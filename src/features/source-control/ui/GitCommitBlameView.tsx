@@ -2,7 +2,9 @@ import { useCallback, useMemo } from "react";
 import { gitBlame } from "../../../platform/tauri/fs";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useGitResource } from "../hooks/useGitResource";
-import { GitFeedback, GitLoading } from "./GitFeedback";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { GitFeedback } from "./GitFeedback";
 
 /** Historical attribution paired with the same revision's file content. */
 export function GitCommitBlameView({
@@ -35,21 +37,23 @@ export function GitCommitBlameView({
           onRetry={resource.refresh}
         />
       ) : null}
-      {resource.loading && !resource.data ? <GitLoading text="Loading…" /> : null}
-      {!sha ? (
-        <p className="p-3 text-[12px] text-[var(--ui-text-secondary)]">{t("No commits yet")}</p>
+      {resource.loading && !resource.data ? (
+        <LoadingText className="px-3 py-2">{t("Loading…")}</LoadingText>
       ) : null}
-      <div className="min-h-0 flex-1 overflow-auto font-mono text-[12px] leading-6">
+      {!sha ? (
+        <EmptyState size="inline" className="px-3" description={t("No commits yet")} />
+      ) : null}
+      <div className="min-h-0 flex-1 overflow-auto font-mono text-ui-caption leading-6">
         {resource.data?.map((entry, index) => {
           const first = resource.data?.[index - 1]?.sha !== entry.sha;
           return (
             <div
               key={entry.line}
-              className={`flex whitespace-pre ${first ? "border-t border-stroke/60" : ""}`}
+              className={`flex whitespace-pre ${first ? "border-t border-(--ui-pane-border)" : ""}`}
             >
               <span
                 title={`${entry.sha}\n${entry.author} · ${entry.summary}`}
-                className="sticky left-0 w-44 shrink-0 truncate bg-[var(--ui-surface)] px-2 font-sans text-[11px] text-[var(--ui-text-secondary)]"
+                className="sticky left-0 w-44 shrink-0 truncate bg-(--color-background-base) px-2 font-sans text-ui-micro text-(--ui-text-secondary)"
               >
                 {first ? `${entry.shortSha} ${entry.author}` : ""}
               </span>

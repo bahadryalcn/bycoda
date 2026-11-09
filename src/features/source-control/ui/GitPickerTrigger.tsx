@@ -1,10 +1,12 @@
 import { Skeleton } from "../../../shared/ui/Skeleton";
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useContext } from "react";
 import { NativePopupHost } from "../../../shared/ui/NativePopupHost";
 import type { ComponentPropsWithoutRef } from "react";
 import { ChevronDown, FolderTree, GitBranch } from "../../../shared/ui/icons";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 
 type Props = Omit<ComponentPropsWithoutRef<"button">, "children" | "className"> & {
   label: string;
@@ -32,10 +34,10 @@ export function GitPickerTrigger({
       motion="none"
       type="button"
       {...props}
-      className={"-ml-1.5 flex min-w-0 max-w-64 items-center gap-1.5"}
+      className="flex min-w-0 max-w-64 items-center gap-1.5"
     >
-      <Icon className="size-3.5 shrink-0" />
-      <span className="relative min-w-0 flex-1 truncate">
+      <Icon className="icon-sm shrink-0" />
+      <span className="relative flex min-w-0 flex-1">
         {loading ? (
           <>
             {/* Reserve the same line box while the current branch loads. */}
@@ -43,15 +45,15 @@ export function GitPickerTrigger({
             <Skeleton label={t("Loading…")} lines={1} className="absolute inset-0" />
           </>
         ) : (
-          label
+          <MiddleTruncate mode="text">{label}</MiddleTruncate>
         )}
       </span>
       {worktree && (
-        <span className="shrink-0 rounded bg-(--ui-surface-muted) px-1 text-(length:--ui-font-caption) leading-4 text-(--ui-text-secondary)">
+        <Badge size="xs" appearance="subtle" className="shrink-0">
           {t("Worktree")}
-        </span>
+        </Badge>
       )}
-      <ChevronDown className="size-3 shrink-0 text-[var(--ui-text-muted)]" />
+      <ChevronDown className="icon-xs shrink-0 text-(--ui-text-muted)" />
     </Button>
   );
 }

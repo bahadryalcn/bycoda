@@ -9,6 +9,7 @@ import {
   loadRecents,
   newProjectPaths,
   looksLikeProject,
+  readArchivedProjects,
   projectRailItems,
   projectRailSections,
   rememberProject,
@@ -17,6 +18,8 @@ import {
   saveProjectRailOrder,
   syncProjectRailOrder,
 } from "./recents";
+
+const ARCHIVED_STORAGE_KEY = "bycoda.archivedProjects";
 
 function mockLocalStorage() {
   const data = new Map<string, string>();
@@ -218,6 +221,21 @@ describe("archiveProject", () => {
     rememberProject("/tmp/gone");
     expect(loadArchivedProjects()).toEqual([]);
     expect(loadRecents().map((item) => item.path)).toEqual(["/tmp/gone"]);
+  });
+
+  it("reports unreadable archive storage as unavailable instead of an empty archive", () => {
+    expect(readArchivedProjects()).toEqual({ state: "ready", items: [] });
+
+    rememberProject("/tmp/gone");
+    archiveProject("/tmp/gone");
+    expect(readArchivedProjects().state).toBe("ready");
+    expect(readArchivedProjects().items.map((item) => item.path)).toEqual(["/tmp/gone"]);
+
+    localStorage.setItem(ARCHIVED_STORAGE_KEY, "{not json");
+    expect(readArchivedProjects()).toEqual({ state: "unavailable", items: [] });
+    localStorage.setItem(ARCHIVED_STORAGE_KEY, JSON.stringify({ path: "/tmp/gone" }));
+    expect(readArchivedProjects()).toEqual({ state: "unavailable", items: [] });
+    expect(loadArchivedProjects()).toEqual([]);
   });
 
   it("delete drops an archived project instead of restoring it", () => {

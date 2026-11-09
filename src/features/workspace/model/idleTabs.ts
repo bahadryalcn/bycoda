@@ -10,6 +10,13 @@ export type IdleTabInput = {
   busySessionIds: ReadonlySet<string>;
   /** Sessions that finished while unfocused and have not been looked at yet. */
   unseenFinishedIds: ReadonlySet<string>;
+  /**
+   * Unseen sessions whose badge has outlived the hibernation TTL. Hibernation
+   * treats them as quiet so the pane tree can be released; the unseen state
+   * itself is untouched, so the badge survives. Leave unset to keep every
+   * unseen session active (the silent "close idle tabs" action).
+   */
+  expiredUnseenIds?: ReadonlySet<string>;
   dirtyFileIds: ReadonlySet<string>;
   movingTabIds?: ReadonlySet<string>;
   /** Unsent composer text or attachments for a session. */
@@ -18,15 +25,10 @@ export type IdleTabInput = {
 
 /** Computed on every app render: rescan a transcript only when its blocks change. */
 const blockActivity = new WeakMap<Block[], boolean>();
-function hasLiveOrDraftBlock(blocks: Block[]): boolean {
+function hasDraftBlock(blocks: Block[]): boolean {
   let active = blockActivity.get(blocks);
   if (active === undefined) {
-    active = blocks.some(
-      (block) =>
-        block.streaming ||
-        block.tool?.status === "in_progress" ||
-        (block.role === "user" && !!block.draft),
-    );
+    active = blocks.some((block) => block.role === "user" && !!block.draft);
     blockActivity.set(blocks, active);
   }
   return active;
@@ -34,21 +36,26 @@ function hasLiveOrDraftBlock(blocks: Block[]): boolean {
 
 type SessionIdleInput = Pick<
   IdleTabInput,
-  "busySessionIds" | "unseenFinishedIds" | "hasComposerDraft"
+  "busySessionIds" | "unseenFinishedIds" | "expiredUnseenIds" | "hasComposerDraft"
 >;
 
 /**
  * True when a session has no live work or waiting input. Mirrors the protected
  * checks in TranscriptPool, plus queued, background, draft and unseen state.
+ * Liveness comes from the session's busy state: a `streaming` block or
+ * `in_progress` tool left behind on a session that is not busy is stale (an
+ * interrupted or crashed run) and must not keep its tab awake forever.
  */
 export function sessionIsIdle(session: Session, input: SessionIdleInput): boolean {
-  if (input.busySessionIds.has(session.id) || input.unseenFinishedIds.has(session.id)) return false;
+  if (input.busySessionIds.has(session.id)) return false;
+  if (input.unseenFinishedIds.has(session.id) && !input.expiredUnseenIds?.has(session.id))
+    return false;
   if (session.busy || session.continuingElsewhere) return false;
   if (session.pendingQuestion || hasPendingApproval(session.blocks)) return false;
   if ((session.backgroundTasks?.length ?? 0) > 0 || (session.backgroundAgents ?? 0) > 0)
     return false;
   if ((session.queuedMessages?.length ?? 0) > 0) return false;
-  if (hasLiveOrDraftBlock(session.blocks)) return false;
+  if (hasDraftBlock(session.blocks)) return false;
   return !input.hasComposerDraft(session.id);
 }
 

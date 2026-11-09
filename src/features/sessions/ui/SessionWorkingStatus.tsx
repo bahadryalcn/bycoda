@@ -1,25 +1,57 @@
-import { t, useLocale } from "../../../shared/i18n";
-import { formatLiveElapsed } from "../model/liveAgents";
-import { useSharedNow } from "./AgentClock";
+import { useT } from "../../../shared/i18n";
+import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
+import { formatLiveMinutes } from "../model/liveAgents";
+import { usePresentationVisible } from "./presentationVisibility";
+import { Clock } from "../../../shared/ui/icons";
+import { sessionWaitReason, type SessionWait } from "../model/sessionWait";
 import { TerminalSpinner } from "./TerminalSpinner";
 
 /** The same working indicator and turn clock in rail rows and session cards. */
-export function SessionWorkingStatus({ startedAt }: { startedAt?: number }) {
-  useLocale();
-  const now = useSharedNow(startedAt != null);
-  const elapsed = startedAt != null ? formatLiveElapsed(startedAt, now) : null;
+export function SessionWorkingStatus({
+  startedAt,
+  showElapsed = true,
+  labelled = false,
+  wait,
+}: {
+  startedAt?: number;
+  /** Rows that print the turn time elsewhere keep only the working mark here. */
+  showElapsed?: boolean;
+  /**
+   * Prints "Working" beside the mark and takes the enclosing badge's text color. Session
+   * lists hide the word on narrow sidebars (sessionList.css); the mark and time stay.
+   */
+  labelled?: boolean;
+  /** The agent yielded and background work holds the turn: a still mark and "Waiting". */
+  wait?: SessionWait;
+}) {
+  const t = useT();
+  // A hidden pane keeps no ticker; showing it reads the clock afresh.
+  const visible = usePresentationVisible();
+  // Minute precision: rail rows and cards re-render once a minute, not every second.
+  // The minute tick only triggers the render; the label reads the exact time.
+  const since = wait ? (wait.since ?? startedAt) : startedAt;
+  const now = useMinuteNow(showElapsed && since != null && visible) ? Date.now() : 0;
+  const elapsed = showElapsed && since != null && now > 0 ? formatLiveMinutes(since, now) : null;
+  const word = t(wait ? "Waiting" : "Working");
+  const reason = wait ? sessionWaitReason(wait) : word;
   return (
     <span
       data-session-working-status
+      data-session-waiting={wait ? "" : undefined}
       role="img"
-      aria-label={[t("Working"), elapsed].filter(Boolean).join(", ")}
-      title={t("Working")}
-      className="inline-flex shrink-0 items-center gap-1 text-[11px] text-(--color-active)"
+      aria-label={[reason, elapsed].filter(Boolean).join(", ")}
+      title={[reason, elapsed].filter(Boolean).join(", ")}
+      className={`inline-flex shrink-0 items-center gap-1 ${
+        labelled ? "" : "text-ui-micro text-(--color-active)"
+      }`}
     >
-      <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none" />
-      {elapsed ? (
-        <span className="shrink-0 tabular-nums">{elapsed}</span>
+      {wait ? <Clock className="icon-xs" strokeWidth={1.75} aria-hidden /> : <TerminalSpinner />}
+      {labelled ? (
+        <span aria-hidden className="session-working-label">
+          {word}
+        </span>
       ) : null}
+      {elapsed ? <span className="shrink-0 tabular-nums">{elapsed}</span> : null}
     </span>
   );
 }

@@ -1,6 +1,10 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { Checkbox } from "../../../shared/ui/Checkbox";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { Popover } from "../../../shared/ui/Popover";
+import { Skeleton } from "../../../shared/ui/Skeleton";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Switch } from "../../../shared/ui/Switch";
 import {
   lazy,
   Suspense,
@@ -9,11 +13,12 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ReactNode,
 } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
-import { Plus, RefreshCw } from "../../../shared/ui/icons";
+import { MoreHorizontal, Plus, RefreshCw } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { supportsHarnessLogin } from "../../../integrations/harness/core/authSupport";
 import {
@@ -167,140 +172,203 @@ export function OnboardingAgents({
           loading={checking}
           onClick={refresh}
         >
-          <RefreshCw className="size-4" />
+          <RefreshCw className="icon-md" />
         </Button>
       </div>
-      {checking && listed.length === 0 ? <p role="status">{t("Scanning this computer…")}</p> : null}
-      {!checking && listed.length === 0 ? (
-        <div className="onboarding-provider-empty" role="status">
-          <strong>{t("No providers found")}</strong>
-          <p>{t("Already installed one? Choose its executable, or install it and scan again.")}</p>
-        </div>
-      ) : null}
-      <div className="onboarding-agent-list">
-        {listed.map((provider) => {
-          const available = isHarnessAvailable(provider);
-          const visible = isPickerProviderVisible(provider);
-          const accountId = supportsProviderAccounts(provider)
-            ? defaultProviderAccountId(provider)
-            : "default";
-          const connected =
-            signedIn.has(`${provider}:${accountId}`) || auth[provider] === "signedIn";
-          const restartRequired = providerBinaryPathChangePending(provider);
-          return (
-            <div className="onboarding-agent" key={provider}>
-              <div className="onboarding-agent-identity">
-                <HarnessIcon harness={provider} className="size-5 shrink-0" />
-                <div>
-                  <strong>{HARNESS_TITLE[provider]}</strong>
-                  <small role="status">
-                    {checking
-                      ? t("Checking installation…")
-                      : restartRequired
-                        ? t("CLI path saved · restart required")
-                        : provider === "acp"
-                          ? available
-                            ? t("ACP agents configured")
-                            : t("No ACP agents configured")
-                          : connected
-                            ? t("Signed in")
-                            : available
-                              ? auth[provider] === "signedOut"
-                                ? t("CLI installed · not signed in")
-                                : auth[provider] === undefined
-                                  ? t("Checking existing CLI account…")
-                                  : t("CLI installed · sign-in status unavailable")
-                              : t("CLI not found · choose its executable or install it")}
-                  </small>
+      <div className="onboarding-scroll">
+        {checking && listed.length === 0 ? (
+          <>
+            <p role="status">{t("Scanning this computer…")}</p>
+            <div className="onboarding-agent-skeleton" aria-hidden="true">
+              {[0, 1, 2].map((row) => (
+                <Skeleton key={row} aria-hidden className="h-9 w-full" />
+              ))}
+            </div>
+          </>
+        ) : null}
+        {!checking && listed.length === 0 ? (
+          <div className="onboarding-provider-empty" role="status">
+            <strong>{t("No providers found")}</strong>
+            <p>
+              {t("Already installed one? Choose its executable, or install it and scan again.")}
+            </p>
+          </div>
+        ) : null}
+        <div className="onboarding-agent-list">
+          {listed.map((provider) => {
+            const available = isHarnessAvailable(provider);
+            const visible = isPickerProviderVisible(provider);
+            const accountId = supportsProviderAccounts(provider)
+              ? defaultProviderAccountId(provider)
+              : "default";
+            const connected =
+              signedIn.has(`${provider}:${accountId}`) || auth[provider] === "signedIn";
+            const restartRequired = providerBinaryPathChangePending(provider);
+            const title = HARNESS_TITLE[provider];
+            const guide = INSTALL_GUIDES[provider];
+            let busy = false;
+            let status: string;
+            if (checking) {
+              busy = true;
+              status = t("Checking…");
+            } else if (restartRequired) {
+              status = t("CLI path saved · restart required");
+            } else if (provider === "acp") {
+              status = available ? t("ACP agents configured") : t("No ACP agents configured");
+            } else if (connected) {
+              status = t("Signed in");
+            } else if (!available) {
+              status = t("Not installed");
+            } else if (auth[provider] === "signedOut") {
+              status = t("Not signed in");
+            } else if (auth[provider] === undefined) {
+              busy = true;
+              status = t("Checking…");
+            } else {
+              status = t("Sign-in not checked");
+            }
+            // One primary action per row, in a fixed column. CLI path and account live in the overflow.
+            let primary: ReactNode = null;
+            let cliSetupIsPrimary = false;
+            if (provider === "acp") {
+              primary = (
+                <Button onClick={() => setCustom(true)} variant="secondary" type="button">
+                  {t("Configure")}
+                </Button>
+              );
+            } else if (!checking && !available && guide) {
+              primary = (
+                <Button
+                  onClick={() =>
+                    void openUrl(guide).catch((reason) => {
+                      if (alive.current) setError(String(reason));
+                    })
+                  }
+                  variant="secondary"
+                  type="button"
+                >
+                  {t("Install guide ↗")}
+                </Button>
+              );
+            } else if (!checking && !available) {
+              cliSetupIsPrimary = true;
+              primary = (
+                <ProviderBinaryControl
+                  key={provider}
+                  provider={provider}
+                  showLabel
+                  onPathSaved={refresh}
+                />
+              );
+            } else if (!checking && available && supportsHarnessLogin(provider) && !connected) {
+              primary = (
+                <Button
+                  aria-label={t("Sign in to {p0}", { p0: title })}
+                  disabled={restartRequired}
+                  onClick={() => onSignIn(provider)}
+                  variant="secondary"
+                  type="button"
+                >
+                  {t("Sign in")}
+                </Button>
+              );
+            } else if (SETUP_COMMANDS[provider]) {
+              primary = (
+                <Button onClick={() => setSetup(provider)} variant="secondary" type="button">
+                  {t("Configure")}
+                </Button>
+              );
+            }
+            const hasMore =
+              (provider !== "acp" && !cliSetupIsPrimary) ||
+              supportsProviderAccounts(provider) ||
+              available;
+            return (
+              <div className="onboarding-agent" key={provider}>
+                <div className="onboarding-agent-identity">
+                  <HarnessIcon harness={provider} className="size-5 shrink-0" />
+                  <div>
+                    <strong>{title}</strong>
+                    <small role="status" className="onboarding-agent-status">
+                      {busy ? <Spinner size="xs" /> : null}
+                      <span>{status}</span>
+                    </small>
+                  </div>
+                </div>
+                <div className="onboarding-agent-controls">
+                  <span className="onboarding-agent-primary">{primary}</span>
+                  <span className="onboarding-agent-visibility" title={t("Show in picker")}>
+                    <Switch
+                      aria-label={t("Use {p0}", { p0: title })}
+                      checked={visible}
+                      onCheckedChange={(next) => savePickerProviderVisible(provider, next)}
+                    />
+                  </span>
+                  <span className="onboarding-agent-more">
+                    {hasMore ? (
+                      <AgentMore label={t("More options for {p0}", { p0: title })}>
+                        {provider !== "acp" && !cliSetupIsPrimary ? (
+                          <ProviderBinaryControl
+                            key={provider}
+                            provider={provider}
+                            showLabel
+                            onPathSaved={refresh}
+                          />
+                        ) : null}
+                        {supportsProviderAccounts(provider) ? (
+                          <TerminalProfileDiscovery
+                            key={provider}
+                            provider={provider}
+                            disabled={checking}
+                            autoDiscover
+                            onConnected={(account) =>
+                              setDefaultProviderAccount(account.provider, account.id)
+                            }
+                          />
+                        ) : null}
+                        {available ? (
+                          <Button variant="ghost" size="sm" disabled={checking} onClick={refresh}>
+                            <RefreshCw className="icon-sm" />
+                            {t("Check again")}
+                          </Button>
+                        ) : null}
+                      </AgentMore>
+                    ) : null}
+                  </span>
                 </div>
               </div>
-              <div className="onboarding-agent-actions">
-                <Checkbox
-                  aria-label={t("Use {p0}", { p0: HARNESS_TITLE[provider] })}
-                  checked={visible}
-                  onChange={(event) => savePickerProviderVisible(provider, event.target.checked)}
-                />
-                {provider !== "acp" ? (
-                  <ProviderBinaryControl provider={provider} onPathSaved={refresh} />
-                ) : null}
-                {supportsProviderAccounts(provider) ? (
-                  <TerminalProfileDiscovery
-                    provider={provider}
-                    disabled={checking}
-                    autoDiscover
-                    showLabel={false}
-                    onConnected={(account) =>
-                      setDefaultProviderAccount(account.provider, account.id)
-                    }
-                  />
-                ) : null}
-                {provider === "acp" ? (
-                  <Button onClick={() => setCustom(true)} variant="secondary" type="button">
-                    {t("Configure")}
-                  </Button>
-                ) : null}
-                {!checking && !available && INSTALL_GUIDES[provider] ? (
-                  <Button
-                    onClick={() =>
-                      void openUrl(INSTALL_GUIDES[provider]!).catch((reason) => {
-                        if (alive.current) setError(String(reason));
-                      })
-                    }
-                    variant="secondary"
-                    type="button"
-                  >
-                    {t("Install guide ↗")}
-                  </Button>
-                ) : !checking && available && supportsHarnessLogin(provider) && !connected ? (
-                  <Button
-                    aria-label={t("Sign in to {p0}", { p0: HARNESS_TITLE[provider] })}
-                    disabled={checking || !available || restartRequired}
-                    onClick={() => onSignIn(provider)}
-                    variant="secondary"
-                    type="button"
-                  >
-                    {t("Sign in")}
-                  </Button>
-                ) : null}
-                {SETUP_COMMANDS[provider] ? (
-                  <Button onClick={() => setSetup(provider)} variant="secondary" type="button">
-                    {t("Configure")}
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="onboarding-provider-footer">
+            );
+          })}
+        </div>
         {missing.length > 0 ? (
-          <Button
-            disabled={checking}
-            onClick={() => setAdding(true)}
-            variant="secondary"
-            type="button"
-          >
-            <Plus className="size-4" />
-            {t("Add provider")}
-          </Button>
+          <div className="onboarding-provider-footer">
+            <Button
+              disabled={checking}
+              onClick={() => setAdding(true)}
+              variant="secondary"
+              type="button"
+            >
+              <Plus className="icon-md" />
+              {t("Add provider")}
+            </Button>
+            <InfoPopover label={t("About existing accounts")}>
+              <p>
+                {t(
+                  "Existing CLI accounts are reused. Choose another account from its profile menu.",
+                )}
+              </p>
+            </InfoPopover>
+          </div>
         ) : null}
-        {listed.length > 0 ? (
-          <p>
-            {t("Existing CLI accounts are reused. Choose another account from its profile menu.")}
-          </p>
-        ) : null}
+        {error ? <Alert tone="danger">{error}</Alert> : null}
       </div>
-      {error ? (
-        <Alert role="alert" tone="danger">
-          {error}
-        </Alert>
-      ) : null}
       {adding ? (
         <Modal title={t("Add provider")} size="sm" onClose={closeAdd}>
           <div className="onboarding-provider-add">
             <div className="onboarding-provider-select">
               <span>{t("Provider")}</span>
               <SearchableSelect
+                hideLabel
                 label={t("Provider")}
                 value={candidate}
                 onChange={(value) => setCandidate(value as HarnessId)}
@@ -377,12 +445,46 @@ export function OnboardingAgents({
             refresh();
           }}
         >
-          <div className="onboarding-settings">
-            <Suspense fallback={<p role="status">{t("Loading…")}</p>}>
-              <GenericAcpSettings />
-            </Suspense>
-          </div>
+          <Suspense fallback={<p role="status">{t("Loading…")}</p>}>
+            <GenericAcpSettings />
+          </Suspense>
         </Modal>
+      ) : null}
+    </>
+  );
+}
+
+/** Quiet overflow for per-provider setup (CLI path, accounts). Nested dialogs stay owned by their controls. */
+function AgentMore({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <Button
+        ref={anchor}
+        iconOnly
+        label={label}
+        tooltip={label}
+        variant="ghost"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <MoreHorizontal className="icon-md" />
+      </Button>
+      {open ? (
+        <Popover
+          anchor={anchor}
+          role="dialog"
+          aria-label={label}
+          align="end"
+          width={220}
+          autoFocus
+          onDismiss={() => setOpen(false)}
+          className="onboarding-agent-menu"
+        >
+          {children}
+        </Popover>
       ) : null}
     </>
   );

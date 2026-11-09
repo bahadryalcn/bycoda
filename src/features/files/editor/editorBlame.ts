@@ -9,12 +9,12 @@ import {
 } from "@codemirror/state";
 import { EditorView, GutterMarker, gutter } from "@codemirror/view";
 import type { GitBlameLine, GitHistoryCommit } from "../../../platform/tauri/fs";
-import { blameByLine, mapBlameLines } from "../../source-control/model/blameMapping";
+import { blameByLine, mapBlameLines } from "../../source-control/public/blameMapping";
 import {
   authorColor,
   formatAbsoluteTime,
   formatRelativeTime,
-} from "../../source-control/model/gitGraphDisplay";
+} from "../../source-control/public/gitGraphDisplay";
 import { editorDocChanges } from "./editorDoc";
 
 /**
@@ -263,7 +263,7 @@ const blameTheme = EditorView.theme({
     whiteSpace: "nowrap",
     paddingLeft: "6px",
     borderLeft: "2px solid transparent",
-    color: "color-mix(in srgb, var(--color-content) 50%, transparent)",
+    color: "var(--ui-text-secondary)",
   },
   ".cm-blameCommit": {
     cursor: "pointer",
@@ -279,7 +279,7 @@ const blameTheme = EditorView.theme({
   },
   ".cm-blameNone": {
     fontStyle: "italic",
-    color: "color-mix(in srgb, var(--color-content) 32%, transparent)",
+    color: "var(--ui-text-muted)",
   },
 });
 

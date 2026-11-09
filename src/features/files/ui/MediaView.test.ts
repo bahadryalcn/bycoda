@@ -81,3 +81,34 @@ it("does not download restored inactive media tabs", async () => {
   );
   expect(mocks.prepare).toHaveBeenCalledOnce();
 });
+
+it("keeps external-open progress local, blocks duplicates and allows retry after failure", async () => {
+  mocks.prepare.mockResolvedValue("/demo.mp4");
+  let reject!: (error: Error) => void;
+  mocks.open.mockImplementationOnce(
+    () =>
+      new Promise<void>((_resolve, fail) => {
+        reject = fail;
+      }),
+  );
+  await act(async () => root.render(createElement(MediaView, { path: "/demo.mp4" })));
+  const button = [...container.querySelectorAll("button")].find(
+    (item) => item.textContent === "Open in default app",
+  )!;
+  button.focus();
+  act(() => {
+    button.click();
+    button.click();
+  });
+  expect(mocks.open).toHaveBeenCalledOnce();
+  expect(button.getAttribute("aria-busy")).toBe("true");
+  expect(document.activeElement).toBe(button);
+  await act(async () => reject(new Error("Application unavailable")));
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Application unavailable",
+  );
+  mocks.open.mockResolvedValue(undefined);
+  await act(async () => button.click());
+  expect(mocks.open).toHaveBeenCalledTimes(2);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});

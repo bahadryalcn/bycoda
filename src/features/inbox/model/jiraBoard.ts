@@ -3,7 +3,7 @@ import {
   clearJiraCache,
   jiraProjectIdsForFetch,
   listJiraProjects,
-  loadHiddenJiraProjectIds,
+  requireHiddenJiraProjectIds,
   loadAllowedJiraBoardIds,
   type JiraIssue,
 } from "./jira";
@@ -32,8 +32,11 @@ export type JiraMove = {
   afterKey?: string;
 };
 
+export const jiraErrorMessage = (reason: unknown) =>
+  reason instanceof Error ? reason.message : String(reason);
+
 async function visibleProjectIds() {
-  const hidden = loadHiddenJiraProjectIds();
+  const hidden = requireHiddenJiraProjectIds();
   return hidden.length ? jiraProjectIdsForFetch(await listJiraProjects(), hidden) : null;
 }
 
@@ -61,7 +64,7 @@ export async function jiraBoardIssues(
     nextPageToken: nextPageToken ?? null,
     projectIds,
   });
-  const hidden = loadHiddenJiraProjectIds();
+  const hidden = requireHiddenJiraProjectIds();
   return { ...page, issues: page.issues.filter((issue) => !hidden.includes(issue.teamId)) };
 }
 export const jiraIssueTransitions = (key: string) =>

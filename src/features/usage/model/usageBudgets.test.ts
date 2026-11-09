@@ -29,6 +29,16 @@ const session = (extra: Partial<Session> = {}): Session =>
   ({ id: "s", cwd: "C:\\work\\app", harness: "codex", blocks: [], ...extra }) as Session;
 
 describe("usage budget semantics", () => {
+  it("keeps a common machine rule distinct from project groups and excludes remote work", () => {
+    const common = { ...rule, scope: "machine" as const, target: "local" };
+    expect(normalizeBudget(common)).toEqual(common);
+    expect(budgetMatches(common, session({ cwd: "C:/other" }), () => "unrelated")).toBe(true);
+    expect(
+      budgetMatches(common, session({ cwd: "remote://machine/project" }), () => undefined),
+    ).toBe(false);
+    expect(normalizeBudget({ ...common, target: "group-id" })).toBeNull();
+    expect(normalizeBudget({ ...common, metric: "accountPercent", capacity: 100 })).toBeNull();
+  });
   it("normalizes Windows scope identity and rejects unsafe settings", () => {
     expect(normalizeBudget(rule)?.target).toBe("c:/work/app");
     for (const patch of [

@@ -10,7 +10,7 @@ import {
   saveProjectGroupAssignments,
   saveProjectGroups,
 } from "../model/projectGroups";
-import { savePinnedProjects } from "../model/recents";
+import { loadPinnedProjects, savePinnedProjects } from "../model/recents";
 import { hideGroup, restoreHiddenGroup } from "../../group-lock/model/groupLock";
 import { ProjectRail } from "../../../app/shell/ProjectRail";
 import { useProjectDiffStats } from "../../source-control/hooks/useProjectDiffStats";
@@ -85,7 +85,7 @@ it("keeps quick project actions visible and opens appearance and folder actions 
   expect(document.querySelector('[role="dialog"][aria-label="Appearance"]')).not.toBeNull();
   expect(button("Add project logo")).toBeDefined();
   expect(button("Background image")).toBeDefined();
-  act(() => button("Folders").dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+  act(() => button("Folders").dispatchEvent(new Event("pointermove", { bubbles: true })));
   expect(document.querySelector('[role="dialog"][aria-label="Appearance"]')).toBeNull();
   expect(button("Rename folder…")).toBeDefined();
   expect(button("Additional folders…")).toBeDefined();
@@ -142,6 +142,41 @@ it("moves a linked workspace into a group through its menu and back out without 
   expect(parent.querySelector('[data-project-group="wallet"]')).toBeNull();
   expect(container.querySelector('[data-project-group="wallet"]')).not.toBeNull();
   expect(loadProjectGroupAssignments()).toEqual({ "/work/client": "wallet" });
+});
+
+it("moves a nested workspace above the group's projects and drags it by its name", async () => {
+  saveProjectGroups([
+    { id: "team", name: "Team", collapsed: false },
+    {
+      id: "wallet",
+      name: "Wallet",
+      collapsed: false,
+      workspaceFile: "/work/wallet/wallet.code-workspace",
+    },
+  ]);
+  saveProjectGroupAssignments({ "/work/client": "team", "/work/wallet": "team" });
+  await renderRail();
+  const members = () =>
+    [
+      ...container.querySelectorAll(
+        '[data-project-group="team"] [data-project-group-items] > [data-project-row], [data-project-group="team"] [data-project-group-items] > [data-project-group]',
+      ),
+    ].map(
+      (node) => node.getAttribute("data-project-path") ?? node.getAttribute("data-project-group"),
+    );
+  expect(members()).toEqual(["/work/client", "wallet"]);
+  // The workspace name is part of the header's drag handle, like a project row's name.
+  expect(button("Open Wallet").hasAttribute("data-no-drag")).toBe(false);
+  await act(async () =>
+    button("Open Wallet").dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowUp", altKey: true, bubbles: true }),
+    ),
+  );
+  expect(members()).toEqual(["wallet", "/work/client"]);
+  expect(loadProjectGroups().find((group) => group.id === "team")?.memberOrder).toEqual([
+    "group:wallet",
+    pathKey("/work/client"),
+  ]);
 });
 
 it("creates a parent from the workspace menu and restores the workspace when that parent is deleted", async () => {
@@ -300,13 +335,18 @@ it("removes hidden group names and pinned projects while retaining settings acce
   );
   act(() => button("Secret group group options").click());
   act(() => button("Group privacy").click());
-  act(() => button("Hide group").click());
+  await act(async () => {
+    button("Hide group").click();
+    await Promise.resolve();
+  });
   expect(container.textContent).not.toContain("Secret group");
   expect(container.querySelector('button[aria-label="personal"]')).toBeNull();
   expect(loadProjectGroupAssignments()[pathKey("/work/personal")]).toBe("private-hidden");
   act(() => button("Settings").click());
   expect(openSettings).toHaveBeenCalledOnce();
-  act(() => restoreHiddenGroup("private-hidden"));
+  await act(async () => {
+    await restoreHiddenGroup("private-hidden");
+  });
   expect(container.textContent).toContain("Secret group");
   expect(button("personal")).toBeDefined();
 });
@@ -336,6 +376,57 @@ function sectionLabels(): string[] {
     .filter((text) => ["Pinned", "Groups", "Projects"].includes(text));
 }
 
+it("pins a group instead of the projects inside it and indents its members", async () => {
+  saveProjectGroups([
+    { id: "alpha", name: "Alpha", collapsed: false },
+    { id: "clients", name: "Client work", collapsed: false },
+  ]);
+  saveProjectGroupAssignments({ [pathKey("/work/client")]: "clients" });
+  savePinnedProjects(["/work/client", "/work/personal"]);
+  await renderRail();
+  const groupIds = () =>
+    [...container.querySelectorAll<HTMLElement>("[data-project-group]")].map(
+      (element) => element.dataset.projectGroup,
+    );
+  const row = container.querySelector<HTMLElement>('[data-project-path="/work/client"]')!;
+  expect(row.closest('[data-project-group="clients"]')).not.toBeNull();
+  expect(row.parentElement?.classList).toContain("ps-5");
+  expect(row.querySelector('button[aria-label$="pin project" i]')).toBeNull();
+  // A grouped project's old pin is dropped; ungrouped pins stay.
+  expect(loadPinnedProjects()).toEqual(["/work/personal"]);
+  await act(async () =>
+    row
+      .querySelector("button")!
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 20, clientY: 40 })),
+  );
+  expect(button("Open in editor")).toBeDefined();
+  expect(
+    [...document.querySelectorAll("button")].some((item) => item.textContent === "Pin project"),
+  ).toBe(false);
+  act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+
+  // An unpinned group keeps its header compact: pinning lives in the group menu, and only the
+  // options slot is reserved at rest; the other actions sit in the collapsing slot.
+  expect(container.querySelector('button[aria-label="Pin group"]')).toBeNull();
+  const header = button("Client work group options").parentElement!;
+  expect(
+    header.querySelector('[data-action-slot="collapse"] [aria-label="Lock Client work"]'),
+  ).not.toBeNull();
+  expect(button("Client work group options").closest('[data-action-slot="collapse"]')).toBeNull();
+  await act(async () => button("Client work group options").click());
+  await act(async () => button("Pin group").click());
+  expect(loadProjectGroups()[0]).toMatchObject({ id: "clients", pinned: true });
+  expect(groupIds()).toEqual(["clients", "alpha"]);
+
+  // The pinned header shows its pin, which unpins.
+  const clients = container.querySelector<HTMLElement>('[data-project-group="clients"]')!;
+  await act(async () =>
+    clients.querySelector<HTMLButtonElement>('button[aria-label="Unpin group"]')!.click(),
+  );
+  expect(loadProjectGroups().find((group) => group.id === "clients")?.pinned).toBeUndefined();
+  expect(container.querySelector('button[aria-label="Unpin group"]')).toBeNull();
+});
+
 it("renders assigned projects in persistent collapsible groups", async () => {
   savePinnedProjects(["/work/personal"]);
   saveProjectGroups([{ id: "clients", name: "Client work", collapsed: false, colorIndex: 4 }]);
@@ -349,7 +440,7 @@ it("renders assigned projects in persistent collapsible groups", async () => {
   const group = container.querySelector<HTMLElement>('[data-project-group="clients"]')!;
   const groupRow = group.firstElementChild as HTMLElement;
   expect(groupRow.classList).toContain("project-reorder-item");
-  expect(groupRow.classList).toContain("h-8");
+  expect(groupRow.classList).toContain("h-(--ui-control-height-compact)");
   expect(groupRow.classList).toContain("px-2");
   const options = button("Client work group options");
   expect(options.getAttribute("aria-haspopup")).toBe("menu");
@@ -359,7 +450,8 @@ it("renders assigned projects in persistent collapsible groups", async () => {
   expect(header.getAttribute("aria-expanded")).toBe("true");
   expect(group.classList).toContain("overflow-hidden");
   expect(group.classList).toContain("rounded-md");
-  expect(group.classList).toContain("bg-content/3");
+  // The expanded group is separated by spacing, not a tinted fill.
+  expect(group.classList).not.toContain("bg-content/3");
   expect(group.getAttribute("style")).toBeNull();
   expect(group.querySelector("[data-project-group-items]")?.classList).toContain("p-1");
   expect(group.querySelector("[data-group-chevron]")).not.toBeNull();
@@ -374,7 +466,7 @@ it("renders assigned projects in persistent collapsible groups", async () => {
   expect(body.dataset.open).toBe("false");
   expect(body.getAttribute("aria-hidden")).toBe("true");
   expect(body.hasAttribute("inert")).toBe(true);
-  expect(collapsedGroup.classList).toContain("bg-content/3");
+  expect(collapsedGroup.classList).not.toContain("bg-content/3");
   const transitionEnd = new Event("transitionend", { bubbles: true });
   Object.defineProperty(transitionEnd, "propertyName", {
     value: "height",
@@ -451,7 +543,10 @@ it("creates, styles, assigns, and deletes a group from the rail", async () => {
   const newGroup = [...moveMenu.querySelectorAll("button")].find(
     (item) => item.textContent === "New group…",
   )!;
-  act(() => newGroup.click());
+  await act(async () => {
+    newGroup.click();
+    await Promise.resolve();
+  });
 
   const input = document.querySelector<HTMLInputElement>(
     '[role="menu"][aria-label="Project group actions"] input[aria-label="Group name"]',
@@ -475,7 +570,10 @@ it("creates, styles, assigns, and deletes a group from the rail", async () => {
   act(() => button("Project icon: Database / Analytics").click());
   expect(loadProjectGroups()[0].mascot).toBe("orbit");
   act(() => button("Delete").click());
-  act(() => button("Delete group").click());
+  await act(async () => {
+    button("Delete group").click();
+    await Promise.resolve();
+  });
   expect(loadProjectGroups()).toEqual([]);
   expect(loadProjectGroupAssignments()).toEqual({});
   expect(button("personal")).toBeDefined();

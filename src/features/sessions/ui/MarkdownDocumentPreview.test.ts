@@ -81,9 +81,7 @@ describe("MarkdownDocumentPreview images", () => {
     );
 
     expect(html).toMatch(/<p align="center">/);
-    expect(html).toContain(
-      'data-document-image="/repo/.github/readme/hero.png"',
-    );
+    expect(html).toContain('data-document-image="/repo/.github/readme/hero.png"');
     expect(html).toContain('aria-label="Hero"');
     expect(html).toContain("inline-size:600px");
   });
@@ -95,9 +93,7 @@ describe("MarkdownDocumentPreview images", () => {
     );
 
     expect(html).toContain("<table");
-    expect(html).toContain(
-      'data-document-image="/repo/.github/readme/chat.png"',
-    );
+    expect(html).toContain('data-document-image="/repo/.github/readme/chat.png"');
     expect(html).toContain('data-document-image="/repo/docs/shots/files.jpg"');
   });
 

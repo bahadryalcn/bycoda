@@ -1,6 +1,6 @@
 import { useId, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
-import { t, useLocale } from "../i18n";
-import { Button } from "./Button";
+import { useT } from "../i18n";
+import { InlineAction } from "./ActionHost";
 import { Eye, EyeOff } from "./icons";
 import { TextField, type TextFieldProps } from "./TextField";
 
@@ -8,11 +8,16 @@ export type PasswordFieldProps = Omit<TextFieldProps, "type" | "clearable" | "en
   messages?: { showPassword?: string; hidePassword?: string };
 };
 
-/** Arc password-field reveal state adapted to bycoda's native field and Button.
- * The input remains the value owner; sensitive text is never copied into state.
+/**
+ * TextField for secrets with a show/hide toggle that keeps focus and caret position. The input owns the value;
+ * the secret is never copied into state, logged or previewed, and no strength policy is applied.
+ * @group fields
+ * @use Passwords, tokens and API keys typed or pasted by the user.
+ * @avoid Non-secret text: TextField. Displaying a stored secret: mask it and offer copy/replace instead.
+ * @arc password-field
  */
 export function PasswordField({ ref, id, messages, disabled, ...props }: PasswordFieldProps) {
-  useLocale();
+  const t = useT();
   const generatedId = useId();
   const controlId = id ?? generatedId;
   const input = useRef<HTMLInputElement>(null);
@@ -44,10 +49,8 @@ export function PasswordField({ ref, id, messages, disabled, ...props }: Passwor
       type={visible ? "text" : "password"}
       data-reveal={toggled ? (visible ? "shown" : "hidden") : undefined}
       endAdornment={
-        <Button
-          type="button"
-          variant="ghost"
-          iconOnly
+        <InlineAction
+          reveal="always"
           label={
             visible
               ? (messages?.hidePassword ?? t("Hide password"))
@@ -70,7 +73,7 @@ export function PasswordField({ ref, id, messages, disabled, ...props }: Passwor
           }}
         >
           {visible ? <EyeOff /> : <Eye />}
-        </Button>
+        </InlineAction>
       }
     />
   );

@@ -2,12 +2,40 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { newSession, type HarnessId } from "./session";
 
 it("restores saved Claude version controls only from the alias targeting that exact version", () => {
-  const settings: AgentModel["settings"] = [{ id: "fast", label: "Fast", kind: "toggle", value: "false", options: [{ value: "true", label: "On" }, { value: "false", label: "Off" }] }];
+  const settings: AgentModel["settings"] = [
+    {
+      id: "fast",
+      label: "Fast",
+      kind: "toggle",
+      value: "false",
+      options: [
+        { value: "true", label: "On" },
+        { value: "false", label: "Off" },
+      ],
+    },
+  ];
   try {
-    setHarnessModels("claude", [{ id: "claude:opus", nativeId: "opus", aliasTarget: "claude-opus-5-5", harness: "claude", name: "Opus", settings }]);
-    expect(resolveModel("claude", "claude:opus-5-5")).toMatchObject({ id: "claude:opus-5-5", nativeId: "claude-opus-5-5", settings: expect.arrayContaining(settings!) });
-    expect(resolveModel("claude", "claude:opus-5-6").settings?.some((setting) => setting.id === "fast")).not.toBe(true);
-  } finally { resetHarnessModelOverlays(); }
+    setHarnessModels("claude", [
+      {
+        id: "claude:opus",
+        nativeId: "opus",
+        aliasTarget: "claude-opus-5-5",
+        harness: "claude",
+        name: "Opus",
+        settings,
+      },
+    ]);
+    expect(resolveModel("claude", "claude:opus-5-5")).toMatchObject({
+      id: "claude:opus-5-5",
+      nativeId: "claude-opus-5-5",
+      settings: expect.arrayContaining(settings!),
+    });
+    expect(
+      resolveModel("claude", "claude:opus-5-6").settings?.some((setting) => setting.id === "fast"),
+    ).not.toBe(true);
+  } finally {
+    resetHarnessModelOverlays();
+  }
 });
 import {
   MODELS,
@@ -37,6 +65,7 @@ import {
   mergeModelSettings,
   modelEffortSetting,
   modelPickerTabs,
+  modelBelongsToHarness,
   nativeModelId,
   preferredModelId,
   preferredModelSettings,
@@ -53,7 +82,18 @@ import {
   type AgentModel,
 } from "./models";
 
-it("nativeId ve id çakışmasında katalog sırasını korur, değişen katalog indeksini yeniler", () => {
+describe("model provider ownership", () => {
+  it("rejects only explicit known foreign provider keys", () => {
+    expect(modelBelongsToHarness("codex", "antigravity:gemini-3.8-flash-high")).toBe(false);
+    expect(modelBelongsToHarness("codex", " claude:opus-5-5 ")).toBe(false);
+    expect(modelBelongsToHarness("codex", "codex:custom")).toBe(true);
+    expect(modelBelongsToHarness("codex", "my-private-model")).toBe(true);
+    expect(modelBelongsToHarness("codex", "openrouter:vendor/custom-model")).toBe(true);
+    expect(modelBelongsToHarness("opencode", "vendor/custom-model")).toBe(true);
+  });
+});
+
+it("keeps catalog order when nativeId and id collide, and refreshes the index when the catalog changes", () => {
   try {
     setHarnessModels("claude", [
       { id: "claude:earlier", nativeId: "shared-identity", harness: "claude", name: "Earlier" },
@@ -421,17 +461,17 @@ describe("models turned off in settings", () => {
   });
 
   it("leaves a turned-off model out of the offered list and the default", () => {
-    expect(defaultModelId("claude")).toBe("claude:sonnet-5");
-    saveModelEnabled("claude:sonnet-5", false);
+    expect(defaultModelId("claude")).toBe("claude:opus-5-5");
+    saveModelEnabled("claude:opus-5-5", false);
 
-    expect(isModelEnabled("claude:sonnet-5")).toBe(false);
-    expect(modelsFor("claude").map((model) => model.id)).not.toContain("claude:sonnet-5");
-    expect(catalogModelsFor("claude").map((model) => model.id)).toContain("claude:sonnet-5");
-    expect(defaultModelId("claude")).not.toBe("claude:sonnet-5");
-    expect(resolveModel("claude").id).not.toBe("claude:sonnet-5");
+    expect(isModelEnabled("claude:opus-5-5")).toBe(false);
+    expect(modelsFor("claude").map((model) => model.id)).not.toContain("claude:opus-5-5");
+    expect(catalogModelsFor("claude").map((model) => model.id)).toContain("claude:opus-5-5");
+    expect(defaultModelId("claude")).not.toBe("claude:opus-5-5");
+    expect(resolveModel("claude").id).not.toBe("claude:opus-5-5");
 
-    saveModelEnabled("claude:sonnet-5", true);
-    expect(defaultModelId("claude")).toBe("claude:sonnet-5");
+    saveModelEnabled("claude:opus-5-5", true);
+    expect(defaultModelId("claude")).toBe("claude:opus-5-5");
   });
 
   it("does not start new conversations on a turned-off saved default", () => {
@@ -778,14 +818,14 @@ describe("every bundled model resolves to its own native id", () => {
   });
 });
 
-describe("host ve browser model tercihi storage ayrımı", () => {
+describe("host and browser model preference storage split", () => {
   afterEach(() => {
     mockLocalStorage();
     resetDisabledModels();
     vi.restoreAllMocks();
   });
 
-  it("storage olmayan host fallback ve cache mutasyonunu sessiz korur", () => {
+  it("keeps the host fallback and cache mutation silent when storage is missing", () => {
     Reflect.deleteProperty(globalThis, "localStorage");
     resetDisabledModels();
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -810,7 +850,7 @@ describe("host ve browser model tercihi storage ayrımı", () => {
     expect(warning).not.toHaveBeenCalled();
   });
 
-  it("browser getter SecurityError hatasını fallback ile birlikte bildirir", () => {
+  it("reports a browser getter SecurityError together with the fallback", () => {
     const error = new DOMException("blocked", "SecurityError");
     Object.defineProperty(globalThis, "localStorage", {
       configurable: true,
@@ -823,7 +863,7 @@ describe("host ve browser model tercihi storage ayrımı", () => {
     expect(warning).toHaveBeenCalledWith("Model preferences storage failed", error);
   });
 
-  it("mevcut storage parse ve quota hatalarını bildirir", () => {
+  it("reports existing storage parse and quota errors", () => {
     mockLocalStorage();
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(localStorage, "getItem").mockReturnValue("{");
@@ -836,4 +876,128 @@ describe("host ve browser model tercihi storage ayrımı", () => {
     saveFavoriteModels(["claude:host-test"]);
     expect(warning).toHaveBeenCalledWith("Model preferences storage failed", error);
   });
+});
+
+describe("cross-provider delegation settings", () => {
+  const delegationModel = {
+    id: "codex:gpt-delegation",
+    harness: "codex" as const,
+    name: "GPT Delegation",
+    settings: [
+      {
+        id: "effort",
+        label: "Reasoning",
+        kind: "select" as const,
+        value: "high",
+        options: [
+          { value: "high", label: "High" },
+          { value: "low", label: "Low" },
+        ],
+      },
+    ],
+  };
+  const subagents = JSON.stringify([{ harness: "claude", model: "claude:opus-5-5" }]);
+  const advisor = JSON.stringify({ harness: "claude", model: "claude:sonnet-5" });
+  const parent = JSON.stringify({
+    parentSessionId: "p",
+    runId: "r",
+    kind: "subagent",
+    model: "codex:gpt-delegation",
+    startedAt: 1,
+  });
+
+  beforeEach(() => {
+    mockLocalStorage();
+    setHarnessModels("codex", [delegationModel]);
+  });
+
+  afterEach(() => {
+    resetHarnessModelOverlays();
+    mockLocalStorage();
+  });
+
+  it("keeps the reserved keys when the model is merged", () => {
+    const merged = mergeModelSettings(delegationModel, {
+      effort: "low",
+      crossSubagents: subagents,
+      crossAdvisor: advisor,
+    });
+    expect(merged).toEqual({ effort: "low", crossSubagents: subagents, crossAdvisor: advisor });
+  });
+
+  it("drops a reserved value that does not decode", () => {
+    const merged = mergeModelSettings(delegationModel, { crossAdvisor: "garbage" });
+    expect(merged).not.toHaveProperty("crossAdvisor");
+  });
+
+  it("carries the parent link through a merge, the way a child keeps its link", () => {
+    const merged = mergeModelSettings(delegationModel, { delegationParent: parent });
+    expect(merged).toEqual({ effort: "high", delegationParent: parent });
+  });
+
+  it("saves the owner's delegation choices as last-used settings", () => {
+    saveLastModelSettings(
+      { effort: "low", crossSubagents: subagents, crossAdvisor: advisor },
+      "overwrite",
+      ["crossSubagents", "crossAdvisor"],
+    );
+    expect(loadLastModelSettings()).toEqual({
+      effort: "low",
+      crossSubagents: subagents,
+      crossAdvisor: advisor,
+    });
+  });
+
+  it("never saves a delegation parent link as last-used settings", () => {
+    saveLastModelSettings({ effort: "low", delegationParent: parent });
+    expect(loadLastModelSettings()).toEqual({ effort: "low" });
+    saveLastModelSettings({ delegationParent: parent }, "fill");
+    expect(loadLastModelSettings()).not.toHaveProperty("delegationParent");
+  });
+});
+
+describe("product model resolution", () => {
+  beforeEach(() => {
+    mockLocalStorage();
+    resetDisabledModels();
+    resetHarnessModelOverlays();
+  });
+  afterEach(() => {
+    resetHarnessModelOverlays();
+    resetDisabledModels();
+  });
+  it("prefers product model over catalog order and updates on refresh", () => {
+    setHarnessModels("claude", [
+      { id: "claude:sonnet", nativeId: "sonnet", harness: "claude", name: "Sonnet" },
+      { id: "claude:opus", nativeId: "opus", harness: "claude", name: "Opus" },
+    ]);
+    expect(defaultModelId("claude")).toBe("claude:opus");
+    saveDefaultModel("claude", "claude:sonnet");
+    expect(preferredModelId("claude")).toBe("claude:sonnet");
+    setHarnessModels("claude", [{ id: "claude:other", harness: "claude", name: "Other" }]);
+    expect(defaultModelId("claude")).toBe("claude:other");
+  });
+  it("falls back when preferred model is disabled", () => {
+    setHarnessModels("claude", [
+      { id: "claude:opus", nativeId: "opus", harness: "claude", name: "Opus" },
+      { id: "claude:sonnet", nativeId: "sonnet", harness: "claude", name: "Sonnet" },
+    ]);
+    saveModelEnabled("claude:opus", false);
+    expect(defaultModelId("claude")).toBe("claude:sonnet");
+  });
+});
+
+it("does not remember generated delegation when saving unrelated settings", () => {
+  mockLocalStorage();
+  saveLastModelSettings({
+    effort: "high",
+    advisor: "default",
+    subagentModel: "haiku",
+    crossAdvisor: JSON.stringify({
+      harness: "claude",
+      model: "claude:opus",
+      providerAccountId: "a",
+    }),
+  });
+  expect(loadLastModelSettings()).toEqual({ effort: "high" });
 });

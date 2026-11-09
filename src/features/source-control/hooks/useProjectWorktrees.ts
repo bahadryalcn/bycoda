@@ -1,20 +1,25 @@
+import { CheckoutCache } from "../model/checkoutCache";
 import { useCallback, useSyncExternalStore } from "react";
+import { createStore } from "../../../shared/lib/store";
 import { isGitWatched, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { pathKey } from "../../../shared/lib/paths";
 import { listWorktrees, type Worktrees } from "../model/worktrees";
 
-type Snapshot = { data?: Worktrees; error?: string };
+type Snapshot = { data?: Worktrees; error?: string; loading?: boolean };
 type Entry = {
   cwd: string;
   snapshot: Snapshot;
-  listeners: Set<() => void>;
+  listeners: ReturnType<typeof createStore<[]>>;
   inFlight?: Promise<boolean>;
   invalidated: boolean;
   stop?: () => void;
 };
 
 const EMPTY: Snapshot = {};
-const entries = new Map<string, Entry>();
+const entries = new CheckoutCache<string, Entry>(
+  (entry) => entry.listeners.size > 0 || !!entry.inFlight,
+  (entry) => entry.snapshot,
+);
 
 function entryFor(cwd: string): Entry {
   const key = pathKey(cwd);
@@ -23,7 +28,7 @@ function entryFor(cwd: string): Entry {
     entry = {
       cwd,
       snapshot: EMPTY,
-      listeners: new Set(),
+      listeners: createStore(),
       invalidated: false,
     };
     entries.set(key, entry);
@@ -32,33 +37,39 @@ function entryFor(cwd: string): Entry {
 }
 
 function publish(entry: Entry, snapshot: Snapshot) {
+  const previous = entry.snapshot;
   entry.snapshot = snapshot;
-  for (const listener of entry.listeners) listener();
+  if (previous.data !== snapshot.data || previous.error !== snapshot.error)
+    entries.refresh(pathKey(entry.cwd));
+  entry.listeners.notify();
 }
 
 function load(entry: Entry, invalidated = false): Promise<boolean> {
+  if (entries.get(pathKey(entry.cwd)) !== entry) return Promise.resolve(false);
   if (entry.inFlight) {
     // A Git mutation during a read needs a follow-up; repeated focus/open
     // events can share the request already in progress.
     entry.invalidated ||= invalidated;
     return entry.inFlight;
   }
+  publish(entry, { ...entry.snapshot, loading: true });
   entry.inFlight = (async () => {
     let loaded = false;
     try {
       const data = await listWorktrees(entry.cwd);
-      publish(entry, { data });
+      publish(entry, { data, loading: false });
       loaded = true;
     } catch (error) {
       // A background failure must not replace a usable list with a loading or
       // error screen. The caller can still surface the error beside the list.
-      publish(entry, { ...entry.snapshot, error: String(error) });
+      publish(entry, { ...entry.snapshot, error: String(error), loading: false });
     }
     entry.inFlight = undefined;
     if (entry.invalidated) {
       entry.invalidated = false;
       return load(entry);
     }
+    entries.prune();
     return loaded;
   })();
   return entry.inFlight;
@@ -98,14 +109,15 @@ export function useProjectWorktrees(cwd: string, enabled = true) {
     (listener: () => void) => {
       if (!active) return () => {};
       const entry = entryFor(cwd);
-      entry.listeners.add(listener);
+      const unsubscribe = entry.listeners.subscribe(listener);
       if (entry.listeners.size === 1) start(entry);
       return () => {
-        entry.listeners.delete(listener);
+        unsubscribe();
         if (entry.listeners.size === 0) {
           entry.stop?.();
           entry.stop = undefined;
         }
+        entries.prune();
       };
     },
     [active, cwd],

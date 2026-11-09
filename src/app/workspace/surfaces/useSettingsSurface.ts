@@ -17,7 +17,9 @@ import {
   type SettingsSectionId,
 } from "../../../features/settings/model/settings";
 import { OPEN_CONNECTIONS_EVENT } from "../../../features/connections/model/connections";
+import { OPEN_DECISION_MODELS_SETTINGS_EVENT } from "../../../features/decision-models/model/decisionModelsSettings";
 import type { ConnectableInboxSource } from "../../../features/inbox/model/inboxFilters";
+import { OPEN_MESSAGING_SETTINGS_EVENT } from "../../../features/messaging/model/messagingSettings";
 
 export interface SettingsSurfaceState {
   settingsOpen: boolean;
@@ -134,9 +136,22 @@ export function useSettingsSurfaceActions({
   }, [openSettings]);
 
   useEffect(() => {
+    const openDecisionModels = () => openSettings("providers");
+    window.addEventListener(OPEN_DECISION_MODELS_SETTINGS_EVENT, openDecisionModels);
+    return () =>
+      window.removeEventListener(OPEN_DECISION_MODELS_SETTINGS_EVENT, openDecisionModels);
+  }, [openSettings]);
+
+  useEffect(() => {
     const onOpenMcp = () => openSettings("mcp");
     window.addEventListener("bycoda:open-mcp-settings", onOpenMcp);
     return () => window.removeEventListener("bycoda:open-mcp-settings", onOpenMcp);
+  }, [openSettings]);
+
+  useEffect(() => {
+    const onOpenMessaging = () => openSettings("integrations", "email");
+    window.addEventListener(OPEN_MESSAGING_SETTINGS_EVENT, onOpenMessaging);
+    return () => window.removeEventListener(OPEN_MESSAGING_SETTINGS_EVENT, onOpenMessaging);
   }, [openSettings]);
 
   const onOpenNotificationSettings = useCallback(
@@ -149,7 +164,7 @@ export function useSettingsSurfaceActions({
   );
 
   const onOpenInboxIntegrations = useCallback(
-    (source: ConnectableInboxSource) => openSettings("inbox", source),
+    (source: ConnectableInboxSource) => openSettings("integrations", source),
     [openSettings],
   );
 

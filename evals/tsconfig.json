@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "allowJs": true,
+    "checkJs": false,
+    "noUnusedLocals": true
+  },
+  "include": ["./**/*.ts", "../src/mammoth-browser.d.ts"],
+  "exclude": [],
+  "references": []
+}

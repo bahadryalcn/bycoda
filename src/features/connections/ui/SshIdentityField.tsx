@@ -1,3 +1,5 @@
+import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -8,7 +10,11 @@ import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { Folder, RefreshCw } from "../../../shared/ui/icons";
 
-type PublicIdentity = { identityFile?: string; keyType: string; fingerprint: string };
+type PublicIdentity = {
+  identityFile?: string;
+  keyType: string;
+  fingerprint: string;
+};
 
 const identityName = (path: string) => path.split(/[\\/]/).pop() || path;
 
@@ -32,6 +38,7 @@ export function SshIdentityField({
   const [attempt, setAttempt] = useState(0);
   const [selecting, setSelecting] = useState(false);
   const [pickerError, setPickerError] = useState(false);
+  const [pathOpen, setPathOpen] = useState(false);
   const picking = useRef(false);
   const mounted = useRef(false);
   useEffect(() => {
@@ -89,7 +96,7 @@ export function SshIdentityField({
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-content">{t("SSH key")}</span>
+        <span className="text-ui-caption font-medium text-content">{t("SSH key")}</span>
         <Button
           variant="ghost"
           iconOnly
@@ -99,10 +106,11 @@ export function SshIdentityField({
           disabled={disabled || selecting || loading}
           onClick={refreshKeys}
         >
-          <RefreshCw aria-hidden className="size-3.5" />
+          <RefreshCw aria-hidden className="icon-sm" />
         </Button>
       </div>
       <SearchableSelect
+        hideLabel
         label={label}
         searchPlaceholder={t("Search SSH keys…")}
         value={value}
@@ -110,24 +118,16 @@ export function SshIdentityField({
           setPickerError(false);
           onChange(next);
         }}
-        disabled={disabled || selecting || loading}
+        disabled={disabled || selecting}
+        loading={loading}
         placeholder={loading ? t("Loading…") : t("SSH agent and default keys")}
         options={[{ value: "", label: t("SSH agent and default keys") }, ...options]}
       />
-      {value ? (
-        <p className="break-all text-xs text-(--ui-text-muted)" title={value}>
-          {value}
-        </p>
-      ) : (
-        <p className="text-xs text-(--ui-text-muted)">
-          {t("Uses your SSH agent and default identities.")}
-        </p>
-      )}
+      {value ? <p className="break-all text-ui-caption text-(--ui-text-muted)">{value}</p> : null}
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="secondary"
           aria-label={`${t("Choose key file…")}: ${pathLabel}`}
-          tooltip={t("Choose private SSH key")}
           disabled={disabled}
           loading={selecting}
           onClick={async () => {
@@ -155,7 +155,7 @@ export function SshIdentityField({
             }
           }}
         >
-          <Folder aria-hidden className="size-3.5" />
+          <Folder aria-hidden className="icon-sm" />
           {t("Choose key file…")}
         </Button>
         {value ? (
@@ -172,20 +172,25 @@ export function SshIdentityField({
         ) : null}
       </div>
       {pickerError ? (
-        <Alert tone="danger" role="alert">
+        <Alert tone="danger">
           {t("Could not open the file picker. Enter a key path or try again.")}
         </Alert>
       ) : null}
       {failed ? (
-        <Alert tone="danger" role="alert">
+        <Alert tone="danger">
           {t("Could not load SSH keys. Enter a path or retry.")}
           <Button disabled={disabled || selecting || loading} onClick={refreshKeys}>
             {t("Retry")}
           </Button>
         </Alert>
       ) : null}
-      <details open={failed || pickerError} className="text-xs text-(--ui-text-muted)">
-        <summary className="cursor-pointer py-1">{t("Use a key file path")}</summary>
+      <Disclosure
+        size="sm"
+        open={pathOpen || failed || pickerError}
+        onOpenChange={setPathOpen}
+        className="text-ui-caption text-(--ui-text-muted)"
+        summary={t("Use a key file path")}
+      >
         <TextField
           label={pathLabel}
           aria-label={pathLabel}
@@ -195,17 +200,18 @@ export function SshIdentityField({
           disabled={disabled || selecting}
           description={t("Leave empty to use your SSH agent and default identities.")}
         />
-      </details>
+      </Disclosure>
       {selectedKey ? (
-        <details className="text-xs text-(--ui-text-muted)">
-          <summary className="cursor-pointer py-1">{t("Key details")}</summary>
-          <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 py-2">
-            <dt>{t("Key type")}</dt>
-            <dd className="break-all">{selectedKey.keyType}</dd>
-            <dt>{t("Fingerprint")}</dt>
-            <dd className="break-all">{selectedKey.fingerprint}</dd>
-          </dl>
-        </details>
+        <Disclosure
+          size="sm"
+          className="text-ui-caption text-(--ui-text-muted)"
+          summary={t("Key details")}
+        >
+          <DescriptionList size="sm">
+            <DescriptionItem term={t("Key type")}>{selectedKey.keyType}</DescriptionItem>
+            <DescriptionItem term={t("Fingerprint")}>{selectedKey.fingerprint}</DescriptionItem>
+          </DescriptionList>
+        </Disclosure>
       ) : null}
     </div>
   );

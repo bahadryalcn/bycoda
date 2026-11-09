@@ -77,7 +77,11 @@ afterEach(() => {
   localStorage.clear();
 });
 async function click(text: string) {
-  const button = [...container.querySelectorAll("button")].find((b) => b.textContent === text);
+  const named = (b: HTMLElement) => b.textContent === text || b.getAttribute("aria-label") === text;
+  // Menu choices (rendered in a popup layer) win over board buttons with the same name.
+  const button =
+    [...document.body.querySelectorAll<HTMLElement>("[role^='menuitem']")].find(named) ??
+    [...container.querySelectorAll<HTMLElement>("button")].find(named);
   expect(button).toBeDefined();
   await act(async () => button!.click());
 }
@@ -127,6 +131,9 @@ it("keeps Kanban issues visible when Jira does not support the board backlog", a
   await click("Refresh");
   await click("Backlog & sprints");
   expect(container.textContent).toContain("ENG-1");
+  // Planning lists the board first; the backlog group reads when it is opened.
+  await click("Backlog");
+  expect(container.textContent).toContain("ENG-1");
   expect(container.textContent).toContain("Backlog is not enabled for this Jira board");
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
@@ -145,7 +152,7 @@ it("clears issues when every project is excluded", async () => {
 });
 it("performs a keyboard status move through the real transition ID", async () => {
   expect(container.querySelector('section[aria-label="Ready"]')?.textContent).toContain("ENG-1");
-  await click("Move");
+  await click("Move ENG-1");
   await click("Working");
   expect(invoke).toHaveBeenCalledWith("jira_issue_transition", {
     key: "ENG-1",
@@ -155,7 +162,10 @@ it("performs a keyboard status move through the real transition ID", async () =>
 });
 it("shows active and future sprints and moves backlog issues to the selected sprint", async () => {
   await click("Backlog & sprints");
-  await click("Move");
+  // Planning opens the first sprint; collapse it and open the backlog group.
+  await click("Sprint 21");
+  await click("Backlog");
+  await click("Move ENG-1");
   await click("Sprint 21");
   expect(invoke).toHaveBeenCalledWith("jira_board_move", {
     boardId: 7,
@@ -175,7 +185,7 @@ it("requires an explicit workflow choice and never posts a required-fields trans
       ];
     return null;
   });
-  await click("Move");
+  await click("Move ENG-1");
   await click("Working");
   expect(container.querySelector<HTMLButtonElement>("button:disabled")?.textContent).toBeTruthy();
   expect(
@@ -192,7 +202,7 @@ it("keeps failed writes visible after reloading the server state", async () => {
       ? Promise.reject("Permission denied")
       : previous(command, args),
   );
-  await click("Move");
+  await click("Move ENG-1");
   await click("Working");
   expect(container.querySelector('[role="alert"]')?.textContent).toBe("Permission denied");
   expect(container.querySelector('section[aria-label="Ready"]')?.textContent).toContain("ENG-1");
@@ -231,7 +241,7 @@ it("supports keyboard ranking within a column", async () => {
       : previous(command, args),
   );
   await click("Refresh");
-  await click("Move");
+  await click("Move ENG-1");
   await click("Rank later");
   expect(invoke).toHaveBeenCalledWith("jira_board_move", {
     boardId: 7,
@@ -241,4 +251,105 @@ it("supports keyboard ranking within a column", async () => {
     beforeKey: null,
     afterKey: "ENG-2",
   });
+});
+
+async function showTwoReadyIssues() {
+  const previous = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command, args) =>
+    command === "jira_board_issues"
+      ? Promise.resolve({
+          issues: [issue, { ...issue, id: "2", identifier: "ENG-2" }],
+          nextPageToken: null,
+        })
+      : previous(command, args),
+  );
+  await click("Refresh");
+}
+const hint = () => document.querySelector<HTMLElement>(".pointer-drop-hint");
+const announcement = () =>
+  document.querySelector<HTMLElement>("[data-drag-announcer]")?.textContent ?? "";
+const handle = (key: string) =>
+  container.querySelector<HTMLElement>(`button[aria-label="Drag ${key}"]`)!;
+function pointer(target: Element | Window, type: string, init: PointerEventInit = {}) {
+  return act(async () => {
+    target.dispatchEvent(
+      new PointerEvent(type, { pointerId: 5, bubbles: true, cancelable: true, ...init }),
+    );
+  });
+}
+async function dragIssue(key: string, over: () => Element | null) {
+  Object.defineProperty(document, "elementFromPoint", { configurable: true, value: over });
+  await pointer(handle(key), "pointerdown", { button: 0, clientX: 5, clientY: 5 });
+  await pointer(handle(key), "pointermove", { clientX: 60, clientY: 60 });
+}
+afterEach(() => {
+  Reflect.deleteProperty(document, "elementFromPoint");
+});
+const column = (name: string) =>
+  container.querySelector<HTMLElement>(`section[aria-label="${name}"]`)!;
+const card = (key: string) =>
+  [...container.querySelectorAll<HTMLElement>(".jira-board-card")].find((el) =>
+    el.textContent?.includes(key),
+  )!;
+it("drags an issue over another column with one badge, an inside mark and an announcement", async () => {
+  await showTwoReadyIssues();
+  await dragIssue("ENG-1", () => column("Working"));
+  expect(document.querySelectorAll(".pointer-drop-hint")).toHaveLength(1);
+  expect(hint()?.textContent).toBe("ENG-1Move to Working");
+  expect(column("Working").getAttribute("data-drop-indicator")).toBe("inside");
+  expect(announcement()).toBe("Move to Working");
+  expect(container.querySelectorAll("[data-drop-indicator]")).toHaveLength(1);
+});
+it("marks the card a ranked drop lands before, and refuses the dragged card itself", async () => {
+  await showTwoReadyIssues();
+  await dragIssue("ENG-1", () => card("ENG-2"));
+  expect(hint()?.textContent).toBe("ENG-1Reorder in Ready");
+  expect(card("ENG-2").getAttribute("data-drop-indicator")).toBe("before");
+  Object.defineProperty(document, "elementFromPoint", {
+    configurable: true,
+    value: () => card("ENG-1"),
+  });
+  await pointer(handle("ENG-1"), "pointermove", { clientX: 61, clientY: 61 });
+  expect(card("ENG-1").getAttribute("data-drop-indicator")).toBeNull();
+  expect(hint()?.textContent).toBe("ENG-1Drop on a column");
+});
+it("cancels on Escape or blur without writing and leaves no badge, mark or grab cursor", async () => {
+  await showTwoReadyIssues();
+  for (const end of [
+    () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true })),
+    () => window.dispatchEvent(new Event("blur")),
+  ]) {
+    await dragIssue("ENG-1", () => column("Working"));
+    expect(hint()).not.toBeNull();
+    await act(async () => {
+      end();
+    });
+    expect(hint()).toBeNull();
+    expect(container.querySelector("[data-drop-indicator]")).toBeNull();
+    expect(document.documentElement.classList.contains("is-grabbing")).toBe(false);
+    expect(announcement()).toContain("Drag cancelled");
+    await pointer(handle("ENG-1"), "pointerup", { clientX: 60, clientY: 60 });
+  }
+  expect(invoke).not.toHaveBeenCalledWith("jira_issue_transition", expect.anything());
+  expect(invoke).not.toHaveBeenCalledWith("jira_board_move", expect.anything());
+});
+it("releases over another column through the same transition rule and clears the feedback", async () => {
+  await showTwoReadyIssues();
+  await dragIssue("ENG-1", () => column("Working"));
+  await pointer(handle("ENG-1"), "pointerup", { clientX: 60, clientY: 60 });
+  expect(hint()).toBeNull();
+  expect(container.querySelector("[data-drop-indicator]")).toBeNull();
+  expect(invoke).toHaveBeenCalledWith("jira_issue_transition", {
+    key: "ENG-1",
+    transitionId: "31",
+  });
+});
+it("clears an open drag when the board unmounts", async () => {
+  await showTwoReadyIssues();
+  await dragIssue("ENG-1", () => column("Working"));
+  expect(hint()).not.toBeNull();
+  act(() => root.unmount());
+  expect(hint()).toBeNull();
+  expect(document.documentElement.classList.contains("is-grabbing")).toBe(false);
+  root = createRoot(container);
 });

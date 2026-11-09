@@ -6,8 +6,10 @@ import { createRoot } from "react-dom/client";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => undefined) }));
 import {
   effectiveProfileId,
+  listTerminalProfiles,
   loadTerminalProfile,
   saveTerminalProfile,
+  syncTerminalProfileMirror,
   useTerminalProfiles,
   type ShellProfiles,
 } from "./terminalProfiles";
@@ -63,6 +65,55 @@ describe("terminal profile choice", () => {
     expect(loadTerminalProfile()).toBe("git-bash");
     await saveTerminalProfile("powershell");
     expect(loadTerminalProfile()).toBe("powershell");
+  });
+
+  it("reports a failed desktop mirror without hiding the successful native save", async () => {
+    vi.mocked(invoke).mockClear();
+    const setItem = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new Error("quota");
+    });
+    try {
+      await expect(saveTerminalProfile("git-bash")).resolves.toEqual({ mirrored: false });
+      expect(invoke).toHaveBeenCalledWith("set_terminal_profile", { id: "git-bash" });
+      expect(loadTerminalProfile()).toBeUndefined();
+    } finally {
+      setItem.mockRestore();
+    }
+    // Retrying only the cache never writes the machine's file again.
+    vi.mocked(invoke).mockClear();
+    expect(syncTerminalProfileMirror("git-bash")).toBe(true);
+    expect(invoke).not.toHaveBeenCalled();
+    expect(loadTerminalProfile()).toBe("git-bash");
+  });
+
+  it("does not let a discovery started before a save rehydrate the older choice", async () => {
+    let resolveList!: (value: ShellProfiles) => void;
+    vi.mocked(invoke).mockImplementationOnce(
+      () => new Promise((resolve) => (resolveList = resolve as typeof resolveList)),
+    );
+    const discovery = listTerminalProfiles(true);
+    vi.mocked(invoke).mockResolvedValueOnce(undefined);
+    await saveTerminalProfile("git-bash");
+    resolveList({ ...listed, chosenId: "powershell" });
+    expect((await discovery).chosenId).toBe("git-bash");
+    expect(loadTerminalProfile()).toBe("git-bash");
+  });
+
+  it("keeps a newer discovery's cache when an older request fails", async () => {
+    let rejectOld!: (reason: Error) => void;
+    vi.mocked(invoke).mockImplementationOnce(
+      () => new Promise((_, reject) => (rejectOld = reject)),
+    );
+    const older = listTerminalProfiles(true);
+    older.catch(() => undefined);
+    vi.mocked(invoke).mockResolvedValueOnce(listed);
+    const newer = listTerminalProfiles(true);
+    rejectOld(new Error("old scan failed"));
+    await expect(older).rejects.toThrow("old scan failed");
+    await newer;
+    vi.mocked(invoke).mockClear();
+    await expect(listTerminalProfiles()).resolves.toMatchObject({ profiles: listed.profiles });
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   it("follows the user's pick while that shell is installed, else the system default", () => {

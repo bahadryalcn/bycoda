@@ -54,7 +54,7 @@ afterEach(() => {
 
 function checkbox(label: string): HTMLInputElement | HTMLButtonElement {
   const input = container.querySelector<HTMLInputElement | HTMLButtonElement>(
-    `input[aria-label="${label}"], button[role="switch"][aria-label="${label}"]`,
+    `input[aria-label="${label}"], input[aria-label^="${label} ("], button[role="switch"][aria-label="${label}"], button[role="switch"][aria-label^="${label} ("]`,
   );
   expect(input, `Missing membership control: ${label}`).not.toBeNull();
   return input!;
@@ -67,7 +67,7 @@ function checked(control: HTMLInputElement | HTMLButtonElement) {
 
 function categoriesButton(project: string): HTMLButtonElement {
   return container.querySelector<HTMLButtonElement>(
-    `button[aria-label="Notification categories for ${project}"]`,
+    `button[aria-label^="Notification categories for ${project} ("]`,
   )!;
 }
 
@@ -134,7 +134,7 @@ it("offers only issue notifications for a Linear project", async () => {
   act(() => categoriesButton("Roadmap").click());
   const issue = checkbox("Issues and Linear tasks for Roadmap");
   expect(
-    issue.closest("fieldset")?.querySelectorAll('[role="switch"][aria-label$=" for Roadmap"]'),
+    issue.closest("fieldset")?.querySelectorAll('[role="switch"][aria-label*=" for Roadmap ("]'),
   ).toHaveLength(1);
   act(() => issue.click());
   expect(loadNotificationPreferences()["linear:project:roadmap"]?.disabled).toEqual(["issues"]);
@@ -153,7 +153,7 @@ it("keeps local projects while offering only local notification categories", asy
   await act(async () => root.render(createElement(ProjectNotificationSettings, { cwd: "/fun" })));
 
   const local = categoriesButton("fun");
-  expect(local.textContent).toContain("Local project · All categories enabled");
+  expect(local.textContent).toContain("All");
   act(() => local.click());
   expect(checked(checkbox("Agent finished for fun"))).toBe(true);
   expect(checked(checkbox("Agent approvals and questions for fun"))).toBe(true);
@@ -204,7 +204,7 @@ it("keeps projects collapsed until opened and preserves choices when switching p
   act(() => personal.click());
   expect(personalPanel.hidden).toBe(false);
   act(() => checkbox("Issues and Linear tasks for me/private").click());
-  expect(personal.textContent).toContain("5 of 6 enabled");
+  expect(personal.textContent).toContain("5 categories");
   act(() => work.click());
   expect(personalPanel.hidden).toBe(true);
   expect(workPanel.hidden).toBe(false);
@@ -238,9 +238,7 @@ it("mutes several selected projects without changing another project's notificat
   act(() => checkbox("Select me/other").click());
   const bulk = container.querySelector('[aria-label="Mute selected projects"]');
   expect(bulk).not.toBeNull();
-  act(() =>
-    bulk!.querySelector<HTMLButtonElement>('[aria-label="Mute notifications"]')!.click(),
-  );
+  act(() => bulk!.querySelector<HTMLButtonElement>('[aria-label="Mute notifications"]')!.click());
   const eightHours = [...document.querySelectorAll('[role="menuitem"]')].find((button) =>
     button.textContent?.startsWith("8 hours ("),
   );
@@ -267,7 +265,7 @@ it.each(["manual", "expiry"])(
     await act(async () => root.render(createElement(ProjectNotificationSettings, { cwd: "" })));
     const project = checkbox("Issues and Linear tasks for me/private").closest("fieldset")!;
     act(() => categoriesButton("me/private").click());
-    expect(categoriesButton("me/private").textContent).toContain("All notifications paused");
+    expect(categoriesButton("me/private").textContent).toContain("Muted");
     const pr = checkbox("Pull requests / Merge requests for me/private");
     const description = document.getElementById(pr.getAttribute("aria-describedby") ?? "");
     expect(description?.textContent).toContain(
@@ -276,7 +274,7 @@ it.each(["manual", "expiry"])(
     expect(checked(pr)).toBe(true);
     expect(pr.disabled).toBe(false);
     act(() => checkbox("Reminders for me/private").click());
-    expect(categoriesButton("me/private").textContent).toContain("All notifications paused");
+    expect(categoriesButton("me/private").textContent).toContain("Muted");
     const resume = [...project.querySelectorAll("button")].find(
       (button) => button.getAttribute("aria-label") === "Resume notifications",
     );
@@ -286,8 +284,8 @@ it.each(["manual", "expiry"])(
     } else {
       await act(async () => vi.advanceTimersByTimeAsync(60_000));
     }
-    expect(categoriesButton("me/private").textContent).toContain("4 of 6 enabled");
-    expect(project.textContent).not.toContain("All notifications paused");
+    expect(categoriesButton("me/private").textContent).toContain("4 categories");
+    expect(project.textContent).not.toContain("Muted");
     expect(pr.hasAttribute("aria-describedby")).toBe(false);
     expect(checked(checkbox("Issues and Linear tasks for me/private"))).toBe(false);
     expect(loadNotificationPreferences()["repository:github.com/me/private"]).toMatchObject({
@@ -323,4 +321,25 @@ it("dismisses the mute menu and custom date picker without changing preferences"
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
   expect(document.activeElement).toBe(trigger);
   expect(loadNotificationPreferences()["repository:github.com/me/private"]).toBeUndefined();
+});
+
+it("shows unreadable saved choices as unavailable, pauses edits and recovers on retry", async () => {
+  updateNotificationPreferences(["repository:github.com/me/private"], { disabled: ["issues"] });
+  localStorage.setItem("bycoda.projectNotifications.v1", "{broken");
+  await act(async () =>
+    root.render(createElement(ProjectNotificationSettings, { cwd: "/work/target" })),
+  );
+  expect(container.textContent).toContain("Saved project notification choices could not be read");
+  await act(async () => categoriesButton("me/private").click());
+  const issues = checkbox("Issues and Linear tasks for me/private");
+  expect(issues.hasAttribute("disabled")).toBe(true);
+
+  localStorage.setItem("bycoda.projectNotifications.v1", "{}");
+  await act(async () => {
+    [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Retry")!
+      .click();
+  });
+  expect(container.textContent).not.toContain("could not be read");
+  expect(checkbox("Issues and Linear tasks for me/private").hasAttribute("disabled")).toBe(false);
 });

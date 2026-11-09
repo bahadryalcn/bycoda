@@ -7,7 +7,7 @@ import { DEFAULT_INBOX_FILTERS } from "../model/inboxFilters";
 vi.mock("../../../shared/ui/Popover", () => ({
   Popover: ({ children }: { children: ReactNode }) => children,
 }));
-it("Atanan öğelerde de uzak proje seçimi görünür ve yalnız bu filtre varken temizlenir", async () => {
+it("shows the remote project selection for Assigned items too and clears it only while this filter applies", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div");
   const root = createRoot(host);

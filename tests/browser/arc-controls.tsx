@@ -2,6 +2,7 @@ import { QuestionForm } from "../../src/features/sessions/ui/QuestionForm";
 import { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Button } from "../../src/shared/ui/Button";
+import { Checkbox } from "../../src/shared/ui/Checkbox";
 import { ControlSpecimen } from "../../src/shared/ui/ControlSpecimen";
 import { NativeSearchableSelect } from "../../src/shared/ui/NativeSearchableSelect";
 import { Badge } from "../../src/shared/ui/Badge";
@@ -24,10 +25,8 @@ import { Combobox } from "../../src/shared/ui/arc/combobox/combobox";
 import { Search, Copy, Plus } from "../../src/shared/ui/icons";
 import { ExpandingButtonGroup } from "../../src/shared/ui/ExpandingButtonGroup";
 import { MorphSelect } from "../../src/shared/ui/MorphSelect";
-import { ExpandableCard } from "../../src/shared/ui/ExpandableCard";
 import { Timeline } from "../../src/shared/ui/Timeline";
 import { JsonViewer } from "../../src/shared/ui/JsonViewer";
-import { FilterToolbar } from "../../src/shared/ui/FilterToolbar";
 import { SortableDataTable } from "../../src/shared/ui/SortableDataTable";
 import { DateRangePicker, type DateRange } from "../../src/shared/ui/DateRangePicker";
 import { InlineEdit } from "../../src/shared/ui/InlineEdit";
@@ -169,6 +168,7 @@ function NativeSelectionFormFixture() {
       >
         <label htmlFor="native-project">Project for form</label>
         <NativeSearchableSelect
+          hideLabel
           id="native-project"
           label="Project for form"
           ref={native}
@@ -180,6 +180,7 @@ function NativeSelectionFormFixture() {
           onChange={() => setChanges((count) => count + 1)}
         />
         <NativeSearchableSelect
+          hideLabel
           label="Controlled project for form"
           name="controlled"
           value={controlled}
@@ -396,6 +397,7 @@ function Fixture() {
         </section>
         <section aria-label="Metadata selection" className="my-4 grid gap-2">
           <SearchableSelect
+            hideLabel
             multiple
             label="Metadata selection"
             value={selected}
@@ -483,10 +485,17 @@ function Fixture() {
         </Group>
         <Group title="Selection" layout="full">
           <Row label="Standard choice">
-            <Select label="Standard choice" value={choice} options={options} onChange={setChoice} />
+            <Select
+              hideLabel
+              label="Standard choice"
+              value={choice}
+              options={options}
+              onChange={setChoice}
+            />
           </Row>
           <Row label="Search choice">
             <SearchableSelect
+              hideLabel
               label="Search choice"
               value={choice}
               options={options}
@@ -502,9 +511,6 @@ function Fixture() {
             />
           </Row>
         </Group>
-        <ExpandableCard title="Draft details">
-          <TextareaField label="Retained draft" rows={3} />
-        </ExpandableCard>
         <Timeline
           label="Attempt outcomes"
           now={1_800_000_000_000}
@@ -525,7 +531,45 @@ function Fixture() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<Fixture />);
+// ?matrix (alias ?view=matrix) renders the state matrix of the one ControlSpecimen reference on its own.
+// FIXTURE evidence only, never installed/native acceptance. Optional: &theme=light|dark and
+// &layout=default|narrow|short (container stress of the behaviour matrix).
+function SharedMatrixFixture({ layout }: { layout: "default" | "narrow" | "short" }) {
+  const [light, setLight] = useState(document.documentElement.classList.contains("theme-light"));
+  return (
+    <main className="h-full overflow-auto p-6 text-content" data-shared-matrix="">
+      <div className="mx-auto grid max-w-4xl gap-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-xl font-medium">bycoda shared state matrix</h1>
+          <Button
+            onClick={() => {
+              document.documentElement.classList.toggle("theme-light", !light);
+              setLight(!light);
+            }}
+          >
+            {light ? "Dark theme" : "Light theme"}
+          </Button>
+        </div>
+        <ControlSpecimen matrix="only" matrixLayout={layout} />
+      </div>
+    </main>
+  );
+}
+
+const params = new URLSearchParams(location.search);
+if (params.get("theme")) {
+  document.documentElement.classList.toggle("theme-light", params.get("theme") === "light");
+}
+const layoutParam = params.get("layout");
+createRoot(document.getElementById("root")!).render(
+  params.get("view") === "matrix" || params.has("matrix") ? (
+    <SharedMatrixFixture
+      layout={layoutParam === "narrow" || layoutParam === "short" ? layoutParam : "default"}
+    />
+  ) : (
+    <Fixture />
+  ),
+);
 
 function ButtonApiControls() {
   const [busy, setBusy] = useState(false);
@@ -602,6 +646,25 @@ function ButtonApiControls() {
           Unavailable action
         </Button>
         <Button onClick={() => setBusy(!busy)}>Toggle pending</Button>
+        <Button
+          variant="ghost"
+          iconOnly
+          label="Refresh quiet action"
+          loading={busy}
+          disabled={busy}
+          onClick={() => setCount((value) => value + 1)}
+        >
+          <Search aria-hidden="true" className="size-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          motion="none"
+          loading={busy}
+          disabled={busy}
+          onClick={() => setCount((value) => value + 1)}
+        >
+          Quiet native action
+        </Button>
       </div>
       <output aria-label="Button action count">{count}</output>
     </section>
@@ -609,10 +672,6 @@ function ButtonApiControls() {
 }
 
 function AdditionalControls() {
-  const [filters, setFilters] = useState([
-    { id: "project", label: "Project", value: "bycoda" },
-    { id: "tag", label: "Tag", value: "review" },
-  ]);
   const [range, setRange] = useState<DateRange | null>(null);
   const [name, setName] = useState("Review notes");
   const [failSave, setFailSave] = useState(false);
@@ -638,11 +697,6 @@ function AdditionalControls() {
         writeText={async (text) => {
           await navigator.clipboard.writeText(text);
         }}
-      />
-      <FilterToolbar
-        filters={filters}
-        onRemove={(id) => setFilters((current) => current.filter((filter) => filter.id !== id))}
-        onClearAll={() => setFilters([])}
       />
       <SortableDataTable
         caption="Project usage"
@@ -672,9 +726,8 @@ function AdditionalControls() {
           setName(next);
         }}
       />
-      <label>
-        <input
-          type="checkbox"
+      <label className="flex items-center gap-2">
+        <Checkbox
           checked={failSave}
           onChange={(event) => setFailSave(event.currentTarget.checked)}
         />

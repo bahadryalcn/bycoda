@@ -7,10 +7,11 @@ import {
   useSyncExternalStore,
   type ReactElement,
 } from "react";
-import { createPortal } from "react-dom";
+import { Portal } from "../../../shared/ui/Portal";
 import { PresentationVisibility } from "./presentationVisibility";
 import type { Block } from "../model/session";
 import { hasPendingApproval } from "../model/session";
+import { streamingTextUpdate } from "../model/stableBlocks";
 
 export const TRANSCRIPT_IDLE_TTL_MS = 3 * 60 * 1000;
 export const TRANSCRIPT_WARM_COUNT = 2;
@@ -19,6 +20,8 @@ export const TRANSCRIPT_WARM_COUNT = 2;
 export type TranscriptUiState = {
   anchorId?: string;
   anchorOffset?: number;
+  virtualAnchorBlockId?: string;
+  virtualAnchorOffset?: number;
   scrollTop?: number;
   bottomFollow?: boolean;
   visibleTurnCount?: number;
@@ -52,19 +55,85 @@ export const TranscriptRetentionContext = createContext<TranscriptCheckpoint | u
 export const TRANSCRIPT_POOL_LIMIT = 12;
 export const TRANSCRIPT_POOL_MAX_BYTES = 24 * 1024 * 1024;
 const blockWeights = new WeakMap<Block, number>();
-export function transcriptPoolWeight(blocks: readonly Block[] = []): number {
-  let bytes = 1024;
-  for (const block of blocks) {
-    let weight = blockWeights.get(block);
-    if (weight === undefined) {
-      weight = 512 + block.text.length * 2;
-      for (const attachment of block.attachments ?? [])
-        weight += 256 + (attachment.data?.length ?? 0) * 2;
-      blockWeights.set(block, weight);
+const arrayWeights = new WeakMap<readonly Block[], number>();
+function retainedPayloadWeight(value: unknown): number {
+  let bytes = 0;
+  const pending = [value];
+  const seen = new WeakSet<object>();
+  while (pending.length) {
+    const current = pending.pop();
+    if (typeof current === "string") {
+      bytes += current.length * 2;
+    } else if (current && typeof current === "object" && !seen.has(current)) {
+      seen.add(current);
+      bytes += 64;
+      if (Array.isArray(current)) {
+        bytes += current.length * 8;
+        for (const entry of current) pending.push(entry);
+      } else {
+        for (const key in current) {
+          if (Object.prototype.hasOwnProperty.call(current, key))
+            pending.push((current as Record<string, unknown>)[key]);
+        }
+      }
     }
-    bytes += weight;
   }
   return bytes;
+}
+function blockWeight(block: Block): number {
+  let weight = blockWeights.get(block);
+  if (weight === undefined) {
+    // Include tool details/previews, delegated steps, shell output and inline data
+    // without serializing/copying their potentially large strings.
+    weight = 512 + retainedPayloadWeight(block);
+    // Generated images also keep their blob; its bytes are not string properties.
+    if (block.image) weight += block.image.size || 0;
+    blockWeights.set(block, weight);
+  }
+  return weight;
+}
+
+/** The single block a streamed-text frame changed between two arrays, if that is all. */
+function streamedIndex(previous: readonly Block[] | undefined, next: readonly Block[]) {
+  if (!previous || previous === next || previous.length !== next.length) return undefined;
+  return streamingTextUpdate(previous as Block[], next as Block[]);
+}
+
+/**
+ * Estimated retained size. A streamed frame only changes one block's text, so
+ * with the previous array it costs one block instead of the whole transcript.
+ */
+export function transcriptPoolWeight(
+  blocks: readonly Block[] = [],
+  previous?: readonly Block[],
+): number {
+  let bytes = arrayWeights.get(blocks);
+  if (bytes !== undefined) return bytes;
+  const index = streamedIndex(previous, blocks);
+  const base = previous && arrayWeights.get(previous);
+  if (index !== undefined && base !== undefined && previous)
+    bytes = base - blockWeight(previous[index]) + blockWeight(blocks[index]);
+  else {
+    bytes = 1024;
+    for (const block of blocks) bytes += blockWeight(block);
+  }
+  arrayWeights.set(blocks, bytes);
+  return bytes;
+}
+
+/** Streaming, running or awaiting approval; text-only frames keep the answer. */
+const activeBlocks = new WeakMap<readonly Block[], boolean>();
+function blocksActive(blocks: readonly Block[], previous?: readonly Block[]): boolean {
+  let active = activeBlocks.get(blocks);
+  if (active !== undefined) return active;
+  const known = previous && activeBlocks.get(previous);
+  active =
+    known !== undefined && streamedIndex(previous, blocks) !== undefined
+      ? known
+      : blocks.some((block) => block.streaming || block.tool?.status === "in_progress") ||
+        hasPendingApproval(blocks as Block[]);
+  activeBlocks.set(blocks, active);
+  return active;
 }
 
 type PooledProps = {
@@ -73,6 +142,7 @@ type PooledProps = {
   blocks?: Block[];
   busy?: boolean;
   pendingQuestion?: boolean;
+  questionBehavior?: "blocking" | "nonBlocking";
   backgroundTasks?: string[];
   backgroundAgents?: number;
 };
@@ -175,8 +245,7 @@ export class TranscriptPool {
       p.pendingQuestion ||
       !!p.backgroundTasks?.length ||
       !!p.backgroundAgents ||
-      !!p.blocks?.some((block) => block.streaming || block.tool?.status === "in_progress") ||
-      hasPendingApproval(p.blocks ?? [])
+      (!!p.blocks && blocksActive(p.blocks))
     );
   }
 
@@ -232,8 +301,7 @@ export class TranscriptPool {
     // First seen while hidden (a restored background tab): wait until shown,
     // unless it needs to stay live. Mounting every restored transcript at boot
     // was the largest startup cost with many tabs.
-    const mounted =
-      visible || !!previous?.mounted || this.protectedIds.has(id);
+    const mounted = visible || !!previous?.mounted || this.protectedIds.has(id);
     // Attach before the pane's passive effects run, so anything that looks
     // for the transcript in the pane already finds a revisited one.
     if (container.parentElement !== host) host.appendChild(container);
@@ -257,8 +325,10 @@ export class TranscriptPool {
       weight:
         previous && previous.element.props.blocks === element.props.blocks
           ? previous.weight
-          : transcriptPoolWeight(element.props.blocks),
+          : transcriptPoolWeight(element.props.blocks, previous?.element.props.blocks),
     };
+    // Seed the activity answer from the previous frame before retention reads it.
+    if (element.props.blocks) blocksActive(element.props.blocks, previous?.element.props.blocks);
     if (!next.mounted && this.protectedEntry(next)) next.mounted = true;
     if (
       previous &&
@@ -359,17 +429,19 @@ const PooledEntry = memo(function PooledEntry({ entry }: { entry: TranscriptPool
   if (!entry.mounted) return null;
   // React events bubble through the portal's owner, not the pane. Forward the
   // one the pane listens for so clicking the transcript still focuses it.
-  return createPortal(
-    <div className="contents" onMouseDown={entry.onMouseDown}>
-      <PresentationVisibility.Provider
-        value={!!entry.host && entry.rendered.props.visible !== false}
-      >
-        <TranscriptRetentionContext.Provider value={entry.checkpoint}>
-          {entry.rendered}
-        </TranscriptRetentionContext.Provider>
-      </PresentationVisibility.Provider>
-    </div>,
-    entry.container,
+  // Pane-hosted portal: the transcript DOM moves between pane slots, not an overlay.
+  return (
+    <Portal target={entry.container}>
+      <div className="contents" onMouseDown={entry.onMouseDown}>
+        <PresentationVisibility.Provider
+          value={!!entry.host && entry.rendered.props.visible !== false}
+        >
+          <TranscriptRetentionContext.Provider value={entry.checkpoint}>
+            {entry.rendered}
+          </TranscriptRetentionContext.Provider>
+        </PresentationVisibility.Provider>
+      </div>
+    </Portal>
   );
 });
 

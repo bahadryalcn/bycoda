@@ -18,14 +18,8 @@ export interface RepositoryReviewOpenDeps {
 export function useRepositoryReviewOpen(deps: RepositoryReviewOpenDeps): {
   onOpenRepository: (request: RepositoryReviewRequest) => void;
 } {
-  const {
-    sidebarCwdRef,
-    lockSnapshot,
-    onOpenFile,
-    onOpenCommit,
-    onOpenDiff,
-    onOpenAllChanges,
-  } = deps;
+  const { sidebarCwdRef, lockSnapshot, onOpenFile, onOpenCommit, onOpenDiff, onOpenAllChanges } =
+    deps;
 
   const onOpenRepository = useCallback(
     (request: RepositoryReviewRequest) => {

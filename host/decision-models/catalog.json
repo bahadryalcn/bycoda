@@ -1,0 +1,286 @@
+{
+  "version": 1,
+  "updatedAt": "2026-11-07",
+  "providers": [
+    {
+      "id": "clef-local",
+      "name": "Clef (local proxy)",
+      "type": "local_runtime",
+      "adapter": "systemone",
+      "defaultEndpoint": "http://127.0.0.1:8767/v1/systemone",
+      "auth": "none",
+      "models": [
+        {
+          "id": "clef-flash-9b",
+          "name": "Clef-Flash 9B (Q4_K_M)",
+          "params": "9B",
+          "openWeights": true,
+          "vision": true,
+          "localFiles": [
+            {
+              "fileName": "Clef-Flash-Q4_K_M-vision.gguf",
+              "sha256": "fd3e90605e8103307dca37cb5a8cdb036267e2fe3cb2d908d80a8ceb9ec0638c",
+              "verified": false
+            }
+          ],
+          "recommendedHardware": { "minVramGb": 7 },
+          "verified": false
+        }
+      ],
+      "notes": "Contract verified against the owner's recorded run (clef verification 2026-10-06, /v1/systemone). Model file hash comes from the owner's installation.json and is not checked against an official source.",
+      "verified": true
+    },
+    {
+      "id": "typesafe-jev",
+      "name": "TypeSafe Jev",
+      "type": "hosted_api",
+      "adapter": "systemone",
+      "auth": "bearer",
+      "docsUrl": "https://docs.typesafe.ai",
+      "models": [],
+      "notes": "Research claim only (2026-11-07): hosted System One API, waitlist for direct access, text only. Endpoint, price and model list not verified.",
+      "verified": false
+    },
+    {
+      "id": "cloudflare-workers-ai",
+      "name": "Cloudflare Workers AI",
+      "type": "gateway",
+      "adapter": "systemone",
+      "auth": "bearer",
+      "models": [
+        {
+          "id": "clef-flash-9b-hosted",
+          "name": "Clef-Flash 9B",
+          "params": "9B",
+          "openWeights": true,
+          "vision": true,
+          "verified": false
+        },
+        {
+          "id": "clef-27b-hosted",
+          "name": "Clef 27B",
+          "params": "27B",
+          "openWeights": true,
+          "vision": true,
+          "verified": false
+        }
+      ],
+      "notes": "Research claim only (2026-11-07). Model ids and endpoint not verified.",
+      "verified": false
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "type": "gateway",
+      "adapter": "systemone",
+      "auth": "bearer",
+      "models": [],
+      "notes": "Research claim only (2026-11-07): System One route, no waitlist. Endpoint and models not verified.",
+      "verified": false
+    },
+    {
+      "id": "vercel-ai-gateway",
+      "name": "Vercel AI Gateway",
+      "type": "gateway",
+      "adapter": "systemone",
+      "auth": "bearer",
+      "models": [],
+      "notes": "Research claim only (2026-11-07). Endpoint and models not verified.",
+      "verified": false
+    },
+    {
+      "id": "truefoundry",
+      "name": "TrueFoundry",
+      "type": "gateway",
+      "adapter": "systemone",
+      "auth": "bearer",
+      "models": [],
+      "notes": "Research claim only (2026-11-07): both System One and /v1/decisions are claimed; the systemone adapter is listed. Not verified.",
+      "verified": false
+    },
+    {
+      "id": "digitalocean",
+      "name": "DigitalOcean",
+      "type": "gateway",
+      "adapter": "systemone",
+      "auth": "bearer",
+      "models": [],
+      "notes": "Research claim only (2026-11-07). Not verified.",
+      "verified": false
+    },
+    {
+      "id": "databricks",
+      "name": "Databricks",
+      "type": "gateway",
+      "adapter": "systemone",
+      "auth": "bearer",
+      "models": [],
+      "notes": "Research claim only (2026-11-07). Not verified.",
+      "verified": false
+    },
+    {
+      "id": "upstage",
+      "name": "Upstage",
+      "type": "gateway",
+      "adapter": "systemone",
+      "auth": "bearer",
+      "models": [],
+      "notes": "Research claim only (2026-11-07). Not verified.",
+      "verified": false
+    },
+    {
+      "id": "concentrate",
+      "name": "Concentrate",
+      "type": "gateway",
+      "adapter": "systemone",
+      "auth": "bearer",
+      "models": [],
+      "notes": "Research claim only (2026-11-07). Not verified.",
+      "verified": false
+    },
+    {
+      "id": "superagent",
+      "name": "Superagent",
+      "type": "gateway",
+      "adapter": "systemone",
+      "auth": "bearer",
+      "models": [],
+      "notes": "Research claim only (2026-11-07). Not verified.",
+      "verified": false
+    },
+    {
+      "id": "litellm",
+      "name": "LiteLLM pass-through",
+      "type": "gateway",
+      "adapter": "systemone",
+      "auth": "bearer",
+      "models": [],
+      "notes": "Research claim only (2026-11-07). Pass-through depends on the upstream model. Not verified.",
+      "verified": false
+    },
+    {
+      "id": "nanogpt",
+      "name": "NanoGPT",
+      "type": "gateway",
+      "adapter": "decisions",
+      "auth": "bearer",
+      "models": [],
+      "notes": "Research claim only (2026-11-07): /api/v1/decisions. Schema not verified; the decisions adapter is a contract assumption.",
+      "verified": false
+    },
+    {
+      "id": "aimlapi",
+      "name": "AIMLAPI",
+      "type": "gateway",
+      "auth": "bearer",
+      "models": [],
+      "notes": "Research claim only (2026-11-07). No adapter is known for it yet.",
+      "verified": false
+    },
+    {
+      "id": "openai-decisions",
+      "name": "OpenAI Decisions API",
+      "type": "hosted_api",
+      "auth": "bearer",
+      "models": [],
+      "notes": "Limited preview, closed model (2026-11-07 research). Access and schema not verified; not enabled.",
+      "verified": false
+    },
+    {
+      "id": "perplexity-pplx-decider",
+      "name": "Perplexity pplx-decider",
+      "auth": "none",
+      "models": [
+        {
+          "id": "pplx-decider-27b",
+          "name": "pplx-decider 27B",
+          "params": "27B",
+          "openWeights": true,
+          "vision": false,
+          "verified": false
+        }
+      ],
+      "notes": "Research claim only (2026-11-07): open weights, Apache-2.0 license, a flash variant exists. Hosting and adapter not verified.",
+      "verified": false
+    },
+    {
+      "id": "aws-strands-decider",
+      "name": "AWS Strands Decider 2B",
+      "auth": "none",
+      "models": [
+        {
+          "id": "strands-decider-2b",
+          "name": "Strands Decider 2B",
+          "params": "1.9B",
+          "openWeights": true,
+          "vision": false,
+          "recommendedHardware": { "cpuOk": true },
+          "verified": false
+        }
+      ],
+      "notes": "Research claim only (2026-11-07): small open-weight model that can run on CPU. No adapter is known yet.",
+      "verified": false
+    },
+    {
+      "id": "liquid-ai-d1-ultra",
+      "name": "Liquid AI d1-ultra",
+      "auth": "none",
+      "models": [],
+      "notes": "Research claim only (2026-11-07). Release status and adapter not verified.",
+      "verified": false
+    },
+    {
+      "id": "laya",
+      "name": "Laya",
+      "auth": "none",
+      "models": [],
+      "notes": "Research claim only (2026-11-07). Release status and adapter not verified.",
+      "verified": false
+    },
+    {
+      "id": "kev",
+      "name": "Kev",
+      "auth": "none",
+      "models": [],
+      "notes": "Research claim only (2026-11-07). Release status and adapter not verified.",
+      "verified": false
+    },
+    {
+      "id": "microsoft-decision-1",
+      "name": "Microsoft-Decision-1",
+      "auth": "none",
+      "models": [],
+      "notes": "Research claim only (2026-11-07). Release status unclear.",
+      "verified": false
+    },
+    {
+      "id": "llama-cpp-server",
+      "name": "llama.cpp server",
+      "type": "local_runtime",
+      "adapter": "systemone",
+      "auth": "none",
+      "models": [],
+      "notes": "Research claim only (2026-11-07): /v1/systemone on a plain llama.cpp server. The owner's Clef proxy is verified, the plain server route is not.",
+      "verified": false
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama",
+      "type": "local_runtime",
+      "adapter": "ollama-systemone",
+      "auth": "none",
+      "models": [],
+      "notes": "Route /api/systemone is a research claim; the ollama-systemone adapter is a contract assumption.",
+      "verified": false
+    },
+    {
+      "id": "mlx-runtimes",
+      "name": "MLX-based runtimes",
+      "type": "local_runtime",
+      "auth": "none",
+      "models": [],
+      "notes": "Experimental on Mac (2026-11-07 research). No adapter is known.",
+      "verified": false
+    }
+  ]
+}

@@ -52,6 +52,23 @@ function enabled(overrides: Partial<GitMenuState>, id: string): boolean {
 }
 
 describe("gitActionsMenuItems layout", () => {
+  it("blocks every commit variant during generation while staging remains available", () => {
+    const items = flatten(
+      gitActionsMenuItems(
+        state({
+          generating: true,
+          stagedCount: 2,
+          unstagedCount: 3,
+          changedCount: 4,
+        }),
+      ),
+    );
+    const variants = items.filter((item) => commitMenuOptions(item.id));
+    expect(variants).toHaveLength(9);
+    expect(variants.every((item) => item.disabled)).toBe(true);
+    expect(items.find((item) => item.id === "stage-all")?.disabled).toBe(false);
+    expect(items.find((item) => item.id === "unstage-all")?.disabled).toBe(false);
+  });
   it("lists the top level in order, then the groups, then Auto Fetch", () => {
     const items = gitActionsMenuItems(state());
     expect(items.map((item) => (item.kind === "sep" ? "-" : item.id))).toEqual([

@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { modelsForClaudeVersion, modelsFromClaudeListModels } from "./claudeCatalog";
 
 it("records the concrete version behind a moving Claude alias", () => {
-  const models = modelsFromClaudeListModels([{ value: "opus", resolvedModel: "claude-opus-5-5", displayName: "Opus" }]);
+  const models = modelsFromClaudeListModels([
+    { value: "opus", resolvedModel: "claude-opus-5-5", displayName: "Opus" },
+  ]);
   expect(models[0]).toMatchObject({ nativeId: "opus", aliasTarget: "claude-opus-5-5" });
 });
 import {
@@ -43,6 +45,7 @@ import {
   toolStartFromEvent,
   toolTitle,
   turnStatusFromResult,
+  errorFromAssistant,
   turnMetricsFromResult,
   isUsageLimitResult,
   usageLimitFromRateLimitEvent,
@@ -358,6 +361,35 @@ describe("usage limits", () => {
 });
 
 describe("turnStatusFromResult", () => {
+  it("does not accept a success subtype when the result marks an error", () => {
+    expect(
+      turnStatusFromResult({
+        subtype: "success",
+        is_error: true,
+        errors: ["OAuth refresh failed"],
+      }),
+    ).toEqual({ status: "failed", error: "OAuth refresh failed" });
+  });
+  it("reads typed assistant API failures without treating ordinary error discussions as failures", () => {
+    const row = {
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "text",
+            text: "Failed to authenticate: OAuth session expired and could not be refreshed",
+          },
+        ],
+      },
+    };
+    expect(errorFromAssistant({ ...row, error: "authentication_failed" })).toBe(
+      "Failed to authenticate: OAuth session expired and could not be refreshed",
+    );
+    expect(errorFromAssistant(row)).toBeUndefined();
+    expect(
+      errorFromAssistant({ ...row, error: "authentication_failed", parent_tool_use_id: "child" }),
+    ).toBeUndefined();
+  });
   it("treats aborted terminals as interrupted", () => {
     expect(
       turnStatusFromResult({
@@ -368,6 +400,23 @@ describe("turnStatusFromResult", () => {
       }).status,
     ).toBe("interrupted");
     expect(turnStatusFromResult({ type: "result", subtype: "success" }).status).toBe("completed");
+  });
+  it("surfaces the result text and API status of an error result that lists no errors", () => {
+    expect(
+      turnStatusFromResult({
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        result: "Invalid API key · Please run /login",
+        api_error_status: 401,
+      }),
+    ).toEqual({ status: "failed", error: "Invalid API key · Please run /login (HTTP 401)" });
+    expect(
+      turnStatusFromResult({ type: "result", subtype: "error_max_turns", is_error: true }),
+    ).toEqual({
+      status: "failed",
+      error: "Claude turn failed.",
+    });
   });
 });
 
@@ -411,6 +460,21 @@ describe("modelsForClaudeVersion", () => {
 });
 
 describe("list_models catalog", () => {
+  it("preserves discovered context capacity without inferring it from picker settings", () => {
+    const models = modelsFromClaudeListModels([
+      { value: "large", contextWindow: 200_000 },
+      { value: "small", context_window: 32_000 },
+      { value: "fallback", contextWindow: 0, context_window: 128_000 },
+      { value: "unknown[1m]", contextWindow: NaN, context_window: "1000000" },
+    ]);
+    expect(models.map((model) => model.contextWindow)).toEqual([
+      200_000,
+      32_000,
+      128_000,
+      undefined,
+    ]);
+  });
+
   const listed = {
     type: "control_response",
     response: {
@@ -810,7 +874,16 @@ describe("contextFromResult", () => {
         "claude-sonnet-5": { contextWindow: 1000000, maxOutputTokens: 64000 },
       },
     };
-    expect(contextFromResult(rec)).toEqual({ used: 29608, window: 1000000 });
+    expect(contextFromResult(rec)).toEqual({ used: undefined, window: 1000000 });
+  });
+
+  it("never reads the turn-wide sum as the level when iterations are missing", () => {
+    const rec = {
+      type: "result",
+      usage: { input_tokens: 40, cache_read_input_tokens: 1_700_000, output_tokens: 9_000 },
+      modelUsage: { "claude-opus-5": { contextWindow: 1000000 } },
+    };
+    expect(contextFromResult(rec)).toEqual({ used: undefined, window: 1000000 });
   });
 
   it("uses the last iteration, since top-level usage sums the whole turn", () => {
@@ -1088,5 +1161,51 @@ describe("tryParseJsonRecord chunked input", () => {
     expect(tryParseJsonRecord(`${full}\n `)).toEqual(JSON.parse(full));
     expect(tryParseJsonRecord("[1]")).toBeUndefined();
     expect(tryParseJsonRecord("")).toBeUndefined();
+  });
+});
+
+describe("original tool JSON accumulator", () => {
+  it("does one full parse for brace-heavy streamed string content", async () => {
+    const { createJsonRecordAccumulator } = await import("./claudeProtocol");
+    const parse = vi.spyOn(JSON, "parse");
+    try {
+      const reader = createJsonRecordAccumulator();
+      expect(reader.append('{"content":"')).toBeUndefined();
+      for (let index = 0; index < 5000; index++) expect(reader.append("}")).toBeUndefined();
+      expect(parse).not.toHaveBeenCalled();
+      const value = reader.append('"}');
+      expect(value?.content).toBe("}".repeat(5000));
+      expect(parse).toHaveBeenCalledTimes(1);
+      expect(reader.append("\n \t")).toBe(value);
+      expect(parse).toHaveBeenCalledTimes(1);
+      expect(reader.append("trailing junk}")).toBeUndefined();
+    } finally {
+      parse.mockRestore();
+    }
+  });
+
+  it("retains escaped quotes, slash parity and nested arrays across every chunk split", async () => {
+    const { createJsonRecordAccumulator, tryParseJsonRecord } = await import("./claudeProtocol");
+    const text = JSON.stringify({ content: 'a \\" } { [ ]', rows: [{ value: "漢" }, 1, null] });
+    for (let split = 0; split <= text.length; split++) {
+      const reader = createJsonRecordAccumulator();
+      const first = reader.append(text.slice(0, split));
+      const value = reader.append(text.slice(split));
+      expect(value ?? first).toEqual(tryParseJsonRecord(text));
+    }
+  });
+
+  it("keeps original tool accumulators separate and rejects irreparable malformed roots", async () => {
+    const { createJsonRecordAccumulator } = await import("./claudeProtocol");
+    const first = createJsonRecordAccumulator(),
+      replacement = createJsonRecordAccumulator();
+    expect(first.append('{"old":')).toBeUndefined();
+    expect(replacement.append('{"new":true}')).toEqual({ new: true });
+    expect(first.append("1}")).toEqual({ old: 1 });
+    for (const input of ["[{}]", '{"x":]}', '{"x":}', "{}{}", "\uFEFF{}"]) {
+      const reader = createJsonRecordAccumulator();
+      expect(reader.append(input)).toBeUndefined();
+      expect(reader.append('{"cannot":"repair"}')).toBeUndefined();
+    }
   });
 });

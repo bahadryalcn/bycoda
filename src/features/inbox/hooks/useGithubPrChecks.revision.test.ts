@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { useGithubPrChecks, type GithubPrChecksView } from "./useGithubPrChecks";
 import type { GithubPrChecks } from "../model/githubPrChecks";
+import { withQueryClient } from "../../../../tests/browser/queryTest";
 
 const { fetchGithubPrChecks } = vi.hoisted(() => ({
   fetchGithubPrChecks: vi.fn(),
@@ -31,6 +32,7 @@ function Consumer({ revision }: { revision: number }) {
   });
   return null;
 }
+const Wrapped = withQueryClient(Consumer);
 const roots: ReturnType<typeof createRoot>[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount());
@@ -49,12 +51,12 @@ it.each(["resolve", "reject"] as const)(
     const root = createRoot(container);
     roots.push(root);
     fetchGithubPrChecks.mockResolvedValueOnce(check("initial"));
-    await act(async () => root.render(createElement(Consumer, { revision: 0 })));
+    await act(async () => root.render(createElement(Wrapped, { revision: 0 })));
     const old = deferred<GithubPrChecks>();
     const replacement = deferred<GithubPrChecks>();
     fetchGithubPrChecks.mockReturnValueOnce(old.promise).mockReturnValueOnce(replacement.promise);
     await act(async () => view.refresh());
-    await act(async () => root.render(createElement(Consumer, { revision: 1 })));
+    await act(async () => root.render(createElement(Wrapped, { revision: 1 })));
     expect(view.stale).toBe(true);
     await act(async () => {
       if (outcome === "resolve") old.resolve(check("obsolete"));

@@ -1,6 +1,6 @@
 import { useLayoutEffect, useState, type CSSProperties } from "react";
-import { createPortal } from "react-dom";
 import type { Terminal } from "@xterm/xterm";
+import { Portal } from "../../../shared/ui/Portal";
 import styles from "./TerminalTools.module.css";
 
 /** Presentation only: never writes to the terminal buffer, selection or clipboard. */
@@ -48,10 +48,14 @@ export function TerminalGhostText({ terminal, suffix }: { terminal: Terminal; su
     };
   }, [terminal]);
   if (!layout) return null;
-  return createPortal(
-    <span aria-hidden="true" className={styles.ghost} style={layout.style}>
-      {suffix}
-    </span>,
-    layout.screen,
+  // Justified portal: the ghost suggestion must sit inside xterm's own screen element so it
+  // shares the terminal's scroll, clipping and cell-grid coordinates. It is not an overlay,
+  // so the shared Popover/overlay stack does not apply.
+  return (
+    <Portal target={layout.screen}>
+      <span aria-hidden="true" className={styles.ghost} style={layout.style}>
+        {suffix}
+      </span>
+    </Portal>
   );
 }

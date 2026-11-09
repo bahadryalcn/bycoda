@@ -8,6 +8,8 @@ export type RemoteFailureKind =
   | "outdated"
   /** This app does not offer the command for projects on another machine. */
   | "unsupported"
+  /** The machine is busy or a request timed out; the same request can be sent again. */
+  | "temporary"
   /** The machine answered with an error of its own (a git failure, a bad path). */
   | "other";
 
@@ -19,10 +21,20 @@ const UNREACHABLE =
 const OUTDATED =
   /Unsupported (host method|remote operation|workspace command)|Update bycoda Host in Connections settings/i;
 const UNSUPPORTED = /isn.t available for projects on another machine/i;
+/** HTTP failures from `remote.rs`: the deadline passed or the answer was not a host's. */
+const TEMPORARY =
+  /\[RPC_TIMEOUT\]|\[RPC_PROTOCOL\]|^Invalid host response$|Host read capacity is busy|Host pending (read request|control queue) limit reached/;
 
 export function remoteErrorText(error: unknown): string {
   if (typeof error === "string") return error;
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Native failures retain a code; persisted view errors may retain only its prefix. */
+export function nativeConnectionFailureCode(error: unknown): string | undefined {
+  const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+  if (typeof code === "string" && /^RPC_WS_[A-Z_]+$/.test(code)) return code;
+  return remoteErrorText(error).match(/^(?:Error: )?(RPC_WS_[A-Z_]+):/)?.[1];
 }
 
 /** Sorts a rejected remote request into what the user can do about it. The
@@ -30,11 +42,28 @@ export function remoteErrorText(error: unknown): string {
 export function classifyRemoteError(error: unknown): RemoteFailure {
   const text = remoteErrorText(error);
   const message = text.replace(/^Host rejected request:\s*/i, "").trim() || text;
+  const code = nativeConnectionFailureCode(error);
+  if (code === "RPC_WS_IDENTITY") return { kind: "identity", message };
+  if (code === "RPC_WS_UNSUPPORTED") return { kind: "outdated", message };
+  if (code && ["RPC_WS_DEADLINE", "RPC_WS_OVERLOAD", "RPC_WS_DETACHED"].includes(code))
+    return { kind: "temporary", message };
+  if (
+    code &&
+    [
+      "RPC_WS_BLOCKED",
+      "RPC_WS_SCHEMA",
+      "RPC_WS_TLS",
+      "RPC_WS_UNAVAILABLE",
+      "RPC_WS_INTERRUPTED",
+    ].includes(code)
+  )
+    return { kind: "unreachable", message };
   if (/Host identity changed\. Add this machine again before continuing\./i.test(text))
     return { kind: "identity", message };
   if (UNREACHABLE.test(text)) return { kind: "unreachable", message };
   if (OUTDATED.test(text)) return { kind: "outdated", message };
   if (UNSUPPORTED.test(text)) return { kind: "unsupported", message };
+  if (TEMPORARY.test(text)) return { kind: "temporary", message };
   return { kind: "other", message };
 }
 

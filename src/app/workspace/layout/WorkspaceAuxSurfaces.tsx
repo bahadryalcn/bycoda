@@ -1,3 +1,5 @@
+import { memo } from "react";
+import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import type { ComponentProps } from "react";
 import { SessionPane } from "../../../features/sessions/ui/SessionPane";
 import { SessionSurface } from "../../../features/sessions/ui/SessionSurface";
@@ -14,6 +16,7 @@ export interface WorkspaceAuxSurfacesProps {
   // Live search
   searchViewOpen: boolean;
   searchDialogOpen?: boolean;
+  searchRequest?: SearchProps["request"];
   onExpandSearch?: () => void;
   onCompactSearch?: () => void;
   gitCwd: string;
@@ -39,9 +42,10 @@ export interface WorkspaceAuxSurfacesProps {
   sessionPaneProps: WorkspaceSessionPaneProps;
 }
 
-export function WorkspaceAuxSurfaces({
+function WorkspaceAuxSurfacesComponent({
   searchViewOpen,
   searchDialogOpen = false,
+  searchRequest,
   onExpandSearch,
   onCompactSearch,
   gitCwd,
@@ -70,6 +74,7 @@ export function WorkspaceAuxSurfaces({
         <LiveSearchView
           open
           presentation={searchDialogOpen ? "dialog" : "page"}
+          request={searchRequest}
           onExpand={onExpandSearch}
           onCompact={onCompactSearch}
           cwd={gitCwd}
@@ -111,4 +116,11 @@ export function WorkspaceAuxSurfaces({
       </div>
     </>
   );
+}
+
+const MemoWorkspaceAuxSurfaces = memo(WorkspaceAuxSurfacesComponent);
+
+/** Workspace recreates most handlers per render; stable proxies let the memo hold. */
+export function WorkspaceAuxSurfaces(props: WorkspaceAuxSurfacesProps) {
+  return <MemoWorkspaceAuxSurfaces {...useStableHandlers(props)} />;
 }

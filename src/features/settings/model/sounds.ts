@@ -16,7 +16,8 @@ export const SOUNDS_DEFAULT = true;
 export const SOUNDS_VOLUME = 0.55;
 
 export const SOUNDS_CHANGE_EVENT = "bycoda:sounds-change";
-export const subscribeSoundsEnabled = (onChange: () => void) => subscribePreferenceChanges([KEY], SOUNDS_CHANGE_EVENT, onChange);
+export const subscribeSoundsEnabled = (onChange: () => void) =>
+  subscribePreferenceChanges([KEY], SOUNDS_CHANGE_EVENT, onChange);
 
 export type SoundCue =
   | "turnFinished"
@@ -45,17 +46,19 @@ export function loadSoundsEnabled(): boolean {
   }
 }
 
-export function saveSoundsEnabled(value: boolean) {
+export function saveSoundsEnabled(value: boolean): boolean {
   const resuming = value && !loadSoundsEnabled();
   try {
-    localStorage.setItem(KEY, value ? "1" : "0");
     if (resuming) localStorage.setItem(ENABLED_AT_KEY, String(Date.now()));
+    localStorage.setItem(KEY, value ? "1" : "0");
   } catch {
-    // private mode / quota
+    applySoundEngine();
+    return false;
   }
   applySoundEngine();
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent<boolean>(SOUNDS_CHANGE_EVENT, { detail: value }));
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent<boolean>(SOUNDS_CHANGE_EVENT, { detail: value }));
+  return true;
 }
 
 function applySoundEngine() {

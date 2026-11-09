@@ -4,7 +4,7 @@ import { humanField, textFromContent } from "../../../../shared/lib/contentText"
 import {
   promptBlocks,
   type PromptContentBlock,
-} from "../../../../features/sessions/model/attachments";
+} from "../../../../features/sessions/model/attachmentPrompt";
 import type {
   AgentModel,
   ModelSetting,

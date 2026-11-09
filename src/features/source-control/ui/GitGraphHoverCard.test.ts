@@ -12,7 +12,8 @@ it("uses the shared clipboard path, reports failure, and clears it on retry", as
   vi.mocked(copyText)
     .mockRejectedValueOnce(new Error("Copy unavailable"))
     .mockResolvedValueOnce(undefined);
-  const root = createRoot(document.createElement("div"));
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
   try {
     await act(async () =>
       root.render(
@@ -35,10 +36,6 @@ it("uses the shared clipboard path, reports failure, and clears it on retry", as
             outputSwimlanes: [],
             refs: [],
           },
-          anchor: { x: 10, y: 10 },
-          side: "right",
-          onEnter: vi.fn(),
-          onLeave: vi.fn(),
         }),
       ),
     );
@@ -53,6 +50,7 @@ it("uses the shared clipboard path, reports failure, and clears it on retry", as
     expect(document.querySelector('[role="alert"]')).toBeNull();
   } finally {
     await act(async () => root.unmount());
+    container.remove();
     vi.unstubAllGlobals();
   }
 });

@@ -1,13 +1,44 @@
 import { subscribePreferenceChanges } from "../../../shared/lib/storedSetting";
 import { themePalette } from "../../../shared/theme/palette";
+import {
+  APPEARANCE_CHOICES,
+  APPEARANCE_RANGES,
+  THEME_HUE_MAX,
+  THEME_HUE_MIN,
+  THEME_SATURATION_MIN,
+} from "./themeRanges";
+import { initWorkspaceBackground } from "./workspaceBackground";
 import { clamp } from "../../../shared/lib/numbers";
-import { initAppearancePreferences } from "./appearancePreferences";
+import {
+  APPEARANCE_PREFERENCES_EVENT,
+  CANVAS_BACKGROUND_DEFAULT,
+  initAppearancePreferences,
+  loadAppearancePreferences,
+  type CanvasBackground,
+} from "./appearancePreferences";
+import {
+  deriveAccentRoles,
+  isAccentReadability,
+  mixInOklab,
+  type AccentCanvas,
+  type AccentReadability,
+} from "./accentContrast";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { hslToRgb, isHexColor, type Rgb } from "../../../shared/lib/colorUtils";
-import { IS_LINUX, IS_MAC } from "../../../platform/tauri/platform";
+import { IS_LINUX, IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { readFlag, writeFlag } from "./storageFlags";
+import {
+  readNativeGlassError,
+  setNativeGlassStatus,
+  type NativeGlassOutcome,
+} from "./nativeGlassStatus";
 import { initUiScale } from "./uiScale";
 import { runThemeTransition } from "./themeTransition";
+import {
+  acceptAppearanceStorageChange,
+  readAppearanceValue,
+  writeAppearanceValue,
+} from "./appearancePersistence";
 import {
   applyPreparedNewThreadBackground,
   clearPreparedNewThreadBackground,
@@ -23,6 +54,7 @@ const BLUR_KEY = "bycoda.sidebarBlur";
 const PROJECT_RAIL_OPEN_KEY = "bycoda.projectRailOpen";
 const SESSION_SIDEBAR_OPEN_KEY = "bycoda.sessionSidebarOpen";
 const BODY_KEY = "bycoda.bodyGlass";
+const WINDOW_GLASS_KEY = "bycoda.windowGlass";
 const SCHEME_KEY = "bycoda.colorScheme";
 const SIDEBAR_TAB_ORDER_KEY = "bycoda.sidebarTabOrder";
 const PROJECT_RAIL_WIDTH_KEY = "bycoda.projectRailWidth";
@@ -43,7 +75,6 @@ let chatBackgroundRevision = Date.now();
 let nativeGlassReady = false;
 let glassFadeTimer: number | undefined;
 let glassSyncGeneration = 0;
-
 export const CHAT_BACKGROUND_PATH_CHANGE_EVENT = "bycoda:chat-background-path-change";
 
 export type ColorScheme = "dark" | "light";
@@ -60,14 +91,8 @@ export type NewThreadBackgroundEffect =
 export type ChangesView = "list" | "tree";
 export type DiffPalette = "default" | "colorblind" | "high-contrast";
 
-export const NEW_THREAD_BACKGROUND_EFFECTS: readonly NewThreadBackgroundEffect[] = [
-  "none",
-  "dither",
-  "ascii",
-  "halftone",
-  "scanlines",
-  "gradient-blur",
-];
+export const NEW_THREAD_BACKGROUND_EFFECTS: readonly NewThreadBackgroundEffect[] =
+  APPEARANCE_CHOICES.newThreadEffect;
 
 export const NEW_THREAD_BACKGROUND_EFFECT_DEFAULT: NewThreadBackgroundEffect = "none";
 
@@ -120,28 +145,27 @@ export type SidebarTabId = "files" | "sessions" | "changes" | "inbox";
 
 const DEFAULT_SIDEBAR_TAB_ORDER: SidebarTabId[] = ["sessions", "inbox", "files", "changes"];
 
-export const THEME_HUE_MIN = 0;
-export const THEME_HUE_MAX = 360;
+export { THEME_HUE_MAX, THEME_HUE_MIN, THEME_SATURATION_MIN } from "./themeRanges";
+
 export const THEME_HUE_DEFAULT = 216;
 
-export const THEME_SATURATION_MIN = 0;
 export const THEME_SATURATION_MAX = 100;
 export const THEME_SATURATION_DEFAULT = 24;
 
-export const THEME_DARK_LIGHTNESS_MIN = 0;
-export const THEME_DARK_LIGHTNESS_MAX = 30;
+export const THEME_DARK_LIGHTNESS_MIN = APPEARANCE_RANGES.darkLightness.min;
+export const THEME_DARK_LIGHTNESS_MAX = APPEARANCE_RANGES.darkLightness.max;
 export const THEME_DARK_LIGHTNESS_DEFAULT = 4;
 
-export const SIDEBAR_OPACITY_MIN = 0.15;
-export const SIDEBAR_OPACITY_MAX = 1;
+export const SIDEBAR_OPACITY_MIN = APPEARANCE_RANGES.sidebarOpacity.min;
+export const SIDEBAR_OPACITY_MAX = APPEARANCE_RANGES.sidebarOpacity.max;
 export const SIDEBAR_OPACITY_DEFAULT = 1;
 
-export const MAIN_OPACITY_MIN = 0.15;
-export const MAIN_OPACITY_MAX = 1;
+export const MAIN_OPACITY_MIN = APPEARANCE_RANGES.mainOpacity.min;
+export const MAIN_OPACITY_MAX = APPEARANCE_RANGES.mainOpacity.max;
 export const MAIN_OPACITY_DEFAULT = 1;
 
-export const SIDEBAR_BLUR_MIN = 1;
-export const SIDEBAR_BLUR_MAX = 64;
+export const SIDEBAR_BLUR_MIN = APPEARANCE_RANGES.sidebarBlur.min;
+export const SIDEBAR_BLUR_MAX = APPEARANCE_RANGES.sidebarBlur.max;
 export const SIDEBAR_BLUR_DEFAULT = 24;
 
 export const PROJECT_RAIL_WIDTH_MIN = 56;
@@ -157,12 +181,16 @@ export const SESSION_SIDEBAR_WIDTH_MAX = 560;
 export const SESSION_SIDEBAR_WIDTH_DEFAULT = 244;
 
 export const BODY_GLASS_DEFAULT = false;
+/** Windows and macOS: the desktop shows through the window in dark mode (Linux uses
+ * Main pane glass). Off gives an opaque window, which costs less to composite. Windows
+ * is off by default because WebView2 composites a transparent window on the CPU. */
+export const WINDOW_GLASS_DEFAULT = !IS_WIN;
 
-export const CHAT_BACKGROUND_OPACITY_MIN = 0.05;
-export const CHAT_BACKGROUND_OPACITY_MAX = 0.65;
+export const CHAT_BACKGROUND_OPACITY_MIN = APPEARANCE_RANGES.chatBackgroundOpacity.min;
+export const CHAT_BACKGROUND_OPACITY_MAX = APPEARANCE_RANGES.chatBackgroundOpacity.max;
 export const CHAT_BACKGROUND_OPACITY_DEFAULT = 0.24;
-export const CHAT_BACKGROUND_BLUR_MIN = 0;
-export const CHAT_BACKGROUND_BLUR_MAX = 40;
+export const CHAT_BACKGROUND_BLUR_MIN = APPEARANCE_RANGES.chatBackgroundBlur.min;
+export const CHAT_BACKGROUND_BLUR_MAX = APPEARANCE_RANGES.chatBackgroundBlur.max;
 export const CHAT_BACKGROUND_BLUR_DEFAULT = 0;
 
 export const CHAT_BACKGROUND_EMPTY_OPACITY_DEFAULT = CHAT_BACKGROUND_OPACITY_DEFAULT;
@@ -171,7 +199,7 @@ export const CHAT_BACKGROUND_SCOPE_DEFAULT: ChatBackgroundScope = "all";
 
 function readNumber(key: string): number | null {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = readAppearanceValue(key);
     if (raw == null) return null;
     const parsed = Number(raw);
     return Number.isFinite(parsed) ? parsed : null;
@@ -187,11 +215,49 @@ function notifyAppearance(key: string) {
 }
 
 function writeNumber(key: string, value: number) {
+  if (!appearanceSettingIds[key]) {
+    try {
+      localStorage.setItem(key, String(value));
+    } catch {
+      /* Layout fallback unchanged. */
+    }
+    return;
+  }
+  return saveAppearanceValue(key, String(value));
+}
+
+const appearanceSettingIds: Record<string, string> = {
+  [ACCENT_COLOR_KEY]: "accent-color",
+  [SCHEME_KEY]: "theme",
+  [THEME_HUE_KEY]: "hue",
+  [THEME_SATURATION_KEY]: "saturation",
+  [THEME_DARK_LIGHTNESS_KEY]: "dark-lightness",
+  [OPACITY_KEY]: "sidebar-opacity",
+  [MAIN_OPACITY_KEY]: "main-pane-opacity",
+  [BLUR_KEY]: "blur",
+  [BODY_KEY]: "main-pane-glass",
+  [WINDOW_GLASS_KEY]: "window-glass",
+  [CHAT_BACKGROUND_PATH_KEY]: "chat-background",
+  [CHAT_BACKGROUND_EMPTY_OPACITY_KEY]: "chat-background",
+  [CHAT_BACKGROUND_SESSION_OPACITY_KEY]: "chat-background",
+  [CHAT_BACKGROUND_OPACITY_KEY]: "chat-background",
+  [CHAT_BACKGROUND_BLUR_KEY]: "chat-background",
+  [CHAT_BACKGROUND_SCOPE_KEY]: "chat-background",
+  [NEW_THREAD_BACKGROUND_EFFECT_KEY]: "chat-background",
+  [DIFF_PALETTE_KEY]: "diff-palette",
+  [SHOW_EXCLUDED_FILES_KEY]: "show-excluded-files",
+};
+function saveAppearanceValue(key: string, value: string | null) {
+  return writeAppearanceValue(key, value, appearanceSettingIds[key] ?? key, () =>
+    notifyAppearance(key),
+  );
+}
+function readAppearanceFlag(key: string, fallback: boolean) {
   try {
-    localStorage.setItem(key, String(value));
-    notifyAppearance(key);
+    const value = readAppearanceValue(key);
+    return value == null ? fallback : value === "1" || value === "true";
   } catch {
-    // private mode / quota
+    return fallback;
   }
 }
 
@@ -205,7 +271,7 @@ function normalizeAccentColor(value: unknown): string | null {
 export function migrateWorkbenchPalette() {
   try {
     const marker = "bycoda.workbenchPalette.v1";
-    if (localStorage.getItem(marker) === "1") return;
+    if (readAppearanceValue(marker) === "1") return;
     const hue = readNumber(THEME_HUE_KEY);
     const saturation = readNumber(THEME_SATURATION_KEY);
     const lightness = readNumber(THEME_DARK_LIGHTNESS_KEY);
@@ -217,7 +283,7 @@ export function migrateWorkbenchPalette() {
       for (const key of [THEME_HUE_KEY, THEME_SATURATION_KEY, THEME_DARK_LIGHTNESS_KEY])
         localStorage.removeItem(key);
     }
-    if (localStorage.getItem(ACCENT_COLOR_KEY)?.toLowerCase() === themePalette.hexb39963)
+    if (readAppearanceValue(ACCENT_COLOR_KEY)?.toLowerCase() === themePalette.hexb39963)
       localStorage.removeItem(ACCENT_COLOR_KEY);
     localStorage.setItem(marker, "1");
   } catch {
@@ -225,19 +291,10 @@ export function migrateWorkbenchPalette() {
   }
 }
 
-function accentForeground(color: string): (typeof themePalette)["scrim" | "solidInk"] {
-  const channels = [1, 3, 5].map((offset) => {
-    const value = Number.parseInt(color.slice(offset, offset + 2), 16) / 255;
-    return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
-  });
-  const luminance = 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
-  return luminance > 0.179 ? themePalette.scrim : themePalette.solidInk;
-}
-
 export function loadAccentColor(): string | null {
   migrateWorkbenchPalette();
   try {
-    return normalizeAccentColor(localStorage.getItem(ACCENT_COLOR_KEY));
+    return normalizeAccentColor(readAppearanceValue(ACCENT_COLOR_KEY));
   } catch {
     return ACCENT_COLOR_DEFAULT;
   }
@@ -245,27 +302,95 @@ export function loadAccentColor(): string | null {
 
 export function saveAccentColor(value: string | null) {
   migrateWorkbenchPalette();
-  try {
-    const next = normalizeAccentColor(value);
-    if (value == null || next == null || next.toLowerCase() === ACCENT_COLOR_DEFAULT.toLowerCase())
-      localStorage.removeItem(ACCENT_COLOR_KEY);
-    else localStorage.setItem(ACCENT_COLOR_KEY, next);
-    notifyAppearance(ACCENT_COLOR_KEY);
-  } catch {
-    // private mode / quota
-  }
+  const next = normalizeAccentColor(value);
+  return saveAppearanceValue(
+    ACCENT_COLOR_KEY,
+    value == null || next == null || next.toLowerCase() === ACCENT_COLOR_DEFAULT.toLowerCase()
+      ? null
+      : next,
+  );
 }
 
+/** The level the accent roles are derived for: the live document value, else the saved one. */
+function currentAccentReadability(): AccentReadability {
+  const live = document.documentElement.dataset.accentReadability;
+  return isAccentReadability(live) ? live : loadAppearancePreferences().accentReadability;
+}
+
+const ACCENT_PROPERTIES = [
+  "--user-accent-color",
+  "--user-accent-solid",
+  "--user-accent-solid-hover",
+  "--user-accent-solid-pressed",
+  "--user-accent-foreground",
+  "--user-accent-selection-dark",
+  "--user-accent-selection-light",
+  "--user-accent-selection-dark-ink",
+  "--user-accent-selection-light-ink",
+  "--user-accent-selection-paper",
+] as const;
+
+function hex(rgb: Rgb) {
+  return `#${[rgb.r, rgb.g, rgb.b]
+    .map((channel) => Math.round(channel).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+/** Tint values applied to the document (live previews included); unset until first applied. */
+const appliedTint: { hue?: number; saturation?: number; darkLightness?: number } = {};
+
+/**
+ * Conservative contrast envelope for selection surfaces, from the applied tint:
+ * the dark editor/terminal `--ui-surface` (content 10% over the base) is the lightest
+ * ground there. Keep the light envelope at content 3%, even though navigation now
+ * shares the lighter chat canvas (V3-033), to retain the existing accent derivation.
+ */
+function themeCanvases(): AccentCanvas {
+  const hue = appliedTint.hue ?? loadThemeHue();
+  const saturation = appliedTint.saturation ?? loadThemeSaturation();
+  const darkBase = hex(
+    hslToRgb(hue, saturation, appliedTint.darkLightness ?? loadThemeDarkLightness()),
+  );
+  const darkContent = hex(hslToRgb(hue, saturation, 92));
+  const lightBase = hex(hslToRgb(hue, saturation * 0.2, 98.6));
+  const lightContent = hex(hslToRgb(hue, saturation * 0.35, 13));
+  return {
+    dark: mixInOklab(darkBase, darkContent, 0.1),
+    light: mixInOklab(lightBase, lightContent, 0.03),
+  };
+}
+
+/** Re-derives the accent roles when only their inputs (tint, canvas) changed. */
+function refreshAccentRoles() {
+  const saved = document.documentElement.style.getPropertyValue("--user-accent-color");
+  if (saved) applyAccentColor(saved);
+}
+
+/**
+ * Publishes the accent roles. `--user-accent-color` stays the saved colour and
+ * `--user-accent-solid` equals it; the ink, hover/pressed steps and the two
+ * selection fills are derived for the active readability level against the real
+ * theme canvas (see accentContrast.ts) and only ever rendered.
+ */
 export function applyAccentColor(value: string | null) {
   const next = normalizeAccentColor(value);
-  document.documentElement.classList.toggle("has-user-accent", next != null);
+  const root = document.documentElement;
+  root.classList.toggle("has-user-accent", next != null);
   if (next == null) {
-    document.documentElement.style.removeProperty("--user-accent-color");
-    document.documentElement.style.removeProperty("--user-accent-foreground");
+    for (const property of ACCENT_PROPERTIES) root.style.removeProperty(property);
     return next;
   }
-  document.documentElement.style.setProperty("--user-accent-color", next);
-  document.documentElement.style.setProperty("--user-accent-foreground", accentForeground(next));
+  const roles = deriveAccentRoles(next, currentAccentReadability(), themeCanvases());
+  root.style.setProperty("--user-accent-color", next);
+  root.style.setProperty("--user-accent-solid", roles.solid.background);
+  root.style.setProperty("--user-accent-solid-hover", roles.solid.hover);
+  root.style.setProperty("--user-accent-solid-pressed", roles.solid.pressed);
+  root.style.setProperty("--user-accent-foreground", roles.solid.foreground);
+  root.style.setProperty("--user-accent-selection-dark", roles.selection.dark.background);
+  root.style.setProperty("--user-accent-selection-light", roles.selection.light.background);
+  root.style.setProperty("--user-accent-selection-dark-ink", roles.selection.dark.foreground);
+  root.style.setProperty("--user-accent-selection-light-ink", roles.selection.light.foreground);
+  root.style.setProperty("--user-accent-selection-paper", roles.selection.paper.background);
   return next;
 }
 
@@ -322,7 +447,46 @@ export function saveThemeDarkLightness(value: number) {
 export function applyThemeDarkLightness(value: number) {
   const next = Math.round(clamp(value, THEME_DARK_LIGHTNESS_MIN, THEME_DARK_LIGHTNESS_MAX));
   document.documentElement.style.setProperty("--theme-dark-lightness", `${next}%`);
+  appliedTint.darkLightness = next;
+  refreshAccentRoles();
+  applyCanvasBackground();
   return next;
+}
+
+/** The chosen canvas tone: the live document value, else the saved one. */
+function currentCanvasBackground(): CanvasBackground {
+  const live = document.documentElement.dataset.canvasBackgroundPreference;
+  if (live === "pure" || live === "tinted") return live;
+  try {
+    return loadAppearancePreferences().canvasBackground;
+  } catch {
+    return CANVAS_BACKGROUND_DEFAULT;
+  }
+}
+
+/**
+ * True when the shared canvas is painted pure black (dark) or pure white (light). The owner's
+ * choice applies to every tint, custom surface colors included (owner 2026-11-09: Pure "does not
+ * work" while it was locked to theme palettes); raised layers keep mixing from the tint.
+ */
+export function canvasBackgroundIsPure(preference: CanvasBackground) {
+  return preference === "pure";
+}
+
+/**
+ * Publishes the effective canvas tone as `data-canvas-background` on the document; the shared theme
+ * (src/styles/index.css) maps "pure" to the canvasPure palette roles. Raised surfaces, borders and
+ * text keep deriving from the palette tint, so they stay distinct on pure black or white.
+ */
+export function applyCanvasBackground(preference: CanvasBackground = currentCanvasBackground()) {
+  const root = document.documentElement;
+  const pure = canvasBackgroundIsPure(preference);
+  const next = pure ? "pure" : "tinted";
+  if (root.dataset.canvasBackground === next) return pure;
+  root.dataset.canvasBackground = next;
+  // The opaque native window behind the page follows the canvas it shows through resize gaps.
+  if (nativeGlassReady) syncNativeGlass(isLightScheme() ? "light" : "dark");
+  return pure;
 }
 
 export function applyThemeTint(hue: number, saturation: number) {
@@ -330,6 +494,10 @@ export function applyThemeTint(hue: number, saturation: number) {
   const nextSaturation = Math.round(clamp(saturation, THEME_SATURATION_MIN, THEME_SATURATION_MAX));
   document.documentElement.style.setProperty("--theme-hue", String(nextHue));
   document.documentElement.style.setProperty("--theme-saturation", `${nextSaturation}%`);
+  appliedTint.hue = nextHue;
+  appliedTint.saturation = nextSaturation;
+  refreshAccentRoles();
+  applyCanvasBackground();
   return { hue: nextHue, saturation: nextSaturation };
 }
 
@@ -347,6 +515,7 @@ const SHARED_APPEARANCE_KEYS = new Set([
   MAIN_OPACITY_KEY,
   BLUR_KEY,
   BODY_KEY,
+  WINDOW_GLASS_KEY,
   CHAT_BACKGROUND_PATH_KEY,
   CHAT_BACKGROUND_OPACITY_KEY,
   CHAT_BACKGROUND_EMPTY_OPACITY_KEY,
@@ -361,7 +530,10 @@ const SHARED_APPEARANCE_KEYS = new Set([
 export function subscribeThemeStorage(onChange: (key: string | null) => void) {
   const onStorage = (event: StorageEvent) => {
     if (event.storageArea && event.storageArea !== localStorage) return;
-    if (event.key === null || SHARED_APPEARANCE_KEYS.has(event.key)) onChange(event.key);
+    if (event.key === null || SHARED_APPEARANCE_KEYS.has(event.key)) {
+      acceptAppearanceStorageChange(event.key);
+      onChange(event.key);
+    }
   };
   const onLocal = (event: Event) => onChange((event as CustomEvent<string>).detail);
   window.addEventListener("storage", onStorage);
@@ -382,6 +554,8 @@ function applyStoredAppearance(key: string | null = null) {
     applyBodyGlass(loadBodyGlass());
     if (nativeGlassReady && IS_LINUX) syncNativeGlass(isLightScheme() ? "light" : "dark");
   }
+  if (key === WINDOW_GLASS_KEY && nativeGlassReady && !IS_LINUX)
+    syncNativeGlass(isLightScheme() ? "light" : "dark");
   if (
     key === null ||
     key === CHAT_BACKGROUND_PATH_KEY ||
@@ -420,12 +594,18 @@ let themeStorageWatching = false;
 
 export function initAppearance() {
   initAppearancePreferences();
+  initWorkspaceBackground();
   document.documentElement.classList.toggle("is-mac", IS_MAC);
   applyStoredAppearance();
   watchSystemColorScheme();
   if (!themeStorageWatching) {
     themeStorageWatching = true;
     subscribeThemeStorage(applyStoredAppearance);
+    // The readability level is part of the appearance record; this also fires for sibling windows.
+    window.addEventListener(APPEARANCE_PREFERENCES_EVENT, () => {
+      applyAccentColor(loadAccentColor());
+      applyCanvasBackground();
+    });
   }
   initUiScale();
 }
@@ -436,7 +616,7 @@ function isThemePreference(value: unknown): value is ThemePreference {
 
 export function loadThemePreference(): ThemePreference {
   try {
-    const raw = localStorage.getItem(SCHEME_KEY);
+    const raw = readAppearanceValue(SCHEME_KEY);
     return isThemePreference(raw) ? raw : THEME_PREFERENCE_DEFAULT;
   } catch {
     return THEME_PREFERENCE_DEFAULT;
@@ -444,12 +624,7 @@ export function loadThemePreference(): ThemePreference {
 }
 
 export function saveThemePreference(value: ThemePreference) {
-  try {
-    localStorage.setItem(SCHEME_KEY, value);
-    notifyAppearance(SCHEME_KEY);
-  } catch {
-    // private mode / quota
-  }
+  return saveAppearanceValue(SCHEME_KEY, value);
 }
 
 function systemQuery(): MediaQueryList | null {
@@ -490,6 +665,8 @@ export function applyThemePreference(
 
 /** The page colour the native window sits behind while glass is off. */
 function opaqueWindowBackground(): Rgb {
+  if (document.documentElement.dataset.canvasBackground === "pure")
+    return hslToRgb(0, 0, isLightScheme() ? 100 : 0);
   const style = getComputedStyle(document.documentElement);
   const read = (name: string, fallback: number) => {
     const value = Number.parseFloat(style.getPropertyValue(name));
@@ -519,14 +696,16 @@ function glassFadeMs(): number {
  * overtaken is dropped rather than left to settle last.
  */
 export function syncNativeGlass(scheme: ColorScheme) {
-  const enabled = scheme === "dark" && (!IS_LINUX || loadBodyGlass());
+  const enabled = scheme === "dark" && (IS_LINUX ? loadBodyGlass() : loadWindowGlass());
   const root = document.documentElement;
   const generation = ++glassSyncGeneration;
+  setNativeGlassStatus(readNativeGlassError(), true);
   const setWindow = () =>
-    invoke("set_window_glass_enabled", {
+    invoke<NativeGlassOutcome>("set_window_glass_enabled", {
       enabled,
       background: opaqueWindowBackground(),
-    }).catch(() => {});
+      preference: loadWindowGlass(),
+    });
 
   if (glassFadeTimer !== undefined) {
     window.clearTimeout(glassFadeTimer);
@@ -534,18 +713,33 @@ export function syncNativeGlass(scheme: ColorScheme) {
   }
 
   if (enabled) {
-    void setWindow().finally(() => {
-      if (generation === glassSyncGeneration) {
-        root.classList.add("has-native-glass");
-      }
-    });
+    void setWindow()
+      .then((outcome) => {
+        if (generation === glassSyncGeneration) {
+          setNativeGlassStatus(false, false, outcome.restartRequired);
+          root.classList.toggle("has-native-glass", outcome.applied);
+        }
+      })
+      .catch(() => {
+        if (generation === glassSyncGeneration) {
+          root.classList.remove("has-native-glass");
+          setNativeGlassStatus(true, false);
+        }
+      });
     return;
   }
 
   root.classList.remove("has-native-glass");
   glassFadeTimer = window.setTimeout(() => {
     glassFadeTimer = undefined;
-    void setWindow();
+    void setWindow()
+      .then((outcome) => {
+        if (generation === glassSyncGeneration)
+          setNativeGlassStatus(false, false, outcome.restartRequired);
+      })
+      .catch(() => {
+        if (generation === glassSyncGeneration) setNativeGlassStatus(true, false);
+      });
   }, glassFadeMs());
 }
 
@@ -616,19 +810,46 @@ export function saveSidebarBlur(value: number) {
   writeNumber(BLUR_KEY, Math.round(clamp(value, SIDEBAR_BLUR_MIN, SIDEBAR_BLUR_MAX)));
 }
 
+let pendingSidebarBlur: number | undefined;
+let applyingSidebarBlur = false;
+
+async function flushSidebarBlur() {
+  if (applyingSidebarBlur) return;
+  applyingSidebarBlur = true;
+  try {
+    while (pendingSidebarBlur !== undefined) {
+      const radius = pendingSidebarBlur;
+      pendingSidebarBlur = undefined;
+      await invoke("set_window_background_blur", { radius }).catch(() => {});
+    }
+  } finally {
+    applyingSidebarBlur = false;
+  }
+}
+
 export function applySidebarBlur(value: number) {
   const next = Math.round(clamp(value, SIDEBAR_BLUR_MIN, SIDEBAR_BLUR_MAX));
-  void invoke("set_window_background_blur", { radius: next });
+  if (IS_MAC) {
+    pendingSidebarBlur = next;
+    void flushSidebarBlur().catch(() => {});
+  }
   return next;
 }
 
 export function loadBodyGlass(): boolean {
-  return readFlag(BODY_KEY) ?? BODY_GLASS_DEFAULT;
+  return readAppearanceFlag(BODY_KEY, BODY_GLASS_DEFAULT);
 }
 
 export function saveBodyGlass(value: boolean) {
-  writeFlag(BODY_KEY, value);
-  notifyAppearance(BODY_KEY);
+  return saveAppearanceValue(BODY_KEY, value ? "1" : "0");
+}
+
+export function loadWindowGlass(): boolean {
+  return readAppearanceFlag(WINDOW_GLASS_KEY, WINDOW_GLASS_DEFAULT);
+}
+
+export function saveWindowGlass(value: boolean) {
+  return saveAppearanceValue(WINDOW_GLASS_KEY, value ? "1" : "0");
 }
 
 export function applyBodyGlass(value: boolean) {
@@ -638,22 +859,17 @@ export function applyBodyGlass(value: boolean) {
 
 export function loadChatBackgroundPath(): string | null {
   try {
-    return localStorage.getItem(CHAT_BACKGROUND_PATH_KEY)?.trim() || null;
+    return readAppearanceValue(CHAT_BACKGROUND_PATH_KEY)?.trim() || null;
   } catch {
     return null;
   }
 }
 
 export function saveChatBackgroundPath(value: string | null) {
-  try {
-    if (value) localStorage.setItem(CHAT_BACKGROUND_PATH_KEY, value);
-    else localStorage.removeItem(CHAT_BACKGROUND_PATH_KEY);
-    notifyAppearance(CHAT_BACKGROUND_PATH_KEY);
-  } catch {
-    // private mode / quota
-  }
+  const saved = saveAppearanceValue(CHAT_BACKGROUND_PATH_KEY, value);
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(CHAT_BACKGROUND_PATH_CHANGE_EVENT));
+  return saved;
 }
 
 export function subscribeChatBackgroundPath(onStoreChange: () => void) {
@@ -684,7 +900,7 @@ function isNewThreadBackgroundEffect(value: unknown): value is NewThreadBackgrou
 
 export function loadNewThreadBackgroundEffect(): NewThreadBackgroundEffect {
   try {
-    const raw = localStorage.getItem(NEW_THREAD_BACKGROUND_EFFECT_KEY);
+    const raw = readAppearanceValue(NEW_THREAD_BACKGROUND_EFFECT_KEY);
     return isNewThreadBackgroundEffect(raw) ? raw : NEW_THREAD_BACKGROUND_EFFECT_DEFAULT;
   } catch {
     return NEW_THREAD_BACKGROUND_EFFECT_DEFAULT;
@@ -692,12 +908,7 @@ export function loadNewThreadBackgroundEffect(): NewThreadBackgroundEffect {
 }
 
 export function saveNewThreadBackgroundEffect(effect: NewThreadBackgroundEffect) {
-  try {
-    localStorage.setItem(NEW_THREAD_BACKGROUND_EFFECT_KEY, effect);
-    notifyAppearance(NEW_THREAD_BACKGROUND_EFFECT_KEY);
-  } catch {
-    // private mode / quota
-  }
+  return saveAppearanceValue(NEW_THREAD_BACKGROUND_EFFECT_KEY, effect);
 }
 
 function renderChatBackground(path: string, effect = loadNewThreadBackgroundEffect()) {
@@ -815,7 +1026,7 @@ function isChatBackgroundScope(value: unknown): value is ChatBackgroundScope {
 
 export function loadChatBackgroundScope(): ChatBackgroundScope {
   try {
-    const raw = localStorage.getItem(CHAT_BACKGROUND_SCOPE_KEY);
+    const raw = readAppearanceValue(CHAT_BACKGROUND_SCOPE_KEY);
     return isChatBackgroundScope(raw) ? raw : CHAT_BACKGROUND_SCOPE_DEFAULT;
   } catch {
     return CHAT_BACKGROUND_SCOPE_DEFAULT;
@@ -823,12 +1034,7 @@ export function loadChatBackgroundScope(): ChatBackgroundScope {
 }
 
 export function saveChatBackgroundScope(value: ChatBackgroundScope) {
-  try {
-    localStorage.setItem(CHAT_BACKGROUND_SCOPE_KEY, value);
-    notifyAppearance(CHAT_BACKGROUND_SCOPE_KEY);
-  } catch {
-    // private mode / quota
-  }
+  return saveAppearanceValue(CHAT_BACKGROUND_SCOPE_KEY, value);
 }
 
 export function applyChatBackgroundScope(value: ChatBackgroundScope) {
@@ -842,7 +1048,7 @@ function isDiffPalette(value: unknown): value is DiffPalette {
 
 export function loadDiffPalette(): DiffPalette {
   try {
-    const raw = localStorage.getItem(DIFF_PALETTE_KEY);
+    const raw = readAppearanceValue(DIFF_PALETTE_KEY);
     return isDiffPalette(raw) ? raw : DIFF_PALETTE_DEFAULT;
   } catch {
     return DIFF_PALETTE_DEFAULT;
@@ -850,12 +1056,7 @@ export function loadDiffPalette(): DiffPalette {
 }
 
 export function saveDiffPalette(value: DiffPalette) {
-  try {
-    localStorage.setItem(DIFF_PALETTE_KEY, value);
-    notifyAppearance(DIFF_PALETTE_KEY);
-  } catch {
-    // private mode / quota
-  }
+  return saveAppearanceValue(DIFF_PALETTE_KEY, value);
 }
 
 /** Swaps the diff color tokens in index.css via an html class. */
@@ -888,7 +1089,7 @@ export function saveSessionSidebarOpen(value: boolean) {
 
 export function loadSidebarTabOrder(): SidebarTabId[] {
   try {
-    const raw = localStorage.getItem(SIDEBAR_TAB_ORDER_KEY);
+    const raw = readAppearanceValue(SIDEBAR_TAB_ORDER_KEY);
     if (!raw) return [...DEFAULT_SIDEBAR_TAB_ORDER];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [...DEFAULT_SIDEBAR_TAB_ORDER];
@@ -950,7 +1151,7 @@ function isTranscriptLayout(value: unknown): value is TranscriptLayout {
 
 export function loadTranscriptLayout(): TranscriptLayout {
   try {
-    const raw = localStorage.getItem(TRANSCRIPT_LAYOUT_KEY);
+    const raw = readAppearanceValue(TRANSCRIPT_LAYOUT_KEY);
     return isTranscriptLayout(raw) ? raw : TRANSCRIPT_LAYOUT_DEFAULT;
   } catch {
     return TRANSCRIPT_LAYOUT_DEFAULT;
@@ -972,7 +1173,8 @@ export function saveTranscriptLayout(value: TranscriptLayout) {
   );
 }
 
-export const subscribeTranscriptLayout = (onChange: () => void) => subscribePreferenceChanges([TRANSCRIPT_LAYOUT_KEY], TRANSCRIPT_LAYOUT_CHANGE_EVENT, onChange);
+export const subscribeTranscriptLayout = (onChange: () => void) =>
+  subscribePreferenceChanges([TRANSCRIPT_LAYOUT_KEY], TRANSCRIPT_LAYOUT_CHANGE_EVENT, onChange);
 
 function isChangesView(value: unknown): value is ChangesView {
   return value === "list" || value === "tree";
@@ -980,7 +1182,7 @@ function isChangesView(value: unknown): value is ChangesView {
 
 export function loadChangesView(): ChangesView {
   try {
-    const raw = localStorage.getItem(CHANGES_VIEW_KEY);
+    const raw = readAppearanceValue(CHANGES_VIEW_KEY);
     return isChangesView(raw) ? raw : CHANGES_VIEW_DEFAULT;
   } catch {
     return CHANGES_VIEW_DEFAULT;
@@ -1009,24 +1211,33 @@ export function saveTranscriptAnchor(value: boolean) {
   );
 }
 
-export const subscribeTranscriptAnchor = (onChange: () => void) => subscribePreferenceChanges([TRANSCRIPT_ANCHOR_KEY], TRANSCRIPT_ANCHOR_CHANGE_EVENT, onChange);
+export const subscribeTranscriptAnchor = (onChange: () => void) =>
+  subscribePreferenceChanges([TRANSCRIPT_ANCHOR_KEY], TRANSCRIPT_ANCHOR_CHANGE_EVENT, onChange);
 
 export function loadShowExcludedFiles(): boolean {
   return readFlag(SHOW_EXCLUDED_FILES_KEY) ?? SHOW_EXCLUDED_FILES_DEFAULT;
 }
 
 export function saveShowExcludedFiles(value: boolean) {
-  writeFlag(SHOW_EXCLUDED_FILES_KEY, value);
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(
-    new CustomEvent<boolean>(SHOW_EXCLUDED_FILES_CHANGE_EVENT, {
-      detail: value,
-    }),
+  return writeAppearanceValue(
+    SHOW_EXCLUDED_FILES_KEY,
+    value ? "1" : "0",
+    "show-excluded-files",
+    () => {
+      if (typeof window !== "undefined")
+        window.dispatchEvent(new Event(SHOW_EXCLUDED_FILES_CHANGE_EVENT));
+    },
+    false,
   );
 }
 
 export function subscribeShowExcludedFiles(onStoreChange: () => void) {
-  if (typeof window === "undefined") return () => {};
-  window.addEventListener(SHOW_EXCLUDED_FILES_CHANGE_EVENT, onStoreChange);
-  return () => window.removeEventListener(SHOW_EXCLUDED_FILES_CHANGE_EVENT, onStoreChange);
+  return subscribePreferenceChanges(
+    [SHOW_EXCLUDED_FILES_KEY],
+    SHOW_EXCLUDED_FILES_CHANGE_EVENT,
+    () => {
+      acceptAppearanceStorageChange(SHOW_EXCLUDED_FILES_KEY);
+      onStoreChange();
+    },
+  );
 }

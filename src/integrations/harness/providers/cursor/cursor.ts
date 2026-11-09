@@ -1,4 +1,58 @@
+import { withTimeout } from "../../../../shared/lib/withTimeout";
+import {
+  assertProviderOperation,
+  observeProviderProcess,
+  finishProviderOperation,
+  cancelQueuedOperation,
+  ownsOperation,
+  processTarget,
+  operationContext,
+  type HarnessOperationContext,
+  captureAcpTurnWriter,
+  queueProviderOperation,
+  acpTurnWriter,
+  type AcpWriterView,
+} from "../turnWriter";
+
+import { killChild } from "../../core/child";
+import { retireProviderEpoch } from "../turnWriter";
+import {
+  announceSlowProviderStartup,
+  PROVIDER_STARTUP_TIMEOUT_MS,
+} from "../../core/providerStartupStatus";
+import {
+  createProviderRetirementLedger,
+  preserveProviderFailure,
+  settleProviderRetirements,
+} from "../../core/providerRetirement";
+import {
+  createPendingApproval,
+  cancelPendingApprovals,
+  observePendingApprovalWrite,
+  type ApprovalActualWriteObserver,
+  ownsPendingApproval,
+  rejectOverlappingApproval,
+  releasePendingApproval,
+  type PendingApproval,
+} from "../pendingApproval";
+import { isApprovalOccurrenceId } from "../../../../shared/model/approvalOccurrence";
+import {
+  captureNativeOutputWorkEvent,
+  runNativeOutputWork,
+  nativeOutputSink,
+  retainNativeOutputEventOrigin,
+  captureNativeOutputWork,
+  trackNativeOutputWork,
+  scheduleNativeOutputCallback,
+  cancelNativeOutputCallback,
+  type NativeOutputWork,
+} from "../../core/nativeOutputDelivery";
 import { trimAndCapText } from "../../../../shared/lib/cappedText";
+import {
+  deliverQuestionReply,
+  showNextQueuedQuestion,
+  type QuestionDelivery,
+} from "../questionDelivery";
 import {
   asRecord,
   looksLikeCallId,
@@ -6,7 +60,6 @@ import {
   pickOption,
   stringField,
 } from "../../../../shared/lib/records";
-import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import {
   humanField,
   textFromContent as sharedTextFromContent,
@@ -17,19 +70,13 @@ import { JsonRpcResponseError } from "../../core/jsonRpc";
 import { reportAcpStopReason } from "../../core/acpStopReason";
 import { AcpSubagents } from "../../core/acpSubagents";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
-import { promptBlocks } from "../../../../features/sessions/model/attachments";
+import { promptBlocks } from "../../../../features/sessions/model/attachmentPrompt";
 import {
   isTaskListToolName,
   taskListFromToolInput,
 } from "../../../../features/sessions/model/taskList";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
-import {
-  killChild,
-  resolveCursorBinary,
-  spawnChild,
-  unwatchChild,
-  watchChild,
-} from "../../core/child";
+import { resolveCursorBinary, spawnChild, watchChild } from "../../core/child";
 import {
   readStoredCursorToolCalls,
   readStoredCursorSubagentRuns,
@@ -38,6 +85,7 @@ import {
 } from "./cursorStore";
 import { cursorAgentLabel, cursorSubagentEvents, kindFromCursorToolName } from "./cursorSubagents";
 import { stopCursorTitleGeneration } from "./cursorTitle";
+import { cursorAskQuestionResponse } from "./cursorQuestionReply";
 import type {
   ApprovalDecision,
   HarnessEvent,
@@ -45,10 +93,8 @@ import type {
   SteerTurnInput,
 } from "../../core/types";
 import {
-  CUSTOM_OPTION_ID,
   questionPromptTitle,
   questionsFromUnknown,
-  type UserQuestion,
   type UserQuestionReply,
 } from "../../../../features/sessions/model/userQuestion";
 import {
@@ -64,7 +110,7 @@ import {
   mergeToolPreview,
 } from "../../core/preview";
 
-const INIT_TIMEOUT_MS = 20_000;
+const INIT_TIMEOUT_MS = PROVIDER_STARTUP_TIMEOUT_MS;
 const AUTH_TIMEOUT_MS = 60_000;
 const SESSION_TIMEOUT_MS = 30_000;
 
@@ -84,7 +130,13 @@ type PendingToolEnrichment = {
   attempts: number;
 };
 
+import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
+
+const retirements = createProviderRetirementLedger("cursor.main", killChild);
+
 type Live = {
+  operation?: object;
+  handle: ChildProcessHandle;
   subagents: AcpSubagents;
   acp: AcpClient;
   acpSessionId: string;
@@ -96,8 +148,9 @@ type Live = {
   runtimeMode: RuntimeMode;
   planning: boolean;
   onEvent: (event: HarnessEvent) => void;
-  approvals: Map<number, (decision: ApprovalDecision) => void>;
-  questions: Map<number, (reply: UserQuestionReply) => void>;
+  approvals: Map<number, PendingApproval>;
+  questions: Map<number, ((reply: UserQuestionReply) => void) & QuestionDelivery>;
+  visibleQuestionId?: number;
   enrichedTools: Set<string>;
   pendingToolEnrichments: Map<string, PendingToolEnrichment>;
   toolEnrichmentTimer?: ReturnType<typeof setTimeout>;
@@ -113,7 +166,6 @@ type Live = {
   subagentTimer?: ReturnType<typeof setTimeout>;
   subagentRefresh?: Promise<void>;
   promptActive: boolean;
-  turns: Promise<void>;
 };
 
 type Resume = {
@@ -122,8 +174,13 @@ type Resume = {
 };
 
 const liveByThread = new Map<string, Live>();
+const startingByThread = new Map<
+  string,
+  { handle: ChildProcessHandle; operation?: object; acp?: AcpClient }
+>();
 const resumeByThread = new Map<string, Resume>();
-const cancelledThreads = new Set<string>();
+const turnsByThread = new Map<string, Promise<unknown>>();
+const sourceEpochByThread = new Map<string, object>();
 
 const CLIENT_CAPABILITIES = {
   fs: { readTextFile: false, writeTextFile: false },
@@ -132,37 +189,74 @@ const CLIENT_CAPABILITIES = {
 };
 
 export async function sendCursorTurn(input: SendTurnInput): Promise<void> {
-  let live: Live;
-  try {
-    live = await ensureLive(input);
-  } catch (error) {
-    cancelledThreads.delete(input.sessionId);
-    throw error;
-  }
-  if (cancelledThreads.delete(input.sessionId)) return;
+  assertProviderOperation(input.operationContext);
 
-  live.onEvent = input.onEvent;
-  live.runtimeMode = input.runtimeMode;
-  live.planning = input.intent === "plan";
-  live.turns = continueAfterFailure(live.turns, async () => {
-    live.cancelled = false;
-    live.muteUpdates = false;
-    scheduleCursorToolEnrichment(live, 0);
-    try {
-      await applyModelSelection(live, input);
-      if (live.cancelled) return;
-      await prompt(live, input);
-    } catch (error) {
-      if (live.cancelled) return;
-      throw error;
-    }
-  });
-  await live.turns;
+  input = { ...input };
+
+  try {
+    const epoch = sourceEpochByThread.get(input.sessionId);
+    const cancelled = () => sourceEpochByThread.get(input.sessionId) !== epoch;
+    let live: Live;
+    const observed = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
+    if (observed) observeProviderProcess(input, observed.handle);
+    const run = queueProviderOperation(
+      turnsByThread,
+      input.sessionId,
+      input.operationContext,
+      async () => {
+        if (cancelled()) return;
+        assertProviderOperation(input.operationContext);
+        live = await ensureLive(input);
+        if (cancelled()) return;
+        assertProviderOperation(input.operationContext);
+        const acp = await captureAcpTurnWriter(
+          live.handle,
+          live.acp,
+          input.nativeControlTurn,
+          input.operationContext,
+        )();
+        if (cancelled()) return;
+        assertProviderOperation(input.operationContext);
+        if (liveByThread.get(input.sessionId) !== live)
+          throw new Error("Provider operation replaced before turn entry");
+        live.onEvent = input.onEvent;
+        live.runtimeMode = input.runtimeMode;
+        live.planning = input.intent === "plan";
+        live.cancelled = false;
+        live.muteUpdates = false;
+        scheduleCursorToolEnrichment(live, 0);
+        try {
+          await applyModelSelection(live, input, acp);
+          if (live.cancelled) return;
+          await prompt(live, input, acp);
+        } catch (error) {
+          if (live.cancelled) return;
+          throw error;
+        }
+      },
+    );
+    await run;
+  } finally {
+    finishProviderOperation(input.operationContext);
+  }
 }
 
 export async function steerCursorTurn(input: SteerTurnInput): Promise<void> {
+  assertProviderOperation(input.operationContext);
+
+  input = { ...input };
+
   const live = liveByThread.get(input.sessionId);
   if (!live) throw new Error("No active Cursor session");
+  if (!ownsOperation(input.operationContext, live.handle, live.operation))
+    throw new Error("Provider operation replaced before steer");
+
+  const acp = await acpTurnWriter(
+    live.handle,
+    live.acp,
+    input.nativeControlTurn,
+    input.operationContext,
+  );
 
   const blocks = promptBlocks(input.text, input.attachments);
   if (blocks.length === 0) return;
@@ -172,32 +266,77 @@ export async function steerCursorTurn(input: SteerTurnInput): Promise<void> {
     prompt: blocks,
   };
   // Notifications have no error response; a second spelling would duplicate input.
-  await live.acp.notify("session/steer", params);
+  await acp.notify("session/steer", params);
 }
 
 export function respondCursorApproval(
   sessionId: string,
   requestId: number,
   decision: ApprovalDecision,
+  approvalOccurrenceId?: string,
 ) {
-  liveByThread.get(sessionId)?.approvals.get(requestId)?.(decision);
+  const live = liveByThread.get(sessionId);
+  const pending = live?.approvals.get(requestId);
+  if (
+    !live ||
+    live.cancelled ||
+    live.muteUpdates ||
+    !pending ||
+    pending.invalidated ||
+    !isApprovalOccurrenceId(approvalOccurrenceId) ||
+    pending.occurrenceId !== approvalOccurrenceId
+  )
+    return;
+  pending(decision);
 }
 
 export function respondCursorQuestion(
   sessionId: string,
   requestId: number,
   reply: UserQuestionReply,
-) {
-  liveByThread.get(sessionId)?.questions.get(requestId)?.(reply);
+): boolean {
+  const live = liveByThread.get(sessionId);
+  const pending = live?.questions.get(requestId);
+  // Nothing is waiting for this answer (the question was resolved or the turn ended).
+  if (!live || !pending) return false;
+  deliverQuestionReply(
+    pending,
+    requestId,
+    reply,
+    live.onEvent,
+    () => live.questions.get(requestId) === pending && !live.cancelled && !live.muteUpdates,
+    () => pending(reply),
+  );
+  return true;
 }
 
 /** Abort the in-flight prompt without tearing down the ACP session. */
-export async function cancelCursorTurn(sessionId: string): Promise<void> {
+export async function cancelCursorTurn(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
   const live = liveByThread.get(sessionId);
+  const preparing = startingByThread.get(sessionId);
+  // A captured cancellation must not affect a newer operation.
+  if (
+    !ownsOperation(
+      context,
+      live?.handle ?? preparing?.handle,
+      live?.operation ?? preparing?.operation,
+    )
+  )
+    return;
+  sourceEpochByThread.set(sessionId, {});
   if (!live) {
-    cancelledThreads.add(sessionId);
+    if (preparing) await stopCursorSession(sessionId, context ?? preparing.handle);
     return;
   }
+  const acp = context
+    ? await acpTurnWriter(live.handle, live.acp, context.nativeControlTurn, context, "control")
+    : live.acp;
+  if (!ownsOperation(context, live.handle, live.operation)) return;
   live.cancelled = true;
   live.muteUpdates = true;
   live.promptActive = false;
@@ -205,44 +344,73 @@ export async function cancelCursorTurn(sessionId: string): Promise<void> {
   live.taskListTools.clear();
   live.agentTools.clear();
   live.backgroundAgentTools.clear();
-  if (live.toolEnrichmentTimer) clearTimeout(live.toolEnrichmentTimer);
+  if (live.toolEnrichmentTimer) cancelNativeOutputCallback(live.toolEnrichmentTimer);
   live.toolEnrichmentTimer = undefined;
-  for (const [, resolve] of live.approvals) resolve("deny");
-  live.approvals.clear();
+  cancelPendingApprovals(live.approvals);
   for (const [, resolve] of live.questions) resolve({ kind: "skipped" });
   live.questions.clear();
-  await live.acp.notify("session/cancel", { sessionId: live.acpSessionId }).catch(() => undefined);
-  live.acp.rejectPending(new Error("cancelled"));
+  await acp.notify("session/cancel", { sessionId: live.acpSessionId }).catch(() => undefined);
+  if (!ownsOperation(context, live.handle, live.operation)) return;
+  live.acp.rejectPending(new Error("cancelled"), { keepNativeOutput: true });
 }
 
 /** Kill the Cursor process but keep the ACP session id so we can session/load. */
-export async function stopCursorSession(sessionId: string): Promise<void> {
-  cancelledThreads.delete(sessionId);
-  const live = liveByThread.get(sessionId);
-  liveByThread.delete(sessionId);
+export async function stopCursorSession(
+  sessionId: string,
+  target?: ChildProcessHandle | HarnessOperationContext,
+): Promise<void> {
+  const context = operationContext(target);
+  if (cancelQueuedOperation(context)) return;
+  const expectedHandle = processTarget(target);
+
+  const candidate = liveByThread.get(sessionId);
+  const live =
+    (!expectedHandle || candidate?.handle === expectedHandle) &&
+    ownsOperation(context, candidate?.handle, candidate?.operation)
+      ? candidate
+      : undefined;
+  const preparing = startingByThread.get(sessionId);
+  const startup =
+    (!expectedHandle || preparing?.handle === expectedHandle) &&
+    ownsOperation(context, preparing?.handle, preparing?.operation)
+      ? preparing
+      : undefined;
+  if (context ? live || startup : !expectedHandle) sourceEpochByThread.set(sessionId, {});
+  if (live) liveByThread.delete(sessionId);
+  if (startup) startingByThread.delete(sessionId);
   if (live) {
     live.muteUpdates = true;
     live.promptActive = false;
     retireCursorSubagentPolling(live);
-    if (live.toolEnrichmentTimer) clearTimeout(live.toolEnrichmentTimer);
+    if (live.toolEnrichmentTimer) cancelNativeOutputCallback(live.toolEnrichmentTimer);
     live.pendingToolEnrichments.clear();
     live.agentTools.clear();
     live.backgroundAgentTools.clear();
-    for (const [, resolve] of live.approvals) resolve("deny");
-    live.approvals.clear();
+    cancelPendingApprovals(live.approvals);
     for (const [, resolve] of live.questions) resolve({ kind: "skipped" });
     live.questions.clear();
   }
   live?.acp.close();
-  unwatchChild(sessionId);
-  await killChild(sessionId).catch(() => undefined);
+  startup?.acp?.close();
+  const handles = new Set([live?.handle, startup?.handle, ...(!context ? [expectedHandle] : [])]);
+  await (context || expectedHandle
+    ? retirements.retire(handles)
+    : retirements.retireOwner(sessionId, handles));
 }
 
 /** Delete or idle detach — drop the Cursor conversation too. */
-export async function forgetCursorSession(sessionId: string): Promise<void> {
+export async function forgetCursorSession(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  // Delete/switch must end the process; stop runs by session (no stale context).
   resumeByThread.delete(sessionId);
-  await stopCursorSession(sessionId);
-  await stopCursorTitleGeneration(sessionId);
+  cancelQueuedOperation(context);
+  await settleProviderRetirements([
+    stopCursorSession(sessionId),
+    stopCursorTitleGeneration(sessionId),
+  ]);
+  retireProviderEpoch(sourceEpochByThread, turnsByThread, sessionId);
 }
 
 /** Seed ACP resume state for a restored Bycoda session. */
@@ -253,69 +421,99 @@ export function bindCursorSession(threadId: string, acpSessionId: string, cwd: s
 }
 
 async function ensureLive(input: SendTurnInput): Promise<Live> {
+  const startupDone = announceSlowProviderStartup(input.onEvent, "Cursor");
+  try {
+    return await ensureStartedLive(input);
+  } finally {
+    startupDone();
+  }
+}
+
+async function ensureStartedLive(input: SendTurnInput): Promise<Live> {
+  assertProviderOperation(input.operationContext);
+
   const existing = liveByThread.get(input.sessionId);
   if (existing && existing.cwd === input.cwd) {
-    existing.onEvent = input.onEvent;
-    existing.runtimeMode = input.runtimeMode;
-    existing.planning = input.intent === "plan";
+    observeProviderProcess(input, existing.handle);
+
     return existing;
   }
-  if (existing) {
-    resumeByThread.delete(input.sessionId);
-    await stopCursorSession(input.sessionId);
-  }
-
-  const resume = resumeByThread.get(input.sessionId);
-  const canLoad = resume != null && resume.cwd === input.cwd;
-  if (resume && resume.cwd !== input.cwd) {
-    resumeByThread.delete(input.sessionId);
-  }
-
-  const { path } = await resolveCursorBinary();
-  const handlers: AcpHandlers = {};
-  const acp = new AcpClient(input.sessionId, handlers);
-  const liveRef: { current: Live | null } = { current: null };
-  const muteGate = { current: false };
-
-  handlers.onNotification = (method, params) => {
-    if (muteGate.current) return;
-    const live = liveRef.current;
-    if (!live || live.muteUpdates) return;
-    handleNotification(live, method, params);
-  };
-  handlers.onRequest = (id, method, params) => {
-    const live = liveRef.current;
-    if (!live) return;
-    void handleRequest(live, id, method, params).catch(() => {
-      console.warn("[bycoda] cursor server request failed");
-    });
-  };
-
-  watchChild(
-    input.sessionId,
-    (line) => acp.pushLine(line),
-    (code) => {
-      acp.close(new Error("Cursor CLI exited"));
-      liveByThread.delete(input.sessionId);
-      const live = liveRef.current;
-      if (live) {
-        live.promptActive = false;
-        for (const resolve of live.approvals.values()) resolve("deny");
-        live.approvals.clear();
-        for (const resolve of live.questions.values()) resolve({ kind: "skipped" });
-        live.questions.clear();
-        retireCursorSubagentPolling(live);
-      }
-      if (!live?.muteUpdates) {
-        (live?.onEvent ?? input.onEvent)({ type: "session.ended", code });
-      }
-    },
+  const handle = retirements.admit(
+    createChildProcessHandle(input.sessionId, input.nativeControlTurn),
   );
-
-  await spawnChild(input.sessionId, path, ["acp"], input.cwd, undefined, "cursor");
-
+  const startup: { handle: ChildProcessHandle; operation?: object; acp?: AcpClient } = {
+    handle,
+    operation: input.operationContext?.operation,
+  };
+  startingByThread.set(input.sessionId, startup);
   try {
-    await acp.request(
+    observeProviderProcess(input, handle, "starting");
+    if (existing) {
+      resumeByThread.delete(input.sessionId);
+      await stopCursorSession(input.sessionId, existing.handle);
+      if (startingByThread.get(input.sessionId) !== startup)
+        throw new Error("Provider startup cancelled");
+    }
+
+    const resume = resumeByThread.get(input.sessionId);
+    const canLoad = resume != null && resume.cwd === input.cwd;
+    if (resume && resume.cwd !== input.cwd) {
+      resumeByThread.delete(input.sessionId);
+    }
+
+    const { path } = await resolveCursorBinary();
+    if (startingByThread.get(input.sessionId) !== startup)
+      throw new Error("Provider startup cancelled");
+    const handlers: AcpHandlers = {};
+    const acp = new AcpClient(handle, handlers);
+    startup.acp = acp;
+    const liveRef: { current: Live | null } = { current: null };
+    const muteGate = { current: false };
+
+    handlers.onNotification = (method, params) => {
+      if (muteGate.current) return;
+      const live = liveRef.current;
+      if (!live || live.muteUpdates) return;
+      handleNotification(live, method, params);
+    };
+    handlers.onRequest = (id, method, params) => {
+      const live = liveRef.current;
+      if (!live) return;
+      return handleRequest(live, id, method, params).catch(() => {
+        console.warn("[bycoda] cursor server request failed");
+      });
+    };
+
+    watchChild(
+      handle,
+      (line) => acp.pushLine(line),
+      (code) => {
+        acp.close(new Error("Cursor CLI exited"));
+        if (liveByThread.get(input.sessionId)?.handle === handle)
+          liveByThread.delete(input.sessionId);
+        const live = liveRef.current;
+        if (live) {
+          live.promptActive = false;
+          cancelPendingApprovals(live.approvals);
+          for (const resolve of live.questions.values()) resolve({ kind: "skipped" });
+          live.questions.clear();
+          retireCursorSubagentPolling(live);
+        }
+        if (!live?.muteUpdates) {
+          (live?.onEvent ?? input.onEvent)({ type: "session.ended", code });
+        }
+      },
+    );
+
+    await spawnChild(handle, path, ["acp"], input.cwd, undefined, "cursor");
+    const startupAcp = await acpTurnWriter(
+      handle,
+      acp,
+      input.nativeControlTurn,
+      input.operationContext,
+    );
+
+    await startupAcp.request(
       "initialize",
       {
         protocolVersion: 1,
@@ -324,7 +522,7 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
       },
       INIT_TIMEOUT_MS,
     );
-    await acp
+    await startupAcp
       .request("authenticate", { methodId: "cursor_login" }, AUTH_TIMEOUT_MS)
       .catch((error: unknown) => {
         // Older agents omit authenticate; transport/authentication failures are fatal.
@@ -339,7 +537,7 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     if (canLoad && resume) {
       muteGate.current = true;
       try {
-        setup = await acp.request<SessionSetupResult>(
+        setup = await startupAcp.request<SessionSetupResult>(
           "session/load",
           {
             sessionId: resume.acpSessionId,
@@ -362,7 +560,7 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     }
 
     if (!acpSessionId) {
-      setup = await acp.request<SessionSetupResult>(
+      setup = await startupAcp.request<SessionSetupResult>(
         "session/new",
         {
           cwd: input.cwd,
@@ -374,7 +572,11 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     }
     if (!acpSessionId) throw new Error("Cursor did not return a session id");
 
+    if (startingByThread.get(input.sessionId) !== startup)
+      throw new Error("Provider startup cancelled");
     const live: Live = {
+      operation: input.operationContext?.operation,
+      handle,
       subagents: new AcpSubagents(),
       acp,
       acpSessionId,
@@ -400,7 +602,6 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
       subagentGeneration: 0,
       subagentFinalPolls: 0,
       promptActive: false,
-      turns: Promise.resolve(),
     };
     liveRef.current = live;
     liveByThread.set(input.sessionId, live);
@@ -415,31 +616,40 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     live.onEvent({ type: "session.started" });
     return live;
   } catch (error) {
-    acp.close(error instanceof Error ? error : new Error(String(error)));
-    await stopCursorSession(input.sessionId);
-    throw error;
+    startup.acp?.close(error instanceof Error ? error : new Error(String(error)));
+    return preserveProviderFailure(error, stopCursorSession(input.sessionId, handle));
+  } finally {
+    if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);
   }
 }
 
-async function applyModelSelection(live: Live, input: SendTurnInput): Promise<void> {
+async function applyModelSelection(
+  live: Live,
+  input: SendTurnInput,
+  acp: AcpWriterView,
+): Promise<void> {
   const base = nativeModelId(input.model);
   const settings = input.modelSettings ?? {};
 
   try {
-    await setConfigOption(live, live.modelConfigId, base);
+    await setConfigOption(live, live.modelConfigId, base, acp);
   } catch {
-    await live.acp
-      .request("session/set_model", {
-        sessionId: live.acpSessionId,
-        modelId: base,
-      })
+    await acp
+      .request(
+        "session/set_model",
+        {
+          sessionId: live.acpSessionId,
+          modelId: base,
+        },
+        20_000,
+      )
       .catch(() => undefined);
   }
 
   for (const [settingId, value] of Object.entries(settings)) {
     const configId = resolveSettingConfigId(live.configOptions, settingId);
     if (!configId) continue;
-    await setConfigOption(live, configId, value).catch(() => undefined);
+    await setConfigOption(live, configId, value, acp).catch(() => undefined);
   }
 }
 
@@ -447,61 +657,100 @@ async function setConfigOption(
   live: Live,
   configId: string,
   value: string | boolean,
+  acp: AcpWriterView,
 ): Promise<void> {
   const current = live.configOptions.find((option) => option.id === configId);
   if (current && String(current.currentValue ?? "") === String(value)) return;
 
-  const result = await live.acp.request<SessionSetupResult>("session/set_config_option", {
-    sessionId: live.acpSessionId,
-    configId,
-    value,
-  });
+  const result = await acp.request<SessionSetupResult>(
+    "session/set_config_option",
+    {
+      sessionId: live.acpSessionId,
+      configId,
+      value,
+    },
+    20_000,
+  );
   if (result?.configOptions) {
     live.configOptions = readConfigOptions(result.configOptions);
     live.modelConfigId = extractModelConfigId(result) || live.modelConfigId;
   }
 }
 
-async function prompt(live: Live, input: SendTurnInput): Promise<void> {
+async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Promise<void> {
+  const responseScope: { work: NativeOutputWork | null } = { work: null };
+  const emitNative = (event: HarnessEvent) =>
+    nativeOutputSink(responseScope.work, () => live.onEvent(event))();
   try {
-    const blocks = promptBlocks(input.text, input.attachments);
-    if (blocks.length === 0) return;
-    live.agentTools.clear();
-    retireCursorSubagentPolling(live);
-    live.subagentRuns.clear();
-    live.subagentRevisions = {};
-    live.backgroundAgentTools.clear();
-    live.taskListTools.clear();
-    live.promptActive = true;
-    const response = live.acp.request("session/prompt", {
-      sessionId: live.acpSessionId,
-      prompt: blocks,
-    });
-    input.onAccepted?.();
-    const result = await response;
-    live.promptActive = false;
-    if (live.cancelled) {
+    try {
+      const blocks = promptBlocks(input.text, input.attachments);
+      if (blocks.length === 0) return;
+      // Settled tools from earlier turns no longer need lookup state. Keep
+      // background agents and pending enrichment until their work has ended.
+      for (const [id, status] of live.toolStatuses) {
+        if (
+          (status === "completed" || status === "failed" || status === "cancelled") &&
+          !live.backgroundAgentTools.has(id) &&
+          !live.pendingToolEnrichments.has(id)
+        ) {
+          live.toolStatuses.delete(id);
+          live.enrichedTools.delete(id);
+        }
+      }
+      live.agentTools.clear();
+      nativeOutputSink(responseScope.work, retireCursorSubagentPolling)(live);
+      live.subagentRuns.clear();
+      live.subagentRevisions = {};
       live.backgroundAgentTools.clear();
-      return;
+      live.taskListTools.clear();
+      live.promptActive = true;
+      const response = acp.request(
+        "session/prompt",
+        {
+          sessionId: live.acpSessionId,
+          prompt: blocks,
+        },
+        0,
+        (value, work) => {
+          responseScope.work?.finish();
+          responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null;
+          return value;
+        },
+      );
+      input.onAccepted?.();
+      const result = await response;
+      live.promptActive = false;
+      if (live.cancelled) {
+        live.backgroundAgentTools.clear();
+        return;
+      }
+      nativeOutputSink(responseScope.work, settleCursorBackgroundAgents)(live, "completed");
+      // Final enrichment is optional and must not hold turn completion.
+      void nativeOutputSink(
+        responseScope.work,
+        refreshCursorSubagents,
+      )(live).catch((error: unknown) => {
+        console.warn("[cursor] Final subagent refresh failed", error);
+      });
+      if (live.cancelled || live.muteUpdates) return;
+      live.subagentFinalPolls = 3;
+      nativeOutputSink(responseScope.work, scheduleCursorSubagents)(live, 500);
+      emitNative({ type: "message.completed" });
+      emitNative({ type: "reasoning.completed" });
+      reportAcpStopReason(result, emitNative);
+      nativeOutputSink(responseScope.work, wakeCursorToolEnrichment)(live);
+    } catch (error) {
+      live.promptActive = false;
+      if (live.cancelled) return;
+      nativeOutputSink(responseScope.work, settleCursorBackgroundAgents)(live, "failed");
+      emitNative({
+        type: "session.error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
     }
-    settleCursorBackgroundAgents(live, "completed");
-    await refreshCursorSubagents(live);
-    if (live.cancelled || live.muteUpdates) return;
-    live.subagentFinalPolls = 3;
-    scheduleCursorSubagents(live, 500);
-    live.onEvent({ type: "message.completed" });
-    live.onEvent({ type: "reasoning.completed" });
-    reportAcpStopReason(result, live.onEvent);
-    wakeCursorToolEnrichment(live);
-  } catch (error) {
-    live.promptActive = false;
-    if (live.cancelled) return;
-    settleCursorBackgroundAgents(live, "failed");
-    live.onEvent({
-      type: "session.error",
-      message: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
+  } finally {
+    responseScope.work?.finish();
   }
 }
 
@@ -517,32 +766,39 @@ function handleNotification(live: Live, method: string, params: unknown) {
 }
 
 async function handleRequest(live: Live, id: number, method: string, params: unknown) {
-  if (method === "session/request_permission") {
-    await handlePermission(live, id, params);
-    return;
-  }
-  if (method === "cursor/ask_question") {
-    await handleAskQuestion(live, id, params);
-    return;
-  }
-  if (method === "cursor/create_plan") {
-    const rec = asRecord(params);
-    const plan = typeof rec?.plan === "string" ? rec.plan : "";
-    if (plan) live.onEvent({ type: "plan", text: plan });
-    await live.acp.respond(id, { outcome: { outcome: "accepted" } });
-    return;
-  }
-  if (isCursorTodoUpdate(method)) {
-    emitCursorTodoUpdate(live, params);
-    await live.acp.respond(id, {}).catch(() => undefined);
-    return;
-  }
-  if (method === "cursor/task") {
-    handleCursorTask(live, params);
-    await live.acp.respond(id, {}).catch(() => undefined);
-    return;
-  }
-  await live.acp.respond(id, {}).catch(() => undefined);
+  return runNativeOutputWork(async (outputWork) => {
+    const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+      live.onEvent(event),
+    );
+    if (method === "session/request_permission") {
+      await nativeOutputSink(outputWork, handlePermission)(live, id, params);
+      return;
+    }
+    if (method === "cursor/ask_question") {
+      await nativeOutputSink(outputWork, handleAskQuestion)(live, id, params);
+      return;
+    }
+    if (method === "cursor/create_plan") {
+      const rec = asRecord(params);
+      const plan = typeof rec?.plan === "string" ? rec.plan : "";
+      if (plan) emitNative({ type: "plan", text: plan });
+      await nativeOutputSink(outputWork, () =>
+        live.acp.respond(id, { outcome: { outcome: "accepted" } }),
+      )();
+      return;
+    }
+    if (isCursorTodoUpdate(method)) {
+      nativeOutputSink(outputWork, emitCursorTodoUpdate)(live, params);
+      await nativeOutputSink(outputWork, () => live.acp.respond(id, {}))().catch(() => undefined);
+      return;
+    }
+    if (method === "cursor/task") {
+      nativeOutputSink(outputWork, handleCursorTask)(live, params);
+      await nativeOutputSink(outputWork, () => live.acp.respond(id, {}))().catch(() => undefined);
+      return;
+    }
+    await nativeOutputSink(outputWork, () => live.acp.respond(id, {}))().catch(() => undefined);
+  });
 }
 
 function isCursorTodoUpdate(method: string): boolean {
@@ -601,155 +857,202 @@ function handleCursorTask(live: Live, params: unknown): void {
 }
 
 async function handleAskQuestion(live: Live, id: number, params: unknown) {
-  const rec = asRecord(params);
-  const questions = questionsFromUnknown(params);
-  const title =
-    (typeof rec?.title === "string" && rec.title.trim()) || questionPromptTitle(questions);
-  const callId =
-    typeof rec?.toolCallId === "string"
-      ? rec.toolCallId
-      : typeof rec?.tool_call_id === "string"
-        ? rec.tool_call_id
-        : undefined;
-  live.onEvent({
-    type: "question.asked",
-    requestId: id,
-    title,
-    questions,
-    ...(callId ? { callId } : {}),
-  });
+  return runNativeOutputWork(
+    async (outputWork) => {
+      const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+        live.onEvent(event),
+      );
+      const rec = asRecord(params);
+      const questions = questionsFromUnknown(params);
+      const title =
+        (typeof rec?.title === "string" && rec.title.trim()) || questionPromptTitle(questions);
+      const callId =
+        typeof rec?.toolCallId === "string"
+          ? rec.toolCallId
+          : typeof rec?.tool_call_id === "string"
+            ? rec.tool_call_id
+            : undefined;
+      const event: Extract<HarnessEvent, { type: "question.asked" }> = {
+        type: "question.asked",
+        requestId: id,
+        title,
+        questions,
+        dismissAction: "skip",
+        ...(callId ? { callId } : {}),
+      };
+      captureNativeOutputWorkEvent(outputWork, event);
 
-  const reply = await new Promise<UserQuestionReply>((resolve) => {
-    live.questions.set(id, resolve);
-  });
-  live.questions.delete(id);
-  live.onEvent({
-    type: "question.resolved",
-    requestId: id,
-    decision: reply.kind,
-    ...(reply.kind === "answered" ? { reply } : {}),
-  });
-
-  await live.acp.respond(id, cursorAskQuestionResponse(reply, questions)).catch(() => undefined);
-}
-
-function cursorAskQuestionResponse(
-  reply: UserQuestionReply,
-  questions: UserQuestion[],
-): Record<string, unknown> {
-  if (reply.kind !== "answered") {
-    return { outcome: { outcome: "skipped", reason: "User skipped" } };
-  }
-  return {
-    outcome: {
-      outcome: "answered",
-      answers: questions.map((question) => ({
-        questionId: question.id,
-        selectedOptionIds: (reply.answers[question.id] ?? []).filter(
-          (optionId) => optionId !== CUSTOM_OPTION_ID,
-        ),
-      })),
+      const replyPromise = new Promise<UserQuestionReply>((resolve) => {
+        live.questions.set(
+          id,
+          Object.assign(resolve, {
+            event,
+            deliver: (reply: UserQuestionReply) =>
+              nativeOutputSink(outputWork, () =>
+                live.acp.respond(id, cursorAskQuestionResponse(reply, questions)),
+              )(),
+          }),
+        );
+      });
+      showNextQueuedQuestion(live);
+      const reply = await replyPromise;
+      live.questions.delete(id);
+      emitNative({
+        type: "question.resolved",
+        requestId: id,
+        decision: live.cancelled || live.muteUpdates ? "cancelled" : reply.kind,
+        ...(reply.kind === "answered" ? { reply } : {}),
+      });
+      showNextQueuedQuestion(live);
     },
-  };
+    { additionalInput: true },
+  );
 }
 
 async function handlePermission(live: Live, id: number, params: unknown) {
-  const rec = asRecord(params);
-  const subject = asRecord(rec?.subject);
-  const tool =
-    asRecord(rec?.toolCall) ?? asRecord(subject?.toolCall) ?? asRecord(subject) ?? rec ?? {};
-  const command = stringField(subject ?? {}, "command");
-  const kind = stringField(tool, "kind") ?? stringField(subject ?? {}, "kind");
-  const preview = mergeToolPreview(
-    extractToolPreview(tool, tool),
-    subject ? extractToolPreview(subject, subject) : undefined,
-  );
-  const title =
-    composeToolTitle({
-      kind,
-      title: toolLabel(tool, subject ?? tool) ?? command ?? stringField(rec ?? {}, "title"),
-      command: command ?? extractShellCommand(tool.rawInput, tool.raw_input, tool.input, subject),
-      skill: extractSkillName(tool.rawInput, tool.raw_input, tool.input, subject),
-      path: preview?.path,
-      query: preview?.query ?? extractSearchQuery(tool) ?? extractSearchQuery(subject),
-      previewKind: preview?.kind,
-    }) || "Permission";
-  const callId =
-    stringField(tool, "toolCallId") ??
-    stringField(tool, "tool_call_id") ??
-    stringField(rec ?? {}, "toolCallId") ??
-    stringField(subject ?? {}, "toolCallId");
-  if (callId) {
-    live.onEvent({
-      type: "tool.updated",
-      callId,
-      title,
-      kind,
-      status: live.toolStatuses.get(callId),
-      preview,
-    });
-    if (preview?.path || preview?.query) {
-      live.enrichedTools.add(callId);
-      live.pendingToolEnrichments.delete(callId);
-    } else if (needsCursorToolEnrichment(kind, title, preview)) {
-      queueCursorToolEnrichment(live, callId, kind);
-    }
-  }
+  return runNativeOutputWork(
+    async (outputWork) => {
+      const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+        live.onEvent(event),
+      );
+      const overlap = rejectOverlappingApproval(
+        live.approvals,
+        id,
+        nativeOutputSink(outputWork, (onActualWrite: ApprovalActualWriteObserver) =>
+          live.acp.respond(id, { outcome: { outcome: "cancelled" } }, onActualWrite),
+        ),
+      );
+      if (overlap) {
+        await overlap;
+        return;
+      }
+      const rec = asRecord(params);
+      const subject = asRecord(rec?.subject);
+      const tool =
+        asRecord(rec?.toolCall) ?? asRecord(subject?.toolCall) ?? asRecord(subject) ?? rec ?? {};
+      const command = stringField(subject ?? {}, "command");
+      const kind = stringField(tool, "kind") ?? stringField(subject ?? {}, "kind");
+      const preview = mergeToolPreview(
+        extractToolPreview(tool, tool),
+        subject ? extractToolPreview(subject, subject) : undefined,
+      );
+      const title =
+        composeToolTitle({
+          kind,
+          title: toolLabel(tool, subject ?? tool) ?? command ?? stringField(rec ?? {}, "title"),
+          command:
+            command ?? extractShellCommand(tool.rawInput, tool.raw_input, tool.input, subject),
+          skill: extractSkillName(tool.rawInput, tool.raw_input, tool.input, subject),
+          path: preview?.path,
+          query: preview?.query ?? extractSearchQuery(tool) ?? extractSearchQuery(subject),
+          previewKind: preview?.kind,
+        }) || "Permission";
+      const callId =
+        stringField(tool, "toolCallId") ??
+        stringField(tool, "tool_call_id") ??
+        stringField(rec ?? {}, "toolCallId") ??
+        stringField(subject ?? {}, "toolCallId");
+      if (callId) {
+        emitNative({
+          type: "tool.updated",
+          callId,
+          title,
+          kind,
+          status: live.toolStatuses.get(callId),
+          preview,
+        });
+        if (preview?.path || preview?.query) {
+          live.enrichedTools.add(callId);
+          live.pendingToolEnrichments.delete(callId);
+        } else if (needsCursorToolEnrichment(kind, title, preview)) {
+          nativeOutputSink(outputWork, queueCursorToolEnrichment)(live, callId, kind);
+        }
+      }
 
-  const options = Array.isArray(rec?.options) ? rec.options : [];
-  const optionIds = options
-    .map((item) => asRecord(item)?.optionId)
-    .filter((value): value is string => typeof value === "string");
+      const options = Array.isArray(rec?.options) ? rec.options : [];
+      const optionIds = options
+        .map((item) => asRecord(item)?.optionId)
+        .filter((value): value is string => typeof value === "string");
 
-  if (live.planning) {
-    const normalized = (preview?.kind ?? kind ?? "").toLowerCase();
-    const readOnly = normalized === "read" || normalized === "search";
-    const optionId = readOnly
-      ? pickOption(optionIds, ["allow-once", "allow_once", "allow"])
-      : pickOption(optionIds, ["reject-once", "reject_once", "reject-always"]);
-    await live.acp.respond(id, {
-      outcome: {
-        outcome: "selected",
-        optionId: optionId ?? (readOnly ? "allow-once" : "reject-once"),
-      },
-    });
-    return;
-  }
+      if (live.planning) {
+        const normalized = (preview?.kind ?? kind ?? "").toLowerCase();
+        const readOnly = normalized === "read" || normalized === "search";
+        const optionId = readOnly
+          ? pickOption(optionIds, ["allow-once", "allow_once", "allow"])
+          : pickOption(optionIds, ["reject-once", "reject_once", "reject-always"]);
+        await nativeOutputSink(outputWork, () =>
+          live.acp.respond(id, {
+            outcome: {
+              outcome: "selected",
+              optionId: optionId ?? (readOnly ? "allow-once" : "reject-once"),
+            },
+          }),
+        )();
+        return;
+      }
 
-  const auto = pickAutoOption(live.runtimeMode, kind, optionIds);
-  if (auto) {
-    await live.acp.respond(id, {
-      outcome: { outcome: "selected", optionId: auto },
-    });
-    return;
-  }
+      const auto = pickAutoOption(live.runtimeMode, kind, optionIds);
+      if (auto) {
+        await nativeOutputSink(outputWork, () =>
+          live.acp.respond(id, {
+            outcome: { outcome: "selected", optionId: auto },
+          }),
+        )();
+        return;
+      }
 
-  live.onEvent({
-    type: "approval.requested",
-    requestId: id,
-    title,
-    kind,
-    callId,
-    preview,
-  });
+      const pending = createPendingApproval((occurrenceId, decision) =>
+        emitNative({ type: "approval.resolved", requestId: id, occurrenceId, decision }),
+      );
+      const { occurrenceId } = pending;
+      live.approvals.set(id, pending);
+      try {
+        emitNative({
+          type: "approval.requested",
+          requestId: id,
+          occurrenceId,
+          title,
+          kind,
+          callId,
+          preview,
+        });
 
-  const decision = await new Promise<ApprovalDecision>((resolve) => {
-    live.approvals.set(id, resolve);
-  });
-  live.approvals.delete(id);
-  live.onEvent({ type: "approval.resolved", requestId: id, decision });
+        const decision = await pending.decision;
+        pending.report(decision);
+        if (!Array.from(liveByThread.values()).includes(live)) return;
 
-  const optionId =
-    decision === "allow"
-      ? pickOption(optionIds, ["allow-once", "allow_once", "allow-always", "allow_always"])
-      : pickOption(optionIds, ["reject-once", "reject_once", "reject-always"]);
+        const optionId =
+          decision === "allow"
+            ? pickOption(optionIds, ["allow-once", "allow_once", "allow-always", "allow_always"])
+            : pickOption(optionIds, ["reject-once", "reject_once", "reject-always"]);
 
-  await live.acp.respond(id, {
-    outcome: {
-      outcome: "selected",
-      optionId: optionId ?? (decision === "allow" ? "allow-once" : "reject-once"),
+        await nativeOutputSink(outputWork, () => {
+          if (!Array.from(liveByThread.values()).includes(live)) return Promise.resolve();
+          if (!ownsPendingApproval(live.approvals, id, pending)) {
+            pending.report("cancelled");
+            return live.acp.respond(
+              id,
+              { outcome: { outcome: "cancelled" } },
+              observePendingApprovalWrite(live.approvals, id, pending),
+            );
+          }
+          return live.acp.respond(
+            id,
+            {
+              outcome: {
+                outcome: "selected",
+                optionId: optionId ?? (decision === "allow" ? "allow-once" : "reject-once"),
+              },
+            },
+            observePendingApprovalWrite(live.approvals, id, pending),
+          );
+        })();
+      } finally {
+        releasePendingApproval(live.approvals, id, pending);
+      }
     },
-  });
+    { additionalInput: true },
+  );
 }
 
 function handleSessionUpdate(live: Live, params: unknown) {
@@ -911,7 +1214,7 @@ function cursorAgentTitle(
 }
 
 function retireCursorSubagentPolling(live: Live): void {
-  if (live.subagentTimer) clearTimeout(live.subagentTimer);
+  if (live.subagentTimer) cancelNativeOutputCallback(live.subagentTimer);
   live.subagentTimer = undefined;
   live.subagentFinalPolls = 0;
   live.subagentGeneration += 1;
@@ -920,42 +1223,57 @@ function retireCursorSubagentPolling(live: Live): void {
 function scheduleCursorSubagents(live: Live, delay: number): void {
   if (live.muteUpdates || live.subagentTimer || live.subagentRefresh || !live.agentTools.size)
     return;
-  live.subagentTimer = setTimeout(() => {
-    live.subagentTimer = undefined;
-    void refreshCursorSubagents(live);
-  }, delay);
+  live.subagentTimer = scheduleNativeOutputCallback(
+    () => {
+      live.subagentTimer = undefined;
+      return refreshCursorSubagents(live);
+    },
+    delay,
+    { additionalInput: true },
+  );
 }
 
 function refreshCursorSubagents(live: Live): Promise<void> {
   if (live.subagentRefresh) return live.subagentRefresh;
   if (live.muteUpdates || !live.agentTools.size) return Promise.resolve();
   const generation = live.subagentGeneration;
-  const job = (async () => {
-    const runs = await readStoredCursorSubagentRuns(
-      live.acpSessionId,
-      [...live.agentTools.keys()].slice(-256),
-      live.subagentRevisions,
-    ).catch(() => []);
-    if (live.muteUpdates || live.subagentGeneration !== generation) return;
-    for (const run of runs) {
-      if (!live.agentTools.has(run.toolCallId)) continue;
-      live.subagentRevisions[run.agentId] = run.revision;
-      live.subagentRuns.set(run.toolCallId, run);
-      for (const event of cursorSubagentEvents(run, live.agentTools.get(run.toolCallId)))
-        live.onEvent(event);
-    }
-  })().finally(() => {
-    live.subagentRefresh = undefined;
-    if (live.subagentGeneration !== generation) {
-      if (live.promptActive) scheduleCursorSubagents(live, 0);
-      return;
-    }
-    if (live.promptActive) scheduleCursorSubagents(live, 1_000);
-    else if (live.subagentFinalPolls > 0) {
-      live.subagentFinalPolls -= 1;
-      scheduleCursorSubagents(live, 500);
-    }
-  });
+  const outputWork = captureNativeOutputWork({ additionalInput: true });
+  const emitNative = nativeOutputSink(outputWork, (event: HarnessEvent) => live.onEvent(event));
+  const job = trackNativeOutputWork(
+    (async () => {
+      const runs = await withTimeout(
+        readStoredCursorSubagentRuns(
+          live.acpSessionId,
+          [...live.agentTools.keys()].slice(-256),
+          live.subagentRevisions,
+        ),
+        20_000,
+        "Cursor subagent refresh timed out",
+      ).catch(() => []);
+      if (live.muteUpdates || live.subagentGeneration !== generation) return;
+      for (const run of runs) {
+        if (!live.agentTools.has(run.toolCallId)) continue;
+        live.subagentRevisions[run.agentId] = run.revision;
+        live.subagentRuns.set(run.toolCallId, run);
+        for (const event of cursorSubagentEvents(run, live.agentTools.get(run.toolCallId)))
+          emitNative(event);
+      }
+    })().finally(
+      nativeOutputSink(outputWork, () => {
+        live.subagentRefresh = undefined;
+        if (live.subagentGeneration !== generation) {
+          if (live.promptActive) scheduleCursorSubagents(live, 0);
+          return;
+        }
+        if (live.promptActive) scheduleCursorSubagents(live, 1_000);
+        else if (live.subagentFinalPolls > 0) {
+          live.subagentFinalPolls -= 1;
+          scheduleCursorSubagents(live, 500);
+        }
+      }),
+    ),
+    outputWork,
+  );
   live.subagentRefresh = job;
   return job;
 }
@@ -1036,50 +1354,68 @@ function scheduleCursorToolEnrichment(live: Live, delay: number): void {
   ) {
     return;
   }
-  live.toolEnrichmentTimer = setTimeout(() => {
-    live.toolEnrichmentTimer = undefined;
-    void refreshCursorToolEnrichments(live);
-  }, delay);
+  live.toolEnrichmentTimer = scheduleNativeOutputCallback(
+    () => {
+      live.toolEnrichmentTimer = undefined;
+      return refreshCursorToolEnrichments(live);
+    },
+    delay,
+    { additionalInput: true },
+  );
 }
 
 function wakeCursorToolEnrichment(live: Live): void {
-  if (live.toolEnrichmentTimer) clearTimeout(live.toolEnrichmentTimer);
+  if (live.toolEnrichmentTimer) cancelNativeOutputCallback(live.toolEnrichmentTimer);
   live.toolEnrichmentTimer = undefined;
   scheduleCursorToolEnrichment(live, 0);
 }
 
 async function refreshCursorToolEnrichments(live: Live): Promise<void> {
-  if (live.muteUpdates || live.toolEnrichmentRunning || live.pendingToolEnrichments.size === 0) {
-    return;
-  }
-  live.toolEnrichmentRunning = true;
-  const callIds = [...live.pendingToolEnrichments.keys()].slice(0, 256);
-  try {
-    const storedCalls = await readStoredCursorToolCalls(live.acpSessionId, callIds).catch(() => []);
-    if (live.muteUpdates) return;
-
-    for (const stored of storedCalls) {
-      const pending = live.pendingToolEnrichments.get(stored.toolCallId);
-      if (!pending) continue;
-      if (applyStoredCursorToolCall(live, stored, pending.kind)) {
-        live.pendingToolEnrichments.delete(stored.toolCallId);
+  return runNativeOutputWork(
+    async (outputWork) => {
+      if (
+        live.muteUpdates ||
+        live.toolEnrichmentRunning ||
+        live.pendingToolEnrichments.size === 0
+      ) {
+        return;
       }
-    }
+      live.toolEnrichmentRunning = true;
+      const callIds = [...live.pendingToolEnrichments.keys()].slice(0, 256);
+      try {
+        const storedCalls = await readStoredCursorToolCalls(live.acpSessionId, callIds).catch(
+          () => [],
+        );
+        if (live.muteUpdates) return;
 
-    for (const callId of callIds) {
-      const pending = live.pendingToolEnrichments.get(callId);
-      if (!pending) continue;
-      const attempts = pending.attempts + 1;
-      if (attempts >= TOOL_ENRICH_MAX_ATTEMPTS) {
-        live.pendingToolEnrichments.delete(callId);
-      } else {
-        live.pendingToolEnrichments.set(callId, { ...pending, attempts });
+        for (const stored of storedCalls) {
+          const pending = live.pendingToolEnrichments.get(stored.toolCallId);
+          if (!pending) continue;
+          if (nativeOutputSink(outputWork, applyStoredCursorToolCall)(live, stored, pending.kind)) {
+            live.pendingToolEnrichments.delete(stored.toolCallId);
+          }
+        }
+
+        for (const callId of callIds) {
+          const pending = live.pendingToolEnrichments.get(callId);
+          if (!pending) continue;
+          const attempts = pending.attempts + 1;
+          if (attempts >= TOOL_ENRICH_MAX_ATTEMPTS) {
+            live.pendingToolEnrichments.delete(callId);
+          } else {
+            live.pendingToolEnrichments.set(callId, { ...pending, attempts });
+          }
+        }
+      } finally {
+        live.toolEnrichmentRunning = false;
+        nativeOutputSink(outputWork, scheduleCursorToolEnrichment)(
+          live,
+          nativeOutputSink(outputWork, toolEnrichmentDelay)(live),
+        );
       }
-    }
-  } finally {
-    live.toolEnrichmentRunning = false;
-    scheduleCursorToolEnrichment(live, toolEnrichmentDelay(live));
-  }
+    },
+    { additionalInput: true },
+  );
 }
 
 function applyStoredCursorToolCall(
@@ -1403,12 +1739,13 @@ function coerceMaybeString(rec: Record<string, unknown>, key: string): string | 
 export function __cursorTestReset(): void {
   for (const live of liveByThread.values()) {
     retireCursorSubagentPolling(live);
-    if (live.toolEnrichmentTimer) clearTimeout(live.toolEnrichmentTimer);
+    if (live.toolEnrichmentTimer) cancelNativeOutputCallback(live.toolEnrichmentTimer);
     live.muteUpdates = true;
   }
   liveByThread.clear();
   resumeByThread.clear();
-  cancelledThreads.clear();
+  turnsByThread.clear();
+  sourceEpochByThread.clear();
 }
 
 function textFromContent(content: unknown, separator = ""): string {

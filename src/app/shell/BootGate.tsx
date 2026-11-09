@@ -1,7 +1,7 @@
 import { useLayoutEffect, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-/** A transferred workspace stays inert until its native ownership acknowledgement succeeds. */
+/** A transferred workspace stays inert until native acknowledges it; a failed acknowledgement boots normally. */
 export function BootGate({
   children,
   transferred,
@@ -23,7 +23,11 @@ export function BootGate({
           .then(() => {
             if (!disposed) setTransferReady(true);
           })
-          .catch(console.error);
+          .catch((error: unknown) => {
+            // An inert window is worse than a normal one; boot normally and warn.
+            console.warn("window_transfer_ready failed; continuing with a normal boot", error);
+            if (!disposed) setTransferReady(true);
+          });
       });
     });
     return () => {

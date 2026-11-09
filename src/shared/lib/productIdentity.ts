@@ -8,9 +8,11 @@
 export const PRODUCT_IDENTITY = Object.freeze({
   displayName: "bycoda",
   developerName: "Bahadır Halil Yalçın",
-  websiteUrl: "https://bycoda.bahadrhllyalcn.com",
-  contactEmail: "info@bahadrhllyalcn.com",
+  websiteUrl: "https://bycoda.codes",
+  contactEmail: "info@bycoda.codes",
+  developerContactEmail: "info@bahadrhllyalcn.com",
   logoSrc: "/brand/bycoda/mark-black.svg",
+  smallLogoSrc: "/brand/bycoda/mark-small-black.svg",
   wordmarkSrc: "/brand/bycoda/wordmark-full-dark.svg",
   horizontalLogoSrc: "/brand/bycoda/logo-horizontal-black.svg",
   repositoryUrl: "https://github.com/bahadryalcn/bycoda" as string | null,

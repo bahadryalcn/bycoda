@@ -5,6 +5,21 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Block } from "../model/session";
 import { ActivityDock } from "./ActivityDock";
+import { SubagentStateLine } from "./SubagentAnatomy";
+import { HARNESS_ICONS } from "./HarnessIcon";
+
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
 
 let container: HTMLDivElement;
 let root: Root;
@@ -23,7 +38,7 @@ function props(
 ): ComponentProps<typeof ActivityDock> {
   return {
     sessionId: "s1",
-    blocks: [user],
+    blocks: [user, { id: "answer", role: "assistant", text: "Finished response" }],
     busy: false,
     pendingQuestion: false,
     atEnd: true,
@@ -61,13 +76,121 @@ afterEach(() => {
 });
 
 describe("ActivityDock", () => {
+  it("renders a delegated provider's icon and exact account beside its model", () => {
+    render({
+      sessionId: "delegated-provider-identity",
+      harness: "codex",
+      busy: true,
+      blocks: [user],
+      delegatedAgents: [
+        {
+          blockId: "delegated:claude-work",
+          sessionId: "claude-work",
+          harness: "claude",
+          providerAccountId: "work",
+          name: "Review",
+          model: "Haiku",
+          kind: "agent",
+          status: "running",
+          detail: "",
+        },
+      ],
+    });
+    act(() => container.querySelector<HTMLButtonElement>("[data-dock-toggle]")?.click());
+    const row = container.querySelector('[data-dock-agent="delegated:claude-work"]')!;
+    expect(row.querySelector("img")?.getAttribute("src")).toBe(HARNESS_ICONS.claude);
+    expect(row.textContent).toContain("work");
+    expect(row.getAttribute("aria-label")).toContain("work");
+  });
+  it("shows counts on the disclosure and points toward its opening direction", () => {
+    render({ sessionId: "info-card", busy: true, blocks: [user, agent] });
+    const toggle = container.querySelector<HTMLButtonElement>("[data-dock-toggle]")!;
+    expect(toggle.textContent).toContain("1 running");
+    expect(toggle.querySelector("svg")?.classList.contains("rotate-180")).toBe(false);
+    expect(container.querySelector('[aria-label="Background work"]')).toBeNull();
+    act(() => toggle.click());
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle.querySelector("svg")?.classList.contains("rotate-180")).toBe(true);
+  });
+  it("keeps child identity and failed step metrics separate from lifecycle and opens the exact run", () => {
+    const onOpenAgent = vi.fn();
+    const run: Block = {
+      ...agent,
+      tool: { ...agent.tool!, status: "completed" },
+      agentRun: {
+        name: "Completed review",
+        model: "gpt-6.1-sol",
+        steps: [{ id: "check", kind: "tool", text: "Check", status: "failed" }],
+        startedAt: 10_000,
+        endedAt: 72_000,
+      },
+    };
+    render({
+      sessionId: "compact-identity",
+      harness: "codex",
+      busy: true,
+      blocks: [user, run],
+      onOpenAgent,
+    });
+    act(() => container.querySelector<HTMLButtonElement>("button[data-dock-toggle]")?.click());
+    const row = container.querySelector<HTMLButtonElement>('[data-dock-agent="a1"]')!;
+    expect(row.getAttribute("data-dock-agent-state")).toBe("done");
+    expect(row.getAttribute("aria-label")).toContain("Done");
+    expect(row.querySelector(".activity-dock-agent-identity")?.textContent).toContain(
+      "Completed review",
+    );
+    expect(row.querySelector(".activity-dock-agent-identity")?.textContent).toContain(
+      "gpt-6.1-sol",
+    );
+    expect(row.querySelector(".activity-dock-agent-metrics")?.textContent).toContain("1 failed");
+    expect(row.querySelector(".activity-dock-agent-metrics")?.textContent).toContain("1m 2s");
+    act(() => row.click());
+    expect(onOpenAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ blockId: "a1", status: "done" }),
+    );
+  });
+
+  it("highlights failed steps without marking a running or completed agent as failed", () => {
+    const steps = [
+      { id: "read", kind: "tool" as const, text: "Read", status: "completed" },
+      { id: "test", kind: "tool" as const, text: "Test", status: "failed" },
+    ];
+    const run = { ...agent, agentRun: { name: "Reviewer", steps } };
+    render({ sessionId: "status-colors", busy: true, blocks: [user, run] });
+    act(() => container.querySelector<HTMLButtonElement>("button[data-dock-toggle]")?.click());
+    const row = dock()!.querySelector('[data-dock-agent="a1"]')!;
+    expect(row.getAttribute("aria-label")).toContain("Running");
+    const failed = [...row.querySelectorAll("span")].find(
+      (span) => span.textContent === "1 failed" && span.getAttribute("data-tone") === "danger",
+    );
+    expect(failed?.getAttribute("data-tone")).toBe("danger");
+    expect(row.textContent).toContain("2 steps, 1 failed");
+
+    act(() =>
+      root.render(
+        createElement(SubagentStateLine, {
+          block: { ...run, tool: { ...run.tool!, status: "completed" } },
+          busy: false,
+          steps,
+        }),
+      ),
+    );
+    const state = container.querySelector("[data-subagent-state]")!;
+    expect(state.textContent).toContain("Done");
+    expect(state.querySelector('[data-tone="success"]')?.textContent).toBe("Done");
+    const completedFailure = [...state.querySelectorAll("span")].find(
+      (span) => span.textContent === "1 failed" && span.getAttribute("data-tone") === "danger",
+    );
+    expect(completedFailure?.getAttribute("data-tone")).toBe("danger");
+  });
+
   it("renders nothing for a session that was idle when opened", () => {
     render();
     expect(dock()).toBeNull();
   });
 
   it("keeps Done up after work finishes until the composer is focused", () => {
-    render({ busy: true });
+    render({ busy: true, atEnd: false });
     expect(dock()?.getAttribute("data-activity-dock")).toBe("working");
     expect(dock()?.querySelector("[data-pacing-uncle]")).not.toBeNull();
     expect(
@@ -80,7 +203,7 @@ describe("ActivityDock", () => {
     ).toBe(false);
     expect(dock()?.querySelector("[data-pacing-uncle]")?.classList.contains("h-8")).toBe(true);
 
-    render({ busy: false });
+    render({ busy: false, atEnd: false });
     expect(dock()?.getAttribute("data-activity-dock")).toBe("done");
     expect(dock()?.querySelector("[data-pacing-uncle]")).toBeNull();
 
@@ -100,10 +223,54 @@ describe("ActivityDock", () => {
     expect(dock()).toBeNull();
   });
 
+  it("names the finished turn separately while a queued send has unknown delivery", () => {
+    render({ busy: true, deliveryUnconfirmed: true, atEnd: false });
+    render({ busy: false, deliveryUnconfirmed: true, atEnd: false });
+    expect(visibleSessionTestText(dock())).toContain("Turn activity: Finished");
+    expect(container.querySelector(".sr-only[role='status']")?.textContent).toBe(
+      "Turn activity: Finished",
+    );
+    render({ busy: false, deliveryUnconfirmed: false, atEnd: false });
+    expect(visibleSessionTestText(dock())).toContain("Done");
+  });
+
+  it("does not flash Done when the completed response is already visible", () => {
+    render({ busy: true });
+    render({ busy: false });
+    expect(dock()).toBeNull();
+    expect(container.querySelector(".sr-only[role='status']")?.textContent).toBe("");
+  });
+
+  it("does not carry previous Done into a newly submitted message before busy acknowledgement", () => {
+    render({ busy: true, atEnd: false });
+    render({ busy: false, atEnd: false });
+    expect(dock()?.getAttribute("data-activity-dock")).toBe("done");
+    const next: Block = { id: "u2", role: "user", text: "next" };
+    render({ busy: false, atEnd: false, blocks: [user, next] });
+    expect(dock()).toBeNull();
+    render({ busy: true, atEnd: false, blocks: [user, next] });
+    expect(dock()?.getAttribute("data-activity-dock")).toBe("working");
+    // The old transport may briefly settle before the new turn acknowledges.
+    render({ busy: false, atEnd: false, blocks: [user, next] });
+    expect(dock()).toBeNull();
+  });
+
   it("announces the state in a polite live region", () => {
     render({ busy: true, pendingQuestion: true });
-    const live = container.querySelector("[aria-live='polite']");
+    const live = container.querySelector(".sr-only[role='status']");
     expect(live?.textContent).toBe("Needs your input");
+  });
+
+  it("lets the visible question own its status without another waiting panel", () => {
+    render({ busy: true, pendingQuestion: true, questionPresented: true });
+    expect(dock()).toBeNull();
+    expect(container.querySelector(".sr-only[role='status']")?.textContent).toBe("");
+  });
+
+  it("keeps agent activity available while a question form is visible", () => {
+    render({ busy: true, pendingQuestion: true, questionPresented: true, blocks: [user, agent] });
+    expect(dock()).not.toBeNull();
+    expect(container.querySelector("button[data-dock-toggle]")).not.toBeNull();
   });
 
   it("lists agents behind a button and opens one on click", () => {
@@ -111,7 +278,8 @@ describe("ActivityDock", () => {
     render({ busy: true, blocks: [user, agent], onOpenAgent });
     expect(container.querySelector("[data-dock-agent]")).toBeNull();
 
-    const chip = container.querySelector<HTMLButtonElement>("button[aria-expanded]");
+    const chip = container.querySelector<HTMLButtonElement>("button[data-dock-toggle]");
+    expect(chip?.getAttribute("aria-label")).toContain("1 running");
     expect(chip?.textContent).toContain("1 running");
     act(() => chip?.click());
 
@@ -131,7 +299,7 @@ describe("ActivityDock", () => {
     };
     // Its own session id: the list's open state is remembered per session.
     render({ busy: true, blocks: [user, timed], sessionId: "s-timing" });
-    act(() => container.querySelector<HTMLButtonElement>("button[aria-expanded]")?.click());
+    act(() => container.querySelector<HTMLButtonElement>("button[data-dock-toggle]")?.click());
     expect(container.querySelector("[data-dock-agent='a1']")?.textContent).toContain("1m 2s");
   });
 
@@ -141,7 +309,7 @@ describe("ActivityDock", () => {
         /^Stop(ping)? /.test(button.getAttribute("aria-label") ?? ""),
       );
     const expand = () =>
-      act(() => container.querySelector<HTMLButtonElement>("button[aria-expanded]")?.click());
+      act(() => container.querySelector<HTMLButtonElement>("button[data-dock-toggle]")?.click());
 
     it("stops one running agent on its own and reads Stopping until it settles", async () => {
       let finish = () => {};
@@ -156,7 +324,7 @@ describe("ActivityDock", () => {
       });
       expand();
       const [button] = stopButtons();
-      expect(button.title).toBe("Stop this subagent");
+      expect(await tooltipText(button)).toBe("Stop this subagent");
       await act(async () => button.click());
       expect(onStopAgent).toHaveBeenCalledWith(expect.objectContaining({ callId: "a1" }));
       expect(stopButtons()[0].disabled).toBe(true);
@@ -176,10 +344,10 @@ describe("ActivityDock", () => {
       await act(async () => stopButtons()[0].click());
       const [button] = stopButtons();
       expect(button.disabled).toBe(false);
-      expect(button.title).toBe("Could not stop it. Try again.");
+      expect(await tooltipText(button)).toBe("Could not stop it. Try again.");
     });
 
-    it("has no per-agent button when only the whole turn can be interrupted", () => {
+    it("has no per-agent button when only the whole turn can be interrupted", async () => {
       const onStopAll = vi.fn(async () => {});
       render({
         busy: true,
@@ -194,7 +362,7 @@ describe("ActivityDock", () => {
       const all = [...container.querySelectorAll("button")].find(
         (button) => visibleSessionTestText(button) === "Stop all",
       );
-      expect(all?.title).toContain("Interrupt the whole turn");
+      expect(await tooltipText(all!)).toContain("Interrupt the whole turn");
       act(() => all?.click());
       expect(onStopAll).toHaveBeenCalled();
     });

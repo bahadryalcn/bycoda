@@ -1,19 +1,42 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager, State};
-
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::{AppHandle, Emitter, Manager};
+pub(crate) mod authority;
+pub(crate) mod canonical_store;
+pub(crate) mod cohort;
 mod content_search;
+mod delete_with_images;
+mod deletions;
+pub(crate) mod host_notes_fence;
 pub(crate) mod incremental;
+mod interruption_repair;
+mod legacy_blob;
+pub(crate) mod native_delivery;
+#[cfg(all(test, windows))]
+mod native_projection_join_tests;
+pub(crate) mod native_raw_capture;
+pub(crate) mod pin_receipts;
+mod provenance;
+mod provider_history;
+mod reader;
+pub(crate) mod references;
+#[path = "session_rewind.rs"]
+pub(crate) mod rewind;
+pub(crate) mod row_identity;
 pub mod usage;
+mod visibility;
+mod wal_watchdog;
+pub(crate) mod window_barrier;
+pub(crate) mod write_receipts;
+/// Project path identity shared with the frontend's `pathKey`.
+pub(crate) use content_search::path_key as project_path_key;
 pub use content_search::{ContentSearchOptions, ContentSearchResult};
-
 const MIGRATION_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
@@ -34,23 +57,53 @@ CREATE INDEX IF NOT EXISTS sessions_cwd_updated_idx
 "#;
 
 pub struct SessionStore {
-    conn: Mutex<Connection>,
+    /// Native construction identity, never a persisted store ID or IPC grant.
+    native_instance_id: uuid::Uuid,
+    _recovery_lease: Option<std::fs::File>,
+    conn: Arc<Mutex<cohort::RegisteredConnection>>,
     read_conn: Mutex<Option<Connection>>,
     /// Query-only connection for the UI's list/get reads. Search holds
     /// `read_conn` for its whole scan, so sharing it would queue these behind
     /// a search. `None` for in-memory stores, which fall back to `conn`.
     list_conn: Mutex<Option<Connection>>,
+    /// Query-only connection for long background reads: the Usage page report
+    /// (decodes every user block; on `list_conn` it queued sidebar and
+    /// transcript reads behind it for up to a second) and legacy-blob
+    /// verification. `None` for in-memory stores.
+    background_conn: Mutex<Option<Connection>>,
     /// One search-index builder at a time: the startup pass and a search both
     /// run `content_search::sync_index`, and indexing a session twice is waste.
     search_index_lock: Mutex<()>,
+    native_writer_barrier: Option<window_barrier::WindowBarrier>,
+    search_background_queued: AtomicBool,
+    search_background_urgent: AtomicBool,
+    search_background_query: Mutex<String>,
+    search_background_error: Mutex<Option<content_search::IndexFailure>>,
+    legacy_page_cache: Mutex<incremental::LegacyPageCache>,
+    output_write_receipts: Mutex<write_receipts::Ledger>,
 }
 
 impl SessionStore {
+    pub(crate) fn native_instance_id(&self) -> uuid::Uuid {
+        self.native_instance_id
+    }
+
     pub fn open(path: PathBuf) -> Result<Self, String> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        let conn = Connection::open(&path).map_err(|e| e.to_string())?;
+        // Stable across reopenings: never clear ingress created by this process.
+        static STARTED_AT: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
+        let started_at = *STARTED_AT.get_or_init(now_millis);
+        let admission = cohort::OpenAdmission::begin(&path)?;
+        let path = admission.path().to_owned();
+        let conn = cohort::RegisteredConnection::new(
+            Connection::open(&path).map_err(|e| e.to_string())?,
+            admission.registration.clone(),
+        );
+        conn.verify_connection(&conn)?;
+        admission.verify()?;
+        // Registration freezes exclude new opens, not writes by a registered
+        // live actor. The connection now owns its kernel lease independently.
+        drop(admission);
+        let _initialization = conn.initialization()?;
         // NORMAL in WAL mode survives an app crash; only an OS crash or power
         // loss can drop the last commits (never corrupts), and skips a WAL
         // fsync on every autocommit write. The size limit truncates the WAL
@@ -58,26 +111,35 @@ impl SessionStore {
         // (an index rebuild, a migration) left a 700 MB file behind for good.
         conn.execute_batch(
             "PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;
-             PRAGMA journal_size_limit = 67108864;",
+             PRAGMA journal_size_limit = 67108864; PRAGMA cache_size = -65536;",
         )
         .map_err(|e| e.to_string())?;
         migrate(&conn).map_err(|e| e.to_string())?;
+        ensure_window_in_flight(&conn).map_err(|e| e.to_string())?;
+        authority::clear_stale_cli_ingress(&conn, started_at);
         crate::ssh_group_defaults::migrate(&conn)?;
         crate::worktrees::reconcile_removals(&conn)?;
-        let open_reader = || -> Result<Connection, String> {
-            let reader = Connection::open(&path).map_err(|e| e.to_string())?;
-            reader
-                .execute_batch("PRAGMA query_only = ON; PRAGMA busy_timeout = 5000;")
-                .map_err(|e| e.to_string())?;
-            Ok(reader)
-        };
+        let open_reader = || reader::open_reader(&path, &conn);
         let read_conn = open_reader()?;
         let list_conn = open_reader()?;
+        let background_conn = open_reader()?;
+        let native_instance_id = uuid::Uuid::new_v4();
+        let recovery_lease = conn.create_recovery_lease(&native_instance_id.to_string())?;
         Ok(Self {
-            conn: Mutex::new(conn),
+            native_instance_id,
+            _recovery_lease: Some(recovery_lease),
+            conn: Arc::new(Mutex::new(conn)),
             read_conn: Mutex::new(Some(read_conn)),
             list_conn: Mutex::new(Some(list_conn)),
+            background_conn: Mutex::new(Some(background_conn)),
             search_index_lock: Mutex::new(()),
+            native_writer_barrier: None,
+            search_background_queued: AtomicBool::new(false),
+            search_background_urgent: AtomicBool::new(false),
+            search_background_query: Mutex::new(String::new()),
+            search_background_error: Mutex::new(None),
+            legacy_page_cache: Mutex::new(Default::default()),
+            output_write_receipts: Mutex::new(Default::default()),
         })
     }
 
@@ -89,18 +151,42 @@ impl SessionStore {
         migrate(&conn).map_err(|e| e.to_string())?;
         crate::ssh_group_defaults::migrate(&conn)?;
         Ok(Self {
-            conn: Mutex::new(conn),
+            native_instance_id: uuid::Uuid::new_v4(),
+            _recovery_lease: None,
+            conn: Arc::new(Mutex::new(cohort::RegisteredConnection::in_memory(conn))),
             read_conn: Mutex::new(None),
             list_conn: Mutex::new(None),
+            background_conn: Mutex::new(None),
             search_index_lock: Mutex::new(()),
+            native_writer_barrier: None,
+            search_background_queued: AtomicBool::new(false),
+            search_background_urgent: AtomicBool::new(false),
+            search_background_query: Mutex::new(String::new()),
+            search_background_error: Mutex::new(None),
+            legacy_page_cache: Mutex::new(Default::default()),
+            output_write_receipts: Mutex::new(Default::default()),
         })
     }
 
-    /// Runs a pure read on the dedicated read connection so it does not queue
-    /// behind a long write on `conn` (WAL lets readers run alongside it). An
-    /// in-memory store has no second connection, so it reads on `conn`.
-    /// Only for commands that never write, even lazily.
-    fn with_read_conn<T>(
+    pub(crate) fn managed_workspace_paths(&self) -> Result<Vec<String>, String> {
+        self.with_read_conn(|conn| {
+            let mut statement = conn.prepare("SELECT DISTINCT worktree_cwd FROM sessions WHERE workspace_id IS NOT NULL AND worktree_cwd IS NOT NULL").map_err(|e|e.to_string())?;
+            let rows = statement.query_map([], |row| row.get(0)).map_err(|e|e.to_string())?;
+            rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|e|e.to_string())
+        })
+    }
+
+    pub(crate) fn legacy_workspace_paths(&self) -> Result<Vec<String>, String> {
+        self.with_read_conn(|conn| {
+            let mut statement = conn.prepare("SELECT DISTINCT COALESCE(NULLIF(worktree_cwd,''),cwd) FROM sessions WHERE workspace_id IS NULL AND worktree_removed=0").map_err(|e|e.to_string())?;
+            let rows = statement.query_map([], |row|row.get(0)).map_err(|e|e.to_string())?;
+            rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|e|e.to_string())
+        })
+    }
+
+    /// Runs write-free queries on the WAL reader, away from long writes.
+    /// In-memory stores use `conn`; callbacks must never write, even lazily.
+    pub(crate) fn with_read_conn<T>(
         &self,
         read: impl FnOnce(&Connection) -> Result<T, String>,
     ) -> Result<T, String> {
@@ -109,30 +195,89 @@ impl SessionStore {
             .lock()
             .map_err(|_| "Session read store is locked")?;
         if let Some(conn) = list_conn.as_ref() {
-            read(conn)
+            reader::run(conn, read)
         } else {
             let conn = self.conn.lock().map_err(|_| "Session store is locked")?;
             read(&conn)
         }
     }
 
+    /// Like [`Self::with_read_conn`], on the connection reserved for long
+    /// background reads so they never hold `list_conn`.
+    pub(super) fn with_background_conn<T>(
+        &self,
+        read: impl FnOnce(&Connection) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let background_conn = self
+            .background_conn
+            .lock()
+            .map_err(|_| "Session background reader is locked")?;
+        match background_conn.as_ref() {
+            Some(conn) => reader::run(conn, read),
+            None => {
+                drop(background_conn);
+                self.with_read_conn(read)
+            }
+        }
+    }
+
     /// Every stored session id, archived ones included.
     pub(crate) fn session_ids(&self) -> Result<std::collections::HashSet<String>, String> {
         self.with_read_conn(|conn| {
-            conn.prepare("SELECT id FROM sessions")
-                .and_then(|mut statement| {
-                    statement
-                        .query_map([], |row| row.get::<_, String>(0))?
-                        .collect::<rusqlite::Result<_>>()
-                })
-                .map_err(|e| e.to_string())
+            conn.prepare(
+                "SELECT id FROM sessions UNION SELECT session_id FROM native_authority_floor",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<_>>()
+            })
+            .map_err(|e| e.to_string())
         })
     }
 
-    pub(crate) fn lock_conn(&self) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
+    pub(crate) fn lock_conn(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, cohort::RegisteredConnection>, String> {
         self.conn
             .lock()
             .map_err(|_| "Session store is locked".into())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_connection_unlocked(&self) -> bool {
+        self.conn.try_lock().is_ok()
+    }
+
+    fn process_write_admission(
+        &self,
+    ) -> Result<crate::native_window_lifecycle::NativeWriteAdmission, window_barrier::BarrierError>
+    {
+        crate::native_window_lifecycle::admit_process_persistence(
+            self.native_writer_barrier.as_ref(),
+        )
+    }
+
+    fn reserve_search_index_work(&self, urgent: bool) -> Option<Arc<content_search::IndexWork>> {
+        if urgent {
+            self.search_background_urgent.store(true, Ordering::Release);
+        }
+        if self.search_background_queued.swap(true, Ordering::AcqRel) {
+            return None;
+        }
+        match content_search::IndexWork::new(self) {
+            Ok(work) => Some(work),
+            Err(_) => {
+                self.search_background_queued
+                    .store(false, Ordering::Release);
+                None
+            }
+        }
+    }
+
+    #[allow(dead_code)] // Native-only inspection is not yet qualified migration input.
+    pub(crate) fn inspect_writer_cohort(&self) -> Result<cohort::Inspection, String> {
+        self.lock_conn()?.inspect()
     }
 }
 
@@ -140,11 +285,16 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
     init_with(
         || app.path().app_data_dir().map_err(|e| e.to_string()),
         SessionStore::open,
-        |store| {
+        |mut store| {
+            store.native_writer_barrier = app
+                .try_state::<window_barrier::WindowBarrier>()
+                .map(|barrier| barrier.inner().clone());
             app.manage(store);
         },
     )?;
     start_search_indexing(app);
+    wal_watchdog::start(app);
+    legacy_blob::start(app);
     Ok(())
 }
 
@@ -163,25 +313,63 @@ fn init_with(
 /// Builds the message-content search index for sessions it does not cover yet
 /// (a fresh migration, a bulk import) off the startup path.
 fn start_search_indexing(app: &AppHandle) {
+    queue_search_indexing(app, std::time::Duration::from_secs(5));
+}
+
+fn queue_search_indexing(app: &AppHandle, delay: std::time::Duration) {
+    let Some(store) = app.try_state::<SessionStore>() else {
+        return;
+    };
+    let Some(work) = store.reserve_search_index_work(delay.is_zero()) else {
+        return;
+    };
+    let worker_work = work.clone();
     let app = app.clone();
+    let recovery_app = app.clone();
     let spawned = std::thread::Builder::new()
         .name("session-search-index".into())
         .spawn(move || {
-            // Let startup finish first; this is catch-up work, not on the
-            // critical path, and a search indexes what it needs by itself.
-            std::thread::sleep(std::time::Duration::from_secs(5));
             if let Some(store) = app.try_state::<SessionStore>() {
-                content_search::index_in_background(&store);
+                // A user search wakes the already queued startup worker rather
+                // than waiting for its entire optional startup delay.
+                wait_for_search_index_start(delay, &store.search_background_urgent);
+                worker_work.run_queued(&store);
+            } else {
+                worker_work.not_started();
             }
         });
     if let Err(error) = spawned {
+        work.not_started();
+        if let Some(store) = recovery_app.try_state::<SessionStore>() {
+            store
+                .search_background_queued
+                .store(false, Ordering::Release);
+        }
         eprintln!("session search index thread: {error}");
     }
 }
 
+fn wait_for_search_index_start(delay: std::time::Duration, urgent: &AtomicBool) {
+    let deadline = std::time::Instant::now() + delay;
+    while let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) {
+        if urgent.swap(false, Ordering::AcqRel) {
+            return;
+        }
+        std::thread::sleep(remaining.min(std::time::Duration::from_millis(100)));
+    }
+    urgent.store(false, Ordering::Release);
+}
+
+#[cfg(test)]
+mod search_index_start_tests;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionUpsert {
+    #[serde(skip)]
+    pub preserve_activity_at: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub managed_by: Option<Value>,
     pub id: String,
     pub cwd: String,
     pub harness: String,
@@ -203,6 +391,12 @@ pub struct SessionUpsert {
     pub branch: Option<String>,
     #[serde(default)]
     pub worktree_cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_revision: Option<i64>,
     #[serde(default)]
     pub worktree_removed: bool,
     #[serde(default)]
@@ -215,6 +409,13 @@ pub struct SessionUpsert {
     /// One-shot context replay derived from the retained transcript prefix.
     #[serde(default)]
     pub pending_context_replay: Option<String>,
+    /// JSON of a flagged host divergence and its answer; opaque to the store.
+    #[serde(default)]
+    pub adopted_divergence: Option<String>,
+    /// JSON of the transcript head this computer and its host last agreed on;
+    /// opaque to the store.
+    #[serde(default)]
+    pub adopted_base: Option<String>,
     /// Original timestamps of an imported conversation. Used only when the row
     /// is first created, so imported history sorts where it happened rather
     /// than at the moment of the import; every later write moves `updated_at`
@@ -228,6 +429,13 @@ pub struct SessionUpsert {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionSummary {
+    pub last_activity_at: i64,
+    #[serde(default)]
+    pub interrupted: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_history: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub managed_by: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transcript_revision: Option<i64>,
     pub id: String,
@@ -246,6 +454,12 @@ pub struct SessionSummary {
     pub branch: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree_cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_revision: Option<i64>,
     #[serde(default)]
     pub worktree_removed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -269,6 +483,8 @@ pub struct SessionSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionRecord {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub managed_by: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transcript_revision: Option<i64>,
     pub id: String,
@@ -293,6 +509,12 @@ pub struct SessionRecord {
     pub branch: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree_cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_revision: Option<i64>,
     #[serde(default)]
     pub worktree_removed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -303,55 +525,211 @@ pub struct SessionRecord {
     pub rewind_history: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_context_replay: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adopted_divergence: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adopted_base: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
 
-#[tauri::command(async)]
-pub fn session_upsert(
-    store: State<'_, SessionStore>,
-    session: SessionUpsert,
+#[tauri::command]
+// App/window are injected natively; preserve the established flat session-save IPC fields.
+#[allow(clippy::too_many_arguments)]
+pub async fn session_upsert(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    mut session: SessionUpsert,
     expected_updated_at: Option<i64>,
     expected_revision: Option<i64>,
     expect_missing: Option<bool>,
-) -> Result<Option<SessionSummary>, String> {
-    validate_upsert(&session)?;
-    // Git lookups can spawn processes; never do that while holding the
-    // connection every other store command waits on.
-    let git = upsert_git_info(&session);
-    // `expectMissing` means "the row must not exist"; `expectedUpdatedAt` means
-    // "the row must still carry this stamp". Neither is the unguarded write.
-    let expected = if expect_missing == Some(true) {
-        Some(None)
-    } else {
-        expected_updated_at.map(Some)
-    };
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    if let Some(expected_revision) = expected_revision {
-        let revision: Option<i64> = conn
-            .query_row(
-                "SELECT revision FROM session_block_state WHERE session_id=?1",
-                [&session.id],
-                |r| r.get(0),
+    capture_output_receipt: Option<bool>,
+    preserve_activity_at: Option<bool>,
+) -> Result<Option<write_receipts::NativeWriteAck<SessionSummary>>, String> {
+    crate::harness::run_blocking("session_upsert", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        // Capture before admission/effects. A reload must never rebind old work to
+        // the replacement physical owner after the SQL write has already started.
+        let owner = write_receipts::capture_owner(&window, &store, capture_output_receipt);
+        let session_id = session.id.clone();
+        crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
+            validate_upsert(&session)?;
+            session.preserve_activity_at = preserve_activity_at.unwrap_or(false);
+            // Git lookups can spawn processes; never do that while holding the
+            // connection every other store command waits on.
+            let git = upsert_git_info(&session);
+            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            provenance::protect_client_upsert(&conn, &mut session)?;
+            write_receipts::upsert(
+                &store,
+                &conn,
+                &session,
+                git,
+                expected_updated_at,
+                expected_revision,
+                expect_missing,
+                owner,
             )
-            .optional()
-            .map_err(|e| e.to_string())?;
-        if revision != Some(expected_revision) {
-            return Ok(None);
-        }
-    }
-    // `None` back means the precondition failed and nothing was written.
-    upsert_session_with_git(&conn, &session, git, expected).map_err(|e| e.to_string())
+        })
+    })
+    .await
 }
 
 fn upsert_git_info(session: &SessionUpsert) -> crate::fs::GitInfo {
-    crate::fs::git_info_for(&crate::fs::expand_home(
+    // Scope by cwd and the caller's branch hint. Read HEAD as well so an
+    // external branch switch invalidates the longer save-path cache promptly.
+    type Key = (PathBuf, Option<String>, Option<Vec<u8>>);
+    type Entry = (std::time::Instant, crate::fs::GitInfo);
+    static CACHE: std::sync::OnceLock<Mutex<std::collections::HashMap<Key, Entry>>> =
+        std::sync::OnceLock::new();
+    let root = crate::fs::expand_home(
         session
             .worktree_cwd
             .as_deref()
             .filter(|cwd| !cwd.is_empty())
             .unwrap_or(&session.cwd),
-    ))
+    );
+    let marker = root
+        .ancestors()
+        .map(|dir| dir.join(".git"))
+        .find(|marker| marker.exists())
+        .unwrap_or_else(|| root.join(".git"));
+    let git_dir = if marker.is_file() {
+        std::fs::read_to_string(&marker).ok().and_then(|text| {
+            text.trim()
+                .strip_prefix("gitdir: ")
+                .map(|path| marker.parent().unwrap_or(&root).join(path))
+        })
+    } else {
+        Some(marker)
+    };
+    let head = git_dir.and_then(|dir| std::fs::read(dir.join("HEAD")).ok());
+    let key = (root.clone(), session.branch.clone(), head);
+    let cache = CACHE.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
+    if let Some(info) = cache.lock().ok().and_then(|entries| {
+        entries
+            .get(&key)
+            .filter(|(time, _)| time.elapsed().as_secs() < 30)
+            .map(|(_, info)| info.clone())
+    }) {
+        return info;
+    }
+    let info = crate::fs::git_info_for(&root);
+    // The shared Git cache has its own short TTL. Do not extend a stale branch
+    // result to 30 seconds when HEAD already proves a branch switch occurred.
+    if let Some(head) = key
+        .2
+        .as_deref()
+        .and_then(|bytes| std::str::from_utf8(bytes).ok())
+    {
+        let head = head.trim();
+        let matches = if let Some(branch) = head.strip_prefix("ref: refs/heads/") {
+            info.branch.as_deref() == Some(branch)
+        } else {
+            info.branch
+                .as_deref()
+                .is_some_and(|branch| head.starts_with(branch))
+        };
+        if !matches {
+            return info;
+        }
+    }
+    if let Ok(mut entries) = cache.lock() {
+        if entries.len() >= 256 {
+            entries.clear();
+        }
+        entries.insert(key, (std::time::Instant::now(), info.clone()));
+    }
+    info
+}
+
+/// The branch a save stores: Git's view of the checkout, else the caller's hint.
+fn stored_branch(session: &SessionUpsert, git: &crate::fs::GitInfo) -> Option<String> {
+    if session.worktree_removed {
+        return None;
+    }
+    git.branch
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            session
+                .branch
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+        })
+        .map(str::to_owned)
+}
+
+/// The summary a full upsert would return, for a committed metadata+delta save
+/// (`session_apply_delta` with `summary`). Row-owned fields come from the row.
+fn delta_summary(
+    conn: &Connection,
+    session: &SessionUpsert,
+    repo: Option<String>,
+    updated_at: i64,
+    revision: i64,
+) -> rusqlite::Result<Option<SessionSummary>> {
+    let trimmed = |value: &Option<String>| {
+        value
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    };
+    let Some((created_at, archived, pinned, draft)) = conn
+        .query_row(
+            "SELECT created_at, archived, pinned, is_draft FROM sessions WHERE id = ?1",
+            [&session.id],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)? != 0,
+                    row.get::<_, i64>(2)? != 0,
+                    row.get::<_, i64>(3)? != 0,
+                ))
+            },
+        )
+        .optional()?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(SessionSummary {
+        last_activity_at: stored_activity_at(conn, &session.id)?,
+        interrupted: stored_turn_interrupted(conn, &session.id)?,
+        provider_history: Some(provider_history::cached_or_stored(
+            conn,
+            &session.id,
+            &session.harness,
+        )?),
+        managed_by: provenance::stored_management(conn, &session.id)?,
+        transcript_revision: Some(revision),
+        id: session.id.clone(),
+        orchestration_lead_id: worker_parent(conn, &session.id)?,
+        orchestration: orchestration_summary(conn, &session.id)?,
+        cwd: session.cwd.clone(),
+        harness: session.harness.clone(),
+        model: session.model.clone(),
+        runtime_mode: session.runtime_mode.clone(),
+        title: session.title.clone(),
+        provider_session_id: trimmed(&session.provider_session_id),
+        branch: session.branch.clone(),
+        worktree_cwd: trimmed(&session.worktree_cwd),
+        workspace_mode: session.workspace_mode.clone(),
+        workspace_id: session.workspace_id.clone(),
+        workspace_revision: session.workspace_revision,
+        worktree_removed: session.worktree_removed,
+        repo,
+        additions: 0,
+        deletions: 0,
+        created_at,
+        updated_at,
+        archived,
+        pinned,
+        draft,
+        linked_work_item: session.linked_work_item.clone(),
+        automation_id: trimmed(&session.automation_id),
+    }))
 }
 
 fn validate_upsert(session: &SessionUpsert) -> Result<(), String> {
@@ -374,6 +752,23 @@ fn validate_upsert(session: &SessionUpsert) -> Result<(), String> {
             validate_id(automation_id, "automation")?;
         }
     }
+    if session
+        .workspace_mode
+        .as_deref()
+        .is_some_and(|mode| !matches!(mode, "current" | "worktree"))
+    {
+        return Err("Invalid workspace mode".into());
+    }
+    if let Some(workspace_id) = &session.workspace_id {
+        validate_id(workspace_id, "workspace")?;
+    }
+    if session
+        .workspace_revision
+        .is_some_and(|revision| revision < 0)
+        || session.workspace_revision.is_some() && session.workspace_id.is_none()
+    {
+        return Err("workspaceRevision requires a workspace and must be nonnegative".into());
+    }
     if !session.model_settings.is_object() {
         return Err("modelSettings must be an object".into());
     }
@@ -387,18 +782,27 @@ fn validate_upsert(session: &SessionUpsert) -> Result<(), String> {
 /// replaces anything: when the id, or the provider conversation it carries, is
 /// already stored, the call does nothing and returns `None`, so importing the
 /// same transcript twice cannot overwrite a chat that was continued since.
-#[tauri::command(async)]
-pub fn session_import(
-    store: State<'_, SessionStore>,
-    session: SessionUpsert,
+#[tauri::command]
+pub async fn session_import(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    mut session: SessionUpsert,
 ) -> Result<Option<SessionSummary>, String> {
-    validate_upsert(&session)?;
-    let git = upsert_git_info(&session);
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    if import_already_stored(&conn, &session).map_err(|e| e.to_string())? {
-        return Ok(None);
-    }
-    upsert_session_with_git(&conn, &session, git, None).map_err(|e| e.to_string())
+    crate::harness::run_blocking("session_import", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        let session_id = session.id.clone();
+        crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
+            validate_upsert(&session)?;
+            let git = upsert_git_info(&session);
+            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            if import_already_stored(&conn, &session).map_err(|e| e.to_string())? {
+                return Ok(None);
+            }
+            provenance::protect_client_upsert(&conn, &mut session)?;
+            upsert_session_with_git(&conn, &session, git, None).map_err(|e| e.to_string())
+        })
+    })
+    .await
 }
 
 fn import_already_stored(conn: &Connection, session: &SessionUpsert) -> rusqlite::Result<bool> {
@@ -421,10 +825,14 @@ fn import_already_stored(conn: &Connection, session: &SessionUpsert) -> rusqlite
 /// `harness:providerSessionId` for every stored session bound to a provider
 /// conversation, plus the id of every session an earlier import created (a
 /// read-only import has no provider binding to match on).
-#[tauri::command(async)]
-pub fn session_import_keys(store: State<'_, SessionStore>) -> Result<Vec<String>, String> {
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    import_keys(&conn).map_err(|e| e.to_string())
+#[tauri::command]
+pub async fn session_import_keys(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    crate::harness::run_blocking("session_import_keys", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        import_keys(&conn).map_err(|e| e.to_string())
+    })
+    .await
 }
 
 fn import_keys(conn: &Connection) -> rusqlite::Result<Vec<String>> {
@@ -457,40 +865,98 @@ fn generated_image_paths(blocks: &Value) -> Vec<String> {
 /// Keep a write reservation through the reference check and file cleanup. Other
 /// windows must not save a new reference between those two operations. A failed
 /// read skips cleanup entirely; leaking an asset is safer than deleting one in use.
-fn cleanup_unreferenced_generated_images(
-    conn: &Connection,
-    paths: &[String],
-    cleanup: impl FnOnce(&[String]) -> Result<(), String>,
-) -> Result<(), String> {
-    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
-        .map_err(|error| error.to_string())?;
-    let mut candidates: HashMap<PathBuf, String> = paths
+type ImageCandidates = HashMap<PathBuf, String>;
+
+fn image_candidates(paths: &[String]) -> ImageCandidates {
+    paths
         .iter()
         .map(|path| {
             let path_buf = PathBuf::from(path);
             (path_buf.canonicalize().unwrap_or(path_buf), path.clone())
         })
-        .collect();
-    {
-        // The view includes authoritative incremental blocks. Retained rewind,
-        // side conversations, queues and composer drafts also own their assets.
-        let mut statement = tx.prepare(
+        .collect()
+}
+
+/// Removes every candidate that a stored record still references. `since`
+/// limits the transcript and rewind-history part to sessions whose search
+/// source version moved past it (every transcript, rewind-history, insert or
+/// legacy-blob write bumps it); `None` scans every session. Queues and drafts
+/// are small and always scanned.
+fn drop_referenced_images(
+    conn: &Connection,
+    candidates: &mut ImageCandidates,
+    since: Option<i64>,
+) -> Result<(), String> {
+    // The view includes authoritative incremental blocks. Retained rewind,
+    // side conversations, queues and composer drafts also own their assets.
+    let mut statement = conn
+        .prepare(
             "SELECT j.value FROM (
-               SELECT blocks_json AS payload FROM session_transcripts
-               UNION ALL SELECT rewind_history_json FROM sessions WHERE rewind_history_json IS NOT NULL
+               SELECT t.blocks_json AS payload FROM session_transcripts t
+                 LEFT JOIN session_search_source_revision r ON r.session_id=t.id
+                 WHERE ?1 IS NULL OR COALESCE(r.version, ?1 + 1) > ?1
+               UNION ALL SELECT s.rewind_history_json FROM sessions s
+                 LEFT JOIN session_search_source_revision r ON r.session_id=s.id
+                 WHERE s.rewind_history_json IS NOT NULL
+                   AND (?1 IS NULL OR COALESCE(r.version, ?1 + 1) > ?1)
                UNION ALL SELECT queue_json FROM session_queues
                UNION ALL SELECT draft_json FROM composer_drafts
              ) AS records, json_tree(records.payload) AS j
              WHERE j.type = 'text' AND j.key = 'path'",
-        ).map_err(|error| error.to_string())?;
-        let references = statement
-            .query_map([], |row| row.get::<_, String>(0))
-            .map_err(|error| error.to_string())?;
-        for reference in references {
-            let path = PathBuf::from(reference.map_err(|error| error.to_string())?);
-            candidates.remove(&path.canonicalize().unwrap_or(path));
+        )
+        .map_err(|error| error.to_string())?;
+    let references = statement
+        .query_map([since], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?;
+    for reference in references {
+        let path = PathBuf::from(reference.map_err(|error| error.to_string())?);
+        candidates.remove(&path.canonicalize().unwrap_or(path));
+        if candidates.is_empty() {
+            break;
         }
     }
+    Ok(())
+}
+
+/// The expensive half of image cleanup, on a read connection: one snapshot
+/// scan of every record. Returns the candidates nothing references plus the
+/// search source version that snapshot saw, for [`cleanup_unreferenced_since`].
+fn unreferenced_generated_images(
+    conn: &Connection,
+    paths: &[String],
+) -> Result<(ImageCandidates, Option<i64>), String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
+    // Read first so the deferred transaction pins the scan to this version.
+    let version: Option<i64> = tx
+        .query_row(
+            "SELECT version FROM session_search_revision WHERE id=1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let mut candidates = image_candidates(paths);
+    drop_referenced_images(&tx, &mut candidates, None)?;
+    Ok((candidates, version))
+}
+
+/// Re-checks the remaining candidates against records changed since the scan
+/// (all records when `since` is `None`) and deletes the files, all inside one
+/// IMMEDIATE transaction so no writer can add a reference in between.
+fn cleanup_unreferenced_since(
+    conn: &Connection,
+    mut candidates: ImageCandidates,
+    since: Option<i64>,
+    cleanup: impl FnOnce(&[String]) -> Result<(), String>,
+) -> Result<(), String> {
+    if candidates.is_empty() {
+        return Ok(());
+    }
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    drop_referenced_images(&tx, &mut candidates, since)?;
     let unreferenced: Vec<String> = candidates.into_values().collect();
     if !unreferenced.is_empty() {
         cleanup(&unreferenced)?;
@@ -498,31 +964,53 @@ fn cleanup_unreferenced_generated_images(
     tx.commit().map_err(|error| error.to_string())
 }
 
-#[tauri::command(async)]
-pub fn session_list_by_project(
-    store: State<'_, SessionStore>,
-    cwd: String,
-) -> Result<Vec<SessionSummary>, String> {
-    if cwd.trim().is_empty() {
-        return Err("cwd is required".into());
-    }
-    // Git lookups can spawn processes; do them before taking any connection.
-    let git = crate::fs::git_info_for(&crate::fs::expand_home(&cwd));
-    store
-        .with_read_conn(|conn| list_by_project_with_git(conn, &cwd, git).map_err(|e| e.to_string()))
+/// Single-connection form: every record is checked inside the transaction.
+#[cfg(test)]
+fn cleanup_unreferenced_generated_images(
+    conn: &Connection,
+    paths: &[String],
+    cleanup: impl FnOnce(&[String]) -> Result<(), String>,
+) -> Result<(), String> {
+    cleanup_unreferenced_since(conn, image_candidates(paths), None, cleanup)
 }
 
-#[tauri::command(async)]
-pub fn session_rebase_project(
-    store: State<'_, SessionStore>,
+#[tauri::command]
+pub async fn session_list_by_project(
+    app: tauri::AppHandle,
+    cwd: String,
+) -> Result<Vec<SessionSummary>, String> {
+    crate::harness::run_blocking("session_list_by_project", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        if cwd.trim().is_empty() {
+            return Err("cwd is required".into());
+        }
+        // Git lookups can spawn processes; do them before taking any connection.
+        let git = crate::fs::git_info_for(&crate::fs::expand_home(&cwd));
+        store.with_read_conn(|conn| {
+            list_by_project_with_git(conn, &cwd, git).map_err(|e| e.to_string())
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn session_rebase_project(
+    app: tauri::AppHandle,
+    window: tauri::Window,
     from_cwd: String,
     to_cwd: String,
 ) -> Result<(), String> {
-    if from_cwd.trim().is_empty() || to_cwd.trim().is_empty() {
-        return Err("project paths are required".into());
-    }
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    rebase_project(&conn, &from_cwd, &to_cwd).map_err(|error| error.to_string())
+    crate::harness::run_blocking("session_rebase_project", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        crate::native_window_lifecycle::persistence_write(&window, || {
+            if from_cwd.trim().is_empty() || to_cwd.trim().is_empty() {
+                return Err("project paths are required".into());
+            }
+            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            rebase_project(&conn, &from_cwd, &to_cwd).map_err(|error| error.to_string())
+        })
+    })
+    .await
 }
 
 fn rebase_project(conn: &Connection, from_cwd: &str, to_cwd: &str) -> rusqlite::Result<()> {
@@ -533,28 +1021,191 @@ fn rebase_project(conn: &Connection, from_cwd: &str, to_cwd: &str) -> rusqlite::
     Ok(())
 }
 
-#[tauri::command(async)]
-pub fn session_list_linked(store: State<'_, SessionStore>) -> Result<Vec<SessionSummary>, String> {
-    store.with_read_conn(|conn| list_linked(conn).map_err(|e| e.to_string()))
+#[tauri::command]
+pub async fn session_list_linked(app: tauri::AppHandle) -> Result<Vec<SessionSummary>, String> {
+    crate::harness::run_blocking("session_list_linked", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        store.with_read_conn(|conn| list_linked(conn).map_err(|e| e.to_string()))
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn session_list_recent(
-    store: State<'_, SessionStore>,
+#[tauri::command]
+pub async fn session_list_recent(
+    app: tauri::AppHandle,
     limit: i64,
 ) -> Result<Vec<SessionSummary>, String> {
-    store.with_read_conn(|conn| list_recent(conn, limit).map_err(|e| e.to_string()))
+    crate::harness::run_blocking("session_list_recent", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        store.with_read_conn(|conn| list_recent(conn, limit).map_err(|e| e.to_string()))
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn session_get(
-    store: State<'_, SessionStore>,
+#[tauri::command]
+pub async fn session_list_recent_since(
+    app: tauri::AppHandle,
+    since: i64,
+) -> Result<Vec<SessionSummary>, String> {
+    crate::harness::run_blocking("session_list_recent_since", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        store.with_read_conn(|conn| list_recent_since(conn, since).map_err(|e| e.to_string()))
+    })
+    .await
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentSessionCursor {
+    activity_at: i64,
+    id: String,
+    revision: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentSessionPage {
+    rows: Vec<SessionSummary>,
+    next_cursor: Option<RecentSessionCursor>,
+}
+
+#[tauri::command]
+pub async fn session_list_recent_since_page(
+    app: tauri::AppHandle,
+    since: i64,
+    cursor: Option<RecentSessionCursor>,
+) -> Result<RecentSessionPage, String> {
+    if cursor
+        .as_ref()
+        .is_some_and(|value| value.id.is_empty() || value.id.len() > 1024)
+    {
+        return Err("Invalid recent-session cursor".into());
+    }
+    crate::harness::run_blocking("session_list_recent_since_page", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        store.with_read_conn(|conn| list_recent_since_page(conn, since, cursor.as_ref()))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn session_deleted_ids(
+    app: AppHandle,
+    session_ids: Vec<String>,
+) -> Result<Vec<String>, String> {
+    if session_ids.len() > 10_000 {
+        return Err("Too many session deletion lookups".into());
+    }
+    for id in &session_ids {
+        validate_id(id, "session")?;
+    }
+    crate::harness::run_blocking("session_deleted_ids", move || {
+        let store = app.state::<SessionStore>();
+        store.with_read_conn(|conn| deletions::deleted_ids(conn, &session_ids))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn session_get(
+    app: AppHandle,
+    window: tauri::Window,
     session_id: String,
 ) -> Result<tauri::ipc::Response, String> {
-    validate_id(&session_id, "session")?;
-    store
-        .with_read_conn(|conn| get_session_json(conn, &session_id).map_err(|e| e.to_string()))
-        .map(tauri::ipc::Response::new)
+    crate::harness::run_blocking("session_get", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        validate_id(&session_id, "session")?;
+        reconcile_pending_before_read(&app, &window, &store, &session_id);
+        store
+            .with_read_conn(|conn| {
+                let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+                deletions::assert_readable(&tx, &session_id)?;
+                get_session_json(&tx, &session_id).map_err(|e| e.to_string())
+            })
+            .map(tauri::ipc::Response::new)
+    })
+    .await
+}
+
+/// Longest a transcript read waits for a pending rewind's reconcile.
+const RECONCILE_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
+type ReconcileDone = Arc<(Mutex<bool>, std::sync::Condvar)>;
+static RECONCILING: Mutex<Option<HashMap<String, ReconcileDone>>> = Mutex::new(None);
+
+/// Reopening a conversation is the recovery entry after a crashed/unknown
+/// rewind. Recovery can resume shared workspace-file rewind effects, so it stays
+/// in the shared lane; a closed gate still permits the retained read.
+///
+/// The reconcile can take several Host round trips (each bounded at 30 s), so
+/// it runs on its own thread (one per session) and the read waits at most
+/// [`RECONCILE_WAIT`]. A slower reconcile keeps its fence and finishes in the
+/// background while the caller gets the retained transcript, the same state as
+/// a failed Host read.
+pub(super) fn reconcile_pending_before_read(
+    app: &AppHandle,
+    window: &tauri::Window,
+    store: &SessionStore,
+    session_id: &str,
+) {
+    if !rewind::has_pending_native(store, Some(session_id)).unwrap_or(false) {
+        return;
+    }
+    let finish = |id: &str, done: &ReconcileDone| {
+        *done.0.lock().unwrap_or_else(|error| error.into_inner()) = true;
+        done.1.notify_all();
+        let mut running = RECONCILING
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(map) = running.as_mut() {
+            if map.get(id).is_some_and(|entry| Arc::ptr_eq(entry, done)) {
+                map.remove(id);
+            }
+        }
+    };
+    let (done, start) = {
+        let mut running = RECONCILING
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let map = running.get_or_insert_with(HashMap::new);
+        match map.get(session_id) {
+            Some(done) => (done.clone(), false),
+            None => {
+                let done: ReconcileDone = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+                map.insert(session_id.to_owned(), done.clone());
+                (done, true)
+            }
+        }
+    };
+    if start {
+        let worker_app = app.clone();
+        let worker_window = window.clone();
+        let id = session_id.to_owned();
+        let signal = done.clone();
+        let spawned = std::thread::Builder::new()
+            .name("session-rewind-reconcile".into())
+            .spawn(move || {
+                if let Some(store) = worker_app.try_state::<SessionStore>() {
+                    let _ =
+                        crate::native_window_lifecycle::persistence_write(&worker_window, || {
+                            rewind::reconcile_pending_native(&worker_app, &store, Some(&id))
+                        });
+                }
+                finish(&id, &signal);
+            });
+        if spawned.is_err() {
+            // No thread: reconcile inline, as before.
+            let _ = crate::native_window_lifecycle::persistence_write(window, || {
+                rewind::reconcile_pending_native(app, store, Some(session_id))
+            });
+            finish(session_id, &done);
+            return;
+        }
+    }
+    let (lock, ready) = &*done;
+    let guard = lock.lock().unwrap_or_else(|error| error.into_inner());
+    let _ = ready
+        .wait_timeout_while(guard, RECONCILE_WAIT, |finished| !*finished)
+        .unwrap_or_else(|error| error.into_inner());
 }
 
 const MAX_SEARCH_SCAN: usize = 400;
@@ -698,12 +1349,16 @@ pub struct SessionSearchResult {
     pub truncated: bool,
 }
 
-#[tauri::command(async)]
-pub fn session_search(
-    store: State<'_, SessionStore>,
+#[tauri::command]
+pub async fn session_search(
+    app: tauri::AppHandle,
     options: SessionSearchOptions,
 ) -> Result<SessionSearchResult, String> {
-    search_store(&store, &options)
+    crate::harness::run_blocking("session_search", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        search_store(&store, &options)
+    })
+    .await
 }
 
 fn search_store(
@@ -718,7 +1373,9 @@ fn search_store(
             .lock()
             .map_err(|_| "Session read store is locked")?;
         if let Some(conn) = read_conn.as_ref() {
-            search_sessions_with_connection(conn, options, token.as_ref())?
+            reader::run(conn, |db| {
+                search_sessions_with_connection(db, options, token.as_ref())
+            })?
         } else {
             let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
             search_sessions_with_connection(&conn, options, token.as_ref())?
@@ -737,12 +1394,20 @@ fn search_store(
 
 /// Full-text search over message content, grouped by session. Cancel with
 /// `cancel_session_search` under the same `searchOwner`.
-#[tauri::command(async)]
-pub fn session_search_content(
-    store: State<'_, SessionStore>,
+#[tauri::command]
+pub async fn session_search_content(
+    app: AppHandle,
     options: ContentSearchOptions,
 ) -> Result<ContentSearchResult, String> {
-    content_search::search_content(&store, &options)
+    crate::harness::run_blocking("session_search_content", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        let result = content_search::search_content(&store, &options)?;
+        if result.pending > 0 && result.index_error.is_none() {
+            queue_search_indexing(&app, std::time::Duration::ZERO);
+        }
+        Ok(result)
+    })
+    .await
 }
 
 #[tauri::command(async)]
@@ -750,65 +1415,87 @@ pub fn cancel_session_search(search_owner: String) {
     cancel_owned_session_search(&search_owner);
 }
 
-#[tauri::command(async)]
-pub fn session_delete(
+#[tauri::command]
+pub async fn session_delete(
+    window: tauri::Window,
     app: AppHandle,
-    store: State<'_, SessionStore>,
     session_id: String,
-    mut image_paths: Vec<String>,
+    image_paths: Vec<String>,
+    allow_recreate: Option<bool>,
 ) -> Result<(), String> {
-    validate_id(&session_id, "session")?;
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    let persisted_paths = get_session(&conn, &session_id)
-        .ok()
-        .flatten()
-        .map(|record| generated_image_paths(&record.blocks))
-        .unwrap_or_default();
-    image_paths.extend(persisted_paths);
-    delete_session(&conn, &session_id).map_err(|e| e.to_string())?;
-    if !image_paths.is_empty() {
-        if let Err(error) = cleanup_unreferenced_generated_images(&conn, &image_paths, |paths| {
-            crate::fs::delete_generated_images_sync(&app, paths)
-        }) {
-            eprintln!("Generated image cleanup will need a retry: {error}");
-        }
-    }
-    drop(conn);
-    let _ = app.emit(crate::reminders::CHANGED, ());
-    Ok(())
+    crate::harness::run_blocking("session_delete", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        // Also cleans shared generated-image files. Keep the entire operation in
+        // the shared lane rather than acquiring another barrier under the SQL lock.
+        crate::native_window_lifecycle::persistence_write_observed(&window, || {
+            let cleanup = |paths: &[String]| crate::fs::delete_generated_images_sync(&app, paths);
+            let result = if allow_recreate.unwrap_or(false) {
+                delete_with_images::run_with_mode(&store, &session_id, image_paths, true, cleanup)
+            } else {
+                delete_with_images::run(&store, &session_id, image_paths, cleanup)
+            };
+            if result.0.is_ok() {
+                let _ = app.emit(crate::reminders::CHANGED, ());
+            }
+            result
+        })
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn session_set_archived(
-    store: State<'_, SessionStore>,
+#[tauri::command]
+pub async fn session_set_archived(
+    app: tauri::AppHandle,
+    window: tauri::Window,
     session_id: String,
     archived: bool,
 ) -> Result<(), String> {
-    validate_id(&session_id, "session")?;
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    set_archived(&conn, &session_id, archived).map_err(|e| e.to_string())
+    crate::harness::run_blocking("session_set_archived", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
+            validate_id(&session_id, "session")?;
+            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            set_archived(&conn, &session_id, archived).map_err(|e| e.to_string())
+        })
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn session_set_pinned(
-    store: State<'_, SessionStore>,
+#[tauri::command]
+pub async fn session_set_pinned(
+    app: tauri::AppHandle,
+    window: tauri::Window,
     session_id: String,
     pinned: bool,
 ) -> Result<(), String> {
-    validate_id(&session_id, "session")?;
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    set_pinned(&conn, &session_id, pinned).map_err(|e| e.to_string())
+    crate::harness::run_blocking("session_set_pinned", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
+            validate_id(&session_id, "session")?;
+            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            set_pinned(&conn, &session_id, pinned).map_err(|e| e.to_string())
+        })
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn session_set_linked_work_item(
-    store: State<'_, SessionStore>,
+#[tauri::command]
+pub async fn session_set_linked_work_item(
+    app: tauri::AppHandle,
+    window: tauri::Window,
     session_id: String,
     linked_work_item: Option<Value>,
 ) -> Result<(), String> {
-    validate_id(&session_id, "session")?;
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    set_linked_work_item(&conn, &session_id, linked_work_item.as_ref()).map_err(|e| e.to_string())
+    crate::harness::run_blocking("session_set_linked_work_item", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
+            validate_id(&session_id, "session")?;
+            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            set_linked_work_item(&conn, &session_id, linked_work_item.as_ref())
+                .map_err(|e| e.to_string())
+        })
+    })
+    .await
 }
 
 const SESSION_QUEUE_MAX_BYTES: usize = 8_000_000;
@@ -816,25 +1503,36 @@ const SESSION_QUEUE_MAX_BYTES: usize = 8_000_000;
 /// Write-through for a session's queued follow-ups. Kept in its own table so a
 /// queue edit never rewrites the transcript, and a transcript save never
 /// touches the queue. An empty queue (`None`) deletes the row.
-#[tauri::command(async)]
-pub fn session_set_queue(
-    store: State<'_, SessionStore>,
+#[tauri::command]
+pub async fn session_set_queue(
+    app: tauri::AppHandle,
+    window: tauri::Window,
     session_id: String,
     queue: Option<Value>,
 ) -> Result<(), String> {
-    validate_id(&session_id, "session")?;
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    set_session_queue(&conn, &session_id, queue.as_ref())
+    crate::harness::run_blocking("session_set_queue", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
+            validate_id(&session_id, "session")?;
+            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            set_session_queue(&conn, &session_id, queue.as_ref())
+        })
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn session_get_queue(
-    store: State<'_, SessionStore>,
+#[tauri::command]
+pub async fn session_get_queue(
+    app: tauri::AppHandle,
     session_id: String,
 ) -> Result<Option<Value>, String> {
-    validate_id(&session_id, "session")?;
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    get_session_queue(&conn, &session_id).map_err(|e| e.to_string())
+    crate::harness::run_blocking("session_get_queue", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        validate_id(&session_id, "session")?;
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        get_session_queue(&conn, &session_id).map_err(|e| e.to_string())
+    })
+    .await
 }
 
 fn set_session_queue(
@@ -882,46 +1580,66 @@ fn get_session_queue(conn: &Connection, session_id: &str) -> rusqlite::Result<Op
 }
 
 const COMPOSER_DRAFT_MAX_BYTES: usize = 8_000_000;
-/// A draft nobody touched for this long is not coming back; listing drops it.
+#[cfg(test)]
 const COMPOSER_DRAFT_MAX_AGE_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 
 /// Write-through for the unsent text in a session's composer. Keyed by the
 /// session id even when that session has no transcript row yet (a blank new
 /// chat), so it has its own table and no foreign key. `None` deletes the row.
-#[tauri::command(async)]
-pub fn session_set_draft(
-    store: State<'_, SessionStore>,
+#[tauri::command]
+pub async fn session_set_draft(
+    app: tauri::AppHandle,
+    window: tauri::Window,
     session_id: String,
     draft: Option<Value>,
 ) -> Result<(), String> {
-    validate_id(&session_id, "session")?;
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    set_composer_draft(&conn, &session_id, draft.as_ref())
+    crate::harness::run_blocking("session_set_draft", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
+            validate_id(&session_id, "session")?;
+            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            set_composer_draft(&conn, &session_id, draft.as_ref())
+        })
+    })
+    .await
 }
 
 /// Every saved draft, read once at launch so each composer can start from its own.
-#[tauri::command(async)]
-pub fn session_list_drafts(store: State<'_, SessionStore>) -> Result<Vec<Value>, String> {
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    list_composer_drafts(&conn).map_err(|e| e.to_string())
+#[tauri::command]
+pub async fn session_list_drafts(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+) -> Result<Vec<Value>, String> {
+    crate::harness::run_blocking("session_list_drafts", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        crate::native_window_lifecycle::persistence_write(&window, || {
+            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            list_composer_drafts(&conn).map_err(|e| e.to_string())
+        })
+    })
+    .await
 }
 
 /// Strict, read-only inventory for remote attachment ownership. Ordinary draft
 /// hydration may discard expired/malformed rows; it cannot authorize a release.
-#[tauri::command(async)]
-pub fn session_attachment_references(
-    store: State<'_, SessionStore>,
+#[tauri::command]
+pub async fn session_attachment_references(
+    app: tauri::AppHandle,
     session_id: String,
     queue_session_ids: Vec<String>,
     all_sessions: Option<bool>,
 ) -> Result<Value, String> {
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    read_attachment_references(
-        &conn,
-        &session_id,
-        &queue_session_ids,
-        all_sessions.unwrap_or(false),
-    )
+    crate::harness::run_blocking("session_attachment_references", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        read_attachment_references(
+            &conn,
+            &session_id,
+            &queue_session_ids,
+            all_sessions.unwrap_or(false),
+        )
+    })
+    .await
 }
 
 fn read_attachment_references(
@@ -1061,13 +1779,9 @@ fn set_composer_draft(
     Ok(())
 }
 
-/// Rows as `{ sessionId, draft }`, oldest-expired ones deleted first. A row
+/// Rows as `{ sessionId, draft }`. A row
 /// that no longer parses is skipped rather than failing the whole list.
 fn list_composer_drafts(conn: &Connection) -> rusqlite::Result<Vec<Value>> {
-    conn.execute(
-        "DELETE FROM composer_drafts WHERE updated_at < ?1",
-        [now_millis() - COMPOSER_DRAFT_MAX_AGE_MS],
-    )?;
     let mut statement = conn
         .prepare("SELECT session_id, draft_json FROM composer_drafts ORDER BY updated_at DESC")?;
     let rows = statement.query_map([], |row| {
@@ -1090,38 +1804,364 @@ pub struct InFlightSession {
     pub cwd: String,
 }
 
-#[tauri::command(async)]
-pub fn session_set_in_flight(
-    store: State<'_, SessionStore>,
+#[tauri::command]
+pub async fn session_set_in_flight(
+    app: tauri::AppHandle,
+    window: tauri::Window,
     sessions: Vec<InFlightSession>,
 ) -> Result<(), String> {
-    for session in &sessions {
-        validate_id(&session.session_id, "session")?;
-        if session.cwd.trim().is_empty() {
-            return Err("cwd is required".into());
+    let captured_page = crate::harness::page_incarnation(&window)?;
+    crate::harness::run_blocking("session_set_in_flight", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        let result = crate::native_window_lifecycle::persistence_write(&window, || {
+            if !crate::window::is_workspace_window(window.label()) {
+                return Err("Only workspace windows can record in-flight sessions".into());
+            }
+            for session in &sessions {
+                validate_id(&session.session_id, "session")?;
+                if session.cwd.trim().is_empty() {
+                    return Err("cwd is required".into());
+                }
+            }
+            let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let page = crate::harness::page_incarnation(&window)?;
+            if page != captured_page {
+                return Err("In-flight owner page has changed".into());
+            }
+            replace_window_in_flight(
+                &mut conn,
+                &store.native_instance_id().to_string(),
+                window.label(),
+                &page,
+                &sessions,
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(page)
+        });
+        if let Ok(page) = &result {
+            if crate::harness::page_retirement_waiting(page)
+                || matches!(
+                    crate::harness::page_retirement_status(page),
+                    crate::harness::PageRetirement::Confirmed
+                )
+            {
+                if let Some(primary) = crate::window::primary_workspace_label(&app) {
+                    let _ = app.emit_to(primary.as_str(), "session-recovery-changed", ());
+                }
+            }
         }
-    }
-    let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    replace_in_flight(&mut conn, &sessions).map_err(|e| e.to_string())
+        result.map(|_| ())
+    })
+    .await
 }
 
 /// Read the quit snapshot without clearing it. Vite/dev reloads must not
 /// consume the only copy.
-#[tauri::command(async)]
-pub fn session_list_in_flight(
-    store: State<'_, SessionStore>,
-) -> Result<Vec<InFlightSession>, String> {
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    list_in_flight(&conn).map_err(|e| e.to_string())
+#[tauri::command]
+pub async fn session_list_in_flight(app: tauri::AppHandle) -> Result<Vec<InFlightSession>, String> {
+    crate::harness::run_blocking("session_list_in_flight", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        list_interrupted_in_flight(&conn, |id, page| {
+            if id == store.native_instance_id().to_string() {
+                matches!(
+                    crate::harness::page_retirement_status(page),
+                    crate::harness::PageRetirement::Confirmed
+                )
+            } else {
+                matches!(
+                    conn.recovery_lease_state(id),
+                    Ok(cohort::LeaseState::Unleased)
+                )
+            }
+        })
+        .map_err(|e| e.to_string())
+    })
+    .await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionRecoveryCandidates {
+    sessions: Vec<InFlightSession>,
+    pending: bool,
+    receipt: Option<String>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct RecoveryReceiptRow {
+    process: Option<String>,
+    page: Option<String>,
+    session: String,
+    cwd: String,
+}
+#[derive(Clone)]
+struct RecoveryReceipt {
+    store: String,
+    page: String,
+    rows: Vec<RecoveryReceiptRow>,
+    settled: Option<std::time::Instant>,
+}
+fn prune_recovery_receipts(
+    receipts: &mut HashMap<String, RecoveryReceipt>,
+    now: std::time::Instant,
+) {
+    receipts.retain(|_, receipt| {
+        receipt.settled.is_none_or(|settled| {
+            now.checked_duration_since(settled).unwrap_or_default()
+                < std::time::Duration::from_secs(600)
+        })
+    });
+}
+fn recovery_receipts() -> &'static Mutex<HashMap<String, RecoveryReceipt>> {
+    static RECEIPTS: std::sync::OnceLock<Mutex<HashMap<String, RecoveryReceipt>>> =
+        std::sync::OnceLock::new();
+    RECEIPTS.get_or_init(Mutex::default)
+}
+
+fn issue_recovery_receipt(
+    conn: &Connection,
+    owner_store: &str,
+    owner_page: &str,
+    sessions: &[InFlightSession],
+    stale: &[(String, String)],
+) -> Result<Option<String>, String> {
+    let included = |id: &str, cwd: &str| {
+        sessions
+            .iter()
+            .any(|item| item.session_id == id && item.cwd == cwd)
+    };
+    let mut result = Vec::new();
+    let mut statement = conn
+        .prepare("SELECT session_id, cwd FROM in_flight_legacy_sessions ORDER BY session_id, cwd")
+        .map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        let (session, cwd) = row.map_err(|e| e.to_string())?;
+        if included(&session, &cwd) {
+            result.push(RecoveryReceiptRow {
+                process: None,
+                page: None,
+                session,
+                cwd,
+            });
+        }
+    }
+    let mut statement = conn.prepare("SELECT DISTINCT process_id, page_id, session_id, cwd FROM in_flight_window_sessions ORDER BY process_id, page_id, session_id, cwd").map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        let (process, page, session, cwd) = row.map_err(|e| e.to_string())?;
+        if stale.contains(&(process.clone(), page.clone())) && included(&session, &cwd) {
+            result.push(RecoveryReceiptRow {
+                process: Some(process),
+                page: Some(page),
+                session,
+                cwd,
+            });
+        }
+    }
+    if result.is_empty() {
+        return Ok(None);
+    }
+    let mut receipts = recovery_receipts()
+        .lock()
+        .map_err(|_| "Recovery receipts unavailable")?;
+    prune_recovery_receipts(&mut receipts, std::time::Instant::now());
+    if let Some((id, _)) = receipts.iter().find(|(_, receipt)| {
+        receipt.settled.is_none()
+            && receipt.store == owner_store
+            && receipt.page == owner_page
+            && receipt.rows == result
+    }) {
+        return Ok(Some(id.clone()));
+    }
+    if receipts
+        .values()
+        .filter(|receipt| receipt.settled.is_none())
+        .count()
+        >= 64
+    {
+        return Err("Recovery receipt capacity reached; retry after pending saves settle".into());
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    if receipts.len() >= 128 {
+        if let Some(id) = receipts
+            .iter()
+            .filter_map(|(id, receipt)| receipt.settled.map(|at| (id.clone(), at)))
+            .min_by_key(|(_, at)| *at)
+            .map(|(id, _)| id)
+        {
+            receipts.remove(&id);
+        }
+    }
+    receipts.insert(
+        id.clone(),
+        RecoveryReceipt {
+            store: owner_store.to_owned(),
+            page: owner_page.to_owned(),
+            rows: result,
+            settled: None,
+        },
+    );
+    Ok(Some(id))
+}
+
+fn acknowledge_recovery_rows(
+    conn: &Connection,
+    snapshot: &Value,
+    rows: &[RecoveryReceiptRow],
+    stale: &[(String, String)],
+) -> rusqlite::Result<()> {
+    let journal = &snapshot["sessionRecovery"];
+    for row in rows {
+        let covered = journal["workspace"]["sessions"]
+            .as_array()
+            .is_some_and(|sessions| {
+                sessions.iter().any(|session| {
+                    session["id"].as_str() == Some(row.session.as_str())
+                        && session["cwd"].as_str() == Some(row.cwd.as_str())
+                })
+            })
+            || journal["resolvedIds"].as_array().is_some_and(|ids| {
+                ids.iter()
+                    .any(|id| id.as_str() == Some(row.session.as_str()))
+            });
+        if !covered {
+            continue;
+        }
+        let protected: bool = {
+            let mut statement = conn.prepare("SELECT DISTINCT process_id, page_id FROM in_flight_window_sessions WHERE session_id = ?1")?;
+            let owners = statement.query_map([&row.session], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?;
+            owners
+                .collect::<rusqlite::Result<Vec<_>>>()?
+                .iter()
+                .any(|owner| !stale.contains(owner))
+        };
+        if protected {
+            continue;
+        }
+        match (&row.process, &row.page) {
+            (Some(process), Some(page)) if stale.contains(&(process.clone(), page.clone())) => {
+                conn.execute("DELETE FROM in_flight_window_sessions WHERE process_id = ?1 AND page_id = ?2 AND session_id = ?3 AND cwd = ?4", params![process, page, row.session, row.cwd])?;
+            }
+            (None, None) => {
+                conn.execute(
+                    "DELETE FROM in_flight_legacy_sessions WHERE session_id = ?1 AND cwd = ?2",
+                    params![row.session, row.cwd],
+                )?;
+            }
+            _ => continue,
+        }
+        conn.execute("DELETE FROM in_flight_sessions WHERE session_id = ?1 AND cwd = ?2 AND NOT EXISTS (SELECT 1 FROM in_flight_window_sessions WHERE session_id = ?1) AND NOT EXISTS (SELECT 1 FROM in_flight_legacy_sessions WHERE session_id = ?1)", params![row.session, row.cwd])?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn session_recovery_candidates(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+) -> Result<SessionRecoveryCandidates, String> {
+    if !crate::window::is_primary_workspace(&app, window.label()) {
+        return Err("Only the primary workspace can read recovery candidates".into());
+    }
+    let owner_page = crate::harness::page_incarnation(&window)?;
+    crate::harness::run_blocking("session_recovery_candidates", move || {
+        let store = app.state::<SessionStore>();
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let process = store.native_instance_id().to_string();
+        let mut statement = conn
+            .prepare("SELECT DISTINCT page_id FROM in_flight_window_sessions WHERE process_id = ?1")
+            .map_err(|e| e.to_string())?;
+        let pages = statement
+            .query_map([&process], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        let mut pending = false;
+        for page in pages {
+            if crate::harness::page_retirement_waiting(&page.map_err(|e| e.to_string())?) {
+                pending = true;
+                break;
+            }
+        }
+        // Read waiting first: a proof that settles during this call either
+        // requests another poll or is visible as confirmed below.
+        let stale = interrupted_processes(&conn, |id, page| {
+            if id == process {
+                matches!(
+                    crate::harness::page_retirement_status(page),
+                    crate::harness::PageRetirement::Confirmed
+                )
+            } else {
+                matches!(
+                    conn.recovery_lease_state(id),
+                    Ok(cohort::LeaseState::Unleased)
+                )
+            }
+        })
+        .map_err(|e| e.to_string())?;
+        let sessions = list_interrupted_in_flight(&conn, |id, page| {
+            stale.iter().any(|item| item.0 == id && item.1 == page)
+        })
+        .map_err(|e| e.to_string())?;
+        if crate::harness::page_incarnation(&window)? != owner_page {
+            return Err("Recovery owner page has changed".into());
+        }
+        let receipt = issue_recovery_receipt(&conn, &process, &owner_page, &sessions, &stale)?;
+        Ok(SessionRecoveryCandidates {
+            sessions,
+            pending,
+            receipt,
+        })
+    })
+    .await
 }
 
 /// Read and clear the quit snapshot so a restored window cannot take it twice.
-#[tauri::command(async)]
-pub fn session_take_in_flight(
-    store: State<'_, SessionStore>,
+#[tauri::command]
+pub async fn session_take_in_flight(
+    app: tauri::AppHandle,
+    window: tauri::Window,
 ) -> Result<Vec<InFlightSession>, String> {
-    let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    take_in_flight(&mut conn).map_err(|e| e.to_string())
+    crate::harness::run_blocking("session_take_in_flight", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        crate::native_window_lifecycle::persistence_write(&window, || {
+            let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            if !crate::window::is_primary_workspace(&app, window.label()) {
+                return Err("Only the primary workspace can take interrupted sessions".into());
+            }
+            let stale = interrupted_processes(&conn, |id, page| {
+                if id == store.native_instance_id().to_string() {
+                    matches!(
+                        crate::harness::page_retirement_status(page),
+                        crate::harness::PageRetirement::Confirmed
+                    )
+                } else {
+                    matches!(
+                        conn.recovery_lease_state(id),
+                        Ok(cohort::LeaseState::Unleased)
+                    )
+                }
+            })
+            .map_err(|e| e.to_string())?;
+            take_interrupted_in_flight(&mut conn, &stale).map_err(|e| e.to_string())
+        })
+    })
+    .await
 }
 
 const WORKSPACE_SNAPSHOT_MAX_BYTES: usize = 2_000_000;
@@ -1129,44 +2169,93 @@ const WORKSPACE_SNAPSHOT_MAX_BYTES: usize = 2_000_000;
 #[path = "server_terminal_restore.rs"]
 mod server_terminal_restore;
 
-#[tauri::command(async)]
-pub fn workspace_set_snapshot(
+#[tauri::command]
+pub async fn workspace_set_snapshot(
+    app: tauri::AppHandle,
     window: tauri::Window,
-    store: State<'_, SessionStore>,
     mut snapshot: Value,
+    recovery_receipt: Option<String>,
 ) -> Result<(), String> {
-    if !snapshot.is_object() {
-        return Err("workspace snapshot must be an object".into());
-    }
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    let owner = window.label() == "main";
-    let previous = if owner && snapshot.get("serversRestore").is_some() {
-        None
+    let owner_page = if recovery_receipt.is_some() {
+        Some(crate::harness::page_incarnation(&window)?)
     } else {
-        get_workspace_snapshot(&conn)
-            .map_err(|e| e.to_string())?
-            .map(|raw| {
-                serde_json::from_str::<Value>(&raw)
-                    .map_err(|_| "Invalid saved workspace snapshot".to_string())
-            })
-            .transpose()?
+        None
     };
-    server_terminal_restore::merge(&mut snapshot, previous.as_ref(), owner)?;
-    let json = serde_json::to_string(&snapshot).map_err(|e| e.to_string())?;
-    if json.len() > WORKSPACE_SNAPSHOT_MAX_BYTES {
-        return Err("workspace snapshot is too large".into());
-    }
-    set_workspace_snapshot(&conn, &json).map_err(|e| e.to_string())
+    crate::harness::run_blocking("workspace_set_snapshot", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        crate::native_window_lifecycle::persistence_write(&window, || {
+            if !crate::window::is_primary_workspace(&app, window.label()) {
+                return Err("Only the primary workspace can save its snapshot".into());
+            }
+            if !snapshot.is_object() {
+                return Err("workspace snapshot must be an object".into());
+            }
+            let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            // The primary check above guarantees this window owns the snapshot.
+            let owner = true;
+            let previous = if owner && snapshot.get("serversRestore").is_some() {
+                None
+            } else {
+                get_workspace_snapshot(&conn)
+                    .map_err(|e| e.to_string())?
+                    .map(|raw| {
+                        serde_json::from_str::<Value>(&raw)
+                            .map_err(|_| "Invalid saved workspace snapshot".to_string())
+                    })
+                    .transpose()?
+            };
+            server_terminal_restore::merge(&mut snapshot, previous.as_ref(), owner)?;
+            let json = serde_json::to_string(&snapshot).map_err(|e| e.to_string())?;
+            if json.len() > WORKSPACE_SNAPSHOT_MAX_BYTES {
+                return Err("workspace snapshot is too large".into());
+            }
+            let receipt_rows = if let Some(id) = recovery_receipt.as_deref() {
+                let mut receipts = recovery_receipts().lock().map_err(|_| "Recovery receipts unavailable")?;
+                prune_recovery_receipts(&mut receipts, std::time::Instant::now());
+                let receipt = receipts.get(id).cloned().ok_or("Recovery receipt unavailable; refresh candidates")?;
+                if receipt.store != store.native_instance_id().to_string() || Some(&receipt.page) != owner_page.as_ref() || crate::harness::page_incarnation(&window)? != receipt.page { return Err("Recovery receipt belongs to a different page or store".into()); }
+                if receipt.settled.is_some() { None } else { Some(receipt.rows) }
+            } else { None };
+            let stale = if receipt_rows.is_some() {
+                interrupted_processes(&conn, |id, page| {
+                    if id == store.native_instance_id().to_string() {
+                        matches!(crate::harness::page_retirement_status(page), crate::harness::PageRetirement::Confirmed)
+                    } else { matches!(conn.recovery_lease_state(id), Ok(cohort::LeaseState::Unleased)) }
+                }).map_err(|e| e.to_string())?
+            } else { Vec::new() };
+            let tx = conn.transaction().map_err(|e| e.to_string())?;
+            set_workspace_snapshot(&tx, &json).map_err(|e| e.to_string())?;
+            if let Some(rows) = &receipt_rows { acknowledge_recovery_rows(&tx, &snapshot, rows, &stale).map_err(|e| e.to_string())?; }
+            tx.commit().map_err(|e| e.to_string())?;
+            if let Some(id) = recovery_receipt.as_deref() { if let Some(receipt) = recovery_receipts().lock().map_err(|_| "Recovery receipts unavailable")?.get_mut(id) { receipt.settled.get_or_insert_with(std::time::Instant::now); } }
+            if let Some(rows) = receipt_rows {
+                for row in rows {
+                    if let (Some(process), Some(page)) = (row.process, row.page) {
+                        if process == store.native_instance_id().to_string() {
+                            let remaining: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM in_flight_window_sessions WHERE process_id = ?1 AND page_id = ?2)", params![process, page], |r| r.get(0)).map_err(|e| e.to_string())?;
+                            if !remaining { crate::harness::release_page_proof(&page); }
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn workspace_get_snapshot(store: State<'_, SessionStore>) -> Result<Option<Value>, String> {
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    let json = get_workspace_snapshot(&conn).map_err(|e| e.to_string())?;
-    match json {
-        None => Ok(None),
-        Some(raw) => serde_json::from_str(&raw).map_err(|e| e.to_string()),
-    }
+#[tauri::command]
+pub async fn workspace_get_snapshot(app: tauri::AppHandle) -> Result<Option<Value>, String> {
+    crate::harness::run_blocking("workspace_get_snapshot", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let json = get_workspace_snapshot(&conn).map_err(|e| e.to_string())?;
+        match json {
+            None => Ok(None),
+            Some(raw) => serde_json::from_str(&raw).map_err(|e| e.to_string()),
+        }
+    })
+    .await
 }
 
 /// Add a `sessions` column when it is absent, so a half-applied history cannot
@@ -1319,6 +2408,8 @@ fn migrate_versions(conn: &Connection) -> rusqlite::Result<()> {
         ("automation_id", "TEXT"),
         ("rewind_history_json", "TEXT"),
         ("pending_context_replay", "TEXT"),
+        ("adopted_divergence", "TEXT"),
+        ("adopted_base", "TEXT"),
     ] {
         ensure_session_column(conn, column, decl)?;
     }
@@ -1466,6 +2557,31 @@ fn migrate_versions(conn: &Connection) -> rusqlite::Result<()> {
             params![now_millis()],
         )?;
     }
+    if current < 19 {
+        ensure_session_column(conn, "workspace_id", "TEXT")?;
+        ensure_session_column(conn, "workspace_revision", "INTEGER")?;
+        conn.execute("DROP INDEX IF EXISTS sessions_cwd_cover_idx", [])?;
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (19, ?1)",
+            params![now_millis()],
+        )?;
+    }
+    // Repair earlier columns before the next migration reads them, even when
+    // an older marker survived a partial schema upgrade.
+    ensure_session_column(conn, "workspace_id", "TEXT")?;
+    ensure_session_column(conn, "workspace_revision", "INTEGER")?;
+    ensure_session_column(conn, "workspace_mode", "TEXT")?;
+    ensure_session_column(conn, "assistant_management_json", "TEXT")?;
+    if current < 20 {
+        // Existing execution is retained independently of transcript clearing,
+        // including sessions cleared by an older build before this migration.
+        conn.execute("UPDATE sessions SET workspace_mode='current' WHERE workspace_mode IS NULL AND workspace_id IS NULL AND worktree_cwd IS NULL AND is_draft=0", [])?;
+        conn.execute("DROP INDEX IF EXISTS sessions_cwd_cover_idx", [])?;
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (20, ?1)",
+            params![now_millis()],
+        )?;
+    }
     Ok(())
 }
 
@@ -1474,15 +2590,27 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // markers must commit together, including the fresh-database path. Existing
     // legacy prefixes are repaired by the column checks in migrate_versions.
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+    canonical_store::ensure_schema(&tx)?;
     migrate_versions(&tx)?;
+    crate::sync_owner::migrate(&tx)?;
+    crate::assistant_session_observation::install(&tx)?;
+    pin_receipts::migrate(&tx)?;
+    ensure_column(&tx, "last_activity_at", "INTEGER")?;
+    tx.execute_batch("CREATE INDEX IF NOT EXISTS sessions_activity_project_v2_idx ON sessions (cwd, COALESCE(last_activity_at,updated_at) DESC, id);
+        CREATE INDEX IF NOT EXISTS sessions_activity_recent_v2_idx ON sessions (pinned, COALESCE(last_activity_at,updated_at) DESC, id) WHERE has_user_message = 1 AND archived = 0;
+        CREATE INDEX IF NOT EXISTS sessions_activity_linked_v2_idx ON sessions (COALESCE(last_activity_at,updated_at) DESC, id) WHERE linked_work_item_json IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS sessions_activity_project_cover_v2_idx ON sessions
+          (cwd,COALESCE(last_activity_at,updated_at) DESC,id,has_user_message,harness,model,runtime_mode,title,provider_session_id,created_at,updated_at,branch,archived,pinned,linked_work_item_json,worktree_cwd,worktree_removed,is_draft,automation_id,workspace_id,workspace_revision,workspace_mode);
+        CREATE INDEX IF NOT EXISTS sessions_activity_recent_cover_v2_idx ON sessions
+          (pinned,COALESCE(last_activity_at,updated_at) DESC,id,cwd,harness,model,runtime_mode,title,provider_session_id,created_at,updated_at,branch,archived,linked_work_item_json,worktree_cwd,worktree_removed,is_draft,automation_id,workspace_id,workspace_revision,workspace_mode)
+          WHERE has_user_message=1 AND archived=0;
+        CREATE INDEX IF NOT EXISTS sessions_activity_linked_cover_v2_idx ON sessions
+          (COALESCE(last_activity_at,updated_at) DESC,id,cwd,has_user_message,harness,model,runtime_mode,title,provider_session_id,created_at,updated_at,branch,archived,pinned,linked_work_item_json,worktree_cwd,worktree_removed,is_draft,automation_id,workspace_id,workspace_revision,workspace_mode)
+          WHERE linked_work_item_json IS NOT NULL;")?;
     tx.commit()?;
 
     // Keep independent schema helpers outside this transaction: some own their
     // own transaction (notably ensure_orchestration_history).
-    // Message-content search index: derived tables, created empty like the ones
-    // around it (so no version row, and instant however many sessions exist).
-    // Sessions are indexed lazily; see `content_search`.
-    content_search::ensure_schema(conn)?;
     // Create even when a version row already exists (another build may have
     // used the same numbers, or a previous run recorded the version without
     // the table). Restore writes into these; missing tables look like a
@@ -1532,7 +2660,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
                         model, runtime_mode, title, provider_session_id,
                         created_at, branch, archived, pinned,
                         linked_work_item_json, worktree_cwd, worktree_removed,
-                        is_draft, automation_id);",
+                        is_draft, automation_id, workspace_id, workspace_revision, workspace_mode);",
     )?;
     // `list_recent` and `list_linked` pin these; both are partial so they only
     // carry the rows those lists can return (live threads, linked threads).
@@ -1549,6 +2677,135 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     crate::automations::ensure_tables(conn)?;
     ensure_orchestration_history(conn)?;
     incremental::ensure_schema(conn)?;
+    ensure_list_summaries(conn)?;
+    ensure_recent_session_revision(conn)?;
+    rewind::ensure_schema(conn)?;
+    crate::native_workspace::ensure_schema(conn)?;
+    crate::native_editor_drafts::ensure_schema(conn)?;
+    // Source-revision/dirty metadata requires all current session columns.
+    // Only metadata is reconciled here; transcripts remain lazily indexed.
+    content_search::ensure_schema(conn)?;
+    visibility::ensure_schema(conn)?;
+    authority::ensure_schema(conn)?;
+    native_raw_capture::ensure_schema(conn)?;
+    row_identity::ensure_schema(conn)?;
+    deletions::ensure_schema(conn)?;
+    Ok(())
+}
+
+fn ensure_recent_session_revision(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS recent_session_revision (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL);
+        INSERT OR IGNORE INTO recent_session_revision(id,revision) VALUES(1,0);
+        CREATE TRIGGER IF NOT EXISTS recent_revision_session_insert AFTER INSERT ON sessions BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;
+        CREATE TRIGGER IF NOT EXISTS recent_revision_session_update AFTER UPDATE OF id,has_user_message,archived,pinned,inbox_ask,last_activity_at,updated_at ON sessions
+        WHEN OLD.id IS NOT NEW.id OR OLD.has_user_message IS NOT NEW.has_user_message OR OLD.archived IS NOT NEW.archived OR OLD.pinned IS NOT NEW.pinned OR OLD.inbox_ask IS NOT NEW.inbox_ask OR COALESCE(OLD.last_activity_at,OLD.updated_at) IS NOT COALESCE(NEW.last_activity_at,NEW.updated_at)
+        BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;
+        CREATE TRIGGER IF NOT EXISTS recent_revision_session_delete AFTER DELETE ON sessions BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;
+        CREATE TRIGGER IF NOT EXISTS recent_revision_worker_insert AFTER INSERT ON orchestration_workers
+        WHEN EXISTS(SELECT 1 FROM sessions WHERE id=NEW.session_id AND has_user_message=1 AND archived=0 AND inbox_ask IS NULL)
+        BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;
+        CREATE TRIGGER IF NOT EXISTS recent_revision_worker_update AFTER UPDATE OF session_id ON orchestration_workers
+        WHEN OLD.session_id IS NOT NEW.session_id AND EXISTS(SELECT 1 FROM sessions WHERE id IN (OLD.session_id,NEW.session_id) AND has_user_message=1 AND archived=0 AND inbox_ask IS NULL)
+        BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;
+        CREATE TRIGGER IF NOT EXISTS recent_revision_worker_delete AFTER DELETE ON orchestration_workers
+        WHEN EXISTS(SELECT 1 FROM sessions WHERE id=OLD.session_id AND has_user_message=1 AND archived=0 AND inbox_ask IS NULL)
+        BEGIN UPDATE recent_session_revision SET revision=revision+1 WHERE id=1; END;")
+}
+
+// Backfill one row per transaction: interrupted migrations resume, and a
+// concurrent writer cannot commit between reading a transcript and its summary.
+fn ensure_list_summaries(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS session_list_summaries (
+        session_id TEXT PRIMARY KEY, interrupted INTEGER NOT NULL, provider_history TEXT NOT NULL,
+        activity_at INTEGER NOT NULL, management_json TEXT
+    );
+    CREATE TABLE IF NOT EXISTS session_provider_projection_state (
+        session_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, harness TEXT NOT NULL
+    );
+    CREATE TRIGGER IF NOT EXISTS session_provider_projection_delete AFTER DELETE ON sessions
+    BEGIN DELETE FROM session_provider_projection_state WHERE session_id=OLD.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_provider_projection_rename AFTER UPDATE OF id ON sessions
+    WHEN OLD.id IS NOT NEW.id
+    BEGIN DELETE FROM session_provider_projection_state WHERE session_id=OLD.id OR session_id=NEW.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_delete AFTER DELETE ON sessions
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=OLD.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_insert AFTER INSERT ON sessions
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=NEW.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_id AFTER UPDATE OF id ON sessions
+    WHEN OLD.id IS NOT NEW.id
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=OLD.id OR session_id=NEW.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_transcript AFTER UPDATE OF blocks_json,harness ON sessions
+    WHEN OLD.blocks_json IS NOT NEW.blocks_json OR OLD.harness IS NOT NEW.harness
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=NEW.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_metadata AFTER UPDATE OF last_activity_at,updated_at,assistant_management_json ON sessions
+    BEGIN UPDATE session_list_summaries SET activity_at=COALESCE(NEW.last_activity_at,NEW.updated_at),
+      management_json=NEW.assistant_management_json WHERE session_id=NEW.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_block_insert AFTER INSERT ON session_blocks
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=NEW.session_id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_block_update AFTER UPDATE ON session_blocks
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=OLD.session_id OR session_id=NEW.session_id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_block_delete AFTER DELETE ON session_blocks
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=OLD.session_id; END;",
+    )?;
+    let missing = {
+        let mut statement = conn.prepare(
+            "SELECT id FROM sessions WHERE NOT EXISTS
+             (SELECT 1 FROM session_list_summaries WHERE session_id=sessions.id)",
+        )?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for id in missing {
+        let tx =
+            rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+        let harness: Option<String> = tx
+            .query_row(
+                "SELECT harness FROM sessions WHERE id=?1 AND NOT EXISTS
+             (SELECT 1 FROM session_list_summaries WHERE session_id=sessions.id)",
+                [&id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(harness) = harness {
+            update_list_summary(&tx, &id, &harness)?;
+        }
+        tx.commit()?;
+    }
+    interruption_repair::repair_owner_stop_summaries(conn)
+}
+
+pub(crate) fn update_list_summary(
+    conn: &Connection,
+    id: &str,
+    harness: &str,
+) -> rusqlite::Result<()> {
+    update_list_summary_with_history(conn, id, harness, None)
+}
+
+fn update_list_summary_with_history(
+    conn: &Connection,
+    id: &str,
+    harness: &str,
+    cached_history: Option<&str>,
+) -> rusqlite::Result<()> {
+    let interrupted = stored_turn_interrupted(conn, id)?;
+    let history = match cached_history {
+        Some(history) => history.to_owned(),
+        None => provider_history::stored(conn, id, harness)?.to_string(),
+    };
+    conn.execute("INSERT INTO session_list_summaries(session_id,interrupted,provider_history,activity_at,management_json)
+        SELECT id,?2,?3,COALESCE(last_activity_at,updated_at),assistant_management_json FROM sessions WHERE id=?1
+        ON CONFLICT(session_id) DO UPDATE SET interrupted=excluded.interrupted,
+        provider_history=excluded.provider_history,activity_at=excluded.activity_at,
+        management_json=excluded.management_json",
+        params![id, interrupted, history])?;
+    conn.execute(
+        "INSERT INTO session_provider_projection_state(session_id,revision,harness)
+        SELECT session_id, revision, ?2 FROM session_block_state WHERE session_id=?1 AND length>=0
+        ON CONFLICT(session_id) DO UPDATE SET revision=excluded.revision,harness=excluded.harness",
+        params![id, harness],
+    )?;
     Ok(())
 }
 
@@ -1686,7 +2943,47 @@ fn upsert_session_with_git(
     git: crate::fs::GitInfo,
     expected: Option<Option<i64>>,
 ) -> rusqlite::Result<Option<SessionSummary>> {
+    upsert_session_with_git_observed(conn, session, git, expected, None, |_, _| None)
+        .map(|write| write.ack)
+}
+
+fn upsert_session_with_git_observed(
+    conn: &Connection,
+    session: &SessionUpsert,
+    git: crate::fs::GitInfo,
+    expected: Option<Option<i64>>,
+    expected_revision: Option<i64>,
+    observe: impl FnOnce(&Connection, &SessionSummary) -> Option<write_receipts::Pending>,
+) -> rusqlite::Result<write_receipts::ObservedWrite<SessionSummary>> {
+    authority::assert_checkpoint_sql(conn, &session.id)?;
     let tx = conn.unchecked_transaction()?;
+    if let Some(expected_revision) = expected_revision {
+        let revision: Option<i64> = tx
+            .query_row(
+                "SELECT revision FROM session_block_state WHERE session_id=?1",
+                [&session.id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if revision != Some(expected_revision) {
+            return Ok(write_receipts::ObservedWrite::absent());
+        }
+    }
+    let result = upsert_session_in_transaction(&tx, session, git, expected)?;
+    let pending = result.as_ref().and_then(|ack| observe(&tx, ack));
+    tx.commit()?;
+    Ok(write_receipts::ObservedWrite {
+        ack: result,
+        pending,
+    })
+}
+
+fn upsert_session_in_transaction(
+    conn: &Connection,
+    session: &SessionUpsert,
+    git: crate::fs::GitInfo,
+    expected: Option<Option<i64>>,
+) -> rusqlite::Result<Option<SessionSummary>> {
     // Serialise every block once: the pieces feed the per-block rows and,
     // joined, are byte-identical to the compact array text of `blocks_json`.
     let to_sql_err = |e| rusqlite::Error::ToSqlConversionFailure(Box::new(e));
@@ -1704,12 +3001,67 @@ fn upsert_session_with_git(
             None,
         ),
     };
-    let mut result = upsert_session_core(&tx, session, git, expected, &blocks_json)?;
+    // Compare normalized rows directly: do not rebuild the stored multi-MB
+    // transcript through the compatibility view just to compare it.
+    let encoded_pieces = serde_json::to_string(&pieces).map_err(to_sql_err)?;
+    let normalized_same: bool = pieces.is_some()
+        && conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM session_block_state st WHERE st.session_id=?1
+         AND st.length=json_array_length(?2) AND st.length>=0
+         AND (SELECT count(*) FROM session_blocks WHERE session_id=?1)=st.length
+         AND NOT EXISTS(SELECT 1 FROM json_each(?2) incoming
+           LEFT JOIN session_blocks b ON b.session_id=?1 AND b.ordinal=incoming.key
+           WHERE b.block_json IS NOT incoming.value))",
+            params![session.id, encoded_pieces],
+            |row| row.get(0),
+        )?;
+    // A non-empty array is checkpointed into `session_blocks` below, in this
+    // transaction, so the row keeps no second multi-MB copy of it: every
+    // transcript reader goes through `session_transcripts`/`session_blocks`.
+    // Anything else keeps the legacy blob as its only copy.
+    let stored_blocks_json = match &pieces {
+        Some(pieces) if !pieces.is_empty() => legacy_blob::NORMALIZED_BLOB,
+        _ => blocks_json.as_str(),
+    };
+    let previous_updated: Option<i64> = conn
+        .query_row(
+            "SELECT updated_at FROM sessions WHERE id=?1",
+            [&session.id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let mut result = upsert_session_core(
+        conn,
+        session,
+        git,
+        expected,
+        &blocks_json,
+        stored_blocks_json,
+        normalized_same,
+    )?;
     if let Some(summary) = result.as_mut() {
-        if let Some(pieces) = &pieces {
-            incremental::checkpoint(&tx, &session.id, &session.blocks, pieces)?;
+        conn.execute("UPDATE sessions SET last_activity_at = CASE WHEN (?2 OR ?3) THEN COALESCE(last_activity_at, ?4, updated_at) ELSE updated_at END WHERE id=?1", params![session.id, session.preserve_activity_at, previous_updated == Some(summary.updated_at), previous_updated])?;
+        summary.last_activity_at = stored_activity_at(conn, &session.id)?;
+        if normalized_same {
+            // Metadata-only saves still invalidate stale deltas and exact-row receipts.
+            conn.execute(
+                "UPDATE session_block_state SET revision=revision+1 WHERE session_id=?1",
+                [&session.id],
+            )?;
+        } else if let Some(pieces) = &pieces {
+            incremental::checkpoint(conn, &session.id, &session.blocks, pieces)?;
         }
-        summary.transcript_revision = tx
+        if !normalized_same && stored_blocks_json != blocks_json {
+            // The emptied blob is only safe next to a complete normalized copy.
+            // Any doubt rolls the whole write back instead of storing neither.
+            legacy_blob::assert_normalized_complete(
+                conn,
+                &session.id,
+                pieces.as_ref().map_or(0, Vec::len),
+            )?;
+        }
+        update_list_summary(conn, &session.id, &session.harness)?;
+        summary.transcript_revision = conn
             .query_row(
                 "SELECT revision FROM session_block_state WHERE session_id=?1",
                 [&session.id],
@@ -1717,8 +3069,67 @@ fn upsert_session_with_git(
             )
             .optional()?;
     }
-    tx.commit()?;
     Ok(result)
+}
+
+/// Whether the row already stores every field that tells the host something
+/// changed (everything but the transcript, `adopted_base`, the derived git
+/// branch and context usage). Compared with SQL `IS`, so NULLs match NULLs.
+pub(crate) fn session_metadata_unchanged(
+    conn: &Connection,
+    session: &SessionUpsert,
+    model_settings: &str,
+    linked_work_item_json: Option<&str>,
+    rewind_history_json: Option<&str>,
+) -> rusqlite::Result<bool> {
+    let trimmed = |value: &Option<String>| {
+        value
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    };
+    let same = conn
+        .query_row(
+            "SELECT cwd IS ?2 AND harness IS ?3 AND model IS ?4 AND model_settings IS ?5
+            AND runtime_mode IS ?6 AND title IS ?7 AND provider_session_id IS ?8
+            AND provider_account_id IS ?9 AND worktree_cwd IS ?10
+            AND worktree_removed IS ?11 AND linked_work_item_json IS ?12
+            AND automation_id IS ?13 AND rewind_history_json IS ?14
+            AND pending_context_replay IS ?15
+            AND workspace_id IS ?16 AND workspace_revision IS ?17 AND workspace_mode IS ?18
+         FROM sessions WHERE id = ?1",
+            params![
+                session.id,
+                session.cwd,
+                session.harness,
+                session.model,
+                model_settings,
+                session.runtime_mode,
+                session.title,
+                trimmed(&session.provider_session_id),
+                trimmed(&session.provider_account_id),
+                trimmed(&session.worktree_cwd),
+                i64::from(session.worktree_removed),
+                linked_work_item_json,
+                trimmed(&session.automation_id),
+                rewind_history_json,
+                session.pending_context_replay,
+                session.workspace_id,
+                session.workspace_revision,
+                session.workspace_mode,
+            ],
+            |row| row.get::<_, Option<bool>>(0),
+        )
+        .optional()
+        .map(|value| value.flatten().unwrap_or(false))?;
+    Ok(same
+        && match &session.managed_by {
+            Some(value) => {
+                provenance::stored_management(conn, &session.id)?.as_ref() == Some(value)
+            }
+            None => true,
+        })
 }
 
 fn upsert_session_core(
@@ -1727,6 +3138,8 @@ fn upsert_session_core(
     git: crate::fs::GitInfo,
     expected: Option<Option<i64>>,
     blocks_json: &str,
+    stored_blocks_json: &str,
+    normalized_same: bool,
 ) -> rusqlite::Result<Option<SessionSummary>> {
     let now = now_millis();
     let model_settings = serde_json::to_string(&session.model_settings)
@@ -1758,20 +3171,8 @@ fn upsert_session_core(
         .as_ref()
         .map(|value| value.trim())
         .filter(|value| !value.is_empty());
-    let branch = if session.worktree_removed {
-        None
-    } else {
-        git.branch
-            .as_deref()
-            .filter(|value| !value.is_empty())
-            .or_else(|| {
-                session
-                    .branch
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-            })
-    };
+    let branch = stored_branch(session, &git);
+    let branch = branch.as_deref();
     let worktree_cwd = session
         .worktree_cwd
         .as_deref()
@@ -1787,36 +3188,53 @@ fn upsert_session_core(
     // the bytes itself, so the old blob is neither copied out nor parsed. Text
     // written another way only reads as "changed", which just moves
     // `updated_at` once.
-    let existing: Option<(i64, i64, bool, i64, i64)> = conn
+    //
+    // A changed `adopted_divergence` (a divergence flagged, or the user's answer
+    // to it) moves `updated_at` even when the blocks are the same: the host
+    // reads that to learn the answer, and `adopted_base` is only a record of
+    // what was agreed, which must not reorder history on its own.
+    let existing: Option<(i64, i64, bool, i64, i64, bool)> = conn
         .prepare(
-            "SELECT created_at, updated_at, blocks_json = ?2, archived, pinned FROM session_transcripts WHERE id = ?1",
+            "SELECT created_at, updated_at, CASE WHEN ?4 THEN 1
+             WHEN EXISTS(SELECT 1 FROM session_block_state WHERE session_id=?1 AND length>=0) THEN 0
+             ELSE blocks_json = ?2 END, archived, pinned, adopted_divergence IS ?3 FROM sessions WHERE id = ?1",
         )?
         .query_row(
-            params![session.id, blocks_json],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            params![session.id, blocks_json, session.adopted_divergence, normalized_same],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
         )
         .optional()?;
     if let Some(expected) = expected {
-        if existing.as_ref().map(|(_, updated, _, _, _)| *updated) != expected {
+        if existing.as_ref().map(|(_, updated, _, _, _, _)| *updated) != expected {
             return Ok(None);
         }
     }
     let created_at = existing
         .as_ref()
-        .map(|(value, _, _, _, _)| *value)
+        .map(|(value, _, _, _, _, _)| *value)
         .unwrap_or_else(|| session.created_at.unwrap_or(now));
+    // A title, model, harness or provider-thread change with the same blocks is
+    // still something the host has to learn: its only desktop stamp is this one.
+    let metadata_unchanged = existing.is_none()
+        || session_metadata_unchanged(
+            conn,
+            session,
+            &model_settings,
+            linked_work_item_json.as_deref(),
+            rewind_history_json.as_deref(),
+        )?;
     let updated_at = match &existing {
-        Some((_, prev_updated, true, _, _)) => *prev_updated,
-        Some((_, previous, _, _, _)) => now.max(previous + 1),
+        Some((_, prev_updated, true, _, _, true)) if metadata_unchanged => *prev_updated,
+        Some((_, previous, _, _, _, _)) => now.max(previous + 1),
         None => session.updated_at.unwrap_or(now),
     };
     let archived = existing
         .as_ref()
-        .map(|(_, _, _, value, _)| *value != 0)
+        .map(|(_, _, _, value, _, _)| *value != 0)
         .unwrap_or(false);
     let pinned = existing
         .as_ref()
-        .map(|(_, _, _, _, value)| *value != 0)
+        .map(|(_, _, _, _, value, _)| *value != 0)
         .unwrap_or(false);
 
     conn.prepare(
@@ -1825,8 +3243,8 @@ fn upsert_session_core(
            provider_session_id, blocks_json, created_at, updated_at, branch,
            context_used, context_window, worktree_cwd, has_user_message,
            linked_work_item_json, provider_account_id, worktree_removed, is_draft,
-           automation_id, rewind_history_json, pending_context_replay
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
+           automation_id, rewind_history_json, pending_context_replay, adopted_divergence, adopted_base, workspace_id, workspace_revision, workspace_mode
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)
          ON CONFLICT(id) DO UPDATE SET
            cwd = excluded.cwd,
            harness = excluded.harness,
@@ -1835,7 +3253,7 @@ fn upsert_session_core(
            runtime_mode = excluded.runtime_mode,
            title = excluded.title,
            provider_session_id = excluded.provider_session_id,
-           blocks_json = excluded.blocks_json,
+           blocks_json = CASE WHEN ?29 THEN sessions.blocks_json ELSE excluded.blocks_json END,
            updated_at = excluded.updated_at,
            branch = excluded.branch,
            context_used = excluded.context_used,
@@ -1848,7 +3266,12 @@ fn upsert_session_core(
            is_draft = excluded.is_draft,
            automation_id = excluded.automation_id,
            rewind_history_json = excluded.rewind_history_json,
-           pending_context_replay = excluded.pending_context_replay",
+           pending_context_replay = excluded.pending_context_replay,
+           adopted_divergence = excluded.adopted_divergence,
+           adopted_base = excluded.adopted_base,
+           workspace_id = excluded.workspace_id,
+           workspace_revision = excluded.workspace_revision,
+           workspace_mode = COALESCE(excluded.workspace_mode, sessions.workspace_mode)",
     )?
     .execute(
         params![
@@ -1860,7 +3283,7 @@ fn upsert_session_core(
             session.runtime_mode,
             session.title,
             provider_session_id,
-            blocks_json,
+            stored_blocks_json,
             created_at,
             updated_at,
             branch,
@@ -1875,11 +3298,32 @@ fn upsert_session_core(
             automation_id,
             rewind_history_json,
             session.pending_context_replay,
+            session.adopted_divergence,
+            session.adopted_base,
+            session.workspace_id,
+            session.workspace_revision,
+            session.workspace_mode,
+            normalized_same,
         ],
     )?;
 
     remember_worker_from_blocks(conn, &session.id, &session.blocks)?;
+    if let Some(managed_by) = &session.managed_by {
+        let raw = serde_json::to_string(managed_by)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+        conn.execute(
+            "UPDATE sessions SET assistant_management_json=?2 WHERE id=?1",
+            params![session.id, raw],
+        )?;
+    }
     Ok(Some(SessionSummary {
+        last_activity_at: updated_at,
+        interrupted: turn_interrupted(session.blocks.as_array().map(Vec::as_slice).unwrap_or(&[])),
+        provider_history: Some(provider_history::derive(
+            session.blocks.as_array().map(Vec::as_slice).unwrap_or(&[]),
+            &session.harness,
+        )),
+        managed_by: provenance::stored_management(conn, &session.id)?,
         transcript_revision: None,
         id: session.id.clone(),
         orchestration_lead_id: worker_parent(conn, &session.id)?,
@@ -1892,6 +3336,9 @@ fn upsert_session_core(
         provider_session_id: provider_session_id.map(str::to_owned),
         branch: branch.map(str::to_owned),
         worktree_cwd: worktree_cwd.map(str::to_owned),
+        workspace_mode: session.workspace_mode.clone(),
+        workspace_id: session.workspace_id.clone(),
+        workspace_revision: session.workspace_revision,
         worktree_removed: session.worktree_removed,
         repo: git.repo,
         additions: 0,
@@ -1944,7 +3391,7 @@ fn search_sessions_sql(include_archived: bool, cwd_scoped: bool) -> String {
         sql.push_str(" INDEXED BY sessions_cwd_cover_idx");
     }
     sql.push_str(
-        " WHERE id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
+        " WHERE id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL) AND NOT EXISTS (SELECT 1 FROM delegated_session_ids d WHERE d.id=sessions.id)
             AND has_user_message = 1
             AND (LOWER(title) LIKE LOWER(?1) ESCAPE '\\'
                  OR CASE WHEN octet_length(blocks_json) <= ?2
@@ -2250,20 +3697,28 @@ fn list_by_project_with_git(
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json,
                 (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id), worktree_cwd,
-                worktree_removed, is_draft, automation_id
-         FROM sessions
+                worktree_removed, is_draft, automation_id, workspace_id, workspace_revision, workspace_mode,
+                projection.interrupted, projection.provider_history, projection.activity_at, projection.management_json
+         FROM sessions INDEXED BY sessions_activity_project_cover_v2_idx
+         LEFT JOIN session_list_summaries projection ON projection.session_id=sessions.id
          WHERE cwd = ?1
            AND has_user_message = 1
            AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
-           AND id NOT IN (SELECT session_id FROM orchestration_workers)
-         ORDER BY updated_at DESC, id ASC",
+           AND id NOT IN (SELECT session_id FROM orchestration_workers) AND NOT EXISTS (SELECT 1 FROM delegated_session_ids d WHERE d.id=sessions.id)
+         ORDER BY COALESCE(last_activity_at,updated_at) DESC, id ASC",
     )?;
     let rows = statement.query_map(params![cwd], |row| {
         let stored_branch: Option<String> = row.get(9)?;
         let archived: i64 = row.get(10)?;
         let pinned: i64 = row.get(11)?;
         let linked_work_item = optional_json(row.get(12)?);
+        let (interrupted, provider_history, last_activity_at, managed_by) =
+            list_projection(conn, row, 21)?;
         Ok(SessionSummary {
+            last_activity_at,
+            interrupted,
+            provider_history,
+            managed_by,
             transcript_revision: None,
             id: row.get(0)?,
             orchestration_lead_id: None,
@@ -2291,6 +3746,9 @@ fn list_by_project_with_git(
             draft: row.get::<_, i64>(16)? != 0,
             linked_work_item,
             automation_id: nonempty(row.get(17)?),
+            workspace_id: row.get(18)?,
+            workspace_revision: row.get(19)?,
+            workspace_mode: row.get(20)?,
         })
     })?;
     rows.collect()
@@ -2303,20 +3761,28 @@ const LIST_LINKED_SQL: &str = "SELECT id, cwd, harness, model, runtime_mode, tit
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json,
                 (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id), worktree_cwd,
-                worktree_removed, is_draft, automation_id
-         FROM sessions INDEXED BY sessions_linked_idx
+                worktree_removed, is_draft, automation_id, workspace_id, workspace_revision, workspace_mode,
+                projection.interrupted, projection.provider_history, projection.activity_at, projection.management_json
+         FROM sessions INDEXED BY sessions_activity_linked_cover_v2_idx
+         LEFT JOIN session_list_summaries projection ON projection.session_id=sessions.id
          WHERE has_user_message = 1
            AND linked_work_item_json IS NOT NULL
            AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
-           AND id NOT IN (SELECT session_id FROM orchestration_workers)
-         ORDER BY updated_at DESC, id ASC";
+           AND id NOT IN (SELECT session_id FROM orchestration_workers) AND NOT EXISTS (SELECT 1 FROM delegated_session_ids d WHERE d.id=sessions.id)
+         ORDER BY COALESCE(last_activity_at,updated_at) DESC, id ASC";
 
 fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
     let mut statement = conn.prepare(LIST_LINKED_SQL)?;
     let rows = statement.query_map([], |row| {
         let archived: i64 = row.get(10)?;
         let pinned: i64 = row.get(11)?;
+        let (interrupted, provider_history, last_activity_at, managed_by) =
+            list_projection(conn, row, 21)?;
         Ok(SessionSummary {
+            last_activity_at,
+            interrupted,
+            provider_history,
+            managed_by,
             transcript_revision: None,
             id: row.get(0)?,
             orchestration_lead_id: None,
@@ -2340,6 +3806,9 @@ fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
             draft: row.get::<_, i64>(16)? != 0,
             linked_work_item: optional_json(row.get(12)?),
             automation_id: nonempty(row.get(17)?),
+            workspace_id: row.get(18)?,
+            workspace_revision: row.get(19)?,
+            workspace_mode: row.get(20)?,
         })
     })?;
     rows.collect()
@@ -2348,14 +3817,80 @@ fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
 /// Newest live sessions across every project, plus every pinned one however
 /// old. Read-only and branch-light: it never shells out to git per project.
 fn list_recent(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<SessionSummary>> {
-    let mut rows = recent_rows(conn, true, -1)?;
-    rows.extend(recent_rows(conn, false, limit.clamp(1, 200))?);
+    let mut rows = recent_rows(conn, true, -1, i64::MIN)?;
+    rows.extend(recent_rows(conn, false, limit.clamp(1, 200), i64::MIN)?);
     rows.sort_by(|a, b| {
-        b.updated_at
-            .cmp(&a.updated_at)
+        b.last_activity_at
+            .cmp(&a.last_activity_at)
             .then_with(|| a.id.cmp(&b.id))
     });
     Ok(rows)
+}
+
+fn list_recent_since(conn: &Connection, since: i64) -> rusqlite::Result<Vec<SessionSummary>> {
+    let mut rows = recent_rows(conn, true, -1, since)?;
+    rows.extend(recent_rows(conn, false, -1, since)?);
+    rows.sort_by(|a, b| {
+        b.last_activity_at
+            .cmp(&a.last_activity_at)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    Ok(rows)
+}
+
+const RECENT_SESSION_PAGE_SIZE: usize = 100;
+fn list_recent_since_page(
+    conn: &Connection,
+    since: i64,
+    cursor: Option<&RecentSessionCursor>,
+) -> Result<RecentSessionPage, String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let revision: i64 = tx
+        .query_row(
+            "SELECT revision FROM recent_session_revision WHERE id=1",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if cursor.is_some_and(|value| value.revision != revision) {
+        return Err("RECENT_SESSIONS_CHANGED".into());
+    }
+    let mut rows = recent_rows_after(
+        &tx,
+        true,
+        (RECENT_SESSION_PAGE_SIZE + 1) as i64,
+        since,
+        cursor,
+    )
+    .map_err(|e| e.to_string())?;
+    rows.extend(
+        recent_rows_after(
+            &tx,
+            false,
+            (RECENT_SESSION_PAGE_SIZE + 1) as i64,
+            since,
+            cursor,
+        )
+        .map_err(|e| e.to_string())?,
+    );
+    rows.sort_by(|a, b| {
+        b.last_activity_at
+            .cmp(&a.last_activity_at)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    let has_more = rows.len() > RECENT_SESSION_PAGE_SIZE;
+    rows.truncate(RECENT_SESSION_PAGE_SIZE);
+    let next_cursor = if has_more {
+        rows.last().map(|row| RecentSessionCursor {
+            activity_at: row.last_activity_at,
+            id: row.id.clone(),
+            revision,
+        })
+    } else {
+        None
+    };
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(RecentSessionPage { rows, next_cursor })
 }
 
 // `sessions_recent_idx` is ordered by (pinned, updated_at DESC, id), so the
@@ -2366,26 +3901,62 @@ const RECENT_ROWS_SQL: &str =
     "SELECT id, cwd, harness, model, runtime_mode, title, provider_session_id,
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json, worktree_cwd, worktree_removed, is_draft,
-                automation_id
-         FROM sessions INDEXED BY sessions_recent_idx
+                automation_id, workspace_id, workspace_revision, workspace_mode,
+                projection.interrupted, projection.provider_history, projection.activity_at, projection.management_json,
+                COALESCE(last_activity_at,updated_at)
+         FROM sessions INDEXED BY sessions_activity_recent_cover_v2_idx
+         LEFT JOIN session_list_summaries projection ON projection.session_id=sessions.id
          WHERE has_user_message = 1
            AND archived = 0
            AND pinned = ?1
+           AND COALESCE(last_activity_at,updated_at) >= ?3
            AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
-           AND id NOT IN (SELECT session_id FROM orchestration_workers)
-         ORDER BY updated_at DESC, id ASC
+           AND id NOT IN (SELECT session_id FROM orchestration_workers) AND NOT EXISTS (SELECT 1 FROM delegated_session_ids d WHERE d.id=sessions.id)
+         ORDER BY COALESCE(last_activity_at,updated_at) DESC, id ASC
          LIMIT ?2";
 
 fn recent_rows(
     conn: &Connection,
     pinned: bool,
     limit: i64,
+    since: i64,
 ) -> rusqlite::Result<Vec<SessionSummary>> {
-    let mut statement = conn.prepare(RECENT_ROWS_SQL)?;
-    let rows = statement.query_map(params![pinned as i64, limit], |row| {
+    recent_rows_after(conn, pinned, limit, since, None)
+}
+
+fn recent_rows_after(
+    conn: &Connection,
+    pinned: bool,
+    limit: i64,
+    since: i64,
+    cursor: Option<&RecentSessionCursor>,
+) -> rusqlite::Result<Vec<SessionSummary>> {
+    let sql = if cursor.is_some() {
+        RECENT_ROWS_SQL.replace("AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)",
+            "AND COALESCE(last_activity_at,updated_at) <= ?4 AND (COALESCE(last_activity_at,updated_at) < ?4 OR id > ?5) AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)")
+    } else {
+        RECENT_ROWS_SQL.to_owned()
+    };
+    let mut statement = conn.prepare(&sql)?;
+    let mut args = vec![
+        rusqlite::types::Value::Integer(pinned as i64),
+        rusqlite::types::Value::Integer(limit),
+        rusqlite::types::Value::Integer(since),
+    ];
+    if let Some(value) = cursor {
+        args.push(rusqlite::types::Value::Integer(value.activity_at));
+        args.push(rusqlite::types::Value::Text(value.id.clone()));
+    }
+    let rows = statement.query_map(rusqlite::params_from_iter(args), |row| {
         let worktree_removed = row.get::<_, i64>(14)? != 0;
         let branch: Option<String> = row.get(9)?;
+        let (interrupted, provider_history, _, managed_by) = list_projection(conn, row, 20)?;
+        let last_activity_at = row.get(24)?;
         Ok(SessionSummary {
+            last_activity_at,
+            interrupted,
+            provider_history,
+            managed_by,
             transcript_revision: None,
             id: row.get(0)?,
             orchestration_lead_id: None,
@@ -2413,9 +3984,113 @@ fn recent_rows(
             draft: row.get::<_, i64>(15)? != 0,
             linked_work_item: optional_json(row.get(12)?),
             automation_id: nonempty(row.get(16)?),
+            workspace_id: row.get(17)?,
+            workspace_revision: row.get(18)?,
+            workspace_mode: row.get(19)?,
         })
     })?;
     rows.collect()
+}
+
+fn list_projection(
+    conn: &Connection,
+    row: &rusqlite::Row<'_>,
+    offset: usize,
+) -> rusqlite::Result<(bool, Option<Value>, i64, Option<Value>)> {
+    if let Some(interrupted) = row.get::<_, Option<i64>>(offset)? {
+        return Ok((
+            interrupted != 0,
+            optional_json(row.get(offset + 1)?),
+            row.get(offset + 2)?,
+            optional_json(row.get(offset + 3)?),
+        ));
+    }
+    // Another writer may have invalidated the projection after migration.
+    let id: String = row.get(0)?;
+    let harness: String = row.get(2)?;
+    Ok((
+        stored_turn_interrupted(conn, &id)?,
+        Some(provider_history::stored(conn, &id, &harness)?),
+        stored_activity_at(conn, &id)?,
+        provenance::stored_management(conn, &id)?,
+    ))
+}
+
+fn stored_activity_at(conn: &Connection, id: &str) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "SELECT COALESCE(last_activity_at, updated_at) FROM sessions WHERE id=?1",
+        [id],
+        |row| row.get(0),
+    )
+}
+
+fn owner_stop_before_quit(blocks: &[Value]) -> bool {
+    blocks.len() >= 2
+        && blocks.last().is_some_and(|block| {
+            block.get("role").and_then(Value::as_str) == Some("system")
+                && matches!(
+                    block.get("text").and_then(Value::as_str),
+                    Some(
+                        "Turn interrupted when bycoda quit." | "Turn interrupted when Bycoda quit."
+                    )
+                )
+        })
+        && blocks.get(blocks.len() - 2).is_some_and(|block| {
+            block.get("role").and_then(Value::as_str) == Some("system")
+                && block.get("text").and_then(Value::as_str).map(str::trim)
+                    == Some("Stopped by you.")
+        })
+}
+
+fn turn_interrupted(blocks: &[Value]) -> bool {
+    !owner_stop_before_quit(blocks)
+        && blocks.last().is_some_and(|block| {
+            block.get("role").and_then(Value::as_str) == Some("system")
+                && block.get("text").and_then(Value::as_str).map(str::trim)
+                    != Some("Stopped by you.")
+                && (block.get("notice").and_then(Value::as_str) == Some("interrupt")
+                    || matches!(
+                        block.get("text").and_then(Value::as_str),
+                        Some(
+                            "Turn interrupted when bycoda quit."
+                                | "Turn interrupted when Bycoda quit."
+                        )
+                    ))
+        })
+}
+
+fn stored_turn_tail(conn: &Connection, id: &str) -> rusqlite::Result<Vec<Value>> {
+    let mut statement = conn.prepare(
+        "SELECT block_json FROM session_blocks WHERE session_id=?1
+         AND EXISTS(SELECT 1 FROM session_block_state WHERE session_id=?1 AND length>=0)
+         ORDER BY ordinal DESC LIMIT 2",
+    )?;
+    let mut raw = statement
+        .query_map([id], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    raw.reverse();
+    if raw.is_empty() {
+        let legacy: Option<(Option<String>, Option<String>)> = conn
+            .query_row(
+                "SELECT json_extract(blocks_json,'$[#-2]'),json_extract(blocks_json,'$[#-1]')
+             FROM sessions WHERE id=?1 AND json_valid(blocks_json)
+             AND NOT EXISTS(SELECT 1 FROM session_block_state WHERE session_id=?1 AND length>=0)",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        if let Some((previous, last)) = legacy {
+            raw.extend(previous.into_iter().chain(last));
+        }
+    }
+    Ok(raw
+        .into_iter()
+        .filter_map(|raw| serde_json::from_str(&raw).ok())
+        .collect())
+}
+
+fn stored_turn_interrupted(conn: &Connection, id: &str) -> rusqlite::Result<bool> {
+    Ok(turn_interrupted(&stored_turn_tail(conn, id)?))
 }
 
 /// Mirrors the sidebar's notion of a listable session: a transcript that the
@@ -2451,8 +4126,26 @@ fn optional_json(raw: Option<String>) -> Option<Value> {
     raw.and_then(|value| serde_json::from_str(&value).ok())
 }
 
+#[cfg(test)]
 fn delete_session(conn: &Connection, session_id: &str) -> rusqlite::Result<()> {
+    delete_session_with_mode(conn, session_id, false)
+}
+
+fn delete_session_with_mode(
+    conn: &Connection,
+    session_id: &str,
+    allow_recreate: bool,
+) -> rusqlite::Result<()> {
+    authority::assert_mutation_sql(conn, session_id)?;
     let tx = conn.unchecked_transaction()?;
+    if allow_recreate {
+        deletions::assert_recreatable_draft(&tx, session_id)?;
+    } else {
+        tx.execute(
+            "INSERT OR IGNORE INTO session_deletions(session_id,deleted_at) VALUES (?1,?2)",
+            params![session_id, now_millis()],
+        )?;
+    }
     let parent = worker_parent(&tx, session_id)?;
     // Ownership is also carried in transcripts for older clients. Release
     // that metadata along with the index so reopening a worker stays detached.
@@ -2476,6 +4169,11 @@ fn delete_session(conn: &Connection, session_id: &str) -> rusqlite::Result<()> {
             "UPDATE sessions SET blocks_json = ?1 WHERE id = ?2",
             params![blocks.to_string(), id],
         )?;
+        let harness: String =
+            tx.query_row("SELECT harness FROM sessions WHERE id=?1", [&id], |row| {
+                row.get(0)
+            })?;
+        update_list_summary(&tx, &id, &harness)?;
     }
     tx.execute(
         "DELETE FROM orchestration_runs WHERE lead_id = ?1",
@@ -2564,6 +4262,11 @@ fn delete_session(conn: &Connection, session_id: &str) -> rusqlite::Result<()> {
         [session_id],
     )?;
     tx.execute("DELETE FROM sessions WHERE id = ?1", [session_id])?;
+    // This projection's delete trigger also removes per-window and legacy rows.
+    tx.execute(
+        "DELETE FROM in_flight_sessions WHERE session_id = ?1",
+        [session_id],
+    )?;
     tx.commit()
 }
 
@@ -2618,7 +4321,8 @@ fn read_session_row_from(
                 provider_session_id, CASE WHEN ?2 THEN blocks_json ELSE '[]' END, created_at, updated_at,
                 context_used, context_window, branch, worktree_cwd,
                 linked_work_item_json, provider_account_id, worktree_removed,
-                automation_id, rewind_history_json, pending_context_replay
+                automation_id, rewind_history_json, pending_context_replay, adopted_divergence,
+                adopted_base, workspace_id, workspace_revision, workspace_mode
          FROM session_transcripts
          WHERE id = ?1 AND inbox_ask IS NULL",
         params![session_id,include_blocks],
@@ -2626,6 +4330,7 @@ fn read_session_row_from(
             let model_settings_raw: String = row.get(4)?;
             let blocks_raw: String = row.get(8)?;
             let record = SessionRecord {
+                managed_by: provenance::stored_management(conn, session_id)?,
                 transcript_revision: conn.query_row("SELECT revision FROM session_block_state WHERE session_id=?1", [session_id], |r|r.get(0)).optional()?,
                 id: row.get(0)?,
                 orchestration_lead_id: worker_parent(conn, session_id)?,
@@ -2647,6 +4352,11 @@ fn read_session_row_from(
                 automation_id: nonempty(row.get(18)?),
                 rewind_history: optional_json(row.get(19)?),
                 pending_context_replay: row.get(20)?,
+                adopted_divergence: row.get(21)?,
+                adopted_base: row.get(22)?,
+                workspace_id: row.get(23)?,
+                workspace_revision: row.get(24)?,
+                workspace_mode: row.get(25)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
             };
@@ -2702,6 +4412,155 @@ fn get_session_json(conn: &Connection, session_id: &str) -> rusqlite::Result<Str
     Ok(head)
 }
 
+fn ensure_window_in_flight(conn: &Connection) -> rusqlite::Result<()> {
+    deletions::ensure_markers(conn)?;
+    let migrated: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'in_flight_legacy_sessions')", [], |row| row.get(0))?;
+    if !migrated {
+        conn.execute_batch("SAVEPOINT window_in_flight_migration;
+            CREATE TABLE IF NOT EXISTS in_flight_legacy_sessions (session_id TEXT PRIMARY KEY, cwd TEXT NOT NULL, sort_index INTEGER NOT NULL);
+            INSERT OR IGNORE INTO in_flight_legacy_sessions SELECT session_id, cwd, sort_index FROM in_flight_sessions;
+            RELEASE window_in_flight_migration;")?;
+    }
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS in_flight_window_sessions (
+        process_id TEXT NOT NULL, window_label TEXT NOT NULL, page_id TEXT NOT NULL, session_id TEXT NOT NULL,
+        cwd TEXT NOT NULL, sort_index INTEGER NOT NULL,
+        PRIMARY KEY (process_id, window_label, page_id, session_id, cwd)
+    );
+    CREATE TRIGGER IF NOT EXISTS in_flight_projection_external_delete AFTER DELETE ON in_flight_sessions BEGIN
+        DELETE FROM in_flight_window_sessions WHERE session_id = OLD.session_id;
+        DELETE FROM in_flight_legacy_sessions WHERE session_id = OLD.session_id;
+    END;
+    CREATE TRIGGER IF NOT EXISTS in_flight_projection_external_insert AFTER INSERT ON in_flight_sessions
+      WHEN NOT EXISTS (SELECT 1 FROM in_flight_window_sessions WHERE session_id = NEW.session_id)
+      BEGIN INSERT OR REPLACE INTO in_flight_legacy_sessions (session_id, cwd, sort_index) VALUES (NEW.session_id, NEW.cwd, NEW.sort_index); END;
+    CREATE TRIGGER IF NOT EXISTS session_deleted_window_in_flight BEFORE INSERT ON in_flight_window_sessions
+      WHEN EXISTS(SELECT 1 FROM session_deletions WHERE session_id=NEW.session_id)
+      BEGIN SELECT RAISE(IGNORE); END;
+    CREATE TRIGGER IF NOT EXISTS session_deleted_legacy_in_flight BEFORE INSERT ON in_flight_legacy_sessions
+      WHEN EXISTS(SELECT 1 FROM session_deletions WHERE session_id=NEW.session_id)
+      BEGIN SELECT RAISE(IGNORE); END;",
+    )
+}
+
+fn replace_window_in_flight(
+    conn: &mut Connection,
+    process: &str,
+    window: &str,
+    page: &str,
+    sessions: &[InFlightSession],
+) -> rusqlite::Result<()> {
+    ensure_window_in_flight(conn)?;
+    let tx = conn.transaction()?;
+    let prior = {
+        let mut statement = tx.prepare("SELECT session_id FROM in_flight_window_sessions WHERE process_id = ?1 AND window_label = ?2 AND page_id = ?3")?;
+        let rows = statement.query_map(params![process, window, page], |row| {
+            row.get::<_, String>(0)
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    tx.execute(
+        "DELETE FROM in_flight_window_sessions WHERE process_id = ?1 AND window_label = ?2 AND page_id = ?3",
+        params![process, window, page],
+    )?;
+    for (index, session) in sessions.iter().enumerate() {
+        tx.execute("INSERT OR IGNORE INTO in_flight_window_sessions (process_id, window_label, page_id, session_id, cwd, sort_index) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![process, window, page, session.session_id, session.cwd, index as i64])?;
+        tx.execute("INSERT INTO in_flight_sessions (session_id, cwd, sort_index) VALUES (?1, ?2, ?3) ON CONFLICT(session_id) DO UPDATE SET cwd = excluded.cwd, sort_index = excluded.sort_index", params![session.session_id, session.cwd, index as i64])?;
+    }
+    for id in prior {
+        tx.execute("DELETE FROM in_flight_sessions WHERE session_id = ?1 AND NOT EXISTS (SELECT 1 FROM in_flight_window_sessions WHERE session_id = ?1) AND NOT EXISTS (SELECT 1 FROM in_flight_legacy_sessions WHERE session_id = ?1)", [id])?;
+    }
+    tx.commit()
+}
+
+fn interrupted_processes(
+    conn: &Connection,
+    is_stale: impl Fn(&str, &str) -> bool,
+) -> rusqlite::Result<Vec<(String, String)>> {
+    ensure_window_in_flight(conn)?;
+    let mut statement =
+        conn.prepare("SELECT DISTINCT process_id, page_id FROM in_flight_window_sessions")?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    Ok(rows
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .into_iter()
+        .filter(|(id, page)| is_stale(id, page))
+        .collect())
+}
+
+fn list_interrupted_in_flight(
+    conn: &Connection,
+    is_stale: impl Fn(&str, &str) -> bool,
+) -> rusqlite::Result<Vec<InFlightSession>> {
+    let stale = interrupted_processes(conn, is_stale)?;
+    let mut statement = conn.prepare(
+        "SELECT session_id, cwd FROM in_flight_legacy_sessions ORDER BY sort_index, session_id",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(InFlightSession {
+            session_id: row.get(0)?,
+            cwd: row.get(1)?,
+        })
+    })?;
+    let mut result = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+    let mut protected = std::collections::HashSet::new();
+    {
+        let mut statement = conn.prepare("SELECT process_id, page_id, session_id, cwd FROM in_flight_window_sessions ORDER BY sort_index, session_id")?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                InFlightSession {
+                    session_id: row.get(2)?,
+                    cwd: row.get(3)?,
+                },
+            ))
+        })?;
+        for row in rows {
+            let (id, page, item) = row?;
+            if stale.contains(&(id, page)) {
+                result.push(item);
+            } else {
+                protected.insert(item.session_id);
+            }
+        }
+    }
+    result.retain(|item| !protected.contains(&item.session_id));
+    result.sort_by(|a, b| (&a.session_id, &a.cwd).cmp(&(&b.session_id, &b.cwd)));
+    result.dedup_by(|a, b| a.session_id == b.session_id && a.cwd == b.cwd);
+    Ok(result)
+}
+
+fn take_interrupted_in_flight(
+    conn: &mut Connection,
+    stale: &[(String, String)],
+) -> rusqlite::Result<Vec<InFlightSession>> {
+    ensure_window_in_flight(conn)?;
+    let tx = conn.transaction()?;
+    let sessions = list_interrupted_in_flight(&tx, |id, page| {
+        stale.iter().any(|item| item.0 == id && item.1 == page)
+    })?;
+    for item in &sessions {
+        tx.execute(
+            "DELETE FROM in_flight_sessions WHERE session_id = ?1 AND cwd = ?2",
+            params![item.session_id, item.cwd],
+        )?;
+        tx.execute(
+            "DELETE FROM in_flight_legacy_sessions WHERE session_id = ?1 AND cwd = ?2",
+            params![item.session_id, item.cwd],
+        )?;
+        for (id, page) in stale {
+            tx.execute("DELETE FROM in_flight_window_sessions WHERE process_id = ?1 AND page_id = ?2 AND session_id = ?3 AND cwd = ?4", params![id, page, item.session_id, item.cwd])?;
+        }
+    }
+    tx.commit()?;
+    Ok(sessions)
+}
+
+#[cfg(test)]
 fn list_in_flight(conn: &Connection) -> rusqlite::Result<Vec<InFlightSession>> {
     let mut statement = conn.prepare(
         "SELECT session_id, cwd FROM in_flight_sessions ORDER BY sort_index ASC, session_id ASC",
@@ -2715,6 +4574,7 @@ fn list_in_flight(conn: &Connection) -> rusqlite::Result<Vec<InFlightSession>> {
     rows.collect()
 }
 
+#[cfg(test)]
 fn replace_in_flight(conn: &mut Connection, sessions: &[InFlightSession]) -> rusqlite::Result<()> {
     let tx = conn.transaction()?;
     tx.execute("DELETE FROM in_flight_sessions", [])?;
@@ -2731,6 +4591,7 @@ fn replace_in_flight(conn: &mut Connection, sessions: &[InFlightSession]) -> rus
     Ok(())
 }
 
+#[cfg(test)]
 fn take_in_flight(conn: &mut Connection) -> rusqlite::Result<Vec<InFlightSession>> {
     let tx = conn.transaction()?;
     let sessions = {
@@ -2893,6 +4754,8 @@ mod tests {
 
     fn sample(id: &str, cwd: &str, title: &str) -> SessionUpsert {
         SessionUpsert {
+            preserve_activity_at: false,
+            managed_by: None,
             id: id.into(),
             cwd: cwd.into(),
             harness: "cursor".into(),
@@ -2907,14 +4770,151 @@ mod tests {
             context_window: None,
             branch: None,
             worktree_cwd: None,
+            workspace_mode: None,
+            workspace_id: None,
+            workspace_revision: None,
             worktree_removed: false,
             linked_work_item: None,
             automation_id: None,
             rewind_history: None,
             pending_context_replay: None,
+            adopted_divergence: None,
+            adopted_base: None,
             created_at: None,
             updated_at: None,
         }
+    }
+
+    #[test]
+    fn owner_stop_is_idle_in_saved_and_legacy_session_summaries() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        for (notice, text, interrupted) in [
+            ("interrupt", "Stopped by you.", false),
+            ("interrupt", "  Stopped by you.\n", false),
+            ("info", "Stopped by you.", false),
+            (
+                "interrupt",
+                "Host restarted while this turn was running.",
+                true,
+            ),
+            ("interrupt", "Connection lost.", true),
+            ("", "Turn interrupted when bycoda quit.", true),
+            ("", "Turn interrupted when Bycoda quit.", true),
+        ] {
+            let mut session = sample("stopped", "/project", "Stopped");
+            session.blocks = json!([
+                { "id": "u", "role": "user", "text": "hello" },
+                { "id": "stop", "role": "system", "notice": notice, "text": text }
+            ]);
+            let saved =
+                upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None)
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(saved.interrupted, interrupted, "{text}");
+            for legacy in [false, true] {
+                if legacy {
+                    conn.execute("DELETE FROM session_blocks WHERE session_id='stopped'", [])
+                        .unwrap();
+                    conn.execute(
+                        "DELETE FROM session_block_state WHERE session_id='stopped'",
+                        [],
+                    )
+                    .unwrap();
+                    conn.execute(
+                        "UPDATE sessions SET blocks_json=?1 WHERE id='stopped'",
+                        [session.blocks.to_string()],
+                    )
+                    .unwrap();
+                }
+                assert_eq!(
+                    list_recent(&conn, 10).unwrap()[0].interrupted,
+                    interrupted,
+                    "{text}, legacy={legacy}"
+                );
+                assert_eq!(
+                    list_by_project_with_git(&conn, "/project", crate::fs::GitInfo::default())
+                        .unwrap()[0]
+                        .interrupted,
+                    interrupted,
+                    "{text}, legacy={legacy}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn interruption_preserves_activity_order_and_new_turn_clears_warning() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let mut older = sample("older", "/project", "Older");
+        older.updated_at = Some(100);
+        let mut newer = sample("newer", "/project", "Newer");
+        newer.updated_at = Some(200);
+        upsert_session_with_git(&conn, &older, crate::fs::GitInfo::default(), None).unwrap();
+        upsert_session_with_git(&conn, &newer, crate::fs::GitInfo::default(), None).unwrap();
+        older.blocks = json!([{ "id": "b1", "role": "user", "text": "hello" },
+            { "id": "stop", "role": "system", "notice": "interrupt", "text": "stopped" }]);
+        older.preserve_activity_at = true;
+        let saved = upsert_session_with_git(&conn, &older, crate::fs::GitInfo::default(), None)
+            .unwrap()
+            .unwrap();
+        assert!(saved.interrupted);
+        assert_eq!(saved.last_activity_at, 100);
+        assert!(saved.updated_at > 200);
+        let rows = list_recent(&conn, 10).unwrap();
+        assert_eq!(
+            rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            ["newer", "older"]
+        );
+        assert!(rows[1].interrupted);
+        older.preserve_activity_at = false;
+        let unchanged = upsert_session_with_git(&conn, &older, crate::fs::GitInfo::default(), None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(unchanged.last_activity_at, 100);
+        assert_eq!(list_recent(&conn, 10).unwrap()[0].id, "newer");
+        older
+            .blocks
+            .as_array_mut()
+            .unwrap()
+            .push(json!({ "id": "next", "role": "user", "text": "continue" }));
+        let resumed = upsert_session_with_git(&conn, &older, crate::fs::GitInfo::default(), None)
+            .unwrap()
+            .unwrap();
+        assert!(!resumed.interrupted);
+        assert!(resumed.last_activity_at > 200);
+        assert!(!list_recent(&conn, 10).unwrap()[0].interrupted);
+    }
+
+    #[test]
+    fn cleared_execution_identity_survives_database_reopen() {
+        let dir = std::env::temp_dir().join(format!(
+            "bycoda-clear-{}-{}",
+            std::process::id(),
+            now_millis()
+        ));
+        let path = dir.join("sessions.db");
+        {
+            let store = SessionStore::open(path.clone()).unwrap();
+            let conn = store.lock_conn().unwrap();
+            let mut session = sample("legacy-clear", "/tmp/project", "Existing");
+            upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None).unwrap();
+            session.blocks = json!([]);
+            session.provider_session_id = None;
+            session.workspace_mode = Some("current".into());
+            upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None).unwrap();
+        }
+        {
+            let store = SessionStore::open(path).unwrap();
+            let conn = store.lock_conn().unwrap();
+            let saved = get_session(&conn, "legacy-clear").unwrap().unwrap();
+            assert_eq!(saved.workspace_mode.as_deref(), Some("current"));
+            assert_eq!(saved.blocks, json!([]));
+            assert!(saved.workspace_id.is_none());
+            assert!(saved.worktree_cwd.is_none());
+        }
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
@@ -2940,6 +4940,97 @@ mod tests {
             restored.pending_context_replay.as_deref(),
             Some("retained transcript context")
         );
+    }
+
+    #[test]
+    fn adopted_divergence_round_trips_and_clears() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let mut session = sample("divergence-roundtrip", "/tmp/project", "Divergence");
+        session.adopted_divergence = Some(r#"{"key":"3:a:b","keep":true}"#.into());
+        upsert_session(&conn, &session).unwrap();
+        let restored = get_session(&conn, &session.id).unwrap().unwrap();
+        assert_eq!(
+            restored.adopted_divergence.as_deref(),
+            Some(r#"{"key":"3:a:b","keep":true}"#)
+        );
+
+        session.adopted_divergence = None;
+        upsert_session(&conn, &session).unwrap();
+        let restored = get_session(&conn, &session.id).unwrap().unwrap();
+        assert_eq!(restored.adopted_divergence, None);
+    }
+
+    #[test]
+    fn adopted_base_round_trips_and_clears() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let mut session = sample("base-roundtrip", "/tmp/project", "Base");
+        let base = r#"{"count":3,"chain":"0123456789abcdef0123456789abcdef"}"#;
+        session.adopted_base = Some(base.into());
+        upsert_session(&conn, &session).unwrap();
+        let restored = get_session(&conn, &session.id).unwrap().unwrap();
+        assert_eq!(restored.adopted_base.as_deref(), Some(base));
+        // The divergence and the base are separate columns.
+        assert_eq!(restored.adopted_divergence, None);
+
+        session.adopted_base = None;
+        upsert_session(&conn, &session).unwrap();
+        let restored = get_session(&conn, &session.id).unwrap().unwrap();
+        assert_eq!(restored.adopted_base, None);
+    }
+
+    #[test]
+    fn an_answered_divergence_moves_updated_at_but_a_recorded_base_does_not() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let mut session = sample("answer-touch", "/tmp/project", "Answer");
+        let first = upsert_session(&conn, &session).unwrap().updated_at;
+
+        // Recording what was agreed is bookkeeping: history keeps its order.
+        session.adopted_base =
+            Some(r#"{"count":1,"chain":"0123456789abcdef0123456789abcdef"}"#.into());
+        let recorded = upsert_session(&conn, &session).unwrap().updated_at;
+        assert_eq!(recorded, first);
+
+        // A flagged divergence, and the answer to it, are something to tell the host.
+        session.adopted_divergence = Some(r#"{"key":"k"}"#.into());
+        let flagged = upsert_session(&conn, &session).unwrap().updated_at;
+        assert!(flagged > recorded);
+        let same = upsert_session(&conn, &session).unwrap().updated_at;
+        assert_eq!(same, flagged);
+        session.adopted_divergence = Some(r#"{"key":"k","keep":true}"#.into());
+        let answered = upsert_session(&conn, &session).unwrap().updated_at;
+        assert!(answered > flagged);
+    }
+
+    #[test]
+    fn a_metadata_only_save_moves_updated_at_but_a_repeat_or_base_does_not() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let mut session = sample("metadata-touch", "/tmp/project", "Metadata");
+        let mut last = upsert_session(&conn, &session).unwrap().updated_at;
+        let mut moved = |session: &SessionUpsert| {
+            let at = upsert_session(&conn, session).unwrap().updated_at;
+            let did = at > last;
+            last = at;
+            did
+        };
+        assert!(!moved(&session), "repeat of the same save");
+        session.title = "Renamed".into();
+        assert!(moved(&session), "title");
+        session.model = "other-model".into();
+        assert!(moved(&session), "model");
+        session.harness = "claude".into();
+        assert!(moved(&session), "harness");
+        session.provider_session_id = Some("thread-1".into());
+        assert!(moved(&session), "provider thread");
+        assert!(!moved(&session), "same provider thread again");
+        session.adopted_base =
+            Some(r#"{"count":1,"chain":"0123456789abcdef0123456789abcdef"}"#.into());
+        assert!(!moved(&session), "adopted_base alone");
+        session.adopted_divergence = Some(r#"{"key":"k"}"#.into());
+        assert!(moved(&session), "divergence");
     }
 
     #[test]
@@ -3100,10 +5191,181 @@ mod tests {
         );
     }
 
-    /// The sidebar query must stay answerable from the index alone. Selecting a
-    /// column the index does not carry silently reintroduces a table seek per
-    /// row, and every summary column sits behind a ~180 KB `blocks_json` blob
-    /// in the record, so that regression is worth ~30x on a real project.
+    #[test]
+    fn legacy_activity_fallback_keeps_order_without_rewriting_rows() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        for (id, at) in [("legacy", 300), ("migrated", 200), ("older", 100)] {
+            let mut value = sample(id, "/tmp/activity", id);
+            value.updated_at = Some(at);
+            value.linked_work_item = Some(json!({"kind":"pr", "number":1}));
+            upsert_session_with_git(&conn, &value, crate::fs::GitInfo::default(), None).unwrap();
+        }
+        conn.execute(
+            "UPDATE sessions SET last_activity_at=NULL WHERE id='legacy'",
+            [],
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        let value: (Option<i64>, i64) = conn
+            .query_row(
+                "SELECT last_activity_at,updated_at FROM sessions WHERE id='legacy'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(value, (None, 300));
+        let project =
+            list_by_project_with_git(&conn, "/tmp/activity", crate::fs::GitInfo::default())
+                .unwrap();
+        assert_eq!(
+            project.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            ["legacy", "migrated", "older"]
+        );
+        assert_eq!(list_recent(&conn, 1).unwrap()[0].id, "legacy");
+        assert_eq!(list_linked(&conn).unwrap()[0].id, "legacy");
+        assert_eq!(list_recent_since(&conn, 250).unwrap()[0].id, "legacy");
+    }
+
+    #[test]
+    fn recent_pages_are_bounded_complete_and_reject_concurrent_mutation() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        for index in 0..1050 {
+            let id = format!("recent-{index:04}");
+            let mut session = sample(&id, "/tmp/paged", &id);
+            session.updated_at = Some(10_000 + (index / 3) as i64);
+            upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None).unwrap();
+            if index % 5 == 0 {
+                conn.execute("UPDATE sessions SET pinned=1 WHERE id=?1", [&id])
+                    .unwrap();
+            }
+        }
+        let expected = list_recent_since(&conn, 10_000).unwrap();
+        let mut cursor = None;
+        let mut actual = Vec::new();
+        loop {
+            let page = list_recent_since_page(&conn, 10_000, cursor.as_ref()).unwrap();
+            assert!(page.rows.len() <= RECENT_SESSION_PAGE_SIZE);
+            actual.extend(page.rows.into_iter().map(|row| row.id));
+            cursor = page.next_cursor;
+            if cursor.is_none() {
+                break;
+            }
+        }
+        assert_eq!(
+            actual,
+            expected.into_iter().map(|row| row.id).collect::<Vec<_>>()
+        );
+        conn.execute("INSERT INTO orchestration_workers(session_id,lead_id) VALUES('outside-worker','lead-1')", []).unwrap();
+        let first = list_recent_since_page(&conn, 10_000, None).unwrap();
+        conn.execute(
+            "UPDATE orchestration_workers SET lead_id='lead-2' WHERE session_id='outside-worker'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE sessions SET title='stream metadata' WHERE id='recent-0000'",
+            [],
+        )
+        .unwrap();
+        conn.execute("UPDATE session_blocks SET block_json=json_set(block_json,'$.text','stream') WHERE session_id='recent-0000'", []).unwrap();
+        conn.execute(
+            "UPDATE session_list_summaries SET activity_at=1 WHERE session_id='recent-0001'",
+            [],
+        )
+        .unwrap();
+        let next = list_recent_since_page(&conn, 10_000, first.next_cursor.as_ref()).unwrap();
+        assert!(!next.rows.is_empty());
+        let after_stale_projection = list_recent_since_page(&conn, 10_000, None).unwrap();
+        assert!(after_stale_projection
+            .rows
+            .iter()
+            .all(|row| row.last_activity_at >= 10_000));
+        let mut stale_cursor = after_stale_projection.next_cursor;
+        let mut found_stale = false;
+        while let Some(cursor) = stale_cursor {
+            let page = list_recent_since_page(&conn, 10_000, Some(&cursor)).unwrap();
+            if let Some(row) = page.rows.iter().find(|row| row.id == "recent-0001") {
+                assert!(row.last_activity_at >= 10_000);
+                found_stale = true;
+            }
+            stale_cursor = page.next_cursor;
+        }
+        assert!(found_stale);
+        conn.execute(
+            "UPDATE sessions SET last_activity_at=50000 WHERE id='recent-0000'",
+            [],
+        )
+        .unwrap();
+        assert!(
+            matches!(list_recent_since_page(&conn, 10_000, first.next_cursor.as_ref()), Err(error) if error == "RECENT_SESSIONS_CHANGED")
+        );
+        let before_worker = list_recent_since_page(&conn, 10_000, None).unwrap();
+        conn.execute("UPDATE orchestration_workers SET session_id='recent-0002' WHERE session_id='outside-worker'", []).unwrap();
+        assert!(
+            matches!(list_recent_since_page(&conn, 10_000, before_worker.next_cursor.as_ref()), Err(error) if error == "RECENT_SESSIONS_CHANGED")
+        );
+        let before_delete = list_recent_since_page(&conn, 10_000, None).unwrap();
+        conn.execute("DELETE FROM sessions WHERE id='recent-0001'", [])
+            .unwrap();
+        assert!(
+            matches!(list_recent_since_page(&conn, 10_000, before_delete.next_cursor.as_ref()), Err(error) if error == "RECENT_SESSIONS_CHANGED")
+        );
+    }
+
+    #[test]
+    fn legacy_activity_migration_does_not_rewrite_large_transcripts() {
+        let dir = std::env::temp_dir().join(format!(
+            "bycoda-activity-benchmark-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        {
+            let store = SessionStore::open(dir.join("sessions.db")).unwrap();
+            let conn = store.conn.lock().unwrap();
+            let raw =
+                json!([{ "id":"large", "role":"user", "text":"x".repeat(65_536) }]).to_string();
+            for index in 0..128 {
+                let id = format!("legacy-{index}");
+                let mut value = sample(&id, "/tmp/large", &id);
+                value.updated_at = Some(index + 1);
+                upsert_session_with_git(&conn, &value, crate::fs::GitInfo::default(), None)
+                    .unwrap();
+                conn.execute(
+                    "UPDATE sessions SET blocks_json=?2,last_activity_at=NULL WHERE id=?1",
+                    params![id, raw],
+                )
+                .unwrap();
+                update_list_summary(&conn, &id, &value.harness).unwrap();
+            }
+            conn.execute_batch("CREATE TEMP TABLE activity_writes(n INTEGER NOT NULL); INSERT INTO activity_writes VALUES(0);
+                CREATE TEMP TRIGGER count_activity_updates AFTER UPDATE OF last_activity_at ON sessions BEGIN UPDATE activity_writes SET n=n+1; END;
+                DROP INDEX sessions_activity_project_cover_v2_idx; DROP INDEX sessions_activity_recent_cover_v2_idx; DROP INDEX sessions_activity_linked_cover_v2_idx;").unwrap();
+            let started = std::time::Instant::now();
+            migrate(&conn).unwrap();
+            eprintln!(
+                "legacy activity migration: 128 x 64 KiB: {:?}",
+                started.elapsed()
+            );
+            let writes: i64 = conn
+                .query_row("SELECT n FROM activity_writes", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(writes, 0);
+            let untouched: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM sessions WHERE last_activity_at IS NULL",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(untouched, 128);
+            assert_eq!(list_recent(&conn, 1).unwrap()[0].id, "legacy-127");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// The list joins the narrow projection rather than probing transcripts.
     #[test]
     fn list_by_project_is_served_by_a_covering_index() {
         let store = SessionStore::open_in_memory().unwrap();
@@ -3118,34 +5380,115 @@ mod tests {
                        ON sessions (cwd, has_user_message, updated_at DESC, id, harness,
                                     model, runtime_mode, title, provider_session_id,
                                     created_at, branch, archived, pinned, linked_work_item_json);
-                     DELETE FROM schema_migrations WHERE version IN (16, 17, 18);",
+                     DELETE FROM schema_migrations WHERE version IN (16, 17, 18, 19, 20);",
                 )
                 .unwrap();
                 migrate(&conn).unwrap();
             }
-            let plan: String = conn
-                .query_row(
+            let mut statement = conn
+                .prepare(
                     "EXPLAIN QUERY PLAN
                  SELECT id, cwd, harness, model, runtime_mode, title, provider_session_id,
                         created_at, updated_at, branch, archived, pinned,
-                        linked_work_item_json, worktree_cwd, worktree_removed, is_draft,
-                        automation_id,
-                        (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id)
-                 FROM sessions
+                        linked_work_item_json,
+                        (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id),
+                        worktree_cwd, worktree_removed, is_draft,
+                        automation_id, workspace_id, workspace_revision, workspace_mode,
+                        projection.interrupted, projection.provider_history, projection.activity_at, projection.management_json
+                 FROM sessions INDEXED BY sessions_activity_project_cover_v2_idx
+                 LEFT JOIN session_list_summaries projection ON projection.session_id=sessions.id
                  WHERE cwd = ?1
                    AND has_user_message = 1
                    AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
                    AND id NOT IN (SELECT session_id FROM orchestration_workers)
-                 ORDER BY updated_at DESC, id ASC",
-                    params!["/tmp/a"],
-                    |row| row.get(3),
+                 ORDER BY COALESCE(last_activity_at,updated_at) DESC, id ASC",
                 )
                 .unwrap();
+            let plan = statement
+                .query_map(params!["/tmp/a"], |row| row.get::<_, String>(3))
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .unwrap()
+                .join("\n");
             assert!(
-                plan.contains("COVERING INDEX"),
-                "sidebar listing fell back to table seeks: {plan}"
+                plan.contains("COVERING INDEX sessions_activity_project_cover_v2_idx")
+                    && plan.contains("projection")
+                    && !plan.contains("session_blocks"),
+                "sidebar listing did not use the summary projection: {plan}"
             );
         }
+    }
+
+    #[test]
+    fn list_projection_backfills_and_tracks_full_writes() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let mut session = sample("projection", "/tmp/a", "Projection");
+        session.blocks = json!([
+            {"id":"u", "role":"user", "turnModel":{"harness":"claude"}},
+            {"id":"i", "role":"system", "notice":"interrupt"}
+        ]);
+        upsert_session(&conn, &session).unwrap();
+        conn.execute(
+            "DELETE FROM session_list_summaries WHERE session_id=?1",
+            [&session.id],
+        )
+        .unwrap();
+        ensure_list_summaries(&conn).unwrap();
+        let summary = list_by_project(&conn, "/tmp/a").unwrap().remove(0);
+        assert!(summary.interrupted);
+        assert_eq!(summary.provider_history.unwrap()["activeHarness"], "claude");
+        session.blocks = json!([{"id":"u", "role":"user", "turnModel":{"harness":"codex"}}]);
+        upsert_session(&conn, &session).unwrap();
+        let summary = list_by_project(&conn, "/tmp/a").unwrap().remove(0);
+        assert!(!summary.interrupted);
+        assert_eq!(summary.provider_history.unwrap()["activeHarness"], "codex");
+        conn.execute(
+            "UPDATE sessions SET last_activity_at=42, assistant_management_json=?2 WHERE id=?1",
+            params![session.id, r#"{"assistant":true}"#],
+        )
+        .unwrap();
+        let summary = list_by_project(&conn, "/tmp/a").unwrap().remove(0);
+        assert_eq!(summary.last_activity_at, 42);
+        assert_eq!(summary.managed_by.unwrap()["assistant"], true);
+        conn.execute(
+            "DELETE FROM session_list_summaries WHERE session_id=?1",
+            [&session.id],
+        )
+        .unwrap();
+        let fallback = list_by_project(&conn, "/tmp/a").unwrap().remove(0);
+        assert_eq!(fallback.last_activity_at, 42);
+        assert_eq!(fallback.provider_history.unwrap()["activeHarness"], "codex");
+        ensure_list_summaries(&conn).unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM session_list_summaries WHERE session_id=?1",
+                [&session.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+        conn.execute(
+            "UPDATE session_blocks SET block_json=?2 WHERE session_id=?1 AND ordinal=0",
+            params![
+                session.id,
+                r#"{"id":"u","role":"user","turnModel":{"harness":"claude"}}"#
+            ],
+        )
+        .unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM session_list_summaries WHERE session_id=?1",
+                [&session.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+        let fallback = list_by_project(&conn, "/tmp/a").unwrap().remove(0);
+        assert_eq!(
+            fallback.provider_history.unwrap()["activeHarness"],
+            "claude"
+        );
     }
 
     #[test]
@@ -3329,7 +5672,7 @@ mod tests {
                         row.get(0)
                     })
                     .unwrap();
-                assert_eq!(latest, 18);
+                assert_eq!(latest, 20);
                 let count: i64 = conn
                     .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
                     .unwrap();
@@ -3337,6 +5680,117 @@ mod tests {
             }
             std::fs::remove_file(path).unwrap();
         }
+    }
+
+    #[test]
+    fn session_managed_identity_survives_full_delta_list_and_reopen() {
+        let path = std::env::temp_dir().join(format!(
+            "bycoda-managed-session-{}.db",
+            uuid::Uuid::new_v4()
+        ));
+        {
+            let store = SessionStore::open(path.clone()).unwrap();
+            let conn = store.lock_conn().unwrap();
+            let mut session = sample("managed-session", "/project", "Managed");
+            session.workspace_id = Some("workspace-1".into());
+            session.workspace_revision = Some(3);
+            session.worktree_cwd = Some("/owned/worktree".into());
+            session.blocks = json!([{"id":"u1","role":"user","text":"keep"}]);
+            let initial = upsert_session(&conn, &session).unwrap();
+            assert_eq!(initial.workspace_id.as_deref(), Some("workspace-1"));
+            assert_eq!(initial.workspace_revision, Some(3));
+            session.workspace_revision = Some(4);
+            let delta = incremental::SessionDelta {
+                session: session.clone(),
+                expected_updated_at: initial.updated_at,
+                expected_revision: initial.transcript_revision.unwrap(),
+                length: 1,
+                changes: vec![],
+            };
+            incremental::apply(&conn, &delta).unwrap().unwrap();
+            for summary in [
+                list_by_project_with_git(&conn, "/project", crate::fs::GitInfo::default())
+                    .unwrap()
+                    .remove(0),
+                list_recent(&conn, 10).unwrap().remove(0),
+            ] {
+                assert_eq!(summary.workspace_id.as_deref(), Some("workspace-1"));
+                assert_eq!(summary.workspace_revision, Some(4));
+            }
+            let record = get_session(&conn, "managed-session").unwrap().unwrap();
+            assert_eq!(record.workspace_id.as_deref(), Some("workspace-1"));
+            assert_eq!(record.workspace_revision, Some(4));
+        }
+        {
+            let store = SessionStore::open(path.clone()).unwrap();
+            let conn = store.lock_conn().unwrap();
+            let record = get_session(&conn, "managed-session").unwrap().unwrap();
+            assert_eq!(record.workspace_id.as_deref(), Some("workspace-1"));
+            assert_eq!(record.workspace_revision, Some(4));
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn session_legacy_migration_leaves_workspace_identity_unassigned() {
+        let conn = Connection::open_in_memory().unwrap();
+        seed_legacy_migration(&conn, 1);
+        migrate(&conn).unwrap();
+        let record = get_session(&conn, "legacy").unwrap().unwrap();
+        assert!(record.workspace_id.is_none());
+        assert!(record.workspace_revision.is_none());
+        assert_eq!(record.title, "Keep me");
+    }
+
+    #[test]
+    fn execution_mode_migration_repairs_partial_workspace_schema_first() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let session = sample("partial-current", "/tmp/project", "Retain checkout");
+        upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None).unwrap();
+        conn.execute_batch(
+            "ALTER TABLE sessions RENAME COLUMN workspace_id TO previous_workspace_id;
+            ALTER TABLE sessions RENAME COLUMN workspace_revision TO previous_workspace_revision;
+            DELETE FROM schema_migrations WHERE version=20;",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        let record = get_session(&conn, &session.id).unwrap().unwrap();
+        assert_eq!(record.workspace_mode.as_deref(), Some("current"));
+        assert!(record.workspace_id.is_none());
+        assert!(record.workspace_revision.is_none());
+    }
+
+    #[test]
+    fn execution_mode_migration_retains_an_already_cleared_legacy_session() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let mut session = sample(
+            "legacy-already-cleared",
+            "/tmp/project",
+            "Existing current session",
+        );
+        upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None).unwrap();
+        // Older /clear persisted an empty transcript without any workspace mode.
+        session.blocks = json!([]);
+        session.provider_session_id = None;
+        upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None).unwrap();
+        let mut draft = sample("legacy-unstarted-draft", "/tmp/project", "Draft");
+        draft.blocks = json!([{"id":"draft-user","role":"user","text":"Unsent","draft":true}]);
+        upsert_session_with_git(&conn, &draft, crate::fs::GitInfo::default(), None).unwrap();
+        conn.execute("DELETE FROM schema_migrations WHERE version=20", [])
+            .unwrap();
+        migrate(&conn).unwrap();
+        let record = get_session(&conn, &session.id).unwrap().unwrap();
+        assert_eq!(record.blocks, json!([]));
+        assert_eq!(record.workspace_mode.as_deref(), Some("current"));
+        assert!(record.workspace_id.is_none());
+        assert!(record.worktree_cwd.is_none());
+        assert!(get_session(&conn, &draft.id)
+            .unwrap()
+            .unwrap()
+            .workspace_mode
+            .is_none());
     }
 
     #[test]
@@ -3451,7 +5905,7 @@ mod tests {
     }
 
     #[test]
-    fn upsert_moves_updated_at_only_when_blocks_change() {
+    fn upsert_moves_updated_at_when_blocks_or_metadata_change() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.conn.lock().unwrap();
         let first = upsert_session(&conn, &sample("s1", "/tmp/a", "First")).unwrap();
@@ -3460,14 +5914,17 @@ mod tests {
         let mut same = sample("s1", "/tmp/a", "Retitled");
         same.blocks =
             serde_json::from_str(r#"[{"text":"hello","role":"user","id":"b1"}]"#).unwrap();
+        let retitled = upsert_session(&conn, &same).unwrap();
+        assert!(retitled.updated_at > first.updated_at);
+        assert_eq!(retitled.title, "Retitled");
+        std::thread::sleep(std::time::Duration::from_millis(5));
         let unchanged = upsert_session(&conn, &same).unwrap();
-        assert_eq!(unchanged.updated_at, first.updated_at);
-        assert_eq!(unchanged.title, "Retitled");
+        assert_eq!(unchanged.updated_at, retitled.updated_at);
         std::thread::sleep(std::time::Duration::from_millis(5));
         let mut changed = sample("s1", "/tmp/a", "Retitled");
         changed.blocks = json!([{ "id": "b1", "role": "user", "text": "hello!" }]);
         let bumped = upsert_session(&conn, &changed).unwrap();
-        assert!(bumped.updated_at > first.updated_at);
+        assert!(bumped.updated_at > retitled.updated_at);
     }
 
     #[test]
@@ -3628,6 +6085,25 @@ mod tests {
         assert!(list_recent(&conn, 10).unwrap().iter().any(|row| row.pinned));
     }
 
+    #[test]
+    fn recent_since_has_no_row_cap_and_includes_cutoff() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        for i in 0..125 {
+            let mut session = sample(&format!("recent-{i}"), "/tmp/a", "Recent");
+            session.updated_at = Some(1_000 + i);
+            upsert_session(&conn, &session).unwrap();
+        }
+        let mut old = sample("old", "/tmp/a", "Old");
+        old.updated_at = Some(999);
+        upsert_session(&conn, &old).unwrap();
+        set_pinned(&conn, "old", true).unwrap();
+        let rows = list_recent_since(&conn, 1_000).unwrap();
+        assert_eq!(rows.len(), 125);
+        assert_eq!(rows.first().unwrap().updated_at, 1_124);
+        assert_eq!(rows.last().unwrap().updated_at, 1_000);
+    }
+
     fn guarded_upsert(
         conn: &Connection,
         session: &SessionUpsert,
@@ -3716,12 +6192,12 @@ mod tests {
         upsert_session(&conn, &linked).unwrap();
         upsert_session(&conn, &sample("s2", "/tmp/b", "Plain")).unwrap();
 
-        let recent = query_plan(&conn, RECENT_ROWS_SQL, &[&0_i64, &50_i64]);
-        assert_indexed_and_presorted(&recent, "sessions_recent_idx");
-        let pinned = query_plan(&conn, RECENT_ROWS_SQL, &[&1_i64, &-1_i64]);
-        assert_indexed_and_presorted(&pinned, "sessions_recent_idx");
+        let recent = query_plan(&conn, RECENT_ROWS_SQL, &[&0_i64, &50_i64, &i64::MIN]);
+        assert_indexed_and_presorted(&recent, "sessions_activity_recent_cover_v2_idx");
+        let pinned = query_plan(&conn, RECENT_ROWS_SQL, &[&1_i64, &-1_i64, &i64::MIN]);
+        assert_indexed_and_presorted(&pinned, "sessions_activity_recent_cover_v2_idx");
         let linked = query_plan(&conn, LIST_LINKED_SQL, &[]);
-        assert_indexed_and_presorted(&linked, "sessions_linked_idx");
+        assert_indexed_and_presorted(&linked, "sessions_activity_linked_cover_v2_idx");
     }
 
     #[test]
@@ -3749,16 +6225,19 @@ mod tests {
     }
 
     #[test]
-    fn upsert_same_blocks_keeps_updated_at() {
+    fn upsert_same_blocks_and_metadata_keeps_updated_at() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.conn.lock().unwrap();
         let first = upsert_session(&conn, &sample("s1", "/tmp/a", "First")).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(5));
-        let mut next = sample("s1", "/tmp/a", "First");
-        next.model = "gpt-5.4".into();
+        let next = sample("s1", "/tmp/a", "First");
         let second = upsert_session(&conn, &next).unwrap();
         assert_eq!(second.updated_at, first.updated_at);
-        assert_eq!(second.model, "gpt-5.4");
+        let mut renamed = next.clone();
+        renamed.model = "gpt-5.4".into();
+        let third = upsert_session(&conn, &renamed).unwrap();
+        assert!(third.updated_at > first.updated_at);
+        assert_eq!(third.model, "gpt-5.4");
     }
 
     #[test]
@@ -4487,7 +6966,7 @@ mod tests {
     }
 
     #[test]
-    fn composer_draft_listing_drops_expired_and_unparseable_rows() {
+    fn composer_draft_listing_keeps_old_and_unparseable_rows() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.conn.lock().unwrap();
         set_composer_draft(&conn, "fresh", Some(&json!({ "text": "keep" }))).unwrap();
@@ -4505,12 +6984,13 @@ mod tests {
         .unwrap();
 
         let listed = list_composer_drafts(&conn).unwrap();
-        assert_eq!(listed.len(), 1);
+        assert_eq!(listed.len(), 2);
         assert_eq!(listed[0]["sessionId"], "fresh");
+        assert_eq!(listed[1]["sessionId"], "old");
         let left: i64 = conn
             .query_row("SELECT COUNT(*) FROM composer_drafts", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(left, 2, "only the expired row is deleted");
+        assert_eq!(left, 3, "listing must not delete unsent drafts");
     }
 
     #[test]
@@ -4538,6 +7018,270 @@ mod tests {
         assert_eq!(first[1].session_id, "s1");
         let second = take_in_flight(&mut conn).unwrap();
         assert!(second.is_empty());
+    }
+
+    #[test]
+    fn in_flight_windows_keep_separate_rows_and_only_prior_process_is_interrupted() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE in_flight_sessions (session_id TEXT PRIMARY KEY, cwd TEXT NOT NULL, sort_index INTEGER NOT NULL)").unwrap();
+        let entry = |id: &str| InFlightSession {
+            session_id: id.into(),
+            cwd: "/repo".into(),
+        };
+        replace_in_flight(&mut conn, &[entry("legacy")]).unwrap();
+        replace_window_in_flight(
+            &mut conn,
+            "old",
+            "secondary",
+            "oldpage",
+            &[entry("crashed")],
+        )
+        .unwrap();
+        replace_window_in_flight(&mut conn, "current", "main", "mainpage", &[entry("main")])
+            .unwrap();
+        replace_window_in_flight(
+            &mut conn,
+            "current",
+            "secondary",
+            "secondarypage",
+            &[entry("secondary")],
+        )
+        .unwrap();
+        replace_window_in_flight(
+            &mut conn,
+            "current",
+            "popout",
+            "popoutpage",
+            &[entry("crashed")],
+        )
+        .unwrap();
+        replace_window_in_flight(&mut conn, "current", "main", "mainpage", &[]).unwrap();
+        let canonical = list_in_flight(&conn).unwrap();
+        assert!(canonical.iter().any(|item| item.session_id == "secondary"));
+        assert!(!canonical.iter().any(|item| item.session_id == "main"));
+        conn.execute(
+            "DELETE FROM in_flight_sessions WHERE session_id = 'secondary'",
+            [],
+        )
+        .unwrap();
+        replace_window_in_flight(&mut conn, "current", "main", "mainpage", &[]).unwrap();
+        assert!(!list_in_flight(&conn)
+            .unwrap()
+            .iter()
+            .any(|item| item.session_id == "secondary"));
+        conn.execute(
+            "INSERT INTO in_flight_sessions VALUES ('secondary', '/repo', 0)",
+            [],
+        )
+        .unwrap();
+        let old = list_interrupted_in_flight(&conn, |id, _| id == "old").unwrap();
+        assert_eq!(
+            old.iter()
+                .map(|r| r.session_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["legacy", "secondary"]
+        );
+        assert_eq!(
+            take_interrupted_in_flight(&mut conn, &[("old".into(), "oldpage".into())])
+                .unwrap()
+                .len(),
+            2
+        );
+        assert!(list_interrupted_in_flight(&conn, |id, _| id == "old")
+            .unwrap()
+            .is_empty());
+        replace_window_in_flight(&mut conn, "current", "popout", "popoutpage", &[]).unwrap();
+        assert_eq!(
+            list_interrupted_in_flight(&conn, |id, _| id == "old")
+                .unwrap()
+                .len(),
+            1
+        );
+        let after_restart = list_interrupted_in_flight(&conn, |id, _| id == "current").unwrap();
+        assert_eq!(
+            after_restart
+                .iter()
+                .map(|r| r.session_id.as_str())
+                .collect::<Vec<_>>(),
+            Vec::<&str>::new()
+        );
+    }
+
+    #[test]
+    fn recovery_lease_distinguishes_live_closed_and_unknown_owners() {
+        let dir =
+            std::env::temp_dir().join(format!("bycoda-recovery-lease-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("sessions.sqlite");
+        let first = SessionStore::open(path.clone()).unwrap();
+        let id = first.native_instance_id().to_string();
+        let second = SessionStore::open(path).unwrap();
+        assert!(matches!(
+            second.conn.lock().unwrap().recovery_lease_state(&id),
+            Ok(cohort::LeaseState::Live)
+        ));
+        assert!(second
+            .conn
+            .lock()
+            .unwrap()
+            .recovery_lease_state(&uuid::Uuid::new_v4().to_string())
+            .is_err());
+        drop(first);
+        assert!(matches!(
+            second.conn.lock().unwrap().recovery_lease_state(&id),
+            Ok(cohort::LeaseState::Unleased)
+        ));
+        drop(second);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn retired_page_recovers_without_clearing_live_or_unknown_siblings() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE in_flight_sessions (session_id TEXT PRIMARY KEY, cwd TEXT NOT NULL, sort_index INTEGER NOT NULL)").unwrap();
+        let entry = |id: &str| InFlightSession {
+            session_id: id.into(),
+            cwd: "/repo".into(),
+        };
+        replace_window_in_flight(
+            &mut conn,
+            "process",
+            "main",
+            "old-page",
+            &[entry("retired")],
+        )
+        .unwrap();
+        replace_window_in_flight(&mut conn, "process", "main", "new-page", &[entry("new")])
+            .unwrap();
+        replace_window_in_flight(
+            &mut conn,
+            "process",
+            "sibling",
+            "unknown-page",
+            &[entry("unknown")],
+        )
+        .unwrap();
+        let result = list_interrupted_in_flight(&conn, |_, page| page == "old-page").unwrap();
+        assert_eq!(
+            result
+                .iter()
+                .map(|r| r.session_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["retired"]
+        );
+        assert_eq!(list_in_flight(&conn).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn recovery_ack_only_consumes_receipted_covered_occurrences() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE in_flight_sessions (session_id TEXT PRIMARY KEY, cwd TEXT NOT NULL, sort_index INTEGER NOT NULL)").unwrap();
+        let item = InFlightSession {
+            session_id: "same".into(),
+            cwd: "/repo".into(),
+        };
+        replace_window_in_flight(
+            &mut conn,
+            "process",
+            "main",
+            "old",
+            std::slice::from_ref(&item),
+        )
+        .unwrap();
+        let rows = vec![RecoveryReceiptRow {
+            process: Some("process".into()),
+            page: Some("old".into()),
+            session: "same".into(),
+            cwd: "/repo".into(),
+        }];
+        replace_window_in_flight(&mut conn, "process", "main", "new", &[item]).unwrap();
+        let stale = vec![
+            ("process".into(), "old".into()),
+            ("process".into(), "new".into()),
+        ];
+        acknowledge_recovery_rows(
+            &conn,
+            &json!({"sessionRecovery":{"workspace":{"sessions":[{"id":"same","cwd":"/repo"}]}}}),
+            &rows,
+            &stale,
+        )
+        .unwrap();
+        let remaining: Vec<String> = conn
+            .prepare("SELECT page_id FROM in_flight_window_sessions")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(remaining, vec!["new"]);
+        assert_eq!(list_in_flight(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn recovery_ack_preserves_uncovered_and_live_owned_rows() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE in_flight_sessions (session_id TEXT PRIMARY KEY, cwd TEXT NOT NULL, sort_index INTEGER NOT NULL)").unwrap();
+        let item = InFlightSession {
+            session_id: "same".into(),
+            cwd: "/repo".into(),
+        };
+        replace_window_in_flight(
+            &mut conn,
+            "process",
+            "main",
+            "old",
+            std::slice::from_ref(&item),
+        )
+        .unwrap();
+        let rows = vec![RecoveryReceiptRow {
+            process: Some("process".into()),
+            page: Some("old".into()),
+            session: "same".into(),
+            cwd: "/repo".into(),
+        }];
+        let stale = vec![("process".into(), "old".into())];
+        acknowledge_recovery_rows(
+            &conn,
+            &json!({"sessionRecovery":{"workspace":{"sessions":[]}}}),
+            &rows,
+            &stale,
+        )
+        .unwrap();
+        replace_window_in_flight(&mut conn, "process", "other", "live", &[item]).unwrap();
+        acknowledge_recovery_rows(
+            &conn,
+            &json!({"sessionRecovery":{"resolvedIds":["same"]}}),
+            &rows,
+            &stale,
+        )
+        .unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM in_flight_window_sessions", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 2);
+        assert_eq!(list_in_flight(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn recovery_receipt_ttl_evicts_only_settled_entries() {
+        let now = std::time::Instant::now();
+        let receipt = |settled| RecoveryReceipt {
+            store: "store".into(),
+            page: "page".into(),
+            rows: vec![],
+            settled,
+        };
+        let mut receipts = HashMap::from([
+            ("pending".into(), receipt(None)),
+            ("settled".into(), receipt(Some(now))),
+        ]);
+        prune_recovery_receipts(&mut receipts, now + std::time::Duration::from_secs(599));
+        assert_eq!(receipts.len(), 2);
+        prune_recovery_receipts(&mut receipts, now + std::time::Duration::from_secs(600));
+        assert!(receipts.contains_key("pending"));
+        assert!(!receipts.contains_key("settled"));
     }
 
     #[test]

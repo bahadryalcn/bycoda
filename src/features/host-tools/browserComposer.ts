@@ -8,6 +8,13 @@ type Receiver = (file: Attachment) => boolean;
 const receivers = new Map<string, Receiver>();
 const key = (cwd: string, sessionId: string) => JSON.stringify([cwd, sessionId]);
 const DRAFT_EVENT = "bycoda:browser-selection-draft";
+export class BrowserDraftDeliveryUncertainError extends Error {
+  constructor() {
+    super(
+      "Attachment delivery could not be confirmed. Check the target composer before trying again.",
+    );
+  }
+}
 export const MAX_BROWSER_SCREENSHOT_BYTES = 2 * 1024 * 1024;
 type DraftRequest = {
   id: string;
@@ -140,11 +147,16 @@ export async function attachBrowserSelectionAcrossWindows(
   let unlisten: (() => void) | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let finished = false;
+  let dispatched = false;
   try {
     await new Promise<void>((resolve, reject) => {
       timer = setTimeout(
         () =>
-          reject(new Error("Open the target conversation composer before adding the selection")),
+          reject(
+            dispatched
+              ? new BrowserDraftDeliveryUncertainError()
+              : new Error("Open the target conversation composer before adding the selection"),
+          ),
         2500,
       );
       void sender
@@ -159,6 +171,7 @@ export async function attachBrowserSelectionAcrossWindows(
             return;
           }
           unlisten = stop;
+          dispatched = true;
           return emitTo(composerWindow, DRAFT_EVENT, {
             id,
             cwd,

@@ -16,6 +16,8 @@ import {
   upsertNote,
   rankNoteFiles,
   type Note,
+  withoutAssistantNotes,
+  type NoteMetadata,
 } from "./notes";
 
 function note(partial: Partial<Note> & Pick<Note, "id" | "slug" | "title">): Note {
@@ -206,5 +208,31 @@ describe("rankNoteFiles", () => {
 describe("noteMentionLabel", () => {
   it("prefixes the slug", () => {
     expect(noteMentionLabel(note({ id: "n", slug: "auth", title: "Auth" }))).toBe("note/auth");
+  });
+});
+
+describe("withoutAssistantNotes", () => {
+  const note = (id: string, extra: Partial<NoteMetadata>): NoteMetadata => ({
+    id,
+    slug: id,
+    title: id,
+    tags: [],
+    createdAt: 1,
+    updatedAt: 1,
+    ...extra,
+  });
+
+  it("hides only the voice assistant's unscoped notebook notes", () => {
+    const notes = [
+      note("assistant", { tags: ["assistant"] }),
+      note("owner", { tags: ["idea"] }),
+      note("project", { tags: ["assistant"], sourceCwd: "/repo" }),
+      note("session", { tags: ["assistant"], sourceSessionId: "s1" }),
+    ];
+    expect(withoutAssistantNotes(notes).map((item) => item.id)).toEqual([
+      "owner",
+      "project",
+      "session",
+    ]);
   });
 });

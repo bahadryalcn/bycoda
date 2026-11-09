@@ -1,0 +1,45 @@
+.root {
+  position: relative;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: 50%;
+  background: var(--ui-fill-subtle);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+  line-height: 1;
+}
+
+.root[data-signed-in="true"] {
+  background: var(--ui-tone-accent-solid);
+  color: var(--ui-tone-accent-on-solid);
+}
+
+.face {
+  display: grid;
+  place-items: center;
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+.face img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.badge {
+  position: absolute;
+  inset-block-end: -0.125rem;
+  inset-inline-end: -0.125rem;
+  display: grid;
+  place-items: center;
+  padding: 0.125rem;
+  border-radius: 50%;
+  background: var(--ui-surface-panel);
+}

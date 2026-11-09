@@ -27,7 +27,8 @@ test("keeps primary usage visible before optional detail at narrow widths", asyn
       await page.setViewportSize({ width, height: 900 });
       await expect(page.locator(".usage-metrics > div")).toHaveCount(3);
       const trend = page.locator('[data-usage-chart="trend"]');
-      expect((await trend.boundingBox())!.y).toBeLessThan(500);
+      // The trend starts inside the first screen (two thirds of the height) under the KPI stack.
+      expect((await trend.boundingBox())!.y).toBeLessThan(600);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -69,6 +70,7 @@ for (const [theme, width] of [
     await dialog.getByRole("button", { name: /^Date range:/ }).click();
     await expect(page.getByRole("dialog", { name: "Date range", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Date range", exact: true })).toBeHidden();
     await expect(dialog).toBeVisible();
     const date = await page.evaluate(() => {
       const d = new Date();
@@ -77,9 +79,11 @@ for (const [theme, width] of [
     });
     await dialog.getByLabel("Start date and time", { exact: true }).fill(`${date}T14:00`);
     await dialog.getByLabel("End date and time", { exact: true }).fill(`${date}T13:00`);
-    await expect(dialog.getByRole("button", { name: "Apply", exact: true })).toBeDisabled();
+    const applyRange = dialog.locator('button[type="submit"]');
+    await expect(applyRange).toHaveAccessibleName("Apply");
+    await expect(applyRange).toBeDisabled();
     await dialog.getByLabel("End date and time", { exact: true }).fill(`${date}T18:00`);
-    await dialog.getByRole("button", { name: "Apply", exact: true }).click();
+    await applyRange.click();
     await expect(dialog).toBeHidden();
     await select(page, "Resolution", "Hourly");
     await page.keyboard.press("Escape");
@@ -151,7 +155,10 @@ test("uses the full settings width, distinguishes views and follows configured a
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/usage-budgets.html?page=1&analytics=1");
   await expect(page.locator(".usage-analytics")).toHaveAttribute("aria-busy", "false");
-  expect((await page.locator(".usage-analytics").boundingBox())!.width).toBeGreaterThan(1800);
+  // Usage uses the shared 80rem Settings column (1280px including its inline padding).
+  const analyticsWidth = (await page.locator(".usage-analytics").boundingBox())!.width;
+  expect(analyticsWidth).toBeGreaterThan(900);
+  expect(analyticsWidth).toBeLessThanOrEqual(1280);
   const colors = () =>
     page
       .locator('[data-usage-chart="trend"]')

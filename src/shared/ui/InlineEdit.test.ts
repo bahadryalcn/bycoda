@@ -141,3 +141,37 @@ it.each(["", "New title"])("offers retry with the exact rejected draft %j", asyn
   await act(async () => retry!.click());
   expect(container.querySelector("input")?.value).toBe(draft);
 });
+
+it("offers Save and Cancel as shared icon Buttons that keep the field's focus on pointer press", async () => {
+  const save = await render("Original");
+  const input = await edit("Renamed");
+  const saveButton = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Save Note title"]',
+  )!;
+  const cancelButton = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Cancel editing"]',
+  )!;
+  expect(saveButton.getAttribute("data-button-hierarchy")).toBe("primary");
+  expect(cancelButton.getAttribute("data-button-hierarchy")).toBe("ghost");
+  expect(saveButton.tabIndex).not.toBe(-1);
+  expect(cancelButton.tabIndex).not.toBe(-1);
+  // A pointer press is prevented, so the field never blurs and a press on Save or Cancel is not a "leave".
+  const press = new Event("pointerdown", { bubbles: true, cancelable: true });
+  saveButton.dispatchEvent(press);
+  expect(press.defaultPrevented).toBe(true);
+  expect(save).not.toHaveBeenCalled();
+  await act(async () => cancelButton.click());
+  expect(save).not.toHaveBeenCalled();
+  expect(input.isConnected).toBe(false);
+  expect(container.querySelector('button[aria-label="Note title: Original"]')).not.toBeNull();
+});
+
+it("saves the draft once from the Save Button", async () => {
+  const save = await render("Original");
+  await edit("Renamed");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Save Note title"]')!.click(),
+  );
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(save).toHaveBeenCalledWith("Renamed");
+});

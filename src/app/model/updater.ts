@@ -1,9 +1,11 @@
 import { t } from "../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
+import { confirmInApp } from "../../shared/model/appConfirm";
 import { getIdentifier, getVersion } from "@tauri-apps/api/app";
-import { ask, message } from "@tauri-apps/plugin-dialog";
+import { message } from "@tauri-apps/plugin-dialog";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updater";
+import type { DownloadEvent, Update } from "@tauri-apps/plugin-updater";
+import { checkForAppUpdate } from "../../features/settings/model/updateChannel";
 import { announceUpdateAvailable } from "../../features/settings/model/sounds";
 import { rememberInstalledUpdate } from "./updateNotice";
 import { appName } from "../../shared/lib/appName";
@@ -18,6 +20,9 @@ export type UpdaterSnapshot = {
   error?: string;
 };
 
+/** Longest slice of release notes shown in the confirmation; the rest is in What’s New. */
+const MAX_NOTES = 1200;
+
 let pendingUpdate: Update | null = null;
 let updateFlow: Promise<UpdaterSnapshot> | null = null;
 let installation: Promise<UpdaterSnapshot> | null = null;
@@ -31,11 +36,26 @@ function isUpdaterNotConfiguredError(error: unknown): boolean {
 // Development, previous-product and unknown identities never contact a feed.
 const PRODUCT_IDENTIFIER = "com.bycoda.desktop";
 
+// The build identity and version never change while the app runs. Remembering the resolved
+// values lets a page that mounts later (Settings) render them on its first frame.
+let knownUpdaterEnabled: boolean | undefined;
+let knownAppVersion: string | undefined;
+
+/** The resolved answer of `isUpdaterEnabled`, or `undefined` before it first resolved. */
+export function knownUpdaterEnabledState(): boolean | undefined {
+  return PRODUCT_IDENTITY.updaterEnabled ? knownUpdaterEnabled : false;
+}
+
+/** The resolved answer of `readAppVersion`, or `undefined` before it first resolved. */
+export function knownAppVersionState(): string | undefined {
+  return knownAppVersion;
+}
+
 export async function isUpdaterEnabled(): Promise<boolean> {
   if (!PRODUCT_IDENTITY.updaterEnabled) return false;
   try {
     const identifier = await getIdentifier();
-    return identifier === PRODUCT_IDENTIFIER;
+    return (knownUpdaterEnabled = identifier === PRODUCT_IDENTIFIER);
   } catch {
     return false;
   }
@@ -46,7 +66,7 @@ export const UPDATES_DISABLED_MESSAGE =
 
 export async function readAppVersion(): Promise<string> {
   try {
-    return await getVersion();
+    return (knownAppVersion = await getVersion());
   } catch {
     return "0.0.0";
   }
@@ -54,7 +74,7 @@ export async function readAppVersion(): Promise<string> {
 
 export async function probeForUpdate(): Promise<Update | null> {
   if (!(await isUpdaterEnabled())) return null;
-  const update = await check({ headers: { "Cache-Control": "no-cache" } });
+  const update = await checkForAppUpdate(await readAppVersion());
   pendingUpdate = update;
   if (update) announceUpdateAvailable(update.version);
   return update;
@@ -94,7 +114,7 @@ async function runUpdateFlowOnce(
   onProgress?.(base);
 
   try {
-    const update = await check({ headers: { "Cache-Control": "no-cache" } });
+    const update = await checkForAppUpdate(currentVersion);
     if (!update) {
       pendingUpdate = null;
       const current: UpdaterSnapshot = { phase: "current", currentVersion };
@@ -117,21 +137,20 @@ async function runUpdateFlowOnce(
     if (!manual) return available;
 
     const notes = update.body?.trim();
-    const detail = notes ? `\n\n${notes}` : "";
-    const yes = await ask(
-      t("{p0} {p1} is available (you have {p2}).{p3}\n\nInstall now?", {
-        p0: PRODUCT_IDENTITY.displayName,
-        p1: update.version,
-        p2: currentVersion,
-        p3: detail,
-      }),
-      {
-        get title() {
-          return t("Update available");
-        },
-        kind: "info",
-      },
-    );
+    const detail = notes
+      ? `\n\n${notes.length > MAX_NOTES ? `${notes.slice(0, MAX_NOTES - 1)}…` : notes}`
+      : "";
+    const yes = await confirmInApp({
+      title: t("Update available"),
+      message:
+        t("{p0} {p1} is available (you have {p2}).", {
+          p0: PRODUCT_IDENTITY.displayName,
+          p1: update.version,
+          p2: currentVersion,
+        }) + detail,
+      confirmLabel: t("Install now"),
+      tone: "normal",
+    });
     if (!yes) return available;
 
     return installPendingUpdate(onProgress);

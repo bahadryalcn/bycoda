@@ -1,4 +1,4 @@
-import { chromium, type FullConfig } from "@playwright/test";
+import { chromium, webkit, type Browser, type FullConfig } from "@playwright/test";
 
 /**
  * A cold fixture server transforms the shared styles and modules on first
@@ -8,11 +8,21 @@ import { chromium, type FullConfig } from "@playwright/test";
 export default async function warmDevServer(config: FullConfig) {
   const baseURL = config.projects[0]?.use.baseURL;
   if (!baseURL) return;
-  const browser = await chromium.launch();
+  const browser = await launchInstalled();
   try {
     const page = await browser.newPage();
     await page.goto(new URL("/tests/browser/crew-scene.html", baseURL).href, { timeout: 300_000 });
   } finally {
     await browser.close();
+  }
+}
+
+// CI shards install only the browser they test, so warm up with whichever one is present.
+async function launchInstalled(): Promise<Browser> {
+  try {
+    return await chromium.launch();
+  } catch (error) {
+    if (!String(error).includes("Executable doesn't exist")) throw error;
+    return webkit.launch();
   }
 }

@@ -13,5 +13,7 @@ export default defineConfig({
     cwd: "../..",
     url: "http://127.0.0.1:1439/tests/browser/automations.html",
     reuseExistingServer: false,
+    // The fixture is built before it is served; a cold build outlasts Playwright's 60 s default.
+    timeout: 300_000,
   },
 });

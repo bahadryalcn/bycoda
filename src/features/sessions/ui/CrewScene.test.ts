@@ -216,17 +216,18 @@ it("updates assigned names immediately while motion is disabled", () => {
 });
 it("changes an empty crew to babies after the first message and honors the growth switch", () => {
   state.enabled = false;
-  const session = { id: "crew-test", blocks: [] } as unknown as Session;
+  // Sessions are immutable: each update is a new object, as the store produces.
+  let session = { id: "crew-test", blocks: [] } as unknown as Session;
   const renderSession = () =>
     act(() => root.render(createElement(CrewScene, { sessionId: session.id, session })));
   renderSession();
   const stages = () =>
     state.paint.mock.calls.at(-1)?.[1].map((seat: { age: { stage: number } }) => seat.age.stage);
   expect(stages()).toEqual([3, 3, 3, 3, 3, 3]);
-  session.blocks = [{ id: "first", role: "user", text: "Start" }];
+  session = { ...session, blocks: [{ id: "first", role: "user", text: "Start" }] };
   renderSession();
   expect(stages()).toEqual([0, 0, 0, 0, 0, 0]);
-  session.context = { used: 180_000, window: 200_000 };
+  session = { ...session, context: { used: 180_000, window: 200_000 } };
   renderSession();
   expect(stages()).toEqual([0, 0, 3, 0, 0, 0]);
   act(() => saveCrewGrowthEnabled(false));

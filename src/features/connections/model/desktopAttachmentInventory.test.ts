@@ -7,10 +7,27 @@ import {
   globalDesktopAttachmentInventory,
 } from "./desktopAttachmentInventory";
 import { savePendingRemoteCommand } from "./remoteOutbox";
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => false }));
+const database = vi.hoisted(() => ({ unavailable: false }));
+vi.mock("./remoteOutboxDatabase", async (original) => ({
+  ...(await original<typeof import("./remoteOutboxDatabase")>()),
+  readOutboxDatabasePage: async () => {
+    if (database.unavailable) throw new Error("storage unavailable");
+    return { values: [], revision: 0 };
+  },
+  readOutboxDatabaseRecord: async () => ({ revision: 0 }),
+}));
 beforeEach(() => {
+  database.unavailable = false;
   localStorage.clear();
   vi.clearAllMocks();
+});
+it("holds attachment cleanup when durable outbox storage is unavailable", async () => {
+  database.unavailable = true;
+  vi.mocked(invoke).mockResolvedValue({ draftIds: [], queues: { queue: [] } });
+  await expect(
+    desktopAttachmentInventory(scope(), "machine", "host", "shell", "project", "queue"),
+  ).rejects.toThrow("storage unavailable");
 });
 const scope = () =>
   new AttachmentOwnership(

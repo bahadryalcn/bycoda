@@ -9,7 +9,13 @@ export type {
   ExpandingButtonGroupTriggerProps,
 } from "./arc/expanding-button-group/expanding-button-group";
 
-/** A small set of familiar commands; callbacks retain their async result contracts. */
+/**
+ * Arc button strip that expands to reveal a small set of commands; async callbacks keep their result contracts.
+ * @group actions
+ * @use A compact rail or card action that expands on hover/focus to reveal a few related commands (item list, overflow).
+ * @avoid Always-visible related actions: ButtonGroup. One default action plus variants: SplitButton. Many commands: DropdownMenu.
+ * @arc expanding-button-group
+ */
 export function ExpandingButtonGroup(props: ExpandingButtonGroupProps) {
   return (
     <ArcExpandingButtonGroup

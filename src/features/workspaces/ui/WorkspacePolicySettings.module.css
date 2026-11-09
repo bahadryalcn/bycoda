@@ -1,0 +1,155 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  gap: 16px;
+}
+
+.root > :global(.settings-advanced) {
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+
+.root :global(.settings-group) {
+  padding-block-start: 0;
+}
+
+.root :global(.settings-advanced-content) > :global(.settings-group) {
+  padding-block-start: 12px;
+}
+
+.storage {
+  min-inline-size: 0;
+}
+
+.groupTitle {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.muted {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-weight: 400;
+}
+
+/* Storage summary: one type scale for the whole body; the caption tier is the only smaller one. */
+.storageBody {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px;
+  min-inline-size: 0;
+  font-size: var(--ui-font-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.storageLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-inline-size: 0;
+}
+
+.used {
+  font-weight: 500;
+}
+
+.free {
+  margin-inline-start: auto;
+  color: var(--ui-text-secondary);
+}
+
+.rootPath {
+  display: block;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Policy editor: plain labelled blocks, no nested disclosure. */
+.block {
+  min-inline-size: 0;
+  padding-block-end: 12px;
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+
+.subheading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  padding: 12px 16px 0;
+  font-size: var(--ui-font-secondary);
+}
+
+.grid4,
+.grid3 {
+  display: grid;
+  gap: 8px 12px;
+  padding: 8px 16px 0;
+}
+
+.grid4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.grid3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+}
+
+.cellLabel {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+/* Single save bar for the whole policy; sticks to the bottom of the scroll area while dirty. */
+.saveBar {
+  position: sticky;
+  inset-block-end: 8px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 16px 0;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid var(--ui-settings-group-border);
+  border-radius: var(--ui-radius-popup);
+  background: var(--ui-surface-floating);
+  box-shadow: var(--ui-elevation-floating);
+  font-size: var(--ui-font-caption);
+}
+
+.saveDot {
+  flex-shrink: 0;
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  background: var(--ui-tone-warning-solid);
+}
+
+.saveSpacer {
+  flex: 1 1 auto;
+}
+
+@media (max-width: 640px) {
+  .grid4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .grid3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

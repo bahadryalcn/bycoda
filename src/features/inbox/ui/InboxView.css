@@ -1,0 +1,51 @@
+.bycoda-inbox {
+  container: inbox / inline-size;
+}
+.inbox-detail-back {
+  display: none;
+}
+/* The board remains mounted while narrow detail is open, retaining scroll and
+   expanded planning groups. Wide layout retains an independent reading pane. */
+.inbox-jira-layout > .jira-board-detail {
+  min-width: 0;
+  width: min(42%, 38rem);
+}
+@container inbox (max-width: 44rem) {
+  .inbox-list-detail > .inbox-list-panel {
+    /* Keep the desktop resize preference intact while filling a single-column view. */
+    width: 100% !important;
+    border-inline-end: 0;
+    flex: 1;
+  }
+  .inbox-list-detail:not([data-detail-open="true"]) > .inbox-detail-pane,
+  .inbox-list-detail[data-detail-open="true"] > .inbox-list-panel {
+    display: none;
+  }
+  .inbox-detail-back {
+    display: block;
+  }
+  .inbox-jira-layout[data-detail-open="true"] > :not(.jira-board-detail) {
+    display: none;
+  }
+  .inbox-jira-layout > .jira-board-detail {
+    width: 100%;
+    max-width: none;
+    flex: 1;
+    border-inline-start: 0;
+  }
+}
+/* The discussion panel covers the detail pane when the inbox itself is narrow, whatever
+   the window width: a split or docked inbox in a wide window needs the same layout as a
+   narrow window. The resize handle has nothing to resize while the panel fills the pane. */
+@container inbox (max-width: 50rem) {
+  .inbox-discussion-panel {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    width: auto !important;
+    background: var(--color-background-base);
+  }
+  .inbox-discussion-resizer {
+    display: none;
+  }
+}

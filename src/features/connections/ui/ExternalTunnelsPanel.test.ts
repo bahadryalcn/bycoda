@@ -11,6 +11,27 @@ import type { TunnelOverview } from "../../../integrations/external-tunnels";
 
 vi.mock("../model/connections", () => ({ remoteRequest: vi.fn() }));
 vi.mock("../../../platform/tauri/clipboard", () => ({ copyText: vi.fn(async () => {}) }));
+// The shared Alert completes its dismissal on an exit animation that happy-dom does not run;
+// its own tests cover that. Here the panel only needs the notice text and its dismiss wiring.
+vi.mock("../../../shared/ui/Alert", () => ({
+  Alert: ({
+    children,
+    onDismiss,
+    role,
+  }: {
+    children: ReactNode;
+    onDismiss?: () => void;
+    role?: string;
+  }) =>
+    createElement(
+      "div",
+      { role },
+      children,
+      onDismiss
+        ? createElement("button", { type: "button", "aria-label": "Dismiss", onClick: onDismiss })
+        : null,
+    ),
+}));
 vi.mock("../../../shared/ui/Modal", () => ({
   Modal: ({ children, title }: { children: ReactNode; title: string }) =>
     createElement("div", { role: "dialog", "aria-label": title }, children),
@@ -105,19 +126,26 @@ function button(text: string) {
   return value;
 }
 async function choose(label: string, value: string) {
-  const field = [...container.querySelectorAll("label")]
-    .find((entry) => entry.textContent?.startsWith(label))
-    ?.querySelector("select");
+  const radio = container.querySelector<HTMLButtonElement>(
+    `[role="radiogroup"][aria-label="${label}"] [data-value="${value}"]`,
+  );
+  if (radio) {
+    await act(async () => radio.click());
+    return;
+  }
+  const field = container.querySelector<HTMLButtonElement>(`[aria-label^="${label}:"]`);
   if (!field) throw new Error(`Missing ${label}`);
-  await act(async () => {
-    field.value = value;
-    field.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await act(async () => field.click());
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((entry) =>
+    entry.textContent?.includes(value),
+  );
+  if (!option) throw new Error(`Missing option ${value}`);
+  await act(async () => option.click());
 }
 
 it("separates dev and host targets and routes host start to the selected computer", async () => {
   await render();
-  await choose("Computer", "remote");
+  await choose("Computer", "Home Mac");
   await choose("Tunnel target", "host");
   const field = [...container.querySelectorAll("input")].find((input) => input.readOnly)!;
   expect(field.value).toBe("http://127.0.0.1:3777");
@@ -186,10 +214,26 @@ it("ignores a previous computer's late status after the selection changes", asyn
     }),
   );
   await render();
-  await choose("Computer", "remote");
+  await choose("Computer", "Home Mac");
   await act(async () =>
     resolve({ ...overview(), tunnels: [{ ...info, publicUrl: "https://old.trycloudflare.com" }] }),
   );
   expect(container.textContent).not.toContain("old.trycloudflare.com");
   expect(container.textContent).toContain("Home Mac");
+});
+
+it("shows a dismissible notice after the Host repaired damaged tunnel state", async () => {
+  current = { ...overview(), repair: { repaired: true, dropped: 2 } };
+  await render();
+  const text = "Tunnel settings were damaged and repaired; 2 entries could not be recovered.";
+  expect(container.textContent).toContain(text);
+  const dismiss = container.querySelector<HTMLButtonElement>('button[aria-label="Dismiss"]');
+  expect(dismiss).not.toBeNull();
+  await act(async () => dismiss!.click());
+  expect(container.textContent).not.toContain(text);
+});
+
+it("does not show the repair notice when the Host reports no repair", async () => {
+  await render();
+  expect(container.textContent).not.toContain("could not be recovered");
 });

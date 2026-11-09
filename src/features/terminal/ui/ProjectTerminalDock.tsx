@@ -1,22 +1,27 @@
-import { Button } from "../../../shared/ui/Button";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { TabList, Tab, Tabs } from "../../../shared/ui/Tabs";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { Sash, type SashEndInfo } from "../../../shared/ui/Sash";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import {
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronUp,
   MoreHorizontal,
   PanelBottom,
+  PanelBottomClose,
   PanelLeft,
+  PanelLeftClose,
   PanelRight,
+  PanelRightClose,
   PanelTop,
+  PanelTopClose,
   Plus,
   SplitSquare,
   Terminal,
-  Trash2,
   X,
 } from "../../../shared/ui/icons";
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { memo, useEffect, useRef, useState } from "react";
+import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
+import { useAnimatedReorder } from "../../../shared/hooks/useAnimatedReorder";
 import { ExplorerMenu } from "../../files/ui/ExplorerMenu";
 import "./terminal.css";
 import { IconButton } from "../../../app/shell/TitleBar";
@@ -59,7 +64,8 @@ type Props = {
   onSelectDefaultProfile?: () => void;
   onSelectTerminal: (fileId: string) => void;
   onCloseTerminal: (fileId: string) => void;
-  onCloseOtherTerminals: (fileId: string) => void;
+  /** Closes every terminal except `keepId`; without it, all of them and the panel. */
+  onCloseTerminals: (keepId?: string) => void;
   onReorderTerminals: (ids: string[]) => void;
   onTerminalMetaChange?: (fileId: string, patch: TerminalMetaPatch) => void;
 };
@@ -92,20 +98,21 @@ const SIDE_ITEMS: { id: DockSide; label: string }[] = [
 ];
 
 function sideIcon(side: DockSide) {
-  if (side === "top") return PanelTop;
-  if (side === "left") return PanelLeft;
-  if (side === "right") return PanelRight;
-  return PanelBottom;
+  if (side === "top") return <PanelTop className="icon-sm" />;
+  if (side === "left") return <PanelLeft className="icon-sm" />;
+  if (side === "right") return <PanelRight className="icon-sm" />;
+  return <PanelBottom className="icon-sm" />;
 }
 
+/** Collapse-panel glyphs: distinct from X (close) and the profile menu's chevron. */
 function hideIcon(side: DockSide) {
-  if (side === "top") return ChevronUp;
-  if (side === "left") return ChevronLeft;
-  if (side === "right") return ChevronRight;
-  return ChevronDown;
+  if (side === "top") return <PanelTopClose className="icon-sm" strokeWidth={1.75} />;
+  if (side === "left") return <PanelLeftClose className="icon-sm" strokeWidth={1.75} />;
+  if (side === "right") return <PanelRightClose className="icon-sm" strokeWidth={1.75} />;
+  return <PanelBottomClose className="icon-sm" strokeWidth={1.75} />;
 }
 
-export function ProjectTerminalDock({
+function ProjectTerminalDockComponent({
   dock,
   focused,
   onFocus,
@@ -119,7 +126,7 @@ export function ProjectTerminalDock({
   onSelectDefaultProfile,
   onSelectTerminal,
   onCloseTerminal,
-  onCloseOtherTerminals,
+  onCloseTerminals,
   onReorderTerminals,
   onTerminalMetaChange,
 }: Props) {
@@ -133,7 +140,6 @@ export function ProjectTerminalDock({
     defaultWidth: 200,
     initial: 200,
   });
-  const [dragging, setDragging] = useState(false);
   const [menu, setMenu] = useState<HTMLElement | null>(null);
   const [profileMenu, setProfileMenu] = useState<HTMLElement | null>(null);
   const [terminalMenu, setTerminalMenu] = useState<{
@@ -141,32 +147,34 @@ export function ProjectTerminalDock({
     y: number;
     id: string;
   } | null>(null);
-  const draggedTerminal = useRef<string | null>(null);
+  // One reorder engine for every tab-like list: pointer drag, Alt+Up/Down, Escape/cancel cleanup
+  // and screen-reader announcements. The context menu offers Move Up / Move Down.
+  const sortable = useAnimatedReorder(
+    dock.pane.files.map((file) => file.id),
+    onReorderTerminals,
+    "y",
+    undefined,
+    {
+      label: (id) => {
+        const file = dock.pane.files.find((entry) => entry.id === id);
+        return file ? terminalTabLabel(file) : "";
+      },
+    },
+  );
   const sideButton = useRef<HTMLDivElement>(null);
   const profileButton = useRef<HTMLDivElement>(null);
   const profiles = useTerminalProfiles();
   const chosenProfile = useTerminalProfile();
   const defaultProfile = effectiveProfileId(profiles, chosenProfile);
-  const drag = useRef<{ start: number; size: number } | null>(null);
+  const dragStart = useRef(dock.size);
   const sizeRef = useRef(dock.size);
   sizeRef.current = dock.size;
   const pending = useRef(dock.size);
   const frame = useRef<number | null>(null);
-  const SideIcon = sideIcon(dock.side);
-  const HideIcon = hideIcon(dock.side);
   const visibleIds = dockTerminalGroup(dock, dock.pane.activeFileId);
   const splitTerminal = (id: string) => {
     onSplitTerminal?.(id);
   };
-
-  useEffect(() => {
-    if (!dragging) return;
-    const previous = document.body.style.cursor;
-    document.body.style.cursor = vertical ? "row-resize" : "col-resize";
-    return () => {
-      document.body.style.cursor = previous;
-    };
-  }, [dragging, vertical]);
 
   useEffect(
     () => () => {
@@ -197,44 +205,37 @@ export function ProjectTerminalDock({
     onSizeCommit(pending.current);
   };
 
-  const onResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = {
-      start: vertical ? event.clientY : event.clientX,
-      size: sizeRef.current,
-    };
+  // The Sash owns pointer capture, the body cursor, Escape/blur cancel and the arrow keys; it
+  // reports a signed delta, which the dock turns into a clamped size for its side.
+  const startResize = () => {
+    dragStart.current = sizeRef.current;
     pending.current = sizeRef.current;
-    setDragging(true);
   };
-
-  const onResizePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!drag.current) return;
-    const point = vertical ? event.clientY : event.clientX;
-    const delta = point - drag.current.start;
+  const resizeBy = (delta: number) => {
     const signed = dock.side === "bottom" || dock.side === "right" ? -delta : delta;
-    paint(clampDockSize(dock.side, drag.current.size + signed, viewport()));
+    paint(clampDockSize(dock.side, dragStart.current + signed, viewport()));
   };
-
-  const onResizePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!drag.current) return;
-    drag.current = null;
-    commit();
-    setDragging(false);
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
+  const endResize = (_delta: number, { cancelled }: SashEndInfo) => {
+    if (!cancelled) {
+      commit();
+      return;
     }
+    if (frame.current != null) {
+      cancelAnimationFrame(frame.current);
+      frame.current = null;
+    }
+    pending.current = dragStart.current;
+    onSizePaint(dragStart.current);
   };
 
   const sash =
     dock.side === "top"
-      ? "absolute inset-x-0 -bottom-px z-10 h-1.5 cursor-row-resize touch-none"
+      ? "absolute inset-x-0 -bottom-px"
       : dock.side === "bottom"
-        ? "absolute inset-x-0 -top-px z-10 h-1.5 cursor-row-resize touch-none"
+        ? "absolute inset-x-0 -top-px"
         : dock.side === "left"
-          ? "absolute inset-y-0 -right-px z-10 w-1.5 cursor-col-resize touch-none"
-          : "absolute inset-y-0 -left-px z-10 w-1.5 cursor-col-resize touch-none";
+          ? "absolute inset-y-0 -right-px"
+          : "absolute inset-y-0 -left-px";
 
   return (
     <section
@@ -250,31 +251,34 @@ export function ProjectTerminalDock({
       } border-stroke`}
       onMouseDown={onFocus}
     >
-      <div
-        role="separator"
-        aria-orientation={vertical ? "horizontal" : "vertical"}
-        aria-label={t("Resize terminal")}
-        aria-valuenow={dock.size}
-        className={`${sash} ${dragging ? "bg-content/15" : "hover:bg-content/10"}`}
-        onPointerDown={onResizePointerDown}
-        onPointerMove={onResizePointerMove}
-        onPointerUp={onResizePointerUp}
-        onPointerCancel={onResizePointerUp}
-        onDoubleClick={() => {
+      <Sash
+        orientation={vertical ? "horizontal" : "vertical"}
+        label={t("Resize terminal")}
+        appearance="hidden"
+        value={dock.size}
+        className={`${sash} terminal-dock-sash`}
+        onResizeStart={startResize}
+        onResize={resizeBy}
+        onResizeEnd={endResize}
+        onReset={() => {
           pending.current = defaultDockSize(dock.side);
           commit();
         }}
       />
-      <header className="terminal-header">
-        <div className="terminal-toolbar">
-          <div className="flex min-w-0 items-center gap-0.5">
+      <PaneHeader
+        as="header"
+        className="terminal-header"
+        titleAs="div"
+        title={t("Terminals")}
+        actions={
+          <>
             <IconButton
               label={t("New Terminal ({p0}`)", { p0: MOD })}
               onClick={() => {
                 onAddTerminal();
               }}
             >
-              <Plus className="size-3.5" strokeWidth={1.75} />
+              <Plus className="icon-sm" strokeWidth={1.75} />
             </IconButton>
             {onAddTerminalWithProfile ? (
               <div ref={profileButton} className="terminal-profile-trigger">
@@ -286,158 +290,127 @@ export function ProjectTerminalDock({
                     setProfileMenu(profileMenu ? null : profileButton.current);
                   }}
                 >
-                  <ChevronDown className="size-3" strokeWidth={1.75} />
+                  <ChevronDown className="icon-sm" strokeWidth={1.75} />
                 </IconButton>
               </div>
             ) : null}
             {onSplitTerminal ? (
               <IconButton label={t("Split")} onClick={() => splitTerminal(dock.pane.activeFileId)}>
-                <SplitSquare className="size-3.5" strokeWidth={1.75} />
+                <SplitSquare className="icon-sm" strokeWidth={1.75} />
               </IconButton>
             ) : null}
             <div ref={sideButton}>
               <IconButton
-                label={t("Terminal controls")}
+                label={t("Terminal dock actions")}
                 active={!!menu}
                 onClick={() => {
                   setProfileMenu(null);
                   setMenu(menu ? null : sideButton.current);
                 }}
               >
-                <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
+                <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
               </IconButton>
             </div>
+            {/* Hide keeps every shell running; X closes every terminal and the panel,
+                asking first only when work is running. */}
             <IconButton label={t("Hide Terminal ({p0}J)", { p0: MOD })} onClick={onHide}>
-              <X className="size-3.5" strokeWidth={1.75} />
+              {hideIcon(dock.side)}
             </IconButton>
-          </div>
-        </div>
-      </header>
+            <IconButton label={t("Close All Terminals")} onClick={() => onCloseTerminals()}>
+              <X className="icon-sm" strokeWidth={1.75} />
+            </IconButton>
+          </>
+        }
+      />
       <div className="terminal-body" ref={bodyRef}>
         <aside
           ref={sidebarResize.setPaneRef}
           className="terminal-sidebar"
           aria-label={t("Terminal controls")}
         >
-          <div
-            className="terminal-list"
-            role="tablist"
-            aria-label={t("Terminals")}
-            aria-orientation="vertical"
+          <Tabs
+            value={dock.pane.activeFileId ?? ""}
+            onValueChange={onSelectTerminal}
+            orientation="vertical"
+            variant="tab"
+            panels="none"
           >
-            {dock.pane.files.map((file, index) => (
-              <div key={file.id} className="terminal-list-row" role="presentation">
-                <Button
-                  variant="tab"
-                  fullWidth
-                  motion="none"
-                  id={`terminal-tab-${file.id}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={file.id === dock.pane.activeFileId}
-                  aria-controls={`terminal-panel-${file.id}`}
-                  tabIndex={file.id === dock.pane.activeFileId ? 0 : -1}
-                  className="terminal-list-item"
-                  title={`${terminalTabLabel(file)} — ${file.cwd}`}
-                  draggable
-                  onClick={() => {
-                    onSelectTerminal(file.id);
-                  }}
-                  onAuxClick={(event) => {
-                    if (event.button === 1) onCloseTerminal(file.id);
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    setTerminalMenu({
-                      x: event.clientX,
-                      y: event.clientY,
-                      id: file.id,
-                    });
-                  }}
-                  onKeyDown={(event) => {
-                    const files = dock.pane.files;
-                    const next =
-                      event.key === "ArrowDown"
-                        ? (index + 1) % files.length
-                        : event.key === "ArrowUp"
-                          ? (index - 1 + files.length) % files.length
-                          : event.key === "Home"
-                            ? 0
-                            : event.key === "End"
-                              ? files.length - 1
-                              : null;
-                    if (next !== null) {
-                      event.preventDefault();
-                      onSelectTerminal(files[next].id);
-                      document.getElementById(`terminal-tab-${files[next].id}`)?.focus();
-                    }
-                  }}
-                  onDragStart={(event) => {
-                    draggedTerminal.current = file.id;
-                    event.dataTransfer.effectAllowed = "move";
-                    event.dataTransfer.setData("text/plain", file.id);
-                  }}
-                  onDragEnd={() => {
-                    draggedTerminal.current = null;
-                  }}
-                  onDragOver={(event) => {
-                    if (draggedTerminal.current) event.preventDefault();
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    const dragged = draggedTerminal.current;
-                    draggedTerminal.current = null;
-                    if (!dragged || dragged === file.id) return;
-                    const ids = dock.pane.files.map((item) => item.id);
-                    const source = ids.indexOf(dragged);
-                    if (source < 0) return;
-                    ids.splice(source, 1);
-                    ids.splice(index, 0, dragged);
-                    onReorderTerminals(ids);
+            <TabList className="terminal-list" label={t("Terminals")}>
+              {dock.pane.files.map((file) => (
+                <ActionHost
+                  key={file.id}
+                  ref={(el) => sortable.setItemRef(file.id, el)}
+                  selected={file.id === dock.pane.activeFileId}
+                  className="terminal-list-row reorder-item"
+                  role="presentation"
+                  onPointerDown={(event) => {
+                    if (
+                      event.button !== 0 ||
+                      (event.target as HTMLElement).closest("[data-no-drag]")
+                    )
+                      return;
+                    sortable.onItemPointerDown(file.id, event);
                   }}
                 >
-                  <Terminal className="size-3 shrink-0" strokeWidth={1.5} />
-                  <span className="min-w-0 flex-1 truncate">{terminalTabLabel(file)}</span>
-                </Button>
-                <div className="terminal-row-actions">
-                  {onSplitTerminal ? (
-                    <Button
-                      iconOnly
-                      label={`${t("Split")} — ${terminalTabLabel(file)}`}
-                      variant="ghost"
+                  <Tab
+                    value={file.id}
+                    fullWidth
+                    id={`terminal-tab-${file.id}`}
+                    controls={`terminal-panel-${file.id}`}
+                    className="terminal-list-item"
+                    tooltip={terminalTabLabel(file)}
+                    tooltipDetails={[file.cwd]}
+                    onClick={(event) => {
+                      if (sortable.consumeClick()) event.preventDefault();
+                      else if (file.id === dock.pane.activeFileId) onSelectTerminal(file.id);
+                    }}
+                    onAuxClick={(event) => {
+                      if (event.button === 1) onCloseTerminal(file.id);
+                    }}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      setTerminalMenu({
+                        x: event.clientX,
+                        y: event.clientY,
+                        id: file.id,
+                      });
+                    }}
+                    onKeyDown={(event) => sortable.onItemKeyDown(file.id, event)}
+                  >
+                    <Terminal className="icon-sm shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">{terminalTabLabel(file)}</span>
+                  </Tab>
+                  <div className="terminal-row-actions">
+                    {onSplitTerminal ? (
+                      <InlineAction
+                        label={`${t("Split")} — ${terminalTabLabel(file)}`}
+                        tooltip={t("Split")}
+                        motion="none"
+                        type="button"
+                        onClick={() => splitTerminal(file.id)}
+                      >
+                        <SplitSquare className="icon-sm" strokeWidth={1.75} />
+                      </InlineAction>
+                    ) : null}
+                    <InlineAction
+                      label={`${t("Close")} — ${terminalTabLabel(file)}`}
+                      tooltip={t("Close")}
                       motion="none"
                       type="button"
-                      aria-label={`${t("Split")} — ${terminalTabLabel(file)}`}
-                      title={t("Split")}
-                      onClick={() => splitTerminal(file.id)}
+                      onClick={() => onCloseTerminal(file.id)}
                     >
-                      <SplitSquare className="size-3" strokeWidth={1.75} />
-                    </Button>
-                  ) : null}
-                  <Button
-                    iconOnly
-                    label={`${t("Close")} — ${terminalTabLabel(file)}`}
-                    variant="ghost"
-                    motion="none"
-                    type="button"
-                    aria-label={`${t("Close")} — ${terminalTabLabel(file)}`}
-                    title={t("Close")}
-                    onClick={() => onCloseTerminal(file.id)}
-                  >
-                    <Trash2 className="size-3" strokeWidth={1.75} />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
+                      <X className="icon-sm" strokeWidth={1.75} />
+                    </InlineAction>
+                  </div>
+                </ActionHost>
+              ))}
+            </TabList>
+          </Tabs>
         </aside>
-        <div
-          {...sidebarResize.separatorProps}
-          aria-label={`${t("Resize terminal")} — ${t("Terminals")}`}
+        <Sash
+          {...sidebarResize.sashProps}
+          label={`${t("Resize terminal")} — ${t("Terminals")}`}
           className="terminal-sidebar-sash"
-          data-dragging={sidebarResize.dragging || undefined}
-          onPointerDown={sidebarResize.onPointerDown}
-          onDoubleClick={sidebarResize.onDoubleClick}
         />
         <div
           className="terminal-canvas relative min-h-0 min-w-0 flex-1"
@@ -481,11 +454,24 @@ export function ProjectTerminalDock({
             ...(onSplitTerminal ? [{ kind: "item" as const, id: "split", label: t("Split") }] : []),
             {
               kind: "item",
-              id: "close",
+              id: "move-up",
               get label() {
-                return t("Close");
+                return t("Move up");
               },
+              disabled: dock.pane.files.findIndex((file) => file.id === terminalMenu.id) < 1,
             },
+            {
+              kind: "item",
+              id: "move-down",
+              get label() {
+                return t("Move down");
+              },
+              disabled:
+                dock.pane.files.findIndex((file) => file.id === terminalMenu.id) >=
+                dock.pane.files.length - 1,
+            },
+            { kind: "sep" },
+            { kind: "item", id: "close", label: t("Close") },
             {
               kind: "item",
               id: "close-others",
@@ -494,11 +480,21 @@ export function ProjectTerminalDock({
               },
               disabled: dock.pane.files.length < 2,
             },
+            { kind: "item", id: "close-all", label: t("Close All Terminals") },
           ]}
           onPick={(id) => {
             if (id === "split") splitTerminal(terminalMenu.id);
+            if (id === "move-up" || id === "move-down") {
+              const moved = terminalMenu.id;
+              sortable.moveBy(moved, id === "move-up" ? -1 : 1);
+              // The menu held focus; hand it back to the tab that moved.
+              requestAnimationFrame(() =>
+                document.getElementById(`terminal-tab-${moved}`)?.focus(),
+              );
+            }
             if (id === "close") onCloseTerminal(terminalMenu.id);
-            if (id === "close-others") onCloseOtherTerminals(terminalMenu.id);
+            if (id === "close-others") onCloseTerminals(terminalMenu.id);
+            if (id === "close-all") onCloseTerminals();
             setTerminalMenu(null);
           }}
           onClose={() => setTerminalMenu(null)}
@@ -578,13 +574,13 @@ export function ProjectTerminalDock({
           side={dock.side === "top" ? "bottom" : "top"}
           align="end"
           className="terminal-popup"
-          ariaLabel={t("Terminal controls")}
+          ariaLabel={t("Terminal dock actions")}
           items={[
             {
               kind: "item",
               id: "move",
               label: t("Move Terminal"),
-              icon: <SideIcon className="size-3.5" />,
+              icon: sideIcon(dock.side),
               submenu: SIDE_ITEMS.map((item) => ({
                 kind: "item" as const,
                 id: item.id,
@@ -597,7 +593,7 @@ export function ProjectTerminalDock({
               kind: "item",
               id: "close",
               label: t("Close Active Terminal"),
-              icon: <Trash2 className="size-3.5" />,
+              icon: <X className="icon-sm" />,
             },
             {
               kind: "item",
@@ -605,11 +601,13 @@ export function ProjectTerminalDock({
               label: t("Close Others"),
               disabled: dock.pane.files.length < 2,
             },
+            { kind: "item", id: "close-all", label: t("Close All Terminals") },
+            { kind: "sep" },
             {
               kind: "item",
               id: "hide",
               label: t("Hide Terminal ({p0}J)", { p0: MOD }),
-              icon: <HideIcon className="size-3.5" />,
+              icon: hideIcon(dock.side),
             },
           ]}
           onPick={(id) => {
@@ -617,7 +615,8 @@ export function ProjectTerminalDock({
               onSideChange(id);
             }
             if (id === "close") onCloseTerminal(dock.pane.activeFileId);
-            if (id === "close-others") onCloseOtherTerminals(dock.pane.activeFileId);
+            if (id === "close-others") onCloseTerminals(dock.pane.activeFileId);
+            if (id === "close-all") onCloseTerminals();
             if (id === "hide") onHide();
             setMenu(null);
           }}
@@ -626,4 +625,12 @@ export function ProjectTerminalDock({
       ) : null}
     </section>
   );
+}
+
+const MemoProjectTerminalDock = memo(ProjectTerminalDockComponent);
+
+/** One dock per project stays mounted; stable handler proxies let a dock skip the
+ * main area's renders unless its own dock state or focus changed. */
+export function ProjectTerminalDock(props: Props) {
+  return <MemoProjectTerminalDock {...useStableHandlers(props)} />;
 }

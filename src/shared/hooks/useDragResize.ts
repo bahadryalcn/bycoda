@@ -7,6 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { suppressTextSelection } from "../lib/drag";
+import type { SashEndInfo } from "../ui/Sash";
 
 type Options = {
   axis?: "horizontal" | "vertical";
@@ -23,7 +24,24 @@ function clampTo(value: number, min: number, max: number) {
   return Math.min(upper, Math.max(Math.min(min, upper), Math.round(value)));
 }
 
-/** Drag a pane's width by writing the DOM directly so React re-renders can't fight the cursor. */
+/**
+ * Drag a pane's width by writing the DOM directly so React re-renders can't fight the cursor.
+ *
+ * Two ways to wire a handle, both with the same clamping, commit and keyboard steps (10 px,
+ * Shift 50 px, Home/End, Enter and double-click reset):
+ * - legacy: spread `separatorProps` and `onPointerDown`/`onDoubleClick` on your own element;
+ * - shared `Sash` (preferred): `<Sash {...sashProps} label={t("Resize sidebar")} />`. The Sash
+ *   owns the pointer capture, rAF throttling, Escape and blur cancel and `role="separator"`;
+ *   `sashProps` maps its start/resize/end/reset callbacks and value/min/max onto this hook.
+ *
+ * `getWidth()` reads the live pane width (also mid-drag), `setWidth(value)` clamps and commits
+ * (`{ commit: false }` only moves the pane, for live previews).
+ *
+ * @example
+ * const resize = useDragResize({ min: 180, max: () => 480, defaultWidth: 244, initial: width, onCommit: setWidth });
+ * <aside ref={resize.setPaneRef}>�</aside>
+ * <Sash {...resize.sashProps} label={t("Resize sidebar")} />
+ */
 export function useDragResize({
   axis = "horizontal",
   direction = "right",
@@ -91,6 +109,15 @@ export function useDragResize({
     document.body.style.cursor = axis === "vertical" ? "row-resize" : "col-resize";
     document.documentElement.classList.add("is-resizing");
 
+    let cancelled = false;
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key !== "Escape") return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      cancelled = true;
+      stop();
+    };
+
     const onMove = (ev: PointerEvent) => {
       if (ev.pointerId !== pointerId) return;
       const coordinate = axis === "vertical" ? ev.clientY : ev.clientX;
@@ -103,6 +130,7 @@ export function useDragResize({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("keydown", onKey, true);
       restoreSelection();
       document.body.style.cursor = previousCursor;
       document.documentElement.classList.remove("is-resizing");
@@ -112,7 +140,9 @@ export function useDragResize({
       } catch {
         /* already released */
       }
-      commit(widthRef.current);
+      // Escape restores the width held when the drag began and commits nothing.
+      if (cancelled) apply(startW);
+      else commit(widthRef.current);
     };
 
     const onUp = (ev: PointerEvent) => {
@@ -124,7 +154,38 @@ export function useDragResize({
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
+    window.addEventListener("keydown", onKey, true);
   };
+
+  // Shared `Sash` wiring: the Sash reports signed deltas; this hook owns the width.
+  const sashStart = useRef<number | null>(null);
+  const sign = direction === "left" ? -1 : 1;
+  const onResizeStart = () => {
+    sashStart.current = widthRef.current;
+    setDragging(true);
+    document.documentElement.classList.add("is-resizing");
+  };
+  const onResize = (delta: number) => {
+    const base = sashStart.current ?? widthRef.current;
+    apply(clamp(base + delta * sign));
+  };
+  const onResizeEnd = (_delta: number, info: SashEndInfo) => {
+    const base = sashStart.current;
+    sashStart.current = null;
+    document.documentElement.classList.remove("is-resizing");
+    setDragging(false);
+    if (info.cancelled) {
+      if (base !== null) apply(base);
+      return;
+    }
+    commit(widthRef.current);
+  };
+  useEffect(
+    () => () => {
+      if (sashStart.current !== null) document.documentElement.classList.remove("is-resizing");
+    },
+    [],
+  );
 
   useEffect(() => () => stopDrag.current?.(), []);
 
@@ -140,7 +201,11 @@ export function useDragResize({
 
   useEffect(() => {
     const resize = () => {
-      const next = clamp(stopDrag.current ? widthRef.current : preferredWidthRef.current);
+      // The pane's parent resizes with every drag frame. While a drag (pointer or
+      // shared Sash) is live, keep its width; snapping back to the saved width here
+      // made the pane flicker between the old and new size until release.
+      const dragging = stopDrag.current !== null || sashStart.current !== null;
+      const next = clamp(dragging ? widthRef.current : preferredWidthRef.current);
       if (next !== widthRef.current) {
         apply(next);
         setWidth(next);
@@ -185,6 +250,19 @@ export function useDragResize({
     commit(defaultRef.current);
   };
 
+  const reset = () => commit(defaultRef.current);
+  const getWidth = () => widthRef.current;
+  const setWidthTo = (value: number, options?: { commit?: boolean }) => {
+    if (options?.commit === false) apply(clamp(value));
+    else commit(value);
+  };
+  // Sash handles the arrows and Enter; Home and End (collapse / maximise) stay here.
+  const onSashKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Home" && event.key !== "End") return;
+    event.preventDefault();
+    commit(event.key === "Home" ? 0 : maxRef.current());
+  };
+
   return {
     width,
     dragging,
@@ -194,6 +272,23 @@ export function useDragResize({
     onKeyDown,
     min: bounds.min,
     max: bounds.max,
+    getWidth,
+    setWidth: setWidthTo,
+    reset,
+    /** Spread on `<Sash>` (add `label`). */
+    sashProps: {
+      orientation: axis === "vertical" ? ("horizontal" as const) : ("vertical" as const),
+      value: width,
+      min: bounds.min,
+      max: bounds.max,
+      step: 10,
+      largeStep: 50,
+      onResizeStart,
+      onResize,
+      onResizeEnd,
+      onReset: reset,
+      onKeyDown: onSashKeyDown,
+    },
     separatorProps: {
       role: "separator" as const,
       tabIndex: 0,

@@ -1,11 +1,18 @@
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
-import { Fragment, useEffect, useState } from "react";
+import { useLocale, useT } from "../../../shared/i18n";
+import { Fragment, useState } from "react";
 import { splitAttachmentTokens } from "../model/attachmentTokens";
+import { splitCitationTokens } from "../model/citationTokens";
+import type { ChatCitation } from "../model/chatCitation";
+import { CitationTokenPill } from "./ChatCitationText";
 import type { Attachment } from "../model/session";
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
 import { useAttachmentPreview } from "./useAttachmentPreview";
 import { SkillTokenText } from "./SkillTokenText";
+import { AttachmentIdentity } from "./AttachmentIdentity";
+import { formatAttachmentSize } from "../model/attachmentPresentation";
+import styles from "./AttachmentTokenText.module.css";
 import {
   AttachmentFilePreview,
   canOpenFileAttachment,
@@ -18,17 +25,11 @@ type PillProps = {
   attachment: Attachment;
 };
 
-const PILL_CLASS =
-  "mx-px rounded bg-(--ui-surface-raised) px-1 py-px align-baseline text-[0.85em] text-(--ui-text-secondary)";
-
 /** A token as a pill. It keeps its brackets in the DOM so selecting and copying give the text back. */
 function TokenPill({ token, label, attachment }: PillProps) {
-  useLocale();
+  const t = useT();
   const [openedFile, setOpenedFile] = useState<Attachment | null>(null);
   const fileOpen = sameFilePreviewSource(openedFile, attachment);
-  useEffect(() => {
-    if (!fileOpen) setOpenedFile(null);
-  }, [fileOpen]);
   const canOpenFile = canOpenFileAttachment(attachment);
   const {
     src: preview,
@@ -37,21 +38,27 @@ function TokenPill({ token, label, attachment }: PillProps) {
     loading,
     error,
     show,
+    retry,
+    recover,
     close,
   } = useAttachmentPreview(attachment);
+  const size = formatAttachmentSize(attachment.size);
   const body = (
-    <>
+    <span className={styles.token} title={attachment.name}>
+      <span className={styles.icon} aria-hidden="true">
+        <AttachmentIdentity attachment={attachment} />
+      </span>
       <span className="sr-only">[</span>
       {label}
       <span className="sr-only">]</span>
-    </>
+      {size ? (
+        // Drawn from an attribute so copying the pill still gives back `[image1]`.
+        <span className={styles.size} aria-hidden="true" data-size={size} />
+      ) : null}
+    </span>
   );
   if (!canOpen && !canOpenFile) {
-    return (
-      <span className={PILL_CLASS} title={attachment.path ?? attachment.name}>
-        {body}
-      </span>
-    );
+    return <span title={attachment.path ?? attachment.name}>{body}</span>;
   }
   return (
     <>
@@ -60,8 +67,11 @@ function TokenPill({ token, label, attachment }: PillProps) {
         variant="link"
         layout="text"
         type="button"
-        title={t("Open {p0} full screen", { p0: attachment.name })}
-        aria-label={t("Open {p0} ({p1}) full screen", { p0: token, p1: attachment.name })}
+        tooltip={t("Open {p0} full screen", { p0: attachment.name })}
+        aria-label={t("Open {p0} ({p1}) full screen", {
+          p0: token,
+          p1: attachment.name,
+        })}
         aria-haspopup="dialog"
         aria-busy={loading}
         disabled={loading}
@@ -76,19 +86,33 @@ function TokenPill({ token, label, attachment }: PillProps) {
         {body}
       </Button>
       {loading ? (
-        <span role="status" className="text-xs text-(--ui-text-secondary)">
+        <span role="status" className="text-ui-caption text-(--ui-text-secondary)">
           {" "}
           {t("Loading…")}
         </span>
       ) : null}
       {error ? (
-        <span role="alert" className="text-xs text-(--ui-tone-warning-fg)">
+        // Phrasing-only: this renders inside <pre>/<p> prose, where the block InlineMessage (a div) is invalid.
+        <>
           {" "}
-          {t("Preview unavailable. Try again.")}
-        </span>
+          <LiveText
+            mode="assertive"
+            className="text-ui-caption text-(--ui-tone-warning-fg)"
+            text={t("Preview unavailable. Try again.")}
+          />
+        </>
       ) : null}
-      {previewOpen && preview ? (
-        <ImageLightbox src={preview} alt={attachment.name} onClose={close} />
+      {previewOpen ? (
+        <ImageLightbox
+          src={preview ?? ""}
+          alt={attachment.name}
+          onClose={close}
+          resetKey={attachment.id}
+          loading={loading}
+          error={error ? t("Preview unavailable. Try again.") : undefined}
+          onRetry={retry}
+          onImageError={recover}
+        />
       ) : null}
       {fileOpen ? (
         <AttachmentFilePreview attachment={attachment} onClose={() => setOpenedFile(null)} />
@@ -97,16 +121,36 @@ function TokenPill({ token, label, attachment }: PillProps) {
   );
 }
 
-/** Message text with the tokens that name one of its attachments shown as pills. */
+/** Plain text with `[quoteN]` tokens that name one of `citations` shown as pills. */
+function CitationTokenText({
+  text,
+  citations = [],
+}: {
+  text: string;
+  citations?: readonly ChatCitation[];
+}) {
+  if (!citations.length) return <SkillTokenText text={text} />;
+  return splitCitationTokens(text, citations.length).map((part, index) =>
+    "token" in part ? (
+      <CitationTokenPill key={index} token={part.token} citation={citations[part.index]} />
+    ) : (
+      <SkillTokenText key={index} text={part.text} />
+    ),
+  );
+}
+
+/** Message text with the tokens that name one of its attachments or citations shown as pills. */
 export function AttachmentTokenText({
   text,
   attachments,
+  citations,
 }: {
   text: string;
   attachments: Attachment[] | undefined;
+  citations?: readonly ChatCitation[];
 }) {
   useLocale();
-  if (!attachments?.length) return <SkillTokenText text={text} />;
+  if (!attachments?.length) return <CitationTokenText text={text} citations={citations} />;
   const segments = splitAttachmentTokens(text, attachments);
   return (
     <>
@@ -119,7 +163,7 @@ export function AttachmentTokenText({
               attachment={segment.attachment}
             />
           ) : (
-            <SkillTokenText text={segment.text} />
+            <CitationTokenText text={segment.text} citations={citations} />
           )}
         </Fragment>
       ))}

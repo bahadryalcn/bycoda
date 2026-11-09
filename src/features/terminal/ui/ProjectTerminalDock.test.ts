@@ -58,7 +58,7 @@ it("resizes the terminal list by drag and keyboard, resets it, and follows dock 
           onAddTerminal: vi.fn(),
           onSelectTerminal: vi.fn(),
           onCloseTerminal: vi.fn(),
-          onCloseOtherTerminals: vi.fn(),
+          onCloseTerminals: vi.fn(),
           onReorderTerminals: vi.fn(),
         }),
       ),
@@ -67,21 +67,36 @@ it("resizes the terminal list by drag and keyboard, resets it, and follows dock 
     const sidebar = host.querySelector<HTMLElement>(".terminal-sidebar")!;
     sash.setPointerCapture = vi.fn();
     sash.releasePointerCapture = vi.fn();
+    sash.hasPointerCapture = () => true;
     expect(sash.getAttribute("aria-orientation")).toBe("vertical");
     expect(sash.tabIndex).toBe(0);
     expect(sidebar.style.width).toBe("200px");
     await act(async () => {
       sash.dispatchEvent(
-        new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, clientX: 200, button: 0 }),
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          pointerId: 1,
+          isPrimary: true,
+          clientX: 200,
+          button: 0,
+        }),
       );
-      window.dispatchEvent(new PointerEvent("pointermove", { pointerId: 2, clientX: 450 }));
+      sash.dispatchEvent(
+        new PointerEvent("pointermove", { bubbles: true, pointerId: 2, clientX: 450 }),
+      );
+      await new Promise((resolve) => requestAnimationFrame(resolve));
     });
     expect(sidebar.style.width).toBe("200px");
-    await act(async () =>
-      window.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, clientX: 300 })),
-    );
+    await act(async () => {
+      sash.dispatchEvent(
+        new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientX: 300 }),
+      );
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
     expect(sidebar.style.width).toBe("300px");
-    await act(async () => window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1 })));
+    await act(async () =>
+      sash.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1 })),
+    );
     expect(sash.getAttribute("aria-valuenow")).toBe("300");
     expect(document.documentElement.classList.contains("is-resizing")).toBe(false);
     await act(async () =>
@@ -164,7 +179,7 @@ it("selects terminals with vertical keyboard navigation and closes the active te
           onAddTerminal: vi.fn(),
           onSelectTerminal,
           onCloseTerminal,
-          onCloseOtherTerminals: vi.fn(),
+          onCloseTerminals: vi.fn(),
           onReorderTerminals: vi.fn(),
         }),
       );
@@ -233,7 +248,7 @@ it("splits the targeted row and keeps both canvases visible while changing focus
           onSelectTerminal,
           onAddTerminalWithProfile,
           onCloseTerminal: vi.fn(),
-          onCloseOtherTerminals: vi.fn(),
+          onCloseTerminals: vi.fn(),
           onReorderTerminals: vi.fn(),
         }),
       ),
@@ -295,7 +310,7 @@ it("keeps the dock focused on terminals without duplicate footer navigation", as
     onAddTerminal: vi.fn(),
     onSelectTerminal,
     onCloseTerminal: vi.fn(),
-    onCloseOtherTerminals: vi.fn(),
+    onCloseTerminals: vi.fn(),
     onReorderTerminals: vi.fn(),
   };
   try {
@@ -309,6 +324,89 @@ it("keeps the dock focused on terminals without duplicate footer navigation", as
     expect(host.querySelector('[role="tabpanel"]')?.getAttribute("aria-hidden")).toBe("false");
   } finally {
     await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("reorders terminals without dragging: Alt+Arrow and the Move up / Move down menu", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  const onReorderTerminals = vi.fn();
+  const onSelectTerminal = vi.fn();
+  const dock = {
+    projectPath: "/project",
+    side: "bottom",
+    size: 220,
+    open: true,
+    pane: {
+      id: "pane",
+      activeFileId: "one",
+      files: ["one", "two", "three"].map((id, index) => ({
+        id,
+        path: `Terminal ${index + 1}`,
+        cwd: "/project",
+        terminal: true,
+      })),
+    },
+  } as Dock;
+  try {
+    await act(async () => {
+      root.render(
+        createElement(ProjectTerminalDock, {
+          dock,
+          focused: false,
+          onFocus: vi.fn(),
+          onHide: vi.fn(),
+          onSideChange: vi.fn(),
+          onSizePaint: vi.fn(),
+          onSizeCommit: vi.fn(),
+          onAddTerminal: vi.fn(),
+          onSelectTerminal,
+          onCloseTerminal: vi.fn(),
+          onCloseTerminals: vi.fn(),
+          onReorderTerminals,
+        }),
+      );
+    });
+    const tabs = host.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    // The tab is a button now driven by the shared pointer engine, not native HTML drag.
+    expect(tabs[0].hasAttribute("draggable")).toBe(false);
+    const alt = new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    await act(async () => {
+      tabs[0].dispatchEvent(alt);
+    });
+    expect(alt.defaultPrevented).toBe(true);
+    expect(onReorderTerminals).toHaveBeenLastCalledWith(["two", "one", "three"], "one");
+    expect(onSelectTerminal).not.toHaveBeenCalled();
+    expect(document.querySelector("[data-drag-announcer]")?.textContent).toBe(
+      "Moved Terminal 1 to position 2 of 3",
+    );
+
+    await act(async () => {
+      tabs[2].dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 4, clientY: 4 }),
+      );
+    });
+    const labels = Array.from(host.querySelectorAll('[role="menu"] button')).map(
+      (button) => button.textContent,
+    );
+    expect(labels).toEqual(expect.arrayContaining(["Move up", "Move down"]));
+    await act(async () => {
+      Array.from(host.querySelectorAll<HTMLButtonElement>('[role="menu"] button'))
+        .find((button) => button.textContent === "Move up")
+        ?.click();
+    });
+    expect(onReorderTerminals).toHaveBeenLastCalledWith(["one", "three", "two"], "three");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
     vi.unstubAllGlobals();
   }
 });

@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { acceptCompletion, completionStatus } from "@codemirror/autocomplete";
 import { historyField, indentLess, indentMore, isolateHistory } from "@codemirror/commands";
@@ -9,16 +10,13 @@ import {
   Compartment,
   countColumn,
   EditorSelection,
+  EditorState,
   Prec,
-  StateField,
   Transaction,
-  type EditorState,
   type Extension,
   type Text,
 } from "@codemirror/state";
 import {
-  Decoration,
-  type DecorationSet,
   EditorView,
   highlightActiveLine,
   highlightActiveLineGutter,
@@ -26,16 +24,14 @@ import {
   lineNumbers,
 } from "@codemirror/view";
 import { ChevronDown, ChevronUp } from "../../../shared/ui/icons";
-
 import { formatInteger } from "../../../shared/lib/numbers";
 import { minimalSetup } from "codemirror";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
-import { isLightScheme } from "../../settings/model/appearance";
-import { loadAutosave, loadFormatOnSave, subscribeAutosave } from "../../settings/model/settings";
-import { formatProjectText, hasBundledFormatter } from "../../../shared/lib/format";
+import { isLightScheme } from "../../settings/public/appearance";
+import { loadAutosave, loadFormatOnSave, subscribeAutosave } from "../../settings/public/settings";
+import { formatProjectText } from "../../../shared/lib/format";
 import {
   gitBlame,
   gitConflicts,
@@ -43,33 +39,38 @@ import {
   notifyGitChanged,
   subscribeGitChanged,
 } from "../../../platform/tauri/fs";
-
 import { displayPath } from "../../../shared/lib/paths";
 import type { EditorNavigation, OpenFileFn } from "../../search/model/search";
-
 import {
   DiffCommentComposer,
   type DiffCommentComposerTarget,
-} from "../../source-control/ui/DiffCommentComposer";
-import { DiffLayoutToggle, useDiffLayout } from "../../source-control/ui/DiffLayoutToggle";
-import { hasConflictMarkers } from "../../source-control/model/conflictMarkers";
-import { nextConflictedFile } from "../../source-control/model/conflictSection";
-import { requestOpenCommit } from "../../source-control/ui/GitFileInspector";
+} from "../../source-control/public/DiffCommentComposer";
+
+import {
+  DiffLayoutToggle,
+  useResponsiveDiffLayout,
+} from "../../source-control/public/DiffLayoutToggle";
+import { hasConflictMarkers } from "../../source-control/public/conflictMarkers";
+import { nextConflictedFile } from "../../source-control/public/conflictSection";
+import { requestOpenCommit } from "../../source-control/public/GitFileInspector";
 import { editorAutocomplete } from "../editor/editorAutocomplete";
 import { editorBlame, refreshBlame } from "../editor/editorBlame";
 import { conflictBlocks, editorConflicts, stepConflict } from "../editor/editorConflicts";
 import { languageForPath, schemeExtensions } from "../editor/editorChrome";
 import { editorReadability } from "../editor/editorReadability";
+import { editorWrappedIndent } from "../editor/editorWrappedIndent";
 import {
   preserveEditorViewport,
   replaceEditorDoc,
+  normalizeLineBreaks,
   scrollLineToTop,
   topVisibleLine,
 } from "../editor/editorDoc";
 import { editorTyping, tryExpandEmmet } from "../editor/editorEditing";
 import { EditorSelectionMenu, type EditorSelectionTarget } from "./EditorSelectionMenu";
+import { EditorContextMenu, type EditorContextTarget } from "./EditorContextMenu";
 import { editorCodeSelection, formatEditorSelectionReference } from "../model/editorSelection";
-import { requestAddToChat } from "../../sessions/model/quoteDraft";
+import { requestAddToChat } from "../../sessions/public/quoteDraft";
 import {
   diffActiveChunkIndex,
   diffLineStatsForView,
@@ -94,13 +95,28 @@ import { editorScrollbar } from "../editor/editorScrollbar";
 import { editorZoom } from "../editor/editorZoom";
 import { attachSplitOverview, editorOverview } from "../editor/editorOverview";
 import { EditorConflictBar } from "./EditorConflictBar";
-import { ConflictLayout, conflictSourcesFromMarkers } from "../../source-control/ui/ConflictLayout";
-import { MergeConflictEditor } from "../../source-control/ui/MergeConflictEditor";
+import {
+  ConflictLayout,
+  conflictSourcesFromMarkers,
+} from "../../source-control/public/ConflictLayout";
+import { MergeConflictEditor } from "../../source-control/public/MergeConflictEditor";
 
 import { useInlineBlame, useInlineBlameUnavailableReason } from "./InlineBlameToggle";
 
 import { FILE_EDITOR_AUTOSAVE_DELAY_MS } from "../editor/editorTiming";
+import {
+  editorSharedHistory,
+  isSharedPeerChange,
+  sharedDocumentSaved,
+  type SharedDocumentHooks,
+} from "../editor/editorSharedHistory";
 import { registerClosingEditor } from "../model/editorClose";
+import {
+  installEditorInputGate,
+  applyExternalEditorUpdate,
+  type MountedEditorObserver,
+  type EditorWorkTicket,
+} from "./useMountedEditorClosure";
 
 type EditorNavigationRequest = EditorNavigation & { token: number };
 
@@ -115,21 +131,26 @@ export function CodeMirrorEditor(props: Parameters<typeof StandardCodeMirrorEdit
     propsRef.current = props;
   });
   const dirtyRef = useRef(false);
-  const internalSaveRef = useRef<(() => Promise<boolean>) | null>(null);
+  const internalSaveRef = useRef<((parent?: EditorWorkTicket) => Promise<boolean>) | null>(null);
   const pending = useRef(new Set<Promise<void>>());
   const saveRequestRef = props.saveRequestRef ?? internalSaveRef;
   const onDirtyChange = useCallback((dirty: boolean) => {
     dirtyRef.current = dirty;
     propsRef.current.onDirtyChange(dirty);
   }, []);
-  const onSave = useCallback((text: string) => {
-    const write = propsRef.current.onSave(text);
+  const onSave = useCallback((text: string, ticket?: EditorWorkTicket) => {
+    const write = ticket ? propsRef.current.onSave(text, ticket) : propsRef.current.onSave(text);
     pending.current.add(write);
     void write.then(
       () => pending.current.delete(write),
       () => pending.current.delete(write),
     );
     return write;
+  }, []);
+  const onMergedDocumentChange = useCallback((document: Text) => {
+    propsRef.current.onEdit?.();
+    propsRef.current.onDocChange?.(document.toString());
+    propsRef.current.onDocumentChange?.(document);
   }, []);
   useEffect(
     () =>
@@ -144,10 +165,17 @@ export function CodeMirrorEditor(props: Parameters<typeof StandardCodeMirrorEdit
     [props.path, saveRequestRef],
   );
   const [merge, setMerge] = useState(() => hasConflictMarkers(props.value));
-  useEffect(() => {
-    if (hasConflictMarkers(props.value)) setMerge(true);
-  }, [props.value]);
-  return merge ? (
+  useLayoutEffect(() => {
+    props.captureObserver?.changed();
+    if (merge && props.initialDraft === undefined) props.captureObserver?.attach(null);
+  }, [merge, props.initialDraft, props.captureObserver]);
+  // Conflict markers arriving in a new value switch to merge mode (latched once on).
+  const [seenValue, setSeenValue] = useState(props.value);
+  if (seenValue !== props.value) {
+    setSeenValue(props.value);
+    if (!merge && hasConflictMarkers(props.value)) setMerge(true);
+  }
+  return merge && props.initialDraft === undefined ? (
     <MergeConflictEditor
       path={props.path}
       cwd={props.cwd}
@@ -156,6 +184,8 @@ export function CodeMirrorEditor(props: Parameters<typeof StandardCodeMirrorEdit
       onSave={onSave}
       onDirtyChange={onDirtyChange}
       canSave={props.canAutosave}
+      onDocumentChange={onMergedDocumentChange}
+      captureObserver={props.captureObserver}
       saveRequestRef={saveRequestRef}
       onOpenFile={props.onOpenFile}
     />
@@ -174,6 +204,9 @@ function StandardCodeMirrorEditor({
   cwd,
   commentPath,
   value,
+  initialDraft,
+  initialDirty = false,
+  retainedState,
   showDiff,
   gitOriginal,
   active,
@@ -181,9 +214,14 @@ function StandardCodeMirrorEditor({
   onDirtyChange,
   onErrorCountChange,
   onSave,
+  onPeerSaved,
   canAutosave,
   onStageGit,
   onDocChange,
+  onDocumentChange,
+  captureObserver,
+  onEdit,
+  shown = true,
   saveRequestRef,
   onOpenFile,
   formatOnSave = true,
@@ -192,18 +230,34 @@ function StandardCodeMirrorEditor({
   cwd: string;
   commentPath: string;
   value: string;
+  /** Recovered edits start dirty against value, which remains the disk baseline. */
+  initialDraft?: string;
+  /** Explicit recovery copies remain unsaved until a successful file write. */
+  initialDirty?: boolean;
+  /** Parent-scoped carry survives replacement of this editor component. */
+  retainedState?: { current: EditorCarry | null };
   showDiff: boolean;
   gitOriginal: string | null;
   active: boolean;
   navigation?: EditorNavigationRequest | null;
   onDirtyChange: (dirty: boolean) => void;
   onErrorCountChange: (count: number) => void;
-  onSave: (content: string) => Promise<void>;
+  onSave: (content: string, ticket?: EditorWorkTicket) => Promise<void>;
+  /** Another editor on this file, showing the same text, saved `content`. */
+  onPeerSaved?: (content: string) => void;
   canAutosave: () => boolean;
   onStageGit?: (contents: string) => Promise<void>;
+  /** Receives the whole text after each change: pass it only while it is shown. */
   onDocChange?: (content: string) => void;
+  /** Admits the actual immutable document before deferred persistence starts. */
+  onDocumentChange?: (document: Text) => void;
+  captureObserver?: MountedEditorObserver;
+  /** Cheap per-change notice that copies no text. */
+  onEdit?: () => void;
+  /** False while covered by another tab: git refreshes wait until it is shown. */
+  shown?: boolean;
   /** Runs the same save flow as Ctrl/Cmd+S before an external preview. */
-  saveRequestRef?: { current: (() => Promise<boolean>) | null };
+  saveRequestRef?: { current: ((parent?: EditorWorkTicket) => Promise<boolean>) | null };
   /** Lets the conflict bar step to the next conflicted file. */
   onOpenFile?: OpenFileFn;
   formatOnSave?: boolean;
@@ -214,17 +268,29 @@ function StandardCodeMirrorEditor({
   const leftViewRef = useRef<EditorView | null>(null);
   const savedDocumentRef = useRef<Text | null>(null);
   const dirtyRef = useRef(false);
+  const initialDirtyRef = useRef(initialDirty);
   const activeRef = useRef(active);
   const onDirtyChangeRef = useRef(onDirtyChange);
   const onErrorCountChangeRef = useRef(onErrorCountChange);
   const onSaveRef = useRef(onSave);
+  const onPeerSavedRef = useRef(onPeerSaved);
   const canAutosaveRef = useRef(canAutosave);
   const onStageGitRef = useRef(onStageGit);
   const canStage = onStageGit !== undefined;
   const onDocChangeRef = useRef(onDocChange);
+  const onDocumentChangeRef = useRef(onDocumentChange);
+  const captureObserverRef = useRef(captureObserver);
+  useLayoutEffect(() => {
+    captureObserverRef.current = captureObserver;
+  }, [captureObserver]);
+  const onEditRef = useRef(onEdit);
+  const shownRef = useRef(shown);
+  shownRef.current = shown;
+  const blameStale = useRef(false);
   const onOpenFileRef = useRef(onOpenFile);
   onOpenFileRef.current = onOpenFile;
   const valueRef = useRef(value);
+  const initialDraftRef = useRef(initialDraft);
   const navigationTokenRef = useRef<number | undefined>(undefined);
   const pendingNavigationRef = useRef<EditorNavigationRequest | null>(null);
   const gitOriginalRef = useRef(gitOriginal);
@@ -235,10 +301,11 @@ function StandardCodeMirrorEditor({
   // What scrolls the editor: its own scroller, or the pair's shared container.
   const scrollerRef = useRef<HTMLElement | null>(null);
   // What a rebuilt editor needs to pick up where the last one stopped.
-  const carryRef = useRef<EditorCarry | null>(null);
+  const localCarryRef = useRef<EditorCarry | null>(null);
+  const carryRef = retainedState ?? localCarryRef;
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const colorScheme = useColorScheme();
-  const diffLayout = useDiffLayout();
+  const diffLayout = useResponsiveDiffLayout(hostRef);
   // Keep the editable result in the conflict-aware editor. Sources use their own
   // read-only panes; resolving the last block must not rebuild the result as a diff.
   const [conflictInline, setConflictInline] = useState(() => hasConflictMarkers(value));
@@ -246,11 +313,15 @@ function StandardCodeMirrorEditor({
     hasConflictMarkers(value) ? conflictSourcesFromMarkers(value) : null,
   );
   const conflictLayoutActive = conflictSources !== null;
-  useEffect(() => {
-    if (!conflictInline && hasConflictMarkers(value)) setConflictInline(true);
-    if (!conflictSources && hasConflictMarkers(value))
-      setConflictSources(conflictSourcesFromMarkers(value));
-  }, [conflictInline, conflictSources, value]);
+  // Both latch on when a new value brings conflict markers; they never turn back off.
+  const [seenConflictValue, setSeenConflictValue] = useState(value);
+  if (seenConflictValue !== value) {
+    setSeenConflictValue(value);
+    if (hasConflictMarkers(value)) {
+      if (!conflictInline) setConflictInline(true);
+      if (!conflictSources) setConflictSources(conflictSourcesFromMarkers(value));
+    }
+  }
   // Without a "before" there is nothing to put on the left.
   const splitDiff = showDiff && diffLayout === "split" && gitOriginal !== null && !conflictInline;
   const [conflictCount, setConflictCount] = useState(0);
@@ -273,9 +344,15 @@ function StandardCodeMirrorEditor({
   const blameOnRef = useRef(blameOn);
   blameOnRef.current = blameOn;
   const [blameError, setBlameError] = useState<string | null>(null);
-  const [formatError, setFormatError] = useState<string | null>(null);
+  const [formatError, setFormatError] = useState<{
+    message: string;
+    generation: number;
+    saved: boolean;
+  } | null>(null);
+  const [contextTarget, setContextTarget] = useState<EditorContextTarget | null>(null);
+  const [contextError, setContextError] = useState<string | null>(null);
   const scheduleBlameRef = useRef<(() => void) | null>(null);
-  const saveNowRef = useRef<(() => Promise<boolean>) | null>(null);
+  const saveNowRef = useRef<((parent?: EditorWorkTicket) => Promise<boolean>) | null>(null);
   const [chunkNav, setChunkNav] = useState<{
     positions: number[];
     index: number;
@@ -292,9 +369,12 @@ function StandardCodeMirrorEditor({
   onDirtyChangeRef.current = onDirtyChange;
   onErrorCountChangeRef.current = onErrorCountChange;
   onSaveRef.current = onSave;
+  onPeerSavedRef.current = onPeerSaved;
   canAutosaveRef.current = canAutosave;
   onStageGitRef.current = onStageGit;
   onDocChangeRef.current = onDocChange;
+  onEditRef.current = onEdit;
+  onDocumentChangeRef.current = onDocumentChange;
   valueRef.current = value;
   gitOriginalRef.current = gitOriginal;
 
@@ -374,6 +454,8 @@ function StandardCodeMirrorEditor({
     let saveGeneration = 0;
     let formatGeneration = 0;
     let autosaveTimer = 0;
+    let composing = false;
+    let compositionSettling = false;
     let view: EditorView;
     let split: MergeView | null = null;
     const carry = carryRef.current;
@@ -381,10 +463,14 @@ function StandardCodeMirrorEditor({
 
     const markDirty = () => {
       const saved = savedDocumentRef.current;
-      setDirty(saved ? !view.state.doc.eq(saved) : false);
+      setDirty(initialDirtyRef.current || (saved ? !view.state.doc.eq(saved) : false));
     };
 
-    const formatDocument = async (manual = false) => {
+    const formatDocument = async (manual = false, parent?: EditorWorkTicket) => {
+      if (disposed || (!parent && (view.state.readOnly || !view.state.facet(EditorView.editable))))
+        return;
+      const settled = captureObserverRef.current?.operation("formatter", parent);
+      if (captureObserverRef.current && !settled) return;
       const generation = ++formatGeneration;
       const before = view.state.doc;
       const selection = view.state.selection;
@@ -393,38 +479,58 @@ function StandardCodeMirrorEditor({
         const result = await formatProjectText(path, before.toString(), selection.main.head);
         if (disposed || generation !== formatGeneration || view.state.doc !== before) return;
         if (!result) {
-          if (manual || hasBundledFormatter(path))
-            setFormatError(t("No formatter is available for this file, or its syntax is invalid."));
-          return;
+          if (manual)
+            setFormatError({
+              message: t("No formatter is available for this file, or its syntax is invalid."),
+              generation,
+              saved: false,
+            });
+          return generation;
         }
-        replaceEditorDoc(view, result.formatted, {
-          annotations: [isolateHistory.of("full")],
-          selection: view.state.selection.eq(selection)
-            ? { anchor: Math.min(Math.max(0, result.cursorOffset), result.formatted.length) }
-            : undefined,
-          scroller: scrollerRef.current ?? undefined,
-        });
+        const apply = () =>
+          replaceEditorDoc(view, result.formatted, {
+            annotations: [isolateHistory.of("full")],
+            selection: view.state.selection.eq(selection)
+              ? { anchor: Math.min(Math.max(0, result.cursorOffset), result.formatted.length) }
+              : undefined,
+            scroller: scrollerRef.current ?? undefined,
+          });
+        if (settled) settled.apply(apply);
+        else apply();
       } catch (error) {
-        if (!disposed && generation === formatGeneration)
-          setFormatError(error instanceof Error ? error.message : String(error));
+        if (!disposed && generation === formatGeneration && view.state.doc === before)
+          setFormatError({
+            message: error instanceof Error ? error.message : String(error),
+            generation,
+            saved: false,
+          });
+      } finally {
+        settled?.();
       }
+      return generation;
     };
 
     /** Resolves true once the document reached the disk. */
-    const saveDocument = (automatic = false): Promise<boolean> => {
+    const saveDocument = (automatic = false, parent?: EditorWorkTicket): Promise<boolean> => {
+      const settled = captureObserverRef.current?.operation("editor-save", parent);
+      if (captureObserverRef.current && !settled) return Promise.resolve(false);
       const retryPendingAutosave = autosaveTimer !== 0 && loadAutosave();
       window.clearTimeout(autosaveTimer);
       const generation = ++saveGeneration;
+      setFormatError((current) => (current?.saved ? { ...current, saved: false } : current));
       return (async () => {
+        let savedFormatGeneration: number | undefined;
         if (formatOnSaveRef.current && loadFormatOnSave()) {
-          await formatDocument();
+          savedFormatGeneration = await formatDocument(false, settled ?? undefined);
           if (disposed || generation !== saveGeneration) return false;
         }
 
         const document = view.state.doc;
         if (automatic && !canAutosaveRef.current()) return false;
         try {
-          await onSaveRef.current(document.toString());
+          if (settled && captureObserverRef.current?.closed())
+            await onSaveRef.current(document.toString(), settled);
+          else await onSaveRef.current(document.toString());
         } catch {
           if (
             retryPendingAutosave &&
@@ -437,17 +543,27 @@ function StandardCodeMirrorEditor({
           return false;
         }
         if (disposed || generation !== saveGeneration) return true;
-        savedDocumentRef.current = document;
-        markDirty();
+        const apply = () => {
+          savedDocumentRef.current = document;
+          initialDirtyRef.current = false;
+          markDirty();
+          if (view.state.doc === document && savedFormatGeneration === formatGeneration)
+            setFormatError((current) =>
+              current?.generation === savedFormatGeneration ? { ...current, saved: true } : current,
+            );
+        };
+        if (settled) settled.apply(apply);
+        else apply();
+        sharedDocumentSaved(view, document);
         scheduleBlame();
         return true;
-      })();
+      })().finally(() => settled?.());
     };
     const save = (automatic = false) => {
       void saveDocument(automatic);
       return true;
     };
-    saveNowRef.current = () => saveDocument();
+    saveNowRef.current = (parent) => saveDocument(false, parent);
     if (saveRequestRef) saveRequestRef.current = saveNowRef.current;
 
     // Blame describes what is on disk, so it is fetched when it is switched on,
@@ -477,16 +593,28 @@ function StandardCodeMirrorEditor({
     scheduleBlameRef.current = scheduleBlame;
     const unsubscribeGit = subscribeGitChanged(
       () => {
-        if (blameOnRef.current && !document.hidden) scheduleBlame();
+        if (!blameOnRef.current) return;
+        if (!shownRef.current) blameStale.current = true;
+        else if (!document.hidden) scheduleBlame();
       },
       { cwd: gitTargetRef.current.cwd },
     );
 
+    function cancelAutosave() {
+      if (!autosaveTimer) return;
+      window.clearTimeout(autosaveTimer);
+      autosaveTimer = 0;
+      captureObserverRef.current?.changed();
+    }
+
     function scheduleAutosave() {
       window.clearTimeout(autosaveTimer);
+      autosaveTimer = 0;
+      captureObserverRef.current?.changed();
       if (!loadAutosave()) return;
       autosaveTimer = window.setTimeout(() => {
         autosaveTimer = 0;
+        captureObserverRef.current?.changed();
         if (dirtyRef.current && loadAutosave() && canAutosaveRef.current()) {
           save(true);
         }
@@ -495,12 +623,80 @@ function StandardCodeMirrorEditor({
 
     // Folding would pull one pane's lines out of line with the other, and the
     // pair scrolls as a whole, so the editor's own scrollbar has no job.
+    const openContextMenu = (editor: EditorView, x = 0, y = 0) => {
+      selectionMeasureVersion++;
+      setSelectionTarget(null);
+      setContextError(null);
+      const position = x || y ? editor.posAtCoords({ x, y }) : null;
+      // Preserve the selected code when opening its menu; otherwise move the caret.
+      if (
+        position !== null &&
+        !editor.state.selection.ranges.some(
+          (range) => !range.empty && position >= range.from && position <= range.to,
+        )
+      ) {
+        editor.dispatch({ selection: { anchor: position } });
+      }
+      selectionMeasureVersion++;
+      setSelectionTarget(null);
+      const caret = editor.coordsAtPos(editor.state.selection.main.head);
+      setContextTarget({
+        x: x || caret?.left || 0,
+        y: y || caret?.bottom || 0,
+        view: editor,
+        isCurrent: () => !disposed,
+        ...(editor === view
+          ? {
+              format: () => void formatDocument(true),
+              save: () => {
+                save();
+              },
+            }
+          : {}),
+      });
+    };
+    const contextMenu = EditorView.domEventHandlers({
+      contextmenu(event, editor) {
+        event.preventDefault();
+        event.stopPropagation();
+        openContextMenu(editor, event.clientX, event.clientY);
+        return true;
+      },
+      keydown(event, editor) {
+        if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return false;
+        event.preventDefault();
+        openContextMenu(editor);
+        return true;
+      },
+    });
+    // Other editors on this file share this text; see editorSharedHistory.
+    const sharedDocument: SharedDocumentHooks = {
+      external: (apply) => applyExternalEditorUpdate(captureObserverRef.current, apply),
+      saved: (document) =>
+        applyExternalEditorUpdate(captureObserverRef.current, () => {
+          if (disposed) return;
+          savedDocumentRef.current = document;
+          initialDirtyRef.current = false;
+          markDirty();
+          if (!dirtyRef.current) cancelAutosave();
+          onPeerSavedRef.current?.(document.toString());
+          scheduleBlame();
+        }),
+      peerLeft: () => {
+        if (disposed || !dirtyRef.current) return false;
+        scheduleAutosave();
+        return true;
+      },
+    };
     const extensions: Extension[] = [
+      contextMenu,
       editorZoom(),
       minimalSetup,
       carry?.state.field(historyField, false)
         ? historyField.init(() => carry.state.field(historyField))
         : [],
+      // Text and undo/redo shared with other editors on this file, e.g. its review tab.
+      editorSharedHistory(path, sharedDocument),
       editorGitConfig.of(showDiffRef.current && !splitDiff ? editorGit(gitOptions) : []),
       // Ahead of the line numbers, so the blame gutter is the leftmost one.
       editorBlameConfig.of(blameOnRef.current ? inlineBlameExtension : []),
@@ -510,7 +706,7 @@ function StandardCodeMirrorEditor({
       highlightActiveLine(),
       highlightActiveLineGutter(),
       EditorView.lineWrapping,
-      wrappedLineIndent,
+      editorWrappedIndent,
       language.of([]),
       editorScheme.of(schemeExtensions(isLightScheme() ? "light" : "dark")),
       editorReadability(path),
@@ -557,6 +753,8 @@ function StandardCodeMirrorEditor({
         ]),
       ),
       EditorView.updateListener.of((update) => {
+        if (update.startState.readOnly !== update.state.readOnly)
+          captureObserverRef.current?.changed();
         if (
           update.transactions.some(
             (tr) =>
@@ -584,15 +782,41 @@ function StandardCodeMirrorEditor({
           setSelectionTarget(null);
         }
         if (!update.docChanged) return;
-        setConflictCount(conflictBlocks(update.state).length);
+        setFormatError((current) => (current?.saved ? { ...current, saved: false } : current));
+        captureObserverRef.current?.changed();
+        const blockCount = conflictBlocks(update.state).length;
+        setConflictCount(blockCount);
+        if (blockCount > 0) setHadConflicts(true);
+        onEditRef.current?.();
         onDocChangeRef.current?.(update.state.doc.toString());
         if (update.transactions.some((tr) => tr.annotation(diskReload))) {
           return;
         }
+        onDocumentChangeRef.current?.(update.state.doc);
         markDirty();
-        scheduleAutosave();
+        // The editor that made a shared edit saves it; one pending save at a time.
+        if (update.transactions.some(isSharedPeerChange)) cancelAutosave();
+        else scheduleAutosave();
       }),
       EditorView.domEventHandlers({
+        compositionstart: () => {
+          composing = true;
+          captureObserverRef.current?.changed();
+        },
+        compositionend: () => {
+          composing = false;
+          compositionSettling = true;
+          captureObserverRef.current?.changed();
+          view.requestMeasure({
+            read: () => null,
+            write: () => {
+              if (!disposed && !view.compositionStarted) {
+                compositionSettling = false;
+                captureObserverRef.current?.changed();
+              }
+            },
+          });
+        },
         blur: () => {
           pendingNavigationRef.current = null;
           selectionMeasureVersion++;
@@ -608,7 +832,7 @@ function StandardCodeMirrorEditor({
       }),
     ];
     // Path and layout changes rebuild extensions, while the document identity stays intact.
-    const initialDoc = carry?.doc ?? valueRef.current;
+    const initialDoc = carry?.doc ?? initialDraftRef.current ?? valueRef.current;
     let leftView: EditorView | null = null;
     if (splitDiff) {
       split = createSplitDiff({
@@ -617,13 +841,14 @@ function StandardCodeMirrorEditor({
         doc: initialDoc,
         extensions,
         originalExtensions: [
+          contextMenu,
           editorZoom(),
           minimalSetup,
           editorReadability(path),
           editorNavigation(cwd, path, (...args) => onOpenFileRef.current?.(...args)),
           lineNumbers(),
           EditorView.lineWrapping,
-          wrappedLineIndent,
+          editorWrappedIndent,
           language.of([]),
           editorScheme.of(schemeExtensions(isLightScheme() ? "light" : "dark")),
         ],
@@ -635,17 +860,45 @@ function StandardCodeMirrorEditor({
     } else {
       view = new EditorView({ doc: initialDoc, parent: host, extensions });
     }
+    const inputGate = installEditorInputGate(view, captureObserverRef.current);
+    const originalGate = leftView
+      ? installEditorInputGate(leftView, captureObserverRef.current)
+      : null;
     splitRef.current = split;
     const detachSplitOverview = split ? attachSplitOverview(split) : null;
     scrollerRef.current = split ? split.dom : view.scrollDOM;
     if (carry?.saved) {
       savedDocumentRef.current = carry.saved;
+      markDirty();
     } else {
-      savedDocumentRef.current = view.state.doc;
-      dirtyRef.current = false;
+      savedDocumentRef.current =
+        initialDraftRef.current === undefined
+          ? view.state.doc
+          : EditorState.create({ doc: valueRef.current }).doc;
+      markDirty();
     }
     viewRef.current = view;
-    setConflictCount(conflictBlocks(view.state).length);
+    captureObserverRef.current?.attach({
+      setClosed(closed) {
+        inputGate.setClosed(closed);
+        originalGate?.setClosed(closed);
+        if (!closed && dirtyRef.current) scheduleAutosave();
+      },
+      read() {
+        if (disposed) throw new Error("Editor view retired");
+        return {
+          text: view.state.doc.toString(),
+          composing: composing || compositionSettling || view.composing,
+          compositionStarted: view.compositionStarted,
+          readOnly: view.state.readOnly,
+          pendingAutosave: dirtyRef.current && autosaveTimer !== 0,
+          kind: "source",
+        };
+      },
+    });
+    const initialBlockCount = conflictBlocks(view.state).length;
+    setConflictCount(initialBlockCount);
+    if (initialBlockCount > 0) setHadConflicts(true);
     if (blameOnRef.current) scheduleBlame();
     lockOverscroll(scrollerRef.current as HTMLDivElement);
     if (carry) {
@@ -671,6 +924,7 @@ function StandardCodeMirrorEditor({
     // Source-control previews keep keyboard navigation in the changed-file list.
     if (
       activeRef.current &&
+      (!carry || carry.focused) &&
       !(showDiffRef.current && document.activeElement?.matches("[data-git-file]"))
     )
       view.focus();
@@ -678,14 +932,20 @@ function StandardCodeMirrorEditor({
     void languageForPath(path).then((extension) => {
       if (!disposed && extension) {
         const reconfigure = { effects: language.reconfigure(extension) };
-        view.dispatch(reconfigure);
-        leftView?.dispatch(reconfigure);
+        applyExternalEditorUpdate(captureObserverRef.current, () => {
+          view.dispatch(reconfigure);
+          leftView?.dispatch(reconfigure);
+        });
       }
     });
 
     const unsubscribeAutosave = subscribeAutosave(scheduleAutosave);
     return () => {
       disposed = true;
+      setContextTarget(null);
+      captureObserverRef.current?.attach(null);
+      inputGate.release();
+      originalGate?.release();
       unsubscribeAutosave();
       window.clearTimeout(autosaveTimer);
       window.clearTimeout(blameTimer);
@@ -701,6 +961,7 @@ function StandardCodeMirrorEditor({
         saved: savedDocumentRef.current,
         state: view.state,
         topLine: topVisibleLine(view, scrollerRef.current ?? view.scrollDOM),
+        focused: view.hasFocus || Boolean(split?.a.hasFocus),
       };
       viewRef.current = null;
       leftViewRef.current = null;
@@ -721,6 +982,7 @@ function StandardCodeMirrorEditor({
     // Inline diff visibility and format-on-save reconfigure the existing editor.
     splitDiff,
     conflictLayoutActive,
+    carryRef,
     syncChunkNav,
   ]);
 
@@ -728,23 +990,29 @@ function StandardCodeMirrorEditor({
     const reconfigure = {
       effects: editorScheme.reconfigure(schemeExtensions(colorScheme)),
     };
-    viewRef.current?.dispatch(reconfigure);
-    leftViewRef.current?.dispatch(reconfigure);
+    applyExternalEditorUpdate(captureObserverRef.current, () => {
+      viewRef.current?.dispatch(reconfigure);
+      leftViewRef.current?.dispatch(reconfigure);
+    });
   }, [colorScheme]);
 
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    view.dispatch({
-      effects: editorBlameConfig.reconfigure(blameOn ? inlineBlameExtension : []),
-    });
+    applyExternalEditorUpdate(captureObserverRef.current, () =>
+      view.dispatch({
+        effects: editorBlameConfig.reconfigure(blameOn ? inlineBlameExtension : []),
+      }),
+    );
     if (blameOn) scheduleBlameRef.current?.();
     else setBlameError(null);
   }, [blameOn]);
 
   useEffect(() => {
-    if (conflictCount > 0) setHadConflicts(true);
-  }, [conflictCount]);
+    if (!shown || !blameStale.current) return;
+    blameStale.current = false;
+    if (blameOnRef.current) scheduleBlameRef.current?.();
+  }, [shown]);
 
   // The file stays unmerged in git until it is staged, whatever the buffer says.
   useEffect(() => {
@@ -752,6 +1020,8 @@ function StandardCodeMirrorEditor({
       setStillUnmerged(false);
       return;
     }
+    // Hidden: no git polling; showing the editor checks again.
+    if (!shown) return;
     let cancelled = false;
     const check = () => {
       gitConflicts(cwd).then(
@@ -769,10 +1039,17 @@ function StandardCodeMirrorEditor({
       cancelled = true;
       unsubscribe();
     };
-  }, [conflictCount, cwd, gitRelative, hadConflicts]);
+  }, [conflictCount, cwd, gitRelative, hadConflicts, shown]);
 
-  const [fileNote, setFileNote] = useState<string | null>(null);
-  useEffect(() => setFileNote(null), [path]);
+  // The note belongs to the file it was raised for, so another file shows none.
+  const [fileNoteState, setFileNoteState] = useState<{ path: string; message: string } | null>(
+    null,
+  );
+  const fileNote = fileNoteState?.path === path ? fileNoteState.message : null;
+  const setFileNote = useCallback(
+    (message: string | null) => setFileNoteState(message === null ? null : { path, message }),
+    [path],
+  );
 
   // The next file git still lists as unmerged, wrapping around.
   const openNextConflictedFile = useCallback(async () => {
@@ -788,7 +1065,7 @@ function StandardCodeMirrorEditor({
     } catch (error: unknown) {
       setFileNote(error instanceof Error ? error.message : String(error));
     }
-  }, [cwd, gitRelative, onOpenFile]);
+  }, [cwd, gitRelative, onOpenFile, setFileNote]);
 
   const markResolved = useCallback(async () => {
     if (!gitRelative) return;
@@ -811,19 +1088,24 @@ function StandardCodeMirrorEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view || splitDiff) return;
-    view.dispatch({
-      effects: editorGitConfig.reconfigure(showDiff ? editorGit(gitOptions) : []),
+    applyExternalEditorUpdate(captureObserverRef.current, () => {
+      view.dispatch({
+        effects: editorGitConfig.reconfigure(showDiff ? editorGit(gitOptions) : []),
+      });
+      if (showDiff) {
+        setGitOriginal(view, gitOriginalRef.current);
+        syncChunkNav(view);
+      } else {
+        setChunkNav(null);
+      }
     });
-    if (showDiff) {
-      setGitOriginal(view, gitOriginalRef.current);
-      syncChunkNav(view);
-    } else {
-      setChunkNav(null);
-    }
   }, [canStage, showDiff, splitDiff]);
 
   useEffect(() => {
-    if (splitRef.current) setSplitCanStage(splitRef.current, canStage);
+    if (splitRef.current)
+      applyExternalEditorUpdate(captureObserverRef.current, () =>
+        setSplitCanStage(splitRef.current!, canStage),
+      );
   }, [canStage, splitDiff]);
 
   useEffect(() => {
@@ -831,14 +1113,16 @@ function StandardCodeMirrorEditor({
     if (!view || !showDiff) return;
     const split = splitRef.current;
     let changed = false;
-    preserveEditorViewport(
-      view,
-      () => {
-        changed = split
-          ? setSplitOriginal(split, gitOriginal ?? "")
-          : setGitOriginal(view, gitOriginal);
-      },
-      scrollerRef.current ?? view.scrollDOM,
+    applyExternalEditorUpdate(captureObserverRef.current, () =>
+      preserveEditorViewport(
+        view,
+        () => {
+          changed = split
+            ? setSplitOriginal(split, gitOriginal ?? "")
+            : setGitOriginal(view, gitOriginal);
+        },
+        scrollerRef.current ?? view.scrollDOM,
+      ),
     );
     if (!changed) return;
     chunkNavPinnedRef.current = null;
@@ -870,16 +1154,21 @@ function StandardCodeMirrorEditor({
     const view = viewRef.current;
     if (!view || dirtyRef.current) return;
     if (view.state.doc.toString() === value) return;
-    replaceEditorDoc(view, value, {
-      annotations: [Transaction.addToHistory.of(false), diskReload.of(true)],
-      scroller: scrollerRef.current ?? undefined,
-    });
-    savedDocumentRef.current = view.state.doc;
-    setDirty(false);
-    if (showDiff) {
-      chunkNavPinnedRef.current = null;
-      syncChunkNav(view);
-    }
+    const apply = () => {
+      const applied = replaceEditorDoc(view, value, {
+        annotations: [Transaction.addToHistory.of(false), diskReload.of(true)],
+        scroller: scrollerRef.current ?? undefined,
+      });
+      if (!applied || view.state.doc.toString() !== normalizeLineBreaks(value)) return;
+      savedDocumentRef.current = view.state.doc;
+      setDirty(false);
+      if (showDiff) {
+        chunkNavPinnedRef.current = null;
+        syncChunkNav(view);
+      }
+    };
+    if (captureObserverRef.current) captureObserverRef.current.external(apply);
+    else apply();
   }, [showDiff, syncChunkNav, value]);
 
   useEffect(() => {
@@ -926,9 +1215,9 @@ function StandardCodeMirrorEditor({
     view.focus();
   }, [active, path, showDiff]);
 
-  useEffect(() => {
-    if (!active) setSelectionTarget(null);
-  }, [active]);
+  // The selection menu never outlives the editor being active.
+  if (!active && selectionTarget !== null) setSelectionTarget(null);
+  if (!active && contextTarget !== null) setContextTarget(null);
 
   return (
     <>
@@ -955,18 +1244,18 @@ function StandardCodeMirrorEditor({
           onMarkResolved={() => void markResolved()}
         />
         {formatError ? (
-          <p
-            role="alert"
-            className="shrink-0 border-b border-stroke px-3 py-1 text-[11px] text-content/65"
-          >
-            {t("Formatting failed: ")}
-            {formatError}
-          </p>
+          <InlineError className="shrink-0 px-3 py-1">
+            {t(formatError.saved ? "Saved, but formatting failed: " : "Formatting failed: ")}
+            {formatError.message}
+          </InlineError>
+        ) : null}
+        {contextError ? (
+          <InlineError className="shrink-0 px-3 py-1">{contextError}</InlineError>
         ) : null}
         {blameOn && blameError ? (
           <p
             role="status"
-            className="shrink-0 truncate border-b border-stroke px-3 py-1 text-[11px] text-content/45"
+            className="shrink-0 truncate px-3 py-1 text-ui-caption text-(--ui-text-muted)"
             title={blameError}
           >
             {t("Blame unavailable: ")}
@@ -974,7 +1263,12 @@ function StandardCodeMirrorEditor({
           </p>
         ) : null}
         <ConflictLayoutFrame path={path} sources={conflictSources}>
-          <div ref={hostRef} className="relative min-h-0 flex-1" />
+          <div
+            ref={hostRef}
+            data-diff-layout={diffLayout}
+            data-editor-shown={shown}
+            className="relative min-h-0 min-w-0 flex-1"
+          />
         </ConflictLayoutFrame>
       </div>
       {commentTarget ? (
@@ -985,6 +1279,14 @@ function StandardCodeMirrorEditor({
         />
       ) : null}
       <EditorSelectionMenu selection={selectionTarget} onDismiss={() => setSelectionTarget(null)} />
+      {contextTarget ? (
+        <EditorContextMenu
+          target={contextTarget}
+          path={commentPath}
+          onClose={() => setContextTarget(null)}
+          onError={setContextError}
+        />
+      ) : null}
     </>
   );
 }
@@ -1057,40 +1359,42 @@ function DiffChunkNav({
   useLocale();
   return (
     <header
-      className="flex h-8 shrink-0 items-center justify-between gap-3 border-b border-stroke px-3 pr-1"
+      className="flex min-h-(--ui-control-height-compact) shrink-0 items-center justify-between gap-2 px-2"
       role="toolbar"
       aria-label={t("Jump between changes")}
     >
       <DiffChunkStat additions={additions} deletions={deletions} />
-      <div className="flex items-center gap-0.5">
-        <DiffLayoutToggle className="mr-1" />
+      <div className="flex shrink-0 items-center gap-1">
         <Button
           variant="ghost"
+          size="sm"
+          iconOnly
+          label={t("Previous change")}
           motion="none"
           type="button"
-          title={t("Previous change")}
-          aria-label={t("Previous change")}
           disabled={total === 0 || index <= 0}
           onMouseDown={(event) => event.preventDefault()}
           onClick={onPrev}
         >
-          <ChevronUp className="size-3.5" strokeWidth={1.75} />
+          <ChevronUp className="icon-sm" strokeWidth={1.75} />
         </Button>
-        <span className="min-w-10 px-0.5 text-center font-mono text-[10.5px] font-medium tabular-nums text-content/55 select-none">
+        <span className="min-w-10 text-center text-ui-micro font-medium tabular-nums text-(--ui-text-secondary) select-none">
           {total === 0 ? "0/0" : `${index + 1}/${total}`}
         </span>
         <Button
           variant="ghost"
+          size="sm"
+          iconOnly
+          label={t("Next change")}
           motion="none"
           type="button"
-          title={t("Next change")}
-          aria-label={t("Next change")}
           disabled={total === 0 || index >= total - 1}
           onMouseDown={(event) => event.preventDefault()}
           onClick={onNext}
         >
-          <ChevronDown className="size-3.5" strokeWidth={1.75} />
+          <ChevronDown className="icon-sm" strokeWidth={1.75} />
         </Button>
+        <DiffLayoutToggle />
       </div>
     </header>
   );
@@ -1102,9 +1406,13 @@ function DiffChunkStat({ additions, deletions }: { additions: number; deletions:
     return <span className="min-w-0 flex-1" />;
   }
   return (
-    <span className="flex min-w-0 shrink-0 items-center gap-1.5 font-sans text-[11px] font-semibold tabular-nums">
-      {additions > 0 ? <span className="text-success">+{formatInteger(additions)}</span> : null}
-      {deletions > 0 ? <span className="text-danger">-{formatInteger(deletions)}</span> : null}
+    <span className="flex min-w-0 shrink-0 items-center gap-1.5 font-sans text-ui-micro font-medium tabular-nums">
+      {additions > 0 ? (
+        <span className="text-(--ui-tone-success-fg)">+{formatInteger(additions)}</span>
+      ) : null}
+      {deletions > 0 ? (
+        <span className="text-(--ui-tone-danger-fg)">-{formatInteger(deletions)}</span>
+      ) : null}
     </span>
   );
 }
@@ -1161,86 +1469,11 @@ function indentOrInsertTab(view: EditorView): boolean {
   return true;
 }
 
-type LineRange = { from: number; to: number };
-
-type EditorCarry = {
+export type EditorCarry = {
   /** Document and history carried when path-specific extensions are rebuilt. */
   doc: Text | null;
   saved: Text | null;
   state: EditorState;
   topLine: number;
+  focused: boolean;
 };
-
-const wrappedLineIndent = StateField.define<DecorationSet>({
-  create(state) {
-    return Decoration.set(indentDecorations(state, [{ from: 0, to: state.doc.length }]), true);
-  },
-  update(decorations, transaction) {
-    if (!transaction.docChanged) return decorations;
-    const ranges: LineRange[] = [];
-    transaction.changes.iterChangedRanges((_fromA, _toA, fromB, toB) => {
-      const from = transaction.state.doc.lineAt(fromB).from;
-      const to = transaction.state.doc.lineAt(toB).to;
-      ranges.push({ from, to });
-    });
-    const changedLines = mergeLineRanges(ranges);
-    return decorations.map(transaction.changes).update({
-      filter: (from) => !changedLines.some((range) => from >= range.from && from <= range.to),
-      add: indentDecorations(transaction.state, changedLines),
-      sort: true,
-    });
-  },
-  provide: (field) => EditorView.decorations.from(field),
-});
-
-function indentDecorations(state: EditorState, ranges: LineRange[]) {
-  const decorations = [];
-  for (const range of ranges) {
-    let line = state.doc.lineAt(range.from);
-    while (line.from <= range.to) {
-      const columns = leadingIndentColumns(line.text, state.tabSize);
-      if (columns > 0) {
-        const indent = Math.min(columns, 40);
-        decorations.push(
-          Decoration.line({
-            attributes: {
-              class: "cm-wrapped-indent",
-              style: `padding-left: calc(${indent}ch + 6px); text-indent: -${indent}ch`,
-            },
-          }).range(line.from),
-        );
-      }
-      if (line.number >= state.doc.lines) break;
-      line = state.doc.line(line.number + 1);
-    }
-  }
-  return decorations;
-}
-
-function leadingIndentColumns(text: string, tabSize: number): number {
-  let columns = 0;
-  for (const character of text) {
-    if (character === " ") {
-      columns += 1;
-    } else if (character === "\t") {
-      columns += tabSize - (columns % tabSize);
-    } else {
-      break;
-    }
-  }
-  return columns;
-}
-
-function mergeLineRanges(ranges: LineRange[]): LineRange[] {
-  const sorted = [...ranges].sort((a, b) => a.from - b.from);
-  const merged: LineRange[] = [];
-  for (const range of sorted) {
-    const previous = merged[merged.length - 1];
-    if (previous && range.from <= previous.to + 1) {
-      previous.to = Math.max(previous.to, range.to);
-    } else {
-      merged.push({ ...range });
-    }
-  }
-  return merged;
-}

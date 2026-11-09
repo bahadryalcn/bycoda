@@ -1,11 +1,16 @@
 import { Button } from "../../../shared/ui/Button";
+import { FilePickerError } from "./FilePickerError";
+import { projectFilesTruncated } from "../../../platform/tauri/fs";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { OverlayParent, useOverlay } from "../../../shared/ui/overlay";
+import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
+import { Modal } from "../../../shared/ui/Modal";
 import { t, useLocale } from "../../../shared/i18n/technical";
-import { RefreshCw, Search } from "../../../shared/ui/icons";
+import { Search } from "../../../shared/ui/icons";
+import { useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import { appName } from "../../../shared/lib/appName";
 import {
   useEffect,
+  useId,
   useMemo,
   useDeferredValue,
   useRef,
@@ -13,7 +18,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { createPortal } from "react-dom";
 import {
   loadProjectFiles,
   peekProjectFiles,
@@ -22,16 +26,15 @@ import {
   rememberOpenedFile,
   type RankedFile,
 } from "../model/fileIndex";
-import { LAYER } from "../../../shared/lib/layers";
 import { fuzzyMatch, type FuzzyHit } from "../../../shared/lib/fuzzy";
-import { isRemoteProjectPath, looksLikeProject } from "../../projects/model/recents";
+import { isRemoteProjectPath, looksLikeProject } from "../../projects/public/recents";
 import type { OpenFileFn } from "../../search/model/search";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { FileTypeIcon } from "./FileTypeIcon";
 import { MatchText } from "../../../shared/ui/MatchText";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { ALT, MOD, SHIFT } from "../../../platform/tauri/platform";
-import { keybindingShortcutLabel, loadNotesEnabled } from "../../settings/model/settings";
+import { keybindingShortcutLabel, loadNotesEnabled } from "../../settings/public/settings";
 import { NOTES_PANEL_COMMAND } from "../../notes/notesPanel";
 import { LAYOUT_PRESETS } from "../../workspace/model/layoutPresets";
 type Action = {
@@ -133,15 +136,15 @@ export function FilePicker({
   useLocale();
   const peekFiles = () => peekProjectFiles(cwd);
   const search = useRef<HTMLInputElement>(null);
-  const dialogRoot = useRef<HTMLDivElement>(null);
-  const overlayId = useOverlay(dialogRoot, true, onClose, open);
+  const listId = useId();
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const [query, setQuery] = useState(initialQuery);
-  const [active, setActive] = useState(0);
   const [files, setFiles] = useState(() => peekFiles() ?? []);
   const [loading, setLoading] = useState(() => peekFiles() == null);
   const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+  const [retrying, setRetrying] = useState(false);
 
   const recents = useMemo(() => {
     const out: string[] = [];
@@ -180,12 +183,23 @@ export function FilePicker({
       .sort((a, b) => b.score - a.score);
   }, [actionQuery, paletteMode, cwd, stopBackgroundWork, arrangeLayout]);
   const optionCount = paletteMode ? actionResults.length : results.length;
+  // Opening (or retargeting) the picker restarts it from the initial query and
+  // the first row; a shrinking result list clamps the highlighted row.
+  const sessionKey = open ? `${cwd}|${initialQuery}` : null;
+  const [seenSessionKey, setSeenSessionKey] = useState<string | null>(null);
+  if (seenSessionKey !== sessionKey) {
+    setSeenSessionKey(sessionKey);
+    if (sessionKey !== null) {
+      setQuery(initialQuery);
+      setRetrying(false);
+      setError(null);
+    }
+  }
+  const [activeIndex, setActive] = useKeyedActiveIndex(sessionKey ?? "closed", optionCount);
+  const rankingPending = !paletteMode && deferredQuery !== query;
 
   useEffect(() => {
     if (!open) return;
-    setQuery(initialQuery);
-    setActive(0);
-    setError(null);
     const searchable = looksLikeProject(cwd);
     const cached = peekFiles();
     if (cached) {
@@ -204,21 +218,20 @@ export function FilePicker({
       .then((next) => {
         if (cancelled) return;
         setFiles(next);
+        setError(null);
         setLoading(false);
+        setRetrying(false);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : String(err));
         setLoading(false);
+        setRetrying(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [open, cwd, initialQuery]);
-
-  useEffect(() => {
-    setActive((index) => (optionCount === 0 ? 0 : Math.min(index, optionCount - 1)));
-  }, [optionCount]);
+  }, [open, cwd, initialQuery, retry]);
 
   useEffect(() => {
     if (!open) return;
@@ -254,12 +267,14 @@ export function FilePicker({
     if (e.key === "Enter") {
       e.preventDefault();
       if (paletteMode) {
-        const action = actionResults[active];
+        const action = actionResults[activeIndex];
         if (action) runAction(action);
       } else {
         // A pending deferred render may still show the previous query's list.
         const file =
-          deferredQuery === query ? results[active] : rankProjectFiles(files, query, recents)[0];
+          deferredQuery === query
+            ? results[activeIndex]
+            : rankProjectFiles(files, query, recents)[0];
         if (file) pick(file);
       }
       return;
@@ -278,65 +293,108 @@ export function FilePicker({
     actionCount: actionResults.length,
   });
 
-  return createPortal(
-    <OverlayParent.Provider value={overlayId}>
-      <div className="fixed inset-0" style={{ zIndex: LAYER.dialog }}>
-        <div className="absolute inset-0" onMouseDown={onClose} />
-        <div
-          ref={dialogRoot}
-          tabIndex={-1}
-          role="dialog"
-          aria-modal="true"
-          aria-label={paletteMode ? t("Command Palette") : t("Go to File")}
-          data-file-picker
-          onMouseDown={(e) => e.stopPropagation()}
-          className="absolute left-1/2 top-[12%] flex w-[min(560px,calc(100vw-24px))] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-[var(--color-stroke)] bg-[var(--ui-surface)] backdrop-blur-xl"
-        >
-          <div className="pb-1.5">
-            <label className="flex items-center gap-2 border-b border-stroke px-2 py-2.5 text-[var(--ui-text-secondary)]">
-              <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
-              <SearchInput
-                ref={search}
-                type="text"
-                value={query}
-                placeholder={t("Go to File (type > for commands)")}
-                aria-label={paletteMode ? t("Command Palette") : t("Go to File")}
-                spellCheck={false}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                className="min-w-0 flex-1"
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setActive(0);
-                }}
-                onKeyDown={onSearchKey}
-              />
-            </label>
+  const pickerLabel = paletteMode ? t("Command Palette") : t("Go to File");
+  return (
+    <Modal
+      padding="none"
+      title={pickerLabel}
+      size="md"
+      minimalHeader
+      fitViewport={false}
+      className="max-h-[80dvh]"
+      motion="none"
+      onClose={onClose}
+    >
+      <div
+        data-file-picker
+        aria-label={pickerLabel}
+        aria-busy={!paletteMode && loading}
+        className="flex flex-col"
+      >
+        <div className="pb-1.5">
+          <div className="flex items-center gap-2 border-b border-stroke py-2.5 ps-2 pe-12 text-[var(--ui-text-secondary)]">
+            <Search className="icon-sm shrink-0" strokeWidth={1.75} />
+            <SearchInput
+              ref={search}
+              type="text"
+              value={query}
+              placeholder={t("Go to File (type > for commands)")}
+              aria-label={pickerLabel}
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={optionCount > 0}
+              aria-controls={optionCount > 0 ? listId : undefined}
+              aria-activedescendant={
+                optionCount > 0 && !rankingPending ? `${listId}-option-${activeIndex}` : undefined
+              }
+              aria-busy={(!paletteMode && (loading || rankingPending)) || undefined}
+              spellCheck={false}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              className="min-w-0 flex-1"
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setActive(0);
+              }}
+              onKeyDown={onSearchKey}
+            />
           </div>
-          {empty ? (
-            <p className="px-3 pb-3 pt-1 text-[12px] text-[var(--ui-text-secondary)]">{empty}</p>
-          ) : paletteMode ? (
-            <ActionList
-              actions={actionResults}
-              active={active}
-              query={actionQuery}
-              onActive={setActive}
-              onRun={runAction}
-            />
-          ) : (
-            <FileList
-              files={results}
-              active={active}
-              query={query}
-              onActive={setActive}
-              onPick={pick}
-            />
-          )}
         </div>
+        {!paletteMode && (error || retrying) ? (
+          <div className="flex min-w-0 items-start gap-2 px-3 py-2 text-ui-caption">
+            {error ? <FilePickerError error={error} /> : null}
+            <Button
+              variant="ghost"
+              size="sm"
+              loading={retrying}
+              onClick={() => {
+                setRetrying(true);
+                setRetry((value) => value + 1);
+              }}
+            >
+              {t("Retry")}
+            </Button>
+          </div>
+        ) : null}
+        {!paletteMode &&
+        !loading &&
+        looksLikeProject(cwd) &&
+        projectFilesTruncated(files) !== false ? (
+          <p className="px-3 pb-2 text-ui-caption text-[var(--ui-text-secondary)]">
+            {projectFilesTruncated(files)
+              ? t("File index is incomplete; some files may not appear.")
+              : t("File index completeness is unknown; some files may not appear.")}
+          </p>
+        ) : null}
+        {empty && !(error && !files.length) ? (
+          <p
+            role="status"
+            className="px-3 pb-3 pt-1 text-ui-caption text-[var(--ui-text-secondary)]"
+          >
+            {empty}
+          </p>
+        ) : paletteMode ? (
+          <ActionList
+            id={listId}
+            actions={actionResults}
+            active={activeIndex}
+            query={actionQuery}
+            onActive={setActive}
+            onRun={runAction}
+          />
+        ) : (
+          <FileList
+            id={listId}
+            files={results}
+            active={activeIndex}
+            query={query}
+            onActive={setActive}
+            onPick={pick}
+          />
+        )}
       </div>
-    </OverlayParent.Provider>,
-    document.body,
+    </Modal>
   );
 }
 
@@ -371,12 +429,14 @@ function emptyLabel({
 }
 
 function ActionList({
+  id,
   actions,
   active,
   query,
   onActive,
   onRun,
 }: {
+  id: string;
   actions: RankedAction[];
   active: number;
   query: string;
@@ -394,6 +454,7 @@ function ActionList({
   return (
     <div
       ref={lockOverscroll}
+      id={id}
       role="listbox"
       aria-label={t("Commands")}
       className="max-h-[min(380px,50vh)] overflow-y-auto overscroll-none px-1.5 pb-1.5"
@@ -408,25 +469,23 @@ function ActionList({
             ref={highlighted ? activeRef : undefined}
             type="button"
             role="option"
+            id={`${id}-option-${index}`}
+            tabIndex={-1}
             aria-selected={highlighted}
             onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => onActive(index)}
             onClick={() => onRun(action)}
-            className={`  flex h-8 w-full items-center gap-2 text-left leading-none  ${
+            className={`  flex min-h-(--ui-control-height) w-full items-center gap-2 text-left leading-none  ${
               highlighted ? "" : ""
             }   `}
           >
-            <RefreshCw
-              className="size-4 shrink-0 text-[var(--ui-text-secondary)]"
-              strokeWidth={1.75}
-            />
             <span className="min-w-0 flex-1 truncate">
               <MatchText text={action.label} positions={action.positions} active={Boolean(query)} />
             </span>
             {action.hint ? (
-              <kbd className="ml-auto shrink-0 rounded border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-1.5 py-0.5 font-mono text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+              <ShortcutKbd size="xs" className="ml-auto shrink-0">
                 {action.hint}
-              </kbd>
+              </ShortcutKbd>
             ) : null}
           </Button>
         );
@@ -435,12 +494,14 @@ function ActionList({
   );
 }
 function FileList({
+  id,
   files,
   active,
   query,
   onActive,
   onPick,
 }: {
+  id: string;
   files: RankedFile[];
   active: number;
   query: string;
@@ -482,6 +543,7 @@ function FileList({
   return (
     <div
       ref={lockOverscroll}
+      id={id}
       role="listbox"
       aria-label={t("Files")}
       onMouseMove={onListMouseMove}
@@ -500,11 +562,13 @@ function FileList({
             ref={highlighted ? activeRef : undefined}
             type="button"
             role="option"
+            id={`${id}-option-${index}`}
+            tabIndex={-1}
             aria-selected={highlighted}
             onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => onRowEnter(index)}
             onClick={() => onPick(file)}
-            className={`  flex h-8 w-full items-center gap-2 text-left leading-none  ${
+            className={`  flex min-h-(--ui-control-height) w-full items-center gap-2 text-left leading-none  ${
               highlighted ? "" : ""
             }   `}
           >
@@ -521,7 +585,7 @@ function FileList({
               />
             </span>
             {dir ? (
-              <span className="min-w-0 max-w-[45%] truncate font-mono text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+              <span className="min-w-0 max-w-[45%] truncate font-mono text-ui-caption text-(--ui-text-secondary)">
                 <MatchText
                   text={dir}
                   positions={file.positions.filter((pos) => pos < slash)}

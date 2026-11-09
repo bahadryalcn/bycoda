@@ -1,0 +1,14 @@
+/* Placeholder for a lazily loaded region. It fills the region's own box so the content does not
+   move the surrounding layout when it arrives; the indeterminate bar itself only mounts after the
+   shared loading delay (useDelayedVisible), so a chunk that is already warm never flashes it. */
+.root {
+  display: grid;
+  place-items: center;
+  block-size: 100%;
+  min-block-size: 0;
+  padding: 0.75rem;
+}
+/* The indeterminate bar is a small cue, not a full-width rule across the region. */
+.root > * {
+  inline-size: min(100%, 14rem);
+}

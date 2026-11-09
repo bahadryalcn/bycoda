@@ -1,0 +1,104 @@
+import { useState } from "react";
+import { t } from "../../../../shared/i18n";
+import { Button } from "../../../../shared/ui/Button";
+import { TextField } from "../../../../shared/ui/TextField";
+import type { SocialClient } from "../../model/socialClient";
+import { uploadForSocialEditor, type SocialMediaEditor } from "../../model/socialMediaEditor";
+import type { ContentMedia } from "./contentDraft";
+import { probeVideo } from "./mediaProbe";
+
+const IMAGE_TYPES = ["image/jpeg", "image/png"];
+const VIDEO_TYPE = "video/mp4";
+
+export type ContentMediaFieldProps = {
+  client: SocialClient;
+  editor: SocialMediaEditor;
+  media: ContentMedia[];
+  disabled: boolean;
+  /** Why attaching is off (for example the account cannot upload media). */
+  disabledReason?: string;
+  onChange: (next: ContentMedia[]) => void;
+};
+
+/** Attach images or one video. Rules per platform are checked in the preview and the publish gate. */
+export function ContentMediaField({
+  client,
+  editor,
+  media,
+  disabled,
+  disabledReason,
+  onChange,
+}: ContentMediaFieldProps) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const add = async (files: File[]) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      // Refuse the whole pick before any upload, so a batch with one bad file uploads nothing.
+      if (files.some((file) => ![...IMAGE_TYPES, VIDEO_TYPE].includes(file.type)))
+        throw new Error(t("Use JPEG or PNG images, or one MP4 video."));
+      const added: ContentMedia[] = [];
+      for (const file of files) {
+        const upload = await uploadForSocialEditor(editor, client, file);
+        const isVideo = file.type === VIDEO_TYPE;
+        const probe = isVideo ? await probeVideo(file).catch(() => undefined) : undefined;
+        added.push({
+          localId: upload.uploadId,
+          name: file.name,
+          media: { kind: isVideo ? "video" : "image", uploadId: upload.uploadId },
+          probe,
+          mediaId: upload.managed?.mediaId,
+        });
+      }
+      onChange([...media, ...added]);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("The file could not be attached."));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = (item: ContentMedia) => {
+    onChange(media.filter((other) => other.localId !== item.localId));
+    if (item.mediaId) void editor.releaseCurrent(item.mediaId).catch(() => {});
+  };
+  return (
+    <fieldset className="content-media">
+      <legend>{t("Media")}</legend>
+      <TextField
+        label={t("Images or one video")}
+        type="file"
+        multiple
+        accept="image/jpeg,image/png,video/mp4"
+        disabled={disabled || busy}
+        description={
+          disabledReason ?? (busy ? t("Uploading…") : t("JPEG or PNG images, or one MP4 video."))
+        }
+        error={error}
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? []);
+          event.target.value = "";
+          if (files.length)
+            void add(files).catch(() => setError(t("The file could not be attached.")));
+        }}
+      />
+      {media.length ? (
+        <ul className="content-media-list">
+          {media.map((item) => (
+            <li key={item.localId}>
+              <span>{item.name}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={disabled || busy}
+                onClick={() => remove(item)}
+              >
+                {t("Remove {p0}", { p0: item.name })}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </fieldset>
+  );
+}

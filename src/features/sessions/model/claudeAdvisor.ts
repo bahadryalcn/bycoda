@@ -66,23 +66,25 @@ export function withClaudeAdvisor(model: AgentModel, catalog: AgentModel[] = [])
   ]) {
     if (!settings.some((s) => s.id === extra.id)) settings.push(extra);
   }
-  const mainRank = advisorRank(model.nativeId ?? model.id.replace(/^claude:/, ""));
   return {
     ...model,
     settings: settings.map((extra) => {
       if (extra.id !== "advisor" && extra.id !== "subagentModel") return extra;
       const known = new Set(extra.options.map((option) => option.value));
+      if (extra.id === "advisor") {
+        return {
+          ...extra,
+          options: [
+            ...extra.options,
+            ...offeredAdvisors(extra, catalog, model).filter((option) => !known.has(option.value)),
+          ],
+        };
+      }
       const pinned = catalog.flatMap((candidate) => {
         if (candidate.harness !== "claude") return [];
         const native = candidate.nativeId ?? candidate.id.replace(/^claude:/, "");
         // Family aliases don't pin a version, so keep them in their own rows.
         if (!/\d/.test(native) || known.has(native)) return [];
-        const rank = advisorRank(native);
-        if (
-          extra.id === "advisor" &&
-          (mainRank == null || rank == null || rank < mainRank || rank === 0)
-        )
-          return [];
         known.add(native);
         return [{ value: native, label: candidate.name }];
       });
@@ -93,17 +95,61 @@ export function withClaudeAdvisor(model: AgentModel, catalog: AgentModel[] = [])
 
 const FAMILIES = new Set(["haiku", "sonnet", "opus", "fable"]);
 
+function advisorNative(model: AgentModel): string {
+  return model.aliasTarget ?? model.nativeId ?? model.id.replace(/^claude:/, "");
+}
+
+function offeredAdvisors(setting: ModelSetting, offered: AgentModel[], main: AgentModel) {
+  const mainRank = advisorRank(advisorNative(main));
+  const seen = new Set<string>();
+  return offered.flatMap((candidate) => {
+    if (candidate.harness !== "claude") return [];
+    const value = advisorNative(candidate).replace(/\[.*$/, "");
+    const id = value.replace(/^claude-/, "").replace(/\./g, "-");
+    const rank = advisorRank(value);
+    const compatible =
+      mainRank == null
+        ? (rank != null || FAMILIES.has(id)) &&
+          setting.options.some((option) => option.value === id.split("-")[0])
+        : rank != null && rank >= mainRank && rank !== 0;
+    if (!compatible || seen.has(id)) return [];
+    seen.add(id);
+    const name = candidate.name.replace(/\s*\([^)]*\)\s*$/, "").trim();
+    const label =
+      /^(?:Claude )?(?:Opus|Sonnet|Haiku|Fable)$/i.test(name) && rank != null
+        ? id[0].toUpperCase() + id.slice(1).replace("-", " ").replace(/-/g, ".")
+        : name;
+    return [{ value, label }];
+  });
+}
+
 /**
  * Limits advisor/subagent rows to the models offered for new work, so models
  * turned off in Settings disappear here too. Family aliases take the live
- * catalog's versioned label ("Opus 5.5"). The current value always stays.
+ * catalog's versioned label ("Opus 5.5"). Advisors use concrete alias targets
+ * and the main model's compatibility rank. The current value always stays.
  */
 export function offeredDelegationSetting(
   setting: ModelSetting,
   offered: AgentModel[],
   current?: string,
+  main?: AgentModel,
 ): ModelSetting {
   if (setting.id !== "advisor" && setting.id !== "subagentModel") return setting;
+  if (setting.id === "advisor" && main) {
+    const options = [
+      ...setting.options.filter((option) => option.value === "default" || option.value === "off"),
+      ...offeredAdvisors(setting, offered, main),
+    ];
+    if (current && !options.some((option) => option.value === current)) {
+      const saved = setting.options.find((option) => option.value === current);
+      const alias = offered.find(
+        (model) => model.harness === "claude" && model.nativeId === current,
+      );
+      options.push({ value: current, label: alias?.name ?? saved?.label ?? current });
+    }
+    return { ...setting, options };
+  }
   const natives = offered
     .filter((model) => model.harness === "claude")
     .map((model) => ({

@@ -23,7 +23,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("silinen hesabın yerine kalan tek hesabı seçtirir ve konuşmayı kurtarır", async () => {
+it("selects the single remaining account in place of the deleted one and recovers the conversation", async () => {
   const onSelect = vi.fn(async () => true);
   const onClose = vi.fn();
   act(() =>
@@ -44,7 +44,7 @@ it("silinen hesabın yerine kalan tek hesabı seçtirir ve konuşmayı kurtarır
   expect(onClose).toHaveBeenCalledOnce();
 });
 
-it("hesap geçişi başarısızsa pencereyi açık tutar", async () => {
+it("keeps the dialog open if the account switch fails", async () => {
   const onClose = vi.fn();
   act(() =>
     root.render(
@@ -66,7 +66,43 @@ it("hesap geçişi başarısızsa pencereyi açık tutar", async () => {
   expect(onClose).not.toHaveBeenCalled();
 });
 
-it("silinen hesap kullanılırken tek hesap olsa da seçiciyi gösterir", () => {
+it("shows pending only on the selected account and keeps retry available on failure", async () => {
+  saveProviderAccount({ id: "second", provider: "claude", label: "Personal", isDefault: false });
+  let reject!: (cause: Error) => void;
+  const onSelect = vi.fn(
+    () =>
+      new Promise<boolean>((_resolve, failure) => {
+        reject = failure;
+      }),
+  );
+  act(() =>
+    root.render(
+      createElement(ProviderAccountRecoveryDialog, {
+        provider: "claude",
+        onSelect,
+        onClose: vi.fn(),
+        onManage: vi.fn(),
+      }),
+    ),
+  );
+  const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    (item) => item.textContent === "Work",
+  )!;
+  button.focus();
+  act(() => {
+    button.click();
+    button.click();
+  });
+  expect(onSelect).toHaveBeenCalledOnce();
+  expect(document.querySelectorAll('button[aria-busy="true"]')).toHaveLength(1);
+  expect(button.getAttribute("aria-busy")).toBe("true");
+  expect(document.activeElement).toBe(button);
+  await act(async () => reject(new Error("Transfer unavailable")));
+  expect(button.hasAttribute("aria-busy")).toBe(false);
+  expect(document.querySelector('[role="alert"]')?.textContent).toBe("Transfer unavailable");
+});
+
+it("shows the picker while a deleted account is in use, even with a single account", () => {
   act(() =>
     root.render(
       createElement(ProviderAccountMenu, {

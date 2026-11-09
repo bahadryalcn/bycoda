@@ -2,6 +2,7 @@ import { getChunks, MergeView } from "@codemirror/merge";
 import { EditorState, type Extension, type Text } from "@codemirror/state";
 import { EditorView, type ViewUpdate } from "@codemirror/view";
 import { editorDocChanges } from "./editorDoc";
+import { editorSurfaceActive } from "./editorSurfaceVisibility";
 import {
   DIFF_CONFIG,
   diffLineStats,
@@ -19,7 +20,16 @@ const ADDED = "var(--color-diff-add)";
 
 const splitScroll = EditorView.domEventHandlers({
   wheel(event, view) {
-    if (event.defaultPrevented || event.ctrlKey || event.shiftKey || !event.deltaY) return false;
+    if (
+      !editorSurfaceActive(view.dom) ||
+      event.defaultPrevented ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      event.shiftKey ||
+      !event.deltaY
+    )
+      return false;
     const scroller = view.dom.closest<HTMLElement>(".cm-mergeView");
     if (!scroller || scroller.scrollHeight <= scroller.clientHeight) return false;
     const lineHeight = parseFloat(getComputedStyle(view.scrollDOM).lineHeight) || 20;
@@ -54,17 +64,17 @@ const splitTheme = EditorView.theme({
     overscrollBehaviorY: "auto",
   },
   "&.cm-merge-a .cm-changedLine": {
-    backgroundColor: `color-mix(in srgb, ${REMOVED} 16%, transparent)`,
+    backgroundColor: "var(--color-diff-del-bg)",
   },
   "&.cm-merge-b .cm-changedLine": {
-    backgroundColor: `color-mix(in srgb, ${ADDED} 18%, transparent)`,
+    backgroundColor: "var(--color-diff-add-bg)",
   },
   // The package styles these per color scheme with more specific selectors.
   "&.cm-merge-a .cm-changedText": {
-    background: `color-mix(in srgb, ${REMOVED} 38%, transparent) !important`,
+    background: "var(--color-diff-del-gutter) !important",
   },
   "&.cm-merge-b .cm-changedText": {
-    background: `color-mix(in srgb, ${ADDED} 38%, transparent) !important`,
+    background: "var(--color-diff-add-gutter) !important",
   },
   "&.cm-merge-a .cm-changedLineGutter": {
     background: `${REMOVED} !important`,
@@ -136,8 +146,7 @@ export function createSplitDiff(options: {
   split.dom.style.overscrollBehavior = "none";
   const afterPane = split.b.dom.parentElement;
   if (afterPane) {
-    afterPane.style.borderLeft =
-      "1px solid color-mix(in srgb, var(--color-content) 12%, transparent)";
+    afterPane.style.borderLeft = "1px solid var(--color-stroke)";
   }
   return split;
 }

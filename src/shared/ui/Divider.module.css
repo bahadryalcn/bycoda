@@ -1,0 +1,63 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+/* Root placement stays caller-adjustable (F3 style-ownership contract). */
+@layer components {
+  .divider {
+    flex: none;
+    align-self: stretch;
+    margin: 0;
+  }
+  .divider[data-orientation="horizontal"][data-inset="sm"] {
+    margin-inline: 0.5rem;
+  }
+  .divider[data-orientation="horizontal"][data-inset="md"] {
+    margin-inline: 0.75rem;
+  }
+  .divider[data-orientation="vertical"][data-inset="sm"] {
+    margin-block: 0.25rem;
+  }
+  .divider[data-orientation="vertical"][data-inset="md"] {
+    margin-block: 0.5rem;
+  }
+}
+
+/* One hairline role for pane and group separation: --ui-pane-border. */
+.divider {
+  border: 0;
+  background: var(--ui-pane-border);
+}
+.divider[data-orientation="horizontal"] {
+  block-size: 1px;
+}
+.divider[data-orientation="vertical"] {
+  inline-size: 1px;
+}
+.divider[data-labelled] {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  block-size: auto;
+  background: none;
+}
+.divider[data-labelled]::before,
+.divider[data-labelled]::after {
+  content: "";
+  flex: 1 1 0;
+  block-size: 1px;
+  background: var(--ui-pane-border);
+}
+.divider[data-labelled][data-label-align="start"]::before {
+  flex: 0 0 0.5rem;
+}
+.label {
+  flex: none;
+  max-inline-size: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
+  font-weight: 500;
+  color: var(--ui-text-secondary);
+}

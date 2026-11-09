@@ -2,8 +2,8 @@ import { afterEach, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listHostClaudeCommands } from "./claude-commands";
-import { prepareHostSkillPrompt } from "./prompt-skills";
+import { listHostClaudeCommands } from "./providers/claude-commands";
+import { prepareHostSkillPrompt } from "./skills/prompt-skills";
 
 const roots: string[] = [];
 afterEach(() => {

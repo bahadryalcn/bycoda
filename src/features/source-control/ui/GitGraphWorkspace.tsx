@@ -1,5 +1,12 @@
 import { Button } from "../../../shared/ui/Button";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { t, useLocale } from "../../../shared/i18n/git";
 import {
   gitDiffIndex,
@@ -14,17 +21,21 @@ import {
   type GitFileDiffKind,
   type GitHistoryCommit,
 } from "../../../platform/tauri/fs";
-import { GitBranch, Loader, PanelLeft, MoreHorizontal } from "../../../shared/ui/icons";
+import { GitBranch, PanelLeft, MoreHorizontal } from "../../../shared/ui/icons";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { Sash } from "../../../shared/ui/Sash";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import {
   GIT_ACTIONS,
   GIT_CONFLICTS,
   useRemoteSupports,
-} from "../../connections/model/remoteCapabilities";
+} from "../../connections/public/remoteCapabilities";
 import { useGitResource } from "../hooks/useGitResource";
 import { setGitFeedback, useGitPanelState, withGitOperation } from "../model/gitPanelState";
 import { invalidateGitIndex } from "../model/gitIndexStore";
-import { invalidateWatchedFiles } from "../../files/model/fileWatch";
+import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { confirmNative } from "../model/gitConfirmation";
 import { GitGraphBranches } from "./GitGraphBranches";
 import { GitGraphCommitInspector } from "./GitGraphCommitInspector";
@@ -34,7 +45,6 @@ import { WorkingTreeDiff } from "./WorkingTreeDiff";
 import { GitStashSection } from "./GitStashSection";
 import { GitFeedback } from "./GitFeedback";
 import { GitOperationBanner } from "./GitOperationBanner";
-import { useDragResize } from "../../../shared/hooks/useDragResize";
 
 type Props = {
   cwd: string;
@@ -50,6 +60,104 @@ const ACTION = "shrink-0";
 let inspectorWidth = 520;
 let branchWidth = 240;
 let changesHeight = 300;
+
+type SashPaneOptions = {
+  /** `vertical` sash between columns resizes a width, `horizontal` a height. */
+  orientation: "vertical" | "horizontal";
+  min: number;
+  max: () => number;
+  initial: number;
+  defaultSize: number;
+  /** The pane grows when the sash moves away from it (a pane at the end edge). */
+  inverse?: boolean;
+  onCommit: (size: number) => void;
+};
+
+/**
+ * Sizes one pane from a shared `Sash`. The drag writes the pane's style directly, so the graph
+ * beside it does not re-render for every frame; the size is committed to state on release.
+ */
+function useSashPane({
+  orientation,
+  min,
+  max,
+  initial,
+  defaultSize,
+  inverse = false,
+  onCommit,
+}: SashPaneOptions) {
+  const property = orientation === "vertical" ? "width" : "height";
+  const limits = useRef({ min, max });
+  limits.current = { min, max };
+  const commitRef = useRef(onCommit);
+  commitRef.current = onCommit;
+  const clamp = useCallback((value: number) => {
+    const upper = Math.max(0, limits.current.max());
+    return Math.min(upper, Math.max(Math.min(limits.current.min, upper), Math.round(value)));
+  }, []);
+  const [size, setSize] = useState(() => clamp(initial));
+  const paneRef = useRef<HTMLElement | null>(null);
+  const sizeRef = useRef(size);
+  const start = useRef(size);
+  const apply = useCallback(
+    (next: number) => {
+      sizeRef.current = next;
+      if (paneRef.current) paneRef.current.style[property] = `${next}px`;
+    },
+    [property],
+  );
+  const setPaneRef = useCallback(
+    (element: HTMLElement | null) => {
+      paneRef.current = element;
+      if (element) element.style[property] = `${sizeRef.current}px`;
+    },
+    [property],
+  );
+  // The size the user chose; a smaller window narrows the pane and a larger one restores it.
+  const preferred = useRef(size);
+  const dragging = useRef(false);
+  const commit = (next: number) => {
+    const value = clamp(next);
+    preferred.current = value;
+    apply(value);
+    setSize(value);
+    commitRef.current(value);
+  };
+  useEffect(() => {
+    const resize = () => {
+      if (dragging.current) return;
+      const next = clamp(preferred.current);
+      if (next === sizeRef.current) return;
+      apply(next);
+      setSize(next);
+    };
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, [apply, clamp]);
+  const sashProps = {
+    orientation,
+    value: size,
+    min,
+    onResizeStart: () => {
+      dragging.current = true;
+      start.current = sizeRef.current;
+    },
+    onResize: (delta: number) => apply(clamp(start.current + (inverse ? -delta : delta))),
+    onResizeEnd: (delta: number, info: { cancelled: boolean }) => {
+      dragging.current = false;
+      commit(info.cancelled ? start.current : start.current + (inverse ? -delta : delta));
+    },
+    onReset: () => commit(defaultSize),
+    // Separator keys: Home/End jump to the smallest/largest size (arrows stay built in).
+    onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "Home" && event.key !== "End") return;
+      event.preventDefault();
+      event.stopPropagation();
+      commit(event.key === "Home" ? 0 : limits.current.max());
+    },
+  };
+  return { size, setPaneRef, sashProps };
+}
 
 export function GitGraphWorkspace({
   cwd,
@@ -68,50 +176,56 @@ export function GitGraphWorkspace({
   const [feedback] = useGitPanelState(cwd, "feedback");
   const read = useCallback(() => gitDiffIndex(cwd), [cwd]);
   const index = useGitResource(cwd, `graph-index:${cwd}`, true, read);
-  const [rail, setRail] = useState(true);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const [compact, setCompact] = useState(false);
+  // An explicit toggle survives resizing; otherwise use the space available to this workspace.
+  const [rail, setRail] = useState<boolean | null>(null);
+  const railVisible = rail ?? !compact;
+  useEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+    const resize = () => setCompact(workspace.clientWidth < 960);
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(workspace);
+    return () => observer.disconnect();
+  }, []);
   const [actionAnchor, setActionAnchor] = useState<HTMLElement | null>(null);
-  const {
-    width: railWidth,
-    setPaneRef: setBranchPaneRef,
-    separatorProps: branchSeparatorProps,
-    onPointerDown: onBranchPointerDown,
-    onDoubleClick: onBranchDoubleClick,
-  } = useDragResize({
+  const branchPane = useSashPane({
+    orientation: "vertical",
     min: 180,
-    max: () => Math.min(400, window.innerWidth - 720),
+    max: () =>
+      Math.max(180, Math.min(400, (workspaceRef.current?.clientWidth ?? window.innerWidth) - 720)),
     initial: branchWidth,
-    defaultWidth: 240,
+    defaultSize: 240,
     onCommit: (width) => {
       branchWidth = width;
     },
   });
-  const {
-    setPaneRef: setChangesPaneRef,
-    separatorProps: changesSeparatorProps,
-    onPointerDown: onChangesPointerDown,
-    onDoubleClick: onChangesDoubleClick,
-  } = useDragResize({
-    axis: "vertical",
+  const railWidth = branchPane.size;
+  const changesPane = useSashPane({
+    orientation: "horizontal",
     min: 180,
     max: () => Math.max(180, window.innerHeight - 350),
     initial: changesHeight,
-    defaultWidth: 300,
+    defaultSize: 300,
     onCommit: (height) => {
       changesHeight = height;
     },
   });
-  const {
-    setPaneRef: setInspectorPaneRef,
-    separatorProps: inspectorSeparatorProps,
-    onPointerDown: onInspectorPointerDown,
-    onDoubleClick: onInspectorDoubleClick,
-    dragging: inspectorDragging,
-  } = useDragResize({
+  const inspectorPane = useSashPane({
+    orientation: "vertical",
     min: 360,
-    max: () => Math.max(360, window.innerWidth - (rail ? railWidth : 0) - 440),
+    max: () =>
+      Math.max(
+        360,
+        (workspaceRef.current?.clientWidth ?? window.innerWidth) -
+          (railVisible ? railWidth : 0) -
+          440,
+      ),
     initial: inspectorWidth,
-    defaultWidth: 520,
-    direction: "left",
+    defaultSize: 520,
+    inverse: true,
     onCommit: (width) => {
       inspectorWidth = width;
     },
@@ -181,139 +295,149 @@ export function GitGraphWorkspace({
       path.slice(cwd.length + 1).replace(/\\/g, "/");
     setConflict({ path, relative });
   };
+  const folder = cwd.split(/[/\\]/).filter(Boolean).slice(-1)[0];
+  const showBusy =
+    busy &&
+    !(conflict && (busy === t("Saving conflict resolution…") || busy === t("Resolving conflict…")));
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-[var(--ui-surface)] text-content">
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke bg-[var(--ui-surface)] px-3 py-2">
-        <Button
-          size="sm"
-          iconOnly
-          label={t("Toggle branches")}
-          variant="ghost"
-          motion="none"
-          type="button"
-          aria-label={t("Toggle branches")}
-          aria-pressed={rail}
-          onClick={() => setRail(!rail)}
-        >
-          <PanelLeft className="size-4" />
-        </Button>
-        <span title={cwd} className="max-w-48 truncate text-sm font-medium">
-          {cwd.split(/[/\\]/).filter(Boolean).slice(-1)[0]}
-        </span>
-        <span className="mr-auto flex min-w-0 items-center gap-2 text-[12px] font-medium">
-          <GitBranch className="size-4 text-accent" />
-          <span className="max-w-44 truncate">{index.data?.branch ?? t("Detached HEAD")}</span>
-          <span
-            title={
-              t("Outgoing commits") +
-              `: ${index.data?.ahead ?? 0} · ` +
-              t("Incoming commits") +
-              `: ${index.data?.behind ?? 0}`
-            }
-            className="text-[11px] tabular-nums text-[var(--ui-text-secondary)]"
+    <div
+      ref={workspaceRef}
+      className="flex min-h-0 min-w-0 flex-1 flex-col bg-(--ui-workspace-panel) text-content"
+    >
+      <PaneHeader
+        leading={
+          <Button
+            size="sm"
+            iconOnly
+            label={t("Toggle branches")}
+            variant="ghost"
+            motion="none"
+            type="button"
+            aria-pressed={railVisible}
+            onClick={() => setRail(!railVisible)}
           >
+            <PanelLeft className="icon-md" />
+          </Button>
+        }
+        titleAs="div"
+        title={
+          <Tooltip label={cwd}>
+            <span>{folder}</span>
+          </Tooltip>
+        }
+        actions={
+          <>
+            {showBusy ? <LoadingText className="me-1">{busy}</LoadingText> : null}
+            <Button
+              size="sm"
+              variant="ghost"
+              motion="none"
+              type="button"
+              disabled={!supported || !!busy || !index.data?.remote}
+              onClick={() => void run("Fetching…", () => gitFetch(cwd))}
+              className={ACTION}
+            >
+              {t("Fetch")}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              motion="none"
+              type="button"
+              disabled={!supported || !!busy || !index.data?.upstream || !!index.data?.operation}
+              onClick={() => void run("Pulling…", () => gitPull(cwd))}
+              className={ACTION}
+            >
+              {t("Pull")}
+              {index.data?.behind ? (
+                <span className="ms-1 tabular-nums">{index.data.behind}</span>
+              ) : null}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              motion="none"
+              type="button"
+              disabled={!supported || !!busy || !index.data?.remote || !!index.data?.operation}
+              onClick={() => void run("Pushing…", () => gitPush(cwd))}
+              className={ACTION}
+            >
+              {t("Push")}
+              {index.data?.ahead ? (
+                <span className="ms-1 tabular-nums">{index.data.ahead}</span>
+              ) : null}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              motion="none"
+              type="button"
+              iconOnly
+              label={t("Working tree actions")}
+              aria-haspopup="menu"
+              aria-expanded={!!actionAnchor}
+              disabled={!supported || !!busy}
+              onClick={(event) => setActionAnchor(actionAnchor ? null : event.currentTarget)}
+            >
+              <MoreHorizontal className="icon-md" />
+            </Button>
+          </>
+        }
+      >
+        <GitBranch className="icon-md shrink-0 text-(--ui-tone-accent-fg)" />
+        <span className="max-w-44 truncate text-ui-caption font-medium">
+          {index.data?.branch ?? t("Detached HEAD")}
+        </span>
+        <Tooltip
+          label={
+            t("Outgoing commits") +
+            `: ${index.data?.ahead ?? 0} · ` +
+            t("Incoming commits") +
+            `: ${index.data?.behind ?? 0}`
+          }
+        >
+          <span className="text-ui-caption tabular-nums text-(--ui-text-secondary)">
             ↑{index.data?.ahead ?? 0} ↓{index.data?.behind ?? 0}
           </span>
-        </span>
-        <Button
-          size="sm"
-          variant="ghost"
-          motion="none"
-          type="button"
-          disabled={!supported || !!busy || !index.data?.remote}
-          onClick={() => void run("Fetching…", () => gitFetch(cwd))}
-          className={ACTION}
-        >
-          {t("Fetch")}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          motion="none"
-          type="button"
-          disabled={!supported || !!busy || !index.data?.upstream || !!index.data?.operation}
-          onClick={() => void run("Pulling…", () => gitPull(cwd))}
-          className={ACTION}
-        >
-          {t("Pull")}
-          {index.data?.behind ? (
-            <span className="ms-1 tabular-nums">{index.data.behind}</span>
-          ) : null}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          motion="none"
-          type="button"
-          disabled={!supported || !!busy || !index.data?.remote || !!index.data?.operation}
-          onClick={() => void run("Pushing…", () => gitPush(cwd))}
-          className={ACTION}
-        >
-          {t("Push")}
-          {index.data?.ahead ? <span className="ms-1 tabular-nums">{index.data.ahead}</span> : null}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          motion="none"
-          type="button"
-          iconOnly
+        </Tooltip>
+      </PaneHeader>
+      {actionAnchor ? (
+        <DropdownMenu
+          anchor={actionAnchor}
           label={t("Working tree actions")}
-          title={t("Working tree actions")}
-          aria-haspopup="menu"
-          aria-expanded={!!actionAnchor}
-          disabled={!supported || !!busy}
-          onClick={(event) => setActionAnchor(actionAnchor ? null : event.currentTarget)}
-        >
-          <MoreHorizontal className="size-4" />
-        </Button>
-        {actionAnchor ? (
-          <DropdownMenu
-            anchor={actionAnchor}
-            label={t("Working tree actions")}
-            items={[
-              {
-                kind: "item",
-                id: "stage",
-                label: t("Stage All Changes"),
-                disabled:
-                  !!busy ||
-                  !index.data?.files.some((file) => file.unstaged) ||
-                  !!index.data?.conflicts?.length,
-              },
-              {
-                kind: "item",
-                id: "unstage",
-                label: t("Unstage All Changes"),
-                disabled: !!busy || !index.data?.files.some((file) => file.staged),
-              },
-              { kind: "sep" },
-              {
-                kind: "item",
-                id: "stash",
-                label: t("Stash"),
-                disabled: !!busy || !index.data?.files.length || !!index.data?.conflicts?.length,
-              },
-            ]}
-            onClose={() => setActionAnchor(null)}
-            onPick={(id) => {
-              setActionAnchor(null);
-              if (id === "stage") void run("Staging…", () => gitStageAll(cwd));
-              else if (id === "unstage") void run("Unstaging…", () => gitUnstageAll(cwd));
-              else if (id === "stash") void run("Stashing…", () => gitStash(cwd));
-            }}
-          />
-        ) : null}
-        {busy ? (
-          <span
-            role="status"
-            className="flex items-center gap-2 text-[12px] text-[var(--ui-text-secondary)]"
-          >
-            <Loader className="size-3.5 animate-spin" />
-            {busy}
-          </span>
-        ) : null}
-      </div>
+          items={[
+            {
+              kind: "item",
+              id: "stage",
+              label: t("Stage All Changes"),
+              disabled:
+                !!busy ||
+                !index.data?.files.some((file) => file.unstaged) ||
+                !!index.data?.conflicts?.length,
+            },
+            {
+              kind: "item",
+              id: "unstage",
+              label: t("Unstage All Changes"),
+              disabled: !!busy || !index.data?.files.some((file) => file.staged),
+            },
+            { kind: "sep" },
+            {
+              kind: "item",
+              id: "stash",
+              label: t("Stash"),
+              disabled: !!busy || !index.data?.files.length || !!index.data?.conflicts?.length,
+            },
+          ]}
+          onClose={() => setActionAnchor(null)}
+          onPick={(id) => {
+            setActionAnchor(null);
+            if (id === "stage") void run("Staging…", () => gitStageAll(cwd));
+            else if (id === "unstage") void run("Unstaging…", () => gitUnstageAll(cwd));
+            else if (id === "stash") void run("Stashing…", () => gitStash(cwd));
+          }}
+        />
+      ) : null}
       {index.error ? (
         <GitFeedback
           title={t("Couldn’t load source control")}
@@ -338,11 +462,11 @@ export function GitGraphWorkspace({
         />
       ) : null}
       <div className="flex min-h-0 flex-1 overflow-x-auto">
-        {rail ? (
+        {railVisible ? (
           <>
             <aside
-              ref={setBranchPaneRef}
-              className="flex min-w-0 shrink-0 flex-col bg-[var(--ui-surface)] max-h-full"
+              ref={branchPane.setPaneRef}
+              className="flex max-h-full min-w-[180px] shrink-0 flex-col overflow-hidden"
             >
               <GitGraphBranches
                 cwd={cwd}
@@ -358,44 +482,41 @@ export function GitGraphWorkspace({
                 />
               </div>
             </aside>
-            <div
-              {...branchSeparatorProps}
-              aria-label={t("Resize branches")}
-              onPointerDown={onBranchPointerDown}
-              onDoubleClick={onBranchDoubleClick}
-              className="w-1 shrink-0 cursor-col-resize touch-none bg-stroke"
-            />
+            <Sash {...branchPane.sashProps} label={t("Resize branches")} />
           </>
         ) : null}
         <section aria-label={t("Commit Graph")} className="flex min-w-[300px] flex-1 flex-col">
-          <Button
-            size="sm"
-            variant="ghost"
-            motion="none"
-            type="button"
-            aria-pressed={!commit}
-            onClick={() => onCommit(null)}
-            className={" flex  shrink-0 items-center justify-between gap-3 text-left "}
-          >
-            <span className="font-medium">{t("Working tree")}</span>
-            <span className="text-[var(--ui-text-secondary)]">
-              {index.data?.files.length ?? 0} {t("files")}
-              {index.data?.conflicts?.length
-                ? ` · ${index.data.conflicts.length} ${t("conflicts")}`
-                : ""}
-            </span>
-          </Button>
+          <div className="shrink-0 border-b border-(--ui-pane-border)">
+            <Button
+              size="sm"
+              variant="item"
+              motion="none"
+              type="button"
+              aria-pressed={!commit}
+              selected={false}
+              onClick={() => onCommit(null)}
+              className="relative flex w-full items-center justify-between gap-3 rounded-none text-left"
+            >
+              {commit ? null : (
+                <span
+                  aria-hidden
+                  className="absolute inset-y-1 start-0 w-0.5 rounded-full bg-(--ui-border-accent)"
+                />
+              )}
+              <span className="font-medium">{t("Working tree")}</span>
+              <span className="text-(--ui-text-secondary)">
+                {index.data?.files.length ?? 0} {t("files")}
+                {index.data?.conflicts?.length
+                  ? ` · ${index.data.conflicts.length} ${t("conflicts")}`
+                  : ""}
+              </span>
+            </Button>
+          </div>
           {graph}
         </section>
-        <div
-          {...inspectorSeparatorProps}
-          aria-label={t("Resize inspector")}
-          onPointerDown={onInspectorPointerDown}
-          onDoubleClick={onInspectorDoubleClick}
-          className={`w-1 shrink-0 cursor-col-resize touch-none focus-visible:bg-accent ${inspectorDragging ? "bg-accent" : "bg-stroke hover:bg-[var(--ui-tone-accent-subtle)]"}`}
-        />
+        <Sash {...inspectorPane.sashProps} label={t("Resize inspector")} />
         <aside
-          ref={setInspectorPaneRef}
+          ref={inspectorPane.setPaneRef}
           aria-label={t("Git inspector")}
           className="flex min-w-[360px] shrink-0 flex-col"
         >
@@ -412,7 +533,7 @@ export function GitGraphWorkspace({
             />
           ) : (
             <>
-              <div ref={setChangesPaneRef} className="min-h-0 shrink-0 overflow-hidden">
+              <div ref={changesPane.setPaneRef} className="min-h-0 shrink-0 overflow-hidden">
                 <GitChangesPanel
                   cwd={cwd}
                   enabled
@@ -425,13 +546,7 @@ export function GitGraphWorkspace({
                   onOpenAllChanges={(kind) => void openFile("", kind)}
                 />
               </div>
-              <div
-                {...changesSeparatorProps}
-                aria-label={t("Resize changes")}
-                onPointerDown={onChangesPointerDown}
-                onDoubleClick={onChangesDoubleClick}
-                className="h-1 shrink-0 cursor-row-resize touch-none bg-stroke"
-              />
+              <Sash {...changesPane.sashProps} label={t("Resize changes")} />
               <div className="flex min-h-0 flex-1 flex-col">
                 {conflict ? (
                   <GitGraphConflictEditor

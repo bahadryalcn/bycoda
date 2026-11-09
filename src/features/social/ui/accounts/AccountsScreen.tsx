@@ -1,0 +1,135 @@
+import { useState } from "react";
+import { t } from "../../../../shared/i18n";
+import { InlineMessage } from "../../../../shared/ui/InlineError";
+import { SectionLabel } from "../../../../shared/ui/SectionLabel";
+import { Sheet } from "../../../../shared/ui/Sheet";
+import { EmptyHint } from "../common/EmptyHint";
+import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
+import type { SocialScreenProps } from "../shell/screens";
+import { AccountDetail } from "./AccountDetail";
+import { AccountRow } from "./AccountRow";
+import { ConnectAccountDialog } from "./ConnectAccountDialog";
+import { GeneralSettings } from "./GeneralSettings";
+import { accountHealth } from "./accountsModel";
+import { useAccountsData } from "./useAccountsData";
+import "./accounts.css";
+
+/** Accounts & Settings: the account list, per-account detail and the general settings below it. */
+export function AccountsScreen({
+  client,
+  machineId,
+  projectId,
+  shellState,
+  active,
+}: SocialScreenProps) {
+  const data = useAccountsData({ client, machineId, projectId, active });
+  const [selectedId, setSelectedId] = useState<string>();
+  const [connectOpen, setConnectOpen] = useState(false);
+  // Health is judged at the time this screen opened, so render stays pure.
+  const [openedAt] = useState(Date.now);
+  const { snapshot } = data;
+  const accounts = snapshot?.accounts ?? [];
+  const selected = accounts.find((account) => account.id === selectedId);
+  const hostOnline = snapshot?.hostOnline ?? shellState.hostOnline;
+  const connectGate: ActionGate = shellState.unreachable
+    ? { disabled: true, disabledReason: t("Could not reach this computer.") }
+    : { disabled: false };
+
+  return (
+    <div className="social-accounts-screen">
+      <SectionLabel
+        className="social-accounts-toolbar"
+        as="h3"
+        count={snapshot ? accounts.length : null}
+        actions={
+          <DisabledReason
+            variant="primary"
+            size="sm"
+            onClick={() => setConnectOpen(true)}
+            {...gateProps(connectGate)}
+          >
+            {t("Connect account")}
+          </DisabledReason>
+        }
+      >
+        {t("Accounts")}
+      </SectionLabel>
+      {data.error ? (
+        <InlineMessage tone="danger" retry={{ onRetry: data.reload, label: t("Try again") }}>
+          {data.error}
+        </InlineMessage>
+      ) : null}
+      {snapshot && !hostOnline ? (
+        <InlineMessage tone="warning" live="off">
+          {t("Scheduling is offline. Scheduled posts and replies wait until the Host is back.")}
+        </InlineMessage>
+      ) : null}
+      <section className="social-accounts-section" aria-label={t("Accounts")}>
+        {!snapshot && data.loading ? <p className="social-muted">{t("Loading…")}</p> : null}
+        {accounts.length ? (
+          <ul className="social-account-list">
+            {accounts.map((account) => (
+              <AccountRow
+                key={account.id}
+                account={account}
+                selected={account.id === selectedId}
+                capabilities={snapshot?.capabilities[account.id] ?? []}
+                health={accountHealth({
+                  account,
+                  capabilities: snapshot?.capabilities[account.id] ?? [],
+                  needsHuman: data.needsHumanIds.has(account.id),
+                  now: openedAt,
+                })}
+                onOpen={() => setSelectedId(account.id)}
+              />
+            ))}
+          </ul>
+        ) : snapshot ? (
+          <EmptyHint
+            message={t("No accounts yet. Connect one to start.")}
+            action={{
+              label: t("Connect account"),
+              onClick: () => setConnectOpen(true),
+              disabled: false,
+            }}
+          />
+        ) : null}
+      </section>
+      {snapshot ? (
+        <GeneralSettings
+          client={client}
+          snapshot={snapshot}
+          hostOnline={hostOnline}
+          projectId={projectId}
+          onChanged={data.reload}
+        />
+      ) : null}
+      {selected && snapshot ? (
+        <Sheet title={selected.name} onClose={() => setSelectedId(undefined)}>
+          <AccountDetail
+            client={client}
+            account={selected}
+            snapshot={snapshot}
+            projects={data.projects}
+            needsHuman={data.needsHumanIds.has(selected.id)}
+            hostOnline={hostOnline}
+            onChanged={data.reload}
+          />
+        </Sheet>
+      ) : null}
+      {connectOpen ? (
+        <ConnectAccountDialog
+          client={client}
+          projects={data.projects}
+          initialProjectId={projectId}
+          onClose={() => setConnectOpen(false)}
+          onCreated={(accountId) => {
+            setConnectOpen(false);
+            setSelectedId(accountId);
+            data.reload();
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}

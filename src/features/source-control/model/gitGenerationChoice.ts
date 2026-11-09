@@ -1,11 +1,11 @@
-import type { HarnessId } from "../../sessions/model/session";
+import type { HarnessId } from "../../sessions";
 import { isHarnessAvailable } from "../../../integrations/harness/core/availabilityState";
 import {
   modelsFor,
   nativeModelId,
   defaultModelSettings,
   modelEffortSetting,
-} from "../../sessions/model/models";
+} from "../../sessions/public/models";
 
 export const TEXT_HARNESSES: HarnessId[] = ["claude", "cursor", "codex", "grok", "opencode"];
 export type GitGenerationChoice = {

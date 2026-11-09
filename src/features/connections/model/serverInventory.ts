@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
+import { listenWindow } from "../../../platform/tauri/listenWindow";
 import type { RemoteMachine } from "./protocol";
 import { adoptRemoteMachineInventory } from "./connections";
 import type { SshInheritance } from "./sshGroupDefaults";
@@ -142,10 +142,10 @@ export function useServerInventory() {
     refresh();
     window.addEventListener(CHANGE, refresh);
     window.addEventListener(HOST_CHANGE, refresh);
-    const native = listen("server-inventory-changed", refresh).catch(() => undefined);
+    const native = listenWindow("server-inventory-changed", refresh);
     return () => {
       disposed = true;
-      void native.then((unlisten) => unlisten?.());
+      native();
       window.removeEventListener(CHANGE, refresh);
       window.removeEventListener(HOST_CHANGE, refresh);
     };

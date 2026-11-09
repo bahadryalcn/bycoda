@@ -1,4 +1,13 @@
-import { closeHarnessSse, harnessHttp, openHarnessSse, watchSse } from "../../core/child";
+import {
+  closeHarnessSse,
+  captureHostHarnessHttp,
+  harnessHttp,
+  openHarnessSse,
+  watchSse,
+  type NativeAuthorityScope,
+  type HarnessHttpInput,
+} from "../../core/child";
+import type { HostRunHandle } from "../../core/hostRun";
 import {
   asRecord,
   normalizeOpenCodeV2Event,
@@ -39,7 +48,26 @@ export type OpenCodeMessage = {
   parts?: unknown[];
 };
 
+type OpenCodeConnection = Readonly<{
+  baseUrl: string;
+  directory: string;
+  generation: OpenCodeApiGeneration;
+  serverPassword?: string;
+  nativeSessionId?: string;
+  nativeAuthority?: Readonly<NativeAuthorityScope>;
+  nativeSessionCapability?: import("../../core/controlTurn").NativeSessionCapability;
+  nativeOwnedService?: import("./opencodeService").NativeOwnedOpenCode;
+}>;
+type OpenCodeHttpDispatch = (input: HarnessHttpInput) => Promise<{ status: number; body: string }>;
+
 export class OpenCodeClient {
+  private readonly connection: OpenCodeConnection;
+  private readonly hostRequest?: OpenCodeHttpDispatch;
+  private readonly hostProviderSessionId?: string;
+  private readonly hostViews = new WeakMap<
+    HostRunHandle,
+    Map<string | undefined, OpenCodeClient>
+  >();
   private readonly permissionSessions = new Map<string, string>();
   private readonly configuredModels = new Map<string, string>();
   private readonly configuredAgents = new Map<string, string>();
@@ -60,7 +88,79 @@ export class OpenCodeClient {
     readonly directory: string,
     readonly generation: OpenCodeApiGeneration = "v1",
     readonly serverPassword?: string,
-  ) {}
+    private readonly nativeSessionId?: string,
+    private readonly nativeAuthority?: NativeAuthorityScope,
+    private readonly nativeSessionCapability?: import("../../core/controlTurn").NativeSessionCapability,
+    private readonly nativeOwnedService?: import("./opencodeService").NativeOwnedOpenCode,
+  ) {
+    this.connection = Object.freeze({
+      baseUrl,
+      directory,
+      generation,
+      serverPassword,
+      nativeSessionId,
+      nativeAuthority: nativeAuthority ? Object.freeze({ ...nativeAuthority }) : undefined,
+      nativeSessionCapability,
+      nativeOwnedService,
+    });
+  }
+
+  /** A per-operation source, never a mutable current-run field on the client.
+   * Shared maps describe this exact server client; they grant no Host authority. */
+  withHostRun(hostRun: HostRunHandle, providerSessionId?: string): OpenCodeClient {
+    if (providerSessionId !== undefined && (!providerSessionId || providerSessionId.length > 512))
+      throw new Error("An original OpenCode provider session is required");
+    let views = this.hostViews.get(hostRun);
+    if (!views) {
+      views = new Map();
+      this.hostViews.set(hostRun, views);
+    }
+    const cached = views.get(providerSessionId);
+    if (cached) return cached;
+    const connection = this.connection;
+    let resolveRequest!: (request: OpenCodeHttpDispatch) => void;
+    let rejectRequest!: (error: unknown) => void;
+    const ready = new Promise<OpenCodeHttpDispatch>((resolve, reject) => {
+      resolveRequest = resolve;
+      rejectRequest = reject;
+    });
+    void ready.catch(() => {});
+    const request: OpenCodeHttpDispatch = (input) => {
+      const original = { ...input, ...(input.headers ? { headers: { ...input.headers } } : {}) };
+      return ready.then((dispatch) => dispatch(original));
+    };
+    const view = Object.create(OpenCodeClient.prototype) as OpenCodeClient;
+    const properties: PropertyDescriptorMap = {};
+    for (const [key, value] of Object.entries({
+      ...connection,
+      connection,
+      hostRequest: request,
+      hostProviderSessionId: providerSessionId,
+      hostViews: this.hostViews,
+      permissionSessions: this.permissionSessions,
+      configuredModels: this.configuredModels,
+      configuredAgents: this.configuredAgents,
+      forms: this.forms,
+    }))
+      properties[key] = { value, enumerable: false };
+    Object.defineProperties(view, properties);
+    Object.freeze(view);
+    // Publish the exact pending view before a reentrant Host bind can observe
+    // it. A failed/unknown original binding is cached, never recreated.
+    views.set(providerSessionId, view);
+    try {
+      resolveRequest(
+        captureHostHarnessHttp(hostRun, {
+          baseUrl: connection.baseUrl,
+          directory: connection.directory,
+          ...(providerSessionId === undefined ? {} : { providerSessionId }),
+        }),
+      );
+    } catch (error) {
+      rejectRequest(error);
+    }
+    return view;
+  }
 
   async getSession(sessionID: string): Promise<OpenCodeSession> {
     return normalizeSession(
@@ -117,7 +217,11 @@ export class OpenCodeClient {
    * moved, so the move is confirmed before the fork is handed out; a fork that
    * cannot be moved is deleted rather than left behind in the wrong folder.
    */
-  async forkSession(sessionID: string, directory: string): Promise<OpenCodeSession> {
+  async forkSession(
+    sessionID: string,
+    directory: string,
+    cleanupFork?: (actualForkId: string) => Promise<void>,
+  ): Promise<OpenCodeSession> {
     const forked = normalizeSession(
       await this.request<OpenCodeSession>(
         "POST",
@@ -136,7 +240,27 @@ export class OpenCodeClient {
       }
       return moved;
     } catch (error) {
-      await this.deleteSession(forked.id);
+      if (this.hostRequest) {
+        try {
+          if (!cleanupFork)
+            throw new Error(`Original Host cleanup is required for OpenCode fork ${forked.id}`);
+          await cleanupFork(forked.id);
+        } catch (cleanupError) {
+          const errors = [error, cleanupError];
+          const message = `OpenCode fork ${forked.id} failed and original cleanup is unverified`;
+          const Aggregate = (
+            globalThis as unknown as {
+              AggregateError?: new (errors: unknown[], message: string) => Error;
+            }
+          ).AggregateError;
+          throw Aggregate
+            ? new Aggregate(errors, message)
+            : Object.assign(new Error(message), {
+                name: "AggregateError",
+                errors: Object.freeze(errors),
+              });
+        }
+      } else await this.deleteSession(forked.id);
       throw error;
     }
   }
@@ -146,14 +270,12 @@ export class OpenCodeClient {
       "POST",
       this.path(`/session/${enc(sessionID)}/${this.generation === "v2" ? "interrupt" : "abort"}`),
       this.generation === "v2" ? { query: { resume: "false" } } : { body: {} },
-    ).catch(() => undefined);
+    );
   }
 
   /** Drop a throwaway session. Interrupt only stops the run. */
   async deleteSession(sessionID: string): Promise<void> {
-    await this.request<unknown>("DELETE", this.path(`/session/${enc(sessionID)}`)).catch(
-      () => undefined,
-    );
+    await this.request<unknown>("DELETE", this.path(`/session/${enc(sessionID)}`));
   }
 
   async revertSession(sessionID: string, messageID: string): Promise<void> {
@@ -177,6 +299,7 @@ export class OpenCodeClient {
     sessionID: string,
     model: { providerID: string; modelID: string },
   ): Promise<string | undefined> {
+    if (this.hostRequest) model = { ...model };
     if (this.generation === "v2") {
       await this.setModel(sessionID, model);
       const admitted = await this.request<unknown>(
@@ -202,6 +325,12 @@ export class OpenCodeClient {
     parts: OpenCodePromptPart[];
     delivery?: "queue" | "steer";
   }): Promise<string | undefined> {
+    if (this.hostRequest)
+      input = {
+        ...input,
+        model: { ...input.model },
+        parts: input.parts.map((part) => ({ ...part })),
+      };
     if (this.generation === "v2") {
       await this.configureTurn(input);
       const admitted = await this.request<unknown>(
@@ -230,6 +359,12 @@ export class OpenCodeClient {
     parts: OpenCodePromptPart[];
     timeoutMs?: number;
   }): Promise<{ info?: Record<string, unknown>; parts?: unknown[] }> {
+    if (this.hostRequest)
+      input = {
+        ...input,
+        model: { ...input.model },
+        parts: input.parts.map((part) => ({ ...part })),
+      };
     if (this.generation === "v2") {
       await this.configureTurn(input);
       const result = await this.request<{ text?: string } | undefined>(
@@ -353,11 +488,19 @@ export class OpenCodeClient {
       },
       onEnd,
     );
-    await openHarnessSse(sessionId, url, this.headers());
+    await openHarnessSse(
+      sessionId,
+      url,
+      this.headers(),
+      this.nativeAuthority,
+      undefined,
+      this.nativeSessionCapability,
+      this.nativeOwnedService,
+    );
   }
 
   async closeEvents(sessionId: string): Promise<void> {
-    await closeHarnessSse(sessionId).catch(() => undefined);
+    await closeHarnessSse(sessionId);
     this.permissionSessions.clear();
     this.forms.clear();
     this.configuredModels.clear();
@@ -539,9 +682,29 @@ export class OpenCodeClient {
       timeoutMs?: number;
     },
   ): Promise<T> {
+    if (this.hostProviderSessionId) {
+      const route = this.generation === "v2" ? path.replace(/^\/api(?=\/)/, "") : path;
+      const target = /^\/session\/([^/]+)(?:\/|$)/.exec(route)?.[1];
+      if (
+        (target && decodeURIComponent(target) !== this.hostProviderSessionId) ||
+        (method === "POST" && route === "/session")
+      )
+        throw new Error("Host operation belongs to a different original OpenCode provider session");
+    }
     const url = this.url(path, opts?.query);
     const hasBody = opts?.body !== undefined;
-    const response = await harnessHttp({
+    const response = await (this.hostRequest ?? harnessHttp)({
+      ...(this.nativeSessionId ? { sessionId: this.nativeSessionId } : {}),
+      ...(this.nativeSessionCapability
+        ? { nativeSessionCapability: this.nativeSessionCapability }
+        : {}),
+      ...(this.nativeOwnedService ? { nativeOwnedService: this.nativeOwnedService } : {}),
+      ...(this.nativeAuthority
+        ? {
+            authorityEnvironmentId: this.nativeAuthority.environmentId,
+            authorityGeneration: this.nativeAuthority.generation,
+          }
+        : {}),
       url,
       method,
       headers: this.headers(hasBody),

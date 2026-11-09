@@ -58,7 +58,7 @@ it("dismisses on Escape without changing permissions", () => {
   expect(onClose).toHaveBeenCalledOnce();
 });
 
-it("disables modes the transport cannot honour and skips them with the keys", () => {
+it("disables modes the transport cannot honour and skips them with the keys", async () => {
   const reason = "Headless agy cannot ask before editing files.";
   act(() =>
     root.render(
@@ -72,7 +72,6 @@ it("disables modes the transport cannot honour and skips them with the keys", ()
   );
   const options = container.querySelectorAll<HTMLButtonElement>('[role="option"]');
   expect(options[0].getAttribute("aria-disabled")).toBe("true");
-  expect(options[0].title).toBe(reason);
   expect(options[0].textContent).toContain(`Unavailable: ${reason}`);
   expect(options[1].hasAttribute("aria-disabled")).toBe(false);
   act(() => options[0].click());

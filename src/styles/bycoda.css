@@ -7,8 +7,8 @@
   --ui-island-text-secondary: color-mix(in srgb, var(--palette-solidInk) 66%, var(--palette-scrim));
   --ui-island-hover: color-mix(in srgb, var(--palette-solidInk) 10%, var(--palette-scrim));
   --ui-island-border: color-mix(in srgb, var(--palette-solidInk) 12%, var(--palette-scrim));
-  --bycoda-panel: color-mix(in srgb, var(--color-background-base) 97%, var(--palette-solidInk));
-  --bycoda-raised: color-mix(in srgb, var(--color-background-base) 94%, var(--palette-solidInk));
+  --bycoda-panel: var(--ui-surface-panel);
+  --bycoda-raised: var(--ui-surface-raised);
   --bycoda-brass-muted: var(--palette-hex7e8795);
 }
 .bycoda-workspace-heading {
@@ -32,7 +32,7 @@
 }
 .bycoda-workspace-heading h1 {
   font-size: 18px;
-  font-weight: 560;
+  font-weight: 500;
   letter-spacing: -0.025em;
   line-height: 1.25;
 }
@@ -50,19 +50,13 @@
 }
 .bycoda-heading-count strong {
   font-size: 20px;
-  font-weight: 550;
+  font-weight: 500;
   color: var(--color-accent);
   font-variant-numeric: tabular-nums;
 }
 .bycoda-settings-content > header {
-  padding-bottom: 26px;
-  border-bottom: 1px solid var(--color-stroke);
-  margin-bottom: 10px;
-}
-.bycoda-settings-content > header h1 {
-  font-size: 24px;
-  font-weight: 550;
-  letter-spacing: -0.035em;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
 }
 .bycoda-page-eyebrow {
   display: flex;
@@ -77,27 +71,12 @@
   height: 28px;
   object-fit: contain;
 }
-.bycoda-settings-content .settings-group > .settings-group-heading h2 {
-  font-size: 16px;
-  font-weight: 550;
-}
-.bycoda-settings-content .settings-group > .settings-group-content {
-  border-radius: 6px;
-  border: 1px solid var(--color-stroke);
-}
 .bycoda-task-column {
   border: 1px solid var(--ui-tone-neutral-border);
-  border-block-start-width: 2px;
 }
 .bycoda-task-column > h2 {
   border-block-end: 1px solid var(--ui-tone-neutral-border);
   margin-block-end: 8px;
-}
-.bycoda-task-column[data-task-column="running"] {
-  border-block-start-color: var(--ui-tone-info-border);
-}
-.bycoda-task-column[data-task-column="done"] {
-  border-block-start-color: var(--ui-tone-success-border);
 }
 .bycoda-task-column article {
   border-radius: 5px;
@@ -127,7 +106,7 @@
   }
 }
 .bycoda-titlebar {
-  background: var(--color-background-base);
+  background: var(--ui-navigation-chrome);
   border-block-end-color: var(--color-stroke);
 }
 .bycoda-project-rail {
@@ -135,20 +114,27 @@
   box-shadow: none;
   overflow: clip;
 }
+.bycoda-project-rail,
+.bycoda-sidebar {
+  border-inline-end-color: var(--ui-pane-border);
+}
+.bycoda-sidebar.body-glass {
+  background: var(--ui-surface-panel);
+}
 .bycoda-rail-brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 7px 10px 12px;
+  padding: 8px 7px 6px 10px;
   color: var(--color-content);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: -0.025em;
 }
-/* The rail shows the mark alone, large enough to read without the wordmark. */
+/* The rail mark is a quiet 22px identity, aligned with the compact tool row. */
 .bycoda-rail-brand img {
-  width: 32px;
-  height: 32px;
+  width: 22px;
+  height: 22px;
   flex: none;
   object-fit: contain;
 }
@@ -167,26 +153,19 @@
 }
 .bycoda-project-rail button,
 .bycoda-sidebar button {
-  border-radius: 5px;
+  border-radius: var(--ui-control-radius);
 }
 .bycoda-sidebar [data-session-list] {
   padding: 5px;
   gap: 2px;
 }
+/* Selection is one calm shared fill with full-strength text; rows, tabs and
+   project cards never grow a decorative edge stripe. */
 .bycoda-sidebar [aria-selected="true"],
 .bycoda-project-rail [aria-current]:not(.project-reorder-item *):not([data-live-agent-card]) {
-  box-shadow: inset 2px 0 var(--color-accent);
-}
-/* Project buttons sit inside a padded card; anchor its marker to the card edge. */
-.bycoda-project-rail .project-reorder-item[data-selected="true"]::before {
-  content: "";
-  position: absolute;
-  inset-block: 0;
-  left: 0;
-  width: 2px;
-  border-radius: inherit;
-  background: var(--color-accent);
-  pointer-events: none;
+  box-shadow: none;
+  background: var(--ui-surface-selected);
+  color: var(--color-content);
 }
 .bycoda-empty {
   background-image: none;
@@ -201,7 +180,7 @@
   margin-bottom: 32px;
   color: var(--color-accent);
   font-size: 17px;
-  font-weight: 650;
+  font-weight: 500;
   letter-spacing: 0.025em;
 }
 .bycoda-wordmark img {
@@ -223,9 +202,12 @@ html:not(.theme-light) .bycoda-brand-lettering {
 html:not(.theme-light) img[src="/brand/bycoda/mark-black.svg"] {
   content: url("/brand/bycoda/mark-white.svg");
 }
+html:not(.theme-light) img[src="/brand/bycoda/mark-small-black.svg"] {
+  content: url("/brand/bycoda/mark-small-white.svg");
+}
 .bycoda-task-brief h1 {
   font-size: clamp(26px, 3.2vw, 42px);
-  font-weight: 560;
+  font-weight: 500;
   line-height: 1.14;
   letter-spacing: -0.035em;
   overflow-wrap: anywhere;
@@ -238,16 +220,24 @@ html:not(.theme-light) img[src="/brand/bycoda/mark-black.svg"] {
   line-height: 1.65;
   color: color-mix(in srgb, var(--color-content) 65%, transparent);
 }
-html [data-composer-box] {
+/* The composer owns one writing surface: the same fill, edge, radius and shadow
+   at rest, on hover and while typing. The caret and the toolbar controls' own
+   keyboard focus carry focus; the box never repaints or grows a frame. It is a quiet
+   focus group (data-ui-focus-quiet, arc.css), so the shared field ring skips it. */
+html [data-composer-box],
+html [data-composer-box]:hover,
+html [data-composer-box]:focus-within {
   border-radius: 12px;
-  border-color: var(--color-stroke);
-  box-shadow: none;
+  border-color: var(--ui-composer-border);
+  background: var(--ui-composer-surface);
+  box-shadow: var(--ui-composer-shadow);
 }
-html.theme-light [data-composer-box] {
-  background: color-mix(in srgb, var(--color-background-base) 96%, var(--palette-solidInk));
+/* Operation boundaries retain their meaning independently of ordinary focus. */
+html [data-composer-box][data-composer-editing] {
+  border-color: var(--ui-tone-accent-border);
 }
 .bycoda-title-settle {
-  animation: bycoda-title-settle 220ms ease-out both;
+  animation: bycoda-title-settle var(--motion-surface-duration) var(--motion-ease-out) both;
 }
 @keyframes bycoda-title-settle {
   from {
@@ -303,7 +293,7 @@ html.theme-light .project-sigil {
 /* Running: opacity-only pulse, finite so it stops on full opacity instead of
    looping forever on the main thread; scaling would blur the pixel-aligned edge. */
 .bycoda-sigil-active {
-  animation: bycoda-sigil-breathe 1800ms ease-in-out 3;
+  animation: bycoda-sigil-breathe calc(var(--motion-duration-scene) * 0.8) ease-in-out 3;
 }
 @keyframes bycoda-sigil-breathe {
   0%,
@@ -316,7 +306,7 @@ html.theme-light .project-sigil {
 }
 .bycoda-welcome {
   position: absolute;
-  z-index: 30;
+  z-index: var(--layer-pane-sheet);
   top: 48px;
   left: 50%;
   transform: translateX(-50%);
@@ -324,17 +314,20 @@ html.theme-light .project-sigil {
   align-items: center;
   gap: 9px;
   padding: 10px 16px;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
-  border-radius: 6px;
-  background: var(--color-background-base);
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--ui-radius-popup);
+  background: var(--ui-surface-floating);
+  box-shadow: var(--ui-elevation-floating);
   color: var(--color-content);
   font-size: 12px;
   white-space: nowrap;
-  animation: bycoda-welcome 1400ms ease both;
+  animation: bycoda-welcome calc(var(--motion-duration-scene) * 0.64) var(--motion-ease-standard)
+    both;
 }
-.bycoda-welcome img {
+.bycoda-welcome-icon {
   width: 24px;
   height: 24px;
+  flex-shrink: 0;
   object-fit: contain;
 }
 @keyframes bycoda-welcome {
@@ -369,17 +362,23 @@ html.theme-light .project-sigil {
   letter-spacing: 0.08em;
   color: var(--ui-text-secondary);
 }
+/* Tools share the rail ground: no card, no rule; spacing separates them. */
 .bycoda-rail-tools {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 6px 7px;
-  border-bottom: 1px solid var(--color-stroke);
+  padding: 2px 7px 4px;
+  margin-block-end: 4px;
 }
 .bycoda-rail-tools--compact {
   display: none;
 }
-@container rail (width <= 200px) {
+/* Settings sits at the rail's bottom edge, below the update and repository footers. */
+.bycoda-rail-tools--footer {
+  padding-block: 2px 8px;
+  margin-block-end: 0;
+}
+@container rail (width <= 280px) {
   .bycoda-rail-tools--expanding {
     display: none;
   }
@@ -398,49 +397,101 @@ html.theme-light .project-sigil {
   display: none;
 }
 .bycoda-project-ledger {
-  padding-top: 8px;
+  padding-top: 4px;
   scrollbar-gutter: stable;
 }
 .bycoda-sidebar {
-  background: var(--color-background-base);
+  background: var(--ui-surface-panel);
 }
 .bycoda-workspace-tabs {
   min-height: 32px;
   height: 32px;
   padding-inline: 6px;
-  background: var(--bycoda-panel);
+  background: var(--ui-navigation-panel);
+}
+.bycoda-workspace-tabs {
+  container: workspace-tabs / inline-size;
 }
 .bycoda-workspace-tabs .workspace-tab {
   container: workspace-tab / inline-size;
 }
+/* The same icon at every width keeps the tabs recognisable; only what sits beside it steps
+   down: icon + label + churn + badge, then icon + label + badge, then icon + badge, then
+   icon + a presence dot. The label is dropped before it could need an ellipsis, and every
+   tab steps together (the steps follow the bar, not each tab). */
 .workspace-tab-icon {
-  display: none;
+  display: block;
   flex: none;
   inline-size: 1.25em;
   block-size: 1.25em;
 }
-/* Switch before labels and diff totals become unreadably truncated. */
-@container workspace-tab (inline-size < 100px) {
+.workspace-tab-badge {
+  display: contents;
+}
+.workspace-tab-dot {
+  display: none;
+  flex: none;
+}
+.workspace-tab-stats {
+  display: none;
+}
+/* Tabs with a count need room for icon + label + badge; plain tabs only icon + label. */
+@container workspace-tabs (inline-size < 236px) {
   .workspace-tab-content {
     display: none;
   }
-  .workspace-tab-icon {
-    display: block;
+}
+@container workspace-tabs (inline-size < 340px) {
+  .bycoda-workspace-tabs:has([data-workspace-tab-counted]) .workspace-tab-content {
+    display: none;
   }
-  [data-workspace-working-count] {
-    margin-inline-start: 0.25em;
+}
+/* Narrowest: the count becomes a dot that only says "there is something here". */
+@container workspace-tabs (inline-size < 190px) {
+  .workspace-tab-badge {
+    display: none;
+  }
+  .workspace-tab-dot {
+    display: inline-block;
+  }
+}
+/* Changes keeps its +/- churn longer than its label (the icon already names the tab):
+   icon + churn + badge once the churn fits, the word only when all of them fit. */
+@container workspace-tab (inline-size >= 112px) {
+  .workspace-tab-stats {
+    display: inline-flex;
+  }
+}
+@container workspace-tab (inline-size < 184px) {
+  [data-workspace-tab-churn] .workspace-tab-content {
+    display: none;
+  }
+}
+/* Churn without a file count (binary, mode-only) is a presence dot until the churn fits. */
+.workspace-tab-stats-compact {
+  display: inline-flex;
+  flex: none;
+  margin-inline-start: 0.25em;
+  font-size: var(--ui-font-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text-secondary);
+}
+@container workspace-tab (inline-size >= 112px) {
+  .workspace-tab-stats-compact {
+    display: none;
   }
 }
 .bycoda-titlebar {
-  min-height: 34px;
-  height: 34px;
-  background: var(--color-background-base);
+  /* Follows the shared density preference: compact control height plus 8px. */
+  min-height: calc(var(--ui-control-height-compact) + 0.5rem);
+  height: calc(var(--ui-control-height-compact) + 0.5rem);
+  background: var(--ui-navigation-chrome);
   border-bottom: 1px solid var(--color-stroke);
 }
 /* Keep the same native controls on the highest visible chrome row. */
 [data-workspace-chrome]:has(> [data-workspace-menubar]) {
   position: relative;
-  --workspace-menu-height: 1.75rem;
+  --workspace-menu-height: var(--ui-control-height-compact);
 }
 [data-workspace-chrome]:has(> .bycoda-titlebar [data-window-controls]) > [data-workspace-menubar] {
   padding-inline-end: calc(7.5rem + 1px);
@@ -482,12 +533,8 @@ html.theme-light .project-sigil {
     display: none;
   }
 }
-html.theme-light .bycoda-project-rail,
-html.theme-light .bycoda-workspace-tabs {
-  background: var(--color-background-base);
-}
 .bycoda-project-rail > [data-tauri-drag-region] {
-  height: 34px;
+  height: calc(var(--ui-control-height-compact) + 0.5rem);
 }
 .bycoda-rail-brand.bycoda-rail-brand--title {
   min-inline-size: 0;
@@ -523,20 +570,17 @@ html.theme-light .bycoda-workspace-tabs {
     display: none;
   }
 }
-.bycoda-rail-tools > button,
-.bycoda-rail-status .recovery-rail-control {
+.bycoda-rail-tools > button {
   height: 28px;
   min-height: 28px;
   gap: 8px;
   padding-inline: 8px;
 }
-.bycoda-rail-tools > button > svg,
-.bycoda-rail-status .recovery-rail-control > svg {
+.bycoda-rail-tools > button > svg {
   width: 14px;
   height: 14px;
 }
-.bycoda-rail-tools > button > span,
-.bycoda-rail-status .recovery-rail-control > span {
+.bycoda-rail-tools > button > span {
   font-size: 12px;
 }
 
@@ -547,44 +591,32 @@ html[data-performance-no-blur] {
   --glass-blur: 0px;
 }
 
-/* Semantic artwork roles follow light, dark and custom theme status colors. */
-:root {
-  --live-background-signal: var(--color-success);
-  --live-background-spectrum: var(--color-feature);
+/* Code font ligatures: Appearance > Typography > Ligatures sets data-code-ligatures on the root. */
+:root[data-code-ligatures="off"] :is(code, pre, kbd, samp, textarea, .cm-content, .cm-line) {
+  font-variant-ligatures: none;
 }
 
-/* Fixed light/dark samples remain legible while the surrounding theme changes.
-   Palette-specific samples supply content colors from the selected theme data. */
-:root {
-  --appearance-sample-light-surface: var(--palette-oklch_95pct_0_none);
-  --appearance-sample-light-ink: var(--palette-oklch_25pct_0_none);
-  --appearance-sample-dark-surface: var(--palette-oklch_12pct_0_none);
-  --appearance-sample-dark-ink: var(--palette-oklch_85pct_0_none);
+/* Appearance swatches: each option paints its sample from fixed palette entries, not the active
+   theme, so every card shows its own colors. */
+.code-theme-swatch[data-swatch="github"] {
+  --swatch-1: var(--palette-hexff7b72);
+  --swatch-2: var(--palette-hexa5d6ff);
+  --swatch-3: var(--palette-hexd2a8ff);
 }
-.appearance-workspace-preview {
-  --sample-surface: var(--material-base, var(--ui-surface));
-  --sample-ink: var(--material-ink, var(--color-content));
-  --sample-accent: var(--material-accent, var(--color-accent));
-  --sample-line: color-mix(in oklab, var(--sample-ink) 14%, var(--sample-surface));
-  --sample-muted: color-mix(in oklab, var(--sample-ink) 28%, var(--sample-surface));
-  --sample-raised: color-mix(in oklab, var(--sample-ink) 5%, var(--sample-surface));
+.code-theme-swatch[data-swatch="dracula"] {
+  --swatch-1: var(--palette-hexff79c6);
+  --swatch-2: var(--palette-hexf1fa8c);
+  --swatch-3: var(--palette-hex50fa7b);
 }
-.appearance-workspace-preview[data-preview-scheme="light"] {
-  --sample-surface: var(--appearance-sample-light-surface);
-  --sample-ink: var(--appearance-sample-light-ink);
+.diff-swatch[data-palette="default"] {
+  --swatch-add: var(--palette-hex10b981);
+  --swatch-del: var(--palette-hexf43f5e);
 }
-.appearance-workspace-preview[data-preview-scheme="dark"] {
-  --sample-surface: var(--appearance-sample-dark-surface);
-  --sample-ink: var(--appearance-sample-dark-ink);
+.diff-swatch[data-palette="colorblind"] {
+  --swatch-add: var(--palette-hex388bfd);
+  --swatch-del: var(--palette-hexdb6d28);
 }
-.appearance-workspace-preview[data-preview-scheme="system"] {
-  --sample-surface: var(--appearance-sample-light-surface);
-  --sample-ink: var(--appearance-sample-light-ink);
-}
-.appearance-workspace-preview[data-preview-scheme="system"] .appearance-preview-conversation {
-  --sample-surface: var(--appearance-sample-dark-surface);
-  --sample-ink: var(--appearance-sample-dark-ink);
-  --sample-line: color-mix(in oklab, var(--sample-ink) 14%, var(--sample-surface));
-  --sample-muted: color-mix(in oklab, var(--sample-ink) 28%, var(--sample-surface));
-  --sample-raised: color-mix(in oklab, var(--sample-ink) 5%, var(--sample-surface));
+.diff-swatch[data-palette="high-contrast"] {
+  --swatch-add: var(--palette-hex58a6ff);
+  --swatch-del: var(--palette-hexf0883e);
 }

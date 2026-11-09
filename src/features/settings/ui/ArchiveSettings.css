@@ -1,0 +1,20 @@
+/* Archived projects and conversations use the shared settings collection; this
+   only orders the page as an open column of groups. */
+.archive-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-inline-size: 0;
+}
+.archive-settings-list {
+  max-block-size: min(60dvh, 36rem);
+}
+.archive-settings-note {
+  margin: 0 0 8px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+}
+.archive-settings-partial {
+  padding: 0 12px 8px;
+}

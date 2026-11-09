@@ -1,4 +1,6 @@
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { stripAttachmentTokens } from "./attachmentTokens";
+import type { InlineVisual } from "./inlineVisual";
 import type { ToolInspection } from "./toolInspection";
 import { dropContextWindow, type ContextUsage } from "./contextUsage";
 import type { SessionUsage } from "./sessionUsage";
@@ -19,33 +21,11 @@ import {
 } from "./models";
 import { loadProjectProviderSettings } from "./projectProviders";
 import { applySessionDefaults, providerSessionDefaults } from "./providerSessionDefaults";
+import { HARNESS_LABEL, HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
+import type { HarnessId } from "../../../shared/model/harnessIdentity";
 
-export type HarnessId =
-  | "claude"
-  | "codex"
-  | "cursor"
-  | "grok"
-  | "opencode"
-  | "pi"
-  | "omp"
-  | "fx"
-  | "hermes"
-  | "antigravity"
-  | "acp";
-
-export const HARNESSES: HarnessId[] = [
-  "claude",
-  "codex",
-  "cursor",
-  "grok",
-  "opencode",
-  "pi",
-  "omp",
-  "fx",
-  "hermes",
-  "antigravity",
-  "acp",
-];
+export { HARNESSES, HARNESS_LABEL, HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
+export type { HarnessId } from "../../../shared/model/harnessIdentity";
 
 export type BlockRole =
   | "user"
@@ -120,7 +100,7 @@ export type ModelTarget = {
 
 export type PlanBuildTarget = ModelTarget;
 
-export type HandoffStatus = "preparing" | "ready";
+export type HandoffStatus = "preparing" | "ready" | "failed" | "cancelled";
 
 export type HandoffMeta = {
   from: HarnessId;
@@ -128,6 +108,10 @@ export type HandoffMeta = {
   status: HandoffStatus;
   /** Inject this brief into prompts to `to` until that harness accepts a turn. */
   pending?: boolean;
+  /** Original context while outgoing cleanup is unresolved; never execution authority. */
+  source?: PendingHarnessSwitch;
+  /** Failure detail for an interrupted preparation, without claiming a successful switch. */
+  error?: string;
 };
 
 /** One persisted question/answer in a completed turn's side conversation. */
@@ -289,6 +273,8 @@ export type Attachment = {
 };
 
 export type QueuedMessage = {
+  /** Authority captured when this intent was created; never upgraded during retry/drain. */
+  authorityGeneration?: number;
   /** A written Steer has no definite delivery acknowledgement. Never replay automatically. */
   deliveryUnknown?: true;
   /** Enqueue-time selection; absent only on queues saved by older versions. */
@@ -332,9 +318,56 @@ export type TurnMetrics = {
   cacheHitPercent?: number;
 };
 
+/** Stamped by the Host at the accepted effect boundary, never supplied by a
+ * client send/create/steer command. Missing author retains legacy owner input. */
+export type SessionMessageAuthor =
+  | {
+      kind: "assistant-room";
+      name: string;
+      threadId: string;
+      reason: "kickoff";
+      operationId: string;
+    }
+  | {
+      kind: "assistant-manual";
+      name: string;
+      supervisionId: string;
+      reason: "nudge" | "answer" | "steer" | "kickoff";
+      operationId: string;
+      activityId?: string;
+    }
+  | {
+      kind: "assistant";
+      name: string;
+      jobId: string;
+      reason: "nudge" | "answer" | "steer" | "kickoff";
+      operationId: string;
+      activityId?: string;
+    }
+  | {
+      kind: "task" | "automation" | "steward";
+      id: string;
+      name: string;
+      reason: string;
+      operationId?: string;
+    };
+export type AssistantSessionManagement = {
+  assistant: true;
+  managedAt: number;
+  detachedAt?: number;
+} & ({ jobId: string; supervisionId?: never } | { supervisionId: string; jobId?: never });
+
 export type Block = {
+  author?: SessionMessageAuthor;
+  /** Immutable self-contained visual published by a completed Conversation Tool. */
+  inlineVisual?: InlineVisual;
   /** Bounded remote preview; full content is requested explicitly, never persisted. */
-  remoteContent?: { revision: number; bytes: number };
+  remoteContent?: {
+    revision: number;
+    bytes: number;
+    /** Digest of the full block this preview was made from, when requested (`sessions.digests`). */
+    digest?: string;
+  };
   id: string;
   role: BlockRole;
   text: string;
@@ -355,6 +388,8 @@ export type Block = {
   providerTurnId?: string;
   /** User turn saved to the session but not submitted to the harness yet. */
   draft?: boolean;
+  /** Workspace policy has not resolved for this submitted turn; retry must resolve it first. */
+  workspacePreparationPending?: boolean;
   /** Host follow-up retained until delivery is confirmed; uncertain work is never replayed automatically. */
   followUpDelivery?: "pending" | "undelivered" | "uncertain";
   /** This user turn activated Bycoda app access for its thread. */
@@ -389,6 +424,8 @@ export type Block = {
   };
   approval?: {
     requestId: number;
+    /** Issued by the original request owner; missing only on legacy snapshots. */
+    occurrenceId?: string;
     decided?: "allow" | "deny" | "cancelled";
   };
   /** Inner activity of a delegated run. Present on Agent/Task tool blocks. */
@@ -409,18 +446,19 @@ export type Block = {
   /** Independent read-only side conversations anchored to this user turn. */
   btwThreads?: BtwThread[];
   noteCard?: NoteCardMeta;
+  /** Provider, account and model switches folded into one row; system blocks only. */
+  modelSwitch?: import("./modelSwitchHistory").ModelSwitchMeta;
   /** Exact CI repair instructions and evidence supplied with this user turn. */
   ciContext?: string;
   /** Mid-turn interjection chrome; system blocks only. Body lives in text. */
   interjection?: InterjectionMeta;
   /** A `!command` the user ran from the composer; system blocks only. */
   shell?: ShellRun;
-  /**
-   * A system row the reader must not miss — an error or an interruption —
-   * rather than turn chrome like a status ping. Never folds into the trail.
-   */
-  notice?: "error" | "interrupt";
+  /** An error or interruption row the reader must not miss; never folds into the trail. */
+  notice?: "error" | "interrupt" | "info";
   statusKey?: string;
+  /** Status rows only: when the work behind this row started, while it still runs. */
+  statusRunningSince?: number;
   /** Durable reason the turn ended before a normal assistant completion. */
   turnOutcome?: "stopped";
   turnStoppedAt?: number;
@@ -470,6 +508,10 @@ export const RUNTIME_MODE_HINT: Record<RuntimeMode, string> = {
 export type WorkspaceMode = "current" | "worktree";
 
 export type Session = {
+  /** Host-owned relationship to a durable assistant job; never inferred from a title. */
+  managedBy?: AssistantSessionManagement;
+  /** Explicit execution owner, independent of cwd, worktree and legacy mirrors. */
+  hostBinding?: import("../../connections").HostSessionBinding;
   /** Incomplete remote view. Sending may proceed; authoritative persistence may not. */
   historyPartial?: boolean;
   /** Only a tail page is available; sending/editing/persistence must wait. */
@@ -496,11 +538,10 @@ export type Session = {
   retryMessage?: string;
   /** Selection of the running turn, separate from the composer's next choice. In-memory only. */
   runningModelTarget?: ModelTarget;
-  /**
-   * What the live turn is waiting on after the agent yielded with work still
-   * running in the background. In-memory only.
-   */
+  /** What the live turn waits on after the agent yielded with background work. In-memory only. */
   backgroundTasks?: string[];
+  /** When `backgroundTasks` first became non-empty in this turn. In-memory only. */
+  backgroundSince?: number;
   /**
    * How many of `backgroundTasks` are subagents rather than commands.
    * Undefined when the provider cannot tell them apart. In-memory only.
@@ -518,6 +559,11 @@ export type Session = {
   providerSessionId?: string;
   /** Named local credential profile used by Claude or Codex. */
   providerAccountId?: string;
+  /**
+   * Account picked while a turn runs: the running turn keeps its own, and the
+   * next idle send switches to this one. In-memory only.
+   */
+  nextProviderAccountId?: string;
   /** Context-window level reported by the harness. Absent until it reports. */
   context?: ContextUsage;
   /** Running totals from Claude turn results. In-memory only. */
@@ -529,9 +575,13 @@ export type Session = {
   pendingSwitch?: PendingHarnessSwitch;
   /** Last known branch in the session's working copy. */
   branch?: string;
+  /** Authoritative managed workspace identity. Absent on legacy sessions, whose checkout is retained. */
+  workspaceId?: string;
+  /** Last observed registry revision; refreshed before managed mutations. */
+  workspaceRevision?: number;
   /** Selected working copy; cwd remains the project identity. */
   worktreeCwd?: string;
-  /** Blank-composer choice; consumed when the first turn starts. */
+  /** Workspace choice; current also persists established legacy execution identity across clear. */
   workspaceMode?: WorkspaceMode;
   /** Base ref for a worktree that will be created on first send. */
   worktreeBase?: string;
@@ -558,16 +608,40 @@ export type Session = {
    * In-memory; request ids do not survive restarts.
    */
   pendingQuestion?: UserQuestionPrompt;
-  /** The local host is running a turn for this session for another computer; Send is held. In-memory. */
+  /** Answers collected for a provider continuation, awaiting transport acceptance. In-memory. */
+  submittedQuestions?: UserQuestionPrompt[];
+  /** The local host is running this session; follow-ups route to that host. In-memory. */
   continuingElsewhere?: boolean;
-  /** A host mirror was rejected; the local transcript is intact. In-memory. */
+  /** Last mirrored host run, used to fence Stop to the turn the user saw. In-memory. */
+  adoptedRunId?: string;
+  /** Ownership generation projected from the validated Host snapshot this mirror applied. */
+  adoptedAuthorityGeneration?: number;
+  /** A host mirror was rejected; the local transcript is intact. In-memory: after
+   * a restart only the record (`adoptedDivergence`) returns, and the next pass
+   * that reaches the host proves the conflict again before it locks sending. */
   adoptedSyncConflict?: boolean;
+  /** The proven divergence from this computer's host copy that was flagged, and
+   * whether the user chose to keep this version. Persisted so a restart neither
+   * repeats the notice nor answers it. */
+  adoptedDivergence?: AdoptedDivergence;
+  /** The transcript this computer and its host last agreed on, so the next
+   * comparison knows which side changed since. Persisted. */
+  adoptedBase?: import("../../sync/model/conversationHead").ConversationHead;
   /** Archived transcript tails removed by explicit conversation rewind. */
   rewindHistory?: ConversationRewindEntry[];
   /** Remote archive metadata was shortened for transport; host archive is intact. */
   rewindHistoryTruncated?: boolean;
   /** One-shot replay context, derived only from the retained transcript prefix. */
   pendingContextReplay?: string;
+};
+
+/** `key` names one divergence by the content that differs; `keep` records the
+ * user's choice to keep this computer's version for it. */
+export type AdoptedDivergence = {
+  key: string;
+  keep?: true;
+  /** The host's transcript when this was flagged; keeping this version agrees on it. */
+  hostHead?: import("../../sync/model/conversationHead").ConversationHead;
 };
 
 export type PendingHarnessSwitch = {
@@ -578,34 +652,6 @@ export type PendingHarnessSwitch = {
   fromProviderAccountId?: string;
   /** The harness being left had hit its usage limit; never ask it for a recap. */
   fromUsageLimited?: boolean;
-};
-
-export const HARNESS_LABEL: Record<HarnessId, string> = {
-  claude: "claude",
-  codex: "codex",
-  cursor: "cursor",
-  grok: "grok",
-  opencode: "opencode",
-  pi: "pi",
-  omp: "omp",
-  fx: "fx",
-  hermes: "hermes",
-  antigravity: "antigravity",
-  acp: "acp",
-};
-
-export const HARNESS_TITLE: Record<HarnessId, string> = {
-  claude: "Claude Code",
-  codex: "Codex",
-  cursor: "Cursor",
-  grok: "Grok Build",
-  opencode: "OpenCode",
-  pi: "Pi",
-  omp: "omp",
-  fx: "fx",
-  hermes: "Hermes Agent",
-  antigravity: "Antigravity",
-  acp: "ACP Agent",
 };
 
 /** fx ACP rejects attachment prompt blocks. */
@@ -826,7 +872,7 @@ export function titleFromPrompt(
   const seed = line || fromFiles;
   if (!seed) return HARNESS_LABEL[harness];
   const max = 72;
-  const short = seed.length > max ? `${seed.slice(0, max - 1)}…` : seed;
+  const short = truncateGraphemes(seed, max);
   return formatSessionTitle(harness, short);
 }
 
@@ -860,7 +906,9 @@ export function hasPendingApproval(blocks: Block[]): boolean {
 export function sessionNeedsInput(session: Session): boolean {
   return (
     !session.worktreeRemoved &&
-    (hasPendingApproval(session.blocks) || session.pendingQuestion != null)
+    (hasPendingApproval(session.blocks) ||
+      (session.pendingQuestion != null &&
+        !["sending", "queued"].includes(session.pendingQuestion.delivery ?? "")))
   );
 }
 

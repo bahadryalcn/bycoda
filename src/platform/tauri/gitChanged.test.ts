@@ -100,7 +100,11 @@ describe("git change notifications", () => {
     expect(invoke).toHaveBeenCalledWith("git_watch", { cwd: "/watched" });
     expect(isGitWatched("/watched")).toBe(true);
 
+    vi.useFakeTimers();
     watchEvents.handler!({ payload: [{ cwd: "/watched", index: true, refs: false }] });
+    // A burst of reports reaches the views once it goes quiet.
+    expect(files.listener).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(250);
     expect(refs.listener).not.toHaveBeenCalled();
     expect(files.listener).toHaveBeenCalledTimes(1);
 
@@ -111,6 +115,8 @@ describe("git change notifications", () => {
         { cwd: "/watched/src", index: true, refs: true },
       ],
     });
+    vi.advanceTimersByTime(250);
+    vi.useRealTimers();
     expect(refs.listener).toHaveBeenCalledTimes(1);
     expect(files.listener).toHaveBeenCalledTimes(2);
     expect(other.listener).not.toHaveBeenCalled();

@@ -33,3 +33,31 @@ it("propagates owner failures without trying another adapter", async () => {
   await expect(remoteHostSessionAccess(request).sync("s")).rejects.toThrow("owner offline");
   expect(request).toHaveBeenCalledOnce();
 });
+
+it.each([localHostSessionAccess, remoteHostSessionAccess])(
+  "preserves explicit canonical page preview and digest choices",
+  async (factory) => {
+    const request = vi.fn().mockResolvedValue({});
+    await factory(request).page("chat", 5, 8, true, false);
+    expect(request).toHaveBeenCalledWith("sessions.page", {
+      sessionId: "chat",
+      before: 5,
+      revision: 8,
+      preview: false,
+      digests: true,
+    });
+  },
+);
+
+it("passes caller-bound update/delete provenance and leaves legacy deletion unbound", async () => {
+  const request = vi.fn().mockResolvedValue(undefined);
+  const access = remoteHostSessionAccess(request);
+  await access.update("s", { title: "New title", authorityGeneration: 2 });
+  await access.delete("s", "p", 2);
+  await access.delete("legacy", "p");
+  expect(request.mock.calls).toEqual([
+    ["sessions.update", { sessionId: "s", title: "New title", authorityGeneration: 2 }],
+    ["sessions.delete", { sessionId: "s", projectId: "p", authorityGeneration: 2 }],
+    ["sessions.delete", { sessionId: "legacy", projectId: "p" }],
+  ]);
+});

@@ -1,0 +1,19 @@
+{
+  "status_code": 0,
+  "comments": [
+    {
+      "cid": "4567890123456",
+      "aweme_id": "1234567890123",
+      "text": "Where can I buy this?",
+      "create_time": 1767225600,
+      "user": { "unique_id": "viewer_one", "nickname": "Viewer One" }
+    },
+    {
+      "cid": "4567890123457",
+      "aweme_id": "1234567890123",
+      "text": "Great update",
+      "create_time": 1767225660,
+      "user": { "unique_id": "viewer_two", "nickname": "Viewer Two" }
+    }
+  ]
+}

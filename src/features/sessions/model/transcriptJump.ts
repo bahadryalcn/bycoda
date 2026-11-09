@@ -1,12 +1,14 @@
+import { createStore } from "../../../shared/lib/store";
+
 export type TranscriptJump = { blockId: string; query?: string; token: number };
 
 const pending = new Map<string, TranscriptJump>();
-const listeners = new Set<() => void>();
+const store = createStore();
 let nextToken = 0;
 
 export function requestTranscriptJump(sessionId: string, blockId: string, query?: string): void {
   pending.set(sessionId, { blockId, query, token: ++nextToken });
-  for (const listener of listeners) listener();
+  store.notify();
 }
 
 export function peekTranscriptJump(sessionId: string): TranscriptJump | null {
@@ -16,10 +18,9 @@ export function peekTranscriptJump(sessionId: string): TranscriptJump | null {
 export function clearTranscriptJump(sessionId: string, token: number): void {
   if (pending.get(sessionId)?.token !== token) return;
   pending.delete(sessionId);
-  for (const listener of listeners) listener();
+  store.notify();
 }
 
 export function subscribeTranscriptJump(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+  return store.subscribe(listener);
 }

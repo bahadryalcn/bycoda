@@ -9,16 +9,18 @@ for (const width of [390, 1440]) {
     const terminal = page.locator(".terminal-settings");
     await expect(
       terminal.getByRole("heading", {
-        name: "Senkronize oturumlar ve uzak sunucular",
+        name: "Makineye göre varsayılan kabuk",
         exact: true,
       }),
     ).toBeVisible();
-    await terminal.locator("#setting-terminal-default-profile button").click();
+    // The host row also carries refresh and inventory buttons; the select is the dialog trigger.
+    const shellSelect = terminal.locator(
+      '#setting-terminal-default-profile button[aria-haspopup="dialog"]',
+    );
+    await shellSelect.click();
     await page.getByRole("dialog").getByRole("combobox").fill("Git");
     await page.getByRole("option", { name: /Git Bash/ }).click();
-    await expect(terminal.locator("#setting-terminal-default-profile button")).toContainText(
-      "Git Bash",
-    );
+    await expect(shellSelect).toContainText("Git Bash");
     await page.locator("[data-settings-scroller]").evaluate((node) => {
       node.scrollTop = 0;
     });
@@ -26,9 +28,20 @@ for (const width of [390, 1440]) {
     await page.screenshot({
       path: `temp/verification/2026-10-18-terminal-settings/tr-dark-${width}.png`,
     });
+    // Open groups outset their hover surface by 12px into the form padding, so the boundary
+    // that must not overflow is the padded form and its scroller.
     await expect
-      .poll(() => terminal.evaluate((root) => root.scrollWidth <= root.clientWidth + 1))
+      .poll(() =>
+        page
+          .locator(".bycoda-settings-form")
+          .evaluate((root) => root.scrollWidth <= root.clientWidth + 1),
+      )
       .toBe(true);
+    expect(
+      await page
+        .locator("[data-settings-scroller]")
+        .evaluate((root) => root.scrollWidth <= root.clientWidth + 1),
+    ).toBe(true);
   });
 }
 
@@ -44,38 +57,43 @@ for (const theme of ["light", "dark"])
       );
       const terminal = page.locator(".terminal-settings");
       const local = terminal.getByRole("button", { name: /^Default terminal profile:/ });
-      const sync = terminal.getByRole("button", {
-        name: /^Default shell on this computer \(local sync\):/,
-      });
+      // TS-12: the local-sync machine shares this computer's one shell preference, so only
+      // "This computer" and genuinely remote servers get an editable default.
+      const sync = terminal.getByRole("button", { name: /\(local sync\)/ });
       const remote = terminal.getByRole("button", {
         name: /^Default shell on remote server Development server with a long descriptive name:/,
       });
-      for (const control of [local, sync, remote]) await expect(control).toBeVisible();
+      for (const control of [local, remote]) await expect(control).toBeVisible();
+      await expect(sync).toHaveCount(0);
+      await expect(terminal.locator(".terminal-host")).toHaveCount(2);
       await expect(terminal.locator("details, summary")).toHaveCount(0);
       await local.focus();
       await page.keyboard.press("Enter");
       await page.getByRole("option", { name: /Git Bash/ }).click();
       await expect(local).toContainText("Git Bash");
-      await expect(sync).toContainText("Automatic");
-      await sync.click();
-      await page.getByRole("option", { name: /Command Prompt/ }).click();
       await remote.click();
       await page.getByRole("option", { name: /WSL/ }).click();
       await page.reload();
       await expect(local).toContainText("Git Bash");
-      await expect(sync).toContainText("Command Prompt");
       await expect(remote).toContainText("WSL");
       await remote.click();
       await page.getByRole("option", { name: /Automatic/ }).click();
       await expect(remote).toContainText("Automatic");
-      const installed = terminal.getByRole("region", {
-        name: "This computer · Available shells",
+      // The shell inventory is a per-machine disclosure on the host row.
+      const inventory = terminal.getByRole("button", {
+        name: "Available shells on This computer",
         exact: true,
       });
-      const bash = installed.locator(".settings-row").filter({ hasText: "Git Bash" });
+      await inventory.click();
+      await expect(inventory).toHaveAttribute("aria-expanded", "true");
+      const installed = terminal.getByRole("list", {
+        name: "Available shells on This computer",
+        exact: true,
+      });
+      const bash = installed.locator(".terminal-shell-item").filter({ hasText: "Git Bash" });
       await expect(bash.getByText("Default", { exact: true })).toBeVisible();
       await installed
-        .locator(".settings-row")
+        .locator(".terminal-shell-item")
         .filter({ hasText: "Command Prompt" })
         .getByRole("button", { name: "Set as default" })
         .click();
@@ -89,7 +107,7 @@ for (const theme of ["light", "dark"])
         await terminal.evaluate((root) =>
           [
             ...root.querySelectorAll(
-              ".settings-row, .settings-group-heading, .settings-row-control",
+              ".settings-row, .settings-group-heading, .settings-row-control, .terminal-host-row",
             ),
           ]
             .filter((node) => node.scrollWidth > node.clientWidth + 1)
@@ -142,5 +160,11 @@ test("host discovery retries and save errors preserve the previous shell", async
   await page.getByRole("option", { name: /Git Bash/ }).click();
   await expect(hosts.getByRole("alert")).toContainText("Fixture shell save failed");
   await expect(remote).toContainText("Automatic");
+  // The outcome of a failed save is unknown, so the machine must be read back before another
+  // choice; the alert offers exactly that recovery action and then re-enables the select.
+  await expect(remote).toBeDisabled();
+  await expect(hosts.getByRole("alert")).toContainText("Requested shell: Git Bash");
+  await hosts.getByRole("alert").getByRole("button", { name: "Read current shell" }).click();
   await expect(remote).toBeEnabled();
+  await expect(remote).toContainText("Automatic");
 });

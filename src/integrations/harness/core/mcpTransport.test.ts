@@ -30,10 +30,12 @@ describe("verified provider HTTP MCP configuration", () => {
       };
       args = configure("claude", args, bridge);
       const server = JSON.parse(args[2]).mcpServers[`bycoda-${scope}`];
+      // Only the conversation server carries bycoda's 300 s per-server deadline.
       expect(server).toEqual({
         type: "http",
         url: bridge.mcpUrl,
         headers: { Authorization: `Bearer \${${env}}` },
+        ...(scope === "conversation" ? { timeout: 300_000 } : {}),
       });
     }
     expect(args.filter((arg) => arg === "--mcp-config")).toHaveLength(1);

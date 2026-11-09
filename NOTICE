@@ -1,7 +1,6 @@
 bycoda is an independently maintained desktop application by bahadryalcn,
-originally based on Upstream v0.6 by Nick and community contributors.
-Original project: https://github.com/upstreamdev/upstream
-Original author: https://github.com/upstreamdev
+originally based on an MIT-licensed open source project by Nick and community
+contributors.
 Maintained repository: https://github.com/bahadryalcn/bycoda
 Original copyright: Copyright (c) 2026 Nick, distributed under the MIT License.
 Fork modifications: Copyright (c) 2026 bahadryalcn, distributed under the MIT License.

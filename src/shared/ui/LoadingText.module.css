@@ -1,0 +1,5 @@
+/* The one "Loading…" line. While the wait is still short the line keeps its box but is
+   invisible and unannounced, so a fast load neither flashes nor shifts the layout. */
+.held {
+  visibility: hidden;
+}

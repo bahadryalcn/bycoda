@@ -14,13 +14,130 @@ import {
   stopStreaming,
 } from "./apply";
 import type { HarnessEvent } from "./types";
+import { planComposerSwitch, withHarnessChoice } from "../../../features/sessions/model/handoff";
 
 let now = 0;
 
+it("retains cumulative provider metrics on the root turn without changing a clarification reply's author", () => {
+  const root = {
+      id: "metrics-root",
+      role: "user" as const,
+      text: "Assigned work",
+      author: { kind: "task" as const, id: "task", name: "Worker", reason: "kickoff" },
+    },
+    reply = {
+      id: "metrics-answer",
+      role: "user" as const,
+      text: "By topic",
+      continuationOf: "metrics-root",
+      author: {
+        kind: "assistant" as const,
+        name: "Assistant",
+        jobId: "job",
+        reason: "answer" as const,
+        operationId: "exact-answer",
+      },
+    };
+  const session = { ...newSession("claude", "/repo"), busy: true, blocks: [root, reply] },
+    next = applyHarnessEvent(session, { type: "turn.metrics", inputTokens: 100, outputTokens: 50 });
+  expect(next.blocks[0].turnMetrics).toEqual({ inputTokens: 100, outputTokens: 50 });
+  expect(next.blocks[1].turnMetrics).toBeUndefined();
+  expect(next.blocks[0].author).toEqual(root.author);
+  expect(next.blocks[1].author).toEqual(reply.author);
+});
+
+it("keeps a late outgoing Codex thread identity out of the newly selected Gemini provider", () => {
+  const source = {
+    ...newSession("codex", "/repo"),
+    busy: true,
+    model: "codex:gpt-6.1-sol",
+    blocks: [{ id: "u", role: "user" as const, text: "Preserve this conversation" }],
+    runningModelTarget: {
+      harness: "codex" as const,
+      model: "codex:gpt-6.1-sol",
+      modelSettings: {},
+    },
+  };
+  const plan = planComposerSwitch(source, "antigravity");
+  if (plan.kind !== "arm") throw new Error("expected provider handoff");
+  const selected = {
+    ...withHarnessChoice(source, "antigravity", "antigravity:gemini-3.8-flash-high", {}),
+    pendingSwitch: plan.pending,
+  };
+  const result = applyHarnessEvent(selected, {
+    type: "session.providerBound",
+    providerSessionId: "codex-late-thread",
+  });
+  expect(result.harness).toBe("antigravity");
+  expect(result.model).toBe(selected.model);
+  expect(result.providerSessionId).toBeUndefined();
+  expect(result.pendingSwitch?.fromProviderSessionId).toBe("codex-late-thread");
+  expect(result.blocks).toBe(source.blocks);
+});
+
+it.each(["pi", "antigravity"] as const)(
+  "keeps next selected %s model/settings when the running Pi config changes",
+  (harness) => {
+    const selected = {
+      ...newSession(harness, "/repo"),
+      busy: true,
+      model: harness === "pi" ? "pi:provider/next" : "antigravity:gemini-3.8-flash-high",
+      modelSettings: { thinking: "high" },
+      runningModelTarget: {
+        harness: "pi" as const,
+        model: "pi:provider/old",
+        modelSettings: { thinking: "medium" },
+      },
+    };
+    const result = applyHarnessEvent(selected, {
+      type: "session.configChanged",
+      model: "pi:provider/fallback",
+      modelSettings: { thinking: "low" },
+    });
+    expect(result.harness).toBe(harness);
+    expect(result.model).toBe(selected.model);
+    expect(result.modelSettings).toEqual(selected.modelSettings);
+    expect(result.runningModelTarget).toMatchObject({
+      harness: "pi",
+      model: "pi:provider/fallback",
+      modelSettings: { thinking: "low" },
+    });
+  },
+);
+
+it("applies configChanged settings but ignores only a foreign model", () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const original = { ...newSession("codex", "/repo"), modelSettings: { effort: "low" } };
+  const result = applyHarnessEvent(original, {
+    type: "session.configChanged",
+    model: "claude:opus",
+    modelSettings: { effort: "high" },
+  });
+  expect(result.model).toBe(original.model);
+  expect(result.modelSettings).toEqual({ effort: "high" });
+  expect(applyHarnessEvent(original, { type: "session.configChanged", model: "claude:opus" })).toBe(
+    original,
+  );
+  expect(warn).toHaveBeenCalled();
+  warn.mockRestore();
+});
+
 it("drops model-specific context capacity on provider model changes but retains usage", () => {
-  const original = { ...newSession("pi", "/repo"), model: "pi:provider/old", context: { used: 100_000, window: 200_000 } };
-  expect(applyHarnessEvent(original, { type: "session.configChanged", model: "pi:provider/new" })).toMatchObject({ model: "pi:provider/new", context: { used: 100_000 } });
-  expect(applyHarnessEvent(original, { type: "session.configChanged", model: original.model, modelSettings: { thinking: "high" } }).context).toEqual(original.context);
+  const original = {
+    ...newSession("pi", "/repo"),
+    model: "pi:provider/old",
+    context: { used: 100_000, window: 200_000 },
+  };
+  expect(
+    applyHarnessEvent(original, { type: "session.configChanged", model: "pi:provider/new" }),
+  ).toMatchObject({ model: "pi:provider/new", context: { used: 100_000 } });
+  expect(
+    applyHarnessEvent(original, {
+      type: "session.configChanged",
+      model: original.model,
+      modelSettings: { thinking: "high" },
+    }).context,
+  ).toEqual(original.context);
 });
 
 it.each([
@@ -177,6 +294,7 @@ describe("turn duration", () => {
   it("stamps how long the agent worked when the turn ends", () => {
     now = 1_000;
     let session = appendUser(newSession("cursor", "/tmp"), "hi");
+    session = applyHarnessEvent(session, { type: "turn.started" });
     expect(session.busy).toBe(true);
     expect(session.blocks[0]?.startedAt).toBe(1_000);
     expect(session.blocks[0]?.durationMs).toBeUndefined();
@@ -190,6 +308,7 @@ describe("turn duration", () => {
   it("does not overwrite a duration already recorded", () => {
     now = 1_000;
     let session = appendUser(newSession("cursor", "/tmp"), "hi");
+    session = applyHarnessEvent(session, { type: "turn.started" });
     now = 5_000;
     session = stopStreaming(session);
     now = 90_000;
@@ -200,6 +319,7 @@ describe("turn duration", () => {
   it("records duration when the turn errors", () => {
     now = 1_000;
     let session = appendUser(newSession("cursor", "/tmp"), "hi");
+    session = applyHarnessEvent(session, { type: "turn.started" });
     now = 8_000;
     session = applyHarnessEvent(session, {
       type: "session.error",
@@ -272,7 +392,10 @@ describe("approval lifetime", () => {
     const session = appendUser(stale, "continue");
     const tool = session.blocks.find((block) => block.tool?.callId === "shell-1");
 
-    expect(tool?.approval).toEqual({ requestId: 7, decided: "cancelled" });
+    expect(tool?.approval).toEqual({
+      ...stale.blocks.find((block) => block.tool?.callId === "shell-1")!.approval,
+      decided: "cancelled",
+    });
     expect(session.blocks.at(-1)).toMatchObject({
       role: "user",
       text: "continue",
@@ -962,6 +1085,18 @@ describe("task list updates", () => {
       },
     });
   });
+  it("appends exact repeated and prefix-shaped plan deltas", () => {
+    let session = appendUser(newSession("codex", "/tmp"), "plan it");
+    for (const text of ["ha", "ha", "-", "--", "\n", "\n"])
+      session = applyHarnessEvent(session, {
+        type: "plan",
+        key: "exact",
+        text,
+        append: true,
+        streaming: true,
+      });
+    expect(session.blocks.find((block) => block.role === "plan")?.text).toBe("haha---\n\n");
+  });
 
   it("promotes only the final assistant message when no native plan exists", () => {
     let session = appendUser(newSession("pi", "/tmp"), "plan it");
@@ -1299,6 +1434,126 @@ describe("clarifying questions", () => {
       ],
     },
   ];
+
+  it("retains provider behavior and delivery state without losing the question deadline", () => {
+    let session = applyHarnessEvent(newSession("codex", "/repo"), {
+      type: "question.asked",
+      requestId: 3,
+      questions,
+      behavior: "nonBlocking",
+      dismissAction: "skip",
+      callId: "item-3",
+      providerTurnId: "turn-1",
+      autoResolveAt: 12345,
+    });
+    session = applyHarnessEvent(session, {
+      type: "question.updated",
+      requestId: 3,
+      delivery: "sending",
+    });
+    expect(session.pendingQuestion).toMatchObject({
+      behavior: "nonBlocking",
+      dismissAction: "skip",
+      callId: "item-3",
+      providerTurnId: "turn-1",
+      delivery: "sending",
+      autoResolveAt: 12345,
+    });
+    session = applyHarnessEvent(session, {
+      type: "question.updated",
+      requestId: 3,
+      delivery: "unknown",
+      error: "Delivery unconfirmed",
+    });
+    expect(session.pendingQuestion?.error).toBe("Delivery unconfirmed");
+    expect(session.blocks).toEqual([]);
+    session = applyHarnessEvent(session, {
+      type: "question.updated",
+      requestId: 3,
+      autoResolveAt: undefined,
+    });
+    expect(session.pendingQuestion?.autoResolveAt).toBeUndefined();
+    expect(session.pendingQuestion?.delivery).toBe("unknown");
+  });
+
+  it("records queued answers only after provider acceptance without hiding a newer question", () => {
+    let session = applyHarnessEvent(newSession("codex", "/repo"), {
+      type: "question.asked",
+      requestId: 3,
+      questions,
+    });
+    session = applyHarnessEvent(session, {
+      type: "question.updated",
+      requestId: 3,
+      delivery: "queued",
+    });
+    session = applyHarnessEvent(session, { type: "question.asked", requestId: 4, questions });
+    expect(session.blocks).toEqual([]);
+    session = applyHarnessEvent(session, {
+      type: "question.updated",
+      requestId: 3,
+      delivery: "unknown",
+      error: "Connection lost",
+    });
+    expect(session.pendingQuestion?.requestId).toBe(4);
+    expect(session.submittedQuestions?.[0].delivery).toBe("unknown");
+    const accepted: HarnessEvent = {
+      type: "question.resolved",
+      requestId: 3,
+      decision: "answered",
+      reply: { kind: "answered", answers: { "Which file?": ["a.ts"] } },
+    };
+    session = applyHarnessEvent(session, accepted);
+    expect(session.pendingQuestion?.requestId).toBe(4);
+    expect(session.submittedQuestions).toBeUndefined();
+    expect(session.blocks.at(-1)?.questionAnswers).toEqual([
+      { prompt: "Which file?", answers: ["a.ts"] },
+    ]);
+    expect(applyHarnessEvent(session, accepted)).toBe(session);
+    expect(stopStreaming(session).submittedQuestions).toBeUndefined();
+  });
+
+  it("clears an uncertain answer card once the provider process is gone, keeping it only while the process lives", () => {
+    let session = applyHarnessEvent(newSession("codex", "/repo"), {
+      type: "question.asked",
+      requestId: 3,
+      questions,
+      behavior: "nonBlocking",
+    });
+    session = applyHarnessEvent(session, {
+      type: "question.updated",
+      requestId: 3,
+      delivery: "queued",
+    });
+    session = applyHarnessEvent(session, {
+      type: "question.updated",
+      requestId: 3,
+      delivery: "unknown",
+    });
+    // A cancelled resolution alone cannot prove the write never arrived.
+    session = applyHarnessEvent(session, {
+      type: "question.resolved",
+      requestId: 3,
+      decision: "cancelled",
+    });
+    expect(session.pendingQuestion?.delivery).toBe("unknown");
+    // The provider process ending (or failing) clears the unconfirmable card.
+    const ended = applyHarnessEvent(session, { type: "session.ended", code: 1 });
+    expect(ended.pendingQuestion).toBeUndefined();
+    expect(ended.submittedQuestions).toBeUndefined();
+    const failed = applyHarnessEvent(session, {
+      type: "session.error",
+      message: "Provider disconnected",
+    });
+    expect(failed.busy).toBe(false);
+    expect(failed.pendingQuestion).toBeUndefined();
+    expect(failed.submittedQuestions).toBeUndefined();
+    expect(stopStreaming(session).pendingQuestion).toBeUndefined();
+    const next = appendUser(session, "Continue after inspecting the provider");
+    expect(next.pendingQuestion).toBeUndefined();
+    expect(next.submittedQuestions).toBeUndefined();
+    expect(next.blocks.some((block) => block.questionAnswers?.length)).toBe(false);
+  });
 
   it("parks the prompt on the session instead of an Allow/Deny row", () => {
     let session = newSession("claude", "/repo");
@@ -1881,7 +2136,7 @@ describe("subagent timing", () => {
 });
 
 describe("approval association", () => {
-  it("tek ilgisiz araca onay bağlamaz", () => {
+  it("does not attach an approval to a single unrelated tool", () => {
     let session = appendUser(newSession("codex", "/tmp"), "check");
     session = applyHarnessEvent(session, {
       type: "tool.started",
@@ -1904,7 +2159,7 @@ describe("approval association", () => {
   });
 });
 
-it("farklı call id aynı başlık olsa da mevcut araca onay bağlamaz", () => {
+it("does not attach an approval to an existing tool when the call id differs even with the same title", () => {
   let session = appendUser(newSession("codex", "/tmp"), "check");
   session = applyHarnessEvent(session, {
     type: "tool.started",

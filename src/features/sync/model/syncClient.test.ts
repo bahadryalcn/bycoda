@@ -578,6 +578,31 @@ describe("runSyncCycle", () => {
 describe("sync status", () => {
   beforeEach(mockLocalStorage);
 
+  it("releases browser ownership after a stopped cycle's response settles", async () => {
+    let finish!: (value: unknown) => void;
+    const request = vi.fn(
+      () =>
+        new Promise<unknown>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const loop = startSyncLoop(
+      () => ["stop-settled"],
+      () => request,
+    );
+    expect(request).toHaveBeenCalledTimes(1);
+    const stopped = loop.stop();
+    let drained = false;
+    void stopped.then(() => {
+      drained = true;
+    });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+    finish({ rev: 0, records: [] });
+    await expect(stopped).resolves.toBe(true);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
   it("goes syncing -> ok and notifies subscribers", async () => {
     const seen: string[] = [];
     const off = subscribeSyncStatus(() => seen.push(getSyncStatus("st-ok").state));
@@ -717,6 +742,32 @@ describe("per-machine scheduling", () => {
   });
 
   const ok = { rev: 1, records: [], applied: [], rejected: [] };
+
+  it("blocks automatic and explicit sync while this workspace lacks ownership", async () => {
+    let automatic = false;
+    const request = vi.fn(async () => ok);
+    const loop = startSyncLoop(
+      () => ["focus-peer"],
+      () => request,
+      undefined,
+      () => automatic,
+    );
+    try {
+      await vi.advanceTimersByTimeAsync(CYCLE_INTERVAL_MS);
+      expect(request).not.toHaveBeenCalled();
+      await syncNow("focus-peer");
+      expect(request).not.toHaveBeenCalled();
+      request.mockClear();
+      await vi.advanceTimersByTimeAsync(CYCLE_INTERVAL_MS);
+      expect(request).not.toHaveBeenCalled();
+      automatic = true;
+      loop.nudge();
+      await vi.advanceTimersByTimeAsync(MIN_CYCLE_SPACING_MS);
+      expect(request).toHaveBeenCalled();
+    } finally {
+      loop.stop();
+    }
+  });
 
   it("an offline machine does not delay a healthy one", async () => {
     let fail: (error: Error) => void = () => undefined;

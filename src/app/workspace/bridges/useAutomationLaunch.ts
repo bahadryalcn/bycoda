@@ -1,5 +1,7 @@
 import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
+import { monotonicNow } from "../../../shared/lib/time/timestamps";
 import { isProjectPasswordLocked } from "../../../features/group-lock/model/groupLock";
+import { withRoomPrivacyMutation } from "../../../features/group-lock/model/roomPrivacyProjection";
 import {
   listAutomationRuns,
   updateAutomationRun,
@@ -8,6 +10,7 @@ import {
 } from "../../../features/automations/model/automations";
 import {
   LOCKED_PROJECT_SKIP,
+  ObservedRunDuration,
   automationLimits,
   dailyRunLimitSkip,
   runLimitBreach,
@@ -26,6 +29,8 @@ import {
   placeSessionInFolder,
   saveSessionFolders,
 } from "../../../features/sessions/model/sessionFolders";
+import { executeOrganizationOperation } from "../../../features/sessions/model/sessionOrganizationOperations";
+import { NATIVE_SESSION_ORGANIZATION_ACTIVE } from "../../../features/sessions/model/sessionOrganizationStore";
 import { newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import { pathKey } from "../../../shared/lib/paths";
 import { submitWithSettlement } from "../../model/managedSubmission";
@@ -97,8 +102,12 @@ export function useAutomationLaunch({
       );
       let watchdog: number | undefined;
       let breach: string | null = null;
+      let admitted = false;
       try {
         await earlier;
+        // Claim before session side effects, including retries after a lost reply.
+        await updateAutomationRun(run.id, "running");
+        admitted = true;
         const skip = isProjectPasswordLocked(automation.cwd)
           ? LOCKED_PROJECT_SKIP
           : run.trigger === "manual"
@@ -124,7 +133,7 @@ export function useAutomationLaunch({
                   !entry.busy &&
                   !entry.worktreeRemoved &&
                   !automationSessionReservations.current.has(entry.id) &&
-                  (automation.workspaceMode === "current"
+                  (automation.workspaceMode === "current" || automation.workspaceMode === undefined
                     ? entry.workspaceMode !== "worktree" &&
                       !entry.worktreeCwd &&
                       pathKey(entry.cwd) === pathKey(automation.cwd)
@@ -150,9 +159,11 @@ export function useAutomationLaunch({
             ...(linkedWorkItem ? { linkedWorkItem } : {}),
             ...(automation.workspaceMode === "worktree"
               ? { workspaceMode: "worktree" as const, worktreeBase: "HEAD" }
-              : automation.workspaceMode === "existing" && automation.worktreeCwd
-                ? { worktreeCwd: automation.worktreeCwd }
-                : {}),
+              : automation.workspaceMode === "current"
+                ? { workspaceMode: "current" as const }
+                : automation.workspaceMode === "existing" && automation.worktreeCwd
+                  ? { worktreeCwd: automation.worktreeCwd }
+                  : {}),
           };
           const nextSessions = [...sessionsRef.current, session];
           sessionsRef.current = nextSessions;
@@ -185,15 +196,65 @@ export function useAutomationLaunch({
 
         reservationId = session.id;
         automationSessionReservations.current.add(session.id);
+        // Retain the admitted session identity before optional organization work.
+        await updateAutomationRun(run.id, "running", { sessionId: session.id });
 
         if (automation.sessionFolderId && looksLikeProject(automation.cwd)) {
-          saveSessionFolders(
-            automation.cwd,
-            placeSessionInFolder(loadSessionFolders(automation.cwd), session.id, {
-              kind: "existing",
-              folderId: automation.sessionFolderId,
-            }),
-          );
+          if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+            const gestureId = `automation:${run.id}`;
+            let folderAdmitted = false;
+            try {
+              const result = await withRoomPrivacyMutation(() => {
+                if (isProjectPasswordLocked(automation.cwd)) throw new Error("Project is locked.");
+                folderAdmitted = true;
+                return executeOrganizationOperation(gestureId, {
+                  kind: "batch",
+                  cwd: automation.cwd,
+                  operations: [
+                    {
+                      kind: "assign",
+                      cwd: automation.cwd,
+                      folderId: automation.sessionFolderId!,
+                      sessionIds: [session.id],
+                    },
+                    {
+                      kind: "folderCollapsed",
+                      cwd: automation.cwd,
+                      folderId: automation.sessionFolderId!,
+                      collapsed: false,
+                    },
+                  ],
+                });
+              });
+              if (result.state !== "applied")
+                window.dispatchEvent(
+                  new CustomEvent("bycoda:organization-operation-feedback", {
+                    detail: { cwd: automation.cwd, sessionId: session.id, runId: run.id, result },
+                  }),
+                );
+            } catch (error) {
+              window.dispatchEvent(
+                new CustomEvent("bycoda:organization-operation-feedback", {
+                  detail: {
+                    cwd: automation.cwd,
+                    sessionId: session.id,
+                    runId: run.id,
+                    ...(folderAdmitted
+                      ? { result: { state: "unknown", operationId: gestureId } }
+                      : { error: String(error) }),
+                  },
+                }),
+              );
+            }
+          } else {
+            saveSessionFolders(
+              automation.cwd,
+              placeSessionInFolder(loadSessionFolders(automation.cwd), session.id, {
+                kind: "existing",
+                folderId: automation.sessionFolderId,
+              }),
+            );
+          }
         }
 
         if (reveal) {
@@ -205,15 +266,13 @@ export function useAutomationLaunch({
           setSidebarTab("sessions", session.cwd);
         }
 
-        await updateAutomationRun(run.id, "running", {
-          sessionId: session.id,
-        });
         started();
         if (limits.maxRunMinutes > 0) {
-          const startedAt = Date.now();
+          const duration = new ObservedRunDuration(Date.now(), monotonicNow());
           const sessionId = session.id;
           watchdog = window.setInterval(() => {
-            breach = runLimitBreach(limits, { startedAt, now: Date.now() });
+            const elapsed = duration.sample(Date.now(), monotonicNow(), 45_000);
+            breach = runLimitBreach(limits, { startedAt: 0, now: elapsed });
             if (!breach) return;
             window.clearInterval(watchdog);
             onStopRef.current(sessionId);
@@ -250,11 +309,14 @@ export function useAutomationLaunch({
           },
         });
       } catch (reason: unknown) {
-        await updateAutomationRun(run.id, "failed", {
-          error: reason instanceof Error ? reason.message : String(reason),
-        }).catch((error) => {
-          console.warn("App operation failed", error);
-        });
+        if (admitted) {
+          await updateAutomationRun(run.id, "failed", {
+            ...(reservationId ? { sessionId: reservationId } : {}),
+            error: reason instanceof Error ? reason.message : String(reason),
+          }).catch((error) => {
+            console.warn("App operation failed", error);
+          });
+        }
         throw reason;
       } finally {
         started();

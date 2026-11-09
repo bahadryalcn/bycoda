@@ -324,7 +324,7 @@ it.each([1, 0.8])(
     expect(shell.scrollTop).toBe(0);
     expect(document.documentElement.scrollTop).toBe(0);
     expect(linuxRow.closest("[hidden]")).toBeNull();
-    expect(host.querySelector('[aria-label="All checks: 2"]')?.getAttribute("aria-pressed")).toBe(
+    expect(host.querySelector('button[data-value="all"]')?.getAttribute("aria-pressed")).toBe(
       "true",
     );
     expect(document.activeElement).toBe(linuxRow);

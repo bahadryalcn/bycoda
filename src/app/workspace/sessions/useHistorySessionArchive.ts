@@ -48,8 +48,8 @@ export function useHistorySessionArchive(deps: HistorySessionArchiveDeps) {
   } = deps;
 
   const onArchiveHistorySession = useCallback(
-    async (sessionId: string, archived: boolean) => {
-      if (archived) return onRemoveHistorySession(sessionId, "archive");
+    async (sessionId: string, archived: boolean, listed?: SessionSummary) => {
+      if (archived) return onRemoveHistorySession(sessionId, "archive", false, undefined, listed);
       if (removingSessionIds.current.has(sessionId)) return false;
       try {
         await setSessionArchived(sessionId, false);

@@ -1,4 +1,104 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
+import { dropAnnouncer, dropBadge, dropMarks, fileDrag, files, textDrag } from "./external-drop";
+
+/** Hover hints are the shared Tooltip (no native title): a label line plus shortcut key caps. */
+async function expectHint(
+  page: Page,
+  target: Locator,
+  label: string | RegExp,
+  keys: (string | RegExp)[] | RegExp | null,
+) {
+  await target.hover();
+  const hint = page.getByRole("tooltip");
+  await expect(hint).toBeVisible();
+  await expect(hint).toContainText(label);
+  if (keys === null) await expect(hint.locator("kbd")).toHaveCount(0);
+  else if (Array.isArray(keys)) await expect(hint.locator("kbd")).toHaveText(keys);
+  else await expect(hint).toContainText(keys);
+  await page.mouse.move(0, 0);
+  await expect(hint).toHaveCount(0);
+}
+
+test("composer attachment submission stays local and keeps Stop available", async ({
+  page,
+}, testInfo) => {
+  await initializeChatLayout(page);
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto("/tests/browser/composer-extras.html?chat-layout");
+  await page.getByRole("button", { name: "Toggle busy", exact: true }).click();
+  await page.evaluate(() => {
+    const fixture = window as unknown as {
+      __TAURI_INTERNALS__: {
+        invoke: (command: string, args?: unknown) => Promise<unknown>;
+      };
+      finishComposerPaste?: () => void;
+    };
+    const original = fixture.__TAURI_INTERNALS__.invoke;
+    fixture.__TAURI_INTERNALS__.invoke = async (command, args) => {
+      if (command === "clipboard_file_paths") return [];
+      // Pasted images are saved before they join the draft; the isolated path stands in.
+      if (command === "write_attachment")
+        return `C:/isolated-fixture/${(args as { name: string }).name}`;
+      if (command === "clipboard_image") {
+        await new Promise<void>((resolve) => {
+          fixture.finishComposerPaste = resolve;
+        });
+        return Uint8Array.from(
+          atob(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6oS0AAAAASUVORK5CYII=",
+          ),
+          (char) => char.charCodeAt(0),
+        ).buffer;
+      }
+      return original(command, args);
+    };
+    document.querySelector("textarea")!.dispatchEvent(
+      new ClipboardEvent("paste", {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: new DataTransfer(),
+      }),
+    );
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Boolean((window as unknown as { finishComposerPaste?: () => void }).finishComposerPaste),
+      ),
+    )
+    .toBe(true);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const pending = page.locator('.composer-send-controls button[data-button-loading="true"]');
+  const stop = page.getByRole("button", { name: "Stop", exact: true });
+  await expect(pending).toHaveCount(1);
+  await expect(pending).toHaveAttribute("aria-busy", "true");
+  await expect(stop).toBeEnabled();
+  for (const light of [false, true]) {
+    await page.evaluate(
+      (value) => document.documentElement.classList.toggle("theme-light", value),
+      light,
+    );
+    await expect(pending).toBeInViewport();
+    await expect(stop).toBeInViewport();
+    await page.screenshot({
+      path: testInfo.outputPath(`composer-pending-390-${light ? "light" : "dark"}.png`),
+    });
+  }
+  await stop.click();
+  await expect(pending).toHaveCount(0);
+  await page.evaluate(() =>
+    (window as unknown as { finishComposerPaste: () => void }).finishComposerPaste(),
+  );
+  await expect(
+    page.getByRole("button", {
+      name: "Remove clipboard-image.png",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
+    /Keep this chat draft/,
+  );
+});
 
 test("Steer explains a prolonged wait and preserves the paused queue at narrow widths", async ({
   page,
@@ -15,23 +115,36 @@ test("Steer explains a prolonged wait and preserves the paused queue at narrow w
     await page.setViewportSize({ width: 320, height: 800 });
     const card = page.locator("[data-message-queue-card]");
     await card.getByRole("button", { name: "Steer", exact: true }).press("Enter");
+    // Pending stages are a compact summary indicator; the notice is for outcomes only.
+    const pending = card.locator("[data-delivery-pending]");
     const progress = page.locator("[data-delivery-progress]");
-    await expect(progress).toContainText("Synchronizing the message queue");
+    await expect(pending).toHaveAttribute("title", "Synchronizing the message queue…");
+    await expect(pending.getByRole("status")).toHaveText("Synchronizing the message queue…");
+    await expect(progress).toHaveCount(0);
     await expect(card.getByRole("button", { name: "Sending…", exact: true })).toBeDisabled();
     await page.clock.runFor(11_000);
-    await expect(progress).toContainText("11s elapsed");
-    await expect(progress).toContainText("you do not need to write it again");
-    expect(await progress.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
-      true,
-    );
+    await expect(pending).toHaveAttribute("title", "Synchronizing the message queue…");
+    expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     await page.screenshot({
       path: `temp/verification/2026-10-21-steer-investigation/${light ? "light" : "dark"}-320-waiting.png`,
     });
     await page.clock.runFor(1000);
-    await expect(progress).toContainText("Waiting for provider confirmation");
+    await expect(pending).toHaveAttribute(
+      "title",
+      "Sending the message. Waiting for provider confirmation…",
+    );
     await page.clock.runFor(1000);
     await expect(progress).toHaveAttribute("data-delivery-progress", "rejected");
-    await expect(card).toContainText("Queue paused");
+    await expect(card.getByRole("alert")).toHaveText(
+      "The send was cancelled or rejected. The message remains queued and the queue is paused.",
+    );
+    await expect(card.getByRole("button", { name: "Resume", exact: true })).toBeEnabled();
+    await expect(
+      card
+        .locator("[data-message-queue-rows]")
+        .getByText("Queued task waiting for the current turn", { exact: true }),
+    ).toBeVisible();
+    await expect(card.getByRole("button", { name: "Remove", exact: true })).toHaveCount(1);
     await expect(card.getByRole("button", { name: "Steer", exact: true })).toBeEnabled();
   }
 });
@@ -53,14 +166,25 @@ test("queue actions expose progress and recovery in both themes at narrow widths
     await steer.focus();
     await steer.press("Enter");
     await expect(card.getByRole("button", { name: "Sending…", exact: true })).toBeDisabled();
-    await expect(card.getByRole("status")).toHaveText("Waiting for confirmation…");
-    await expect(card.getByRole("alert")).toContainText("It remains queued");
+    // The pending action is carried by the button label alone, without a feedback line.
+    await expect(card.locator("[data-queue-feedback]")).toHaveCount(0);
     await expect(steer).toBeEnabled();
+    await expect(card.getByRole("button", { name: "Resume", exact: true })).toBeEnabled();
+    await expect(card.locator("[data-queue-feedback]")).toHaveCount(0);
+    await expect(card.getByRole("alert")).toHaveCount(0);
+    await expect(
+      card
+        .locator("[data-message-queue-rows]")
+        .getByText("Queued task waiting for the current turn", { exact: true }),
+    ).toBeVisible();
+    await expect(card.getByRole("button", { name: "Remove", exact: true })).toHaveCount(1);
     expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   }
   await card.getByRole("button", { name: "Resume", exact: true }).click();
   await expect(card.getByRole("button", { name: "Resuming…", exact: true })).toBeDisabled();
-  await expect(card.getByRole("status")).toContainText("when this turn finishes");
+  // A resumed queue is shown by its state, not by an inferred acceptance line.
+  await expect(card.getByRole("button", { name: "Resume", exact: true })).toHaveCount(0);
+  await expect(card.locator("[data-queue-feedback]")).toHaveCount(0);
   await page.screenshot({
     path: "temp/verification/2026-10-20-git-reliability/queue-feedback.png",
   });
@@ -73,8 +197,11 @@ test("chat shortcut hints follow custom bindings and expose rewind at narrow wid
   await page.goto("/tests/browser/composer-extras.html?chat-layout&shortcuts");
   const input = page.getByRole("textbox", { name: "Message", exact: true });
   await input.fill("");
-  const rewind = page.getByRole("button", { name: "Rewind and edit", exact: true });
-  await expect(rewind).toHaveAttribute("title", "Rewind and edit (Esc Esc)");
+  const rewind = page.getByRole("button", {
+    name: "Rewind and edit",
+    exact: true,
+  });
+  await expectHint(page, rewind, "Rewind and edit", ["Esc", "Esc"]);
   for (const light of [false, true]) {
     await page.evaluate(
       (value) => document.documentElement.classList.toggle("theme-light", value),
@@ -92,7 +219,10 @@ test("chat shortcut hints follow custom bindings and expose rewind at narrow wid
   await expect(rewind).toBeHidden();
   await page.getByRole("button", { name: "Toggle busy", exact: true }).click();
   const stop = page.getByRole("button", { name: "Stop", exact: true });
-  const queue = page.getByRole("button", { name: "Queue message", exact: true });
+  const queue = page.getByRole("button", {
+    name: "Queue message",
+    exact: true,
+  });
   await page.evaluate(() => {
     localStorage.setItem(
       "bycoda.keybindingOverrides",
@@ -103,14 +233,14 @@ test("chat shortcut hints follow custom bindings and expose rewind at narrow wid
     );
     window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.keybindingOverrides" }));
   });
-  await expect(stop).toHaveAttribute("title", /M.*Ctrl\+C/);
-  await expect(queue).toHaveAttribute("title", "Queue message for when this turn finishes");
+  await expectHint(page, stop, "Stop", /M.*Ctrl\s*C/);
+  await expectHint(page, queue, "Queue message for when this turn finishes", null);
   await page.evaluate(() => {
     localStorage.removeItem("bycoda.keybindingOverrides");
     window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.keybindingOverrides" }));
   });
-  await expect(stop).toHaveAttribute("title", "Stop (Esc / Ctrl+C)");
-  await expect(queue).toHaveAttribute("title", /Tab/);
+  await expectHint(page, stop, "Stop", ["Esc", "Ctrl", "C"]);
+  await expectHint(page, queue, "Queue message", /Tab/);
 });
 
 test("custom context signal exposes completed TPS and compact and respects reduced motion", async ({
@@ -118,9 +248,11 @@ test("custom context signal exposes completed TPS and compact and respects reduc
 }, testInfo) => {
   await initializeChatLayout(page);
   await page.goto("/tests/browser/composer-extras.html?chat-layout&response-speed");
-  const trigger = page.getByRole("button", { name: /^Context usage: 50%.*50.0 TPS/ });
+  const trigger = page.getByRole("button", {
+    name: /^Context usage: 50%.*50.0 TPS/,
+  });
   await expect(trigger).toHaveText("");
-  await expect(trigger.locator("svg")).toHaveAttribute("data-speed-fill", "0.75");
+  await expect(trigger.locator(".context-signal")).toHaveAttribute("data-speed-fill", "0.75");
   for (const light of [false, true]) {
     await page.evaluate(
       (value) => document.documentElement.classList.toggle("theme-light", value),
@@ -129,15 +261,24 @@ test("custom context signal exposes completed TPS and compact and respects reduc
     for (const width of [390, 1000]) {
       await page.setViewportSize({ width, height: 800 });
       await trigger.hover();
-      const panel = page.getByRole("dialog", { name: "Context usage", exact: true });
+      // Hover previews the panel in the shared HoverCard (a click pins it as a dialog).
+      const panel = page.locator('[data-hover-card][aria-label="Context usage"]');
       await expect(panel).toBeInViewport();
+      // The card is the only hint: no second tooltip repeats its heading.
+      await expect(page.getByRole("tooltip")).toHaveCount(0);
       await expect(panel.getByRole("meter")).toHaveAttribute("aria-valuenow", "50");
       await expect(panel).toContainText("50.0 TPS");
-      await expect(panel).toContainText("200 output tokens in 4.0s");
-      await panel.getByText("Speed scale", { exact: true }).click();
-      await expect(panel).toContainText("≥60 TPS 100%");
+      await expect(panel).not.toContainText("Speed scale");
+      const info = panel.getByRole("button", {
+        name: "Response speed",
+        exact: true,
+      });
+      await expect(info).toHaveAttribute("aria-expanded", "false");
+      await info.click();
+      await expect(info).toHaveAttribute("aria-expanded", "true");
+      await expect(panel).toContainText("Average over the full turn");
       await expect(panel.getByRole("button", { name: "Compact now", exact: true })).toBeEnabled();
-      await expect(trigger.locator("svg")).toBeVisible();
+      await expect(trigger.locator(".context-signal")).toBeVisible();
       await trigger.screenshot({
         path: testInfo.outputPath(`signal-${light ? "light" : "dark"}-${width}.png`),
       });
@@ -190,8 +331,46 @@ test("composer blank space focuses the larger draft while controls remain operab
       expect((await input.boundingBox())!.height).toBeGreaterThanOrEqual(68);
     }
   }
-  await box.getByRole("button", { name: "Add files or choose a mode", exact: true }).click();
+  await box.getByRole("button", { name: "Add files or skills", exact: true }).click();
   await expect(page.locator("[data-composer-plus]")).toBeVisible();
+});
+
+test("reprompt previews, applies and reverses selected text in both themes", async ({ page }) => {
+  await initializeChatLayout(page);
+  await useTextActionProvider(page, "claude");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const light of [false, true]) {
+    await page.goto("/tests/browser/composer-extras.html?translation-selection");
+    await page.evaluate(
+      (value) => document.documentElement.classList.toggle("theme-light", value),
+      light,
+    );
+    await page.setViewportSize({ width: light ? 390 : 1000, height: 800 });
+    const input = page.getByRole("textbox", { name: "Message", exact: true });
+    const original = "Before selam after";
+    await input.fill(original);
+    await input.evaluate((el: HTMLTextAreaElement) => {
+      el.focus();
+      el.setSelectionRange(7, 12);
+      el.dispatchEvent(new Event("select", { bubbles: true }));
+    });
+    const action = page
+      .getByRole("toolbar", { name: "Selected text actions" })
+      .getByRole("button", { name: "Reprompt", exact: true });
+    await action.focus();
+    await action.press("Enter");
+    const result = page.getByRole("dialog", { name: "Reprompt", exact: true });
+    await expect(result).toContainText("Rewritten prompt");
+    await expect(result).toContainText("Translated fixture text");
+    await expect(input).toHaveValue(original);
+    expect(await result.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await result.getByRole("button", { name: "Apply prompt", exact: true }).click();
+    await expect(input).toHaveValue("Before Translated fixture text after");
+    await input.press("ArrowUp");
+    await expect(input).toHaveValue(original);
+    await input.press("ArrowDown");
+    await expect(input).toHaveValue("Before Translated fixture text after");
+  }
 });
 
 test("Antigravity translates directly and only connected providers are listed", async ({
@@ -199,6 +378,7 @@ test("Antigravity translates directly and only connected providers are listed", 
 }) => {
   test.setTimeout(20_000);
   await initializeChatLayout(page);
+  await useTextActionProvider(page, "antigravity");
   await page.goto(
     "/tests/browser/composer-extras.html?translation-selection&antigravity-selection",
     { waitUntil: "domcontentloaded" },
@@ -210,19 +390,79 @@ test("Antigravity translates directly and only connected providers are listed", 
     .getByRole("toolbar", { name: "Selected text actions" })
     .getByRole("button", { name: /Translate to English/ })
     .click();
-  const result = page.getByRole("dialog", { name: "Translate to English", exact: true });
+  const result = page.getByRole("dialog", {
+    name: "Translate to English",
+    exact: true,
+  });
   await expect(result).not.toContainText("Choose a translation model.");
   await expect(result).toContainText("Translated fixture text");
   await result.getByRole("button", { name: /Antigravity/ }).click();
-  await page.getByRole("menuitem", { name: /^Model/ }).click();
+  await expect(page.getByRole("dialog", { name: "Model and settings", exact: true })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Claude Code", exact: true })).toHaveCount(0);
   await expect(page.getByRole("tab", { name: "Codex", exact: true })).toHaveCount(0);
   await page.getByRole("option").filter({ hasText: "Gemini 3.8 Flash" }).first().click();
+  // The panel stays open after a pick and covers the dialog; Escape closes only the panel.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Model and settings", exact: true })).toHaveCount(
+    0,
+  );
+  await expect(result).toBeVisible();
   await result.getByRole("button", { name: "Translate selected text", exact: true }).click();
   await expect(result).toContainText("Translated fixture text");
   await result.getByRole("button", { name: "Apply translation", exact: true }).click();
   await expect(input).toHaveValue("Translated fixture text");
   await expect(page.getByTestId("choice")).toContainText('"harness":"antigravity"');
+});
+
+test("translation selection actions stay on one row across themes and widths", async ({ page }) => {
+  await initializeChatLayout(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const light of [false, true]) {
+    for (const width of [1280, 800, 390]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/tests/browser/composer-extras.html?translation-selection");
+      await page.evaluate(
+        (value) => document.documentElement.classList.toggle("theme-light", value),
+        light,
+      );
+      const input = page.getByRole("textbox", { name: "Message", exact: true });
+      await input.fill("selam bugün nasılsın?");
+      await input.press("Control+a");
+      const toolbar = page.getByRole("toolbar", { name: "Selected text actions" });
+      await expect(
+        toolbar.getByRole("button", { name: "Translate to Chinese", exact: true }),
+      ).toBeAttached();
+      const bounds = await toolbar.getByRole("button").evaluateAll((buttons) =>
+        buttons.map((button) => ({
+          top: button.getBoundingClientRect().top,
+          bottom: button.getBoundingClientRect().bottom,
+        })),
+      );
+      expect(
+        Math.max(...bounds.map((box) => box.top)) - Math.min(...bounds.map((box) => box.top)),
+      ).toBeLessThan(2);
+      const popup = page.locator("[data-selection-menu]");
+      if (width >= 800) {
+        await expect
+          .poll(() =>
+            toolbar.evaluate(
+              (element) => element.parentElement!.scrollWidth <= element.parentElement!.clientWidth,
+            ),
+          )
+          .toBe(true);
+      }
+      const box = (await popup.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+      await toolbar.getByRole("button", { name: "Translate to Chinese", exact: true }).focus();
+      await expect(toolbar).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/2026-11-04-selection-menu/${light ? "light" : "dark"}-${width}.png`,
+      });
+      await page.keyboard.press("Escape");
+      await expect(toolbar).toHaveCount(0);
+    }
+  }
 });
 
 test("translation selection menu opens above text and survives unavailable geometry", async ({
@@ -275,11 +515,14 @@ test("busy composer keeps Send, Queue and Stop visible with shortcut hints", asy
   await page.goto("/tests/browser/composer-extras.html?chat-layout&accounts");
   await page.getByRole("button", { name: "Toggle busy", exact: true }).click();
   const send = page.getByRole("button", { name: "Send", exact: true });
-  const queue = page.getByRole("button", { name: "Queue message", exact: true });
+  const queue = page.getByRole("button", {
+    name: "Queue message",
+    exact: true,
+  });
   const stop = page.getByRole("button", { name: "Stop", exact: true });
-  await expect(send).toHaveAttribute("title", "Steer (Enter)");
-  await expect(queue).toHaveAttribute("title", /Shift\+Tab/);
-  await expect(stop).toHaveAttribute("title", "Stop (Esc / Ctrl+C)");
+  await expectHint(page, send, "Steer", ["Enter"]);
+  await expectHint(page, queue, "Queue message", ["Shift", "Tab"]);
+  await expectHint(page, stop, "Stop", ["Esc", "Ctrl", "C"]);
   for (const theme of ["light", "dark"]) {
     await page.evaluate(
       (value) => document.documentElement.classList.toggle("theme-light", value === "light"),
@@ -292,7 +535,7 @@ test("busy composer keeps Send, Queue and Stop visible with shortcut hints", asy
       expect(bounds[0]!.x + bounds[0]!.width).toBeLessThanOrEqual(bounds[1]!.x);
       expect(bounds[1]!.x + bounds[1]!.width).toBeLessThanOrEqual(bounds[2]!.x);
       const plus = await page
-        .getByRole("button", { name: "Add files or choose a mode", exact: true })
+        .getByRole("button", { name: "Add files or skills", exact: true })
         .boundingBox();
       const context = await page.locator(".context-meter-summary").boundingBox();
       for (const box of [plus, context, ...bounds]) {
@@ -310,6 +553,13 @@ test("busy composer keeps Send, Queue and Stop visible with shortcut hints", asy
   );
 });
 
+/** Text actions follow the global default provider, not the conversation's, so the fixture pins it. */
+async function useTextActionProvider(page: import("@playwright/test").Page, harness: string) {
+  await page.addInitScript((value) => {
+    localStorage.setItem("bycoda.lastModel", JSON.stringify({ harness: value, model: "" }));
+  }, harness);
+}
+
 async function initializeChatLayout(page: import("@playwright/test").Page) {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addInitScript(() => {
@@ -318,7 +568,10 @@ async function initializeChatLayout(page: import("@playwright/test").Page) {
     Math.random = () => 0;
     Object.assign(window, {
       __TAURI_INTERNALS__: {
-        metadata: { currentWebview: { label: "fixture" }, currentWindow: { label: "fixture" } },
+        metadata: {
+          currentWebview: { label: "fixture" },
+          currentWindow: { label: "fixture" },
+        },
         transformCallback: () => 1,
         unregisterCallback: () => {},
         invoke: async (command: string) => {
@@ -331,41 +584,43 @@ async function initializeChatLayout(page: import("@playwright/test").Page) {
   });
 }
 
-test("hints unfold in 3D and remain complete when motion is reduced", async ({
+test("hints reveal with one quiet fade and remain complete when motion is reduced", async ({
   page,
 }, testInfo) => {
   await initializeChatLayout(page);
   await page.setViewportSize({ width: 640, height: 800 });
   await page.goto("/tests/browser/composer-extras.html?chat-layout&accounts&hint-motion");
   const hint = page.locator(".composer-tips-text");
+  await expect(hint).toHaveCount(0);
+  await page.locator(".composer-tips-icon").click();
   await expect(hint).toBeVisible();
   const fullText = await hint.getAttribute("aria-label");
-  expect((await hint.innerText()).replaceAll("\u00a0", " ")).toBe(fullText);
+  expect((await hint.innerText()).replaceAll(" ", " ")).toBe(fullText);
+  // The next tip replaces the text with a single fade, never per-character 3D pieces.
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  const folding = await hint.evaluate((root) => {
-    const pieces = [...root.querySelectorAll<HTMLElement>(".composer-tip-fold-piece")];
-    for (const piece of pieces) {
-      for (const animation of piece.getAnimations()) {
-        animation.pause();
-        animation.currentTime = 80;
-      }
-    }
-    return pieces.some((piece) => {
-      const transform = getComputedStyle(piece).transform;
-      return transform.startsWith("matrix3d(");
-    });
-  });
-  expect(folding).toBe(true);
-  await page.screenshot({ path: testInfo.outputPath("hint-folding.png"), animations: "allow" });
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  expect((await hint.innerText()).replaceAll("\u00a0", " ")).toBe(fullText);
-  expect(await hint.evaluate((root) => root.getAnimations({ subtree: true }).length)).toBe(0);
+  await page.locator(".composer-tips-icon").click();
+  const revealing = await hint.evaluate((root) =>
+    root
+      .getAnimations({ subtree: true })
+      .map((animation) => (animation as CSSAnimation).animationName),
+  );
+  expect(revealing).toEqual(["composer-tip-reveal"]);
+  await expect(hint.locator(".composer-tip-fold-piece")).toHaveCount(0);
+  await expect(hint.locator("[data-tip-fold]")).toHaveCount(1);
   expect(
-    await hint
-      .locator(".composer-tip-fold-piece")
-      .first()
-      .evaluate((piece) => getComputedStyle(piece).transform),
-  ).toBe("none");
+    await hint.evaluate((root) =>
+      getComputedStyle(root.querySelector("[data-tip-fold]")!).transform.startsWith("matrix3d("),
+    ),
+  ).toBe(false);
+  await page.screenshot({
+    path: testInfo.outputPath("hint-fade.png"),
+    animations: "allow",
+  });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const nextText = await hint.getAttribute("aria-label");
+  expect(nextText).not.toBe(fullText);
+  expect((await hint.innerText()).replaceAll(" ", " ")).toBe(nextText);
+  expect(await hint.evaluate((root) => root.getAnimations({ subtree: true }).length)).toBe(0);
   await expect(page.locator(".composer-tips-cursor")).toHaveCount(0);
 });
 
@@ -374,18 +629,32 @@ for (const variant of ["", "&remote", "&project-picker"]) {
     await initializeChatLayout(page);
     await page.goto(`/tests/browser/composer-extras.html?chat-layout&accounts${variant}`);
     const input = page.getByRole("textbox", { name: "Message", exact: true });
-    const context = page.getByRole("button", { name: /Open context actions/ });
+    const context = page.getByRole("button", { name: /^Context usage/ });
     await expect(context).toBeVisible();
     for (const width of [320, 420, 1000]) {
       await page.setViewportSize({ width, height: 800 });
+      // The meter closes the trailing cluster of the toolbar row, right before Send/Stop.
       expect(
         await context.evaluate((button) => {
           const box = button.closest("[data-composer-box]")!.getBoundingClientRect();
-          return Math.abs(box.right - button.getBoundingClientRect().right - 13) < 3;
+          const meter = button.getBoundingClientRect();
+          const actions = [
+            ...button.closest(".composer-send-controls")!.querySelectorAll("button"),
+          ].filter((candidate) => candidate !== button);
+          const last = actions[actions.length - 1]!.getBoundingClientRect();
+          return (
+            meter.left >= box.left &&
+            meter.right <= last.left + 1 &&
+            last.right <= box.right &&
+            Math.abs(meter.top + meter.height / 2 - (last.top + last.height / 2)) < 8
+          );
         }),
       ).toBe(true);
       await context.click();
-      const dialog = page.getByRole("dialog", { name: "Context usage", exact: true });
+      const dialog = page.getByRole("dialog", {
+        name: "Context usage",
+        exact: true,
+      });
       await expect(dialog).toBeInViewport();
       await expect(page.getByRole("button", { name: "Compact now" })).toBeEnabled();
       await page.keyboard.press("Escape");
@@ -403,95 +672,132 @@ for (const variant of ["", "&remote", "&project-picker"]) {
   });
 }
 
-test("chat metadata keeps hints muted and preserves controls in narrow and scaled panels", async ({
+test("chat tips open on demand and preserve controls in narrow and scaled panels", async ({
   page,
 }, testInfo) => {
   await initializeChatLayout(page);
-  await page.goto("/tests/browser/composer-extras.html?chat-layout&accounts&long-account");
+  await page.goto("/tests/browser/composer-extras.html?chat-layout&accounts&workspace-footer");
   const input = page.getByRole("textbox", { name: "Message", exact: true });
   const hint = page.locator(".composer-tips-icon");
+  const tooltip = page.getByRole("tooltip");
+  const folders = page.getByRole("button", {
+    name: "Folders for this session",
+    exact: true,
+  });
+  const footer = page.locator("[data-composer-workspace]");
+  const controls = footer.locator("[data-composer-workspace-controls]");
+  const checkout = controls.getByLabel("Workspace Current checkout", {
+    exact: true,
+  });
+  const branch = controls.getByRole("button", {
+    name: "Branch main",
+    exact: true,
+  });
+  await expect(hint).toHaveText("Tip");
+  await expect(hint).toHaveAccessibleName("Tip");
+  await expect(hint).toHaveAttribute("aria-expanded", "false");
+  await hint.hover();
+  await hint.focus();
+  await expect(tooltip).toHaveCount(0);
+  await page.keyboard.press("Enter");
+  await expect(tooltip).toBeVisible();
+  await expect(hint).toHaveText("Next tip");
+  await page.mouse.move(0, 0);
+  await input.focus();
+  await expect(tooltip).toBeVisible();
+  await input.click();
+  await expect(tooltip).toHaveCount(0);
+  await expect(hint).toHaveText("Tip");
+  await expect(footer.locator(":scope > [data-composer-tips]")).toHaveCount(1);
+  // In the context row the tip is the last, quietest item.
+  expect(
+    await footer.evaluate((element) =>
+      [...element.children]
+        .filter((child) => !child.classList.contains("basis-full"))
+        .at(-1)
+        ?.hasAttribute("data-composer-tips"),
+    ),
+  ).toBe(true);
+  await expect(checkout).toBeVisible();
+  await expect(branch).toBeVisible();
+  expect(
+    await controls.evaluate((element) => {
+      const checkout = element.querySelector('[aria-label="Workspace Current checkout"]')!;
+      const branch = element.querySelector('[aria-label="Branch main"]')!;
+      const directories = element.querySelector("[data-composer-directories]")!;
+      return (
+        !!(checkout.compareDocumentPosition(branch) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+        !!(branch.compareDocumentPosition(directories) & Node.DOCUMENT_POSITION_FOLLOWING)
+      );
+    }),
+  ).toBe(true);
   for (const theme of ["dark", "light"]) {
     await page.evaluate(
       (light) => document.documentElement.classList.toggle("theme-light", light),
       theme === "light",
     );
-    for (const width of [320, 420, 640, 1100]) {
-      await page.setViewportSize({ width, height: 800 });
-      await expect(hint).toBeInViewport();
+    for (const width of [320, 390, 768, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await input.focus();
+      await page.mouse.move(0, 0);
+      await expect(tooltip).toHaveCount(0);
       await expect(input).toBeInViewport();
       await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
-      const styles = await page.locator("[data-composer-box]").evaluate((box) => {
-        const agent = getComputedStyle(document.querySelector("[data-session-agent]")!);
-        const label = getComputedStyle(box.querySelector(".composer-tips-icon")!);
-        const copy = getComputedStyle(box.querySelector(".composer-tips-text")!);
-        const canvas = document.createElement("canvas");
-        canvas.width = canvas.height = 1;
-        const ctx = canvas.getContext("2d")!;
-        const luminance = (color: string) => {
-          ctx.clearRect(0, 0, 1, 1);
-          ctx.fillStyle = color;
-          ctx.fillRect(0, 0, 1, 1);
-          const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-          const linear = [r, g, b]
-            .map((c) => c / 255)
-            .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
-          return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
-        };
-        const text = luminance(agent.color);
-        const hintText = luminance(copy.color);
-        const background = luminance(getComputedStyle(box).backgroundColor);
-        return {
-          colors: [agent.color, label.color, copy.color],
-          sizes: [agent.fontSize, label.fontSize, copy.fontSize],
-          opacity: [agent.opacity, label.opacity, copy.opacity],
-          contrast: (Math.max(text, background) + 0.05) / (Math.min(text, background) + 0.05),
-          hintContrast:
-            (Math.max(hintText, background) + 0.05) / (Math.min(hintText, background) + 0.05),
-          contained: box.scrollWidth <= box.clientWidth + 1,
-        };
-      });
-      expect(styles.colors[1]).toBe(styles.colors[2]);
-      expect(styles.colors[2]).not.toBe(styles.colors[0]);
-      expect(styles.sizes).toEqual(["12px", "11px", "11px"]);
-      expect(styles.opacity).toEqual(["1", "1", "1"]);
-      expect(styles.contrast).toBeGreaterThanOrEqual(4.5);
-      expect(styles.hintContrast).toBeLessThan(styles.contrast);
-      expect(styles.contained).toBe(true);
+      await expect(folders).toBeInViewport();
+      await expect(checkout).toBeInViewport();
+      await expect(branch).toBeInViewport();
+      expect(
+        await folders.evaluate(
+          (button) => !!button.closest("[data-composer-workspace] [data-composer-directories]"),
+        ),
+      ).toBe(true);
+      await hint.hover();
+      await expect(tooltip).toHaveCount(0);
+      await hint.click();
+      await expect(tooltip).toBeInViewport();
+      await expect(hint).toHaveText("Next tip");
+      await expect(hint).toHaveAccessibleName("Next tip");
+      await expect(hint).toHaveAttribute("aria-expanded", "true");
+      // The control's name ("Next tip") carries the affordance; the tooltip holds only the tip.
+      expect((await tooltip.innerText()).trim().length).toBeGreaterThan(20);
+      const previous = await tooltip.innerText();
+      await hint.click();
+      await expect(tooltip).not.toHaveText(previous!);
+      const next = await tooltip.innerText();
+      await hint.click();
+      await expect(tooltip).not.toHaveText(next!);
+      if (theme === "dark" && width === 1024) {
+        await page.screenshot({
+          path: testInfo.outputPath("chat-tip-open.png"),
+          animations: "disabled",
+        });
+      }
+      await page.keyboard.press("Escape");
+      await expect(tooltip).toHaveCount(0);
+      await expect(hint).toHaveText("Tip");
+      await expect(hint).toHaveAttribute("aria-expanded", "false");
+      await hint.hover();
+      await hint.focus();
+      await expect(tooltip).toHaveCount(0);
+      await expect(input).toHaveValue("Keep this chat draft");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      await expect(page.locator(".composer-tips-copy")).toBeVisible();
-      await expect(page.locator("[data-composer] [data-session-agent]")).toHaveCount(0);
-      await expect(page.locator("[data-session-header] [data-session-agent]")).toBeVisible();
-      await hint.click();
-      const dialog = page.getByRole("dialog", { name: "Chat tips", exact: true });
-      await expect(dialog).toHaveCount(0);
-      await expect(page.locator("[data-composer-tips] [title]")).toHaveCount(0);
-      await expect(input).toHaveValue("Keep this chat draft");
       await page.screenshot({
         path: testInfo.outputPath(`chat-${theme}-${width}.png`),
         animations: "disabled",
       });
     }
   }
-  await page.setViewportSize({ width: 1440, height: 900 });
   for (const zoom of [1.25, 1.5]) {
     await page.locator("main").evaluate((main, scale) => {
       main.style.inlineSize = "420px";
       main.style.zoom = String(scale);
-      main.style.minBlockSize = `${900 / scale}px`;
     }, zoom);
-    await expect(input).toBeInViewport();
-    await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
-    expect(
-      await page
-        .locator("[data-composer-box]")
-        .evaluate((box) => box.scrollWidth <= box.clientWidth + 1),
-    ).toBe(true);
-    await page.screenshot({
-      path: testInfo.outputPath(`chat-split-${zoom}.png`),
-      animations: "disabled",
-    });
+    await hint.click();
+    await expect(tooltip).toBeInViewport();
+    await expect(folders).toBeInViewport();
+    await page.keyboard.press("Escape");
   }
 });
 
@@ -513,15 +819,18 @@ test("chat busy actions explain steering and queuing without losing the draft", 
   await expect(send).toContainText("Queue message");
   await input.fill("Keep my work");
   await expect(send).toContainText("Steer");
-  await expect(send).toHaveAttribute("title", "Steer (Enter)");
-  await expect(page.getByRole("button", { name: "Queue message", exact: true })).toHaveAttribute(
-    "title",
-    /Shift\+Tab/,
+  await expectHint(page, send, "Steer", ["Enter"]);
+  await expectHint(
+    page,
+    page.getByRole("button", { name: "Queue message", exact: true }),
+    "Queue message",
+    ["Shift", "Tab"],
   );
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveAttribute(
-    "title",
-    "Stop (Esc)",
-  );
+  await expectHint(page, page.getByRole("button", { name: "Stop", exact: true }), "Stop", [
+    "Esc",
+    "Ctrl",
+    "C",
+  ]);
   for (const width of [320, 420, 1000]) {
     await page.setViewportSize({ width, height: 800 });
     await expect(send).toBeInViewport();
@@ -532,14 +841,20 @@ test("chat busy actions explain steering and queuing without losing the draft", 
     ).toBe(true);
   }
   await expect(page.locator("[data-activity-dock]")).toBeVisible();
-  await expect(page.locator(".activity-dock-summary")).toHaveCSS(
-    "background-color",
+  // The summary row never paints a patch over the dock it sits in: it is transparent (or matches).
+  const dockBackground = await page
+    .locator("[data-activity-dock]")
+    .evaluate((dock) => getComputedStyle(dock).backgroundColor);
+  expect(["rgba(0, 0, 0, 0)", "transparent", dockBackground]).toContain(
     await page
-      .locator("[data-composer-box]")
-      .evaluate((box) => getComputedStyle(box).backgroundColor),
+      .locator(".activity-dock-summary")
+      .evaluate((summary) => getComputedStyle(summary).backgroundColor),
   );
   await page.setViewportSize({ width: 420, height: 800 });
-  await page.screenshot({ path: testInfo.outputPath("chat-working.png"), animations: "disabled" });
+  await page.screenshot({
+    path: testInfo.outputPath("chat-working.png"),
+    animations: "disabled",
+  });
   await input.fill("");
   const stop = page.getByRole("button", { name: "Stop", exact: true });
   await expect(stop).toBeVisible();
@@ -549,7 +864,9 @@ test("chat busy actions explain steering and queuing without losing the draft", 
   await expect(input).toHaveValue("Keep my work");
   await stop.click();
   await page.getByRole("button", { name: "Toggle disabled", exact: true }).click();
-  await expect(page.locator("[data-activity-dock]")).toHaveAttribute("data-activity-dock", "done");
+  // The fixture transcript is at its end, so the finished turn has nothing unseen to report:
+  // the dock leaves while the "done" state stays covered by ActivityDock.test.ts.
+  await expect(page.locator("[data-activity-dock]")).toHaveCount(0);
   await input.fill("My next request");
   await page.getByRole("button", { name: "Toggle disabled", exact: true }).click();
   await expect(input).toHaveValue("My next request");
@@ -694,7 +1011,9 @@ test("welcome and working labels stay readable in narrow panels and both themes"
         true,
       );
       expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
-      await page.screenshot({ path: testInfo.outputPath(`welcome-${theme}-${width}.png`) });
+      await page.screenshot({
+        path: testInfo.outputPath(`welcome-${theme}-${width}.png`),
+      });
     }
   }
   await page.setViewportSize({ width: 1440, height: 800 });
@@ -705,7 +1024,9 @@ test("welcome and working labels stay readable in narrow panels and both themes"
     await page.locator(".bycoda-empty").evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
   ).toBe(true);
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
-  await page.screenshot({ path: testInfo.outputPath("welcome-split-panel.png") });
+  await page.screenshot({
+    path: testInfo.outputPath("welcome-split-panel.png"),
+  });
 });
 
 test("model picker names and selects accounts and session shows its active agent", async ({
@@ -734,15 +1055,25 @@ test("model picker names and selects accounts and session shows its active agent
   const main = page.locator("[data-composer-model-controls] button[aria-haspopup]").first();
   await expect(main).toContainText("personal");
   await main.click();
-  await page.getByRole("menuitem", { name: /^Model / }).click();
-  const work = page.getByRole("option", { name: /Opus 5.5 work/ });
-  await expect(work).toBeVisible();
+  const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
+  await expect(panel).toBeVisible();
+  // Two accounts: a segmented control in the list header names both; each model is listed once.
+  const account = panel.getByRole("radiogroup", { name: "Account", exact: true });
+  await expect(account.getByRole("radio")).toHaveText(["personal", "work"]);
+  await expect(account.getByRole("radio", { name: "personal", exact: true })).toBeChecked();
+  const opus = panel.getByRole("option", { name: /^Claude Opus 5\.5, / });
+  await expect(opus).toHaveCount(1);
   await page.screenshot({
     path: testInfo.outputPath("account-model-picker.png"),
     animations: "disabled",
   });
-  await work.click();
+  await opus.click();
+  await expect(panel).toBeVisible();
+  await account.getByRole("radio", { name: "work", exact: true }).click();
+  await expect(account.getByRole("radio", { name: "work", exact: true })).toBeChecked();
   await expect(main).toContainText("Opus 5.5 work");
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
   await expect(page.locator("[data-session-agent]")).toContainText(
     "Claude Code · Claude Opus 5.5 work",
   );
@@ -764,7 +1095,7 @@ test("model picker names and selects accounts and session shows its active agent
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test("chat edits model settings from one menu at narrow and wide sizes", async ({
+test("chat edits model settings from one panel at narrow and wide sizes", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => {
@@ -788,94 +1119,155 @@ test("chat edits model settings from one menu at narrow and wide sizes", async (
   await page.setViewportSize({ width: 320, height: 800 });
   await page.goto("/tests/browser/composer-extras.html");
   const main = page.locator("[data-composer-model-controls] button[aria-haspopup]").first();
-  const menu = page.getByRole("menu", {
+  const panel = page.getByRole("dialog", {
     name: "Model and settings",
     exact: true,
   });
-  const row = (name: string) =>
-    menu.getByRole("menuitem").filter({ has: page.getByText(name, { exact: true }) });
-  const choose = async (name: string, option: string) => {
-    await main.click();
-    await row(name).click();
-    await page.getByRole("menuitemradio", { name: option, exact: true }).click();
+  const settingsColumn = panel.locator("[data-model-settings]");
+  // A setting's options: radio rows, segmented radios or subagent checkboxes.
+  const setting = (name: string) =>
+    settingsColumn.locator(
+      `[role="radiogroup"][aria-label="${name}"], [role="group"][aria-label="${name}"]`,
+    );
+  const option = (name: string, label: string | RegExp) =>
+    setting(name)
+      .getByRole("radio", { name: label, exact: true })
+      .or(setting(name).getByRole("checkbox", { name: label, exact: true }));
+  // Delegation values are encoded refs inside the settings record.
+  const delegation = async () => {
+    const { settings } = JSON.parse((await page.getByTestId("choice").textContent()) ?? "{}");
+    const decode = (value?: string) => (value ? JSON.parse(value) : null);
+    return {
+      advisor: decode(settings.crossAdvisor)?.model ?? null,
+      subagents: ([] as { model: string }[])
+        .concat(decode(settings.crossSubagents) ?? [])
+        .map((ref) => ref.model),
+    };
+  };
+  const agentsTab = panel.getByRole("tab", { name: /^Agents/ });
+  const openPanel = async (tab?: "agents") => {
+    if (!(await panel.isVisible())) await main.click();
+    await expect(panel).toBeVisible();
+    if (tab) await agentsTab.click();
+  };
+  const choose = async (name: string, label: string | RegExp, tab?: "agents") => {
+    await openPanel(tab);
+    await option(name, label).click();
+    // Picking a setting keeps the panel open.
+    await expect(panel).toBeVisible();
+    await expect(option(name, label)).toHaveAttribute("aria-checked", "true");
   };
   await expect(main).toBeInViewport();
+  await expect(main).toHaveAttribute("aria-haspopup", "dialog");
   await expect(page.getByRole("button", { name: "Extras", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
-  await choose("Advisor", "Claude Opus 5.5");
-  await choose("Subagent model", "Claude Haiku 4.5");
+  const opusAdvisor = /^Claude Code · Claude Opus 5\.5\b/;
+  await choose("Advisor", opusAdvisor, "agents");
+  await choose("Subagents", /^Claude Code · Claude Haiku 4\.5\b/);
   await expect(page.getByTestId("choice")).toContainText('"model":"claude:sonnet-5"');
-  await expect(page.getByTestId("choice")).toContainText('"advisor":"claude-opus-5-5"');
-  await expect(page.getByTestId("choice")).toContainText('"subagentModel":"claude-haiku-4-5"');
-  await main.click();
-  await expect(menu).toBeInViewport();
+  await expect
+    .poll(delegation)
+    .toEqual({ advisor: "claude:opus-5-5", subagents: ["claude:haiku-4.5"] });
+  await expect(panel).toBeInViewport();
   await page.screenshot({
     path: testInfo.outputPath("chat-model-settings-320px.png"),
     animations: "disabled",
   });
   await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
     "Keep this chat draft",
   );
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
   await page.getByRole("button", { name: "Toggle busy", exact: true }).click();
-  await main.click();
+  await openPanel("agents");
   // Settings can be queued for the next turn while an agent is running.
-  await expect(row("Advisor")).toBeEnabled();
+  await expect(option("Advisor", opusAdvisor)).toBeEnabled();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Toggle busy", exact: true }).click();
   await page.getByRole("button", { name: "Toggle disabled", exact: true }).click();
-  await main.click();
-  await expect(row("Advisor")).toBeDisabled();
-  // Keyboard activation must respect the same lock as pointer input.
-  await menu.press("ArrowRight");
-  await menu.press("Enter");
-  await expect(page.getByRole("menuitemradio")).toHaveCount(0);
+  await openPanel("agents");
+  const lockedRows = settingsColumn.locator(
+    '[data-setting-id] [role="radio"], [data-setting-id] [role="checkbox"]',
+  );
+  await expect(lockedRows.first()).toBeDisabled();
+  expect(
+    await lockedRows.evaluateAll((rows) =>
+      rows.every((row) => (row as HTMLButtonElement).disabled),
+    ),
+  ).toBe(true);
+  // Keyboard activation must respect the same lock as pointer input: locked rows take no focus
+  // and Enter/Space change nothing.
+  const before = await page.getByTestId("choice").textContent();
+  await agentsTab.focus();
+  for (let step = 0; step < 3; step += 1) {
+    await page.keyboard.press("Tab");
+    expect(
+      await page.evaluate(() =>
+        Boolean(document.activeElement?.closest("[data-model-settings] [data-setting-id]")),
+      ),
+    ).toBe(false);
+  }
+  await agentsTab.focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Space");
+  await expect(page.getByTestId("choice")).toHaveText(before ?? "");
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Toggle disabled", exact: true }).click();
 
   await page.getByRole("button", { name: "codex", exact: true }).click();
-  await main.click();
-  await expect(menu.getByRole("menuitem")).toHaveText([
-    "ReasoningMedium",
-    "Service TierStandard",
-    "ModelGPT-5.4",
-  ]);
-  await expect(row("Advisor")).toHaveCount(0);
+  await openPanel();
+  // The panel reads top-down: Reasoning leads, then Service Tier.
+  expect(
+    await settingsColumn
+      .locator('[data-setting-id] > [role="radiogroup"]')
+      .evaluateAll((groups) => groups.map((group) => group.getAttribute("aria-label"))),
+  ).toEqual(["Reasoning", "Service Tier"]);
+  await expect(option("Reasoning", "Medium")).toHaveAttribute("aria-checked", "true");
+  await expect(option("Service Tier", "Standard")).toHaveAttribute("aria-checked", "true");
+  // Claude-only rows stay off Codex; the cross-provider delegation rows live on the Agents tab.
+  await expect(setting("Subagent model policy")).toHaveCount(0);
+  await expect(setting("Advisor")).toHaveCount(0);
   await page.screenshot({
     path: testInfo.outputPath("chat-codex-settings-320px.png"),
     animations: "disabled",
   });
-  await page.keyboard.press("Escape");
+  await agentsTab.click();
+  await expect(setting("Advisor")).toBeVisible();
+  await expect(setting("Subagent model policy")).toHaveCount(0);
+  await panel.getByRole("tab", { name: "Settings", exact: true }).click();
   await choose("Reasoning", "High");
   await choose("Service Tier", "Fast");
+  await page.keyboard.press("Escape");
   await expect(main).toContainText("High");
   await expect(page.getByTestId("choice")).toContainText('"serviceTier":"fast"');
   await page.setViewportSize({ width: 1000, height: 800 });
-  await main.click();
+  await openPanel();
   await page.screenshot({
     path: testInfo.outputPath("chat-codex-settings-wide.png"),
     animations: "disabled",
   });
-  await row("Model").click();
-  await expect(page.getByRole("textbox", { name: "Search models", exact: true })).toBeVisible();
+  // Models and settings share one panel; its search drives the listbox, so it is a combobox.
+  await expect(panel.getByRole("listbox", { name: "Models", exact: true })).toBeVisible();
+  await expect(panel.getByRole("combobox", { name: "Search models", exact: true })).toBeVisible();
   await expect(page.locator("[data-model-extras-entry]")).toHaveCount(0);
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "grok", exact: true }).click();
-  await main.click();
-  await expect(row("Reasoning")).toBeVisible();
+  await openPanel();
+  await expect(setting("Reasoning")).toBeVisible();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "gemini", exact: true }).click();
-  await main.click();
-  await expect(row("Model")).toBeVisible();
+  await openPanel();
+  await expect(panel.getByRole("listbox", { name: "Models", exact: true })).toBeVisible();
+  await expect(settingsColumn).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
     "Keep this chat draft",
   );
 });
 
-test("model menu stays inside its frame and viewport", async ({ page }, testInfo) => {
+test("model panel stays inside the viewport", async ({ page }, testInfo) => {
   await page.addInitScript(() => {
     localStorage.setItem("bycoda.language", "en");
     Object.assign(window, {
@@ -899,52 +1291,48 @@ test("model menu stays inside its frame and viewport", async ({ page }, testInfo
   const main = page.locator("[data-composer-model-controls] button[aria-haspopup]").first();
   await expect(main).toContainText("personal");
   await main.click();
-  await page.getByRole("menuitem", { name: /^Model / }).click();
+  const panel = page.getByRole("dialog", {
+    name: "Model and settings",
+    exact: true,
+  });
   for (const viewport of [
     { width: 661, height: 761 },
     { width: 320, height: 480 },
     { width: 1000, height: 800 },
   ]) {
     await page.setViewportSize(viewport);
-    const menu = page.getByRole("menu", { name: "Model and settings", exact: true });
-    await expect(menu).toBeInViewport();
+    await expect(panel).toBeInViewport();
+    // The panel and its rail, model list and settings column all fit the viewport.
     await expect
       .poll(() =>
-        menu.evaluate((el) => {
-          const content = el.getBoundingClientRect();
-          const frame = el.parentElement!.getBoundingClientRect();
-          return content.right <= frame.right && el.scrollWidth <= el.clientWidth + 1;
-        }),
-      )
-      .toBe(true);
-    const flyout = page.getByRole("dialog", { name: "Models", exact: true });
-    await expect
-      .poll(() =>
-        flyout.evaluate((el) => {
-          const frame = el.parentElement!.getBoundingClientRect();
-          const tabs = el.querySelectorAll('[role="tab"]').length;
-          const preferredHeight = Math.max(tabs * 32 + (tabs - 1) * 4 + 12, 300) + 2;
-          const controls = document
-            .querySelector(".model-controls-menu")!
-            .parentElement!.getBoundingClientRect();
+        panel.evaluate((el) => {
+          const box = el.getBoundingClientRect();
+          const inside = (selector: string) => {
+            const child = el.querySelector(selector);
+            if (!child) return false;
+            const rect = child.getBoundingClientRect();
+            return rect.left >= box.left - 1 && rect.right <= box.right + 1;
+          };
           return (
-            frame.top >= 7 &&
-            frame.bottom <= innerHeight - 7 &&
-            frame.height <= preferredHeight + 1 &&
-            // The flyout overlaps its row by 4px, inside the menu's 5px inset.
-            (innerWidth < 661 ||
-              (frame.left >= controls.right - 10 && frame.left <= controls.right))
+            box.left >= 0 &&
+            box.top >= 0 &&
+            box.right <= innerWidth &&
+            box.bottom <= innerHeight &&
+            el.scrollWidth <= el.clientWidth + 1 &&
+            inside('[role="tablist"]') &&
+            inside('[role="listbox"]') &&
+            inside("[data-model-settings]")
           );
         }),
       )
       .toBe(true);
     await page.screenshot({
-      path: testInfo.outputPath(`model-menu-fixed-${viewport.width}.png`),
+      path: testInfo.outputPath(`model-panel-fixed-${viewport.width}.png`),
       animations: "disabled",
     });
   }
   await page.screenshot({
-    path: testInfo.outputPath("model-menu-fixed.png"),
+    path: testInfo.outputPath("model-panel-fixed.png"),
     animations: "disabled",
   });
 });
@@ -954,17 +1342,25 @@ test("independent scalar model settings preserve the draft caret and sibling val
 }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await page.goto("/tests/browser/composer-extras.html?scalar");
-  const draft = page.getByRole("textbox", { name: "Scalar draft", exact: true });
+  const draft = page.getByRole("textbox", {
+    name: "Scalar draft",
+    exact: true,
+  });
   await draft.focus();
   await draft.evaluate((node) => node.setSelectionRange(3, 8));
-  const effort = page.getByRole("combobox", { name: /^(Effort|Reasoning): Medium$/ });
+  const effort = page.getByRole("combobox", {
+    name: /^(Effort|Reasoning): Medium$/,
+  });
   await effort.click();
   await effort.press("End");
   await effort.press("Enter");
   await expect(draft).toBeFocused();
   expect(await draft.evaluate((node) => [node.selectionStart, node.selectionEnd])).toEqual([3, 8]);
   await expect(page.getByTestId("scalar-settings")).toContainText('"reasoningEffort":"high"');
-  const tier = page.getByRole("combobox", { name: "Service Tier: Standard", exact: true });
+  const tier = page.getByRole("combobox", {
+    name: "Service Tier: Standard",
+    exact: true,
+  });
   await tier.click();
   await tier.press("End");
   await tier.press("Enter");
@@ -972,4 +1368,139 @@ test("independent scalar model settings preserve the draft caret and sibling val
   await expect(page.getByTestId("scalar-settings")).toContainText('"serviceTier":"fast"');
   await expect(draft).toHaveValue("Preserve this draft");
   await expect(draft).toBeFocused();
+});
+
+test("external drop: the composer shows one mark and one badge that names the attach action", async ({
+  page,
+}) => {
+  // A dropped image is saved through the native attachment store before it joins
+  // the draft; only that write is stood in for, with an isolated path.
+  await page.addInitScript(() => {
+    Object.assign(window, {
+      __TAURI_INTERNALS__: {
+        metadata: { currentWebview: { label: "fixture" }, currentWindow: { label: "fixture" } },
+        transformCallback: () => 1,
+        unregisterCallback: () => {},
+        invoke: async (command: string, args?: { name?: string }) => {
+          if (command === "plugin:event|listen") return 1;
+          if (command === "plugin:event|unlisten") return;
+          if (command === "write_attachment") return `C:/isolated-fixture/${args?.name}`;
+          throw new Error(`No native host in composer fixture: ${command}`);
+        },
+      },
+    });
+  });
+  await page.goto("/tests/browser/composer-extras.html");
+  const box = page.locator("[data-composer-box]").first();
+  await expect(box).toBeVisible();
+
+  // Dragging text is not a file drop: no mark, no badge.
+  await textDrag(box, "dragover");
+  await expect(dropBadge(page)).toHaveCount(0);
+  await expect(dropMarks(page)).toHaveCount(0);
+
+  await fileDrag(box, "dragover", files(3));
+  await expect(box).toHaveAttribute("data-drop-indicator", "inside");
+  await expect(dropMarks(page)).toHaveCount(1);
+  await expect(dropBadge(page)).toHaveCount(1);
+  await expect(dropBadge(page)).toHaveText("Attach 3 files");
+  await expect(dropAnnouncer(page)).toHaveText("Attach 3 files");
+  // The old in-box instruction is gone: the badge is the only sentence.
+  await expect(box).not.toContainText("Drop files to attach");
+  for (const light of [false, true]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      light,
+    );
+    await page.screenshot({
+      path: `temp/verification/vis-dnd-4/composer-attach-3-${light ? "light" : "dark"}.png`,
+    });
+  }
+
+  // Every way a drag can end clears both.
+  await page.keyboard.press("Escape");
+  await expect(dropBadge(page)).toHaveCount(0);
+  await expect(dropMarks(page)).toHaveCount(0);
+  await fileDrag(box, "dragover", files(1));
+  await expect(dropBadge(page)).toHaveText("Attach 1 file");
+  await fileDrag(box, "dragleave", files(1), { x: 1, y: 1 });
+  await expect(dropMarks(page)).toHaveCount(0);
+  await fileDrag(box, "dragover", files(1));
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await expect(dropBadge(page)).toHaveCount(0);
+
+  // Dropping attaches and clears the feedback.
+  await fileDrag(box, "dragover", files(1));
+  await fileDrag(box, "drop", [{ name: "dropped.png", type: "image/png" }]);
+  await expect(dropBadge(page)).toHaveCount(0);
+  await expect(dropMarks(page)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Remove dropped\.png/ })).toBeVisible();
+
+  // More files than a draft can hold: the badge says how many will be kept.
+  await fileDrag(box, "dragover", files(25));
+  await expect(dropBadge(page)).toHaveText("Attach 19 of 25 files");
+  await page.keyboard.press("Escape");
+  await expect(dropBadge(page)).toHaveCount(0);
+});
+
+test("external drop: a composer that cannot take attachments says why instead of offering the drop", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/composer-extras.html?no-attachments");
+  const box = page.locator("[data-composer-box]").first();
+  await expect(box).toBeVisible();
+  await fileDrag(box, "dragover", files(2));
+  await expect(box).toHaveAttribute("data-drop-indicator", "blocked");
+  await expect(dropBadge(page)).toHaveText("This provider does not support attachments");
+  await expect(dropBadge(page)).toHaveAttribute("data-action", "blocked");
+  for (const light of [false, true]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      light,
+    );
+    await page.screenshot({
+      path: `temp/verification/vis-dnd-4/composer-blocked-${light ? "light" : "dark"}.png`,
+    });
+  }
+  await fileDrag(box, "dragleave", files(2), { x: 1, y: 1 });
+  await expect(dropMarks(page)).toHaveCount(0);
+});
+
+test("model picker selects image models under Agents in both themes and widths", async ({
+  page,
+}) => {
+  test.setTimeout(30_000);
+  await initializeChatLayout(page);
+  for (const [width, scheme] of [
+    [1280, "light"],
+    [1280, "dark"],
+    [800, "light"],
+    [800, "dark"],
+  ] as const) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
+    await page.goto("/tests/browser/composer-extras.html?chat-layout", {
+      waitUntil: "domcontentloaded",
+    });
+    await page.evaluate(
+      (value) => document.documentElement.classList.toggle("theme-light", value),
+      scheme === "light",
+    );
+    await page
+      .getByRole("button", { name: /^Claude Code/ })
+      .first()
+      .click();
+    const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
+    await expect(panel).toBeVisible();
+    await panel.getByRole("tab", { name: /^Agents/ }).click();
+    const row = panel.locator('[data-setting-id="imageModels"]');
+    await expect(row).toContainText("Image models");
+    await expect(row).toContainText("Automatic");
+    await row.locator("[data-model-setting-add]").click();
+    await panel.getByRole("checkbox", { name: /Nano Banana/ }).click();
+    await expect(page.getByTestId("choice")).toContainText('"imageModels":"[\\"antigravity');
+    await page.screenshot({
+      path: `temp/verification/image-models/picker-${width}-${scheme}.png`,
+    });
+  }
 });

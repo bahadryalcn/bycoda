@@ -1,4 +1,4 @@
-"""Regression checks only: never builds, installs, contacts SSH, or stops processes."""
+"""No live build/install/SSH or app/provider stop. Windows job fixture owns its test children."""
 import io
 import os
 from contextlib import closing
@@ -8,6 +8,7 @@ import plistlib
 import shutil
 import sqlite3
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
@@ -15,17 +16,676 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from local_update import UPDATER_FEED, archive_package, dependency_action, dependency_key, fingerprint, sync_source, queue_install, validate_versions, validate_product_identity, finish_build, host_key, install_job_active, snapshot
+from local_update import UPDATER_FEED, build_env, archive_package, dependency_action, dependency_key, fingerprint, sync_source, queue_install, validate_versions, validate_product_identity, finish_build, host_key, install_job_active, snapshot, bundled_host_key, worker
 from local_update_lib import backup, count, safe_child, write_json, read_json, alive, digest, windows_binary_digest, PRODUCT_IDENTITY, package_identity
 from local_install import wait_idle, stop_windows_host, host_install, verify_windows_host_process
 from local_install import app_install, windows_app_process_filter, desktop_db, mac_app_update_paths
+from local_install import windows_app_snapshot
+from local_install import verify_desktop_backup, wait_broker_launch
+from local_update import install_job_status, git_identity, stamp_build_identity, inputs, verify_interrupted_resume, status, write_package_manifest, archive_host_package, main, package_run
+from local_update_lib import package_components
+from local_install import installed_identity
+from local_update_lib import spawn_windows_updater, tree_hashes, UpdaterLaunchRefused, windows_installer_idle
+
+class BuildEnvTests(unittest.TestCase):
+    def test_keeps_only_public_account_settings(self):
+        self.assertEqual(build_env(None), {})
+        self.assertEqual(build_env({'BYCODA_CLERK_ISSUER': 'https://clerk.bycoda.codes',
+                                    'BYCODA_ACCOUNT_ENV': 'production'}),
+                         {'BYCODA_ACCOUNT_ENV': 'production', 'BYCODA_CLERK_ISSUER': 'https://clerk.bycoda.codes'})
+
+    def test_refuses_other_keys_and_shell_text(self):
+        for bad in ({'PATH': '/tmp'}, {'BYCODA_WINDOWS_SIGNING_CERT_SHA1': 'abc'},
+                    {'BYCODA_CLERK_CLIENT_ID': 'a b'}, {'BYCODA_CLERK_CLIENT_ID': 'x;rm -rf /'},
+                    {'BYCODA_ACCOUNT_API_URL': 1}, ['BYCODA_ACCOUNT_ENV']):
+            with self.assertRaises(ValueError):
+                build_env(bad)
+
 
 class LocalUpdateTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'nt', 'Windows-native pnpm manager cache')
+    def test_exact_cached_pnpm_does_not_mutate_global_shim_or_accept_wrong_version(self):
+        from local_update import cached_pnpm_environment
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            base = root / 'pnpm/package-manager-store/v11/links/@pnpm/exe.win32-x64/12.15.0/hash/node_modules/@pnpm/exe.win32-x64'
+            base.mkdir(parents=True)
+            write_json(base / 'package.json', {'name': '@pnpm/exe.win32-x64', 'version': '12.15.0'})
+            (base / 'pnpm.exe').write_bytes(b'fixture exact manager')
+            env = {'LOCALAPPDATA': folder, 'PATH': 'original-manager-bin'}
+            with patch('local_update.os.name', 'nt'), patch('local_update.platform.machine', return_value='AMD64'):
+                selected = cached_pnpm_environment(env, '12.15.0')
+                self.assertTrue(selected['PATH'].startswith(str(base)))
+                self.assertEqual(env['PATH'], 'original-manager-bin')
+                write_json(base / 'package.json', {'name': '@pnpm/exe.win32-x64', 'version': '12.11.2'})
+                self.assertIsNone(cached_pnpm_environment(env, '12.15.0'))
+                self.assertIsNone(cached_pnpm_environment(env, '12.99.0'))
+                with self.assertRaises(ValueError):
+                    cached_pnpm_environment(env, '../../escape')
+
+    def git_fixture(self, root):
+        options = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
+        def git(*args):
+            return subprocess.run(['git', *args], cwd=root, check=True, capture_output=True,
+                                  text=True, **options).stdout.strip()
+        git('init', '-b', 'main')
+        git('config', 'user.email', 'fixture@example.invalid')
+        git('config', 'user.name', 'Fixture')
+        (root / '.gitignore').write_text('state/\nsecret.txt\n')
+        (root / 'package.json').write_text('{"version":"0.1.0"}')
+        (root / 'source.ts').write_text('original')
+        git('add', '.')
+        git('commit', '-m', 'Fixture')
+        return git
+
+    def test_worktree_git_metadata_and_local_sources_use_common_git_directory(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder) / 'repo'
+            root.mkdir()
+            git = self.git_fixture(root)
+            worktree = pathlib.Path(folder) / 'worktree'
+            git('worktree', 'add', '-b', 'work', str(worktree))
+            self.assertTrue((worktree / '.git').is_file())
+            (root / '.git/info/local-build-sources').write_text('secret.txt\n')
+            (worktree / 'secret.txt').write_text('fixture explicitly opted in')
+            self.assertIn('secret.txt', inputs(worktree))
+            self.assertEqual(git_identity(root)['repositoryId'], git_identity(worktree)['repositoryId'])
+            self.assertEqual(git_identity(worktree)['branch'], 'work')
+
+    def test_frozen_identity_matches_real_dirty_bytes_and_reuses_immutable_stamp(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            git = self.git_fixture(root)
+            git('mv', 'source.ts', 'renamed.ts')
+            (root / 'renamed.ts').write_text('dirty frozen bytes')
+            (root / ' Türkçe.ts').write_text('unicode source')
+            identity = {}
+            archive, source = snapshot(root, root / 'state', capture=identity)
+            self.assertEqual(identity['sourceFingerprint'], source)
+            self.assertEqual(identity['head'], git('rev-parse', 'HEAD'))
+            self.assertEqual(identity['schemaVersion'], 1)
+            self.assertEqual({row['path'] for row in identity['dirtyPaths']}, {'source.ts', 'renamed.ts', ' Türkçe.ts'})
+            again = {}
+            snapshot(root, root / 'state', capture=again)
+            self.assertEqual(identity, again)
+            workspace = root / 'state/source'
+            frozen = sync_source(archive, source, workspace)
+            path = stamp_build_identity(workspace, {'source': source, 'mode': 'local',
+                                        'buildIdentity': identity}, '0.1.0')
+            self.assertEqual(read_json(path), identity)
+            self.assertEqual(fingerprint(frozen), identity['sourceFingerprint'])
+            self.assertEqual(frozen['renamed.ts'], b'dirty frozen bytes')
+            self.assertNotIn('build/build-info.json', frozen)
+            with self.assertRaisesRegex(RuntimeError, 'does not match'):
+                stamp_build_identity(workspace, {'source': 'different', 'mode': 'local',
+                                     'buildIdentity': identity}, '0.1.0')
+            (root / 'renamed.ts').write_text('different same-version source')
+            changed = {}
+            snapshot(root, root / 'state', capture=changed)
+            self.assertNotEqual(identity['buildId'], changed['buildId'])
+
+    def test_source_edit_during_capture_is_rejected_without_identity(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            self.git_fixture(root)
+            real_inputs = inputs
+            calls = 0
+            def editing_inputs(path):
+                nonlocal calls
+                result = real_inputs(path)
+                calls += 1
+                if calls == 1:
+                    (root / 'source.ts').write_text('concurrent writer')
+                return result
+            identity = {}
+            with patch('local_update.inputs', side_effect=editing_inputs):
+                with self.assertRaisesRegex(RuntimeError, 'Source changed during freeze'):
+                    snapshot(root, root / 'state', capture=identity)
+            self.assertEqual(identity, {})
+
+    def test_installed_receipt_binds_manifest_to_observed_binary_without_auth(self):
+        with tempfile.TemporaryDirectory() as folder:
+            binary = pathlib.Path(folder) / 'bycoda-host.mjs'
+            binary.write_bytes(b'fixture package')
+            identity = {'buildId': 'fixture'}
+            receipt = installed_identity({'buildIdentity': identity}, binary, host=True)
+            self.assertEqual(receipt, {'buildIdentity': identity, 'binaryPath': str(binary.resolve()),
+                                      'binaryHash': digest(binary), 'binaryHashKind': 'sha256'})
+            self.assertNotIn('buildIdentity', installed_identity({}, binary, host=True))
+
+    def test_archived_package_name_carries_build_identity(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            setup = root / 'setup.exe'
+            setup.write_bytes(b'fixture')
+            target = archive_package(root, setup, '0.1.0', True, today='2026-10-26',
+                                     build_id='01234567890123456789-local')
+            self.assertIn('_01234567890123456789-local_', target.name)
+            with self.assertRaisesRegex(ValueError, 'Invalid build identity'):
+                archive_package(root, setup, '0.1.0', True, build_id='../unsafe')
+
+    def test_dead_helper_does_not_allow_a_still_running_installer_or_unknown_nsis_child(self):
+        release = pathlib.Path('C:/build/run')
+        app = pathlib.Path('C:/local/bycoda/bycoda.exe')
+        normal = {'ProcessId': 1, 'ParentProcessId': 0, 'Name': 'other.exe', 'ExecutablePath': 'C:/other.exe', 'CommandLine': 'other.exe'}
+        windows_installer_idle([normal], release, app, 900)
+        for candidate in (
+            {**normal, 'ExecutablePath': 'C:/build/run/setup.exe'},
+            {**normal, 'ExecutablePath': 'C:/local/bycoda/uninstall.exe'},
+            {**normal, 'ParentProcessId': 900},
+            {**normal, 'Name': 'Au_.exe', 'ExecutablePath': 'C:/Temp/nsF3B.tmp/Au_.exe'},
+            {**normal, 'Name': 'setup.exe', 'ExecutablePath': None, 'CommandLine': None},
+            {**normal, 'Name': 'bycoda_0.6.75_x64-setup.exe'},
+        ):
+            with self.subTest(candidate=candidate), self.assertRaisesRegex(RuntimeError, 'still running or ambiguous'):
+                windows_installer_idle([candidate], release, app, 900)
+        with self.assertRaisesRegex(RuntimeError, 'Cannot verify'):
+            windows_installer_idle([{}], release, app)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows unknown launch recovery')
+    def test_windows_launch_failure_preserves_child_state_and_blocks_unknown_retry(self):
+        for outcome in ('child', 'unknown', 'refused'):
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as folder:
+                root = pathlib.Path(folder)
+                release = root / 'release'
+                release.mkdir()
+                write_json(release / 'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY), 'hostHashes': {'host.mjs': 'fixture'}, 'appHashes': {'setup.exe': 'fixture'}, 'binaryHash': 'fixture'})
+                record = root / '.bycoda-host/update-jobs/app.json'
+                def launch(args, cwd, receipt, launch_key):
+                    if outcome == 'child':
+                        write_json(record, {'id': 'same', 'pid': 123, 'state': 'waiting', 'launchKey': launch_key})
+                    if outcome == 'refused':
+                        raise UpdaterLaunchRefused('known refusal')
+                    raise RuntimeError('unknown verification outcome')
+                with patch('local_update.pathlib.Path.home', return_value=root), \
+                     patch('local_update.alive', return_value=True), \
+                     patch('local_update.spawn_windows_updater', side_effect=launch) as broker:
+                    with self.assertRaises(RuntimeError):
+                        queue_install(release, ('app',))
+                    current = install_job_status(read_json(record))
+                    self.assertEqual(current['state'], {'child': 'waiting', 'unknown': 'launch-unknown', 'refused': 'failed'}[outcome])
+                    if outcome == 'child':
+                        self.assertEqual(current['pid'], 123)
+                    if outcome == 'unknown':
+                        with self.assertRaisesRegex(RuntimeError, 'outcome is unknown'):
+                            queue_install(release, ('app',))
+                        self.assertEqual(broker.call_count, 1)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows late publication reconciliation')
+    def test_launch_exception_sidecar_cannot_overwrite_a_late_completed_helper_report(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            release = root / 'release'
+            release.mkdir()
+            record = root / '.bycoda-host/update-jobs/app.json'
+            write_json(release / 'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY), 'hostHashes': {'host.mjs': 'fixture'}, 'appHashes': {'setup.exe': 'fixture'}, 'binaryHash': 'fixture'})
+            def publish(path, value):
+                if path.name.endswith('.error.json'):
+                    write_json(record, {'id': 'same', 'pid': 123, 'state': 'installed'})
+                write_json(path, value)
+            with patch('local_update.pathlib.Path.home', return_value=root), \
+                 patch('local_update.write_json', side_effect=publish), \
+                 patch('local_update.spawn_windows_updater', side_effect=RuntimeError('verification timed out')):
+                with self.assertRaisesRegex(RuntimeError, 'timed out'):
+                    queue_install(release, ('app',))
+            self.assertEqual(read_json(record), {'id': 'same', 'pid': 123, 'state': 'installed'})
+
+    def test_status_uses_only_the_current_attempt_receipt_before_first_helper_report(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            receipt = root / 'launch-app.json'
+            launch_key = 'a' * 32
+            record = {'state': 'launching', 'pid': None, 'launchKey': launch_key,
+                      'launchReceipt': str(receipt), 'component': 'app', 'releaseDirectory': str(root)}
+            write_json(receipt, {'pid': 123, 'verified': True, 'launchKey': 'b' * 32})
+            self.assertIsNone(install_job_status(record)['pid'])
+            self.assertTrue(install_job_active(record))
+            write_json(receipt, {'pid': 123, 'verified': True, 'launchKey': launch_key})
+            with patch('local_update.alive', return_value=False):
+                projected = install_job_status(record)
+                self.assertEqual(projected['pid'], 123)
+                self.assertEqual(projected['state'], 'interrupted')
+                self.assertFalse(install_job_active(record))
+            with patch('local_update.alive', return_value=True):
+                self.assertTrue(install_job_active(record))
+            self.assertIsNone(record['pid'])
+
+    def test_helper_launch_handshake_requires_matching_pid_key_and_verification(self):
+        with tempfile.TemporaryDirectory() as folder:
+            receipt = pathlib.Path(folder) / 'launch-app.json'
+            write_json(receipt, {'pid': os.getpid(), 'launchKey': 'a' * 32, 'verified': True})
+            wait_broker_launch(receipt, 'a' * 32)
+            for state in ({'pid': os.getpid(), 'launchKey': 'b' * 32, 'verified': True},
+                          {'pid': os.getpid(), 'launchKey': 'a' * 32, 'verified': False}):
+                write_json(receipt, state)
+                with self.assertRaisesRegex(RuntimeError, 'installation did not start'):
+                    wait_broker_launch(receipt, 'a' * 32, seconds=0)
+
+    def test_headless_helper_owns_its_log_for_startup_validation_failure(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            manifest = root / 'manifest.json'
+            write_json(manifest, {'id': 'invalid', 'version': '0.6.75', 'identity': dict(PRODUCT_IDENTITY)})
+            log = root / 'install-app.log'
+            options = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
+            result = subprocess.run([sys.executable, '-B', str(pathlib.Path(__file__).with_name('local_install.py')),
+                                     str(manifest), 'app', '--log', str(log)], capture_output=True, **options)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('Invalid package id/version', log.read_text())
+
+    @unittest.skipUnless(os.name == 'nt', 'Real isolated Windows job lifetime')
+    def test_windows_broker_survives_kill_on_close_job(self):
+        import ctypes
+        import _winapi
+        from ctypes import wintypes
+        class Limits(ctypes.Structure):
+            _fields_ = [('processTime', ctypes.c_int64), ('jobTime', ctypes.c_int64),
+                        ('flags', wintypes.DWORD), ('minimum', ctypes.c_size_t),
+                        ('maximum', ctypes.c_size_t), ('count', wintypes.DWORD),
+                        ('affinity', ctypes.c_size_t), ('priority', wintypes.DWORD),
+                        ('scheduling', wintypes.DWORD)]
+        class ExtendedLimits(ctypes.Structure):
+            _fields_ = [('basic', Limits), ('io', ctypes.c_uint64 * 6),
+                        ('processMemory', ctypes.c_size_t), ('jobMemory', ctypes.c_size_t),
+                        ('peakProcess', ctypes.c_size_t), ('peakJob', ctypes.c_size_t)]
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+        kernel.CreateJobObjectW.restype = wintypes.HANDLE
+        kernel.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+        kernel.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        kernel.ResumeThread.argtypes = [wintypes.HANDLE]
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.IsProcessInJob.argtypes = [wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)]
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            library = str(pathlib.Path(__file__).resolve().parent)
+            leaf_start = (
+                'import ctypes,os,pathlib,time,json,subprocess,sys;from ctypes import wintypes;'
+                'k=ctypes.WinDLL("kernel32");k.GetConsoleWindow.restype=ctypes.c_void_p;'
+                'k.GetCurrentProcess.restype=wintypes.HANDLE;'
+                'a=ctypes.WinDLL("advapi32");a.OpenProcessToken.argtypes=[wintypes.HANDLE,wintypes.DWORD,ctypes.POINTER(wintypes.HANDLE)];'
+                'token=wintypes.HANDLE();assert a.OpenProcessToken(k.GetCurrentProcess(),8,ctypes.byref(token));'
+                'e=wintypes.DWORD();n=wintypes.DWORD();assert a.GetTokenInformation(token,20,ctypes.byref(e),4,ctypes.byref(n));'
+                'p=pathlib.Path(' + repr(str(root)) + ');'
+                'p.joinpath(str(os.getpid())+".ready").write_text(json.dumps({"console":k.GetConsoleWindow() or 0,"elevated":bool(e.value)}));'
+                'deadline=time.monotonic()+30;'
+            )
+            descendant = leaf_start + (
+                '\nwhile not p.joinpath("finish").exists() and time.monotonic()<deadline: time.sleep(.02)'
+            )
+            leaf = leaf_start + 'spawned=False;childCode=' + repr(descendant) + (
+                '\nwhile not p.joinpath("finish").exists() and time.monotonic()<deadline:'
+                '\n if p.joinpath("restart").exists() and not spawned:'
+                '\n  child=subprocess.Popen([sys.executable,"-B","-c",childCode],creationflags=subprocess.CREATE_NO_WINDOW);spawned=True;'
+                'p.joinpath("descendant.pid").write_text(str(child.pid))'
+                '\n time.sleep(.02)'
+            )
+            root_code = (
+                'import json,pathlib,subprocess,sys,time;'
+                'sys.stdout=open(' + repr(str(root / 'parent.log')) + ',"w",buffering=1);sys.stderr=sys.stdout;'
+                'sys.path.insert(0,' + repr(library) + ');'
+                'from local_update_lib import spawn_windows_updater;'
+                'p=pathlib.Path(' + repr(str(root)) + ');'
+                'args=[sys.executable,"-B","-c",' + repr(leaf) + '];'
+                'direct=subprocess.Popen(args,creationflags=subprocess.CREATE_NO_WINDOW);'
+                '\ntry:\n broker=spawn_windows_updater(args,p)\n'
+                'except subprocess.CalledProcessError as error:\n print(error.stderr,flush=True)\n raise\n'
+                'p.joinpath("pids.json").write_text(json.dumps({"direct":direct.pid,"broker":broker}));'
+                'time.sleep(30)'
+            )
+            job = kernel.CreateJobObjectW(None, None)
+            self.assertTrue(job)
+            limits = ExtendedLimits()
+            limits.basic.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, no breakaway.
+            self.assertTrue(kernel.SetInformationJobObject(job, 9, ctypes.byref(limits), ctypes.sizeof(limits)))
+            process = thread = None
+            handles = []
+            try:
+                process, thread, pid, _ = _winapi.CreateProcess(
+                    sys.executable, subprocess.list2cmdline([sys.executable, '-B', '-c', root_code]),
+                    None, None, False, subprocess.CREATE_NO_WINDOW | 4, None, str(root), subprocess.STARTUPINFO())
+                self.assertTrue(kernel.AssignProcessToJobObject(job, process))
+                self.assertNotEqual(kernel.ResumeThread(thread), -1)
+                _winapi.CloseHandle(thread)
+                thread = None
+                deadline = time.monotonic() + 20
+                while not (root / 'pids.json').exists():
+                    self.assertEqual(_winapi.WaitForSingleObject(process, 0), 258,
+                                     (root / 'parent.log').read_text() if (root / 'parent.log').exists() else 'Isolated job parent exited before broker launch')
+                    self.assertLess(time.monotonic(), deadline, 'Broker launch timed out')
+                    time.sleep(.02)
+                pids = read_json(root / 'pids.json')
+                elevations = []
+                for name in ('direct', 'broker'):
+                    while not (root / (str(pids[name]) + '.ready')).exists():
+                        self.assertLess(time.monotonic(), deadline, 'Marker child did not start')
+                        time.sleep(.02)
+                    handle = kernel.OpenProcess(0x100000 | 0x1000, False, pids[name])
+                    self.assertTrue(handle)
+                    handles.append(handle)
+                    member = wintypes.BOOL()
+                    self.assertTrue(kernel.IsProcessInJob(handle, job, ctypes.byref(member)))
+                    self.assertEqual(bool(member.value), name == 'direct')
+                    info = read_json(root / (str(pids[name]) + '.ready'))
+                    self.assertEqual(info['console'], 0, 'Fixture console must remain hidden')
+                    elevations.append(info['elevated'])
+                    if name == 'broker':
+                        self.assertTrue(kernel.IsProcessInJob(handle, None, ctypes.byref(member)))
+                        self.assertFalse(member.value, 'Broker must also escape the WMI provider quota job')
+                self.assertEqual(elevations[0], elevations[1], 'Broker must not elevate the caller')
+                kernel.CloseHandle(job)
+                job = None
+                self.assertEqual(_winapi.WaitForSingleObject(process, 5000), 0)
+                self.assertEqual(_winapi.WaitForSingleObject(handles[0], 5000), 0)
+                self.assertEqual(_winapi.WaitForSingleObject(handles[1], 0), 258, 'Brokered helper died with the managed parent')
+                (root / 'restart').touch()
+                while not (root / 'descendant.pid').exists():
+                    self.assertLess(time.monotonic(), deadline, 'Brokered descendant did not launch')
+                    time.sleep(.02)
+                descendant_pid = int((root / 'descendant.pid').read_text())
+                handle = kernel.OpenProcess(0x100000 | 0x1000, False, descendant_pid)
+                self.assertTrue(handle)
+                handles.append(handle)
+                self.assertTrue(kernel.IsProcessInJob(handle, None, ctypes.byref(member)))
+                self.assertFalse(member.value, 'Restarted descendant inherited a job quota')
+                (root / 'finish').touch()
+                self.assertEqual(_winapi.WaitForSingleObject(handles[1], 5000), 0)
+                print(json.dumps({'proof': 'isolated Windows updater lifetime', 'managedParentAndChildStopped': True,
+                                  'brokerSurvived': True, 'brokerAndDescendantOutsideAllJobs': True,
+                                  'sameElevation': True, 'sameUserAndSessionVerified': True, 'hiddenConsole': True}))
+            finally:
+                (root / 'finish').touch()
+                if job:
+                    kernel.CloseHandle(job)
+                if process:
+                    _winapi.WaitForSingleObject(process, 5000)
+                    _winapi.CloseHandle(process)
+                if thread:
+                    _winapi.CloseHandle(thread)
+                for handle in handles:
+                    _winapi.WaitForSingleObject(handle, 5000)
+                    kernel.CloseHandle(handle)
+                for marker in root.glob('*.ready'):
+                    handle = kernel.OpenProcess(0x100000, False, int(marker.stem))
+                    if handle:
+                        _winapi.WaitForSingleObject(handle, 5000)
+                        kernel.CloseHandle(handle)
+
+    def test_existing_database_backup_is_verified_without_replacing_corruption(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = pathlib.Path(folder) / 'desktop.db'
+            for content in (b'', b'partial SQLite backup'):
+                path.write_bytes(content)
+                with self.assertRaisesRegex(RuntimeError, 'requires recovery'):
+                    verify_desktop_backup(path)
+                self.assertEqual(path.read_bytes(), content)
+            path.unlink()
+            with closing(sqlite3.connect(path)) as connection:
+                connection.execute('CREATE TABLE in_flight_sessions(id TEXT)')
+            with self.assertRaisesRegex(RuntimeError, 'requires recovery'):
+                verify_desktop_backup(path)
+            with closing(sqlite3.connect(path)) as connection:
+                connection.execute('CREATE TABLE sessions(id TEXT)')
+            verify_desktop_backup(path)
+            with self.assertRaisesRegex(RuntimeError, 'requires recovery'):
+                verify_desktop_backup(path, seconds=0)
+
+    def test_job_status_reports_dead_helpers_without_mutating_records(self):
+        original = {'state': 'installing', 'pid': 123, 'id': 'same'}
+        with patch('local_update.alive', return_value=False):
+            self.assertEqual(install_job_status(original), {**original, 'state': 'interrupted',
+                             'recordedState': 'installing', 'helperAlive': False,
+                             'recovery': 'verify-recovery-before-install-only'})
+            self.assertEqual(original['state'], 'installing')
+            self.assertEqual(install_job_status({'state': 'launching', 'pid': None}),
+                             {'state': 'launching', 'pid': None, 'helperAlive': None})
+        with patch('local_update.alive', return_value=True) as alive:
+            self.assertTrue(install_job_status(original)['helperAlive'])
+            for state in ('installed', 'failed'):
+                self.assertEqual(install_job_status({'state': state, 'pid': 123}),
+                                 {'state': state, 'pid': 123, 'helperAlive': None})
+            self.assertEqual(alive.call_count, 1)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows broker contract')
+    def test_windows_queue_retries_dead_same_package_via_hidden_broker(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            release = root / 'release'
+            release.mkdir()
+            write_json(release / 'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY), 'hostHashes': {'host.mjs': 'fixture'}, 'appHashes': {'setup.exe': 'fixture'}, 'binaryHash': 'fixture'})
+            record = root / '.bycoda-host/update-jobs/app.json'
+            write_json(record, {'id': 'same', 'pid': 456, 'state': 'installing'})
+            def launch(args, cwd, receipt, launch_key):
+                self.assertEqual(cwd, release)
+                self.assertEqual(args[-6:-4], ['--log', str(release / 'install-app.log')])
+                self.assertEqual(args[:3], [sys.executable, '-B', str(release / 'local_install.py')])
+                write_json(record, {'id': 'same', 'pid': 123, 'state': 'starting'})
+                return 123
+            with patch('local_update.pathlib.Path.home', return_value=root), \
+                 patch('local_update.alive', return_value=False), \
+                 patch('local_update.spawn_windows_updater', side_effect=launch) as broker, \
+                 patch('local_update.verify_interrupted_resume') as recovery, \
+                 patch('local_update.assert_windows_installer_idle') as installer_guard, \
+                 patch('local_update.subprocess.Popen') as direct:
+                queue_install(release, ('app',), resume=True)
+            broker.assert_called_once()
+            recovery.assert_called_once()
+            installer_guard.assert_called_once()
+            direct.assert_not_called()
+            self.assertEqual(read_json(record)['state'], 'starting')
+            self.assertEqual(read_json(release / 'launch-app.json')['pid'], 123)
+
+    def test_windows_broker_checks_result_pid_and_current_user_without_elevation(self):
+        with patch('local_update_lib.ps', return_value='123') as powershell, \
+             patch('local_update_lib.alive', return_value=True):
+            self.assertEqual(spawn_windows_updater(['python.exe', "a path's/entry.py", 'app'], "C:/a path's"), 123)
+        script = powershell.call_args.args[0]
+        self.assertIn('Win32_ProcessStartup', script)
+        self.assertIn('ShowWindow=[uint16]0;CreateFlags=[uint32]150994944', script)
+        self.assertIn('GetOwnerSid', script)
+        self.assertIn('WindowsIdentity]::GetCurrent().User.Value', script)
+        self.assertNotIn('RunAs', script)
+        for value, running in [('bad', True), ('0', True), ('123', False)]:
+            with patch('local_update_lib.ps', return_value=value), patch('local_update_lib.alive', return_value=running):
+                with self.assertRaisesRegex(RuntimeError, 'process id|exited'):
+                    spawn_windows_updater(['python.exe'], 'C:/fixture')
+
+    def test_interrupted_windows_snapshot_is_reused_only_for_known_installation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            app = root / 'app/bycoda.exe'
+            app.parent.mkdir()
+            app.write_bytes(b'old exe-__TAURI_BUNDLE_TYPE_VAR_UNK')
+            (app.parent / 'sidecar.dll').write_bytes(b'old sidecar')
+            rollback = root / 'rollback'
+            rollback.mkdir()
+            manifest = {'binaryHash': 'new hash', 'version': '0.6.75'}
+            hashes, complete = windows_app_snapshot(app, rollback, manifest)
+            before = tree_hashes(rollback)
+            self.assertFalse(complete)
+            self.assertEqual(windows_app_snapshot(app, rollback, manifest), (hashes, False))
+            self.assertEqual(tree_hashes(rollback), before)
+            (app.parent / 'sidecar.dll').write_bytes(b'unknown partial installation')
+            with self.assertRaisesRegex(RuntimeError, 'unknown installation'):
+                windows_app_snapshot(app, rollback, manifest)
+            self.assertEqual(tree_hashes(rollback), before)
+            with patch('local_install.windows_binary_digest', return_value='new hash'), \
+                 patch('local_install.ps', return_value='0.6.75'):
+                with self.assertRaisesRegex(RuntimeError, 'unknown installation'):
+                    windows_app_snapshot(app, rollback, manifest)
+                (app.parent / 'sidecar.dll').unlink()
+                with self.assertRaisesRegex(RuntimeError, 'unknown installation'):
+                    windows_app_snapshot(app, rollback, manifest)
+            (rollback / 'installation/sidecar.dll').write_bytes(b'corrupt backup')
+            with self.assertRaisesRegex(RuntimeError, 'integrity'):
+                windows_app_snapshot(app, rollback, manifest)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows worker package layout')
+    def test_worker_repackages_changed_host_without_rebuilding_unchanged_web(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            workspace = root / 'source'
+            workspace.mkdir()
+            files = {'package.json': b'{"packageManager":"pnpm@12.0.0"}',
+                     'host/cli.ts': b'old host', 'src-tauri/src/lib.rs': b'unchanged Rust'}
+            (workspace / 'package.json').write_bytes(files['package.json'])
+            (workspace / 'node_modules').mkdir()
+            helpers = workspace / 'scripts/local-update'
+            helpers.mkdir(parents=True)
+            for name in ('local_update.py', 'local_update_lib.py', 'local_install.py'):
+                (helpers / name).write_text('# fixture only')
+            source_archive = root / 'source.tar.gz'
+            source_archive.write_bytes(b'fixture source archive')
+            artifacts = root / 'cargo/release'
+            native = artifacts / 'bycoda.exe'
+            setup = artifacts / 'bundle/nsis/bycoda_0.0.1_x64-setup.exe'
+            host = workspace / 'build/host-packages/win32-x64'
+            archive = host.parent / 'bycoda-host-win32-x64.zip'
+            stages = []
+            commands = []
+            graph = {'schemaVersion': 1, 'inputs': ['host/cli.ts'], 'outputs': ['build/host/bycoda-host.mjs']}
+
+            def command_result(args, **kwargs):
+                commands.append(args)
+                return '12.0.0' if args[0] == 'pnpm' else 'rustc fixture'
+
+            def build_stage(name, command, cwd, env, release, timings):
+                stages.append(name)
+                if request.get('buildIdentity'):
+                    self.assertEqual(read_json(env['BYCODA_BUILD_MANIFEST']), request['buildIdentity'])
+                if name == 'host-compile':
+                    output = workspace / graph['outputs'][0]
+                    output.parent.mkdir(parents=True, exist_ok=True)
+                    output.write_bytes(files['host/cli.ts'])
+                elif name == 'host-package':
+                    host.mkdir(parents=True, exist_ok=True)
+                    (host / 'host.mjs').write_bytes(files['host/cli.ts'])
+                    launcher = files.get('packages/host-service-launcher/src/main.rs', b'launcher')
+                    (host / 'bycoda-host-launcher.exe').write_bytes(launcher)
+                    archive.write_bytes(files['host/cli.ts'] + launcher)
+                    pathlib.Path(f'{archive}.sha256').write_text(digest(archive))
+                elif name == 'web':
+                    (workspace / 'dist').mkdir(exist_ok=True)
+                    (workspace / 'dist/index.html').write_text('unchanged web')
+                elif name == 'native':
+                    setup.parent.mkdir(parents=True, exist_ok=True)
+                    native.write_bytes(b'MZ-__TAURI_BUNDLE_TYPE_VAR_UNK-unchanged-native')
+                    # Model the installer bundling the generated host resource.
+                    setup.write_bytes(b'installer:' + archive.read_bytes())
+                else:
+                    self.fail('Unexpected build stage: ' + name)
+
+            request = {'stateRoot': str(root), 'cargoTarget': str(root / 'cargo'),
+                       'archive': str(source_archive), 'archiveHash': digest(source_archive),
+                       'source': 'fixture', 'mode': 'local', 'buildOnly': True}
+            with patch('local_update.sync_source', return_value=files), \
+                 patch('local_update.validate_versions', return_value='0.0.1'), \
+                 patch('local_update.validate_product_identity'), \
+                 patch('local_update.legacy_updaters', return_value=[]), \
+                 patch('local_update.status', return_value={}), \
+                 patch('local_update.host_graph', return_value=graph), \
+                 patch('local_update.run', side_effect=command_result), \
+                 patch('local_update.stage', side_effect=build_stage), \
+                 patch('local_update.archive_package', side_effect=lambda state, source, *args, **kwargs: source), \
+                 patch('local_update.finish_build'):
+                worker(dict(request, id='baseline'))
+                self.assertEqual(stages, ['host-compile', 'host-package', 'web', 'native'])
+                stages.clear()
+                worker(dict(request, id='unchanged'))
+                self.assertEqual(stages, [])
+                files['packages/host-service-launcher/src/main.rs'] = b'changed native launcher'
+                worker(dict(request, id='launcher-changed'))
+                self.assertEqual(stages, ['host-package', 'native'])
+                stages.clear()
+                (workspace / graph['outputs'][0]).write_bytes(b'tampered compiler output')
+                worker(dict(request, id='tampered-output'))
+                self.assertEqual(stages, ['host-compile'])
+                stages.clear()
+                files['host/cli.ts'] = b'new host'
+                worker(dict(request, id='host-changed'))
+                self.assertEqual(stages, ['host-compile', 'host-package', 'native'])
+                self.assertEqual((root / 'runs/host-changed/setup.exe').read_bytes(), b'installer:new hostchanged native launcher')
+                stages.clear()
+                worker(dict(request, id='host-unchanged'))
+                self.assertEqual(stages, [])
+                identity = {'schemaVersion': 1, 'buildId': '01234567890123456789-local',
+                            'sourceFingerprint': 'fixture', 'version': '0.0.1', 'mode': 'local'}
+                request['buildIdentity'] = identity
+                worker(dict(request, id='stamped'))
+                self.assertEqual(stages, ['host-package', 'web', 'native'])
+                self.assertEqual(read_json(root / 'runs/stamped/build-info.json'), identity)
+                self.assertEqual(read_json(root / 'runs/stamped/manifest.json')['buildIdentity'], identity)
+                stages.clear()
+                worker(dict(request, id='stamped-reuse'))
+                self.assertEqual(stages, [])
+                # Equal versions and code cache hits do not permit stale component stamps.
+                request['buildIdentity'] = dict(identity, buildId='11234567890123456789-local')
+                worker(dict(request, id='different-stamp'))
+                self.assertEqual(stages, ['host-package', 'web', 'native'])
+                stages.clear()
+                commands.clear()
+                files['host/cli.ts'] = b'Host-only next code'
+                worker(dict(request, id='host-only', components=['host']))
+                self.assertEqual(stages, ['host-compile', 'host-package'])
+                self.assertFalse(any(args[0] == 'rustc' for args in commands))
+                host_release = root / 'runs/host-only-host'
+                manifest = read_json(host_release / 'manifest.json')
+                self.assertEqual(manifest['components'], ['host'])
+                self.assertNotIn('appHashes', manifest)
+                self.assertNotIn('binaryHash', manifest)
+                self.assertFalse((host_release / 'setup.exe').exists())
+                self.assertEqual((host_release / manifest['hostArchive']['name']).read_bytes(), files['host/cli.ts'] + files['packages/host-service-launcher/src/main.rs'])
+                self.assertEqual(len(list((root / 'packages').glob('bycoda-host_*.zip'))), 1)
+                with self.assertRaisesRegex(RuntimeError, 'does not contain app'):
+                    worker(dict(request, id='host-only', installOnly=True,
+                                packageComponents=['host'], components=['host', 'app']))
+
+    def test_installer_cache_tracks_bundled_host_bytes_and_checksum(self):
+        with tempfile.TemporaryDirectory() as folder:
+            archive = pathlib.Path(folder) / 'bycoda-host-win32-x64.zip'
+            checksum = pathlib.Path(f'{archive}.sha256')
+            archive.write_bytes(b'old host package')
+            checksum.write_text('old checksum')
+            previous = bundled_host_key(archive)
+            self.assertEqual(previous, bundled_host_key(archive))
+            archive.write_bytes(b'new host package')
+            changed = bundled_host_key(archive)
+            self.assertNotEqual(previous, changed)
+            checksum.write_text('new checksum')
+            self.assertNotEqual(changed, bundled_host_key(archive))
+
+    def test_completed_host_job_requires_running_runtime_health_before_reuse(self):
+        for healthy in (True, False):
+            with self.subTest(healthy=healthy), tempfile.TemporaryDirectory() as folder:
+                root = pathlib.Path(folder)
+                release = root / 'release'
+                release.mkdir()
+                runtime = root / '.bycoda-host/runtime/selected'
+                runtime.mkdir(parents=True)
+                (runtime / 'host.mjs').write_text('selected host')
+                (root / '.bycoda-host/runtime-path').write_text(str(runtime))
+                write_json(release / 'manifest.json', {
+                    'id': 'same', 'identity': dict(PRODUCT_IDENTITY),
+                    'hostHashes': {'host.mjs': digest(runtime / 'host.mjs')}})
+                record = root / '.bycoda-host/update-jobs/host.json'
+                write_json(record, {'id': 'same', 'state': 'installed'})
+                with patch('local_update.pathlib.Path.home', return_value=root), \
+                     patch('local_update.verify_host', side_effect=None if healthy else RuntimeError('Wrong running runtime')) as verify, \
+                     patch('local_update.subprocess.Popen', return_value=SimpleNamespace(pid=123)) as direct_spawn, \
+                     patch('local_update.spawn_windows_updater', return_value=123) as broker_spawn:
+                    queue_install(release, ('host',))
+                self.assertEqual((broker_spawn if os.name == 'nt' else direct_spawn).call_count, 0 if healthy else 1)
+                verify.assert_called_once_with(runtime)
+
     def test_mac_update_migrates_legacy_and_stable_services_and_restores_engine_on_failure(self):
         for stable_service in (False, True):
             for fail in (False, True):
                 with self.subTest(stable=stable_service, fail=fail), tempfile.TemporaryDirectory() as folder:
-                    home = pathlib.Path(folder)
+                    # tempfile may return an 8.3 alias on Windows; the installer
+                    # resolves the runtime before persisting launch arguments.
+                    home = pathlib.Path(folder).resolve()
                     base = home / '.bycoda-host'
                     previous = base / 'runtime/previous'
                     (previous / 'bin').mkdir(parents=True)
@@ -48,6 +708,7 @@ class LocalUpdateTests(unittest.TestCase):
                     (release / 'host/bin').mkdir(parents=True)
                     (release / 'host/bin/node').write_bytes(b'new node')
                     (release / 'host/host.mjs').write_text('new host')
+                    (release / 'host/bycoda-host.mjs').write_text('new host bundle')
                     system = SimpleNamespace(name='posix', getuid=lambda: 501,
                                              close=os.close, replace=os.replace)
                     health = RuntimeError('simulated health failure') if fail else None
@@ -239,11 +900,85 @@ class LocalUpdateTests(unittest.TestCase):
                     self.assertTrue((app / 'Contents/MacOS/bycoda').exists())
 
     @unittest.skipUnless(os.name == 'nt', 'Windows service recovery')
+    def test_windows_native_port_recovery_rejects_corrupt_or_foreign_state(self):
+        from local_install import installed_windows_host_port
+        with tempfile.TemporaryDirectory() as folder:
+            base = pathlib.Path(folder).resolve()
+            # A stale legacy file must not hide corrupt native configuration.
+            (base / 'service.ps1').write_text("serve --port '3774'")
+            with patch('local_install.BASE', base):
+                for port in (0, 65536, True, '3777'):
+                    write_json(base / 'service-launcher.json', {'directory': str(base), 'port': port})
+                    with self.assertRaisesRegex(RuntimeError, 'port is invalid'):
+                        installed_windows_host_port()
+                write_json(base / 'service-launcher.json', {'directory': str(base / 'other'), 'port': 3777})
+                with self.assertRaisesRegex(RuntimeError, 'another directory'):
+                    installed_windows_host_port()
+                (base / 'service-launcher.json').write_text('{broken')
+                with self.assertRaises(json.JSONDecodeError):
+                    installed_windows_host_port()
+                write_json(base / 'service-launcher.json', {'directory': str(base), 'port': 3777})
+                write_json(base / 'running.json', {'port': 3888})
+                self.assertEqual(installed_windows_host_port(), 3888)
+                (base / 'running.json').write_text('{broken')
+                with self.assertRaises(json.JSONDecodeError):
+                    installed_windows_host_port()
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows service recovery')
+    def test_windows_native_service_config_recovers_port_and_restores_optional_configs(self):
+        for native_previous in (False, True):
+            for fail_health in (False, True):
+                with self.subTest(native=native_previous, rollback=fail_health), tempfile.TemporaryDirectory() as folder:
+                    root = pathlib.Path(folder).resolve()
+                    base = root / 'base'
+                    (base / 'bin').mkdir(parents=True)
+                    previous = base / 'runtime/previous'
+                    previous.mkdir(parents=True)
+                    (base / 'host.db').touch()
+                    (base / 'runtime-path').write_text(str(previous))
+                    (base / 'bin/bycoda-host.cmd').write_text('previous command')
+                    old_config = {'directory': str(base), 'port': 3777, 'entry': str(previous / 'host.mjs')}
+                    if native_previous:
+                        write_json(base / 'service-launcher.json', old_config)
+                    else:
+                        (base / 'service.ps1').write_text("& 'node.exe' 'host.mjs' serve --port '3777'")
+                    release = root / 'release'
+                    (release / 'host').mkdir(parents=True)
+                    (release / 'host/host.mjs').write_text('new host')
+                    (release / 'host/bycoda-host.mjs').write_text('new bundle')
+                    commands = []
+                    def command(args):
+                        commands.append(args)
+                        if args[2:4] == ['service', 'install']:
+                            self.assertEqual(args[-2:], ['--port', '3777'])
+                            if args[0] == str(previous / 'node.exe'):
+                                if native_previous:
+                                    self.assertEqual(read_json(base / 'service-launcher.json'), old_config)
+                                else:
+                                    self.assertFalse((base / 'service-launcher.json').exists())
+                            else:
+                                write_json(base / 'service-launcher.json', {'directory': str(base), 'port': 3777, 'entry': args[1]})
+                    with patch('local_install.BASE', base), patch('local_install.verify_tree'), \
+                         patch('local_install.wait_idle'), patch('local_install.backup'), \
+                         patch('local_install.run', side_effect=command), \
+                         patch('local_install.verify_host', side_effect=RuntimeError('health failed') if fail_health else None):
+                        install = lambda: host_install(release, {'version': 'test', 'platform': 'win32-x64', 'id': 'native', 'hostHashes': {}}, lambda *a, **kw: None)
+                        if fail_health:
+                            with self.assertRaisesRegex(RuntimeError, 'health failed'):
+                                install()
+                            self.assertEqual((base / 'runtime-path').read_text(), str(previous))
+                            self.assertEqual((base / 'bin/bycoda-host.cmd').read_text(), 'previous command')
+                            self.assertEqual(commands[-1][:4], [str(previous / 'node.exe'), str(previous / 'host.mjs'), 'service', 'install'])
+                        else:
+                            install()
+                            self.assertIn('test-win32-x64-native', (base / 'runtime-path').read_text())
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows service recovery')
     def test_split_host_payload_survives_install_and_rollback(self):
         # Exercise real recursive copies and pointer restoration, never services.
         for fail_health in (False, True):
             with self.subTest(rollback=fail_health), tempfile.TemporaryDirectory() as folder:
-                root = pathlib.Path(folder)
+                root = pathlib.Path(folder).resolve()
                 base = root / 'base'
                 (base / 'bin').mkdir(parents=True)
                 previous = base / 'runtime' / 'previous'
@@ -431,14 +1166,164 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertFalse(install_job_active({'state': 'installing', 'pid': 123}))
 
     def test_shared_provider_edit_invalidates_host_cache(self):
-        files = {'host/cli.ts': b'entry',
+        files = {'package.json': b'{}', 'host/cli.ts': b'entry',
                  'src/integrations/harness/providers/codex/codex.ts': b'old'}
-        before = host_key(files)
+        graph = {'schemaVersion': 1, 'inputs': list(files), 'outputs': ['build/host/host.mjs']}
+        before = host_key(files, graph)
         files['src/integrations/harness/providers/codex/codex.ts'] = b'excludeTurns: true'
-        self.assertNotEqual(before, host_key(files))
-        after = host_key(files)
+        self.assertNotEqual(before, host_key(files, graph))
+        after = host_key(files, graph)
         files['src/integrations/harness/providers/codex/codexLive.test.ts'] = b'test'
-        self.assertEqual(after, host_key(files))
+        self.assertEqual(after, host_key(files, graph))
+        files['src/app/shell/UnrelatedUI.tsx'] = b'UI-only change'
+        self.assertEqual(after, host_key(files, graph))
+        with self.assertRaisesRegex(RuntimeError, 'missing frozen input'):
+            host_key(files, dict(graph, inputs=['src/missing-import.ts']))
+        for name in ('host/storage/snapshot-worker.mjs', 'host/provider-guard.mjs', 'host/app-skills/example.md'):
+            files[name] = b'old runtime resource'
+            graph['inputs'].append(name)
+            before = host_key(files, graph)
+            files[name] = b'changed runtime resource'
+            self.assertNotEqual(before, host_key(files, graph), name)
+
+    def test_component_manifest_rejects_missing_app_before_any_job_is_written(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            release = root / 'release'
+            write_json(release / 'manifest.json', {'id': 'host-only', 'identity': dict(PRODUCT_IDENTITY),
+                                                  'components': ['host'], 'hostHashes': {'host.mjs': 'fixture'}})
+            with patch('local_update.pathlib.Path.home', return_value=root), \
+                 patch('local_update.spawn_windows_updater') as spawn:
+                with self.assertRaisesRegex(RuntimeError, 'does not contain app'):
+                    queue_install(release)
+            spawn.assert_not_called()
+            self.assertFalse((root / '.bycoda-host/update-jobs').exists())
+            self.assertEqual(package_components({'hostHashes': {'host.mjs': 'legacy'}}, ['host']), ['host'])
+
+    def test_component_manifest_and_host_archive_are_immutable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            manifest = {'components': ['host'], 'source': 'one', 'timings': {'host': 1}}
+            path = root / 'manifest.json'
+            write_package_manifest(path, manifest)
+            write_package_manifest(path, dict(manifest, timings={}))
+            self.assertEqual(read_json(path), manifest)
+            with self.assertRaisesRegex(RuntimeError, 'Immutable package manifest'):
+                write_package_manifest(path, dict(manifest, source='other'))
+            payload = root / 'host.zip'
+            payload.write_bytes(b'host package')
+            first = archive_host_package(root, payload, '0.6.94', 'win32-x64', 'test-local')
+            self.assertEqual(first, archive_host_package(root, payload, '0.6.94', 'win32-x64', 'test-local'))
+            payload.write_bytes(b'different bytes')
+            with self.assertRaisesRegex(RuntimeError, 'Immutable package payload'):
+                archive_host_package(root, payload, '0.6.94', 'win32-x64', 'test-local')
+            with self.assertRaisesRegex(ValueError, 'identifier'):
+                package_run(root, {'id': '../escape'}, ['host'])
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows coordinator selection')
+    def test_install_only_can_explicitly_select_old_component_manifest_without_building(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            state = root / 'state'
+            write_json(root / 'scripts/local-update/local-update.config.json',
+                       {'stateRoot': str(state), 'windows': {'cargoTarget': 'target'}})
+            write_json(state / 'coordinator-latest.json', {'id': 'new-host', 'mode': 'local', 'packageComponents': ['host']})
+            manifest = state / 'runs/old-release/manifest.json'
+            write_json(manifest, {'id': 'old-release', 'mode': 'release', 'components': ['host', 'app']})
+            with patch('local_update.ROOT', root), \
+                 patch.object(sys, 'argv', ['local_update.py', '--platforms', 'windows', '--install-only',
+                                            '--components', 'app', '--snapshot-request', str(manifest)]), \
+                 patch('local_update.worker') as install, patch('local_update.snapshot') as freeze:
+                main()
+            freeze.assert_not_called()
+            request = install.call_args.args[0]
+            self.assertEqual(request['id'], 'old-release')
+            self.assertTrue(request['installOnly'])
+            self.assertEqual(request['mode'], 'release')
+            self.assertEqual(request['components'], ['app'])
+            self.assertEqual(request['packageComponents'], ['host', 'app'])
+
+    def test_interrupted_status_separates_old_count_from_fresh_independent_idle_gates(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            for component in ('host', 'app'):
+                write_json(root / '.bycoda-host/update-jobs' / (component + '.json'),
+                           {'id': 'same', 'pid': 123, 'state': 'waiting', 'activeSessions': 1})
+            with patch('local_update.pathlib.Path.home', return_value=root), \
+                 patch('local_update.alive', return_value=False), \
+                 patch('local_update.count', side_effect=[0, sqlite3.OperationalError('unreadable')]):
+                result = status()
+            self.assertEqual(result['host']['state'], 'interrupted')
+            self.assertNotIn('activeSessions', result['host'])
+            self.assertEqual(result['host']['reportedActiveSessions'], 1)
+            self.assertEqual(result['host']['idleGate']['state'], 'idle')
+            self.assertEqual(result['app']['idleGate']['state'], 'unknown')
+            self.assertIsNone(result['app']['idleGate']['activeSessions'])
+
+    def test_interrupted_job_requires_explicit_same_package_resume(self):
+        for system in ('nt', 'posix'):
+            with self.subTest(system=system):
+                self.check_interrupted_job_resume(system)
+
+    def check_interrupted_job_resume(self, system):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            release = root / 'release'
+            write_json(release / 'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY),
+                                                  'components': ['host'], 'hostHashes': {'host.mjs': 'fixture'}})
+            write_json(root / '.bycoda-host/update-jobs/host.json',
+                       {'id': 'same', 'pid': 123, 'state': 'waiting', 'activeSessions': 1})
+            with patch('local_update.pathlib.Path.home', return_value=root), \
+                 patch('local_update.os', SimpleNamespace(name=system)), \
+                 patch('local_update.alive', return_value=False), \
+                 patch('local_update.spawn_windows_updater', return_value=456) as spawn, \
+                 patch('local_update.subprocess.Popen', return_value=SimpleNamespace(pid=456)) as popen:
+                with self.assertRaisesRegex(RuntimeError, 'interrupted'):
+                    queue_install(release, ('host',))
+                spawn.assert_not_called()
+                popen.assert_not_called()
+                queue_install(release, ('host',), resume=True)
+                if system == 'nt':
+                    spawn.assert_called_once()
+                    popen.assert_not_called()
+                else:
+                    popen.assert_called_once()
+                    spawn.assert_not_called()
+                receipt = read_json(release / 'launch-host.json')
+                self.assertEqual(receipt['pid'], 456)
+                self.assertTrue(receipt['verified'])
+            for phase in ('launching', 'installing', None):
+                with self.assertRaisesRegex(RuntimeError, 'uncertain effect'):
+                    verify_interrupted_resume(release, {'id': 'same'}, 'host', {'id': 'same', 'recordedState': phase})
+            for phase in ('waiting', None):
+                projected = install_job_status({'id': 'same', 'state': phase, 'pid': None})
+                self.assertEqual(projected['state'], 'launch-unknown')
+                self.assertTrue(install_job_active(projected))
+            with self.assertRaisesRegex(RuntimeError, 'another package'):
+                verify_interrupted_resume(release, {'id': 'new'}, 'host', {'id': 'old', 'recordedState': 'waiting'})
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows interrupted app recovery')
+    def test_interrupted_app_resume_verifies_rollback_and_current_tree_without_writes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            app = root / 'Local/bycoda/bycoda.exe'
+            app.parent.mkdir(parents=True)
+            app.write_bytes(b'old app')
+            saved = root / 'release/rollback-app/installation'
+            shutil.copytree(app.parent, saved)
+            write_json(saved.parent / 'windows-installation-hashes.json', tree_hashes(saved))
+            before = tree_hashes(saved.parent)
+            record = {'id': 'same', 'pid': 123, 'recordedState': 'installing'}
+            with patch.dict(os.environ, {'LOCALAPPDATA': str(root / 'Local')}), \
+                 patch('local_update.assert_windows_installer_idle') as idle, \
+                 patch('local_update.desktop_db', return_value=root / 'missing-db'):
+                verify_interrupted_resume(root / 'release', {'id': 'same'}, 'app', record)
+                idle.assert_called_once()
+                self.assertEqual(tree_hashes(saved.parent), before)
+                app.write_bytes(b'unknown replacement')
+                with self.assertRaisesRegex(RuntimeError, 'outcome is unknown'):
+                    verify_interrupted_resume(root / 'release', {'id': 'same'}, 'app', record)
+            self.assertEqual(tree_hashes(saved.parent), before)
 
     def test_exited_windows_host_does_not_require_a_live_lifecycle_endpoint(self):
         with patch('local_install.read_json', return_value={'pid': 123, 'port': 3774}), \
@@ -472,7 +1357,10 @@ class LocalUpdateTests(unittest.TestCase):
             (base / 'bin/bycoda-host.cmd').write_text('previous-launcher')
             release = root / 'release'
             (release / 'host').mkdir(parents=True)
+            (release / 'host/host.mjs').write_text('// isolated fixture host')
+            (release / 'host/bycoda-host.mjs').write_text('// isolated executing fixture bundle')
             calls = []
+            reports = []
             def checked_runtime(runtime):
                 self.assertEqual((base / 'runtime-path').read_text(), 'previous-runtime')
                 calls.append('health')
@@ -482,9 +1370,12 @@ class LocalUpdateTests(unittest.TestCase):
                  patch('local_install.wait_idle'), patch('local_install.backup'), \
                  patch('local_install.run', side_effect=recorded_run), \
                  patch('local_install.verify_host', side_effect=checked_runtime):
-                host_install(release, {'version':'0.5.70','platform':'win32-x64','id':'fixed','hostHashes':{}}, lambda *a, **kw: None)
+                host_install(release, {'version':'0.5.70','platform':'win32-x64','id':'fixed','hostHashes':{}},
+                             lambda state, **values: reports.append((state, values)))
             self.assertEqual(calls, [['service', 'uninstall'], ['service', 'install'], 'health'])
             self.assertIn('fixed', (base / 'runtime-path').read_text())
+            self.assertEqual(pathlib.Path(reports[-1][1]['binaryPath']).name, 'bycoda-host.mjs')
+            self.assertEqual(reports[-1][1]['binaryHash'], digest(release / 'host/bycoda-host.mjs'))
 
     def test_build_only_does_not_schedule_installation(self):
         with patch('local_update.queue_install') as install:
@@ -502,7 +1393,7 @@ class LocalUpdateTests(unittest.TestCase):
             root = pathlib.Path(folder)
             release = root/'release'
             release.mkdir()
-            write_json(release/'manifest.json', {'id': 'new', 'identity': dict(PRODUCT_IDENTITY)})
+            write_json(release/'manifest.json', {'id': 'new', 'identity': dict(PRODUCT_IDENTITY), 'hostHashes': {'host.mjs': 'fixture'}, 'appHashes': {'setup.exe': 'fixture'}, 'binaryHash': 'fixture'})
             base = root/'.bycoda-host/update-jobs'
             write_json(base/'host.json', {'id': 'new', 'pid': 123, 'state': 'waiting'})
             app = {'id': 'old', 'pid': 456, 'state': 'waiting'}
@@ -513,7 +1404,7 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertEqual(read_json(base/'app.json'), app)
             self.assertEqual(set(read_json(release/'install-jobs.json')), {'host'})
 
-    def test_nsis_bundle_marker_is_the_only_normalized_executable_difference(self):
+    def test_unsigned_nsis_bundle_marker_normalization_preserves_payload(self):
         with tempfile.TemporaryDirectory() as folder:
             built = pathlib.Path(folder) / 'built.exe'
             installed = pathlib.Path(folder) / 'installed.exe'
@@ -528,6 +1419,67 @@ class LocalUpdateTests(unittest.TestCase):
                 installed.write_bytes(data)
                 with self.assertRaises(RuntimeError):
                     windows_binary_digest(installed)
+
+    def test_signed_nsis_payload_matches_unsigned_build_without_hiding_code_changes(self):
+        def image(signed=False):
+            data = bytearray(1040 if signed else 1024)
+            def put(offset, value, size=4):
+                data[offset:offset + size] = value.to_bytes(size, 'little')
+            data[:2] = b'MZ'
+            put(0x3c, 128)
+            put(128, 0x4550)
+            put(134, 1, 2)
+            put(148, 240, 2)
+            put(152, 0x20b, 2)
+            put(212, 512)
+            put(260, 16)
+            put(408, 512)
+            put(412, 512)
+            marker = b'__TAURI_BUNDLE_TYPE_VAR_' + (b'NSS' if signed else b'UNK')
+            data[600:600 + len(marker)] = marker
+            data[800:807] = b'payload'
+            if signed:
+                put(216, 1234)
+                put(296, 1024)
+                put(300, 16)
+                put(1024, 16)
+                put(1028, 0x200, 2)
+                put(1030, 2, 2)
+                data[1032:] = b'*' * 8
+            return data
+        with tempfile.TemporaryDirectory() as folder:
+            path = pathlib.Path(folder) / 'native.exe'
+            path.write_bytes(image())
+            expected = windows_binary_digest(path)
+            path.write_bytes(image(True))
+            self.assertEqual(windows_binary_digest(path), expected)
+            for offset in (800, 1023):
+                modified = image(True)
+                modified[offset] ^= 1
+                path.write_bytes(modified)
+                self.assertNotEqual(windows_binary_digest(path), expected)
+            unsigned_overlay, signed_overlay = image(), image(True)
+            unsigned_overlay[408:412] = (496).to_bytes(4, 'little')
+            signed_overlay[408:412] = (496).to_bytes(4, 'little')
+            path.write_bytes(unsigned_overlay)
+            overlay_hash = windows_binary_digest(path)
+            path.write_bytes(signed_overlay)
+            self.assertEqual(windows_binary_digest(path), overlay_hash)
+            signed_overlay[1016] = 1
+            path.write_bytes(signed_overlay)
+            self.assertNotEqual(windows_binary_digest(path), overlay_hash)
+            for offset, value in ((296, 512), (296, 1025), (300, 32), (1024, 17), (1030, 1)):
+                modified = image(True)
+                modified[offset:offset + 4] = value.to_bytes(4, 'little')
+                path.write_bytes(modified)
+                with self.assertRaisesRegex(RuntimeError, 'PE'):
+                    windows_binary_digest(path)
+            modified = image(True)
+            modified[1024:1028] = (15).to_bytes(4, 'little')
+            modified[1039] = 1
+            path.write_bytes(modified)
+            with self.assertRaisesRegex(RuntimeError, 'padding'):
+                windows_binary_digest(path)
 
     def test_packages_are_archived_by_version_and_date_without_overwrite(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -549,7 +1501,6 @@ class LocalUpdateTests(unittest.TestCase):
 
     def test_mixed_version_source_is_rejected_before_build(self):
         files = {'package.json': b'{"version":"0.8.70"}',
-                 'package-lock.json': b'{"version":"0.8.70","packages":{"":{"version":"0.8.70"}}}',
                  'src-tauri/tauri.conf.json': b'{"version":"0.8.71"}',
                  'Cargo.toml': b'[workspace.package]\nversion="0.8.70"'}
         with self.assertRaises(RuntimeError):
@@ -557,23 +1508,34 @@ class LocalUpdateTests(unittest.TestCase):
 
     def test_matching_version_and_rust_lock_are_accepted(self):
         files = {'package.json': b'{"version":"0.8.70"}',
-                 'package-lock.json': b'{"version":"0.8.70","packages":{"":{"version":"0.8.70"}}}',
                  'src-tauri/tauri.conf.json': b'{"version":"0.8.70"}',
                  'Cargo.toml': b'[workspace.package]\nversion="0.8.70"',
                  'src-tauri/Cargo.toml': b'[package]\nname="bycoda"',
                  'Cargo.lock': b'[[package]]\nname="bycoda"\nversion="0.8.70"'}
         self.assertEqual(validate_versions(files), '0.8.70')
 
-    def test_only_package_json_controls_dependency_key(self):
+    def test_version_only_change_reuses_dependencies_but_dependency_change_does_not(self):
         def files(version, dependency='1.0.0'):
-            return {'package.json': json.dumps({'version': version, 'dependencies': {'a': dependency}}).encode(),
-                    'package-lock.json': json.dumps({'version': version, 'packages': {'': {'version': version},
-                                                   'node_modules/a': {'version': dependency}}}).encode()}
-        self.assertNotEqual(dependency_key(files('0.8.70')), dependency_key(files('0.8.71')))
+            return {'package.json': json.dumps({'version': version, 'dependencies': {'a': dependency}}).encode()}
+        self.assertEqual(dependency_key(files('0.8.70')), dependency_key(files('0.8.71')))
         self.assertNotEqual(dependency_key(files('0.8.70')), dependency_key(files('0.8.70', '2.0.0')))
         first = files('0.8.70')
-        changed_lock = dict(first, **{'package-lock.json': b'changed', 'pnpm-lock.yaml': b'changed'})
-        self.assertEqual(dependency_key(first), dependency_key(changed_lock))
+        reformatted = dict(first, **{'package.json': b'{ "dependencies": { "a": "1.0.0" }, "version": "0.8.71" }'})
+        self.assertEqual(dependency_key(first), dependency_key(reformatted))
+
+    def test_pnpm_lock_configuration_and_patch_changes_refresh_dependencies(self):
+        first = {'package.json': b'{"version":"0.8.70"}'}
+        for name in ('pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', '.pnpmfile.cjs', 'patches/dependency.patch',
+                     'packages/core/package.json', 'apps/desktop/package.json'):
+            with self.subTest(name=name):
+                added = dict(first, **{name: b'original'})
+                changed = dict(first, **{name: b'changed'})
+                self.assertNotEqual(dependency_key(first), dependency_key(added))
+                self.assertNotEqual(dependency_key(added), dependency_key(changed))
+                with tempfile.TemporaryDirectory() as folder:
+                    workspace = pathlib.Path(folder)
+                    (workspace / 'node_modules').mkdir()
+                    self.assertEqual(dependency_action(workspace, changed, dependency_key(added)), 'clean-install')
 
     def test_dependency_install_policy_preserves_existing_modules(self):
         files = {'package.json': b'{"version":"0.8.70"}'}
@@ -584,7 +1546,8 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertEqual(dependency_action(workspace, files), 'reuse')
             self.assertEqual(dependency_action(workspace, files, dependency_key(files)), 'reuse')
             self.assertEqual(dependency_action(workspace, files, previous_package=files['package.json']), 'reuse')
-            self.assertEqual(dependency_action(workspace, files, previous_package=b'{}'), 'clean-install')
+            self.assertEqual(dependency_action(workspace, files, previous_package=b'{"version":"0.8.71"}'), 'reuse')
+            self.assertEqual(dependency_action(workspace, files, previous_package=b'{"dependencies":{"a":"1"}}'), 'clean-install')
             self.assertEqual(dependency_action(workspace, files, 'old'), 'clean-install')
 
     def test_bad_database_read_never_means_idle(self):
@@ -665,7 +1628,7 @@ class LocalUpdateTests(unittest.TestCase):
             root = pathlib.Path(folder)
             release = root/'release'
             release.mkdir()
-            write_json(release/'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY)})
+            write_json(release/'manifest.json', {'id': 'same', 'identity': dict(PRODUCT_IDENTITY), 'hostHashes': {'host.mjs': 'fixture'}, 'appHashes': {'setup.exe': 'fixture'}, 'binaryHash': 'fixture'})
             base = root/'.bycoda-host/update-jobs'
             for component in ('host', 'app'):
                 write_json(base/(component+'.json'), {'id': 'same', 'pid': 123})
@@ -678,7 +1641,7 @@ class LocalUpdateTests(unittest.TestCase):
             root = pathlib.Path(folder)
             release = root/'release'
             release.mkdir()
-            write_json(release/'manifest.json', {'id': 'new', 'identity': dict(PRODUCT_IDENTITY)})
+            write_json(release/'manifest.json', {'id': 'new', 'identity': dict(PRODUCT_IDENTITY), 'hostHashes': {'host.mjs': 'fixture'}, 'appHashes': {'setup.exe': 'fixture'}, 'binaryHash': 'fixture'})
             write_json(root/'.bycoda-host/update-jobs/host.json', {'id': 'old', 'pid': 123})
             with patch('local_update.pathlib.Path.home', return_value=root), patch('local_update.alive', return_value=True), patch('local_update.subprocess.Popen') as spawn:
                 with self.assertRaises(RuntimeError):

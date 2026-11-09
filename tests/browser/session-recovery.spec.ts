@@ -29,7 +29,10 @@ for (const theme of ["dark", "light"]) {
         (element as HTMLElement).style.width = `${width}px`;
       }, width);
       await expect(search).toBeVisible();
-      await expect(recovery.locator(".recovery-rail-count")).toBeVisible();
+      // Exactly one count: the corner badge on a label-less rail, else the plain section count.
+      await expect(
+        recovery.locator(".recovery-rail-count:visible, .recovery-rail-number:visible"),
+      ).toHaveCount(1);
       const bounds = await rail.boundingBox();
       for (const control of [search, recovery]) {
         const box = (await control.boundingBox())!;
@@ -42,10 +45,14 @@ for (const theme of ["dark", "light"]) {
           true,
         );
       }
+      const tools = rail.locator('nav[aria-label="Workspace tools"]:visible');
+      await expect(tools.getByRole("button", { name: "Assistant", exact: true })).toBeVisible();
+      await expect(tools.getByRole("button", { name: "Settings", exact: true })).toHaveCount(0);
       const settings = rail
-        .locator('nav[aria-label="Workspace tools"]:visible')
+        .getByRole("navigation", { name: "Settings", exact: true })
         .getByRole("button", { name: "Settings", exact: true });
       await expect(settings).toBeVisible();
+      await expect(settings).toBeInViewport();
       await settings.focus();
       await page.keyboard.press("Enter");
       await expect(page.getByTestId("settings-destination")).toHaveText("general");
@@ -65,7 +72,11 @@ test("all recovered projects remain searchable, selectable and reopenable", asyn
   const dialog = page.getByRole("dialog", { name: "Recovered sessions" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("checkbox")).toHaveCount(6);
-  await expect(dialog.getByRole("status")).toContainText("1 Failed");
+  const filters = dialog.getByRole("radiogroup", { name: "Session filters", exact: true });
+  await expect(filters.getByRole("radio", { name: /^Needs attention/ })).toBeChecked();
+  await expect(filters.getByRole("radio", { name: /^Needs attention/ })).toContainText("6");
+  await expect(filters.getByRole("radio", { name: /^All sessions/ })).toContainText("24");
+  await expect(dialog.getByText("Failed", { exact: true })).toHaveCount(1);
   await dialog.getByRole("radio", { name: /All sessions/ }).click();
   await expect(dialog.getByRole("checkbox")).toHaveCount(24);
   await dialog.getByRole("textbox", { name: "Search recovered sessions" }).fill("conversation 24");
@@ -87,7 +98,7 @@ test("the summary and bulk controls fit a narrow viewport", async ({ page }) => 
   await page.goto("/tests/browser/session-recovery.html");
   const dialog = page.getByRole("dialog", { name: "Recovered sessions" });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Restore previous layout" })).toBeInViewport();
+  await expect(dialog.getByRole("button", { name: "Restore chat layout" })).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
@@ -95,7 +106,7 @@ test("the summary and bulk controls fit a narrow viewport", async ({ page }) => 
     path: "temp/verification/2026-10-13-session-recovery/narrow-500.png",
     animations: "disabled",
   });
-  await dialog.getByRole("button", { name: "Restore previous layout" }).click();
+  await dialog.getByRole("button", { name: "Restore chat layout" }).click();
   await expect(page.getByTestId("opened")).toContainText('"layout":true');
   const result = JSON.parse(await page.getByTestId("opened").innerText()) as { ids: string[] };
   expect(result.ids).toHaveLength(24);
@@ -106,20 +117,26 @@ test("cleanup updates the list and survives closing the dialog", async ({ page }
   await page.setViewportSize({ width: 360, height: 640 });
   await page.goto("/tests/browser/session-recovery.html");
   const dialog = page.getByRole("dialog", { name: "Recovered sessions" });
-  await dialog.getByRole("button", { name: "Clear completed", exact: true }).click();
-  const allSessions = dialog.getByRole("radio", { name: /All sessions/ });
-  await allSessions.click();
-  await expect(allSessions).toBeChecked();
+  const maintain = async (name: RegExp) => {
+    await dialog.getByRole("button", { name: "Recovery list maintenance", exact: true }).click();
+    await page.getByRole("menuitem", { name }).click();
+  };
+  await maintain(/^Remove \d+ completed from list$/);
+  // After completed entries are removed every remaining row needs attention.
+  // There is no redundant filter; all six rows must remain directly available.
+  await expect(
+    dialog.getByRole("radiogroup", { name: "Session filters", exact: true }),
+  ).toHaveCount(0);
   await expect(dialog.getByRole("checkbox")).toHaveCount(6);
   await dialog.getByRole("checkbox").first().check();
-  await dialog.getByRole("button", { name: "Remove selected", exact: true }).click();
+  await maintain(/^Remove 1 selected from list$/);
   await expect(dialog.getByRole("checkbox")).toHaveCount(5);
   expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page.screenshot({ path: "temp/verification/2026-10-13-session-recovery/narrow.png" });
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await page.getByRole("button", { name: "Recovered sessions 24" }).click();
   await expect(dialog.getByRole("checkbox")).toHaveCount(5);
-  await dialog.getByRole("button", { name: "Clear list", exact: true }).click();
+  await maintain(/^Clear recovery list \(\d+\)$/);
   await expect(dialog.getByRole("checkbox")).toHaveCount(0);
 });
 

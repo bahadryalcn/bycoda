@@ -1,4 +1,97 @@
 import { expect, test } from "@playwright/test";
+import { mkdirSync } from "node:fs";
+
+test("editor scrollbar reveals on hover and focus without moving content", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: { invoke: async () => null, transformCallback: () => 0 },
+      configurable: true,
+    });
+  });
+  await page.goto("/tests/browser/editor-selection.html?readability=large");
+  const editor = page.locator(".cm-editor").first();
+  const thumb = editor.locator(".cm-editorScrollbarThumb");
+  const scroller = editor.locator(".cm-scroller");
+  await expect(thumb).toBeVisible();
+  await editor.locator(".cm-content").evaluate((element) => (element as HTMLElement).blur());
+  await page.mouse.move(1, 1);
+  await expect(thumb).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  const width = await scroller.evaluate((element) => element.clientWidth);
+  await editor.hover();
+  await expect(thumb).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await page.mouse.move(1, 1);
+  await editor.locator(".cm-content").focus();
+  await expect(thumb).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await page.keyboard.press("Control+End");
+  await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  expect(await scroller.evaluate((element) => element.clientWidth)).toBe(width);
+  await page.emulateMedia({ forcedColors: "active" });
+  await expect(editor.locator(".cm-editorScrollbar")).toBeHidden();
+  await expect(scroller).toHaveCSS("scrollbar-width", "auto");
+});
+
+for (const mode of ["file", "inline", "split"]) {
+  test(`editor context menu works in ${mode}`, async ({ page, context, browserName }, info) => {
+    // WebKit grants clipboard reads; writes still use the actual Copy gesture.
+    await context.grantPermissions(
+      browserName === "webkit" ? ["clipboard-read"] : ["clipboard-read", "clipboard-write"],
+    );
+    await page.addInitScript(() => {
+      Object.defineProperty(window, "__TAURI_INTERNALS__", {
+        value: {
+          invoke: async () => null,
+          transformCallback: () => 0,
+        },
+        configurable: true,
+      });
+    });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/tests/browser/editor-selection.html?search=${mode}`, {
+      waitUntil: "domcontentloaded",
+    });
+    const editors = page.locator(".cm-editor");
+    const content = editors.last().locator(".cm-content");
+    await content.click();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.insertText("const value={x:1,y:2}");
+    const editedLine = content.locator(".cm-line").filter({ hasText: "const value={x:1,y:2}" });
+    await expect(editedLine).toHaveCount(1);
+    const captureDir = `temp/verification/2026-11-03-editor-format/${info.project.name}`;
+    mkdirSync(captureDir, { recursive: true });
+    for (const light of [false, true]) {
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        light,
+      );
+      // Inline diffs can place a large, non-editable deleted-chunk widget in
+      // the content midpoint. Open actions on the actual modified line.
+      await editedLine.click({ button: "right" });
+      const menu = page.getByRole("menu", { name: "Editor actions" });
+      await expect(menu.getByRole("menuitem", { name: "Format document" })).toBeVisible();
+      await expect(menu.getByRole("menuitem", { name: "Save", exact: true })).toBeEnabled();
+      await page.screenshot({ path: `${captureDir}/${mode}-${light ? "light" : "dark"}.png` });
+      await page.keyboard.press("Escape");
+      await expect(menu).toHaveCount(0);
+    }
+    await editedLine.click();
+    await page.keyboard.press("Shift+F10");
+    await page.getByRole("menuitem", { name: "Format document" }).click();
+    await expect(content).toContainText("const value = { x: 1, y: 2 };");
+    await page.keyboard.press("Control+z");
+    await expect(content).toContainText("const value={x:1,y:2}");
+    await page.keyboard.press("Control+a");
+    await page.keyboard.press("Shift+F10");
+    await page.getByRole("menuitem", { name: "Copy", exact: true }).click();
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe("const value={x:1,y:2}");
+    if (mode === "split") {
+      await editors.first().locator(".cm-content").click({ button: "right" });
+      await expect(page.getByRole("menuitem", { name: "Paste", exact: true })).toBeDisabled();
+      await expect(page.getByRole("menuitem", { name: "Format document" })).toHaveCount(0);
+    }
+  });
+}
 
 for (const mode of ["file", "inline", "split"]) {
   test(`readability preserves drafts and visible structure in ${mode}`, async ({ page }, info) => {
@@ -270,7 +363,8 @@ test("selected code has a clickable chat action, shortcut and dismiss behavior",
   await page.keyboard.press("Shift+ArrowDown");
   await expect(toolbar).toBeVisible();
   await expect(editor).toBeFocused();
-  await expect(toolbar).toContainText("Ctrl+L");
+  // The shortcut renders as separate key caps.
+  await expect(toolbar.locator("kbd")).toHaveText(["Ctrl", "L"]);
   // The action and shortcut remain on one row, as in the editor reference.
   await expect(toolbar.getByRole("button")).toHaveCSS("white-space", "nowrap");
   await page.screenshot({ path: info.outputPath("selected-code-chat-action.png") });

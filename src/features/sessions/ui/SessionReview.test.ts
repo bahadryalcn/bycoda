@@ -101,6 +101,82 @@ it("shows a retryable status failure even when no file list has arrived", async 
   expect(container.textContent).toContain("Retry");
 });
 
+it("explains a saved checkpoint failure and refreshes without claiming to recreate it", async () => {
+  mocks.status.mockRejectedValueOnce(
+    new Error("Workspace checkpoint failed: Not a directory (os error 20)"),
+  );
+  await act(async () =>
+    root.render(createElement(SessionReview, { sessionId: "failed", cwd: "/repo", onOpenDiff })),
+  );
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "could not be fully recorded",
+  );
+  expect(container.textContent).not.toContain("Retry");
+  const refresh = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Refresh",
+  )!;
+  let resolve: (value: { files: [] }) => void;
+  mocks.status.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const calls = mocks.status.mock.calls.length;
+  await act(async () => refresh.click());
+  expect(refresh.getAttribute("aria-busy")).toBe("true");
+  await act(async () => refresh.click());
+  expect(mocks.status).toHaveBeenCalledTimes(calls + 1);
+  await act(async () => resolve!({ files: [] }));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("retains the saved change list after a failed refresh and requires recovery before mutation", async () => {
+  mocks.status.mockRejectedValueOnce(new Error("Connection unavailable"));
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+    await new Promise((resolve) => setTimeout(resolve, 240));
+  });
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Connection unavailable",
+  );
+  expect(row()).not.toBeNull();
+  const keep = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Keep",
+  )!;
+  expect(keep.disabled).toBe(true);
+  const retry = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Retry",
+  )!;
+  await act(async () => retry.click());
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(row()).not.toBeNull();
+  expect(keep.disabled).toBe(false);
+});
+
+it("keeps focus and progress on Keep until its operation settles", async () => {
+  let resolve!: (value: { files: [] }) => void;
+  mocks.keep.mockReturnValueOnce(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const keep = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Keep",
+  )!;
+  keep.focus();
+  act(() => {
+    keep.click();
+    keep.click();
+  });
+  expect(mocks.keep).toHaveBeenCalledTimes(1);
+  expect(keep.getAttribute("aria-busy")).toBe("true");
+  expect(document.activeElement).toBe(keep);
+  expect(row()).not.toBeNull();
+  await act(async () => resolve({ files: [] }));
+  expect(container.querySelector("[data-session-review]")).toBeNull();
+});
+
 it("automatically refreshes a recording checkpoint without presenting it as an error", async () => {
   vi.useFakeTimers();
   try {
@@ -111,10 +187,12 @@ it("automatically refreshes a recording checkpoint without presenting it as an e
       ),
     );
     expect(container.querySelector('[role="alert"]')).toBeNull();
-    expect(container.querySelector('[role="status"]')?.textContent).toContain("Loading changes");
+    expect(
+      container.querySelector('[role="status"]:not([class*="srOnly"])')?.textContent,
+    ).toContain("Loading changes");
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     expect(container.querySelector("[data-session-review]")).not.toBeNull();
-    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(container.querySelector('[role="status"]:not([class*="srOnly"])')).toBeNull();
   } finally {
     vi.useRealTimers();
   }
@@ -139,7 +217,7 @@ it("cancels recording polling when another session is displayed", async () => {
     const calls = mocks.status.mock.calls.length;
     await act(async () => vi.advanceTimersByTimeAsync(3000));
     expect(mocks.status).toHaveBeenCalledTimes(calls);
-    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(container.querySelector('[role="status"]:not([class*="srOnly"])')).toBeNull();
   } finally {
     vi.useRealTimers();
   }
@@ -177,7 +255,7 @@ it("discards a status response from a previously displayed session", async () =>
 });
 
 function row() {
-  return container.querySelector<HTMLButtonElement>("[data-session-review] ul button[title]")!;
+  return container.querySelector<HTMLButtonElement>("[data-session-review] ul li button")!;
 }
 function openMenu() {
   const event = new MouseEvent("contextmenu", {
@@ -288,10 +366,8 @@ it("reports native reveal errors", async () => {
   mocks.reveal.mockRejectedValueOnce(new Error("Folder unavailable"));
   const menu = openMenu();
   await act(async () => item(menu, revealLabel).click());
-  expect(mocks.message).toHaveBeenCalledWith("Error: Folder unavailable", {
-    title: "File action failed",
-    kind: "error",
-  });
+  expect(mocks.message).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("Error: Folder unavailable");
 });
 
 it.each(["md", "html", "png", "svg", "pdf"])(
@@ -335,6 +411,37 @@ it.each(["md", "html", "png", "svg", "pdf"])(
     }
   },
 );
+
+it("explains that an orchestration run locks Undo", async () => {
+  mocks.status.mockResolvedValueOnce({
+    files: [
+      {
+        path: "/repo/src/main.ts",
+        relative: "src/main.ts",
+        status: "modified",
+        additions: 1,
+        deletions: 0,
+        exact: true,
+        undoable: true,
+      },
+    ],
+  });
+  await act(async () =>
+    root.render(
+      createElement(SessionReview, {
+        sessionId: "orchestrated",
+        cwd: "/repo",
+        undoLockReason: "orchestration",
+        onOpenDiff,
+      }),
+    ),
+  );
+  const undo = container.querySelector<HTMLElement>(
+    '[title="Undo is unavailable while an orchestration run is active or paused"]',
+  );
+  expect(undo).not.toBeNull();
+  expect(undo!.querySelector("button")?.disabled).toBe(true);
+});
 
 it("omits Preview for source files without a rendered viewer", () => {
   expect(item(openMenu(), "Preview")).toBeUndefined();

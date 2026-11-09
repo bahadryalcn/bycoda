@@ -396,6 +396,19 @@ describe("serializeBtwSnapshot", () => {
     );
   });
 
+  it("never leaves a split surrogate when a long block is cut at the budget", () => {
+    // Sweep the emoji across every alignment around the block cap.
+    for (let pad = BTW_MAX_BLOCK_CHARS - 16; pad <= BTW_MAX_BLOCK_CHARS; pad++) {
+      const blocks: Block[] = [
+        block("emoji", "assistant", `${"m".repeat(pad)}🚀${"t".repeat(40)}`),
+      ];
+      const snapshot = serializeBtwSnapshot(blocks, "emoji");
+      expect(snapshot).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+      expect(snapshot).not.toMatch(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+      expect(snapshot.length).toBeLessThanOrEqual(BTW_MAX_SNAPSHOT_CHARS);
+    }
+  });
+
   it("keeps the newest context and bounds both block and snapshot size", () => {
     const blocks: Block[] = [
       block("old", "user", "old context"),

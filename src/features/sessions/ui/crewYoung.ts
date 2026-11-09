@@ -2752,7 +2752,7 @@ function baby(
       );
   };
   layer(1 - s, () => {
-    // Baby bouncer ("ana kucağı"): wire base, reclined padded seat with a toy bar.
+    // Baby bouncer (reclined infant seat): wire base, reclined padded seat with a toy bar.
     P.line(
       [
         [-36, -3],
@@ -2883,7 +2883,7 @@ function baby(
     );
   });
   layer(s, () => {
-    // Activity jumper ("hoplama salıncağı"): feet on a round base, a toy ring around the waist,
+    // Activity jumper (bouncing swing seat): feet on a round base, a toy ring around the waist,
     // springs in the three posts. The baby stands and bounces; nothing hangs from above.
     const beat = Math.abs(Math.sin(time / 300));
     const bounce = beat * 9 + (a.jump ?? 0) * 4;

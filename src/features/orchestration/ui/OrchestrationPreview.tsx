@@ -1,10 +1,14 @@
-import { MenuRow } from "../../../shared/ui/MenuRow";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { ActionHost } from "../../../shared/ui/ActionHost";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Surface } from "../../../shared/ui/Surface";
 import { Alert } from "../../../shared/ui/Alert";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { TextField } from "../../../shared/ui/TextField";
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   useContext,
@@ -13,7 +17,6 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { HARNESS_TITLE, type Block } from "../../sessions/model/session";
 import type { OrchestrationChoice, ProposedTask } from "../model/orchestrationPlan";
@@ -26,19 +29,15 @@ import {
   modelEffortLabel,
   modelEffortSetting,
 } from "../../sessions/model/models";
-import { LAYER } from "../../../shared/lib/layers";
 import { OrchestrationActions } from "./OrchestrationActions";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { Popover } from "../../../shared/ui/Popover";
 import {
-  Check,
   ChevronDown,
   ChevronRight,
-  CircleDashed,
   CircleHelp,
   MessageMultiple,
   Play,
-  Search,
 } from "../../../shared/ui/icons";
 
 function AssignmentModel({
@@ -53,13 +52,7 @@ function AssignmentModel({
   useLocale();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
-  const [effortActive, setEffortActive] = useState(0);
-  const [inEffort, setInEffort] = useState(false);
-  const [activeRow, setActiveRow] = useState<HTMLButtonElement | null>(null);
   const anchor = useRef<HTMLButtonElement>(null);
-  const search = useRef<HTMLInputElement>(null);
-  const listOverscroll = useLockOverscroll<HTMLDivElement>();
   const selected = choices.find(
     (choice) => choice.harness === task.harness && choice.model === task.model,
   );
@@ -72,49 +65,11 @@ function AssignmentModel({
     const model = findModel(choice.model);
     return model?.harness === choice.harness ? modelEffortSetting(model) : undefined;
   };
-  const activeChoice = matches[active];
-  const activeModel = activeChoice ? findModel(activeChoice.model) : undefined;
-  const effort = activeChoice ? effortForChoice(activeChoice) : undefined;
-  const selectedEffortValue = effort
-    ? activeChoice === selected
-      ? (task.modelSettings?.[effort.id] ?? effort.value)
-      : effort.value
-    : undefined;
   const selectedModel = selected ? findModel(selected.model) : undefined;
   const selectedEffortLabel =
     selectedModel && selectedModel.harness === selected?.harness
       ? modelEffortLabel(selectedModel, task.modelSettings)
       : undefined;
-  // Two things fought this field for focus. The composer takes focus back
-  // unless a picker surface is in the DOM, which `data-model-picker` below
-  // now declares; and the popover measures itself with `visibility: hidden`
-  // on its first pass, where nothing can be focused. Placement flushes in a
-  // layout effect ahead of this one, so focus now for the pass that is
-  // already on screen and again next frame, once placement has landed.
-  // Re-focusing a focused field is a no-op.
-  useEffect(() => {
-    if (!open) return;
-    search.current?.focus({ preventScroll: true });
-    const frame = requestAnimationFrame(() => search.current?.focus({ preventScroll: true }));
-    return () => cancelAnimationFrame(frame);
-  }, [open]);
-  useEffect(() => {
-    activeRow?.scrollIntoView({ block: "nearest" });
-  }, [activeRow]);
-  useEffect(() => {
-    if (!effort) {
-      setEffortActive(0);
-      return;
-    }
-    const index = effort.options.findIndex((option) => option.value === selectedEffortValue);
-    setEffortActive(index >= 0 ? index : 0);
-  }, [effort, selectedEffortValue]);
-  const pick = (choice: OrchestrationChoice, modelSettings: Record<string, string>) => {
-    onChange(choice, modelSettings);
-    setOpen(false);
-    setInEffort(false);
-    anchor.current?.focus();
-  };
   const settingsFor = (choice: OrchestrationChoice, effortValue?: string) => {
     const model = findModel(choice.model);
     if (!model || model.harness !== choice.harness) return {};
@@ -124,56 +79,52 @@ function AssignmentModel({
       ...(setting && effortValue ? { [setting.id]: effortValue } : {}),
     });
   };
-  const openEffortOrPick = (choice: OrchestrationChoice) => {
-    const model = findModel(choice.model);
-    if (model?.harness === choice.harness && modelEffortSetting(model)?.options.length) {
-      setInEffort(true);
-      return;
-    }
-    pick(choice, settingsFor(choice));
-  };
-  // Arrows walk the list from the search field, the way the app's other
-  // pickers work. The keys stop here so the transcript underneath does not
-  // scroll along with the highlight.
-  const onSearchKey = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      event.stopPropagation();
-      if (inEffort && effort?.options.length) {
-        const direction = event.key === "ArrowDown" ? 1 : -1;
-        setEffortActive(
-          (index) => (index + direction + effort.options.length) % effort.options.length,
-        );
-        return;
-      }
-      if (!matches.length) return;
-      const step = event.key === "ArrowDown" ? 1 : -1;
-      setActive((index) => Math.min(matches.length - 1, Math.max(0, index + step)));
-      return;
-    }
-    if (event.key === "ArrowRight") {
-      event.preventDefault();
-      event.stopPropagation();
-      if (effort?.options.length) setInEffort(true);
-      return;
-    }
-    if (event.key === "ArrowLeft" && inEffort) {
-      event.preventDefault();
-      event.stopPropagation();
-      setInEffort(false);
-      return;
-    }
-    if (event.key === "Enter") {
-      event.preventDefault();
-      event.stopPropagation();
-      if (inEffort) {
-        const option = effort?.options[effortActive];
-        if (activeChoice && option) pick(activeChoice, settingsFor(activeChoice, option.value));
-        return;
-      }
-      if (activeChoice) openEffortOrPick(activeChoice);
-    }
+  // A row id joins harness and model with a NUL; an effort option appends its value.
+  const choiceId = (choice: OrchestrationChoice) => `${choice.harness}\u0000${choice.model}`;
+  const items: DropdownMenuItem[] = matches.length
+    ? matches.map((choice) => {
+        const effort = effortForChoice(choice);
+        const current = effort
+          ? choice === selected
+            ? (task.modelSettings?.[effort.id] ?? effort.value)
+            : effort.value
+          : undefined;
+        return {
+          kind: "item" as const,
+          id: choiceId(choice),
+          label: choice.name,
+          description: HARNESS_TITLE[choice.harness],
+          icon: <HarnessIcon harness={choice.harness} className="icon-md shrink-0" />,
+          checked: choice === selected,
+          selectionRole: "radio" as const,
+          submenuLabel: t("{p0} effort", { p0: choice.name }),
+          submenuWidth: 200,
+          submenu: effort?.options.length
+            ? effort.options.map((option) => ({
+                kind: "item" as const,
+                id: `${choiceId(choice)}\u0000${option.value}`,
+                label: option.label,
+                checked: option.value === current,
+                selectionRole: "radio" as const,
+              }))
+            : undefined,
+        };
+      })
+    : [
+        {
+          kind: "content",
+          id: "empty",
+          node: (
+            <p className="px-2 py-3 text-ui-caption text-(--ui-text-secondary)">
+              {t("No matching models")}
+            </p>
+          ),
+        },
+      ];
+  const pick = (id: string) => {
+    const [harness, model, effortValue] = id.split("\u0000");
+    const choice = choices.find((item) => item.harness === harness && item.model === model);
+    if (choice) onChange(choice, settingsFor(choice, effortValue));
   };
   return (
     <div className="relative min-w-0">
@@ -184,158 +135,42 @@ function AssignmentModel({
         aria-label={t("Model for {p0}", { p0: task.title })}
         selected={open}
         aria-expanded={open}
+        aria-haspopup="menu"
         onClick={() => {
           setQuery("");
-          setActive(selected ? choices.indexOf(selected) : 0);
-          setInEffort(false);
           setOpen(!open);
         }}
         className="max-w-full"
       >
-        <HarnessIcon harness={task.harness} className="size-3.5 shrink-0" />
+        <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
         <span className="truncate">
           {selected?.name ?? task.model}
           {selectedEffortLabel ? ` · ${selectedEffortLabel}` : ""} · {HARNESS_TITLE[task.harness]}
         </span>
-        <ChevronDown className="size-3 shrink-0" />
+        <ChevronDown className="icon-xs shrink-0" />
       </Button>
       {open && (
-        <Popover
+        <DropdownMenu
           anchor={anchor}
+          label={t("Assignment models")}
           side="bottom"
           align="start"
           width={260}
           maxHeight={320}
-          ignore="[data-assignment-model-target]"
-          onDismiss={() => {
-            setOpen(false);
-            setInEffort(false);
+          items={items}
+          initialActiveId={selected ? choiceId(selected) : undefined}
+          returnFocusRef={anchor}
+          search={{
+            value: query,
+            onChange: setQuery,
+            label: t("Search assignment models"),
+            placeholder: t("Search models or harnesses…"),
           }}
+          onPick={pick}
+          onClose={() => setOpen(false)}
           data-model-picker
-          data-assignment-model-target
-          className="flex flex-col overflow-hidden"
-        >
-          <label className="flex shrink-0 items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2.5 text-(--ui-text-secondary)">
-            <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
-            <SearchInput
-              ref={search}
-              type="text"
-              aria-label={t("Search assignment models")}
-              placeholder={t("Search models or harnesses…")}
-              spellCheck={false}
-              autoComplete="off"
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setActive(0);
-                setInEffort(false);
-              }}
-              onKeyDown={onSearchKey}
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
-            />
-          </label>
-          <div
-            ref={listOverscroll}
-            role="listbox"
-            aria-label={t("Assignment models")}
-            className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1"
-          >
-            {matches.map((choice, index) => (
-              <Button
-                variant="item"
-                key={`${choice.harness}:${choice.model}`}
-                ref={index === active ? setActiveRow : undefined}
-                type="button"
-                fullWidth
-                selected={index === active}
-                role="option"
-                aria-selected={choice === selected}
-                aria-haspopup={effortForChoice(choice)?.options.length ? "menu" : undefined}
-                aria-expanded={index === active && inEffort}
-                onMouseDown={(event) => event.preventDefault()}
-                onMouseEnter={() => {
-                  setActive(index);
-                  const model = findModel(choice.model);
-                  setInEffort(
-                    model?.harness === choice.harness &&
-                      !!modelEffortSetting(model)?.options.length,
-                  );
-                }}
-                onClick={() => {
-                  setActive(index);
-                  openEffortOrPick(choice);
-                }}
-              >
-                <HarnessIcon harness={choice.harness} className="size-4 shrink-0" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] leading-tight text-(--ui-tone-neutral-fg)">
-                    {choice.name}
-                  </span>
-                  <span className="mt-0.5 block truncate text-[11px] leading-tight text-(--ui-text-secondary)">
-                    {HARNESS_TITLE[choice.harness]}
-                  </span>
-                </span>
-                {choice === selected && (
-                  <Check className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={2} />
-                )}
-                {effortForChoice(choice)?.options.length ? (
-                  <ChevronRight
-                    className="size-3.5 shrink-0 text-(--ui-text-secondary)"
-                    strokeWidth={1.75}
-                  />
-                ) : null}
-              </Button>
-            ))}
-            {!matches.length && (
-              <p className="px-2 py-3 text-[12px] text-(--ui-text-secondary)">
-                {t("No matching models")}
-              </p>
-            )}
-          </div>
-        </Popover>
+        />
       )}
-      {open &&
-      inEffort &&
-      activeRow &&
-      activeChoice &&
-      activeModel?.harness === activeChoice.harness &&
-      effort ? (
-        <Popover
-          anchor={activeRow}
-          side="right"
-          gap={-4}
-          width={200}
-          layer={LAYER.submenu}
-          role="menu"
-          aria-label={t("{p0} effort", { p0: activeChoice.name })}
-          ignore="[data-assignment-model-target]"
-          onMouseEnter={() => setInEffort(true)}
-          data-assignment-model-target
-          className="p-1 font-sans"
-        >
-          {effort.options.map((option, index) => {
-            const highlighted = index === effortActive;
-            const selectedOption = option.value === selectedEffortValue;
-            return (
-              <MenuRow
-                key={option.value}
-                type="button"
-                data-highlighted={highlighted}
-                role="menuitemradio"
-                aria-checked={selectedOption}
-                onMouseDown={(event) => event.preventDefault()}
-                onMouseEnter={() => setEffortActive(index)}
-                onClick={() => pick(activeChoice, settingsFor(activeChoice, option.value))}
-              >
-                <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                {selectedOption ? (
-                  <Check className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={2} />
-                ) : null}
-              </MenuRow>
-            );
-          })}
-        </Popover>
-      ) : null}
     </div>
   );
 }
@@ -363,7 +198,7 @@ function WorkerHelp() {
         onBlur={() => setHovered(false)}
         className="shrink-0"
       >
-        <CircleHelp className="size-3.5" strokeWidth={1.75} />
+        <CircleHelp className="icon-sm" strokeWidth={1.75} />
       </Button>
       {(hovered || open) && (
         <Popover
@@ -374,10 +209,10 @@ function WorkerHelp() {
           onDismiss={() => setOpen(false)}
           className={`px-2.5 py-2 ${open ? "" : "pointer-events-none"}`}
         >
-          <div className="text-[12px] leading-4 text-(--ui-tone-neutral-fg)">
+          <div className="text-ui-caption leading-4 text-(--ui-tone-neutral-fg)">
             {t("How many workers run at once")}
           </div>
-          <div className="mt-1 text-[11px] leading-4 text-(--ui-text-secondary)">
+          <div className="mt-1 text-ui-micro leading-4 text-(--ui-text-secondary)">
             {t(
               "Tasks wait for available workers and for their dependencies to finish. A lower number runs fewer agent sessions at the same time.",
             )}
@@ -474,27 +309,29 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
       tasks: proposal.tasks.map((task) => (task.id === id ? { ...task, ...patch } : task)),
     });
   };
-  const fieldLabel = "mb-1 block text-[11px] leading-tight text-(--ui-text-secondary)";
+  const fieldLabel = "mb-1 block text-ui-micro leading-tight text-(--ui-text-secondary)";
   return (
-    <div
-      className="mb-2 overflow-hidden rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) font-sans"
+    <Surface
+      variant="quiet"
+      padding="none"
+      className="mb-2 overflow-hidden font-sans"
       aria-label={t("Orchestration proposal")}
       data-orchestration-review
     >
       <div className="flex min-w-0 flex-wrap items-center gap-2.5 px-3 py-2.5">
-        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-(--ui-surface-raised) text-(--ui-text-secondary)">
-          {planning || proposal.status === "starting" ? (
-            <CircleDashed className="size-4 animate-spin" />
+        <span className="grid size-6 shrink-0 place-items-center text-(--ui-text-secondary)">
+          {planning ? (
+            <Spinner size="md" />
           ) : (
-            <MessageMultiple className="size-4" strokeWidth={1.75} />
+            <MessageMultiple className="icon-md" strokeWidth={1.75} />
           )}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium leading-tight text-(--ui-text-secondary)">
+          <div className="truncate text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
             {planning ? t("Planning assignments…") : proposal.title}
           </div>
-          <div className="mt-1 flex items-center gap-1.5 text-[11px] leading-tight text-(--ui-text-secondary)">
-            <HarnessIcon harness={proposal.author.harness} className="size-3 shrink-0" />
+          <div className="mt-1 flex items-center gap-1.5 text-ui-micro leading-tight text-(--ui-text-secondary)">
+            <HarnessIcon harness={proposal.author.harness} className="icon-xs shrink-0" />
             <span className="truncate" title={HARNESS_TITLE[proposal.author.harness]}>
               {t("Lead · ")}
               {proposal.author.name}
@@ -523,9 +360,10 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
               variant="primary"
               type="button"
               disabled={!editable}
+              loading={starting}
+              startIcon={<Play className="icon-xs" strokeWidth={1.75} />}
               onClick={() => void perform(() => actions!.confirm(proposal.leadId, block.id))}
             >
-              <Play className="size-3" strokeWidth={1.75} />
               {starting ? t("Starting…") : t("Confirm & start")}
             </Button>
           )}
@@ -551,7 +389,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
         </div>
       </div>
       {planning && (
-        <p className="px-3 pb-2.5 text-[12px] leading-5 text-(--ui-text-secondary)">
+        <p className="px-3 pb-2.5 text-ui-caption leading-5 text-(--ui-text-secondary)">
           {proposal.settings.choices.length
             ? t(
                 "Your lead is choosing tasks and worker models. Review the assignments here before starting.",
@@ -574,7 +412,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                 : undefined;
             return (
               <li key={task.id}>
-                <div className="flex min-h-9 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1 hover:bg-(--ui-surface-raised)">
+                <ActionHost className="flex min-h-9 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1">
                   <Button
                     variant="item"
                     type="button"
@@ -589,13 +427,13 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                     className="min-w-0 flex-1 text-left"
                   >
                     {open ? (
-                      <ChevronDown className="size-3.5 shrink-0" />
+                      <ChevronDown className="icon-sm shrink-0" />
                     ) : (
-                      <ChevronRight className="size-3.5 shrink-0" />
+                      <ChevronRight className="icon-sm shrink-0" />
                     )}
-                    <span className="truncate text-[12px]" title={task.title}>
-                      {task.title}
-                    </span>
+                    <OverflowTooltip label={task.title}>
+                      <span className="truncate text-ui-caption">{task.title}</span>
+                    </OverflowTooltip>
                   </Button>
                   <div className="max-w-[60%] min-w-0">
                     {editable ? (
@@ -612,10 +450,10 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                       />
                     ) : (
                       <span
-                        className="flex min-w-0 items-center gap-1.5 text-[11px] text-(--ui-text-secondary)"
+                        className="flex min-w-0 items-center gap-1.5 text-ui-micro text-(--ui-text-secondary)"
                         title={HARNESS_TITLE[task.harness]}
                       >
-                        <HarnessIcon harness={task.harness} className="size-3 shrink-0" />
+                        <HarnessIcon harness={task.harness} className="icon-xs shrink-0" />
                         <span className="truncate">
                           {taskChoice?.name ?? task.model}
                           {taskEffort ? ` · ${taskEffort}` : ""}
@@ -623,12 +461,12 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                       </span>
                     )}
                   </div>
-                </div>
+                </ActionHost>
                 {open && (
-                  <div className="space-y-2.5 px-3 pb-3 pl-8 text-[11px] leading-4 text-(--ui-text-secondary)">
+                  <div className="space-y-2.5 px-3 pb-3 pl-8 text-ui-micro leading-4 text-(--ui-text-secondary)">
                     {editable ? (
                       <>
-                        <label className="block">
+                        <div className="block">
                           <span className={fieldLabel}>{t("Task")}</span>
                           <TextField
                             hideLabel
@@ -638,28 +476,36 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                             value={task.title}
                             onChange={(event) => change(task.id, { title: event.target.value })}
                           />
-                        </label>
-                        <label className="block">
+                        </div>
+                        <div className="block">
                           <span className={fieldLabel}>{t("Instructions")}</span>
                           <InstructionsField
                             label={t("Instructions for task {p0}", { p0: index + 1 })}
                             value={task.prompt}
                             onChange={(prompt) => change(task.id, { prompt })}
                           />
-                        </label>
+                        </div>
                       </>
                     ) : (
-                      <p className="whitespace-pre-wrap text-[12px] leading-5 text-(--ui-text-secondary)">
+                      <p className="whitespace-pre-wrap text-ui-caption leading-5 text-(--ui-text-secondary)">
                         {task.prompt}
                       </p>
                     )}
                     {!!task.dependsOn.length && (
-                      <p>
-                        {t("After ·")}{" "}
-                        {task.dependsOn
-                          .map((id) => proposal.tasks.find((entry) => entry.id === id)?.title ?? id)
-                          .join(", ")}
-                      </p>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span className="shrink-0">{t("After ·")}</span>
+                        <BadgeList
+                          label={t("After")}
+                          size="xs"
+                          max={2}
+                          className="min-w-0"
+                          items={task.dependsOn.map((id, index) => {
+                            const title =
+                              proposal.tasks.find((entry) => entry.id === id)?.title ?? id;
+                            return { id: `${index}:${title}`, label: title };
+                          })}
+                        />
+                      </div>
                     )}
                   </div>
                 )}
@@ -676,7 +522,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
           onClick={() => setShowAll(!showAll)}
           className="w-full text-left"
         >
-          {showAll ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          {showAll ? <ChevronDown className="icon-sm" /> : <ChevronRight className="icon-sm" />}
           {showAll
             ? t("Show fewer tasks")
             : t(proposal.tasks.length === 4 ? "Show {p0} more task" : "Show {p0} more tasks", {
@@ -684,13 +530,9 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
               })}
         </Button>
       )}
-      {(error || proposal.error) && (
-        <Alert tone="danger" role="alert">
-          {error ?? proposal.error}
-        </Alert>
-      )}
+      {(error || proposal.error) && <Alert tone="danger">{error ?? proposal.error}</Alert>}
       {!planning && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-(--ui-tone-neutral-border) px-3 py-2 text-[11px] text-(--ui-text-secondary)">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-(--ui-tone-neutral-border) px-3 py-2 text-ui-micro text-(--ui-text-secondary)">
           <div className="flex items-center gap-1.5">
             {editable ? (
               <>
@@ -720,16 +562,21 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
             <WorkerHelp />
           </div>
           <span>
-            {run?.status ??
-              (proposal.status === "approved"
-                ? t("Approved")
-                : proposal.status === "ready"
-                  ? t("Awaiting confirmation")
-                  : "")}{" "}
-            {t("· Shared project folder")}
+            {[
+              run?.status
+                ? t(run.status.charAt(0).toUpperCase() + run.status.slice(1))
+                : proposal.status === "approved"
+                  ? t("Approved")
+                  : proposal.status === "ready"
+                    ? t("Awaiting confirmation")
+                    : "",
+              t("Shared project folder"),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </span>
         </div>
       )}
-    </div>
+    </Surface>
   );
 }

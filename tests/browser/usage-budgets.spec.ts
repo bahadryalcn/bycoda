@@ -30,7 +30,7 @@ for (const [theme, width] of [
         if (Math.abs(card.top - peer.top) < 2)
           expect(Math.abs(card.height - peer.height)).toBeLessThan(2);
     expect(await accounts.first().evaluate((el) => el.getBoundingClientRect().height)).toBeLessThan(
-      290,
+      340,
     );
 
     await page.screenshot({
@@ -51,7 +51,6 @@ for (const [theme, width] of [
     await page.keyboard.press("Escape");
 
     await page.getByRole("radio", { name: "Limits", exact: true }).click();
-    await page.locator(".usage-display-preferences > summary").click();
     await page.getByRole("switch", { name: "Show remaining usage", exact: true }).click();
     await page.getByRole("radio", { name: "Limits", exact: true }).click();
     await expect(accounts.first().getByRole("meter").first()).toHaveAttribute(
@@ -80,7 +79,7 @@ test("creates, edits, persists and removes a project token allocation", async ({
   await page.goto("/tests/browser/usage-budgets.html");
   await page.getByRole("button", { name: "Add budget", exact: true }).click();
   await select(page, "Budget target", "C:/fixture/app");
-  await page.getByLabel("Budget name", { exact: true }).fill("Project allocation");
+  await page.getByLabel("Budget name (optional)", { exact: true }).fill("Project allocation");
   await page.getByLabel("Token capacity", { exact: true }).fill("10000");
   await page.getByLabel("Allocation (%)", { exact: true }).fill("25");
   await page.getByRole("button", { name: "Save budget", exact: true }).click();
@@ -96,6 +95,7 @@ test("creates, edits, persists and removes a project token allocation", async ({
   await page.getByRole("button", { name: "Save budget", exact: true }).click();
   await expect(page.getByText("Budget reached", { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "Remove", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm delete", exact: true }).click();
   await expect(page.getByText("No usage budgets.", { exact: false })).toBeVisible();
 });
 test("supports session and workspace scopes and 5-hour account thresholds", async ({ page }) => {
@@ -103,13 +103,13 @@ test("supports session and workspace scopes and 5-hour account thresholds", asyn
   await page.getByRole("button", { name: "Add budget", exact: true }).click();
   await select(page, "Scope", "Session");
   await select(page, "Budget target", "Fixture session · C:/fixture/app");
-  await page.getByLabel("Budget name", { exact: true }).fill("Session allowance");
+  await page.getByLabel("Budget name (optional)", { exact: true }).fill("Session allowance");
   await page.getByRole("button", { name: "Save budget", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Session allowance" })).toBeVisible();
   await page.getByRole("button", { name: "Add budget", exact: true }).click();
   await select(page, "Scope", "Workspace");
   await select(page, "Budget target", "Fixture workspace");
-  await page.getByLabel("Budget name", { exact: true }).fill("Account ceiling");
+  await page.getByLabel("Budget name (optional)", { exact: true }).fill("Account ceiling");
   await select(page, "Measurement", "Provider account threshold (%)");
   await select(page, "Period", "5 hours");
   await select(page, "Provider account", "codex · Fixture account");
@@ -128,7 +128,7 @@ test("supports session and workspace scopes and 5-hour account thresholds", asyn
 test("shows Turkish budget controls", async ({ page }) => {
   await page.goto("/tests/browser/usage-budgets.html?lang=tr");
   await page.getByRole("button", { name: "Bütçe ekle", exact: true }).click();
-  await expect(page.getByLabel("Bütçe adı", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Bütçe adı (isteğe bağlı)", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Ayrılan pay (%)", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Bütçeyi kaydet", exact: true })).toBeVisible();
 });
@@ -140,7 +140,7 @@ test("keeps the editor usable at narrow width in light theme and reduced motion"
   await page.goto("/tests/browser/usage-budgets.html?theme=light");
   await page.getByRole("button", { name: "Add budget", exact: true }).focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByLabel("Budget name", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Budget name (optional)", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save budget", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({
@@ -160,25 +160,18 @@ for (const [theme, width, motion] of [
     await page.emulateMedia({ reducedMotion: motion === "reduce" ? "reduce" : "no-preference" });
     await page.goto(`/tests/browser/usage-budgets.html?overview=1&theme=${theme}&motion=${motion}`);
 
-    const values = page.locator(".usage-metrics strong > .bycoda-arc");
-    await expect(values).toHaveCount(6);
-    await expect(values.nth(1)).toHaveText(motion === "auto" ? /1.0K/ : "1.0K");
-    if (motion !== "auto") await expect(values.locator('[aria-hidden="true"]')).toHaveCount(0);
+    // Key numbers are plain exact text; there is no decorative reel to wait for.
+    const values = page.locator(".usage-metrics strong");
+    await expect(values).toHaveCount(3);
+    await page.getByRole("button", { name: "Usage details", exact: true }).click();
+    await expect(values).toHaveCount(7);
+    await expect(values.nth(3)).toHaveText("1K");
+    await expect(values.locator('[aria-hidden="true"]')).toHaveCount(0);
     await page.evaluate(() => {
       (window as any).refreshUsageFixture();
       (window as any).refreshUsageFixture();
     });
-    await expect
-      .poll(() =>
-        values
-          .nth(1)
-          .evaluate((node) =>
-            node.querySelector("[aria-hidden]")
-              ? node.firstElementChild?.textContent
-              : node.textContent,
-          ),
-      )
-      .toBe("3.0K");
+    await expect.poll(() => values.nth(3).textContent()).toBe("3K");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );

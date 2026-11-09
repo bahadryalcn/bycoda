@@ -66,6 +66,8 @@ test("stash actions fit a narrow rail and commit files remain navigable", async 
 });
 
 test("graph scope, file filtering and keyboard resizing preserve Git context", async ({ page }) => {
+  // The branch rail grows only while the workspace has room (at most its width minus 720 px).
+  await page.setViewportSize({ width: 1280, height: 800 });
   await open(page);
   const dialog = page.getByRole("dialog", { name: "Commit Graph", exact: true });
   await dialog.getByRole("radio", { name: "Current branch", exact: true }).click();
@@ -130,7 +132,7 @@ for (const appearance of ["dark", "light"] as const) {
   });
 }
 
-test("fetch, pull, push, stage, unstage ve stash doğru depoda çalışır", async ({ page }) => {
+test("fetch, pull, push, stage, unstage and stash run in the correct repository", async ({ page }) => {
   await open(page);
   const dialog = page.getByRole("dialog", {
     name: "Commit Graph",
@@ -164,10 +166,14 @@ test("fetch, pull, push, stage, unstage ve stash doğru depoda çalışır", asy
     expect(calls.find((call) => call.command === command)?.args.cwd).toBe("/fixture");
 });
 
-test("yerel ve origin branch silme ayrı aksiyonlar kullanır", async ({ page }) => {
+test("local and origin branch deletion use separate actions", async ({ page }) => {
   await open(page);
   await page.getByRole("button", { name: "Actions for develop", exact: true }).click();
   await page.getByText("Delete Branch…", { exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Delete branch?", exact: true })
+    .getByRole("button", { name: "Delete branch", exact: true })
+    .click();
   await expect(page.getByRole("button", { name: "Actions for develop", exact: true })).toHaveCount(
     0,
   );
@@ -178,6 +184,10 @@ test("yerel ve origin branch silme ayrı aksiyonlar kullanır", async ({ page })
     })
     .click();
   await page.getByText("Delete from remote…", { exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Delete?", exact: true })
+    .getByRole("button", { name: "Delete", exact: true })
+    .click();
   await expect(
     page.getByRole("button", {
       name: "Actions for origin/feature/team",
@@ -208,7 +218,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
 });
 
-test("commit sağ tık menüsü değişiklik, blame, GitHub ve kopyalama aksiyonlarını çalıştırır", async ({
+test("commit context menu runs the changes, blame, GitHub and copy actions", async ({
   page,
   context,
   browserName,
@@ -311,7 +321,7 @@ test("commit sağ tık menüsü değişiklik, blame, GitHub ve kopyalama aksiyon
   );
 });
 
-test("commit sağ tık menüsünün Git aksiyonları seçilen SHA ile çalışır", async ({ page }) => {
+test("commit context menu Git actions run with the selected SHA", async ({ page }) => {
   await open(page);
   const dialog = page.getByRole("dialog", {
     name: "Commit Graph",
@@ -337,6 +347,11 @@ test("commit sağ tık menüsünün Git aksiyonları seçilen SHA ile çalışı
   for (const name of ["Soft", "Mixed", "Hard"]) {
     await pick("Reset Current Branch to Here");
     await page.getByRole("menuitem", { name: new RegExp(`^${name}`) }).click();
+    if (name === "Hard")
+      await page
+        .getByRole("dialog", { name: /^Hard reset to /u })
+        .getByRole("button", { name: "Hard reset", exact: true })
+        .click();
     await expect(dialog.getByRole("button", { name: "Fetch", exact: true })).toBeEnabled();
   }
   const calls = await page.evaluate(
@@ -364,6 +379,10 @@ test("commit sağ tık menüsünün Git aksiyonları seçilen SHA ile çalışı
   ).toEqual(["soft", "mixed", "hard"]);
 });
 async function open(page: import("@playwright/test").Page, conflict = false, large = false) {
+  // Menus scale in from 94%. On a slow CI compositor that animation can sit at its first
+  // frame while Playwright clicks, then finish under the still pointer: the row below the
+  // click receives mouseenter and closes the open submenu. Settled geometry keeps clicks exact.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(
     `/tests/browser/git-workspace.html${conflict ? "?conflict" : large ? "?large" : ""}`,
     {
@@ -371,7 +390,12 @@ async function open(page: import("@playwright/test").Page, conflict = false, lar
     },
   );
   await page.getByRole("button", { name: "Open full graph", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "Commit Graph", exact: true })).toBeVisible();
+  const dialog = page.getByRole("dialog", { name: "Commit Graph", exact: true });
+  await expect(dialog).toBeVisible();
+  // A workspace narrower than 960 px starts with the branch rail hidden; open it explicitly.
+  const toggle = dialog.getByRole("button", { name: "Toggle branches", exact: true });
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute("aria-pressed")) === "false") await toggle.click();
   await expect(
     page.getByRole("button", { name: "Switch to feature/graph", exact: true }),
   ).toBeVisible({ timeout: 30000 });
@@ -412,7 +436,7 @@ test("large histories and file lists stay windowed; searching does not query Git
   await page.screenshot({ path: testInfo.outputPath("large-filtered.png") });
 });
 
-test("branch, commit ve dosya karşılaştırması panel içinde kalır", async ({ page }) => {
+test("branch, commit and file comparison stay inside the panel", async ({ page }) => {
   await open(page);
   const dialog = page.getByRole("dialog", {
     name: "Commit Graph",
@@ -422,10 +446,11 @@ test("branch, commit ve dosya karşılaştırması panel içinde kalır", async 
   await expect(dialog.getByRole("heading", { name: "Improve workspace navigation" })).toBeVisible();
   await dialog.getByRole("button").filter({ hasText: "src/theme.css" }).click();
   await expect(dialog.getByText("const after = true;", { exact: false })).toBeVisible();
-  await dialog.getByRole("button", { name: "Side-by-side view", exact: true }).click();
+  await dialog.getByRole("button", { name: /^Diff view:/ }).click();
+  await page.getByRole("menuitemradio", { name: "Side-by-side view", exact: true }).click();
   await expect(
-    dialog.getByRole("button", { name: "Side-by-side view", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+    dialog.getByRole("button", { name: "Diff view: Side-by-side view", exact: true }),
+  ).toBeVisible();
   await dialog.getByRole("button", { name: "Full screen", exact: true }).click();
   const bounds = await dialog.boundingBox();
   expect(bounds?.x).toBe(0);
@@ -433,7 +458,7 @@ test("branch, commit ve dosya karşılaştırması panel içinde kalır", async 
   await expect(dialog.getByRole("button", { name: "Restore window", exact: true })).toBeVisible();
 });
 
-test("branch değiştirme ve başka referanstan branch oluşturma", async ({ page }) => {
+test("switching branches and creating a branch from another ref", async ({ page }) => {
   await open(page);
   await page.getByRole("button", { name: "Switch to feature/graph", exact: true }).click();
   await expect(
@@ -466,12 +491,15 @@ test("branch değiştirme ve başka referanstan branch oluşturma", async ({ pag
   });
 });
 
-test("conflict sonucu panel içinde düzenlenip stage edilir ve merge sürdürülür", async ({
+test("edits a conflict result in the panel, stages it and continues the merge", async ({
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 1500, height: 900 });
   await open(page, true);
-  await page.locator('button[title="Open src/conflict.ts in the editor"]').click();
+  await page
+    .locator('[data-conflict="src/conflict.ts"]')
+    .getByRole("button", { name: /^conflict\.ts/ })
+    .click();
   await page.getByRole("separator", { name: "Resize inspector" }).press("End");
   const output = page.getByRole("textbox", {
     name: "Resolved output",
@@ -502,7 +530,7 @@ test("conflict sonucu panel içinde düzenlenip stage edilir ve merge sürdürü
   expect(left.y).toBe(right.y);
   expect(middle.y).toBeGreaterThan(left.y);
   await page.screenshot({ path: testInfo.outputPath("conflict-stacked.png") });
-  await page.getByRole("button", { name: "Side by side", exact: true }).click();
+  await page.getByRole("radio", { name: "Side by side", exact: true }).click();
   [left, middle, right] = await boxes();
   expect(left.x).toBeLessThan(middle.x);
   expect(middle.x).toBeLessThan(right.x);
@@ -518,15 +546,19 @@ test("conflict sonucu panel içinde düzenlenip stage edilir ve merge sürdürü
   await output.locator(".cm-line").first().click();
   await output.press("ControlOrMeta+a");
   await page.keyboard.insertText("const theme = 'merged';\n");
-  await page.getByRole("button", { name: "Result only", exact: true }).click();
+  await page.getByRole("radio", { name: "Result only", exact: true }).click();
   await expect(ours).toBeHidden();
   await expect(output.locator(".cm-line").first()).toHaveText("const theme = 'merged';");
-  await page.getByRole("button", { name: "Sources above", exact: true }).click();
+  await page.getByRole("radio", { name: "Sources above", exact: true }).click();
   await expect(output.locator(".cm-line").first()).toHaveText("const theme = 'merged';");
   await page.setViewportSize({ width: 700, height: 900 });
-  [left, middle, right] = await boxes();
-  expect(left.y).toBeLessThan(right.y);
-  expect(right.y).toBeLessThan(middle.y);
+  // The panes restack after the resize settles; measure once they have.
+  await expect
+    .poll(async () => {
+      const [ours, result, theirs] = await boxes();
+      return ours.y < theirs.y && theirs.y < result.y;
+    })
+    .toBe(true);
   await page.screenshot({ path: testInfo.outputPath("conflict-narrow.png") });
   await page.getByRole("button", { name: "Save and stage", exact: true }).click();
   await expect(output).toHaveCount(0);

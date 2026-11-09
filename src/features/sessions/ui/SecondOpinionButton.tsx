@@ -1,22 +1,13 @@
 import { Button } from "../../../shared/ui/Button";
 import type { ExpandingButtonGroupTriggerProps } from "../../../shared/ui/ExpandingButtonGroup";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import {
-  Check,
   ChevronDown,
-  ChevronRight,
   MessageMultiple,
   Replace,
   type IconComponent,
 } from "../../../shared/ui/icons";
-import {
-  useEffect,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
   getHarnessAvailabilitySnapshot,
   hasProbedHarnessAvailability,
@@ -25,7 +16,6 @@ import {
   subscribeHarnessAvailability,
 } from "../../../integrations/harness/core/availability";
 import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
-import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import {
   getModelSnapshot,
   getPickerVisibilitySnapshot,
@@ -38,11 +28,14 @@ import {
   subscribeModels,
   subscribePickerVisibility,
 } from "../model/models";
-import { LAYER } from "../../../shared/lib/layers";
 import { secondOpinionTargets } from "../model/secondOpinion";
 import { HARNESS_TITLE, type HarnessId, type ModelTarget } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
-import { Popover } from "../../../shared/ui/Popover";
+import {
+  DropdownMenu,
+  type DropdownMenuAction,
+  type DropdownMenuItem,
+} from "../../../shared/ui/DropdownMenu";
 
 type Props = {
   from: HarnessId;
@@ -64,24 +57,20 @@ type Props = {
   excludeFromModel?: boolean;
   disabled?: boolean;
   triggerClassName?: string;
+  triggerVariant?: "ghost" | "secondary";
   renderTrigger?: (props: ExpandingButtonGroupTriggerProps) => ReactNode;
 };
 
 const MENU_WIDTH = 240;
 const SUBMENU_WIDTH = 240;
 const SUBMENU_MAX_HEIGHT = 288;
-const EFFORT_MENU_WIDTH = 200;
-/** The flyout tucks under the parent menu's edge rather than floating free. */
-const SUBMENU_OVERLAP = -4;
-/** Neither menu is inside the other, so a click in one is not a click away. */
-const SELF = "[data-provider-target]";
 
 export function HandoffButton({
   from,
   onPick,
   renderTrigger,
 }: Pick<Props, "from" | "onPick" | "renderTrigger">) {
-  useLocale();
+  const t = useT();
   return (
     <SecondOpinionButton
       from={from}
@@ -109,7 +98,7 @@ export function BuildTargetButton({
   disabled?: boolean;
   onPick: (target: ModelTarget) => void;
 }) {
-  useLocale();
+  const t = useT();
   return (
     <SecondOpinionButton
       from={from}
@@ -123,7 +112,7 @@ export function BuildTargetButton({
       menuLabel="Build this plan with another model or provider"
       includeCurrent
       disabled={disabled}
-      triggerClassName="flex h-6 w-6 shrink-0 items-center justify-center rounded-r-md border-l border-(--ui-tone-neutral-border) bg-(--ui-tone-neutral-solid) text-(--ui-tone-neutral-on-solid) hover:bg-(--ui-surface-raised) disabled:pointer-events-none disabled:opacity-40"
+      triggerVariant="secondary"
     />
   );
 }
@@ -142,9 +131,10 @@ export function SecondOpinionButton({
   excludeFromModel = false,
   disabled: disabledByCaller = false,
   triggerClassName,
+  triggerVariant = "ghost",
   renderTrigger,
 }: Props) {
-  useLocale();
+  const t = useT();
   const availabilityVersion = useSyncExternalStore(
     subscribeHarnessAvailability,
     getHarnessAvailabilitySnapshot,
@@ -157,14 +147,7 @@ export function SecondOpinionButton({
   );
   const catalogVersion = useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
   const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(0);
-  const [modelActive, setModelActive] = useState(0);
-  const [effortActive, setEffortActive] = useState(0);
-  const [menuLevel, setMenuLevel] = useState<"providers" | "models" | "effort">("providers");
   const [button, setButton] = useState<HTMLButtonElement | null>(null);
-  const [activeRow, setActiveRow] = useState<HTMLButtonElement | null>(null);
-  const [activeModelRow, setActiveModelRow] = useState<HTMLButtonElement | null>(null);
-  const lockOverscroll = useLockOverscroll<HTMLDivElement>();
 
   const probed = hasProbedHarnessAvailability();
   const targets = useMemo(() => {
@@ -178,67 +161,15 @@ export function SecondOpinionButton({
     });
   }, [from, includeCurrent, probed, availabilityVersion, visibilityVersion]);
 
-  const activeHarness = targets[active];
-  const models = useMemo(() => {
-    void catalogVersion;
-    if (!activeHarness) return [];
-    const list = modelsFor(activeHarness);
-    // The current model is not a second opinion on itself, so it is not an
-    // option once the picker lets the turn's own harness back in.
-    return excludeFromModel && activeHarness === from && fromModel
-      ? list.filter((model) => model.id !== fromModel)
-      : list;
-  }, [activeHarness, catalogVersion, from, fromModel, excludeFromModel]);
-  const preferred =
-    activeHarness != null
-      ? activeHarness === from && fromModel && !excludeFromModel
-        ? fromModel
-        : preferredModelId(activeHarness)
-      : undefined;
-  const activeModel = models[modelActive];
-  const activeEffort = activeModel ? modelEffortSetting(activeModel) : undefined;
-  const selectedEffortValue = activeEffort
-    ? activeModel.id === fromModel
-      ? (fromSettings?.[activeEffort.id] ?? activeEffort.value)
-      : activeEffort.value
-    : undefined;
-
   useEffect(() => {
     if (!open) return;
     void probeHarnessAvailability();
   }, [open]);
 
   useEffect(() => {
-    if (!open || !activeHarness) return;
-    void refreshHarnessCatalogs([activeHarness]);
-  }, [open, activeHarness]);
-
-  useEffect(() => {
-    setActive(0);
-    setMenuLevel("providers");
-  }, [open, targets.join(",")]);
-
-  useEffect(() => {
-    if (!activeHarness) {
-      setModelActive(0);
-      return;
-    }
-    const index = models.findIndex((model) => model.id === preferred);
-    setModelActive(index >= 0 ? index : 0);
-  }, [activeHarness, preferred, models]);
-
-  useEffect(() => {
-    if (!activeEffort) {
-      setEffortActive(0);
-      return;
-    }
-    const index = activeEffort.options.findIndex((option) => option.value === selectedEffortValue);
-    setEffortActive(index >= 0 ? index : 0);
-  }, [activeEffort, selectedEffortValue]);
-
-  useEffect(() => {
-    activeModelRow?.scrollIntoView({ block: "nearest" });
-  }, [activeModelRow]);
+    if (!open || targets.length === 0) return;
+    void refreshHarnessCatalogs(targets);
+  }, [open, targets]);
 
   useEffect(() => {
     if (!open) return;
@@ -246,11 +177,6 @@ export function SecondOpinionButton({
     window.addEventListener("resize", close);
     return () => window.removeEventListener("resize", close);
   }, [open]);
-
-  const dismiss = (restoreFocus: boolean) => {
-    setOpen(false);
-    if (restoreFocus) button?.focus();
-  };
 
   // With the current model hidden, a target harness only counts as usable
   // if it still has a model left to offer once that exclusion is applied.
@@ -270,7 +196,20 @@ export function SecondOpinionButton({
   const disabled = disabledByCaller || noTargets;
   const label = noTargets ? disabledTitle : title;
 
-  const pick = (model: (typeof models)[number], effortValue?: string) => {
+  const modelsOf = (harness: HarnessId) => {
+    void catalogVersion;
+    const list = modelsFor(harness);
+    // The current model is not a second opinion on itself, so it is not an
+    // option once the picker lets the turn's own harness back in.
+    return excludeFromModel && harness === from && fromModel
+      ? list.filter((model) => model.id !== fromModel)
+      : list;
+  };
+  const SEP = "\u0000";
+  const pickEncoded = (id: string) => {
+    const [harness, modelId, effortValue] = id.split(SEP);
+    const model = modelsOf(harness as HarnessId).find((item) => item.id === modelId);
+    if (!model) return;
     const effort = modelEffortSetting(model);
     const modelSettings = mergeModelSettings(model, {
       ...(model.id === fromModel ? fromSettings : undefined),
@@ -279,94 +218,76 @@ export function SecondOpinionButton({
     setOpen(false);
     onPick({ harness: model.harness, model: model.id, modelSettings });
   };
-
-  const openModels = () => {
-    if (models.length > 0) setMenuLevel("models");
-  };
-
-  const openEffortOrPick = (model: (typeof models)[number]) => {
-    if (modelEffortSetting(model)?.options.length) {
-      setMenuLevel("effort");
-    } else {
-      pick(model);
-    }
-  };
-
-  const moveHarness = (dir: 1 | -1) => {
-    if (targets.length === 0) return;
-    setMenuLevel("providers");
-    setActive((index) => (index + dir + targets.length) % targets.length);
-  };
-
-  const moveModel = (dir: 1 | -1) => {
-    if (models.length === 0) return;
-    setModelActive((index) => (index + dir + models.length) % models.length);
-  };
-
-  const moveEffort = (dir: 1 | -1) => {
-    if (!activeEffort?.options.length) return;
-    setEffortActive(
-      (index) => (index + dir + activeEffort.options.length) % activeEffort.options.length,
-    );
-  };
-
-  const onMenuKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      if (menuLevel === "effort") moveEffort(1);
-      else if (menuLevel === "models") moveModel(1);
-      else moveHarness(1);
-      return;
-    }
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      if (menuLevel === "effort") moveEffort(-1);
-      else if (menuLevel === "models") moveModel(-1);
-      else moveHarness(-1);
-      return;
-    }
-    if (event.key === "ArrowRight") {
-      event.preventDefault();
-      if (menuLevel === "providers") openModels();
-      else if (menuLevel === "models" && activeEffort?.options.length) setMenuLevel("effort");
-      return;
-    }
-    if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      setMenuLevel(menuLevel === "effort" ? "models" : "providers");
-      return;
-    }
-    if (event.key === "Enter") {
-      event.preventDefault();
-      if (!activeHarness) return;
-      if (menuLevel === "effort") {
-        const option = activeEffort?.options[effortActive];
-        if (activeModel && option) pick(activeModel, option.value);
-        return;
-      }
-      if (menuLevel === "models") {
-        if (activeModel) openEffortOrPick(activeModel);
-        return;
-      }
-      openModels();
-    }
-  };
-
-  const showSubmenu =
-    open &&
-    menuLevel !== "providers" &&
-    activeRow != null &&
-    activeRow.dataset.providerIndex === String(active) &&
-    activeHarness != null &&
-    models.length > 0;
-  const showEffort =
-    showSubmenu &&
-    menuLevel === "effort" &&
-    activeModelRow != null &&
-    activeModelRow.dataset.modelIndex === String(modelActive) &&
-    activeModel != null &&
-    activeEffort != null &&
-    activeEffort.options.length > 0;
+  const menuItems = (): DropdownMenuItem[] => [
+    {
+      kind: "content",
+      id: "description",
+      node: (
+        <p className="px-1.5 py-1 text-ui-micro leading-3 text-(--ui-text-secondary) text-balance">
+          {description}
+        </p>
+      ),
+    },
+    { kind: "sep" },
+    ...(targets.length === 0
+      ? [
+          {
+            kind: "content" as const,
+            id: "empty",
+            node: (
+              <div className="px-1.5 py-1 text-ui-caption leading-4 text-(--ui-text-secondary)">
+                {disabledTitle}
+              </div>
+            ),
+          },
+        ]
+      : targets.map((harness): DropdownMenuAction => {
+          const list = modelsOf(harness);
+          const preferred =
+            harness === from && fromModel && !excludeFromModel
+              ? fromModel
+              : preferredModelId(harness);
+          return {
+            kind: "item",
+            id: harness,
+            label: HARNESS_TITLE[harness],
+            icon: <HarnessIcon harness={harness} className="size-3.5" />,
+            disabled: !isHarnessAvailable(harness) && probed,
+            submenu: list.length
+              ? list.map((model): DropdownMenuAction => {
+                  const effort = modelEffortSetting(model);
+                  const current = effort
+                    ? model.id === fromModel
+                      ? (fromSettings?.[effort.id] ?? effort.value)
+                      : effort.value
+                    : undefined;
+                  return {
+                    kind: "item",
+                    id: [harness, model.id].join(SEP),
+                    label: model.name,
+                    checked: model.id === preferred,
+                    selectionRole: "radio",
+                    submenuWidth: SUBMENU_WIDTH,
+                    submenuMaxHeight: SUBMENU_MAX_HEIGHT,
+                    submenuLabel: t("{p0} effort", { p0: model.name }),
+                    submenu: effort?.options.length
+                      ? effort.options.map((option): DropdownMenuAction => ({
+                          kind: "item",
+                          id: [harness, model.id, option.value].join(SEP),
+                          label: option.label,
+                          checked: option.value === current,
+                          selectionRole: "radio",
+                        }))
+                      : undefined,
+                  };
+                })
+              : undefined,
+            submenuLabel: t("{p0} models", { p0: HARNESS_TITLE[harness] }),
+            submenuWidth: SUBMENU_WIDTH,
+            submenuMaxHeight: SUBMENU_MAX_HEIGHT,
+          };
+        })),
+  ];
 
   return (
     <>
@@ -386,15 +307,14 @@ export function SecondOpinionButton({
           className={triggerClassName}
           iconOnly
           label={label}
-          variant="ghost"
+          variant={triggerVariant}
           ref={setButton}
           type="button"
-          title={label}
+          tooltip={label}
           aria-label={label}
           aria-haspopup="menu"
           aria-expanded={open}
           disabled={disabled}
-
           onClick={() => {
             if (disabled) return;
             setOpen((value) => !value);
@@ -403,183 +323,17 @@ export function SecondOpinionButton({
           <Icon className="size-3.5" strokeWidth={1.75} />
         </Button>
       )}
-      {open ? (
-        <>
-          <Popover
-            anchor={button}
-            side="top"
-            align="center"
-            width={MENU_WIDTH}
-            autoFocus
-            ignore={SELF}
-            onDismiss={(reason) => dismiss(reason === "escape")}
-            role="menu"
-            tabIndex={-1}
-            aria-label={menuLabel}
-            onKeyDown={onMenuKey}
-            data-provider-target
-            className="p-1 font-sans"
-          >
-            <div className="px-1.5 pb-2 pt-1.5">
-              <p className="text-[11px] leading-3 text-(--ui-text-secondary) text-balance">
-                {description}
-              </p>
-            </div>
-            <div className="mx-1 mb-1 h-px bg-(--ui-surface-raised)" />
-            {targets.length === 0 ? (
-              <div className="px-2.5 py-2 text-[12px] leading-4 text-(--ui-text-secondary)">
-                {disabledTitle}
-              </div>
-            ) : (
-              targets.map((harness, index) => {
-                const highlighted = index === active;
-                const available = isHarnessAvailable(harness);
-                return (
-                  <Button
-                    className="w-full text-left"
-                    fullWidth
-                    selected={highlighted}
-                    variant="item"
-                    key={harness}
-                    ref={highlighted ? setActiveRow : undefined}
-                    data-provider-index={index}
-                    type="button"
-                    role="menuitem"
-                    aria-haspopup={modelsFor(harness).length > 0 ? "menu" : undefined}
-                    aria-expanded={highlighted && showSubmenu}
-                    disabled={!available && probed}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onMouseEnter={() => {
-                      setActive(index);
-                      setMenuLevel("models");
-                    }}
-                    onClick={() => {
-                      if (!available && probed) return;
-                      setActive(index);
-                      if (modelsFor(harness).length > 0) setMenuLevel("models");
-                    }}
-                  >
-                    <HarnessIcon harness={harness} className="size-3.5" />
-                    <span className="min-w-0 flex-1 truncate">{HARNESS_TITLE[harness]}</span>
-                    {modelsFor(harness).length > 0 ? (
-                      <ChevronRight
-                        className="size-3.5 shrink-0 text-(--ui-text-secondary)"
-                        strokeWidth={1.75}
-                      />
-                    ) : null}
-                  </Button>
-                );
-              })
-            )}
-          </Popover>
-          {showSubmenu ? (
-            <Popover
-              // Remounting per row re-measures the flyout against that row.
-              key={active}
-              ref={lockOverscroll}
-              anchor={activeRow}
-              side="right"
-              gap={SUBMENU_OVERLAP}
-              width={SUBMENU_WIDTH}
-              maxHeight={SUBMENU_MAX_HEIGHT}
-              layer={LAYER.submenu}
-              role="menu"
-              aria-label={t("{p0} models", { p0: HARNESS_TITLE[activeHarness] })}
-              ignore={SELF}
-              onMouseEnter={() =>
-                setMenuLevel((level) => (level === "providers" ? "models" : level))
-              }
-              data-provider-target
-              className="overflow-y-auto overscroll-none p-1"
-            >
-              {models.map((model, index) => {
-                const highlighted = index === modelActive;
-                return (
-                  <Button
-                    className="w-full text-left"
-                    fullWidth
-                    selected={highlighted}
-                    variant="item"
-                    key={model.id}
-                    ref={highlighted ? setActiveModelRow : undefined}
-                    data-model-index={index}
-                    type="button"
-                    role="menuitem"
-                    aria-haspopup={modelEffortSetting(model)?.options.length ? "menu" : undefined}
-                    aria-expanded={highlighted && showEffort}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onMouseEnter={() => {
-                      setModelActive(index);
-                      setMenuLevel(modelEffortSetting(model)?.options.length ? "effort" : "models");
-                    }}
-                    onClick={() => {
-                      setModelActive(index);
-                      openEffortOrPick(model);
-                    }}
-                  >
-                    <span className="min-w-0 flex-1 truncate">{model.name}</span>
-                    {model.id === preferred ? (
-                      <Check
-                        className="size-3 shrink-0 text-(--ui-text-secondary)"
-                        strokeWidth={2}
-                      />
-                    ) : null}
-                    {modelEffortSetting(model)?.options.length ? (
-                      <ChevronRight
-                        className="size-3.5 shrink-0 text-(--ui-text-secondary)"
-                        strokeWidth={1.75}
-                      />
-                    ) : null}
-                  </Button>
-                );
-              })}
-            </Popover>
-          ) : null}
-          {showEffort ? (
-            <Popover
-              key={`${activeModel.id}:effort`}
-              anchor={activeModelRow}
-              side="right"
-              gap={SUBMENU_OVERLAP}
-              width={EFFORT_MENU_WIDTH}
-              layer={LAYER.submenu + 1}
-              role="menu"
-              aria-label={t("{p0} effort", { p0: activeModel.name })}
-              ignore={SELF}
-              onMouseEnter={() => setMenuLevel("effort")}
-              data-provider-target
-              className="p-1 font-sans"
-            >
-              {activeEffort.options.map((option, index) => {
-                const highlighted = index === effortActive;
-                const selected = option.value === selectedEffortValue;
-                return (
-                  <Button
-                    className="w-full text-left"
-                    fullWidth
-                    selected={highlighted}
-                    variant="item"
-                    key={option.value}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={selected}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onMouseEnter={() => setEffortActive(index)}
-                    onClick={() => pick(activeModel, option.value)}
-                  >
-                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                    {selected ? (
-                      <Check
-                        className="size-3.5 shrink-0 text-(--ui-text-secondary)"
-                        strokeWidth={2}
-                      />
-                    ) : null}
-                  </Button>
-                );
-              })}
-            </Popover>
-          ) : null}
-        </>
+      {open && button ? (
+        <DropdownMenu
+          anchor={button}
+          label={menuLabel}
+          items={menuItems()}
+          side="top"
+          align="center"
+          width={MENU_WIDTH}
+          onPick={pickEncoded}
+          onClose={() => setOpen(false)}
+        />
       ) : null}
     </>
   );

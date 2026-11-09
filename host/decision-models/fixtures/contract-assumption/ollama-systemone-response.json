@@ -1,0 +1,23 @@
+{
+  "provenance": "Contract assumption, not verified: the Ollama /api/systemone route and its response were not checked against a running Ollama (D13).",
+  "request": {
+    "model": "example-decider",
+    "state": { "text": "Merhaba, yardım eder misiniz?" },
+    "questions": {
+      "intent": {
+        "type": "choice",
+        "instructions": "Mesajın niyeti nedir?",
+        "criteria": { "help": "Yardım isteği", "greeting": "Selamlama", "other": "Diğer" }
+      }
+    }
+  },
+  "response": {
+    "answers": {
+      "intent": {
+        "type": "choice",
+        "choice": "help",
+        "probabilities": { "help": 0.7, "greeting": 0.2, "other": 0.1 }
+      }
+    }
+  }
+}

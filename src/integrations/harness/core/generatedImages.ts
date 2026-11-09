@@ -2,7 +2,7 @@ import {
   saveGeneratedImage,
   deleteGeneratedImages,
   type GeneratedImageAsset,
-} from "../../../platform/tauri/fs";
+} from "../../../platform/tauri/generatedImages";
 
 type Storage = {
   save(input: { data: string; name: string }): Promise<GeneratedImageAsset>;

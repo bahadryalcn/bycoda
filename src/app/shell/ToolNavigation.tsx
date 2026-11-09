@@ -16,17 +16,21 @@ import {
   Inbox,
   StickyNote,
   Server,
+  Sparkles,
   Zap,
   Wrench,
   Terminal,
 } from "../../shared/ui/icons";
-import { t, useLocale } from "../../shared/i18n";
+import { useT } from "../../shared/i18n";
 import { TOOL_IDS, type WorkspaceToolId } from "../model/toolWindows";
 import { routeWindowDestination } from "../model/windowNavigation";
 import { Button } from "../../shared/ui/Button";
+import { Tab, TabList, Tabs } from "../../shared/ui/Tabs";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { useSshRunbookQueue } from "../../features/connections/model/sshRunbookQueue";
 import "./toolNavigation.css";
+import { preloadToolSurface } from "../workspace/surfaces/lazySurfaces";
+import { useAssistantIdentity } from "../../features/assistant/model/assistantClient";
 
 // Retained panels own separate headers. Carry keyboard focus into the header
 // revealed by switching tools, after the previous tablist becomes hidden.
@@ -70,6 +74,7 @@ const labels = {
   notes: "Notes",
   "conversation-tools": "Conversation tools",
   terminal: "Terminal",
+  assistant: "Set up",
 };
 const icons = {
   servers: Server,
@@ -80,6 +85,7 @@ const icons = {
   notes: StickyNote,
   "conversation-tools": Wrench,
   terminal: Terminal,
+  assistant: Sparkles,
 };
 
 /** Mount on first visit, retain edits and selection, suspend effects while hidden. */
@@ -93,7 +99,13 @@ export function ToolPanel({
   keepEffects?: boolean;
 }) {
   const visited = useRef(false);
-  if (active) visited.current = true;
+  // A hidden panel keeps the element it last showed: React skips an identical
+  // element, so workspace renders do not re-render the hidden tool's tree.
+  const shown = useRef(children);
+  if (active) {
+    visited.current = true;
+    shown.current = children;
+  }
   if (visited.current && keepEffects)
     return (
       <div
@@ -105,16 +117,20 @@ export function ToolPanel({
     );
   return visited.current ? (
     <Activity mode={active ? "visible" : "hidden"}>
-      <div className="ui-page-enter flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+      <div className="ui-page-enter flex min-h-0 min-w-0 flex-1 flex-col">{shown.current}</div>
     </Activity>
   ) : null;
 }
 
 export function ToolNavigation() {
-  useLocale();
+  const t = useT();
+  const assistant = useAssistantIdentity();
+  const label = (tool: WorkspaceToolId) =>
+    tool === "assistant" ? assistant.room : t(labels[tool]);
   const sshReviews = useSshRunbookQueue();
   const navigation = useContext(ToolNavigationContext);
-  const [opening, setOpening] = useState(false);
+  const [opening, setOpening] = useState<"single" | "grouped" | null>(null);
+  const openingRef = useRef(false);
   const [error, setError] = useState("");
   const tabRefs = useRef(new Map<WorkspaceToolId, HTMLButtonElement>());
   const pickerRef = useRef<HTMLButtonElement>(null);
@@ -133,14 +149,15 @@ export function ToolNavigation() {
             ? navigation.notesEnabled
             : id === "servers"
               ? navigation.includeServers || navigation.active === "servers"
-              : id === "terminal" || id === "conversation-tools"
+              : id === "terminal" || id === "conversation-tools" || id === "assistant"
                 ? navigation.includeAuxiliaryTools
                 : true,
         );
   const open = async (grouped: boolean) => {
-    if (opening) return;
+    if (openingRef.current) return;
     const active = navigation.active!;
-    setOpening(true);
+    openingRef.current = true;
+    setOpening(grouped ? "grouped" : "single");
     setError("");
     try {
       if (
@@ -156,7 +173,8 @@ export function ToolNavigation() {
     } catch (cause) {
       setError(String(cause));
     } finally {
-      setOpening(false);
+      openingRef.current = false;
+      setOpening(null);
     }
   };
   return (
@@ -168,11 +186,12 @@ export function ToolNavigation() {
       {tools.length > 1 ? (
         <div className="tool-picker" data-tauri-drag-region="false">
           <SearchableSelect
+            hideLabel
             label={t("Workspace tools")}
             value={navigation.active}
             options={tools.map((tool) => ({
               value: tool,
-              label: t(labels[tool]),
+              label: label(tool),
               description:
                 tool === "servers" && sshReviews.intents.length
                   ? t("Pending SSH reviews")
@@ -188,58 +207,41 @@ export function ToolNavigation() {
           />
         </div>
       ) : null}
-      <div
-        className="tool-tabs"
-        role="tablist"
-        aria-label={t("Workspace tools")}
-        onKeyDown={(event) => {
-          const index = tools.indexOf(navigation.active!);
-          const next =
-            event.key === "ArrowRight"
-              ? (index + 1) % tools.length
-              : event.key === "ArrowLeft"
-                ? (index + tools.length - 1) % tools.length
-                : event.key === "Home"
-                  ? 0
-                  : event.key === "End"
-                    ? tools.length - 1
-                    : -1;
-          if (next < 0) return;
-          event.preventDefault();
-          const nextTool = tools[next];
-          requestKeyboardFocus(nextTool);
-          navigation.onSelect(tools[next]);
-          tabRefs.current.get(tools[next])?.focus();
+      <Tabs
+        value={navigation.active ?? ""}
+        panels="none"
+        onValueChange={(value) => {
+          const tool = tools.find((id) => id === value);
+          if (!tool) return;
+          requestKeyboardFocus(tool);
+          navigation.onSelect(tool);
         }}
       >
-        {tools.map((tool) => {
-          const Icon = icons[tool];
-          return (
-            <Button
-              variant="tab"
-              motion="none"
-              key={tool}
-              type="button"
-              role="tab"
-              data-tauri-drag-region="false"
-              ref={(node) => {
-                if (node) tabRefs.current.set(tool, node);
-                else tabRefs.current.delete(tool);
-              }}
-              aria-selected={navigation.active === tool}
-              tabIndex={navigation.active === tool ? 0 : -1}
-              title={t(labels[tool])}
-              onClick={() => navigation.onSelect(tool)}
-            >
-              <Icon className="size-3.5 shrink-0" aria-hidden />
-              <span>{t(labels[tool])}</span>
-              {tool === "servers" && sshReviews.intents.length ? (
-                <span aria-label={t("Pending SSH reviews")}>{sshReviews.intents.length}</span>
-              ) : null}
-            </Button>
-          );
-        })}
-      </div>
+        <TabList className="tool-tabs" label={t("Workspace tools")}>
+          {tools.map((tool) => {
+            const Icon = icons[tool];
+            return (
+              <Tab
+                value={tool}
+                key={tool}
+                data-tauri-drag-region="false"
+                ref={(node) => {
+                  if (node) tabRefs.current.set(tool, node);
+                  else tabRefs.current.delete(tool);
+                }}
+                onPointerEnter={() => preloadToolSurface(tool)}
+                onFocus={() => preloadToolSurface(tool)}
+              >
+                <Icon className="icon-sm shrink-0" aria-hidden />
+                <span>{label(tool)}</span>
+                {tool === "servers" && sshReviews.intents.length ? (
+                  <span aria-label={t("Pending SSH reviews")}>{sshReviews.intents.length}</span>
+                ) : null}
+              </Tab>
+            );
+          })}
+        </TabList>
+      </Tabs>
       <div className="tool-window-actions">
         <Button
           variant="ghost"
@@ -247,30 +249,29 @@ export function ToolNavigation() {
           iconOnly
           label={t("Open in new window")}
           data-tauri-drag-region="false"
-          disabled={opening}
+          disabled={opening !== null}
+          loading={opening === "single"}
           onClick={() => void open(false)}
-          aria-label={t("Open in new window")}
-          title={t("Open in new window")}
         >
-          <AppWindow className="size-3.5" aria-hidden />
+          <AppWindow className="icon-sm" aria-hidden />
         </Button>
         <Button
           variant="ghost"
           motion="none"
           data-tauri-drag-region="false"
-          disabled={opening}
+          disabled={opening !== null}
+          loading={opening === "grouped"}
+          startIcon={<DashboardSquare className="icon-sm" aria-hidden />}
           onClick={() => void open(true)}
           aria-label={t("Open all tools in one window")}
-          title={t("Open all tools in one window")}
+          tooltip={t("All tools in one window")}
+          tooltipWhen="overflow"
         >
-          <DashboardSquare className="size-3.5" aria-hidden />
-          <span className="tool-action-label">
-            {opening ? t("Opening new window…") : t("All tools in one window")}
-          </span>
+          <span className="tool-action-label">{t("All tools in one window")}</span>
         </Button>
       </div>
       {error ? (
-        <Alert tone="danger" role="alert" data-tauri-drag-region="false">
+        <Alert tone="danger" data-tauri-drag-region="false">
           <span>
             {t("Could not open window")}: {error}
           </span>

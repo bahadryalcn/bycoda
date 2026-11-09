@@ -2,6 +2,7 @@
 import { beforeEach, expect, it } from "vitest";
 import {
   checkoutOptionLabel,
+  checkoutRepositoryPaths,
   checkoutRowLabels,
   defaultCheckout,
   groupCheckouts,
@@ -29,6 +30,29 @@ const main = tree("/repo", { isMain: true });
 const byPath = (...trees: Worktree[]) => Object.fromEntries(trees.map((item) => [item.path, item]));
 
 beforeEach(() => localStorage.clear());
+
+it("keeps checkout children distinct, deduplicates paths and excludes outside targets", () => {
+  expect(
+    checkoutRepositoryPaths(["/repo", "/t/a"], {
+      "/repo": ["/repo/mobile", "/repo/mobile", "/elsewhere"],
+      "/t/a": ["/t/a/mobile"],
+    }),
+  ).toEqual(["/repo", "/repo/mobile", "/t/a", "/t/a/mobile"]);
+});
+
+it("retains child selection through discovery and falls back only after confirmed absence", () => {
+  const paths = ["/repo", "/t/a"];
+  const trees = byPath(main, tree("/t/a"));
+  expect(resolveCheckoutSelection("/repo/mobile", "/repo", paths, trees, {})).toBe("/repo/mobile");
+  expect(
+    resolveCheckoutSelection("/repo/mobile", "/repo", paths, trees, { "/repo": ["/repo/mobile"] }),
+  ).toBe("/repo/mobile");
+  expect(resolveCheckoutSelection("/repo/mobile", "/repo", paths, trees, { "/repo": [] })).toBe(
+    "/repo",
+  );
+  expect(resolveCheckoutSelection("/elsewhere", "/repo", paths, trees, {})).toBe("/repo");
+  expect(resolveCheckoutSelection("", "/repo", paths, trees, {})).toBe("");
+});
 
 it("resolves the deepest checkout containing the session cwd, else the main folder", () => {
   const paths = ["/repo", "/repo/.trees/a"];

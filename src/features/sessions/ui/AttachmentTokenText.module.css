@@ -1,0 +1,31 @@
+.token {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 1px 5px;
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-tone-accent-subtle);
+  box-shadow: inset 0 0 0 1px var(--ui-tone-accent-border);
+  color: var(--ui-tone-accent-fg);
+  font-size: 0.9em;
+  vertical-align: baseline;
+}
+.size::before {
+  content: attr(data-size);
+  font-size: 0.85em;
+  color: var(--ui-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.icon {
+  display: inline-flex;
+  align-items: center;
+  width: 13px;
+  height: 13px;
+  overflow: hidden;
+}
+.icon > * {
+  width: 13px;
+  height: 13px;
+}

@@ -1,0 +1,199 @@
+/* Board lanes and cards. Lanes are quiet fills on the canvas; cards are thin frames
+   that step up only on hover, selection and drag. */
+.task-board-columns {
+  display: flex;
+  gap: 0.5rem;
+  block-size: 100%;
+  min-block-size: 0;
+}
+.task-board-columns > section.bycoda-task-column {
+  flex: 1 1 0;
+  min-inline-size: 12.5rem;
+  border: 0;
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-fill-faint);
+}
+.task-board-columns > section.bycoda-task-column[data-empty] {
+  flex: 0.6 1 0;
+  min-inline-size: 8.5rem;
+}
+.task-board-columns > section.bycoda-task-column > h2 {
+  border-block-end: 0;
+  margin-block-end: 0;
+  block-size: 2.25rem;
+}
+.task-board-columns > section > ul {
+  display: grid;
+  align-content: start;
+  gap: 0.5rem;
+  min-block-size: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding-inline: 0.5rem;
+  padding-block-end: 0.5rem;
+}
+.task-board-columns[data-all-empty] {
+  block-size: auto;
+  align-items: start;
+}
+.task-board-columns[data-all-empty] > section > ul {
+  min-block-size: 0;
+  padding-block: 0;
+}
+.task-board-column-picker {
+  display: none;
+}
+.task-column-empty {
+  padding: 0.25rem 0.25rem 0;
+  text-align: start;
+  align-items: flex-start;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
+}
+
+/* Drop cues use theme tokens only: the lane that would accept the card, and a line
+   where a reorder lands. Both clear on drop, cancel (dragend) and leave. */
+.bycoda-task-column[data-drop-active="true"] {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  background: var(--ui-surface-selected);
+}
+.bycoda-task-column li[data-drop-before]::before {
+  content: "";
+  display: block;
+  block-size: 0.1875rem;
+  margin-block-end: 0.25rem;
+  border-radius: var(--radius-pill);
+  background: var(--ui-focus-ring-color);
+}
+.bycoda-task-column li[data-dragging] > article {
+  outline: var(--ui-focus-width) dashed var(--ui-tone-neutral-border);
+  background: var(--ui-surface-pressed);
+}
+
+@container task-area (max-width: 640px) {
+  .task-board-column-picker {
+    display: block;
+    margin-block-end: 0.75rem;
+  }
+  .task-board-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    block-size: auto;
+  }
+  .task-board-columns > section:not([data-compact-selected]) {
+    display: none;
+  }
+  .task-board-columns > section > ul {
+    overflow-y: visible;
+  }
+}
+
+/* Card */
+.task-board-card {
+  container-type: inline-size;
+  container-name: task-card;
+  position: relative;
+  display: grid;
+  gap: 0.25rem;
+  min-inline-size: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--color-background-base);
+}
+.task-board-card:hover,
+.task-board-card:focus-visible {
+  background: var(--ui-surface-raised);
+}
+.task-board-card > * {
+  min-inline-size: 0;
+}
+.task-card-goal {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-inline-size: 0;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-micro);
+}
+.task-card-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  padding-inline-end: 1rem;
+  overflow-wrap: anywhere;
+  color: var(--color-content);
+  font-size: var(--ui-font-body);
+  font-weight: 500;
+}
+.task-card-meta,
+.task-card-note,
+.task-card-description {
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-micro);
+}
+.task-card-description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.task-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  min-inline-size: 0;
+}
+.task-card-actions {
+  margin-block-start: 0.25rem;
+}
+
+/* The drag handle shows on hover and focus, only for cards that can move. */
+.task-drag-grip {
+  display: none;
+}
+[draggable="true"] .task-drag-grip {
+  display: block;
+  position: absolute;
+  inset-block-start: 0.75rem;
+  inset-inline-end: 0.5rem;
+  color: var(--ui-text-muted);
+  opacity: 0;
+  transition: opacity var(--motion-duration-fast);
+}
+[draggable="true"]:hover .task-drag-grip,
+[draggable="true"]:focus-within .task-drag-grip {
+  opacity: 1;
+}
+.bycoda-tasks [draggable="true"] {
+  cursor: grab;
+}
+.bycoda-tasks [draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* Actions stay on one line: the primary button shrinks, the overflow action stays. */
+.task-card-actions > button:not([aria-haspopup]) {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-card-actions > [aria-haspopup] {
+  flex-shrink: 0;
+}
+@container task-card (max-width: 13rem) {
+  .task-card-footer {
+    flex-wrap: wrap;
+    row-gap: 0.125rem;
+  }
+  .task-card-footer > span:last-child:not(:first-child) {
+    flex-basis: 100%;
+    margin-inline-start: 0;
+  }
+}

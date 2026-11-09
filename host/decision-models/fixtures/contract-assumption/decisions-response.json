@@ -1,0 +1,20 @@
+{
+  "provenance": "Contract assumption, not verified: the /v1/decisions request and response schema was not checked against official documentation (D13). Same answer layout as the verified System One contract.",
+  "request": {
+    "model": "example-decider",
+    "state": { "title": "Örnek ekran" },
+    "questions": {
+      "consent": {
+        "type": "noul",
+        "instructions": "Ekranda çerez onay penceresi var mı?",
+        "criteria": { "true": "Evet", "false": "Hayır" }
+      }
+    }
+  },
+  "response": {
+    "answers": {
+      "consent": { "type": "noul", "noul": 0.93 }
+    },
+    "usage": { "input_tokens": 41, "output_tokens": 0 }
+  }
+}

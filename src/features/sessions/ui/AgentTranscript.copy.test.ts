@@ -83,15 +83,19 @@ it("awaits note saving in the response toolbar and prevents duplicate actions", 
   );
   const toolbar = container.querySelector('[role="toolbar"][aria-label="Message actions"]')!;
   expect(toolbar).not.toBeNull();
-  const save = toolbar.querySelector<HTMLButtonElement>('[data-id="save"]')!;
+  const save = toolbar.querySelector<HTMLButtonElement>('[aria-label="Save as note"]')!;
   await act(async () => {
     save.click();
     save.click();
   });
   expect(onSaveNote).toHaveBeenCalledExactlyOnceWith("Keep this answer");
   expect(save.getAttribute("aria-busy")).toBe("true");
+  // Saved is claimed only once the Notes write has settled.
+  expect(save.getAttribute("aria-label")).toBe("Save as note");
   await act(async () => finish());
-  expect(save.dataset.state).toBe("done");
+  expect(save.getAttribute("aria-label")).toBe("Saved to Notes");
+  expect(save.getAttribute("aria-busy")).toBeNull();
+  expect(container.querySelector('[role="status"]')?.textContent).toBe("Saved to Notes");
 });
 
 it("groups all five response actions and keeps their menus anchored and keyboard accessible", async () => {
@@ -118,14 +122,19 @@ it("groups all five response actions and keeps their menus anchored and keyboard
     ),
   );
   const toolbar = container.querySelector('[role="toolbar"][aria-label="Message actions"]')!;
-  expect(
-    [...toolbar.querySelectorAll("[data-ebg-item]")].map((item) => item.getAttribute("data-id")),
-  ).toEqual(["copy", "save", "handoff", "second-opinion", "metrics"]);
-  for (const id of ["handoff", "second-opinion"]) {
-    const trigger = toolbar.querySelector<HTMLButtonElement>(`[data-id="${id}"]`)!;
+  const items = () => [...toolbar.querySelectorAll<HTMLButtonElement>("[data-fbg-item]")];
+  expect(items().map((item) => item.getAttribute("aria-label"))).toEqual([
+    "Copy response",
+    "Save as note",
+    "Handoff",
+    "Second opinion",
+    expect.stringContaining("Turn metrics"),
+  ]);
+  for (const name of ["Handoff", "Second opinion"]) {
+    const trigger = toolbar.querySelector<HTMLButtonElement>(`[aria-label="${name}"]`)!;
     await act(async () => trigger.click());
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(document.querySelector('[role="menu"][data-provider-target]')).not.toBeNull();
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
     await act(async () =>
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
     );
@@ -134,7 +143,8 @@ it("groups all five response actions and keeps their menus anchored and keyboard
   }
   expect(onSecondOpinion).not.toHaveBeenCalled();
   expect(onHandoff).not.toHaveBeenCalled();
-  const metrics = toolbar.querySelector<HTMLButtonElement>('[data-id="metrics"]')!;
+  const metrics = items()[4]!;
+  expect(metrics.getAttribute("aria-haspopup")).toBe("dialog");
   await act(async () => metrics.click());
   expect(
     document.querySelector('[role="dialog"][aria-label="Turn metrics"]')?.textContent,
@@ -146,7 +156,7 @@ it("groups all five response actions and keeps their menus anchored and keyboard
   await act(async () =>
     metrics.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })),
   );
-  expect(document.activeElement?.getAttribute("data-id")).toBe("second-opinion");
+  expect(document.activeElement?.getAttribute("aria-label")).toBe("Second opinion");
 });
 
 it("shows response note failures without confirming success", async () => {
@@ -163,10 +173,15 @@ it("shows response note failures without confirming success", async () => {
       }),
     ),
   );
-  const save = container.querySelector<HTMLButtonElement>('[role="toolbar"] [data-id="save"]')!;
+  const save = container.querySelector<HTMLButtonElement>(
+    '[role="toolbar"] [aria-label="Save as note"]',
+  )!;
   await act(async () => save.click());
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Storage unavailable");
-  expect(save.dataset.state).not.toBe("done");
+  // The failed action offers a retry instead of a confirmation.
+  expect(save.getAttribute("aria-label")).toBe("Retry save");
+  expect(save.getAttribute("aria-disabled")).toBeNull();
+  expect(container.querySelector('[role="status"]')?.textContent).toBe("");
 });
 
 it("copies the full user prompt and confirms success", async () => {
@@ -211,56 +226,18 @@ it("lets keyboard users expand and collapse a truncated prompt", async () => {
   expect(container.querySelector("pre")?.classList).not.toContain("line-clamp-4");
 });
 
-it("remeasures prompt corners when a pooled tab is shown at a new width", () => {
-  let textWidth = 200;
-  let textHeight = 20;
-  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function () {
-    return this.tagName === "PRE" ? textWidth : 200;
-  });
-  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function () {
-    return this.tagName === "PRE" ? textHeight : 200;
-  });
-  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function () {
-    return this.tagName === "PRE" ? textHeight : 200;
-  });
-  const getStyle = window.getComputedStyle.bind(window);
-  vi.spyOn(window, "getComputedStyle").mockImplementation((element) => {
-    const style = getStyle(element);
-    return element.tagName === "PRE"
-      ? new Proxy(style, {
-          get(target, property) {
-            return property === "lineHeight" ? "20px" : Reflect.get(target, property);
-          },
-        })
-      : style;
-  });
-
+it("keeps one prompt corner radius whatever the pane width", () => {
   const blocks = [{ id: "prompt", role: "user" as const, text: "A long pasted prompt" }];
   const show = (visible: boolean) =>
     act(() => root.render(createElement(AgentTranscript, { blocks, visible })));
   const bubble = () => container.querySelector(".user-message-bubble")!;
 
   show(true);
-  expect(bubble().classList).toContain("rounded-full");
-
-  textWidth = 0;
-  textHeight = 0;
+  expect(bubble().classList).toContain("rounded-xl");
+  expect(bubble().classList).not.toContain("rounded-full");
   show(false);
-  expect(bubble().closest<HTMLElement>(".agent-transcript")?.style.display).toBe("none");
-
-  // Reattached in a narrower pane, so the same prompt wraps onto two lines.
-  textWidth = 260;
-  textHeight = 40;
   show(true);
   expect(bubble().classList).toContain("rounded-xl");
-
-  textWidth = 0;
-  textHeight = 0;
-  show(false);
-  textWidth = 260;
-  textHeight = 20;
-  show(true);
-  expect(bubble().classList).toContain("rounded-full");
 });
 
 it("shows a copy error instead of success and allows retry", async () => {

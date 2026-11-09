@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getNote, peekNoteDetail, type Note, type NoteSummary } from "./notes";
+import { beginNoteWork, deriveNoteInputResult, noteInputWorkError } from "./notesInputOwners";
 
 /** An editor mounts only after the selected body arrives; a summary is never an editable blank note. */
 export function useNoteDetail(summary: NoteSummary | Note | null) {
   const [retryCount, setRetryCount] = useState(0);
+  const fetchingRef = useRef<string | null>(null);
+  const [fetching, setFetching] = useState<string | null>(null);
   const retained = useRef<Note | null>(null);
   const [result, setResult] = useState<{
     id: string;
@@ -21,23 +24,40 @@ export function useNoteDetail(summary: NoteSummary | Note | null) {
   useEffect(() => {
     if (!id || version === undefined) return;
     if (!retryCount && peekNoteDetail(id, version)) return;
+    const work = beginNoteWork("note-detail-consumer");
+    if (!work) {
+      setResult({ id, version, note: null, error: noteInputWorkError().message });
+      return;
+    }
+    const key = JSON.stringify([id, version]);
+    fetchingRef.current = key;
+    setFetching(key);
     let active = true;
-    void getNote(id).then(
-      (note) => {
-        if (active) setResult({ id, version, note, error: note ? null : "Note was not found" });
-      },
-      (cause: unknown) => {
-        if (active)
-          setResult({
-            id,
-            version,
-            note: null,
-            error: cause instanceof Error ? cause.message : String(cause),
-          });
-      },
-    );
+    void getNote(id, work)
+      .then(
+        (note) => {
+          if (active) setResult({ id, version, note, error: note ? null : "Note was not found" });
+        },
+        (cause: unknown) => {
+          if (active)
+            setResult({
+              id,
+              version,
+              note: null,
+              error: cause instanceof Error ? cause.message : String(cause),
+            });
+        },
+      )
+      .finally(() => {
+        if (active) {
+          fetchingRef.current = null;
+          setFetching(null);
+        }
+        work();
+      });
     return () => {
       active = false;
+      if (fetchingRef.current === key) fetchingRef.current = null;
     };
   }, [id, version, retryCount]);
   const current = result && result.id === id && result.version === version ? result : null;
@@ -48,7 +68,7 @@ export function useNoteDetail(summary: NoteSummary | Note | null) {
   const note = useMemo(
     () =>
       detail && summary && detail.updatedAt === summary.updatedAt
-        ? { ...detail, ...summary, body: detail.body }
+        ? deriveNoteInputResult({ ...detail, ...summary, body: detail.body }, detail, summary)
         : detail,
     [detail, summary],
   );
@@ -56,8 +76,13 @@ export function useNoteDetail(summary: NoteSummary | Note | null) {
     note,
     loading: Boolean(summary && !note && !current?.error),
     error: current?.error ?? null,
+    retrying: fetching === JSON.stringify([id, version]) && Boolean(current?.error),
     retry: () => {
-      setResult(null);
+      if (!id || version === undefined) return;
+      const key = JSON.stringify([id, version]);
+      if (fetchingRef.current === key) return;
+      fetchingRef.current = key;
+      setFetching(key);
       setRetryCount((value) => value + 1);
     },
   };

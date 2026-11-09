@@ -1,0 +1,104 @@
+/* Full-row members of a two-column settings grid. Single column in narrow layouts. */
+.wide {
+  grid-column: 1 / -1;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+.wideRow {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.switchRow {
+  display: grid;
+  gap: 4px;
+  min-inline-size: 0;
+  align-content: start;
+}
+.switchRow > p {
+  margin: 0;
+  padding-inline-start: 2px;
+  line-height: 1.5;
+}
+
+.roleSection {
+  display: grid;
+  gap: 14px;
+  min-inline-size: 0;
+  padding-block-start: 14px;
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+.roleToggle {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.fields {
+  gap: 18px 16px;
+  align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+}
+.fields > * {
+  min-inline-size: 0;
+}
+.fields > p,
+.fields > [role="alert"] {
+  grid-column: 1 / -1;
+  margin: 0;
+  line-height: 1.55;
+}
+.plainFieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+  display: grid;
+  gap: 6px;
+}
+.plainFieldset legend {
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+  line-height: 1.4;
+  color: inherit;
+  padding-block-end: 2px;
+}
+.presetControls {
+  display: grid;
+  gap: 6px;
+  min-inline-size: 0;
+  inline-size: 100%;
+}
+.unit {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-micro);
+  white-space: nowrap;
+}
+.inlineField {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 6px;
+}
+.inlineControls,
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+}
+.actions {
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+}
+/* A text field inside a settings row fills the row's control column. */
+.grow {
+  flex: 1 1 100%;
+  min-inline-size: 0;
+}

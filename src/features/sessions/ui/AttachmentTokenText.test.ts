@@ -42,6 +42,37 @@ function render(text: string, attachments: Attachment[] | undefined) {
 }
 
 describe("AttachmentTokenText", () => {
+  it.each([image.previewUrl, undefined])(
+    "retries decoding through the owning Host (%s)",
+    async (previewUrl) => {
+      const loadPreview = vi.fn();
+      if (!previewUrl) loadPreview.mockResolvedValueOnce(btoa("initial"));
+      loadPreview
+        .mockRejectedValueOnce(new Error("offline"))
+        .mockResolvedValueOnce(btoa("recovered"));
+      render("[image1]", [{ ...image, previewUrl, path: "/host/shot.png", loadPreview }]);
+      await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+      await act(async () =>
+        document.querySelector('[role="dialog"] img')!.dispatchEvent(new Event("error")),
+      );
+      const retry = () =>
+        Array.from(document.querySelectorAll("button"))
+          .find((button) => button.textContent === "Retry")!
+          .click();
+      // A broken carried URL reloads from the Host at once; a broken Host result waits for Retry.
+      expect(document.querySelector('[role="dialog"] [role="alert"]')).not.toBeNull();
+      if (!previewUrl) {
+        await act(async () => retry());
+        expect(document.querySelector('[role="dialog"] [role="alert"]')).not.toBeNull();
+      }
+      await act(async () => retry());
+      expect(loadPreview).toHaveBeenCalledTimes(previewUrl ? 2 : 3);
+      expect(document.querySelector('[role="dialog"] img')?.getAttribute("src")).toBe(
+        `data:image/png;base64,${btoa("recovered")}`,
+      );
+    },
+  );
+
   it("keeps the message text intact, brackets included", () => {
     render("see [image1] and [file1].", [image, doc]);
     expect(container.textContent).toBe("see [image1] and [file1].");
@@ -55,6 +86,12 @@ describe("AttachmentTokenText", () => {
     expect(
       container.querySelector('[aria-label="Open [file1] (notes.md) full screen"]')?.textContent,
     ).toBe("[file1]");
+  });
+
+  it("shows the attachment size beside the token without adding it to the text", () => {
+    render("see [image1]", [image]);
+    expect(container.querySelector("[data-size]")?.getAttribute("data-size")).toBe("3 B");
+    expect(container.textContent).toBe("see [image1]");
   });
 
   it("leaves unknown tokens and legacy messages as plain text", () => {

@@ -7,7 +7,7 @@ use std::net::{TcpListener, TcpStream};
 use std::process::{Child, Command, Stdio};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex, PoisonError,
+    Arc, Mutex, PoisonError, TryLockError,
 };
 use std::time::{Duration, Instant};
 
@@ -29,39 +29,84 @@ pub struct SshTarget {
     pub host_key_alias: Option<String>,
 }
 
-/// The addresses to try, in order: the one whose SSH port answers first,
-/// then the other. A machine with one address has just that one.
-pub fn dial_order(target: &SshTarget) -> Vec<SshTarget> {
+/// Every way to the machine in its preferred order: the saved address, its
+/// other address, then the ones its Host taught (`remote_routes`), filtered and
+/// ordered by the owner's route settings. The others check the host key filed
+/// for the saved address.
+pub(crate) fn candidates(target: &SshTarget) -> Vec<SshTarget> {
     let primary = SshTarget {
         alternate: None,
         host_key_alias: target.host_key_alias.clone(),
         ..target.clone()
     };
-    let Some(alternate) = target
+    let host = |value: &str| {
+        value
+            .rsplit_once('@')
+            .map_or(value, |(_, host)| host)
+            .trim()
+            .to_ascii_lowercase()
+    };
+    let mut seen = vec![host(&target.target)];
+    let mut others = Vec::new();
+    let alternate = target
         .alternate
         .as_deref()
         .map(str::trim)
         .filter(|alternate| !alternate.is_empty() && *alternate != target.target)
-    else {
-        return vec![primary];
-    };
-    let second = SshTarget {
-        target: alternate.to_string(),
-        alternate: None,
-        host_key_alias: known_host_key_name(&primary),
-        ..target.clone()
-    };
-    // Both checks at once: an unreachable address costs its timeout only once.
-    let probe = |candidate: SshTarget| std::thread::spawn(move || ssh_server_reachable(&candidate));
-    let first = probe(primary.clone());
-    let other = probe(second.clone());
-    let first = first.join().ok().flatten();
-    let other = other.join().ok().flatten();
-    if first == Some(false) && other == Some(true) {
-        vec![second, primary]
-    } else {
-        vec![primary, second]
+        .map(|alternate| (alternate.to_string(), target.port));
+    let learned = crate::remote_routes::learned(target)
+        .into_iter()
+        .map(|route| (route.target, route.port.or(target.port)));
+    for (address, port) in alternate.into_iter().chain(learned) {
+        if seen.contains(&host(&address)) {
+            continue;
+        }
+        seen.push(host(&address));
+        others.push(SshTarget {
+            target: address,
+            port,
+            alternate: None,
+            host_key_alias: None,
+            ..target.clone()
+        });
     }
+    if !others.is_empty() {
+        let alias = known_host_key_name(&primary);
+        for other in &mut others {
+            other.host_key_alias = alias.clone();
+        }
+    }
+    crate::remote_routes::arrange(target, std::iter::once(primary).chain(others).collect())
+}
+
+/// The addresses to try, in order: `candidates`, each moved ahead of the saved
+/// one only when the saved one's SSH port is silent and this one answers. All
+/// are checked at once, so an unreachable address costs its timeout only once.
+/// A machine with one address and nothing learned has just that one.
+pub fn dial_order(target: &SshTarget) -> Vec<SshTarget> {
+    let candidates = candidates(target);
+    if candidates.len() == 1 {
+        return candidates;
+    }
+    let probes: Vec<_> = candidates
+        .iter()
+        .cloned()
+        .map(|candidate| std::thread::spawn(move || ssh_server_reachable(&candidate)))
+        .collect();
+    let answers: Vec<Option<bool>> = probes
+        .into_iter()
+        .map(|probe| probe.join().ok().flatten())
+        .collect();
+    // The saved address keeps first place unless its port is known to be silent.
+    let rank = |index: usize, answer: Option<bool>| match answer {
+        Some(true) => 0,
+        None if index == 0 => 0,
+        None => 1,
+        Some(false) => 2,
+    };
+    let mut order: Vec<(usize, SshTarget)> = candidates.into_iter().enumerate().collect();
+    order.sort_by_key(|(index, _)| rank(*index, answers[*index]));
+    order.into_iter().map(|(_, dial)| dial).collect()
 }
 
 /// The name ssh files the primary address's host key under: its
@@ -311,7 +356,8 @@ fn command_with_keepalive(target: &SshTarget, interactive: bool, keepalive: u32)
     command
 }
 
-fn capture(mut reader: impl Read + Send + 'static) -> std::thread::JoinHandle<Vec<u8>> {
+fn capture(mut reader: impl Read + Send + 'static) -> std::sync::mpsc::Receiver<Vec<u8>> {
+    let (send, receive) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut output = Vec::new();
         let mut buffer = [0; 4096];
@@ -322,8 +368,29 @@ fn capture(mut reader: impl Read + Send + 'static) -> std::thread::JoinHandle<Ve
             let remaining = (64 * 1024usize).saturating_sub(output.len());
             output.extend_from_slice(&buffer[..count.min(remaining)]);
         }
-        output
-    })
+        let _ = send.send(output);
+    });
+    receive
+}
+
+/// Starts an ssh process the app owns. On Windows it joins the app's job, so it
+/// cannot outlive a crashed app.
+fn spawn_owned(command: &mut Command) -> std::io::Result<Child> {
+    #[cfg(windows)]
+    {
+        crate::windows::spawn_managed(command)
+    }
+    #[cfg(not(windows))]
+    {
+        command.spawn()
+    }
+}
+
+/// Ends an ssh process the app started: its process tree first, then the child.
+fn stop(child: &mut Child) {
+    crate::harness::terminate_all(&[child.id()]);
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -370,12 +437,25 @@ pub fn detect_platform(
     })
 }
 
+/// One failed address keeps its own message; several are each named, so a
+/// host-key refusal on the first is not hidden by the fallback's error.
+fn dial_failures(mut failures: Vec<(String, String)>) -> String {
+    if failures.len() == 1 {
+        return failures.remove(0).1;
+    }
+    failures
+        .iter()
+        .map(|(target, error)| format!("{target}: {error}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn detect_platform_from_dials(
     dials: Vec<SshTarget>,
     job: &Arc<Job>,
     mut probe: impl FnMut(&SshTarget) -> Result<HostPlatform, String>,
 ) -> Result<(HostPlatform, SshTarget), String> {
-    let mut failure = String::new();
+    let mut failures = Vec::new();
     for dial in dials {
         if job.cancelled.load(Ordering::Relaxed) {
             return Err("Connection cancelled".into());
@@ -386,11 +466,11 @@ fn detect_platform_from_dials(
                 if job.cancelled.load(Ordering::Relaxed) {
                     return Err(error);
                 }
-                failure = error;
+                failures.push((dial.target.clone(), error));
             }
         }
     }
-    Err(failure)
+    Err(dial_failures(failures))
 }
 
 fn powershell_encoded(script: &str) -> String {
@@ -460,26 +540,24 @@ fn run_remote_command(
     }
     askpass.configure(&mut command)?;
     command.args(["--", &target.target]).args(remote);
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("Could not start OpenSSH: {e}"))?;
+    let mut child =
+        spawn_owned(&mut command).map_err(|e| format!("Could not start OpenSSH: {e}"))?;
     let pipes = match (child.stdout.take(), child.stderr.take(), child.stdin.take()) {
         (Some(stdout), Some(stderr), Some(stdin)) => (stdout, stderr, stdin),
         _ => {
-            let _ = child.kill();
-            let _ = child.wait();
+            stop(&mut child);
             return Err("OpenSSH process pipes are unavailable".into());
         }
     };
     let stdout = capture(pipes.0);
     let stderr = capture(pipes.1);
     let mut stdin = pipes.2;
-    let writer = std::thread::spawn(move || stdin.write_all(script.as_bytes()));
+    // Detached on purpose: it ends once the child exits and its stdin closes.
+    std::thread::spawn(move || stdin.write_all(script.as_bytes()));
     let deadline = Instant::now() + Duration::from_secs(300);
     let result = loop {
         if job.cancelled.load(Ordering::Relaxed) || Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
+            stop(&mut child);
             break Err(if job.cancelled.load(Ordering::Relaxed) {
                 "Connection cancelled"
             } else {
@@ -491,15 +569,22 @@ fn run_remote_command(
             Ok(Some(status)) => break Ok(status.success()),
             Ok(None) => std::thread::sleep(Duration::from_millis(50)),
             Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                stop(&mut child);
                 break Err(error.to_string());
             }
         }
     };
-    let _ = writer.join();
-    let output = String::from_utf8_lossy(&stdout.join().unwrap_or_default()).to_string();
-    let errors = String::from_utf8_lossy(&stderr.join().unwrap_or_default()).to_string();
+    // A grandchild can keep the pipes open after ssh is gone; the output read so
+    // far is used instead of waiting for the pipe to close.
+    let give_up = Instant::now() + Duration::from_secs(2);
+    let collect = |pipe: std::sync::mpsc::Receiver<Vec<u8>>| {
+        let bytes = pipe
+            .recv_timeout(give_up.saturating_duration_since(Instant::now()))
+            .unwrap_or_default();
+        String::from_utf8_lossy(&bytes).to_string()
+    };
+    let output = collect(stdout);
+    let errors = collect(stderr);
     if !result? {
         return Err(format!(
             "SSH setup failed: {}",
@@ -572,8 +657,9 @@ pub fn pairing_script(platform: HostPlatform, name: &str) -> String {
 /// Seconds between ssh's keepalive probes on a tunnel; three unanswered probes
 /// end the link, so a silent network is noticed in about 15 seconds.
 const TUNNEL_KEEPALIVE_SECS: u32 = 5;
-/// How often a tunnel's ssh process is checked for having exited.
-const WATCH_INTERVAL: Duration = Duration::from_millis(250);
+/// How often a tunnel's ssh process is checked for having exited. Keepalives
+/// take ~15 s to notice a dead link anyway; 1 s keeps idle tunnels cheap.
+const WATCH_INTERVAL: Duration = Duration::from_secs(1);
 
 /// A tunnel whose ssh process ended without the app closing it.
 #[derive(Clone, Debug, Serialize)]
@@ -611,6 +697,18 @@ fn stderr_tail(text: &str) -> String {
     lines[lines.len().saturating_sub(5)..].join("\n")
 }
 
+/// Appends ssh's stderr, keeping only its newest 8 KB so the last words survive.
+fn append_stderr_tail(errors: &mut String, chunk: &[u8]) {
+    errors.push_str(&String::from_utf8_lossy(chunk));
+    if errors.len() > 8192 {
+        let mut cut = errors.len() - 8192;
+        while !errors.is_char_boundary(cut) {
+            cut += 1;
+        }
+        errors.drain(..cut);
+    }
+}
+
 /// ssh's complaint about the forwarded port: the tunnel works, but nothing
 /// listens on the machine's host port.
 fn host_refused(stderr: &str) -> bool {
@@ -642,13 +740,14 @@ fn parse_ssh_config_dump(output: &str) -> Option<(String, u16)> {
 /// Whether the SSH server's own address accepts a TCP connection: a check
 /// that does not depend on ssh's wording. `None` when the address is unknown.
 /// Reads the user's config through `ssh -G`, which never connects.
-fn ssh_server_reachable(target: &SshTarget) -> Option<bool> {
+pub(crate) fn ssh_server_reachable(target: &SshTarget) -> Option<bool> {
     let (host, port) = parse_ssh_config_dump(&ssh_config_dump(target)?)?;
     Some(tcp_reachable(&host, port, Duration::from_secs(3)))
 }
 
 /// `ssh -G` for a target: the settings ssh would use, without connecting.
-fn ssh_config_dump(target: &SshTarget) -> Option<String> {
+/// Capped at 5 seconds and 64 KiB, since a `Match exec` line can hang.
+pub(crate) fn ssh_config_dump(target: &SshTarget) -> Option<String> {
     let mut command = Command::new("ssh");
     command.arg("-G");
     if let Some(port) = target.port {
@@ -658,17 +757,55 @@ fn ssh_config_dump(target: &SshTarget) -> Option<String> {
         .args(["--", &target.target])
         .env("LC_ALL", "C")
         .stdin(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::null());
     crate::hide_window_console(&mut command);
-    let output = command.output().ok().filter(|o| o.status.success())?;
-    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+    let mut child = spawn_owned(&mut command).ok()?;
+    let Some(mut stdout) = child.stdout.take() else {
+        stop(&mut child);
+        return None;
+    };
+    let (send, receive) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut output = Vec::new();
+        let _ = (&mut stdout).take(64 * 1024).read_to_end(&mut output);
+        let _ = send.send(output);
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let succeeded = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status.success(),
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            _ => break false,
+        }
+    };
+    if !succeeded {
+        stop(&mut child);
+        return None;
+    }
+    let output = receive.recv_timeout(Duration::from_secs(1)).ok()?;
+    Some(String::from_utf8_lossy(&output).into_owned())
 }
 
+/// Whether `host:port` accepts a TCP connection within `timeout` per address.
+/// Name lookup runs on a worker that is abandoned after 3 seconds, since a
+/// broken resolver can hang it.
 fn tcp_reachable(host: &str, port: u16, timeout: Duration) -> bool {
-    use std::net::ToSocketAddrs;
-    (host, port)
-        .to_socket_addrs()
-        .is_ok_and(|mut addrs| addrs.any(|addr| TcpStream::connect_timeout(&addr, timeout).is_ok()))
+    let (send, receive) = std::sync::mpsc::channel();
+    let host = host.to_string();
+    std::thread::spawn(move || {
+        use std::net::ToSocketAddrs;
+        let addresses = (host.as_str(), port)
+            .to_socket_addrs()
+            .map(|addresses| addresses.take(8).collect::<Vec<_>>());
+        let _ = send.send(addresses);
+    });
+    let Ok(Ok(addresses)) = receive.recv_timeout(Duration::from_secs(3)) else {
+        return false;
+    };
+    addresses
+        .iter()
+        .any(|addr| TcpStream::connect_timeout(addr, timeout).is_ok())
 }
 
 /// What the renderer reads to classify a failed start: ssh's exit status and
@@ -712,13 +849,19 @@ pub struct Tunnel {
     /// Where this tunnel leads, so one started for an address the machine no
     /// longer has is never reused. `None` for a tunnel adopted without it.
     target: Option<SshTarget>,
+    /// The address ssh actually dialed, one of the target's `candidates`.
+    dialed: Option<SshTarget>,
+    started: Instant,
 }
 impl Drop for Tunnel {
     fn drop(&mut self) {
-        self.settled.store(true, Ordering::SeqCst);
         let mut child = self.child();
-        let _ = child.kill();
-        let _ = child.wait();
+        // Only a tunnel still running is closed on purpose. One whose ssh already
+        // exited is left for the watcher, which reports that exit.
+        if matches!(child.try_wait(), Ok(None)) {
+            self.settled.store(true, Ordering::SeqCst);
+        }
+        stop(&mut child);
     }
 }
 impl Tunnel {
@@ -741,9 +884,7 @@ impl Tunnel {
                         break;
                     }
                     let mut errors = errors.lock().unwrap_or_else(PoisonError::into_inner);
-                    if errors.len() < 8192 {
-                        errors.push_str(&String::from_utf8_lossy(&buffer[..count]));
-                    }
+                    append_stderr_tail(&mut errors, &buffer[..count]);
                 }
                 done.store(true, Ordering::SeqCst);
             });
@@ -757,6 +898,8 @@ impl Tunnel {
             stderr_done,
             settled: Arc::new(AtomicBool::new(false)),
             target: None,
+            dialed: None,
+            started: Instant::now(),
         }
     }
     /// Reports through `sink`, once, if ssh exits on its own. A tunnel dropped
@@ -804,7 +947,7 @@ impl Tunnel {
         job: Option<&Arc<Job>>,
         askpass: Option<&Askpass>,
     ) -> Result<Self, String> {
-        let mut failure = String::new();
+        let mut failures = Vec::new();
         for dial in dial_order(target) {
             match Self::start_with_command(
                 &dial,
@@ -814,17 +957,32 @@ impl Tunnel {
             ) {
                 Ok(mut tunnel) => {
                     tunnel.target = Some(target.clone());
+                    tunnel.dialed = Some(dial);
                     return Ok(tunnel);
                 }
                 Err(error) => {
                     if job.is_some_and(|j| j.cancelled.load(Ordering::Relaxed)) {
                         return Err(error);
                     }
-                    failure = error;
+                    failures.push((dial.target.clone(), error));
                 }
             }
         }
-        Err(failure)
+        Err(dial_failures(failures))
+    }
+
+    /// A quiet tunnel over one address of `saved`, as a better way in than the
+    /// running one. Never prompts: a route that needs a password is no better.
+    pub(crate) fn start_route(dial: &SshTarget, saved: &SshTarget) -> Result<Self, String> {
+        let mut tunnel = Self::start_with_command(
+            dial,
+            None,
+            None,
+            command_with_keepalive(dial, false, TUNNEL_KEEPALIVE_SECS),
+        )?;
+        tunnel.target = Some(saved.clone());
+        tunnel.dialed = Some(dial.clone());
+        Ok(tunnel)
     }
 
     fn start_with_command(
@@ -847,9 +1005,8 @@ impl Tunnel {
         ]);
         command.stdin(Stdio::null()).stdout(Stdio::null());
         drop(listener);
-        let child = command
-            .spawn()
-            .map_err(|e| format!("Could not start OpenSSH: {e}"))?;
+        let child =
+            spawn_owned(&mut command).map_err(|e| format!("Could not start OpenSSH: {e}"))?;
         let mut tunnel = Self::adopt(child, port);
         tunnel.target = Some(target.clone());
         let deadline = Instant::now() + Duration::from_secs(if job.is_some() { 150 } else { 20 });
@@ -884,7 +1041,14 @@ impl Tunnel {
             )
             .is_ok()
             {
-                return Ok(tunnel);
+                // The port may answer for another listener while ssh is exiting, so
+                // ssh must still run after a short re-check. This narrows that window;
+                // it does not close it.
+                std::thread::sleep(Duration::from_millis(150));
+                if tunnel.alive() {
+                    return Ok(tunnel);
+                }
+                continue;
             }
             if Instant::now() >= deadline {
                 return Err("SSH timed out connecting to the machine.".into());
@@ -898,6 +1062,17 @@ impl Tunnel {
 struct Slot {
     tunnel: Option<Tunnel>,
     failure: Option<(Instant, String)>,
+    generation: u64,
+    environment_id: String,
+}
+
+/// A running tunnel that dialed a later address than its machine prefers.
+pub(crate) struct LaterRoute {
+    pub id: String,
+    pub saved: SshTarget,
+    /// The preferred addresses ahead of the one in use, best first.
+    pub better: Vec<SshTarget>,
+    slot: Arc<Mutex<Slot>>,
     generation: u64,
 }
 
@@ -916,6 +1091,21 @@ pub struct Tunnels {
     exit_sink: Mutex<Option<ExitSink>>,
 }
 impl Tunnels {
+    /// A retained lease is not authority after its registry slot is replaced.
+    /// Release both locks before performing any RPC or browser socket IO.
+    pub(crate) fn is_current(&self, id: &str, lease: &TunnelLease) -> bool {
+        let Some(slot) = self.slots().get(id).cloned() else {
+            return false;
+        };
+        if !Arc::ptr_eq(&slot, &lease.slot) {
+            return false;
+        }
+        // Busy means a tunnel start holds the slot: not current, without waiting.
+        let Ok(current) = slot.try_lock() else {
+            return false;
+        };
+        current.generation == lease.generation && current.tunnel.as_ref().is_some_and(Tunnel::alive)
+    }
     fn slots(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<Mutex<Slot>>>> {
         self.slots.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -943,6 +1133,7 @@ impl Tunnels {
             tunnel: Some(tunnel),
             failure: None,
             generation: 1,
+            environment_id: environment_id.into(),
         };
         let old = self.slots().insert(id, Arc::new(Mutex::new(slot)));
         drop(old);
@@ -962,7 +1153,24 @@ impl Tunnels {
         allow_connect: bool,
     ) -> Result<TunnelLease, String> {
         let slot = self.slots().entry(id.into()).or_default().clone();
-        let mut current = slot.lock().unwrap_or_else(PoisonError::into_inner);
+        // A call that may not connect (a cancel, a peek, a background poll) must not
+        // queue behind a tunnel start that holds the slot for many seconds: contention
+        // reads as unreachable, which those callers already handle.
+        let mut current = if allow_connect {
+            slot.lock().unwrap_or_else(PoisonError::into_inner)
+        } else {
+            match slot.try_lock() {
+                Ok(guard) => guard,
+                Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+                Err(TryLockError::WouldBlock) => {
+                    return Err(
+                        "Machine is unreachable right now: a connection attempt is in progress."
+                            .into(),
+                    );
+                }
+            }
+        };
+        current.environment_id = environment_id.into();
         if let Some(tunnel) = current.tunnel.as_mut() {
             // A request that read the machine just before its address was edited
             // can start a tunnel to the old one; it is dropped here, not reused.
@@ -1015,7 +1223,12 @@ impl Tunnels {
         let Some(slot) = self.slots().get(id).cloned() else {
             return false;
         };
-        let current = slot.lock().unwrap_or_else(PoisonError::into_inner);
+        // Busy means a tunnel start holds the slot: no report can be read now.
+        let current = match slot.try_lock() {
+            Ok(guard) => guard,
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(TryLockError::WouldBlock) => return false,
+        };
         let Some(tunnel) = current.tunnel.as_ref() else {
             return false;
         };
@@ -1050,6 +1263,88 @@ impl Tunnels {
     pub fn clear(&self) {
         let old = std::mem::take(&mut *self.slots());
         drop(old);
+    }
+
+    /// The address a machine's running tunnel dialed, if it is up.
+    pub(crate) fn dialed(&self, id: &str) -> Option<SshTarget> {
+        let slot = self.slots().get(id).cloned()?;
+        let current = slot.try_lock().ok()?;
+        let tunnel = current.tunnel.as_ref().filter(|tunnel| tunnel.alive())?;
+        tunnel.dialed.clone()
+    }
+
+    /// Tunnels up for at least `settled` over a later address than their
+    /// machine prefers. Never waits on a slot: a busy one is skipped until the
+    /// next check.
+    pub(crate) fn later_routes(&self, settled: Duration) -> Vec<LaterRoute> {
+        let slots: Vec<_> = self
+            .slots()
+            .iter()
+            .map(|(id, slot)| (id.clone(), slot.clone()))
+            .collect();
+        slots
+            .into_iter()
+            .filter_map(|(id, slot)| {
+                let (saved, dialed, generation) = {
+                    let current = slot.try_lock().ok()?;
+                    let tunnel = current.tunnel.as_ref().filter(|tunnel| tunnel.alive())?;
+                    if tunnel.started.elapsed() < settled {
+                        return None;
+                    }
+                    (
+                        tunnel.target.clone()?,
+                        tunnel.dialed.clone()?,
+                        current.generation,
+                    )
+                };
+                let mut better = candidates(&saved);
+                // An address the owner turned off is no longer listed: every one is better.
+                let rank = better
+                    .iter()
+                    .position(|dial| dial.target == dialed.target)
+                    .unwrap_or(better.len());
+                better.truncate(rank);
+                (!better.is_empty()).then_some(LaterRoute {
+                    id,
+                    saved,
+                    better,
+                    slot,
+                    generation,
+                })
+            })
+            .collect()
+    }
+
+    /// Puts `tunnel` in place of the one `later` saw, if that one still runs
+    /// unchanged. The old tunnel is closed on purpose, so no drop is reported;
+    /// leases on it stop being current and their callers reconnect at once.
+    pub(crate) fn switch(&self, later: &LaterRoute, tunnel: Tunnel) -> bool {
+        let unchanged = self
+            .slots()
+            .get(&later.id)
+            .is_some_and(|slot| Arc::ptr_eq(slot, &later.slot));
+        if !unchanged {
+            return false;
+        }
+        let mut current = later.slot.lock().unwrap_or_else(PoisonError::into_inner);
+        let running = current.tunnel.as_ref().is_some_and(|old| {
+            old.alive()
+                && old
+                    .target
+                    .as_ref()
+                    .is_some_and(|target| same_tunnel_route(target, &later.saved))
+        });
+        if current.generation != later.generation || !running {
+            return false;
+        }
+        let environment_id = current.environment_id.clone();
+        self.watch(&environment_id, &tunnel);
+        current.generation = current.generation.wrapping_add(1);
+        current.failure = None;
+        let old = current.tunnel.replace(tunnel);
+        drop(current);
+        drop(old);
+        true
     }
 }
 
@@ -1099,678 +1394,5 @@ pub fn device_name() -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    #[test]
-    fn job_remains_readable_and_writable_after_mutex_poison() {
-        let job = Job::new();
-        let poisoned = job.clone();
-        assert!(std::thread::spawn(move || {
-            let _guard = poisoned.inner.lock().unwrap();
-            panic!("simulate worker panic");
-        })
-        .join()
-        .is_err());
-        job.message("Recovered");
-        assert_eq!(job.view().message, "Recovered");
-    }
-
-    #[test]
-    fn setup_falls_back_after_ssh_failure_and_keeps_the_selected_host_key() {
-        let primary = SshTarget {
-            target: "me@home".into(),
-            port: None,
-            remote_port: 3774,
-            alternate: None,
-            host_key_alias: None,
-            identity_file: None,
-        };
-        let alternate = SshTarget {
-            target: "me@tailnet".into(),
-            host_key_alias: Some("home".into()),
-            ..primary.clone()
-        };
-        let mut attempted = Vec::new();
-        let (platform, selected) =
-            detect_platform_from_dials(vec![primary, alternate], &Job::new(), |dial| {
-                attempted.push(dial.target.clone());
-                if dial.target == "me@home" {
-                    Err("SSH connection refused".into())
-                } else {
-                    Ok(HostPlatform::Unix)
-                }
-            })
-            .unwrap();
-        assert_eq!(attempted, ["me@home", "me@tailnet"]);
-        assert_eq!(platform, HostPlatform::Unix);
-        let script_dial = dial_order(&selected).remove(0);
-        assert_eq!(script_dial.target, "me@tailnet");
-        assert_eq!(script_dial.host_key_alias.as_deref(), Some("home"));
-    }
-
-    #[test]
-    fn cancelled_setup_does_not_try_another_address() {
-        let job = Job::new();
-        job.cancel();
-        let target = SshTarget {
-            target: "me@home".into(),
-            port: None,
-            remote_port: 3774,
-            alternate: None,
-            host_key_alias: None,
-            identity_file: None,
-        };
-        let result = detect_platform_from_dials(vec![target], &job, |_| {
-            panic!("cancelled setup must not connect")
-        });
-        assert_eq!(result.unwrap_err(), "Connection cancelled");
-    }
-    use super::*;
-
-    #[test]
-    fn stale_requests_cannot_invalidate_a_newer_tunnel() {
-        let tunnels = Tunnels::default();
-        let slot = |generation| {
-            Arc::new(Mutex::new(Slot {
-                tunnel: None,
-                failure: Some((Instant::now(), "keep".into())),
-                generation,
-            }))
-        };
-        let old = slot(1);
-        tunnels.slots().insert("host".into(), old.clone());
-        let old_lease = TunnelLease {
-            endpoint: String::new(),
-            slot: old,
-            generation: 1,
-        };
-        let newer = slot(2);
-        tunnels.slots().insert("host".into(), newer.clone());
-        tunnels.invalidate("host", &old_lease);
-        assert!(newer.lock().unwrap().failure.is_some());
-        let stale_lease = TunnelLease {
-            endpoint: String::new(),
-            slot: newer.clone(),
-            generation: 1,
-        };
-        tunnels.invalidate("host", &stale_lease);
-        assert!(newer.lock().unwrap().failure.is_some());
-        tunnels.invalidate(
-            "host",
-            &TunnelLease {
-                generation: 2,
-                ..stale_lease
-            },
-        );
-        assert!(newer.lock().unwrap().failure.is_none());
-    }
-    #[test]
-    fn a_requested_reconnect_forgets_the_cached_failure() {
-        let tunnels = Tunnels::default();
-        let slot = Arc::new(Mutex::new(Slot {
-            tunnel: None,
-            failure: Some((Instant::now(), "SSH connection failed".into())),
-            generation: 1,
-        }));
-        tunnels.slots().insert("host".into(), slot.clone());
-        tunnels.forget_failure("other");
-        assert!(slot.lock().unwrap().failure.is_some());
-        tunnels.forget_failure("host");
-        assert!(slot.lock().unwrap().failure.is_none());
-    }
-    // scripts/checks/test-remote-ssh.py creates an isolated sshd, host and keypair.
-    // This test uses the production tunnel lifecycle and shell transport.
-    #[test]
-    #[ignore = "requires the isolated loopback SSH fixture"]
-    fn loopback_transport_preserves_host_and_reconnects() {
-        let required = |key| std::env::var(key).expect("Run scripts/checks/test-remote-ssh.py");
-        let target = SshTarget {
-            target: required("BYCODA_TEST_SSH_TARGET"),
-            port: Some(required("BYCODA_TEST_SSH_PORT").parse().unwrap()),
-            remote_port: required("BYCODA_TEST_HOST_PORT").parse().unwrap(),
-            alternate: None,
-            host_key_alias: None,
-            identity_file: None,
-        };
-        let make_command = || {
-            let mut command = command(&target, false);
-            command.args([
-                "-F",
-                "/dev/null",
-                "-i",
-                &required("BYCODA_TEST_SSH_KEY"),
-                "-o",
-                "IdentitiesOnly=yes",
-                "-o",
-                &format!("UserKnownHostsFile={}", required("BYCODA_TEST_KNOWN_HOSTS")),
-            ]);
-            command
-        };
-        let job = Job::new();
-        let askpass = job.askpass().unwrap();
-        let detected = run_remote_command(
-            &target,
-            String::new(),
-            &job,
-            &askpass,
-            make_command(),
-            PLATFORM_PROBE,
-        )
-        .unwrap();
-        assert_eq!(parse_platform(&detected).unwrap(), HostPlatform::Unix);
-        let output = run_script_with_command(
-            &target,
-            "printf 'remote-script-ok\\n'\n".into(),
-            &job,
-            &askpass,
-            make_command(),
-        )
-        .unwrap();
-        assert_eq!(output.trim(), "remote-script-ok");
-        let environment = required("BYCODA_TEST_ENVIRONMENT");
-        for _ in 0..2 {
-            let tunnel = Tunnel::start_with_command(&target, None, None, make_command()).unwrap();
-            let response = ureq::post(&format!("http://127.0.0.1:{}/rpc", tunnel.port))
-                .set(
-                    "Authorization",
-                    &format!("Bearer {}", required("BYCODA_TEST_TOKEN")),
-                )
-                .send_string(r#"{"version":1,"method":"environment.describe"}"#)
-                .unwrap();
-            let value: serde_json::Value = serde_json::from_reader(response.into_reader()).unwrap();
-            assert_eq!(value["result"]["environmentId"], environment);
-            drop(tunnel);
-            // A client disappearing must not kill the independently owned host.
-            assert!(TcpStream::connect(("127.0.0.1", target.remote_port)).is_ok());
-        }
-    }
-    /// A harmless stand-in for ssh: prints `boom` to stderr and exits with 3.
-    fn short_lived_child() -> Child {
-        #[cfg(windows)]
-        let mut command = {
-            let mut command = Command::new("cmd");
-            command.args(["/C", "echo boom 1>&2 & exit 3"]);
-            command
-        };
-        #[cfg(not(windows))]
-        let mut command = {
-            let mut command = Command::new("sh");
-            command.args(["-c", "echo boom >&2; exit 3"]);
-            command
-        };
-        command
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap()
-    }
-    /// A stand-in that keeps running until it is killed.
-    fn long_lived_child() -> Child {
-        #[cfg(windows)]
-        let mut command = {
-            let mut command = Command::new("ping");
-            command.args(["-n", "30", "127.0.0.1"]);
-            command
-        };
-        #[cfg(not(windows))]
-        let mut command = {
-            let mut command = Command::new("sleep");
-            command.arg("30");
-            command
-        };
-        command
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap()
-    }
-    fn exit_events() -> (Tunnels, std::sync::mpsc::Receiver<TunnelExit>) {
-        let tunnels = Tunnels::default();
-        let (sender, receiver) = std::sync::mpsc::channel();
-        let sender = Mutex::new(sender);
-        tunnels.set_exit_sink(Arc::new(move |exit| {
-            let _ = sender.lock().unwrap().send(exit);
-        }));
-        (tunnels, receiver)
-    }
-    #[test]
-    fn an_unexpected_ssh_exit_is_reported_once_with_its_status_and_last_words() {
-        let (tunnels, events) = exit_events();
-        tunnels.insert("m".into(), "env", Tunnel::adopt(short_lived_child(), 1));
-        let exit = events.recv_timeout(Duration::from_secs(10)).unwrap();
-        assert_eq!(exit.environment_id, "env");
-        assert_eq!(exit.exit_code, Some(3));
-        assert_eq!(exit.stderr, "boom");
-        // Dropping the dead tunnel afterwards says nothing more.
-        tunnels.remove("m");
-        assert!(events.recv_timeout(Duration::from_millis(700)).is_err());
-    }
-    #[test]
-    fn closing_replacing_or_clearing_a_tunnel_on_purpose_reports_nothing() {
-        let (tunnels, events) = exit_events();
-        tunnels.insert("m".into(), "env", Tunnel::adopt(long_lived_child(), 1));
-        // Replacement by a fresh tunnel, then a disconnect, then app quit.
-        tunnels.insert("m".into(), "env", Tunnel::adopt(long_lived_child(), 2));
-        tunnels.remove("m");
-        tunnels.insert("n".into(), "env", Tunnel::adopt(long_lived_child(), 3));
-        tunnels.clear();
-        assert!(events.recv_timeout(Duration::from_millis(900)).is_err());
-    }
-    #[test]
-    fn removing_a_machines_tunnel_clears_its_failure_and_reports_nothing() {
-        let (tunnels, events) = exit_events();
-        tunnels.insert("m".into(), "env", Tunnel::adopt(long_lived_child(), 1));
-        tunnels.slots().get("m").unwrap().lock().unwrap().failure =
-            Some((Instant::now(), "old address failed".into()));
-        tunnels.remove("m");
-        assert!(tunnels.slots().get("m").is_none());
-        assert!(events.recv_timeout(Duration::from_millis(700)).is_err());
-    }
-    #[test]
-    fn a_tunnel_started_for_another_address_is_not_reused() {
-        let tunnels = Tunnels::default();
-        let target = |host: &str| SshTarget {
-            target: host.into(),
-            port: None,
-            remote_port: 3774,
-            alternate: None,
-            host_key_alias: None,
-            identity_file: None,
-        };
-        let mut tunnel = Tunnel::adopt(long_lived_child(), 4321);
-        tunnel.target = Some(target("me@old"));
-        tunnels.insert("m".into(), "env", tunnel);
-        let Ok(lease) = tunnels.endpoint("m", "env", &target("me@old"), false) else {
-            panic!("same address reuses the tunnel")
-        };
-        assert_eq!(lease.endpoint, "http://127.0.0.1:4321");
-        let error = tunnels
-            .endpoint("m", "env", &target("me@new"), false)
-            .err()
-            .expect("the old tunnel is dropped, not reused");
-        assert!(error.starts_with("Machine is unreachable"));
-        let slot = tunnels.slots().get("m").unwrap().clone();
-        assert!(slot.lock().unwrap().tunnel.is_none());
-    }
-    #[test]
-    fn a_missing_tunnel_is_not_started_when_connecting_is_not_allowed() {
-        let tunnels = Tunnels::default();
-        let target = SshTarget {
-            target: "nowhere.invalid".into(),
-            port: None,
-            remote_port: 3774,
-            alternate: None,
-            host_key_alias: None,
-            identity_file: None,
-        };
-        let started = Instant::now();
-        let error = tunnels
-            .endpoint("m", "env", &target, false)
-            .err()
-            .expect("no tunnel exists");
-        assert!(error.starts_with("Machine is unreachable. Automatic reconnect is off"));
-        assert!(started.elapsed() < Duration::from_secs(1), "spawned ssh");
-        // Nothing is cached, so a user-initiated attempt is not answered with it.
-        let slot = tunnels.slots().get("m").unwrap().clone();
-        assert!(slot.lock().unwrap().failure.is_none());
-    }
-    #[test]
-    fn saved_identity_is_used_for_setup_tunnels_and_alternate_addresses() {
-        let target = SshTarget {
-            target: "alice@host.invalid".into(),
-            port: Some(2222),
-            remote_port: 3776,
-            alternate: Some("alice@alternate.invalid".into()),
-            host_key_alias: None,
-            identity_file: Some("C:/keys/saved key".into()),
-        };
-        let decoded: SshTarget =
-            serde_json::from_str(&serde_json::to_string(&target).unwrap()).unwrap();
-        for interactive in [false, true] {
-            let command = command(&decoded, interactive);
-            let args: Vec<String> = command
-                .get_args()
-                .map(|arg| arg.to_string_lossy().into_owned())
-                .collect();
-            assert!(args
-                .windows(2)
-                .any(|pair| pair == ["-i", "C:/keys/saved key"]));
-            assert!(args.contains(&"IdentitiesOnly=yes".into()));
-        }
-        assert!(dial_order(&decoded)
-            .iter()
-            .all(|dial| dial.identity_file == target.identity_file));
-        let legacy: SshTarget =
-            serde_json::from_str(r#"{"target":"host.invalid","port":22,"remotePort":3776}"#)
-                .unwrap();
-        assert!(legacy.identity_file.is_none());
-        let mut tunnel = Tunnel::adopt(long_lived_child(), 4321);
-        tunnel.target = Some(decoded.clone());
-        let tunnels = Tunnels::default();
-        tunnels.insert("saved".into(), "env", tunnel);
-        let changed_key = SshTarget {
-            identity_file: Some("C:/keys/replacement".into()),
-            ..decoded
-        };
-        assert_eq!(
-            tunnels
-                .endpoint("saved", "env", &changed_key, false)
-                .unwrap()
-                .endpoint,
-            "http://127.0.0.1:4321"
-        );
-    }
-
-    #[test]
-    fn tunnels_use_fast_keepalives_without_blocking_interactive_auth() {
-        let target = SshTarget {
-            target: "me@host".into(),
-            port: Some(2222),
-            remote_port: 3774,
-            alternate: None,
-            host_key_alias: None,
-            identity_file: None,
-        };
-        let args = |command: &Command| -> Vec<String> {
-            command
-                .get_args()
-                .map(|arg| arg.to_string_lossy().into_owned())
-                .collect()
-        };
-        let tunnel = args(&command_with_keepalive(
-            &target,
-            false,
-            TUNNEL_KEEPALIVE_SECS,
-        ));
-        for option in [
-            "ServerAliveInterval=5",
-            "ServerAliveCountMax=3",
-            "ExitOnForwardFailure=yes",
-            "ConnectTimeout=15",
-            "BatchMode=yes",
-        ] {
-            assert!(tunnel.contains(&option.to_string()), "{option}");
-        }
-        // Setup commands keep the slower probes; an interactive attempt may prompt.
-        let setup = args(&command(&target, true));
-        assert!(setup.contains(&"ServerAliveInterval=15".to_string()));
-        assert!(setup.contains(&"BatchMode=no".to_string()));
-        let probe = command(&target, false);
-        let env = |name: &str| {
-            probe
-                .get_envs()
-                .find(|(key, _)| *key == name)
-                .and_then(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()))
-        };
-        assert_eq!(env("LC_ALL").as_deref(), Some("C"));
-        assert_eq!(env("LANG").as_deref(), Some("C"));
-    }
-    #[test]
-    fn ssh_stderr_is_reduced_to_a_few_safe_lines() {
-        let noisy = "one\ntwo\x07\nBearer abc.def\nthree\nfour\nfive\nsix\nPASSWORD=hunter2\n";
-        assert_eq!(stderr_tail(noisy), "two\nthree\nfour\nfive\nsix");
-        assert_eq!(stderr_tail(&"x".repeat(500)).len(), 200);
-        assert_eq!(stderr_tail(""), "");
-    }
-    #[test]
-    fn a_refused_forward_is_told_from_a_dead_tunnel() {
-        assert!(host_refused(
-            "channel 2: open failed: connect failed: Connection refused\n"
-        ));
-        assert!(host_refused(
-            "channel 0: open failed: connect failed: No connection could be made because the target machine actively refused it.\n"
-        ));
-        assert!(!host_refused(
-            "ssh: connect to host mini port 22: Connection refused\n"
-        ));
-        assert!(!host_refused(""));
-        let tunnels = Tunnels::default();
-        let tunnel = Tunnel::adopt(long_lived_child(), 1);
-        tunnel
-            .stderr
-            .lock()
-            .unwrap()
-            .push_str("channel 3: open failed: connect failed: Connection refused\n");
-        tunnels.insert("m".into(), "env", tunnel);
-        assert!(tunnels.take_host_refusal("m"));
-        assert!(!tunnels.take_host_refusal("m"), "a report is used once");
-        assert!(!tunnels.take_host_refusal("other"));
-    }
-    #[test]
-    fn ssh_config_dumps_give_the_address_ssh_would_dial() {
-        let dump = "user me\nhostname 10.0.0.7\nport 2200\nidentityfile ~/.ssh/id_ed25519\n";
-        assert_eq!(parse_ssh_config_dump(dump), Some(("10.0.0.7".into(), 2200)));
-        assert_eq!(
-            parse_ssh_config_dump("hostname a\nport 22\nproxycommand none\nproxyjump none\n"),
-            Some(("a".into(), 22))
-        );
-        for proxied in ["proxyjump bastion", "proxycommand nc %h %p"] {
-            assert_eq!(
-                parse_ssh_config_dump(&format!("hostname a\nport 22\n{proxied}\n")),
-                None
-            );
-        }
-        assert_eq!(parse_ssh_config_dump("hostname a\n"), None);
-        assert_eq!(parse_ssh_config_dump(""), None);
-    }
-    #[test]
-    fn a_machine_with_two_addresses_dials_the_one_that_answers_first() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let target = SshTarget {
-            target: "me@nowhere.invalid".into(),
-            port: Some(port),
-            remote_port: 3774,
-            alternate: Some("me@127.0.0.1".into()),
-            host_key_alias: None,
-            identity_file: None,
-        };
-        let order = dial_order(&target);
-        assert_eq!(
-            order
-                .iter()
-                .map(|dial| dial.target.as_str())
-                .collect::<Vec<_>>(),
-            ["me@127.0.0.1", "me@nowhere.invalid"]
-        );
-        // The other address checks the host key filed for the saved one.
-        assert_eq!(order[0].host_key_alias.as_deref(), Some("nowhere.invalid"));
-        assert_eq!(order[1].host_key_alias, None);
-        assert!(order.iter().all(|dial| dial.alternate.is_none()));
-
-        drop(listener);
-        let order = dial_order(&target);
-        assert_eq!(order[0].target, "me@nowhere.invalid");
-
-        let single = SshTarget {
-            alternate: None,
-            ..target.clone()
-        };
-        assert_eq!(dial_order(&single).len(), 1);
-        let blank = SshTarget {
-            alternate: Some("  ".into()),
-            ..target
-        };
-        assert_eq!(dial_order(&blank).len(), 1);
-    }
-
-    #[test]
-    fn the_other_address_is_checked_like_the_first() {
-        assert_eq!(validate_alternate(None, None), Ok(None));
-        assert_eq!(validate_alternate(Some("  "), None), Ok(None));
-        assert_eq!(
-            validate_alternate(Some(" me@100.64.0.5 "), None),
-            Ok(Some("me@100.64.0.5".into()))
-        );
-        assert!(validate_alternate(Some("-oProxyCommand=x"), None).is_err());
-    }
-
-    #[test]
-    fn tcp_reachability_and_failure_tags() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        assert!(tcp_reachable("127.0.0.1", port, Duration::from_secs(2)));
-        // A released ephemeral port can be reused by another parallel test.
-        // Port zero never has a listener, so the negative dial is deterministic.
-        assert!(!tcp_reachable("127.0.0.1", 0, Duration::from_secs(2)));
-        assert_eq!(
-            failure_tag(Some(255), Some(true)),
-            " (exit 255, host reachable)"
-        );
-        assert_eq!(
-            failure_tag(Some(255), Some(false)),
-            " (exit 255, host unreachable)"
-        );
-        assert_eq!(failure_tag(None, None), "");
-    }
-    #[test]
-    fn ssh_targets_cannot_inject_options_or_shell_commands() {
-        for target in [
-            "home",
-            "me@mac-mini.local",
-            "user@192.168.1.4",
-            "user@[::1]",
-        ] {
-            assert!(validate_target(target, None).is_ok());
-        }
-        for target in [
-            "",
-            "-oProxyCommand=bad",
-            "host;touch /tmp/x",
-            "host\nname",
-            "$(whoami)",
-            "user@host command",
-            "host/../../x",
-            "ssh://user@host",
-            "a@b@c",
-        ] {
-            assert!(validate_target(target, None).is_err(), "{target}");
-        }
-        assert!(validate_target("host", Some(0)).is_err());
-        assert_eq!(shell_quote("a'b"), "'a'\\''b'");
-    }
-    #[test]
-    fn unix_bootstrap_accepts_windows_checkout_line_endings() {
-        let lf_template = include_str!("remote_bootstrap.sh").replace("\r\n", "\n");
-        let crlf_template = lf_template.replace('\n', "\r\n");
-        let script = bootstrap_script_from_template(HostPlatform::Unix, &crlf_template);
-        assert!(script.starts_with("set -eu\n"));
-        assert!(!script.contains('\r'));
-        assert_eq!(
-            script,
-            bootstrap_script_from_template(HostPlatform::Unix, &lf_template)
-        );
-    }
-    #[test]
-    fn bootstrap_is_versioned_and_only_explicit_upgrade_restarts_the_host() {
-        let script = bootstrap_script(HostPlatform::Unix);
-        assert!(script.contains("BASE=\"$HOME/.bycoda-host\""));
-        assert!(script.contains("ENTRY=\"$BASE/bin/bycoda-host\""));
-        assert!(script.contains("BYCODA_HOST_PORT:-3776"));
-        assert!(script.contains("bycoda host distribution is not configured"));
-        assert!(!script.contains("github.com/bahadryalcn/bycoda"));
-        assert!(!script.contains('\r'));
-        assert!(!script.contains("@@"));
-        assert!(script.contains("--proto '=https'"));
-        assert!(script.contains("checksum mismatch"));
-        assert!(script.contains("\"$FORCE_UPGRADE\" = 1"));
-        assert!(script.contains("service uninstall"));
-        assert!(upgrade_script(HostPlatform::Unix, 3774).starts_with("BYCODA_HOST_FORCE_UPGRADE=1"));
-        assert!(!upgrade_script(HostPlatform::Unix, 3774).contains('\r'));
-        assert!(upgrade_script(HostPlatform::Windows, 3774)
-            .starts_with("$env:BYCODA_HOST_FORCE_UPGRADE = '1'"));
-    }
-    #[test]
-    fn remote_platform_probe_handles_cmd_powershell_and_unix() {
-        assert_eq!(
-            parse_platform("BYCODA_PLATFORM $env:OS Windows_NT $OS\r\n").unwrap(),
-            HostPlatform::Windows
-        );
-        assert_eq!(
-            parse_platform("BYCODA_PLATFORM\r\nWindows_NT\r\n%OS%\r\n").unwrap(),
-            HostPlatform::Windows
-        );
-        assert_eq!(
-            parse_platform("BYCODA_PLATFORM :OS %OS%\n").unwrap(),
-            HostPlatform::Unix
-        );
-        assert!(parse_platform("unrecognized shell").is_err());
-        assert!(powershell_reader().len() < 4096);
-        let script = bootstrap_script(HostPlatform::Windows);
-        assert!(!script.contains("@@"));
-        assert!(script.contains("checksum mismatch"));
-        assert!(script.contains("Protect-BycodaDirectory"));
-        assert!(pairing_script(HostPlatform::Windows, "Nick's $PC").contains("'Nick''s $PC'"));
-    }
-    #[cfg(windows)]
-    #[test]
-    fn windows_shells_detect_the_platform_and_accept_utf8_scripts() {
-        for (program, args) in [
-            ("cmd.exe", vec!["/D", "/C"]),
-            (
-                "powershell.exe",
-                vec!["-NoProfile", "-NonInteractive", "-Command"],
-            ),
-        ] {
-            let output = Command::new(program)
-                .env_remove("PSModulePath")
-                .args(args)
-                .arg(PLATFORM_PROBE.join(" "))
-                .output()
-                .unwrap();
-            assert!(output.status.success());
-            assert_eq!(
-                parse_platform(&String::from_utf8_lossy(&output.stdout)).unwrap(),
-                HostPlatform::Windows
-            );
-        }
-        let mut child = Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-EncodedCommand",
-                &powershell_reader(),
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all("Write-Output '日本語 🖥'\n".as_bytes())
-            .unwrap();
-        let output = child.wait_with_output().unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), "日本語 🖥");
-    }
-    #[test]
-    fn device_names_are_bounded_single_lines() {
-        let name = device_name();
-        assert!(name.starts_with("bycoda"));
-        assert!(name.chars().count() <= 100);
-        assert!(!name.chars().any(char::is_control));
-    }
-    #[test]
-    fn answers_must_match_the_current_prompt() {
-        let job = Job::new();
-        assert!(job.answer("old", "yes".into()).is_err());
-        let waiter = job.clone();
-        let thread = std::thread::spawn(move || waiter.prompt("Trust this host?".into(), true));
-        while job.view().prompt.is_none() {
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        let prompt = job.view().prompt.unwrap();
-        assert!(job.answer(&prompt.id, "arbitrary".into()).is_err());
-        job.answer(&prompt.id, "yes".into()).unwrap();
-        assert_eq!(thread.join().unwrap(), Some("yes".into()));
-        assert!(job.answer(&prompt.id, "yes".into()).is_err());
-    }
-}
+#[path = "remote_ssh_tests.rs"]
+mod tests;

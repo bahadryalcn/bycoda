@@ -37,7 +37,13 @@ it("contains a render failure and remounts only the failed view on retry", async
   expect(container.querySelector('[role="alert"]')).not.toBeNull();
   expect(container.textContent).not.toContain("View exploded");
   await act(async () => button("Show details").click());
-  expect(container.querySelector("pre")?.textContent).toBe("View exploded");
+  expect(container.querySelector("pre")?.textContent).toContain("View exploded");
+  expect(container.querySelector("pre")?.textContent).toContain("Component stack:");
+  expect(container.querySelector("pre")?.textContent).toContain("View");
+  const recorded = JSON.parse(localStorage.getItem("bycoda.diagnostics.lastRenderError")!);
+  expect(recorded.message).toBe("View exploded");
+  expect(recorded.componentStack).toContain("View");
+  expect(Date.parse(recorded.at)).not.toBeNaN();
   await act(async () => button("Back to workspace").click());
   expect(onBack).toHaveBeenCalledOnce();
   fail = false;
@@ -84,4 +90,51 @@ it.each([
 ])("recognizes module recovery for %s", (message) => {
   expect(isModuleLoadError(new Error(message))).toBe(true);
   expect(isModuleLoadError(new Error("Cannot read properties of undefined"))).toBe(false);
+});
+
+it("remounts a failed view when a reset key changes and reports the error and reset", async () => {
+  let fail = true;
+  function View() {
+    if (fail) throw new Error("Keyed failure");
+    return createElement("p", null, "Recovered by key");
+  }
+  const onError = vi.fn();
+  const onReset = vi.fn();
+  const render = (key: number) =>
+    act(async () =>
+      root.render(
+        createElement(
+          RecoveryBoundary,
+          { resetKeys: [key], onError, onReset },
+          createElement(View),
+        ),
+      ),
+    );
+  await render(1);
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  expect(container.querySelector("h2")?.textContent).toBe("This view could not be displayed");
+  expect(onError).toHaveBeenCalledOnce();
+  // The same key keeps the failed state.
+  await render(1);
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  fail = false;
+  await render(2);
+  expect(container.textContent).toBe("Recovered by key");
+  expect(onReset).toHaveBeenCalledOnce();
+});
+
+it("does not loop when a view still fails after retry or after a reset key change", async () => {
+  function View(): never {
+    throw new Error("Always failing");
+  }
+  const render = (key: number) =>
+    act(async () =>
+      root.render(createElement(RecoveryBoundary, { resetKeys: [key] }, createElement(View))),
+    );
+  await render(1);
+  await act(async () => button("Try again").click());
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  await render(2);
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  expect(button("Reload app")).toBeDefined();
 });

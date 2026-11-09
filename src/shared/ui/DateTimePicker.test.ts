@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 function day(date: string) {
-  const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${date}"]`);
+  const button = container.querySelector<HTMLButtonElement>(`button[data-date="${date}"]`);
   expect(button, date).not.toBeNull();
   return button!;
 }
@@ -185,4 +185,52 @@ it("localizes weekday labels and their accessible full names", () => {
   expect(headers).toHaveLength(7);
   expect(headers[0].getAttribute("aria-label")).toBe("Pazartesi");
   expect(headers[6].getAttribute("aria-label")).toBe("Pazar");
+});
+
+it.each([
+  ["tr", "29 Şubat 2028 Salı"],
+  ["en", "Tuesday, February 29, 2028"],
+])("announces a full date in %s while preserving its local ISO value", (locale, label) => {
+  vi.spyOn(i18n, "useLocale").mockReturnValue(locale);
+  const onChange = vi.fn();
+  act(() => root.render(createElement(DateTimePicker, { value: "2028-02-20T18:30", onChange })));
+  const leapDay = day("2028-02-29");
+  expect(leapDay.getAttribute("aria-label")).toBe(label);
+  expect(leapDay.title).toBe(label);
+  act(() => leapDay.click());
+  expect(onChange).toHaveBeenCalledWith("2028-02-29T18:30");
+});
+
+it("marks today, the chosen day and disabled days with attributes that do not depend on colour", () => {
+  act(() =>
+    root.render(
+      createElement(DateTimePicker, {
+        value: "2028-02-24T09:00",
+        minDate: "2028-02-18",
+        onChange: vi.fn(),
+      }),
+    ),
+  );
+  expect(day("2028-02-20").hasAttribute("data-today")).toBe(true);
+  expect(day("2028-02-20").getAttribute("aria-current")).toBe("date");
+  expect(day("2028-02-24").hasAttribute("data-selected")).toBe(true);
+  expect(day("2028-02-24").closest('[role="gridcell"]')!.getAttribute("aria-selected")).toBe(
+    "true",
+  );
+  expect(day("2028-02-17").disabled).toBe(true);
+  expect(day("2028-02-18").disabled).toBe(false);
+  expect(day("2028-02-17").hasAttribute("data-today")).toBe(false);
+});
+
+it("shows the danger frame for a malformed time only after the field is left", () => {
+  const onChange = vi.fn();
+  act(() => root.render(createElement(DateTimePicker, { value: "2028-02-20T1", onChange })));
+  const time = container.querySelector<HTMLInputElement>('input[placeholder="HH:mm"]')!;
+  expect(time.getAttribute("aria-invalid")).toBeNull();
+  act(() => {
+    time.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+  });
+  expect(time.getAttribute("aria-invalid")).toBe("true");
+  act(() => root.render(createElement(DateTimePicker, { value: "2028-02-20T18:30", onChange })));
+  expect(time.getAttribute("aria-invalid")).toBeNull();
 });

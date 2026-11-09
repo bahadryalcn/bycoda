@@ -1,11 +1,12 @@
 import { Button } from "../../shared/ui/Button";
-import { t, useLocale } from "../../shared/i18n";
+import { useT } from "../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { ExplorerMenu, type ExplorerMenuItem } from "../../features/files/ui/ExplorerMenu";
+import { ContextMenu, type ContextMenuItem } from "../../shared/ui/ContextMenu";
 import { ALT, MOD, SHIFT } from "../../platform/tauri/platform";
 import { runUpdateFlow } from "../model/updater";
 import { openUsageGuide } from "../../features/onboarding/model/usageGuide";
+import { startTour } from "../../features/onboarding/model/tourState";
 import type { TitleBarLayout } from "./TitleBar";
 import {
   SPLIT_DOWN_ID,
@@ -21,8 +22,16 @@ import {
   subscribeAutosave,
   subscribeKeybindings,
 } from "../../features/settings/model/settings";
+import { useStableHandlers } from "../../shared/hooks/useStableHandlers";
 
 type MenuKey = "file" | "view" | "terminal";
+
+/**
+ * Window event the title bar's compact application-menu button dispatches. It
+ * toggles the same menu bar the Alt key does; `detail` is the viewport point
+ * (the button's bottom-left) where the first menu should drop down.
+ */
+export const APP_MENU_TOGGLE_EVENT = "bycoda:app-menu-toggle";
 
 type Props = {
   onNew: () => void;
@@ -48,7 +57,7 @@ type Props = {
   layout?: TitleBarLayout;
 };
 
-export const MenuBar = memo(function MenuBar({
+const MemoMenuBar = memo(function MenuBar({
   onNew,
   onNewTerminal,
   onToggleTerminal,
@@ -71,10 +80,12 @@ export const MenuBar = memo(function MenuBar({
   onZoomReset,
   layout,
 }: Props) {
-  useLocale();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [activeMenu, setActiveMenu] = useState<MenuKey | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
+  // The title bar's compact button opens the menus as one popover, not as the menubar band.
+  const [popover, setPopover] = useState<{ x: number; y: number } | null>(null);
   const [, refreshShortcuts] = useState(loadKeybindingOverrides);
   const [autosave, setAutosave] = useState(loadAutosave);
   const barRef = useRef<HTMLDivElement>(null);
@@ -86,9 +97,20 @@ export const MenuBar = memo(function MenuBar({
   const shortcut = (command: string, keys: string) =>
     keybindingShortcutLabel(command, keys) ?? undefined;
 
-  // Toggle with standalone Alt key tap
+  // Toggle with a standalone Alt tap or F10 (outside terminals, where F10 belongs to the program).
   useEffect(() => {
     let altPressedAlone = false;
+
+    const toggle = () => {
+      setOpen((prev) => {
+        if (prev) {
+          setActiveMenu(null);
+          setMenuAnchor(null);
+          return false;
+        }
+        return true;
+      });
+    };
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Alt") {
@@ -96,18 +118,22 @@ export const MenuBar = memo(function MenuBar({
       } else if (altPressedAlone) {
         altPressedAlone = false;
       }
+      if (
+        e.key === "F10" &&
+        !e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.shiftKey &&
+        !(e.target instanceof Element && e.target.closest(".xterm"))
+      ) {
+        e.preventDefault();
+        toggle();
+      }
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.key === "Alt" && altPressedAlone) {
-        setOpen((prev) => {
-          if (prev) {
-            setActiveMenu(null);
-            setMenuAnchor(null);
-            return false;
-          }
-          return true;
-        });
+        toggle();
         altPressedAlone = false;
       }
     };
@@ -137,10 +163,29 @@ export const MenuBar = memo(function MenuBar({
     setMenuAnchor(null);
   }, []);
 
+  // The title bar's compact menu button opens File, View and Terminal as one popover
+  // under the button (no extra band); with no anchor it falls back to the Alt menubar.
+  useEffect(() => {
+    const onToggle = (event: Event) => {
+      if (open || activeMenu || popover) {
+        setOpen(false);
+        setPopover(null);
+        closeMenu();
+        return;
+      }
+      const anchor = (event as CustomEvent<{ x: number; y: number } | undefined>).detail;
+      if (anchor) setPopover(anchor);
+      else setOpen(true);
+    };
+    window.addEventListener(APP_MENU_TOGGLE_EVENT, onToggle);
+    return () => window.removeEventListener(APP_MENU_TOGGLE_EVENT, onToggle);
+  }, [open, activeMenu, popover, closeMenu]);
+
   const handlePick = useCallback(
     (id: string) => {
       closeMenu();
       setOpen(false);
+      setPopover(null);
 
       switch (id) {
         case "new_tab":
@@ -169,6 +214,9 @@ export const MenuBar = memo(function MenuBar({
           break;
         case "usage_guide":
           openUsageGuide();
+          break;
+        case "product_tour":
+          startTour("first-run");
           break;
         case "go_to_file":
           onGoToFile?.();
@@ -256,7 +304,7 @@ export const MenuBar = memo(function MenuBar({
     ],
   );
 
-  const getMenuItems = (key: MenuKey): ExplorerMenuItem[] => {
+  const getMenuItems = (key: MenuKey): ContextMenuItem[] => {
     switch (key) {
       case "file":
         return [
@@ -379,6 +427,13 @@ export const MenuBar = memo(function MenuBar({
             id: "usage_guide",
             get label() {
               return t("Usage guide");
+            },
+          },
+          {
+            kind: "item",
+            id: "product_tour",
+            get label() {
+              return t("Take the tour");
             },
           },
           { kind: "sep" },
@@ -504,6 +559,25 @@ export const MenuBar = memo(function MenuBar({
     }
   };
 
+  if (popover) {
+    return (
+      <ContextMenu
+        x={popover.x}
+        y={popover.y}
+        items={[
+          ...getMenuItems("file"),
+          { kind: "sep" },
+          ...getMenuItems("view"),
+          { kind: "sep" },
+          ...getMenuItems("terminal"),
+        ]}
+        ariaLabel={t("Application menu")}
+        onPick={handlePick}
+        onClose={() => setPopover(null)}
+      />
+    );
+  }
+
   if (!open && !activeMenu) {
     return null;
   }
@@ -533,7 +607,7 @@ export const MenuBar = memo(function MenuBar({
     <div
       ref={barRef}
       data-workspace-menubar
-      className="flex h-7 shrink-0 items-center gap-0.5 border-b border-stroke bg-content/5 px-2 text-[12px]"
+      className="flex min-h-(--ui-control-height-compact) shrink-0 items-center gap-0.5 border-b border-(--ui-pane-border) bg-(--ui-surface-panel) px-2 text-ui-caption"
       data-tauri-drag-region="deep"
     >
       {MENUS.map(({ key, label }) => {
@@ -542,10 +616,13 @@ export const MenuBar = memo(function MenuBar({
           <Button
             selected={isActive}
             variant="ghost"
+            size="sm"
             motion="none"
             key={key}
             type="button"
             data-tauri-drag-region="false"
+            aria-haspopup="menu"
+            aria-expanded={isActive}
             onClick={(e) => {
               if (isActive) {
                 closeMenu();
@@ -558,7 +635,6 @@ export const MenuBar = memo(function MenuBar({
                 openDropdown(key, e.currentTarget);
               }
             }}
-            className={``}
           >
             {label}
           </Button>
@@ -566,11 +642,11 @@ export const MenuBar = memo(function MenuBar({
       })}
 
       {activeMenu && menuAnchor ? (
-        <ExplorerMenu
+        <ContextMenu
           x={menuAnchor.x}
           y={menuAnchor.y}
           items={getMenuItems(activeMenu)}
-          ariaLabel={`${activeMenu} menu`}
+          ariaLabel={MENUS.find((menu) => menu.key === activeMenu)?.label}
           onPick={handlePick}
           onClose={closeMenu}
         />
@@ -578,3 +654,8 @@ export const MenuBar = memo(function MenuBar({
     </div>
   );
 });
+
+/** The workspace recreates most handlers per render; stable proxies let the memo hold. */
+export function MenuBar(props: Props) {
+  return <MemoMenuBar {...useStableHandlers(props)} />;
+}

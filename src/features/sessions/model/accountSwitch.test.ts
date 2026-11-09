@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { SWITCH_BUSY_STATUS, switchSessionAccount, type AccountSwitchDeps } from "./accountSwitch";
+import { switchSessionAccount, type AccountSwitchDeps } from "./accountSwitch";
 import { appendPreparingHandoff, planComposerSwitch, pendingHandoff } from "./handoff";
 import { newSession, type Session } from "./session";
 
@@ -24,7 +24,6 @@ function setup(session: Session | undefined, transfer?: AccountSwitchDeps["trans
     forget: vi.fn(async () => undefined),
     bind: vi.fn(),
     latest: vi.fn(() => state.session),
-    label: (_p: string, id: string) => `Label ${id}`,
     removing: vi.fn(() => false),
     ownsRequest: vi.fn(() => true),
   };
@@ -137,7 +136,7 @@ describe("switchSessionAccount", () => {
     s.deps.ownsRequest.mockReturnValue(false);
     expect(result.update(original)).toBe(original);
   });
-  it("silinen hesabın sağlayıcı geçmişi yoksa aynı konuşmayı bağlamıyla sürdürür", async () => {
+  it("continues the same conversation with its context when the deleted account has no provider history", async () => {
     const original = convo({ providerAccountId: "removed" });
     const s = setup(original, async () => false);
     const result = await run(s, "replacement");
@@ -157,7 +156,6 @@ describe("switchSessionAccount", () => {
     expect(result.kind).toBe("switched");
     if (result.kind !== "switched") return;
     expect(result.mode).toBe("transferred");
-    expect(result.status).toBe("Continuing with Label account-b");
     expect(s.deps.transfer).toHaveBeenCalledWith({
       provider: "claude",
       fromAccountId: "account-a",
@@ -189,7 +187,6 @@ describe("switchSessionAccount", () => {
     expect(result.kind === "switched" && result.mode).toBe("handoff");
     expect(s.deps.bind).not.toHaveBeenCalled();
     if (result.kind !== "switched") return;
-    expect(result.status).toContain("summary goes with your next message");
     const next = result.update(s.state.session!);
     expect(next.providerSessionId).toBeUndefined();
     expect(next.providerAccountId).toBe("account-b");
@@ -213,11 +210,32 @@ describe("switchSessionAccount", () => {
     expect(result.kind === "switched" && result.mode).toBe("handoff");
   });
 
-  it("refuses while a turn is running", async () => {
-    const s = setup(convo({ busy: true }));
-    expect(await run(s)).toEqual({ kind: "refused", status: SWITCH_BUSY_STATUS });
+  it("defers the pick while a turn is running, without touching the turn", async () => {
+    const busy = convo({ busy: true });
+    const s = setup(busy);
+    const result = await run(s);
+    expect(result.kind).toBe("deferred");
+    if (result.kind !== "deferred") return;
+    expect(result.update(busy)).toMatchObject({ nextProviderAccountId: "account-b" });
+    expect(result.update(busy).providerAccountId).toBe(busy.providerAccountId);
     expect(s.deps.transfer).not.toHaveBeenCalled();
     expect(s.deps.forget).not.toHaveBeenCalled();
+  });
+
+  it("withdraws a waiting pick when the running account is picked again", async () => {
+    const busy = convo({ busy: true, nextProviderAccountId: "account-b" });
+    const s = setup(busy);
+    const result = await run(s, "account-a");
+    expect(result.kind).toBe("deferred");
+    if (result.kind === "deferred")
+      expect(result.update(busy).nextProviderAccountId).toBeUndefined();
+  });
+
+  it("still applies the pick when cleanup of the old child fails", async () => {
+    const s = setup(convo());
+    s.deps.forget.mockRejectedValueOnce(new Error("busy"));
+    const result = await run(s);
+    expect(result.kind).toBe("switched");
   });
 
   it("refuses while a handoff is being prepared or the session is closing", async () => {
@@ -249,7 +267,6 @@ describe("switchSessionAccount", () => {
     expect(s.deps.bind).not.toHaveBeenCalled();
     expect(result.kind === "switched" && result.mode).toBe("account");
     if (result.kind !== "switched") return;
-    expect(result.status).toBeUndefined();
     const next = result.update(switched);
     expect(next.providerAccountId).toBe("account-a");
     expect(next.pendingSwitch).toEqual(plan.pending);

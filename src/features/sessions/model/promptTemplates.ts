@@ -69,6 +69,7 @@ function parse(raw: string | null): PromptTemplate[] {
 let cacheStorage: Storage | null = null;
 let cacheRaw: string | null | undefined;
 let cacheValue: PromptTemplate[] = [];
+const unavailableTemplates: PromptTemplate[] = [];
 
 /** Stable between calls while storage is unchanged, so it can back `useSyncExternalStore`. */
 export function loadPromptTemplates(): PromptTemplate[] {
@@ -81,7 +82,7 @@ export function loadPromptTemplates(): PromptTemplate[] {
     cacheValue = parse(raw);
     return cacheValue;
   } catch {
-    return [];
+    return unavailableTemplates;
   }
 }
 

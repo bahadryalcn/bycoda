@@ -33,14 +33,14 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("uses a single main-window fallback and never elects an unidentified window", async () => {
+it("holds every watcher when enumeration is unknown and never elects an unidentified window", async () => {
   mocks.windows.mockRejectedValue(new Error("Enumeration unavailable"));
   mocks.current
     .mockReturnValueOnce({ label: "main" })
     .mockReturnValueOnce({ label: "workspace-secondary" })
     .mockReturnValueOnce({ label: "quick-composer" });
   expect(await Promise.all([isLeadWindow(), isLeadWindow(), isLeadWindow()])).toEqual([
-    true,
+    false,
     false,
     false,
   ]);
@@ -50,19 +50,42 @@ it("uses a single main-window fallback and never elects an unidentified window",
   expect(await isLeadWindow()).toBe(false);
 });
 
-it("preserves normal window election and excludes quick composers", async () => {
+it("elects workspace windows and excludes every native auxiliary window kind", async () => {
   mocks.windows.mockResolvedValue([
     { label: "workspace-secondary" },
     { label: "quick-composer" },
+    { label: "quick-composer-git" },
+    { label: "desktop-control-indicator" },
+    { label: "voice-overlay-main" },
     { label: "main" },
   ]);
   mocks.current
     .mockReturnValueOnce({ label: "main" })
-    .mockReturnValueOnce({ label: "workspace-secondary" });
-  expect(await Promise.all([isLeadWindow(), isLeadWindow()])).toEqual([true, false]);
+    .mockReturnValueOnce({ label: "workspace-secondary" })
+    .mockReturnValueOnce({ label: "quick-composer" })
+    .mockReturnValueOnce({ label: "quick-composer-git" })
+    .mockReturnValueOnce({ label: "desktop-control-indicator" })
+    .mockReturnValueOnce({ label: "voice-overlay-main" });
+  expect(await Promise.all(Array.from({ length: 6 }, () => isLeadWindow()))).toEqual([
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+  ]);
 });
 
-it("announces a background transition once across two watcher instances while enumeration keeps failing", async () => {
+it("matches exact auxiliary labels and never elects an auxiliary on an empty list", async () => {
+  mocks.windows.mockResolvedValue([]);
+  mocks.current.mockReturnValueOnce({ label: "voice-overlay-main" });
+  expect(await isLeadWindow()).toBe(false);
+  mocks.windows.mockResolvedValue([{ label: "quick-composer-custom" }, { label: "main" }]);
+  mocks.current.mockReturnValueOnce({ label: "main" });
+  expect(await isLeadWindow()).toBe(true);
+});
+
+it("holds announcements during failed enumeration, then elects one watcher after recovery", async () => {
   vi.useFakeTimers();
   mocks.windows.mockRejectedValue(new Error("Enumeration unavailable"));
   let checks = 0;
@@ -86,6 +109,13 @@ it("announces a background transition once across two watcher instances while en
     root!.render(createElement(Fragment, null, createElement(Watcher), createElement(Watcher))),
   );
   expect(mocks.notify).not.toHaveBeenCalled();
+  mocks.tasks.mockResolvedValue([{ ...task, status: "review" }]);
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(mocks.tasks).not.toHaveBeenCalled();
+  expect(mocks.notify).not.toHaveBeenCalled();
+  mocks.windows.mockResolvedValue([{ label: "main" }, { label: "workspace-secondary" }]);
+  mocks.tasks.mockResolvedValue([task]);
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
   mocks.tasks.mockResolvedValue([{ ...task, status: "review" }]);
   await act(async () => vi.advanceTimersByTimeAsync(60_000));
   expect(mocks.notify).toHaveBeenCalledOnce();

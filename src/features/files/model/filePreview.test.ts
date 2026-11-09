@@ -1,10 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { canPreviewFile, formatFileSize, isImagePath, sniffImageMime, sniffDocumentImageMime } from "./filePreview";
+import {
+  canPreviewFile,
+  formatFileSize,
+  isImagePath,
+  sniffImageMime,
+  sniffDocumentImageMime,
+} from "./filePreview";
 
 it("validates document image bytes instead of trusting file extensions", () => {
   const bytes = (text: string) => new TextEncoder().encode(text);
-  expect(sniffDocumentImageMime("logo.svg", bytes('<svg xmlns="http://www.w3.org/2000/svg"></svg>'))).toBe("image/svg+xml");
-  expect(sniffDocumentImageMime("logo.svg", bytes("version https://git-lfs.github.com/spec/v1"))).toBeNull();
+  expect(
+    sniffDocumentImageMime("logo.svg", bytes('<svg xmlns="http://www.w3.org/2000/svg"></svg>')),
+  ).toBe("image/svg+xml");
+  expect(
+    sniffDocumentImageMime("logo.svg", bytes("version https://git-lfs.github.com/spec/v1")),
+  ).toBeNull();
   expect(sniffDocumentImageMime("logo.png", bytes("not an image"))).toBeNull();
   expect(sniffDocumentImageMime("text.txt", bytes("<svg></svg>"))).toBeNull();
 });

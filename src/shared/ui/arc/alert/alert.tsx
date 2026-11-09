@@ -16,13 +16,7 @@ import {
   type TargetAndTransition,
   type Transition,
 } from "motion/react";
-import {
-  Check,
-  AlertCircle as InfoCircle,
-  AlertCircle as WarningTriangle,
-  CircleX as XmarkCircle,
-  X,
-} from "../../icons";
+import { Check, AlertCircle as WarningCircle, CircleX as XmarkCircle, Info, X } from "../../icons";
 import { Button } from "../../Button";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./alert.module.css";
@@ -38,10 +32,17 @@ export interface AlertProps extends HTMLAttributes<HTMLDivElement> {
   open?: boolean;
   /** Shows a dismiss button. An uncontrolled alert collapses first, then calls this. */
   onDismiss?: () => void;
+  /** Compact one-line form without card chrome, for in-row errors and warnings. The icon keeps the tone readable without colour. */
+  inline?: boolean;
+  /** Recovery or follow-up controls, such as Retry. Rendered beside the copy and wrapped under it only when the row is too narrow; the caller keeps the operation. */
+  action?: ReactNode;
+  /** Accessible name of the dismiss control. Defaults to `Dismiss` plus the title. */
+  dismissLabel?: string;
 }
 type AlertBoxProps = Omit<AlertProps, "open"> & { reduce: boolean | null; animateIcon?: boolean };
 
-const icons = { info: InfoCircle, success: Check, warning: WarningTriangle, danger: XmarkCircle };
+/** Each tone has its own glyph, so the tone is never carried by colour alone. */
+const icons = { info: Info, success: Check, warning: WarningCircle, danger: XmarkCircle };
 const exitFast: Transition = {
   duration: motionTokens.duration.fast,
   ease: [...motionTokens.ease.standard],
@@ -147,8 +148,11 @@ function AlertBox({
   reduce,
   onDismiss,
   animateIcon = false,
+  inline = false,
   icon,
   role,
+  action,
+  dismissLabel,
   ...props
 }: AlertBoxProps) {
   const Icon = icons[tone];
@@ -168,7 +172,9 @@ function AlertBox({
   return (
     <div
       {...props}
-      className={[styles.alert, styles[tone], className].filter(Boolean).join(" ")}
+      className={[styles.alert, styles[tone], inline && styles.inline, className]
+        .filter(Boolean)
+        .join(" ")}
       role={role ?? (tone === "danger" ? "alert" : "status")}
     >
       {/* A new tone morphs its icon in place; a newly shown alert gives the icon a small settle. */}
@@ -187,48 +193,53 @@ function AlertBox({
             exit={reduce ? fadeOut : { ...iconIn, transition: exitFast }}
             transition={reduce ? enter : motionTokens.spring.snappy}
           >
-            {icon ?? <Icon width={18} height={18} aria-hidden="true" />}
+            {icon ?? <Icon width={inline ? 14 : 16} height={inline ? 14 : 16} aria-hidden="true" />}
           </Swap>
         </AnimatePresence>
       </motion.span>
-      {/* The copy column follows its content height, so longer or shorter messages never snap the alert. */}
-      <HeightFrame
-        className={styles.copy}
-        reduce={reduce}
-        morphKey={`${title}\n${hasDetails}\n${text ?? ""}`}
-      >
-        {title ? (
-          <strong className={styles.title}>
-            <AnimatePresence mode="popLayout" initial={false}>
-              <Swap key={title} className={styles.line} {...swap}>
-                {title}
-              </Swap>
-            </AnimatePresence>
-          </strong>
-        ) : null}
-        <AnimatePresence mode="popLayout" initial={false}>
-          {hasDetails && (
-            <motion.div key="details" className={styles.description} {...swap}>
-              {text === null ? (
-                children
-              ) : (
-                <AnimatePresence mode="popLayout" initial={false}>
-                  <Swap key={text} className={styles.line} {...swap}>
-                    {text}
-                  </Swap>
-                </AnimatePresence>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </HeightFrame>
+      {/* Copy and actions share one row; actions wrap below only when the row is too narrow. */}
+      <div className={styles.body}>
+        {/* The copy column follows its content height, so longer or shorter messages never snap the alert. */}
+        <HeightFrame
+          className={styles.copy}
+          reduce={reduce}
+          morphKey={`${title}\n${hasDetails}\n${text ?? ""}`}
+        >
+          {title ? (
+            <strong className={styles.title}>
+              <AnimatePresence mode="popLayout" initial={false}>
+                <Swap key={title} className={styles.line} {...swap}>
+                  {title}
+                </Swap>
+              </AnimatePresence>
+            </strong>
+          ) : null}
+          <AnimatePresence mode="popLayout" initial={false}>
+            {hasDetails && (
+              <motion.div key="details" className={styles.description} {...swap}>
+                {text === null ? (
+                  children
+                ) : (
+                  <AnimatePresence mode="popLayout" initial={false}>
+                    <Swap key={text} className={styles.line} {...swap}>
+                      {text}
+                    </Swap>
+                  </AnimatePresence>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </HeightFrame>
+        {action ? <div className={styles.action}>{action}</div> : null}
+      </div>
       {onDismiss && (
         <Button
           type="button"
           variant="ghost"
           size="sm"
           iconOnly
-          label={`Dismiss: ${title ?? ""}`}
+          className={styles.dismiss}
+          label={dismissLabel ?? (title ? `Dismiss: ${title}` : "Dismiss")}
           onClick={onDismiss}
         >
           <X width={16} height={16} strokeWidth={1.75} aria-hidden="true" />

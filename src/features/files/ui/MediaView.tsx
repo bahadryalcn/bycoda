@@ -1,5 +1,7 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Progress } from "../../../shared/ui/Progress";
 import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
@@ -48,13 +50,29 @@ export function MediaView({
   const paneVisible = useContext(MediaVisibilityContext);
   const [state, setState] = useState<State>({ status: "loading" });
   const [retry, setRetry] = useState(0);
-  const [actionError, setActionError] = useState<string>();
+  const openingRef = useRef(false);
+  const openGeneration = useRef(0);
   // Do not display the previous file's metadata during the render before effect cleanup.
   const source = useMemo(() => ({}), [path, readBytes, mimeType, retry, active]);
+  // Open-in-app state belongs to the file/source it started for; a new owner starts clean.
+  const actionOwner = useMemo(() => ({}), [externalPath, source]);
+  const [openingOwner, setOpeningOwner] = useState<object | null>(null);
+  const [actionFailure, setActionFailure] = useState<{ owner: object; message: string } | null>(
+    null,
+  );
+  const opening = openingOwner === actionOwner;
+  const actionError = actionFailure?.owner === actionOwner ? actionFailure.message : undefined;
   const isVideo = mediaKind(path) === "video";
   const player = useRef<HTMLMediaElement | null>(null);
   const generation = useRef(0);
   const localCopy = !!externalPath?.startsWith("remote://") && !localExplorerPath(externalPath);
+  useEffect(() => {
+    openGeneration.current += 1;
+    openingRef.current = false;
+    return () => {
+      openGeneration.current += 1;
+    };
+  }, [externalPath, source]);
   useEffect(() => {
     if (!active) {
       setState({ status: "loading" });
@@ -65,7 +83,6 @@ export function MediaView({
     let ownedUrl: string | undefined;
     let size: number | undefined;
     setState({ status: "loading" });
-    setActionError(undefined);
     void (async () => {
       try {
         let url: string;
@@ -161,7 +178,7 @@ export function MediaView({
           />
         ) : state.status === "error" ? (
           <DocumentMessage title={t("Couldn’t open {p0}", { p0: basename(path) })} error>
-            <span role="alert">{state.message}</span>
+            <InlineError>{state.message}</InlineError>
             <Button
               variant="ghost"
               motion="none"
@@ -187,10 +204,10 @@ export function MediaView({
           </div>
         )}
       </div>
-      <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-stroke px-3 py-2 text-xs text-[var(--ui-text-secondary)]">
-        <span className="min-w-0 flex-1 truncate" title={path}>
-          {basename(path)}
-        </span>
+      <footer className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-2 border-t border-(--ui-pane-border) px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
+        <OverflowTooltip label={path}>
+          <span className="min-w-0 flex-1 truncate">{basename(path)}</span>
+        </OverflowTooltip>
         {isVideo ? (
           <>
             {metadata?.width && metadata.height ? (
@@ -214,27 +231,37 @@ export function MediaView({
             variant="ghost"
             motion="none"
             type="button"
-            title={
+            loading={opening}
+            tooltip={
               localCopy
                 ? t("Changes to this local copy are not saved to the connected machine.")
                 : undefined
             }
             onClick={() => {
-              const request = generation.current;
-              setActionError(undefined);
-              void openPathWithDefaultApp(externalPath).catch((reason: unknown) => {
-                if (request === generation.current) setActionError(String(reason));
-              });
+              if (openingRef.current) return;
+              openingRef.current = true;
+              const request = openGeneration.current;
+              setOpeningOwner(actionOwner);
+              setActionFailure(null);
+              void (async () => {
+                try {
+                  await openPathWithDefaultApp(externalPath);
+                } catch (reason) {
+                  if (request === openGeneration.current)
+                    setActionFailure({ owner: actionOwner, message: String(reason) });
+                } finally {
+                  if (request === openGeneration.current) {
+                    openingRef.current = false;
+                    setOpeningOwner(null);
+                  }
+                }
+              })();
             }}
           >
             {t(localCopy ? "Open local copy" : "Open in default app")}
           </Button>
         ) : null}
-        {actionError ? (
-          <span role="alert" className="basis-full text-danger">
-            {actionError}
-          </span>
-        ) : null}
+        {actionError ? <InlineError className="basis-full">{actionError}</InlineError> : null}
       </footer>
     </div>
   );

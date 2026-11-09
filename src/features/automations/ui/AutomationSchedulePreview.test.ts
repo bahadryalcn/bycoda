@@ -5,7 +5,7 @@ import { expect, it, vi } from "vitest";
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 import { createAutomationTrigger } from "../model/automations";
-import { TriggerRow } from "./AutomationsView";
+import { TriggerRow } from "./TriggerEditor";
 
 it("uses host time and timezone for unsaved schedules and rejects a stale machine response", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

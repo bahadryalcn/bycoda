@@ -26,6 +26,7 @@ import {
   type Variants,
 } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
+import { scaleFor } from "./scale";
 import styles from "./bar-chart.module.css";
 
 export interface BarChartDatum {
@@ -36,7 +37,27 @@ export interface BarChartDatum {
   /** Short label under the bar, such as "T" or "Sep 14". Leave it out to keep the axis quiet. */
   axisLabel?: string;
   value: number;
+  /**
+   * Optional category of this bar (an index into `seriesLabels`). Categories beyond the first carry a surface pattern
+   * (diagonal, dots, cross-hatch) in the bar and the legend, so they differ by more than colour.
+   */
+  series?: number;
+  /**
+   * Grouped bars: one value per series (aligned with `seriesLabels`), drawn side by side inside this category.
+   * Pass the category total as `value`; it drives the headline and the screen-reader summary, while the bars use
+   * `values` and the scale follows the tallest of them. Leave it out for the single-series chart.
+   */
+  values?: number[];
 }
+
+/** Surface patterns by series index; the first category stays solid. */
+const SERIES_PATTERNS = ["solid", "diagonal", "dots", "cross"] as const;
+type SeriesPattern = (typeof SERIES_PATTERNS)[number];
+const patternOf = (series: number | undefined): SeriesPattern =>
+  SERIES_PATTERNS[Math.max(0, Math.trunc(series ?? 0)) % SERIES_PATTERNS.length]!;
+/** Series in a grouped category: the widest `values` list, or 1 for a single-series chart. */
+const lanesOf = (data: BarChartDatum[]) =>
+  Math.max(1, ...data.map((item) => item.values?.length ?? 0));
 
 /** Use a bar chart for one measure across a run of days, weeks, or months, when people compare each period against the rest and against the average. */
 export interface BarChartProps {
@@ -55,6 +76,10 @@ export interface BarChartProps {
   categoryLabel?: string;
   /** Draws the average as a reference line that springs to each new range. */
   showAverage?: boolean;
+  /** Names of the series: the categories used by `BarChartDatum.series`, or the lanes of `BarChartDatum.values`. When given, a legend with pattern swatches is drawn. */
+  seriesLabels?: string[];
+  /** Header of the series column in the data table read by screen readers. */
+  seriesColumnLabel?: string;
   /** Plot height in pixels. */
   height?: number;
   formatValue?: (value: number) => string;
@@ -100,21 +125,11 @@ const TOP = 12,
   FILL = 0.58,
   MAX_BAR = 28,
   RADIUS = 4;
+/** A grouped category fills more of its slot, with a hairline between its bars. */
+const GROUP_FILL = 0.8,
+  LANE_GAP = 2;
 const grouped = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
-
-/** Clean gridlines: the smallest step of 1, 2, 3, or 5 that covers the data in four rows or fewer, so shared steps survive a range change. */
-function scaleFor(max: number) {
-  const safe = Math.max(max, 1);
-  const magnitude = 10 ** Math.floor(Math.log10(safe / 4));
-  for (const factor of [1, 2, 3, 5, 10]) {
-    const step = factor * magnitude,
-      rows = Math.ceil(safe / step);
-    if (rows <= 4)
-      return { top: rows * step, ticks: Array.from({ length: rows + 1 }, (_, row) => row * step) };
-  }
-  return { top: safe, ticks: [0, safe] };
-}
 
 /** A column that grows from a square baseline to a softly rounded data end. */
 function barPath(x: number, w: number, h: number, base: number) {
@@ -154,6 +169,10 @@ function Bar({
   scale,
   height,
   reduced,
+  pattern,
+  patternBase,
+  lane,
+  lanes,
 }: {
   id: string;
   place: number;
@@ -165,6 +184,11 @@ function Bar({
   scale: MotionValue<number>;
   height: number;
   reduced: boolean;
+  pattern: SeriesPattern;
+  patternBase: string;
+  /** Position of this bar inside its category and the number of bars there; 0 of 1 is the single-series chart. */
+  lane: number;
+  lanes: number;
 }) {
   const [isPresent, safeToRemove] = usePresence();
   const amount = useMotionValue(0);
@@ -202,12 +226,34 @@ function Bar({
 
   const d = useTransform(() => {
     const w = frame.width.get() * frame.unit.get(),
-      size = Math.min(w * FILL, MAX_BAR),
-      center = centerOf(frame, slot.get());
+      gap = lanes > 1 ? LANE_GAP : 0,
+      size = Math.min(
+        lanes > 1 ? Math.max(1, (w * GROUP_FILL - gap * (lanes - 1)) / lanes) : w * FILL,
+        MAX_BAR,
+      ),
+      center = centerOf(frame, slot.get()) + (lane - (lanes - 1) / 2) * (size + gap);
     return barPath(center - size / 2, size, (amount.get() / scale.get()) * (height - TOP), height);
   });
   return (
-    <motion.path className={styles.bar} data-key={id} data-active={active || undefined} d={d} />
+    <>
+      <motion.path
+        className={styles.bar}
+        data-key={id}
+        data-lane={lanes > 1 ? lane : undefined}
+        data-pattern={pattern}
+        data-active={active || undefined}
+        d={d}
+      />
+      {pattern !== "solid" && (
+        <motion.path
+          className={styles.barPattern}
+          data-pattern-for={id}
+          d={d}
+          fill={`url(#${patternBase}-${pattern})`}
+          aria-hidden="true"
+        />
+      )}
+    </>
   );
 }
 
@@ -460,6 +506,8 @@ export function BarChart({
   averageLabel = "Daily average",
   valueLabel = "Total",
   categoryLabel = "Day",
+  seriesLabels,
+  seriesColumnLabel = "Series",
   showAverage = true,
   height = 176,
   formatValue = (value) => grouped.format(value),
@@ -469,11 +517,30 @@ export function BarChart({
   const plot = useRef<HTMLDivElement>(null);
   const inView = useInView(figure, { once: true, amount: 0.35 });
   const titleId = useId();
+  const patternBase = useId().replace(/:/g, "");
+  const lanes = useMemo(() => lanesOf(data), [data]);
+  const groupedBars = lanes > 1;
+  const usedPatterns = useMemo(
+    () =>
+      new Set(
+        (groupedBars
+          ? Array.from({ length: lanes }, (_, lane) => patternOf(lane))
+          : data.map((item) => patternOf(item.series))
+        ).filter((p) => p !== "solid"),
+      ),
+    [data, groupedBars, lanes],
+  );
+  const seriesName = (series: number | undefined) => seriesLabels?.[series ?? 0];
+  const valuesOf = (item: BarChartDatum) =>
+    groupedBars
+      ? Array.from({ length: lanes }, (_, lane) => item.values?.[lane] ?? 0)
+      : [item.value];
   const count = Math.max(data.length, 1),
     last = data.length - 1;
   const average = data.length ? data.reduce((sum, item) => sum + item.value, 0) / data.length : 0;
-  const peak = data.reduce((max, item) => Math.max(max, item.value), 0);
-  const { top, ticks } = useMemo(() => scaleFor(peak), [peak]);
+  const peak = data.reduce((max, item) => Math.max(max, ...valuesOf(item)), 0);
+  const whole = data.every((item) => Number.isInteger(item.value));
+  const { top, ticks } = useMemo(() => scaleFor(peak, whole), [peak, whole]);
   const signature = data.map((item) => item.key).join("|");
   const suffix = unit ? ` ${unit}` : "";
 
@@ -644,7 +711,11 @@ export function BarChart({
   const scrubbed = scrubbing ? data[index] : null;
   const reading = scrubbed ?? data[last];
   const valueText = reading
-    ? `${reading.label}: ${formatValue(reading.value)}${suffix}`
+    ? groupedBars
+      ? `${reading.label}: ${valuesOf(reading)
+          .map((value, lane) => `${seriesName(lane) ?? lane + 1} ${formatValue(value)}${suffix}`)
+          .join(", ")}`
+      : `${reading.label}: ${formatValue(reading.value)}${suffix}`
     : "No data";
   const highest = data.reduce<BarChartDatum | null>(
     (best, item) => (!best || item.value > best.value ? item : best),
@@ -656,7 +727,9 @@ export function BarChart({
   );
   const summary = `${label}, ${period}. ${averageLabel} ${formatValue(average)}${suffix}.${highest ? ` Highest ${highest.label}, ${formatValue(highest.value)}${suffix}.` : ""}${lowest && lowest !== highest ? ` Lowest ${lowest.label}, ${formatValue(lowest.value)}${suffix}.` : ""}`;
   const shown = inView || reduced;
-  const avoid = showAverage ? meanY : null;
+  // Grouped bars compare series against each other, so no single average line crosses them.
+  const averageLine = showAverage && !groupedBars;
+  const avoid = averageLine ? meanY : null;
 
   return (
     <figure ref={figure} className={styles.figure} aria-labelledby={titleId}>
@@ -686,6 +759,31 @@ export function BarChart({
       <div className={styles.chart} data-scrubbing={scrubbing || undefined}>
         <div ref={plot} className={styles.plot} style={{ height }}>
           <svg className={styles.svg} width="100%" height={height} role="img" aria-label={summary}>
+            {usedPatterns.size > 0 && (
+              <defs>
+                {[...usedPatterns].map((pattern) => (
+                  <pattern
+                    key={pattern}
+                    id={`${patternBase}-${pattern}`}
+                    width={6}
+                    height={6}
+                    patternUnits="userSpaceOnUse"
+                    patternTransform={pattern === "dots" ? undefined : "rotate(45)"}
+                  >
+                    {pattern === "dots" ? (
+                      <circle className={styles.patternMark} cx={3} cy={3} r={1.1} />
+                    ) : (
+                      <>
+                        <line className={styles.patternMark} x1={3} y1={0} x2={3} y2={6} />
+                        {pattern === "cross" && (
+                          <line className={styles.patternMark} x1={0} y1={3} x2={6} y2={3} />
+                        )}
+                      </>
+                    )}
+                  </pattern>
+                ))}
+              </defs>
+            )}
             <AnimatePresence initial={false}>
               {ticks.map((value) => (
                 <Gridline key={value} value={value} scale={scale} height={height} />
@@ -702,21 +800,27 @@ export function BarChart({
               transition={reduced ? { duration: 0 } : fadeFast}
             />
             <AnimatePresence initial={false}>
-              {data.map((item, at) => (
-                <Bar
-                  key={item.key}
-                  id={item.key}
-                  place={last - at}
-                  value={item.value}
-                  delay={known.fresh.get(item.key) ?? at * revealStep}
-                  shown={shown}
-                  active={index === at}
-                  frame={frame}
-                  scale={scale}
-                  height={height}
-                  reduced={reduced}
-                />
-              ))}
+              {data.flatMap((item, at) =>
+                valuesOf(item).map((value, lane) => (
+                  <Bar
+                    key={groupedBars ? `${item.key}:${lane}/${lanes}` : item.key}
+                    id={groupedBars ? `${item.key}:${lane}` : item.key}
+                    place={last - at}
+                    value={value}
+                    delay={known.fresh.get(item.key) ?? at * revealStep}
+                    shown={shown}
+                    active={index === at}
+                    frame={frame}
+                    scale={scale}
+                    height={height}
+                    reduced={reduced}
+                    pattern={patternOf(groupedBars ? lane : item.series)}
+                    patternBase={patternBase}
+                    lane={lane}
+                    lanes={groupedBars ? lanes : 1}
+                  />
+                )),
+              )}
             </AnimatePresence>
             <line
               className={styles.baseline}
@@ -725,7 +829,7 @@ export function BarChart({
               y1={height - 0.5}
               y2={height - 0.5}
             />
-            {showAverage && (
+            {averageLine && (
               <motion.line
                 className={styles.mean}
                 x1={0}
@@ -754,7 +858,7 @@ export function BarChart({
               />
             ))}
           </AnimatePresence>
-          {showAverage && (
+          {averageLine && (
             <motion.span
               className={styles.meanLabel}
               style={{ y: meanY }}
@@ -819,6 +923,16 @@ export function BarChart({
           }}
         />
       </div>
+      {seriesLabels && seriesLabels.length > 0 && (
+        <ul className={styles.legend} aria-label={seriesColumnLabel}>
+          {seriesLabels.map((name, series) => (
+            <li key={name} className={styles.legendItem}>
+              <span className={styles.swatch} data-pattern={patternOf(series)} aria-hidden="true" />
+              <span className={styles.legendName}>{name}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className={styles.srOnly}>
         <table>
           <caption>
@@ -828,18 +942,22 @@ export function BarChart({
             <tr>
               <th scope="col">{categoryLabel}</th>
               <th scope="col">{label}</th>
+              {seriesLabels && <th scope="col">{seriesColumnLabel}</th>}
             </tr>
           </thead>
           <tbody>
-            {data.map((item) => (
-              <tr key={item.key}>
-                <th scope="row">{item.label}</th>
-                <td>
-                  {formatValue(item.value)}
-                  {suffix}
-                </td>
-              </tr>
-            ))}
+            {data.flatMap((item) =>
+              valuesOf(item).map((value, lane) => (
+                <tr key={`${item.key}:${lane}`}>
+                  <th scope="row">{item.label}</th>
+                  <td>
+                    {formatValue(value)}
+                    {suffix}
+                  </td>
+                  {seriesLabels && <td>{seriesName(groupedBars ? lane : item.series)}</td>}
+                </tr>
+              )),
+            )}
           </tbody>
         </table>
       </div>

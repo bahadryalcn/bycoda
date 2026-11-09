@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
+import { useStableProps } from "../helpers/stableProps";
 import { leafIds, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import type { ActiveWorkspaceContext } from "../derived/useActiveWorkspaceContext";
 import type { useWorkspaceNavigation } from "../../hooks/useWorkspaceNavigation";
@@ -195,7 +196,9 @@ export function useSessionPaneProps({
     onApproval: useKeepSessionAction(onApproval, onKeepSession)!,
     onQuestionReply: useKeepSessionAction(onQuestionReply, onKeepSession)!,
     onQuestionInteraction: useKeepSessionAction(onQuestionInteraction, onKeepSession),
-    onOpenFile,
+    onOpenFile: useStableCallback<Parameters<P["onOpenFile"]>, void>((path, navigation, options) =>
+      onOpenFile(path, navigation, { ...options, placement: "pane" }),
+    ),
     onOpenDiff,
     onOpenPlan,
     onBuildPlan: useKeepSessionAction(onBuildPlan, onKeepSession)!,
@@ -210,7 +213,8 @@ export function useSessionPaneProps({
     onRunProjectAction: onRunSessionProjectAction,
   };
 
-  return { sessionPaneProps };
+  // One object while its values hold: the main area and inbox-ask panes are memoized on it.
+  return { sessionPaneProps: useStableProps(sessionPaneProps) };
 }
 
 /** Preserve callback identity and optionality while committing intentional session actions. */

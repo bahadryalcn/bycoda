@@ -1,7 +1,19 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Alert } from "../../../shared/ui/Alert";
-import { useEffect, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { Badge } from "../../../shared/ui/Badge";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
+import { t } from "../../../shared/i18n";
+import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Button } from "../../../shared/ui/Button";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -15,6 +27,7 @@ import { formatUsageTokens } from "../../providers/model/providerUsage";
 import { formatResetCountdown } from "../../providers/model/rateLimits";
 import { getSessions, useShellSessions } from "../../sessions/model/sessionsStore";
 import { pathKey } from "../../../shared/lib/paths";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { createBudgetReader } from "../model/usageBudgetReadings";
 import {
   deleteUsageBudget,
@@ -29,8 +42,13 @@ import {
   type UsageBudget,
 } from "../model/usageBudgets";
 
-const scopes = ["project", "session", "workspace"] as const;
-const scopeLabel = { project: "Project", session: "Session", workspace: "Workspace" };
+const scopes = ["machine", "project", "session", "workspace"] as const;
+const scopeLabel = {
+  machine: "This machine",
+  project: "Project",
+  session: "Session",
+  workspace: "Workspace",
+};
 const periodLabel = { all: "All time", weekly: "Rolling 7 days", fiveHour: "5 hours" };
 const subscribeNothing = () => () => {};
 const clientSnapshot = () => true;
@@ -42,7 +60,6 @@ export function UsageBudgets({ refresh = 0 }: { refresh?: number }) {
 }
 
 function UsageBudgetsContent({ refresh }: { refresh: number }) {
-  useLocale();
   const sessions = useShellSessions();
   const lock = useLockSnapshot();
   const [version, setVersion] = useState(0);
@@ -99,36 +116,73 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
 
   const pending = load?.version !== version || load?.refresh !== refresh;
   const budgets = load?.budgets ?? [];
-  const readings = pending ? {} : (load?.readings ?? {});
+  const readings = load?.readings ?? {};
   const error = writeError || load?.error;
   const now = load?.now ?? 0;
   const editorVisible =
     editor === "new" ||
     (editor &&
-      (editor.scope === "workspace"
-        ? !lock.lockedGroupIds.has(editor.target)
-        : !isProjectLockedIn(lock, editor.project ?? editor.target)));
+      (editor.scope === "machine"
+        ? true
+        : editor.scope === "workspace"
+          ? !lock.lockedGroupIds.has(editor.target)
+          : !isProjectLockedIn(lock, editor.project ?? editor.target)));
 
   const visible = budgets.filter((b) =>
-    b.scope === "workspace"
-      ? !lock.lockedGroupIds.has(b.target)
-      : b.scope === "project"
-        ? !isProjectLockedIn(lock, b.target)
-        : !!b.project && !isProjectLockedIn(lock, b.project),
+    b.scope === "machine"
+      ? true
+      : b.scope === "workspace"
+        ? !lock.lockedGroupIds.has(b.target)
+        : b.scope === "project"
+          ? !isProjectLockedIn(lock, b.target)
+          : !!b.project && !isProjectLockedIn(lock, b.project),
   );
   const remove = (id: string) => {
     try {
       deleteUsageBudget(id);
       setSaved(false);
       setError("");
-    } catch {
+    } catch (cause) {
       setError(t("Usage budget settings could not be saved."));
+      throw cause;
     }
   };
   return (
-    <section className="mb-7 space-y-3" aria-label={t("Usage budgets")} aria-busy={pending}>
+    <section className="space-y-2" aria-label={t("Usage budgets")} aria-busy={pending}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-medium">{t("Usage budgets")}</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-ui-body font-medium">{t("Usage budgets")}</h2>
+          <InfoPopover label={t("About usage budgets")}>
+            <p>
+              {t(
+                "Budgets apply to local desktop turns. Host tasks, remote sessions and other machines are not covered.",
+              )}
+            </p>
+            <p>
+              {t(
+                "Local rules can overlap. Their readings are not added together and provider quota percentages are never pooled.",
+              )}
+            </p>
+            <p>
+              {t(
+                "Token budgets include input, output and cache tokens from local records. Project and workspace reports use 15-minute buckets; boundary buckets are included. Session budgets require complete turn metrics. Percentage rules compare the selected account's weekly or 5-hour usage with your threshold; they do not reserve provider capacity. Missing or stale data blocks new turns only when blocking is enabled. Running turns can exceed a budget.",
+              )}
+            </p>
+          </InfoPopover>
+          {(["block", "monitor"] as const).map((action) => {
+            const count = visible.filter((budget) => budget.action === action).length;
+            return count ? (
+              <Badge key={action}>
+                {count} {t(action === "block" ? "Block new turns" : "Monitor only")}
+              </Badge>
+            ) : null;
+          })}
+          {!pending && !visible.length && !editor && !error ? (
+            <p className="text-ui-caption text-(--ui-text-secondary)">
+              {t("No usage budgets. Add a project, session or workspace budget.")}
+            </p>
+          ) : null}
+        </div>
         <Button
           ref={addButton}
           onClick={() => {
@@ -139,21 +193,8 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
           {t("Add budget")}
         </Button>
       </div>
-      <p className="text-xs text-content/60">
-        {t(
-          "Budgets apply to local desktop turns. Host tasks, remote sessions and other machines are not covered.",
-        )}
-      </p>
-      {error ? (
-        <Alert tone="danger" role="alert">
-          {error}
-        </Alert>
-      ) : null}
-      {saved ? (
-        <Alert tone="info" role="status">
-          {t("Budget saved")}
-        </Alert>
-      ) : null}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {saved ? <Alert tone="info">{t("Budget saved")}</Alert> : null}
       {editor && editorVisible ? (
         <BudgetEditor
           key={editor === "new" ? "new" : editor.id}
@@ -175,35 +216,43 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
           }}
         />
       ) : null}
-      {pending && !visible.length ? (
-        <Alert tone="info" role="status">
-          {t("Checking budget usage…")}
-        </Alert>
-      ) : null}
-      {!pending && !visible.length && !editor && !error ? (
-        <p className="text-xs text-content/60">
-          {t("No usage budgets. Add a project, session or workspace budget.")}
-        </p>
-      ) : null}
+      {pending && !visible.length ? <LoadingText>{t("Checking budget usage…")}</LoadingText> : null}
       {visible.map((budget) => {
-        const reading = readings[budget.id];
+        const reading =
+          budget.scope === "machine" &&
+          (lock.lockedGroupIds.size > 0 || (lock.lockedProjectKeys?.size ?? 0) > 0)
+            ? undefined
+            : readings[budget.id];
         const known = reading?.used != null;
         const format = (n: number) =>
           budget.metric === "tokens" ? formatUsageTokens(n) : `${n.toFixed(1)}%`;
         return (
-          <div key={budget.id} className="space-y-2 border-b border-stroke py-3">
+          <div
+            key={budget.id}
+            className="space-y-1.5 rounded-(--ui-radius-card) border border-(--ui-settings-group-border) px-3 py-2.5"
+          >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0">
-                <h3 className="break-words text-xs font-medium">{budget.label}</h3>
-                <p className="text-xs text-content/60">
+                <h3 className="break-words text-ui-caption font-medium">{budget.label}</h3>
+                <p className="text-ui-caption text-(--ui-text-secondary)">
                   {t(scopeLabel[budget.scope])} · {t(periodLabel[budget.period])} ·{" "}
                   {t(budget.action === "block" ? "Block new turns" : "Monitor only")}
+                </p>
+                <p className="break-all text-ui-caption text-(--ui-text-secondary)">
+                  {budget.scope === "machine"
+                    ? t("Supported local Codex and Claude usage")
+                    : budget.scope === "workspace"
+                      ? (loadProjectGroups().find((group) => group.id === budget.target)?.name ??
+                        t("Workspace unavailable"))
+                      : budget.scope === "session"
+                        ? (sessions.find((session) => session.id === budget.target)?.title ??
+                          budget.target)
+                        : budget.target}
                 </p>
               </div>
               <div className="flex gap-1">
                 <Button
                   variant="ghost"
-                  disabled={pending}
                   onClick={() => {
                     setEditor(budget);
                     setSaved(false);
@@ -211,9 +260,12 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                 >
                   {t("Edit")}
                 </Button>
-                <Button variant="ghost" disabled={pending} onClick={() => remove(budget.id)}>
-                  {t("Remove")}
-                </Button>
+                <ConfirmMorph
+                  label={t("Remove")}
+                  tone="danger"
+                  confirmMode="press"
+                  onConfirm={() => remove(budget.id)}
+                />
               </div>
             </div>
             {known && reading ? (
@@ -226,7 +278,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                   compact
                   showRemaining={false}
                 />
-                <p className="text-xs">
+                <p className="text-ui-caption">
                   {format(reading.used!)} / {format(reading.limit)} ·{" "}
                   {t(
                     reading.state === "exceeded"
@@ -238,7 +290,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                 </p>
               </>
             ) : (
-              <Alert tone="info" role="status">
+              <Alert tone="info">
                 {t(
                   pending
                     ? "Checking budget usage…"
@@ -246,8 +298,21 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                 )}
               </Alert>
             )}
+            {pending && known ? (
+              <LoadingText
+                presentation="text"
+                className="text-ui-caption text-(--ui-text-secondary)"
+              >
+                {t("Refreshing usage… Previous results remain visible.")}
+              </LoadingText>
+            ) : null}
+            {!pending && known ? (
+              <p className="text-ui-caption text-(--ui-text-secondary)">
+                {t("Last observed")}: <Timestamp value={now} format="relative" />
+              </p>
+            ) : null}
             {budget.metric === "accountPercent" ? (
-              <p className="text-xs text-content/60">
+              <p className="text-ui-caption text-(--ui-text-secondary)">
                 {budget.provider} ·{" "}
                 {providerAccounts(budget.provider).find((a) => a.id === budget.accountId)?.label ??
                   t("Account unavailable")}{" "}
@@ -259,19 +324,11 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
             ) : null}
             {budget.scope === "workspace" &&
             !loadProjectGroups().some((g) => g.id === budget.target) ? (
-              <p className="text-xs text-danger">{t("Workspace unavailable")}</p>
+              <p className="text-ui-caption text-danger">{t("Workspace unavailable")}</p>
             ) : null}
           </div>
         );
       })}
-      <details className="text-xs text-content/60">
-        <summary>{t("How budgets are measured")}</summary>
-        <p className="mt-2">
-          {t(
-            "Token budgets include input, output and cache tokens from local records. Project and workspace reports use 15-minute buckets; boundary buckets are included. Session budgets require complete turn metrics. Percentage rules compare the selected account's weekly or 5-hour usage with your threshold; they do not reserve provider capacity. Missing or stale data blocks new turns only when blocking is enabled. Running turns can exceed a budget.",
-          )}
-        </p>
-      </details>
     </section>
   );
 }
@@ -291,30 +348,73 @@ function BudgetEditor({
   onSave: () => void;
   onCancel: () => void;
 }) {
-  const [scope, setScope] = useState<BudgetScope>(budget?.scope ?? "project");
-  const [target, setTarget] = useState(budget?.target ?? "");
-  const [label, setLabel] = useState(budget?.label ?? "");
-  const [metric, setMetric] = useState<UsageBudget["metric"]>(budget?.metric ?? "tokens");
-  const [period, setPeriod] = useState<UsageBudget["period"]>(budget?.period ?? "weekly");
-  const [capacity, setCapacity] = useState(String(budget?.capacity ?? 1_000_000));
-  const [percent, setPercent] = useState(String(budget?.percent ?? 100));
-  const [action, setAction] = useState<UsageBudget["action"]>(budget?.action ?? "monitor");
+  const draftKey = `usage-budget:${budget?.id ?? "new"}`;
+  const [scope, setScope] = useRetainedState<BudgetScope>(
+    `${draftKey}:scope`,
+    budget?.scope ?? "project",
+  );
+  const [target, setTarget] = useRetainedState(`${draftKey}:target`, budget?.target ?? "");
+  const [label, setLabel] = useRetainedState(`${draftKey}:label`, budget?.label ?? "");
+  const [metric, setMetric] = useRetainedState<UsageBudget["metric"]>(
+    `${draftKey}:metric`,
+    budget?.metric ?? "tokens",
+  );
+  const [period, setPeriod] = useRetainedState<UsageBudget["period"]>(
+    `${draftKey}:period`,
+    budget?.period ?? "weekly",
+  );
+  const [capacity, setCapacity] = useRetainedState(
+    `${draftKey}:capacity`,
+    String(budget?.capacity ?? 1_000_000),
+  );
+  const [percent, setPercent] = useRetainedState(
+    `${draftKey}:percent`,
+    String(budget?.percent ?? 100),
+  );
+  const [action, setAction] = useRetainedState<UsageBudget["action"]>(
+    `${draftKey}:action`,
+    budget?.action ?? "monitor",
+  );
   const accounts = (["codex", "claude"] as const).flatMap(providerAccounts);
-  const [account, setAccount] = useState(budget ? `${budget.provider}:${budget.accountId}` : "");
+  const [account, setAccount] = useRetainedState(
+    `${draftKey}:account`,
+    budget ? `${budget.provider}:${budget.accountId}` : "",
+  );
   const [error, setError] = useState("");
   const targets =
-    scope === "project"
-      ? projectPaths.map((p) => ({ value: pathKey(p), label: p }))
-      : scope === "workspace"
-        ? groups.map((g) => ({ value: g.id, label: g.name }))
-        : sessions.map((s) => ({ value: s.id, label: `${s.title} · ${s.cwd}` }));
+    scope === "machine"
+      ? [{ value: "local", label: t("This machine") }]
+      : scope === "project"
+        ? projectPaths.map((p) => ({ value: pathKey(p), label: p }))
+        : scope === "workspace"
+          ? groups.map((g) => ({ value: g.id, label: g.name }))
+          : sessions.map((s) => ({ value: s.id, label: `${s.title} · ${s.cwd}` }));
   if (budget?.scope === scope && !targets.some((o) => o.value === budget.target)) {
     targets.push({ value: budget.target, label: budget.label });
   }
   const selectedAccount = accounts.find((a) => `${a.provider}:${a.id}` === account);
+  const effectiveLimit =
+    Number(capacity) > 0 &&
+    Number(percent) > 0 &&
+    Number(percent) <= 100 &&
+    Number.isFinite(Number(capacity) * Number(percent))
+      ? formatUsageTokens((Number(capacity) * Number(percent)) / 100)
+      : "—";
+  const clearDraft = (saved?: UsageBudget) => {
+    const value = budget ? (saved ?? budget) : undefined;
+    setScope(value?.scope ?? "project");
+    setTarget(value?.target ?? "");
+    setLabel(value?.label ?? "");
+    setMetric(value?.metric ?? "tokens");
+    setPeriod(value?.period ?? "weekly");
+    setCapacity(String(value?.capacity ?? 1_000_000));
+    setPercent(String(value?.percent ?? 100));
+    setAction(value?.action ?? "monitor");
+    setAccount(value ? `${value.provider}:${value.accountId}` : "");
+  };
   return (
     <form
-      className="space-y-3 border-y border-stroke py-3"
+      className="space-y-3 rounded-(--ui-radius-card) border border-(--ui-settings-group-border) p-3"
       onSubmit={(event) => {
         event.preventDefault();
         const next = normalizeBudget({
@@ -343,19 +443,37 @@ function BudgetEditor({
         }
         try {
           saveUsageBudget(next);
+          clearDraft(next);
           onSave();
         } catch {
           setError(t("Usage budget settings could not be saved."));
         }
       }}
     >
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-x-3 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
         <BudgetSelect
           label={t("Scope")}
+          info={
+            scope === "machine" ? (
+              <InfoPopover label={t("About machine budgets")}>
+                <p>
+                  {t(
+                    "Supported local Codex and Claude usage. Missing, unsupported or private data stays unknown; a blocking rule refuses new turns until usage can be verified.",
+                  )}
+                </p>
+                <p>
+                  {t(
+                    "Multiple profiles of one provider may share logs; common usage remains unknown until their sources can be verified.",
+                  )}
+                </p>
+              </InfoPopover>
+            ) : undefined
+          }
           value={scope}
           onChange={(v) => {
             setScope(v as BudgetScope);
-            setTarget("");
+            setTarget(v === "machine" ? "local" : "");
+            if (v === "machine") setMetric("tokens");
           }}
           options={scopes.map((s) => ({ value: s, label: t(scopeLabel[s]) }))}
         />
@@ -364,12 +482,6 @@ function BudgetEditor({
           value={target}
           onChange={setTarget}
           options={targets}
-        />
-        <TextField
-          label={t("Budget name")}
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          maxLength={200}
         />
         <BudgetSelect
           label={t("Measurement")}
@@ -380,17 +492,10 @@ function BudgetEditor({
           }}
           options={[
             { value: "tokens", label: t("Token allocation") },
-            { value: "accountPercent", label: t("Provider account threshold (%)") },
+            ...(scope === "machine"
+              ? []
+              : [{ value: "accountPercent", label: t("Provider account threshold (%)") }]),
           ]}
-        />
-        <BudgetSelect
-          label={t("Period")}
-          value={period}
-          onChange={(v) => setPeriod(v as UsageBudget["period"])}
-          options={(metric === "tokens"
-            ? (["all", "weekly", "fiveHour"] as const)
-            : (["weekly", "fiveHour"] as const)
-          ).map((p) => ({ value: p, label: t(periodLabel[p]) }))}
         />
         {metric === "tokens" ? (
           <NumberField
@@ -422,6 +527,15 @@ function BudgetEditor({
           onChange={(e) => setPercent(e.target.value)}
         />
         <BudgetSelect
+          label={t("Period")}
+          value={period}
+          onChange={(v) => setPeriod(v as UsageBudget["period"])}
+          options={(metric === "tokens"
+            ? (["all", "weekly", "fiveHour"] as const)
+            : (["weekly", "fiveHour"] as const)
+          ).map((p) => ({ value: p, label: t(periodLabel[p]) }))}
+        />
+        <BudgetSelect
           label={t("When reached")}
           value={action}
           onChange={(v) => setAction(v as UsageBudget["action"])}
@@ -430,27 +544,52 @@ function BudgetEditor({
             { value: "block", label: t("Block new turns") },
           ]}
         />
+        <TextField
+          label={t("Budget name (optional)")}
+          placeholder={
+            targets.find((option) => option.value === target)?.label ?? t("Budget target")
+          }
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          maxLength={200}
+        />
       </div>
-      {error ? (
-        <Alert tone="danger" role="alert">
-          {error}
-        </Alert>
-      ) : null}
-      <div className="flex gap-2">
+      {error ? <Alert tone="danger">{error}</Alert> : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-ui-secondary text-(--ui-text-secondary)">
+          {metric === "tokens"
+            ? `${t("Effective token limit")}: ${effectiveLimit}`
+            : `${t("Account usage threshold (%)")}: ${percent}%`}
+          {" · "}
+          {t(action === "block" ? "Block new turns" : "Monitor only")}
+        </p>
         <Button type="submit" variant="primary">
           {t("Save budget")}
         </Button>
-        <Button onClick={onCancel}>{t("Cancel")}</Button>
+        <Button
+          onClick={() => {
+            clearDraft();
+            onCancel();
+          }}
+        >
+          {t("Cancel")}
+        </Button>
       </div>
     </form>
   );
 }
 
-function BudgetSelect(props: ComponentProps<typeof SearchableSelect>) {
+function BudgetSelect({
+  info,
+  ...props
+}: ComponentProps<typeof SearchableSelect> & { info?: ReactNode }) {
   return (
     <div className="space-y-1">
-      <span className="text-xs font-medium">{props.label}</span>
-      <SearchableSelect {...props} />
+      <span className="flex items-center gap-1 text-ui-caption font-medium">
+        {props.label}
+        {info}
+      </span>
+      <SearchableSelect hideLabel {...props} />
     </div>
   );
 }

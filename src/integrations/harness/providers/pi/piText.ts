@@ -1,6 +1,20 @@
+import { captureTextInput, prepareTextProcess, runTextOperation } from "../../core/textSource";
+import { piTurnWriter } from "../turnWriter";
+import { killChild } from "../../core/child";
+import {
+  settleProviderRetirements,
+  observeProviderProbeCleanup,
+  createProviderRetirementLedger,
+  preserveProviderFailure,
+} from "../../core/providerRetirement";
 import { continueAfterFailure, settledTail } from "../../../../shared/lib/promiseQueue";
 import { modelsFor } from "../../../../features/sessions/model/models";
-import { killChild, spawnChild, unwatchChild, watchChild } from "../../core/child";
+import {
+  createChildProcessHandle,
+  spawnChild,
+  watchChild,
+  type ChildProcessHandle,
+} from "../../core/child";
 import { PiRpc } from "./piClient";
 import { OMP_FLAVOR, PI_FLAVOR, type PiFlavor } from "./piFlavor";
 import {
@@ -13,12 +27,15 @@ import {
   isPiThinkingLevel,
 } from "./piProtocol";
 import { abortTextPromptRace } from "../../core/abortTextPrompt";
-import type { HarnessEvent } from "../../core/types";
+import type { HarnessEvent, HarnessOperationContext } from "../../core/types";
+
+const retirements = createProviderRetirementLedger("pi.text", killChild);
 
 const INIT_TIMEOUT_MS = 15_000;
 const REQUEST_TIMEOUT_MS = 45_000;
 
 type LiveText = {
+  process: ChildProcessHandle;
   rpc: PiRpc;
   cwd: string;
   model?: string;
@@ -34,6 +51,7 @@ type LiveText = {
 
 type TextState = {
   live: LiveText | null;
+  starting: ChildProcessHandle | null;
   turns: Promise<void>;
 };
 
@@ -42,7 +60,7 @@ const stateByFlavor = new Map<string, TextState>();
 function stateFor(flavor: PiFlavor): TextState {
   let state = stateByFlavor.get(flavor.id);
   if (!state) {
-    state = { live: null, turns: Promise.resolve() };
+    state = { live: null, starting: null, turns: Promise.resolve() };
     stateByFlavor.set(flavor.id, state);
   }
   return state;
@@ -69,7 +87,7 @@ export function warmupText(flavor: PiFlavor, cwd: string): Promise<void> {
     await ensureLive(flavor, cwd);
   });
   state.turns = settledTail(run);
-  return run.catch(() => undefined);
+  return observeProviderProbeCleanup(run);
 }
 
 export async function runTextPrompt(
@@ -82,10 +100,14 @@ export async function runTextPrompt(
     timeoutMs?: number;
     signal?: AbortSignal;
     onEvent?: (event: HarnessEvent) => void;
+    operationContext?: HarnessOperationContext;
   },
 ): Promise<string> {
+  input = captureTextInput(input);
   const state = stateFor(flavor);
-  const run = state.turns.catch(() => undefined).then(() => promptOnLive(flavor, input));
+  const run = state.turns
+    .catch(() => undefined)
+    .then(() => runTextOperation(input.operationContext, () => promptOnLive(flavor, input)));
   state.turns = settledTail(run);
   return run;
 }
@@ -100,14 +122,46 @@ async function promptOnLive(
     timeoutMs?: number;
     signal?: AbortSignal;
     onEvent?: (event: HarnessEvent) => void;
+    operationContext?: HarnessOperationContext;
   },
 ): Promise<string> {
-  const session = await ensureLive(flavor, input.cwd, input.model, input.modelSettings);
+  input.signal?.throwIfAborted();
+  const session = await ensureLive(
+    flavor,
+    input.cwd,
+    input.model,
+    input.modelSettings,
+    input.operationContext,
+  );
+  let writer: Awaited<ReturnType<typeof piTurnWriter>>;
+  try {
+    prepareTextProcess(session.process, input.operationContext);
+    writer = await piTurnWriter(
+      session.process,
+      session.rpc,
+      input.operationContext?.nativeControlTurn,
+      input.operationContext,
+    );
+    input.signal?.throwIfAborted();
+  } catch (error) {
+    return preserveProviderFailure(error, dropLive(flavor, session));
+  }
+  const abortOriginal = async () => {
+    const original = await piTurnWriter(
+      session.process,
+      session.rpc,
+      input.operationContext?.nativeControlTurn,
+      input.operationContext,
+      "control",
+    );
+    return original.request({ type: "abort" });
+  };
   const timeoutMs = input.timeoutMs ?? REQUEST_TIMEOUT_MS;
   try {
-    await session.rpc.request({ type: "new_session" }).catch(() => undefined);
+    // Never continue with the previous utility conversation if reset failed.
+    await writer.request({ type: "new_session" });
     const thinking = input.modelSettings?.thinking;
-    await session.rpc
+    await writer
       .request({
         type: "set_thinking_level",
         level: isPiThinkingLevel(thinking) ? thinking : "off",
@@ -115,7 +169,7 @@ async function promptOnLive(
       .catch(() => undefined);
     const fast = input.modelSettings?.fast;
     if (flavor.id === "omp" && (fast === "true" || fast === "false")) {
-      await session.rpc
+      await writer
         .request({ type: "set_fast_mode", enabled: fast === "true" })
         .catch(() => undefined);
     }
@@ -129,12 +183,13 @@ async function promptOnLive(
       session.turnFailed = reject;
     });
 
+    const failOriginal = session.turnFailed;
     const abort = abortTextPromptRace(input.signal, () => {
-      session.turnFailed?.(new Error("By-the-way request cancelled"));
-      void session.rpc.request({ type: "abort" }).catch(() => undefined);
+      failOriginal?.(new Error("By-the-way request cancelled"));
+      void abortOriginal().catch(() => undefined);
     });
 
-    await session.rpc.request(buildPiPrompt({ text: input.prompt }), timeoutMs);
+    await writer.request(buildPiPrompt({ text: input.prompt }), timeoutMs);
     if (session.turnEndPending) finishTurn(session);
 
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -156,19 +211,18 @@ async function promptOnLive(
 
     let output = session.output.trim();
     if (!output) {
-      const rec = await session.rpc.request({ type: "get_last_assistant_text" }).catch(() => null);
+      const rec = await writer.request({ type: "get_last_assistant_text" }).catch(() => null);
       const text = asRecord(rec?.data)?.text;
       if (typeof text === "string") output = text.trim();
     }
     if (!output) throw new Error(`${flavor.label} returned empty output.`);
-    await dropLive(flavor);
+    await dropLive(flavor, session);
     return output;
   } catch (error) {
     session.turnDone = null;
     session.turnFailed = null;
-    await session.rpc.request({ type: "abort" }).catch(() => undefined);
-    await dropLive(flavor);
-    throw error;
+    await abortOriginal().catch(() => undefined);
+    return preserveProviderFailure(error, dropLive(flavor, session));
   } finally {
     session.collecting = false;
     session.onEvent = undefined;
@@ -182,11 +236,23 @@ async function ensureLive(
   cwd: string,
   requestedModel?: string,
   modelSettings?: Record<string, string>,
+  operationContext?: HarnessOperationContext,
 ): Promise<LiveText> {
   const state = stateFor(flavor);
   const model = pickTextModel(flavor, requestedModel);
   const settingsKey = modelSettingsKey(modelSettings);
   const current = state.live;
+  if (current && !current.closed) {
+    prepareTextProcess(current.process, operationContext);
+    await piTurnWriter(
+      current.process,
+      current.rpc,
+      operationContext?.nativeControlTurn,
+      operationContext,
+    );
+    if (state.live !== current || current.closed)
+      throw new Error(`${flavor.label} text generator stopped`);
+  }
   if (
     current &&
     !current.closed &&
@@ -196,8 +262,7 @@ async function ensureLive(
   ) {
     return current;
   }
-  await dropLive(flavor);
-  return startLive(flavor, cwd, model, modelSettings);
+  return startLive(flavor, cwd, model, modelSettings, operationContext);
 }
 
 async function startLive(
@@ -205,51 +270,68 @@ async function startLive(
   cwd: string,
   model?: string,
   modelSettings?: Record<string, string>,
+  operationContext?: HarnessOperationContext,
 ): Promise<LiveText> {
   const state = stateFor(flavor);
+  const previous = captureDrop(flavor);
+  let stopping = Promise.resolve();
   const childId = flavor.textChildId;
-  const { path } = await flavor.resolveBinary();
+  const textProcess = createChildProcessHandle(
+    childId,
+    operationContext?.nativeControlTurn,
+    operationContext?.nativeControlTurn ? undefined : "utility",
+  );
+  prepareTextProcess(textProcess, operationContext, true);
   const liveRef: { current: LiveText | null } = { current: null };
-  const rpc = new PiRpc(
-    childId,
-    (rec) => {
-      const current = liveRef.current;
-      if (current) handleFrame(current, rec);
-    },
-    flavor.label,
-  );
-  const session: LiveText = {
-    rpc,
-    cwd,
-    model,
-    settingsKey: modelSettingsKey(modelSettings),
-    collecting: false,
-    output: "",
-    closed: false,
-    turnDone: null,
-    turnFailed: null,
-    turnEndPending: false,
-    onEvent: undefined,
-  };
-  liveRef.current = session;
-
-  watchChild(
-    childId,
-    (line) => rpc.pushLine(line),
-    () => {
-      session.closed = true;
-      if (state.live === session) state.live = null;
-      const exited = new Error(`${flavor.label} text generator exited`);
-      rpc.close(exited);
-      session.turnFailed?.(exited);
-      session.turnDone = null;
-      session.turnFailed = null;
-    },
-  );
-
+  let admitted = false;
   try {
+    retirements.admitPending(textProcess);
+    admitted = true;
+    state.starting = textProcess;
+    stopping = dropLive(flavor, undefined, previous);
+    const rpc = new PiRpc(
+      textProcess,
+      (rec) => {
+        const current = liveRef.current;
+        if (current) handleFrame(current, rec);
+      },
+      flavor.label,
+    );
+    const session: LiveText = {
+      process: textProcess,
+      rpc,
+      cwd,
+      model,
+      settingsKey: modelSettingsKey(modelSettings),
+      collecting: false,
+      output: "",
+      closed: false,
+      turnDone: null,
+      turnFailed: null,
+      turnEndPending: false,
+      onEvent: undefined,
+    };
+    liveRef.current = session;
+
+    watchChild(
+      textProcess,
+      (line) => rpc.pushLine(line),
+      () => {
+        session.closed = true;
+        if (state.live === session) state.live = null;
+        const exited = new Error(`${flavor.label} text generator exited`);
+        rpc.close(exited);
+        session.turnFailed?.(exited);
+        session.turnDone = null;
+        session.turnFailed = null;
+      },
+    );
+
+    await stopping;
+    const { path } = await flavor.resolveBinary();
+    if (state.starting !== textProcess) throw new Error(`${flavor.label} text startup cancelled`);
     await spawnChild(
-      childId,
+      textProcess,
       path,
       buildPiSpawnArgs(flavor, {
         isolated: true,
@@ -259,23 +341,54 @@ async function startLive(
       undefined,
       flavor.id,
     );
-    await rpc.request({ type: "get_state" }, INIT_TIMEOUT_MS);
+    const writer = await piTurnWriter(
+      textProcess,
+      rpc,
+      operationContext?.nativeControlTurn,
+      operationContext,
+    );
+    await writer.request({ type: "get_state" }, INIT_TIMEOUT_MS);
+    if (state.starting !== textProcess || session.closed)
+      throw new Error(`${flavor.label} text startup cancelled`);
     state.live = session;
     return session;
   } catch (error) {
-    session.closed = true;
-    rpc.close(error instanceof Error ? error : new Error(String(error)));
-    unwatchChild(childId);
-    await killChild(childId).catch(() => undefined);
-    throw error;
+    const session = liveRef.current;
+    if (session) {
+      session.closed = true;
+      session.rpc.close(error instanceof Error ? error : new Error(String(error)));
+    }
+    return preserveProviderFailure(
+      error,
+      settleProviderRetirements([
+        stopping,
+        ...(admitted ? [retirements.retire([textProcess])] : []),
+      ]),
+    );
+  } finally {
+    if (state.starting === textProcess) state.starting = null;
   }
 }
 
-async function dropLive(flavor: PiFlavor): Promise<void> {
+function captureDrop(flavor: PiFlavor) {
   const state = stateFor(flavor);
-  const current = state.live;
-  const childId = flavor.textChildId;
-  state.live = null;
+  return {
+    current: state.live,
+    pending: state.starting,
+    cohort: retirements.cohort(flavor.textChildId),
+  };
+}
+async function dropLive(
+  flavor: PiFlavor,
+  expected?: LiveText,
+  captured?: ReturnType<typeof captureDrop>,
+): Promise<void> {
+  const state = stateFor(flavor);
+  const snapshot = captured ?? captureDrop(flavor);
+  const current = expected ?? snapshot.current;
+  const starting = expected ? null : snapshot.pending;
+  if (state.live === current) state.live = null;
+  if (state.starting === starting) state.starting = null;
   if (current) {
     current.closed = true;
     current.rpc.close();
@@ -283,8 +396,10 @@ async function dropLive(flavor: PiFlavor): Promise<void> {
     current.turnDone = null;
     current.turnFailed = null;
   }
-  unwatchChild(childId);
-  await killChild(childId).catch(() => undefined);
+  const original = new Set([current?.process, starting]);
+  await (expected
+    ? retirements.retire(original)
+    : settleProviderRetirements([snapshot.cohort.retire(), retirements.retire(original)]));
 }
 
 function handleFrame(session: LiveText, rec: Record<string, unknown>) {
@@ -326,6 +441,7 @@ export const runPiTextPrompt = (input: {
   timeoutMs?: number;
   signal?: AbortSignal;
   onEvent?: (event: HarnessEvent) => void;
+  operationContext?: HarnessOperationContext;
 }) => runTextPrompt(PI_FLAVOR, input);
 
 export const stopOmpTextPrompt = () => stopTextPrompt(OMP_FLAVOR);
@@ -338,4 +454,5 @@ export const runOmpTextPrompt = (input: {
   timeoutMs?: number;
   signal?: AbortSignal;
   onEvent?: (event: HarnessEvent) => void;
+  operationContext?: HarnessOperationContext;
 }) => runTextPrompt(OMP_FLAVOR, input);

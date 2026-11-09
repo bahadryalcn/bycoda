@@ -1,11 +1,11 @@
-import { remoteRequest as sendHostRequest } from "../../connections/model/connections";
-import { subscribeRemoteMachineChannel } from "../../connections/model/remoteMachineChannel";
-import { isLocalSyncMachine } from "../../connections/model/localSync";
+import { remoteRequest as sendHostRequest } from "../../connections/public/connections";
+import { subscribeRemoteMachineChannel } from "../../connections/public/remoteMachineChannel";
+import { isLocalSyncMachine } from "../../connections/public/localSync";
 import {
   isRemoteProvider,
   type HostProject,
   type RemoteMachine,
-} from "../../connections/model/protocol";
+} from "../../connections/public/protocol";
 import {
   backgroundMachineFor,
   backgroundMachines,
@@ -21,15 +21,26 @@ import {
 } from "../../automations/model/machineResults";
 import { machineProjects, machineCapabilities } from "../../automations/model/machineSnapshot";
 import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
+import {
+  defaultProviderAccountId,
+  supportsProviderAccounts,
+} from "../../providers/model/providerAccounts";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import { HOST_TASK_WORKSPACES, type TaskWorkspace } from "./taskWorkspace";
 import { HOST_CREW_TASKS } from "../../crews/model/crew";
+import { TASK_RUN_BUDGET_CAPABILITY, type TaskRunBudget } from "./taskBudget";
+import { TASK_PREFLIGHT_CAPABILITY, type TaskPreflightRequirement } from "./taskPreflight";
+import { projectKey } from "../../../shared/lib/paths";
 import {
   HOST_TASKS,
+  HOST_TASK_ACCOUNTS,
+  HOST_TASK_REVIEWER_PROFILE,
   HOST_TASKS_TODO,
   HOST_TASK_CONTINUATION,
   taskColumn,
   type HostTask,
   type HostTaskInput,
+  type HostTaskWireInput,
   type TaskColumn,
   type TaskStatus,
 } from "./hostTasks";
@@ -40,6 +51,7 @@ export const TASK_AGENT_ERROR = "This agent cannot run tasks in the background."
 
 /** A host task as this desktop shows it: on its machine, in its project. */
 export type BoardTask = HostTask & {
+  evaluationSupported?: boolean;
   machineId: string;
   machineName: string;
   /** How this desktop addresses the task's project. */
@@ -53,10 +65,17 @@ export type BoardTask = HostTask & {
 
 /** What the task form edits. A draft with an ID edits that task. */
 export type TaskDraft = {
+  budget?: TaskRunBudget;
+  preflightRequirements?: TaskPreflightRequirement[];
+  workflowId?: string;
+  workflowVersion?: number;
+  reviewerConfig?: HostTaskInput["reviewerConfig"];
   crewDefinitionId?: string;
   workspaceLocked?: boolean;
   workspace?: TaskWorkspace;
   id?: string;
+  /** Stable create receipt, separate from edit mode; retained by form spreads. */
+  creation?: { id: string; target?: string; attempted?: boolean };
   /** Explicit host selected by the owner; edits retain their original host. */
   machineId?: string;
   /** The status of the task being edited. */
@@ -65,12 +84,13 @@ export type TaskDraft = {
   prompt: string;
   cwd: string;
   harness: HarnessId;
+  providerAccountId?: string;
   model: string;
   modelSettings: Record<string, string>;
   runtimeMode: RuntimeMode;
   maxRunMinutes: number;
   /** Run on a new branch of its own when the project is a git repository. */
-  isolate: boolean;
+  isolate?: boolean;
   /** Empty for no check. */
   verifyCommand: string;
   review: boolean;
@@ -140,15 +160,21 @@ export function todoUnsupportedMessage(
 
 export function newTaskDraft(cwd: string, harness: HarnessId, model: string): TaskDraft {
   return {
+    creation: { id: crypto.randomUUID() },
     title: "",
     prompt: "",
     cwd,
     harness,
     model,
+    ...(!parseRemotePath(cwd) &&
+    supportsProviderAccounts(harness) &&
+    defaultProviderAccountId(harness) !== "default"
+      ? { providerAccountId: defaultProviderAccountId(harness) }
+      : {}),
     modelSettings: {},
     runtimeMode: "auto",
     maxRunMinutes: 0,
-    isolate: false,
+
     verifyCommand: "",
     review: false,
     autoMerge: false,
@@ -158,6 +184,12 @@ export function newTaskDraft(cwd: string, harness: HarnessId, model: string): Ta
 
 export function draftFromTask(task: BoardTask): TaskDraft {
   return {
+    ...(task.budget ? { budget: task.budget } : {}),
+    ...(task.preflightRequirements ? { preflightRequirements: task.preflightRequirements } : {}),
+    ...(task.workflowId
+      ? { workflowId: task.workflowId, workflowVersion: task.workflowVersion }
+      : {}),
+    ...(task.reviewerConfig ? { reviewerConfig: task.reviewerConfig } : {}),
     ...(task.crewDefinitionId ? { crewDefinitionId: task.crewDefinitionId } : {}),
     id: task.id,
     machineId: task.machineId,
@@ -166,11 +198,12 @@ export function draftFromTask(task: BoardTask): TaskDraft {
     prompt: task.prompt,
     cwd: task.cwd,
     harness: task.harness,
+    providerAccountId: task.providerAccountId,
     model: task.model,
     modelSettings: task.modelSettings,
     runtimeMode: task.runtimeMode,
     maxRunMinutes: task.maxRunMinutes,
-    isolate: task.isolate !== false,
+    isolate: task.isolate,
     workspace: task.workspace,
     workspaceLocked: Boolean(task.branch || task.sessionId),
     verifyCommand: task.verifyCommand ?? "",
@@ -202,17 +235,45 @@ export function boardTasksFromHost(
   });
 }
 
-/** What the host stores for a draft. Throws when the draft's agent cannot run
+function clearsReviewerProfile(options: {
+  id?: string;
+  reviewerConfig?: HostTaskInput["reviewerConfig"];
+}): boolean {
+  return Boolean(
+    options.id &&
+    Object.prototype.hasOwnProperty.call(options, "reviewerConfig") &&
+    options.reviewerConfig === undefined,
+  );
+}
+
+/** What the host receives for a draft. Throws when the draft's agent cannot run
  * on a host. */
-export function hostTaskFromDraft(draft: TaskDraft, id: string, projectId: string): HostTaskInput {
+export function hostTaskFromDraft(
+  draft: TaskDraft,
+  id: string,
+  projectId: string,
+): HostTaskWireInput {
   if (!isRemoteProvider(draft.harness)) throw new Error(TASK_AGENT_ERROR);
   return {
     id,
+    ...("budget" in draft ? { budget: draft.budget ?? {} } : {}),
+    ...(draft.preflightRequirements ? { preflightRequirements: draft.preflightRequirements } : {}),
+    ...(draft.workflowId
+      ? { workflowId: draft.workflowId, workflowVersion: draft.workflowVersion }
+      : {}),
+    ...(draft.reviewerConfig
+      ? { reviewerConfig: draft.reviewerConfig }
+      : clearsReviewerProfile(draft)
+        ? { reviewerConfig: null }
+        : {}),
     ...(draft.crewDefinitionId ? { crewDefinitionId: draft.crewDefinitionId } : {}),
     title: draft.title,
     prompt: draft.prompt,
     projectId,
     harness: draft.harness,
+    ...(draft.providerAccountId === undefined
+      ? {}
+      : { providerAccountId: draft.providerAccountId }),
     model: draft.model,
     modelSettings: draft.modelSettings,
     runtimeMode: draft.runtimeMode,
@@ -235,33 +296,30 @@ export function tasksInColumn(tasks: readonly BoardTask[], status: TaskColumn): 
     : column.sort((a, b) => (b.completedAt ?? b.updatedAt) - (a.completedAt ?? a.updatedAt));
 }
 
-/** A span of time as a card shows it: "under 1m", "12m", "3h 5m", "2d 4h". */
-export function formatTaskSpan(ms: number): string {
-  const minutes = Math.floor(Math.max(0, ms) / 60_000);
-  if (minutes < 1) return "under 1m";
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return minutes % 60 ? `${hours}h ${minutes % 60}m` : `${hours}h`;
-  return hours % 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${Math.floor(hours / 24)}d`;
-}
-
-/** When a card's task got to where it is: how long it has waited or run, or
- * how long ago it finished. */
-export function taskTimeLabel(
-  task: Pick<HostTask, "status" | "createdAt" | "updatedAt" | "startedAt" | "completedAt">,
-  now: number,
-): string {
-  if (task.status === "todo") return `Added ${formatTaskSpan(now - task.createdAt)} ago`;
-  if (task.status === "queued") return `Waiting ${formatTaskSpan(now - task.updatedAt)}`;
-  if (task.status === "running")
-    return `Running ${formatTaskSpan(now - (task.startedAt ?? task.updatedAt))}`;
-  if (task.status === "verifying") return `Verifying ${formatTaskSpan(now - task.updatedAt)}`;
-  return `${task.status === "blocked" ? "Stopped" : "Finished"} ${formatTaskSpan(
-    now - (task.completedAt ?? task.updatedAt),
-  )} ago`;
-}
+export { formatTaskSpan, taskTimeLabel } from "./taskTime";
 
 const lastBoardTasks: LastGoodLists<BoardTask> = new Map();
+
+/** Keeps a machine's last-known tasks in step with mutations its host
+ * acknowledged, so a later failed read cannot show the earlier board again. */
+export function rememberBoardTasks(saved: readonly BoardTask[], removed?: BoardTask): void {
+  for (const machineId of new Set(saved.map((task) => task.machineId))) {
+    const known = lastBoardTasks.get(machineId);
+    if (!known) continue;
+    const mine = saved.filter((task) => task.machineId === machineId);
+    lastBoardTasks.set(machineId, [
+      ...known.filter((entry) => !mine.some((task) => task.id === entry.id)),
+      ...mine,
+    ]);
+  }
+  if (!removed) return;
+  const known = lastBoardTasks.get(removed.machineId);
+  if (known)
+    lastBoardTasks.set(
+      removed.machineId,
+      known.filter((entry) => entry.id !== removed.id || entry.projectId !== removed.projectId),
+    );
+}
 const pendingBoardTaskReads = new Map<string, Promise<BoardTask[]>>();
 const taskReadRevisions = new Map<string, number>();
 const watchedTasks = new Map<
@@ -410,6 +468,7 @@ export async function listBoardTaskResults(
               reviewRecheckSupported: capabilities.includes("tasks.review-recheck"),
               blockedTakeoverSupported: capabilities.includes("tasks.blocked-takeover"),
               workspaceControlsSupported: capabilities.includes(HOST_TASK_WORKSPACES),
+              evaluationSupported: capabilities.includes("tasks.evaluation"),
             }));
           }
           throw new Error(
@@ -447,9 +506,11 @@ export async function saveTask(
   status: "todo" | "queued" = "queued",
 ): Promise<BoardTask> {
   const machine = taskMachineFor(machines, draft.cwd, draft.machineId);
+  await requireTaskAccount(machine, draft.providerAccountId);
   if (draft.crewDefinitionId && !(await machineCapabilities(machine)).includes(HOST_CREW_TASKS))
     throw new Error("Update this project's host to run tasks with a crew.");
   await requireTaskContinuation(machine, !draft.crewDefinitionId && draft.continueUntilDone);
+  await requireTaskHarnessCapabilities(machine, draft);
   await requireTaskWorkspaces(machine, !draft.crewDefinitionId && Boolean(draft.workspace));
   if (status === "todo" && !draft.id) {
     // An older host would queue the item and start it.
@@ -462,12 +523,44 @@ export async function saveTask(
     if (unsupported) throw new Error(unsupported);
   }
   const project = await hostProjectFor(machine, draft.cwd);
+  // Resolve optional presentation metadata before the write: once saved, the
+  // receipt must survive a later descriptor outage.
+  const workspaceControlsSupported = (await machineCapabilities(machine)).includes(
+    HOST_TASK_WORKSPACES,
+  );
+  const creation = draft.id ? undefined : (draft.creation ??= { id: crypto.randomUUID() });
+  if (creation) {
+    const target = JSON.stringify([machine.id, machine.environmentId, project.id]);
+    if (creation.target && creation.target !== target)
+      throw new Error(
+        "Resolve the previous task creation on its original machine before changing projects.",
+      );
+    if (creation.attempted) {
+      // A failed reply is not evidence that the Host did not persist the task.
+      // Failed reconciliation must not authorize another write.
+      const existing = await remoteRequest<HostTask[]>(machine.id, "tasks.list", {
+        projectId: project.id,
+      });
+      if (!Array.isArray(existing))
+        throw new Error("The previous task creation could not be checked.");
+      const recovered = existing.find(
+        (task) => task.id === creation.id && task.projectId === project.id,
+      );
+      if (recovered)
+        return {
+          ...boardTaskFromHost(machine, hostProjectCwd(machine, project), recovered),
+          workspaceControlsSupported,
+        };
+    }
+    creation.target = target;
+    creation.attempted = true;
+  }
   const saved = await remoteRequest<HostTask>(
     machine.id,
     "tasks.save",
     {
       task: {
-        ...hostTaskFromDraft(draft, draft.id ?? crypto.randomUUID(), project.id),
+        ...hostTaskFromDraft(draft, draft.id ?? creation!.id, project.id),
         // An older host starts every new task queued, and ignores this.
         ...(draft.id ? {} : { status }),
       },
@@ -477,7 +570,7 @@ export async function saveTask(
   );
   return {
     ...boardTaskFromHost(machine, hostProjectCwd(machine, project), saved),
-    workspaceControlsSupported: (await machineCapabilities(machine)).includes(HOST_TASK_WORKSPACES),
+    workspaceControlsSupported,
   };
 }
 
@@ -496,6 +589,18 @@ export function taskMachineFor(
   return machine;
 }
 
+export async function requireTaskAccount(
+  machine: RemoteMachine,
+  accountId?: string,
+): Promise<void> {
+  if (
+    accountId &&
+    accountId !== "default" &&
+    !(await machineCapabilities(machine)).includes(HOST_TASK_ACCOUNTS)
+  )
+    throw new Error("Update the selected host to run tasks with the selected provider account.");
+}
+
 export async function requireTaskContinuation(
   machine: RemoteMachine,
   enabled: boolean,
@@ -504,6 +609,69 @@ export async function requireTaskContinuation(
     throw new Error(
       `Update bycoda Host on ${isLocalSyncMachine(machine) ? "this computer" : machine.name} to continue tasks until complete.`,
     );
+}
+
+export async function requireTaskHarnessCapabilities(
+  machine: RemoteMachine,
+  options: {
+    id?: string;
+    budget?: TaskRunBudget;
+    preflightRequirements?: TaskPreflightRequirement[];
+    reviewerConfig?: HostTaskInput["reviewerConfig"];
+  },
+): Promise<void> {
+  const clearReviewer = clearsReviewerProfile(options);
+  if (!options.budget && !options.preflightRequirements?.length && !clearReviewer) return;
+  const capabilities = await machineCapabilities(machine);
+  if (clearReviewer && !capabilities.includes(HOST_TASK_REVIEWER_PROFILE))
+    throw new Error(TASK_MACHINE_ERROR);
+  if (options.budget && !capabilities.includes(TASK_RUN_BUDGET_CAPABILITY))
+    throw new Error("Update the selected host to enforce the total run budget.");
+  if (options.preflightRequirements?.length && !capabilities.includes(TASK_PREFLIGHT_CAPABILITY))
+    throw new Error("Update the selected host to check preparation requirements.");
+}
+
+export async function preflightTaskDraft(machines: readonly RemoteMachine[], draft: TaskDraft) {
+  const machine = taskMachineFor(machines, draft.cwd, draft.machineId);
+  const capabilities = await machineCapabilities(machine);
+  if (!capabilities.includes(TASK_PREFLIGHT_CAPABILITY))
+    throw new Error("Update the selected host to check preparation requirements.");
+  const path = parseRemotePath(draft.cwd)?.hostPath ?? draft.cwd;
+  const project = (await machineProjects(machine)).find(
+    (entry) => projectKey(entry.cwd) === projectKey(path),
+  );
+  if (!project) throw new Error("Choose a registered project before checking preparation.");
+  return sendHostRequest<import("./taskPreflight").TaskPreflightReport>(
+    machine.id,
+    "tasks.preflight",
+    {
+      task: hostTaskFromDraft(
+        { ...draft, title: draft.title.trim() || "Preparation" },
+        draft.id ?? "preflight",
+        project.id,
+      ),
+    },
+  );
+}
+
+export async function recordTaskEvaluation(
+  task: BoardTask,
+  evaluation: { accepted: boolean; reviewMinutes: number; corrections: number },
+): Promise<BoardTask> {
+  return updatedBoardTask(
+    task,
+    await sendHostRequest<HostTask>(
+      task.machineId,
+      "tasks.evaluation.save",
+      {
+        taskId: task.id,
+        expectedUpdatedAt: task.updatedAt,
+        evaluation,
+      },
+      false,
+      true,
+    ),
+  );
 }
 
 function updatedBoardTask(task: BoardTask, updated: HostTask): BoardTask {
@@ -515,6 +683,7 @@ function updatedBoardTask(task: BoardTask, updated: HostTask): BoardTask {
     reviewRecheckSupported: task.reviewRecheckSupported,
     blockedTakeoverSupported: task.blockedTakeoverSupported,
     workspaceControlsSupported: task.workspaceControlsSupported,
+    evaluationSupported: task.evaluationSupported,
   };
 }
 
@@ -633,7 +802,7 @@ export async function deleteTask(task: BoardTask, discard = false): Promise<void
   await remoteRequest(
     task.machineId,
     "tasks.delete",
-    { taskId: task.id, ...(discard ? { discard: true } : {}) },
+    { taskId: task.id, expectedUpdatedAt: task.updatedAt, ...(discard ? { discard: true } : {}) },
     false,
     true,
   );

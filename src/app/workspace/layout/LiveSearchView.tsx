@@ -5,8 +5,10 @@ import {
   isTextOnlyChange,
 } from "../../../features/sessions/model/sessionsStore";
 import { useLocale } from "../../../shared/i18n";
+import { NavigationBoundary } from "../../shell/NavigationBoundary";
 import { SearchView } from "../surfaces/lazySurfaces";
 import { type ComponentProps, useMemo } from "react";
+import { isUserConversation } from "../../../shared/model/host-contracts/delegation";
 
 /** Search adopts accumulated streamed text with the next structural update. */
 export function LiveSearchView({
@@ -19,8 +21,17 @@ export function LiveSearchView({
   const live = useSessionsSelector((sessions) => sessions, isTextOnlyChange);
   const sessions = useMemo(
     () =>
-      live.filter((session) => !session.inboxAsk && !isProjectLockedIn(lockSnapshot, session.cwd)),
+      live.filter(
+        (session) =>
+          !session.inboxAsk &&
+          isUserConversation(session) &&
+          !isProjectLockedIn(lockSnapshot, session.cwd),
+      ),
     [live, lockSnapshot],
   );
-  return <SearchView {...props} sessions={sessions} />;
+  return (
+    <NavigationBoundary name="Search" onBack={props.onClose}>
+      <SearchView {...props} sessions={sessions} />
+    </NavigationBoundary>
+  );
 }

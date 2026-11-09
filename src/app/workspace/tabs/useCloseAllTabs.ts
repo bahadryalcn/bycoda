@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { confirmCloseTerminals } from "../../../features/terminal/model/terminalClose";
 import {
   closeSurfacePanes,
@@ -19,6 +14,7 @@ import {
 import { newSession, type Session } from "../../../features/sessions/model/session";
 import { confirmWorkspaceClose } from "../../model/closeConfirmation";
 import { confirmDiscardUnsaved } from "../helpers/appHelpers";
+import { t } from "../../../shared/i18n";
 import type { useCloseTabActions } from "./useCloseTabActions";
 
 export interface CloseAllTabsDeps {
@@ -55,7 +51,6 @@ export function useCloseAllTabs({
   setSessions,
   setComposerFocused,
 }: CloseAllTabsDeps) {
-
   const onCloseAllTabs = useCallback(() => {
     const tab = tabsRef.current.find((entry) => entry.id === activeTabIdRef.current);
     if (!tab) return;
@@ -119,7 +114,11 @@ export function useCloseAllTabs({
 
       void (async () => {
         if (unsaved.length > 0) {
-          const ok = await confirmDiscardUnsaved("Close all open files with unsaved changes?");
+          const ok = await confirmDiscardUnsaved({
+            title: t("Close all open files without saving?"),
+            confirmLabel: t("Discard and close"),
+            files: unsaved,
+          });
           if (!ok) return;
         }
         finishClose();
@@ -152,7 +151,12 @@ export function useCloseAllTabs({
       if (
         !(await confirmWorkspaceClose(
           unsaved.length > 0
-            ? () => confirmDiscardUnsaved("Close all tabs with unsaved files?")
+            ? () =>
+                confirmDiscardUnsaved({
+                  title: t("Close all tabs with unsaved files?"),
+                  confirmLabel: t("Discard and close"),
+                  files: unsaved,
+                })
             : undefined,
           terminals.length > 0 ? () => confirmCloseTerminals(terminals) : undefined,
         ))

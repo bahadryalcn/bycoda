@@ -1,8 +1,8 @@
 import { Alert } from "../../../shared/ui/Alert";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { RefreshCw, X } from "../../../shared/ui/icons";
+import { Play, X } from "../../../shared/ui/icons";
 import { startLocalHost, useLocalHostState } from "../model/localHostService";
 
 /** Starts this computer's stopped host; reports the reason when it cannot. */
@@ -36,7 +36,7 @@ export function LocalHostStartButton({
       size="sm"
       loading={starting}
       loadingLabel={t("Starting host…")}
-      startIcon={<RefreshCw className="size-3.5" aria-hidden />}
+      startIcon={<Play className="icon-sm" aria-hidden />}
       onClick={() => void start()}
     >
       {t("Start host")}
@@ -51,13 +51,15 @@ export function useLocalHostDownNotice() {
   const [error, setError] = useState<string>();
   const [starting, setStarting] = useState(false);
 
-  // Show it again the next time the host stops.
-  useEffect(() => {
+  const [seenState, setSeenState] = useState(state);
+  // Show it again the next time the host stops (adjusted during render).
+  if (seenState !== state) {
+    setSeenState(state);
     if (state !== "stopped") {
       setHidden(false);
       setError(undefined);
     }
-  }, [state]);
+  }
 
   const start = async () => {
     if (starting) return;
@@ -89,7 +91,7 @@ export function LocalHostDownNotice({
 }) {
   useLocale();
   return (
-    <Alert role="alert" tone="warning">
+    <Alert tone="warning">
       <div className="min-w-0 flex-1">
         <p className="font-medium">{t("The host on this computer is not running.")}</p>
         <p className="ui-secondary-text mbs-0.5 leading-relaxed">
@@ -103,21 +105,14 @@ export function LocalHostDownNotice({
           size="sm"
           loading={notice.starting}
           loadingLabel={t("Starting host…")}
-          startIcon={<RefreshCw className="size-3.5" aria-hidden />}
+          startIcon={<Play className="icon-sm" aria-hidden />}
           onClick={() => void notice.start()}
         >
           {t("Start host")}
         </Button>
       </div>
-      <Button
-        iconOnly
-        variant="ghost"
-        size="sm"
-        label={t("Dismiss")}
-        tooltip={t("Dismiss")}
-        onClick={notice.dismiss}
-      >
-        <X className="size-3.5" aria-hidden />
+      <Button iconOnly variant="ghost" size="sm" label={t("Dismiss")} onClick={notice.dismiss}>
+        <X className="icon-sm" aria-hidden />
       </Button>
     </Alert>
   );

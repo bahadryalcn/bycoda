@@ -3,11 +3,14 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { pathKey, prettyCwd, isEqualOrInside } from "../../../shared/lib/paths";
 import { gitDiffIndex, type GitDiffIndex } from "../../../platform/tauri/fs";
 import { Button } from "../../../shared/ui/Button";
-import { Modal } from "../../../shared/ui/Modal";
+import { ConfirmConsequences } from "../../../shared/ui/ConfirmDialog";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { listWorktrees, type Worktree, type RemoveWorktree } from "../model/worktrees";
 import type { WorktreeManagementRequest } from "../model/worktreeManagement";
 import { GitFeedback, GitLoading } from "./GitFeedback";
+import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 
 /** A checkout-scoped confirmation; removal stays owned by the app and keeps sessions. */
 export function QuickDeleteWorktreeDialog({
@@ -79,16 +82,46 @@ export function QuickDeleteWorktreeDialog({
       ? t("Create a branch before deleting this detached worktree")
       : undefined;
   const ready = !!tree && !blocked && (!!index || tree.missing);
+  const remove = async () => {
+    if (!tree || !ready || busy) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await onRemove(request.cwd, tree.path, true, true);
+      onClose();
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <Modal
       languageDomain="git"
       title={t("Delete worktree?")}
       size="sm"
+      initialFocus="[data-delete-worktree-cancel]"
       onClose={() => {
         if (!busy) onClose();
       }}
+      footer={
+        <ModalActions>
+          <Button variant="ghost" data-delete-worktree-cancel="" disabled={busy} onClick={onClose}>
+            {t("Cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            tone="danger"
+            loading={busy}
+            disabled={!ready || !!error}
+            onClick={() => void remove()}
+          >
+            {t("Delete worktree")}
+          </Button>
+        </ModalActions>
+      }
     >
-      <div className="flex min-w-0 flex-col gap-3 p-4 text-[12px]">
+      <div className="flex min-w-0 flex-col gap-3 text-ui-caption">
         {!request.deletePath && trees ? (
           <SearchableSelect
             label={t("Worktree")}
@@ -115,30 +148,37 @@ export function QuickDeleteWorktreeDialog({
         ) : null}
         {trees && !trees.length ? <p>{t("No additional worktrees")}</p> : null}
         {trees && request.deletePath && !tree ? (
-          <p role="alert">{t("This worktree is no longer available.")}</p>
+          <InlineError>{t("This worktree is no longer available.")}</InlineError>
         ) : null}
         {index ? (
-          <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1">
-            <dt>{t("Changes")}</dt>
-            <dd>
+          <DescriptionList size="sm">
+            <DescriptionItem term={t("Changes")}>
               {index.files.filter((file) => file.unstaged).length + (index.conflicts?.length ?? 0)}
-            </dd>
-            <dt>{t("Staged")}</dt>
-            <dd>{index.files.filter((file) => file.staged).length}</dd>
-            <dt>{t("Unpushed commits")}</dt>
-            <dd>{tree?.unpushed ?? t("Status unavailable")}</dd>
-          </dl>
+            </DescriptionItem>
+            <DescriptionItem term={t("Staged")}>
+              {index.files.filter((file) => file.staged).length}
+            </DescriptionItem>
+            <DescriptionItem term={t("Unpushed commits")}>
+              {tree?.unpushed ?? t("Status unavailable")}
+            </DescriptionItem>
+          </DescriptionList>
         ) : null}
         {tree ? (
-          <p className="text-warning">
-            {t("All uncommitted and untracked changes here are discarded.")}{" "}
-            {t("The branch is kept.")}
-          </p>
+          <ConfirmConsequences
+            items={[
+              {
+                key: "discard",
+                tone: "warning",
+                content: t("All uncommitted and untracked changes here are discarded."),
+              },
+              { key: "branch", tone: "neutral", content: t("The branch is kept.") },
+            ]}
+          />
         ) : null}
         {blocked ? (
-          <p role="alert" className="text-warning">
+          <InlineMessage tone="warning" live="assertive">
             {blocked}
-          </p>
+          </InlineMessage>
         ) : null}
         {error ? (
           <GitFeedback
@@ -147,31 +187,6 @@ export function QuickDeleteWorktreeDialog({
             onRetry={!busy ? () => setRevision((value) => value + 1) : undefined}
           />
         ) : null}
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" disabled={busy} onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            variant="danger"
-            loading={busy}
-            disabled={!ready || !!error}
-            onClick={async () => {
-              if (!tree || !ready || busy) return;
-              setBusy(true);
-              setError(undefined);
-              try {
-                await onRemove(request.cwd, tree.path, true, true);
-                onClose();
-              } catch (reason) {
-                setError(String(reason));
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            {t("Delete worktree")}
-          </Button>
-        </div>
       </div>
     </Modal>
   );

@@ -32,7 +32,9 @@ const notes: Note[] = Array.from({ length: count }, (_, index) => ({
   updatedAt: Date.now() - index * 60000,
 }));
 const calls: { command: string; id?: string; query?: string; bytes?: number }[] = [];
+const imagePickerControl = { finish: null as null | (() => void) };
 Object.assign(window, {
+  imagePickerControl,
   notesFixture: notes,
   notesFixtureCalls: calls,
   __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
@@ -45,6 +47,11 @@ Object.assign(window, {
       args: { note?: NoteUpsert; id?: string; query?: string } = {},
     ) => {
       if (command.startsWith("notes_")) calls.push({ command, id: args.id, query: args.query });
+      if (command === "plugin:dialog|open") {
+        return new Promise<null>((resolve) => {
+          imagePickerControl.finish = () => resolve(null);
+        });
+      }
       if (command === "notes_list") return structuredClone(notes);
       if (command === "notes_list_summaries") {
         const summaries = notes.map(summarizeNote);

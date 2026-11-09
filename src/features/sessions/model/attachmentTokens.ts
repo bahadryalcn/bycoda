@@ -1,5 +1,8 @@
 import type { Attachment } from "./session";
-import { markdownLanguage } from "@codemirror/lang-markdown";
+import { parser, GFM, Subscript, Superscript, Emoji } from "@lezer/markdown";
+
+// Match the editor's Markdown dialect without loading the editor and its DOM runtime.
+const markdownParser = parser.configure([GFM, Subscript, Superscript, Emoji]);
 
 /**
  * Inline references to a message's attachments: `[image1]`, `[file2]`.
@@ -24,7 +27,8 @@ export type TextSegment =
   | { text: string }
   | { token: string; label: string; attachment: Attachment };
 
-const TOKEN = /\[(image|file)([1-9]\d*)\]/g;
+// `quote` tokens name chat citations (citationTokens.ts) and share this matcher.
+const TOKEN = /\[(image|file|quote)([1-9]\d*)\]/g;
 /** A token glued to a word is an index expression (`arr[image1]`), not a reference. */
 const WORD_CHAR = /[\p{L}\p{N}_$]/u;
 
@@ -54,10 +58,15 @@ export function tokenLabel(token: string): string {
  * block, and one glued to a preceding word are ordinary text.
  */
 export function findTokens(text: string, files: Pick<Attachment, "kind">[]): TokenMatch[] {
-  if (!files.length || !text.includes("[")) return [];
-  const indexByToken = new Map(attachmentTokens(files).map((token, index) => [token, index]));
+  return findTokenMatches(text, files.length ? attachmentTokens(files) : []);
+}
+
+/** Occurrences of the exact `tokens` in `text`; `index` is the token's place in `tokens`. */
+export function findTokenMatches(text: string, tokens: readonly string[]): TokenMatch[] {
+  if (!tokens.length || !text.includes("[")) return [];
+  const indexByToken = new Map(tokens.map((token, index) => [token, index]));
   const code: [number, number][] = [];
-  markdownLanguage.parser.parse(text).iterate({
+  markdownParser.parse(text).iterate({
     enter(node) {
       if (["InlineCode", "FencedCode", "CodeBlock"].includes(node.name)) {
         code.push([node.from, node.to]);
@@ -188,8 +197,10 @@ export function deleteTokenAtCaret(
   caret: number,
   direction: "back" | "forward",
   files: Pick<Attachment, "kind">[],
+  /** Further tokens deleted whole, such as citation `[quote1]` tokens. */
+  extra: readonly string[] = [],
 ): { text: string; caret: number } | null {
-  const hit = findTokens(text, files).find((match) =>
+  const hit = [...findTokens(text, files), ...findTokenMatches(text, extra)].find((match) =>
     direction === "back" ? match.end === caret : match.start === caret,
   );
   if (!hit) return null;
@@ -207,7 +218,15 @@ function rewriteTokens(
   files: Pick<Attachment, "kind">[],
   replace: (match: TokenMatch) => string,
 ): string {
-  const matches = findTokens(text, files);
+  return rewriteTokenMatches(text, findTokens(text, files), replace);
+}
+
+/** `rewriteTokens` over matches found by the caller, in text order. */
+export function rewriteTokenMatches(
+  text: string,
+  matches: readonly TokenMatch[],
+  replace: (match: TokenMatch) => string,
+): string {
   if (!matches.length) return text;
   let out = "";
   let at = 0;

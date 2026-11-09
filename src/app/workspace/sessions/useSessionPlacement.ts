@@ -1,7 +1,20 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { message } from "@tauri-apps/plugin-dialog";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
-import { newDefaultSession, type Session } from "../../../features/sessions/model/session";
+import {
+  newDefaultSession,
+  sessionWorkCwd,
+  type Session,
+} from "../../../features/sessions/model/session";
+import { getGroupLockView } from "../../../features/group-lock/model/groupLock";
+import { isProjectLockedIn } from "../../../features/group-lock/model/lockState";
+import { parseRemotePath } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionFor } from "../../../features/connections/model/connections";
+import {
+  remoteSessionOwnershipKey,
+  reserveSessionWindow,
+} from "../../model/sessionWindowOwnership";
+import { appName } from "../../../shared/lib/appName";
 import { forgetHarnessSession } from "../../../integrations/harness";
 import { isBlankSession } from "../../../features/projects/model/projectReturn";
 import {
@@ -68,6 +81,14 @@ export function useSessionPlacement({
       if (sessionId === targetId) return;
       const targetTab = tabsRef.current.find((tab) => leafIds(tab.layout).includes(targetId));
       if (!targetTab) return;
+      const sourceTabId = tabsRef.current.find((tab) =>
+        leafIds(tab.layout).includes(sessionId),
+      )?.id;
+      if (
+        movingTabIds.current.has(targetTab.id) ||
+        (sourceTabId && movingTabIds.current.has(sourceTabId))
+      )
+        return;
 
       const alreadyHere = leafIds(targetTab.layout).includes(sessionId);
       if (!alreadyHere) {
@@ -75,42 +96,132 @@ export function useSessionPlacement({
         if (!session) return;
       }
 
-      const tab = tabsRef.current.find((entry) => entry.id === targetTab.id);
-      if (!tab || !leafIds(tab.layout).includes(targetId)) return;
-
-      const replaceTarget =
-        !leafIds(tab.layout).includes(sessionId) &&
-        isBlankSession(sessionsRef.current.find((entry) => entry.id === targetId));
-
-      if (replaceTarget) {
-        lastPersisted.current.delete(targetId);
-        const blank = sessionsRef.current.find((entry) => entry.id === targetId);
-        if (blank) void forgetHarnessSession(blank.harness, targetId);
+      const session = sessionsRef.current.find((entry) => entry.id === sessionId);
+      if (!session || session.inboxAsk) return;
+      const beforeTab = tabsRef.current.find((entry) => entry.id === targetTab.id);
+      if (
+        !beforeTab ||
+        !leafIds(beforeTab.layout).includes(targetId) ||
+        tabsRef.current.find((entry) => leafIds(entry.layout).includes(sessionId))?.id !==
+          sourceTabId
+      )
+        return;
+      const beforeLock = getGroupLockView().lock;
+      const beforeTarget = sessionsRef.current.find((entry) => entry.id === targetId);
+      if (
+        isProjectLockedIn(beforeLock, session.cwd) ||
+        isProjectLockedIn(beforeLock, sessionWorkCwd(session)) ||
+        (beforeTarget &&
+          (isProjectLockedIn(beforeLock, beforeTarget.cwd) ||
+            isProjectLockedIn(beforeLock, sessionWorkCwd(beforeTarget))))
+      )
+        return;
+      const beforeWorktree = tabWorktreeOf(beforeTab);
+      if (beforeWorktree && isProjectLockedIn(beforeLock, beforeWorktree)) return;
+      if (
+        isMovingPane(sessionId) ||
+        isMovingPane(targetId) ||
+        movingTabIds.current.has(targetTab.id) ||
+        (sourceTabId && movingTabIds.current.has(sourceTabId))
+      )
+        return;
+      const remoteId = remoteSessionFor(session.id);
+      const sourceCwd = session.cwd;
+      const sourceWorktree = sessionWorkCwd(session);
+      const remoteKey =
+        remoteId && parseRemotePath(session.cwd)
+          ? remoteSessionOwnershipKey(session.cwd, remoteId)
+          : null;
+      let release: Awaited<ReturnType<typeof reserveSessionWindow>>;
+      try {
+        release = await reserveSessionWindow(remoteKey ? [session.id, remoteKey] : [session.id]);
+      } catch (error) {
+        await message(String(error), { title: appName(), kind: "warning" });
+        return;
       }
+      if (!release) return;
+      let retained = false;
+      try {
+        const current = sessionsRef.current.find((entry) => entry.id === sessionId);
+        const currentRemoteId = current && remoteSessionFor(current.id);
+        const currentRemoteKey =
+          current && currentRemoteId && parseRemotePath(current.cwd)
+            ? remoteSessionOwnershipKey(current.cwd, currentRemoteId)
+            : null;
+        const currentSourceTabId = tabsRef.current.find((entry) =>
+          leafIds(entry.layout).includes(sessionId),
+        )?.id;
+        if (
+          !current ||
+          current.inboxAsk ||
+          current.cwd !== sourceCwd ||
+          sessionWorkCwd(current) !== sourceWorktree ||
+          currentRemoteKey !== remoteKey ||
+          currentSourceTabId !== sourceTabId ||
+          isMovingPane(sessionId) ||
+          isMovingPane(targetId) ||
+          movingTabIds.current.has(targetTab.id) ||
+          (sourceTabId && movingTabIds.current.has(sourceTabId))
+        )
+          return;
+        const lock = getGroupLockView().lock;
+        if (
+          isProjectLockedIn(lock, current.cwd) ||
+          isProjectLockedIn(lock, sessionWorkCwd(current))
+        )
+          return;
 
-      const result = applyPlaceSessionOnPane({
-        tabs: tabsRef.current,
-        sessions: sessionsRef.current,
-        sessionId,
-        targetId,
-        edge,
-        replaceTarget,
-        scope: tabCloseScope,
-        worktreeOf: tabWorktreeOf,
-        createReplacement: (seed) =>
-          newDefaultSession(seed?.cwd ?? projectCwdRef.current, seed?.runtimeMode),
-      });
-      if (!result) return;
+        const tab = tabsRef.current.find((entry) => entry.id === targetTab.id);
+        if (!tab || !leafIds(tab.layout).includes(targetId)) return;
+        const targetSession = sessionsRef.current.find((entry) => entry.id === targetId);
+        if (
+          targetSession &&
+          (isProjectLockedIn(lock, targetSession.cwd) ||
+            isProjectLockedIn(lock, sessionWorkCwd(targetSession)))
+        )
+          return;
+        const targetWorktree = tabWorktreeOf(tab);
+        if (targetWorktree && isProjectLockedIn(lock, targetWorktree)) return;
 
-      sessionsRef.current = result.sessions;
-      tabsRef.current = result.tabs;
-      setSessions(result.sessions);
-      setTabs(result.tabs);
-      setActiveTabId(result.activeTabId);
-      setProjectTerminalFocused(false);
-      setComposerFocused(true);
+        const replaceTarget =
+          !leafIds(tab.layout).includes(sessionId) &&
+          isBlankSession(sessionsRef.current.find((entry) => entry.id === targetId));
+
+        const result = applyPlaceSessionOnPane({
+          tabs: tabsRef.current,
+          sessions: sessionsRef.current,
+          sessionId,
+          targetId,
+          edge,
+          replaceTarget,
+          scope: tabCloseScope,
+          worktreeOf: tabWorktreeOf,
+          createReplacement: (seed) =>
+            newDefaultSession(seed?.cwd ?? projectCwdRef.current, seed?.runtimeMode),
+        });
+        if (!result) return;
+
+        if (replaceTarget) {
+          lastPersisted.current.delete(targetId);
+          const blank = sessionsRef.current.find((entry) => entry.id === targetId);
+          if (blank) void forgetHarnessSession(blank.harness, targetId).catch(console.warn);
+        }
+
+        sessionsRef.current = result.sessions;
+        tabsRef.current = result.tabs;
+        setSessions(result.sessions);
+        setTabs(result.tabs);
+        setActiveTabId(result.activeTabId);
+        setProjectTerminalFocused(false);
+        setComposerFocused(true);
+        retained = true;
+      } finally {
+        await release(retained).catch((error) =>
+          console.error("Conversation ownership release failed", error),
+        );
+      }
     },
-    [ensureOpenSession, tabCloseScope],
+    [ensureOpenSession, isMovingPane, tabCloseScope, tabWorktreeOf],
   );
 
   const onPlaceTabOnPane = useCallback(
@@ -153,7 +264,7 @@ export function useSessionPlacement({
 
       if (blankTarget) {
         lastPersisted.current.delete(blankTarget.id);
-        void forgetHarnessSession(blankTarget.harness, blankTarget.id);
+        void forgetHarnessSession(blankTarget.harness, blankTarget.id).catch(console.warn);
       }
       sessionsRef.current = result.sessions;
       tabsRef.current = result.tabs;

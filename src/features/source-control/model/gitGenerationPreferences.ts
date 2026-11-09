@@ -1,6 +1,6 @@
 import { useMemo, useSyncExternalStore } from "react";
 import { createStoredSetting } from "../../../shared/lib/storedSetting";
-import { mergeModelSettings, resolveModel } from "../../sessions/model/models";
+import { mergeModelSettings, resolveModel } from "../../sessions/public/models";
 import { TEXT_HARNESSES, type GitGenerationChoice } from "./gitGenerationChoice";
 
 export function parseGitGenerationChoice(raw: string | null): GitGenerationChoice | undefined {

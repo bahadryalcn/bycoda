@@ -34,9 +34,7 @@
 }
 
 .session-note-status {
-  flex-basis: 100%;
-  color: var(--ui-text-secondary);
-  font-size: 11px;
+  flex: 1 1 auto;
   padding-inline: 4px;
 }
 
@@ -54,22 +52,10 @@
   scrollbar-gutter: stable;
 }
 
-.session-notes-empty {
-  display: flex;
-  flex: 1;
-  min-block-size: 0;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-  overflow-y: auto;
-  padding: 16px;
-}
-
 .session-notes-library-link {
   flex: none;
   padding: 4px 8px;
-  border-block-start: 1px solid var(--ui-tone-neutral-border);
+  border-block-start: 1px solid var(--color-stroke);
 }
 
 .note-bulk-actions {
@@ -89,7 +75,7 @@
   flex: 1;
   white-space: nowrap;
   color: var(--ui-text-secondary);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 
 .note-selectable-row {
@@ -109,19 +95,8 @@
   flex: 1;
 }
 
-.note-filter-dot {
-  position: absolute;
-  inset-block-start: 5px;
-  inset-inline-end: 5px;
-  inline-size: 4px;
-  block-size: 4px;
-  border-radius: 50%;
-  background: var(--color-accent);
-}
-
 .note-group-heading {
   inline-size: 100%;
-  margin-block-start: 4px;
 }
 
 .note-library-pages {
@@ -134,7 +109,7 @@
   padding-inline: 12px;
   border-block-start: 1px solid var(--color-stroke);
   color: var(--ui-text-secondary);
-  font-size: 11px;
+  font-size: var(--ui-font-caption);
 }
 
 .notes-workspace button.note-library-card {
@@ -152,72 +127,78 @@
   flex-direction: column;
   flex: 1;
   min-block-size: 0;
-  gap: 10px;
+  gap: 8px;
   padding-inline: clamp(16px, 2.5cqi, 40px);
-  padding-block: 14px;
+  padding-block: 10px;
   min-inline-size: 0;
 }
 
+/* Title leads; one meta row (project, tags, words) sits under it. */
 .note-detail-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: "identity identity" "title actions" "tags status";
-  align-items: center;
-  gap: 6px 16px;
+  display: flex;
+  min-inline-size: 0;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.note-detail-identity {
-  grid-area: identity;
+.note-detail-titlerow {
+  display: flex;
+  min-inline-size: 0;
   flex-wrap: wrap;
-  row-gap: 2px;
-}
-
-.note-detail-updated {
-  font-size: 11px;
-  white-space: nowrap;
+  align-items: center;
+  gap: 4px 12px;
 }
 
 .note-detail-title {
-  grid-area: title;
+  flex: 1 1 14rem;
   min-inline-size: 0;
-}
-.note-detail-tags {
-  grid-area: tags;
-  min-inline-size: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-}
-.note-detail-tags > summary {
-  cursor: pointer;
-  inline-size: fit-content;
-  padding-block: 4px;
-}
-.note-detail-tags[open] > summary {
-  margin-block-end: 4px;
-}
-.note-detail-status {
-  grid-area: status;
-  text-align: end;
-  justify-self: end;
-}
-.note-detail-error {
-  grid-column: 1 / -1;
 }
 
 .note-detail-actions {
-  grid-area: actions;
   display: flex;
+  flex: none;
   flex-wrap: wrap;
   justify-content: end;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+}
+
+.note-save-status {
+  padding-inline: 4px;
+  white-space: nowrap;
+}
+
+.note-detail-meta {
+  display: flex;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+.note-detail-tags {
+  flex: 1 1 10rem;
+  min-inline-size: 0;
+}
+
+.note-detail-words {
+  margin-inline-start: auto;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.note-detail-error {
+  grid-column: 1 / -1;
 }
 
 .note-delete-description {
   margin: 0;
   padding: 16px;
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: var(--ui-font-secondary);
   line-height: 1.6;
   color: var(--ui-text-secondary);
 }
@@ -231,30 +212,12 @@
 }
 
 @container (max-width: 620px) {
-  .note-detail-header {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "identity identity" "title title" "actions actions" "tags status";
-    gap: 4px 8px;
-  }
-  .note-detail-header:has(.note-detail-tags[open]) {
-    grid-template-areas: "identity identity" "title title" "actions actions" "tags tags" "status status";
-  }
-  .note-detail-actions {
-    justify-content: start;
-  }
-  .note-detail-status {
-    text-align: end;
-    justify-self: end;
-  }
   .note-detail-content {
     padding: 8px;
     gap: 6px;
   }
-  .note-detail-identity {
-    color: var(--ui-text-secondary);
-  }
-  .note-detail-updated {
-    margin-inline-start: auto;
+  .note-detail-actions {
+    justify-content: start;
   }
 }
 
@@ -270,12 +233,14 @@
   overflow: hidden;
 }
 
+/* One quiet row: Document / Source / Split as a compact segmented switch,
+   formatting tools at the far end. */
 .note-editor-toolbar {
-  position: sticky;
-  inset-block-start: 0;
-  z-index: 5;
-  min-block-size: 40px;
-  background: var(--ui-surface);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  min-block-size: var(--ui-control-height-compact, 1.75rem);
 }
 
 .note-layout {
@@ -285,7 +250,7 @@
   grid-template-columns: minmax(0, 1fr);
   grid-auto-rows: minmax(0, 1fr);
   min-block-size: 0;
-  gap: 12px;
+  gap: 0;
   align-items: stretch;
 }
 
@@ -293,33 +258,30 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.note-format-popover {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  padding: 8px;
-}
-.note-format-popover > button {
-  justify-content: start;
+.note-split > .note-editor-pane + .note-editor-pane {
+  border-inline-start: 1px solid var(--ui-editor-border);
 }
 
 .note-editor-pane {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-block-size: 0;
   min-inline-size: 0;
   overflow: hidden;
-  border: 1px solid var(--ui-tone-neutral-border);
-  border-radius: 8px;
-  background: var(--ui-surface);
+}
+
+/* The document canvas is the reading ground. */
+.note-editor-pane[data-document] {
+  background: transparent;
 }
 
 .note-pane-label {
   flex: none;
-  padding: 10px 14px;
-  border-block-end: 1px solid var(--ui-tone-neutral-border);
+  padding: 6px 12px;
+  border-block-end: 1px solid var(--color-stroke);
   color: var(--ui-text-secondary);
-  font-size: 11px;
+  font-size: var(--ui-font-caption);
   font-weight: 500;
 }
 
@@ -335,8 +297,17 @@
   display: flex;
   flex-direction: column;
   min-block-size: 100%;
-  padding: 12px;
+  padding: 12px 16px;
   overflow-wrap: anywhere;
+}
+
+/* Reading measure: ~46rem, centered, in the Document pane only (Source stays full width). */
+.note-editor-pane[data-document] .note-pane-content {
+  box-sizing: border-box;
+  inline-size: min(100%, 46rem);
+  margin-inline: auto;
+  padding-block: 20px 32px;
+  line-height: 1.6;
 }
 
 .note-pane-content > [data-note-editor] {
@@ -350,61 +321,67 @@
 }
 
 .note-pane-footer {
+  position: absolute;
+  inset-inline-end: 8px;
+  inset-block-end: 8px;
   display: flex;
-  flex: none;
   align-items: center;
   justify-content: end;
-  min-block-size: 32px;
-  padding-inline: 12px;
-  border-block-start: 1px solid var(--ui-tone-neutral-border);
-  color: var(--ui-text-secondary);
-  font-size: 11px;
 }
 
 .note-preview-block {
-  position: relative;
-  margin-block-end: 12px;
+  margin-block-end: 4px;
 }
 
 .note-preview-content {
+  min-inline-size: 0;
+  flex: 1;
   cursor: text;
-  padding: 8px 36px 8px 8px;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  padding-block: 4px;
 }
 
+.note-preview-content :is(p, ul, ol, blockquote) {
+  max-inline-size: 46rem;
+}
+
+/* The block being edited is a quiet filled region, not an edge stripe. */
 .note-active-block {
-  margin-block: 12px;
-  padding: 10px;
-  border: 1px solid var(--color-accent);
-  border-radius: 6px;
+  margin-block: 4px;
+  padding: 4px 8px;
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface-selected);
 }
 
 .note-edit-block {
   display: block;
   margin-inline-start: auto;
 }
-.note-preview-edit {
-  position: absolute;
-  inset-block-start: 4px;
-  inset-inline-end: 0;
-}
-
 .note-add-block {
-  inline-size: 100%;
-  margin-block-start: 12px;
+  align-self: start;
+  margin-block-start: 8px;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .note-preview-edit {
-    opacity: 0;
+/* Document title: one step up from body, medium weight. */
+.note-detail-title input {
+  font-size: var(--ui-font-title);
+  font-weight: 500;
+}
+
+/* Intermediate widths (721-900px): the library and the document share the row.
+   The library is capped to a share of the workspace (its saved width is kept and
+   applies again when the window grows) and the title, save state and actions stay
+   on one row so the document starts directly under a two-row header. */
+@container notes-workspace (min-width: 721px) and (max-width: 900px) {
+  .note-library-sidebar {
+    max-inline-size: max(19rem, 40%);
   }
-  .note-preview-block:hover .note-preview-edit,
-  .note-preview-block:focus-within .note-preview-edit {
-    opacity: 1;
+  .note-detail-title {
+    flex-basis: 8rem;
   }
-  .note-preview-content:hover {
-    border-color: var(--color-stroke);
-    background: var(--ui-surface-muted);
+  .note-detail-actions {
+    flex-wrap: nowrap;
+  }
+  .note-detail-tags {
+    flex-basis: 8rem;
   }
 }

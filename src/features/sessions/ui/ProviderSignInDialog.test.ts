@@ -41,7 +41,7 @@ function button(label: string): HTMLButtonElement {
 }
 
 describe("ProviderSignInDialog", () => {
-  it("girişi oturumda seçilen hesapla başlatır", async () => {
+  it("starts sign-in with the account selected in the session", async () => {
     auth.loginHarness.mockResolvedValue();
     act(() =>
       root.render(

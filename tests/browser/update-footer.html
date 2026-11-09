@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Update footer browser fixture</title>
+    <style>
+      .update-fixture {
+        min-block-size: 100dvh;
+        background: var(--ui-surface);
+        color: var(--ui-text-primary);
+        font-family: var(--font-sans);
+        padding: 2rem;
+      }
+      .update-fixture h1 {
+        margin-block: 0 0.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+      }
+      .update-fixture p {
+        margin-block: 0 1.5rem;
+        color: var(--ui-text-muted);
+        font-size: 0.8125rem;
+      }
+      .update-fixture-rail {
+        container: rail / inline-size;
+        inline-size: min(100%, 20rem);
+        min-block-size: 18rem;
+        display: flex;
+        flex-direction: column;
+        justify-content: end;
+        gap: 1rem;
+        border: 1px solid var(--ui-tone-neutral-border);
+        border-radius: var(--ui-control-radius);
+        padding: 0.5rem;
+      }
+      .update-fixture-specimen {
+        inline-size: min(100%, 20rem);
+        margin-block-start: 1.5rem;
+      }
+      .update-fixture-output {
+        display: block;
+        margin-block-start: 1rem;
+        font-size: 0.8125rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./update-footer.tsx"></script>
+  </body>
+</html>

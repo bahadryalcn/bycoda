@@ -1,0 +1,37 @@
+/* Shared presentation for Input, Textarea and TagInput help/error copy. The caller's own `className`
+   (error/description colors and padding) is applied to the copy element; only reveal mechanics live here. */
+.messageSlot {
+  display: grid;
+  overflow: hidden;
+}
+.messageClip {
+  min-height: 0;
+  overflow: hidden;
+}
+/* Words are measured against this box when they pop out to leave, so it must be the positioned parent. */
+.words {
+  position: relative;
+  display: block;
+}
+.word {
+  display: inline-block;
+  white-space: pre;
+}
+/* One column per character of a count. Tabular digits keep columns equal, so only a gained or lost digit changes the width. */
+.column {
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+.column > span {
+  display: inline-block;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

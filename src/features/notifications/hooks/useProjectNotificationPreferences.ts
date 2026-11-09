@@ -2,6 +2,8 @@ import { useSyncExternalStore } from "react";
 import {
   loadNotificationPreferences,
   notificationPreferencesSnapshot,
+  notificationPreferencesStatus,
+  retryNotificationPreferencesRead,
   subscribeNotificationPreferences,
 } from "../model/notificationPreferences";
 
@@ -13,4 +15,14 @@ export function useProjectNotificationPreferences() {
     notificationPreferencesSnapshot,
   );
   return loadNotificationPreferences();
+}
+
+/** Whether the stored project preferences could be read, with a read-only retry. */
+export function useProjectNotificationPreferencesStatus() {
+  useSyncExternalStore(
+    subscribeNotificationPreferences,
+    notificationPreferencesSnapshot,
+    notificationPreferencesSnapshot,
+  );
+  return { status: notificationPreferencesStatus(), retry: retryNotificationPreferencesRead };
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties, FocusEvent, KeyboardEvent, ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties, FocusEvent, KeyboardEvent, ReactNode, Ref } from "react";
 import {
   AnimatePresence,
   animate,
@@ -12,12 +12,23 @@ import {
 } from "motion/react";
 import type { TargetAndTransition } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
-import { Button } from "../../Button";
+import { Button, type ButtonTone } from "../../Button";
 import styles from "./floating-button-group.module.css";
 
 export type FloatingButtonGroupVariant = "muted" | "floating";
 export type FloatingButtonGroupSize = "sm" | "md";
 export type FloatingButtonGroupOrientation = "horizontal" | "vertical";
+
+/** A composite that owns a menu or popup can own its trigger state while the group owns the button presentation. */
+export interface FloatingButtonGroupTriggerProps {
+  ref?: Ref<HTMLButtonElement>;
+  onSelect?: () => void;
+  disabled?: boolean;
+  /** Replaces the item label as the accessible name, such as a label that carries live detail. */
+  ariaLabel?: string;
+  "aria-haspopup"?: "menu" | "dialog";
+  "aria-expanded"?: boolean;
+}
 
 export interface FloatingButtonGroupAction {
   type?: "action";
@@ -28,6 +39,10 @@ export interface FloatingButtonGroupAction {
   icon?: ReactNode;
   /** Shows only the icon. The label moves into a tooltip and the accessible name. Overrides the group's iconOnly. */
   iconOnly?: boolean;
+  /** Tooltip text when it differs from the label. A shortcut hint is still appended. */
+  tooltip?: string;
+  /** Semantic intent of the item, such as success for a confirmed result or danger for a failed one. */
+  tone?: ButtonTone;
   onSelect?: () => void;
   disabled?: boolean;
   /** Pending state stays owned by the consumer. */
@@ -38,6 +53,11 @@ export interface FloatingButtonGroupAction {
   shortcut?: string;
   /** Other labels this item can switch to, such as ["Copied"] for Share. The button keeps the width of the widest, so a label change never moves anything. */
   reserveLabels?: readonly string[];
+  /**
+   * Hands the button to a composite that owns a popup. Call renderTrigger with the composite's trigger state; the group draws
+   * the button, keeps it in the roving order and keeps the shared highlight, tooltip and keyboard behavior.
+   */
+  render?: (renderTrigger: (props: FloatingButtonGroupTriggerProps) => ReactNode) => ReactNode;
 }
 
 export interface FloatingButtonGroupSeparator {
@@ -54,6 +74,8 @@ export interface FloatingButtonGroupProps {
   /** muted sits quietly on a page; floating raises the tray with the floating shadow for overlays such as a selection toolbar. */
   variant?: FloatingButtonGroupVariant;
   size?: FloatingButtonGroupSize;
+  /** `none` drops the tray inset so bare icons sit flush in a row that owns its spacing (message actions). */
+  padding?: "default" | "none";
   orientation?: FloatingButtonGroupOrientation;
   /** Shows every item as an icon only, with its label in a tooltip. Items with their own iconOnly win. */
   iconOnly?: boolean;
@@ -157,6 +179,7 @@ export function FloatingButtonGroup({
   label,
   variant = "muted",
   size = "md",
+  padding = "default",
   orientation = "horizontal",
   iconOnly: groupIconOnly = false,
   preserveSelection = false,
@@ -342,6 +365,107 @@ export function FloatingButtonGroup({
     .filter(Boolean)
     .join(" ");
 
+  const setNode = (id: string, node: HTMLButtonElement | null, outer?: Ref<HTMLButtonElement>) => {
+    if (node) nodes.current.set(id, node);
+    else nodes.current.delete(id);
+    if (typeof outer === "function") outer(node);
+    else if (outer) outer.current = node;
+  };
+
+  const renderAction = (
+    item: FloatingButtonGroupAction,
+    trigger?: FloatingButtonGroupTriggerProps,
+  ) => {
+    const {
+      id,
+      label: itemLabel,
+      icon,
+      onSelect,
+      tooltip,
+      tone,
+      loading = false,
+      pressed,
+      shortcut,
+      reserveLabels = [],
+    } = item;
+    const disabled = !!item.disabled || !!trigger?.disabled;
+    const iconOnly = !!icon && (item.iconOnly ?? groupIconOnly);
+    const name = trigger?.ariaLabel ?? itemLabel;
+    const hint = tooltip ?? itemLabel;
+    return (
+      <Button
+        key={id}
+        variant="ghost"
+        size={size}
+        motion="none"
+        tone={tone}
+        loading={loading}
+        selected={pressed}
+        iconOnly={iconOnly}
+        label={name}
+        tooltip={hint}
+        tooltipWhen="overflow"
+        shortcut={shortcut}
+        onMouseDown={preserveSelection ? (event) => event.preventDefault() : undefined}
+        ref={(node) => setNode(id, node, trigger?.ref)}
+        type="button"
+        className={styles.item}
+        data-fbg-item=""
+        data-active={activeId === id ? "" : undefined}
+        data-icon={icon ? "" : undefined}
+        data-icon-only={iconOnly ? "" : undefined}
+        aria-label={name}
+        aria-haspopup={trigger?.["aria-haspopup"]}
+        aria-expanded={trigger?.["aria-expanded"]}
+        aria-pressed={pressed === undefined ? undefined : pressed}
+        aria-disabled={disabled || loading || undefined}
+        tabIndex={stop === id ? 0 : -1}
+        onPointerMove={(event) => {
+          if (event.pointerType === "mouse" || event.pointerType === "pen") setHoverId(id);
+        }}
+        onPointerDown={(event) => {
+          if (disabled || event.button !== 0) return;
+          setHoverId(id);
+          setPressing(true);
+        }}
+        onPointerUp={() => setPressing(false)}
+        onPointerCancel={() => setPressing(false)}
+        onPointerLeave={() => setPressing(false)}
+        onKeyDown={(event) => {
+          if ((event.key === "Enter" || event.key === " ") && !event.repeat && !disabled)
+            setPressing(true);
+        }}
+        onKeyUp={(event) => {
+          if (event.key === "Enter" || event.key === " ") setPressing(false);
+        }}
+        onFocus={(event) => {
+          setTabStop(id);
+          let keyboard = false;
+          try {
+            keyboard = event.currentTarget.matches(":focus-visible");
+          } catch {
+            keyboard = false;
+          }
+          setFocusId(keyboard ? id : null);
+        }}
+        onClick={() => {
+          if (disabled) return;
+          trigger?.onSelect?.();
+          onSelect?.();
+          onAction?.(id);
+        }}
+      >
+        <ItemBody
+          label={itemLabel}
+          icon={icon}
+          iconOnly={iconOnly}
+          reserve={reserveLabels}
+          reduced={reduced}
+        />
+      </Button>
+    );
+  };
+
   const group = (
     <div
       ref={tray}
@@ -351,6 +475,7 @@ export function FloatingButtonGroup({
       aria-label={label}
       aria-orientation={orientation}
       data-variant={variant}
+      data-padding={padding === "none" ? "none" : undefined}
       onKeyDown={onKeyDown}
       onBlur={onBlur}
     >
@@ -370,88 +495,10 @@ export function FloatingButtonGroup({
               aria-orientation={vertical ? "horizontal" : "vertical"}
             />
           );
-        const {
-          id,
-          label: itemLabel,
-          icon,
-          onSelect,
-          disabled = false,
-          loading = false,
-          pressed,
-          shortcut,
-          reserveLabels = [],
-        } = item;
-        const iconOnly = !!icon && (item.iconOnly ?? groupIconOnly);
-        const button = (
-          <Button
-            key={id}
-            variant="ghost"
-            size={size}
-            motion="none"
-            loading={loading}
-            selected={pressed}
-            iconOnly={iconOnly}
-            label={itemLabel}
-            tooltip={shortcut ? `${itemLabel} (${shortcut})` : itemLabel}
-            onMouseDown={preserveSelection ? (event) => event.preventDefault() : undefined}
-            ref={(node) => {
-              if (node) nodes.current.set(id, node);
-              else nodes.current.delete(id);
-            }}
-            type="button"
-            className={styles.item}
-            data-fbg-item=""
-            data-active={activeId === id ? "" : undefined}
-            data-icon={icon ? "" : undefined}
-            data-icon-only={iconOnly ? "" : undefined}
-            aria-label={itemLabel}
-            aria-pressed={pressed === undefined ? undefined : pressed}
-            aria-disabled={disabled || loading || undefined}
-            tabIndex={stop === id ? 0 : -1}
-            onPointerMove={(event) => {
-              if (event.pointerType === "mouse" || event.pointerType === "pen") setHoverId(id);
-            }}
-            onPointerDown={(event) => {
-              if (disabled || event.button !== 0) return;
-              setHoverId(id);
-              setPressing(true);
-            }}
-            onPointerUp={() => setPressing(false)}
-            onPointerCancel={() => setPressing(false)}
-            onPointerLeave={() => setPressing(false)}
-            onKeyDown={(event) => {
-              if ((event.key === "Enter" || event.key === " ") && !event.repeat && !disabled)
-                setPressing(true);
-            }}
-            onKeyUp={(event) => {
-              if (event.key === "Enter" || event.key === " ") setPressing(false);
-            }}
-            onFocus={(event) => {
-              setTabStop(id);
-              let keyboard = false;
-              try {
-                keyboard = event.currentTarget.matches(":focus-visible");
-              } catch {
-                keyboard = false;
-              }
-              setFocusId(keyboard ? id : null);
-            }}
-            onClick={() => {
-              if (disabled) return;
-              onSelect?.();
-              onAction?.(id);
-            }}
-          >
-            <ItemBody
-              label={itemLabel}
-              icon={icon}
-              iconOnly={iconOnly}
-              reserve={reserveLabels}
-              reduced={reduced}
-            />
-          </Button>
+        if (!item.render) return renderAction(item);
+        return (
+          <Fragment key={item.id}>{item.render((trigger) => renderAction(item, trigger))}</Fragment>
         );
-        return button;
       })}
     </div>
   );

@@ -23,13 +23,49 @@ describe("conversation rewind strategies", () => {
 
   it("uses the complete native Codex turn for a steered final message", () => {
     const session = {
-      ...newSession("codex", "/repo"), providerSessionId: "provider",
-      blocks: [...blocks, { id: "steer", role: "user" as const, text: "Second request", providerTurnId: "turn-2" }],
+      ...newSession("codex", "/repo"),
+      providerSessionId: "provider",
+      blocks: [
+        ...blocks,
+        { id: "steer", role: "user" as const, text: "Second request", providerTurnId: "turn-2" },
+      ],
     };
     expect(conversationRewindStrategy(session, "steer", true)).toEqual({
-      blockId: "wrong", preserveProviderBinding: true, providerTurnId: "turn-2",
+      blockId: "wrong",
+      preserveProviderBinding: true,
+      providerTurnId: "turn-2",
     });
     expect(conversationRewindStrategy(session, "first", true).preserveProviderBinding).toBe(false);
-    expect(conversationRewindStrategy({ ...session, pendingContextReplay: "undelivered context" }, "steer", true).preserveProviderBinding).toBe(false);
+    expect(
+      conversationRewindStrategy(
+        { ...session, pendingContextReplay: "undelivered context" },
+        "steer",
+        true,
+      ).preserveProviderBinding,
+    ).toBe(false);
+  });
+
+  it("never asks a provider to revert files in a managed workspace", () => {
+    const session = {
+      ...newSession("codex", "/repo"),
+      providerSessionId: "provider",
+      workspaceId: "managed",
+      blocks: [
+        ...blocks,
+        { id: "steer", role: "user" as const, text: "Steer", providerTurnId: "turn-2" },
+      ],
+    };
+    expect(conversationRewindStrategy(session, "steer", true)).toEqual({
+      blockId: "steer",
+      preserveProviderBinding: false,
+      providerTurnId: undefined,
+    });
+    expect(conversationRewindStrategy(session, "steer", true, false).preserveProviderBinding).toBe(
+      false,
+    );
+    expect(
+      conversationRewindStrategy({ ...session, workspaceId: undefined }, "steer", true, true)
+        .preserveProviderBinding,
+    ).toBe(false);
   });
 });

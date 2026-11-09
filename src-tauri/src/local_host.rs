@@ -24,7 +24,11 @@ use crate::remote::{
     RemoteConnections,
 };
 
-fn host_data_dir() -> Option<PathBuf> {
+pub(crate) fn host_data_dir() -> Option<PathBuf> {
+    if crate::debug_profile::profile_id().is_some() {
+        // Missing debug isolation is unknown, never a fallback to the owner's Host.
+        return crate::debug_profile::host_data_dir();
+    }
     #[cfg(windows)]
     let home = std::env::var("USERPROFILE").ok()?;
     #[cfg(not(windows))]
@@ -35,6 +39,11 @@ fn host_data_dir() -> Option<PathBuf> {
 /// The local launcher command (program, leading args), or `None` when
 /// nothing is installed at the expected location on this machine.
 fn launcher_command(data_dir: &Path) -> Option<(String, Vec<String>)> {
+    if crate::debug_profile::profile_id().is_some() {
+        let node = std::env::var("BYCODA_DEV_NODE_EXECUTABLE").ok()?;
+        let entry = std::env::var("BYCODA_DEV_HOST_ENTRY").ok()?;
+        return Some((node, vec![entry]));
+    }
     #[cfg(windows)]
     let launcher = data_dir.join("bin").join("bycoda-host.cmd");
     #[cfg(not(windows))]
@@ -107,6 +116,72 @@ fn run_launcher(
     parse_launcher_output(&run_with_timeout(command, timeout)?)
 }
 
+/// Identity of the host's `running.json`: a restart or port change rewrites it.
+type RunningStamp = Option<(std::time::SystemTime, u64)>;
+
+fn running_stamp(data_dir: &Path) -> RunningStamp {
+    let metadata = std::fs::metadata(data_dir.join("running.json")).ok()?;
+    Some((metadata.modified().ok()?, metadata.len()))
+}
+
+/// The last `connection-info` answer for one `running.json`.
+struct ConnectionInfoCache {
+    stamp: RunningStamp,
+    port: Option<u64>,
+    /// After a failed lookup, no new launcher run before this instant.
+    retry_at: Option<Instant>,
+    backoff: Duration,
+}
+
+static CONNECTION_INFO: std::sync::Mutex<Option<ConnectionInfoCache>> = std::sync::Mutex::new(None);
+const CONNECTION_RETRY_MIN: Duration = Duration::from_secs(15);
+const CONNECTION_RETRY_MAX: Duration = Duration::from_secs(300);
+
+/// The running host's port. The app asks on every focus and every 30 s, and
+/// `connection-info` starts a Node process each time; a verified answer is
+/// kept for as long as `running.json` is unchanged and the host still answers
+/// its lifecycle probe (a direct loopback request). Failures back off.
+fn connection_port(data_dir: &Path, program: &str, base_args: &[String]) -> Option<u64> {
+    let stamp = running_stamp(data_dir);
+    {
+        let cache = CONNECTION_INFO.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(cached) = cache.as_ref().filter(|cached| cached.stamp == stamp) {
+            if let Some(port) = cached.port {
+                match probe_lifecycle_status(data_dir) {
+                    Ok(_) => return Some(port),
+                    Err(LifecycleProbeError::Stopped) => return None,
+                    // Busy or mid-restart: ask the launcher below.
+                    Err(LifecycleProbeError::Unconfirmed) => {}
+                }
+            } else if cached.retry_at.is_some_and(|at| Instant::now() < at) {
+                return None;
+            }
+        }
+    }
+    let port = run_launcher(
+        program,
+        base_args,
+        &["connection-info"],
+        // Node cold start behind antivirus scanning can exceed 10 s once.
+        Duration::from_secs(30),
+    )
+    .and_then(|info| info.get("port").and_then(Value::as_u64));
+    let mut cache = CONNECTION_INFO.lock().unwrap_or_else(|e| e.into_inner());
+    let backoff = match cache.as_ref() {
+        Some(previous) if previous.stamp == stamp && previous.port.is_none() => {
+            (previous.backoff * 2).min(CONNECTION_RETRY_MAX)
+        }
+        _ => CONNECTION_RETRY_MIN,
+    };
+    *cache = Some(ConnectionInfoCache {
+        stamp,
+        port,
+        retry_at: port.is_none().then(|| Instant::now() + backoff),
+        backoff,
+    });
+    port
+}
+
 /// How this desktop appears in its own host's device list, distinct from
 /// an SSH-paired desktop's name (`remote_ssh::device_name`).
 fn local_device_name() -> String {
@@ -120,28 +195,25 @@ fn local_device_name() -> String {
 /// is not also acting as someone else's remote machine, so it is not an
 /// error.
 ///
-/// `remote_machines`/`remote_connect` are themselves plain, non-`async`
-/// functions under `#[tauri::command(async)]` (Tauri runs them on a
-/// blocking thread; the attribute does not require an `async fn` body) —
-/// so this command follows the same shape and calls them directly, with
-/// no `.await`.
-#[tauri::command(async)]
-pub fn local_host_connect(app: AppHandle) -> Result<Option<Machine>, String> {
+/// The linking work blocks on lifecycle probes, the launcher process and
+/// Host RPC, so the command runs it on the blocking pool; `remote_machines` is
+/// a short store read and is called directly.
+#[tauri::command]
+pub async fn local_host_connect(app: AppHandle) -> Result<Option<Machine>, String> {
+    crate::harness::run_blocking("local_host_connect", move || {
+        local_host_connect_blocking(app)
+    })
+    .await
+}
+
+pub(crate) fn local_host_connect_blocking(app: AppHandle) -> Result<Option<Machine>, String> {
     let Some(data_dir) = host_data_dir() else {
         return Ok(None);
     };
     let Some((program, base_args)) = launcher_command(&data_dir) else {
         return Ok(None);
     };
-    let Some(info) = run_launcher(
-        &program,
-        &base_args,
-        &["connection-info"],
-        Duration::from_secs(10),
-    ) else {
-        return Ok(None);
-    };
-    let Some(port) = info.get("port").and_then(Value::as_u64) else {
+    let Some(port) = connection_port(&data_dir, &program, &base_args) else {
         return Ok(None);
     };
     let url = format!("http://127.0.0.1:{port}");
@@ -161,7 +233,7 @@ pub fn local_host_connect(app: AppHandle) -> Result<Option<Machine>, String> {
         &program,
         &base_args,
         &["pair", "--name", &local_device_name(), "--json"],
-        Duration::from_secs(20),
+        Duration::from_secs(45),
     ) else {
         return Ok(None);
     };
@@ -196,14 +268,32 @@ fn local_host_state(installed: bool, responding: bool, updating: bool) -> &'stat
     }
 }
 
+/// A busy host can miss one probe; retry once before calling it unconfirmed.
+fn probe_with_retry(data_dir: &Path) -> Result<(Value, Value), LifecycleProbeError> {
+    match probe_lifecycle_status(data_dir) {
+        Err(LifecycleProbeError::Unconfirmed) => {
+            std::thread::sleep(Duration::from_millis(500));
+            probe_lifecycle_status(data_dir)
+        }
+        other => other,
+    }
+}
+
 fn updating(data_dir: &Path) -> bool {
     install_running(data_dir) || job_pending(data_dir)
 }
 
 /// Polled by the app-wide notice. An install or update in progress stops the
 /// host on purpose, so it is reported as `updating`, not `stopped`.
-#[tauri::command(async)]
-pub fn local_host_status() -> LocalHostStatus {
+#[tauri::command]
+pub async fn local_host_status() -> LocalHostStatus {
+    // The probes read the Host's lifecycle files and make bounded HTTP calls.
+    tauri::async_runtime::spawn_blocking(local_host_status_blocking)
+        .await
+        .unwrap_or(LocalHostStatus { state: "unknown" })
+}
+
+fn local_host_status_blocking() -> LocalHostStatus {
     let Some(data_dir) = host_data_dir() else {
         return LocalHostStatus { state: "absent" };
     };
@@ -211,7 +301,7 @@ pub fn local_host_status() -> LocalHostStatus {
     if !installed {
         return LocalHostStatus { state: "absent" };
     }
-    let probe = probe_lifecycle_status(&data_dir);
+    let probe = probe_with_retry(&data_dir);
     let responding = probe.is_ok();
     let updating = !responding && updating(&data_dir);
     if matches!(probe, Err(LifecycleProbeError::Unconfirmed)) && !updating {
@@ -263,38 +353,64 @@ static STARTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// it again. Falls back to the host's own `service install`, which starts an
 /// existing service and only (re)creates a missing one; it also returns early
 /// when a host already answers.
-#[tauri::command(async)]
-pub fn local_host_start(app: AppHandle) -> Result<Option<Machine>, String> {
-    let _guard = STARTING
-        .try_lock()
-        .map_err(|_| "This computer's host is already starting.".to_string())?;
-    let data_dir = host_data_dir().ok_or("Could not find this computer's host folder.")?;
-    let (program, base_args) =
-        launcher_command(&data_dir).ok_or("bycoda Host is not installed on this computer.")?;
-    if lifecycle_status(&data_dir).is_none() {
-        if updating(&data_dir) {
-            return Err(
-                "The host on this computer is being updated. Try again when it finishes.".into(),
-            );
-        }
-        let started = start_service() && wait_until_responding(&data_dir, Duration::from_secs(20));
-        if !started {
-            let port = running_port(&data_dir).unwrap_or(3776).to_string();
-            run_launcher(
-                &program,
-                &base_args,
-                &["service", "install", "--port", &port],
-                Duration::from_secs(60),
-            );
-            if !wait_until_responding(&data_dir, Duration::from_secs(10)) {
-                return Err(format!(
-                    "The host on this computer did not start. Check {}.",
-                    data_dir.join("host.log").display()
-                ));
+#[tauri::command]
+pub async fn local_host_start(app: AppHandle) -> Result<Option<Machine>, String> {
+    crate::harness::run_blocking("local_host_start", move || {
+        let _guard = STARTING
+            .try_lock()
+            .map_err(|_| "This computer's host is already starting.".to_string())?;
+        let data_dir = host_data_dir().ok_or("Could not find this computer's host folder.")?;
+        let (program, base_args) =
+            launcher_command(&data_dir).ok_or("bycoda Host is not installed on this computer.")?;
+        // One bounded probe, no retry: a host that answers needs no restart. A
+        // failed probe is either Stopped (service not running) or Unconfirmed
+        // (corrupt running.json, port reused by another app, hung Host); both still
+        // go through the idempotent install/start path, which returns early when a
+        // Host really answers.
+        let stopped = match probe_lifecycle_status(&data_dir) {
+            Ok(_) => None,
+            Err(error) => Some(error == LifecycleProbeError::Stopped),
+        };
+        if let Some(stopped) = stopped {
+            if crate::debug_profile::profile_id().is_some() {
+                if stopped {
+                    return Err(
+                        "The development host stopped. Restart pnpm dev:native for this workspace."
+                            .into(),
+                    );
+                }
+            } else {
+                if updating(&data_dir) {
+                    return Err(
+                        "The host on this computer is being updated. Try again when it finishes."
+                            .into(),
+                    );
+                }
+                // Starting the task is a no-op for a running or hung process, so only
+                // wait for it when the host was actually stopped.
+                let started = stopped
+                    && start_service()
+                    && wait_until_responding(&data_dir, Duration::from_secs(20));
+                if !started {
+                    let port = running_port(&data_dir).unwrap_or(3776).to_string();
+                    run_launcher(
+                        &program,
+                        &base_args,
+                        &["service", "install", "--port", &port],
+                        Duration::from_secs(60),
+                    );
+                    if !wait_until_responding(&data_dir, Duration::from_secs(10)) {
+                        return Err(format!(
+                            "The host on this computer did not start. Check {}.",
+                            data_dir.join("host.log").display()
+                        ));
+                    }
+                }
             }
         }
-    }
-    local_host_connect(app)
+        local_host_connect_blocking(app)
+    })
+    .await
 }
 
 fn wait_until_responding(data_dir: &Path, timeout: Duration) -> bool {

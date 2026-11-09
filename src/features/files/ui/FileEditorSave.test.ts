@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { EditorView } from "@codemirror/view";
+import { Chunk } from "@codemirror/merge";
 import { undo } from "@codemirror/commands";
 import { Storage } from "happy-dom";
 import { act, createElement } from "react";
@@ -66,6 +67,22 @@ async function render(active = true, path = "/repo/save.txt") {
 function saveButton() {
   return container.querySelector<HTMLButtonElement>('button[aria-label="Save"]')!;
 }
+
+it("treats a path change without an explicit document identity as a different document", async () => {
+  const open = (path: string) =>
+    act(async () =>
+      root.render(createElement(FileEditor, { path, cwd: "/repo", active: true, onDirtyChange })),
+    );
+  await open("/repo/first.txt");
+  const first = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+  act(() => first.dispatch({ changes: { from: 0, insert: "first draft " } }));
+  disk = "second document\r\n";
+  await open("/repo/second.txt");
+  const second = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+  expect(second.state.doc.toString()).toBe("second document\n");
+  expect(second.state.doc.toString()).not.toContain("first draft");
+  expect(saveButton().disabled).toBe(true);
+});
 
 it("saves an already dirty buffer when autosave is enabled from settings", async () => {
   const view = await render();
@@ -170,7 +187,7 @@ it.each(["button", "shortcut"])(
     act(() => view.dispatch({ changes: { from: 0, insert: "draft " } }));
     disk = "external\r\n";
     await act(async () => invalidateWatchedFiles(["/repo/save.txt"]));
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
       "File changed on disk",
     );
     expect(view.state.doc.toString()).toBe("draft original\n");
@@ -183,7 +200,7 @@ it.each(["button", "shortcut"])(
     act(() => view.dispatch({ changes: { from: 0, insert: "latest " } }));
     await act(async () => conflictAction("Overwrite disk version").click());
     expect(disk).toBe("latest draft original\r\n");
-    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).not.toContain("File changed on disk");
     expect(onDirtyChange).toHaveBeenLastCalledWith("/repo/save.txt", false);
   },
 );
@@ -198,7 +215,7 @@ it("reloads the external version only after the explicit discard choice", async 
   expect(reloaded.state.doc.toString()).toBe("external\n");
   expect(disk).toBe("external\r\n");
   expect(onDirtyChange).toHaveBeenLastCalledWith("/repo/save.txt", false);
-  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.textContent).not.toContain("File changed on disk");
 });
 
 it("retains newer edits made while the chosen reload is reading", async () => {
@@ -219,7 +236,7 @@ it("retains newer edits made while the chosen reload is reading", async () => {
   act(() => view.dispatch({ changes: { from: 0, insert: "newer " } }));
   await act(async () => finish("external\r\n"));
   expect(view.state.doc.toString()).toBe("newer draft original\n");
-  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  expect(container.textContent).toContain("File changed on disk");
   expect(onDirtyChange).toHaveBeenLastCalledWith("/repo/save.txt", true);
 });
 
@@ -333,4 +350,58 @@ it("updates Markdown preview from the edited buffer and saves while preview is o
     expect(shortcut(modeButton("Preview")).defaultPrevented).toBe(true);
   });
   expect(disk).toBe("updated original\r\n");
+});
+
+it("retains the same source editor, selection and undo while Preview owns the pane", async () => {
+  const view = await render(true, "/repo/retained-preview.md");
+  const modeButton = (text: string) =>
+    [...container.querySelectorAll("button")].find((button) => button.textContent === text)!;
+  await act(async () => modeButton("Source").click());
+  act(() =>
+    view.dispatch({ changes: { from: 0, insert: "draft " }, selection: { anchor: 1, head: 4 } }),
+  );
+  await act(async () => modeButton("Preview").click());
+  const source = container.querySelector<HTMLElement>("[data-file-editor-source-active]")!;
+  expect(source.getAttribute("data-file-editor-source-active")).toBe("false");
+  expect(source.hasAttribute("inert")).toBe(true);
+  expect(EditorView.findFromDOM(source.querySelector<HTMLElement>(".cm-editor")!)).toBe(view);
+  expect(view.state.doc.toString()).toBe("draft original\n");
+  expect(disk).toBe("original\r\n");
+
+  await act(async () => modeButton("Source").click());
+  expect(source.getAttribute("data-file-editor-source-active")).toBe("true");
+  expect(source.hasAttribute("inert")).toBe(false);
+  expect(view.state.selection.main.anchor).toBe(1);
+  expect(view.state.selection.main.head).toBe(4);
+  act(() => expect(undo(view)).toBe(true));
+  expect(view.state.doc.toString()).toBe("original\n");
+});
+
+it("preserves mixed separators through editing, undo and save", async () => {
+  disk = "first\r\nsecond\nthird\rfourth\r\n";
+  const view = await render();
+  act(() => view.dispatch({ changes: { from: 0, to: 5, insert: "FIRST" } }));
+  await act(async () => saveButton().click());
+  expect(disk).toBe("FIRST\r\nsecond\nthird\rfourth\r\n");
+  act(() => {
+    undo(view);
+  });
+  await act(async () => saveButton().click());
+  expect(disk).toBe("first\r\nsecond\nthird\rfourth\r\n");
+});
+
+it("keeps a mixed draft and reports an imprecise diff without writing", async () => {
+  disk = "first\r\nsecond\n";
+  const view = await render();
+  act(() => view.dispatch({ changes: { from: 0, to: 5, insert: "FIRST" } }));
+  const build = vi.spyOn(Chunk, "build").mockReturnValue([{ precise: false }] as never);
+  try {
+    await act(async () => saveButton().click());
+    expect(disk).toBe("first\r\nsecond\n");
+    expect(view.state.doc.toString()).toBe("FIRST\nsecond\n");
+    expect(container.textContent).toContain("Cannot safely preserve mixed line endings");
+    expect(saveButton().disabled).toBe(false);
+  } finally {
+    build.mockRestore();
+  }
 });

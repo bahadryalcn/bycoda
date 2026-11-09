@@ -6,7 +6,10 @@ import type {
   TurnMetrics,
 } from "../../../../features/sessions/model/session";
 import type { TurnUsage } from "../../../../features/sessions/model/sessionUsage";
-import { attachmentPathText, promptText } from "../../../../features/sessions/model/attachments";
+import {
+  attachmentPathText,
+  promptText,
+} from "../../../../features/sessions/model/attachmentPrompt";
 import { parseResetTimestamp } from "../../../../features/providers/model/rateLimits";
 import {
   isTaskListToolName,
@@ -22,6 +25,7 @@ import {
 import { isAgentToolName, createPreviewFromTool, titleFromToolInput } from "../../core/preview";
 import type { ReportedCommand } from "../../core/reportedCommands";
 import { streamTextDelta } from "../../core/streamText";
+import { claudeDisallowedTools } from "./claudeToolLimits";
 import type { ApprovalDecision, HarnessEvent } from "../../core/types";
 
 /** Claude Code versions that first ship Opus 5.5 / Opus 5 / Sonnet 5 / Fable 5 / Opus 4.8 / 4.7. */
@@ -243,13 +247,15 @@ export function buildClaudeSpawnArgs(input: {
   includePartialMessages?: boolean;
   maxTurns?: number;
   isolated?: boolean;
+  /** Retain only the provider transcript while preserving isolated hooks/MCP policy. */
+  persistSession?: boolean;
   /** Folders beyond the cwd the session may read and edit. */
   additionalDirs?: readonly string[];
   disabledSkills?: readonly string[];
 }): string[] {
   const args = ["--output-format", "stream-json", "--verbose", "--input-format", "stream-json"];
-  if (input.disabledSkills?.length)
-    args.push("--disallowedTools", ...input.disabledSkills.map((name) => `Skill(${name})`));
+  const disallowed = claudeDisallowedTools(input);
+  if (disallowed.length) args.push("--disallowedTools", ...disallowed);
   if (!input.isolated) {
     args.push("--permission-prompt-tool", "stdio");
   }
@@ -260,7 +266,7 @@ export function buildClaudeSpawnArgs(input: {
   // user's hooks have no business firing there. Interactive sessions inherit
   // whatever the caller decided so `~/.claude` hooks keep working.
   const env = { ...input.settings?.env };
-  if (input.subagentModel && input.subagentModel !== "default") {
+  if (input.subagentModel && !["default", "off"].includes(input.subagentModel)) {
     env.CLAUDE_CODE_SUBAGENT_MODEL = input.subagentModel;
     env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE = input.subagentPolicy === "force" ? "1" : "0";
   }
@@ -278,7 +284,7 @@ export function buildClaudeSpawnArgs(input: {
     ...(input.isolated ? { disableAllHooks: true } : {}),
   };
   if (input.isolated) {
-    args.push("--no-session-persistence");
+    if (!input.persistSession) args.push("--no-session-persistence");
     args.push("--strict-mcp-config");
     args.push("--mcp-config", JSON.stringify({ mcpServers: {} }));
     args.push("--settings", JSON.stringify(settings));
@@ -479,12 +485,45 @@ export function statusTextFromSystem(rec: Record<string, unknown>): string | und
   return compact ? "Compacted context" : undefined;
 }
 
+/**
+ * Where a compaction stands, from the `system/status` pings around it. Claude
+ * Code sends `status: "compacting"` (no prose) when it starts, then a status
+ * with a null/absent `status` when the pass is over; a failed pass may carry
+ * `compact_result: "failed"` and `compact_error`. The finished compaction itself
+ * is reported by the `compact_boundary` message, handled by `statusTextFromSystem`.
+ */
+export function compactionPhaseFromSystem(
+  rec: Record<string, unknown>,
+): { phase: "running" | "ended" | "failed"; error?: string } | undefined {
+  if (stringField(rec, "type") !== "system" || stringField(rec, "subtype") !== "status") {
+    return undefined;
+  }
+  if (stringField(rec, "compact_result")?.toLowerCase() === "failed") {
+    const error = stringField(rec, "compact_error")?.trim();
+    return { phase: "failed", ...(error ? { error } : {}) };
+  }
+  const status = stringField(rec, "status")?.trim().toLowerCase();
+  if (status === "compacting") return { phase: "running" };
+  if (!status && "status" in rec) return { phase: "ended" };
+  return undefined;
+}
+
+/** Claude can report an API failure as an assistant row before a success result. */
+export function errorFromAssistant(rec: Record<string, unknown>): string | undefined {
+  if (rec.type !== "assistant" || isSubagentMessage(rec)) return undefined;
+  if (rec.isApiErrorMessage !== true && (typeof rec.error !== "string" || !rec.error.trim()))
+    return undefined;
+  return (
+    assistantTextBlocks(rec).join("").trim() || String(rec.error || "Claude API request failed.")
+  );
+}
+
 export function turnStatusFromResult(rec: Record<string, unknown>): {
   status: "completed" | "failed" | "interrupted" | "cancelled";
   error?: string;
 } {
   const subtype = stringField(rec, "subtype") ?? "";
-  if (subtype === "success") return { status: "completed" };
+  if (subtype === "success" && rec.is_error !== true) return { status: "completed" };
   const errors = Array.isArray(rec.errors)
     ? rec.errors.filter((item): item is string => typeof item === "string")
     : [];
@@ -499,7 +538,13 @@ export function turnStatusFromResult(rec: Record<string, unknown>): {
   }
   if (joined.includes("cancel")) return { status: "cancelled" };
   const error = errors.find((item) => !item.startsWith("[ede_diagnostic]"));
-  return { status: "failed", error: error ?? "Claude turn failed." };
+  // An `is_error` result carries its reason in `result` (text), not in `errors`.
+  const result = typeof rec.result === "string" ? rec.result.trim() : "";
+  const status = typeof rec.api_error_status === "number" ? ` (HTTP ${rec.api_error_status})` : "";
+  return {
+    status: "failed",
+    error: error ?? (result ? `${result}${status}` : `Claude turn failed.${status}`),
+  };
 }
 
 /**
@@ -945,6 +990,83 @@ export function tryParseJsonRecord(value: string): Record<string, unknown> | und
   }
 }
 
+/** One original tool's append-only input. Each code unit enters the frontier once.
+ * Full JSON validation runs only after the root closes; string braces never trigger reparses. */
+export function createJsonRecordAccumulator() {
+  const chunks: string[] = [];
+  const closing: string[] = [];
+  let started = false;
+  let inString = false;
+  let escaping = false;
+  let terminal = false;
+  let parsed: Record<string, unknown> | undefined;
+  const whitespace = (char: string) =>
+    char === " " || char === "\t" || char === "\r" || char === "\n";
+  return {
+    append(chunk: string): Record<string, unknown> | undefined {
+      if (!chunk.length) return parsed;
+      if (terminal) {
+        if (!parsed) return undefined;
+        for (let index = 0; index < chunk.length; index++) {
+          if (!whitespace(chunk[index])) {
+            parsed = undefined;
+            return undefined;
+          }
+        }
+        return parsed;
+      }
+      chunks.push(chunk);
+      for (let index = 0; index < chunk.length; index++) {
+        const char = chunk[index];
+        if (!started) {
+          if (whitespace(char)) continue;
+          if (char !== "{") {
+            terminal = true;
+            chunks.length = 0;
+            closing.length = 0;
+            return undefined;
+          }
+          started = true;
+          closing.push("}");
+          continue;
+        }
+        if (inString) {
+          if (escaping) escaping = false;
+          else if (char === "\\") escaping = true;
+          else if (char === '"') inString = false;
+          continue;
+        }
+        if (char === '"') inString = true;
+        else if (char === "{" || char === "[") closing.push(char === "{" ? "}" : "]");
+        else if (char === "}" || char === "]") {
+          if (closing.pop() !== char) {
+            terminal = true;
+            chunks.length = 0;
+            closing.length = 0;
+            return undefined;
+          }
+          if (closing.length) continue;
+          terminal = true;
+          for (let tail = index + 1; tail < chunk.length; tail++) {
+            if (!whitespace(chunk[tail])) {
+              chunks.length = 0;
+              return undefined;
+            }
+          }
+          try {
+            parsed = asRecord(JSON.parse(chunks.join(""))) ?? undefined;
+          } catch {
+            parsed = undefined;
+          }
+          chunks.length = 0;
+          return parsed;
+        }
+      }
+      return undefined;
+    },
+  };
+}
+
 export function taskListFromTodos(input: Record<string, unknown>): TaskListItem[] | null {
   return taskListFromToolInput("TodoWrite", input);
 }
@@ -1176,10 +1298,9 @@ export function contextUsedFromAssistant(rec: Record<string, unknown>): number |
 /**
  * Context level and window from a turn `result`.
  *
- * `usage` at the top level sums every iteration of the turn, so the last entry
- * of `usage.iterations` is what actually sits in the window. `modelUsage`
- * carries the window itself, which is why we let the CLI tell us rather than
- * keeping a model table in sync.
+ * Top-level `usage` sums the whole turn (it can exceed the window), so only the
+ * last `usage.iterations` entry is a level; assistant messages cover the rest.
+ * `modelUsage` carries the window, so the CLI tells us rather than a table.
  */
 export function contextFromResult(
   rec: Record<string, unknown>,
@@ -1187,7 +1308,7 @@ export function contextFromResult(
   const usage = asRecord(rec.usage);
   const iterations = Array.isArray(usage?.iterations) ? usage.iterations : [];
   const last = asRecord(iterations[iterations.length - 1]);
-  const used = contextUsedFromUsage(last ?? usage);
+  const used = contextUsedFromUsage(last);
 
   let window: number | undefined;
   const modelUsage = asRecord(rec.modelUsage);

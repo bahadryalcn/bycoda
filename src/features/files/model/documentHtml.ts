@@ -9,7 +9,7 @@ const ALLOWED_LINK = /^(https?:|mailto:)/i;
  * turns links into inert text that shows its target as a tooltip: a click
  * would otherwise navigate the app's own webview away from the viewer.
  */
-export function sanitizeDocumentHtml(html: string): string {
+export function sanitizeDocumentBody(html: string): HTMLElement {
   const body = DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true },
     FORBID_TAGS: ["style", "form", "input", "button", "textarea", "select"],
@@ -25,5 +25,9 @@ export function sanitizeDocumentHtml(html: string): string {
     link.removeAttribute("target");
     if (ALLOWED_LINK.test(href)) link.setAttribute("title", href);
   }
-  return body.innerHTML;
+  return body;
+}
+
+export function sanitizeDocumentHtml(html: string): string {
+  return sanitizeDocumentBody(html).innerHTML;
 }

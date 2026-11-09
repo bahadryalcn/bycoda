@@ -1,0 +1,51 @@
+/* Waiting-for-you rows: platform mark, reason, and compact actions. */
+.needs-human-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.needs-human-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.5rem 0.75rem;
+  min-width: 0;
+}
+
+.needs-human-row + .needs-human-row {
+  border-top: 1px solid var(--ui-pane-border);
+}
+
+.needs-human-text {
+  display: flex;
+  flex: 1 1 8rem;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.needs-human-reason {
+  color: var(--color-content);
+  font-size: var(--ui-font-body);
+  font-weight: 500;
+}
+
+.needs-human-platform,
+.needs-human-note {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
+}
+
+.needs-human-note {
+  padding: 0.5rem 0.75rem;
+}
+
+.needs-human-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}

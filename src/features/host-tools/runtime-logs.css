@@ -1,25 +1,26 @@
-.host-tools-content:has(> .runtime-logs-panel) {
+.host-tools-content-logs {
   display: flex;
   flex-direction: column;
   overflow: clip;
 }
 
-.host-tools-content:has(> .runtime-logs-panel) > .host-tools-machine {
+.host-tools-content-logs > .host-tools-machine {
   flex: none;
 }
 
 .runtime-logs-panel {
   --runtime-log-muted: var(--ui-text-secondary);
-  --runtime-log-error: var(--color-danger);
-  --runtime-log-warning: var(--color-warning);
-  --runtime-log-browser: var(--color-info);
+  --runtime-log-error: var(--ui-tone-danger-fg);
+  --runtime-log-warning: var(--ui-tone-warning-fg);
+  --runtime-log-browser: var(--ui-tone-info-fg);
   --runtime-log-server: var(--color-feature);
-  background: var(--color-background-base);
+  background: var(--ui-workspace-canvas);
   flex: 1 1 0;
   block-size: auto;
-  gap: clamp(6px, 1cqi, 10px);
+  gap: 4px;
   min-block-size: 0;
-  padding-block: 8px;
+  padding: 4px;
+  --host-tool-content: 100%;
 }
 
 .runtime-logs-panel > :not(.runtime-logs-timeline) {
@@ -43,14 +44,14 @@
 .runtime-logs-disclosure > summary {
   padding-block: 8px;
   color: var(--runtime-log-muted);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   cursor: pointer;
   overflow-wrap: anywhere;
 }
 
 .runtime-logs-disclosure > summary:focus-visible {
-  outline: 2px solid var(--color-accent, var(--color-content));
-  outline-offset: 2px;
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
 }
 
 .runtime-logs-disclosure > summary:active {
@@ -75,8 +76,8 @@
 
 .runtime-logs-monitor-setup > strong,
 .runtime-logs-monitor-list strong {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
 }
 
 .runtime-logs-monitor-list {
@@ -96,12 +97,12 @@
   flex: 1 1 180px;
   min-inline-size: 0;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 
 .runtime-logs-heading,
 .runtime-logs-title,
-.runtime-logs-state,
+.runtime-logs-status,
 .runtime-logs-stream-actions,
 .runtime-logs-footer,
 .runtime-logs-footer-actions,
@@ -118,8 +119,8 @@
 }
 
 .runtime-logs-heading h3 {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: var(--ui-font-title);
+  font-weight: 500;
   flex-shrink: 0;
 }
 
@@ -134,40 +135,39 @@
 
 .runtime-logs-host {
   color: var(--runtime-log-muted);
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
   min-inline-size: 0;
   white-space: nowrap;
   overflow: clip;
   text-overflow: ellipsis;
 }
 
-.runtime-logs-state {
+.runtime-logs-status {
   flex-shrink: 0;
-  font-size: 11px;
-  color: var(--runtime-log-muted);
-}
-
-.runtime-logs-state::before {
-  content: "";
-  inline-size: 6px;
-  block-size: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.runtime-logs-state[data-state="live"] {
-  color: var(--color-success);
-}
-
-.runtime-logs-state[data-state="offline"] {
-  color: var(--runtime-log-error);
 }
 
 .runtime-logs-controls {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
+}
+
+.runtime-logs-source-picker {
+  flex: 0 1 180px;
+  min-inline-size: 0;
+}
+
+.runtime-logs-controls > .runtime-logs-search {
+  order: 1;
+}
+
+.runtime-logs-controls > button {
+  order: 2;
+}
+
+.runtime-logs-controls > .runtime-logs-stream-actions {
+  order: 3;
 }
 
 .runtime-logs-search {
@@ -186,7 +186,8 @@
 
 .runtime-logs-stream-actions,
 .runtime-logs-footer-actions {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  gap: 0;
 }
 
 .runtime-logs-filters {
@@ -231,8 +232,8 @@
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   border: 1px solid var(--color-stroke);
-  border-radius: 7px;
-  background: var(--color-background-base);
+  border-radius: 0;
+  background: var(--ui-workspace-reading-base);
 }
 
 .runtime-logs-list {
@@ -263,7 +264,6 @@
   justify-content: center;
   align-items: start;
   padding-block-start: 11px;
-  cursor: pointer;
 }
 
 .runtime-log-row > details {
@@ -271,17 +271,11 @@
 }
 
 .runtime-log-summary {
-  list-style: none;
   display: grid;
   gap: 5px;
   padding-block: 8px;
   padding-inline: 2px 9px;
-  cursor: pointer;
   min-inline-size: 0;
-}
-
-.runtime-log-summary::-webkit-details-marker {
-  display: none;
 }
 
 .runtime-log-meta {
@@ -313,7 +307,7 @@
   content: "";
   inline-size: 4px;
   block-size: 4px;
-  border-radius: 1px;
+  border-radius: 50%;
   background: currentColor;
   flex-shrink: 0;
 }
@@ -351,7 +345,7 @@
   font-variant-numeric: tabular-nums;
   padding-block: 1px;
   padding-inline: 5px;
-  border-radius: 4px;
+  border-radius: var(--ui-control-radius);
   color: var(--color-content);
   background: var(--color-selection);
 }
@@ -373,7 +367,7 @@
 .runtime-log-message {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
   line-height: 1.5;
   white-space: nowrap;
   overflow: clip;
@@ -385,7 +379,7 @@
   gap: 9px;
   padding-block: 4px 12px;
   padding-inline: 2px 10px;
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
   min-inline-size: 0;
   overflow-wrap: break-word;
 }
@@ -393,7 +387,7 @@
 .runtime-log-detail-body pre,
 .runtime-log-detail-body code {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
 }
 
 .runtime-log-detail-body pre {
@@ -405,7 +399,7 @@
 .runtime-log-detail-body h4 {
   margin-block: 0 5px;
   font-size: var(--ui-font-caption);
-  font-weight: 600;
+  font-weight: 500;
   color: var(--runtime-log-muted);
 }
 
@@ -423,14 +417,12 @@
   min-inline-size: 0;
   padding: 8px;
   border: 1px solid var(--color-stroke);
-  border-radius: 4px;
+  border-radius: var(--ui-control-radius);
 }
 
 .runtime-log-object-node summary {
-  color: var(--runtime-log-muted);
-  cursor: pointer;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
 }
 
 .runtime-log-object-node ul {
@@ -480,28 +472,28 @@
 }
 
 .runtime-logs-empty strong {
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   font-weight: 500;
 }
 
 .runtime-logs-empty p {
   max-inline-size: 44ch;
   margin: 0;
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
   line-height: 1.6;
   color: var(--runtime-log-muted);
 }
 
 .runtime-logs-selection {
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
   color: var(--runtime-log-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .runtime-logs-hint {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
   line-height: 1.5;
   overflow-wrap: break-word;
 }
@@ -513,12 +505,8 @@
 .runtime-logs-sources {
   padding-block-start: 7px;
   border-block-start: 1px solid var(--color-stroke);
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
   color: var(--runtime-log-muted);
-}
-
-.runtime-logs-sources > summary {
-  cursor: pointer;
 }
 
 .runtime-logs-sources ul {
@@ -558,10 +546,6 @@
   .runtime-log-summary:hover {
     background: var(--color-selection-subtle);
   }
-  .runtime-logs-sources > summary:hover,
-  .runtime-log-object-node summary:hover {
-    color: var(--color-content);
-  }
 }
 
 /* Severity is carried by text and the gutter, never by a red log canvas. */
@@ -584,15 +568,17 @@
   --runtime-row-color: var(--color-feature);
 }
 .runtime-log-row[data-level="success"] {
-  --runtime-row-color: var(--color-success);
+  --runtime-row-color: var(--ui-tone-success-fg);
 }
-.runtime-log-row .runtime-log-level,
-.runtime-log-row .runtime-log-message {
+.runtime-log-row .runtime-log-level {
   color: var(--runtime-row-color);
+}
+.runtime-log-row .runtime-log-message {
+  color: var(--color-content);
 }
 .runtime-log-meta > .runtime-log-kind {
   font-family: var(--font-mono);
-  font-weight: 600;
+  font-weight: 500;
 }
 .runtime-log-meta > .runtime-log-kind::before {
   content: none;
@@ -628,7 +614,7 @@
   min-inline-size: 0;
   max-inline-size: 100%;
   border: 1px solid var(--color-stroke);
-  border-radius: 5px;
+  border-radius: var(--ui-control-radius);
   background: var(--ui-surface-raised);
 }
 .runtime-logs-panel .runtime-logs-monitor-name {
@@ -649,6 +635,53 @@
   gap: 12px;
   padding: 12px;
   min-inline-size: 0;
+}
+
+.runtime-logs-monitors-popover {
+  padding: 12px;
+}
+
+.runtime-logs-monitors-popover .runtime-logs-monitor-setup {
+  display: grid;
+  gap: 10px;
+}
+
+.runtime-logs-monitors-popover .runtime-logs-capture-form > .bycoda-arc-field {
+  flex-basis: 160px;
+}
+
+.runtime-logs-monitors-popover .runtime-logs-monitor-name {
+  min-inline-size: 0;
+  max-inline-size: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.runtime-logs-footer {
+  justify-content: start;
+  min-block-size: 24px;
+  padding-inline: 4px;
+  font-size: var(--ui-font-micro);
+}
+
+.runtime-logs-footer .runtime-logs-totals {
+  gap: 6px;
+  margin-inline-start: auto;
+  font-size: var(--ui-font-micro);
+}
+
+@container (max-width: 620px) {
+  .runtime-logs-source-picker {
+    flex: 1 1 120px;
+    max-inline-size: 180px;
+  }
+  .runtime-logs-controls > .runtime-logs-search {
+    flex: 1 1 140px;
+  }
+  .runtime-logs-controls > .runtime-logs-stream-actions {
+    flex: 1 1 auto;
+    justify-content: end;
+  }
 }
 .runtime-logs-capture-form > .bycoda-arc-field {
   flex: 1 1 120px;

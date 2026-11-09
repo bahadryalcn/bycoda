@@ -1,0 +1,69 @@
+.muted {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+}
+
+.permission {
+  display: grid;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.permissionText {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+}
+.permissionText strong {
+  font-weight: 500;
+  color: inherit;
+}
+
+.retention {
+  display: grid;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.hint {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.hint > p {
+  flex: 1;
+}
+
+.usage {
+  display: grid;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface-muted);
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+.chip strong {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+}

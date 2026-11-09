@@ -31,10 +31,10 @@ test("merge editor selects individual source conflicts, preserves manual edits a
     .getByRole("group", { name: "Conflict 2 of 2", exact: true })
     .getByRole("button", { name: "Mark as Resolved", exact: true })
     .click();
-  await page.getByRole("button", { name: "Side by side", exact: true }).click();
+  await page.getByRole("radio", { name: "Side by side", exact: true }).click();
   await expect(output).toContainText("name=custom");
   await page.screenshot({ path: info.outputPath("three-column.png") });
-  await page.getByRole("button", { name: "Sources above", exact: true }).click();
+  await page.getByRole("radio", { name: "Sources above", exact: true }).click();
   await expect(output).toContainText("name=custom");
   await page.screenshot({ path: info.outputPath("twin-source.png") });
   await page.getByRole("button", { name: "Save and stage", exact: true }).click();
@@ -148,15 +148,42 @@ test("merge editor panes resize with separators and scroll to matching conflicts
       );
       return line?.textContent ?? "";
     });
+  // All three panes read in one task, so a follower is never compared with a
+  // leader position from an earlier frame.
+  const topLines = () =>
+    page.evaluate(() =>
+      Object.fromEntries(
+        ["result", "ours", "theirs"].map((side) => {
+          const scroller = document.querySelector(`.conflict-pane-${side} .cm-scroller`)!;
+          const top = scroller.getBoundingClientRect().top;
+          const line = [...scroller.querySelectorAll(".cm-line")].find(
+            (item) => item.getBoundingClientRect().bottom > top + 2,
+          );
+          return [side, line?.textContent ?? ""];
+        }),
+      ),
+    );
   await page.locator(".conflict-pane-result .cm-content").hover();
   await page.mouse.wheel(0, 240);
-  await expect.poll(() => topLine(".conflict-pane-result")).toMatch(/unchanged context/);
+  // WebKit animates wheel scrolling: compare the panes once the result has
+  // stopped moving, not against a position captured mid-animation.
+  let previous = "";
   await expect
-    .poll(() => topLine(".conflict-pane-ours"))
-    .toBe(await topLine(".conflict-pane-result"));
-  await expect
-    .poll(() => topLine(".conflict-pane-theirs"))
-    .toBe(await topLine(".conflict-pane-result"));
+    .poll(async () => {
+      const lines = await topLines();
+      const current = JSON.stringify(lines);
+      const settled = current === previous;
+      previous = current;
+      return settled ? lines : { unsettled: lines };
+    })
+    .toEqual({
+      result: expect.stringMatching(/unchanged context/),
+      ours: expect.stringMatching(/unchanged context/),
+      theirs: expect.stringMatching(/unchanged context/),
+    });
+  const aligned = await topLines();
+  expect(aligned.ours).toBe(aligned.result);
+  expect(aligned.theirs).toBe(aligned.result);
   await page.getByRole("button", { name: "Sync scrolling", exact: true }).click();
   const before = await topLine(".conflict-pane-ours");
   await page.locator(".conflict-pane-result .cm-content").hover();
@@ -172,6 +199,17 @@ for (const theme of ["dark", "light"]) {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/tests/browser/merge-conflicts.html${theme === "light" ? "?light&hash" : ""}`);
     const output = page.getByRole("textbox", { name: "Resolved output", exact: true });
+    const expectConflictValues = async (price: string, name: string, state: string) => {
+      // CodeMirror only renders the viewport. Check both distant conflicts by
+      // navigating the real editor, including at the final narrow viewport.
+      await output.focus();
+      await output.press("ControlOrMeta+Home");
+      await expect(output.locator(".cm-line").filter({ hasText: /^price=/ })).toHaveText(price);
+      await output.press("ControlOrMeta+End");
+      await expect(output.locator(".cm-line").filter({ hasText: /^name=/ })).toHaveText(name);
+      await expect(output.locator(".cm-line").filter({ hasText: /^end$/ })).toHaveText("end");
+      await page.screenshot({ path: info.outputPath(`${theme}-${state}-end.png`) });
+    };
     await expect(page.locator(".conflict-provenance")).toContainText("main");
     await expect(page.locator(".conflict-provenance")).toContainText("feature/pricing");
     await expect(page.locator(".conflict-pane-ours .conflict-source-identity")).toContainText(
@@ -190,17 +228,14 @@ for (const theme of ["dark", "light"]) {
     const incoming = page.getByRole("button", { name: "Accept All Incoming", exact: true });
     await incoming.focus();
     await incoming.press("Enter");
-    await expect(output).toContainText("price=120");
-    await expect(output).toContainText("name=incoming");
+    await expectConflictValues("price=120", "name=incoming", "incoming");
     await expect(page.getByRole("button", { name: "Save and stage", exact: true })).toBeEnabled();
     await output.focus();
     await output.press("ControlOrMeta+z");
-    await expect(output).toContainText("price=80");
-    await expect(output).toContainText("name=base");
+    await expectConflictValues("price=80", "name=base", "undo");
     await expect(page.getByRole("button", { name: "Save and stage", exact: true })).toBeDisabled();
     await page.getByRole("button", { name: "Accept All Current", exact: true }).click();
-    await expect(output).toContainText("price=100");
-    await expect(output).toContainText("name=current");
+    await expectConflictValues("price=100", "name=current", "current");
     const writes = await page.evaluate(() =>
       (window as unknown as { mergeCalls: { command: string }[] }).mergeCalls.filter((call) =>
         /write_text_file|git_stage_file/.test(call.command),

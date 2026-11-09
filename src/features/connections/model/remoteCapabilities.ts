@@ -8,13 +8,13 @@ import { subscribeRemoteRecovered } from "./remoteHealth";
 import { parseRemotePath } from "./remoteProjects";
 
 /** Branches, tags, remotes, stashes, history rewriting, conflicts and blame
- * (host/git-actions.ts). */
+ * (host/git/git-actions.ts). */
 export const GIT_ACTIONS = "git.actions";
 
-/** Reading the three versions of a conflicted file (host/git-conflicts.ts). */
+/** Reading the three versions of a conflicted file (host/git/git-conflicts.ts). */
 export const GIT_CONFLICTS = "git.conflicts";
 
-/** Running a `!command` from the composer in a host session (host/shell.ts). */
+/** Running a `!command` from the composer in a host session (host/execution/shell.ts). */
 export const SESSION_SHELL = "sessions.shell";
 export const SESSION_REWIND = "sessions.rewind";
 

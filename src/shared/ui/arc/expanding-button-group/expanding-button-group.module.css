@@ -1,47 +1,71 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+/* External layout: callers can size or place the tray with Tailwind utilities. The reveal below is layout-only CSS and stays unlayered. */
+@layer components {
+  .group {
+    max-inline-size: 100%;
+    flex: none;
+  }
+  .group[data-full-width] {
+    inline-size: 100%;
+  }
+}
+
 .group {
   position: relative;
   isolation: isolate;
   display: inline-flex;
-  max-inline-size: 100%;
-  flex: none;
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
+  border: 1px solid var(--color-stroke);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface-raised);
 }
-/* Official measured width/label reveal; standard action presentation stays in Button. */
+/* Flat icon buttons for headers: no tray surface, matching window controls. */
+.group[data-chrome="bare"] {
+  gap: var(--space-1);
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
+/* The label reveal is layout-only: its grid track opens from 0fr to 1fr, so no width is measured or driven from script.
+   Standard action presentation stays in Button. */
 .group .item {
+  --ebg-duration: var(--motion-reorder-duration, 160ms);
+  --ebg-ease: var(--motion-ease-out, cubic-bezier(0.22, 1, 0.36, 1));
   min-inline-size: var(--ebg-h);
   flex: none;
   justify-content: flex-start;
   overflow: clip;
-  padding-inline: var(--ebg-start) 0;
+  /* Button draws a 1px border inside its box, so the inset excludes it and a collapsed action stays square. */
+  padding-inline: calc(var(--ebg-start) - 1px);
   touch-action: manipulation;
 }
 .item > span {
-  gap: var(--ebg-gap);
+  gap: 0;
   flex: none;
   justify-content: flex-start;
 }
 .group[data-fit] .item {
   flex-shrink: 1;
 }
-.group[data-full-width] {
-  inline-size: 100%;
-}
 .group[data-full-width] .item {
   flex-grow: 1;
   justify-content: center;
-  padding-inline: var(--ebg-start);
 }
-.group[data-full-width] .item:not([data-expanded]) > span {
-  gap: 0;
+/* A running action keeps its label open; its icon breathes so pending reads without another control. */
+.item[aria-busy="true"] {
+  cursor: progress;
 }
-.group[data-full-width] .item:not([data-expanded]) .label {
-  inline-size: 0;
-  overflow: clip;
+.item[aria-busy="true"] .icon {
+  animation: ebg-pending 1s var(--ebg-ease) infinite;
+}
+@keyframes ebg-pending {
+  50% {
+    opacity: 0.45;
+  }
 }
 .icon {
   position: relative;
@@ -64,10 +88,35 @@
   stroke-width: 1.75;
 }
 .label {
-  display: inline-grid;
+  display: grid;
   flex: none;
+  grid-template-columns: 0fr;
+  transition: grid-template-columns var(--ebg-duration) var(--ebg-ease);
+}
+.item[data-expanded] .label {
+  grid-template-columns: 1fr;
+}
+.clip {
+  min-inline-size: 0;
+  overflow: clip;
+}
+/* The gap and the extra trailing inset live inside the clipped track, so a collapsed action is exactly square. */
+.text {
+  display: grid;
   align-items: center;
   justify-items: start;
+  padding-inline: var(--ebg-gap) calc(var(--ebg-end) - var(--ebg-start));
+  opacity: 0;
+  translate: -4px 0;
+  transition:
+    opacity var(--motion-feedback-duration, 120ms) var(--ebg-ease),
+    translate var(--motion-feedback-duration, 120ms) var(--ebg-ease);
+}
+.item[data-expanded] .text {
+  opacity: 1;
+  translate: 0 0;
+  transition-duration: var(--ebg-duration);
+  transition-delay: 30ms;
 }
 .word {
   grid-area: 1 / 1;
@@ -79,9 +128,50 @@
   pointer-events: none;
   white-space: nowrap;
 }
-.item[data-unmeasured][data-expanded] {
-  inline-size: auto !important;
-  padding-inline-end: var(--ebg-end);
+.word[data-swap] {
+  animation: ebg-word-in var(--ebg-duration) var(--ebg-ease) both;
+}
+.glyph[data-swap] {
+  animation: ebg-icon-in var(--ebg-duration) var(--ebg-ease) both;
+}
+.check {
+  stroke-dasharray: 1;
+  animation: ebg-draw var(--ebg-duration) var(--ebg-ease) 60ms both;
+}
+@keyframes ebg-word-in {
+  from {
+    opacity: 0;
+    translate: 0 0.5em;
+  }
+}
+@keyframes ebg-icon-in {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+@keyframes ebg-draw {
+  from {
+    opacity: 0;
+    stroke-dashoffset: 1;
+  }
+  to {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .label,
+  .text,
+  .item[data-expanded] .text {
+    transition: none;
+  }
+  .word[data-swap],
+  .glyph[data-swap],
+  .check,
+  .item[aria-busy="true"] .icon {
+    animation: none;
+  }
 }
 .srOnly {
   position: absolute;

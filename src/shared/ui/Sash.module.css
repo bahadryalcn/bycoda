@@ -1,0 +1,85 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+/* Root placement stays caller-adjustable (F3 style-ownership contract): a caller may
+   position the sash absolutely (`absolute`, offsets) instead of in the flex flow. */
+@layer components {
+  .sash {
+    position: relative;
+    flex: none;
+    align-self: stretch;
+  }
+}
+
+/* One resize-edge look: the pane hairline at rest, a quiet 1px neutral line on hover, drag
+   and keyboard focus. The hit area is wider than the line (pseudo-element, ±3px). */
+.sash {
+  z-index: 1;
+  box-sizing: border-box;
+  touch-action: none;
+  outline: none;
+  background: var(--ui-pane-border);
+}
+.sash[data-appearance="hidden"] {
+  background: transparent;
+}
+.sash[data-orientation="vertical"] {
+  inline-size: 1px;
+  cursor: col-resize;
+}
+.sash[data-orientation="horizontal"] {
+  block-size: 1px;
+  cursor: row-resize;
+}
+.sash[aria-disabled="true"] {
+  cursor: default;
+}
+.sash::before,
+.sash::after {
+  content: "";
+  position: absolute;
+}
+.sash[data-orientation="vertical"]::before {
+  inset-block: 0;
+  inset-inline: -3px;
+}
+.sash[data-orientation="horizontal"]::before {
+  inset-inline: 0;
+  inset-block: -3px;
+}
+.sash::after {
+  pointer-events: none;
+  opacity: 0;
+  background: var(--ui-sash-active);
+  transition: opacity var(--motion-feedback-duration, 120ms) var(--motion-ease-out, ease-out);
+}
+.sash[data-orientation="vertical"]::after {
+  inset-block: 0;
+  inset-inline: 0;
+}
+.sash[data-orientation="horizontal"]::after {
+  inset-inline: 0;
+  inset-block: 0;
+}
+.sash[data-dragging]::after,
+.sash:focus-visible::after {
+  opacity: 1;
+}
+.sash:focus-visible::after {
+  background: var(--ui-focus-ring-color);
+}
+@media (hover: hover) and (pointer: fine) {
+  .sash:not([aria-disabled="true"]):hover::after {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sash::after {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .sash::after {
+    background: Highlight;
+  }
+}

@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import { findModel, modelsFor, resolveModel, type AgentModel } from "../model/models";
 import type { HarnessId } from "../model/session";
+import type { ModelAccountCatalog } from "../model/accountModelChoices";
 import {
   hasProbedHarnessAvailability,
   isHarnessAvailable,
@@ -11,6 +12,8 @@ import { refreshHarnessCatalogs } from "../../../integrations/harness/core/regis
 /** Where the model picker gets its models and provider availability. The
  * default is this computer's catalog; a remote session supplies its host's. */
 export type ModelSource = {
+  /** Explicit Host catalogs never fall back to this device's credential profiles. */
+  accounts?: ModelAccountCatalog;
   /** Present only for non-local sources; local sources use global stores. */
   id?: string;
   modelsFor(harness: HarnessId): AgentModel[];

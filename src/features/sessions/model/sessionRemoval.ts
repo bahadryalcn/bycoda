@@ -1,11 +1,6 @@
 import { stopStreaming } from "../../../integrations/harness/core/apply";
 import { forgetHarnessSession } from "../../../integrations/harness/core/registry";
-import {
-  buildDeterministicHandoff,
-  completeHandoff,
-  isPreparingHandoff,
-  sessionChildHarnesses,
-} from "./handoff";
+import { cancelHandoff, isPreparingHandoff, sessionChildHarnesses } from "./handoff";
 import { flushSessionCheckpoint } from "./checkpoint";
 import { isFilesystemTab, type WorkspaceTab } from "../../workspace/model/layout";
 import { orchestrator } from "../../orchestration/model/orchestration";
@@ -22,6 +17,7 @@ import {
   type SessionWorkspaceRemoval,
 } from "./sessionWorkspaceLifecycle";
 import type { WorkspaceTabCloseScope } from "../../workspace/model/workspaceTabGroups";
+import type { SessionDeletionStage } from "./sessionDeletionStatus";
 
 type Workspace = {
   tabs: WorkspaceTab[];
@@ -67,6 +63,9 @@ type SessionRemovalOptions = {
   };
   confirm(tabs: WorkspaceTab[], mode: SessionRemovalMode): Promise<boolean>;
   stop(sessionId: string): Promise<unknown>;
+  onProgress?: (stage: SessionDeletionStage) => void;
+  /** Cleanup trouble that did not stop the removal (e.g. a provider process that may still run). */
+  onWarning?: (detail: string) => void;
 };
 
 /**
@@ -113,19 +112,29 @@ async function removeSession(
   });
   if (!(await options.confirm(plan.closedTabs, options.mode))) return false;
 
+  options.onProgress?.("stopping");
   if (options.mode === "delete") {
     const run = orchestrator.forSession(sessionId);
     if (run && (run.status === "active" || run.status === "paused")) {
-      await orchestrator.stopRun(run.leadId);
+      try {
+        await orchestrator.stopRun(run.leadId);
+      } catch (error) {
+        warn(options, "The orchestration run could not be stopped", error);
+      }
     }
   }
-  await options.stop(sessionId);
+  try {
+    await options.stop(sessionId);
+  } catch (error) {
+    // The record is still removed; the child is released below.
+    warn(options, "The running turn could not be stopped", error);
+  }
   const latest = options.workspace.snapshot().sessions.find((session) => session.id === sessionId);
   let stopped = latest;
   if (latest) {
     stopped = latest.busy ? stopStreaming(latest) : latest;
     if (isPreparingHandoff(stopped)) {
-      stopped = completeHandoff(stopped, buildDeterministicHandoff(stopped));
+      stopped = cancelHandoff(stopped);
     }
     if (stopped.queuedMessages?.length) {
       stopped = { ...stopped, queueStatus: "paused" };
@@ -140,12 +149,24 @@ async function removeSession(
   if (options.mode === "delete") {
     // Release native processes before deleting the record, so a following
     // worktree removal cannot race fire-and-forget cleanup.
-    await Promise.all(harnesses.map((harness) => forgetHarnessSession(harness, sessionId)));
+    options.onProgress?.("provider");
+    const released = await Promise.allSettled(
+      harnesses.map((harness) => forgetHarnessSession(harness, sessionId)),
+    );
+    for (const result of released) {
+      // Still delete: a lingering child must not make the conversation undeletable.
+      if (result.status === "rejected")
+        warn(options, "A provider process could not be confirmed stopped", result.reason);
+    }
   }
 
-  if (stopped) await flushSessionCheckpoint(sessionId);
+  if (stopped) {
+    options.onProgress?.("checkpoint");
+    await flushSessionCheckpoint(sessionId);
+  }
   let savedSummary: SessionSummary | undefined;
   if (options.mode === "delete") {
+    options.onProgress?.("deleting");
     const imagePaths =
       stopped?.blocks.flatMap((block) =>
         block.role === "image" && block.image ? [block.image.path] : [],
@@ -197,7 +218,9 @@ async function removeSession(
   // tabs, and focus changes must survive this operation.
   if (options.mode === "archive") {
     for (const harness of harnesses) {
-      void forgetHarnessSession(harness, sessionId);
+      void forgetHarnessSession(harness, sessionId).catch((error) => {
+        console.warn("App operation failed", error);
+      });
     }
   }
   options.workspace.apply({
@@ -208,4 +231,9 @@ async function removeSession(
     savedSummary,
   });
   return true;
+}
+
+function warn(options: SessionRemovalOptions, summary: string, error: unknown): void {
+  console.warn(summary, error);
+  options.onWarning?.(`${summary}: ${error instanceof Error ? error.message : String(error)}`);
 }

@@ -19,13 +19,16 @@
 import type { McpTag } from "./mcpPicker";
 import { canRestoreOver } from "./draftPersistence";
 import type { Attachment } from "./session";
+import { rendererPersistenceDrain, type PersistenceWork } from "../data/persistenceDrain";
 
 const drafts = new Map<string, string>();
 const mcpTags = new Map<string, McpTag[]>();
 const attachments = new Map<string, Attachment[]>();
 const modes = new Map<string, "save">();
+const sourceDraftIds = new Map<string, string>();
+const sourceDraftDigests = new Map<string, string>();
 const notices = new Map<string, string>();
-const listeners = new Set<(sessionId: string) => void>();
+const listeners = new Set<(sessionId: string, work?: PersistenceWork) => void>();
 let revision = 0;
 const changedAt = new Map<string, number>();
 
@@ -35,14 +38,31 @@ export function composerDraftRevision(): number {
 }
 
 /** Called with the session id whenever its draft changes. Returns the unsubscribe. */
-export function subscribeComposerDrafts(listener: (sessionId: string) => void): () => void {
+export function subscribeComposerDrafts(
+  listener: (sessionId: string, work?: PersistenceWork) => void,
+): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
-function changed(sessionId: string) {
+/** View-only listeners: also told about drafts restored from disk, which `listeners` must not rewrite. */
+const presenceListeners = new Set<() => void>();
+
+/** For lists that mark sessions holding an unsent draft. Returns the unsubscribe. */
+export function subscribeComposerDraftPresence(listener: () => void): () => void {
+  presenceListeners.add(listener);
+  return () => presenceListeners.delete(listener);
+}
+
+function notifyPresence() {
+  for (const listener of presenceListeners) listener();
+}
+
+function changed(sessionId: string, work?: PersistenceWork) {
+  rendererPersistenceDrain.noteMutation([sessionId], work);
   changedAt.set(sessionId, ++revision);
-  for (const listener of listeners) listener(sessionId);
+  for (const listener of listeners) listener(sessionId, work);
+  notifyPresence();
 }
 
 export function getComposerDraft(sessionId: string): string | undefined {
@@ -119,24 +139,33 @@ export function restoreComposerDraft(
     mcpTags: McpTag[];
     attachments: Attachment[];
     mode?: "save";
+    sourceDraftId?: string;
+    sourceDraftDigest?: string;
     notice?: string;
   },
   startedAt = revision,
+  work?: PersistenceWork,
 ): boolean {
   if ((changedAt.get(sessionId) ?? 0) > startedAt) return false;
   if (
     !canRestoreOver({
       text: drafts.get(sessionId),
       attachments: attachments.get(sessionId),
+      sourceDraftId: sourceDraftIds.get(sessionId),
     })
   ) {
     return false;
   }
+  rendererPersistenceDrain.noteMutation([sessionId], work);
   if (saved.text) drafts.set(sessionId, saved.text);
   if (saved.mcpTags.length > 0) mcpTags.set(sessionId, saved.mcpTags);
   if (saved.attachments.length > 0) attachments.set(sessionId, saved.attachments);
   if (saved.mode) modes.set(sessionId, saved.mode);
+  if (saved.sourceDraftId) sourceDraftIds.set(sessionId, saved.sourceDraftId);
+  if (saved.sourceDraftId && saved.sourceDraftDigest)
+    sourceDraftDigests.set(sessionId, saved.sourceDraftDigest);
   if (saved.notice) notices.set(sessionId, saved.notice);
+  notifyPresence();
   return true;
 }
 
@@ -146,13 +175,62 @@ export function composerDraftOf(sessionId: string): {
   mcpTags: McpTag[];
   attachments: Attachment[];
   mode?: "save";
+  sourceDraftId?: string;
+  sourceDraftDigest?: string;
 } {
   return {
     text: drafts.get(sessionId) ?? "",
     mcpTags: mcpTags.get(sessionId) ?? [],
     attachments: attachments.get(sessionId) ?? [],
     ...(modes.has(sessionId) ? { mode: modes.get(sessionId) } : {}),
+    ...(sourceDraftIds.has(sessionId) ? { sourceDraftId: sourceDraftIds.get(sessionId) } : {}),
+    ...(sourceDraftDigests.has(sessionId)
+      ? { sourceDraftDigest: sourceDraftDigests.get(sessionId) }
+      : {}),
   };
+}
+
+/** Publish one mounted capture without a transient clear or four unrelated admissions. */
+export function setComposerDraftSnapshot(
+  sessionId: string,
+  snapshot: ReturnType<typeof composerDraftOf>,
+  work?: PersistenceWork,
+): void {
+  const before = composerDraftOf(sessionId);
+  // Mounted captures predating the lineage field must preserve an active edit.
+  // Explicit undefined or clearComposerDraft ends that association.
+  const sourceDraftId = Object.prototype.hasOwnProperty.call(snapshot, "sourceDraftId")
+    ? snapshot.sourceDraftId
+    : before.sourceDraftId;
+  const sourceDraftDigest = !sourceDraftId
+    ? undefined
+    : Object.prototype.hasOwnProperty.call(snapshot, "sourceDraftDigest")
+      ? snapshot.sourceDraftDigest
+      : sourceDraftId === before.sourceDraftId
+        ? before.sourceDraftDigest
+        : undefined;
+  if (
+    before.text === snapshot.text &&
+    before.mode === snapshot.mode &&
+    before.sourceDraftId === sourceDraftId &&
+    before.sourceDraftDigest === sourceDraftDigest &&
+    before.mcpTags === snapshot.mcpTags &&
+    before.attachments === snapshot.attachments
+  )
+    return;
+  if (snapshot.text) drafts.set(sessionId, snapshot.text);
+  else drafts.delete(sessionId);
+  if (snapshot.mcpTags.length) mcpTags.set(sessionId, snapshot.mcpTags);
+  else mcpTags.delete(sessionId);
+  if (snapshot.attachments.length) attachments.set(sessionId, snapshot.attachments);
+  else attachments.delete(sessionId);
+  if (snapshot.mode) modes.set(sessionId, snapshot.mode);
+  else modes.delete(sessionId);
+  if (sourceDraftId) sourceDraftIds.set(sessionId, sourceDraftId);
+  else sourceDraftIds.delete(sessionId);
+  if (sourceDraftDigest) sourceDraftDigests.set(sessionId, sourceDraftDigest);
+  else sourceDraftDigests.delete(sessionId);
+  changed(sessionId, work);
 }
 
 /** Typed text or an attachment that has not been sent. Whitespace alone is not a message. */
@@ -161,11 +239,13 @@ export function hasUnsentComposerDraft(sessionId: string): boolean {
   return draft.text.trim().length > 0 || draft.attachments.length > 0;
 }
 
-export function clearComposerDraft(sessionId: string): void {
+export function clearComposerDraft(sessionId: string, work?: PersistenceWork): void {
   drafts.delete(sessionId);
   mcpTags.delete(sessionId);
   attachments.delete(sessionId);
   modes.delete(sessionId);
+  sourceDraftIds.delete(sessionId);
+  sourceDraftDigests.delete(sessionId);
   notices.delete(sessionId);
-  changed(sessionId);
+  changed(sessionId, work);
 }

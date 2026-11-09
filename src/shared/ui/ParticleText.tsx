@@ -1,6 +1,12 @@
 import { useDecorativeMotionEnabled } from "../../features/settings/model/decorativeMotion";
 
-/** A brief title settle, without canvas effects or continuous animation. */
+/**
+ * Title text that settles in briefly when it changes (CSS only, no canvas); static when decorative motion is off.
+ * Fills the remaining width of a flex row.
+ * @group text
+ * @use A session or view title whose text changes and should softly re-enter.
+ * @avoid Ordinary static text or headings. Do not add continuous or canvas text effects.
+ */
 export function ParticleText({ text, className = "" }: { text: string; className?: string }) {
   const motionEnabled = useDecorativeMotionEnabled();
   return (

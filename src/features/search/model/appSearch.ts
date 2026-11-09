@@ -17,6 +17,13 @@ import { streamingTextUpdate } from "../../sessions/model/stableBlocks";
 
 export type SearchScope = "all" | "conversations" | "files" | "projects";
 
+/** A contextual entry into the shared search surface. Omitted fields retain drafts. */
+export type SearchRequest = {
+  scope: SearchScope;
+  query?: string;
+  conversationScope?: "everywhere" | "group" | "project";
+};
+
 export type ConversationHit = {
   id: string;
   kind: "conversation";
@@ -82,6 +89,16 @@ export type GroupedHits = {
   content: ContentHit[];
   projects: ProjectHit[];
 };
+
+/** Counts describe loaded eligible hits, never the backend's total population. */
+export type GroupedHitCounts = Record<
+  keyof GroupedHits,
+  {
+    available: number;
+    shown: number;
+    omitted: number;
+  }
+>;
 
 const ALL_LIMITS: Record<keyof GroupedHits, number> = {
   conversations: 8,
@@ -455,6 +472,17 @@ export function filterHitsByProject(hits: AppSearchHit[], cwd: string | undefine
 }
 
 export function groupHits(hits: AppSearchHit[], scope: SearchScope): GroupedHits {
+  return groupHitsWithCounts(hits, scope).grouped;
+}
+
+export function groupHitsWithCounts(
+  hits: AppSearchHit[],
+  scope: SearchScope,
+): {
+  grouped: GroupedHits;
+  counts: GroupedHitCounts;
+  omitted: number;
+} {
   const grouped: GroupedHits = {
     conversations: [],
     messages: [],
@@ -475,13 +503,22 @@ export function groupHits(hits: AppSearchHit[], scope: SearchScope): GroupedHits
   grouped.projects.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
 
   const limits = SCOPE_LIMITS[scope];
-  return {
+  const shown: GroupedHits = {
     conversations: grouped.conversations.slice(0, limits.conversations),
     messages: grouped.messages.slice(0, limits.messages),
     files: grouped.files.slice(0, limits.files),
     content: grouped.content.slice(0, limits.content),
     projects: grouped.projects.slice(0, limits.projects),
   };
+  const counts = {} as GroupedHitCounts;
+  let omitted = 0;
+  for (const category of Object.keys(grouped) as Array<keyof GroupedHits>) {
+    const available = limits[category] > 0 ? grouped[category].length : 0;
+    const hidden = available - shown[category].length;
+    counts[category] = { available, shown: shown[category].length, omitted: hidden };
+    omitted += hidden;
+  }
+  return { grouped: shown, counts, omitted };
 }
 
 export function flattenGrouped(grouped: GroupedHits): AppSearchHit[] {

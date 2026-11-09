@@ -1,12 +1,23 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+/* External layout: callers can place, size or align the control with Tailwind utilities. Its surface, face choreography and the
+   confirm/cancel hierarchy below stay unlayered. Actions are shared Buttons: Cancel is a quiet neutral ghost, and only the
+   confirming action carries the danger (or accent) tone. */
+@layer components {
+  .root {
+    display: inline-flex;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    vertical-align: middle;
+  }
+}
+
 .root {
   position: relative;
-  display: inline-flex;
-  min-inline-size: 0;
-  max-inline-size: 100%;
-  vertical-align: middle;
   color: var(--foreground);
   font-family: var(--font-body);
-  font-size: var(--text-sm);
+  font-size: var(--ui-font-secondary);
   letter-spacing: var(--tracking-body);
   line-height: var(--leading-body);
   --confirm-fill: var(--ui-tone-danger-solid);
@@ -24,14 +35,14 @@
   max-inline-size: 100%;
   justify-content: flex-start;
   overflow: clip;
-  border-radius: var(--radius-pill);
-  background: var(--surface-raised);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface-raised);
 }
 .surface::after {
   content: "";
   position: absolute;
   inset: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-stroke);
   border-radius: inherit;
   pointer-events: none;
 }
@@ -60,14 +71,14 @@
 }
 .icon {
   display: grid;
-  inline-size: 16px;
-  block-size: 16px;
+  inline-size: var(--ui-icon-md);
+  block-size: var(--ui-icon-md);
   place-items: center;
-  color: var(--text-secondary);
+  color: var(--ui-text-secondary);
 }
 .icon > svg {
-  inline-size: 16px;
-  block-size: 16px;
+  inline-size: var(--ui-icon-md);
+  block-size: var(--ui-icon-md);
 }
 .prompt {
   max-inline-size: 16rem;
@@ -122,7 +133,11 @@
   gap: 0.25em;
 }
 .face[data-face="counting"] .status {
-  color: var(--text-secondary);
+  color: var(--ui-text-secondary);
+}
+.status > .alert {
+  inline-size: var(--ui-icon-md);
+  block-size: var(--ui-icon-md);
 }
 .alert {
   color: var(--ui-tone-danger-fg);
@@ -138,11 +153,11 @@
   stroke: var(--ui-tone-success-on-solid);
 }
 .ring {
-  inline-size: 16px;
-  block-size: 16px;
+  inline-size: var(--ui-icon-md);
+  block-size: var(--ui-icon-md);
 }
 .ringTrack {
-  stroke: var(--border);
+  stroke: var(--color-stroke);
 }
 .ringFill {
   stroke: var(--confirm-fill);

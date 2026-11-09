@@ -1,12 +1,49 @@
-export type UsageGuideTarget =
+/** Controls inside the focused chat pane's composer. */
+type PaneTarget =
   | "composer"
+  | "composer-plus"
   | "model-controls"
+  | "access-mode"
   | "send-controls"
   | "queue"
   | "queue-button"
-  | "stop-button"
+  | "stop-button";
+
+/** Workspace controls that exist once for the whole window. */
+type GlobalTarget =
   | "changes"
-  | "project-navigation";
+  | "files-tab"
+  | "sidebar-tabs"
+  | "new-session"
+  | "project-navigation"
+  | "project-add"
+  | "group-pin"
+  | "terminal-toggle"
+  | "rail-inbox"
+  | "rail-notes"
+  | "rail-automations"
+  | "rail-tasks"
+  | "rail-tools"
+  | "rail-settings";
+
+export type UsageGuideTarget = PaneTarget | GlobalTarget;
+
+const GLOBAL_TARGETS: ReadonlySet<string> = new Set<GlobalTarget>([
+  "changes",
+  "files-tab",
+  "sidebar-tabs",
+  "new-session",
+  "project-navigation",
+  "project-add",
+  "group-pin",
+  "terminal-toggle",
+  "rail-inbox",
+  "rail-notes",
+  "rail-automations",
+  "rail-tasks",
+  "rail-tools",
+  "rail-settings",
+]);
 
 function visible(element: HTMLElement): boolean {
   if (!element.isConnected || element.closest('[hidden], [inert], [aria-hidden="true"]'))
@@ -32,8 +69,7 @@ export function findUsageGuideTarget(names: readonly UsageGuideTarget[]): HTMLEl
       if (composer) return composer;
       continue;
     }
-    const globalTarget = name === "changes" || name === "project-navigation";
-    const scope = globalTarget ? document : pane;
+    const scope = GLOBAL_TARGETS.has(name) ? document : pane;
     const candidate = scope
       ? Array.from(scope.querySelectorAll<HTMLElement>(selector)).find(visible)
       : undefined;

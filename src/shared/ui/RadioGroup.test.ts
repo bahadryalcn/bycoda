@@ -140,3 +140,54 @@ it("submits and resets through an associated form outside the group subtree", as
   });
   expect(new FormData(form).get("mode")).toBe("a");
 });
+
+it("renders tiles as a roving radiogroup with custom content and arrow selection", async () => {
+  const onValueChange = vi.fn();
+  const tiles = [
+    { value: "a", content: createElement("b", null, "Alpha"), data: { "data-kind": "x" } },
+    { value: "b", content: "Beta", disabled: true },
+    { value: "c", content: "Gamma", ariaLabel: "Third" },
+  ];
+  const mount = (value: string) =>
+    act(async () =>
+      root.render(
+        createElement(RadioGroup, {
+          variant: "tiles",
+          label: "Tiles",
+          options: tiles,
+          value,
+          onValueChange,
+        }),
+      ),
+    );
+  await mount("c");
+  const group = container.querySelector('[role="radiogroup"]')!;
+  expect(group.getAttribute("aria-label")).toBe("Tiles");
+  const radios = Array.from(group.querySelectorAll<HTMLButtonElement>('[role="radio"]'));
+  expect(radios.map((radio) => radio.getAttribute("aria-checked"))).toEqual([
+    "false",
+    "false",
+    "true",
+  ]);
+  expect(radios.map((radio) => radio.tabIndex)).toEqual([-1, -1, 0]);
+  expect(radios[0].getAttribute("data-kind")).toBe("x");
+  expect(radios[0].querySelector("b")?.textContent).toBe("Alpha");
+  expect(radios[1].disabled).toBe(true);
+  radios[2].focus();
+  await act(async () => {
+    radios[2].dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }),
+    );
+  });
+  // Wraps past the end and skips the disabled middle tile.
+  expect(onValueChange).toHaveBeenLastCalledWith("a");
+  expect(document.activeElement).toBe(radios[0]);
+  await act(async () => radios[2].click());
+  expect(onValueChange).toHaveBeenLastCalledWith("c");
+  await mount("zzz");
+  expect(
+    Array.from(container.querySelectorAll<HTMLButtonElement>('[role="radio"]')).map(
+      (radio) => radio.tabIndex,
+    ),
+  ).toEqual([0, -1, -1]);
+});

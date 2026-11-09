@@ -1,7 +1,11 @@
-import type { Block, Session } from "../../sessions/model/session";
-import type { UserQuestionReply } from "../../sessions/model/userQuestion";
+import type { Block, Session, ApprovalRequestToken, UserQuestionReply } from "../../sessions";
+import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
 import type { DesktopProjectDirectory } from "./protocol";
-import { isRemoteJiraOperation, type RemoteJiraOperation } from "../../inbox/model/jiraBoardProtocol";
+import type { NativeControlTurnReceipt } from "../../../integrations/harness/core/controlTurn";
+import {
+  isRemoteJiraOperation,
+  type RemoteJiraOperation,
+} from "../../inbox/model/jiraBoardProtocol";
 import {
   REMOTE_INBOX_VERSION,
   REMOTE_INBOX_PROVIDERS,
@@ -32,18 +36,34 @@ export type DesktopLiveSession = {
   busy: boolean;
   pending?: Block[];
   patch?: Partial<Session>;
+  turnReceipt?: NativeControlTurnReceipt;
 };
 
 export type DesktopLivePayload = {
+  writers?: { version: 1; sessionIds: string[] };
   projectDirectory?: DesktopProjectDirectory;
+  /** Omit directory contents only after the host acknowledges this revision. */
+  projectDirectoryRevision?: string;
   deletions?: { version: 1; replies: { id: string; error?: string }[] };
   clientId?: string;
+  pageToken?: string;
   sessions: DesktopLiveSession[];
   acked?: string[];
   inbox?: DesktopInboxPayload;
+  /** The last shared-queue change cursor this desktop saw (`queues.seq`). */
+  queueSeq?: number;
+  /** The last adopted-session change cursor this desktop saw (`adopted.seq`). */
+  adoptedSeq?: number;
+  /** The shared queues this desktop holds the drain lease of; the beat keeps them alive. `blocked`: it cannot send them now (a sync conflict). */
+  queueLeases?: { sessionId: string; epoch: number; blocked?: boolean }[];
+  /** The conversations this window runs a turn of under a run lease; the beat keeps them alive. */
+  runLeases?: { sessionId: string; epoch: number }[];
+  /** Someone is using this window now; the Host holds phone pushes meanwhile. */
+  userActive?: true;
 };
 
 export type DesktopLiveResult = {
+  projectDirectoryRevision?: string;
   deletions?: {
     jobs: { id: string; sessionId: string; cwd: string }[];
     acked: string[];
@@ -51,6 +71,14 @@ export type DesktopLiveResult = {
   commands?: DesktopLiveCommand[];
   inbox?: { jobs?: DesktopInboxJob[]; acked?: string[] };
   notesRevision?: number;
+  /** Shared queues changed since `queueSeq`; `reset` when that cannot be told. */
+  queues?: { seq: number; ids: string[]; reset?: boolean };
+  /** Adopted sessions whose host copy moved since `adoptedSeq`; `reset` when that cannot be told. */
+  adopted?: { seq: number; ids: string[]; reset?: boolean };
+  /** Per queue in `queueLeases`: the extended lease, or `null` when it was lost. */
+  queueLeases?: Record<string, { holder: string; epoch: number; expiresAt: number } | null>;
+  /** Per conversation in `runLeases`: the lease kept, or `null` when another side runs it now. */
+  runLeases?: Record<string, { holder: string; epoch: number; expiresAt: number } | null>;
 };
 export type DesktopInboxRunner = {
   invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -72,8 +100,14 @@ export async function executeDesktopInboxOperation(
     return runner.jira(operation, deadline);
   }
   if (operation.action === "review") {
-    if (!Number.isSafeInteger(deadline) || Number(deadline) <= Date.now() || Number(deadline) > Date.now() + 120_000)
-      throw new Error("The desktop review approval deadline is missing or expired. Update the host and review again.");
+    if (
+      !Number.isSafeInteger(deadline) ||
+      Number(deadline) <= Date.now() ||
+      Number(deadline) > Date.now() + 120_000
+    )
+      throw new Error(
+        "The desktop review approval deadline is missing or expired. Update the host and review again.",
+      );
     return runner.invoke("desktop_inbox_review", { operation, deadline });
   }
   if (operation.action === "providers") {
@@ -87,7 +121,9 @@ export async function executeDesktopInboxOperation(
     return Promise.all(
       REMOTE_INBOX_PROVIDERS.map(async (provider) => {
         try {
-          const status = (await runner.invoke(commands[provider])) as { connected?: boolean };
+          const status = (await runner.invoke(commands[provider])) as {
+            connected?: boolean;
+          };
           return { provider, connected: status?.connected === true };
         } catch (error) {
           return { provider, connected: false, error: safeInboxError(error) };
@@ -117,17 +153,38 @@ export async function executeDesktopInboxOperation(
 export type DesktopLiveCommand = {
   id: string;
   sessionId: string;
-  type: "cancel" | "approve" | "answer";
+  type: "cancel" | "approve" | "answer" | "retire-writer";
   requestId?: number;
+  approvalOccurrenceId?: string;
   decision?: "allow" | "deny";
   reply?: UserQuestionReply;
+  pageToken?: string;
+  turnReceipt?: NativeControlTurnReceipt;
 };
+export type DesktopControlGuard = (() => boolean) & { stopOrchestration?: () => Promise<void> };
 
 export type DesktopLiveHandlers = {
+  retireWriter?: (sessionId: string) => Promise<void>;
   delete?: (sessionId: string, cwd: string) => Promise<void>;
-  stop: (sessionId: string) => void;
-  approve: (sessionId: string, requestId: number, decision: "allow" | "deny") => void;
-  answer: (sessionId: string, requestId: number, reply: UserQuestionReply) => void;
+  stop: (sessionId: string, current?: DesktopControlGuard) => void;
+  captureApproval?: (
+    session: Session,
+    requestId: number,
+    block: Block,
+  ) => ApprovalRequestToken | undefined;
+  approvalDispatchStarted?: (expected: ApprovalRequestToken | undefined) => boolean;
+  approve: (
+    sessionId: string,
+    requestId: number,
+    decision: "allow" | "deny",
+    expected?: ApprovalRequestToken,
+  ) => void | boolean | Promise<boolean>;
+  answer: (
+    sessionId: string,
+    requestId: number,
+    reply: UserQuestionReply,
+    current?: () => boolean,
+  ) => void;
 };
 
 /** Drops functions/undefined so the value survives the JSON bridge. */
@@ -135,8 +192,84 @@ function jsonSafe<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+// Per Session object (immutable between updates); re-scanned when `blocks` changes.
+const undecidedBySession = new WeakMap<Session, { blocks: Session["blocks"]; found: Block[] }>();
 function undecidedApprovals(session: Session): Block[] {
-  return session.blocks.filter((block) => block.approval && !block.approval.decided);
+  const blocks = session.blocks;
+  const cached = undecidedBySession.get(session);
+  if (cached && cached.blocks === blocks) return cached.found;
+  const found = blocks.filter((block) => block.approval && !block.approval.decided);
+  undecidedBySession.set(session, { blocks, found });
+  return found;
+}
+
+type DesktopApprovalSource = {
+  sessionId: string;
+  requestId: number;
+  occurrenceId?: string;
+  block: object;
+  approval: object;
+  token?: ApprovalRequestToken;
+};
+
+type DesktopCommandOutcome = "applied" | "stale" | "held";
+type RetainedDesktopApproval = {
+  source: DesktopApprovalSource;
+  decision: "allow" | "deny";
+  wireOccurrenceId?: string;
+};
+type DesktopApprovalCommands = {
+  records: Map<string, RetainedDesktopApproval>;
+  capacityHeld: boolean;
+};
+const DESKTOP_APPROVAL_COMMAND_LIMIT = 64;
+const approvalCommandsKey = Symbol.for("bycoda.desktop-live.approval-commands.v1");
+const approvalIdentitiesKey = Symbol.for("bycoda.desktop-live.approval-object-identities.v1");
+const approvalCommandGlobals = globalThis as typeof globalThis & {
+  [approvalCommandsKey]?: WeakMap<Set<string>, DesktopApprovalCommands>;
+  [approvalIdentitiesKey]?: WeakMap<object, object>;
+};
+const approvalCommands = (approvalCommandGlobals[approvalCommandsKey] ??= new WeakMap());
+const approvalIdentities = (approvalCommandGlobals[approvalIdentitiesKey] ??= new WeakMap());
+function approvalObjectIdentity(value: object): object {
+  let identity = approvalIdentities.get(value);
+  if (!identity) {
+    identity = {};
+    approvalIdentities.set(value, identity);
+  }
+  return identity;
+}
+function retainedApprovalCommands(handled: Set<string>): DesktopApprovalCommands {
+  let state = approvalCommands.get(handled);
+  if (!state) {
+    state = { records: new Map(), capacityHeld: false };
+    approvalCommands.set(handled, state);
+  }
+  return state;
+}
+
+function captureDesktopApprovals(
+  sessions: readonly Session[],
+  handlers: DesktopLiveHandlers,
+): DesktopApprovalSource[] {
+  const sources: DesktopApprovalSource[] = [];
+  for (const session of sessions) {
+    if (session.worktreeRemoved) continue;
+    for (const block of undecidedApprovals(session)) {
+      const approval = block.approval!;
+      const requestId = approval.requestId;
+      const token = handlers.captureApproval?.(session, requestId, block);
+      sources.push({
+        sessionId: session.id,
+        requestId,
+        occurrenceId: approval.occurrenceId,
+        block: approvalObjectIdentity(block),
+        approval: approvalObjectIdentity(approval),
+        token,
+      });
+    }
+  }
+  return sources;
 }
 
 /** The heartbeat entry per session object (null: nothing to report). A session
@@ -181,40 +314,95 @@ export function applyDesktopLiveCommand(
   command: DesktopLiveCommand,
   sessions: readonly Session[],
   handlers: DesktopLiveHandlers,
+  originalApprovals?: readonly DesktopApprovalSource[],
 ): boolean {
+  return dispatchDesktopLiveCommand(command, sessions, handlers, originalApprovals) === "applied";
+}
+
+function dispatchDesktopLiveCommand(
+  command: DesktopLiveCommand,
+  sessions: readonly Session[],
+  handlers: DesktopLiveHandlers,
+  originalApprovals?: readonly DesktopApprovalSource[],
+  approvalOccurrenceSupported = true,
+  current?: DesktopControlGuard,
+): DesktopCommandOutcome {
   const session = sessions.find((candidate) => candidate.id === command.sessionId);
-  if (!session || session.worktreeRemoved) return false;
+  if (!session || session.worktreeRemoved) return "stale";
   const id = command.requestId;
   if (command.type === "cancel") {
-    if (!session.busy) return false;
-    handlers.stop(session.id);
-    return true;
+    if (!session.busy) return "stale";
+    if (current) handlers.stop(session.id, current);
+    else handlers.stop(session.id);
+    return "applied";
   }
-  if (id === undefined || id === null || !Number.isFinite(Number(id))) return false;
+  if (id === undefined || id === null || !Number.isFinite(Number(id))) return "stale";
   const requestId = Number(id);
   if (command.type === "approve") {
-    if (command.decision !== "allow" && command.decision !== "deny") return false;
-    const pending = undecidedApprovals(session).some(
+    if (command.decision !== "allow" && command.decision !== "deny") return "stale";
+    const pending = undecidedApprovals(session).find(
       (block) => String(block.approval?.requestId) === String(requestId),
     );
-    if (!pending) return false;
-    handlers.approve(session.id, requestId, command.decision);
-    return true;
+    if (!pending) return "stale";
+    if (!approvalOccurrenceSupported || !isApprovalOccurrenceId(command.approvalOccurrenceId))
+      return "held";
+    // A direct caller captures at its synchronous accepted boundary. A heartbeat
+    // supplies its original cut, including an empty cut; never recapture a token
+    // after the request await for an approval that arrived or changed meanwhile.
+    const sources = originalApprovals ?? captureDesktopApprovals(sessions, handlers);
+    const source = sources.find(
+      (candidate) => candidate.sessionId === session.id && candidate.requestId === requestId,
+    );
+    if (!source) return "stale";
+    if (!isApprovalOccurrenceId(source.occurrenceId)) return "held";
+    if (
+      source.occurrenceId !== command.approvalOccurrenceId ||
+      pending.approval?.occurrenceId !== source.occurrenceId
+    )
+      return "stale";
+    if (
+      source.block !== approvalObjectIdentity(pending) ||
+      source.approval !== approvalObjectIdentity(pending.approval!)
+    )
+      return "stale";
+    if (!source.token || !handlers.approvalDispatchStarted) return "held";
+    // The probe is a private callback-attempt observation, not a provider ACK.
+    // A true probe before entry also prevents replay after a synchronous throw.
+    if (handlers.approvalDispatchStarted(source.token)) return "applied";
+    try {
+      handlers.approve(session.id, requestId, command.decision, source.token);
+    } catch (error) {
+      if (handlers.approvalDispatchStarted(source.token)) return "applied";
+      throw error;
+    }
+    return handlers.approvalDispatchStarted(source.token) ? "applied" : "held";
   }
   if (command.type === "answer") {
-    if (!command.reply) return false;
-    if (String(session.pendingQuestion?.requestId) !== String(requestId)) return false;
-    handlers.answer(session.id, requestId, command.reply);
-    return true;
+    if (!command.reply) return "stale";
+    if (String(session.pendingQuestion?.requestId) !== String(requestId)) return "stale";
+    if (current) handlers.answer(session.id, requestId, command.reply, current);
+    else handlers.answer(session.id, requestId, command.reply);
+    return "applied";
   }
-  return false;
+  return "stale";
 }
 
 /** When the last heartbeat was sent and whether it reported nothing. */
 export type DesktopLiveBeat = {
   idleAt?: number;
   notesRevision?: number;
+  queueSeq?: number;
+  adoptedSeq?: number;
   directoryFingerprint?: string;
+  directorySequence?: number;
+  directoryAck?: string;
+  directoryResend?: boolean;
+  /** The last directory serialized, so an unchanged object is not stringified again. */
+  serialized?: {
+    directory: DesktopProjectDirectory;
+    json: string;
+    revision?: string;
+  };
 };
 
 /** One exchange with the host: report live sessions plus what was handled
@@ -222,15 +410,47 @@ export type DesktopLiveBeat = {
  * until a call succeeds; `handled` dedupes re-sent commands. With a `beat`,
  * an empty heartbeat is not repeated before DESKTOP_LIVE_IDLE_MS. */
 export async function runDesktopLiveTick(deps: {
+  /** Actual Host descriptor observation; absent legacy capability is unjoined. */
+  approvalOccurrenceSupported?: boolean;
   beat?: DesktopLiveBeat;
   now?: () => number;
   clientId?: string;
+  userActive?: () => boolean;
+  controlGuard?: {
+    pageToken: () => Promise<string>;
+    verify: (token: string) => Promise<void>;
+    capture: (session: Session) =>
+      | {
+          receipt: NativeControlTurnReceipt;
+          current: () => boolean;
+          question: unknown;
+          ready?: Promise<void>;
+          stopOrchestration?: () => Promise<void>;
+        }
+      | undefined;
+  };
   request: (payload: DesktopLivePayload) => Promise<DesktopLiveResult | undefined>;
   sessions: () => readonly Session[];
+  writers?: () => string[];
   projectDirectory?: () => DesktopProjectDirectory;
   handlers: DesktopLiveHandlers;
   unacked: Set<string>;
   handled: Set<string>;
+  /** Shared queues another computer changed: `undefined` means any of them. */
+  onQueuesChanged?: (ids: string[] | undefined) => void;
+  /** Every answer of a host that reports adopted-session changes: the ids that
+   * moved (empty when none), or `reset` when the cursor is new or was lost. */
+  onAdopted?: (change: { ids: string[]; reset: boolean }) => void;
+  /** The drain leases this desktop holds, and what the host answered for them. */
+  queueLeases?: {
+    held: () => { sessionId: string; epoch: number; blocked?: boolean }[];
+    answered: (answers: NonNullable<DesktopLiveResult["queueLeases"]>) => void;
+  };
+  /** The run leases of the turns this window runs; `answered` returns the conversations whose lease was lost. */
+  runLeases?: {
+    held: () => { sessionId: string; epoch: number }[];
+    answered: (answers: NonNullable<DesktopLiveResult["runLeases"]>) => string[];
+  };
   inbox?: DesktopInboxRunner;
   deletions?: {
     results: Map<string, { id: string; error?: string }>;
@@ -239,11 +459,53 @@ export async function runDesktopLiveTick(deps: {
 }): Promise<void> {
   const acked = [...deps.unacked];
   const now = deps.now ?? Date.now;
-  const live = buildDesktopLiveSessions(deps.sessions());
+  const originalSessions = deps.sessions();
+  const originalControls = new Map(
+    originalSessions.map((session) => [session.id, deps.controlGuard?.capture(session)]),
+  );
+  const pageToken = deps.controlGuard ? await deps.controlGuard.pageToken() : undefined;
+  for (const [id, original] of originalControls) {
+    if (!original?.ready) continue;
+    try {
+      await original.ready;
+    } catch {
+      originalControls.set(id, undefined);
+    }
+  }
+  const live = buildDesktopLiveSessions(originalSessions).map((entry) => {
+    const original = originalControls.get(entry.id);
+    return original ? { ...entry, turnReceipt: original.receipt } : entry;
+  });
   const projectDirectory = deps.projectDirectory?.();
-  const directoryFingerprint = projectDirectory ? JSON.stringify(projectDirectory) : undefined;
-  const directoryChanged = directoryFingerprint !== deps.beat?.directoryFingerprint;
+  let directoryFingerprint: string | undefined;
+  let directoryRevision: string | undefined;
+  if (projectDirectory) {
+    // Directory builders return the same object while their inputs are unchanged;
+    // logo previews make the JSON large, so only a new object is serialized.
+    const serialized = deps.beat?.serialized;
+    directoryFingerprint =
+      serialized?.directory === projectDirectory
+        ? serialized.json
+        : JSON.stringify(projectDirectory);
+    if (deps.beat) {
+      directoryRevision =
+        serialized?.json === directoryFingerprint ? serialized.revision : undefined;
+      if (!directoryRevision) {
+        deps.beat.directorySequence = (deps.beat.directorySequence ?? 0) + 1;
+        directoryRevision = String(deps.beat.directorySequence);
+      }
+      deps.beat.serialized = {
+        directory: projectDirectory,
+        json: directoryFingerprint,
+        revision: directoryRevision,
+      };
+    }
+  }
+  const directoryChanged =
+    directoryFingerprint !== deps.beat?.directoryFingerprint || deps.beat?.directoryResend === true;
   const inboxReplies = [...(deps.inbox?.results.values() ?? [])].slice(0, 2);
+  const heldLeases = deps.queueLeases?.held() ?? [];
+  const heldRuns = deps.runLeases?.held() ?? [];
   const idle =
     live.length === 0 &&
     acked.length === 0 &&
@@ -261,7 +523,13 @@ export async function runDesktopLiveTick(deps: {
   )
     return;
   const payload: DesktopLivePayload = {
-    ...(projectDirectory ? { projectDirectory } : {}),
+    ...(deps.writers && deps.handlers.retireWriter
+      ? { writers: { version: 1 as const, sessionIds: deps.writers() } }
+      : {}),
+    ...(projectDirectory && (!directoryRevision || deps.beat?.directoryAck !== directoryRevision)
+      ? { projectDirectory }
+      : {}),
+    ...(directoryRevision ? { projectDirectoryRevision: directoryRevision } : {}),
     ...(deps.deletions && deps.handlers.delete
       ? {
           deletions: {
@@ -271,8 +539,14 @@ export async function runDesktopLiveTick(deps: {
         }
       : {}),
     ...(deps.clientId ? { clientId: deps.clientId } : {}),
+    ...(deps.userActive?.() ? { userActive: true as const } : {}),
+    ...(pageToken ? { pageToken } : {}),
     sessions: live,
     ...(acked.length > 0 ? { acked } : {}),
+    ...(deps.beat?.queueSeq !== undefined ? { queueSeq: deps.beat.queueSeq } : {}),
+    ...(deps.beat?.adoptedSeq !== undefined ? { adoptedSeq: deps.beat.adoptedSeq } : {}),
+    ...(heldLeases.length ? { queueLeases: heldLeases } : {}),
+    ...(heldRuns.length ? { runLeases: heldRuns } : {}),
     ...(deps.inbox
       ? {
           inbox: {
@@ -282,8 +556,28 @@ export async function runDesktopLiveTick(deps: {
         }
       : {}),
   };
+  // These tokens belong to the actual local requests published by this exchange.
+  // The legacy wire has no remote-view occurrence nonce: this closes the local
+  // await/replacement race, not an ID-reuse ambiguity in an older remote view.
+  const originalApprovals = captureDesktopApprovals(originalSessions, deps.handlers);
   const result = await deps.request(payload);
-  if (deps.beat) deps.beat.directoryFingerprint = directoryFingerprint;
+  if (deps.beat) {
+    deps.beat.directoryFingerprint = directoryFingerprint;
+    deps.beat.directoryAck =
+      directoryRevision && result?.projectDirectoryRevision === directoryRevision
+        ? directoryRevision
+        : undefined;
+    // A restarted host cannot acknowledge an omitted projection. Retry the
+    // full privacy snapshot next beat; old hosts keep the legacy full cadence.
+    deps.beat.directoryResend =
+      !!projectDirectory && !payload.projectDirectory && !deps.beat.directoryAck;
+  }
+  if (result?.queueLeases) deps.queueLeases?.answered(result.queueLeases);
+  // A run lease the host took back: another computer runs this conversation now,
+  // so this window stops its turn instead of writing next to it.
+  if (result?.runLeases && deps.runLeases)
+    for (const sessionId of deps.runLeases.answered(result.runLeases))
+      deps.handlers.stop(sessionId);
   if (deps.deletions && deps.handlers.delete) {
     const runner = deps.deletions;
     for (const id of result?.deletions?.acked ?? []) runner.results.delete(id);
@@ -300,7 +594,12 @@ export async function runDesktopLiveTick(deps: {
       void Promise.resolve()
         .then(() => deps.handlers.delete!(job.sessionId, job.cwd))
         .then(() => runner.results.set(job.id, { id: job.id }))
-        .catch((error) => runner.results.set(job.id, { id: job.id, error: safeInboxError(error) }))
+        .catch((error) =>
+          runner.results.set(job.id, {
+            id: job.id,
+            error: safeInboxError(error),
+          }),
+        )
         .finally(() => runner.running.delete(job.id));
     }
   }
@@ -321,9 +620,17 @@ export async function runDesktopLiveTick(deps: {
       void Promise.resolve()
         .then(() => executeDesktopInboxOperation(job.operation, runner, job.deadline))
         .then((value) =>
-          runner.results.set(job.id, { id: job.id, result: jsonSafe(value ?? null) }),
+          runner.results.set(job.id, {
+            id: job.id,
+            result: jsonSafe(value ?? null),
+          }),
         )
-        .catch((error) => runner.results.set(job.id, { id: job.id, error: safeInboxError(error) }))
+        .catch((error) =>
+          runner.results.set(job.id, {
+            id: job.id,
+            error: safeInboxError(error),
+          }),
+        )
         .finally(() => {
           runner.running.delete(job.id);
           while (runner.results.size > 64)
@@ -341,19 +648,132 @@ export async function runDesktopLiveTick(deps: {
     }
   }
   if (deps.beat) deps.beat.idleAt = idle ? now() : undefined;
+  const queues = result?.queues;
+  if (queues && Number.isSafeInteger(queues.seq) && Array.isArray(queues.ids)) {
+    // The first answer only establishes the cursor: every queue is read on
+    // first sight anyway. After that, the changed ones are re-read at once.
+    // An answer with nothing new wakes nobody.
+    const changed = queues.ids.filter((id) => typeof id === "string");
+    if (deps.beat?.queueSeq !== undefined && (queues.reset || changed.length > 0))
+      deps.onQueuesChanged?.(queues.reset ? undefined : changed);
+    if (deps.beat) deps.beat.queueSeq = queues.seq;
+  }
+  const adopted = result?.adopted;
+  if (adopted && Number.isSafeInteger(adopted.seq) && Array.isArray(adopted.ids)) {
+    // The first answer is a reset: the desktop reads the list once to catch up.
+    deps.onAdopted?.({
+      ids: adopted.ids.filter((id) => typeof id === "string"),
+      reset: adopted.reset === true || deps.beat?.adoptedSeq === undefined,
+    });
+    if (deps.beat) deps.beat.adoptedSeq = adopted.seq;
+  }
   for (const id of acked) deps.unacked.delete(id);
   const commands = Array.isArray(result?.commands) ? result.commands : [];
   for (const command of commands) {
     if (!command || typeof command.id !== "string") continue;
     // Older hosts return all windows' commands. Never acknowledge a session
     // this window doesn't have, or it will disappear before its owner sees it.
-    if (!deps.sessions().some((session) => session.id === command.sessionId)) continue;
+    if (
+      command.type !== "retire-writer" &&
+      !deps.sessions().some((session) => session.id === command.sessionId)
+    )
+      continue;
     if (deps.handled.has(command.id)) {
       deps.unacked.add(command.id);
       continue;
     }
     try {
-      applyDesktopLiveCommand(command, deps.sessions(), deps.handlers);
+      let current: DesktopControlGuard | undefined;
+      if (command.type !== "retire-writer" && deps.controlGuard) {
+        const original = originalControls.get(command.sessionId);
+        if (
+          !pageToken ||
+          command.pageToken !== pageToken ||
+          !original ||
+          !command.turnReceipt ||
+          command.turnReceipt.version !== 1 ||
+          command.turnReceipt.sessionId !== original.receipt.sessionId ||
+          command.turnReceipt.turnId !== original.receipt.turnId
+        )
+          continue;
+        await deps.controlGuard.verify(pageToken);
+        current = () =>
+          original.current() &&
+          (command.type !== "answer" ||
+            deps.sessions().find((session) => session.id === command.sessionId)?.pendingQuestion ===
+              original.question);
+        if (original.stopOrchestration) current.stopOrchestration = original.stopOrchestration;
+        if (!current()) continue;
+      }
+      if (command.type === "retire-writer") {
+        if (!deps.handlers.retireWriter)
+          throw new Error("Desktop writer retirement is unavailable. Reopen the updated app.");
+        if (deps.sessions().some((session) => session.id === command.sessionId && session.busy))
+          throw new Error("The desktop session is still running. Retry after it finishes.");
+        await deps.handlers.retireWriter(command.sessionId);
+      } else if (command.type === "approve") {
+        const retained = retainedApprovalCommands(deps.handled);
+        const requestId = command.requestId == null ? undefined : Number(command.requestId);
+        let original = retained.records.get(command.id);
+        if (
+          original &&
+          (original.source.sessionId !== command.sessionId ||
+            original.source.requestId !== requestId ||
+            original.decision !== command.decision ||
+            original.wireOccurrenceId !==
+              (isApprovalOccurrenceId(command.approvalOccurrenceId)
+                ? command.approvalOccurrenceId
+                : undefined))
+        ) {
+          // A command ID is immutable. A changed envelope cannot retarget its
+          // original choice; consuming it is an explicit local stale witness.
+          retained.records.delete(command.id);
+        } else {
+          if (!original) {
+            const source = originalApprovals.find(
+              (candidate) =>
+                candidate.sessionId === command.sessionId && candidate.requestId === requestId,
+            );
+            if (source && (command.decision === "allow" || command.decision === "deny")) {
+              if (
+                retained.capacityHeld ||
+                retained.records.size >= DESKTOP_APPROVAL_COMMAND_LIMIT
+              ) {
+                // The Host queue retains this original choice. Once an original
+                // cannot be pinned, never recapture it from a later heartbeat.
+                retained.capacityHeld = true;
+                continue;
+              }
+              original = {
+                source,
+                decision: command.decision,
+                wireOccurrenceId: isApprovalOccurrenceId(command.approvalOccurrenceId)
+                  ? command.approvalOccurrenceId
+                  : undefined,
+              };
+              retained.records.set(command.id, original);
+            }
+          }
+          const outcome = dispatchDesktopLiveCommand(
+            command,
+            deps.sessions(),
+            deps.handlers,
+            original ? [original.source] : originalApprovals,
+            deps.approvalOccurrenceSupported === true,
+            current,
+          );
+          if (outcome === "held") continue;
+          retained.records.delete(command.id);
+        }
+      } else
+        dispatchDesktopLiveCommand(
+          command,
+          deps.sessions(),
+          deps.handlers,
+          undefined,
+          true,
+          current,
+        );
     } catch (error) {
       console.error(error);
       continue; // Keep the command pending if its handler failed.

@@ -1,16 +1,34 @@
+/* Color and size are owned here. CSS modules are unlayered, so these declarations
+   win over consumer Tailwind utilities (text-*, w-*, leading-*): every working
+   signal reads the same active role at a shared icon size. */
 .indicator {
+  --working-indicator-size: var(--ui-icon-xs);
+  color: var(--ui-tone-accent-fg);
   display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--working-indicator-size);
+  block-size: var(--working-indicator-size);
+  line-height: 1;
   vertical-align: middle;
+  user-select: none;
+}
+
+.indicator[data-size="sm"] {
+  --working-indicator-size: var(--ui-icon-sm);
+}
+
+.indicator[data-size="md"] {
+  --working-indicator-size: var(--ui-icon-md);
 }
 
 /* The 24x24 grid of the former SVG, centered and fitted like its viewBox. */
 .grid {
   position: relative;
   display: block;
-  block-size: 1em;
-  max-inline-size: 100%;
-  aspect-ratio: 1;
-  margin-inline: auto;
+  inline-size: 100%;
+  block-size: 100%;
 }
 
 /* Static staggered bars; only the root pulses. Measured in the WebView2 build:
@@ -23,7 +41,8 @@
   inline-size: calc(2.6 / 24 * 100%);
   block-size: calc(14 / 24 * 100%);
   border-radius: 999px;
-  background: currentColor;
+  /* Not currentColor: an ancestor or consumer text color must not recolor it. */
+  background: var(--ui-tone-accent-fg);
   transform: scaleY(var(--bar-scale, 0.6));
 }
 
@@ -57,6 +76,14 @@
    specificity than the animation shorthand above, so it survives its reset. */
 .indicator[data-offscreen="true"] {
   animation-play-state: paused;
+}
+
+/* Forced colors would repaint the bar backgrounds to Canvas and hide them. */
+@media (forced-colors: active) {
+  .bar {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
 }
 
 @keyframes working-signal {

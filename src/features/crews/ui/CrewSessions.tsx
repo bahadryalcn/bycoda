@@ -2,14 +2,57 @@ import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { ChevronDown, ChevronRight, Pause, Play, Plus, Square } from "../../../shared/ui/icons";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Modal } from "../../../shared/ui/Modal";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { ChevronLeft, ChevronRight, Pencil, Plus } from "../../../shared/ui/icons";
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import { taskSessionIds } from "../../tasks/model/backgroundSession";
-import { useProjectCrews, type CrewRunView } from "../model/crewClient";
+import { useProjectCrews } from "../model/crewClient";
+import { crewRunMatchesQuery } from "../model/crewPresentation";
 import { crewRunTitle } from "../model/crewRoster";
-import { CrewEditDialog, StartCrewDialog } from "./CrewDialogs";
-import { crewWorkStatus, crewWorkStatusLabel } from "./CrewRailSection";
+import { lazySurface } from "../../../shared/ui/lazySurface";
+import { CrewWorkDetail } from "./CrewWorkDetail";
+import { CrewWorkList, type CrewWorkView } from "./CrewWorkList";
+import { CrewWorkStatusText } from "./CrewWorkState";
+import { classifyRemoteError, isConnectionFailure } from "../../connections/model/remoteFailure";
+import { reportRemoteConnection } from "../../connections/model/remoteHealth";
+import { useRemoteConnectionFeedback } from "../../connections/ui/RemoteConnectionFeedback";
+import {
+  crewActionError,
+  crewActionErrorRecovered,
+  type CrewActionError,
+} from "../model/crewActionError";
+import { useCrewMachineScope } from "./CrewMachineScope";
+
+const CrewEditDialog = lazySurface(async () => ({
+  default: (await import("./CrewDialogs")).CrewEditDialog,
+}));
+const StartCrewDialog = lazySurface(async () => ({
+  default: (await import("./CrewDialogs")).StartCrewDialog,
+}));
+type CrewState = ReturnType<typeof useProjectCrews>;
+
+/** Only query transport failures belong to the machine notice; mutations keep their own outcomes. */
+function useCrewConnectionFeedback(cwd: string, state: CrewState) {
+  const failure = state.error ? classifyRemoteError(state.error) : undefined;
+  const connectionFailure = failure && isConnectionFailure(failure);
+  const sharedConnectionIssue = useRemoteConnectionFeedback(cwd, failure);
+  // Keyed on values, not the data object: a report re-renders the sidebar, so an
+  // effect that ran on every new object looped forever (React #185).
+  const loaded = state.isSuccess && !!state.data;
+  useEffect(() => {
+    if (state.error && connectionFailure) reportRemoteConnection(cwd, "crews", state.error);
+    else if (loaded) reportRemoteConnection(cwd, "crews");
+  }, [cwd, state.error, loaded, connectionFailure]);
+  return !!connectionFailure && sharedConnectionIssue;
+}
+
+/** Where a saved crew can be used; the same wording as the editor. */
+function crewScopeLabel(crew: { projectId?: string }) {
+  return crew.projectId ? t("This project") : t("All projects on this host");
+}
+type OpenSession = (target: BackgroundSessionTarget) => void | Promise<void>;
 
 export function CrewSidebar({
   cwd,
@@ -18,404 +61,539 @@ export function CrewSidebar({
 }: {
   cwd: string;
   query?: string;
-  onOpen: (target: BackgroundSessionTarget) => void | Promise<void>;
+  onOpen: OpenSession;
   onManagedChange: (cwd: string, ids: string[]) => void;
 }) {
   const state = useProjectCrews(cwd);
+  // The managed ids as one value, so the parent hears only real changes; a new
+  // data object on each render must not set parent state on each render.
+  const managed = state.data
+    ? JSON.stringify(
+        state.data.runs
+          .flatMap((run) => [
+            run.coordinatorSessionId,
+            ...run.tasks.flatMap((task) => Object.values(taskSessionIds(task))),
+          ])
+          .filter((id): id is string => !!id),
+      )
+    : undefined;
   useEffect(() => {
-    if (!state.data) return;
-    // Crew conversations are reached from their work, not the plain session list.
-    const ids = state.data.runs
-      .flatMap((run) => [
-        run.coordinatorSessionId,
-        ...run.tasks.flatMap((task) => Object.values(taskSessionIds(task))),
-      ])
-      .filter((id): id is string => !!id);
-    onManagedChange(cwd, ids);
-  }, [cwd, state.data, onManagedChange]);
+    if (managed === undefined) return;
+    onManagedChange(cwd, JSON.parse(managed) as string[]);
+  }, [cwd, managed, onManagedChange]);
   return <CrewSessions cwd={cwd} state={state} {...props} />;
 }
 
-function taskStatusLabel(status: string) {
-  return status === "verifying"
-    ? t("Reviewing")
-    : status === "review"
-      ? t("Awaiting acceptance")
-      : status === "blocked"
-        ? t("Blocked")
-        : status === "done"
-          ? t("Done")
-          : status === "queued"
-            ? t("Queued")
-            : t("Working");
-}
-
-/**
- * Crew work: each delivery given to a crew, with its status and task progress.
- * A row opens the coordinator; details list the members' and reviewers' conversations.
- */
+/** Navigation stays compact. All operations and conversations live in one work view. */
 export function CrewSessions({
   cwd,
   state,
   query = "",
+  definitionId,
   onOpen,
 }: {
   cwd: string;
-  state: ReturnType<typeof useProjectCrews>;
+  state: CrewState;
   query?: string;
-  onOpen?: (target: BackgroundSessionTarget) => void | Promise<void>;
+  definitionId?: string;
+  onOpen?: OpenSession;
 }) {
   useLocale();
-  const [pending, setPending] = useState(false);
-  const pendingGate = useRef(false);
-  const [error, setError] = useState("");
-  const [view, setView] = useState<"ongoing" | "finished">("ongoing");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [dialog, setDialog] = useState<
-    { kind: "start" } | { kind: "edit"; crewId?: string; returnToStart?: boolean } | null
-  >(null);
+  const [opened, setOpened] = useState<{
+    definitionId?: string;
+    runId?: string;
+  } | null>(null);
   const data = state.data;
-  const act = async (operation: () => Promise<unknown>) => {
-    if (pendingGate.current) return;
-    pendingGate.current = true;
-    setPending(true);
-    setError("");
-    try {
-      await operation();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      pendingGate.current = false;
-      setPending(false);
-    }
-  };
-  const open = (sessionId: string) => {
-    if (!data || !onOpen) return;
-    void act(async () =>
-      onOpen({
-        cwd,
-        machineId: data.machine.id,
-        projectId: data.project.id,
-        sessionId,
-      }),
-    );
-  };
-  const q = query.trim().toLocaleLowerCase();
-  const all = [...(data?.runs ?? [])].sort((a, b) => b.updatedAt - a.updatedAt);
-  const ongoing = all.filter((run) => run.status !== "finished");
-  const finished = all.filter((run) => run.status === "finished");
-  const listed = (view === "ongoing" ? ongoing : finished).filter(
-    (run) =>
-      !q ||
-      `${crewRunTitle(run)} ${run.definition.name} ${run.assignments.map((a) => a.title).join(" ")} ${run.definition.agents.map((a) => a.name).join(" ")}`
-        .toLocaleLowerCase()
-        .includes(q),
-  );
-  // Crews are listed and edited in the project rail; this pane shows their work
-  // and keeps Start reachable while the rail is hidden.
+  const sharedConnectionIssue = useCrewConnectionFeedback(cwd, state);
+  const q = query.trim();
+  const runs = [...(data?.runs ?? [])]
+    .filter(
+      (run) => run.status !== "finished" && (!definitionId || run.definition.id === definitionId),
+    )
+    .filter((run) => crewRunMatchesQuery(run, q))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
   if (!data && !state.error) return null;
-  if (data && !all.length && !data.definitions.length) return null;
+  if (data && !data.runs.length && !data.definitions.length && !state.error) return null;
   return (
-    <section
-      aria-label={t("Crew work")}
-      className="flex flex-col gap-1.5 border-b border-(--ui-tone-neutral-border) px-2 py-2"
-    >
-      <div className="flex items-center gap-1">
-        <span className="min-w-0 flex-1 truncate px-1 text-xs font-medium text-(--ui-text-secondary)">
+    // A quiet section label on the list's gutter. With nothing running it is only this one
+    // line (and Manage), so an idle project spends no rows on an empty state.
+    <section aria-label={t("Crew work")} className="px-1.5 pt-1">
+      <div className="flex min-h-7 items-center gap-1 ps-2.5 pe-0.5">
+        <span className="min-w-0 flex-1 text-ui-caption font-medium text-(--ui-text-muted)">
           {t("Crew work")}
         </span>
-        {finished.length ? (
-          <SegmentedControl
-            label={t("Crew work view")}
-            value={view}
-            options={[
-              {
-                value: "ongoing",
-                label: t("Ongoing ({p0})", { p0: ongoing.length }),
-              },
-              { value: "finished", label: t("Finished") },
-            ]}
-            onValueChange={(value) => setView(value === "finished" ? "finished" : "ongoing")}
-          />
-        ) : null}
         <Button
           variant="ghost"
-          iconOnly
-          label={t("Start crew work")}
-          disabled={!data || pending}
-          onClick={() => setDialog(data?.definitions.length ? { kind: "start" } : { kind: "edit" })}
+          size="sm"
+          disabled={!data}
+          onClick={() => setOpened({ definitionId })}
         >
-          <Plus className="size-3.5" />
+          {t("Manage")}
         </Button>
       </div>
-      {error && <Alert tone="danger">{error}</Alert>}
-      {state.error && (
-        <Button variant="ghost" onClick={() => void state.refetch()} title={state.error.message}>
+      {state.error && !sharedConnectionIssue ? (
+        <Button variant="ghost" onClick={() => void state.refetch()} tooltip={state.error.message}>
           {t("Crew host unavailable. Retry")}
         </Button>
-      )}
-      {data && !listed.length ? (
-        <p className="px-1 text-xs text-(--ui-text-secondary)">
-          {q
-            ? t("No matching crew work.")
-            : view === "ongoing"
-              ? t("No ongoing crew work.")
-              : t("No finished crew work.")}
+      ) : null}
+      {sharedConnectionIssue && !data ? (
+        <p role="status" className="px-2.5 py-1 text-ui-caption text-(--ui-text-muted)">
+          {t("Not connected")}
         </p>
       ) : null}
-      {listed.map((run) => (
-        <CrewWorkRow
-          key={run.id}
-          run={run}
-          catalogName={(harness, model) =>
-            data?.catalog.models[harness as keyof typeof data.catalog.models]?.find(
-              (m) => m.id === model,
-            )?.name ?? model
-          }
-          expanded={!!expanded[run.id]}
-          onToggle={() =>
-            setExpanded((current) => ({
-              ...current,
-              [run.id]: !current[run.id],
-            }))
-          }
-          pending={pending}
-          canOpen={!!onOpen}
-          onOpen={open}
-          onPause={() =>
-            void act(() =>
-              state.call(run.status === "paused" ? "crews.resume" : "crews.pause", {
-                runId: run.id,
-              }),
-            )
-          }
-          onStop={() => void act(() => state.call("crews.stop", { runId: run.id }))}
-        />
-      ))}
-      {dialog?.kind === "start" ? (
-        <StartCrewDialog
+      <div className="flex flex-col gap-px empty:hidden">
+        {runs.map((run) => (
+          <Button
+            key={run.id}
+            data-crew-work-link={run.id}
+            variant="item"
+            motion="none"
+            className="min-w-0 w-full"
+            onClick={() => setOpened({ definitionId: run.definition.id, runId: run.id })}
+            tooltip={crewRunTitle(run)}
+            tooltipWhen="overflow"
+          >
+            <span className="min-w-0 flex-1 text-start">
+              <span className="block truncate font-medium">{crewRunTitle(run)}</span>
+              <span className="mt-0.5 flex min-w-0 items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
+                <span className="truncate">{run.definition.name}</span>
+                <CrewWorkStatusText run={run} />
+              </span>
+            </span>
+            <ChevronRight className="icon-sm shrink-0" />
+          </Button>
+        ))}
+      </div>
+      {opened ? (
+        <CrewManagementDialog
           cwd={cwd}
           state={state}
+          definitionId={opened.definitionId}
+          initialRunId={opened.runId}
           onOpen={onOpen}
-          onEdit={(crewId) => setDialog({ kind: "edit", crewId, returnToStart: true })}
-          onClose={() => setDialog(null)}
-        />
-      ) : dialog?.kind === "edit" ? (
-        <CrewEditDialog
-          cwd={cwd}
-          crewId={dialog.crewId}
-          createScope={dialog.crewId ? undefined : "project"}
-          onStart={() => setDialog({ kind: "start" })}
-          onClose={() => setDialog(dialog.returnToStart ? { kind: "start" } : null)}
+          onClose={() => setOpened(null)}
         />
       ) : null}
     </section>
   );
 }
 
-function CrewWorkRow({
-  run,
-  catalogName,
-  expanded,
-  onToggle,
-  pending,
-  canOpen,
+/** One workspace for choosing a crew, selecting its work and opening any related session. */
+export function CrewManagementDialog({
+  cwd: homeCwd,
+  state: homeState,
+  definitionId,
+  initialRunId,
   onOpen,
-  onPause,
-  onStop,
+  onClose,
 }: {
-  run: CrewRunView;
-  catalogName: (harness: string, model: string) => string;
-  expanded: boolean;
-  onToggle: () => void;
-  pending: boolean;
-  canOpen: boolean;
-  onOpen: (sessionId: string) => void;
-  onPause: () => void;
-  onStop: () => void;
+  cwd: string;
+  state: CrewState;
+  definitionId?: string;
+  initialRunId?: string;
+  onOpen?: OpenSession;
+  onClose: () => void;
 }) {
-  const title = crewRunTitle(run);
-  const done = run.tasks.filter((task) => task.status === "done").length;
-  const requests = run.messages.filter((m) => !m.resolvedAt);
-  const blocked = run.tasks.filter((task) => task.status === "blocked");
-  const status = run.status === "finished" ? t("Done") : crewWorkStatusLabel(crewWorkStatus(run));
-  const progress = run.tasks.length
-    ? t("{p0}/{p1} tasks", { p0: done, p1: run.tasks.length })
-    : t("Planning");
+  useLocale();
+  const scope = useCrewMachineScope(homeCwd, homeState);
+  const { cwd, state } = scope;
+  const [scopedCwd, setScopedCwd] = useState(cwd);
+  const [crewId, setCrewId] = useState(definitionId ?? "");
+  const [selectedId, setSelectedId] = useState(initialRunId ?? "");
+  const [view, setView] = useState<CrewWorkView>(
+    state.data?.runs.find((run) => run.id === initialRunId)?.status === "finished"
+      ? "finished"
+      : "ongoing",
+  );
+  const [page, setPage] = useState<"work" | "start" | "edit">("work");
+  // Narrow windows show the work list or one work at a time; wide ones show both.
+  const [pane, setPane] = useState<"list" | "detail">(initialRunId ? "detail" : "list");
+  const [editorReturn, setEditorReturn] = useState<"work" | "start">("work");
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  // Works the owner stopped: the lead's cancel can take a moment to land, and Stop must not
+  // stay offered for work that was already told to stop. Resuming clears it.
+  const [stoppedRuns, setStoppedRuns] = useState<ReadonlySet<string>>(() => new Set());
+  const markStopped = (id: string, stopped: boolean) =>
+    setStoppedRuns((current) => {
+      const next = new Set(current);
+      if (stopped) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  const pending = pendingAction !== null;
+  const pendingGate = useRef(false);
+  const [actionError, setActionError] = useState<CrewActionError>();
+  const error = actionError?.message ?? "";
+  const setError = (message: string) =>
+    setActionError(message ? { message, at: Date.now(), connection: false } : undefined);
+  // A failure to reach the machine is retired once the machine answers a read again.
+  if (crewActionErrorRecovered(actionError, state.dataUpdatedAt)) setActionError(undefined);
+  // The filter belongs to the dialog, so polling and the edit/start pages never reset it.
+  const [query, setQuery] = useState("");
+  const data = state.data;
+  // Another machine has its own crews and work; nothing selected here applies there.
+  if (scopedCwd !== cwd) {
+    setScopedCwd(cwd);
+    setCrewId(definitionId ?? "");
+    setSelectedId("");
+    setView("ongoing");
+    setQuery("");
+    setActionError(undefined);
+  }
+  const crews = [...(data?.definitions ?? [])];
+  for (const run of data?.runs ?? []) {
+    if (!crews.some((item) => item.id === run.definition.id)) crews.push(run.definition);
+  }
+  const crew = crews.find((item) => item.id === crewId) ?? crews[0];
+  const savedCrew = !!data?.definitions.some((item) => item.id === crew?.id);
+  const all = [...(data?.runs ?? [])]
+    .filter((run) => run.definition.id === crew?.id)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+  const pinned = all.find((run) => run.id === selectedId);
+  const selectedView = pinned ? (pinned.status === "finished" ? "finished" : "ongoing") : view;
+  if (selectedView !== view) setView(selectedView);
+  const listed = all.filter((run) =>
+    selectedView === "finished" ? run.status === "finished" : run.status !== "finished",
+  );
+  // Selection resolves from the whole view; the filter only narrows what the list shows.
+  const visible = listed.filter((run) => crewRunMatchesQuery(run, query));
+  const selected = listed.find((run) => run.id === selectedId) ?? listed[0];
+  const resolvedRunId = selected?.id;
+  const resolvedCrewId = crew?.id;
+  // Reconcile removed records during render so a poll cannot replace an unpinned selection.
+  if (resolvedRunId && resolvedRunId !== selectedId) setSelectedId(resolvedRunId);
+  if (resolvedCrewId && resolvedCrewId !== crewId) setCrewId(resolvedCrewId);
+  const act = async (key: string, label: string, operation: () => Promise<unknown>) => {
+    if (pendingGate.current) return;
+    pendingGate.current = true;
+    setPendingAction(key);
+    setActionError(undefined);
+    try {
+      await operation();
+    } catch (reason) {
+      setActionError(crewActionError(reason, label, data?.machine, Date.now()));
+    } finally {
+      pendingGate.current = false;
+      setPendingAction(null);
+    }
+  };
+  const open = (sessionId: string, source = sessionId) => {
+    if (!data || !onOpen) return;
+    void act(`open:${source}`, t("Open session"), async () => {
+      await onOpen({
+        cwd,
+        machineId: data.machine.id,
+        projectId: data.project.id,
+        sessionId,
+      });
+      onClose();
+    }).catch((reason: unknown) =>
+      setError(reason instanceof Error ? reason.message : String(reason)),
+    );
+  };
+  if (page === "edit")
+    return (
+      <CrewEditDialog
+        cwd={cwd}
+        crewId={savedCrew ? crew?.id : undefined}
+        createScope={savedCrew ? undefined : "project"}
+        initialPage="team"
+        onStart={(id) => {
+          setCrewId(id);
+          setPage("start");
+        }}
+        onClose={() => setPage(editorReturn)}
+      />
+    );
+  if (page === "start")
+    return (
+      <StartCrewDialog
+        cwd={cwd}
+        state={state}
+        definitionId={crew?.id}
+        onOpen={
+          onOpen
+            ? async (target) => {
+                await onOpen(target);
+                onClose();
+              }
+            : undefined
+        }
+        onEdit={(id) => {
+          setCrewId(id);
+          setEditorReturn("start");
+          setPage("edit");
+        }}
+        onClose={() => setPage("work")}
+      />
+    );
+  const crewScope = crew && savedCrew ? crewScopeLabel(crew) : undefined;
+  // Without any work the empty state owns the one start action; with work the header does.
+  const noWork = all.length === 0;
+  // A single piece of work needs no list column; its detail is the whole view.
+  const needsList = all.length > 1;
+  const hideListNarrow = needsList && !!selected && pane === "detail";
+  const hideDetailNarrow = needsList && pane === "list";
   return (
-    <div
-      data-crew-run={run.id}
-      className="group min-w-0 overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface)"
+    <Modal
+      padding="none"
+      title={crew?.name ?? t("Crews")}
+      context={crewScope}
+      size="lg"
+      onClose={() => {
+        if (!pending) onClose();
+      }}
     >
-      <div className="flex min-w-0 items-center">
-        <Button
-          variant="item"
-          motion="none"
-          className="min-w-0 flex-1"
-          disabled={!run.coordinatorSessionId || !canOpen || pending}
-          title={`${title}\n${run.definition.name}`}
-          onClick={() => run.coordinatorSessionId && onOpen(run.coordinatorSessionId)}
-        >
-          <span className="min-w-0 flex-1 text-start">
-            <span className="block truncate text-sm font-medium">{title}</span>
-            <span className="block truncate text-xs text-(--ui-text-secondary)">
-              {[run.definition.name, status, progress].join(" · ")}
-            </span>
-          </span>
-        </Button>
-        {run.status !== "finished" ? (
-          <>
+      <div className="@container/crew-management min-w-0" aria-busy={pending}>
+        <div className="flex flex-wrap items-end gap-2 px-4 pb-2 pt-2">
+          {scope.picker(pending)}
+          {scope.projectPicker(pending)}
+          {data && crews.length > 1 ? (
+            <div className="min-w-0 flex-1 basis-48">
+              <SearchableSelect
+                label={t("Crew")}
+                value={crew?.id ?? ""}
+                options={crews.map((item) => ({
+                  value: item.id,
+                  label: item.name,
+                  description: data.definitions.some((saved) => saved.id === item.id)
+                    ? undefined
+                    : t("Deleted"),
+                }))}
+                disabled={pending}
+                onChange={(id) => {
+                  setCrewId(id);
+                  setSelectedId("");
+                  setView("ongoing");
+                  setQuery("");
+                  setError("");
+                }}
+              />
+            </div>
+          ) : null}
+          {/* Where on the left, what to do on the right; the crew summary sits under the row. */}
+          <div className="ms-auto flex shrink-0 flex-wrap items-center gap-2">
             <Button
-              variant="ghost"
-              iconOnly
-              size="sm"
-              label={run.status === "paused" ? t("Resume work") : t("Pause new assignments")}
-              disabled={pending}
-              onClick={onPause}
+              variant={savedCrew ? (noWork ? "secondary" : "ghost") : "primary"}
+              disabled={!data || pending}
+              startIcon={savedCrew ? <Pencil className="icon-sm" /> : <Plus className="icon-sm" />}
+              tooltip={
+                savedCrew
+                  ? t("Changes apply to future work. Work already started keeps its own team.")
+                  : undefined
+              }
+              onClick={() => {
+                setEditorReturn("work");
+                setPage("edit");
+              }}
             >
-              {run.status === "paused" ? (
-                <Play className="size-3.5" />
-              ) : (
-                <Pause className="size-3.5" />
-              )}
+              {savedCrew ? t("Edit crew") : t("New crew")}
             </Button>
-            <Button
-              variant="ghost"
-              iconOnly
-              size="sm"
-              label={t("Stop work")}
-              tooltip={t("Stop work and cancel running assignments")}
-              disabled={pending}
-              onClick={onStop}
-            >
-              <Square className="size-3.5" />
-            </Button>
-          </>
-        ) : null}
-        <Button
-          variant="ghost"
-          iconOnly
-          size="sm"
-          label={expanded ? t("Hide details") : t("Show details")}
-          aria-expanded={expanded}
-          className="me-1"
-          onClick={onToggle}
-        >
-          {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-        </Button>
-      </div>
-      {requests.length ? (
-        <div className="flex min-w-0 items-center gap-2 border-t border-(--ui-tone-neutral-border) px-2 py-1">
-          <span
-            className="min-w-0 flex-1 truncate text-xs text-warning"
-            title={requests.map((r) => r.text).join("\n")}
-          >
-            {t("Needs decision: {p0}", { p0: requests[0].text })}
-          </span>
-          <Button
-            variant="link"
-            size="sm"
-            disabled={!run.coordinatorSessionId || !canOpen || pending}
-            onClick={() => run.coordinatorSessionId && onOpen(run.coordinatorSessionId)}
-          >
-            {t("Answer")}
-          </Button>
-        </div>
-      ) : blocked.length ? (
-        <p className="truncate border-t border-(--ui-tone-neutral-border) px-2 py-1 text-xs text-danger">
-          {t("Blocked: {p0}", { p0: blocked[0].error ?? blocked[0].title })}
-        </p>
-      ) : null}
-      {run.error ? (
-        <div className="px-2 pb-2">
-          <Alert tone="warning">{run.error}</Alert>
-        </div>
-      ) : null}
-      {expanded ? (
-        <div className="flex flex-col gap-px border-t border-(--ui-tone-neutral-border) p-1">
-          <div className="flex min-w-0 flex-col gap-1 px-2 py-1 text-xs">
-            <p className="break-words font-medium">{title}</p>
-            <p className="break-words text-(--ui-text-secondary)">
-              {[run.definition.name, status, progress].join(" · ")}
-            </p>
-            {requests.map((request) => (
-              <p key={request.id} className="whitespace-pre-wrap break-words text-warning">
-                {t("Needs decision: {p0}", { p0: request.text })}
-              </p>
-            ))}
-            {blocked.map((task) => (
-              <p key={task.id} className="whitespace-pre-wrap break-words text-danger">
-                {t("Blocked: {p0}", { p0: task.error ?? task.title })}
-              </p>
-            ))}
+            {savedCrew && !noWork ? (
+              <Button
+                variant="primary"
+                disabled={!crew || pending}
+                startIcon={<Plus className="icon-sm" />}
+                onClick={() => setPage("start")}
+              >
+                {t("New work")}
+              </Button>
+            ) : null}
           </div>
-          <Button
-            variant="item"
-            motion="none"
-            disabled={!run.coordinatorSessionId || !canOpen || pending}
-            onClick={() => run.coordinatorSessionId && onOpen(run.coordinatorSessionId)}
-          >
-            <span className="min-w-0 flex-1 truncate text-start font-medium">
-              {t("Coordinator")}
-            </span>
-            <span className="text-xs text-(--ui-text-secondary)">
-              {run.coordinatorStatus === "running"
-                ? t("Working")
-                : run.coordinatorStatus === "interrupted"
-                  ? t("Interrupted")
-                  : t("Conversation")}
-            </span>
-          </Button>
-          {run.tasks.map((task) => {
-            const assignment = run.assignments.find((a) => a.taskId === task.id);
-            const agent = run.definition.agents.find((a) => a.id === assignment?.memberId);
-            const ids = taskSessionIds(task);
-            return (
-              <div key={task.id} className="flex flex-col gap-px">
-                <Button
-                  variant="item"
-                  motion="none"
-                  className="w-full"
-                  disabled={!ids.worker || !canOpen || pending}
-                  title={`${task.title}\n${task.harness} · ${task.model}\n${assignment?.reason ?? ""}\n${task.error ?? ""}`}
-                  onClick={() => ids.worker && onOpen(ids.worker)}
+        </div>
+        {crew ? (
+          <p className="-mt-1 px-4 pb-2 text-ui-caption text-(--ui-text-secondary)">
+            {savedCrew
+              ? `${t("{p0} members", { p0: crew.agents.length })} · ${t("Saved team for future work")}`
+              : t("This crew was deleted. Its work and conversations are kept.")}
+          </p>
+        ) : null}
+        {!data ? (
+          <div className="p-4">
+            <Alert tone={state.error ? "danger" : "info"}>
+              {state.error?.message ?? t("Loading crews…")}
+            </Alert>
+            <Button variant="ghost" onClick={() => void state.refetch()}>
+              {t("Retry")}
+            </Button>
+          </div>
+        ) : noWork ? (
+          <div className="px-4 pb-4">
+            {data.catalogError || state.error ? (
+              <div className="pb-3">
+                <Alert
+                  tone="warning"
+                  action={
+                    <Button variant="ghost" onClick={() => void state.refetch()}>
+                      {t("Retry")}
+                    </Button>
+                  }
                 >
-                  <span className="min-w-0 flex-1 text-start">
-                    <span className="block truncate">{agent?.name ?? task.title}</span>
-                    <span className="block truncate text-xs text-(--ui-text-secondary)">
-                      {task.title}
-                    </span>
-                  </span>
-                  <span className="max-w-[42%] shrink-0 text-end text-xs text-(--ui-text-secondary)">
-                    {taskStatusLabel(task.status)}
-                    <span className="block truncate">{catalogName(task.harness, task.model)}</span>
-                  </span>
-                </Button>
-                {ids.review ? (
+                  {data.catalogError ?? state.error?.message}
+                </Alert>
+              </div>
+            ) : null}
+            {error ? (
+              <div className="pb-3">
+                <Alert tone="danger">{error}</Alert>
+              </div>
+            ) : null}
+            <EmptyState
+              context="panel"
+              kind="empty"
+              title={t("No crew work yet")}
+              description={
+                savedCrew
+                  ? t(
+                      "Use New work to give this crew a delivery. Its progress and decisions appear here.",
+                    )
+                  : crew
+                    ? t("This crew has no work history.")
+                    : t("Create a crew, then start work with it.")
+              }
+              action={
+                savedCrew ? (
                   <Button
-                    variant="item"
-                    motion="none"
-                    className="w-full"
-                    disabled={!canOpen || pending}
-                    onClick={() => onOpen(ids.review!)}
+                    variant="primary"
+                    disabled={!crew || pending}
+                    startIcon={<Plus className="icon-sm" />}
+                    onClick={() => setPage("start")}
                   >
-                    <span className="min-w-0 flex-1 truncate text-start">
-                      {t("Reviewer")} · {task.title}
-                    </span>
-                    <span className="text-xs text-(--ui-text-secondary)">
-                      {task.verification?.review?.verdict === "pass"
-                        ? t("Passed")
-                        : task.verification?.review?.verdict === "fail"
-                          ? t("Changes needed")
-                          : t("Reviewing")}
-                    </span>
+                    {t("New work")}
                   </Button>
+                ) : undefined
+              }
+            />
+          </div>
+        ) : (
+          <div
+            className={`grid min-w-0 ${needsList && selected ? "@min-[640px]/crew-management:grid-cols-[264px_minmax(0,1fr)]" : ""}`}
+          >
+            {needsList ? (
+              <div
+                className={`[&>nav]:h-full ${hideListNarrow ? "hidden @min-[640px]/crew-management:block" : ""}`}
+              >
+                <CrewWorkList
+                  view={selectedView}
+                  ongoingCount={all.filter((run) => run.status !== "finished").length}
+                  runs={visible}
+                  listedCount={listed.length}
+                  query={query}
+                  selectedId={selected?.id}
+                  disabled={pending}
+                  hasMoreHistory={state.hasMoreHistory}
+                  historyLoading={state.historyLoading}
+                  historyError={state.historyError}
+                  onLoadMore={() => void state.loadMoreHistory()}
+                  onViewChange={(next) => {
+                    if (pendingGate.current) return;
+                    setView(next);
+                    setSelectedId("");
+                    setError("");
+                  }}
+                  onQueryChange={setQuery}
+                  onSelect={(id) => {
+                    setSelectedId(id);
+                    setPane("detail");
+                    setError("");
+                  }}
+                />
+              </div>
+            ) : null}
+            {selected || data.catalogError || state.error || error ? (
+              <div
+                className={`min-w-0 p-4 @min-[640px]/crew-management:min-h-64 ${hideDetailNarrow ? "hidden @min-[640px]/crew-management:block" : ""}`}
+              >
+                {needsList && selected ? (
+                  <div className="-mt-1 mb-2 @min-[640px]/crew-management:hidden">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      startIcon={<ChevronLeft className="icon-sm" />}
+                      disabled={pending}
+                      onClick={() => setPane("list")}
+                    >
+                      {t("Back to work list")}
+                    </Button>
+                  </div>
+                ) : null}
+                {data.catalogError ? (
+                  <Alert
+                    tone="warning"
+                    action={
+                      <Button variant="ghost" onClick={() => void state.refetch()}>
+                        {t("Retry")}
+                      </Button>
+                    }
+                  >
+                    {data.catalogError}
+                  </Alert>
+                ) : null}
+                {state.error ? (
+                  <Alert
+                    tone="warning"
+                    action={
+                      <Button variant="ghost" onClick={() => void state.refetch()}>
+                        {t("Retry")}
+                      </Button>
+                    }
+                  >
+                    {state.error.message}
+                  </Alert>
+                ) : null}
+                {selected ? (
+                  <CrewWorkDetail
+                    key={selected.id}
+                    run={selected}
+                    savedCrew={savedCrew ? crew : undefined}
+                    catalog={data.catalog}
+                    pending={pending}
+                    pendingAction={pendingAction}
+                    error={error}
+                    canOpen={!!onOpen}
+                    onOpen={open}
+                    canDelete={!!data.runDeleteSupported}
+                    stopRequested={stoppedRuns.has(selected.id)}
+                    onPause={() =>
+                      void act(
+                        `pause:${selected.id}`,
+                        selected.status === "paused"
+                          ? t("Resume work")
+                          : t("Pause new assignments"),
+                        async () => {
+                          const resuming = selected.status === "paused";
+                          await state.call(resuming ? "crews.resume" : "crews.pause", {
+                            runId: selected.id,
+                          });
+                          if (resuming) markStopped(selected.id, false);
+                        },
+                      )
+                    }
+                    onStop={() =>
+                      void act(`stop:${selected.id}`, t("Stop work"), async () => {
+                        await state.call("crews.stop", { runId: selected.id });
+                        markStopped(selected.id, true);
+                      })
+                    }
+                    onDelete={() =>
+                      void act(`delete:${selected.id}`, t("Delete work"), async () => {
+                        await state.call("crews.deleteRun", {
+                          runId: selected.id,
+                          expectedUpdatedAt: selected.updatedAt,
+                        });
+                        // The work is gone: a narrow window goes back to the list.
+                        setPane("list");
+                      })
+                    }
+                  />
+                ) : error ? (
+                  <Alert tone="danger">{error}</Alert>
                 ) : null}
               </div>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }

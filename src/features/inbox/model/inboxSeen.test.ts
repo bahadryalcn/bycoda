@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearKnownInboxItems,
   knownInboxEntries,
@@ -48,6 +48,59 @@ describe("inbox seen items", () => {
   });
   afterEach(() => {
     localStorage.removeItem(KEY);
+  });
+
+  it("parses one shared snapshot and observes changed or corrupt storage", () => {
+    localStorage.setItem(KEY, JSON.stringify({ seeded: true, items: { item: 100 } }));
+    const parse = vi.spyOn(JSON, "parse");
+    for (let index = 0; index < 100; index++)
+      isInboxEntryUnseen(entry("item", new Date(100).toISOString()));
+    expect(parse).toHaveBeenCalledTimes(1);
+    localStorage.setItem(KEY, JSON.stringify({ seeded: true, items: { item: 0 } }));
+    expect(isInboxEntryUnseen(entry("item", new Date(100).toISOString()))).toBe(true);
+    localStorage.setItem(KEY, "{");
+    expect(inboxSeenIsSeeded()).toBe(false);
+    expect(inboxSeenIsSeeded()).toBe(false);
+    expect(parse).toHaveBeenCalledTimes(3);
+    localStorage.setItem(KEY, "[]");
+    expect(inboxSeenIsSeeded()).toBe(false);
+    expect(inboxSeenIsSeeded()).toBe(false);
+    expect(parse).toHaveBeenCalledTimes(4);
+    parse.mockRestore();
+  });
+
+  it("bounds new seen identities without evicting existing or blocking updates", () => {
+    // Records must sit inside the 90-day window, or pruning would drop them first.
+    const recent = Date.now();
+    const items = Object.fromEntries(
+      Array.from({ length: 50_000 }, (_, index) => [`key-${index}`, recent - 1_000]),
+    );
+    localStorage.setItem(KEY, JSON.stringify({ seeded: true, items }));
+    expect(markInboxItemSeen(entry("new-key", new Date(recent).toISOString()))).toBe(false);
+    expect(markInboxItemSeen(entry("key-0", new Date(recent + 1).toISOString()))).toBe(true);
+    const saved = JSON.parse(localStorage.getItem(KEY)!);
+    expect(Object.keys(saved.items)).toHaveLength(50_000);
+    expect(saved.items["key-0"]).toBe(recent + 1);
+    expect(saved.items["key-49999"]).toBe(recent - 1_000);
+  });
+
+  it("prunes seen records older than 90 days and keeps an old item without a record seen", () => {
+    const day = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        seeded: true,
+        items: { "old-key": now - 100 * day, "recent-key": now - 10 * day },
+      }),
+    );
+    expect(markInboxItemSeen(entry("fresh-key", new Date(now).toISOString()))).toBe(true);
+    const saved = JSON.parse(localStorage.getItem(KEY)!);
+    expect(Object.keys(saved.items).sort()).toEqual(["fresh-key", "recent-key"]);
+    // Pruning must not resurface an old item as unread.
+    expect(inboxHasUnseenItems([entry("old-key", new Date(now - 100 * day).toISOString())])).toBe(
+      false,
+    );
   });
 
   it("seeds current items so a long-standing inbox does not badge", () => {

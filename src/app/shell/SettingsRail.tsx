@@ -1,9 +1,10 @@
 import { Button } from "../../shared/ui/Button";
-import { t, useLocale } from "../../shared/i18n";
+import { useLocale, useT } from "../../shared/i18n";
 import { useEffect, useRef, type KeyboardEvent } from "react";
 import {
   Archive,
   ArrowLeft,
+  AudioLines,
   Bot,
   CircleDot,
   Folder,
@@ -12,15 +13,19 @@ import {
   Globe,
   Internet,
   Keyboard,
+  KeyRound,
+  Link2,
+  UserRound,
   Lock,
   MessageSquare,
   Palette,
   SlidersHorizontal,
   Sparkles,
   Terminal,
+  UsageIcon,
   type IconComponent,
 } from "../../shared/ui/icons";
-import { UsageIcon } from "./WorkspaceControls";
+import { AccountRailRow } from "../../features/account";
 import { useLockOverscroll } from "../../shared/hooks/useLockOverscroll";
 import {
   settingsSectionsByGroup,
@@ -37,13 +42,17 @@ export const SETTINGS_SECTION_ICONS: Record<SettingsSectionId, IconComponent> = 
   keybindings: Keyboard,
   terminal: Terminal,
   chat: MessageSquare,
+  voice: AudioLines,
   providers: Bot,
   crews: Bot,
-  usage: UsageIcon as IconComponent,
+  usage: UsageIcon,
   limits: SlidersHorizontal,
   mcp: Globe,
   skills: Sparkles,
   inbox: Inbox,
+  integrations: Link2,
+  account: UserRound,
+  secrets: KeyRound,
   worktrees: GitBranch,
   groupLock: Lock,
   archive: Archive,
@@ -57,11 +66,14 @@ type Props = {
 
 /** Body of the project rail while settings are open. */
 export function SettingsNav({ section, onSelect, onClose }: Props) {
-  useLocale();
+  const t = useT();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const rows = useRef(new Map<SettingsSectionId, HTMLButtonElement>());
-  const groups = settingsSectionsByGroup();
+  // Account is not a list group: it is the avatar row under the list.
+  const groups = settingsSectionsByGroup().filter((group) => group.id !== "account");
   const sections = groups.flatMap((group) => group.sections);
+  // The account row sits outside the list; keep one list row tabbable while it is active.
+  const stop = sections.some((item) => item.id === section) ? section : sections[0]?.id;
   useEffect(() => {
     rows.current.get(section)?.scrollIntoView?.({ block: "nearest" });
   }, [section]);
@@ -76,7 +88,7 @@ export function SettingsNav({ section, onSelect, onClose }: Props) {
       >
         {groups.map((group) => (
           <div key={group.id} className="flex flex-col gap-px">
-            <div className="px-2 pb-1 text-xs font-semibold text-content/35 @max-[140px]/rail:hidden">
+            <div className="px-2 pb-1 text-ui-caption font-medium text-(--ui-text-secondary) @max-[140px]/rail:hidden">
               {group.label}
             </div>
             {group.sections.map((item) => (
@@ -85,7 +97,7 @@ export function SettingsNav({ section, onSelect, onClose }: Props) {
                 label={item.label}
                 icon={SETTINGS_SECTION_ICONS[item.id]}
                 active={item.id === section}
-                tabIndex={item.id === section ? 0 : -1}
+                tabIndex={item.id === stop ? 0 : -1}
                 buttonRef={(element) => {
                   if (element) rows.current.set(item.id, element);
                   else rows.current.delete(item.id);
@@ -114,6 +126,7 @@ export function SettingsNav({ section, onSelect, onClose }: Props) {
       </div>
       <div className="flex shrink-0 flex-col gap-px p-2">
         <NavRow label={t("Back")} icon={ArrowLeft} onClick={onClose} />
+        <AccountRailRow active={section === "account"} onSelect={() => onSelect("account")} />
       </div>
     </>
   );
@@ -147,13 +160,19 @@ function NavRow({
       ref={buttonRef}
       tabIndex={tabIndex}
       onKeyDown={onKeyDown}
-      title={label}
+      tooltip={label}
+      tooltipWhen="overflow"
+      tooltipSide="right"
       aria-label={label}
       aria-current={active ? "true" : undefined}
       className={`flex w-full items-center gap-2 @max-[140px]/rail:justify-center `}
     >
-      <Icon aria-hidden="true" className="size-4 shrink-0 opacity-70" strokeWidth={1.75} />
-      <span className="min-w-0 flex-1 truncate text-sm font-medium leading-tight @max-[140px]/rail:hidden">
+      <Icon
+        aria-hidden="true"
+        className={`icon-sm shrink-0 ${active ? "" : "text-(--ui-text-secondary)"}`}
+        strokeWidth={1.75}
+      />
+      <span className="min-w-0 flex-1 truncate text-ui-body font-medium leading-tight @max-[140px]/rail:hidden">
         {label}
       </span>
     </Button>

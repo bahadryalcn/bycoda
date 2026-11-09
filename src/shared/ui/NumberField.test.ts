@@ -78,3 +78,104 @@ it("does not coerce empty native drafts or clamp out-of-range input events", asy
   expect(input.value).toBe("-1");
   expect(input.validity.rangeUnderflow).toBe(true);
 });
+
+const setNativeValue = (input: HTMLInputElement, value: string) =>
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+const steppers = () => ({
+  decrease: container.querySelector<HTMLButtonElement>('button[aria-label="Decrease value"]')!,
+  increase: container.querySelector<HTMLButtonElement>('button[aria-label="Increase value"]')!,
+});
+
+it("steps with the native step base, keeps focus in the field and reports through onChange", async () => {
+  const drafts: string[] = [];
+  await act(async () =>
+    root.render(
+      createElement(NumberField, {
+        label: "Capacity",
+        min: 0,
+        max: 10,
+        step: 5,
+        defaultValue: "5",
+        onChange: (event) => drafts.push(event.target.value),
+      }),
+    ),
+  );
+  const input = container.querySelector("input")!;
+  await act(async () => steppers().increase.click());
+  expect(input.value).toBe("10");
+  expect(drafts).toEqual(["10"]);
+  // At the maximum the increase action is unavailable and the draft stays raw.
+  expect(steppers().increase.disabled).toBe(true);
+  await act(async () => steppers().decrease.click());
+  await act(async () => steppers().decrease.click());
+  expect(input.value).toBe("0");
+  expect(steppers().decrease.disabled).toBe(true);
+  expect(drafts).toEqual(["10", "5", "0"]);
+});
+
+it("steps step=any fields by one inside min and max and never throws", async () => {
+  await act(async () =>
+    root.render(
+      createElement(NumberField, {
+        label: "Allocation",
+        min: 0.5,
+        max: 2,
+        step: "any",
+        defaultValue: "1.25",
+      }),
+    ),
+  );
+  const input = container.querySelector("input")!;
+  await act(async () => steppers().increase.click());
+  expect(input.value).toBe("2");
+  await act(async () => steppers().decrease.click());
+  await act(async () => steppers().decrease.click());
+  expect(input.value).toBe("0.5");
+});
+
+it("keeps empty drafts empty until a stepper is used, then starts from the native base", async () => {
+  await act(async () =>
+    root.render(createElement(NumberField, { label: "Count", min: 3, defaultValue: "" })),
+  );
+  const input = container.querySelector("input")!;
+  expect(input.value).toBe("");
+  await act(async () => steppers().increase.click());
+  expect(input.value).toBe("3");
+});
+
+it("disables both steppers for disabled and read-only fields and can omit them", async () => {
+  await act(async () =>
+    root.render(createElement(NumberField, { label: "Locked", readOnly: true, defaultValue: "4" })),
+  );
+  expect(steppers().increase.disabled).toBe(true);
+  expect(steppers().decrease.disabled).toBe(true);
+  await act(async () =>
+    root.render(createElement(NumberField, { label: "Off", disabled: true, defaultValue: "4" })),
+  );
+  expect(steppers().increase.disabled).toBe(true);
+  await act(async () =>
+    root.render(createElement(NumberField, { label: "Native", steppers: false })),
+  );
+  expect(container.querySelectorAll("button")).toHaveLength(0);
+});
+
+it("never submits the surrounding form from a stepper and keeps typed drafts untouched", async () => {
+  const submitted = vi.fn((event: Event) => event.preventDefault());
+  await act(async () =>
+    root.render(
+      createElement(
+        "form",
+        { onSubmit: submitted },
+        createElement(NumberField, { label: "Amount", name: "amount", defaultValue: "1" }),
+      ),
+    ),
+  );
+  const input = container.querySelector("input")!;
+  await act(async () => {
+    setNativeValue(input, "7");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => steppers().increase.click());
+  expect(input.value).toBe("8");
+  expect(submitted).not.toHaveBeenCalled();
+});

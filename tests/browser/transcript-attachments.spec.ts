@@ -1,5 +1,35 @@
 import { expect, test } from "@playwright/test";
 
+for (const theme of ["light", "dark"] as const) {
+  test(`working rows survive repeated follow-up messages in ${theme}`, async ({ page }, info) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.emulateMedia({ reducedMotion: "reduce", colorScheme: theme });
+    await page.goto("/tests/browser/transcript.html?working-followup");
+    await page.evaluate((value) => {
+      document.documentElement.classList.toggle("theme-light", value === "light");
+    }, theme);
+    const dock = page.getByRole("region", { name: "Turn activity", exact: true });
+    const toggle = dock.getByRole("button", { name: /Background work, 2 running/ });
+    await expect(toggle).toBeVisible();
+    await toggle.click();
+    const research = dock.getByRole("button", { name: /Product research/ });
+    const server = dock.getByRole("button", { name: /pnpm dev/ });
+    await expect(research).toBeVisible();
+    await expect(server).toBeVisible();
+    for (let index = 0; index < 2; index++) {
+      await page.getByRole("button", { name: "Send follow-up", exact: true }).click();
+      // The dock toggle is icon-only; its accessible name carries the count.
+      await expect(toggle).toHaveAccessibleName(/2 running/);
+      await expect(research).toBeVisible();
+      await expect(server).toBeVisible();
+      await expect(dock.getByRole("button", { name: "Stop all", exact: true })).toBeVisible();
+    }
+    await page.screenshot({ path: info.outputPath(`working-followup-${theme}-1280.png`) });
+    await dock.getByRole("button", { name: "Stop all", exact: true }).click();
+    await expect(dock).toHaveCount(0);
+  });
+}
+
 for (const width of [390, 1000]) {
   for (const theme of ["light", "dark"]) {
     test(`mixed attachments remain readable and open at ${width}px in ${theme}`, async ({

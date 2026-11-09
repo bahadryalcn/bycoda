@@ -61,3 +61,50 @@ it("rebuilds the search index when data changes and cancels work on unmount", as
   await act(async () => vi.advanceTimersByTime(200));
   expect(container.textContent).toBe("");
 });
+
+it("uses shared icon Buttons for the toolbar and toggles a branch from the keyboard", async () => {
+  await act(async () =>
+    root.render(
+      createElement(JsonViewer, { data: { user: { name: "Ada" } }, defaultExpandDepth: 1 }),
+    ),
+  );
+  for (const name of ["Expand all", "Collapse all"]) {
+    const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!;
+    expect(button.getAttribute("data-button-hierarchy")).toBe("ghost");
+  }
+  const tree = container.querySelector<HTMLElement>('[role="tree"]')!;
+  const rootRow = container.querySelector<HTMLElement>('[role="treeitem"][aria-level="1"]')!;
+  expect(rootRow.getAttribute("aria-expanded")).toBe("true");
+  await act(async () => {
+    rootRow.focus();
+    tree.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(rootRow.getAttribute("aria-expanded")).toBe("false");
+  await act(async () => {
+    tree.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(rootRow.getAttribute("aria-expanded")).toBe("true");
+});
+
+it("truncates a long string in the row but copies and exposes its full value", async () => {
+  const long = `${"segment-".repeat(12)}end`;
+  const writeText = vi.fn(async () => {});
+  await act(async () =>
+    root.render(
+      createElement(JsonViewer, { data: { text: long }, writeText, defaultExpandDepth: 1 }),
+    ),
+  );
+  const row = [...container.querySelectorAll<HTMLElement>('[role="treeitem"]')].find((item) =>
+    item.getAttribute("aria-label")?.startsWith("text:"),
+  )!;
+  expect(row.querySelector("[title]")?.getAttribute("title")).toBe(long);
+  const copy = row.querySelector<HTMLButtonElement>('button[aria-label="Copy value"]')!;
+  // Row actions are revealed with the row, not in the tab order of every row.
+  expect(copy.tabIndex).toBe(-1);
+  await act(async () => copy.click());
+  expect(writeText).toHaveBeenCalledWith(long);
+});

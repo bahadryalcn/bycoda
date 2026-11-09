@@ -378,7 +378,7 @@ describe("fx protocol", () => {
     });
   });
 });
-it("Fx usage used önceliğini ve dar top-level alan uygunluğunu korur", () => {
+it("preserves Fx usage `used` precedence and narrow top-level field matching", () => {
   expect(eventsFromAcpUpdate({ update: { usage: { totalTokens: 900, used: 7 } } })).toEqual([
     { type: "context", used: 7 },
   ]);

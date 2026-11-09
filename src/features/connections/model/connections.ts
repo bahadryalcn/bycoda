@@ -1,5 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  assertDesktopControlReceipts,
+  requiresDesktopControlReceipts,
+} from "./desktopControlCapability";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { RemoteDataState } from "./remoteDataState";
 import {
   applySessionSync,
@@ -12,12 +16,11 @@ import {
 } from "./protocol";
 import { subscribeRemoteMachineChannel } from "./remoteMachineChannel";
 import { remoteProjectFor } from "./remoteProjects";
-import type { RemoteRailSession } from "./remoteRailSessions";
+import { railSessions, type RemoteRailSession } from "./remoteRailSessions";
 import { blocksSending } from "./remoteConnection";
 import {
   bindMachineEnvironment,
   captureConnectionGeneration,
-  invalidateConnection,
   readRemoteLifecycle,
   recordFeatureHealth,
   remoteFeatureForMethod,
@@ -25,12 +28,13 @@ import {
   SUPERSEDED_CONNECTION,
 } from "./remoteLifecycle";
 import {
-  notifyRemoteRecovered,
+  announceRemoteRecovery,
+  forgetRemoteConnection,
   readRemoteConnection,
   recordRemoteConnection,
   resetRemoteConnection,
 } from "./remoteHealth";
-import { loadRemoteAutoReconnect } from "../../settings/model/settings";
+import { loadRemoteAutoReconnect } from "../../settings/public/settings";
 import {
   bindRemoteAttachmentReaders,
   withRemoteAttachmentPreviews,
@@ -42,14 +46,31 @@ import { startPerformanceSpan } from "../../../shared/lib/performanceTrace";
 import { queueRemoteSummaryCache } from "./remoteSummaryCache";
 import { deleteRemotePageCache } from "./remotePageCache";
 import { isLocalSyncMachine } from "./localSync";
+import { sessionExecutionClient } from "./sessionExecutionClient";
+import type { SessionExecutionClient } from "../../../shared/model/host-contracts/session-execution";
+import { decodeSessionSync } from "./sessionSyncDecode";
+import { NativeHostConnectionError } from "../../../platform/tauri/hostConnection";
+import {
+  getHostRpcMethod,
+  hostRpcHasEffect,
+  DEVICE_LIFECYCLE_METHODS,
+  MOBILE_DEVICE_PREVIEW_METHODS,
+  NATIVE_DEVICE_METHODS,
+} from "../../../shared/model/host-contracts";
 import {
   localHostSessionAccess,
   remoteHostSessionAccess,
   type HostSessionRequest,
   type SessionAccess,
+  type HostSessionPage,
 } from "./sessionAccess";
 
 const CHANGE = "bycoda:remote-machines";
+const deviceMethods = new Set<string>([
+  ...NATIVE_DEVICE_METHODS,
+  ...DEVICE_LIFECYCLE_METHODS,
+  ...MOBILE_DEVICE_PREVIEW_METHODS,
+]);
 export const REMOTE_HISTORY_CHANGE = "bycoda:remote-history";
 export const REMOTE_HISTORY_UPDATED = "bycoda:remote-history-updated";
 export const refreshRemoteProjectSessions = () =>
@@ -67,7 +88,8 @@ export function adoptRemoteMachineInventory(machines: RemoteMachine[]) {
       next.endpoint !== previous.endpoint ||
       JSON.stringify(next.ssh) !== JSON.stringify(previous.ssh)
     )
-      resetRemoteConnection(previous.environmentId);
+      // A removed machine is forgotten, so nothing keeps retrying or reporting it.
+      (next ? resetRemoteConnection : forgetRemoteConnection)(previous.environmentId);
   }
   cachedMachines = machines;
   machinesLoaded = true;
@@ -232,11 +254,31 @@ export function remoteSessionFor(shellId: string): string | undefined {
     return undefined;
   }
 }
+
+/** Another shell (tab) bound to this host session, if any. */
+export function remoteShellBoundTo(sessionId: string, exceptShellId?: string): string | undefined {
+  try {
+    const all: unknown = JSON.parse(localStorage.getItem(TAB_KEY) ?? "{}");
+    if (!all || typeof all !== "object") return undefined;
+    return Object.entries(all).find(
+      ([shellId, value]) => value === sessionId && shellId !== exceptShellId,
+    )?.[0];
+  } catch {
+    return undefined;
+  }
+}
+
+/** Binds a shell to a host session, or unbinds it. A host session id is unique
+ * to the host, so a shell binding to it takes it over from any other shell:
+ * two tabs never show (and send into) the same host session through bindings. */
 export function rememberRemoteSession(shellId: string, sessionId?: string) {
   try {
     const all = JSON.parse(localStorage.getItem(TAB_KEY) ?? "{}");
-    if (sessionId) all[shellId] = sessionId;
-    else delete all[shellId];
+    if (sessionId) {
+      for (const [other, value] of Object.entries(all))
+        if (other !== shellId && value === sessionId) delete all[other];
+      all[shellId] = sessionId;
+    } else delete all[shellId];
     localStorage.setItem(TAB_KEY, JSON.stringify(all));
   } catch {
     /* tab selection is best effort */
@@ -275,40 +317,118 @@ export function remoteRequest<T>(
   params: unknown = {},
   fresh = false,
   userInitiated = false,
+  expectedEnvironmentId?: string,
+  syncCycleId?: string,
 ): Promise<T> {
+  if (method === "commands.dispatch" && requiresDesktopControlReceipts(params))
+    params = structuredClone(params);
   const machine = cachedMachines.find((entry) => entry.id === machineId);
+  // Keep every request bound to the Host selected before crossing native IPC.
+  // A saved machine can be replaced while an asynchronous workspace call waits.
+  const expectedEnvironment = expectedEnvironmentId ?? machine?.environmentId;
   if (machine) bindMachineEnvironment(machine.id, machine.environmentId);
   const generation = machine ? captureConnectionGeneration(machine.environmentId) : undefined;
+  const sameMachine = () =>
+    !machine ||
+    cachedMachines.some(
+      (entry) => entry.id === machineId && entry.environmentId === machine.environmentId,
+    );
   const current = () =>
     !machine ||
-    (cachedMachines.some(
-      (entry) => entry.id === machineId && entry.environmentId === machine.environmentId,
-    ) &&
-      readRemoteLifecycle(machine.environmentId).generation === generation);
+    (sameMachine() && readRemoteLifecycle(machine.environmentId).generation === generation);
   const feature = remoteFeatureForMethod(method, params);
-  return invoke<T>("remote_request", {
-    machineId,
-    method,
-    params,
-    ...(fresh ? { fresh } : {}),
-    ...(mayStartTunnel(machineId, fresh, userInitiated) ? {} : { allowConnect: false }),
-  }).then(
-    (result) => {
-      if (!current()) throw new Error(SUPERSEDED_CONNECTION);
-      if (machine && feature) {
-        recordFeatureHealth(machine.environmentId, feature, true, generation);
-        if (feature === "host" && readRemoteLifecycle(machine.environmentId).phase === "idle")
-          setConnectionPhase(machine.environmentId, "ready");
-      }
-      return result;
-    },
-    (reason: unknown) => {
-      if (!current()) throw new Error(SUPERSEDED_CONNECTION);
-      if (machine && feature)
-        recordFeatureHealth(machine.environmentId, feature, false, generation);
-      throw reason;
-    },
-  );
+  const definition = deviceMethods.has(method) ? getHostRpcMethod(method) : undefined;
+  const deviceEffect = definition && hostRpcHasEffect(method, definition.kind);
+  const originalPreviewId =
+    (method === "devices.preview" || method === "devices.preview.mobile.start") &&
+    params &&
+    typeof params === "object" &&
+    "requestId" in params &&
+    typeof params.requestId === "string"
+      ? params.requestId
+      : null;
+  const deviceUnknown = (reason: unknown, code: string, message: string) =>
+    Object.assign(
+      new NativeHostConnectionError({
+        code,
+        message,
+        generation: reason instanceof NativeHostConnectionError ? reason.generation : null,
+        requestId: reason instanceof NativeHostConnectionError ? reason.requestId : null,
+        commandId: null,
+        uncertain: true,
+        unsupported: false,
+      }),
+      {
+        method,
+        retry: "never" as const,
+        ...(originalPreviewId !== null ? { previewRequestId: originalPreviewId } : {}),
+      },
+    );
+  const superseded = (reason?: unknown) =>
+    deviceEffect
+      ? deviceUnknown(
+          reason,
+          "RPC_WS_ROUTE_RETIRED",
+          `${method}: The connection changed after this device request began. Its outcome is unknown. Do not repeat the request; inspect the original device or preview status.`,
+        )
+      : new Error(SUPERSEDED_CONNECTION);
+  const send = () =>
+    invoke<T>("remote_request", {
+      machineId,
+      method,
+      params,
+      ...(syncCycleId ? { syncCycleId } : {}),
+      ...(expectedEnvironment ? { expectedEnvironmentId: expectedEnvironment } : {}),
+      ...(fresh ? { fresh } : {}),
+      ...(mayStartTunnel(machineId, fresh, userInitiated) ? {} : { allowConnect: false }),
+    }).then(
+      (result) => {
+        if (!current()) {
+          // A receipt the host returned is the outcome, whatever happened to the
+          // connection meanwhile: turning an accepted command (a create above all)
+          // into an error would orphan the host session it made. The generation
+          // check still voids every other answer, which may describe a stale host.
+          if (method === "commands.dispatch" && sameMachine()) return result;
+          throw superseded();
+        }
+        if (machine && feature) {
+          recordFeatureHealth(machine.environmentId, feature, true, generation);
+          if (feature === "host" && readRemoteLifecycle(machine.environmentId).phase === "idle")
+            setConnectionPhase(machine.environmentId, "ready");
+        }
+        return result;
+      },
+      (reason: unknown) => {
+        if (!current()) throw superseded(reason);
+        if (machine && feature)
+          recordFeatureHealth(machine.environmentId, feature, false, generation);
+        // This exact bounded marker is generated by the Native HTTP decoder.
+        // Host/user prose, incomplete markers and other methods remain unchanged.
+        const message =
+          typeof reason === "string"
+            ? reason
+            : reason instanceof Error
+              ? reason.message
+              : undefined;
+        if (
+          deviceEffect &&
+          message ===
+            `The device operation may have completed [RPC_DEVICE_OUTCOME_UNKNOWN] (${method}). Its outcome is unknown. Do not repeat the request; inspect its original device or preview status and reconnect the selected machine if access changed.`
+        )
+          throw deviceUnknown(reason, "RPC_DEVICE_OUTCOME_UNKNOWN", message);
+        throw reason;
+      },
+    );
+  if (method === "commands.dispatch" && requiresDesktopControlReceipts(params)) {
+    return (
+      expectedEnvironment ? loadRemoteCapabilities(expectedEnvironment) : Promise.resolve(undefined)
+    ).then((capabilities) => {
+      if (!current()) throw superseded();
+      assertDesktopControlReceipts(params, capabilities);
+      return send();
+    });
+  }
+  return send();
 }
 
 const pendingSessionSyncs = new Map<string, Promise<SessionSync>>();
@@ -347,11 +467,24 @@ export function sessionAccessForMachine(
   machineId: string,
   fresh = false,
   userInitiated = false,
+  expectedEnvironmentId?: string,
 ): SessionAccess {
   const machine = cachedMachines.find((entry) => entry.id === machineId);
   const kind = machine && isLocalSyncMachine(machine) ? "local" : "remote";
   const request: HostSessionRequest = async <T>(method: string, params: unknown) => {
-    const result = await remoteRequest<T>(machineId, method, params, fresh, userInitiated);
+    if (expectedEnvironmentId) {
+      const owner = await remoteMachineFor(expectedEnvironmentId);
+      if (!owner || owner.id !== machineId)
+        throw new Error("The owning Host route is no longer available.");
+    }
+    const result = await remoteRequest<T>(
+      machineId,
+      method,
+      params,
+      fresh,
+      userInitiated,
+      expectedEnvironmentId,
+    );
     if (
       method === "sessions.delete" &&
       machine?.environmentId &&
@@ -370,12 +503,28 @@ export function sessionAccessForMachine(
 }
 
 /** Reads one sync, assembling it from bounded pieces when the host chunks it. */
+export function sessionExecutionClientForMachine(
+  machineId: string,
+  environmentId: string,
+  fresh = false,
+  userInitiated = false,
+) {
+  return sessionExecutionClient(
+    environmentId,
+    sessionAccessForMachine(machineId, fresh, userInitiated, environmentId),
+  );
+}
+
+/** Reads one sync, assembling it from bounded pieces when the host chunks it. */
 async function syncRemoteSession(
   machineId: string,
   sessionId: string,
   revision?: number,
   waitMs = 0,
   known?: HostSession,
+  digests = false,
+  client?: SessionExecutionClient,
+  partialHistory = false,
 ): Promise<SessionSync> {
   const done = startPerformanceSpan("remote-sync");
   try {
@@ -384,22 +533,30 @@ async function syncRemoteSession(
       machineId,
       sessionId,
       revision,
+      known?.sourceEpoch,
+      partialHistory,
       known?.history?.before,
       loaded?.map((block) => block.id),
+      digests,
     ]);
     return sharedRead(pendingSessionSyncs, key, async () => {
-      const response = await sessionAccessForMachine(machineId).sync(sessionId, {
+      const options = {
         revision,
+        ...(known?.sourceEpoch ? { sourceEpoch: known.sourceEpoch } : {}),
         waitMs,
-        ...(known?.history
+        ...(digests ? { digests: true } : {}),
+        ...(partialHistory && known?.history
           ? {
               partial: true,
               loadedBlockIds: [...new Set((loaded ?? []).map((block) => block.id))],
               windowStart: known.history.before,
             }
           : {}),
-      });
-      return assembleSessionSync(machineId, sessionId, response);
+      };
+      const response = client
+        ? ((await client.syncSession({ sessionId, ...options })) as unknown as SessionSyncResponse)
+        : await sessionAccessForMachine(machineId).sync(sessionId, options);
+      return assembleSessionSync(machineId, sessionId, response, client?.environmentId);
     });
   } finally {
     done();
@@ -410,6 +567,7 @@ async function assembleSessionSync(
   machineId: string,
   sessionId: string,
   response: SessionSyncResponse,
+  expectedEnvironmentId?: string,
 ): Promise<SessionSync> {
   if (response.kind !== "chunked") return response;
   const maxTransferUnits = 32 * 1024 * 1024;
@@ -422,24 +580,34 @@ async function assembleSessionSync(
   const pieces: string[] = [];
   let offset = 0;
   while (offset < response.length) {
-    const { data } = await remoteRequest<SessionSyncChunk>(machineId, "sessions.syncChunk", {
-      sessionId,
-      transfer: response.transfer,
-      offset,
-    });
+    const { data } = await remoteRequest<SessionSyncChunk>(
+      machineId,
+      "sessions.syncChunk",
+      {
+        sessionId,
+        transfer: response.transfer,
+        offset,
+      },
+      false,
+      false,
+      expectedEnvironmentId,
+    );
     if (typeof data !== "string" || data.length === 0 || data.length > response.length - offset)
       throw new Error("Session transfer returned an invalid chunk");
     pieces.push(data);
     offset += data.length;
   }
   if (offset !== response.length) throw new Error("Session transfer has an unexpected length");
-  const payload = pieces.join("");
   const decodeDone = startPerformanceSpan("remote-decode", {
-    units: payload.length,
+    units: response.length,
   });
   try {
-    const decoded = JSON.parse(payload) as SessionSync;
-    decodeDone({ units: payload.length });
+    const decoded = await decodeSessionSync(pieces, response.length);
+    const decodedEpoch =
+      decoded.kind === "unchanged" ? decoded.sourceEpoch : decoded.value.sourceEpoch;
+    if (response.sourceEpoch !== undefined && decodedEpoch !== response.sourceEpoch)
+      throw new Error("Session transfer source changed");
+    decodeDone({ units: response.length });
     return decoded;
   } catch (error) {
     decodeDone();
@@ -478,6 +646,9 @@ export async function loadRemoteSession(
     onHistory?: (snapshot: HostSession) => void;
     isCurrent?: () => boolean;
     onHistoryError?: (error: unknown) => void;
+    /** The host sends block digests and the transcript head (`sessions.digests`). */
+    digests?: boolean;
+    executionClient?: SessionExecutionClient;
   } = {},
 ): Promise<HostSession> {
   if (known?.historyLoading) return known;
@@ -485,7 +656,14 @@ export async function loadRemoteSession(
   // sync. Refresh their bounded tail page instead of requesting a full history
   // snapshot (or sending ignored partial parameters).
   if (known?.history && !options.partialHistory) {
-    const tail = await readRemoteSessionPage(machineId, sessionId);
+    const tail = await readRemoteSessionPage(
+      machineId,
+      sessionId,
+      undefined,
+      undefined,
+      options.digests,
+      options.executionClient,
+    );
     if (tail.revision === known.revision) return known;
     return {
       ...tail.value,
@@ -497,7 +675,14 @@ export async function loadRemoteSession(
     };
   }
   if (!known && options.pages) {
-    const page = await readRemoteSessionPage(machineId, sessionId);
+    const page = await readRemoteSessionPage(
+      machineId,
+      sessionId,
+      undefined,
+      undefined,
+      options.digests,
+      options.executionClient,
+    );
     const snapshot = {
       ...page.value,
       history: {
@@ -510,7 +695,14 @@ export async function loadRemoteSession(
       setTimeout(() => {
         if (!(options.isCurrent?.() ?? true)) return;
         void withRemoteAttachmentPreviews(machineId, snapshot, undefined, (params) =>
-          remoteRequest(machineId, "attachments.read", params),
+          remoteRequest(
+            machineId,
+            "attachments.read",
+            params,
+            false,
+            false,
+            options.executionClient?.environmentId,
+          ),
         )
           .then(options.onPreviews)
           .catch((error) => {
@@ -525,7 +717,10 @@ export async function loadRemoteSession(
       sessionId,
       revision,
       revision === undefined ? 0 : options.waitMs,
-      options.partialHistory ? base : undefined,
+      base,
+      options.digests,
+      options.executionClient,
+      options.partialHistory,
     );
   const update = await sync(known?.revision, known);
   let snapshot: HostSession;
@@ -533,7 +728,14 @@ export async function loadRemoteSession(
     snapshot = applyRemoteSessionSync(known, update);
   } catch {
     if (known?.history) {
-      const tail = await readRemoteSessionPage(machineId, sessionId);
+      const tail = await readRemoteSessionPage(
+        machineId,
+        sessionId,
+        undefined,
+        undefined,
+        options.digests,
+        options.executionClient,
+      );
       snapshot = {
         ...tail.value,
         history: {
@@ -545,11 +747,25 @@ export async function loadRemoteSession(
     } else snapshot = applyRemoteSessionSync(undefined, await sync(undefined, undefined));
   }
   snapshot = bindRemoteAttachmentReaders(machineId, snapshot, (params) =>
-    remoteRequest(machineId, "attachments.read", params),
+    remoteRequest(
+      machineId,
+      "attachments.read",
+      params,
+      false,
+      false,
+      options.executionClient?.environmentId,
+    ),
   );
   if (options.onPreviews) {
     void withRemoteAttachmentPreviews(machineId, snapshot, known, (params) =>
-      remoteRequest(machineId, "attachments.read", params),
+      remoteRequest(
+        machineId,
+        "attachments.read",
+        params,
+        false,
+        false,
+        options.executionClient?.environmentId,
+      ),
     )
       .then(options.onPreviews)
       .catch((error) => {
@@ -560,7 +776,14 @@ export async function loadRemoteSession(
   // Adopted-session and preload consumers receive one complete snapshot and
   // have no callback through which independently downloaded images can arrive.
   return withRemoteAttachmentPreviews(machineId, snapshot, known, (params) =>
-    remoteRequest(machineId, "attachments.read", params),
+    remoteRequest(
+      machineId,
+      "attachments.read",
+      params,
+      false,
+      false,
+      options.executionClient?.environmentId,
+    ),
   );
 }
 
@@ -569,18 +792,28 @@ async function readRemoteSessionPage(
   sessionId: string,
   before?: number,
   revision?: number,
+  digests = false,
+  client?: SessionExecutionClient,
 ) {
-  const key = JSON.stringify([machineId, sessionId, before, revision]);
+  const key = JSON.stringify([machineId, sessionId, before, revision, digests]);
   return sharedRead(pendingSessionPages, key, async () => {
     const done = startPerformanceSpan(before === undefined ? "remote-tail" : "remote-history");
     try {
-      const page = await sessionAccessForMachine(machineId).page(sessionId, before, revision);
+      const page = client
+        ? ((await client.pageSession({
+            sessionId,
+            before,
+            revision,
+            preview: true,
+            ...(digests ? { digests: true } : {}),
+          })) as unknown as HostSessionPage)
+        : await sessionAccessForMachine(machineId).page(sessionId, before, revision, digests);
       const raw = applyRemoteSessionSync(
         undefined,
-        await assembleSessionSync(machineId, sessionId, page.sync),
+        await assembleSessionSync(machineId, sessionId, page.sync, client?.environmentId),
       );
       const value = bindRemoteAttachmentReaders(machineId, raw, (params) =>
-        remoteRequest(machineId, "attachments.read", params),
+        remoteRequest(machineId, "attachments.read", params, false, false, client?.environmentId),
       );
       done({ blocks: value.session.blocks.length, revision: page.revision });
       return { ...page, value };
@@ -597,12 +830,18 @@ export async function loadRemoteBlock(
   sessionId: string,
   blockId: string,
   revision: number,
+  client?: SessionExecutionClient,
 ) {
-  const response = await sessionAccessForMachine(machineId).block(sessionId, blockId, revision);
-  const sync = await assembleSessionSync(machineId, sessionId, response);
+  const response = await sessionAccessForMachine(
+    machineId,
+    false,
+    false,
+    client?.environmentId,
+  ).block(sessionId, blockId, revision);
+  const sync = await assembleSessionSync(machineId, sessionId, response, client?.environmentId);
   if (sync.kind !== "snapshot" || sync.value.revision !== revision) return undefined;
   const bound = bindRemoteAttachmentReaders(machineId, sync.value, (params) =>
-    remoteRequest(machineId, "attachments.read", params),
+    remoteRequest(machineId, "attachments.read", params, false, false, client?.environmentId),
   );
   const block = bound.session.blocks.find((entry) => entry.id === blockId);
   return block?.remoteContent ? undefined : block;
@@ -614,10 +853,18 @@ export async function loadRemoteHistoryPage(
   sessionId: string,
   current: HostSession,
   isCurrent: () => boolean = () => true,
+  client?: SessionExecutionClient,
 ): Promise<HostSession | undefined> {
   const cursor = current.history;
   if (cursor?.before === undefined) return current;
-  const page = await readRemoteSessionPage(machineId, sessionId, cursor.before, cursor.revision);
+  const page = await readRemoteSessionPage(
+    machineId,
+    sessionId,
+    cursor.before,
+    cursor.revision,
+    false,
+    client,
+  );
   if (!isCurrent() || page.revision !== current.revision || cursor.revision !== current.revision)
     return undefined;
   if (page.before !== undefined && page.before >= cursor.before)
@@ -710,7 +957,7 @@ export async function disconnectMachine(machineId: string): Promise<void> {
   await invoke("remote_disconnect", { machineId });
   const environmentId = cachedMachines.find((entry) => entry.id === machineId)?.environmentId;
   if (environmentId) invalidateRemoteCapabilities(environmentId);
-  if (environmentId) invalidateConnection(environmentId);
+  if (environmentId) forgetRemoteConnection(environmentId);
   cachedMachines = cachedMachines.filter((entry) => entry.id !== machineId);
   window.dispatchEvent(new Event(CHANGE));
 }
@@ -809,7 +1056,7 @@ export function reportRemoteMachineStatus(machineId: string, online: boolean, er
   // Views that gave up on this machine reload as soon as it answers again.
   if (online && wasOffline) {
     if (environmentId) invalidateRemoteCapabilities(environmentId);
-    notifyRemoteRecovered(environmentId);
+    announceRemoteRecovery(environmentId); // keeps a blocked or outdated state
   }
 }
 
@@ -867,24 +1114,23 @@ function watchMachineStatus(machineId: string): () => void {
 
 /** Whether a machine is reachable; undefined until the first check returns. */
 export function useRemoteMachineOnline(machineId?: string): boolean | undefined {
-  const [online, setOnline] = useState(() =>
-    machineId ? machineOnline.get(machineId) : undefined,
+  const subscribe = useCallback(
+    (notify: () => void) => {
+      if (!machineId) return () => undefined;
+      window.addEventListener(STATUS, notify);
+      const unwatch = watchMachineStatus(machineId);
+      return () => {
+        window.removeEventListener(STATUS, notify);
+        unwatch();
+      };
+    },
+    [machineId],
   );
-  useEffect(() => {
-    if (!machineId) {
-      setOnline(undefined);
-      return;
-    }
-    const update = () => setOnline(machineOnline.get(machineId));
-    update();
-    window.addEventListener(STATUS, update);
-    const unwatch = watchMachineStatus(machineId);
-    return () => {
-      window.removeEventListener(STATUS, update);
-      unwatch();
-    };
-  }, [machineId]);
-  return online;
+  const getSnapshot = useCallback(
+    () => (machineId ? machineOnline.get(machineId) : undefined),
+    [machineId],
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, () => undefined);
 }
 
 const historyKey = (project: string) => `bycoda.remote-history.v2:${project}`;
@@ -896,6 +1142,10 @@ function cachedSessions(project: string): HostSessionSummary[] {
   } catch {
     return [];
   }
+}
+/** Ids of the host sessions last listed for a remote project (its `remote://` path). */
+export function cachedRemoteSessionIds(project: string): string[] {
+  return cachedSessions(project).map((session) => session.id);
 }
 export function cachedRemoteSessionSummary(project: string, sessionId: string) {
   return cachedSessions(project).find((session) => session.id === sessionId);
@@ -997,7 +1247,6 @@ export function useRemoteProjectSessions(project: string, enabled = true): Remot
     }
     setDataState({ phase: "refreshing", updatedAt: lastVerified.current });
     let disposed = false;
-    let timer: ReturnType<typeof setTimeout>;
     let failures = 0;
     let recovering = false;
     const fail = (reason: unknown) => {
@@ -1087,26 +1336,28 @@ export function useRemoteProjectSessions(project: string, enabled = true): Remot
       };
     }
     let firstRead = true;
-    const poll = async () => {
-      try {
-        const force = firstRead || failures > 0;
+    const stopFallback = startRailPoller({
+      targets: [remote.projectId],
+      foregroundMs: 3_000,
+      random: () => 0.5,
+      load: async (_target, wake) => {
+        const force = firstRead || failures > 0 || wake === true;
         firstRead = false;
-        const next = await sharedSessionLists.load(machine.id, remote.projectId, force);
-        if (disposed) return;
+        return sharedSessionLists.load(machine.id, remote.projectId, force);
+      },
+      onResult: (_target, next) => {
         failures = 0;
         saveList(next);
-      } catch (reason) {
+      },
+      onError: (_target, reason) => {
         // Keep the cached list and back off while SSH is unavailable.
         failures = Math.min(4, failures + 1);
         fail(reason);
-      }
-      if (!disposed)
-        timer = setTimeout(() => void poll(), failures ? remoteBackoffDelay(failures) : 3_000);
-    };
-    void poll();
+      },
+    });
     return () => {
       disposed = true;
-      clearTimeout(timer);
+      stopFallback();
     };
   }, [project, remote?.projectId, machine?.id, refresh, capabilityVersion]);
   // Effects run after render. Never expose the previous project's cards with
@@ -1174,9 +1425,7 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
     );
     let shown = "";
     const publish = () => {
-      const next = [...lists].flatMap(([project, { list, fresh }]) =>
-        list.map((session) => ({ project, session, fresh })),
-      );
+      const next = railSessions(lists);
       const serialized = JSON.stringify(next);
       if (serialized === shown) return;
       shown = serialized;
@@ -1205,7 +1454,8 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
       cleanups.push(
         startRailPoller({
           targets: fallback,
-          load: ({ machine, remote }) => sharedSessionLists.load(machine.id, remote.projectId),
+          load: ({ machine, remote }, force) =>
+            sharedSessionLists.load(machine.id, remote.projectId, force),
           onResult: ({ project }, next) => save(project, next),
         }),
       );

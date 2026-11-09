@@ -1,38 +1,40 @@
 import { useFollowBottom } from "../hooks/useFollowBottom";
-import { t, useLocale } from "../../../shared/i18n";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { GlassBackdrop } from "../../../app/shell/GlassBackdrop";
-import { Check, Copy, CornerDownRight, Square, X } from "../../../shared/ui/icons";
-import { copyText } from "../../../platform/tauri/clipboard";
-import { agentRunMarkdown, isReportStep } from "../model/agentRunMarkdown";
-import type { AgentStep, Block } from "../model/session";
+import { useLocale, useT } from "../../../shared/i18n";
 import {
-  isStoppedBlock,
-  isSubagentBlock,
-  subagentModelName,
-  subagentName,
-  subagentReport,
-  subagentStatusLine,
-  toolCallState,
-  toolCallLabel,
-} from "../model/transcriptActivity";
-import { AgentClock } from "./AgentClock";
-import { ActivityRow, agentStepBlock } from "./AgentTranscript";
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { ArrowDown, Check, Copy, CornerDownRight, Square } from "../../../shared/ui/icons";
+import { copyText } from "../../../platform/tauri/clipboard";
+import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { Alert } from "../../../shared/ui/Alert";
+import { agentRunMarkdown, isReportStep } from "../model/agentRunMarkdown";
+import { blockLifecycle } from "../model/activityDock";
+import { commandCopyText, emptyOutputReason, inspectCommand } from "../model/commandInspection";
+import type { AgentStep, Block } from "../model/session";
+import type { DelegationKind } from "../../../shared/model/host-contracts/delegation";
+import { isSubagentBlock, subagentName, subagentReport } from "../model/transcriptActivity";
+import { SubagentReport, SubagentStateLine, runLabel } from "./SubagentAnatomy";
+import { ActivityRow } from "./AgentTranscriptActivity";
+import { blockForStep } from "./agentStepBlocks";
 import { AgentMarkdown } from "./AgentMarkdown";
 import { VIEW_SUBAGENT_EVENT } from "./subagentFocus";
 import { useStopRequests } from "./useStopRequests";
 import { Button } from "../../../shared/ui/Button";
-import { TextareaField } from "../../../shared/ui/TextareaField";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Sheet } from "../../../shared/ui/Sheet";
 import styles from "./SubagentSheet.module.css";
+import { useSubagentModelName } from "../model/reactiveReads";
+import { SubagentMessageForm, type SubagentRelay } from "./SubagentMessageForm";
 
-export type SubagentRelay = {
-  draft: string;
-  status?: "accepted" | "rejected";
-  blockedReason?: string;
-  setDraft: (draft: string) => void;
-  send: () => void;
-  onOpenConversation: () => void;
-};
+export type { SubagentRelay } from "./SubagentMessageForm";
 
 /**
  * Which delegated run's panel is open in a session pane. The pane that owns the
@@ -42,7 +44,9 @@ export type SubagentRelay = {
 export function useSubagentSheet(blocks: Block[], visible: boolean) {
   const [openId, setOpenId] = useState<string | null>(null);
   const blocksRef = useRef(blocks);
-  blocksRef.current = blocks;
+  useLayoutEffect(() => {
+    blocksRef.current = blocks;
+  }, [blocks]);
   // Where focus was when the panel opened, so closing puts it back.
   const returnFocus = useRef<HTMLElement | null>(null);
 
@@ -83,32 +87,16 @@ export function useSubagentSheet(blocks: Block[], visible: boolean) {
 
   const block = openId ? blocks.find((entry) => entry.id === openId) : undefined;
   // The run vanished (a rewind, a deleted turn): nothing left to show.
-  const gone = openId !== null && !block;
+  if (openId !== null && !block) setOpenId(null);
+  // The panel is gone without `close`; hand focus back once it has unmounted.
   useEffect(() => {
-    if (gone) close();
-  }, [gone, close]);
+    if (openId !== null) return;
+    const target = returnFocus.current;
+    returnFocus.current = null;
+    if (target?.isConnected) target.focus({ preventScroll: true });
+  }, [openId]);
 
   return { block, open, close };
-}
-
-const stepBlocks = new WeakMap<AgentStep, Block>();
-
-/** Stable block per step, so an unchanged step does not re-render as it arrives. */
-function blockForStep(step: AgentStep): Block {
-  let block = stepBlocks.get(step);
-  if (!block) {
-    block = agentStepBlock(step);
-    stepBlocks.set(step, block);
-  }
-  return block;
-}
-
-function runLabel(block: Block, busy: boolean): string {
-  if (isStoppedBlock(block)) return t("Stopped by you");
-  const state = toolCallState(block);
-  if (state === "rejected") return t("Failed");
-  if (state === "pending") return busy ? t("Running") : t("Stopped");
-  return t("Done");
 }
 
 /** Steps shown at first, and added by each "Show earlier steps". */
@@ -129,9 +117,12 @@ export function SubagentSheet({
   onClose,
   onStop,
   onShowInTranscript,
+  onLoadRemoteBlock,
   onOpenFile,
   onOpenDiff,
   relay,
+  requests,
+  agentRole,
 }: {
   block: Block;
   busy: boolean;
@@ -140,293 +131,451 @@ export function SubagentSheet({
   onClose: () => void;
   /** Present when the harness can stop this one run without the whole turn. */
   onStop?: () => Promise<void>;
-  onShowInTranscript: (blockId: string) => void;
+  /** Returns false when the block could not be found; the sheet then stays open. Absent for a delegated child, which is not in the transcript. */
+  onShowInTranscript?: (blockId: string) => boolean | void;
+  /** The transcript's authorized full-block loader, for blocks held as remote summaries. */
+  onLoadRemoteBlock?: (blockId: string, revision: number) => Promise<void> | void;
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
   relay?: SubagentRelay;
+  requests?: ReactNode;
+  agentRole?: DelegationKind;
 }) {
-  useLocale();
-  const sheetRef = useRef<HTMLElement>(null);
+  const t = useT();
   const command = !isSubagentBlock(block);
   const name = command ? t("Command details") : subagentName(block);
-  const model = command ? undefined : subagentModelName(block);
+  const subagentModel = useSubagentModelName(block);
+  const model = command ? undefined : subagentModel;
   const run = block.agentRun;
-  const state = toolCallState(block);
-  const running = busy && state === "pending";
+  const running = blockLifecycle(block, busy) === "running";
+  // Showing in the transcript can fail (the block is not rendered there); the
+  // sheet stays open with the reason instead of silently losing its context.
+  const [showFailedFor, setShowFailedFor] = useState<string | null>(null);
+  const showFailed = showFailedFor === block.id;
   const steps = run?.steps ?? [];
-  const summary = isStoppedBlock(block) ? "" : subagentStatusLine(block, steps);
   const stops = useStopRequests();
   const stopKey = block.tool?.callId ?? block.id;
   const stopping = stops.stopping.has(stopKey);
 
-  // Esc closes from anywhere in this pane, as the side-question sheet does.
-  useEffect(() => {
-    const sheet = sheetRef.current;
-    if (!visible || !sheet) return;
-    const pane = sheet.closest("[data-session-drop]") ?? sheet.parentElement;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      if (event.isComposing) return;
-      const target = event.target instanceof Node ? event.target : null;
-      if (target !== document.body && !(target && pane?.contains(target))) {
-        return;
+  return (
+    <Sheet
+      padding="none"
+      modal={false}
+      anchor="container"
+      side="end"
+      open={visible}
+      title={
+        command
+          ? name
+          : agentRole === "advisor"
+            ? `${t("Advisor")}: ${name}`
+            : t("Subagent: {p0}", { p0: name })
       }
-      event.preventDefault();
-      onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [visible, onClose]);
+      closeLabel={t(command ? "Close command panel" : "Close agent panel")}
+      escapeScope="[data-session-drop]"
+      scroll="none"
+      bodyClassName={`${styles.layout} font-sans text-ui-body`}
+      onClose={onClose}
+      headerActions={
+        <>
+          <CopyTranscriptButton block={block} busy={busy} status={runLabel(block, busy)} />
+          {onStop && running ? (
+            <Button
+              className="shrink-0"
+              variant="ghost"
+              type="button"
+              disabled={stopping}
+              tooltip={
+                stops.failed.has(stopKey)
+                  ? t("Could not stop it. Try again.")
+                  : t(
+                      command
+                        ? "Stop this command"
+                        : agentRole === "advisor"
+                          ? "Stop"
+                          : "Stop this subagent",
+                    )
+              }
+              onClick={() => stops.request(stopKey, onStop)}
+            >
+              <Square className="icon-sm" aria-hidden />
+              {stopping
+                ? t("Stopping…")
+                : stops.failed.has(stopKey)
+                  ? t("Could not stop. Retry")
+                  : t("Stop")}
+            </Button>
+          ) : null}
+          {onShowInTranscript ? (
+            <Button
+              iconOnly
+              label={t("Show in transcript")}
+              variant="ghost"
+              type="button"
+              onClick={() => {
+                setShowFailedFor(onShowInTranscript(block.id) === false ? block.id : null);
+              }}
+              tooltip={
+                command ? t("Show in transcript") : t("Scroll to this agent in the transcript")
+              }
+              className="shrink-0"
+            >
+              <CornerDownRight className="icon-sm" aria-hidden />
+            </Button>
+          ) : null}
+        </>
+      }
+      headerBelow={<SubagentStateLine block={block} busy={busy} steps={steps} model={model} />}
+    >
+      {showFailed ? (
+        <div className="shrink-0 px-4 pt-2">
+          <Alert tone="warning" inline>
+            {t("Could not find this item in the transcript. It stays open here.")}
+          </Alert>
+        </div>
+      ) : null}
+      {command ? (
+        <CommandDetails
+          key={block.id}
+          block={block}
+          busy={busy}
+          cwd={cwd}
+          onLoadRemoteBlock={onLoadRemoteBlock}
+        />
+      ) : (
+        <SubagentTrail
+          key={block.id}
+          block={block}
+          steps={steps}
+          running={running}
+          cwd={cwd}
+          onOpenFile={onOpenFile}
+          onOpenDiff={onOpenDiff}
+        />
+      )}
+      {!command && requests ? (
+        <div className={styles.requests}>
+          {requests}
+          {relay ? <SubagentMessageForm name={name} relay={relay} /> : null}
+        </div>
+      ) : !command && relay ? (
+        <SubagentMessageForm name={name} relay={relay} />
+      ) : !command ? (
+        <p className="shrink-0 px-4 py-2 text-ui-caption text-(--ui-text-secondary)">
+          {t("Messaging is unavailable in this conversation.")}
+        </p>
+      ) : null}
+    </Sheet>
+  );
+}
 
-  // Focus moves into the panel when it opens; swapping agents leaves it where
-  // the reader put it.
+/** Copy text for a command, stating when the retained body is only a summary or shortened. */
+function commandDetailsCopyText(
+  block: Block,
+  busy: boolean,
+  status: string,
+  t: ReturnType<typeof useT>,
+): string {
+  const inspection = inspectCommand(block, busy);
+  const text = commandCopyText(inspection, status);
+  const notices = [
+    inspection.remote
+      ? t("[Only a summary of the output is kept here; the full output was not loaded.]")
+      : null,
+    inspection.outputTruncated
+      ? t("[Output was shortened; the full text may not be available.]")
+      : null,
+    inspection.command.truncated
+      ? t("[Command text was shortened to keep this conversation responsive.]")
+      : null,
+  ].filter((notice): notice is string => !!notice);
+  return notices.length ? [text, ...notices].join("\n\n") : text;
+}
+
+/** Local state for loading a remote summary into the full block. */
+type RemoteLoad = { status: "idle" | "loading" | "failed"; revision: number };
+
+/**
+ * Command details, in reading order: status is in the header, then the command
+ * (exact text on demand), the session context (subordinate), and the output as
+ * the one main reading area. Updates from the same live block as the dock.
+ */
+function CommandDetails({
+  block,
+  busy,
+  cwd,
+  onLoadRemoteBlock,
+}: {
+  block: Block;
+  busy: boolean;
+  cwd?: string;
+  onLoadRemoteBlock?: (blockId: string, revision: number) => Promise<void> | void;
+}) {
+  const t = useT();
+  const inspection = useMemo(() => inspectCommand(block, busy), [block, busy]);
+  const { command, error, output, remote } = inspection;
+  const reason = emptyOutputReason(inspection);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const longCommand = command.text.length > 240 || command.text.split("\n").length > 3;
+
+  // Remote summary: pending/error/retry are local; a result only counts for the
+  // revision it was requested for, and never after the command was swapped.
+  const [load, setLoad] = useState<RemoteLoad>({ status: "idle", revision: 0 });
+  const generation = useRef(0);
+  useEffect(
+    () => () => {
+      generation.current += 1;
+    },
+    [],
+  );
+  const revision = remote?.revision;
+  const loadState = revision !== undefined && load.revision === revision ? load.status : "idle";
+  const loadFull = () => {
+    if (!onLoadRemoteBlock || revision === undefined || loadState === "loading") return;
+    const requested = ++generation.current;
+    setLoad({ status: "loading", revision });
+    const settle = (status: RemoteLoad["status"]) => {
+      if (generation.current !== requested) return;
+      setLoad({ status, revision });
+    };
+    try {
+      void Promise.resolve(onLoadRemoteBlock(block.id, revision)).then(
+        () => settle("idle"),
+        () => settle("failed"),
+      );
+    } catch {
+      settle("failed");
+    }
+  };
+
+  // Follow the newest output until the reader scrolls up or selects text.
+  const scroller = useRef<HTMLDivElement>(null);
+  const following = useFollowBottom(scroller, true, output, 32, false);
+  const [behind, setBehind] = useState(false);
   useEffect(() => {
-    const sheet = sheetRef.current;
-    if (sheet && !sheet.contains(document.activeElement)) sheet.focus();
-  }, []);
+    const el = scroller.current;
+    if (!el) return;
+    const sync = () => setBehind(el.scrollHeight - el.scrollTop - el.clientHeight > 32);
+    const onSelection = () => {
+      const selection = document.getSelection();
+      if (
+        selection &&
+        !selection.isCollapsed &&
+        selection.anchorNode &&
+        el.contains(selection.anchorNode)
+      ) {
+        following.current = false;
+        setBehind(true);
+      }
+    };
+    el.addEventListener("scroll", sync, { passive: true });
+    document.addEventListener("selectionchange", onSelection);
+    return () => {
+      el.removeEventListener("scroll", sync);
+      document.removeEventListener("selectionchange", onSelection);
+    };
+  }, [following]);
+  // New output while the reader is paused keeps the jump control visible.
+  useEffect(() => {
+    const el = scroller.current;
+    if (el && !following.current) {
+      setBehind(el.scrollHeight - el.scrollTop - el.clientHeight > 32);
+    }
+  }, [output, following]);
+  const jumpToLatest = () => {
+    const el = scroller.current;
+    if (!el) return;
+    following.current = true;
+    el.scrollTop = el.scrollHeight;
+    setBehind(false);
+  };
+
+  // Silence is only claimed when the retained body is complete. A remote summary
+  // or shortened body cannot establish that the command printed nothing.
+  const unavailableText =
+    reason && !error
+      ? remote
+        ? t(
+            "The output is not loaded here. Only a summary is kept; load the full output to read it.",
+          )
+        : inspection.outputTruncated
+          ? t("The output was shortened and nothing is retained here, so it cannot be shown.")
+          : null
+      : null;
+  const emptyText =
+    unavailableText ??
+    (reason === "running"
+      ? t("Running. No output has been reported yet; new output appears here.")
+      : reason === "done"
+        ? t("Finished. The command reported no output.")
+        : reason === "stopped"
+          ? t("Stopped before it reported any output.")
+          : reason === "interrupted"
+            ? t("Interrupted before it reported any output. Its final state was not reported.")
+            : reason === "failed" && !error
+              ? t("Failed without reporting output.")
+              : null);
 
   return (
-    <div data-subagent-overlay className="subagent-overlay absolute inset-0 z-40">
-      <div aria-hidden className="absolute inset-0" onMouseDown={onClose} />
+    <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pt-1 pb-3">
       <section
-        ref={sheetRef}
-        role="dialog"
-        aria-label={command ? name : t("Subagent: {p0}", { p0: name })}
-        tabIndex={-1}
-        className="subagent-sheet absolute inset-y-0 right-0 isolate w-[min(34rem,94%)] outline-none"
+        aria-label={t("Command")}
+        className="flex max-h-[min(22rem,55dvh)] min-h-0 shrink flex-col gap-1 overflow-y-auto overscroll-contain"
       >
-        <GlassBackdrop className="subagent-sheet-glass popover-backdrop" />
-        <div
-          className={`${styles.layout} relative z-[1] flex h-full min-h-0 flex-col font-sans text-sm text-(--ui-tone-neutral-fg)`}
-        >
-          <header className="flex shrink-0 flex-col gap-1 border-b border-(--ui-tone-neutral-border) py-2.5 pr-2 pl-4">
-            <div className="flex min-w-0 items-center gap-2">
-              <h2 className="min-w-0 flex-1 truncate text-sm font-medium" title={name}>
-                {name}
-              </h2>
-              <CopyTranscriptButton block={block} status={runLabel(block, busy)} />
-              {onStop && running ? (
-                <Button
-                  className="shrink-0"
-                  variant="ghost"
-                  type="button"
-                  disabled={stopping}
-                  title={
-                    stops.failed.has(stopKey)
-                      ? t("Could not stop it. Try again.")
-                      : t(command ? "Stop this command" : "Stop this subagent")
-                  }
-                  onClick={() => stops.request(stopKey, onStop)}
-                >
-                  <Square className="size-3.5" strokeWidth={1.75} />
-                  {stopping ? t("Stopping…") : t("Stop")}
-                </Button>
-              ) : null}
-              <Button
-                iconOnly
-                label={t("Show in transcript")}
-                variant="ghost"
-                type="button"
-                onClick={() => onShowInTranscript(block.id)}
-                title={
-                  command ? t("Show in transcript") : t("Scroll to this agent in the transcript")
-                }
-                className="shrink-0"
-              >
-                <CornerDownRight className="size-3.5" strokeWidth={1.75} />
-              </Button>
-              <Button
-                iconOnly
-                label={t(command ? "Close command panel" : "Close agent panel")}
-                variant="ghost"
-                type="button"
-                aria-label={t(command ? "Close command panel" : "Close agent panel")}
-                title={t("Close (Esc)")}
-                onClick={onClose}
-                className="shrink-0"
-              >
-                <X className="size-4" strokeWidth={1.75} />
-              </Button>
-            </div>
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs wrap-anywhere text-(--ui-text-secondary)">
-              <span
-                className={
-                  state === "rejected"
-                    ? "text-(--ui-tone-danger-fg)"
-                    : running
-                      ? "text-(--ui-tone-accent-fg)"
-                      : ""
-                }
-              >
-                {runLabel(block, busy)}
-              </span>
-              {run?.agentType ? <span>{run.agentType}</span> : null}
-              {model ? <span title={t("Model: {p0}", { p0: model })}>{model}</span> : null}
-              {summary && state !== "rejected" ? <span>{summary}</span> : null}
-              <AgentClock startedAt={run?.startedAt} endedAt={run?.endedAt} live={running} />
-            </div>
-          </header>
-          {command ? (
-            <CommandDetails key={block.id} block={block} cwd={cwd} />
-          ) : (
-            <SubagentTrail
-              key={block.id}
-              block={block}
-              steps={steps}
-              running={running}
-              cwd={cwd}
-              onOpenFile={onOpenFile}
-              onOpenDiff={onOpenDiff}
-            />
-          )}
-          {!command && relay ? (
-            <form
-              className={`${styles.composer} flex shrink-0 flex-col gap-2 border-t border-(--ui-tone-neutral-border) bg-[var(--ui-surface)] px-4 py-3`}
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!relay.blockedReason && relay.draft.trim()) relay.send();
-              }}
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-ui-caption font-medium text-(--ui-text-secondary)">{t("Command")}</h3>
+          {longCommand ? (
+            <Button
+              variant="ghost"
+              type="button"
+              aria-expanded={commandOpen}
+              onClick={() => setCommandOpen((value) => !value)}
             >
-              <TextareaField
-                className={styles.message}
-                label={t("Message for {p0}", { p0: name })}
-                description={t(
-                  "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.",
-                )}
-                rows={3}
-                value={relay.draft}
-                onChange={(event) => relay.setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    (event.ctrlKey || event.metaKey) &&
-                    !event.nativeEvent.isComposing
-                  ) {
-                    event.preventDefault();
-                    if (!relay.blockedReason && relay.draft.trim()) relay.send();
-                  }
-                }}
-              />
-              {relay.blockedReason ? (
-                <p className="text-xs text-[var(--ui-text-muted)]">{relay.blockedReason}</p>
-              ) : null}
-              <p role="status" className="text-xs text-[var(--ui-text-muted)]">
-                {relay.status === "accepted"
-                  ? t("Request added to the main conversation. Delivery is not yet confirmed.")
-                  : relay.status === "rejected"
-                    ? t("Request was not accepted. Your message is kept here; try again.")
-                    : null}
-              </p>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <Button variant="ghost" onClick={relay.onOpenConversation}>
-                  {t("Open main conversation")}
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  disabled={!!relay.blockedReason || !relay.draft.trim()}
-                >
-                  {t("Relay via main agent")}
-                </Button>
-              </div>
-            </form>
-          ) : !command ? (
-            <p className="shrink-0 border-t border-(--ui-tone-neutral-border) px-4 py-2 text-xs text-(--ui-text-secondary)">
-              {t("Messaging is unavailable in this conversation.")}
-            </p>
+              {commandOpen ? t("Show less") : t("Show full command")}
+            </Button>
           ) : null}
         </div>
+        <pre
+          tabIndex={0}
+          className={`select-text overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-lg border border-(--color-stroke) bg-(--ui-surface-panel) px-3 py-2 font-mono text-ui-caption leading-5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color) ${
+            commandOpen || !longCommand ? "max-h-[min(16rem,32dvh)]" : "max-h-20"
+          }`}
+        >
+          {command.text}
+        </pre>
+        {command.truncated ? (
+          <p className="text-ui-caption text-(--ui-text-secondary)">
+            {t("Command text was shortened to keep this conversation responsive.")}
+          </p>
+        ) : null}
+        {cwd ? (
+          <p className="text-ui-caption wrap-anywhere text-(--ui-text-secondary)">
+            <span>{t("Session working directory")}: </span>
+            <span className="select-text font-mono">{cwd}</span>
+          </p>
+        ) : null}
+      </section>
+      <section
+        aria-label={t("Output")}
+        className="relative flex min-h-[8rem] flex-1 flex-col gap-1"
+      >
+        <h3 className="text-ui-caption font-medium text-(--ui-text-secondary)">{t("Output")}</h3>
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {/* The one scroll owner of the sheet: error and output read in one quiet
+              panel. Always mounted: the follow hook attaches to this element once. */}
+          <div
+            ref={scroller}
+            tabIndex={0}
+            className="min-h-0 flex-1 overflow-auto overscroll-none rounded-lg border border-(--color-stroke) bg-(--ui-surface-panel) [scrollbar-gutter:stable] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color)"
+          >
+            <div className="flex min-w-0 flex-col gap-2 px-3 py-2">
+              {error ? (
+                <pre className="select-text whitespace-pre-wrap break-words font-mono text-ui-caption leading-5 text-(--ui-tone-danger-fg)">
+                  {error}
+                </pre>
+              ) : null}
+              {output ? (
+                <pre className="select-text whitespace-pre-wrap break-words font-mono text-ui-caption leading-5">
+                  {output}
+                </pre>
+              ) : emptyText ? (
+                <p className="text-ui-caption text-(--ui-text-secondary)">{emptyText}</p>
+              ) : null}
+            </div>
+          </div>
+          {behind && output ? (
+            <Button
+              className="absolute right-3 bottom-3 shadow-(--ui-elevation-floating)"
+              variant="secondary"
+              type="button"
+              onClick={jumpToLatest}
+            >
+              <ArrowDown className="icon-sm" strokeWidth={1.75} />
+              {t("Jump to latest")}
+            </Button>
+          ) : null}
+        </div>
+        {inspection.outputTruncated ? (
+          <p className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
+            {t("Output was shortened; the full text may not be available.")}
+          </p>
+        ) : null}
+        {remote ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
+            <span>{t("Only a summary of this output is kept here.")}</span>
+            {onLoadRemoteBlock ? (
+              <Button
+                variant="ghost"
+                type="button"
+                loading={loadState === "loading"}
+                onClick={loadFull}
+              >
+                {loadState === "failed"
+                  ? t("Retry")
+                  : `${t("Load full output (")}${Math.max(1, Math.ceil(remote.bytes / 1024))}${t(" KB)")}`}
+              </Button>
+            ) : null}
+            {loadState === "loading" ? (
+              <LoadingText>{t("Loading full output…")}</LoadingText>
+            ) : null}
+            {loadState === "failed" ? (
+              <InlineError>{t("Could not load the full output.")}</InlineError>
+            ) : null}
+          </div>
+        ) : null}
       </section>
     </div>
   );
 }
 
-/** Provider-reported command data; updates from the same live block as the dock. */
-function CommandDetails({ block, cwd }: { block: Block; cwd?: string }) {
-  useLocale();
-  const command =
-    block.tool?.preview?.title || block.tool?.title || block.text || toolCallLabel(block);
-  const output = block.tool?.preview?.output || block.tool?.output;
-  const detail = block.tool?.detail?.trim();
-  const result = [output, detail && detail !== command && detail !== output ? detail : undefined]
-    .filter(Boolean)
-    .join("\n\n");
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-none px-4 py-3">
-      <h3 className="mb-1 text-xs text-(--ui-text-secondary)">{t("Command")}</h3>
-      <pre className="select-text whitespace-pre-wrap break-words rounded-lg bg-(--ui-surface-raised) p-3 font-mono text-xs leading-5">
-        {command}
-      </pre>
-      {cwd ? (
-        <>
-          <h3 className="mt-4 mb-1 text-xs text-(--ui-text-secondary)">{t("Working directory")}</h3>
-          <pre className="select-text whitespace-pre-wrap break-words font-mono text-xs">{cwd}</pre>
-        </>
-      ) : null}
-      <h3 className="mt-4 mb-1 text-xs text-(--ui-text-secondary)">{t("Output")}</h3>
-      {result ? (
-        <pre className="select-text whitespace-pre-wrap break-words rounded-lg bg-(--ui-surface-raised) p-3 font-mono text-xs leading-5">
-          {result}
-        </pre>
-      ) : (
-        <p className="text-xs text-(--ui-text-secondary)">
-          {t("No output has been reported for this command yet.")}
-        </p>
-      )}
-      {block.tool?.outputTruncated ? (
-        <p className="mt-2 text-xs text-(--ui-text-secondary)">
-          {t("Output was truncated by the provider.")}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-/** Copies the run as Markdown; the icon confirms it for a moment. */
-function CopyTranscriptButton({ block, status }: { block: Block; status: string }) {
-  useLocale();
-  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
-  const timer = useRef<number | null>(null);
-  useEffect(
-    () => () => {
-      if (timer.current != null) window.clearTimeout(timer.current);
-    },
-    [],
-  );
+/**
+ * Copies the run (Markdown for a subagent, exact command + status + output for a
+ * command). One copy at a time, results ignored once the selected run changed,
+ * the confirmation resets after the copy settles, and a failure stays visible
+ * until retried.
+ */
+function CopyTranscriptButton({
+  block,
+  busy,
+  status,
+}: {
+  block: Block;
+  busy: boolean;
+  status: string;
+}) {
+  const t = useT();
+  // A different run invalidates any copy in flight and any shown outcome; streaming
+  // content of the same run does not, because the text is read when the click happens.
+  const feedback = useCopyFeedback({ resetKeys: [block.id], successMs: 2000 });
+  const command = !isSubagentBlock(block);
   const copy = () => {
-    const text = isSubagentBlock(block)
-      ? agentRunMarkdown(block, status)
-      : [
-          block.tool?.preview?.title || block.tool?.title || block.text,
-          status,
-          block.tool?.preview?.output || block.tool?.output,
-          block.tool?.detail,
-        ]
-          .filter(Boolean)
-          .join("\n\n");
+    const text = command
+      ? commandDetailsCopyText(block, busy, status, t)
+      : agentRunMarkdown(block, status);
     if (!text) return;
-    void copyText(text).then(
-      () => setState("copied"),
-      () => setState("failed"),
-    );
-    if (timer.current != null) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setState("idle"), 2000);
+    feedback.copy(() => copyText(text));
   };
-  const label =
-    state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy transcript";
+  const label = feedback.copied
+    ? t("Copied")
+    : feedback.failed
+      ? t("Copy failed. Try again.")
+      : command
+        ? t("Copy details")
+        : t("Copy transcript");
   return (
     <Button
       className="shrink-0"
       variant="ghost"
       type="button"
+      loading={feedback.pending}
       onClick={copy}
-      title={t("{p0} (Markdown)", { p0: label })}
+      tooltip={command ? label : t("{p0} (Markdown)", { p0: label })}
       aria-label={label}
     >
-      {state === "copied" ? (
-        <Check className="size-4" strokeWidth={1.75} />
+      {feedback.copied ? (
+        <Check className="icon-md" strokeWidth={1.75} />
       ) : (
-        <Copy className="size-4" strokeWidth={1.75} />
+        <Copy className="icon-md" strokeWidth={1.75} />
       )}
     </Button>
   );
@@ -434,15 +583,15 @@ function CopyTranscriptButton({ block, status }: { block: Block; status: string 
 
 /** What the subagent was asked, clamped until the reader opens it. */
 function PromptCard({ prompt }: { prompt: string }) {
-  useLocale();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const long = prompt.length > 360 || prompt.split("\n").length > 6;
   return (
     <section
       aria-label={t("Prompt")}
-      className="rounded-lg bg-(--ui-surface-raised) px-3 py-2 text-[13px] leading-5"
+      className="mb-2 rounded-lg bg-(--ui-surface-panel) px-3 py-2 text-ui-secondary leading-5"
     >
-      <h3 className="pb-0.5 text-[11px] font-medium tracking-wide text-(--ui-text-secondary) uppercase">
+      <h3 className="pb-0.5 text-ui-caption font-medium text-(--ui-text-secondary)">
         {t("Prompt")}
       </h3>
       <p
@@ -518,12 +667,11 @@ function SubagentTrail({
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
 }) {
-  useLocale();
+  const t = useT();
   const scroller = useRef<HTMLDivElement>(null);
   // Follow the newest step until the reader scrolls up; scrolling back to the
   // end picks the follow up again.
   const report = subagentReport(block);
-  const failed = toolCallState(block) === "rejected";
   const prompt = block.agentRun?.prompt?.trim();
   // A run can hold hundreds of steps. Rows are variable-height and open on
   // demand, so rather than virtualise them the newest page is rendered and the
@@ -544,7 +692,7 @@ function SubagentTrail({
       <div className="flex min-w-0 flex-col gap-1 px-4 py-3">
         {prompt ? <PromptCard prompt={prompt} /> : null}
         {visible.length === 0 && !report ? (
-          <p className="pt-1 text-xs text-(--ui-text-secondary)">
+          <p className="pt-1 text-ui-caption text-(--ui-text-secondary)">
             {running ? t("Waiting for the first step.") : t("This agent did not report any steps.")}
           </p>
         ) : null}
@@ -572,20 +720,7 @@ function SubagentTrail({
             onOpenDiff={onOpenDiff}
           />
         ))}
-        {report ? (
-          <section
-            aria-label={failed ? t("Failure") : t("Report")}
-            className="mt-1 border-t border-(--ui-tone-neutral-border) pt-2"
-          >
-            {failed ? (
-              <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-(--ui-tone-danger-fg)">
-                {report}
-              </pre>
-            ) : (
-              <AgentMarkdown text={report} cwd={cwd} onOpenFile={onOpenFile} />
-            )}
-          </section>
-        ) : null}
+        <SubagentReport block={block} cwd={cwd} onOpenFile={onOpenFile} className="mt-3" />
       </div>
     </div>
   );

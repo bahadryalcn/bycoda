@@ -1,5 +1,10 @@
 import {
+  withRoomPrivacyMutation,
+  type PrivacyMutationToken,
+} from "../../../features/group-lock/model/roomPrivacyProjection";
+import {
   useCallback,
+  useEffect,
   useState,
   type Dispatch,
   type MutableRefObject,
@@ -12,6 +17,7 @@ import {
   loadRecents,
   newProjectPaths,
   rememberProject,
+  rememberProjectInMutation,
 } from "../../../features/projects/model/recents";
 import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
 import { knownRemoteMachine } from "../../../features/connections/model/connections";
@@ -23,6 +29,7 @@ import {
   planProjectOpenRun,
   type ProjectOpenStep,
 } from "../../../features/projects/model/projectOpenRun";
+import { OPEN_PROJECT_PATH_EVENT } from "../../../features/projects/model/contributeFlow";
 import { pickFolders } from "../../../platform/tauri/fs";
 import { openSyncedProjectRemotely } from "../../../features/sync/model/syncRemoteProjects";
 import type { TabActivation } from "../tabs/useTabActivation";
@@ -37,7 +44,7 @@ export interface ProjectOpenDeps {
   setNotesViewOpen: Dispatch<SetStateAction<boolean>>;
   setAutomationsViewOpen: Dispatch<SetStateAction<boolean>>;
   setServersViewOpen?: Dispatch<SetStateAction<boolean>>;
-  onCwdChange: (sessionId: string, cwd: string) => void;
+  onCwdChange: (sessionId: string, cwd: string, token?: PrivacyMutationToken) => void;
   setSessions: typeof setSessions;
   setTabs: (update: WorkspaceTab[] | ((previous: WorkspaceTab[]) => WorkspaceTab[])) => void;
   insertBeside: TabActivation["insertBeside"];
@@ -45,7 +52,7 @@ export interface ProjectOpenDeps {
   activateTab: TabActivation["activateTab"];
   setActiveTabId: (id: string) => void;
   setComposerFocused: Dispatch<SetStateAction<boolean>>;
-  setRecents: Dispatch<SetStateAction<ReturnType<typeof rememberProject>>>;
+  setRecents: Dispatch<SetStateAction<Awaited<ReturnType<typeof rememberProject>>>>;
   workspaceNavigation: { cancel: () => void; selectProject: (path: string) => void };
 }
 
@@ -98,7 +105,7 @@ export function useProjectOpen({
   }, []);
 
   const openProjects = useCallback(
-    (paths: readonly string[]) => {
+    (paths: readonly string[], token?: PrivacyMutationToken) => {
       const knownBefore = loadRecents().map((item) => item.path);
       const steps = planProjectOpenRun({
         memory: readProjectReturnMemory(),
@@ -108,7 +115,7 @@ export function useProjectOpen({
         paths,
       });
       const last = steps[steps.length - 1];
-      if (!last) return;
+      if (!last) return Promise.resolve();
 
       // After the early return, not before it. `pickFolders` hands back an
       // empty list when the picker is dismissed, and every path failing
@@ -127,7 +134,10 @@ export function useProjectOpen({
         (step): step is Extract<ProjectOpenStep, { action: "reuse-blank" }> =>
           step.action === "reuse-blank",
       );
-      if (blank) onCwdChange(blank.sessionId, blank.path);
+      if (blank) {
+        if (token) onCwdChange(blank.sessionId, blank.path, token);
+        else onCwdChange(blank.sessionId, blank.path);
+      }
 
       const created = steps.filter(
         (step): step is Extract<ProjectOpenStep, { action: "create" }> => step.action === "create",
@@ -163,25 +173,49 @@ export function useProjectOpen({
           break;
       }
       // Every project opened is remembered, the one chosen last most recently.
-      for (const step of steps) setRecents(rememberProject(step.path));
-      promptAddedProjectNames(knownBefore);
+      const pending: Promise<void>[] = [];
+      for (const step of steps) {
+        if (token) setRecents(rememberProjectInMutation(step.path, token));
+        else pending.push(rememberProject(step.path).then(setRecents));
+      }
+      return Promise.all(pending).then(() => {
+        promptAddedProjectNames(knownBefore);
+      });
     },
     [activateTab, insertBeside, onCwdChange, promptAddedProjectNames, readProjectReturnMemory],
   );
 
   const onSelectProject = useCallback(
-    (path: string) => {
+    (path: string, workspaceRequestId?: string) => {
       workspaceNavigation.cancel();
-      openProjects([path]);
+      if (workspaceRequestId) {
+        return withRoomPrivacyMutation(async (token) => {
+          await openProjects([path], token);
+          workspaceNavigation.selectProject(path);
+        }, workspaceRequestId);
+      }
+      void openProjects([path]).catch((error: unknown) =>
+        console.error("Could not remember project", error),
+      );
       workspaceNavigation.selectProject(path);
     },
     [openProjects, workspaceNavigation.cancel, workspaceNavigation.selectProject],
   );
 
+  // A folder opened from elsewhere in the app (the cloned bycoda repository).
+  useEffect(() => {
+    const open = (event: Event) => {
+      const path = (event as CustomEvent<{ path?: unknown }>).detail?.path;
+      if (typeof path === "string" && path) onSelectProject(path);
+    };
+    window.addEventListener(OPEN_PROJECT_PATH_EVENT, open);
+    return () => window.removeEventListener(OPEN_PROJECT_PATH_EVENT, open);
+  }, [onSelectProject]);
+
   const pickProject = useCallback(async () => {
     // Several folders can be taken at once; each opens as its own project, and
     // the last one selected ends up focused.
-    openProjects(await pickFolders());
+    await openProjects(await pickFolders());
   }, [openProjects]);
 
   const openSyncedProject = useCallback(

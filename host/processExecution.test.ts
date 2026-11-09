@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { execFileAsync, runGitText } from "../src/shared/lib/processExecution.node";
 
-it("argv ve ortamı shell yorumlamadan aktarır, metin ve binary seçeneklerini korur", async () => {
+it("passes argv and environment without shell interpretation and preserves text and binary options", async () => {
   const argument = "literal $HOME & | ;";
   const result = await execFileAsync(
     process.execPath,
@@ -21,7 +21,7 @@ it("argv ve ortamı shell yorumlamadan aktarır, metin ve binary seçeneklerini 
   expect(binary.stdout).toEqual(Buffer.from([0, 255]));
 });
 
-it("git sonucunu kırpmaz ve çağıranın maxBuffer sınırını korur", async () => {
+it("does not trim the git result and preserves the caller's maxBuffer limit", async () => {
   expect(await runGitText(["--version"], { windowsHide: true })).toMatch(/^git version .+\n$/);
   await expect(
     runGitText(["--version"], { windowsHide: true, maxBuffer: 1 }),

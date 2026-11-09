@@ -1,4 +1,5 @@
 import { useCallback, useRef } from "react";
+import { IS_MAC } from "../../platform/tauri/platform";
 
 type Edges = Pick<
   HTMLElement,
@@ -54,10 +55,19 @@ export function innerScrollerTakes(el: HTMLElement, e: WheelEvent): boolean {
 }
 
 /**
- * Stop macOS rubber-band bounce when a scroller reaches any edge. Returns the
- * detach, and stands alone from the hook so it can be exercised directly.
+ * Stop macOS rubber-band bounce when a scroller reaches any edge. Elsewhere
+ * there is no bounce, only scroll chaining, which `overscroll-behavior` stops on
+ * the compositor; a non-passive wheel listener would make every tick wait on JS.
+ * Returns the detach, and stands alone from the hook so it can be exercised directly.
  */
-export function lockOverscroll(el: HTMLElement): () => void {
+export function lockOverscroll(el: HTMLElement, isMac = IS_MAC): () => void {
+  if (!isMac) {
+    const previous = el.style.overscrollBehavior;
+    el.style.overscrollBehavior = "contain";
+    return () => {
+      el.style.overscrollBehavior = previous;
+    };
+  }
   const onWheel = (e: WheelEvent) => {
     if (e.defaultPrevented || e.ctrlKey || e.shiftKey) return;
     if (!atScrollEdge(el, e)) return;

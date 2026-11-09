@@ -12,11 +12,32 @@ import {
   setHarnessModels,
 } from "../../src/features/sessions/model/models";
 import { modelsForClaudeVersion } from "../../src/integrations/harness/providers/claude/claudeCatalog";
+import { registerHarness } from "../../src/integrations/harness/core/registry";
 import { languageReady } from "../../src/shared/i18n";
+import { Button } from "../../src/shared/ui/Button";
 import { WandSparkles } from "../../src/shared/ui/icons";
+// Shared tokens (control heights, field roles) so shared Buttons size as in the app.
+import "../../src/styles/index.css";
 import "./git-generation.css";
 
 setHarnessModels("claude", modelsForClaudeVersion("2.1.300"));
+// Git generation offers only text-capable providers; their models feed the advisor and subagent rows.
+const unavailable = async () => {
+  throw new Error("No live provider in git generation fixture");
+};
+registerHarness({
+  id: "claude",
+  live: true,
+  canSteer: false,
+  sendTurn: unavailable,
+  steerTurn: unavailable,
+  cancelTurn: unavailable,
+  stopSession: unavailable,
+  forgetSession: unavailable,
+  respondApproval: () => {},
+  bindSession: () => {},
+  runTextPrompt: async () => "Fixture commit message",
+});
 const source = {
   modelsFor,
   resolve: resolveModel,
@@ -40,13 +61,15 @@ function Fixture() {
             onChange={(e) => setDraft(e.target.value)}
           />
           <div className="absolute right-1 top-1 flex items-center rounded-md bg-content/10">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              label="Generate commit message"
               aria-label="Generate commit message"
-              className="grid size-5 place-items-center rounded-md text-content hover:bg-content/20"
             >
-              <WandSparkles className="size-3" />
-            </button>
+              <WandSparkles className="size-3.5" strokeWidth={1.75} />
+            </Button>
             <GitGenerationSettings
               cwd="/fixture"
               preferred="claude"

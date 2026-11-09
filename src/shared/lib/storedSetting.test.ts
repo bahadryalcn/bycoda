@@ -8,7 +8,7 @@ afterEach(() => {
 });
 
 describe("createStoredSetting", () => {
-  it("eksik ve bozuk değerlerde varsayılana döner", () => {
+  it("falls back to the default for missing and corrupt values", () => {
     const setting = createStoredSetting({
       key: "test",
       fallback: 3,
@@ -19,7 +19,7 @@ describe("createStoredSetting", () => {
     localStorage.setItem("test", "broken");
     expect(setting.load()).toBe(3);
   });
-  it("önce yazar, aynı sekmede bildirir ve aboneliği temizler", () => {
+  it("writes first, notifies in the same tab and clears the subscription", () => {
     const setting = storedFlag("test", false, "setting:test");
     const values: unknown[] = [];
     const stop = setting.subscribe(() => values.push(setting.load()));
@@ -29,7 +29,7 @@ describe("createStoredSetting", () => {
     setting.save(false);
     expect(values).toEqual([true]);
   });
-  it("diğer sekmede yalnız kendi anahtarını dinler", () => {
+  it("listens only to its own key in other tabs", () => {
     const setting = createStoredSetting({
       key: "test",
       fallback: "",
@@ -51,7 +51,7 @@ describe("createStoredSetting", () => {
     window.dispatchEvent(new StorageEvent("storage", { key: "test" }));
     expect(listener).toHaveBeenCalledTimes(2);
   });
-  it("kota hatasında mevcut kayıt korunur", () => {
+  it("keeps the existing record on a quota error", () => {
     const setting = storedFlag("test", false);
     setting.save(true);
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {

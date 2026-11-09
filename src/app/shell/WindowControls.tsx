@@ -1,15 +1,22 @@
-import { t, useLocale } from "../../shared/i18n";
+import { useT } from "../../shared/i18n";
+import { Button } from "../../shared/ui/Button";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Copy, Minus, Square, X } from "../../shared/ui/icons";
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { TransientNotice } from "../../shared/ui/TransientNotice";
 import { setNativeFullscreen } from "../../platform/tauri/fullscreen";
+import { refreshWindowState, useNativeWindowState } from "../../platform/tauri/windowState";
 
 export async function toggleWindowMaximize(): Promise<void> {
   const win = getCurrentWindow();
   if (await win.isFullscreen()) await setNativeFullscreen(false);
   else await win.toggleMaximize();
 }
+
+// Full-height caption buttons, flush with the title bar edge. They stay Buttons so the shared
+// tooltip, focus ring and hover states apply; `data-tauri-drag-region="false"` keeps them out of
+// the window drag area.
+const CONTROL_CLASS = "h-full w-10 min-h-0 rounded-none";
 
 // Detached workspaces own their controls in the persistent Working bar.
 export const WindowControlsVisible = createContext(true);
@@ -20,63 +27,18 @@ export function WindowControls() {
 }
 
 function NativeWindowControls() {
-  useLocale();
-  const [isMaximized, setIsMaximized] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const t = useT();
+  // Shared with every other window-state reader: one native listener per window.
+  const native = useNativeWindowState();
+  const isMaximized = native?.maximized ?? false;
+  const isFullscreen = native?.fullscreen ?? false;
   const [error, setError] = useState<string | null>(null);
-  const refreshRef = useRef<() => Promise<void>>(async () => {});
-
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let unlistenFocus: (() => void) | undefined;
-    let mounted = true;
-    let revision = 0;
-
-    const win = getCurrentWindow();
-    const refresh = async () => {
-      const current = ++revision;
-      try {
-        const [maximized, fullscreen] = await Promise.all([win.isMaximized(), win.isFullscreen()]);
-        if (mounted && current === revision) {
-          setIsMaximized(maximized);
-          setIsFullscreen(fullscreen);
-        }
-      } catch {}
-    };
-    refreshRef.current = refresh;
-    void refresh();
-
-    void win
-      .onResized(() => void refresh())
-      .then((unlistenFn) => {
-        if (mounted) {
-          unlisten = unlistenFn;
-        } else {
-          unlistenFn();
-        }
-      })
-      .catch(() => {});
-    void win
-      .onFocusChanged(() => void refresh())
-      .then((unlistenFn) => {
-        if (mounted) unlistenFocus = unlistenFn;
-        else unlistenFn();
-      })
-      .catch(() => {});
-
-    return () => {
-      mounted = false;
-      refreshRef.current = async () => {};
-      unlisten?.();
-      unlistenFocus?.();
-    };
-  }, []);
 
   const runAction = async (action: () => Promise<void>) => {
     setError(null);
     try {
       await action();
-      await refreshRef.current();
+      await refreshWindowState().catch(() => null);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
     }
@@ -92,41 +54,56 @@ function NativeWindowControls() {
       className="flex h-full shrink-0 items-stretch border-s border-stroke"
       data-tauri-drag-region="false"
     >
-      {error ? <TransientNotice message={error} onDismiss={() => setError(null)} /> : null}
-      <button
-        type="button"
-        title={t("Minimize")}
-        aria-label={t("Minimize window")}
+      {error ? (
+        <TransientNotice
+          tone="danger"
+          durationMs={null}
+          message={error}
+          onDismiss={() => setError(null)}
+        />
+      ) : null}
+      <Button
+        iconOnly
+        label={t("Minimize window")}
+        tooltip={t("Minimize")}
+        tooltipSide="bottom"
+        variant="ghost"
+        motion="none"
         data-tauri-drag-region="false"
         onClick={handleMinimize}
-        className="flex w-10 items-center justify-center text-content/60 transition-colors hover:bg-content/10 hover:text-content focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-content/60 active:bg-content/20"
+        className={CONTROL_CLASS}
       >
-        <Minus className="size-3.5" strokeWidth={1.75} />
-      </button>
-      <button
-        type="button"
-        title={isMaximized || isFullscreen ? t("Restore") : t("Maximize")}
-        aria-label={isMaximized || isFullscreen ? t("Restore window") : t("Maximize window")}
+        <Minus className="icon-sm" strokeWidth={1.75} />
+      </Button>
+      <Button
+        iconOnly
+        label={isMaximized || isFullscreen ? t("Restore window") : t("Maximize window")}
+        tooltip={isMaximized || isFullscreen ? t("Restore") : t("Maximize")}
+        variant="ghost"
+        motion="none"
         data-tauri-drag-region="false"
         onClick={handleToggleMaximize}
-        className="flex w-10 items-center justify-center text-content/60 transition-colors hover:bg-content/10 hover:text-content focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-content/60 active:bg-content/20"
+        className={CONTROL_CLASS}
       >
         {isMaximized || isFullscreen ? (
-          <Copy className="size-3" strokeWidth={1.75} />
+          <Copy className="icon-sm" strokeWidth={1.75} />
         ) : (
-          <Square className="size-3" strokeWidth={1.75} />
+          <Square className="icon-sm" strokeWidth={1.75} />
         )}
-      </button>
-      <button
-        type="button"
-        title={t("Close")}
-        aria-label={t("Close window")}
+      </Button>
+      <Button
+        iconOnly
+        label={t("Close window")}
+        tooltip={t("Close")}
+        variant="ghost"
+        tone="danger"
+        motion="none"
         data-tauri-drag-region="false"
         onClick={handleClose}
-        className="flex w-10 items-center justify-center text-content/60 transition-colors hover:bg-danger hover:text-on-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-content/60 active:bg-danger"
+        className={CONTROL_CLASS}
       >
-        <X className="size-3.5" strokeWidth={1.75} />
-      </button>
+        <X className="icon-sm" strokeWidth={1.75} />
+      </Button>
     </div>
   );
 }

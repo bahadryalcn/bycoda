@@ -37,6 +37,8 @@ describe("OpenCode v2 background service", () => {
       ["service", "status"],
       "/repo",
       "opencode",
+      undefined,
+      "management",
     );
   });
 

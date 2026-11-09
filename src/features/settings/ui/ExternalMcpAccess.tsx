@@ -1,20 +1,23 @@
 import { SettingsFeedback } from "./settingsControls";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { invoke } from "@tauri-apps/api/core";
-import { ask } from "@tauri-apps/plugin-dialog";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { t, useLocale } from "../../../shared/i18n";
+import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { Modal } from "../../../shared/ui/Modal";
+import { SearchInput } from "../../../shared/ui/SearchInput";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Popover } from "../../../shared/ui/Popover";
-import { CircleHelp, RefreshCw } from "../../../shared/ui/icons";
-import { copyText } from "../../../platform/tauri/clipboard";
-import { remoteRequest } from "../../connections/model/connections";
-import { isLocalSyncMachine } from "../../connections/model/localSync";
-import type { HostProject, RemoteMachine } from "../../connections/model/protocol";
+import { CircleHelp, RefreshCw, ListFilter, RotateCcw } from "../../../shared/ui/icons";
+import { remoteRequest } from "../../connections/public/connections";
+import { isLocalSyncMachine } from "../../connections/public/localSync";
+import type { HostProject, RemoteMachine } from "../../connections";
 import { Select } from "./settingsControls";
+import { CopyButton } from "./CopyButton";
 import styles from "./ExternalMcpAccess.module.css";
 
 const groups = ["conversation", "runtime-logs", "social"] as const;
@@ -31,6 +34,11 @@ type Grant = {
 };
 
 // Examples contain only an environment variable reference, never a minted secret.
+function grantStatus(grant: { revokedAt?: number; expiresAt: number }, now = Date.now()) {
+  if (grant.revokedAt !== undefined) return "revoked";
+  return grant.expiresAt <= now ? "expired" : "active";
+}
+
 export function externalMcpExamples(endpoint: string) {
   return {
     claude: JSON.stringify(
@@ -48,36 +56,6 @@ export function externalMcpExamples(endpoint: string) {
     ),
     codex: `[mcp_servers.bycoda]\nurl = "${endpoint}"\nbearer_token_env_var = "BYCODA_MCP_TOKEN"`,
   };
-}
-
-function CopyButton({ value, label }: { value: string; label: string }) {
-  const [state, setState] = useState<"idle" | "copying" | "copied" | "error">("idle");
-  const pending = useRef(false);
-  return (
-    <>
-      <Button
-        loading={state === "copying"}
-        onClick={async () => {
-          if (pending.current) return;
-          pending.current = true;
-          setState("copying");
-          try {
-            await copyText(value);
-            setState("copied");
-          } catch {
-            setState("error");
-          } finally {
-            pending.current = false;
-          }
-        }}
-      >
-        {label}
-      </Button>
-      <span role="status">
-        {state === "copied" ? t("Copied") : state === "error" ? t("Copy failed. Try again.") : ""}
-      </span>
-    </>
-  );
 }
 
 function CreateToken({
@@ -106,6 +84,8 @@ function CreateToken({
   const [secret, setSecret] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [uncertain, setUncertain] = useState(false);
+  const formId = useId();
   const pending = useRef(false);
   const alive = useRef(true);
   const nameField = useRef<HTMLInputElement>(null);
@@ -121,7 +101,7 @@ function CreateToken({
   }, []);
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (pending.current || secret) return;
+    if (pending.current || secret || uncertain) return;
     const duration = Number(days);
     if (
       !name.trim() ||
@@ -156,8 +136,11 @@ function CreateToken({
       onCreated();
     } catch {
       // Never render an RPC error payload: it could contain credential material.
-      if (alive.current)
+      if (alive.current) {
+        setUncertain(true);
         setError(t("Token creation failed. Refresh the list before trying again."));
+        onCreated();
+      }
     } finally {
       pending.current = false;
       if (alive.current) setBusy(false);
@@ -173,6 +156,35 @@ function CreateToken({
         }
       }}
       size="sm"
+      footer={
+        secret ? (
+          <ModalActions start={<CopyButton value={secret} label={t("Copy token")} />}>
+            <Button
+              onClick={() => {
+                setSecret(null);
+                onClose();
+              }}
+            >
+              {t("Done")}
+            </Button>
+          </ModalActions>
+        ) : (
+          <ModalActions>
+            <Button disabled={busy} onClick={onClose}>
+              {t("Cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              type="submit"
+              form={formId}
+              loading={busy}
+              disabled={uncertain}
+            >
+              {t("Create token")}
+            </Button>
+          </ModalActions>
+        )
+      }
     >
       {secret ? (
         <div className={styles.stack}>
@@ -185,20 +197,14 @@ function CreateToken({
             autoComplete="off"
             spellCheck={false}
           />
-          <div className={styles.actions}>
-            <CopyButton value={secret} label={t("Copy token")} />
-            <Button
-              onClick={() => {
-                setSecret(null);
-                onClose();
-              }}
-            >
-              {t("Done")}
-            </Button>
-          </div>
         </div>
       ) : (
-        <form onSubmit={(event) => void submit(event)} className={styles.stack} aria-busy={busy}>
+        <form
+          id={formId}
+          onSubmit={(event) => void submit(event)}
+          className={styles.stack}
+          aria-busy={busy}
+        >
           <TextField
             ref={nameField}
             label={t("Token name")}
@@ -222,17 +228,25 @@ function CreateToken({
               <div key={group} className={styles.scope}>
                 <span>{group}</span>
                 <Select
+                  hideLabel
                   label={group}
                   value={modes[group]}
                   disabled={busy}
                   options={[
                     { value: "", label: t("No access") },
                     { value: "read", label: t("Read") },
-                    { value: "write", label: t("Write") },
-                    { value: "read,write", label: t("Read and write") },
+                    ...(group === "runtime-logs"
+                      ? []
+                      : [
+                          { value: "write", label: t("Write") },
+                          { value: "read,write", label: t("Read and write") },
+                        ]),
                   ]}
                   onChange={(value) => setModes((current) => ({ ...current, [group]: value }))}
                 />
+                {group === "runtime-logs" ? (
+                  <p className={styles.metadata}>{t("Runtime logs are read-only.")}</p>
+                ) : null}
               </div>
             ))}
           </fieldset>
@@ -248,14 +262,6 @@ function CreateToken({
             onChange={(e) => setDays(e.target.value)}
           />
           {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
-          <div className={styles.actions}>
-            <Button disabled={busy} onClick={onClose}>
-              {t("Cancel")}
-            </Button>
-            <Button variant="primary" type="submit" loading={busy}>
-              {t("Create token")}
-            </Button>
-          </div>
         </form>
       )}
     </Modal>
@@ -274,9 +280,30 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
   const [creating, setCreating] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filterAnchor = useRef<HTMLButtonElement>(null);
+  const [now, setNow] = useState(Date.now);
   const info = useRef<HTMLButtonElement>(null);
   const pending = useRef(false);
   const epoch = useRef(0);
+  useEffect(() => {
+    const next = Math.min(
+      ...(data?.tokens ?? [])
+        .filter((grant) => grant.revokedAt === undefined && grant.expiresAt > now)
+        .map((grant) => grant.expiresAt),
+    );
+    const timer = Number.isFinite(next)
+      ? setTimeout(() => setNow(Date.now()), Math.max(16, Math.min(next - Date.now(), 2147483647)))
+      : undefined;
+    const wake = () => setNow(Date.now());
+    window.addEventListener("focus", wake);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", wake);
+    };
+  }, [data?.tokens, now]);
   async function refresh() {
     const version = ++epoch.current;
     setLoading(true);
@@ -289,7 +316,10 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
         remoteRequest<HostProject[]>(machine.id, "projects.list"),
         remoteRequest<{ tokens: Grant[] }>(machine.id, "mcp.tokens.list"),
       ]);
-      if (version === epoch.current) setData({ machine, projects, tokens: result.tokens });
+      if (version === epoch.current) {
+        setData({ machine, projects, tokens: result.tokens });
+        setNow(Date.now());
+      }
     } catch {
       if (version === epoch.current)
         setError(
@@ -308,20 +338,12 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
     };
   }, []);
   async function revoke(grant: Grant) {
-    if (!data || pending.current) return;
+    if (!data || pending.current)
+      throw new Error("Token revocation is unavailable while another request is pending.");
     pending.current = true;
     setRevoking(grant.id);
     setError("");
     try {
-      if (
-        !(await ask(
-          t('Revoke token "{p0}"? Connected clients will lose access immediately.', {
-            p0: grant.name,
-          }),
-          { title: t("Revoke token"), kind: "warning" },
-        ))
-      )
-        return;
       const result = await remoteRequest<{ revoked: boolean }>(
         data.machine.id,
         "mcp.tokens.revoke",
@@ -337,8 +359,9 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
             ),
           },
       );
-    } catch {
+    } catch (cause) {
       setError(t("Token revocation failed. Refresh and try again."));
+      throw cause;
     } finally {
       pending.current = false;
       setRevoking(null);
@@ -348,12 +371,20 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
     ? `http://127.0.0.1:${new URL(data.machine.endpoint).port || "80"}/mcp`
     : "http://127.0.0.1:<port>/mcp";
   const examples = externalMcpExamples(endpoint);
+  const shownTokens = (data?.tokens ?? []).filter(
+    (grant) =>
+      (filter === "all" || grantStatus(grant, now) === filter) &&
+      `${grant.name} ${data?.projects.find((project) => project.id === grant.projectId)?.name ?? grant.projectId} ${Object.keys(grant.scopes).join(" ")}`
+        .toLocaleLowerCase()
+        .includes(query.trim().toLocaleLowerCase()),
+  );
   return (
     <section
       id="setting-external-mcp-access"
       className={styles.section}
       aria-labelledby="external-mcp-heading"
       data-setting-id="external-mcp-access"
+      tabIndex={-1}
     >
       <div className={styles.header}>
         <h2 id="external-mcp-heading">{t("External MCP access")}</h2>
@@ -367,7 +398,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
             aria-haspopup="dialog"
             onClick={() => setHelp(!help)}
           >
-            <CircleHelp className="size-3.5" />
+            <CircleHelp className="icon-sm" strokeWidth={1.75} />
           </Button>
           <Button
             variant="ghost"
@@ -377,9 +408,10 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
             disabled={revoking !== null}
             onClick={() => void refresh()}
           >
-            <RefreshCw className="size-3.5" />
+            <RefreshCw className="icon-sm" strokeWidth={1.75} />
           </Button>
           <Button
+            variant="primary"
             disabled={!data?.projects.length || loading || !!error || revoking !== null}
             onClick={() => setCreating(true)}
           >
@@ -388,7 +420,85 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
         </div>
       </div>
       {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
-      {loading && <SettingsFeedback state="loading">{t("Loading tokens…")}</SettingsFeedback>}
+      {loading && !data && (
+        <SettingsFeedback state="loading">{t("Loading tokens…")}</SettingsFeedback>
+      )}
+      <div className={styles.toolbar}>
+        <div className={styles.search}>
+          <SearchInput
+            appearance="field"
+            aria-label={t("Search tokens")}
+            placeholder={t("Search tokens")}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+        <div className={styles.toolbarSlot}>
+          <Button
+            ref={filterAnchor}
+            variant="ghost"
+            iconOnly
+            label={t("Filters")}
+            selected={filter !== "all"}
+            aria-expanded={filtersOpen}
+            aria-haspopup="dialog"
+            onClick={() => setFiltersOpen(!filtersOpen)}
+          >
+            <ListFilter />
+          </Button>
+          {filter !== "all" || query ? (
+            <Button
+              variant="ghost"
+              iconOnly
+              label={t("Reset filters")}
+              onClick={() => {
+                setFilter("all");
+                setQuery("");
+              }}
+            >
+              <RotateCcw className="icon-sm" strokeWidth={1.75} />
+            </Button>
+          ) : null}
+          {data ? (
+            <span className={`${styles.metadata} ${styles.count}`} role="status">
+              {t("{p0} of {p1} tokens", { p0: shownTokens.length, p1: data.tokens.length })}
+            </span>
+          ) : null}
+        </div>
+      </div>
+      {filtersOpen ? (
+        <Popover
+          anchor={filterAnchor}
+          role="dialog"
+          aria-label={t("Filter tokens")}
+          onDismiss={() => setFiltersOpen(false)}
+          width={260}
+        >
+          <div className={styles.help}>
+            <Select
+              hideLabel
+              label={t("Status")}
+              value={filter}
+              onChange={setFilter}
+              options={[
+                { value: "all", label: t("All") },
+                { value: "active", label: t("Active") },
+                { value: "expired", label: t("Expired") },
+                { value: "revoked", label: t("Revoked") },
+              ]}
+            />
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setFilter("all");
+                setQuery("");
+              }}
+            >
+              {t("Reset filters")}
+            </Button>
+          </div>
+        </Popover>
+      ) : null}
       {!loading && !error && data && !data.projects.length && (
         <SettingsFeedback state="empty">
           {t("Register a project on the local host before creating a token.")}
@@ -399,43 +509,62 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
           {t("No external tokens. Create a token to connect a client.")}
         </SettingsFeedback>
       )}
+      {!loading && data?.tokens.length && shownTokens.length === 0 ? (
+        <SettingsFeedback state="empty">{t("No tokens match your filters.")}</SettingsFeedback>
+      ) : null}
       <div className={styles.list}>
-        {data?.tokens.map((grant) => (
+        {shownTokens.map((grant) => (
           <div key={grant.id} className={styles.row}>
             <div className={styles.identity}>
               <span>{grant.name}</span>
               <span className={styles.metadata}>
-                {data.projects.find((p) => p.id === grant.projectId)?.name ?? grant.projectId} ·{" "}
-                {grant.revokedAt !== undefined
-                  ? t("Revoked")
-                  : grant.expiresAt <= Date.now()
-                    ? t("Expired")
-                    : t("Active")}
+                {data?.projects.find((p) => p.id === grant.projectId)?.name ?? grant.projectId}{" "}
+                <Badge
+                  tone={
+                    { revoked: "danger", expired: "warning", active: "success" }[
+                      grantStatus(grant, now)
+                    ] as "danger" | "warning" | "success"
+                  }
+                >
+                  {
+                    { revoked: t("Revoked"), expired: t("Expired"), active: t("Active") }[
+                      grantStatus(grant, now)
+                    ]
+                  }
+                </Badge>
               </span>
               <span className={styles.metadata}>
                 {t("Expires")}: {new Date(grant.expiresAt).toLocaleString()}
               </span>
               <section>
                 <h3>{t("Scopes")}</h3>
-                <span className={styles.metadata}>
-                  {Object.entries(grant.scopes)
-                    .map(
-                      ([group, modes]) =>
-                        `${group}: ${modes.map((mode) => (mode === "read" ? t("Read") : t("Write"))).join(", ")}`,
-                    )
-                    .join(" · ")}
-                </span>
+                {/* The grant list is a grid of auto tracks; a zero base width keeps the list's own
+                    full-row measuring copy from widening the track. */}
+                <div className={`${styles.metadata} w-0 min-w-full`}>
+                  <BadgeList
+                    label={t("Scopes")}
+                    items={Object.entries(grant.scopes).map(([group, modes]) => ({
+                      id: group,
+                      label: `${group}: ${modes.map((mode) => (mode === "read" ? t("Read") : t("Write"))).join(", ")}`,
+                    }))}
+                  />
+                </div>
               </section>
             </div>
             {grant.revokedAt === undefined && (
-              <Button
-                variant="danger"
-                loading={revoking === grant.id}
+              <ConfirmMorph
+                label={t("Revoke token")}
+                prompt={t('Revoke token "{p0}"? Connected clients will lose access immediately.', {
+                  p0: grant.name,
+                })}
+                tone="danger"
+                confirmMode="press"
+                confirmLabel={t("Revoke token")}
+                pendingLabel={t("Revoking…")}
+                doneLabel={t("Revoked")}
                 disabled={loading || (revoking !== null && revoking !== grant.id)}
-                onClick={() => void revoke(grant)}
-              >
-                {t("Revoke token")}
-              </Button>
+                onConfirm={() => revoke(grant)}
+              />
             )}
           </div>
         ))}

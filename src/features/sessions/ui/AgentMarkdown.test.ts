@@ -45,7 +45,9 @@ describe("AgentMarkdown text direction", () => {
     );
 
     expect(markup).toContain('class="markdown-code-shell markdown-code-resizable"');
-    expect(markup).toContain('data-collapsed="false" dir="ltr"');
+    const shell = markup.match(/<div class="markdown-code-shell[^>]*>/)?.[0];
+    expect(shell).toContain('data-collapsed="false"');
+    expect(shell).toContain('dir="ltr"');
   });
 });
 
@@ -160,5 +162,28 @@ describe("AgentMarkdown note images", () => {
 
     expect(markup).toContain('data-note-image="/note-assets/note-1/123-diagram.png"');
     expect(markup).toContain('alt="Diagram"');
+  });
+});
+
+describe("AgentMarkdown task lists and links", () => {
+  it("shows task markers as read-only checkboxes", () => {
+    const markup = renderToStaticMarkup(
+      createElement(AgentMarkdown, { text: "- [x] done\n- [ ] open" }),
+    );
+    const boxes = markup.match(/<input[^>]*type="checkbox"[^>]*>/g) ?? [];
+    expect(boxes).toHaveLength(2);
+    expect(boxes[0]).toContain("checked");
+    expect(boxes[1]).not.toContain("checked");
+    for (const box of boxes) {
+      expect(box).toContain('tabindex="-1"');
+      expect(box).not.toContain("disabled");
+    }
+  });
+
+  it("renders links as real anchors", () => {
+    const markup = renderToStaticMarkup(
+      createElement(AgentMarkdown, { text: "See [docs](https://example.com/docs)." }),
+    );
+    expect(markup).toMatch(/<a [^>]*href="https:\/\/example\.com\/docs"/);
   });
 });

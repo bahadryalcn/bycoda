@@ -1,14 +1,14 @@
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { type ReactNode, useSyncExternalStore } from "react";
 import { basename } from "../../../platform/tauri/fs";
 import { projectKey } from "../../../shared/lib/paths";
-import { looksLikeProject } from "../../projects/model/recents";
+import { looksLikeProject } from "../../projects/public/recents";
 import {
   loadTabGroupLabels,
   resolveTabGroupLabel,
   subscribeTabGroupLabels,
 } from "../../workspace/model/tabGroups";
-import { loadCrewSceneEnabled, subscribeCrewSceneEnabled } from "../../settings/model/settings";
+import { loadCrewSceneEnabled, subscribeCrewSceneEnabled } from "../../settings/public/settings";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { CrewScene } from "./crewSurface";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -25,7 +25,7 @@ type Props = {
 };
 
 export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
-  useLocale();
+  const t = useT();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const crewEnabled = useSyncExternalStore(
     subscribeCrewSceneEnabled,
@@ -47,7 +47,8 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
       {composer ? (
         // Same box as the docked composer (max-w-4xl, p-1.5), so the input
         // keeps its width when the first message docks it.
-        <div className="bycoda-entry-workbench pointer-events-none relative z-10 mx-auto flex w-full flex-1 flex-col">
+        // z-10: in-pane stacking above sibling layers; no in-pane layer scale exists, so the literal stays.
+        <div className="bycoda-entry-workbench pointer-events-none relative z-(--layer-pane-sheet) mx-auto flex w-full flex-1 flex-col">
           <div className="bycoda-entry-heading">
             <div className="bycoda-wordmark" aria-label={PRODUCT_IDENTITY.displayName}>
               <img src={PRODUCT_IDENTITY.logoSrc} alt="" />
@@ -61,7 +62,7 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
                 <div className="bycoda-entry-actions bycoda-arc">
                   <Button
                     variant="primary"
-                    startIcon={<FolderOpen size={14} />}
+                    startIcon={<FolderOpen className="icon-sm" />}
                     onClick={() => runGuideAction("open-project")}
                   >
                     {t("Open a project")}

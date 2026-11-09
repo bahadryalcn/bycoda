@@ -45,15 +45,45 @@ if [ ! -x "$ENTRY" ] || [ "$FORCE_UPGRADE" = 1 ]; then
     echo 'Install shasum or sha256sum on this host and reconnect.' >&2; exit 1
   fi
   [ "$EXPECTED" = "$ACTUAL" ] || { echo 'bycoda Host package checksum mismatch.' >&2; exit 1; }
-  mkdir "$TMP/unpacked"
-  tar -xzf "$TMP/$FILE" -C "$TMP/unpacked"
-  [ "$("$TMP/unpacked/bycoda-host" --version)" = "$VERSION" ] || { echo 'bycoda Host version mismatch.' >&2; exit 1; }
   DEST="$BASE/runtime/$VERSION-$OS-$ARCH-$(basename "$TMP")"
-  # Concurrent installations never replace a directory used by a running host.
-  mv "$TMP/unpacked" "$DEST"
+  if [ "${BYCODA_HOST_REUSE_PACKAGE:-0}" = 1 ]; then
+    DEST="$BASE/runtime/$VERSION-$OS-$ARCH-package-$EXPECTED"
+  fi
+  if [ -e "$DEST" ]; then
+    # Only reuse a completely extracted package whose files still match the
+    # inventory made from the checksum-verified archive. Never overwrite a
+    # package that a service may still be using.
+    [ -f "$DEST/.package-files.sha256" ] || { echo 'The cached host package is incomplete. Reinstall the host with the local update coordinator.' >&2; exit 1; }
+    if command -v shasum >/dev/null 2>&1; then
+      (cd "$DEST" && shasum -a 256 -c .package-files.sha256) >/dev/null || { echo 'The cached host package changed. Reinstall the host with the local update coordinator.' >&2; exit 1; }
+    else
+      (cd "$DEST" && sha256sum -c .package-files.sha256) >/dev/null || { echo 'The cached host package changed. Reinstall the host with the local update coordinator.' >&2; exit 1; }
+    fi
+  else
+    mkdir "$TMP/unpacked"
+    tar -xzf "$TMP/$FILE" -C "$TMP/unpacked"
+    [ "$("$TMP/unpacked/bycoda-host" --version)" = "$VERSION" ] || { echo 'bycoda Host version mismatch.' >&2; exit 1; }
+    if [ "${BYCODA_HOST_REUSE_PACKAGE:-0}" = 1 ]; then
+      if command -v shasum >/dev/null 2>&1; then
+        (cd "$TMP/unpacked" && find . -type f -exec shasum -a 256 {} +) > "$TMP/package-files.sha256"
+      else
+        (cd "$TMP/unpacked" && find . -type f -exec sha256sum {} +) > "$TMP/package-files.sha256"
+      fi
+      mv "$TMP/package-files.sha256" "$TMP/unpacked/.package-files.sha256"
+    fi
+    # Atomic publication also leaves failed installs reusable on the next try.
+    mv "$TMP/unpacked" "$DEST"
+  fi
   [ "$("$DEST/bycoda-host" --version)" = "$VERSION" ] || exit 1
   # Keep a real wrapper (rather than a symlink): it resolves the packaged Node
   # relative to the versioned executable, not this bin directory.
+  # The replaced runtime stays one install longer: sessions started from it
+  # (and a rollback) may still launch its files.
+  OLD_RUNTIME=$(cat "$BASE/runtime-path" 2>/dev/null || true)
+  if [ -n "$OLD_RUNTIME" ] && [ "$OLD_RUNTIME" != "$DEST" ]; then
+    printf '%s\n' "$OLD_RUNTIME" > "$TMP/previous-runtime-path"
+    mv "$TMP/previous-runtime-path" "$BASE/previous-runtime-path"
+  fi
   printf '%s\n' "$DEST" > "$TMP/runtime-path"
   mv "$TMP/runtime-path" "$BASE/runtime-path"
   cat > "$TMP/launcher" <<'SH'
@@ -73,14 +103,24 @@ fi
 "$ENTRY" service install --port "$HOST_PORT" >/dev/null
 "$ENTRY" connection-info
 # Every install unpacks a fresh runtime (with its Node engine) beside the old
-# ones. Now that the new host answers, drop the others, except a runtime that a
-# registered service definition still launches and installs still in progress.
+# ones. Now that the new host answers, drop the others, except the previous
+# runtime, a runtime that a registered service definition still launches and
+# installs still in progress.
+# Runtimes are compared by folder name: they all live directly in runtime/,
+# while recorded paths may spell $BASE differently (symlinks, earlier installs).
 RUNTIME=$(cat "$BASE/runtime-path")
+CURRENT=$(basename "$RUNTIME")
+PREVIOUS=$(cat "$BASE/previous-runtime-path" 2>/dev/null || true)
+KEEP=${PREVIOUS:+$(basename "$PREVIOUS")}
 REGISTERED=$(cat "$HOME/Library/LaunchAgents/com.bycoda.host.plist" "$HOME/.config/systemd/user/bycoda-host.service" 2>/dev/null || true)
-for OLD in "$BASE"/runtime/*/; do
-  OLD=${OLD%/}
-  [ -d "$OLD" ] || continue
-  [ "$OLD" != "$RUNTIME" ] || continue
-  case "$REGISTERED" in *"$(basename "$OLD")"*) continue ;; esac
-  rm -rf "$OLD" || true
-done
+if [ -n "$CURRENT" ] && [ -d "$BASE/runtime/$CURRENT" ]; then
+  for OLD in "$BASE"/runtime/*/; do
+    OLD=${OLD%/}
+    [ -d "$OLD" ] || continue
+    NAME=$(basename "$OLD")
+    [ "$NAME" != "$CURRENT" ] || continue
+    [ "$NAME" != "$KEEP" ] || continue
+    case "$REGISTERED" in *"$NAME"*) continue ;; esac
+    rm -rf "$OLD" || true
+  done
+fi

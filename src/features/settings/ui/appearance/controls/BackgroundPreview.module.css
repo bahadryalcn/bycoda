@@ -1,0 +1,116 @@
+.preview {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.stage {
+  position: relative;
+  height: 12rem;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  border: 1px solid var(--ui-pane-border);
+  background: var(--ui-surface);
+}
+.layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.color {
+  mix-blend-mode: soft-light;
+}
+.window {
+  position: absolute;
+  inset: 0.875rem;
+  display: grid;
+  grid-template-columns: minmax(0, 0.32fr) minmax(0, 1fr);
+  overflow: hidden;
+  border-radius: 0.5rem;
+  border: 1px solid var(--ui-pane-border);
+}
+.sidebar {
+  display: grid;
+  align-content: start;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  background: color-mix(in srgb, var(--ui-surface) 55%, transparent);
+}
+.sidebar[data-glass] {
+  background: color-mix(in srgb, var(--ui-surface) calc(var(--glass-opacity) * 100%), transparent);
+  backdrop-filter: blur(8px);
+}
+.sidebar span {
+  display: block;
+  height: 0.875rem;
+  border-radius: 0.3125rem;
+  background: var(--ui-surface-selected);
+}
+.sidebar span[data-selected] {
+  background: var(--ui-interaction-accent);
+  opacity: 0.6;
+}
+.main {
+  display: grid;
+  align-content: end;
+  padding: 0.75rem;
+  background: color-mix(in srgb, var(--ui-surface) 25%, transparent);
+}
+.main span {
+  display: block;
+  height: 1.5rem;
+  border-radius: 0.4375rem;
+  border: 1px solid var(--ui-pane-border);
+  background: var(--ui-surface-selected);
+}
+/* Legend under the stage: layer order back to front, muted when a layer is off. */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+.legend li {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--ui-surface-selected);
+  color: var(--color-content);
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+  line-height: 1.5;
+}
+/* The arrow between two chips sits in the gap, outside either pill. */
+.legend li + li {
+  margin-inline-start: 1rem;
+}
+.legend li + li::before {
+  content: "\2192";
+  position: absolute;
+  inset-inline-start: -1rem;
+  width: 1rem;
+  text-align: center;
+  color: var(--ui-text-muted);
+  font-weight: 400;
+}
+.legend li[data-off] {
+  background: transparent;
+  border-color: var(--ui-pane-border);
+  color: var(--ui-text-muted);
+  font-weight: 400;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+}

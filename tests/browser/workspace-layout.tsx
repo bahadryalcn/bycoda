@@ -1,4 +1,10 @@
-import { useState, type ComponentProps } from "react";
+import { useRef, useState, type ComponentProps } from "react";
+import { useEditorFileOpen } from "../../src/app/workspace/files/useEditorFileOpen";
+import {
+  useSessionPaneProps,
+  type SessionPaneDeps,
+} from "../../src/app/workspace/layout/useSessionPaneProps";
+import { applyThemePreference } from "../../src/features/settings/model/appearance";
 import { createRoot } from "react-dom/client";
 import { PaneTree } from "../../src/features/workspace/ui/PaneTree";
 import {
@@ -15,6 +21,7 @@ import { applyMoveFileBetweenPanes } from "../../src/features/workspace/model/wo
 import { TitleBar } from "../../src/app/shell/TitleBar";
 import { DetachedWorkingBar } from "../../src/app/shell/DetachedWorkingBar";
 import { newSession } from "../../src/features/sessions/model/session";
+import { flushHostSessionBindings } from "../../src/features/connections/public/sessionExecutionBinding";
 import { languageReady } from "../../src/shared/i18n";
 import "./w7-shell.css";
 
@@ -119,12 +126,107 @@ const callbacks = Object.fromEntries(
   | "onNewTerminal"
 >;
 
+function HtmlLinkFixture() {
+  const [session] = useState(() => ({
+    ...newSession("claude", "/fixture"),
+    title: "HTML conversation",
+    blocks: [
+      {
+        id: "html-answer",
+        role: "assistant" as const,
+        text: "Your updated document is ready.\n\n[Open updated HTML](/fixture/canim-anam.html)",
+        timestamp: Date.now(),
+      },
+    ],
+  }));
+  const [tabs, setTabs] = useState<WorkspaceTab[]>([
+    {
+      kind: "session",
+      id: "html-conversation",
+      layout: leaf(session.id),
+      focusedId: session.id,
+      editorPanes: [],
+      terminalPanes: [],
+    },
+  ]);
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const activeTabIdRef = useRef("html-conversation");
+  const cwdRef = useRef("/fixture");
+  const sessionsRef = useRef([session]);
+  const navigationToken = useRef(0);
+  const { onOpenFile } = useEditorFileOpen({
+    activeTabId: "html-conversation",
+    activeTabIdRef,
+    tabsRef,
+    sessionsRef,
+    sidebarCwdRef: cwdRef,
+    gitCwdRef: cwdRef,
+    activateTab: (id) => {
+      activeTabIdRef.current = id;
+    },
+    insertBesideActive: (previous, tab) => [...previous, tab],
+    setTabs: (update) =>
+      setTabs((previous) => {
+        const next = typeof update === "function" ? update(previous) : update;
+        tabsRef.current = next;
+        return next;
+      }),
+    setActiveTabId: noop,
+    setProjectTerminalFocused: noop,
+    setComposerFocused: noop,
+    setEditorNavigation: noop,
+    editorNavigationToken: navigationToken,
+  });
+  const { sessionPaneProps } = useSessionPaneProps({
+    ...callbacks,
+    tabs,
+    movingWindows: new Set(),
+    windowTransferPending: false,
+    workspaceNavigation: { pending: null },
+    visibleRecents: [],
+    onKeepSession: noop,
+    onOpenFile,
+  } as unknown as SessionPaneDeps);
+  const tab = tabs[0];
+  return (
+    <main className="flex h-dvh min-h-0 min-w-0 flex-col bg-background-base text-content">
+      <PaneTree
+        {...callbacks}
+        {...sessionPaneProps}
+        layout={tab.layout}
+        sessions={[session]}
+        editorPanes={tab.editorPanes}
+        dirtyFileIds={new Set()}
+        fileErrorCounts={new Map()}
+        visible
+        focusedId={tab.focusedId}
+        composerFocused={false}
+        recents={[]}
+        onFocus={(focusedId) =>
+          setTabs((previous) => previous.map((entry) => ({ ...entry, focusedId })))
+        }
+        onClose={noop}
+        onCompactContext={() => false}
+        onRatio={noop}
+        onMovePane={noop}
+      />
+      <output data-testid="html-workspace-count" className="sr-only">
+        {tabs.length}
+      </output>
+      <output data-testid="html-editor-count" className="sr-only">
+        {tab.editorPanes.length}
+      </output>
+    </main>
+  );
+}
+
 function Fixture() {
   const [layout, setLayout] = useState<LayoutNode>(withFiles ? initialFileLayout : initial);
   const [focused, setFocused] = useState(withFiles ? initialEditors[0].id : sessions[0].id);
   const [editors, setEditors] = useState(withFiles ? initialEditors : []);
   return (
-    <main className="flex h-screen min-h-0 min-w-0 flex-col bg-background-base text-content">
+    <main className="flex h-dvh min-h-0 min-w-0 flex-col bg-background-base text-content">
       {withChrome ? (
         <>
           <TitleBar
@@ -219,4 +321,16 @@ function Fixture() {
     </main>
   );
 }
-void languageReady.then(() => createRoot(document.getElementById("root")!).render(<Fixture />));
+if (new URLSearchParams(location.search).has("html-link")) {
+  localStorage.setItem("bycoda.fileTabMode", "workspace");
+  applyThemePreference(
+    new URLSearchParams(location.search).get("theme") === "light" ? "light" : "dark",
+  );
+}
+// The app resolves durable session owners at boot before any pane renders;
+// the fixture mounts chat panes directly, so it hydrates the same store first.
+void Promise.all([languageReady, flushHostSessionBindings()]).then(() =>
+  createRoot(document.getElementById("root")!).render(
+    new URLSearchParams(location.search).has("html-link") ? <HtmlLinkFixture /> : <Fixture />,
+  ),
+);

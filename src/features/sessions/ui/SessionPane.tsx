@@ -1,13 +1,19 @@
+import { AssistantManagedBadge } from "./AssistantManagedBadge";
+import { AssistantSessionControl } from "./AssistantSessionControl";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
-import { t, useLocale, getLocale } from "../../../shared/i18n";
-import { ChevronDown, File, GripVertical, Loader, X } from "../../../shared/ui/icons";
+import { useLocale, useT } from "../../../shared/i18n";
+import { ChevronDown, GripVertical, StickyNote, X } from "../../../shared/ui/icons";
 import { sessionPerformanceTrace } from "../../../shared/lib/performanceTrace";
-import { useDecorativeMotionEnabled } from "../../settings/model/decorativeMotion";
+import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
+import { useCitedTurnHistory } from "./useCitedTurnHistory";
 import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -16,19 +22,30 @@ import {
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { Portal } from "../../../shared/ui/Portal";
+import { useTitleBarActionsSlot } from "../../../app/shell/TitleBarActionsSlot";
 import { Composer } from "./Composer";
+import { RewoundHistoryDisclosure } from "./RewoundHistoryDisclosure";
+import { useSavedDraftProjection } from "./useSavedDraftProjection";
+import {
+  useParentInputClosure,
+  canMutateParentInputs,
+  mutateParentInput,
+  type ParentInputHandle,
+  type ParentAdmission,
+} from "../data/parentInputClosure";
 import type { NewSessionOptions } from "../model/newSessionCommand";
 import "./session-notes-layout.css";
-import { ProjectQuickActions } from "../../projects/ui/ProjectQuickActions";
+import { ProjectQuickActions } from "../../projects/public/ProjectQuickActions";
 import type { ExpandingButtonGroupItem } from "../../../shared/ui/ExpandingButtonGroup";
-import type { ProjectAction } from "../../projects/model/projectActions";
+import type { ProjectAction } from "../../projects";
 import type { OpenFileFn } from "../../search/model/search";
 import {
   sessionProviderAccountId,
   supportsProviderAccounts,
   type ProviderAccountProvider,
 } from "../../providers/model/providerAccounts";
-import type { Worktree } from "../../source-control/model/worktrees";
+import type { Worktree } from "../../source-control";
 import {
   orchestrationCheckoutCwd,
   orchestrator,
@@ -36,7 +53,7 @@ import {
 } from "../../orchestration/model/orchestration";
 import { DiscussionEmpty } from "./DiscussionEmpty";
 import { LinkedWorkItemUpdateNotice } from "../../inbox/ui/LinkedWorkItemUpdateNotice";
-import { SessionReview } from "./SessionReview";
+import { orchestrationLocksUndo, SessionReview } from "./SessionReview";
 import { RetryFailedTurn } from "./RetryFailedTurn";
 import { PromptOutline } from "./PromptOutline";
 import {
@@ -46,9 +63,14 @@ import {
   type ApprovalDecision,
   type UserQuestionReply,
 } from "../../../integrations/harness";
-import { looksLikeProject, type RecentProject } from "../../projects/model/recents";
+import {
+  looksLikeProject,
+  isRemoteProjectPath,
+  type RecentProject,
+} from "../../projects/public/recents";
 import {
   HARNESS_TITLE,
+  hasPendingApproval,
   sessionDisplayTitle,
   sessionDraftBlock,
   sessionWorkCwd,
@@ -64,7 +86,7 @@ import {
   type ComposerTurnOptions,
 } from "../model/session";
 import { sessionHasBtwThreads, supportsBtwHarness } from "../model/btw";
-import { sessionRetryNotice } from "../model/sessionIssue";
+import { ProviderRetryNotice } from "./ProviderRetryNotice";
 import {
   sameSessionIgnoringStreamingText,
   sameBlocksIgnoringStreamingText,
@@ -77,13 +99,18 @@ import { BtwSheet, useBtwConversation } from "./BtwSheet";
 import { ActivityDock } from "./ActivityDock";
 import { InterruptedNotice } from "./InterruptedNotice";
 import { CONTINUE_PROMPT } from "../model/inFlight";
-import { SubagentSheet, useSubagentSheet } from "./SubagentSheet";
+import { useSubagentSheet } from "./SubagentSheet";
+import { SessionSubagentSheet, useDockActions } from "./SessionSubagentSheet";
 import { useSubagentRelay } from "./useSubagentRelay";
-import { isBackgroundOnly, type DockAgent } from "../model/activityDock";
-import { requestOpenSubagent, requestViewSubagent } from "./subagentFocus";
+import { isBackgroundOnly } from "../model/activityDock";
+import { requestOpenSubagent } from "./subagentFocus";
 import { AgentTranscript } from "./AgentTranscript";
-import { Modal } from "../../../shared/ui/Modal";
-import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcut";
+import type { ApprovalDispatch } from "./ApprovalDecisionContext";
+import { EditFromHereDialog } from "./EditFromHereDialog";
+import { useEditingLastTurn } from "./useEditingLastTurn";
+import { useMessageRewind } from "./useMessageRewind";
+import { useQuoteRequests } from "./useQuoteRequests";
+import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 import { Button } from "../../../shared/ui/Button";
 import { PooledTranscript, type TranscriptPool } from "./TranscriptPool";
 import { TranscriptFind } from "./TranscriptFind";
@@ -94,13 +121,9 @@ import {
 } from "../model/transcriptJump";
 import { EmptySession } from "./EmptySession";
 import { CrewBackdrop } from "./CrewBackdrop";
-import { useComposerDockMotion } from "./useComposerDockMotion";
-import {
-  acknowledgeQuoteRequest,
-  ADD_TO_CHAT_EVENT,
-  type AddToChatRequest,
-  type QuoteRequest,
-} from "../model/quoteDraft";
+import { composerReadingActive } from "./composerReading";
+import { useComposerEngagement } from "./useComposerEngagement";
+import { useComposerDockMotion, useComposerReadingMotion } from "./useComposerDockMotion";
 import { createNote, noteTitle } from "../../notes";
 import {
   getNotesPanelOpen,
@@ -109,43 +132,48 @@ import {
   toggleNotesPanel,
 } from "../../notes/notesPanel";
 import { SessionNotesPanel } from "../../notes/ui/SessionNotesPanel";
-import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/model/settings";
+import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/public/settings";
 import { getComposerDraft, setComposerDraft } from "../model/draftCache";
 import { BycodaWelcome } from "./BycodaWelcome";
 import { projectKey } from "../../../shared/lib/paths";
 import { userPromptHistory } from "../model/composerHistory";
-import { lastTurnRecall, lastUserTurnBlock } from "../model/editLastTurn";
-import { isOperatorUserTurn, operatorUserPrompt } from "../model/operatorCommand";
+import {
+  lastTurnRecall,
+  lastUserTurnBlock,
+  userBlockRecall,
+  type LastTurnRecall,
+} from "../model/editLastTurn";
 import { canRewindConversation } from "../model/conversationRewind";
-import { conversationRewindStrategy } from "../model/conversationRewindStrategy";
-import type { LastTurnRecall } from "../model/editLastTurn";
 import {
   loadProjectChatBackgroundSettings,
   projectChatBackgroundImageRevision,
   projectChatBackgroundRevision,
   subscribeProjectChatBackground,
-} from "../../projects/model/projectChatBackground";
-import { useProjectBackgroundEffect } from "../../projects/ui/useProjectBackgroundEffect";
-import { GradientBlurBackground } from "../../settings/ui/GradientBlurBackground";
-import { LiveBackgroundLayer } from "../../settings/ui/LiveBackgroundCanvas";
+} from "../../projects/public/projectChatBackground";
+import { useProjectBackgroundEffect } from "../../projects/public/useProjectBackgroundEffect";
+import { GradientBlurBackground } from "../../settings/public/GradientBlurBackground";
+import { LiveBackgroundLayer } from "../../settings/public/LiveBackgroundCanvas";
 import {
   loadChatBackgroundPath,
   loadNewThreadBackgroundEffect,
   subscribeChatBackgroundPath,
-} from "../../settings/model/appearance";
+} from "../../settings/public/appearance";
 import type { SessionFolderTarget } from "../model/sessionFolders";
+import type { SessionOrganizationResult } from "../model/sessionOrganizationStore";
 import { markLinkedSessionUpdateSeen } from "../../inbox/model/linkedSessionSeen";
-import { RemoteSession } from "../../connections/ui/RemoteSession";
-import { useSession } from "../model/sessionsStore";
-import { isRemoteProjectPath } from "../../projects/model/recents";
-import type { HostSession } from "../../connections/model/protocol";
+import { RemoteSession } from "../../connections/public/RemoteSession";
+import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 import {
-  AdoptedSessionNotice,
-  BackgroundSessionIndicator,
-} from "../../connections/ui/AdoptedSessionNotice";
-import { SharedQueueRecoveryNotice } from "../../connections/ui/SharedQueueRecoveryNotice";
-import type { RefreshAdoptedSession } from "../../connections/model/useAdoptedSessions";
-
+  getSessions,
+  sameOptionalSessionIgnoringStreamingText,
+  selectSessionById,
+  usePaneSession,
+  usePaneSessionBlocks,
+} from "../model/sessionsStore";
+import type { HostSession, RefreshAdoptedSession } from "../../connections";
+import { AdoptedSessionNotice } from "../../connections/public/AdoptedSessionNotice";
+import { remoteOrigin } from "./RemoteOriginMark";
+import { SharedQueueRecoveryNotice } from "../../connections/public/SharedQueueRecoveryNotice";
 export type SessionPaneProps = {
   session: Session;
   workspaceSwitchingSessionId?: string;
@@ -185,7 +213,10 @@ export type SessionPaneProps = {
   onNewSession?: (sessionId: string, options?: NewSessionOptions) => void;
   /** Open the picker of conversations Claude Code stored for this project. */
   onResumeProviderSession?: (sessionId: string) => void;
-  onPlaceSessionInFolder: (sessionId: string, target: SessionFolderTarget) => void;
+  onPlaceSessionInFolder: (
+    sessionId: string,
+    target: SessionFolderTarget,
+  ) => void | Promise<void | SessionOrganizationResult>;
   onDeleteQueuedMessage: (sessionId: string, messageId: string) => void;
   onEditQueuedMessage: (
     sessionId: string,
@@ -216,8 +247,9 @@ export type SessionPaneProps = {
   onArchiveSession?: (sessionId: string, archived: boolean) => Promise<boolean>;
   onDeleteSession?: (sessionId: string) => Promise<boolean>;
   onRewindMessage?: (sessionId: string, blockId: string) => Promise<boolean>;
-  onApproval: (sessionId: string, requestId: number, decision: ApprovalDecision) => void;
+  onApproval: ApprovalDispatch;
   onQuestionReply: (sessionId: string, requestId: number, reply: UserQuestionReply) => void;
+  questionDraftScope?: string;
   onQuestionInteraction?: (sessionId: string, requestId: number) => void;
   onOpenFile: OpenFileFn;
   onOpenDiff: (path?: string, session?: { sessionId: string; cwd: string }) => void;
@@ -246,7 +278,6 @@ export type SessionPaneProps = {
   ) => void;
   onNewTerminal: (sessionId: string) => void;
   onRunProjectAction?: (sessionId: string, action: ProjectAction) => void;
-
   onPaneDragStart?: (event: ReactPointerEvent<HTMLElement>) => void;
   /** Keeps this transcript mounted after the pane closes. */
   transcriptPool?: TranscriptPool;
@@ -261,10 +292,17 @@ export type SessionPaneProps = {
 type Props = SessionPaneProps & {
   /** The session runtime is on another machine. */
   remoteSession?: boolean;
-  remoteFeatures?: { attachments: boolean; plan: boolean; draft: boolean; steer?: boolean };
+  remoteFeatures?: {
+    attachments: boolean;
+    questionAttachments?: boolean;
+    plan: boolean;
+    draft: boolean;
+    steer?: boolean;
+  };
   /** An opened host conversation whose transcript has not arrived yet. */
   remoteSessionLoading?: boolean;
   remoteSessionStarted?: boolean;
+  managedWorkspaceCreationReady?: boolean;
   workingMachine?: string;
   headerStatus?: ReactNode;
   /** A host chat whose last turn the host lost: shows Continue, as a quit turn does locally. */
@@ -273,67 +311,6 @@ type Props = SessionPaneProps & {
   sendBlockedReason?: string;
   allowedModelHarnesses?: readonly HarnessId[];
 };
-
-function RewoundHistoryDisclosure({
-  history,
-  truncated = false,
-}: {
-  history: NonNullable<Session["rewindHistory"]>;
-  truncated?: boolean;
-}) {
-  useLocale();
-  return (
-    <details
-      data-rewind-history
-      className="mx-auto max-h-64 w-full max-w-4xl shrink-0 overflow-y-auto border-b border-(--ui-tone-neutral-border) px-3 py-2 text-xs text-[var(--ui-text-secondary)]"
-    >
-      <summary className="cursor-pointer hover:text-(--ui-tone-neutral-fg)">
-        {t("Rewound history ({p0})", { p0: history.length })}
-      </summary>
-      {truncated ? (
-        <p className="mt-1 text-[var(--ui-text-disabled)]">
-          {t("Showing a preview of rewound history.")}
-        </p>
-      ) : null}
-      <div className="mt-2 flex flex-col gap-3">
-        {[...history].reverse().map((entry) => (
-          <section key={entry.id} className="flex flex-col gap-2">
-            <time
-              dateTime={new Date(entry.createdAt).toISOString()}
-              className="text-[var(--ui-text-disabled)]"
-            >
-              {new Date(entry.createdAt).toLocaleString(getLocale())}
-            </time>
-            {entry.blocks
-              .filter(
-                (block) =>
-                  !block.internal &&
-                  !block.draft &&
-                  (Boolean(block.text) || Boolean(block.attachments?.length)),
-              )
-              .map((block, index) => (
-                <article
-                  key={`${block.id}:${index}`}
-                  className="min-w-0 rounded-md bg-[var(--ui-surface)] px-2.5 py-2"
-                >
-                  {block.text ? (
-                    <pre className="select-text whitespace-pre-wrap break-words font-sans text-(--ui-tone-neutral-fg)">
-                      {block.text}
-                    </pre>
-                  ) : null}
-                  {block.attachments?.length ? (
-                    <p className="mt-1 break-words text-[var(--ui-text-secondary)]">
-                      {t("Attachments")}: {block.attachments.map((file) => file.name).join(", ")}
-                    </p>
-                  ) : null}
-                </article>
-              ))}
-          </section>
-        ))}
-      </div>
-    </details>
-  );
-}
 
 function sameRemoteFeatures(a: Props["remoteFeatures"], b: Props["remoteFeatures"]): boolean {
   return (
@@ -349,12 +326,21 @@ function sameRemoteFeatures(a: Props["remoteFeatures"], b: Props["remoteFeatures
 
 export const SessionPane = memo(function SessionPane(props: SessionPaneProps) {
   useLocale();
-  // The shell hands down sessions that lag behind by streamed text; the store
-  // holds the live one, and this subscription is what repaints the stream.
-  const live = useSession(props.session.id) ?? props.session;
+  // The shell hands down sessions that lag behind by streamed text. This
+  // subscription re-renders the pane for status, approval, tool and other
+  // metadata changes, but skips streamed-text frames: the live transcript pieces
+  // (`usePaneSessionBlocks`, `LiveSessionBlocks`) subscribe to the text. A hidden
+  // pane only follows the shell, so a busy background tab does not re-render on
+  // every streamed frame either.
+  const live =
+    usePaneSession(props.session.id, props.visible, sameOptionalSessionIgnoringStreamingText) ??
+    props.session;
+  // Keeps identity when a rebuilt session has the same content, so the pane below
+  // is not re-rendered for it.
+  const paneSession = useStableValue(live, sameSessionIgnoringStreamingText);
   // Sessions in a project on another machine render this same pane, backed by
   // the host instead of this computer's session runtime.
-  if (isRemoteProjectPath(props.session.cwd))
+  if (hostSessionBinding(props.session) || isRemoteProjectPath(props.session.cwd))
     return (
       <RemoteSession
         shell={props.session}
@@ -366,7 +352,7 @@ export const SessionPane = memo(function SessionPane(props: SessionPaneProps) {
         render={(remote) => <LocalSessionPane {...props} {...remote} />}
       />
     );
-  return <LocalSessionPane {...props} session={live} />;
+  return <LocalSessionPane {...props} session={paneSession} />;
 });
 
 const LocalSessionPane = memo(function LocalSessionPane({
@@ -374,6 +360,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   remoteFeatures,
   remoteSessionLoading = false,
   remoteSessionStarted = false,
+  managedWorkspaceCreationReady = false,
   workingMachine,
   headerStatus,
   interruptedTurn,
@@ -393,44 +380,45 @@ const LocalSessionPane = memo(function LocalSessionPane({
   hideProjectPicker,
   onFocus,
   onClose,
-  onCwdChange,
-  onBranchChange,
-  onWorktreeChange,
+  onCwdChange: onCwdChangeProp,
+  onBranchChange: onBranchChangeProp,
+  onWorktreeChange: onWorktreeChangeProp,
   onRefreshAdoptedSession,
-  onWorkspaceModeChange,
-  onWorktreeBaseChange,
+  onWorkspaceModeChange: onWorkspaceModeChangeProp,
+  onWorktreeBaseChange: onWorktreeBaseChangeProp,
   onManageWorktrees,
-  onModelChange,
-  onModelSettingsChange,
-  onRuntimeModeChange,
-  onSaveDraft,
-  onRemoveDraft,
-  onSubmit,
+  onModelChange: onModelChangeProp,
+  onModelSettingsChange: onModelSettingsChangeProp,
+  onRuntimeModeChange: onRuntimeModeChangeProp,
+  onSaveDraft: onSaveDraftProp,
+  onRemoveDraft: onRemoveDraftProp,
+  onSubmit: onSubmitProp,
   onStop,
-  onCompactContext,
-  onNewSession,
-  onPlaceSessionInFolder,
-  onResumeProviderSession,
-  onDeleteQueuedMessage,
-  onEditQueuedMessage,
+  onCompactContext: onCompactContextProp,
+  onNewSession: onNewSessionProp,
+  onPlaceSessionInFolder: onPlaceSessionInFolderProp,
+  onResumeProviderSession: onResumeProviderSessionProp,
+  onDeleteQueuedMessage: onDeleteQueuedMessageProp,
+  onEditQueuedMessage: onEditQueuedMessageProp,
   onQueuedMessageEditingChange,
-  onReorderQueuedMessages,
-  onSteerQueuedMessage,
-  onResumeQueue,
-  onUsageLimitResume,
-  onUsageLimitResumeAtReset,
-  onUsageLimitDismiss,
-  onSelectProviderAccount,
-  onInboxCardDismiss,
+  onReorderQueuedMessages: onReorderQueuedMessagesProp,
+  onSteerQueuedMessage: onSteerQueuedMessageProp,
+  onResumeQueue: onResumeQueueProp,
+  onUsageLimitResume: onUsageLimitResumeProp,
+  onUsageLimitResumeAtReset: onUsageLimitResumeAtResetProp,
+  onUsageLimitDismiss: onUsageLimitDismissProp,
+  onSelectProviderAccount: onSelectProviderAccountProp,
+  onInboxCardDismiss: onInboxCardDismissProp,
   onLinkedWorkItemUpdateCardDismiss,
-  onNoteCardDismiss,
-  onHandoffCardDismiss,
+  onNoteCardDismiss: onNoteCardDismissProp,
+  onHandoffCardDismiss: onHandoffCardDismissProp,
   onOpenLinkedWorkItem,
   onArchiveSession,
   onDeleteSession,
   onApproval,
-  onQuestionReply,
-  onQuestionInteraction,
+  onQuestionReply: onQuestionReplyProp,
+  questionDraftScope,
+  onQuestionInteraction: onQuestionInteractionProp,
   onOpenFile,
   onOpenDiff,
   onOpenPlan,
@@ -453,7 +441,97 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onLoadRemoteHistory,
   onLoadRemoteBlock,
 }: Props) {
-  useLocale();
+  const rootParentRef = useRef<ParentInputHandle | null>(null);
+  const rootMutation = <T,>(operation: () => T, original?: ParentAdmission): T | false => {
+    const owner = rootParentRef.current;
+    if (original) return owner ? owner.continue(original, operation) : false;
+    if (owner) return mutateParentInput(owner, operation);
+    return canMutateParentInputs(session.id) ? operation() : false;
+  };
+  const onSubmit = (...args: Parameters<Props["onSubmit"]>) =>
+    rootMutation(() => onSubmitProp(...args));
+  const onSaveDraft = (...args: Parameters<Props["onSaveDraft"]>) =>
+    rootMutation(() => onSaveDraftProp(...args));
+  const onRemoveDraft = (...args: Parameters<Props["onRemoveDraft"]>) =>
+    rootMutation(() => onRemoveDraftProp(...args));
+  const onModelChange = (...args: Parameters<Props["onModelChange"]>) =>
+    rootMutation(() => onModelChangeProp(...args));
+  const onModelSettingsChange = (...args: Parameters<Props["onModelSettingsChange"]>) =>
+    rootMutation(() => onModelSettingsChangeProp(...args));
+  const onRuntimeModeChange = (...args: Parameters<Props["onRuntimeModeChange"]>) =>
+    rootMutation(() => onRuntimeModeChangeProp(...args));
+  const onCwdChange = (...args: Parameters<Props["onCwdChange"]>) =>
+    rootMutation(() => onCwdChangeProp(...args));
+  const onBranchChange = (...args: Parameters<Props["onBranchChange"]>) =>
+    rootMutation(() => onBranchChangeProp(...args));
+  const onWorkspaceModeChange = (...args: Parameters<Props["onWorkspaceModeChange"]>) =>
+    rootMutation(() => onWorkspaceModeChangeProp(...args));
+  const onWorktreeBaseChange = (...args: Parameters<Props["onWorktreeBaseChange"]>) => {
+    if (!canMutateParentInputs(session.id)) rootParentRef.current?.();
+    return onWorktreeBaseChangeProp(...args);
+  };
+  const onQuestionReply = (...args: Parameters<Props["onQuestionReply"]>) =>
+    rootMutation(() => onQuestionReplyProp(...args));
+  const onCompactContext = (...args: Parameters<Props["onCompactContext"]>) =>
+    rootMutation(() => onCompactContextProp(...args));
+  const onPlaceSessionInFolder = (...args: Parameters<Props["onPlaceSessionInFolder"]>) =>
+    rootMutation(() => onPlaceSessionInFolderProp(...args));
+  const onDeleteQueuedMessage = (...args: Parameters<Props["onDeleteQueuedMessage"]>) =>
+    rootMutation(() => onDeleteQueuedMessageProp(...args));
+  const onEditQueuedMessage = (...args: Parameters<Props["onEditQueuedMessage"]>) =>
+    rootMutation(() => onEditQueuedMessageProp(...args));
+  const onSteerQueuedMessage = (...args: Parameters<Props["onSteerQueuedMessage"]>) =>
+    rootMutation(() => onSteerQueuedMessageProp(...args));
+  const onResumeQueue = (...args: Parameters<Props["onResumeQueue"]>) =>
+    rootMutation(() => onResumeQueueProp(...args));
+  const onUsageLimitResumeAtReset = (...args: Parameters<Props["onUsageLimitResumeAtReset"]>) =>
+    rootMutation(() => onUsageLimitResumeAtResetProp(...args));
+  const onUsageLimitDismiss = (...args: Parameters<Props["onUsageLimitDismiss"]>) =>
+    rootMutation(() => onUsageLimitDismissProp(...args));
+  const onWorktreeChange = onWorktreeChangeProp
+    ? async (...args: Parameters<NonNullable<Props["onWorktreeChange"]>>) => {
+        const result = rootMutation(() => onWorktreeChangeProp(...args));
+        if (result === false) throw new Error("Session input is temporarily closed.");
+        return await result;
+      }
+    : undefined;
+  const onInboxCardDismiss = onInboxCardDismissProp
+    ? (...args: Parameters<NonNullable<Props["onInboxCardDismiss"]>>) =>
+        rootMutation(() => onInboxCardDismissProp(...args))
+    : undefined;
+  const onNoteCardDismiss = onNoteCardDismissProp
+    ? (...args: Parameters<NonNullable<Props["onNoteCardDismiss"]>>) =>
+        rootMutation(() => onNoteCardDismissProp(...args))
+    : undefined;
+  const onHandoffCardDismiss = onHandoffCardDismissProp
+    ? (...args: Parameters<NonNullable<Props["onHandoffCardDismiss"]>>) =>
+        rootMutation(() => onHandoffCardDismissProp(...args))
+    : undefined;
+  const onQuestionInteraction = onQuestionInteractionProp
+    ? (...args: Parameters<NonNullable<Props["onQuestionInteraction"]>>) =>
+        rootMutation(() => onQuestionInteractionProp(...args))
+    : undefined;
+  const onResumeProviderSession = onResumeProviderSessionProp
+    ? (...args: Parameters<NonNullable<Props["onResumeProviderSession"]>>) =>
+        rootMutation(() => onResumeProviderSessionProp(...args))
+    : undefined;
+  const onReorderQueuedMessages = onReorderQueuedMessagesProp
+    ? (...args: Parameters<NonNullable<Props["onReorderQueuedMessages"]>>) =>
+        rootMutation(() => onReorderQueuedMessagesProp(...args))
+    : undefined;
+  const onUsageLimitResume = onUsageLimitResumeProp
+    ? (...args: Parameters<NonNullable<Props["onUsageLimitResume"]>>) =>
+        rootMutation(() => onUsageLimitResumeProp(...args))
+    : undefined;
+  const onSelectProviderAccount = onSelectProviderAccountProp
+    ? (...args: Parameters<NonNullable<Props["onSelectProviderAccount"]>>) =>
+        rootMutation(() => onSelectProviderAccountProp(...args))
+    : undefined;
+  const onNewSession = onNewSessionProp
+    ? (...args: Parameters<NonNullable<Props["onNewSession"]>>) =>
+        rootMutation(() => onNewSessionProp(...args))
+    : undefined;
+  const t = useT();
   const orchestrationRuns = useSyncExternalStore(
     orchestrator.subscribe,
     orchestrator.snapshot,
@@ -465,11 +543,27 @@ const LocalSessionPane = memo(function LocalSessionPane({
       sameCheckout(orchestrationCheckoutCwd(run), sessionWorkCwd(session)),
   );
   const title = sessionDisplayTitle(session.title, session.harness);
-  const retryNotice = sessionRetryNotice(session.retryMessage);
   const isEmpty = session.blocks.length === 0;
   const remote = remoteSession;
   const activeSessionIdRef = useRef(session.id);
   activeSessionIdRef.current = session.id;
+  // The pane's `session` keeps its identity across streamed text, so event-time
+  // reads go to the store for the current one (a remote session is not in it).
+  const renderedSession = useRef(session);
+  renderedSession.current = session;
+  const renderedRemote = useRef(remote);
+  renderedRemote.current = remote;
+  const currentSessionRef = useMemo(
+    () => ({
+      get current(): Session {
+        const rendered = renderedSession.current;
+        return renderedRemote.current
+          ? rendered
+          : (selectSessionById(getSessions(), rendered.id) ?? rendered);
+      },
+    }),
+    [],
+  );
   const stableSession = useStableValue(session, sameSessionIgnoringStreamingText);
   const stableBlocks = useStableValue(session.blocks, sameBlocksIgnoringStreamingText);
   const lastUserMessage = useMemo(() => lastUserTurnBlock(stableBlocks), [stableBlocks]);
@@ -499,6 +593,31 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const [findAction, setFindAction] = useState<ExpandingButtonGroupItem | null>(null);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const draftBlock = useMemo(() => sessionDraftBlock(stableSession), [stableSession]);
+  const savedDraftProjection = useSavedDraftProjection(
+    session.id,
+    visible &&
+      !remote &&
+      !managed &&
+      !session.busy &&
+      !session.continuingElsewhere &&
+      !session.historyLoading &&
+      !session.worktreePreparing &&
+      workspaceSwitchingSessionId !== session.id &&
+      !windowMovingSessionIds?.has(session.id) &&
+      !session.editingQueuedMessageId &&
+      !session.queuedMessages?.length &&
+      !session.pendingQuestion &&
+      !hasPendingApproval(session.blocks) &&
+      !session.inboxAsk &&
+      !session.worktreeRemoved &&
+      !sendBlockedReason &&
+      draftBlock &&
+      !draftBlock.followUpDelivery &&
+      !draftBlock.appRequestId
+      ? draftBlock
+      : undefined,
+  );
+  const projectedDraft = savedDraftProjection.projected;
   useSyncExternalStore(
     subscribeProjectChatBackground,
     projectChatBackgroundRevision,
@@ -545,6 +664,16 @@ const LocalSessionPane = memo(function LocalSessionPane({
     (requestId: number, decision: ApprovalDecision) => onApproval(session.id, requestId, decision),
     [onApproval, session.id],
   );
+  const approvalContext = useMemo(
+    () => ({
+      get session() {
+        return currentSessionRef.current;
+      },
+      getSession: () => currentSessionRef.current,
+      dispatch: onApproval,
+    }),
+    [onApproval, currentSessionRef],
+  );
   const replyQuestion = useCallback(
     (requestId: number, reply: UserQuestionReply) => onQuestionReply(session.id, requestId, reply),
     [onQuestionReply, session.id],
@@ -561,52 +690,66 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const transcriptScope = useRef<HTMLDivElement>(null);
   const [transcriptScroller, setTranscriptScroller] = useState<HTMLDivElement | null>(null);
   const focusPane = useCallback(() => onFocus(session.id), [onFocus, session.id]);
-  const quoteRequestId = useRef(0);
+  const {
+    quoteRequest,
+    addSelectionToChat,
+    acknowledgeQuote,
+    snapshot: quoteSnapshot,
+  } = useQuoteRequests(rootParentRef, addToChatTarget);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
-  const [editingLastTurn, setEditingLastTurn] = useState(false);
-  const [pendingRewind, setPendingRewind] = useState<{
-    sessionId: string;
-    block: Block;
-    action: "edit" | "return";
-    recall: LastTurnRecall;
-  } | null>(null);
-  const [rewindingMessage, setRewindingMessage] = useState(false);
-  const [rewindError, setRewindError] = useState<string | null>(null);
-  const [rewindDraftSignal, setRewindDraftSignal] = useState<{
+  // The reader scrolled away from the end (from the transcript's follow owner).
+  const [readingHistory, setReadingHistory] = useState(false);
+  // One owner for "the earlier turn is being edited"; the Composer receives it.
+  const [editingLastTurn, setEditingLastTurn] = useEditingLastTurn(
+    session.id,
+    editLastTurnSupported,
+  );
+  const {
+    pendingRewind,
+    rewindingMessage,
+    rewindError,
+    filePlan,
+    filePlanLoading,
+    rewindMode,
+    fileRevertNotice,
+    rewindDraftSignal,
+    requestMessageRewind,
+    rewindLastTurnToDraft,
+    confirmMessageRewind,
+    cancelRewind,
+    acknowledgeDraftSignal,
+    snapshot: rewindSnapshot,
+  } = useMessageRewind({
+    session,
+    managed,
+    sendBlockedReason,
+    lastUserMessage,
+    onRewindMessage,
+    rootParentRef,
+    activeSessionIdRef,
+    currentSessionRef,
+  });
+  const [draftEditSignal, setDraftEditSignal] = useState<{
     sessionId: string;
     id: string;
     value: LastTurnRecall;
   } | null>(null);
-  const rewindIncludesGroupedTurn = Boolean(
-    pendingRewind &&
-    session.harness === "codex" &&
-    conversationRewindStrategy(session, pendingRewind.block.id, true).blockId !==
-      pendingRewind.block.id,
-  );
-  useEffect(() => {
-    setEditingLastTurn(false);
-  }, [session.id, editLastTurnSupported]);
-  useEffect(() => {
-    setPendingRewind(null);
-    setRewindError(null);
-    setRewindDraftSignal(null);
-  }, [session.id]);
   const modelWelcomeSequence = useRef(0);
   const decorativeMotionEnabled = useDecorativeMotionEnabled();
   const [modelWelcome, setModelWelcome] = useState<{
     run: number;
+    harness: HarnessId;
   } | null>(null);
   const dismissModelWelcome = useCallback(() => setModelWelcome(null), []);
-  useEffect(() => {
-    if (!visible || !decorativeMotionEnabled) setModelWelcome(null);
-  }, [visible, decorativeMotionEnabled]);
+  // A hidden pane, or one without decorative motion, shows no welcome.
+  if (modelWelcome && (!visible || !decorativeMotionEnabled)) setModelWelcome(null);
   // Restore a saved run for this lead; its agents render on the sidebar card.
   useEffect(() => {
     if (!remote && !session.inboxAsk && !session.worktreeRemoved)
       void orchestrator.hydrate(session.id).catch(console.error);
   }, [remote, session.id, session.inboxAsk, session.worktreeRemoved]);
-  const [quoteRequest, setQuoteRequest] = useState<QuoteRequest>();
   const btw = useBtwConversation({
+    parentSessionId: session.id,
     available:
       !remote &&
       !isEmpty &&
@@ -659,7 +802,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const showAgentInTranscript = useCallback(
     (blockId: string) => {
       requestOpenSubagent(blockId);
-      navigateBlock(blockId);
+      return navigateBlock(blockId);
     },
     [navigateBlock],
   );
@@ -671,21 +814,31 @@ const LocalSessionPane = memo(function LocalSessionPane({
     stopHarnessBackgroundWork(session.harness, session.id, callId),
   );
   // Only one sheet over the pane at a time: a side question takes over.
-  useEffect(() => {
-    if (btw.open) closeSubagentSheet();
-  }, [btw.open, closeSubagentSheet]);
-  const openDockAgent = useCallback(
-    (agent: DockAgent) => {
-      if (agent.kind === "agent") requestViewSubagent(agent.blockId);
-      else subagentSheet.open(agent.blockId);
-    },
-    [subagentSheet.open],
-  );
+  // Cross-provider children are sessions of their own: dock rows, a panel and Stop.
+  const { delegated, delegatedAgents, openDockAgent, stopDockAgent, stopDockAll } = useDockActions({
+    sessionId: session.id,
+    blocks: stableBlocks,
+    busy: !!session.busy,
+    perItemStop,
+    stopBackground,
+    onStop,
+    native: subagentSheet,
+    btwOpen: btw.open,
+  });
   const jumpRequest = useSyncExternalStore(
     subscribeTranscriptJump,
     () => peekTranscriptJump(session.id),
     () => null,
   );
+  useCitedTurnHistory({
+    visible,
+    jump: jumpRequest,
+    blocks: stableBlocks,
+    hasMore: remoteHistoryHasMore,
+    loading: remoteHistoryLoading,
+    error: remoteHistoryError,
+    load: onLoadRemoteHistory,
+  });
   useEffect(() => {
     if (!visible || !navigatorReady || !jumpRequest) return;
     const frame = requestAnimationFrame(() => {
@@ -694,14 +847,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [visible, navigatorReady, jumpRequest, navigateBlock, session.id]);
-  const addSelectionToChat = useCallback((text: string, mode?: QuoteRequest["mode"]) => {
-    quoteRequestId.current += 1;
-    setQuoteRequest({ id: quoteRequestId.current, text, mode });
-  }, []);
-  const acknowledgeQuote = useCallback((handledId: number) => {
-    setQuoteRequest((current) => acknowledgeQuoteRequest(current, handledId));
-  }, []);
+  }, [visible, navigatorReady, jumpRequest, navigateBlock, session.id, stableBlocks]);
   const notesEnabled = useSyncExternalStore(subscribeNotesEnabled, loadNotesEnabled, () => true);
   const notesPanelOpen = useSyncExternalStore(subscribeNotesPanel, getNotesPanelOpen, () => false);
   // One panel, docked beside the focused pane, so a split never shows two.
@@ -739,27 +885,52 @@ const LocalSessionPane = memo(function LocalSessionPane({
     [session.cwd, session.id],
   );
 
-  useEffect(() => {
-    if (!addToChatTarget) return;
-    const onAdd = (event: Event) => {
-      const detail = (event as CustomEvent<AddToChatRequest>).detail;
-      if (!detail?.text) return;
-      addSelectionToChat(detail.text, detail.mode);
-    };
-    window.addEventListener(ADD_TO_CHAT_EVENT, onAdd);
-    return () => window.removeEventListener(ADD_TO_CHAT_EVENT, onAdd);
-  }, [addSelectionToChat, addToChatTarget]);
   const workCwd = sessionWorkCwd(session);
   const showDeckProjectPicker = isEmpty && !looksLikeProject(session.cwd);
   const dockComposer =
-    remoteSessionLoading || (!draftBlock && (!isEmpty || inSplit || !!session.inboxAsk));
+    remoteSessionLoading ||
+    ((!draftBlock || savedDraftProjection.ready) && (!isEmpty || inSplit || !!session.inboxAsk));
   const composerDockMotion = useComposerDockMotion(dockComposer);
+  const composerEngagement = useComposerEngagement(composerDockMotion.dockedRef);
+  // Reading history with focus elsewhere: the one mounted composer shows its
+  // compact geometry. Anything needing the full layout keeps it.
+  const composerReading = composerReadingActive({
+    readingHistory: readingHistory && dockComposer && !isEmpty,
+    engaged: composerEngagement.engaged,
+    blocked: !!session.pendingQuestion || editingLastTurn || btw.open,
+  });
+  useComposerReadingMotion(composerDockMotion.dockedRef, dockComposer, composerReading);
   const draftRef = useRef<string | undefined>(getComposerDraft(session.id));
+  const parentChanged = useParentInputClosure({
+    kind: "session-parent",
+    sessionId: session.id,
+    snapshot: () => ({
+      draft: draftRef.current,
+      composerSeed: session.composerSeed,
+      inboxCard: session.inboxCard,
+      noteCard: session.noteCard,
+      handoffCard: session.handoffCard,
+      pendingQuestion: session.pendingQuestion,
+      submittedQuestions: session.submittedQuestions,
+      questionDraftScope,
+      ...quoteSnapshot(),
+      editingLastTurn,
+      ...rewindSnapshot(),
+      harness: session.harness,
+      model: session.model,
+      modelSettings: session.modelSettings,
+      runtimeMode: session.runtimeMode,
+    }),
+  });
+  useLayoutEffect(() => {
+    rootParentRef.current = parentChanged;
+  }, [parentChanged]);
   // Composer is memoized: every handler keeps one identity and calls the
   // latest closure, so it re-renders only when something it shows changed.
   const composerDraftChange = useStableCallback((text: string) => {
     draftRef.current = text;
     setComposerDraft(session.id, text);
+    parentChanged();
   });
   const composerInboxCardDismiss = useStableCallback(() => onInboxCardDismiss?.(session.id));
   const composerNoteCardDismiss = useStableCallback(() => onNoteCardDismiss?.(session.id));
@@ -768,6 +939,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
     onQuestionInteraction?.(session.id, id),
   );
   const composerFocus = useStableCallback(() => onFocus(session.id));
+  const composerNewSession = useStableCallback(
+    (options?: NewSessionOptions, original?: ParentAdmission) =>
+      original
+        ? rootMutation(() => onNewSessionProp?.(session.id, options), original)
+        : onNewSession?.(session.id, options),
+  );
   const composerCwdChange = useStableCallback((cwd: string) => onCwdChange(session.id, cwd));
   const composerBranchChange = useStableCallback(() => onBranchChange(session.id));
   const composerWorktreeChange = useStableCallback(
@@ -784,7 +961,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
     (harness: HarnessId, model: string, accountId?: string) => {
       onModelChange(session.id, harness, model, accountId);
       // A new key restarts the animation and its cleanup timer on every pick.
-      setModelWelcome(decorativeMotionEnabled ? { run: ++modelWelcomeSequence.current } : null);
+      setModelWelcome(
+        decorativeMotionEnabled ? { run: ++modelWelcomeSequence.current, harness } : null,
+      );
     },
   );
   const composerModelSettingsChange = useStableCallback((settings: Record<string, string>) =>
@@ -793,13 +972,26 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const composerRuntimeModeChange = useStableCallback((mode: RuntimeMode) =>
     onRuntimeModeChange(session.id, mode),
   );
-  const composerSaveDraft = useStableCallback((text: string, attachments: Attachment[]) =>
-    onSaveDraft(session.id, text, attachments),
+  const composerSaveDraft = useStableCallback(
+    (text: string, attachments: Attachment[], original?: ParentAdmission) =>
+      original
+        ? rootMutation(() => onSaveDraftProp(session.id, text, attachments), original)
+        : onSaveDraft(session.id, text, attachments),
   );
   const composerSubmit = useStableCallback(
-    (text: string, attachments: Attachment[], options?: ComposerTurnOptions) => {
+    (
+      text: string,
+      attachments: Attachment[],
+      options?: ComposerTurnOptions,
+      original?: ParentAdmission,
+    ) => {
       if (!dockComposer) composerDockMotion.captureLaunch();
-      return onSubmit(session.id, text, attachments, options);
+      if (projectedDraft && draftBlock && !options?.draftBlockId) {
+        options = { ...options, draftBlockId: draftBlock.id };
+      }
+      return original
+        ? rootMutation(() => onSubmitProp(session.id, text, attachments, options), original)
+        : onSubmit(session.id, text, attachments, options);
     },
   );
   const composerBtwCommand = useStableCallback(btw.openWith);
@@ -815,12 +1007,21 @@ const LocalSessionPane = memo(function LocalSessionPane({
     onSubmit: (text, options) => onSubmit(session.id, text, [], options),
   });
   const composerStop = useStableCallback(() => onStop(session.id));
-  const composerCompactContext = useStableCallback(() => onCompactContext(session.id));
+  const composerCompactContext = useStableCallback((original?: ParentAdmission) =>
+    original
+      ? rootMutation(() => onCompactContextProp(session.id), original)
+      : onCompactContext(session.id),
+  );
   const composerPlaceInFolder = useStableCallback((target: SessionFolderTarget) =>
     onPlaceSessionInFolder(session.id, target),
   );
   const composerResumeProviderSession = useStableCallback(
-    onResumeProviderSession ? () => onResumeProviderSession(session.id) : undefined,
+    onResumeProviderSession
+      ? (original?: ParentAdmission) =>
+          original
+            ? rootMutation(() => onResumeProviderSessionProp?.(session.id), original)
+            : onResumeProviderSession(session.id)
+      : undefined,
   );
   const composerDeleteQueuedMessage = useStableCallback((messageId: string) =>
     onDeleteQueuedMessage(session.id, messageId),
@@ -834,7 +1035,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
   );
   const composerReorderQueuedMessages = useStableCallback(
     onReorderQueuedMessages
-      ? (messageIds: string[]) => onReorderQueuedMessages(session.id, messageIds)
+      ? (messageIds: string[], original?: ParentAdmission) =>
+          original
+            ? rootMutation(() => onReorderQueuedMessagesProp!(session.id, messageIds), original)
+            : onReorderQueuedMessages(session.id, messageIds)
       : undefined,
   );
   const composerSteerQueuedMessage = useStableCallback((messageId: string) =>
@@ -850,74 +1054,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
     (provider: ProviderAccountProvider, accountId: string) =>
       onSelectProviderAccount?.(session.id, provider, accountId),
   );
-  const composerPromptHistory = useStableCallback(() => userPromptHistory(session));
-  const composerRecallMessageApplied = useCallback((id: string) => {
-    setRewindDraftSignal((current) => (current?.id === id ? null : current));
-  }, []);
-  const requestMessageRewind = useCallback(
-    (block: Block, action: "edit" | "return", recall?: LastTurnRecall) => {
-      if (!canRewindConversation(session, block.id)) return;
-      setRewindError(null);
-      setPendingRewind({
-        sessionId: session.id,
-        block,
-        action,
-        recall: recall ?? {
-          text: isOperatorUserTurn(block) ? `/operator ${operatorUserPrompt(block)}` : block.text,
-          attachments: block.attachments ?? [],
-        },
-      });
-    },
-    [session],
-  );
-  const rewindLastTurnToDraft = useCallback(
-    (recall: LastTurnRecall) => {
-      if (lastUserMessage) requestMessageRewind(lastUserMessage, "edit", recall);
-    },
-    [lastUserMessage, requestMessageRewind],
-  );
-  const confirmMessageRewind = useCallback(async () => {
-    if (!pendingRewind || rewindingMessage || !onRewindMessage) return;
-    const requestedSessionId = pendingRewind.sessionId;
-    if (requestedSessionId !== session.id) return;
-    if (
-      !canRewindConversation(session, pendingRewind.block.id) ||
-      managed ||
-      session.inboxAsk ||
-      session.worktreeRemoved ||
-      sendBlockedReason
-    ) {
-      setRewindError(t("This conversation can no longer be rewound."));
-      return;
-    }
-    setRewindingMessage(true);
-    setRewindError(null);
-    try {
-      const accepted = await onRewindMessage(requestedSessionId, pendingRewind.block.id);
-      if (activeSessionIdRef.current !== requestedSessionId) return;
-      if (!accepted) {
-        setRewindError(t("The conversation could not be rewound. Try again."));
-        return;
-      }
-      if (pendingRewind.action === "edit") {
-        setRewindDraftSignal({
-          sessionId: requestedSessionId,
-          id: crypto.randomUUID(),
-          value: pendingRewind.recall,
-        });
-      }
-      setPendingRewind(null);
-    } catch {
-      setRewindError(t("The conversation could not be rewound. Try again."));
-    } finally {
-      setRewindingMessage(false);
-    }
-  }, [managed, onRewindMessage, pendingRewind, rewindingMessage, sendBlockedReason, session]);
-  const stopDockAgent = useStableCallback((agent: DockAgent) =>
-    agent.callId ? stopBackground(agent.callId) : Promise.reject(new Error("No call to stop")),
-  );
-  const stopDockAll = useStableCallback(() =>
-    perItemStop ? stopBackground() : Promise.resolve(onStop(session.id)),
+  const composerPromptHistory = useStableCallback(() =>
+    userPromptHistory(currentSessionRef.current),
   );
   const continueInterruptedTurn = useStableCallback(() =>
     onSubmit(session.id, CONTINUE_PROMPT, []),
@@ -925,14 +1063,30 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const sessionBusy = !!session.busy;
   const hasPendingQuestion = !!session.pendingQuestion;
   const dockAtEnd = !showJumpToBottom;
-  const canRewindMessage = useStableCallback(
-    (blockId: string) =>
-      !!onRewindMessage &&
-      !managed &&
-      !session.inboxAsk &&
-      !session.worktreeRemoved &&
-      !sendBlockedReason &&
-      canRewindConversation(session, blockId),
+  const rewindableMessageIds = useStableValue(
+    useMemo(() => {
+      if (
+        !onRewindMessage ||
+        managed ||
+        stableSession.inboxAsk ||
+        stableSession.worktreeRemoved ||
+        sendBlockedReason
+      )
+        return [];
+      const messages = stableSession.blocks.filter(
+        (block) => block.role === "user" && !block.draft && !block.internal,
+      );
+      // The conversation guards are shared by every accepted user message.
+      if (!messages.length || !canRewindConversation(stableSession, messages[0].id)) return [];
+      return messages.map((block) => block.id);
+    }, [stableSession, onRewindMessage, managed, sendBlockedReason]),
+    shallowArrayEqual,
+  );
+  // Render predicates must change identity when their result changes so memoized
+  // historical turns update after an async permission/preparation gate clears.
+  const canRewindMessage = useCallback(
+    (blockId: string) => rewindableMessageIds.includes(blockId),
+    [rewindableMessageIds],
   );
   const rewindMessage = useStableCallback((block: Block, action: "return" | "edit") =>
     requestMessageRewind(block, action),
@@ -944,6 +1098,18 @@ const LocalSessionPane = memo(function LocalSessionPane({
     }),
   );
   const removeDraft = useStableCallback((block: Block) => onRemoveDraft(session.id, block.id));
+  // Editing takes the saved draft back into the composer: the card goes and its
+  // text and files return as unsent input, kept and saved like any other draft.
+  const editDraft = useStableCallback((block: Block) => {
+    const value = userBlockRecall(block);
+    if (!value || onRemoveDraft(session.id, block.id) === false) return false;
+    setDraftEditSignal({ sessionId: session.id, id: crypto.randomUUID(), value });
+    return true;
+  });
+  const recalledMessageApplied = useStableCallback((id: string) => {
+    acknowledgeDraftSignal(id);
+    setDraftEditSignal((current) => (current?.id === id ? null : current));
+  });
   const secondOpinion = useStableCallback((target: ModelTarget, turn: Block[]) =>
     onSecondOpinion?.(session.id, target, turn),
   );
@@ -961,14 +1127,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
         cwd={workCwd}
         enabled={visible}
         busy={!!session.busy}
-        undoLocked={
-          reviewUndoLocked ||
-          orchestrationRuns.some(
-            (run) =>
-              (run.status === "active" || run.status === "paused") &&
-              (run.leadId === session.id ||
-                run.tasks.some((task) => task.sessionId === session.id)),
-          )
+        undoLockReason={
+          reviewUndoLocked
+            ? "session"
+            : orchestrationLocksUndo(orchestrationRuns, session.id)
+              ? "orchestration"
+              : undefined
         }
         onOpenFile={onOpenFile}
         onOpenDiff={onOpenDiff}
@@ -996,12 +1160,25 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const composerChildren = useMemo(
     () => (
       <>
-        {/* Above the queue and the input, below any question form. */}
+        {/* Stable order above the writing box: question/approval and blocker, then activity, queue, input. */}
+        <InterruptedNotice
+          session={stableSession}
+          interruptedTurn={interruptedTurn}
+          blockedReason={sendBlockedReason}
+          message={remote ? "The host stopped this turn before it finished." : undefined}
+          onContinue={continueInterruptedTurn}
+        />
+        {/* Above the queue and the input, below any blocker. */}
         <ActivityDock
           sessionId={session.id}
+          harness={session.harness}
           blocks={stableBlocks}
           busy={sessionBusy}
           pendingQuestion={hasPendingQuestion}
+          questionPresented={hasPendingQuestion}
+          deliveryUnconfirmed={stableSession.queuedMessages?.some(
+            (message) => message.deliveryUnknown,
+          )}
           backgroundTasks={session.backgroundTasks}
           backgroundAgents={session.backgroundAgents}
           visible={visible}
@@ -1010,18 +1187,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
           perItemStop={perItemStop}
           onStopAgent={stopDockAgent}
           onStopAll={stopDockAll}
-        />
-        <InterruptedNotice
-          session={stableSession}
-          interruptedTurn={interruptedTurn}
-          blockedReason={sendBlockedReason}
-          message={remote ? "The host stopped this turn before it finished." : undefined}
-          onContinue={continueInterruptedTurn}
+          delegatedAgents={delegatedAgents}
         />
       </>
     ),
     [
       session.id,
+      session.harness,
       stableBlocks,
       sessionBusy,
       hasPendingQuestion,
@@ -1033,6 +1205,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       perItemStop,
       stopDockAgent,
       stopDockAll,
+      delegatedAgents,
       stableSession,
       interruptedTurn,
       sendBlockedReason,
@@ -1049,6 +1222,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
         windowMovingSessionIds?.has(session.id)
       }
       remoteSession={remoteSession}
+      remoteOrigin={remoteOrigin(session)}
+      managedWorkspaceCreationReady={managedWorkspaceCreationReady}
       sendBlockedReason={sendBlockedReason}
       sendHeldReason={
         windowMovingSessionIds?.has(session.id)
@@ -1062,6 +1237,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       focusToken={composerFocusToken}
       hotkeys={focused && !btw.open}
       shell={!dockComposer}
+      reading={composerReading}
       harness={session.harness}
       model={session.model}
       modelSettings={session.modelSettings}
@@ -1075,7 +1251,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       hideBranchPicker={!!session.inboxAsk || managed}
       hideTopBar={!!session.inboxAsk}
       context={session.context}
-      contextBlocks={session.blocks}
+      contextBlocks={stableBlocks}
       contextEmpty={
         isEmpty &&
         !session.providerSessionId &&
@@ -1093,6 +1269,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       sessionUsage={session.usage}
       quoteRequest={quoteRequest}
       initialDraft={
+        savedDraftProjection.initialDraft ??
         draftRef.current ??
         (session.inboxCard || session.noteCard || session.handoffCard
           ? undefined
@@ -1103,6 +1280,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       noteCard={session.noteCard}
       handoffCard={session.handoffCard}
       question={session.pendingQuestion}
+      questionDraftScope={questionDraftScope ?? session.id}
       onQuoteRequestConsumed={acknowledgeQuote}
       onInboxCardDismiss={composerInboxCardDismiss}
       onNoteCardDismiss={composerNoteCardDismiss}
@@ -1145,11 +1323,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onBtwCommand={composerBtwCommand}
       onStop={composerStop}
       onCompactContext={composerCompactContext}
-      onNewSession={onNewSession ? (options) => onNewSession(session.id, options) : undefined}
+      onNewSession={onNewSession ? composerNewSession : undefined}
       onPlaceInFolder={composerPlaceInFolder}
       onResumeProviderSession={composerResumeProviderSession}
       queuedMessages={session.queuedMessages}
       queueStatus={session.queueStatus}
+      runningModelTarget={session.runningModelTarget}
       onDeleteQueuedMessage={composerDeleteQueuedMessage}
       onEditQueuedMessage={composerEditQueuedMessage}
       onQueuedMessageEditingChange={composerQueuedMessageEditingChange}
@@ -1162,12 +1341,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onUsageLimitDismiss={composerUsageLimitDismiss}
       providerAccountId={
         supportsProviderAccounts(session.harness)
-          ? sessionProviderAccountId(session.harness, session)
+          ? (session.nextProviderAccountId ?? sessionProviderAccountId(session.harness, session))
           : undefined
       }
       onSelectProviderAccount={onSelectProviderAccount ? composerSelectProviderAccount : undefined}
       onOpenFile={onOpenFile}
-      busy={!!session.busy}
+      busy={!!session.busy || !!session.continuingElsewhere}
       backgroundOnly={isBackgroundOnly(
         !!session.busy,
         session.backgroundTasks,
@@ -1180,26 +1359,27 @@ const LocalSessionPane = memo(function LocalSessionPane({
       promptHistory={composerPromptHistory}
       onRecallLastTurn={rewindLastTurnToDraft}
       recalledMessage={
-        rewindDraftSignal?.sessionId === session.id
-          ? { id: rewindDraftSignal.id, value: rewindDraftSignal.value }
-          : undefined
+        draftEditSignal?.sessionId === session.id
+          ? { id: draftEditSignal.id, value: draftEditSignal.value }
+          : rewindDraftSignal?.sessionId === session.id
+            ? { id: rewindDraftSignal.id, value: rewindDraftSignal.value }
+            : undefined
       }
-      onRecalledMessageApplied={composerRecallMessageApplied}
+      onRecalledMessageApplied={recalledMessageApplied}
+      editingLastTurn={editingLastTurn}
       onEditingLastTurnChange={setEditingLastTurn}
     >
       {composerChildren}
     </Composer>
   );
 
-  const hasPaneHeader = inSplit || Boolean(onPaneDragStart);
+  // A lone chat is named by its title-bar tab, so its pane carries no header of
+  // its own; only a real split needs per-pane identity, focus and a drag handle.
+  // (`onPaneDragStart` is always supplied by the pane tree, so it can't decide this.)
+  const hasPaneHeader = inSplit;
+  const titleBarSlot = useTitleBarActionsSlot();
   const workingBadge = workingMachine ? (
-    <Badge
-      tone="neutral"
-      role="status"
-      data-working-machine
-      title={`${t("Working on ")}${workingMachine}.`}
-      className="min-w-0"
-    >
+    <Badge tone="neutral" role="status" data-working-machine className="min-w-0">
       {t("Working on ")}
       {workingMachine}.
     </Badge>
@@ -1207,7 +1387,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const notesShortcut = useKeybindingShortcut(NOTES_PANEL_COMMAND);
   const closeShortcut = useKeybindingShortcut("Pane: Close");
   const paneActions: ExpandingButtonGroupItem[] = [
-    ...(hasPaneHeader && !session.inboxAsk && findAction ? [findAction] : []),
+    ...(!session.inboxAsk && findAction ? [findAction] : []),
     ...(notesEnabled && visible && focused && !showNotesPanel
       ? [
           {
@@ -1215,19 +1395,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
             label: t("Notes"),
             ariaLabel: t("Open notes panel"),
             shortcut: notesShortcut,
-            icon: <File className="size-3.5" strokeWidth={1.75} />,
+            icon: <StickyNote className="icon-sm" strokeWidth={1.75} />,
             onSelect: toggleNotesPanel,
-          },
-        ]
-      : []),
-    ...(hasPaneHeader
-      ? [
-          {
-            id: "close-pane",
-            label: t("Close pane"),
-            shortcut: closeShortcut,
-            icon: <X className="size-3" strokeWidth={1.75} />,
-            onSelect: () => onClose(session.id),
           },
         ]
       : []),
@@ -1238,6 +1407,22 @@ const LocalSessionPane = memo(function LocalSessionPane({
       actionsCwd={session.cwd}
       shortcutsEnabled={focused}
       additionalItems={paneActions}
+      trailing={
+        hasPaneHeader ? (
+          <Button
+            iconOnly
+            label={t("Close pane")}
+            variant="ghost"
+            size="sm"
+            type="button"
+            tooltip={t("Close pane")}
+            shortcut={closeShortcut}
+            onClick={() => onClose(session.id)}
+          >
+            <X className="icon-sm" strokeWidth={1.75} />
+          </Button>
+        ) : null
+      }
       onRun={
         onRunProjectAction && !session.worktreeRemoved
           ? (action) => onRunProjectAction(session.id, action)
@@ -1252,6 +1437,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       data-session-drop={session.id}
       data-session-visible={visible}
       data-session-empty={isEmpty}
+      data-session-streaming={streamingReplyLength(session) >= 0 ? "true" : undefined}
       data-project-chat-background={!!projectBackground}
       data-project-background-effect={projectBackground?.effect}
       data-project-background-scope={projectBackground?.scope}
@@ -1259,18 +1445,24 @@ const LocalSessionPane = memo(function LocalSessionPane({
       className="chat-pane-background relative isolate flex h-full min-h-0 min-w-0 flex-1 flex-col"
       onMouseDown={() => onFocus(session.id)}
     >
-      <LiveBackgroundLayer
+      <LiveSessionBackground
+        sessionId={session.id}
+        fallback={session}
+        follow={!remote}
         active={focused}
         visible={visible}
-        speech={streamingReplyLength(session)}
       />
-      {!isEmpty ? <CrewBackdrop visible={visible} session={session} /> : null}
+      {!isEmpty ? <CrewBackdrop visible={visible} session={stableSession} /> : null}
       {projectBackground?.effect === "gradient-blur" ||
       (!projectBackground && globalBackgroundPath && globalBackgroundEffect === "gradient-blur") ? (
         <GradientBlurBackground />
       ) : null}
       {modelWelcome && visible && decorativeMotionEnabled ? (
-        <BycodaWelcome key={modelWelcome.run} onDone={dismissModelWelcome} />
+        <BycodaWelcome
+          key={modelWelcome.run}
+          harness={modelWelcome.harness}
+          onDone={dismissModelWelcome}
+        />
       ) : null}
       {hasPaneHeader ? (
         <div
@@ -1292,42 +1484,74 @@ const LocalSessionPane = memo(function LocalSessionPane({
           >
             {onPaneDragStart ? (
               <GripVertical
-                className="size-3.5 shrink-0 text-(--ui-text-secondary)"
+                className="icon-sm shrink-0 text-(--ui-text-secondary)"
                 strokeWidth={1.75}
               />
             ) : null}
             <span
               className={`size-2 shrink-0 rounded-full ${focused ? "bg-(--ui-tone-accent-subtle)" : "bg-transparent"}`}
             />
-            <span
-              className="min-w-0 flex-1 truncate text-xs text-(--ui-tone-neutral-fg)"
-              title={title}
-            >
-              {title}
-            </span>
+            <OverflowTooltip label={title}>
+              <span
+                className={`min-w-0 flex-1 truncate text-ui-caption ${
+                  focused ? "text-content" : "text-(--ui-text-secondary)"
+                }`}
+              >
+                {title}
+              </span>
+            </OverflowTooltip>
           </div>
           {workingBadge}
           <div className="session-pane-header-actions">
+            <AssistantManagedBadge management={session.managedBy} local={!remote} />
+            <AssistantSessionControl
+              sessionId={session.id}
+              cwd={session.cwd}
+              management={session.managedBy}
+              local={!remote}
+            />
             {headerStatus}
-            <BackgroundSessionIndicator key={session.id} session={session} />
             {projectActions}
           </div>
         </div>
       ) : null}
-      {!hasPaneHeader && workingBadge ? (
-        <div
-          data-session-agent-header
-          className="flex h-9 shrink-0 items-center gap-3 border-b border-(--ui-tone-neutral-border) px-12"
-        >
-          {workingBadge}
-        </div>
-      ) : null}
       {!hasPaneHeader ? (
-        <div className="absolute end-3 top-1.5 z-10 flex max-w-full flex-wrap items-center justify-end gap-1.5">
-          {headerStatus}
-          <BackgroundSessionIndicator key={session.id} session={session} />
-          {projectActions}
-        </div>
+        titleBarSlot ? (
+          // A lone chat's actions live in the title bar's chrome row beside its tab (pane-hosted portal,
+          // not a popover: the target is the title bar slot).
+          visible ? (
+            <Portal target={titleBarSlot}>
+              <>
+                {workingBadge ? <div className="min-w-0 max-w-56">{workingBadge}</div> : null}
+                <AssistantManagedBadge management={session.managedBy} local={!remote} />
+                <AssistantSessionControl
+                  sessionId={session.id}
+                  cwd={session.cwd}
+                  management={session.managedBy}
+                  local={!remote}
+                />
+                {headerStatus}
+                {projectActions}
+              </>
+            </Portal>
+          ) : null
+        ) : (
+          <div
+            data-session-toolbar
+            className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center justify-end gap-1 px-2 py-0.5"
+          >
+            {workingBadge ? <div className="me-auto min-w-0">{workingBadge}</div> : null}
+            <AssistantManagedBadge management={session.managedBy} local={!remote} />
+            <AssistantSessionControl
+              sessionId={session.id}
+              cwd={session.cwd}
+              management={session.managedBy}
+              local={!remote}
+            />
+            {headerStatus}
+            {projectActions}
+          </div>
+        )
       ) : null}
       <div data-session-body className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <SharedQueueRecoveryNotice key={`queue:${session.id}`} sessionId={session.id} />
@@ -1361,20 +1585,66 @@ const LocalSessionPane = memo(function LocalSessionPane({
             />
           ) : null}
           {session.retryMessage && (session.busy || session.continuingElsewhere) ? (
-            <div
-              role="status"
-              className="shrink-0 border-b border-(--ui-tone-warning-border) bg-(--ui-tone-warning-subtle) px-3 py-2 text-xs text-(--ui-tone-warning-fg)"
+            <ProviderRetryNotice
+              key={session.id}
+              provider={HARNESS_TITLE[session.harness]}
+              message={session.retryMessage}
+              onStop={() => onStop(session.id)}
+              onRefresh={
+                session.continuingElsewhere && !session.busy && onRefreshAdoptedSession
+                  ? () => onRefreshAdoptedSession(session.id)
+                  : undefined
+              }
+            />
+          ) : null}
+          {savedDraftProjection.failed ? (
+            <Alert
+              tone="warning"
+              action={<Button onClick={savedDraftProjection.retry}>{t("Retry")}</Button>}
             >
-              <strong>
-                {t(
-                  retryNotice.reconnecting
-                    ? "Reconnecting to {provider}"
-                    : "{provider} is retrying",
-                  { provider: HARNESS_TITLE[session.harness] },
+              {t("Could not load session ownership. Your saved draft is still available.")}
+            </Alert>
+          ) : null}
+          {fileRevertNotice ? (
+            <Alert tone={fileRevertNotice.skipped.length ? "warning" : "info"}>
+              <div
+                className="flex max-h-48 min-w-0 flex-col gap-2 overflow-auto text-ui-body"
+                data-session-files-revert-result
+              >
+                <p>
+                  {t("Reverted files: {p0}", {
+                    p0: fileRevertNotice.reverted.length,
+                  })}
+                </p>
+                {fileRevertNotice.reverted.length ? (
+                  <ul>
+                    {fileRevertNotice.reverted.map((path) => (
+                      <li key={path} className="[overflow-wrap:anywhere]">
+                        {path}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>{t("No session files were reverted.")}</p>
                 )}
-              </strong>
-              {retryNotice.detail ? <> · {retryNotice.detail}</> : null}
-            </div>
+                {fileRevertNotice.skipped.length ? (
+                  <>
+                    <p>
+                      {t("Skipped files: {p0}", {
+                        p0: fileRevertNotice.skipped.length,
+                      })}
+                    </p>
+                    <ul>
+                      {fileRevertNotice.skipped.map(({ path, reason }) => (
+                        <li key={path} className="[overflow-wrap:anywhere]">
+                          {path}: {reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+              </div>
+            </Alert>
           ) : null}
           {session.rewindHistory?.length ? (
             <RewoundHistoryDisclosure
@@ -1383,13 +1653,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
             />
           ) : null}
           {remoteSessionLoading ? (
-            <div
-              role="status"
-              className="flex h-full min-h-0 items-center justify-center gap-2 text-[13px] text-(--ui-text-secondary)"
-            >
-              <Loader className="size-4 shrink-0 animate-spin" strokeWidth={1.75} aria-hidden />
-              {t("Loading conversation…")}
-            </div>
+            <LoadingText layout="fill">{t("Loading conversation…")}</LoadingText>
           ) : isEmpty ? (
             session.inboxAsk ? (
               <div className="scrollbar-none h-full min-h-0 overflow-y-auto">
@@ -1410,102 +1674,142 @@ const LocalSessionPane = memo(function LocalSessionPane({
             )
           ) : (
             <>
-              <PooledTranscript
-                pool={transcriptPool}
+              <LiveSessionBlocks
                 sessionId={session.id}
-                onMouseDown={focusPane}
-              >
-                <AgentTranscript
-                  sessionId={session.id}
-                  blocks={session.blocks}
-                  performanceTraceId={sessionPerformanceTrace(session.id)}
-                  historyLoading={session.historyLoading}
-                  historyLoadError={session.historyLoadError}
-                  remoteHistoryHasMore={remoteHistoryHasMore}
-                  remoteHistoryLoading={remoteHistoryLoading}
-                  remoteHistoryError={remoteHistoryError}
-                  onLoadRemoteHistory={onLoadRemoteHistory}
-                  onLoadRemoteBlock={onLoadRemoteBlock}
-                  canRewindMessage={canRewindMessage}
-                  onRewindMessage={rewindMessage}
-                  busy={!!session.busy}
-                  visible={visible}
-                  cwd={workCwd}
-                  harness={session.harness}
-                  model={session.model}
-                  modelSettings={session.modelSettings}
-                  providerAccountId={session.providerAccountId}
-                  pendingQuestion={!!session.pendingQuestion}
-                  liveStatusInDock
-                  backgroundTasks={session.backgroundTasks}
-                  backgroundAgents={session.backgroundAgents}
-                  onApproval={session.worktreeRemoved ? undefined : approve}
-                  onAddToChat={addSelectionToChat}
-                  onSaveNote={notesEnabled ? saveNote : undefined}
-                  onSendDraft={draftBlock ? sendDraft : undefined}
-                  onRemoveDraft={draftBlock ? removeDraft : undefined}
-                  onSaveSelectionNote={notesEnabled ? saveSelectionNote : undefined}
-                  onOpenFile={onOpenFile}
-                  onOpenDiff={onOpenDiff}
-                  onOpenPlan={openPlan}
-                  onBuildPlan={session.worktreeRemoved ? undefined : buildPlan}
-                  planBuildTargets={!remote}
-                  onSecondOpinion={
-                    !session.inboxAsk && !session.worktreeRemoved && onSecondOpinion
-                      ? secondOpinion
-                      : undefined
-                  }
-                  onHandoff={
-                    !session.inboxAsk && !session.worktreeRemoved && onHandoff ? handoff : undefined
-                  }
-                  onJumpToBottomChange={setShowJumpToBottom}
-                  onJumpToBottomReady={onJumpToBottomReady}
-                  onRevealReady={onRevealReady}
-                  onNavigateReady={onNavigateReady}
-                  onScrollerChange={setTranscriptScroller}
-                  editingLastTurn={editingLastTurn}
-                  onEditLastTurn={undefined}
-                  latestTurnAccessory={latestTurnAccessory}
-                />
-              </PooledTranscript>
-              {!session.inboxAsk ? (
-                <TranscriptFind
-                  sessionId={session.id}
-                  onTriggerChange={hasPaneHeader ? setFindAction : undefined}
-                  blocks={findSearching ? session.blocks : stableBlocks}
-                  visible={visible}
-                  focused={focused}
-                  onNavigate={navigateBlock}
-                  onSearchingChange={setFindSearching}
-                  side={
-                    session.linkedWorkItemUpdateCard &&
-                    session.linkedWorkItemUpdateCard.status !== "loading"
-                      ? "left"
-                      : "right"
-                  }
-                />
-              ) : null}
-              <PromptOutline
-                blocks={outlineOpen ? session.blocks : stableBlocks}
-                onOpenChange={setOutlineOpen}
-                scope={transcriptScope}
-                scroller={transcriptScroller}
                 visible={visible}
-                revealBlock={revealBlock}
-              />
+                enabled={!remote}
+                fallback={session.blocks}
+              >
+                {(liveBlocks) => (
+                  <PooledTranscript
+                    pool={transcriptPool}
+                    sessionId={session.id}
+                    onMouseDown={focusPane}
+                  >
+                    <AgentTranscript
+                      approvalContext={approvalContext}
+                      sessionId={session.id}
+                      blocks={
+                        projectedDraft
+                          ? liveBlocks.filter((block) => block.id !== draftBlock?.id)
+                          : liveBlocks
+                      }
+                      performanceTraceId={sessionPerformanceTrace(session.id)}
+                      historyLoading={session.historyLoading}
+                      historyLoadError={session.historyLoadError}
+                      remoteHistoryHasMore={remoteHistoryHasMore}
+                      remoteHistoryLoading={remoteHistoryLoading}
+                      remoteHistoryError={remoteHistoryError}
+                      onLoadRemoteHistory={onLoadRemoteHistory}
+                      onLoadRemoteBlock={onLoadRemoteBlock}
+                      canRewindMessage={canRewindMessage}
+                      onRewindMessage={rewindMessage}
+                      busy={!!session.busy}
+                      visible={visible}
+                      cwd={workCwd}
+                      harness={session.harness}
+                      model={session.model}
+                      modelSettings={session.modelSettings}
+                      providerAccountId={session.providerAccountId}
+                      pendingQuestion={!!session.pendingQuestion}
+                      questionBehavior={session.pendingQuestion?.behavior}
+                      liveStatusInDock
+                      backgroundTasks={session.backgroundTasks}
+                      backgroundAgents={session.backgroundAgents}
+                      retryMessage={session.retryMessage}
+                      preparingTurn={!!session.worktreePreparing}
+                      onApproval={session.worktreeRemoved ? undefined : approve}
+                      onAddToChat={addSelectionToChat}
+                      onSaveNote={notesEnabled ? saveNote : undefined}
+                      onSendDraft={draftBlock ? sendDraft : undefined}
+                      onEditDraft={draftBlock && !remote ? editDraft : undefined}
+                      onRemoveDraft={draftBlock ? removeDraft : undefined}
+                      onSaveSelectionNote={notesEnabled ? saveSelectionNote : undefined}
+                      onOpenFile={onOpenFile}
+                      onOpenDiff={onOpenDiff}
+                      onOpenPlan={openPlan}
+                      onBuildPlan={session.worktreeRemoved ? undefined : buildPlan}
+                      planBuildTargets={!remote}
+                      onSecondOpinion={
+                        !session.inboxAsk && !session.worktreeRemoved && onSecondOpinion
+                          ? secondOpinion
+                          : undefined
+                      }
+                      onHandoff={
+                        !session.inboxAsk && !session.worktreeRemoved && onHandoff
+                          ? handoff
+                          : undefined
+                      }
+                      onJumpToBottomChange={setShowJumpToBottom}
+                      onReadingChange={setReadingHistory}
+                      onJumpToBottomReady={onJumpToBottomReady}
+                      onRevealReady={onRevealReady}
+                      onNavigateReady={onNavigateReady}
+                      onScrollerChange={setTranscriptScroller}
+                      editingLastTurn={editingLastTurn}
+                      onEditLastTurn={undefined}
+                      latestTurnAccessory={latestTurnAccessory}
+                    />
+                  </PooledTranscript>
+                )}
+              </LiveSessionBlocks>
+              {!session.inboxAsk ? (
+                <LiveSessionBlocks
+                  sessionId={session.id}
+                  visible={visible}
+                  enabled={findSearching && !remote}
+                  fallback={stableBlocks}
+                >
+                  {(findBlocks) => (
+                    <TranscriptFind
+                      sessionId={session.id}
+                      onTriggerChange={setFindAction}
+                      blocks={findBlocks}
+                      visible={visible}
+                      focused={focused}
+                      onNavigate={navigateBlock}
+                      onSearchingChange={setFindSearching}
+                      side={
+                        session.linkedWorkItemUpdateCard &&
+                        session.linkedWorkItemUpdateCard.status !== "loading"
+                          ? "left"
+                          : "right"
+                      }
+                    />
+                  )}
+                </LiveSessionBlocks>
+              ) : null}
+              <LiveSessionBlocks
+                sessionId={session.id}
+                visible={visible}
+                enabled={outlineOpen && !remote}
+                fallback={stableBlocks}
+              >
+                {(outlineBlocks) => (
+                  <PromptOutline
+                    blocks={outlineBlocks}
+                    onOpenChange={setOutlineOpen}
+                    scope={transcriptScope}
+                    scroller={transcriptScroller}
+                    visible={visible}
+                    revealBlock={revealBlock}
+                  />
+                )}
+              </LiveSessionBlocks>
               {showJumpToBottom ? (
-                <div className="pointer-events-none absolute inset-x-0 bottom-2 z-30 flex justify-center">
+                // z-30: in-pane overlay above the transcript; no in-pane layer scale exists, so the literal stays.
+                <div className="pointer-events-none absolute inset-x-0 bottom-2 z-(--layer-pane-sheet) flex justify-center">
                   <Button
-                    iconOnly
-                    label={t("Jump to latest")}
-                    variant="ghost"
+                    className="pointer-events-auto"
+                    variant="secondary"
+                    size="sm"
+                    shape="pill"
                     type="button"
-                    title={t("Jump to latest")}
-                    aria-label={t("Jump to latest")}
+                    startIcon={<ChevronDown className="icon-md" strokeWidth={2} />}
                     data-jump-to-bottom
                     onClick={() => jumpToBottomRef.current?.()}
                   >
-                    <ChevronDown className="size-4" strokeWidth={2} />
+                    {t("Jump to latest")}
                   </Button>
                 </div>
               ) : null}
@@ -1518,6 +1822,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
             data-session-composer
             inert={btw.open}
             className="mx-auto w-full max-w-4xl shrink-0"
+            {...composerEngagement.handlers}
           >
             {composer}
           </div>
@@ -1536,34 +1841,30 @@ const LocalSessionPane = memo(function LocalSessionPane({
           onOpenFile={onOpenFile}
           onOpenDiff={onOpenDiff}
         />
-        {subagentSheet.block ? (
-          <SubagentSheet
-            block={subagentSheet.block}
-            busy={!!session.busy}
-            visible={visible}
-            cwd={workCwd}
-            relay={{
-              ...subagentRelay,
-              blockedReason: subagentRelayBlockedReason,
-              onOpenConversation: () => {
-                closeSubagentSheet();
-                jumpToBottomRef.current?.();
-              },
-            }}
-            onClose={closeSubagentSheet}
-            onStop={
-              perItemStop && subagentSheet.block.tool?.callId
-                ? () => stopBackground(subagentSheet.block?.tool?.callId)
-                : undefined
-            }
-            onShowInTranscript={(blockId) => {
+        <SessionSubagentSheet
+          visible={visible}
+          busy={sessionBusy}
+          cwd={workCwd}
+          native={{
+            block: subagentSheet.block,
+            relay: subagentRelay,
+            blockedReason: subagentRelayBlockedReason,
+            close: closeSubagentSheet,
+            open: subagentSheet.open,
+            showInTranscript: showAgentInTranscript,
+            onOpenMain: () => {
               closeSubagentSheet();
-              showAgentInTranscript(blockId);
-            }}
-            onOpenFile={onOpenFile}
-            onOpenDiff={onOpenDiff}
-          />
-        ) : null}
+              jumpToBottomRef.current?.();
+            },
+            stopRun: perItemStop ? stopBackground : undefined,
+          }}
+          delegated={delegated}
+          onSubmitToSession={(sessionId, text, options) => onSubmit(sessionId, text, [], options)}
+          onStopSession={onStop}
+          onLoadRemoteBlock={onLoadRemoteBlock}
+          onOpenFile={onOpenFile}
+          onOpenDiff={onOpenDiff}
+        />
       </div>
     </div>
   );
@@ -1574,72 +1875,92 @@ const LocalSessionPane = memo(function LocalSessionPane({
         {showNotesPanel ? <SessionNotesPanel sessionId={session.id} cwd={session.cwd} /> : null}
       </div>
       {pendingRewind ? (
-        <Modal
-          onClose={() => {
-            if (!rewindingMessage) setPendingRewind(null);
+        <EditFromHereDialog
+          plan={filePlan}
+          planLoading={filePlanLoading}
+          pending={rewindMode}
+          error={rewindError}
+          onCancel={() => {
+            parentChanged();
+            cancelRewind();
           }}
-          title={
-            pendingRewind.action === "edit"
-              ? t("Rewind and edit message?")
-              : t("Return before this message?")
-          }
-          description={t(
-            "This removes the selected message and following outputs from active context. File changes stay unchanged. Continuing may start a fresh provider session. Removed messages remain available in rewound history.",
-          )}
-          size="sm"
-        >
-          <div className="flex flex-col gap-4 p-4">
-            {rewindIncludesGroupedTurn ? (
-              <p className="text-sm text-(--ui-tone-warning-fg)">
-                {t(
-                  "This message belongs to a grouped Codex turn. Rewinding it also removes earlier steers in that provider turn.",
-                )}
-              </p>
-            ) : null}
-            {pendingRewind.action === "edit" ? (
-              <p className="text-sm text-[var(--ui-text-secondary)]">
-                {t(
-                  "The message will return to the composer as an unsent draft and replace its current draft.",
-                )}
-              </p>
-            ) : (
-              <p className="text-sm text-[var(--ui-text-secondary)]">
-                {t("The current composer draft will be kept.")}
-              </p>
-            )}
-            {rewindError ? (
-              <Alert tone="danger" role="alert">
-                {rewindError}
-              </Alert>
-            ) : null}
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                disabled={rewindingMessage}
-                onClick={() => setPendingRewind(null)}
-              >
-                {t("Cancel")}
-              </Button>
-              <Button
-                variant="primary"
-                loading={rewindingMessage}
-                loadingLabel={t("Rewinding…")}
-                onClick={() => void confirmMessageRewind()}
-              >
-                {pendingRewind.action === "edit" ? t("Rewind and edit") : t("Return before")}
-              </Button>
-            </div>
-          </div>
-        </Modal>
+          onConfirm={(mode) => void confirmMessageRewind(mode)}
+        />
       ) : null}
     </>
   );
 });
 
+/**
+ * The live blocks of a session, for the parts of a pane that follow streamed
+ * text. The pane itself renders from a session that ignores that text, so only
+ * this component re-renders on a frame. While `enabled` is off it renders
+ * `fallback` and does not subscribe.
+ */
+function LiveSessionBlocks({
+  sessionId,
+  visible,
+  enabled,
+  fallback,
+  children,
+}: {
+  sessionId: string;
+  visible: boolean;
+  enabled: boolean;
+  fallback: Block[];
+  children: (blocks: Block[]) => ReactNode;
+}) {
+  const live = usePaneSessionBlocks(sessionId, visible, enabled);
+  return <>{children(live ?? fallback)}</>;
+}
+
+/** The animated chat background, driven by the streamed text of the live session. */
+function LiveSessionBackground({
+  sessionId,
+  fallback,
+  follow,
+  active,
+  visible,
+}: {
+  sessionId: string;
+  fallback: Session;
+  /** False for a remote session, whose current state is `fallback`. */
+  follow: boolean;
+  active: boolean;
+  visible: boolean;
+}) {
+  const live = usePaneSession(sessionId, visible);
+  const session = follow ? (live ?? fallback) : fallback;
+  return (
+    <LiveBackgroundLayer
+      active={active}
+      visible={visible}
+      speech={streamingReplyLength(session)}
+      activity={liveTurnActivity(session)}
+    />
+  );
+}
+
 /** Length of the assistant reply currently streaming, or -1 when none is. */
 function streamingReplyLength(session: Session): number {
   const last = session.blocks[session.blocks.length - 1];
   return session.busy && last?.role === "assistant" && last.streaming ? last.text.length : -1;
+}
+
+/**
+ * Everything the running turn has streamed since the latest user message:
+ * reply, reasoning and tool progress. Each step also counts as a short burst,
+ * so the live background reacts to tool calls that stream no text. -1 when idle.
+ */
+function liveTurnActivity(session: Session): number {
+  if (!session.busy) return -1;
+  let length = 0;
+  for (let i = session.blocks.length - 1; i >= 0; i--) {
+    const block = session.blocks[i];
+    if (block.role === "user") break;
+    length += 12 + block.text.length + (block.tool?.detail?.length ?? 0);
+  }
+  return length;
 }
 
 const LatestTurnAccessory = memo(function LatestTurnAccessory({

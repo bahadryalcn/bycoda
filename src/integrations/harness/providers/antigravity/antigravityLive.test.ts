@@ -1,3 +1,14 @@
+import { processConstructions } from "../processConstruction.testSupport";
+import { requestedApproval } from "../approvalOccurrence.testSupport";
+import {
+  exerciseOverlappingApproval,
+  exerciseApprovalActualWriteLifetime,
+} from "../approvalOverlap.testSupport";
+import {
+  nativeOutputFrame,
+  captureNativeOutputEvent,
+  getNativeOutputEventOrigin,
+} from "../../core/nativeOutputDelivery.testSupport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HarnessEvent, SendTurnInput } from "../../core/types";
 import { modelsFor, resetHarnessModelOverlays } from "../../../../features/sessions/model/models";
@@ -27,96 +38,107 @@ const mock = vi.hoisted(() => {
     autoPrompt: false,
     promptStop: "end_turn",
     blockWrites: false,
+    heldApprovalWrite: null as (() => Promise<void>) | null,
     resolveGates: null as Array<() => void> | null,
     setupConfigOptions: null as unknown[] | null,
     setConfigResult: null as unknown,
   };
 });
 vi.mock("../../../../platform/tauri/fs", () => ({ homeDir: async () => "/home/test" }));
-vi.mock("../../core/child", () => ({
-  resolveAntigravityBinary: async () => {
-    if (mock.resolveGates) {
-      await new Promise<void>((resolve) => mock.resolveGates.push(resolve));
-    }
-    return { path: "/fake/agy_acp_server.par", args: ["--uid="] };
-  },
-  spawnChild: mock.spawn,
-  killChild: mock.kill,
-  unwatchChild: (id: string) => {
-    mock.listeners.delete(id);
-    mock.exits.delete(id);
-  },
-  watchChild: (id: string, line: (line: string) => void, exit?: (code: number | null) => void) => {
-    mock.listeners.set(id, line);
-    if (exit) mock.exits.set(id, exit);
-  },
-  writeChild: async (thread: string, line: string) => {
-    const message = JSON.parse(line);
-    mock.sent.push({ thread, ...message });
-    if (mock.blockWrites) return new Promise<void>(() => undefined);
-    if (!message.method || message.id == null) return;
-    if (mock.silent.has(message.method)) return;
-    if (message.method === "session/prompt" && !mock.autoPrompt) return;
-    queueMicrotask(() => {
-      const method = message.method;
-      if (mock.fail.has(method)) {
-        mock.listeners.get(thread)?.(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            id: message.id,
-            error: {
-              code: -32601,
-              message: method === "session/new" ? "Authentication required" : "unsupported",
-            },
-          }),
-        );
-        return;
+
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    resolveAntigravityBinary: async () => {
+      if (mock.resolveGates) {
+        await new Promise<void>((resolve) => mock.resolveGates.push(resolve));
       }
-      if (method === "session/load") {
-        mock.listeners.get(thread)?.(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            method: "session/update",
-            params: {
-              update: { sessionUpdate: "agent_message_chunk", content: { text: "OLD HISTORY" } },
+      return { path: "/fake/agy_acp_server.par", args: ["--uid="] };
+    },
+    spawnChild: mock.spawn,
+    killChild: mock.kill,
+    unwatchChild: (id: string) => {
+      mock.listeners.delete(id);
+      mock.exits.delete(id);
+    },
+    watchChild: (
+      id: string,
+      line: (line: string) => void,
+      exit?: (code: number | null) => void,
+    ) => {
+      mock.listeners.set(id, line);
+      if (exit) mock.exits.set(id, exit);
+    },
+    writeChild: async (thread: string, line: string) => {
+      const message = JSON.parse(line);
+      mock.sent.push({ thread, ...message });
+      if (message.id === 993 && message.result && mock.heldApprovalWrite)
+        await mock.heldApprovalWrite();
+      if (mock.blockWrites) return new Promise<void>(() => undefined);
+      if (!message.method || message.id == null) return;
+      if (mock.silent.has(message.method)) return;
+      if (message.method === "session/prompt" && !mock.autoPrompt) return;
+      queueMicrotask(() => {
+        const method = message.method;
+        if (mock.fail.has(method)) {
+          mock.listeners.get(thread)?.(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: message.id,
+              error: {
+                code: -32601,
+                message: method === "session/new" ? "Authentication required" : "unsupported",
+              },
+            }),
+          );
+          return;
+        }
+        if (method === "session/load") {
+          mock.listeners.get(thread)?.(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              method: "session/update",
+              params: {
+                update: { sessionUpdate: "agent_message_chunk", content: { text: "OLD HISTORY" } },
+              },
+            }),
+          );
+        }
+        const setup = {
+          sessionId: "provider-session",
+          configOptions: mock.setupConfigOptions ?? [
+            {
+              id: "model",
+              category: "model",
+              currentValue: "m1",
+              options: [
+                { value: "m1", name: "Model One" },
+                { value: "m2", name: "Model Two" },
+              ],
             },
-          }),
-        );
-      }
-      const setup = {
-        sessionId: "provider-session",
-        configOptions: mock.setupConfigOptions ?? [
-          {
-            id: "model",
-            category: "model",
-            currentValue: "m1",
-            options: [
-              { value: "m1", name: "Model One" },
-              { value: "m2", name: "Model Two" },
-            ],
-          },
-          {
-            id: "thinking",
-            category: "thought_level",
-            currentValue: "low",
-            options: [
-              { value: "low", name: "Low" },
-              { value: "high", name: "High" },
-            ],
-          },
-        ],
-      };
-      const result = ["session/new", "session/load", "session/resume"].includes(method)
-        ? setup
-        : method === "session/prompt"
-          ? { stopReason: mock.promptStop }
-          : method === "session/set_config_option" && mock.setConfigResult != null
-            ? mock.setConfigResult
-            : {};
-      mock.listeners.get(thread)?.(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
-    });
-  },
-}));
+            {
+              id: "thinking",
+              category: "thought_level",
+              currentValue: "low",
+              options: [
+                { value: "low", name: "Low" },
+                { value: "high", name: "High" },
+              ],
+            },
+          ],
+        };
+        const result = ["session/new", "session/load", "session/resume"].includes(method)
+          ? setup
+          : method === "session/prompt"
+            ? { stopReason: mock.promptStop }
+            : method === "session/set_config_option" && mock.setConfigResult != null
+              ? mock.setConfigResult
+              : {};
+        mock.listeners.get(thread)?.(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
+      });
+    },
+  }),
+);
 
 const agy = await import("./antigravity");
 const { refreshAntigravityCatalog } = await import("./antigravityCatalog");
@@ -144,8 +166,8 @@ const liveKey = () => childKeys().at(-1)!;
 const childListener = () => mock.listeners.get(liveKey())!;
 const genKey = expect.stringMatching(/^thread#\d+$/);
 
-function permission(kind = "execute", id = 100) {
-  childListener()(
+function permission(kind = "execute", id = 100, listener = childListener()) {
+  listener(
     JSON.stringify({
       jsonrpc: "2.0",
       id,
@@ -184,6 +206,7 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
     mock.autoPrompt = false;
     mock.promptStop = "end_turn";
     mock.blockWrites = false;
+    mock.heldApprovalWrite = null;
     mock.resolveGates = null;
     mock.setupConfigOptions = null;
     mock.setConfigResult = null;
@@ -196,12 +219,155 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
       model: `${provider.id}:m1`,
       text: "hi",
       runtimeMode: "supervised",
-      onEvent: (event) => events.push(event),
+      onEvent: (event) => {
+        captureNativeOutputEvent("thread", event);
+        events.push(event);
+      },
     };
   });
   afterEach(async () => {
     await provider.forget("thread");
     resetHarnessModelOverlays();
+  });
+
+  it.each([false, true])(
+    "retains Antigravity actual approval writes after timeout (cancel first: %s)",
+    async (cancelBeforeTimeout) => {
+      const turn = provider.send(input);
+      const outcome = turn.catch(() => undefined);
+      await waitPrompt();
+      const permissionListener = childListener();
+      let frame = 0;
+      await exerciseApprovalActualWriteLifetime({
+        events,
+        requestId: 993,
+        cancelBeforeTimeout,
+        closesOnUncancelledTimeout: true,
+        ask: () =>
+          nativeOutputFrame("thread", `actual-write-${++frame}`, () =>
+            permission("execute", 993, permissionListener),
+          ),
+        approve: (nonce) => provider.respond("thread", 993, "allow", nonce),
+        cancel: () => provider.cancel("thread"),
+        holdWrites: (gate) => {
+          mock.heldApprovalWrite = gate;
+        },
+        replies: () =>
+          mock.sent
+            .filter((message) => message.id === 993 && message.result)
+            .map((message) => message.result),
+      });
+      await outcome;
+    },
+  );
+
+  it.each([false, true])(
+    "fails closed on an overlapping Antigravity permission (allow already queued: %s)",
+    async (allowBeforeDuplicate) => {
+      const turn = provider.send(input);
+      await waitPrompt();
+      const permissionListener = childListener();
+      let frame = 0;
+      await exerciseOverlappingApproval({
+        events,
+        requestId: 992,
+        allowBeforeDuplicate,
+        ask: () =>
+          nativeOutputFrame("thread", `overlap-${++frame}`, () =>
+            permission("execute", 992, permissionListener),
+          ),
+        approve: (nonce, decision) => provider.respond("thread", 992, decision, nonce),
+        replies: () =>
+          mock.sent
+            .filter((message) => message.id === 992 && message.result)
+            .map((message) => message.result),
+        deniedResult: { outcome: { outcome: "selected", optionId: "no" } },
+        // Ordinary subsequent activity retires the legitimate original-lineage watchdog.
+        afterResponses: () =>
+          permissionListener(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              method: "session/update",
+              params: {
+                update: {
+                  sessionUpdate: "agent_message_chunk",
+                  content: { type: "text", text: "Continuing" },
+                },
+              },
+            }),
+          ),
+      });
+      finishPrompt();
+      await turn;
+    },
+  );
+
+  it("never applies an earlier permission occurrence when the server reuses its RPC ID", async () => {
+    const turn = provider.send(input);
+    await waitPrompt();
+    let previous: Extract<HarnessEvent, { type: "approval.requested" }> | undefined;
+    for (let occurrence = 0; occurrence < 2; occurrence++) {
+      permission("execute", 917);
+      await vi.waitFor(() =>
+        expect(
+          events.filter((event) => event.type === "approval.requested" && event.requestId === 917),
+        ).toHaveLength(occurrence + 1),
+      );
+      const asked = requestedApproval(events, 917);
+      provider.respond("thread", 917, "allow");
+      if (previous) {
+        expect(asked.occurrenceId).not.toBe(previous.occurrenceId);
+        provider.respond("thread", 917, "allow", previous.occurrenceId);
+      }
+      await flush();
+      expect(mock.sent.filter((message) => message.id === 917 && message.result)).toHaveLength(
+        occurrence,
+      );
+      provider.respond("thread", 917, "deny", asked.occurrenceId);
+      await vi.waitFor(() =>
+        expect(mock.sent.filter((message) => message.id === 917 && message.result)).toHaveLength(
+          occurrence + 1,
+        ),
+      );
+      expect(events).toContainEqual({
+        type: "approval.resolved",
+        requestId: 917,
+        occurrenceId: asked.occurrenceId,
+        decision: "deny",
+      });
+      provider.respond("thread", 917, "allow", asked.occurrenceId);
+      await flush();
+      expect(mock.sent.filter((message) => message.id === 917 && message.result)).toHaveLength(
+        occurrence + 1,
+      );
+      previous = asked;
+    }
+    finishPrompt();
+    await turn;
+  });
+
+  it("keeps a generated route bound to its explicit logical hint through deferred approval", async () => {
+    const turn = provider.send({ ...input, nativeOutputSessionId: "thread" });
+    await waitPrompt();
+    expect(mock.spawn.mock.calls.at(-1)?.[9]).toBe("thread");
+    const inspect = nativeOutputFrame(
+      liveKey(),
+      "permission",
+      () => permission("execute", 913),
+      "thread",
+    );
+    const asked = events.find((e) => e.type === "approval.requested")!;
+    const origin = getNativeOutputEventOrigin(asked);
+    expect(origin).not.toBeNull();
+    expect(inspect().pendingCausalWork).toBeGreaterThan(0);
+    provider.respond("thread", 913, "allow", requestedApproval(events, 913).occurrenceId);
+    await flush();
+    const resolved = events.find((e) => e.type === "approval.resolved")!;
+    expect(getNativeOutputEventOrigin(resolved)).toBe(origin);
+    finishPrompt();
+    await turn;
+    await flush();
+    expect(inspect().pendingCausalWork).toBe(0);
   });
 
   it("spawns the exact endpoint, sends settings/images and routes real approvals", async () => {
@@ -220,6 +386,10 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
       provider.id === "antigravity" ? "/fake/" : "/repo",
       undefined,
       provider.id,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
     );
     expect(mock.sent.find((m) => m.method === "initialize")?.params).toMatchObject({
       protocolVersion: 1,
@@ -236,7 +406,7 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
     permission();
     await vi.waitFor(() => expect(events.some((e) => e.type === "approval.requested")).toBe(true));
     expect(response()).toBeUndefined();
-    provider.respond("thread", 100, "allow");
+    provider.respond("thread", 100, "allow", requestedApproval(events, 100).occurrenceId);
     await vi.waitFor(() =>
       expect(response()).toEqual({ outcome: { outcome: "selected", optionId: "yes" } }),
     );
@@ -388,7 +558,7 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
     await vi.waitFor(() => expect(events.some((e) => e.type === "approval.requested")).toBe(true));
     expect(secondEvents.some((e) => e.type === "approval.requested")).toBe(false);
     expect(response()).toBeUndefined();
-    provider.respond("thread", 100, "allow");
+    provider.respond("thread", 100, "allow", requestedApproval(events, 100).occurrenceId);
     await vi.waitFor(() => expect(response()).toBeTruthy());
     finishPrompt();
     await first;
@@ -473,7 +643,8 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
       expect(events).toContainEqual({
         type: "approval.resolved",
         requestId: 100,
-        decision: "deny",
+        occurrenceId: requestedApproval(events, 100).occurrenceId,
+        decision: "cancelled",
       }),
     );
     // The process has exited and its RPC client is closed. The UI approval
@@ -530,7 +701,7 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
       // The approval wait is user time, not provider silence: no stall note.
       await vi.advanceTimersByTimeAsync(300_000);
       expect(events.some((e) => e.type === "status")).toBe(false);
-      provider.respond("thread", 100, "allow");
+      provider.respond("thread", 100, "allow", requestedApproval(events, 100).occurrenceId);
       await flush();
       finishPrompt();
       await vi.runAllTimersAsync();
@@ -979,7 +1150,7 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
     mock.blockWrites = true;
     vi.useFakeTimers();
     try {
-      provider.respond("thread", 100, "allow");
+      provider.respond("thread", 100, "allow", requestedApproval(events, 100).occurrenceId);
       const outcome = turn.then(
         () => "resolved",
         (e: Error) => e.message,

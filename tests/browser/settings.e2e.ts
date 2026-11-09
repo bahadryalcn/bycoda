@@ -1,28 +1,143 @@
 import { test, expect } from "@playwright/test";
 
+for (const theme of ["dark", "light"])
+  for (const width of [1280, 800]) {
+    test(`workspace gradients retain custom designs and synchronize windows: ${theme} ${width}`, async ({
+      page,
+      context,
+      browserName,
+    }) => {
+      const key = "bycoda.workspaceBackground.v1";
+      const url = `/tests/browser/settings.html?section=appearance&theme=${theme}&lang=en`;
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(url);
+      const group = page.locator('[data-setting-id="workspace-background"]');
+      await expect(group).toBeAttached();
+      await group.scrollIntoViewIfNeeded();
+      const stored = () =>
+        page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? "null"), key);
+      const previousGlass = await page.evaluate(() =>
+        ["bycoda.bodyGlass", "bycoda.windowGlass"].map((key) => localStorage.getItem(key)),
+      );
+      await group.getByRole("radio", { name: "Ocean", exact: true }).click();
+      await expect.poll(stored).toMatchObject({ enabled: true });
+      await group.getByRole("button", { name: "Customize background", exact: true }).click();
+      await group.getByText("Soft blend", { exact: true }).click();
+      await group.getByRole("slider", { name: "Gradient angle", exact: true }).press("ArrowRight");
+      const angle = (await stored()).angle;
+      await group.getByText("Radial", { exact: true }).click();
+      await expect(
+        group.getByRole("slider", { name: "Gradient angle", exact: true }),
+      ).toHaveAttribute("aria-disabled", "true");
+      expect((await stored()).angle).toBe(angle);
+      await group.getByText("Soft blend", { exact: true }).click();
+      await group.getByRole("button", { name: "Color 1", exact: true }).click();
+      await page.getByRole("textbox", { name: "Hex color", exact: true }).fill("#2244aa");
+      await expect.poll(async () => (await stored()).colors[0]).toBe("#2244aa");
+      await page.keyboard.press("Escape");
+      const design = await stored();
+      const toggle = group.getByRole("switch", { name: "Show workspace background", exact: true });
+      await toggle.click();
+      await expect(page.locator("html")).not.toHaveClass(/has-workspace-background/);
+      expect((await stored()).colors).toEqual(design.colors);
+      await toggle.click();
+      await page.reload();
+      await expect(page.locator("html")).toHaveClass(/has-workspace-background/);
+      expect(await stored()).toEqual(design);
+      expect(
+        await page.evaluate(() =>
+          ["bycoda.bodyGlass", "bycoda.windowGlass"].map((key) => localStorage.getItem(key)),
+        ),
+      ).toEqual(previousGlass);
+      const sibling = await context.newPage();
+      try {
+        await sibling.goto(url);
+        await expect(sibling.locator("html")).toHaveClass(/has-workspace-background/);
+        await group.getByRole("button", { name: "Customize background", exact: true }).click();
+        await group
+          .getByRole("slider", { name: "Gradient angle", exact: true })
+          .press("ArrowRight");
+        const changed = await stored();
+        await expect
+          .poll(() =>
+            sibling.evaluate(() => getComputedStyle(document.documentElement).backgroundImage),
+          )
+          .toContain(`${changed.angle}deg`);
+        if (browserName === "chromium") {
+          const cdp = await context.newCDPSession(page);
+          try {
+            await cdp.send("Emulation.setEmulatedMedia", {
+              features: [{ name: "prefers-reduced-transparency", value: "reduce" }],
+            });
+            await expect
+              .poll(() =>
+                page.evaluate(() => getComputedStyle(document.documentElement).backgroundImage),
+              )
+              .toBe("none");
+            await expect(
+              group.getByText(
+                "Your accessibility settings hide workspace backgrounds. Your design is still saved.",
+                { exact: true },
+              ),
+            ).toBeVisible();
+            expect((await stored()).enabled).toBe(true);
+          } finally {
+            await cdp.send("Emulation.setEmulatedMedia", { features: [] });
+            await cdp.detach();
+          }
+        }
+      } finally {
+        await sibling.close();
+      }
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      ).toBe(true);
+    });
+  }
+
 for (const theme of ["light", "dark"]) {
   for (const width of [390, 1440]) {
     test(`terminal typography settings: ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/settings.html?section=appearance&theme=${theme}&lang=tr`);
-      const font = page.getByRole("textbox", { name: "Terminal yazı tipi", exact: true });
+      // Terminal text follows the code font until the owner picks a separate terminal font.
+      await page.getByRole("radio", { name: "Ayrı seç", exact: true }).click();
+      // The editable combobox commits a suggested or custom font on Enter/blur.
+      const font = page.getByRole("combobox", { name: "Terminal fontu", exact: true });
       await font.fill("JetBrains Mono");
-      const size = page.getByRole("slider", { name: "Terminal yazı boyutu", exact: true });
-      await size.focus();
-      await size.press("ArrowRight");
-      await expect(size).toHaveAttribute("aria-valuenow", "14");
-      await page.locator('[data-setting-id="terminal-font-weight"] button').click();
-      await page.getByRole("option", { name: "Yarı kalın", exact: true }).click();
-      await page.locator('[data-setting-id="terminal-line-height"] button').click();
-      await page.getByRole("option", { name: "1.35×", exact: true }).click();
-      const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem("bycoda.appearancePreferences.v1") ?? "{}"));
-      await expect.poll(saved).toMatchObject({ terminalFont: "JetBrains Mono", terminalSize: 14,
-        terminalWeight: 600, terminalLineHeight: 1.35, codeSize: 13 });
+      await font.press("Enter");
+      const size = page.locator('[data-setting-id="terminal-font-size"] button');
+      await size.click();
+      await page.getByRole("option", { name: /^14/ }).click();
+      await expect(size).toHaveAccessibleName(/14/);
+      await page
+        .locator('[data-setting-id="terminal-font-weight"]')
+        .getByRole("radio", { name: "Kalın", exact: true })
+        .click();
+      await page
+        .locator('[data-setting-id="terminal-line-height"]')
+        .getByRole("radio", { name: "1.35×", exact: true })
+        .click();
+      const saved = () =>
+        page.evaluate(() =>
+          JSON.parse(localStorage.getItem("bycoda.appearancePreferences.v1") ?? "{}"),
+        );
+      await expect.poll(saved).toMatchObject({
+        terminalFont: "JetBrains Mono",
+        terminalFontSource: "custom",
+        terminalSize: 14,
+        terminalWeight: 700,
+        terminalLineHeight: 1.35,
+        codeSize: 13,
+      });
       await page.reload();
       await expect(font).toHaveValue("JetBrains Mono");
-      await expect(size).toHaveAttribute("aria-valuenow", "14");
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+      await expect(size).toHaveAccessibleName(/14/);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      ).toBe(true);
     });
   }
 }
@@ -34,22 +149,26 @@ for (const theme of ["dark", "light"]) {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/tests/browser/settings.html?section=appearance&theme=${theme}&lang=tr`);
     const row = page.locator('[data-setting-id="code-theme"]');
-    const trigger = row.getByRole("button");
-    await trigger.scrollIntoViewIfNeeded();
-    await trigger.focus();
-    await trigger.press("Enter");
-    await page.getByRole("option", { name: "Dracula", exact: true }).click();
+    await row.scrollIntoViewIfNeeded();
+    await row.getByRole("radio", { name: "Dracula", exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("data-code-theme", "dracula");
-    const keyword = page.locator(".appearance-code-keyword").first();
-    await expect(keyword).toHaveCSS("color", theme === "dark" ? "rgb(255, 121, 198)" : "rgb(207, 34, 46)");
+    const keyword = page.locator(".code-sample-keyword").first();
+    await expect(keyword).toHaveCSS(
+      "color",
+      theme === "dark" ? "rgb(255, 121, 198)" : "rgb(207, 34, 46)",
+    );
     await page.reload();
     await expect(trigger).toContainText("Dracula");
     await expect(page.locator("html")).toHaveAttribute("data-code-theme", "dracula");
     await trigger.scrollIntoViewIfNeeded();
     await page.setViewportSize({ width: 390, height: 844 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
     mkdirSync("temp/verification/2026-10-19-code-themes", { recursive: true });
-    await row.screenshot({ path: `temp/verification/2026-10-19-code-themes/${theme}-theme-control.png` });
+    await row.screenshot({
+      path: `temp/verification/2026-10-19-code-themes/${theme}-theme-control.png`,
+    });
   });
 }
 
@@ -86,7 +205,9 @@ for (const theme of ["light", "dark"])
       await awake.click();
       await expect(duration).toContainText("15 minutes");
       await expect(screen).toBeChecked();
-      const language = general.locator('[data-setting-id="git-language"]').getByRole("button");
+      const language = general.locator(
+        '[data-setting-id="git-language"] button[aria-haspopup="listbox"]',
+      );
       await language.focus();
       await language.press("Enter");
       await page.getByRole("option", { name: "English", exact: true }).click();
@@ -94,8 +215,12 @@ for (const theme of ["light", "dark"])
       await expect(general.locator('[data-setting-id="technical-language"]')).toContainText(
         "Follow application language",
       );
-      await expect(general.getByText("Changes save automatically", { exact: true })).toHaveCount(1);
-      await expect(general.locator(".general-detail")).toBeVisible();
+      // The header help states automatic saving once; groups no longer repeat it.
+      await expect(general.getByText("Changes save automatically", { exact: true })).toHaveCount(0);
+      await page.getByRole("button", { name: "About this page", exact: true }).click();
+      await expect(page.getByText("Changes save automatically", { exact: true })).toHaveCount(1);
+      await page.keyboard.press("Escape");
+      await expect(general.locator(".general-about-value")).toBeVisible();
       const overflows = await general.evaluate((root) =>
         [
           ...root.querySelectorAll(
@@ -128,7 +253,9 @@ test("appearance topics stay visible and support search into nested controls", a
   const topics = page.locator(".appearance-settings > .appearance-section");
   await expect(topics).toHaveCount(6);
   await page.screenshot({ path: testInfo.outputPath("appearance-overview-dark.png") });
-  await expect(page.locator(".appearance-save-note")).toHaveText("Changes save automatically");
+  await page.getByRole("button", { name: "About this page", exact: true }).click();
+  await expect(page.getByText("Changes save automatically", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(page.locator('[data-setting-id="code-font-size"]')).toBeVisible();
   await expect(
     page.locator(".appearance-settings details, .appearance-settings summary"),
@@ -144,9 +271,16 @@ test("appearance topics stay visible and support search into nested controls", a
   // Expanded content must stay contained at intermediate and narrow widths too.
   for (const width of [390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
+    // Open rows outset their hover surface into the form padding, so the padded form and the
+    // scroller are the boundaries that must stay free of horizontal overflow.
     expect(
       await page
-        .locator(".appearance-settings")
+        .locator(".bycoda-settings-form")
+        .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+    ).toBe(true);
+    expect(
+      await page
+        .locator("[data-settings-scroller]")
         .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
     ).toBe(true);
   }
@@ -178,7 +312,7 @@ test("control density persists shared control targets and resets without changin
   await page.reload();
   await expect(trigger).toHaveAccessibleName("Control density: Touch");
   await expect(page.locator("html")).toHaveAttribute("data-control-density", "touch");
-  await page.getByRole("button", { name: "Reset reading settings", exact: true }).click();
+  await row.getByRole("button", { name: "Restore default", exact: true }).click();
   await expect(trigger).toHaveAccessibleName("Control density: Compact");
   await expect(page.locator("html")).toHaveAttribute("data-control-density", "compact");
   expect((await trigger.boundingBox())!.height).toBeLessThan(44);
@@ -193,6 +327,10 @@ test("elastic appearance adjustments retain bounds, persistence and light-mode g
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
+  // Blur is adjustable on macOS only; present a Mac platform so the slider's bounds are exercised.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", { get: () => "MacIntel" });
+  });
   await page.goto("/tests/browser/settings.html?section=appearance&theme=dark&lang=en");
   await page.getByRole("button", { name: /^Olive/ }).click();
   await expect(page.locator("details.settings-advanced")).toHaveCount(0);
@@ -250,7 +388,7 @@ const sections = [
 ];
 
 for (const theme of ["light", "dark"])
-  for (const width of [390, 768, 1024, 1440]) {
+  for (const width of [390, 768, 800, 1024, 1280, 1440]) {
     test(`keybindings recording and filters: ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/settings.html?section=keybindings&theme=${theme}&lang=en`);
@@ -282,11 +420,15 @@ for (const theme of ["light", "dark"])
       const feedback = page
         .locator(".settings-row")
         .filter({ has: recorder })
-        .locator(".settings-row-feedback");
-      await expect(feedback.getByRole("status")).toContainText("Saved");
-      expect(
-        await feedback.evaluate((node) => node.clientWidth / node.parentElement!.clientWidth),
-      ).toBeGreaterThan(0.85);
+        .getByRole("status")
+        .filter({ has: page.getByRole("button", { name: "Saved", exact: true }) });
+      await expect(feedback).toContainText("Saved");
+      const savedDetails = feedback.getByRole("button", { name: "Saved", exact: true });
+      await expect(savedDetails).toBeVisible();
+      await savedDetails.click();
+      await expect(page.getByRole("dialog", { name: "Saved", exact: true })).toContainText("Saved");
+      await page.keyboard.press("Escape");
+      await expect(savedDetails).toBeFocused();
       await page.reload();
       await search.fill("Open Inbox");
       await expect(recorder).toContainText("Q");
@@ -297,6 +439,23 @@ for (const theme of ["light", "dark"])
       await page.keyboard.press("Control+k");
       await expect(page.getByRole("alert")).toContainText("Already used");
       await expect(recorder).toContainText("Q");
+      const recorderBounds = (await recorder.boundingBox())!;
+      const resetBounds = (await page
+        .getByRole("button", {
+          name: "Reset App: Open Inbox shortcut",
+          exact: true,
+        })
+        .boundingBox())!;
+      // Conflict feedback must not collapse the recorder beneath its reset
+      // action and leave pointer activation waiting behind another control.
+      expect(recorderBounds.width).toBeGreaterThan(40);
+      expect(recorderBounds.x + recorderBounds.width).toBeLessThanOrEqual(resetBounds.x + 1);
+      if ([390, 800, 1280].includes(width)) {
+        const conflictCaptures =
+          "temp/verification/2026-11-01-release-performance/keybindings-conflict";
+        mkdirSync(conflictCaptures, { recursive: true });
+        await page.screenshot({ path: `${conflictCaptures}/${theme}-${width}.png` });
+      }
       await recorder.click();
       await page.keyboard.press("Delete");
       await expect(recorder).toContainText("Disabled");
@@ -313,6 +472,8 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Reset filters", exact: true }).click();
       await expect(recorder).toBeVisible();
       await expect(recorder).toContainText("I");
+      // Filters reset independently of the search text, so clear it before searching by category.
+      await search.clear();
       await page.getByRole("button", { name: "Filters", exact: true }).click();
       await filters.getByRole("button", { name: "Category: All categories", exact: true }).click();
       await page.getByRole("option", { name: "Pane", exact: true }).click();
@@ -365,7 +526,11 @@ test("shared appearance controls preserve palette persistence and provide color 
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/settings.html?section=appearance&theme=${theme}&lang=en`);
       const studio = page.getByRole("region", { name: "Theme and colors", exact: true });
-      await expect(studio.locator(".appearance-workspace-preview")).toHaveCount(9);
+      // The 9 workspace-preview galleries were replaced by named palette chips and a segmented scheme.
+      await expect(studio.locator(".appearance-workspace-preview")).toHaveCount(0);
+      await expect(
+        studio.getByRole("radiogroup", { name: "Color scheme", exact: true }).getByRole("radio"),
+      ).toHaveCount(3);
       await expect(studio.locator("details, summary")).toHaveCount(0);
       const olive = studio.getByRole("button", { name: /^Olive/ });
       const palettes = studio.getByRole("group", { name: "Theme palettes", exact: true });
@@ -385,7 +550,8 @@ test("shared appearance controls preserve palette persistence and provide color 
         "true",
       );
       await studio
-        .getByRole("button", { name: theme === "light" ? "Light" : "Dark", exact: true })
+        .getByRole("radiogroup", { name: "Color scheme", exact: true })
+        .getByRole("radio", { name: theme === "light" ? "Light" : "Dark", exact: true })
         .click();
       await expect(page.locator("html")).toHaveClass(
         theme === "light" ? /theme-light/ : /^(?!.*theme-light)/,
@@ -489,6 +655,13 @@ test("explicit template validation, save status and persistence preserve the las
   await page.getByRole("textbox", { name: "Template text", exact: true }).fill("Unsaved revision");
   await page.getByRole("button", { name: "Back to workspace" }).click();
   await page.getByRole("button", { name: "Reopen settings" }).click();
+  // The unsaved draft survives closing and reopening Settings and stays visibly unsaved;
+  // discarding it restores the last saved value.
+  await expect(page.getByRole("textbox", { name: "Template text", exact: true })).toHaveValue(
+    "Unsaved revision",
+  );
+  await expect(page.getByRole("button", { name: "Save templates", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Discard changes and reload", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Template text", exact: true })).toHaveValue(
     "Find bugs and explain their impact.",
   );
@@ -513,8 +686,12 @@ for (const lang of languages)
           await page.goto(
             `/tests/browser/settings.html?lang=${lang}&theme=${theme}&section=${section}`,
           );
+          await expect(page.locator(".bycoda-settings-panel")).toBeVisible();
+          const categoryPicker = page.locator(".bycoda-settings-category-picker");
           await expect(
-            page.locator(".bycoda-settings-categories").getByRole("tab", { selected: true }),
+            (await categoryPicker.isVisible())
+              ? categoryPicker.getByRole("button")
+              : page.locator(".bycoda-settings-categories").getByRole("tab", { selected: true }),
           ).toBeVisible();
           await expect(page.locator(".bycoda-settings-panel")).toBeVisible();
           await expect(page.locator("details.settings-advanced")).toHaveCount(0);
@@ -546,7 +723,9 @@ for (const lang of languages)
               ]
                 .filter(
                   (node) =>
-                    node.getClientRects().length > 0 && node.getBoundingClientRect().width < 150,
+                    !node.closest(".sr-only") &&
+                    node.getClientRects().length > 0 &&
+                    node.getBoundingClientRect().width < 150,
                 )
                 .map((node) => node.textContent),
             );

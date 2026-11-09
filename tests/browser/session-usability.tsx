@@ -19,6 +19,7 @@ import {
   setHarnessModels,
 } from "../../src/features/sessions/model/models";
 import { registerHarness } from "../../src/integrations/harness/core/registry";
+import { flushHostSessionBindings } from "../../src/features/connections/public/sessionExecutionBinding";
 import { languageReady } from "../../src/shared/i18n";
 import { applyThemePreference } from "../../src/features/settings/model/appearance";
 import "../../src/styles/index.css";
@@ -95,7 +96,7 @@ setComposerAttachments(sessionId, [
   },
 ]);
 const events = { sends: 0, stops: 0, approvals: 0, queueAttempts: 0 };
-type Mode = "idle" | "working" | "approval" | "unknown";
+type Mode = "idle" | "working" | "approval" | "unknown" | "tools" | "long";
 type FixtureControl = { mode: (mode: Mode) => void; remount: () => void; events: typeof events };
 declare global {
   interface Window {
@@ -130,7 +131,46 @@ function Fixture() {
                     approval: { requestId: 7 },
                   },
                 ]
-              : baseBlocks,
+              : mode === "tools"
+                ? [
+                    ...baseBlocks,
+                    {
+                      id: "failed-command",
+                      role: "tool",
+                      text: "pnpm test",
+                      tool: {
+                        kind: "shell",
+                        status: "failed",
+                        detail:
+                          "Test runner exited before completion. Retry after fixing the configuration.",
+                        output: Array.from(
+                          { length: 80 },
+                          (_, index) =>
+                            `Saved output line ${index + 1}: workspace-validation-result-${"path/".repeat(20)}`,
+                        ).join("\n"),
+                        preview: { kind: "shell", title: "pnpm test --workspace" },
+                      },
+                    },
+                  ]
+                : mode === "long"
+                  ? [
+                      ...baseBlocks,
+                      {
+                        id: "long-answer",
+                        role: "assistant",
+                        text:
+                          "## Review results\n\n" +
+                          "This saved response keeps the explanation readable while retaining the complete report. ".repeat(
+                            14,
+                          ) +
+                          "\n\n| File | Result |\n| --- | --- |\n| " +
+                          "very-long-project-directory/".repeat(12) +
+                          "report.json | Ready for review |\n\n```text\n" +
+                          "saved-output/".repeat(60) +
+                          "\n```",
+                      },
+                    ]
+                  : baseBlocks,
           queuedMessages:
             mode === "unknown"
               ? [
@@ -221,7 +261,9 @@ function Fixture() {
   );
 }
 applyThemePreference(new URLSearchParams(location.search).has("light") ? "light" : "dark");
-void languageReady.then(() =>
+// The app resolves durable session owners at boot before any pane renders;
+// the fixture mounts it directly, so it hydrates the same store first.
+void Promise.all([languageReady, flushHostSessionBindings()]).then(() =>
   createRoot(document.getElementById("root")!).render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}

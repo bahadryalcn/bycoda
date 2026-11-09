@@ -42,7 +42,7 @@ describe("commitMenuItems", () => {
     ]);
   });
 
-  it("okuma aksiyonları işlem sürerken kullanılabilir", () => {
+  it("read actions stay available while an operation runs", () => {
     const items = commitMenuItems(commit({}), true);
     expect(
       items.flatMap((item) => (item.kind === "item" && !item.disabled ? [item.id] : [])),
@@ -66,19 +66,19 @@ describe("commitMenuItems", () => {
   });
 });
 
-describe("GitHub commit bağlantısı", () => {
+describe("GitHub commit link", () => {
   const sha = "a".repeat(40);
   it.each([
     "git@github.com:team/app.git",
     "https://github.com/team/app.git",
     "ssh://git@github.com/team/app.git",
     "https://github.com/team/app/",
-  ])("%s uzak adresini çözer", (url) => {
+  ])("resolves the %s remote address", (url) => {
     expect(githubCommitUrl([{ name: "origin", url }], sha)).toBe(
       `https://github.com/team/app/commit/${sha}`,
     );
   });
-  it("origin tercih eder ve sahte alan adlarını reddeder", () => {
+  it("prefers origin and rejects spoofed domains", () => {
     expect(
       githubCommitUrl(
         [

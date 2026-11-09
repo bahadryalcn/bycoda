@@ -1,6 +1,16 @@
 import { NO_VERDICT } from "./taskRules";
+import type { TaskAcceptanceReport } from "./taskAcceptance";
+import { parseTaskRunBudget, type TaskRunBudget, type TaskRunBudgetUsage } from "./taskBudget";
+import {
+  parseTaskPreflightRequirements,
+  type TaskPreflightRequirement,
+  type TaskPreflightReport,
+} from "./taskPreflight";
+export type { TaskAcceptanceCriterion, TaskAcceptanceReport } from "./taskAcceptance";
+import { parseProviderAccountId } from "../../providers/model/providerAccountId";
 import { parseTaskWorkspace, type TaskWorkspace } from "./taskWorkspace";
 import { parseCrewScopes } from "../../crews/model/crew";
+import type { BranchDeliveryPlan } from "../../workspaces/model/contracts";
 export {
   TASK_MOVES,
   canMoveTask,
@@ -13,12 +23,17 @@ export {
   hasUnmergedBranch,
   NO_VERDICT,
 } from "./taskRules";
-import { isRemoteProvider, type RemoteProvider } from "../../connections/model/protocol";
+import { isRemoteProvider } from "../../connections/public/protocol";
+import type { RemoteProvider } from "../../connections";
 import { RUNTIME_MODES, type RuntimeMode } from "../../sessions/model/session";
 
 /** A backlog of tasks a machine's host works through on its own, whether or
  * not a desktop is open. The host advertises this capability when it has it. */
 export const HOST_TASKS = "tasks";
+/** Explicit local account profiles for unattended task and goal runs. */
+export const HOST_TASK_ACCOUNTS = "tasks.provider-accounts";
+/** Explicitly clear an independently configured task reviewer on edit. */
+export const HOST_TASK_REVIEWER_PROFILE = "tasks.reviewer-profile";
 
 /** The host keeps manual to-do items: tasks the owner adds by hand that no
  * agent starts until they are moved to the queue. The host advertises this
@@ -57,6 +72,19 @@ export function taskColumn(status: TaskStatus): TaskColumn {
 export type TaskVerification = {
   command?: { exitCode: number | null; output: string; timedOut: boolean };
   review?: { verdict: "pass" | "fail"; note: string; sessionId: string };
+  acceptance?: TaskAcceptanceReport;
+};
+
+export type TaskOwnerNotice = {
+  id: string;
+  /** remaining_finding: correction limit reached with this finding open.
+   * external_check: needs a device/access/credential the task could not get.
+   * auto_continued: a stop condition was converted into continued work.
+   * info: anything else the owner should know after completion. */
+  kind: "remaining_finding" | "external_check" | "auto_continued" | "info";
+  /** One short sentence for the owner, plain language. */
+  message: string;
+  at: number;
 };
 
 export type TaskReviewNote = {
@@ -82,6 +110,10 @@ export const TASK_SOURCES = ["manual", "goal", "steward"] as const;
 export type TaskSource = (typeof TASK_SOURCES)[number];
 
 export type HostTaskInput = {
+  budget?: TaskRunBudget;
+  preflightRequirements?: TaskPreflightRequirement[];
+  workflowId?: string;
+  workflowVersion?: number;
   /** Reusable team selected to execute this task. Its workers are separate tasks. */
   crewDefinitionId?: string;
   /** Host-owned Crew assignment and its independently selected reviewer. */
@@ -101,6 +133,8 @@ export type HostTaskInput = {
   /** The host's ID for the project folder. */
   projectId: string;
   harness: RemoteProvider;
+  /** Local profile on the executing host. Absent retains legacy host default. */
+  providerAccountId?: string;
   model: string;
   modelSettings: Record<string, string>;
   runtimeMode: RuntimeMode;
@@ -116,9 +150,8 @@ export type HostTaskInput = {
   verifyCommand?: string;
   /** Have a second agent review the result. Counts as true when absent. */
   review?: boolean;
-  /** Merge the task's branch as soon as it reaches review with every
-   * configured check passed, without waiting for approval. Only an isolated
-   * task can; absent counts as false. */
+  /** Legacy preference, accepted for migration only. The Host suspends it and
+   * requires a fresh SHA-bound owner approval for integration delivery. */
   autoMerge?: boolean;
   /** Keep correcting actionable failures while work progresses. Owner stops,
    * unchanged attempts and genuinely unavailable resources still require input. */
@@ -133,13 +166,68 @@ export type HostTaskInput = {
   dependsOn?: string[];
 };
 
+/** Wire-only clear sentinel; persisted tasks keep a normalized optional profile. */
+export type HostTaskWireInput = Omit<HostTaskInput, "reviewerConfig"> & {
+  reviewerConfig?: HostTaskInput["reviewerConfig"] | null;
+};
+
+/** Task-specific extension of the frozen workspace review; these ignored outputs need explicit review too. */
+export interface TaskDeliveryArtifactsPreview {
+  paths: string[];
+  hashes: Record<string, string>;
+  sourceFingerprint: string;
+  targetFingerprint: string;
+  targetHashes: Record<string, string | null>;
+  blockers: string[];
+}
+export type TaskDeliveryReview = BranchDeliveryPlan & { artifacts?: TaskDeliveryArtifactsPreview };
+
 export type HostTask = HostTaskInput & {
+  /** Registry identity survives directory retirement; paths are only materialization hints. */
+  workspaceId?: string;
+  /** Durable attempt identity keeps prepare retries idempotent without reusing an already delivered workspace. */
+  workspaceGenerationId?: string;
+  workspaceActivityId?: string;
+  deliveryState?: "awaitingOwner" | "merged" | "published";
+  deliveryOperationId?: string;
+  artifactDeliveryPending?: boolean;
+  /** An incomplete artifact delivery fences directory retirement until its receipt reconciles. */
+  artifactDeliveryActivityId?: string;
+  /** Owner-reviewed ignored outputs, bound to the same opaque delivery plan token. */
+  deliveryArtifacts?: TaskDeliveryArtifactsPreview & {
+    planToken: string;
+    sourceHead: string;
+    targetDirectory: string;
+  };
+  /** Persisted autoMerge settings are suspended until a fresh SHA-bound owner approval. */
+  deliveryApprovalRequired?: boolean;
+  finalization?: {
+    branch: string;
+    head: string;
+    status: string;
+    diff: string;
+    fingerprint: string;
+    clean: boolean;
+  };
+  evaluation?: {
+    accepted: boolean;
+    reviewMinutes: number;
+    corrections: number;
+    recordedAt: number;
+  };
+  budgetUsage?: TaskRunBudgetUsage;
+  budgetStop?: string;
+  preflight?: TaskPreflightReport;
   /** Durable, host-owned identity of this task's current crew execution. */
   crewExecutionId?: string;
   status: TaskStatus;
   sessionId?: string;
   /** The session turn this task started. */
   runId?: string;
+  /** Host-projected delivered supervisor writes; unknown outcomes remain separate. */
+  assistantFollowups?: { delivered: number; unconfirmed: number };
+  /** Diagnostic only: the exact current run has had no observed output for 15 min. */
+  runStall?: { sessionId: string; runId: string; lastActivityAt: number; detectedAt: number };
   /** Why the task is blocked. */
   error?: string;
   /** Failed checks carried into the next worker run, including via To do. */
@@ -164,6 +252,13 @@ export type HostTask = HostTaskInput & {
     reason: "external" | "no_progress" | "limit";
     message: string;
   };
+  /** Non-blocking items the owner should see once the task finishes (remaining
+   * findings, unavailable external checks, auto-continued limits). The task
+   * keeps running instead of stopping for them. */
+  ownerNotices?: TaskOwnerNotice[];
+  /** The task finished after exhausting automatic correction with open
+   * findings; review PASS is not claimed. */
+  completedWithFindings?: boolean;
   /** Bounded, durable outcomes; worker summaries are claims, not acceptance evidence. */
   attemptHistory?: {
     attempt: number;
@@ -191,7 +286,7 @@ export type HostTask = HostTaskInput & {
   baseCommit?: string;
   /** Checkout selected for delivery, independent of the task's working copy. */
   deliveryCwd?: string;
-  /** The task branch was merged into `baseBranch` and removed. */
+  /** Delivery is recorded separately from implementation completion. The branch is retained. */
   merged?: boolean;
   /** The merge happened on its own, and when. */
   autoMerged?: boolean;
@@ -201,7 +296,7 @@ export type HostTask = HostTaskInput & {
   /** Ignored local output paths delivered alongside this task, for dependency transfer. */
   artifactPaths?: string[];
   artifactHashes?: Record<string, string>;
-  /** Owner delivery request retained through integration repair and verification. */
+  /** Legacy intent only; never an authorization to deliver without a fresh owner plan. */
   deliveryRequested?: boolean;
   /** Dependency outputs have been copied into this task's retained checkout. */
   dependencyArtifactsPrepared?: boolean;
@@ -211,6 +306,10 @@ export type HostTask = HostTaskInput & {
     sessionId?: string;
     runId?: string;
     startedAt: number;
+    /** New reviews must explicitly report evidence for every acceptance criterion. */
+    acceptanceRequired?: boolean;
+    /** Working-copy contents inspected by this reviewer, when available. */
+    workspaceFingerprint?: string;
     error?: string;
     /** Format-only follow-ups; these do not launch another implementation worker. */
     verdictRepairAttempts?: number;
@@ -275,7 +374,13 @@ export function unfinishedDependencies<T extends Pick<HostTask, "id" | "status">
 ): T[] {
   return (task.dependsOn ?? []).flatMap((id) => {
     const dependency = tasks.find((entry) => entry.id === id);
-    return dependency && dependency.status !== "done" ? [dependency] : [];
+    return dependency &&
+      (dependency.status !== "done" ||
+        ("branch" in dependency &&
+          Boolean(dependency.branch) &&
+          !("merged" in dependency && dependency.merged)))
+      ? [dependency]
+      : [];
   });
 }
 
@@ -301,6 +406,16 @@ export function parseHostTask(input: unknown): HostTaskInput {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Invalid task");
   const v = input as Record<string, unknown>;
   if (
+    v.workflowId !== undefined &&
+    (typeof v.workflowId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(v.workflowId))
+  )
+    throw new Error("Invalid task workflow identity.");
+  if (
+    v.workflowVersion !== undefined &&
+    (!Number.isSafeInteger(v.workflowVersion) || Number(v.workflowVersion) < 1)
+  )
+    throw new Error("Invalid task workflow version.");
+  if (
     v.crewDefinitionId !== undefined &&
     (typeof v.crewDefinitionId !== "string" || !ID.test(v.crewDefinitionId))
   )
@@ -315,7 +430,7 @@ export function parseHostTask(input: unknown): HostTaskInput {
   if (v.crewRunId !== undefined && (typeof v.crewRunId !== "string" || !ID.test(v.crewRunId)))
     throw new Error("Invalid crew run");
   let reviewerConfig: HostTaskInput["reviewerConfig"];
-  if (v.reviewerConfig !== undefined) {
+  if (v.reviewerConfig !== undefined && v.reviewerConfig !== null) {
     const r = v.reviewerConfig as Record<string, unknown>;
     if (
       !r ||
@@ -389,19 +504,36 @@ export function parseHostTask(input: unknown): HostTaskInput {
     throw new Error("Invalid task dependencies");
   return {
     id: v.id,
+    ...(v.budget === undefined ? {} : { budget: parseTaskRunBudget(v.budget) }),
+    ...(v.preflightRequirements === undefined
+      ? {}
+      : { preflightRequirements: parseTaskPreflightRequirements(v.preflightRequirements) }),
+    ...(typeof v.workflowId === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(v.workflowId)
+      ? { workflowId: v.workflowId }
+      : {}),
+    ...(Number.isSafeInteger(v.workflowVersion) && Number(v.workflowVersion) > 0
+      ? { workflowVersion: Number(v.workflowVersion) }
+      : {}),
     ...(typeof v.crewDefinitionId === "string" ? { crewDefinitionId: v.crewDefinitionId } : {}),
     ...(typeof v.crewRunId === "string" ? { crewRunId: v.crewRunId } : {}),
     ...(v.crewScopes === undefined ? {} : { crewScopes: parseCrewScopes(v.crewScopes) }),
-    ...(reviewerConfig ? { reviewerConfig } : {}),
+    ...(reviewerConfig || v.reviewerConfig === null ? { reviewerConfig } : {}),
     title: v.title.trim(),
     prompt: v.prompt,
     projectId: v.projectId,
     harness: v.harness,
+    ...(v.providerAccountId === undefined
+      ? {}
+      : { providerAccountId: parseProviderAccountId(v.providerAccountId, v.harness) }),
     model: v.model,
     modelSettings: settings as Record<string, string>,
     runtimeMode: v.runtimeMode as RuntimeMode,
     maxRunMinutes: Number(limit),
-    isolate: v.crewDefinitionId ? false : v.isolate !== false,
+    ...(v.crewDefinitionId
+      ? { isolate: false }
+      : v.isolate === undefined
+        ? {}
+        : { isolate: v.isolate as boolean }),
     ...(workspace ? { workspace } : {}),
     ...(v.position !== undefined ? { position: Number(v.position) } : {}),
     ...(check.trim() ? { verifyCommand: check.trim() } : {}),
@@ -411,9 +543,7 @@ export function parseHostTask(input: unknown): HostTaskInput {
     ...(typeof v.goalId === "string" ? { goalId: v.goalId } : {}),
     ...(typeof v.source === "string" ? { source: v.source as TaskSource } : {}),
     ...(typeof v.stewardId === "string" ? { stewardId: v.stewardId } : {}),
-    ...(Array.isArray(v.dependsOn)
-      ? { dependsOn: [...new Set(v.dependsOn as string[])] }
-      : {}),
+    ...(Array.isArray(v.dependsOn) ? { dependsOn: [...new Set(v.dependsOn as string[])] } : {}),
   };
 }
 

@@ -127,7 +127,7 @@ async function render(onCancel = vi.fn()) {
     });
 }
 
-it("Escape yalnız üst overlay'i kapatır, uzaktaki proje penceresine sızmaz", async () => {
+it("Escape closes only the top overlay and does not leak to the remote project dialog", async () => {
   const cancel = vi.fn();
   await render(cancel);
   const { Modal } = await import("../../../shared/ui/Modal");
@@ -186,7 +186,7 @@ it("browses a machine's folders and adds the chosen one as a project", async () 
   expect(isLocalProject(opened[0])).toBe(false);
 });
 
-it("uzak makinede yeni klasör oluşturur ve açılacak yolu günceller", async () => {
+it("creates a new folder on the remote machine and updates the path to open", async () => {
   const original = vi.mocked(invoke).getMockImplementation()!;
   vi.mocked(invoke).mockImplementation(async (command, input) => {
     const request = input as { method?: string; params?: { path?: string; name?: string } };
@@ -312,4 +312,39 @@ it("ignores a project that finishes opening after cancellation", async () => {
   await act(async () => button("Cancel").click());
   await act(async () => finish({ id: "late", cwd: "/home/me", name: "me" }));
   expect(opened).toEqual([]);
+});
+
+it("keeps a pending remote Open bound to its original machine and prevents duplicate submission", async () => {
+  machines.push({
+    id: "second",
+    name: "Second server",
+    endpoint: "ssh://second",
+    environmentId: "second-env",
+  });
+  const original = vi.mocked(invoke).getMockImplementation()!;
+  let finish!: (value: unknown) => void;
+  vi.mocked(invoke).mockImplementation((command, input) => {
+    if ((input as { method?: string } | undefined)?.method === "projects.open")
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    return original(command, input);
+  });
+  await render();
+  const form = document.body.querySelector("form")!;
+  await act(async () => {
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  const picker = document.body.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!;
+  expect(picker.disabled).toBe(true);
+  expect(button("Opening…").getAttribute("aria-busy")).toBe("true");
+  expect(
+    vi
+      .mocked(invoke)
+      .mock.calls.filter((call) => (call[1] as { method?: string })?.method === "projects.open"),
+  ).toHaveLength(1);
+  await act(async () => finish({ id: "opened", cwd: "/home/me", name: "me" }));
+  expect(opened).toHaveLength(1);
+  expect(picker.disabled).toBe(false);
 });

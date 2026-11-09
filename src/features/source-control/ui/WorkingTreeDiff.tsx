@@ -1,8 +1,9 @@
-import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { runDiffWorker } from "../model/diffWorker";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Loader } from "../../../shared/ui/icons";
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import {
   gitDiscardFile,
   gitFileDiff,
@@ -20,7 +21,7 @@ import {
   workingTreeDiffFocusId,
   type WorkingTreeDiffEntry,
 } from "../model/workingTreeDiff";
-import { stageChunkText } from "../../files/editor/editorGit";
+import { stageChunkText } from "../../files/public/editorGit";
 import {
   currentGitChangeHint,
   fetchGitIndex,
@@ -175,6 +176,10 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
   );
   const diffsRef = useRef(diffs);
   diffsRef.current = diffs;
+  // Read by the loader, so a focus change reorders loads without reloading diffs.
+  const focusPathRef = useRef(focusPath);
+  focusPathRef.current = focusPath;
+  const reprioritizeRef = useRef<(() => void) | null>(null);
   // Sections that are expanded and near the viewport: their bodies are the
   // ones worth loading (or reloading after a change).
   const neededRef = useRef(new Set<string>());
@@ -239,6 +244,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
                     ? await runDiffWorker(
                         (remote) => remote.build(diff.original, diff.current),
                         () => buildUnifiedFileAsync(diff.original, diff.current),
+                        { size: diff.original.length + diff.current.length },
                       )
                     : null,
               };
@@ -293,6 +299,14 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
       }
     };
     pumpRef.current = pump;
+    reprioritizeRef.current = () => {
+      latestEntries = prioritizeWorkingTreeDiffEntries(
+        latestEntries,
+        focusPathRef.current,
+        focusKind,
+      );
+      pump();
+    };
 
     const run = () => {
       const current = ++generation;
@@ -330,7 +344,11 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
             for (const id of existing.keys()) if (!kept.has(id)) existing.delete(id);
             return true;
           });
-          latestEntries = prioritizeWorkingTreeDiffEntries(entries, focusPath, focusKind);
+          latestEntries = prioritizeWorkingTreeDiffEntries(
+            entries,
+            focusPathRef.current,
+            focusKind,
+          );
           // A refresh retries what failed before.
           failedIds.clear();
           pump();
@@ -378,12 +396,19 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
       disposed = true;
       refreshNow.current = null;
       pumpRef.current = null;
+      reprioritizeRef.current = null;
       window.clearTimeout(refreshTimer);
       unsub();
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
     };
   }, [cwd, focusKind, retry]);
+
+  // A focus change only reorders the loads that are still pending; the diffs
+  // already on screen stay loaded.
+  useEffect(() => {
+    reprioritizeRef.current?.();
+  }, [focusPath]);
 
   // A review opened from the Changes or Staged Changes section shows only that side.
   const entries = useMemo(() => workingTreeDiffEntries(files ?? [], focusKind), [files, focusKind]);
@@ -472,44 +497,32 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
 
   if (!cwd || cwd === "~") {
     return (
-      <p className="grid h-full place-items-center text-[13px] text-[var(--ui-text-muted)]">
-        {t("No project folder")}
-      </p>
+      <div className="grid h-full place-items-center">
+        <EmptyState key="no-project" context="panel" description={t("No project folder")} />
+      </div>
     );
   }
   if (error) {
     return (
-      <div className="grid h-full place-items-center p-6 text-center">
-        <AlertCircle className="mx-auto mb-3 size-5 text-danger" />
-        <p className="text-[13px] text-content">{t("Couldn’t load changes")}</p>
-        <p className="mt-1 text-[12px] text-[var(--ui-text-secondary)]">{error}</p>
-        <Button
-          variant="ghost"
-          motion="none"
-          type="button"
-          onClick={() => setRetry((value) => value + 1)}
-          className="mt-3"
-        >
-          {t("Retry")}
-        </Button>
+      <div className="grid h-full place-items-center p-6">
+        <EmptyState
+          key="load-error"
+          kind="unavailable"
+          context="panel"
+          title={t("Couldn’t load changes")}
+          description={error}
+          onRetry={() => setRetry((value) => value + 1)}
+        />
       </div>
     );
   }
   if (files == null) {
-    return (
-      <div className="grid h-full place-items-center text-[var(--ui-text-muted)]">
-        <Loader className="size-4 animate-spin" strokeWidth={1.75} />
-      </div>
-    );
+    return <SurfaceLoading />;
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {mutationError && (
-        <p role="alert" className="shrink-0 px-3 py-2 text-[12px] text-danger">
-          {mutationError}
-        </p>
-      )}
+      {mutationError && <InlineError className="shrink-0 px-3 py-2">{mutationError}</InlineError>}
       <UnifiedDiffView
         files={models}
         fileCount={focusKind ? entries.length : files.length}

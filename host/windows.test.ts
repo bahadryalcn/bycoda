@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import { providerLaunch } from "./process";
 import {
@@ -13,9 +13,9 @@ import {
   protectWindowsDirectory,
   runPowerShell,
   windowsTaskScript,
-  windowsServiceRunner,
   windowsNodeSetupScript,
   windowsUninstallScript,
+  windowsUninstallPreflightScript,
 } from "./windows";
 
 const directories: string[] = [];
@@ -27,6 +27,78 @@ const temporary = () => {
   directories.push(dir);
   return dir;
 };
+const prepareLauncher = (entry: string) => {
+  mkdirSync(dirname(entry), { recursive: true });
+  writeFileSync(join(dirname(entry), "bycoda-host-launcher.exe"), "packaged launcher");
+};
+const ownerDescriptor =
+  "'O:' + $sid + 'G:' + $sid + 'D:(A;;FA;;;' + $sid + ')(A;;FA;;;BA)(A;;FA;;;SY)'";
+// An elevated install leaves Task Scheduler's default descriptor: owned by
+// Administrators, read-only for the user.
+const elevatedDescriptor =
+  "'O:BAG:' + $sid + 'D:(A;ID;0x1f019f;;;BA)(A;ID;FA;;;BA)(A;;FR;;;' + $sid + ')'";
+/** Stand in for the Task Scheduler COM API so tests never touch a real task. Requires $sid. */
+const fakeScheduler = (descriptor: string) => `
+$script:sddl = ${descriptor}
+$script:descriptorSets = 0
+$script:denyDescriptor = $false
+$script:comTask = [PSCustomObject]@{ Definition = [PSCustomObject]@{ Principal = [PSCustomObject]@{ UserId = $sid } } }
+$script:comTask | Add-Member -MemberType ScriptMethod -Name GetSecurityDescriptor -Value { param($flags) $script:sddl }
+$script:comTask | Add-Member -MemberType ScriptMethod -Name SetSecurityDescriptor -Value {
+  param($descriptor, $flags)
+  if ($script:denyDescriptor) { throw 'Access is denied.' }
+  $script:descriptorSets++
+  $script:sddl = $descriptor
+}
+$script:comFolder = [PSCustomObject]@{}
+$script:comFolder | Add-Member -MemberType ScriptMethod -Name GetTask -Value { param($taskName) $script:comTask }
+$script:comScheduler = [PSCustomObject]@{}
+$script:comScheduler | Add-Member -MemberType ScriptMethod -Name Connect -Value {}
+$script:comScheduler | Add-Member -MemberType ScriptMethod -Name GetFolder -Value { param($path) $script:comFolder }
+function New-Object { param($ComObject) if ($ComObject -ne 'Schedule.Service') { throw "Unexpected COM object $ComObject" }; $script:comScheduler }
+`;
+
+it.skipIf(process.platform !== "win32")(
+  "checks effective task deletion rights without changing permissions or stopping the host",
+  async () => {
+    // Exercise the actual Windows access check, including denied rights, rather
+    // than assuming that membership in Administrators grants an unelevated token access.
+    const script = windowsUninstallPreflightScript();
+    const definitions = script.slice(0, script.lastIndexOf("\nAssert-BycodaTaskRemovalAccess"));
+    const result = JSON.parse(
+      await runPowerShell(`
+${definitions}
+$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$descriptor = 'O:' + $sid + 'G:' + $sid + 'D:'
+Assert-BycodaTaskRemovalAccess ('Bycoda Missing Test-' + [Guid]::NewGuid().ToString('N'))
+@{
+  readOnly = [BycodaTaskAccess]::CanDelete($descriptor + '(A;;FR;;;' + $sid + ')')
+  full = [BycodaTaskAccess]::CanDelete($descriptor + '(A;;FA;;;' + $sid + ')')
+  denied = [BycodaTaskAccess]::CanDelete($descriptor + '(D;;SD;;;' + $sid + ')(A;;FA;;;' + $sid + ')')
+} | ConvertTo-Json -Compress
+`),
+    );
+    expect(result).toEqual({ readOnly: false, full: true, denied: false });
+    // An Administrators-owned task is refused with the exact elevated repair command.
+    const refusal = JSON.parse(
+      await runPowerShell(`
+${definitions}
+$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+${fakeScheduler(elevatedDescriptor)}
+$message = ''
+try { Assert-BycodaTaskRemovalAccess "Bycoda Host-$sid" } catch { $message = $_.Exception.Message }
+@{ sid = $sid; message = $message; sets = $script:descriptorSets } | ConvertTo-Json -Compress
+`),
+    );
+    const sid = refusal.sid as string;
+    expect(refusal.sets).toBe(0);
+    expect(refusal.message).toContain("cannot remove the bycoda Host scheduled task");
+    expect(refusal.message).toContain("elevated");
+    expect(refusal.message).toContain(
+      `$s.GetFolder('\\').GetTask('Bycoda Host-${sid}').SetSecurityDescriptor('O:${sid}G:${sid}D:(A;;FA;;;${sid})(A;;FA;;;BA)(A;;FA;;;SY)', 0)`,
+    );
+  },
+);
 
 it.skipIf(process.platform !== "win32")(
   "reuses the firewall executable across releases, replaces Node atomically and restores older engines",
@@ -59,74 +131,6 @@ try {
     expect(readFileSync(stable, "utf8")).toBe("engine one");
   },
 );
-
-it.skipIf(process.platform !== "win32").each([0, 23])(
-  "keeps a host alive after stderr diagnostics and preserves exit code %s",
-  (exitCode) => {
-    const directory = temporary();
-    const entry = join(directory, "diagnostic-host.cjs");
-    const runner = join(directory, "service.ps1");
-    writeFileSync(
-      entry,
-      `process.stderr.write('provider diagnostic\\n');
-setTimeout(() => { console.log('host still running'); process.exitCode = ${exitCode}; }, 200);`,
-    );
-    writeFileSync(
-      runner,
-      windowsServiceRunner(
-        {
-          directory,
-          entry,
-          executable: process.execPath,
-          port: 3776,
-        },
-        process.env.PATH ?? "",
-      ),
-    );
-    let status: number | null | undefined;
-    try {
-      execFileSync(powershell(), powershellArgs(`& ${psQuote(runner)}; exit $LASTEXITCODE`), {
-        windowsHide: true,
-        timeout: 15_000,
-        env: powershellEnvironment(),
-        stdio: "pipe",
-      });
-      status = 0;
-    } catch (error) {
-      status = (error as { status?: number | null }).status;
-    }
-    const bytes = readFileSync(join(directory, "host.log"));
-    const log = bytes.toString(bytes[0] === 0xff && bytes[1] === 0xfe ? "utf16le" : "utf8");
-    expect(log).toContain("provider diagnostic");
-    expect(log).toContain("host still running");
-    expect(status).toBe(exitCode);
-  },
-);
-
-it.skipIf(process.platform !== "win32")("reports a missing host executable as failure", () => {
-  const directory = temporary();
-  const runner = join(directory, "service.ps1");
-  writeFileSync(
-    runner,
-    windowsServiceRunner(
-      {
-        directory,
-        entry: join(directory, "host.mjs"),
-        executable: join(directory, "missing.exe"),
-        port: 3776,
-      },
-      process.env.PATH ?? "",
-    ),
-  );
-  expect(() =>
-    execFileSync(powershell(), powershellArgs(`& ${psQuote(runner)}; exit $LASTEXITCODE`), {
-      windowsHide: true,
-      timeout: 15_000,
-      env: powershellEnvironment(),
-      stdio: "pipe",
-    }),
-  ).toThrow();
-});
 
 it("runs npm provider entry points directly with literal arguments and bundled Node", async () => {
   const directory = temporary();
@@ -163,10 +167,22 @@ it("uses an unlimited, unelevated per-user task and preserves literal paths", ()
   expect(script).toContain("-LogonType Interactive -RunLevel Limited");
   expect(script).toContain("-ExecutionTimeLimit ([TimeSpan]::Zero)");
   expect(script).toContain("-MultipleInstances IgnoreNew");
-  expect(script).toContain("-OutputType WindowsApplication");
-  expect(script).toContain("service-launcher-v3.exe");
+  expect(script).not.toMatch(/Add-Type|EncodedCommand|ScriptBlock|service\.ps1/);
+  expect(script).toContain("bycoda-host-launcher.exe");
+  expect(script).toContain("service-launcher.json");
   expect(script).toContain("Set-ScheduledTask -TaskName $name -Action $action");
   expect(script).not.toMatch(/Stop-ScheduledTask|Unregister-ScheduledTask|S4U|RunLevel Highest/);
+  // The descriptor must not depend on whether the registering token was elevated.
+  const secured = script.indexOf(
+    '.SetSecurityDescriptor("O:${sid}G:${sid}D:(A;;FA;;;${sid})(A;;FA;;;BA)(A;;FA;;;SY)", 0)',
+  );
+  expect(secured).toBeGreaterThan(script.indexOf("Register-ScheduledTask -TaskName $name"));
+  expect(secured).toBeLessThan(script.indexOf("Start-ScheduledTask -TaskName $name"));
+  expect(script).toContain("New-Object -ComObject Schedule.Service");
+  expect(script).toContain("could not be secured for its owner");
+  expect(windowsUninstallPreflightScript()).toContain(
+    "SetSecurityDescriptor('O:${sid}G:${sid}D:(A;;FA;;;${sid})(A;;FA;;;BA)(A;;FA;;;SY)', 0)",
+  );
   expect(psQuote("Nick's $PC")).toBe("'Nick''s $PC'");
   expect(Buffer.from(powershellArgs("$x = '日本語'").at(-1)!, "base64").toString("utf16le")).toBe(
     "$x = '日本語'",
@@ -185,45 +201,60 @@ it("keeps only the text of a PowerShell error written as CLIXML", () => {
 });
 
 it.skipIf(process.platform !== "win32")(
-  "keeps stderr diagnostics harmless across successive service runtime upgrades",
+  "refuses incomplete packages before writing a runtime or registering a task",
   async () => {
     const directory = temporary();
-    // Task Scheduler is isolated; exercise the generated runner with real Windows PowerShell.
-    writeFileSync(join(directory, "service-launcher-v3.exe"), "unused test launcher");
+    const entry = join(directory, "incomplete", "host.mjs");
+    const script = windowsTaskScript(
+      { directory, entry, executable: process.execPath, port: 3776 },
+      "",
+    );
+    await expect(
+      runPowerShell(`
+function Get-ScheduledTask { param($TaskName, $ErrorAction) $null }
+function Register-ScheduledTask { throw 'Must not register an incomplete package' }
+${script}
+`),
+    ).rejects.toThrow("packaged Windows Host launcher is missing");
+    expect(existsSync(join(directory, "engine"))).toBe(false);
+    expect(existsSync(join(directory, "service-launcher.json"))).toBe(false);
+  },
+);
+
+it.skipIf(process.platform !== "win32")(
+  "stages literal JSON configuration across successive runtime upgrades",
+  async () => {
+    const directory = join(temporary(), "Nick's $PC 日本語 &");
+    mkdirSync(directory);
     for (const version of ["0.6.35", "0.6.36"]) {
       const runtime = join(directory, "runtime", version);
       mkdirSync(runtime, { recursive: true });
       const entry = join(runtime, "host.cjs");
-      writeFileSync(
-        entry,
-        `console.error('diagnostic ${version}');
-setTimeout(() => console.log('healthy ${version}'), 100);`,
-      );
+      prepareLauncher(entry);
       await runPowerShell(`
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $script:task = [PSCustomObject]@{ Principal = [PSCustomObject]@{ UserId = $sid }; State = 'Ready'; Actions = @([PSCustomObject]@{ Execute = 'old'; Arguments = 'old' }) }
 function Get-ScheduledTask { param($TaskName, $ErrorAction) $script:task }
 function Set-ScheduledTask { param($TaskName, $Action, $ErrorAction) $script:task.Actions = @($Action) }
 function Start-ScheduledTask { param($TaskName) }
+${fakeScheduler(ownerDescriptor)}
 ${windowsTaskScript({ directory, entry, executable: process.execPath, port: 3776 }, process.env.PATH ?? "")}
+if ($script:descriptorSets -ne 0) { throw 'An owner-secured task must not be rewritten.' }
 `);
-      const runner = join(directory, "service.ps1");
-      expect(readFileSync(runner, "utf8")).toContain(entry);
-      expect(readFileSync(runner, "utf8")).toContain(join(directory, "engine", "node.exe"));
-      execFileSync(powershell(), powershellArgs(`& ${psQuote(runner)}; exit $LASTEXITCODE`), {
-        windowsHide: true,
-        timeout: 15_000,
-        env: powershellEnvironment(),
-        stdio: "pipe",
+      const config = JSON.parse(readFileSync(join(directory, "service-launcher.json"), "utf8"));
+      expect(config).toEqual({
+        directory,
+        entry,
+        executable: join(directory, "engine", "node.exe"),
+        port: 3776,
+        path: process.env.PATH ?? "",
       });
-      const bytes = readFileSync(join(directory, "host.log"));
-      const log = bytes.toString(bytes[0] === 0xff && bytes[1] === 0xfe ? "utf16le" : "utf8");
-      expect(log).toContain(`diagnostic ${version}`);
-      expect(log).toContain(`healthy ${version}`);
+      expect(readFileSync(join(directory, "engine", "bycoda-host-launcher.exe"), "utf8")).toBe(
+        "packaged launcher",
+      );
+      expect(existsSync(join(directory, "service.ps1"))).toBe(false);
     }
   },
-  // Two upgrades each launch PowerShell twice; allow their bounded process
-  // operations to finish on a cold Windows runner without changing assertions.
   90_000,
 );
 
@@ -237,7 +268,8 @@ it.skipIf(process.platform !== "win32")(
       entry: join(directory, "new-host.mjs"),
       port: 3776,
     };
-    const runner = join(directory, "service.ps1");
+    const runner = join(directory, "service-launcher.json");
+    prepareLauncher(options.entry);
     writeFileSync(runner, "old runtime");
     const result = JSON.parse(
       await runPowerShell(`
@@ -246,17 +278,39 @@ $script:task = [PSCustomObject]@{ Principal = [PSCustomObject]@{ UserId = $sid }
 function Get-ScheduledTask { param($TaskName, $ErrorAction) $script:task }
 function Set-ScheduledTask { param($TaskName, $Action, $ErrorAction) $script:task.Actions = @($Action) }
 function Start-ScheduledTask { param($TaskName) }
+${fakeScheduler(elevatedDescriptor)}
 ${windowsTaskScript(options, process.env.PATH ?? "")}
+$repaired = $script:sddl
 $updated = [IO.File]::ReadAllText(${psQuote(runner)})
+$script:sddl = ${elevatedDescriptor}
+$script:denyDescriptor = $true
+$securedRejected = $false
+try { ${windowsTaskScript(options, process.env.PATH ?? "")} } catch {
+  if ($_.Exception.Message -notlike '*could not be secured for its owner: Access is denied.*') { throw }
+  $securedRejected = $true
+}
+$script:denyDescriptor = $false
 $script:task.State = 'Running'
 [IO.File]::WriteAllText(${psQuote(runner)}, 'live runtime')
 $rejected = $false
 try { ${windowsTaskScript(options, process.env.PATH ?? "")} } catch { $rejected = $true }
-@{ updated = $updated; rejected = $rejected; preserved = [IO.File]::ReadAllText(${psQuote(runner)}) } | ConvertTo-Json -Compress
+$script:task.State = 'Queued'
+$queuedRejected = $false
+try { ${windowsTaskScript(options, process.env.PATH ?? "")} } catch {
+  if ($_.Exception.Message -notlike '*has not settled*') { throw }
+  $queuedRejected = $true
+}
+@{ sid = $sid; repaired = $repaired; securedRejected = $securedRejected; updated = $updated; rejected = $rejected; queuedRejected = $queuedRejected; preserved = [IO.File]::ReadAllText(${psQuote(runner)}) } | ConvertTo-Json -Compress
 `),
     );
+    // An existing Administrators-owned task is repaired for its owner; a refused repair fails loudly.
+    expect(result.repaired).toBe(
+      `O:${result.sid}G:${result.sid}D:(A;;FA;;;${result.sid})(A;;FA;;;BA)(A;;FA;;;SY)`,
+    );
+    expect(result.securedRejected).toBe(true);
     expect(result.updated).toContain("new-host.mjs");
     expect(result.rejected).toBe(true);
+    expect(result.queuedRejected).toBe(true);
     expect(result.preserved).toBe("live runtime");
   },
 );
@@ -346,6 +400,7 @@ $file = Get-Acl -LiteralPath ${psQuote(join(directory, "credential.json"))}
       executable: process.execPath,
       entry: join(directory, "host.mjs"),
     };
+    prepareLauncher(options.entry);
     const result = JSON.parse(
       await runPowerShell(`
 $script:registeredTask = $null
@@ -361,14 +416,24 @@ function Set-ScheduledTask {
 function Register-ScheduledTask {
   param($TaskName, $Action, $Principal, $Trigger, $Settings, $Description)
   $script:registrations++
-  $script:registeredTask = [PSCustomObject]@{ Principal = $Principal; Actions = @($Action) }
+  $script:registeredTask = [PSCustomObject]@{ Principal = $Principal; Actions = @($Action); State = 'Ready' }
   @{ user = $Principal.UserId; sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value; logon = $Principal.LogonType.ToString(); limit = $Settings.ExecutionTimeLimit; instances = $Settings.MultipleInstances.ToString(); executable = $Action.Execute; action = $Action.Arguments } | ConvertTo-Json -Compress | Set-Content -LiteralPath ${psQuote(join(directory, "task.json"))}
 }
 function Start-ScheduledTask { param($TaskName) $script:starts++ }
+$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+${fakeScheduler(elevatedDescriptor)}
 ${windowsTaskScript(options, process.env.PATH ?? "")}
 $script:registeredTask.Actions = @([PSCustomObject]@{ Execute = 'powershell.exe'; Arguments = 'old' })
 ${windowsTaskScript(options, process.env.PATH ?? "")}
 ${windowsTaskScript(options, process.env.PATH ?? "")}
+$script:registeredTask.State = 'Running'
+${windowsTaskScript(options, process.env.PATH ?? "")}
+[IO.File]::WriteAllText(${psQuote(join(directory, "bycoda-host-launcher.exe"))}, 'changed launcher')
+$liveRejected = $false
+try { ${windowsTaskScript(options, process.env.PATH ?? "")} } catch {
+  if ($_.Exception.Message -notlike '*Stop the existing host*') { throw }
+  $liveRejected = $true
+}
 $definition = Get-Content -LiteralPath ${psQuote(join(directory, "task.json"))} -Raw | ConvertFrom-Json
 $script:registeredTask = [PSCustomObject]@{ Principal = [PSCustomObject]@{ UserId = 'S-1-5-18' } }
 $rejected = $false
@@ -378,68 +443,32 @@ try {
   if ($_.Exception.Message -notlike '*different user*') { throw }
   $rejected = $true
 }
-@{ definition = $definition; registrations = $script:registrations; migrations = $script:migrations; starts = $script:starts; rejected = $rejected; userSid = if ($definition.user -match '^S-1-') { $definition.user } else { ([Security.Principal.NTAccount]::new($definition.user)).Translate([Security.Principal.SecurityIdentifier]).Value } } | ConvertTo-Json -Compress
+@{ sid = $sid; sddl = $script:sddl; descriptorSets = $script:descriptorSets; definition = $definition; registrations = $script:registrations; migrations = $script:migrations; starts = $script:starts; rejected = $rejected; liveRejected = $liveRejected; userSid = if ($definition.user -match '^S-1-') { $definition.user } else { ([Security.Principal.NTAccount]::new($definition.user)).Translate([Security.Principal.SecurityIdentifier]).Value } } | ConvertTo-Json -Compress
 `),
     );
     expect(result.userSid).toBe(result.definition.sid);
     expect(result.registrations).toBe(1);
-    expect(result.starts).toBe(3);
+    // Registration secures the task for its owner exactly once; later runs leave it alone.
+    expect(result.descriptorSets).toBe(1);
+    expect(result.sddl).toBe(
+      `O:${result.sid}G:${result.sid}D:(A;;FA;;;${result.sid})(A;;FA;;;BA)(A;;FA;;;SY)`,
+    );
+    expect(result.starts).toBe(4);
     expect(result.migrations).toBe(1);
     expect(result.rejected).toBe(true);
+    expect(result.liveRejected).toBe(true);
     expect(["Interactive", "3"]).toContain(result.definition.logon);
     expect(result.definition.limit).toBe("PT0S");
     expect(["IgnoreNew", "2"]).toContain(result.definition.instances);
-    expect(result.definition.executable).toBe(join(directory, "service-launcher-v3.exe"));
-    const executable = readFileSync(result.definition.executable);
-    const peHeader = executable.readUInt32LE(0x3c);
-    expect(executable.readUInt16LE(peHeader + 24 + 68)).toBe(2); // Windows GUI subsystem
-    expect(Buffer.from(result.definition.action, "base64").toString("utf16le")).toContain(
-      "service.ps1",
+    expect(result.definition.executable).toBe(
+      join(directory, "engine", "bycoda-host-launcher.exe"),
     );
-
-    // Exercise the compiled GUI executable, not just the task definition. The
-    // child must have no console and errors must reach the task's exit status.
-    const probe = join(directory, "console.json");
-    execFileSync(
-      result.definition.executable,
-      powershellArgs(`
-Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class ConsoleProbe { [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow(); }'
-@{ console = [ConsoleProbe]::GetConsoleWindow().ToInt64(); pid = $PID } | ConvertTo-Json -Compress | Set-Content -LiteralPath ${psQuote(probe)}
-`).slice(-1),
-      { windowsHide: true, timeout: 30_000 },
+    expect(result.definition.action).toBe('"' + join(directory, "service-launcher.json") + '"');
+    expect(JSON.parse(readFileSync(join(directory, "service-launcher.json"), "utf8")).entry).toBe(
+      options.entry,
     );
-    expect(JSON.parse(readFileSync(probe, "utf8").replace(/^\uFEFF/, "")).console).toBe(0);
-    // A failed host is restarted after a short delay; the last failure is the
-    // task's result. A graceful exit (0) is never restarted.
-    const runs = join(directory, "runs.txt");
-    const run = (code: number) => {
-      try {
-        execFileSync(
-          result.definition.executable,
-          powershellArgs(
-            `Add-Content -LiteralPath ${psQuote(runs)} -Value run; exit ${code}`,
-          ).slice(-1),
-          {
-            windowsHide: true,
-            timeout: 30_000,
-            env: { ...process.env, BYCODA_LAUNCHER_RESTARTS: "1" },
-          },
-        );
-        return 0;
-      } catch (error) {
-        return (error as { status?: number }).status;
-      }
-    };
-    const count = () => readFileSync(runs, "utf8").trim().split(/\s+/).length;
-    expect(run(23)).toBe(23);
-    expect(count()).toBe(2);
-    rmSync(runs);
-    expect(run(0)).toBe(0);
-    expect(count()).toBe(1);
   },
-  // Three sequential PowerShell calls each have their own 30s process timeout.
-  // Leave room for all three to settle before test teardown removes their files.
-  100_000,
+  60_000,
 );
 
 it.skipIf(process.platform !== "win32")(

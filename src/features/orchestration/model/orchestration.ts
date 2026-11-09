@@ -3,6 +3,7 @@ import { HARNESSES, type HarnessId, type Session } from "../../sessions/model/se
 import { pathKey } from "../../../shared/lib/paths";
 import type { ApprovalDecision, HarnessEvent } from "../../../integrations/harness/core/types";
 import { pendingApprovalForSession } from "../../notifications/model/approvalToast";
+import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import {
   validateOrchestrationSettings,
@@ -46,6 +47,12 @@ export type WorkerPreparation = {
   scratchDir?: string;
   workspace: OrchestrationWorkspace;
 };
+export type OriginalOrchestrationStop = { current(): boolean; stop(): Promise<void> };
+export type DesktopOrchestrationControl = {
+  ready: Promise<void>;
+  current(): boolean;
+  stop(): Promise<void>;
+};
 export type OrchestrationHost = {
   session(id: string): Session | undefined;
   sessions(): Session[];
@@ -63,10 +70,16 @@ export type OrchestrationHost = {
   ): Promise<boolean>;
   submit(id: string, text: string, done: (outcome: ControlOutcome) => void): void;
   stop(id: string): Promise<void>;
+  captureStop?(id: string): OriginalOrchestrationStop | undefined;
   /** Redirect a worker mid-turn, without discarding what it has already done. */
   steer(id: string, text: string): Promise<void>;
   /** Answer on a worker's behalf; the lead, not the user, decides. */
-  respondApproval(id: string, requestId: number, decision: ApprovalDecision): void;
+  respondApproval(
+    id: string,
+    requestId: number,
+    decision: ApprovalDecision,
+    approvalOccurrenceId: string,
+  ): boolean | void;
   answerQuestion(id: string, requestId: number, reply: UserQuestionReply): void;
 };
 type Storage = {
@@ -74,6 +87,8 @@ type Storage = {
   load(id: string): Promise<OrchestrationRun | null>;
   enable(id: string, cwd: string): Promise<string>;
   disable(id: string): Promise<void>;
+  captureGrant?(id: string): Promise<string>;
+  disableCaptured?(id: string, generation: string): Promise<void>;
   scopes(cwd: string, files: string[]): Promise<string[]>;
   resolvePath(path: string): Promise<string>;
 };
@@ -89,6 +104,9 @@ const storage: Storage = {
   },
   enable: (sessionId, cwd) => invoke("control_enable", { sessionId, cwd }),
   disable: (sessionId) => invoke("control_disable", { sessionId }),
+  captureGrant: (sessionId) => invoke("control_grant_capture", { sessionId }),
+  disableCaptured: (sessionId, generation) =>
+    invoke("control_disable_captured", { sessionId, generation }),
   scopes: (cwd, files) => invoke("control_scopes", { cwd, files }),
   resolvePath: (path) => invoke("control_write_path", { path }),
 };
@@ -144,11 +162,19 @@ const ASSIGNMENT_BLOCK =
   /(?:\r?\n[ \t]*)*<bycoda_assignment\b[^>]*>[\s\S]*?<\/bycoda_assignment>/gi;
 
 /** Prompt the worker receives, including the envelope the transcript hides. */
-export function workerTurnPrompt(prompt: string, files: string[], scratchDir?: string): string {
+export function workerTurnPrompt(
+  prompt: string,
+  files: string[],
+  scratchDir?: string,
+  ownsBranch = true,
+): string {
+  const commits = ownsBranch
+    ? "Commit your changes on your assigned branch with clear, coherent commits. Stage only files you own."
+    : "This retained legacy shared session has no owned branch: do not stage or commit until the owner explicitly migrates it.";
   const scratch = scratchDir
     ? ` Temporary helpers and test output may be written in your private scratch directory: ${JSON.stringify(scratchDir)}. TMPDIR, TMP and TEMP point there. Use this directory for scratch files; do not write elsewhere outside the project. Deliver final changes in your assigned project files.`
     : "";
-  return `${prompt}\n\n<bycoda_assignment>\nYou are a worker managed by a bycoda lead. Work only in the checkout selected for this run. The workspace, scope and Git rules in this assignment envelope override any contradictory wording in the task text above. Your assigned write scope is: ${files.join(", ")}.${scratch} Read other files as needed, but do not edit outside your scope. If another file or shared operation is needed, report the blocker and stop so the lead can expand or create a new assignment. Do not spawn agents, create worktrees, switch branches, stage, commit, push, install dependencies or run broad formatters/generators. A task owning '.' may run explicitly requested project-wide validation or generation, but Git finalization remains the lead's responsibility after integration. Other workers may be working concurrently in separate checkouts; do not rely on their work until the lead has accepted it. Report focused checks, changed files, remaining issues and a concise final result.\n</bycoda_assignment>`;
+  return `${prompt}\n\n<bycoda_assignment>\nYou are a worker managed by a bycoda lead. Work only in the checkout selected for this run. The workspace, scope and Git rules in this assignment envelope override any contradictory wording in the task text above. Your assigned write scope is: ${files.join(", ")}.${scratch} Read other files as needed, but do not edit outside your scope. If another file or shared operation is needed, report the blocker and stop so the lead can expand or create a new assignment. ${commits} Do not spawn agents, create worktrees, switch branches, push, install dependencies or run broad formatters/generators. A task owning '.' may run explicitly requested project-wide validation or generation, and report the final branch and commit SHA. Delivery requires owner-approved managed delivery; a lead acceptance is not permission to merge or publish. Other workers may be working concurrently in separate checkouts; do not rely on their work until the lead has accepted it. Report focused checks, changed files, remaining issues and a concise final result.\n</bycoda_assignment>`;
 }
 
 /** Task text a person should see: the assignment envelope stays in the send. */
@@ -182,7 +208,7 @@ const FIELDS = new Map<string, string[]>([
   ["review", ["taskId"]],
   ["finish", []],
   ["steer", ["taskId", "text"]],
-  ["respond", ["taskId", "requestId", "decision"]],
+  ["respond", ["taskId", "requestId", "decision", "approvalOccurrenceId"]],
   ["answer", ["taskId", "requestId", "answers", "skip"]],
 ]);
 function checkFields(action: string, input: Record<string, unknown>) {
@@ -240,6 +266,7 @@ const listed = (values: string[], max = 12) =>
 
 export class Orchestrator {
   private runs: OrchestrationRun[] = [];
+  private readonly incarnations = new Map<string, object>();
   private listeners = new Set<() => void>();
   private loaded = new Set<string>();
   private deleted = new Set<string>();
@@ -298,7 +325,9 @@ export class Orchestrator {
   private emit() {
     for (const listener of this.listeners) listener();
   }
-  private async commit(run: OrchestrationRun) {
+  private async commit(run: OrchestrationRun, guard?: () => boolean) {
+    if (guard && !guard()) throw new Error("Original orchestration changed.");
+    if (!this.incarnations.has(run.leadId)) this.incarnations.set(run.leadId, {});
     run = normalizeOrchestrationRun(run);
     this.runs = [...this.runs.filter((entry) => entry.leadId !== run.leadId), run];
     this.emit();
@@ -312,6 +341,7 @@ export class Orchestrator {
     try {
       await saved;
     } catch (error) {
+      if (guard && !guard()) throw error;
       const current = this.run(run.leadId)!;
       const running = current.tasks.filter(activeTask);
       this.runs = this.runs.map((entry) =>
@@ -665,6 +695,7 @@ export class Orchestrator {
         : [];
     try {
       await this.host!.stop(leadId); // Refresh the child environment before its next turn.
+      this.incarnations.set(leadId, {});
       await this.commit({
         version: 2,
         leadId,
@@ -722,7 +753,7 @@ export class Orchestrator {
     const run = this.run(id);
     if (!run || run.status !== "active") return prompt;
     const cli = `${shellPath(run.cli)} control`;
-    return `${prompt}\n\n<bycoda_orchestration>\nYou are the lead of a local bycoda run. Coordinate the user's task using ${cli}. Run \`${cli} --help\` before your first command; it documents every action, its exact JSON fields and the retry rule. Credentials are already in your environment; never print them.\nEach call prints one JSON line and exits non-zero unless "ok" is true; read the "error" text, it says what to do next. Unknown JSON fields are rejected rather than ignored, so fix the field name instead of guessing. If a call fails before reaching bycoda, retry it with the "requestId" from that response so the work is never queued twice.\nUse list to discover allowed harness/model IDs. Delegate bounded tasks with project-relative files (directories reserve their descendants), self-contained prompts and dependsOn task IDs. Use the checkout selected for this run. You may read and plan; leave project file edits to workers. Never start workers outside this CLI. Workers with overlapping files are queued. For project-wide validation, generators or broad formatting, assign a separate task with files ["."] and wait for other workers to finish. Workers must never commit, push, switch branches or write outside the selected checkout. If the user requested those final operations, review and integrate every worker, call finish, then perform the explicitly authorized finalization yourself from the lead checkout.\nAgents never prompt the user. When one needs an approval or answers a question, list, get and wait report it as needsInput on that task, and you decide with respond or answer; it stays stopped until you do. Judge the request against the task you assigned, and put it to the user in this conversation only when the call is genuinely theirs.\nSteer a running agent with steer to correct its course without losing its work; use message only once it has stopped. Read results with get or wait; completed means a turn finished, not that the work passed review. Review the actual changes, message a worker for fixes, and use review to accept each completed task. A scope-blocked worker is isolated to that task: use message if it should stay within its existing scope, retry with corrected project-relative files if the assignment was too narrow, or cancel it if no longer needed. Never expand scope merely to excuse an unexpected write. Call finish only when required work and combined validation are complete. You receive worker results automatically when idle; use bounded wait calls while supervising. If the run is paused, list/get/wait remain readable and explain the reason. Stop polling, report that reason, and ask the user to click Resume; Resume automatically continues interrupted workers from their retained checkouts. Do not expose credentials, create worktrees, switch branches or silently escalate worker permissions.\n</bycoda_orchestration>`;
+    return `${prompt}\n\n<bycoda_orchestration>\nYou are the lead of a local bycoda run. Coordinate the user's task using ${cli}. Run \`${cli} --help\` before your first command; it documents every action, its exact JSON fields and the retry rule. Credentials are already in your environment; never print them.\nEach call prints one JSON line and exits non-zero unless "ok" is true; read the "error" text, it says what to do next. Unknown JSON fields are rejected rather than ignored, so fix the field name instead of guessing. If a call fails before reaching bycoda, retry it with the "requestId" from that response so the work is never queued twice.\nUse list to discover allowed harness/model IDs. Delegate bounded tasks with project-relative files (directories reserve their descendants), self-contained prompts and dependsOn task IDs. Use the checkout selected for this run. You may read and plan; leave project file edits to workers. Never start workers outside this CLI. Workers with overlapping files are queued. For project-wide validation, generators or broad formatting, assign a separate task with files ["."] and wait for other workers to finish. Workers must commit their own changes on their assigned branches and report the final SHA. Workers must never push, switch branches or write outside their assigned checkout. Review requires owner-approved managed delivery before accepting a worker result; never use checkpoint copying or the lead credential to bypass owner approval. Ask the owner to review the worker branch in its Workspace actions when delivery is pending.\nAgents never prompt the user. When one needs an approval or answers a question, list, get and wait report it as needsInput on that task, and you decide with respond or answer; it stays stopped until you do. Judge the request against the task you assigned, and put it to the user in this conversation only when the call is genuinely theirs.\nSteer a running agent with steer to correct its course without losing its work; use message only once it has stopped. Read results with get or wait; completed means a turn finished, not that the work passed review. Review the actual changes, message a worker for fixes, and use review to accept each completed task. A scope-blocked worker is isolated to that task: use message if it should stay within its existing scope, retry with corrected project-relative files if the assignment was too narrow, or cancel it if no longer needed. Never expand scope merely to excuse an unexpected write. Call finish only when required work and combined validation are complete. You receive worker results automatically when idle; use bounded wait calls while supervising. If the run is paused, list/get/wait remain readable and explain the reason. Stop polling, report that reason, and ask the user to click Resume; Resume automatically continues interrupted workers from their retained checkouts. Do not expose credentials, create worktrees, switch branches or silently escalate worker permissions.\n</bycoda_orchestration>`;
   }
   async handle(
     leadId: string,
@@ -731,6 +762,9 @@ export class Orchestrator {
     input: Record<string, unknown>,
   ): Promise<unknown> {
     checkFields(action, input);
+    // Freeze the caller's original scalar correlation before the command queue.
+    // A later mutation cannot upgrade an old input with a replacement's nonce.
+    if (action === "respond") input = { ...input };
     const signature = JSON.stringify({ action, input });
     const key = `${leadId}:${requestId}`;
     const receipts = this.persisted.get(leadId)?.requests;
@@ -809,6 +843,8 @@ export class Orchestrator {
     return {
       kind: pending.kind,
       requestId: pending.requestId,
+      approvalOccurrenceId:
+        pending.kind === "approval" ? pending.block?.approval?.occurrenceId : undefined,
       label: pending.label,
       detail:
         pending.kind === "approval"
@@ -1063,13 +1099,32 @@ export class Orchestrator {
           );
         if (input.requestId !== pending.requestId)
           throw new Error(`Stale requestId. ${target.title} is waiting on ${pending.requestId}.`);
+        if (
+          !isApprovalOccurrenceId(input.approvalOccurrenceId) ||
+          !isApprovalOccurrenceId(pending.approvalOccurrenceId) ||
+          input.approvalOccurrenceId !== pending.approvalOccurrenceId
+        )
+          throw new Error(
+            "This approval occurrence cannot be verified. Read the original approvalOccurrenceId from needsInput before responding.",
+          );
         const decision = text(input.decision, "decision", 16);
         if (decision !== "allow" && decision !== "deny")
           throw new Error('decision must be "allow" or "deny"');
-        this.host!.respondApproval(target.sessionId, pending.requestId, decision);
+        const dispatched = this.host!.respondApproval(
+          target.sessionId,
+          pending.requestId,
+          decision,
+          input.approvalOccurrenceId,
+        );
+        if (dispatched === false)
+          throw new Error(
+            "This approval decision was not dispatched. Its original request was retained.",
+          );
         return record(this.run(run.leadId)!, {
           taskId: target.id,
           decision,
+          approvalOccurrenceId: input.approvalOccurrenceId,
+          providerAck: "unproved",
         });
       }
       case "answer": {
@@ -1272,7 +1327,9 @@ export class Orchestrator {
         const timer = setTimeout(finish, seconds * 1000);
       });
     }
-    return this.view(this.run(leadId)!);
+    const current = this.run(leadId);
+    if (!current) throw new Error("No orchestration run was found for this lead");
+    return this.view(current);
   }
   private async pump() {
     if (this.pumping) {
@@ -1393,6 +1450,7 @@ export class Orchestrator {
               task.recoveryPrompt ?? task.prompt,
               task.files,
               prepared.scratchDir,
+              task.workspacePolicy !== "shared",
             );
             this.host.submit(task.sessionId, prompt, (outcome) => {
               void this.settle(run.leadId, task.id, outcome, dispatchId).catch(console.error);
@@ -1706,6 +1764,184 @@ export class Orchestrator {
     const task = run.tasks.find((entry) => entry.sessionId === id)!;
     return this.cancelTask(run.leadId, task.id);
   }
+
+  /** Snapshot exact local run, dispatches and process owners before an external wait. */
+  captureDesktopControl(id: string): DesktopOrchestrationControl | undefined {
+    const run = this.forSession(id);
+    if (
+      !run ||
+      !this.host?.captureStop ||
+      !this.store.captureGrant ||
+      !this.store.disableCaptured ||
+      this.starting.has(run.leadId)
+    )
+      return undefined;
+    const incarnation = this.incarnations.get(run.leadId);
+    if (!incarnation) return undefined;
+    const originalStatus = run.status;
+    const lead = run.leadId === id;
+    const tasks = run.tasks.filter((task) =>
+      lead ? activeTask(task) : task.sessionId === id && activeTask(task),
+    );
+    if (!lead && tasks.length !== 1) return undefined;
+    if (tasks.some((task) => !task.activeDispatchId)) return undefined;
+    const snapshots = tasks.map((task) => ({
+      id: task.id,
+      sessionId: task.sessionId,
+      dispatchId: task.activeDispatchId!,
+    }));
+    const queuedIds = lead
+      ? run.tasks.filter((task) => task.status === "queued").map((task) => task.id)
+      : [];
+    const ids = lead
+      ? [run.leadId, ...snapshots.map((task) => task.sessionId)]
+      : snapshots.map((task) => task.sessionId);
+    const targets = ids.map((sessionId) => this.host!.captureStop!(sessionId));
+    if (targets.some((target) => !target)) return undefined;
+    const original = targets as OriginalOrchestrationStop[];
+    let stopping = false;
+    const sameRun = () =>
+      this.incarnations.get(run.leadId) === incarnation && !this.starting.has(run.leadId);
+    const current = () => {
+      const latest = this.run(run.leadId);
+      return (
+        !!latest &&
+        sameRun() &&
+        (stopping && lead ? latest.status === "stopped" : latest.status === originalStatus) &&
+        (!lead || latest.tasks.filter(activeTask).length === snapshots.length) &&
+        snapshots.every((task) =>
+          latest.tasks.some(
+            (entry) =>
+              entry.id === task.id &&
+              entry.sessionId === task.sessionId &&
+              entry.activeDispatchId === task.dispatchId &&
+              activeTask(entry),
+          ),
+        ) &&
+        original.every((target) => target.current())
+      );
+    };
+    let generation: string | undefined;
+    const ready = this.store.captureGrant(run.leadId).then((value) => {
+      if (!value || !current()) throw new Error("Original orchestration changed.");
+      generation = value;
+    });
+    void ready.catch(() => {});
+    return {
+      ready,
+      current,
+      stop: async () => {
+        await ready;
+        if (!generation) throw new Error("Original orchestration grant unavailable.");
+        await this.stopDesktopControl(
+          run.leadId,
+          snapshots,
+          queuedIds,
+          original,
+          lead,
+          sameRun,
+          current,
+          generation,
+          () => {
+            stopping = true;
+          },
+        );
+      },
+    };
+  }
+
+  private async stopDesktopControl(
+    leadId: string,
+    tasks: { id: string; sessionId: string; dispatchId: string }[],
+    queuedIds: string[],
+    targets: OriginalOrchestrationStop[],
+    lead: boolean,
+    sameRun: () => boolean,
+    current: () => boolean,
+    generation: string,
+    markStopping: () => void,
+  ): Promise<void> {
+    if (!current()) throw new Error("Original orchestration changed.");
+    const run = this.run(leadId)!;
+    const selected = new Set(tasks.map((task) => task.id));
+    const queued = new Set(queuedIds);
+    markStopping();
+    await this.commit(
+      {
+        ...run,
+        ...(lead ? { status: "stopped" as const } : {}),
+        tasks: run.tasks.map((task) =>
+          selected.has(task.id) ? { ...task, status: "cancelling" as const } : task,
+        ),
+      },
+      sameRun,
+    );
+    if (!current()) throw new Error("Original orchestration changed while stopping.");
+    const outcomes = await Promise.allSettled(
+      targets.map(async (target) => {
+        if (!sameRun() || !target.current())
+          throw new Error("Original orchestration changed while stopping.");
+        await target.stop();
+      }),
+    );
+    const failed = outcomes.filter(
+      (outcome): outcome is PromiseRejectedResult => outcome.status === "rejected",
+    );
+    if (failed.length) throw new Error("Original orchestration stop remains unconfirmed.");
+    if (!sameRun()) throw new Error("Original orchestration changed while stopping.");
+    const latest = this.run(leadId);
+    if (
+      !latest ||
+      tasks.some(
+        (task) =>
+          !latest.tasks.some(
+            (entry) =>
+              entry.id === task.id &&
+              entry.sessionId === task.sessionId &&
+              (entry.activeDispatchId === task.dispatchId ||
+                (!entry.activeDispatchId &&
+                  entry.lastDispatchId === task.dispatchId &&
+                  !activeTask(entry))),
+          ),
+      )
+    )
+      throw new Error("Original orchestration dispatch changed while stopping.");
+    const dispatches = new Set(tasks.map((task) => task.dispatchId));
+    await this.commit(
+      {
+        ...latest,
+        ...(lead ? { status: "stopped" as const } : {}),
+        tasks: latest.tasks.map((task) =>
+          selected.has(task.id) || queued.has(task.id)
+            ? {
+                ...task,
+                status: "cancelled" as const,
+                accepted: false,
+                delivered: lead,
+                activeDispatchId: undefined,
+                ...(!lead ? { recoveryPrompt: undefined } : {}),
+                ...(task.activeDispatchId ? { lastDispatchId: task.activeDispatchId } : {}),
+              }
+            : task,
+        ),
+        dispatches: (latest.dispatches ?? []).map((dispatch) =>
+          dispatches.has(dispatch.id)
+            ? {
+                ...dispatch,
+                state: "cancelled" as const,
+                stage: "settled" as const,
+                updatedAt: Date.now(),
+              }
+            : dispatch,
+        ),
+      },
+      sameRun,
+    );
+    if (!sameRun()) throw new Error("Original orchestration changed after stopping.");
+    for (const dispatch of dispatches) this.writeChecks.delete(dispatch);
+    if (lead) await this.store.disableCaptured!(leadId, generation);
+    else void this.pump().catch(console.error);
+  }
   /** Drain control writes before the database removes a lead or one of its workers. */
   deleteSession(id: string, remove: () => Promise<void>): Promise<void> {
     // Ordinary history has no orchestration writes to drain. A slow control
@@ -1730,6 +1966,7 @@ export class Orchestrator {
         this.deleted.add(id);
         if (!run) return;
         this.runs = this.runs.filter((entry) => entry.leadId !== run.leadId);
+        this.incarnations.delete(run.leadId);
         this.persisted.delete(run.leadId);
         this.blocked.delete(run.leadId);
         this.announced.delete(run.leadId);
@@ -1743,6 +1980,7 @@ export class Orchestrator {
           });
           if (updated) {
             const normalized = normalizeOrchestrationRun(updated);
+            this.incarnations.set(normalized.leadId, {});
             this.runs = [...this.runs, normalized];
             this.persisted.set(run.leadId, normalized);
             this.emit();

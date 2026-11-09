@@ -1,0 +1,108 @@
+/* One row (or `rows` lines) of badges; what does not fit collapses into a "+N" button. */
+.root {
+  position: relative;
+  display: block;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+.list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* While the "+N" trigger is shown, a label longer than a line truncates and leaves room for it. */
+.item {
+  display: flex;
+  min-inline-size: 0;
+  /* `--badge-list-item-max` lets a caller cap one long name so it cannot fill the row. */
+  max-inline-size: min(
+    calc(100% - var(--badge-list-reserve, 0px)),
+    var(--badge-list-item-max, 100%)
+  );
+}
+.moreItem {
+  display: flex;
+  flex: none;
+}
+.badge {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+.text {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.more {
+  font-variant-numeric: tabular-nums;
+}
+/* Same height as the xs badges it sits between. */
+.moreXs.moreXs {
+  block-size: 1rem;
+  min-block-size: 1rem;
+  padding-inline: 0.25rem;
+  font-size: var(--ui-font-micro);
+}
+/* Natural widths of every badge. In flow with no height, so the list keeps the width of its full
+   row (a flex or grid parent shrinks it, hiding badges never shrinks it) and adds no overflow. */
+.probe {
+  block-size: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+.probeRow {
+  display: flex;
+  inline-size: max-content;
+  gap: var(--space-1);
+}
+/* Measured at the width it will render, so a capped name does not crowd out the rest. */
+.probe .item {
+  max-inline-size: var(--badge-list-item-max, none);
+}
+/* Overflow card: the items that did not fit, as a compact list under the list's name. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+.cardTitle {
+  padding-inline: var(--space-1);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.cardList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-block-size: 16rem;
+  overflow-y: auto;
+}
+.cardItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.125rem var(--space-1);
+  color: var(--color-content);
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
+}
+.cardIcon {
+  display: inline-flex;
+  flex: none;
+  color: var(--ui-text-secondary);
+}
+.cardText {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}

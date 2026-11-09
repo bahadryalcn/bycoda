@@ -19,6 +19,10 @@ import { serverTerminalRestoreState } from "../model/serverTerminalRestoreState"
 vi.mock("../model/serverInventory", () => ({
   useServerInventory: () => ({ servers: [server], loaded: true, loading: false }),
 }));
+const closePolicy = vi.hoisted(() => ({ confirm: vi.fn(async () => true) }));
+vi.mock("../../terminal/model/terminalClose", () => ({
+  confirmCloseTerminal: closePolicy.confirm,
+}));
 const events = vi.hoisted(() => ({ mounted: [] as string[], unmounted: [] as string[] }));
 const configuration = vi.hoisted(() => ({ preview: vi.fn() }));
 const proxy = vi.hoisted(() => ({ request: vi.fn() }));
@@ -291,6 +295,95 @@ it("cold restore previews the current canonical target and connects a fresh shel
   await act(async () => serverTerminalRestoreState.setEnabled(false));
   expect(events.unmounted).toEqual([]);
 });
+it("keeps an open mobile review when a desktop tab asks for another inherited review", async () => {
+  const grouped: ServerRecord = {
+    ...server,
+    metadata: {
+      ...server.metadata,
+      sshInheritance: { groupId: "defaults-1", fields: ["user"], environment: true },
+    },
+  };
+  const digest = "a".repeat(64);
+  serverTerminalRestoreState.initialize({ version: 1, enabled: false, tabs: [] });
+  configuration.preview.mockResolvedValue({
+    connectionId: server.id,
+    inheritance: null,
+    configuration: { endpoint: server.sshEndpoint, digest, environment: [], provenance: {} },
+  });
+  configuration.preview.mockResolvedValueOnce({
+    connectionId: server.id,
+    inheritance: grouped.metadata.sshInheritance,
+    configuration: {
+      endpoint: server.sshEndpoint,
+      digest,
+      environment: [],
+      provenance: {},
+      shellKind: "posix",
+    },
+  });
+  function GroupAction() {
+    const open = useOpenServerTerminal();
+    return createElement("button", { onClick: () => open?.(grouped) }, "Open grouped SSH");
+  }
+  await act(async () =>
+    root.render(createElement(ServersTerminalWorkspace, { children: createElement(GroupAction) })),
+  );
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Open grouped SSH")!
+      .click(),
+  );
+  await act(async () =>
+    [...document.querySelectorAll('[role="dialog"] button')]
+      .find((button) => button.textContent === "Connect")!
+      .click(),
+  );
+  expect(events.mounted).toEqual([server.id]);
+  const handle = createSshMobileWorkspaceControl({
+    catalog: () => ({ ready: true, servers: [server] }),
+    preview: async () => ({ connectionId: server.id, configuration: { digest } }),
+    confirmClose: async () => true,
+  });
+  const context = {
+    actorId: "synthetic-actor",
+    environmentId: "fixture",
+    sourceSessionId: "source",
+    projectCwd: "/fixture",
+    workingCwd: "/fixture",
+    valid: () => true,
+    authorize: async () => true,
+  };
+  const reviewed = (await handle(context, "ssh.workspace.review", {
+    connectionId: server.id,
+  })) as SshWorkspaceReview;
+  let pending!: Promise<unknown>;
+  await act(async () => {
+    pending = handle(context, "ssh.workspace.approve", {
+      reviewId: reviewed.reviewId,
+      requestId: "mobile",
+    });
+  });
+  let settled = false;
+  void pending.then(
+    () => (settled = true),
+    () => (settled = true),
+  );
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Enable session Bash integration")!
+      .click(),
+  );
+  expect(document.body.textContent).toContain("Finish the open SSH review first.");
+  expect(settled).toBe(false);
+  await act(async () =>
+    [...document.querySelectorAll('[role="dialog"] button')]
+      .find((button) => button.textContent === "Connect")!
+      .click(),
+  );
+  expect(await pending).toMatchObject({ state: "opened-on-computer" });
+});
+
 function Inventory() {
   const open = useOpenServerTerminal();
   return createElement("button", { onClick: () => open?.(server) }, "Open explicit SSH");
@@ -489,6 +582,7 @@ it.each([
 );
 let root: Root;
 beforeEach(() => {
+  closePolicy.confirm.mockReset().mockResolvedValue(true);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   events.mounted = [];
   events.unmounted = [];
@@ -685,4 +779,55 @@ it("suspends terminal focus while another tool is visible and retains its proces
   expect(container.querySelector("[data-terminal-id]")?.getAttribute("data-active")).toBe("true");
   expect(events.mounted).toHaveLength(1);
   expect(events.unmounted).toEqual([]);
+});
+
+it("middle-click uses the close policy and retains the neighboring active SSH tab", async () => {
+  await act(async () =>
+    root.render(createElement(ServersTerminalWorkspace, { children: createElement(Inventory) })),
+  );
+  const open = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Open explicit SSH",
+  )!;
+  await act(async () => open.click());
+  await act(async () => open.click());
+  const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+  closePolicy.confirm.mockResolvedValueOnce(false);
+  await act(async () =>
+    tabs[1].dispatchEvent(
+      new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true }),
+    ),
+  );
+  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(2);
+  expect(events.unmounted).toEqual([]);
+  await act(async () =>
+    tabs[1].dispatchEvent(
+      new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true }),
+    ),
+  );
+  expect(closePolicy.confirm).toHaveBeenCalledWith(
+    expect.objectContaining({ id: tabs[1].id.slice(4), terminal: true }),
+  );
+  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(1);
+  expect(tabs[0].getAttribute("aria-selected")).toBe("true");
+  expect(events.unmounted).toHaveLength(1);
+});
+it("Delete requests the same close policy and preserves a terminal when confirmation fails", async () => {
+  await act(async () =>
+    root.render(createElement(ServersTerminalWorkspace, { children: createElement(Inventory) })),
+  );
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Open explicit SSH")!
+      .click(),
+  );
+  const tab = container.querySelector<HTMLButtonElement>('[role="tab"]')!;
+  closePolicy.confirm.mockRejectedValueOnce(new Error("fixture confirmation unavailable"));
+  await act(async () =>
+    tab.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true })),
+  );
+  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(1);
+  expect(events.unmounted).toEqual([]);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "fixture confirmation unavailable",
+  );
 });

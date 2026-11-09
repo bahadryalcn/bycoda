@@ -1,12 +1,28 @@
+.pane:global(.bycoda-sidebar.body-glass) {
+  /* Override the legacy opaque canvas fill, while the more specific native
+     glass selector in index.css retains ownership of its transparency. */
+  background: var(--ui-surface-panel);
+}
+
 .folder[data-folder-dragging="true"] {
   opacity: 0.4;
 }
-.folder > [data-folder-insert] {
-  display: none;
+
+/* Groups and sections (Pinned, Reminders, a folder) are told apart by space, never by rules
+   or boxes. Collapsed headers stack on the list's tight rhythm, like a list of folders; an
+   open group gets a little air after its last row, and so does a closed one that hands over
+   to loose sessions, so the next header or the unfiled list reads as a new start. */
+.folder[data-section-divided]:not([data-section-collapsed]):has(~ li:not([aria-hidden])),
+.folder[data-section-divided][data-section-collapsed]:has(
+    + li:not([data-section-divided], [aria-hidden])
+  ) {
+  margin-block-end: var(--space-3);
 }
-.folder[data-folder-drop="before"] > [data-folder-insert="before"],
-.folder[data-folder-drop="after"] > [data-folder-insert="after"],
-.folder[data-folder-drop="into"] > div > [data-folder-row] > [data-drop-highlight],
-.folder[data-folder-drop="pinned"] > div > [data-folder-row] > [data-drop-highlight] {
-  display: block;
+
+/* A group's subgroups and sessions sit under its header with no guide line. The indent puts
+   their titles on the group name's line (header inset + mark + gap, less the row's own
+   inset), so the hierarchy reads from alignment alone. */
+.folderChildren {
+  padding-block: 1px var(--space-1);
+  padding-inline-start: 1.375rem;
 }

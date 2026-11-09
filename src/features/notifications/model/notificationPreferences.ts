@@ -25,6 +25,9 @@ export type ProjectNotificationPreference = {
 type Preferences = Record<string, ProjectNotificationPreference>;
 const KEY = "bycoda.projectNotifications.v1";
 const CHANGE = "bycoda:project-notifications-change";
+let lastKnownPreferences: Preferences = {};
+/** The latest read failed, so `lastKnownPreferences` is not an authoritative record. */
+let preferencesReadFailed = false;
 
 /** `after` is the last suppressed millisecond, shared with native delivery. */
 export type ProjectNotificationRule = { enabled: boolean; after: number };
@@ -47,9 +50,32 @@ export function getProjectNotificationRule(
 }
 
 export function loadNotificationPreferences(): Preferences {
+  return readNotificationPreferences(false);
+}
+
+/**
+ * Whether project preferences could be read. When `unavailable`, the values
+ * returned by `loadNotificationPreferences` are the last known (or defaults),
+ * not the stored choices, and edits are refused until a read succeeds.
+ */
+export function notificationPreferencesStatus(): "ready" | "unavailable" {
+  readNotificationPreferences(false);
+  return preferencesReadFailed ? "unavailable" : "ready";
+}
+
+/** Re-reads storage and tells subscribers; returns the resulting status. */
+export function retryNotificationPreferencesRead(): "ready" | "unavailable" {
+  const status = notificationPreferencesStatus();
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(CHANGE));
+  return status;
+}
+
+function readNotificationPreferences(strict: boolean): Preferences {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(KEY) ?? "{}");
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("Project notification preferences are unavailable.");
+    }
     const entries = Object.entries(parsed).flatMap(([id, value]) => {
       if (!id || !value || typeof value !== "object" || Array.isArray(value)) return [];
       const disabled = Array.isArray(value.disabled)
@@ -84,9 +110,15 @@ export function loadNotificationPreferences(): Preferences {
         ],
       ];
     });
-    return Object.fromEntries(entries);
-  } catch {
-    return {};
+    lastKnownPreferences = Object.fromEntries(entries);
+    preferencesReadFailed = false;
+    return lastKnownPreferences;
+  } catch (error) {
+    preferencesReadFailed = true;
+    // Read-only consumers retain known data. Mutations must never merge into
+    // defaults after a failed read and overwrite recoverable preferences.
+    if (strict) throw error;
+    return lastKnownPreferences;
   }
 }
 
@@ -94,7 +126,7 @@ export function updateNotificationPreferences(
   projectIds: readonly string[],
   patch: Partial<ProjectNotificationPreference>,
 ) {
-  const preferences = loadNotificationPreferences();
+  const preferences = { ...readNotificationPreferences(true) };
   for (const id of projectIds) {
     const previous = preferences[id];
     const enabled =
@@ -117,6 +149,8 @@ export function updateNotificationPreferences(
     };
   }
   localStorage.setItem(KEY, JSON.stringify(preferences));
+  lastKnownPreferences = preferences;
+  preferencesReadFailed = false;
   if (typeof window !== "undefined") window.dispatchEvent(new Event(CHANGE));
 }
 
@@ -153,6 +187,7 @@ export function allowsProjectNotificationIndicator(
 export function notificationPreferencesSnapshot(): string {
   const preferences = loadNotificationPreferences();
   return JSON.stringify({
+    unavailable: preferencesReadFailed,
     preferences,
     muted: Object.keys(preferences).filter((id) => isProjectMuted(preferences[id])),
   });

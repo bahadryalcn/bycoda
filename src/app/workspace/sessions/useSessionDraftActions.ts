@@ -1,9 +1,5 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import {
   HARNESS_LABEL,
   canReplaceSessionTitle,
@@ -31,6 +27,38 @@ export interface SessionDraftActionDeps {
   setStoredLinkedSessions: Dispatch<SetStateAction<SessionSummary[]>>;
 }
 
+/** Shared draft construction for interactive and explicitly owned Room creation. */
+export function addSessionDraft(
+  session: Session,
+  text: string,
+  attachments: Attachment[] = [],
+  appRequestId?: string,
+): Session {
+  if (sessionDraftBlock(session)) return session;
+  const title = canReplaceSessionTitle(
+    session.title,
+    session.harness,
+    HARNESS_LABEL[session.harness],
+  )
+    ? titleFromPrompt(text, session.harness, attachments)
+    : session.title;
+  return {
+    ...session,
+    title,
+    blocks: [
+      ...session.blocks,
+      {
+        id: crypto.randomUUID(),
+        role: "user",
+        text,
+        ...(attachments.length ? { attachments } : {}),
+        draft: true,
+        ...(appRequestId ? { appRequestId } : {}),
+      },
+    ],
+  };
+}
+
 export function useSessionDraftActions({
   pendingPersist,
   lastPersisted,
@@ -42,7 +70,7 @@ export function useSessionDraftActions({
   const onSaveDraft = useCallback(
     (sessionId: string, text: string, attachments: Attachment[] = [], appRequestId?: string) => {
       const current = sessionsRef.current.find((session) => session.id === sessionId);
-      if (current && remoteProjectFor(current.cwd))
+      if (current && (hostSessionBinding(current) || remoteProjectFor(current.cwd)))
         return !!remoteSessionActions(sessionId)?.saveDraft(text, attachments);
       if (
         !current ||
@@ -54,32 +82,10 @@ export function useSessionDraftActions({
       ) {
         return false;
       }
-      const placeholderTitle = canReplaceSessionTitle(
-        current.title,
-        current.harness,
-        HARNESS_LABEL[current.harness],
-      );
-      const title = placeholderTitle
-        ? titleFromPrompt(text, current.harness, attachments)
-        : current.title;
       setSessions((prev) =>
         prev.map((session) =>
           session.id === sessionId && !sessionDraftBlock(session)
-            ? {
-                ...session,
-                title,
-                blocks: [
-                  ...session.blocks,
-                  {
-                    id: crypto.randomUUID(),
-                    role: "user",
-                    text,
-                    ...(attachments.length > 0 ? { attachments } : {}),
-                    draft: true,
-                    ...(appRequestId ? { appRequestId } : {}),
-                  },
-                ],
-              }
+            ? addSessionDraft(session, text, attachments, appRequestId)
             : session,
         ),
       );
@@ -92,6 +98,8 @@ export function useSessionDraftActions({
     (sessionId: string, draftBlockId: string) => {
       const current = sessionsRef.current.find((session) => session.id === sessionId);
       if (!current) return false;
+      if (hostSessionBinding(current))
+        return remoteSessionActions(sessionId)?.removeDraft?.(draftBlockId) ?? false;
       const withoutDraft = removeSessionDraft(current, draftBlockId);
       if (!withoutDraft) return false;
 

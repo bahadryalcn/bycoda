@@ -1,9 +1,10 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Progress } from "../../../shared/ui/Progress";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ExternalLink } from "../../../shared/ui/icons";
-import { parseRemotePath } from "../../connections/model/remoteProjects";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import {
   basename,
   openPathWithDefaultApp,
@@ -22,7 +23,7 @@ import { DocumentMessage } from "./DocumentMessage";
 import { FileActionError } from "./FileActionError";
 import { formatFileSize } from "../model/filePreview";
 import { watchFile } from "../model/fileWatch";
-import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
+import { SurfaceSelection } from "../../sessions/public/SurfaceSelection";
 
 // The parsers are big; each loads on first use so none reach the main bundle.
 const PdfViewer = lazy(() => import("./PdfViewer"));
@@ -34,6 +35,8 @@ type Props = {
   cwd: string;
   readBytes?: () => Promise<Uint8Array>;
   externalPath?: string | null;
+  /** Content-sized attachment previews; the editor keeps its full-height viewport. */
+  fitContent?: boolean;
 };
 
 type LoadState =
@@ -45,18 +48,29 @@ type LoadState =
  * Read-only surface for PDF, Word and Excel files. Reads the bytes the same way
  * the image viewer does, then hands them to a lazily loaded format viewer.
  */
-export function DocumentView({ path, cwd, readBytes, externalPath = path }: Props) {
+export function DocumentView({
+  path,
+  cwd,
+  readBytes,
+  externalPath = path,
+  fitContent = false,
+}: Props) {
   useLocale();
   const kind = documentKind(path);
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
-  const [actionError, setActionError] = useState<string | null>(null);
+  // The error belongs to the file it came from; a different file shows none.
+  const actionKey = JSON.stringify([path, externalPath ?? ""]);
+  const [actionFailure, setActionFailure] = useState<{ key: string; message: string } | null>(null);
+  const actionError =
+    actionFailure && actionFailure.key === actionKey ? actionFailure.message : null;
+  const setActionError = (message: string | null) =>
+    setActionFailure(message === null ? null : { key: actionKey, message });
   const actionRequest = useRef(0);
   const reload = useCallback(() => setReloadKey((value) => value + 1), []);
   const name = basename(path);
 
   useEffect(() => {
-    setActionError(null);
     return () => {
       actionRequest.current += 1;
     };
@@ -115,6 +129,33 @@ export function DocumentView({ path, cwd, readBytes, externalPath = path }: Prop
     <p className="ui-caption-text mt-1 break-all font-mono">{displayPath(path, cwd)}</p>
   );
 
+  const pdfReady = kind === "pdf" && state.status === "ready";
+  const openButton = externalPath ? (
+    <Button
+      size="sm"
+      variant="ghost"
+      motion="none"
+      type="button"
+      tooltip={
+        localCopy
+          ? t("Changes to this local copy are not saved to the connected machine.")
+          : undefined
+      }
+      onClick={() => {
+        setActionError(null);
+        const request = ++actionRequest.current;
+        void openPathWithDefaultApp(externalPath).catch((cause: unknown) => {
+          if (request === actionRequest.current)
+            setActionError(cause instanceof Error ? cause.message : String(cause));
+        });
+      }}
+      className="flex items-center gap-1.5"
+    >
+      <ExternalLink className="icon-xs" strokeWidth={1.75} />
+      {t(localCopy ? "Open local copy" : "Open in default app")}
+    </Button>
+  ) : null;
+
   let body: ReactNode;
   if (kind === "doc") {
     body = (
@@ -147,13 +188,18 @@ export function DocumentView({ path, cwd, readBytes, externalPath = path }: Prop
   } else {
     body = (
       <Suspense fallback={<Loading name={name} />}>
-        <FormatViewer kind={kind as DocumentKind} bytes={state.bytes} />
+        <FormatViewer
+          kind={kind as DocumentKind}
+          bytes={state.bytes}
+          trailing={openButton}
+          fitContent={fitContent}
+        />
       </Suspense>
     );
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className={`flex min-h-0 flex-col ${fitContent ? "" : "h-full"}`}>
       <SurfaceSelection
         className="min-h-0 flex-1"
         context={`@${displayPath(path, cwd)}`}
@@ -162,38 +208,17 @@ export function DocumentView({ path, cwd, readBytes, externalPath = path }: Prop
       >
         {body}
       </SurfaceSelection>
-      <footer className="flex h-8 shrink-0 items-center gap-3 border-t border-stroke px-3 text-[11px] text-[var(--ui-text-secondary)]">
-        <span className="truncate">{name}</span>
-        {state.status === "ready" ? (
-          <span className="tabular-nums">{formatFileSize(state.bytes.byteLength)}</span>
-        ) : null}
-        <span className="flex-1" />
-        {externalPath ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            motion="none"
-            type="button"
-            title={t(
-              localCopy
-                ? "Changes to this local copy are not saved to the connected machine."
-                : "Open in default app",
-            )}
-            onClick={() => {
-              setActionError(null);
-              const request = ++actionRequest.current;
-              void openPathWithDefaultApp(externalPath).catch((cause: unknown) => {
-                if (request === actionRequest.current)
-                  setActionError(cause instanceof Error ? cause.message : String(cause));
-              });
-            }}
-            className="flex items-center gap-1.5"
-          >
-            <ExternalLink className="size-3" strokeWidth={1.75} />
-            {t(localCopy ? "Open local copy" : "Open in default app")}
-          </Button>
-        ) : null}
-      </footer>
+      {pdfReady ? null : (
+        <footer className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-3 border-t border-(--ui-pane-border) px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
+          <OverflowTooltip label={name}>
+            <span className="min-w-0 flex-1 truncate">{name}</span>
+          </OverflowTooltip>
+          {state.status === "ready" ? (
+            <span className="shrink-0 tabular-nums">{formatFileSize(state.bytes.byteLength)}</span>
+          ) : null}
+          {openButton}
+        </footer>
+      )}
       {actionError ? (
         <FileActionError message={actionError} onDismiss={() => setActionError(null)} />
       ) : null}
@@ -201,11 +226,27 @@ export function DocumentView({ path, cwd, readBytes, externalPath = path }: Prop
   );
 }
 
-function FormatViewer({ kind, bytes }: { kind: DocumentKind; bytes: Uint8Array }) {
+function FormatViewer({
+  kind,
+  bytes,
+  trailing,
+  fitContent,
+}: {
+  kind: DocumentKind;
+  bytes: Uint8Array;
+  trailing?: ReactNode;
+  fitContent?: boolean;
+}) {
   useLocale();
-  if (kind === "pdf") return <PdfViewer bytes={bytes} />;
+  if (kind === "pdf") return <PdfViewer bytes={bytes} trailing={trailing} />;
   if (kind === "docx") return <DocxViewer bytes={bytes} />;
-  return <SheetViewer bytes={bytes} format={kind === "csv" || kind === "tsv" ? kind : undefined} />;
+  return (
+    <SheetViewer
+      bytes={bytes}
+      format={kind === "csv" || kind === "tsv" ? kind : undefined}
+      fitContent={fitContent}
+    />
+  );
 }
 
 function Loading({ name }: { name: string }) {

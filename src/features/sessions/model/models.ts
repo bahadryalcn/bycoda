@@ -1,7 +1,10 @@
-import type { HarnessId } from "./session";
+import type { HarnessId } from "../../../shared/model/harnessIdentity";
+import { productProviderDefaults } from "../../../shared/model/productProviderDefaults";
 import { withClaudeAdvisor } from "./claudeAdvisor";
-import { HARNESSES } from "./session";
+import * as delegation from "../../../shared/model/host-contracts/delegation";
+import { HARNESSES } from "../../../shared/model/harnessIdentity";
 import { loadProjectProviderSettings } from "./projectProviders";
+import { accountSessionDefaults } from "./accountSessionDefaults";
 import {
   hasProbedHarnessAvailability,
   isHarnessAvailable,
@@ -34,6 +37,8 @@ export type AgentModel = {
     name: string;
   };
   settings?: ModelSetting[];
+  /** A CLI speed variant represented by this model's Fast setting. */
+  fastVariant?: { id: string; nativeId: string };
   /** Context window, when the harness catalog reports one. */
   contextWindow?: number;
 };
@@ -277,13 +282,103 @@ export function getModelSnapshot(): number {
 
 export function setHarnessModels(harness: HarnessId, models: AgentModel[]) {
   if (models.length === 0 && harness !== "acp") return;
+  models = foldFastVariants(models);
   models = models.map((model) => withClaudeAdvisor(model, models));
+  const defaultId = pickDefaultId(harness, models);
+  // Workspace windows re-broadcast unchanged catalogs on every request. An
+  // identical live catalog is a no-op, so open pickers keep their keyboard row
+  // and subscribers do not re-render for nothing.
+  const current = overlays[harness];
+  if (current && overlayDefaults[harness] === defaultId && sameModelCatalog(current, models)) {
+    return;
+  }
   overlays = { ...overlays, [harness]: models };
-  overlayDefaults = {
-    ...overlayDefaults,
-    [harness]: pickDefaultId(harness, models),
-  };
+  overlayDefaults = { ...overlayDefaults, [harness]: defaultId };
   emit();
+}
+
+/** Grok reports speed as model ids; fold only an unambiguous same-provider pair. */
+function foldFastVariants(models: AgentModel[]): AgentModel[] {
+  const pairs = new Map<AgentModel, AgentModel>();
+  for (const variant of models) {
+    if (variant.harness !== "grok") continue;
+    if (!/[-_ ]fast$/i.test(variant.nativeId ?? variant.id) || !/ fast$/i.test(variant.name))
+      continue;
+    const name = variant.name.replace(/ fast$/i, "").toLowerCase();
+    const candidates = models.filter(
+      (base) =>
+        base !== variant &&
+        base.harness === variant.harness &&
+        base.provider?.id === variant.provider?.id &&
+        base.name.toLowerCase() === name &&
+        !base.settings?.some((setting) => setting.id === "fast"),
+    );
+    if (candidates.length === 1 && !pairs.has(candidates[0])) pairs.set(candidates[0], variant);
+  }
+  const variants = new Set(pairs.values());
+  return models
+    .filter((model) => !variants.has(model))
+    .map((model) => {
+      const variant = pairs.get(model);
+      if (!variant) return model;
+      return {
+        ...model,
+        fastVariant: { id: variant.id, nativeId: variant.nativeId ?? nativeIdFrom(variant.id) },
+        settings: [
+          ...(model.settings ?? []),
+          {
+            id: "fast",
+            label: "Fast",
+            kind: "toggle" as const,
+            value: "false",
+            options: [
+              { value: "true", label: "On" },
+              { value: "false", label: "Off" },
+            ],
+          },
+        ],
+      };
+    });
+}
+
+/** A historical fast id retains its launch identity and resolves to base + Fast. */
+function savedFastVariant(id: string): AgentModel | undefined {
+  const base = allModels().find(
+    (model) => model.fastVariant?.id === id || model.fastVariant?.nativeId === id,
+  );
+  return base
+    ? {
+        ...base,
+        nativeId: base.fastVariant!.nativeId,
+        settings: base.settings?.map((setting) =>
+          setting.id === "fast" ? { ...setting, value: "true" } : setting,
+        ),
+      }
+    : undefined;
+}
+
+/** Resolve a catalog Fast toggle to the actual CLI model identity. */
+export function nativeModelIdWithSettings(
+  modelId: string,
+  settings?: Record<string, string>,
+): string {
+  const model = lookupModel(modelId) ?? findModelIdentity(modelId);
+  if (!model?.fastVariant) return nativeModelId(model ?? modelId);
+  const fast = settings?.fast ?? model.settings?.find((setting) => setting.id === "fast")?.value;
+  if (fast === "true") return model.fastVariant.nativeId;
+  // A historical fast selection may have been explicitly switched off.
+  const base = allModels().find((item) => item.id === model.id);
+  return nativeModelId(base ?? model);
+}
+
+function sameModelCatalog(a: AgentModel[], b: AgentModel[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
 }
 
 /** True after a live CLI catalog has replaced the built-in fallback list. */
@@ -297,16 +392,14 @@ export function resetHarnessModelOverlays() {
   overlayDefaults = {};
   emit();
 }
-
 export function defaultModelId(harness: HarnessId): string {
+  const product = productProviderDefaults(harness, modelsFor(harness)).model;
+  if (product) return product;
   const id = overlayDefaults[harness] ?? DEFAULT_MODEL_ID[harness];
   if (!id || isModelEnabled(id)) return id;
   return pickDefaultId(harness, modelsFor(harness));
 }
-
-// `modelsFor`/`findModel` sit in render bodies (every session card, every
-// provider row, the picker itself), so they must not rebuild the catalog on
-// each call. These caches are dropped in `emit()` whenever an overlay lands.
+// Cache model indexes until emit invalidates them.
 let baseByHarness: Partial<Record<HarnessId, AgentModel[]>> | null = null;
 let allCache: AgentModel[] | null = null;
 let indexById: Map<string, AgentModel> | null = null;
@@ -397,7 +490,6 @@ export function saveModelEnabled(id: string, enabled: boolean) {
     modelPreferenceStorage()?.setItem(DISABLED_MODELS_KEY, JSON.stringify([...next]));
   } catch (error) {
     console.warn("Model preferences storage failed", error);
-    // private mode / quota
   }
   disabledCache = next;
   emit();
@@ -432,7 +524,7 @@ export function findModel(id: string): AgentModel | undefined {
     }
     indexById = index;
   }
-  return indexById.get(id);
+  return indexById.get(id) ?? savedFastVariant(id);
 }
 
 /** Match id OR nativeId in catalog order, preserving the old linear-find collision precedence. */
@@ -446,7 +538,7 @@ export function findModelIdentity(id: string): AgentModel | undefined {
     }
     indexByIdentity = index;
   }
-  return indexByIdentity.get(id);
+  return indexByIdentity.get(id) ?? savedFastVariant(id);
 }
 
 /** The bundled list never changes, so index it once for `lookupModel`. */
@@ -557,10 +649,64 @@ export function resolveModel(harness: HarnessId, id?: string): AgentModel {
   return (fallbackId ? findModel(fallbackId) : undefined) ?? modelsFor(harness)[0];
 }
 
-/** Catalog-reported context window for a model id, when known. */
-export function modelContextWindow(id: string): number | undefined {
-  const window = findModel(id)?.contextWindow;
-  return window && window > 0 ? window : undefined;
+/** Budget fallback, not a provider limit: modern Codex/Claude get 128k; other
+ * harnesses (including custom ACP endpoints) get 32k until discovery reports one.
+ * A genuine oversized request is always left to the provider to reject. */
+export function defaultHandoffContextWindow(harness: HarnessId): number {
+  return harness === "codex" || harness === "claude" ? 128_000 : 32_000;
+}
+
+/** Exact discovered identity, then bundled identity, then a harness fallback.
+ * Do not use resolveModel's picker fallback: an unrelated model's capacity may
+ * be larger than the requested custom model's actual window. */
+export function modelContextWindow(id: string): number | undefined;
+export function modelContextWindow(id: string, harness: HarnessId): number;
+export function modelContextWindow(id: string, harness?: HarnessId): number | undefined {
+  const owner =
+    harness ??
+    findModelIdentity(id)?.harness ??
+    (HARNESSES.includes(id.split(":")[0] as HarnessId) ? (id.split(":")[0] as HarnessId) : "acp");
+  const nativeIdentity = (value: string) =>
+    comparableNativeId(
+      owner,
+      owner === "claude" ? value.trim().replace(/\[1m\]$/i, "") : value.trim(),
+    );
+  // Only bycoda's owning-harness prefix is structural. Colons inside native
+  // ids (provider:model, URLs, custom endpoints) distinguish different models.
+  const keyIdentity = (value: string) =>
+    nativeIdentity(
+      value.trim().startsWith(`${owner}:`) ? value.trim().slice(owner.length + 1) : value,
+    );
+  const requested = keyIdentity(id);
+  const matches = (model: AgentModel, alias = false) =>
+    model.harness === owner &&
+    (alias
+      ? model.aliasTarget != null && nativeIdentity(model.aliasTarget) === requested
+      : keyIdentity(model.id) === requested ||
+        (model.nativeId != null && nativeIdentity(model.nativeId) === requested));
+  const capacity = (models: AgentModel[], alias = false) =>
+    models.find(
+      (model) =>
+        matches(model, alias) &&
+        Number.isFinite(model.contextWindow) &&
+        (model.contextWindow ?? 0) > 0,
+    )?.contextWindow;
+  return (
+    capacity(overlays[owner] ?? []) ??
+    capacity(overlays[owner] ?? [], true) ??
+    capacity(MODELS) ??
+    (harness ? defaultHandoffContextWindow(owner) : undefined)
+  );
+}
+
+/** Explicit bycoda provider keys cannot cross adapters. Native/custom model ids
+ * remain valid even when discovery has not advertised them yet. */
+export function modelBelongsToHarness(harness: HarnessId, modelId: string): boolean {
+  const requested = modelId.trim();
+  const colon = requested.indexOf(":");
+  if (colon < 0) return true;
+  const owner = requested.slice(0, colon).toLowerCase() as HarnessId;
+  return !HARNESSES.includes(owner) || owner === harness;
 }
 
 export function nativeModelId(model: AgentModel | string): string {
@@ -606,9 +752,7 @@ function claudeNativeId(harness: HarnessId, native: string): string {
 
 export function defaultModelSettings(model: AgentModel): Record<string, string> {
   const settings: Record<string, string> = {};
-  for (const setting of model.settings ?? []) {
-    settings[setting.id] = setting.value;
-  }
+  for (const setting of model.settings ?? []) settings[setting.id] = setting.value;
   return settings;
 }
 
@@ -623,7 +767,7 @@ export function mergeModelSettings(
     const value = compatibleSettingValue(setting, current[setting.id]);
     if (value != null) next[setting.id] = value;
   }
-  return next;
+  return delegation.carryCrossDelegation(current, next);
 }
 
 const EFFORT_SETTING_IDS = new Set([
@@ -685,9 +829,12 @@ export function loadLastModelSettings(): Record<string, string> {
 export function saveLastModelSettings(
   settings: Record<string, string>,
   mode: "overwrite" | "fill" = "overwrite",
+  delegationKeys: readonly string[] = [],
 ) {
   const prev = loadLastModelSettings();
-  const incoming = parseStringRecord(settings);
+  const { [delegation.DELEGATION_PARENT_KEY]: _parent, ...incoming } = parseStringRecord(settings);
+  for (const key of [...delegation.CROSS_DELEGATION_KEYS, "advisor", "subagentModel"])
+    if (!delegationKeys.includes(key)) delete incoming[key];
   const next = mode === "fill" ? { ...incoming, ...prev } : { ...prev, ...incoming };
   try {
     modelPreferenceStorage()?.setItem(LAST_MODEL_SETTINGS_KEY, JSON.stringify(next));
@@ -770,10 +917,12 @@ function pickerVisibilityStorageChanged(event: StorageEvent) {
 
 export function subscribePickerVisibility(onStoreChange: () => void): () => void {
   pickerVisibilityListeners.add(onStoreChange);
-  if (pickerVisibilityListeners.size === 1 && typeof window !== "undefined") window.addEventListener("storage", pickerVisibilityStorageChanged);
+  if (pickerVisibilityListeners.size === 1 && typeof window !== "undefined")
+    window.addEventListener("storage", pickerVisibilityStorageChanged);
   return () => {
     pickerVisibilityListeners.delete(onStoreChange);
-    if (!pickerVisibilityListeners.size && typeof window !== "undefined") window.removeEventListener("storage", pickerVisibilityStorageChanged);
+    if (!pickerVisibilityListeners.size && typeof window !== "undefined")
+      window.removeEventListener("storage", pickerVisibilityStorageChanged);
   };
 }
 
@@ -880,9 +1029,8 @@ export function saveDefaultModel(harness: HarnessId, model: string) {
   }
 }
 
-/** User-picked model for a provider, else the catalog default. */
-export function preferredModelId(harness: HarnessId): string {
-  const saved = loadDefaultModels()[harness];
+export function preferredModelId(harness: HarnessId, accountId?: string): string {
+  const saved = accountSessionDefaults(harness, accountId).model ?? loadDefaultModels()[harness];
   if (saved && isEnabledChoice(harness, saved)) return saved;
   const last = loadLastModelChoice();
   if (last?.harness === harness && isEnabledChoice(harness, last.model)) {

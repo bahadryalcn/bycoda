@@ -9,6 +9,8 @@ function tabAt(left: number, top: number, parentElement: HTMLElement) {
   const captured = new Set<number>();
   return {
     parentElement,
+    getAttribute: () => null,
+    textContent: "",
     getBoundingClientRect: () => ({
       left,
       right: left + 100,
@@ -43,6 +45,7 @@ function setup(
   externalDrop?: ReorderExternalDrop<string>,
   foldOnDrag = false,
   itemIds = ids,
+  onEnd?: () => void,
 ) {
   Object.assign(browser, { matchMedia: () => ({ matches: reducedMotion }) });
   const onReorder = vi.fn();
@@ -52,6 +55,7 @@ function setup(
   function Probe() {
     reorder = useAnimatedReorder(itemIds, onReorder, axis, externalDrop, {
       foldOnDrag,
+      onEnd,
     });
     return null;
   }
@@ -75,10 +79,19 @@ function setup(
 
 describe("missed mouse release", () => {
   const move = (type: string, x: number, pointerType: string, buttons: number) =>
-    browser.dispatchEvent(Object.assign(new Event(type), { clientX: x, clientY: x, pointerId: 1, pointerType, buttons }));
+    browser.dispatchEvent(
+      Object.assign(new Event(type), {
+        clientX: x,
+        clientY: x,
+        pointerId: 1,
+        pointerType,
+        buttons,
+      }),
+    );
   it("cancels a missed release and clears drag styles without committing", () => {
     const { press, tabs, onReorder } = setup(true);
-    press(); move("pointermove", 180, "mouse", 1);
+    press();
+    move("pointermove", 180, "mouse", 1);
     vi.advanceTimersByTime(20);
     expect(tabs[0].dataset.dragging).toBe("true");
     move("pointermove", 210, "mouse", 0);
@@ -89,15 +102,17 @@ describe("missed mouse release", () => {
     expect(tabs[0].hasPointerCapture(1)).toBe(false);
     expect(tabs[0].style.transform).toBe("");
   });
-  it.each(["touch", "pen"])("keeps a %s drag with no mouse buttons", pointerType => {
+  it.each(["touch", "pen"])("keeps a %s drag with no mouse buttons", (pointerType) => {
     const { press, onReorder } = setup(true);
-    press(); move("pointermove", 245, pointerType, 0);
+    press();
+    move("pointermove", 245, pointerType, 0);
     move("pointerup", 245, pointerType, 0);
     expect(onReorder).toHaveBeenCalledOnce();
   });
   it("keeps the final position of a fast mouse release", () => {
     const { press, onReorder } = setup(true);
-    press(); move("pointerup", 245, "mouse", 0);
+    press();
+    move("pointerup", 245, "mouse", 0);
     expect(onReorder).toHaveBeenCalledOnce();
   });
 });
@@ -116,8 +131,16 @@ beforeEach(() => {
   });
   const classes = new Set<string>();
   vi.stubGlobal("window", browser);
+  // Only the live region is created here; the drag feedback badge is not exercised by these gestures.
+  const liveRegion = { style: {}, dataset: {}, isConnected: true, setAttribute: vi.fn() };
+  vi.stubGlobal("HTMLElement", class {});
   vi.stubGlobal("document", {
-    body: { style: { cursor: "", setProperty: vi.fn(), removeProperty: vi.fn() } },
+    activeElement: null,
+    createElement: () => liveRegion,
+    body: {
+      append: vi.fn(),
+      style: { cursor: "", setProperty: vi.fn(), removeProperty: vi.fn() },
+    },
     documentElement: {
       classList: {
         add: (name: string) => classes.add(name),
@@ -135,6 +158,52 @@ afterEach(() => {
 });
 
 describe("workspace tab gestures", () => {
+  it("reports actual settlement once without enabling external-drop distance behavior", () => {
+    const onEnd = vi.fn();
+    const { press, tabs, onReorder } = setup(true, "y", undefined, false, ids, onEnd);
+    expect(press()).toBe(true);
+    const horizontalOnly = (type: string) =>
+      browser.dispatchEvent(
+        Object.assign(new Event(type), {
+          clientX: 400,
+          clientY: 16,
+          pointerId: 1,
+        }),
+      );
+    horizontalOnly("pointermove");
+    expect(tabs[0].dataset.dragging).toBeUndefined();
+    horizontalOnly("pointerup");
+    browser.dispatchEvent(new Event("blur"));
+    expect(onReorder).not.toHaveBeenCalled();
+    expect(onEnd).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the gesture until delayed commit and reports end before its synchronous callback", () => {
+    const events: string[] = [];
+    const { press, onReorder } = setup(false, "x", undefined, false, ids, () => {
+      events.push("end");
+    });
+    onReorder.mockImplementation(() => {
+      events.push("commit");
+    });
+    press();
+    pointer("pointermove", 245);
+    pointer("pointerup", 245);
+    expect(events).toEqual([]);
+    vi.advanceTimersByTime(160);
+    expect(events).toEqual(["end", "commit"]);
+    browser.dispatchEvent(new Event("blur"));
+    expect(events).toEqual(["end", "commit"]);
+  });
+
+  it("does not promise an end callback when it cannot acquire a gesture", () => {
+    const onEnd = vi.fn();
+    const { press } = setup(true, "x", undefined, false, [ids[0]], onEnd);
+    expect(press()).toBeUndefined();
+    pointer("pointerup", 245);
+    expect(onEnd).not.toHaveBeenCalled();
+  });
+
   it.each([{ itemIds: ids }, { itemIds: [ids[0]] }])(
     "allows vertical external drops with $itemIds",
     ({ itemIds }) => {

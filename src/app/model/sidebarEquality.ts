@@ -1,5 +1,6 @@
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import type { LiveAgent } from "../../features/sessions/model/liveAgents";
+import { sessionWaitsEqual } from "../../features/sessions/model/sessionWait";
 
 export type WorktreeTabStats = ReadonlyMap<string, { tabs: number; busy: boolean }>;
 
@@ -29,6 +30,8 @@ function sessionSummaryEqual(a: SessionSummary, b: SessionSummary): boolean {
   return (
     a.id === b.id &&
     a.issue === b.issue &&
+    a.interrupted === b.interrupted &&
+    a.lastActivityAt === b.lastActivityAt &&
     a.orchestrationLeadId === b.orchestrationLeadId &&
     a.cwd === b.cwd &&
     a.harness === b.harness &&
@@ -48,6 +51,7 @@ function sessionSummaryEqual(a: SessionSummary, b: SessionSummary): boolean {
     a.pinned === b.pinned &&
     a.draft === b.draft &&
     a.automationId === b.automationId &&
+    plainEqual(a.delegationParent, b.delegationParent) &&
     plainEqual(a.linkedWorkItem, b.linkedWorkItem) &&
     plainEqual(a.orchestration, b.orchestration)
   );
@@ -79,6 +83,7 @@ export function liveAgentsEqual(a: readonly LiveAgent[], b: readonly LiveAgent[]
         agent.inputKind === other.inputKind &&
         agent.done === other.done &&
         agent.issue === other.issue &&
+        sessionWaitsEqual(agent.waiting ?? null, other.waiting ?? null) &&
         agent.ownerWindowLabel === other.ownerWindowLabel
       );
     })

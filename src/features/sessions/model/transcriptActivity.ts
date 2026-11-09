@@ -7,10 +7,12 @@ import {
   isSearchTool,
   isWeakToolTitle,
 } from "../../../integrations/harness/core/preview";
-import { leafName } from "../../files/model/fileName";
+import { leafName } from "../../files/public/fileName";
 import { displayPath, pathKey, resolveWorkspacePath } from "../../../shared/lib/paths";
 import { isTurnInterruptMessage } from "./inFlight";
 import { isSessionErrorBlock } from "./sessionIssue";
+import { COMPACTING_TEXT, isRunningCompaction } from "./compactionStatus";
+import { isStartupStatusBlock } from "./startupStatus";
 import type { AgentStep, Block, ToolPreview } from "./session";
 import { findModelIdentity } from "./models";
 import { bycodaWorkSummary } from "./bycodaToolCall";
@@ -67,7 +69,12 @@ export function toolCallState(block: Block): ToolCallState {
   if (isFailedStatus(status)) return "rejected";
   if (needsApproval(block)) return "pending";
   // Settled, and not red: what it did before the stop stays readable.
-  if (status === "completed" || status === "success" || status === "stopped") {
+  if (
+    status === "completed" ||
+    status === "success" ||
+    status === "stopped" ||
+    status === "interrupted"
+  ) {
     return "accepted";
   }
   if (block.streaming || status === "in_progress" || status === "pending" || status === "running") {
@@ -79,7 +86,21 @@ export function toolCallState(block: Block): ToolCallState {
   return "pending";
 }
 
+/** Blocks are immutable: a live turn re-classifies the same calls on every streamed
+ * frame, so the cwd-free label and the category are remembered per block. */
+const labels = new WeakMap<Block, string>();
+const categories = new WeakMap<Block, ActivityWorkKind>();
+
 export function toolCallLabel(block: Block, cwd?: string): string {
+  if (cwd === undefined) {
+    let label = labels.get(block);
+    if (label === undefined) labels.set(block, (label = composeToolCallLabel(block)));
+    return label;
+  }
+  return composeToolCallLabel(block, cwd);
+}
+
+function composeToolCallLabel(block: Block, cwd?: string): string {
   const preview = block.tool?.preview;
   const path = preview?.path ? displayPath(preview.path, cwd) : preview?.fileName;
   return (
@@ -150,10 +171,11 @@ function isStatusStep(block: Block): boolean {
  * neither work nor chrome, so it keeps its own row live and settled alike.
  */
 export function isActivityBlock(block: Block): boolean {
+  if (block.inlineVisual) return false;
   if (isThinkingBlock(block)) return true;
   if (block.role === "system") {
-    // A command the user ran is theirs, not the agent's work: it keeps its row.
-    return !block.interjection && !block.shell && !isNoticeBlock(block);
+    // A command the user ran or a model switch is theirs, not the agent's work: it keeps its row.
+    return !block.interjection && !block.shell && !block.modelSwitch && !isNoticeBlock(block);
   }
   if (block.role !== "tool" && block.role !== "approval") return false;
   if (
@@ -183,15 +205,49 @@ export function hasReadableText(text: string): boolean {
   return /[^\s\p{P}]/u.test(text);
 }
 
-/** First paragraph of a folded prose block, stripped to one plain line. */
-export function proseSummary(text: string): string {
-  const body = text.replace(/```[\s\S]*?(?:```|$)/g, " ");
-  const paragraph =
-    body
+const FENCE = "```";
+
+function countFences(text: string, from: number, to: number): number {
+  let count = 0;
+  for (let at = text.indexOf(FENCE, from); at >= 0 && at + FENCE.length <= to;) {
+    count++;
+    at = text.indexOf(FENCE, at + FENCE.length);
+  }
+  return count;
+}
+
+/** The first non-empty paragraph of `text`, outside code fences. */
+function firstParagraph(text: string): string {
+  const boundary = /\n\s*\n/g;
+  // Only text up to a blank line can matter, so a long streaming reply is not
+  // scanned in full. A blank line inside a fence is not a paragraph break.
+  let fences = 0;
+  let counted = 0;
+  for (let match = boundary.exec(text); match; match = boundary.exec(text)) {
+    // A fence marker never spans whitespace, so each stretch is counted once.
+    fences += countFences(text, counted, match.index);
+    counted = match.index;
+    if (fences % 2 !== 0) continue;
+    const head = text.slice(0, match.index);
+    const paragraph = head
+      .replace(/```[\s\S]*?(?:```|$)/g, " ")
       .split(/\n\s*\n/)
       .map((part) => part.trim())
-      .find(Boolean) ?? "";
-  return paragraph
+      .find(Boolean);
+    if (paragraph) return paragraph;
+  }
+  return (
+    text
+      .replace(/```[\s\S]*?(?:```|$)/g, " ")
+      .split(/\n\s*\n/)
+      .map((part) => part.trim())
+      .find(Boolean) ?? ""
+  );
+}
+
+/** First paragraph of a folded prose block, stripped to one plain line. */
+export function proseSummary(text: string): string {
+  return firstParagraph(text)
     .replace(/^\s{0,3}(?:#{1,6}|>|[-*+]|\d+\.)\s+/gm, "")
     .replace(/`([^`]*)`/g, "$1")
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
@@ -515,6 +571,8 @@ export function initialThinkingIndex(items: TurnItem[]): number {
 }
 
 function isIgnoredTurnBlock(block: Block): boolean {
+  // The live activity line names the start-up phase; it is never history.
+  if (isStartupStatusBlock(block)) return true;
   // Keep thinking as a step in the group, so a long think does not read as
   // the agent having stalled.
   if (block.role === "reasoning") return !block.text.trim();
@@ -597,7 +655,7 @@ const MAX_SUBAGENT_NAME = 56;
  */
 export function subagentName(block: Block): string {
   const brief = subagentBrief(block);
-  const sentence = (brief.match(/^[^.!?]*[.!?]?/)?.[0] ?? brief).trim();
+  const sentence = (brief.match(/^.*?[.!?](?=\s|$)/s)?.[0] ?? brief).trim();
   const name = sentence || brief;
   if (name.length <= MAX_SUBAGENT_NAME) return name;
   const cut = name.slice(0, MAX_SUBAGENT_NAME);
@@ -628,20 +686,35 @@ export function subagentReport(block: Block): string | undefined {
  * the agent is working, and the count says how far it has got.
  */
 export function subagentStatusLine(block: Block, steps: AgentStep[]): string {
-  if (toolCallState(block) === "rejected") return "failed";
-  const tools = steps.filter((step) => step.kind === "tool").length;
-  if (isStoppedBlock(block)) {
-    return tools === 0
-      ? STOPPED_BY_YOU
-      : `${tools === 1 ? "1 step" : `${tools} steps`}, ${STOPPED_BY_YOU}`;
+  return subagentStatusParts(block, steps)
+    .map((part) => part.text)
+    .join(", ");
+}
+
+export type SubagentStatusPart = {
+  text: string;
+  tone?: "danger" | "warning" | "success" | "accent";
+};
+
+/** Keep step failures separate from the run's lifecycle and neutral step count. */
+export function subagentStatusParts(block: Block, steps: AgentStep[]): SubagentStatusPart[] {
+  if (toolCallState(block) === "rejected") return [{ text: "failed", tone: "danger" }];
+  if (block.tool?.status?.toLowerCase() === "interrupted") {
+    return [{ text: "interrupted", tone: "warning" }];
   }
-  if (tools === 0) return "";
+  const tools = steps.filter((step) => step.kind === "tool").length;
   const count = tools === 1 ? "1 step" : `${tools} steps`;
+  if (isStoppedBlock(block)) {
+    return [...(tools ? [{ text: count }] : []), { text: STOPPED_BY_YOU, tone: "warning" }];
+  }
+  if (tools === 0) return [];
   // A step that failed inside a run that went on to finish still has to say so
   // here, or the row reads clean until someone opens the trail.
   const failed = steps.filter((step) => step.kind === "tool" && isFailedStatus(step.status)).length;
-  if (!failed) return count;
-  return `${count}, ${failed === 1 ? "1 failed" : `${failed} failed`}`;
+  return [
+    { text: count },
+    ...(failed ? [{ text: `${failed} failed`, tone: "danger" as const }] : []),
+  ];
 }
 
 /** A failed delegated call must stay visible even when the work trail folds. */
@@ -681,6 +754,12 @@ export type ActivityPhase = {
 const WORK_KIND_ORDER: ActivityWorkKind[] = ["edit", "run", "agent", "research", "other"];
 
 export function toolCategory(block: Block): ActivityWorkKind {
+  let category = categories.get(block);
+  if (category === undefined) categories.set(block, (category = classifyTool(block)));
+  return category;
+}
+
+function classifyTool(block: Block): ActivityWorkKind {
   const kind = block.tool?.kind;
   const title = block.text || block.tool?.title;
   const preview = block.tool?.preview;
@@ -913,6 +992,10 @@ function currentWorkKind(steps: Block[]): ActivityWorkKind | undefined {
  * "N notes" clause; a group holding nothing but notes is just that clause.
  */
 export function workSummaryLine(steps: Block[], live = false): string {
+  // While context compacts, say so instead of a bare "Working"/"Thinking".
+  if (live && steps.length > 0 && isRunningCompaction(steps[steps.length - 1])) {
+    return COMPACTING_TEXT;
+  }
   const appSummary = bycodaWorkSummary(steps, live);
   if (appSummary) return appSummary;
   const tally = tallySteps(steps);

@@ -1,4 +1,5 @@
-import { confirm } from "@tauri-apps/plugin-dialog";
+import { t } from "../../../shared/i18n";
+import { confirmInApp } from "../../../shared/model/appConfirm";
 import type { ServerRecord } from "./serverInventory";
 import { previewSshConfiguration } from "./sshGroupDefaults";
 
@@ -122,15 +123,19 @@ const defaults: Deps = {
   now: Date.now,
   id: () => crypto.randomUUID(),
   confirmClose: (review) =>
-    confirm(
-      `A paired mobile device requests closing its SSH terminal on this computer:\n${review.connection.name}\n${review.connection.host}:${review.connection.port}\nOwned terminals: ${review.terminalCount}\nOther desktop SSH resources are not included.`,
-      {
-        title: "Close mobile SSH workspace",
-        kind: "warning",
-        okLabel: "Close owned terminal",
-        cancelLabel: "Cancel",
-      },
-    ),
+    confirmInApp({
+      title: t("Close mobile SSH terminal?"),
+      message: [
+        t("A paired mobile device requests closing its SSH terminal on this computer:"),
+        review.connection.name,
+        `${review.connection.host}:${review.connection.port}`,
+        t("Owned terminals: {p0}", { p0: review.terminalCount }),
+        t("Other desktop SSH resources are not included."),
+      ].join("\n"),
+      confirmLabel: t("Close terminal"),
+      tone: "danger",
+      reveal: true,
+    }),
 };
 export function createSshMobileWorkspaceControl(overrides: Partial<Deps> = {}) {
   const deps = { ...defaults, ...overrides };

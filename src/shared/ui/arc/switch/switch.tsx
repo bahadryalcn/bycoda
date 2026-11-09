@@ -1,7 +1,7 @@
 "use client";
 
-import { forwardRef, useEffect, useRef, useState } from "react";
-import type { ComponentPropsWithoutRef, ElementRef } from "react";
+import { forwardRef, useEffect, useId, useRef, useState } from "react";
+import type { ComponentPropsWithoutRef, ElementRef, ReactNode } from "react";
 import * as SwitchPrimitive from "@radix-ui/react-switch";
 import { animate, motion, useMotionValue, useReducedMotion } from "motion/react";
 import type { Transition } from "motion/react";
@@ -9,7 +9,11 @@ import { motionTokens } from "../lib/motion-tokens";
 import styles from "./switch.module.css";
 
 export interface SwitchProps extends ComponentPropsWithoutRef<typeof SwitchPrimitive.Root> {
-  label?: string;
+  label?: ReactNode;
+  /** Which side of the track the label sits on. `start` suits settings rows with the switch at the end. */
+  labelPosition?: "end" | "start";
+  /** Secondary line under the label. Needs `label`. */
+  description?: ReactNode;
   /** Compact settings geometry; the hit area remains 28px high. */
   compact?: boolean;
 }
@@ -24,6 +28,8 @@ export const Switch = forwardRef<ElementRef<typeof SwitchPrimitive.Root>, Switch
   function Switch(
     {
       label,
+      labelPosition = "end",
+      description,
       compact = false,
       className,
       checked,
@@ -64,7 +70,21 @@ export const Switch = forwardRef<ElementRef<typeof SwitchPrimitive.Root>, Switch
       return () => controls.stop();
     }, [on, reduceMotion, scaleX]);
     const extra = pressed && !reduceMotion && !props.disabled ? stretch : 0;
+    const descriptionId = useId();
+    const hasDescription = label != null && label !== false && description != null;
     const classes = [styles.switch, className].filter(Boolean).join(" ");
+
+    const textNode =
+      label != null && label !== false && label !== "" ? (
+        <span className={styles.text}>
+          <span className={styles.label}>{label}</span>
+          {hasDescription ? (
+            <span id={descriptionId} className={styles.description}>
+              {description}
+            </span>
+          ) : null}
+        </span>
+      ) : null;
 
     return (
       <SwitchPrimitive.Root
@@ -107,8 +127,15 @@ export const Switch = forwardRef<ElementRef<typeof SwitchPrimitive.Root>, Switch
         }}
         className={classes}
         data-compact={compact || undefined}
-        aria-label={props["aria-label"] ?? label}
+        aria-label={props["aria-label"] ?? (typeof label === "string" ? label : undefined)}
+        aria-describedby={
+          hasDescription
+            ? [props["aria-describedby"], descriptionId].filter(Boolean).join(" ")
+            : props["aria-describedby"]
+        }
+        data-label-position={labelPosition === "start" ? "start" : undefined}
       >
+        {labelPosition === "start" ? textNode : null}
         <span className={styles.track}>
           {/* The thumb stretches like a held finger and keeps its far edge anchored, then travels on a spring. */}
           <motion.span
@@ -121,7 +148,7 @@ export const Switch = forwardRef<ElementRef<typeof SwitchPrimitive.Root>, Switch
             }
           />
         </span>
-        {label ? <span className={styles.label}>{label}</span> : null}
+        {labelPosition === "end" ? textNode : null}
       </SwitchPrimitive.Root>
     );
   },

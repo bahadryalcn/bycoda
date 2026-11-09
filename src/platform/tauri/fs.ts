@@ -1,3 +1,5 @@
+import { createWorkspacePathMutations } from "./fs/pathMutations";
+export type { MovePathResult } from "./fs/pathMutations";
 import { invoke as invokeLocal } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { withGithubRead } from "../../shared/lib/githubReadGate";
@@ -5,6 +7,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { parentPath, slash, joinPath } from "../../shared/lib/paths";
 import { REMOTE_PATH_PREFIX } from "../../shared/lib/remotePaths";
 import { localExplorerPath } from "../../shared/lib/remoteExplorerPaths";
+import { requestFolderPicker } from "./folderPicker";
+import { createGitWatchCoalescer, sameCheckout, type GitWatchReport } from "./gitWatchCoalesce";
 import type { InterjectionMeta } from "../../features/sessions/model/session";
 
 export { REMOTE_PATH_PREFIX } from "../../shared/lib/remotePaths";
@@ -20,6 +24,13 @@ export async function readProjectImage(root: string, path: string): Promise<Uint
 
 type RemoteCommandRunner = (command: string, args: Record<string, unknown>) => Promise<unknown>;
 let remoteRunner: RemoteCommandRunner | undefined;
+type RemoteMachineResolver = (environmentId: string) => Promise<{ id: string } | undefined>;
+let remoteMachineResolver: RemoteMachineResolver | undefined;
+
+/** App composition supplies recorded-machine resolution without a React import. */
+export function setRemoteMachineResolver(resolver: RemoteMachineResolver): void {
+  remoteMachineResolver = resolver;
+}
 
 /** Set once by the connections feature, which knows the connected machines. */
 export function setRemoteCommandRunner(runner: RemoteCommandRunner) {
@@ -210,6 +221,8 @@ export async function browseDirectory(path: string, containing = false): Promise
 }
 
 export type DiscoveredSkill = {
+  /** Catalog installation target; absent for skills installed outside bycoda. */
+  installProvider?: string;
   modelInvocable?: false;
   userInvocable?: false;
   name: string;
@@ -234,10 +247,12 @@ export type DiscoveredSkill = {
 export function listSkills(
   cwd: string,
   disabledPaths?: readonly string[] | null,
+  provider?: string,
 ): Promise<DiscoveredSkill[]> {
   return invoke<DiscoveredSkill[]>("list_skills", {
     cwd,
     disabledPaths: disabledPaths ?? null,
+    ...(provider ? { provider } : {}),
   });
 }
 
@@ -299,7 +314,15 @@ export function listClaudeCommands(cwd: string): Promise<ClaudeCommandEntry[]> {
 type ProjectFileListing = {
   root: string;
   files: { name: string; relative: string }[];
+  truncated?: boolean;
 };
+
+const projectFileCompleteness = new WeakMap<ProjectFile[], boolean>();
+
+/** Undefined means the serving Host did not report whether its scan was complete. */
+export function projectFilesTruncated(files: ProjectFile[]): boolean | undefined {
+  return projectFileCompleteness.get(files);
+}
 
 /** Local projects send the root once with relative paths; a remote host still
  * sends full entries, which pass through untouched. */
@@ -307,11 +330,13 @@ export async function listProjectFiles(cwd: string): Promise<ProjectFile[]> {
   const listing = await invoke<ProjectFileListing | ProjectFile[]>("list_project_files", { cwd });
   if (Array.isArray(listing)) return listing;
   const prefix = listing.root.endsWith("/") ? listing.root : `${listing.root}/`;
-  return listing.files.map((file) => ({
+  const files = listing.files.map((file) => ({
     name: file.name,
     path: prefix + file.relative,
     relative: file.relative,
   }));
+  if (typeof listing.truncated === "boolean") projectFileCompleteness.set(files, listing.truncated);
+  return files;
 }
 
 export type GitDiffStats = {
@@ -830,15 +855,7 @@ const GIT_CHANGED = "bycoda-git-changed";
  */
 export type GitChangeScope = "index" | "checkout" | "refs";
 
-type GitChange = { cwd?: string; scope: GitChangeScope };
-
-/** Whether two folders belong to one checkout: the same folder or nested. */
-function sameCheckout(a: string, b: string): boolean {
-  const normalize = (path: string) => path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-  const left = normalize(a);
-  const right = normalize(b);
-  return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
-}
+export type GitChange = { cwd?: string; scope: GitChangeScope };
 
 /**
  * Tell git UIs (diff pane, branch picker) to reload after a local git mutation.
@@ -849,7 +866,6 @@ export function notifyGitChanged(cwd?: string, scope: GitChangeScope = "refs") {
   window.dispatchEvent(new CustomEvent<GitChange>(GIT_CHANGED, { detail: { cwd, scope } }));
 }
 
-type GitWatchReport = { cwd: string; index: boolean; refs: boolean };
 type GitWatch = {
   count: number;
   state: "pending" | "watching" | "failed";
@@ -861,33 +877,26 @@ const GIT_WATCH_EVENT = "bycoda-git-watch";
 const gitWatches = new Map<string, GitWatch>();
 let gitWatchReady: Promise<void> | null = null;
 
-function deliverGitWatch(reports: GitWatchReport[]) {
-  const sent: { cwd: string; scope: GitChangeScope }[] = [];
-  for (const report of reports) {
-    const scope: GitChangeScope = report.refs ? "checkout" : "index";
-    // Nested folders of one checkout share their listeners: tell them once.
-    if (
-      sent.some(
-        (prior) =>
-          sameCheckout(prior.cwd, report.cwd) && (prior.scope === "checkout" || scope === "index"),
-      )
-    )
-      continue;
-    sent.push({ cwd: report.cwd, scope });
-    notifyGitChanged(report.cwd, scope);
-  }
-}
+/** Native reports arrive in bursts per checkout; views reload once per burst. */
+const gitWatchCoalescer = createGitWatchCoalescer(notifyGitChanged);
 
 function gitWatchSetup(): Promise<void> {
   // Reports are addressed to the webview that registered the checkout.
-  gitWatchReady ??= Promise.resolve()
-    .then(() =>
-      getCurrentWebview().listen<GitWatchReport[]>(GIT_WATCH_EVENT, (event) =>
-        deliverGitWatch(event.payload),
-      ),
-    )
-    // A reloaded page drops what its previous load registered.
-    .then(() => invokeLocal<void>("git_watch_reset"));
+  gitWatchReady ??= (async () => {
+    const unlisten = await getCurrentWebview().listen<GitWatchReport[]>(GIT_WATCH_EVENT, (event) =>
+      gitWatchCoalescer.push(event.payload),
+    );
+    try {
+      // A reloaded page drops what its previous load registered.
+      await invokeLocal<void>("git_watch_reset");
+    } catch (error) {
+      unlisten();
+      throw error;
+    }
+  })().catch((error) => {
+    gitWatchReady = null;
+    throw error;
+  });
   return gitWatchReady;
 }
 
@@ -949,6 +958,7 @@ function acquireGitWatch(cwd: string): () => void {
     const current = gitWatches.get(cwd);
     if (!current || --current.count > 0) return;
     gitWatches.delete(cwd);
+    gitWatchCoalescer.cancel(cwd);
     // A pending start unwatches itself once it settles.
     if (current.state === "watching") void invokeLocal("git_unwatch", { cwd }).catch(() => {});
   };
@@ -968,7 +978,7 @@ export function isGitWatched(cwd: string): boolean {
  * skips every `index` change, for views of commits, branches or stashes.
  */
 export function subscribeGitChanged(
-  listener: () => void,
+  listener: (change?: GitChange | null) => void,
   filter?: { cwd?: string; refsOnly?: boolean },
 ): () => void {
   const onChange = (event: Event) => {
@@ -979,7 +989,7 @@ export function subscribeGitChanged(
         return;
       }
     }
-    listener();
+    listener(change);
   };
   window.addEventListener(GIT_CHANGED, onChange);
   const cwd = filter?.cwd;
@@ -999,21 +1009,8 @@ export function createPath(parent: string, name: string, isDir: boolean): Promis
   return invoke<string>("create_path", { parent, name, isDir }).then(slash);
 }
 
-export function renamePath(path: string, name: string): Promise<string> {
-  return invoke<string>("rename_path", { path, name }).then(slash);
-}
-
-export function deletePath(path: string): Promise<void> {
-  return invoke<void>("delete_path", { path });
-}
-
-export function copyPath(from: string, destParent: string): Promise<string> {
-  return invoke<string>("copy_path", { from, destParent }).then(slash);
-}
-
-export function movePath(from: string, destParent: string): Promise<string> {
-  return invoke<string>("move_path", { from, destParent }).then(slash);
-}
+export const { renamePath, deletePath, copyPath, movePath } =
+  createWorkspacePathMutations(invokeWorkspace);
 
 /**
  * Paths for files copied in a file manager, on macOS, Linux and Windows.
@@ -1058,10 +1055,9 @@ export function openPathWithDefaultApp(path: string): Promise<void> {
 /** Read-only live native folder access, using the recorded owning machine. */
 export async function openLiveRemoteFolder(path: string): Promise<void> {
   const { parseRemotePath } = await import("../../features/connections/model/remoteProjects");
-  const { remoteMachineFor } = await import("../../features/connections/model/connections");
   const parsed = parseRemotePath(path);
   if (!parsed) throw new Error("Choose a folder on a connected computer.");
-  const machine = await remoteMachineFor(parsed.environmentId);
+  const machine = await remoteMachineResolver?.(parsed.environmentId);
   if (!machine) throw new Error("The owning computer is not connected.");
   return invokeLocal<void>("remote_open_live_folder", {
     machineId: machine.id,
@@ -1225,8 +1221,7 @@ export async function pickNativeFolders(
 
 /** Shared in-app browser for adding projects and session folders. */
 export async function pickFolders(title = "Open projects", multiple = true): Promise<string[]> {
-  const { openFolderPicker } = await import("../../features/projects/ui/openFolderPicker");
-  const folders = await openFolderPicker({ title, multiple });
+  const folders = await requestFolderPicker({ title, multiple });
   for (const path of folders) await invoke<void>("authorize_project_path", { path });
   return folders;
 }
@@ -1323,17 +1318,13 @@ export async function readBinaryFile(path: string): Promise<Uint8Array<ArrayBuff
     : new Uint8Array(buffer);
 }
 
-export type GeneratedImageAsset = {
-  path: string;
-  mimeType: string;
-  size: number;
-};
+export type { GeneratedImageAsset } from "./generatedImages";
 
 export function saveGeneratedImage(input: {
   data: string;
   name: string;
-}): Promise<GeneratedImageAsset> {
-  return invoke<GeneratedImageAsset>("save_generated_image", input);
+}): Promise<import("./generatedImages").GeneratedImageAsset> {
+  return invoke<import("./generatedImages").GeneratedImageAsset>("save_generated_image", input);
 }
 
 export function deleteGeneratedImages(paths: string[]): Promise<void> {

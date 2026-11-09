@@ -1,49 +1,67 @@
+import { MessageQueue } from "./MessageQueue";
+import { RemoteOriginMark } from "./RemoteOriginMark";
+import { ComposerHighlight } from "./ComposerHighlight";
 import { Alert } from "../../../shared/ui/Alert";
-import {
-  DeliveryProgressNotice,
-  deliveryIsPending,
-  useDeliveryProgress,
-} from "./DeliveryProgressNotice";
-import { Badge } from "../../../shared/ui/Badge";
+import { registerVoiceDraftReader } from "../../voice/model/voiceDraftContext";
+import { DeliveryProgressNotice, DeliveryProgressIndicator } from "./DeliveryProgressNotice";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { useClearComposerDraft } from "../hooks/useClearComposerDraft";
+import { useMountedComposerClosure } from "../hooks/useMountedComposerClosure";
+import {
+  retainParentInput,
+  useParentInputClosure,
+  useParentInputsClosed,
+  canMutateParentInputs,
+  mutateParentInput,
+  type ParentInputHandle,
+  type ParentAdmission,
+} from "../data/parentInputClosure";
 import {
   useComposerTranslationSelection,
   type ComposerTranslationSelection,
 } from "../hooks/useComposerTranslationSelection";
-import { canOfferTranslation, type TranslationTarget } from "../model/translation";
+import {
+  canOfferTranslation,
+  repromptReference,
+  type TextActionTarget,
+} from "../model/translation";
 import {
   translatedSelection,
   translationHistoryKey,
   type TranslationHistory,
 } from "../model/translationHistory";
 import { TranscriptSelectionMenu } from "./TranscriptSelectionMenu";
+import { ComposerCitations } from "./ComposerCitations";
+import { chatCitationTokens, removeCitationFromText } from "../model/citationTokens";
+import { extractChatCitations, withChatCitations, type ChatCitation } from "../model/chatCitation";
 import { TranslationResultDialog } from "./TranslationResultDialog";
-import { registerBrowserComposer } from "../../host-tools/browserComposer";
-import { registerLogsComposer } from "../../host-tools/logsComposer";
 import { releaseAttachments } from "../model/releaseAttachments";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import type { QueueAction } from "../model/queueAction";
-import { useComposerSpelling } from "../../settings/model/composerSpelling";
+import { useComposerSpelling } from "../../settings/public/composerSpelling";
 import { ComposerTips } from "./ComposerTips";
+import { useWorkspaceCreation } from "../../workspaces/model/workspaceCreation";
+import {
+  bundledHostWaitsForSessions,
+  useBundledHostStatus,
+} from "../../connections/public/bundledHostStatus";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
+import { WorkspaceCreationStatus } from "../../workspaces/ui/WorkspaceCreationStatus";
+import { SessionWorkspaceActions } from "../../workspaces/ui/SessionWorkspaceActions";
+import { WorkspaceRewindPreviewHost } from "../../workspaces/ui/WorkspaceRewindPreview";
 import "./chat-controls.css";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
   ArrowUp,
   AiIdea,
-  Check,
   CircleDashed,
-  CornerDownRight,
   CursorMagicSelection,
   FilePlus,
   ListEnd,
-  Pause,
-  Pencil,
-  Play,
   Plus,
   Share,
+  SlidersHorizontal,
   Square,
-  StickyNote,
-  Trash2,
   Undo2,
   X,
 } from "../../../shared/ui/icons";
@@ -60,15 +78,14 @@ import {
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
+  type SetStateAction,
 } from "react";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   attachmentsFromFiles,
-  MAX_ATTACHMENTS,
-  attachmentsFromPaths,
   filesFromClipboard,
   mergeAttachments,
   pickAttachments,
+  retainAttachmentPickerSelection,
   revokeAttachment,
 } from "../model/attachments";
 import {
@@ -79,45 +96,37 @@ import {
   removeAttachmentFromText,
   tokensForIncoming,
 } from "../model/attachmentTokens";
-import { COMPOSER_MAX_HEIGHT, resizeComposer } from "../model/composerResize";
+import { composerMaxHeight, resizeComposer } from "../model/composerResize";
 import { createComposerResizeFrame } from "./composerResizeFrame";
 import {
   isFileReferenceText,
   messageFilesFromClipboard,
   nativeClipboardAttachments,
 } from "../../../platform/tauri/clipboard";
-import {
-  EXPLORER_FILE_POINTER_DRAG_EVENT,
-  type ExplorerFilePointerDragDetail,
-} from "../../../shared/lib/drag";
-import { dragPointToClient } from "../../../shared/lib/dragPoint";
 import type { ContextUsage } from "../model/contextUsage";
 import type { Block } from "../model/session";
 import type { SessionUsage } from "../model/sessionUsage";
+import { peekProjectFiles } from "../../files/public/fileIndex";
 import {
-  loadProjectFiles,
-  peekProjectFiles,
-  recentOpenedFiles,
-  subscribeProjectFiles,
-} from "../../files/model/fileIndex";
-import {
-  buildMentionIndex,
-  fileMentionParts,
   mentionLabel,
   mentionTokenAt,
-  rankMentionFiles,
   replaceMentionToken,
   type MentionIndex,
   type MentionToken,
-} from "../../files/model/fileMentions";
+} from "../../files/public/fileMentions";
 import type { ProjectFile } from "../../../platform/tauri/fs";
 import { composeInboxMessage, type InboxComposerCard } from "../../inbox/model/githubTasks";
 import type { HandoffComposerCard } from "../model/handoff";
-import { isLocalProject, looksLikeProject, type RecentProject } from "../../projects/model/recents";
+import {
+  isLocalProject,
+  looksLikeProject,
+  type RecentProject,
+} from "../../projects/public/recents";
 import type {
   Attachment,
   HarnessId,
   MessageQueueStatus,
+  ModelTarget,
   QueuedMessage,
   UsageLimit,
   RuntimeMode,
@@ -125,16 +134,20 @@ import type {
   ComposerTurnOptions,
 } from "../model/session";
 import { parseShellCommand } from "../model/shellRun";
-import { canSteerHarness } from "../../../integrations/harness/core/registry";
+import { clearConversationBlocker } from "../model/clearConversation";
+import { getSessions } from "../model/sessionsStore";
+import {
+  canSteerHarness,
+  isHarnessTurnStopping,
+  subscribeHarnessStopping,
+} from "../../../integrations/harness/core/registry";
 import {
   HARNESS_TITLE,
   harnessSupportsAttachments,
   planUnavailableReason,
   unavailableRuntimeModes,
 } from "../model/session";
-import { hasMissingAttachment } from "../model/queuePersistence";
-import { moveQueuedMessage, resolveFollowUpRoute } from "../model/messageQueue";
-import { useAnimatedReorder } from "../../../shared/hooks/useAnimatedReorder";
+import { resolveFollowUpRoute } from "../model/messageQueue";
 import type { UserQuestionPrompt, UserQuestionReply } from "../model/userQuestion";
 import { historyKey, type HistoryBrowse } from "../model/composerHistory";
 import { isImeComposition } from "../../../shared/lib/keyboard";
@@ -146,58 +159,46 @@ import {
   hasNativeCommands,
   isNativeCommandPrompt,
   replaceSlashToken,
-  skillTextParts,
   slashTokenAt,
+  skillTextParts,
   type Skill,
   type SlashToken,
 } from "../../skills/model/skills";
 import { AccessPicker } from "./AccessPicker";
 import { ContextMeter } from "./ContextMeter";
 import { AttachmentChip } from "./AttachmentChip";
-import { QueuedMessageEditDialog } from "./QueuedMessageEditDialog";
-import { BranchPicker } from "../../source-control/ui/BranchPicker";
-import { WorktreePicker } from "../../source-control/ui/WorktreePicker";
+import { BranchPicker } from "../../source-control/public/BranchPicker";
+import { WorktreePicker } from "../../source-control/public/WorktreePicker";
 import {
   isWorkspaceModeShortcut,
   WorkspaceIdentity,
   WorkspacePicker,
 } from "../../workspace/ui/WorkspacePicker";
-import type { Worktree } from "../../source-control/model/worktrees";
-import { CwdPicker } from "../../projects/ui/CwdPicker";
+import type { Worktree } from "../../source-control";
+import { CwdPicker } from "../../projects/public/CwdPicker";
 import { FileMentionPicker } from "./FileMentionPicker";
 import { McpServerPicker } from "./McpServerPicker";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { InboxMiniCard } from "../../inbox/ui/InboxMiniCard";
 import { NoteMiniCard } from "../../notes/ui/NoteMiniCard";
 import { HandoffMiniCard } from "./HandoffMiniCard";
 import { ModelPicker } from "./ModelPicker";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { Button } from "../../../shared/ui/Button";
-import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcut";
-import { QuestionForm } from "./QuestionForm";
+import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
+import { ComposerQuestionForm } from "./ComposerQuestionForm";
 import { ComposerSuggestions } from "./ComposerSuggestions";
 import { SkillPicker } from "../../skills/ui/SkillPicker";
 import { pathKey, projectKey } from "../../../shared/lib/paths";
 import { consumeQuoteRequest, type QuoteRequest } from "../model/quoteDraft";
-import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
-import { useProjectBranchesState } from "../../source-control/hooks/useProjectBranches";
+import { useTabGroupLogos } from "../../projects/public/useTabGroupLogos";
+import { useProjectBranchesState } from "../../source-control/public/useProjectBranches";
 import {
   keybindingPressed,
   loadNotesEnabled,
   subscribeNotesEnabled,
-} from "../../settings/model/settings";
-import {
-  isNoteMentionPath,
-  loadNoteSummaries,
-  peekNoteSummaries,
-  rankNoteFiles,
-  notesAsProjectFiles,
-  type NoteSummary,
-  type NoteComposerCard,
-} from "../../notes";
+} from "../../settings/public/settings";
+import { isNoteMentionPath, type NoteComposerCard } from "../../notes";
 import { resolveTabGroupLogo } from "../../workspace/model/tabGroups";
-import { useCliCommands } from "./useCliCommands";
-import { useComposerSkills } from "./useComposerSkills";
-import { Popover } from "../../../shared/ui/Popover";
 import { UsageLimitNotice } from "./UsageLimitNotice";
 import {
   supportsProviderAccounts,
@@ -207,18 +208,10 @@ import { consumePlanCommand, PLAN_COMMAND } from "../model/plan";
 import { consumeOperatorCommand, OPERATOR_COMMAND } from "../model/operatorCommand";
 import { consumeOrchestratorCommand, ORCHESTRATOR_COMMAND } from "../model/orchestratorCommand";
 import { consumeDraftCommand, DRAFT_COMMAND } from "../model/draftCommand";
+import { leadingModeCommand, MODE_COMMAND_INDENT, ModeCommandPill } from "./modeCommands";
+import { BTW_COMMAND, consumeBtwCommand, consumeBtwPrefix } from "../model/btw";
+import { isCompactCommand } from "../model/compact";
 import {
-  leadingModeCommand,
-  MODE_COMMAND_INDENT,
-  ModeCommandPill,
-  ModeCommandText,
-  type ModeCommandToken,
-} from "./modeCommands";
-import { BTW_COMMAND, consumeBtwCommand, consumeBtwPrefix, supportsBtwHarness } from "../model/btw";
-import { COMPACT_COMMAND, isCompactCommand } from "../model/compact";
-import {
-  CLEAR_SESSION_COMMAND,
-  NEW_SESSION_COMMAND,
   isClearSessionCommand,
   isNewSessionCommand,
   type NewSessionOptions,
@@ -235,31 +228,28 @@ import {
   type SessionFolderTarget,
   type SessionFolder,
 } from "../model/sessionFolders";
+import { organizationFoldersForProject } from "../model/sessionOrganizationOperations";
+import {
+  cachedSessionOrganization,
+  hydrateSessionOrganization,
+  NATIVE_SESSION_ORGANIZATION_ACTIVE,
+  subscribeSessionOrganization,
+  unresolvedSessionOrganizationGestures,
+} from "../model/sessionOrganizationStore";
+import type { SessionOrganizationResult } from "../model/sessionOrganizationStore";
+import { listPinSagas } from "../model/sessionPinSaga";
 import { SessionFolderPicker } from "./SessionFolderPicker";
 import { MCP_COMMAND, isMcpCommand } from "../model/mcpCommand";
-import {
-  mcpContextText,
-  mcpTagParts,
-  newMcpTag,
-  taggedMcpServers,
-  type McpTag,
-} from "../model/mcpPicker";
+import { mcpContextText, newMcpTag, taggedMcpServers, type McpTag } from "../model/mcpPicker";
 import {
   getComposerAttachments,
   getComposerMcpTags,
   getComposerDraftMode,
   setComposerDraftMode,
-  setComposerAttachments,
+  setComposerDraftSnapshot,
   setComposerMcpTags,
   takeComposerNotice,
 } from "../model/draftCache";
-import { type McpConnection } from "../../settings/model/mcp";
-import {
-  getCachedMcpSettings,
-  loadMcpSettings,
-  subscribeMcpSettings,
-  type McpSettingsSnapshot,
-} from "../../settings/model/mcpSettingsCache";
 import type { LastTurnRecall } from "../model/editLastTurn";
 import {
   isDefaultQueueChord,
@@ -272,15 +262,30 @@ import {
   isInterruptChord,
   STOP_TURN_COMMAND,
 } from "../model/sessionKeys";
-import {
-  insertTemplateBody,
-  loadPromptTemplates,
-  subscribePromptTemplates,
-  templateSkill,
-  templateTriggerAt,
-} from "../model/promptTemplates";
+import { insertTemplateBody, templateTriggerAt } from "../model/promptTemplates";
 import { SessionDirsPicker } from "./SessionDirsPicker";
-
+import {
+  deferredExternalDraftToApply,
+  externalDraftAction,
+  type DeferredExternalDraft,
+} from "./composerExternalDraft";
+import { useComposerMcpCatalog } from "./useComposerMcpCatalog";
+import { useComposerMentionSources } from "./useComposerMentionSources";
+import { useComposerSlashInventory } from "./useComposerSlashInventory";
+import { applyTextareaEdit, insertDictatedText } from "./composerTextareaEdit";
+import { installAttachmentSelectionPolicy } from "./attachmentSelectionPolicy";
+import { DictationButton } from "../../voice/ui/DictationButton";
+import { MicrophoneRecoveryAction } from "../../voice/ui/MicrophoneRecoveryAction";
+import { useEditingLastTurn } from "./useEditingLastTurn";
+import {
+  useAttachmentSink,
+  useComposerAttachmentLifecycle,
+  useComposerAttachmentReads,
+  releaseOverLimit,
+  skippedPastedFiles,
+} from "./useComposerAttachments";
+import { useComposerFileDrop } from "./useComposerFileDrop";
+import { useComposerRegistrations } from "./useComposerRegistrations";
 type Props = {
   enabled?: boolean;
   focused: boolean;
@@ -288,6 +293,12 @@ type Props = {
   focusToken?: number;
   shell?: boolean;
   compact?: boolean;
+  /**
+   * Reading mode: the reader is away from the end of the transcript and not
+   * using the composer. The same mounted field shrinks to its content and the
+   * secondary workspace row is tucked away; nothing is remounted or copied.
+   */
+  reading?: boolean;
   placeholder?: string;
   inputAriaLabel?: string;
   disabled?: boolean;
@@ -299,6 +310,8 @@ type Props = {
   cwd?: string;
   executionCwd: string;
   sessionId?: string;
+  /** Nested composers keep their own draft ID; null means no known logical root. */
+  parentSessionId?: string | null;
   branch?: string;
   recents?: RecentProject[];
   hideProjectPicker?: boolean;
@@ -306,7 +319,13 @@ type Props = {
   hideTopBar?: boolean;
   /** Routes discovery to the host; local-only app modes remain unavailable. */
   remoteSession?: boolean;
-  remoteFeatures?: { attachments: boolean; plan: boolean; draft: boolean; steer?: boolean };
+  remoteFeatures?: {
+    attachments: boolean;
+    questionAttachments?: boolean;
+    plan: boolean;
+    draft: boolean;
+    steer?: boolean;
+  };
   /** Why Send cannot reach its destination right now; Send stays usable and tries again. */
   sendBlockedReason?: string;
   /** Send is refused while set (another computer is mid-turn on this session). */
@@ -337,6 +356,8 @@ type Props = {
   promptHistory?: () => string[];
   queuedMessages?: QueuedMessage[];
   queueStatus?: MessageQueueStatus;
+  /** Model and settings of the turn in progress; queued rows saved for another one cannot steer it. */
+  runningModelTarget?: ModelTarget;
   usageLimit?: UsageLimit;
   hotkeys?: boolean;
   onFocus: () => void;
@@ -344,6 +365,8 @@ type Props = {
   onBranchChange?: () => void;
   onWorktreeChange?: (tree: Worktree) => Promise<void>;
   draftWorkspace?: boolean;
+  /** UI integration signal only. Set after the remote creator binds managed ownership. */
+  managedWorkspaceCreationReady?: boolean;
   workspaceMode?: WorkspaceMode;
   worktreeBase?: string;
   onWorkspaceModeChange?: (mode: WorkspaceMode, base?: string) => void;
@@ -359,27 +382,39 @@ type Props = {
   onNoteCardDismiss?: () => void;
   onHandoffCardDismiss?: () => void;
   onQuestionReply?: (requestId: number, reply: UserQuestionReply) => void;
+  questionDraftScope?: string;
   onQuestionInteraction?: (requestId: number) => void;
   onSubmit: (
     text: string,
     attachments: Attachment[],
     options?: ComposerTurnOptions,
+    parentAdmission?: ParentAdmission,
   ) => boolean | void;
   /** `draft` opens the side question with the text unsent, for a typed `/btw `. */
-  onBtwCommand?: (text: string, options?: { draft?: boolean }) => boolean | void;
+  onBtwCommand?: (
+    text: string,
+    options?: { draft?: boolean },
+    parentAdmission?: ParentAdmission,
+  ) => boolean | void;
   canSaveDraft?: boolean;
-  onSaveDraft?: (text: string, attachments: Attachment[]) => boolean | void;
+  onSaveDraft?: (
+    text: string,
+    attachments: Attachment[],
+    parentAdmission?: ParentAdmission,
+  ) => boolean | void;
   onStop?: () => void;
-  onCompactContext?: () => boolean;
-  onNewSession?: (options?: NewSessionOptions) => void;
-  onPlaceInFolder?: (target: SessionFolderTarget) => void;
+  onCompactContext?: (parentAdmission?: ParentAdmission) => boolean;
+  onNewSession?: (options?: NewSessionOptions, parentAdmission?: ParentAdmission) => void;
+  onPlaceInFolder?: (
+    target: SessionFolderTarget,
+  ) => void | false | Promise<void | SessionOrganizationResult>;
   /** Open the picker of conversations Claude Code stored for this project. */
-  onResumeProviderSession?: () => void;
+  onResumeProviderSession?: (parentAdmission?: ParentAdmission) => void;
   onDeleteQueuedMessage?: (messageId: string) => void;
   onEditQueuedMessage?: (messageId: string, text: string, attachments: Attachment[]) => void;
   onQueuedMessageEditingChange?: (messageId?: string) => void;
   /** The queue in its new order, as ids; resolved against the live queue by the owner. */
-  onReorderQueuedMessages?: (messageIds: string[]) => void;
+  onReorderQueuedMessages?: (messageIds: string[], parentAdmission?: ParentAdmission) => void;
   onSteerQueuedMessage?: (messageId: string) => QueueAction;
   onResumeQueue?: () => QueueAction;
   onUsageLimitResume?: () => void;
@@ -395,412 +430,16 @@ type Props = {
   onRecallMessageReady?: (recall: (value: LastTurnRecall) => void) => void;
   recalledMessage?: { id: string; value: LastTurnRecall };
   onRecalledMessageApplied?: (id: string) => void;
+  /**
+   * Owner-supplied edit marker. Without it the Composer holds the flag itself;
+   * `onEditingLastTurnChange` then only reports changes.
+   */
+  editingLastTurn?: boolean;
   onEditingLastTurnChange?: (editing: boolean) => void;
+  /** Shown in the workspace row when the conversation was started from another device. */
+  remoteOrigin?: "running" | "idle";
   children?: ReactNode;
 };
-
-function ToolButton({
-  active,
-  disabled,
-  label,
-  onClick,
-  children,
-}: {
-  active?: boolean;
-  disabled?: boolean;
-  label: string;
-  onClick?: () => void;
-  children: ReactNode;
-}) {
-  useLocale();
-  return (
-    <Button
-      className="shrink-0"
-      selected={active}
-      variant="ghost"
-      iconOnly
-      label={label}
-      type="button"
-      title={label}
-      aria-label={label}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      {children}
-    </Button>
-  );
-}
-
-function MessageQueue({
-  sessionId,
-  messages,
-  status,
-  onDelete,
-  canAttach,
-  remote = false,
-  busy = false,
-  steerSupported = false,
-  onEdit,
-  onEditingChange,
-  onReorder,
-  onSteer,
-  onResume,
-}: {
-  sessionId?: string;
-  messages: QueuedMessage[];
-  status?: MessageQueueStatus;
-  canAttach: boolean;
-  /** The turn runs on another machine: it cannot be steered, and the queue is this app's. */
-  remote?: boolean;
-  busy?: boolean;
-  steerSupported?: boolean;
-  onDelete?: (messageId: string) => void;
-  onEdit?: (messageId: string, text: string, attachments: Attachment[]) => void;
-  onEditingChange?: (messageId?: string) => void;
-  onReorder?: (messageIds: string[]) => void;
-  onSteer?: (messageId: string) => QueueAction;
-  onResume?: () => QueueAction;
-}) {
-  useLocale();
-  const delivery = useDeliveryProgress(sessionId);
-  const pendingDelivery = deliveryIsPending(delivery?.stage);
-  const actionRef = useRef(false);
-  const [pendingAction, setPendingAction] = useState<string>();
-  const [feedback, setFeedback] = useState<{ error: boolean; text: string; actionId: string }>();
-  const activeFeedback =
-    feedback?.error &&
-    (feedback.actionId === "resume"
-      ? status === "active"
-      : !messages.some((message) => message.id === feedback.actionId))
-      ? undefined
-      : feedback;
-  useEffect(() => {
-    if (!feedback || feedback.error) return;
-    const timer = window.setTimeout(() => setFeedback(undefined), 6000);
-    return () => window.clearTimeout(timer);
-  }, [feedback]);
-  const perform = async (id: string, action: (() => QueueAction) | undefined) => {
-    if (actionRef.current) return;
-    actionRef.current = true;
-    setPendingAction(id);
-    setFeedback(undefined);
-    try {
-      if (!action)
-        throw new Error(
-          t("This queue action is unavailable. Reopen the conversation and try again."),
-        );
-      const result = await action();
-      if (result === false)
-        throw new Error(
-          t(
-            "The message was not accepted. It remains queued. Check the conversation and try again.",
-          ),
-        );
-      setFeedback({
-        error: false,
-        actionId: id,
-        text:
-          typeof result === "object" && result?.message
-            ? t(result.message)
-            : id === "resume" && status !== "restored"
-              ? t("Queue resumed. Messages will send when this turn finishes.")
-              : t("Message accepted. Follow its progress in the conversation."),
-      });
-    } catch (error) {
-      setFeedback({ error: true, actionId: id, text: t(String(error).replace(/^Error: /, "")) });
-    } finally {
-      actionRef.current = false;
-      setPendingAction(undefined);
-    }
-  };
-  const sortable = useAnimatedReorder(
-    messages.map((message) => message.id),
-    (ids) => {
-      if (!actionRef.current) onReorder?.(ids);
-    },
-    "y",
-  );
-  const card = useRef<HTMLDivElement>(null);
-  const refocus = useRef<string | undefined>(undefined);
-  // Moving a focused row in the DOM drops its focus; give it back after a keyboard move.
-  useLayoutEffect(() => {
-    if (!refocus.current) return;
-    card.current?.querySelector<HTMLElement>(`[data-queue-handle="${refocus.current}"]`)?.focus();
-    refocus.current = undefined;
-  }, [messages]);
-  const moveByKey = (event: KeyboardEvent, id: string, index: number) => {
-    if (
-      actionRef.current ||
-      !event.altKey ||
-      (event.key !== "ArrowUp" && event.key !== "ArrowDown")
-    )
-      return;
-    event.preventDefault();
-    const next = moveQueuedMessage(messages, id, index + (event.key === "ArrowUp" ? -1 : 1));
-    if (next === messages) return;
-    refocus.current = id;
-    onReorder?.(next.map((message) => message.id));
-  };
-  const [editingId, setEditingId] = useState<string>();
-  const onEditingChangeRef = useRef(onEditingChange);
-  const editingIdRef = useRef(editingId);
-  useLayoutEffect(() => {
-    onEditingChangeRef.current = onEditingChange;
-    editingIdRef.current = editingId;
-  }, [onEditingChange, editingId]);
-  useEffect(() => {
-    return () => {
-      if (editingIdRef.current) onEditingChangeRef.current?.();
-    };
-  }, []);
-  const editingMessage = messages.find((message) => message.id === editingId);
-  // The row was sent or removed while its dialog was open: close, never resurrect it.
-  useEffect(() => {
-    if (editingId && !editingMessage) {
-      setEditingId(undefined);
-      onEditingChangeRef.current?.();
-    }
-  }, [editingId, editingMessage]);
-  if (messages.length === 0 && !pendingAction && !activeFeedback) return null;
-  const paused = (status === "paused" || status === "resuming") && messages.length > 0;
-  const restored = status === "restored" && messages.length > 0;
-  const canSend = (message: QueuedMessage) =>
-    !pendingAction &&
-    !pendingDelivery &&
-    !message.deliveryUnknown &&
-    !(delivery?.messageId === message.id && delivery.stage === "unknown") &&
-    !hasMissingAttachment(message) &&
-    (!busy || (steerSupported && message.intent !== "plan" && message.intent !== "orchestrate"));
-
-  const startEdit = (message: QueuedMessage) => {
-    setEditingId(message.id);
-    onEditingChange?.(message.id);
-  };
-  const cancelEdit = () => {
-    setEditingId(undefined);
-    onEditingChange?.();
-  };
-
-  return (
-    <div className="px-2 text-(--ui-text-secondary)" data-message-queue data-usage-guide="queue">
-      <div
-        className="relative z-0 rounded-t-[10px] border border-b-0 border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-2 py-1"
-        data-message-queue-card
-        ref={card}
-      >
-        {paused ? (
-          <div className="flex h-7 items-center gap-2 border-b border-(--ui-tone-neutral-border) text-[12px]">
-            <Pause className="size-3.5" />
-            <span className="min-w-0 flex-1 truncate">
-              {t("Queue paused because you interrupted")}
-            </span>
-            <Button
-              variant="ghost"
-              type="button"
-              disabled={
-                !onResume ||
-                !!pendingAction ||
-                pendingDelivery ||
-                messages.some((message) => message.deliveryUnknown) ||
-                delivery?.stage === "unknown" ||
-                hasMissingAttachment(messages[0])
-              }
-              loading={pendingAction === "resume"}
-              loadingLabel={t("Resuming…")}
-              onClick={() => void perform("resume", onResume)}
-              className="shrink-0"
-            >
-              <Play className="size-3.5" />
-              {pendingAction === "resume" ? t("Resuming…") : t("Resume")}
-            </Button>
-          </div>
-        ) : null}
-        {restored ? (
-          <div className="flex h-7 items-center gap-2 border-b border-(--ui-tone-neutral-border) text-[12px]">
-            <Pause className="size-3.5" />
-            <span className="min-w-0 flex-1 truncate">
-              {messages.length === 1
-                ? t("1 queued message restored")
-                : t("{p0} queued messages restored", { p0: messages.length })}
-            </span>
-            <Button
-              variant="ghost"
-              type="button"
-              disabled={
-                !!pendingAction ||
-                pendingDelivery ||
-                messages.some((message) => message.deliveryUnknown) ||
-                delivery?.stage === "unknown" ||
-                hasMissingAttachment(messages[0]) ||
-                (!onResume && !canSend(messages[0]))
-              }
-              loading={pendingAction === "resume"}
-              loadingLabel={t("Resuming…")}
-              onClick={() =>
-                void perform(
-                  "resume",
-                  onResume ?? (onSteer ? () => onSteer(messages[0].id) : undefined),
-                )
-              }
-              className="shrink-0"
-            >
-              <Play className="size-3.5" />
-              {pendingAction === "resume" ? t("Sending…") : t("Send next")}
-            </Button>
-          </div>
-        ) : null}
-        <div
-          className="max-h-[min(30dvh,15rem)] min-h-0 overflow-y-auto overscroll-contain"
-          data-message-queue-rows
-        >
-          {messages.map((message, index) => {
-            const attachmentGone = hasMissingAttachment(message);
-            const label =
-              message.text.trim() ||
-              `${message.attachments.length} attachment${message.attachments.length === 1 ? "" : "s"}`;
-            return (
-              <div
-                key={message.id}
-                ref={(node) => sortable.setItemRef(message.id, node)}
-                className={`reorder-item grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 text-[12px] data-[dragging]:rounded-md data-[dragging]:bg-(--ui-surface) data-[dragging]:shadow-lg ${
-                  index > 0 ? "border-t border-(--ui-tone-neutral-border)" : ""
-                }`}
-              >
-                {messages.length > 1 ? (
-                  <Button
-                    iconOnly
-                    label={t("Reorder queued message")}
-                    disabled={!!pendingAction || pendingDelivery}
-                    variant="ghost"
-                    type="button"
-                    data-queue-handle={message.id}
-                    title={t("Drag to reorder")}
-                    shortcut="Alt+↑ / Alt+↓"
-                    aria-label={t("Reorder queued message")}
-                    aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-                    onPointerDown={(event) => sortable.onItemPointerDown(message.id, event)}
-                    onKeyDown={(event) => moveByKey(event, message.id, index)}
-                    className="shrink-0"
-                  >
-                    <ListEnd className="size-3.5" />
-                  </Button>
-                ) : (
-                  <ListEnd className="size-3.5 shrink-0" />
-                )}
-                <div className="min-w-0 py-1">
-                  <div className="truncate text-(--ui-text-secondary)" title={label}>
-                    {label}
-                  </div>
-                  {attachmentGone ? (
-                    <span
-                      className="block [overflow-wrap:anywhere] text-(--ui-tone-warning-fg)"
-                      title={t(
-                        "An attached file is gone. Edit this message to drop it, or remove the message.",
-                      )}
-                    >
-                      {t("Attachment missing")}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  {remote ? null : (
-                    <Button
-                      variant="ghost"
-                      type="button"
-                      disabled={!canSend(message)}
-                      title={
-                        busy && (message.intent === "plan" || message.intent === "orchestrate")
-                          ? t("New messages wait until this turn finishes. Stop pauses the queue.")
-                          : undefined
-                      }
-                      loading={
-                        pendingAction === message.id ||
-                        (pendingDelivery && delivery?.messageId === message.id)
-                      }
-                      loadingLabel={t("Sending…")}
-                      onClick={() =>
-                        void perform(message.id, onSteer ? () => onSteer(message.id) : undefined)
-                      }
-                      className="shrink-0"
-                    >
-                      <CornerDownRight className="size-3.5" />
-                      {pendingAction === message.id ||
-                      (pendingDelivery && delivery?.messageId === message.id)
-                        ? t("Sending…")
-                        : t("Steer")}
-                    </Button>
-                  )}
-                  <Button
-                    iconOnly
-                    label={t("Edit queued message")}
-                    disabled={!!pendingAction || pendingDelivery}
-                    variant="ghost"
-                    type="button"
-                    title={t("Edit queued message")}
-                    aria-label={t("Edit queued message")}
-                    onClick={() => startEdit(message)}
-                    className="shrink-0"
-                  >
-                    <Pencil className="size-3.5" />
-                  </Button>
-                  <Button
-                    iconOnly
-                    label={t("Remove queued message")}
-                    disabled={!!pendingAction || pendingDelivery}
-                    variant="ghost"
-                    type="button"
-                    title={t("Remove queued message")}
-                    aria-label={t("Remove queued message")}
-                    onClick={() => onDelete?.(message.id)}
-                    className="shrink-0"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        {!delivery &&
-        (pendingAction ||
-          activeFeedback ||
-          (busy && status === "active" && messages.length > 0)) ? (
-          <div
-            role={activeFeedback?.error ? "alert" : "status"}
-            aria-live="polite"
-            className="py-1 text-[12px] [overflow-wrap:anywhere]"
-            data-queue-feedback
-          >
-            {pendingAction
-              ? t("Waiting for confirmation…")
-              : (activeFeedback?.text ?? t("Queue is waiting for the current turn to finish."))}
-          </div>
-        ) : null}
-        {remote ? (
-          <div className="border-t border-(--ui-tone-neutral-border) py-1 text-[11px] text-(--ui-text-secondary)">
-            {t("Sent one at a time when the host finishes this turn, while {p0} is open.", {
-              p0: PRODUCT_IDENTITY.displayName,
-            })}
-          </div>
-        ) : null}
-      </div>
-      {editingMessage ? (
-        <QueuedMessageEditDialog
-          key={editingMessage.id}
-          message={editingMessage}
-          canAttach={canAttach}
-          onSave={(text, attachments) => {
-            onEdit?.(editingMessage.id, text, attachments);
-            setEditingId(undefined);
-          }}
-          onRemove={() => onDelete?.(editingMessage.id)}
-          onCancel={cancelEdit}
-        />
-      ) : null}
-    </div>
-  );
-}
-
 export const Composer = memo(function Composer({
   enabled = true,
   focused,
@@ -808,17 +447,19 @@ export const Composer = memo(function Composer({
   hotkeys = false,
   shell = false,
   compact = false,
+  reading = false,
   placeholder,
   inputAriaLabel,
   disabled = false,
   harness,
   model,
   allowedModelHarnesses,
-  modelSettings = {},
+  modelSettings = NO_MODEL_SETTINGS,
   runtimeMode,
   cwd = "~",
   executionCwd,
   sessionId,
+  parentSessionId,
   branch,
   recents = [],
   hideProjectPicker = false,
@@ -850,12 +491,14 @@ export const Composer = memo(function Composer({
   promptHistory,
   queuedMessages = [],
   queueStatus,
+  runningModelTarget,
   usageLimit,
   onFocus,
   onCwdChange,
   onBranchChange,
   onWorktreeChange,
   draftWorkspace = false,
+  managedWorkspaceCreationReady = false,
   workspaceMode,
   worktreeBase,
   onWorkspaceModeChange,
@@ -872,6 +515,7 @@ export const Composer = memo(function Composer({
   onNoteCardDismiss,
   onHandoffCardDismiss,
   onQuestionReply,
+  questionDraftScope,
   onQuestionInteraction,
   onSubmit,
   canSaveDraft = false,
@@ -899,14 +543,39 @@ export const Composer = memo(function Composer({
   onRecallMessageReady,
   recalledMessage,
   onRecalledMessageApplied,
+  editingLastTurn,
   onEditingLastTurnChange,
+  remoteOrigin,
   children,
 }: Props) {
   "use memo";
-  useLocale();
+  const t = useT();
+  const logicalParentSessionId =
+    parentSessionId === null ? undefined : (parentSessionId ?? sessionId);
+  const parentClosed = useParentInputsClosed(logicalParentSessionId);
+  const parentInputRef = useRef<ParentInputHandle | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const [citations, setCitationsState] = useState(
+    () => extractChatCitations(initialDraft ?? "").citations,
+  );
+  const citationsRef = useRef<ChatCitation[]>(citations);
+  const draftTextRef = useRef(extractChatCitations(initialDraft ?? "").text);
+  const mountedClosureRef = useRef<ReturnType<typeof useMountedComposerClosure> | null>(null);
+  const attachmentApplyDepth = useRef(0);
+  const canMutateDraft = useCallback(
+    () =>
+      (parentInputRef.current?.canMutate() ?? canMutateParentInputs(logicalParentSessionId)) &&
+      (attachmentApplyDepth.current > 0 || (mountedClosureRef.current?.canMutate() ?? true)),
+    [logicalParentSessionId],
+  );
   const translationContext = useMemo(
-    () => ({ cwd: executionCwd, harness, model, modelSettings, providerAccountId }),
+    () => ({
+      cwd: executionCwd,
+      harness,
+      model,
+      modelSettings,
+      providerAccountId,
+    }),
     [executionCwd, harness, model, modelSettings, providerAccountId],
   );
   const translationSelection = useComposerTranslationSelection(
@@ -915,19 +584,38 @@ export const Composer = memo(function Composer({
   );
   const [translationRequest, setTranslationRequest] = useState<{
     selection: ComposerTranslationSelection;
-    target: TranslationTarget;
+    target: TextActionTarget;
   } | null>(null);
-  const translationHistoryRef = useRef<TranslationHistory | null>(null);
-  useEffect(() => {
-    translationHistoryRef.current = null;
+  // A translation belongs to one draft: another session or an accepted external
+  // reset drops the open request and invalidates the remembered history. The
+  // epoch tags the history instead of clearing a ref during render.
+  const [translationScope, setTranslationScope] = useState({
+    sessionId,
+    draftResetToken,
+    epoch: 0,
+  });
+  if (
+    translationScope.sessionId !== sessionId ||
+    translationScope.draftResetToken !== draftResetToken
+  ) {
+    setTranslationScope({ sessionId, draftResetToken, epoch: translationScope.epoch + 1 });
     setTranslationRequest(null);
-  }, [sessionId, draftResetToken]);
+  }
+  const translationHistoryRef = useRef<{
+    epoch: number;
+    history: TranslationHistory;
+  } | null>(null);
+  const currentTranslationHistory = () =>
+    translationHistoryRef.current?.epoch === translationScope.epoch
+      ? translationHistoryRef.current.history
+      : null;
   const [inputResize] = useState(createComposerResizeFrame);
   const [modelPickerRequest, setModelPickerRequest] = useState(0);
   const accountProvider = supportsProviderAccounts(harness) ? harness : undefined;
   useEffect(() => () => inputResize.cancel(), [inputResize]);
   const boxRef = useRef<HTMLDivElement>(null);
-  const plusRef = useRef<HTMLDivElement>(null);
+  const plusRef = useRef<HTMLButtonElement>(null);
+  const modeRef = useRef<HTMLButtonElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
   // A remount (or a restart) starts from the attachments the draft was saved with.
   const [attachments, setAttachments] = useState<Attachment[]>(() =>
@@ -935,25 +623,45 @@ export const Composer = memo(function Composer({
   );
   const attachmentsRef = useRef(attachments);
   const borrowedAttachmentIdsRef = useRef(new Set<string>());
-  const attachmentLifecycleRef = useRef(0);
   const consumedQuoteId = useRef<number | null>(null);
   const draftRevisionRef = useRef(0);
   const userEditBeforeRef = useRef<string | null>(null);
   const draftResetTokenRef = useRef(draftResetToken);
   /** Bumped when the draft is cleared, so a late paste cannot land on the next one. */
   const pasteGenerationRef = useRef(0);
+  const pasteFailuresRef = useRef(0);
   const sendIntentRef = useRef(0);
   /** Pasted and dropped files still reading when Send is pressed. */
   const pasteFlightRef = useRef<Promise<void> | null>(null);
-  const submitLockRef = useRef(false);
+  const submitLockRef = useRef<symbol | null>(null);
+  const submitInputRef = useRef<{ text: string; queue: boolean } | null>(null);
+  const submitContinuationRef = useRef<
+    ((value: string, queue: boolean, original: ParentAdmission) => void) | null
+  >(null);
+  const [submission, setSubmission] = useState<{
+    sessionId: string | undefined;
+    action: "send" | "queue";
+  } | null>(null);
   const previousBusyRef = useRef(busy);
   useEffect(() => {
-    if (previousBusyRef.current && !busy) sendIntentRef.current += 1;
+    if (previousBusyRef.current && !busy) {
+      sendIntentRef.current += 1;
+      submitLockRef.current = null;
+      setSubmission(null);
+    }
     previousBusyRef.current = busy;
   }, [busy]);
+  const stopping = useSyncExternalStore(
+    subscribeHarnessStopping,
+    () => (sessionId ? isHarnessTurnStopping(sessionId) : false),
+    () => false,
+  );
   const stopPendingSend = () => {
+    parentInputRef.current?.();
     // Retire submission intent without discarding a clipboard read or its result.
     sendIntentRef.current += 1;
+    submitLockRef.current = null;
+    setSubmission(null);
     onStop?.();
   };
   const positionedInitialDraft = useRef(false);
@@ -962,280 +670,370 @@ export const Composer = memo(function Composer({
   /** Set while the text is an unedited entry recalled with Up/Down. */
   const historyRef = useRef<HistoryBrowse | null>(null);
   const escapeArmedRef = useRef<number | null>(null);
-  const [draft, setDraft] = useState(initialDraft ?? "");
-  const clearComposer = useClearComposerDraft(ref, setDraft, onDraftChange);
+  const replaceCitations = useCallback((next: ChatCitation[]) => {
+    if (JSON.stringify(citationsRef.current) === JSON.stringify(next)) return;
+    citationsRef.current = next;
+    setCitationsState(next);
+    mountedClosureRef.current?.changed();
+  }, []);
+  const [draft, setDraftState] = useState(() => extractChatCitations(initialDraft ?? "").text);
+  const setDraft = useCallback((update: SetStateAction<string>) => {
+    const next = typeof update === "function" ? update(draftTextRef.current) : update;
+    if (next !== draftTextRef.current) mountedClosureRef.current?.changed();
+    draftTextRef.current = next;
+    setDraftState(next);
+  }, []);
+  const publishedDraft = useRef<string | undefined>(undefined);
+  const publishDraft = useCallback(
+    (text: string, includeCitations = true) => {
+      draftTextRef.current = text;
+      if (mountedClosureRef.current?.retired) return;
+      const persisted = includeCitations ? withChatCitations(text, citationsRef.current) : text;
+      if (publishedDraft.current === persisted) return;
+      const publish = () => onDraftChange?.(persisted);
+      if (mountedClosureRef.current && !mountedClosureRef.current.publishCache(publish)) return;
+      if (!mountedClosureRef.current) publish();
+      publishedDraft.current = persisted;
+    },
+    [onDraftChange],
+  );
+  const clearVisibleComposer = useClearComposerDraft(ref, setDraft, publishDraft, canMutateDraft);
+  const clearComposer = useCallback(() => {
+    if (!canMutateDraft()) return;
+    replaceCitations([]);
+    clearVisibleComposer();
+  }, [canMutateDraft, clearVisibleComposer, replaceCitations]);
   // Updating defaultValue rewrites WebKit's text node and commits an active IME.
   // Apply later external drafts through the existing synchronization effect.
-  const [mountDraft] = useState(initialDraft);
+  const [mountDraft] = useState(() =>
+    initialDraft === undefined ? undefined : extractChatCitations(initialDraft).text,
+  );
   const { branches: draftBranches } = useProjectBranchesState(
     executionCwd,
     draftWorkspace && enabled && !busy,
   );
+  // "HEAD" (for example from an automation) names the checked-out branch; it is
+  // resolved here on every read instead of being written back to the owner.
+  const effectiveWorktreeBase =
+    draftWorkspace && workspaceMode === "worktree" && worktreeBase === "HEAD"
+      ? draftBranches?.current || worktreeBase
+      : worktreeBase;
+  const workspaceCreation = useWorkspaceCreation(
+    cwd,
+    draftWorkspace && enabled && looksLikeProject(cwd),
+    workspaceMode,
+    effectiveWorktreeBase,
+  );
+  // Only an explicit worktree choice blocks; a policy default falls back to current.
+  const remoteWorkspaceCreationBlocked =
+    draftWorkspace &&
+    workspaceMode === "worktree" &&
+    workspaceCreation.mode === "worktree" &&
+    !!parseRemotePath(cwd) &&
+    !managedWorkspaceCreationReady;
+  const workspaceHostUpdateRequired =
+    workspaceCreation.updateRequired || remoteWorkspaceCreationBlocked;
+  const bundledHostStatus = useBundledHostStatus(
+    draftWorkspace && workspaceHostUpdateRequired && !parseRemotePath(cwd),
+  );
+  const workspaceCreationError =
+    workspaceHostUpdateRequired && bundledHostWaitsForSessions(bundledHostStatus)
+      ? t(
+          "The Host update on this computer is waiting for active sessions to finish and will install automatically.",
+        )
+      : (workspaceCreation.error ??
+        (remoteWorkspaceCreationBlocked
+          ? t("Update bycoda to create managed sessions on this remote Host.")
+          : undefined));
+  // Policy reads are short-bounded; only an explicit worktree error stops Send.
+  const workspaceSendBlocked =
+    draftWorkspace &&
+    (workspaceCreation.pending || (!!workspaceCreationError && workspaceMode === "worktree"));
   const resolvedWorktreeBase =
-    worktreeBase && worktreeBase !== "HEAD"
-      ? worktreeBase
-      : branch || draftBranches?.current || worktreeBase || undefined;
-  useEffect(() => {
-    if (
-      draftWorkspace &&
-      workspaceMode === "worktree" &&
-      worktreeBase === "HEAD" &&
-      draftBranches?.current
-    ) {
-      onWorktreeBaseChange?.(draftBranches.current);
-    }
-  }, [draftBranches?.current, draftWorkspace, onWorktreeBaseChange, workspaceMode, worktreeBase]);
-  const [hasValue, setHasValue] = useState(
-    () =>
-      (initialDraft ?? "").trim().length > 0 ||
-      attachments.length > 0 ||
-      !!inboxCard ||
-      !!noteCard ||
-      !!handoffCard,
+    workspaceCreation.base || branch || draftBranches?.current || undefined;
+  const [hasText, setHasText] = useState(
+    () => extractChatCitations(initialDraft ?? "").text.trim().length > 0,
   );
   // Says so when a restored draft lost an attachment whose file is gone.
   const [pasteError, setPasteError] = useState<string | null>(
     () => (sessionId ? takeComposerNotice(sessionId) : undefined) ?? null,
   );
-  const [fileDrag, setFileDrag] = useState(false);
   const [plusOpen, setPlusOpen] = useState(false);
+  const [modeOpen, setModeOpen] = useState(false);
   const [planSelected, setPlanSelected] = useState(false);
   const [operatorSelected, setOperatorSelected] = useState(false);
   const [orchestrationSelected, setOrchestrationSelected] = useState(false);
-  const [draftSelected, setDraftSelected] = useState(() =>
+  const [draftSelected, setDraftSelectedState] = useState(() =>
     sessionId ? getComposerDraftMode(sessionId) === "save" : false,
   );
+  const draftModeRef = useRef(draftSelected);
+  const setDraftSelected = useCallback(
+    (update: SetStateAction<boolean>) => {
+      if (!canMutateDraft()) return;
+      const next = typeof update === "function" ? update(draftModeRef.current) : update;
+      if (next === draftModeRef.current) return;
+      draftModeRef.current = next;
+      setDraftSelectedState(next);
+      mountedClosureRef.current?.changed();
+    },
+    [canMutateDraft],
+  );
   useEffect(() => {
-    if (sessionId) setComposerDraftMode(sessionId, draftSelected ? "save" : undefined);
+    if (sessionId)
+      mountedClosureRef.current?.publishCache(() =>
+        setComposerDraftMode(sessionId, draftSelected ? "save" : undefined),
+      );
   }, [sessionId, draftSelected]);
   const [slash, setSlash] = useState<SlashToken | null>(null);
-  const [skillActive, setSkillActive] = useState(0);
+  const [skillSelection, setSkillSelection] = useState({
+    query: "",
+    cwd,
+    index: 0,
+  });
+  if (skillSelection.query !== (slash?.query ?? "") || skillSelection.cwd !== cwd) {
+    setSkillSelection({ query: slash?.query ?? "", cwd, index: 0 });
+  }
+  const setSkillActive = (next: number | ((index: number) => number)) => {
+    setSkillSelection((previous) => {
+      const index =
+        previous.query === (slash?.query ?? "") && previous.cwd === cwd ? previous.index : 0;
+      return {
+        query: slash?.query ?? "",
+        cwd,
+        index: typeof next === "function" ? next(index) : next,
+      };
+    });
+  };
   const [creatingSkill, setCreatingSkill] = useState(false);
   const [sessionFolderOpen, setSessionFolderOpen] = useState(false);
   const [sessionFolders, setSessionFolders] = useState<SessionFolder[]>([]);
+  const [sessionFolderError, setSessionFolderError] = useState<string | null>(null);
+  const [sessionFolderPending, setSessionFolderPending] = useState(false);
+  const [sessionFolderSaving, setSessionFolderSaving] = useState(false);
+  const sessionFolderLoading = useRef(false);
+  const sessionFolderMutationBlocked = useRef(false);
+  const sessionFolderCwd = useRef(cwd);
+  sessionFolderCwd.current = cwd;
   const [sessionFolderSelected, setSessionFolderSelected] = useState(false);
+  // The folder choice belongs to one working directory.
+  const [folderScopeCwd, setFolderScopeCwd] = useState(cwd);
+  if (folderScopeCwd !== cwd) {
+    setFolderScopeCwd(cwd);
+    setSessionFolderOpen(false);
+    setSessionFolderSelected(false);
+  }
   const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
-  const [mcpConnections, setMcpConnections] = useState<McpConnection[]>([]);
-  const [mcpStatus, setMcpStatus] = useState<Map<string, string>>(new Map());
-  const [mcpLoading, setMcpLoading] = useState(false);
-  const [mcpError, setMcpError] = useState("");
-  const [selectedMcp, setSelectedMcp] = useState<McpTag[]>(() =>
+  // An open MCP picker lists one project's servers for one provider and session.
+  const [mcpScope, setMcpScope] = useState({ executionCwd, harness, sessionId });
+  if (
+    mcpScope.executionCwd !== executionCwd ||
+    mcpScope.harness !== harness ||
+    mcpScope.sessionId !== sessionId
+  ) {
+    setMcpScope({ executionCwd, harness, sessionId });
+    setMcpPickerOpen(false);
+  }
+  const mcpCatalog = useComposerMcpCatalog({
+    executionCwd,
+    harness,
+    active: mcpPickerOpen,
+  });
+  const { status: mcpStatus, loading: mcpLoading, error: mcpError } = mcpCatalog;
+  const [selectedMcp, setSelectedMcpState] = useState<McpTag[]>(() =>
     sessionId ? getComposerMcpTags(sessionId) : [],
   );
+  const selectedMcpRef = useRef(selectedMcp);
+  const setSelectedMcp = useCallback(
+    (update: SetStateAction<McpTag[]>) => {
+      if (!canMutateDraft()) return;
+      const next = typeof update === "function" ? update(selectedMcpRef.current) : update;
+      if (next === selectedMcpRef.current) return;
+      selectedMcpRef.current = next;
+      setSelectedMcpState(next);
+      mountedClosureRef.current?.changed();
+    },
+    [canMutateDraft],
+  );
+  const mountedClosure = useMountedComposerClosure({
+    sessionId,
+    input: ref,
+    snapshot: () => ({
+      text: withChatCitations(ref.current?.value ?? draftTextRef.current, citationsRef.current),
+      attachments: attachmentsRef.current,
+      mcpTags: selectedMcpRef.current,
+      ...(draftModeRef.current ? { mode: "save" as const } : {}),
+    }),
+    reopened: () => {
+      const text = ref.current?.value ?? draftTextRef.current;
+      publishDraft(text);
+      if (sessionId)
+        mountedClosureRef.current?.publishCache(() =>
+          setComposerDraftSnapshot(sessionId, {
+            text: withChatCitations(text, citationsRef.current),
+            attachments: attachmentsRef.current,
+            mcpTags: selectedMcpRef.current,
+            ...(draftModeRef.current ? { mode: "save" as const } : {}),
+          }),
+        );
+    },
+  });
+  useLayoutEffect(() => {
+    mountedClosureRef.current = mountedClosure;
+  }, [mountedClosure]);
   const mcpInsertAt = useRef<number | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
   const remote = remoteSession;
   // Workspace APIs route remote:// paths to their owning machine.
   const localCwd = executionCwd;
-  const [files, setFiles] = useState<ProjectFile[]>(() => peekProjectFiles(localCwd) ?? []);
   const notesEnabled = useSyncExternalStore(subscribeNotesEnabled, loadNotesEnabled, () => true);
   const spelling = useComposerSpelling();
   const queueShortcut = useKeybindingShortcut(QUEUE_MESSAGE_COMMAND);
   const stopShortcut = useKeybindingShortcut(STOP_TURN_COMMAND);
-  const promptTemplates = useSyncExternalStore(
-    subscribePromptTemplates,
-    loadPromptTemplates,
-    () => [],
-  );
-  const [notes, setNotes] = useState<NoteSummary[]>(() => peekNoteSummaries() ?? []);
   const [mention, setMention] = useState<MentionToken | null>(null);
-  const [mentionActive, setMentionActive] = useState(0);
-  const [resendEdited, setResendEdited] = useState(false);
+  const [mentionSelection, setMentionSelection] = useState({
+    query: "",
+    cwd,
+    index: 0,
+  });
+  if (mentionSelection.query !== (mention?.query ?? "") || mentionSelection.cwd !== cwd) {
+    setMentionSelection({ query: mention?.query ?? "", cwd, index: 0 });
+  }
+  const setMentionActive = (next: number | ((index: number) => number)) => {
+    setMentionSelection((previous) => {
+      const index =
+        previous.query === (mention?.query ?? "") && previous.cwd === cwd ? previous.index : 0;
+      return {
+        query: mention?.query ?? "",
+        cwd,
+        index: typeof next === "function" ? next(index) : next,
+      };
+    });
+  };
+  const [localResendEdited, setLocalResendEdited] = useEditingLastTurn(
+    sessionId,
+    editLastTurnSupported,
+  );
+  const resendEdited = editingLastTurn ?? localResendEdited;
+  const setResendEdited = useCallback(
+    (editing: boolean) => {
+      if (editingLastTurn === undefined) setLocalResendEdited(editing);
+      onEditingLastTurnChange?.(editing);
+    },
+    [editingLastTurn, onEditingLastTurnChange, setLocalResendEdited],
+  );
   const groupLogos = useTabGroupLogos();
   const projectLogoPath = resolveTabGroupLogo(projectKey(cwd), groupLogos);
-
   useLayoutEffect(() => {
     slashRef.current = slash;
     mentionRef.current = mention;
     attachmentsRef.current = attachments;
   }, [slash, mention, attachments]);
-
   const mentionOpen =
     mention !== null && (looksLikeProject(executionCwd) || (!remote && notesEnabled));
   const tokens = useMemo(() => attachmentTokens(attachments), [attachments]);
   const navigationEmpty =
-    draft.length === 0 && attachments.length === 0 && !inboxCard && !noteCard && !handoffCard;
+    draft.length === 0 &&
+    citations.length === 0 &&
+    attachments.length === 0 &&
+    !inboxCard &&
+    !noteCard &&
+    !handoffCard;
   const skillPickerOpen = creatingSkill || slash !== null;
   const pickerOpen = skillPickerOpen || sessionFolderOpen || mcpPickerOpen;
-  const skillCatalog = useComposerSkills({
-    harness,
-    executionCwd: localCwd,
-    sessionId,
-    pickerOpen,
-  });
-  const skills = skillCatalog.skills;
-  const templateItems = useMemo(() => promptTemplates.map(templateSkill), [promptTemplates]);
-  // The CLI's own commands never replace a Bycoda command or a skill that
-  // Bycoda already lists under the same name.
-  const takenNames = useMemo(
-    () =>
-      new Set([
-        ...[
-          PLAN_COMMAND,
-          COMPACT_COMMAND,
-          NEW_SESSION_COMMAND,
-          CLEAR_SESSION_COMMAND,
-          SESSION_FOLDER_COMMAND,
-          MCP_COMMAND,
-          OPERATOR_COMMAND,
-          ORCHESTRATOR_COMMAND,
-          DRAFT_COMMAND,
-          BTW_COMMAND,
-          RESUME_COMMAND,
-        ].map((command) => command.name),
-        "mono",
-        "bycoda",
-        ...skills.map((skill) => skill.name),
-      ]),
-    [skills],
-  );
-  const cliCommands = useCliCommands({
-    harness,
-    localCwd,
-    sessionId,
-    menuOpen: pickerOpen,
-    taken: takenNames,
-    files: skills,
-  });
-  const slashItems = useMemo(
-    () => [
-      ...(onNewSession ? [NEW_SESSION_COMMAND, CLEAR_SESSION_COMMAND] : []),
-      ...(remote
-        ? [
-            ...(remoteFeatures?.plan ? [PLAN_COMMAND] : []),
-            COMPACT_COMMAND,
-            ...skills.filter(
-              (skill) =>
-                skill.name !== NEW_SESSION_COMMAND.name &&
-                skill.name !== CLEAR_SESSION_COMMAND.name &&
-                (skill.kind === "file" || skill.kind === "native"),
-            ),
-            ...cliCommands.slashCommands,
-          ]
-        : [
-            SESSION_FOLDER_COMMAND,
-            MCP_COMMAND,
-            OPERATOR_COMMAND,
-            ...(hideTopBar ? [] : [ORCHESTRATOR_COMMAND]),
-            PLAN_COMMAND,
-            ...(canSaveDraft && onSaveDraft ? [DRAFT_COMMAND] : []),
-            COMPACT_COMMAND,
-            ...(supportsBtwHarness(harness) ? [BTW_COMMAND] : []),
-            // Reading and replaying stored conversations is written against
-            // Claude Code's own on-disk format, so the command only exists
-            // where it works.
-            ...((harness === "claude" || harness === "codex") && onResumeProviderSession
-              ? [RESUME_COMMAND]
-              : []),
-            ...skills.filter(
-              (skill) =>
-                ![
-                  NEW_SESSION_COMMAND.name,
-                  CLEAR_SESSION_COMMAND.name,
-                  OPERATOR_COMMAND.name,
-                  "mono",
-                  "bycoda",
-                ].includes(skill.name) &&
-                (skill.kind === "native" ||
-                  (skill.name !== PLAN_COMMAND.name &&
-                    skill.name !== COMPACT_COMMAND.name &&
-                    skill.name !== SESSION_FOLDER_COMMAND.name &&
-                    skill.name !== MCP_COMMAND.name &&
-                    skill.name !== ORCHESTRATOR_COMMAND.name &&
-                    skill.name !== DRAFT_COMMAND.name &&
-                    skill.name !== RESUME_COMMAND.name &&
-                    skill.name !== BTW_COMMAND.name)),
-            ),
-            ...cliCommands.slashCommands,
-          ]),
-      ...templateItems,
-    ],
-    [
+  const { skillCatalog, promptTemplates, dollarSkills, rankedSkills, skillNames } =
+    useComposerSlashInventory({
       harness,
-      templateItems,
-      skills,
-      cliCommands.slashCommands,
+      executionCwd: localCwd,
+      sessionId,
+      pickerOpen,
       remote,
-      remoteFeatures?.plan,
+      remotePlan: !!remoteFeatures?.plan,
       hideTopBar,
-      canSaveDraft,
-      onSaveDraft,
-      onResumeProviderSession,
-      onNewSession,
-    ],
-  );
-  const skillLimit = hasNativeCommands(harness) ? Number.POSITIVE_INFINITY : undefined;
-  const rankedSkills = useMemo(
-    () =>
-      rankSkills(
-        slash?.trigger === "$" ? cliCommands.dollarSkills : slashItems,
-        slash?.query ?? "",
-        slash?.trigger === "$" ? undefined : skillLimit,
-      ),
-    [cliCommands.dollarSkills, slash?.trigger, slash?.query, slashItems, skillLimit],
-  );
+      canStartNewSession: !!onNewSession,
+      canSaveDraft: canSaveDraft && !!onSaveDraft,
+      canResumeProviderSession: !!onResumeProviderSession,
+      slashTrigger: slash?.trigger,
+      slashQuery: slash?.query ?? "",
+    });
   const sessionDirsHarness =
     harness === "claude" || harness === "codex" || harness === "antigravity";
   const showSessionDirs =
     !remote && !compact && sessionDirsHarness && isLocalProject(cwd ?? executionCwd);
   const attachmentsSupported =
     (!remote || !!remoteFeatures?.attachments) && harnessSupportsAttachments(harness);
-  const skillNames = useMemo(
-    () =>
-      new Set(
-        [...slashItems, ...cliCommands.dollarSkills]
-          .filter((skill) => skill.kind !== "template")
-          .map((skill) => skill.invocation),
-      ),
-    [slashItems, cliCommands.dollarSkills],
-  );
   const leadingMode = leadingModeCommand(draft, skillNames, { shell: true });
   const modeIndent = leadingMode ? MODE_COMMAND_INDENT : undefined;
   // No token can be styled without one of these introducers. Plain drafts use
   // the native text once, avoiding a second full wrapping layout in the overlay.
-  const plainDraft = !leadingMode && !/[/@$]/.test(draft);
+  const plainDraft =
+    !leadingMode &&
+    !/[/@$]/.test(draft) &&
+    !((attachments.length || citations.length) && draft.includes("["));
   useLayoutEffect(() => {
     // The indent can rewrap the first line after the input already resized.
     if (ref.current) resizeComposer(ref.current);
   }, [modeIndent]);
-  const mentionFiles = useMemo(
-    () => (!remote && notesEnabled ? [...files, ...notesAsProjectFiles(notes)] : files),
-    [files, notes, notesEnabled, remote],
-  );
-  const mentionIndex = useMemo(() => buildMentionIndex(mentionFiles), [mentionFiles]);
+  useLayoutEffect(() => {
+    // Reading mode swaps the field's minimum rows and height ceiling in place;
+    // measure the same textarea again, keeping its value, caret and history.
+    const el = ref.current;
+    if (el) resizeComposer(el);
+    if (!reading) return;
+    // The compact ceiling follows the window height.
+    let frame = 0;
+    const onResize = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (ref.current?.isConnected) resizeComposer(ref.current);
+      });
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [reading]);
+  const { mentionIndex, rankedFiles } = useComposerMentionSources({
+    executionCwd,
+    remote,
+    notesEnabled,
+    mentionOpen,
+    mentionQuery: mention?.query ?? "",
+  });
   const mentionIndexRef = useRef<MentionIndex>(mentionIndex);
   useLayoutEffect(() => {
     mentionIndexRef.current = mentionIndex;
   }, [mentionIndex]);
-  const rankedFiles = useMemo(() => {
-    if (!mentionOpen) return [];
-    const fileHits = looksLikeProject(executionCwd)
-      ? rankMentionFiles(files, mention?.query ?? "", recentOpenedFiles(executionCwd))
-      : [];
-    const noteHits = !remote && notesEnabled ? rankNoteFiles(notes, mention?.query ?? "") : [];
-    const seen = new Set(noteHits.map((file) => file.path));
-    return [...noteHits, ...fileHits.filter((file) => !seen.has(file.path))];
-  }, [executionCwd, files, mention?.query, mentionOpen, notes, notesEnabled, remote]);
-
-  const syncHasValue = useCallback(
-    (text: string, files: Attachment[]) => {
-      setHasValue(
-        text.trim().length > 0 || files.length > 0 || !!inboxCard || !!noteCard || !!handoffCard,
-      );
-    },
-    [inboxCard, noteCard, handoffCard],
-  );
-
+  const skillActive =
+    skillSelection.query === (slash?.query ?? "") && skillSelection.cwd === cwd
+      ? Math.max(0, Math.min(skillSelection.index, rankedSkills.length - 1))
+      : 0;
+  const mentionActive =
+    mentionSelection.query === (mention?.query ?? "") && mentionSelection.cwd === cwd
+      ? Math.max(0, Math.min(mentionSelection.index, rankedFiles.length - 1))
+      : 0;
+  /** Only the textarea's own text is state; files and cards are read at render. */
+  const syncHasText = useCallback((text: string) => setHasText(text.trim().length > 0), []);
+  const hasValue =
+    hasText ||
+    citations.length > 0 ||
+    attachments.length > 0 ||
+    !!inboxCard ||
+    !!noteCard ||
+    !!handoffCard;
   // A leading mode command in the text shows the same pill as picking the mode.
   const operatorActive = operatorSelected || leadingMode?.name === OPERATOR_COMMAND.name;
   const orchestrationActive =
     orchestrationSelected || leadingMode?.name === ORCHESTRATOR_COMMAND.name;
   const draftActive = draftSelected || leadingMode?.name === DRAFT_COMMAND.name;
+  // Remote draft saving can also create a Host session, so it needs the same bridge.
+  const workspaceActionBlocked =
+    remoteWorkspaceCreationBlocked || (!draftActive && workspaceSendBlocked);
   const planActive = planSelected || leadingMode?.name === PLAN_COMMAND.name;
-
   /** Turning a mode off also drops its leading command from the text. */
   const clearLeadingMode = (name: string) => {
+    if (!canMutateDraft()) return;
     const el = ref.current;
     if (!el || leadingModeCommand(el.value, skillNames)?.name !== name) return;
     const next = el.value.replace(/^\/[a-z]+\s?/, "");
@@ -1243,117 +1041,93 @@ export const Composer = memo(function Composer({
     resizeComposer(el);
     el.setSelectionRange(0, 0);
     setDraft(next);
-    onDraftChange?.(next);
-    syncHasValue(next, attachmentsRef.current);
+    publishDraft(next);
+    syncHasText(next);
   };
 
+  const resetMcpCatalog = mcpCatalog.reset;
   const openMcpPicker = useCallback(() => {
-    setMcpConnections([]);
-    setMcpStatus(new Map());
-    setMcpError("");
-    setMcpLoading(true);
+    resetMcpCatalog();
     setMcpPickerOpen(true);
-  }, []);
+  }, [resetMcpCatalog]);
 
   useEffect(() => {
-    if (!mcpPickerOpen) return;
-    const apply = (snapshot: McpSettingsSnapshot) => {
-      setMcpConnections(snapshot.servers);
-      setMcpStatus(
-        new Map(
-          snapshot.servers
-            .filter((server) => server.provider === "claude")
-            .map((server) => [server.name, server.status]),
-        ),
-      );
-      setMcpError(snapshot.error);
-      setMcpLoading(false);
-    };
-    const stop = subscribeMcpSettings(executionCwd, apply);
-    const cached = getCachedMcpSettings(executionCwd);
-    if (cached) apply(cached);
-    void loadMcpSettings(executionCwd, false, {
-      claudeHealth: harness === "claude",
-    });
-    return stop;
-  }, [executionCwd, harness, mcpPickerOpen]);
-
-  useEffect(() => {
-    setMcpPickerOpen(false);
-  }, [executionCwd, harness, sessionId]);
-
-  useEffect(() => {
-    if (sessionId) setComposerMcpTags(sessionId, selectedMcp);
+    if (sessionId) mountedClosure.publishCache(() => setComposerMcpTags(sessionId, selectedMcp));
   }, [sessionId, selectedMcp]);
 
-  useEffect(() => {
-    // Object URLs die with this pane, so the saved copy keeps none.
-    if (sessionId) {
-      setComposerAttachments(
-        sessionId,
-        attachments.map(({ previewUrl: _preview, ...file }) => file),
-      );
-    }
-  }, [sessionId, attachments]);
-
-  useEffect(() => {
-    syncHasValue(ref.current?.value ?? "", attachmentsRef.current);
-  }, [inboxCard, noteCard, handoffCard, syncHasValue]);
+  useComposerAttachmentLifecycle({
+    sessionId,
+    harness,
+    attachments,
+    attachmentsRef,
+    borrowedAttachmentIdsRef,
+    pasteGenerationRef,
+    mountedClosure,
+    setPasteError,
+  });
 
   /** Text goes at the caret when the input has focus, otherwise at the end. */
-  const insertIntoDraft = useCallback((insertion: string) => {
-    const el = ref.current;
-    if (!el || !insertion) return;
-    const focused = document.activeElement === el;
-    const edit = insertAtSelection(
-      el.value,
-      focused ? { start: el.selectionStart, end: el.selectionEnd } : null,
-      insertion,
-    );
-    applyTextareaEdit(el, edit.text, edit.caret);
-  }, []);
+  const insertIntoDraft = useCallback(
+    (insertion: string) => {
+      if (!canMutateDraft()) return;
+      const el = ref.current;
+      if (!insertion) return;
+      if (!el) {
+        if (attachmentApplyDepth.current > 0) {
+          const edit = insertAtSelection(draftTextRef.current, null, insertion);
+          setDraft(edit.text);
+          publishDraft(edit.text);
+        }
+        return;
+      }
+      const focused = document.activeElement === el;
+      const edit = insertAtSelection(
+        el.value,
+        focused ? { start: el.selectionStart, end: el.selectionEnd } : null,
+        insertion,
+      );
+      applyTextareaEdit(el, edit.text, edit.caret);
+    },
+    [canMutateDraft, publishDraft],
+  );
 
   const addAttachments = useCallback(
     (incoming: Attachment[]) => {
+      if (!canMutateDraft()) return;
       if (!harnessSupportsAttachments(harness) || incoming.length === 0) return;
       const previous = attachmentsRef.current;
       const next = mergeAttachments(previous, incoming);
       attachmentsRef.current = next;
       setAttachments(next);
-      setPasteError(null);
+      // Files the full draft left out are said, not silently dropped.
+      setPasteError(releaseOverLimit(previous, next, incoming));
       draftRevisionRef.current += 1;
       // Skipped duplicates are not in `next`, so they get no token either.
       insertIntoDraft(tokensForIncoming(previous, next.slice(previous.length)));
-      syncHasValue(ref.current?.value ?? "", next);
+      syncHasText(ref.current?.value ?? "");
       ref.current?.focus();
     },
-    [harness, insertIntoDraft, syncHasValue],
+    [harness, insertIntoDraft, syncHasText],
   );
 
-  useEffect(() => {
-    if (!sessionId || !cwd || disabled) return;
-    return registerBrowserComposer(cwd, sessionId, (file) => {
-      if (!attachmentsSupported || attachmentsRef.current.length >= MAX_ATTACHMENTS) return false;
-      addAttachments([file]);
-      return attachmentsRef.current.some((entry) => entry.id === file.id);
-    });
-  }, [cwd, sessionId, disabled, attachmentsSupported, addAttachments]);
-
-  useEffect(() => {
-    if (!sessionId || !cwd || disabled) return;
-    return registerLogsComposer(cwd, sessionId, (text) => {
-      if (!ref.current || !text) return false;
-      draftRevisionRef.current += 1;
-      const next = `${ref.current.value}${ref.current.value ? "\n\n" : ""}${text}`;
-      applyTextareaEdit(ref.current, next, next.length);
-      syncHasValue(ref.current.value, attachmentsRef.current);
-      ref.current.focus();
-      return true;
-    });
-  }, [cwd, sessionId, disabled, syncHasValue]);
+  useComposerRegistrations({
+    cwd,
+    sessionId,
+    disabled,
+    attachmentsSupported,
+    inputRef: ref,
+    attachmentsRef,
+    draftRevisionRef,
+    canMutateDraft,
+    addAttachments,
+    setAttachments,
+    setPasteError,
+    syncHasText,
+  });
 
   const insertAttachmentToken = useCallback(
     (id: string) => {
+      if (!canMutateDraft()) return;
       const index = attachmentsRef.current.findIndex((file) => file.id === id);
       if (index < 0) return;
       draftRevisionRef.current += 1;
@@ -1365,6 +1139,7 @@ export const Composer = memo(function Composer({
 
   const removeAttachment = useCallback(
     (id: string) => {
+      if (!canMutateDraft()) return;
       const previous = attachmentsRef.current;
       const removed = previous.find((file) => file.id === id);
       if (removed && !borrowedAttachmentIdsRef.current.delete(removed.id)) {
@@ -1393,79 +1168,33 @@ export const Composer = memo(function Composer({
           applyTextareaEdit(el, text, caret);
         }
       }
-      syncHasValue(ref.current?.value ?? "", next);
+      syncHasText(ref.current?.value ?? "");
       ref.current?.focus();
     },
-    [syncHasValue],
+    [syncHasText],
   );
   // IPC listener registration is asynchronous; changing providers must not
   // detach it or leave it reading obsolete capabilities and callbacks.
-  const fileDropStateRef = useRef({
-    attachmentsSupported,
-    remote,
-    addAttachments,
+  const attachmentSink = useAttachmentSink({ attachmentsSupported, remote, addAttachments });
+  const { rememberAttachmentRead, readDroppedAttachments } = useComposerAttachmentReads({
+    parentInputRef,
+    mountedClosure,
+    sinkRef: attachmentSink,
+    attachmentApplyDepth,
+    pasteGenerationRef,
+    pasteFailuresRef,
+    pasteFlightRef,
+    setPasteError,
   });
-  useLayoutEffect(() => {
-    fileDropStateRef.current = { attachmentsSupported, remote, addAttachments };
-  }, [attachmentsSupported, remote, addAttachments]);
 
-  const rememberAttachmentRead = useCallback((work: Promise<void>) => {
-    const generation = pasteGenerationRef.current;
-    const flight = work.then(
-      () => undefined,
-      (reason: unknown) => {
-        if (pasteGenerationRef.current !== generation) return;
-        // Abort a Send already waiting on this failed read, retaining its text.
-        pasteGenerationRef.current += 1;
-        setPasteError(reason instanceof Error ? reason.message : String(reason));
-      },
-    );
-    const previous = pasteFlightRef.current;
-    const joined = previous ? previous.then(() => flight) : flight;
-    pasteFlightRef.current = joined;
-    void joined.finally(() => {
-      if (pasteFlightRef.current === joined) pasteFlightRef.current = null;
-    });
-  }, []);
-
-  const readDroppedAttachments = useCallback(
-    (read: () => Promise<Attachment[]>) => {
-      const generation = pasteGenerationRef.current;
-      setPasteError(null);
-      rememberAttachmentRead(
-        Promise.resolve()
-          .then(read)
-          .then((incoming) => {
-            if (
-              pasteGenerationRef.current !== generation ||
-              !fileDropStateRef.current.attachmentsSupported
-            ) {
-              incoming.forEach(revokeAttachment);
-              return;
-            }
-            if (incoming.length === 0) {
-              setPasteError(
-                "Nothing to attach from that drop — the file may have been moved, renamed, or deleted.",
-              );
-              return;
-            }
-            fileDropStateRef.current.addAttachments(incoming);
-          })
-          .catch((reason: unknown) => {
-            if (pasteGenerationRef.current !== generation) return;
-            setPasteError(reason instanceof Error ? reason.message : String(reason));
-          }),
-      );
-    },
-    [rememberAttachmentRead],
-  );
-
-  // The text as it was just before a user edit. Only a native `beforeinput`
-  // sets it, so programmatic text changes never count as the user deleting a
-  // token. Backspace/Delete against a token takes the whole token.
+  // Only native edits remove attachments; programmatic draft replacement does not.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    const removeSelectionPolicy = installAttachmentSelectionPolicy(
+      el,
+      () => attachmentsRef.current,
+    );
     const onBeforeInput = (event: InputEvent) => {
       userEditBeforeRef.current = el.value;
       const back = event.inputType === "deleteContentBackward";
@@ -1481,108 +1210,117 @@ export const Composer = memo(function Composer({
         el.selectionStart,
         back ? "back" : "forward",
         attachmentsRef.current,
+        chatCitationTokens(citationsRef.current.length),
       );
       if (!edit) return;
       event.preventDefault();
       applyTextareaEdit(el, edit.text, edit.caret);
     };
     el.addEventListener("beforeinput", onBeforeInput);
-    return () => el.removeEventListener("beforeinput", onBeforeInput);
-  }, []);
-
-  useEffect(() => {
-    const lifecycle = ++attachmentLifecycleRef.current;
     return () => {
-      queueMicrotask(() => {
-        if (attachmentLifecycleRef.current !== lifecycle) return;
-        pasteGenerationRef.current += 1;
-        releaseAttachments(attachmentsRef.current, borrowedAttachmentIdsRef.current);
-        attachmentsRef.current = [];
-        borrowedAttachmentIdsRef.current.clear();
-      });
+      removeSelectionPolicy();
+      el.removeEventListener("beforeinput", onBeforeInput);
     };
   }, []);
 
-  useEffect(() => {
-    if (harnessSupportsAttachments(harness)) return;
-    const previous = attachmentsRef.current;
-    if (previous.length === 0) return;
-    releaseAttachments(previous, borrowedAttachmentIdsRef.current);
-    attachmentsRef.current = [];
-    setAttachments([]);
-    syncHasValue(ref.current?.value ?? "", []);
-  }, [harness, syncHasValue]);
-  useEffect(() => {
-    setSkillActive(0);
-  }, [slash?.query, cwd]);
-
-  useEffect(() => {
-    setSessionFolderOpen(false);
-    setSessionFolderSelected(false);
-  }, [cwd]);
-
-  useEffect(() => {
-    setSkillActive((index) =>
-      rankedSkills.length === 0 ? 0 : Math.min(index, rankedSkills.length - 1),
-    );
-  }, [rankedSkills.length]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const apply = (next: ProjectFile[]) => {
-      if (!cancelled) setFiles(next);
-    };
-    const cached = peekProjectFiles(localCwd);
-    apply(cached ?? []);
-    if (!localCwd) return;
-    void loadProjectFiles(localCwd, mentionOpen && !remote)
-      .then(apply)
-      .catch((error) => {
-        console.warn("Composer operation failed", error);
-      });
-    const unsub = subscribeProjectFiles(() => {
-      const next = peekProjectFiles(localCwd);
-      if (next) apply(next);
-    });
-    return () => {
-      cancelled = true;
-      unsub();
-    };
-  }, [localCwd, mentionOpen, remote]);
-
-  useEffect(() => {
-    if (remote || !mentionOpen || !notesEnabled) return;
-    let cancelled = false;
-    void loadNoteSummaries()
-      .then((next) => {
-        if (!cancelled) setNotes(next);
-      })
-      .catch((error) => console.warn("Loading composer notes failed", error));
-    return () => {
-      cancelled = true;
-    };
-  }, [mentionOpen, notesEnabled, remote]);
-
-  useEffect(() => {
-    setMentionActive(0);
-  }, [mention?.query, cwd]);
-
-  useEffect(() => {
-    setMentionActive((index) =>
-      rankedFiles.length === 0 ? 0 : Math.min(index, rankedFiles.length - 1),
-    );
-  }, [rankedFiles.length]);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || !initialDraft) return;
-    if (el.value !== initialDraft) el.value = initialDraft;
+  // An accepted external draft takes the same projection path as a native edit:
+  // the textarea stays the authority and writes first, then the draft text,
+  // Send/placeholder state and token menus follow it. Echoes of the current
+  // text only refresh the ref, and nothing is written during an IME composition.
+  const applyExternalDraft = (el: HTMLTextAreaElement, serialized: string) => {
+    const { text, citations: incomingCitations } = extractChatCitations(serialized);
+    replaceCitations(incomingCitations);
+    const replaced = el.value !== text;
+    if (replaced) {
+      mountedClosure.changed();
+      draftRevisionRef.current += 1;
+      el.value = text;
+    }
+    draftTextRef.current = text;
     if (!positionedInitialDraft.current) {
       const end = el.value.length;
       el.setSelectionRange(end, end);
       positionedInitialDraft.current = true;
     }
     resizeComposer(el);
+    if (!replaced) return;
+    setDraft(text);
+    syncHasText(text);
+    setSlash(null);
+    setMention(null);
+  };
+  const applyExternalDraftRef = useRef(applyExternalDraft);
+  useLayoutEffect(() => {
+    applyExternalDraftRef.current = applyExternalDraft;
+  });
+  const composingRef = useRef(false);
+  useEffect(
+    () =>
+      sessionId
+        ? registerVoiceDraftReader(sessionId, () => ({
+            text: ref.current?.value ?? draftTextRef.current,
+            attachments: attachmentsRef.current,
+            composing: composingRef.current,
+            attachmentsPending: !!pasteFlightRef.current,
+          }))
+        : undefined,
+    [sessionId],
+  );
+  const deferredExternalDraftRef = useRef<DeferredExternalDraft | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let settle: number | undefined;
+    let valueAtStart = "";
+    const start = () => {
+      composingRef.current = true;
+      valueAtStart = el.value;
+    };
+    const end = () => {
+      composingRef.current = false;
+      // Text the user just composed wins: a draft that arrived during that
+      // composition is refused rather than written over it.
+      if (el.value !== valueAtStart) deferredExternalDraftRef.current = null;
+      if (!deferredExternalDraftRef.current) return;
+      // Some engines dispatch the final input event after compositionend. Let
+      // it update the revision first so a deferred draft never overwrites it.
+      window.clearTimeout(settle);
+      settle = window.setTimeout(() => {
+        if (composingRef.current) return;
+        const text = deferredExternalDraftToApply({
+          deferred: deferredExternalDraftRef.current,
+          revision: draftRevisionRef.current,
+          domValue: el.value,
+        });
+        deferredExternalDraftRef.current = null;
+        if (text !== null) applyExternalDraftRef.current(el, text);
+      }, 0);
+    };
+    el.addEventListener("compositionstart", start);
+    el.addEventListener("compositionend", end);
+    return () => {
+      window.clearTimeout(settle);
+      el.removeEventListener("compositionstart", start);
+      el.removeEventListener("compositionend", end);
+    };
+  }, []);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !initialDraft) return;
+    const action = externalDraftAction({
+      external: initialDraft,
+      domValue: el.value,
+      composing: composingRef.current,
+    });
+    if (action === "defer") {
+      deferredExternalDraftRef.current = {
+        text: initialDraft,
+        revision: draftRevisionRef.current,
+      };
+      return;
+    }
+    deferredExternalDraftRef.current = null;
+    applyExternalDraft(el, initialDraft);
   }, [initialDraft]);
 
   // Drafts changed while hidden could not be measured. Inbox panes are portaled
@@ -1600,30 +1338,42 @@ export const Composer = memo(function Composer({
   }, [enabled]);
 
   useEffect(() => {
-    onDraftChange?.(draft);
-  }, [draft, onDraftChange]);
+    publishDraft(draft);
+  }, [draft, citations, publishDraft]);
   useEffect(() => {
     if (draftResetToken == null || draftResetTokenRef.current === draftResetToken) {
       return;
     }
     draftResetTokenRef.current = draftResetToken;
+    mountedClosure.changed();
     pasteGenerationRef.current += 1;
     draftRevisionRef.current += 1;
-    clearComposer();
-    setDraftSelected(false);
+    // This reset was accepted externally. Preserve it and invalidate the closed
+    // observation instead of silently dropping it through the user edit gate.
+    if (ref.current) {
+      ref.current.value = "";
+      ref.current.style.height = "auto";
+    }
+    replaceCitations([]);
+    setDraft("");
+    publishDraft("");
+    draftModeRef.current = false;
+    setDraftSelectedState(false);
     setPlanSelected(false);
     setOrchestrationSelected(false);
     setSessionFolderSelected(false);
     setSessionFolderOpen(false);
     setMcpPickerOpen(false);
-    setSelectedMcp([]);
+    selectedMcpRef.current = [];
+    setSelectedMcpState([]);
     setPlusOpen(false);
+    setModeOpen(false);
     setSlash(null);
     setMention(null);
     setCreatingSkill(false);
     setCreateError(null);
-    syncHasValue("", attachmentsRef.current);
-  }, [draftResetToken, clearComposer, syncHasValue]);
+    syncHasText("");
+  }, [draftResetToken, clearComposer, syncHasText]);
 
   const syncHighlightScroll = useCallback((el: HTMLTextAreaElement) => {
     const highlight = highlightRef.current;
@@ -1655,46 +1405,91 @@ export const Composer = memo(function Composer({
     // `$name` opens only while some Codex skill matches, so `$HOME` stays text.
     const dollar = token ? null : dollarTokenAt(el.value, cursor);
     setSlash(
-      token ??
-        (dollar && rankSkills(cliCommands.dollarSkills, dollar.query, 1).length > 0
-          ? dollar
-          : null),
+      token ?? (dollar && rankSkills(dollarSkills, dollar.query, 1).length > 0 ? dollar : null),
     );
     setMention(token ? null : mentionTokenAt(el.value, cursor));
   };
 
   const openSessionFolderPicker = useCallback(() => {
+    if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+      if (sessionFolderLoading.current) return;
+      sessionFolderLoading.current = true;
+      setSessionFolderPending(true);
+      setSessionFolderError(null);
+      void hydrateSessionOrganization()
+        .then((state) => {
+          if (sessionFolderCwd.current !== cwd) return;
+          setSessionFolders(organizationFoldersForProject(state, cwd));
+          setSessionFolderOpen(true);
+        })
+        .catch((error: unknown) => {
+          if (sessionFolderCwd.current === cwd) setSessionFolderError(String(error));
+        })
+        .finally(() => {
+          sessionFolderLoading.current = false;
+          setSessionFolderPending(false);
+        });
+      return;
+    }
     setSessionFolders(loadSessionFolders(cwd));
     setSessionFolderOpen(true);
   }, [cwd]);
 
   useEffect(() => {
+    if (!NATIVE_SESSION_ORGANIZATION_ACTIVE || !sessionFolderOpen) return;
+    return subscribeSessionOrganization(
+      () => {
+        const snapshot = cachedSessionOrganization();
+        if (!snapshot) return;
+        try {
+          setSessionFolders(organizationFoldersForProject(snapshot, cwd));
+        } catch (error) {
+          setSessionFolderError(String(error));
+        }
+      },
+      (error) => setSessionFolderError(String(error)),
+    );
+  }, [cwd, sessionFolderOpen]);
+
+  useEffect(() => {
     const el = ref.current;
     if (!el || !quoteRequest) return;
 
-    const result = consumeQuoteRequest(el.value, consumedQuoteId.current, quoteRequest);
+    // The caret survives blur; a never-placed caret (0 in a non-empty draft) means the end.
+    const at = el.selectionStart || el.value.length;
+    const result = consumeQuoteRequest(
+      withChatCitations(el.value, citationsRef.current),
+      consumedQuoteId.current,
+      quoteRequest,
+      { start: at, end: el.selectionStart ? el.selectionEnd : at },
+    );
     consumedQuoteId.current = result.consumedId;
     if (result.changed) {
-      el.value = result.draft;
+      draftRevisionRef.current += 1;
+      const incoming = extractChatCitations(result.draft);
+      replaceCitations(incoming.citations);
+      el.value = incoming.text;
       resizeComposer(el);
-      setDraft(result.draft);
-      syncHasValue(result.draft, attachmentsRef.current);
+      setDraft(incoming.text);
+      syncHasText(incoming.text);
       setSlash(null);
       setMention(null);
       setCreatingSkill(false);
       setCreateError(null);
-      el.setSelectionRange(result.draft.length, result.draft.length);
+      const caret = result.caret ?? incoming.text.length;
+      el.setSelectionRange(caret, caret);
       el.focus();
     }
     onQuoteRequestConsumed?.(quoteRequest.id);
-  }, [onQuoteRequestConsumed, quoteRequest, syncHasValue]);
+  }, [onQuoteRequestConsumed, quoteRequest, syncHasText]);
 
   // `/btw ` opens the side conversation as soon as it is typed, carrying any
   // text after it over as the unsent side question.
   const enterBtwFromPrefix = useCallback(
     (el: HTMLTextAreaElement) => {
+      if (!canMutateDraft()) return false;
       if (!onBtwCommand || inboxCard || noteCard || handoffCard) return false;
-      if (attachmentsRef.current.length > 0) return false;
+      if (attachmentsRef.current.length > 0 || citationsRef.current.length > 0) return false;
       const rest = consumeBtwPrefix(el.value);
       if (rest == null || onBtwCommand(rest, { draft: true }) === false) {
         return false;
@@ -1703,17 +1498,18 @@ export const Composer = memo(function Composer({
       resizeComposer(el);
       draftRevisionRef.current += 1;
       setDraft("");
-      onDraftChange?.("");
-      syncHasValue("", attachmentsRef.current);
+      publishDraft("");
+      syncHasText("");
       setSlash(null);
       setMention(null);
       return true;
     },
-    [handoffCard, inboxCard, noteCard, onBtwCommand, onDraftChange, syncHasValue],
+    [canMutateDraft, handoffCard, inboxCard, noteCard, onBtwCommand, publishDraft, syncHasText],
   );
 
   const pickSkill = useCallback(
     (skill: Skill) => {
+      if (!canMutateDraft()) return;
       const el = ref.current;
       const token = slashRef.current;
       if (!el || !token) {
@@ -1728,8 +1524,8 @@ export const Composer = memo(function Composer({
         mcpInsertAt.current = token.start;
         el.setSelectionRange(token.start, token.start);
         setDraft(next);
-        onDraftChange?.(next);
-        syncHasValue(next, attachmentsRef.current);
+        publishDraft(next);
+        syncHasText(next);
         setSlash(null);
         openMcpPicker();
         return;
@@ -1744,7 +1540,7 @@ export const Composer = memo(function Composer({
         if (next[cursor] === " ") cursor += 1;
         el.setSelectionRange(cursor, cursor);
         setDraft(next);
-        syncHasValue(next, attachmentsRef.current);
+        syncHasText(next);
         setSlash(null);
         setCreatingSkill(false);
         openSessionFolderPicker();
@@ -1762,8 +1558,8 @@ export const Composer = memo(function Composer({
         resizeComposer(el);
         el.setSelectionRange(token.start, token.start);
         setDraft(cleared);
-        onDraftChange?.(cleared);
-        syncHasValue(cleared, attachmentsRef.current);
+        publishDraft(cleared);
+        syncHasText(cleared);
         setSlash(null);
         setCreatingSkill(false);
         onResumeProviderSession();
@@ -1786,7 +1582,7 @@ export const Composer = memo(function Composer({
       if (next[cursor] === " ") cursor += 1;
       el.setSelectionRange(cursor, cursor);
       setDraft(next);
-      syncHasValue(next, attachmentsRef.current);
+      syncHasText(next);
       setSlash(null);
       setCreatingSkill(false);
       if (skill.kind === "builtin" && skill.name === BTW_COMMAND.name) {
@@ -1795,18 +1591,20 @@ export const Composer = memo(function Composer({
       el.focus();
     },
     [
+      canMutateDraft,
       enterBtwFromPrefix,
-      onDraftChange,
+      publishDraft,
       onPlaceInFolder,
       openMcpPicker,
       onResumeProviderSession,
       openSessionFolderPicker,
-      syncHasValue,
+      syncHasText,
     ],
   );
 
   const pickMention = useCallback(
     (file: ProjectFile) => {
+      if (!canMutateDraft()) return;
       const el = ref.current;
       const token = mentionRef.current;
       if (!el || !token) {
@@ -1824,11 +1622,11 @@ export const Composer = memo(function Composer({
       if (next[cursor] === " ") cursor += 1;
       el.setSelectionRange(cursor, cursor);
       setDraft(next);
-      syncHasValue(next, attachmentsRef.current);
+      syncHasText(next);
       setMention(null);
       el.focus();
     },
-    [syncHasValue, remote],
+    [canMutateDraft, syncHasText, remote],
   );
 
   const lastFocusToken = useRef(focusToken);
@@ -1864,134 +1662,31 @@ export const Composer = memo(function Composer({
     ref.current?.focus();
   }, [disabled, focused, question, busy, focusToken]);
 
+  useComposerFileDrop({
+    enabled,
+    disabled,
+    attachmentsSupported,
+    boxRef,
+    sinkRef: attachmentSink,
+    attachmentsRef,
+    readDroppedAttachments,
+    setPasteError,
+  });
   useEffect(() => {
-    if (!enabled || disabled) {
-      setFileDrag(false);
-      return;
-    }
-    const dropRoot = () => boxRef.current;
-    let nativeDropAt = 0;
-
-    const overTarget = (x: number, y: number) => {
-      const root = dropRoot();
-      if (!root) return false;
-      const rect = root.getBoundingClientRect();
-      return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-    };
-
-    const onDragOver = (event: DragEvent) => {
-      const data = event.dataTransfer;
-      if (!hasFiles(data)) return;
-      event.preventDefault();
-      const supported = fileDropStateRef.current.attachmentsSupported;
-      data.dropEffect = supported ? "copy" : "none";
-      setFileDrag(supported);
-    };
-    const onDragLeave = (event: DragEvent) => {
-      const root = dropRoot();
-      if (!root) return;
-      const next = event.relatedTarget as Node | null;
-      if (next && root.contains(next)) return;
-      setFileDrag(false);
-    };
-    const onDrop = (event: DragEvent) => {
-      const data = event.dataTransfer;
-      if (!hasFiles(data)) return;
-      event.preventDefault();
-      setFileDrag(false);
-      if (!fileDropStateRef.current.attachmentsSupported) return;
-      if (Date.now() - nativeDropAt < 250) return;
-      const files = filesFromClipboard(data);
-      if (files.length === 0) return;
-      readDroppedAttachments(() => attachmentsFromFiles(files));
-    };
-
-    const onExplorerFilePointerDrag = (event: Event) => {
-      if (fileDropStateRef.current.remote) return;
-      const detail = (event as CustomEvent<ExplorerFilePointerDragDetail>).detail;
-      if (!detail || detail.type === "end") {
-        setFileDrag(false);
-        return;
-      }
-      const over = overTarget(detail.x, detail.y);
-      const supported = fileDropStateRef.current.attachmentsSupported;
-      if (detail.type === "move") {
-        setFileDrag(over && supported);
-        return;
-      }
-      setFileDrag(false);
-      if (!over || !supported) return;
-      readDroppedAttachments(() => attachmentsFromPaths(detail.paths ?? [detail.path]));
-    };
-
-    const root = dropRoot();
-    root?.addEventListener("dragover", onDragOver);
-    root?.addEventListener("dragleave", onDragLeave);
-    root?.addEventListener("drop", onDrop);
-    window.addEventListener(EXPLORER_FILE_POINTER_DRAG_EVENT, onExplorerFilePointerDrag);
-
-    let cancelled = false;
-    let unlisten: (() => void) | undefined;
-    void getCurrentWebview()
-      .onDragDropEvent((event) => {
-        if (cancelled) return;
-        if (event.payload.type === "leave") {
-          setFileDrag(false);
-          return;
-        }
-        const { x, y } = event.payload.position;
-        const point = dragPointToClient(x, y);
-        const over = overTarget(point.x, point.y);
-        const supported = fileDropStateRef.current.attachmentsSupported;
-        if (event.payload.type === "enter" || event.payload.type === "over") {
-          setFileDrag(over && supported);
-          return;
-        }
-        if (event.payload.type !== "drop") return;
-        setFileDrag(false);
-        if (!over || !supported) return;
-        if (event.payload.paths.length === 0) {
-          setPasteError(
-            "This drag did not provide a file. Save the image, then drag the saved file here.",
-          );
-          return;
-        }
-        nativeDropAt = Date.now();
-        const paths = event.payload.paths;
-        readDroppedAttachments(() => attachmentsFromPaths(paths));
-      })
-      .then((fn) => {
-        if (cancelled) fn();
-        else unlisten = fn;
-      })
-      .catch((error) => {
-        console.warn("Composer operation failed", error);
-      });
-
-    return () => {
-      cancelled = true;
-      root?.removeEventListener("dragover", onDragOver);
-      root?.removeEventListener("dragleave", onDragLeave);
-      root?.removeEventListener("drop", onDrop);
-      window.removeEventListener(EXPLORER_FILE_POINTER_DRAG_EVENT, onExplorerFilePointerDrag);
-      unlisten?.();
-    };
-  }, [disabled, enabled, readDroppedAttachments]);
-  useEffect(() => {
-    if (!attachmentsSupported) {
-      pasteGenerationRef.current += 1;
-      setFileDrag(false);
-    }
+    // Reads begun before files became unsupported must not land on this draft.
+    if (!attachmentsSupported) pasteGenerationRef.current += 1;
   }, [attachmentsSupported]);
   const restoreDraft = useCallback(
-    (text: string, nextAttachments: Attachment[], borrowedIds?: ReadonlySet<string>) => {
+    (serialized: string, nextAttachments: Attachment[], borrowedIds?: ReadonlySet<string>) => {
+      const { text, citations: restoredCitations } = extractChatCitations(serialized);
+      replaceCitations(restoredCitations);
       const restoredBorrowedIds = borrowedIds ?? borrowedAttachmentIdsRef.current;
       setDraft(text);
-      onDraftChange?.(text);
+      publishDraft(text);
       if (ref.current) {
         ref.current.value = text;
         ref.current.style.height = "auto";
-        ref.current.style.height = `${Math.min(ref.current.scrollHeight, COMPOSER_MAX_HEIGHT)}px`;
+        ref.current.style.height = `${Math.min(ref.current.scrollHeight, composerMaxHeight(ref.current))}px`;
       }
 
       const nextIds = new Set(nextAttachments.map((file) => file.id));
@@ -2001,13 +1696,14 @@ export const Composer = memo(function Composer({
       );
       attachmentsRef.current = nextAttachments;
       setAttachments(nextAttachments);
-      syncHasValue(text, nextAttachments);
+      syncHasText(text);
       ref.current?.focus();
     },
-    [onDraftChange, syncHasValue],
+    [publishDraft, syncHasText],
   );
 
   const exitEditMode = useCallback(() => {
+    if (!canMutateDraft()) return;
     draftRevisionRef.current += 1;
     pasteGenerationRef.current += 1;
     clearComposer();
@@ -2016,17 +1712,18 @@ export const Composer = memo(function Composer({
     attachmentsRef.current = [];
     setAttachments([]);
     setResendEdited(false);
-    onEditingLastTurnChange?.(false);
     setPlusOpen(false);
+    setModeOpen(false);
     setSlash(null);
     setMention(null);
     setMcpPickerOpen(false);
     setSelectedMcp([]);
-    syncHasValue("", []);
+    syncHasText("");
     ref.current?.focus();
-  }, [clearComposer, onEditingLastTurnChange, syncHasValue]);
+  }, [clearComposer, setResendEdited, syncHasText]);
 
   const recallLastTurn = useCallback(() => {
+    if (!canMutateDraft()) return;
     if (!editLastTurnSupported || !lastTurnRecall) return;
     if (onRecallLastTurn) {
       onRecallLastTurn(lastTurnRecall);
@@ -2042,85 +1739,245 @@ export const Composer = memo(function Composer({
       new Set(lastTurnRecall.attachments.map((file) => file.id)),
     );
     setResendEdited(true);
-    onEditingLastTurnChange?.(true);
   }, [
     editLastTurnSupported,
     onRecallLastTurn,
     exitEditMode,
     lastTurnRecall,
-    onEditingLastTurnChange,
     resendEdited,
     restoreDraft,
+    setResendEdited,
   ]);
 
-  const recallMessage = useCallback(
+  const applyExternalRecall = useCallback(
     (value: LastTurnRecall) => {
       restoreDraft(
         value.text,
         value.attachments,
         new Set(value.attachments.map((file) => file.id)),
       );
+      // Recall is an unsent draft. Place the caret explicitly after the prompt
+      // rather than retaining the previous draft's selection.
+      ref.current?.setSelectionRange(value.text.length, value.text.length);
       setResendEdited(false);
-      onEditingLastTurnChange?.(false);
     },
-    [onEditingLastTurnChange, restoreDraft],
+    [restoreDraft, setResendEdited],
+  );
+  const recallMessage = useCallback(
+    (value: LastTurnRecall) => {
+      if (!canMutateDraft()) return;
+      applyExternalRecall(value);
+    },
+    [canMutateDraft, applyExternalRecall],
   );
 
   const appliedRecallIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (!recalledMessage || appliedRecallIdRef.current === recalledMessage.id) return;
     appliedRecallIdRef.current = recalledMessage.id;
-    recallMessage(recalledMessage.value);
+    applyExternalRecall(recalledMessage.value);
     onRecalledMessageApplied?.(recalledMessage.id);
-  }, [onRecalledMessageApplied, recallMessage, recalledMessage]);
+  }, [onRecalledMessageApplied, applyExternalRecall, recalledMessage]);
 
   useEffect(() => {
     if (onRecallMessageReady) onRecallMessageReady(recallMessage);
   }, [onRecallMessageReady, recallMessage]);
 
   useEffect(() => {
+    // The edit marker resets with the session during render (useEditingLastTurn);
+    // the revision and recalled-history refs can only be retired after commit.
     draftRevisionRef.current += 1;
-    setResendEdited(false);
-    onEditingLastTurnChange?.(false);
-  }, [sessionId, onEditingLastTurnChange]);
-
-  useEffect(() => {
     historyRef.current = null;
   }, [sessionId]);
-
-  useEffect(() => {
-    if (editLastTurnSupported) return;
-    setResendEdited(false);
-    onEditingLastTurnChange?.(false);
-  }, [editLastTurnSupported, onEditingLastTurnChange]);
 
   useEffect(() => {
     if (!editLastTurnSupported || !onRecallLastTurnReady) return;
     onRecallLastTurnReady(recallLastTurn);
   }, [editLastTurnSupported, onRecallLastTurnReady, recallLastTurn]);
 
+  const parentChanged = useParentInputClosure(
+    {
+      kind: "composer-parent",
+      sessionId: logicalParentSessionId,
+      snapshot: () => ({
+        composerSessionId: sessionId,
+        text: withChatCitations(ref.current?.value ?? draftTextRef.current, citationsRef.current),
+        draftText: withChatCitations(draftTextRef.current, citationsRef.current),
+        initialDraft,
+        draftResetToken,
+        currentDraftResetToken: draftResetTokenRef.current,
+        quoteRequest,
+        consumedQuoteId: consumedQuoteId.current,
+        recalledMessage,
+        appliedRecallId: appliedRecallIdRef.current,
+        planSelected,
+        operatorSelected,
+        orchestrationSelected,
+        draftSelected,
+        sessionFolderSelected,
+        resendEdited,
+        selectedMcp: selectedMcpRef.current,
+        attachments: attachmentsRef.current,
+        borrowedAttachmentIds: [...borrowedAttachmentIdsRef.current],
+        draftRevision: draftRevisionRef.current,
+        pasteGeneration: pasteGenerationRef.current,
+        pasteFailures: pasteFailuresRef.current,
+        pastePending: !!pasteFlightRef.current,
+        sendIntent: sendIntentRef.current,
+        submitPending: !!submitLockRef.current,
+        submitInput: submitInputRef.current,
+        submission,
+        creatingSkill,
+        createBusy,
+        createError,
+        sessionFolderOpen,
+        mcpPickerOpen,
+        mcpLoading,
+        mcpError,
+        mcpInsertAt: mcpInsertAt.current,
+        mcpStatus: [...mcpStatus],
+        inboxCard,
+        noteCard,
+        handoffCard,
+        question,
+        questionDraftScope,
+        harness,
+        model,
+        modelSettings,
+        runtimeMode,
+        providerAccountId,
+        cwd,
+        executionCwd,
+        workspaceMode,
+        worktreeBase,
+        disabled,
+        sendHeldReason,
+        sendBlockedReason,
+        worktreePreparing,
+        worktreeRemoved,
+      }),
+      missingCoverage:
+        parentSessionId !== undefined && sessionId !== logicalParentSessionId
+          ? ["nested-btw-input-scope", "decision-conservation", "composer-auxiliary-inputs"]
+          : ["decision-conservation", "composer-auxiliary-inputs"],
+    },
+    ref,
+  );
+  useLayoutEffect(() => {
+    parentInputRef.current = parentChanged;
+  }, [parentChanged]);
   const submit = (value: string, queue = false) => {
-    if (disabled || worktreeRemoved || sendHeldReason || submitLockRef.current) return;
-    submitLockRef.current = true;
-    void completeSubmit(value, queue).finally(() => {
-      submitLockRef.current = false;
+    if (!canMutateDraft()) return;
+    if (submitLockRef.current) return;
+    if (disabled || worktreeRemoved || workspaceActionBlocked || sendHeldReason) {
+      // Enter reaches here without the send button's tooltip; say why nothing was sent.
+      setPasteError(
+        sendHeldReason ||
+          sendBlockedReason ||
+          t(
+            "The message was not sent. Resolve the conversation or workspace blocker and try again.",
+          ),
+      );
+      return;
+    }
+    const admitted = parentChanged.admit();
+    if (!admitted) return;
+    const rawAction = mountedClosure.admitAction();
+    if (!rawAction) {
+      admitted.finish();
+      setPasteError(
+        t("The message is kept. Wait for checkpoint preparation to finish before sending."),
+      );
+      return;
+    }
+    const token = Symbol();
+    const originalIdentity = parentChanged.identity();
+    const intent = sendIntentRef.current;
+    const generation = pasteGenerationRef.current;
+    submitInputRef.current = { text: value, queue };
+    parentChanged();
+    submitLockRef.current = token;
+    setSubmission({ sessionId, action: queue ? "queue" : "send" });
+    void admitted.run(async () => {
+      try {
+        let pending = pasteFlightRef.current;
+        while (pending) {
+          await pending;
+          // Check the original owner before reading refs that a reused view may
+          // already have assigned to a different logical session.
+          if (parentChanged.identity() !== originalIdentity) return;
+          if (pasteGenerationRef.current !== generation || sendIntentRef.current !== intent) {
+            // A failed read already explains itself; keep that message.
+            setPasteError(
+              (current) =>
+                current ?? t("The draft changed while it was being prepared. Send it again."),
+            );
+            return;
+          }
+          pending = pasteFlightRef.current;
+        }
+        if (parentChanged.identity() !== originalIdentity) return;
+        admitted.apply(() =>
+          rawAction.apply(() => submitContinuationRef.current?.(value, queue, admitted)),
+        );
+      } catch (error) {
+        if (parentChanged.identity() === originalIdentity)
+          setPasteError(error instanceof Error ? error.message : String(error));
+      } finally {
+        rawAction.finish();
+        if (parentChanged.identity() === originalIdentity && submitLockRef.current === token) {
+          submitLockRef.current = null;
+          submitInputRef.current = null;
+          parentChanged();
+          setSubmission(null);
+        }
+      }
     });
   };
-  const completeSubmit = async (submittedValue: string, queue = false) => {
-    const intent = sendIntentRef.current;
-    let pending = pasteFlightRef.current;
-    const generation = pasteGenerationRef.current;
-    while (pending) {
-      await pending;
-      // A reset or an earlier send retired this draft while the read was out.
-      if (pasteGenerationRef.current !== generation || sendIntentRef.current !== intent) return;
-      pending = pasteFlightRef.current;
-    }
+  const completeSubmit = (submittedValue: string, queue = false, original?: ParentAdmission) => {
     const value = ref.current?.value ?? submittedValue;
-    if (disabled || worktreeRemoved || sendHeldReason) return;
+    if (!canMutateDraft()) return;
+    // Preserve public callback arguments while open. Only an actually closed
+    // logical root needs the explicit private downstream continuation.
+    const continuation = canMutateParentInputs(logicalParentSessionId) ? undefined : original;
+    const continuationArgs: [] | [ParentAdmission] = continuation ? [continuation] : [];
+    if (disabled || worktreeRemoved || workspaceActionBlocked || sendHeldReason) {
+      setPasteError(
+        sendHeldReason ||
+          t(
+            "The message was not sent. Resolve the conversation or workspace blocker and try again.",
+          ),
+      );
+      return;
+    }
+    if (
+      citationsRef.current.length &&
+      (isClearSessionCommand(value) ||
+        isCompactCommand(value) ||
+        isResumeCommand(value) ||
+        isMcpCommand(value) ||
+        parseShellCommand(value) !== undefined ||
+        isNativeCommandPrompt(value, harness))
+    ) {
+      setPasteError(
+        t("Remove quoted replies before running this command. Your draft is preserved."),
+      );
+      return;
+    }
     if (isClearSessionCommand(value)) {
-      if (busy || onSubmit(value.trim(), [], { intent: "default" }) === false) {
-        setPasteError(t("Stop the current turn before clearing the conversation."));
+      if (
+        busy ||
+        onSubmit(value.trim(), [], { intent: "default" }, ...continuationArgs) === false
+      ) {
+        const blocked = sessionId
+          ? getSessions().find((entry) => entry.id === sessionId)
+          : undefined;
+        setPasteError(
+          (blocked && clearConversationBlocker(blocked)) ||
+            (busy
+              ? t("Stop the current turn before clearing the conversation.")
+              : t("The conversation cannot be cleared right now. Try again in a moment.")),
+        );
         return;
       }
       pasteGenerationRef.current += 1;
@@ -2136,8 +1993,7 @@ export const Composer = memo(function Composer({
       setSlash(null);
       setMention(null);
       setResendEdited(false);
-      onEditingLastTurnChange?.(false);
-      syncHasValue("", []);
+      syncHasText("");
       return;
     }
     if (isNewSessionCommand(value) && onNewSession) {
@@ -2145,10 +2001,11 @@ export const Composer = memo(function Composer({
       // the navigation command before switching tabs so it cannot reappear.
       if (ref.current) ref.current.value = "";
       setDraft("");
-      onDraftChange?.("");
+      publishDraft("");
       setSlash(null);
-      syncHasValue("", attachmentsRef.current);
-      onNewSession();
+      syncHasText("");
+      if (continuation) onNewSession(undefined, continuation);
+      else onNewSession();
       return;
     }
     if (isResumeCommand(value)) {
@@ -2162,17 +2019,18 @@ export const Composer = memo(function Composer({
       }
       clearComposer();
       setPlusOpen(false);
+      setModeOpen(false);
       setSlash(null);
       setMention(null);
-      syncHasValue("", attachmentsRef.current);
-      onResumeProviderSession();
+      syncHasText("");
+      onResumeProviderSession(...continuationArgs);
       return;
     }
     if (isMcpCommand(value)) {
       mcpInsertAt.current = 0;
       clearComposer();
       setSlash(null);
-      syncHasValue("", attachments);
+      syncHasText("");
       openMcpPicker();
       return;
     }
@@ -2187,24 +2045,45 @@ export const Composer = memo(function Composer({
     }
     if ((draftSelected || draftCommand.matched) && onSaveDraft) {
       const files = attachmentsRef.current;
-      const text = draftCommand.text;
+      const text = withChatCitations(draftCommand.text, citationsRef.current);
       if (!text.trim() && files.length === 0) return;
+      const input = {
+        source: "composer-save-draft-intent",
+        composerSessionId: sessionId,
+        rawText: value,
+        text,
+        attachments: files,
+        selectedMcp,
+      };
+      const retained = retainParentInput({
+        kind: "composer-parent",
+        sessionId: logicalParentSessionId,
+        snapshot: () => input,
+      });
       const accepted = onSaveDraft(
         mcpContextText(taggedMcpServers(text, selectedMcp), text),
         files,
+        ...continuationArgs,
       );
-      if (accepted === false || !ref.current) return;
+      if (accepted === false) {
+        retained.release();
+        setPasteError(t("The draft was not accepted. Your text and files are kept."));
+        return;
+      }
+      retained.update({ ...input, disposition: "accepted-unknown" });
+      if (!ref.current) return;
       pasteGenerationRef.current += 1;
       clearComposer();
       setAttachments([]);
       setDraftSelected(false);
       setSelectedMcp([]);
       setPlusOpen(false);
+      setModeOpen(false);
       setSlash(null);
       setMention(null);
       setCreatingSkill(false);
       setCreateError(null);
-      syncHasValue("", []);
+      syncHasText("");
       return;
     }
     const folderCommand = consumeSessionFolderCommand(value);
@@ -2217,16 +2096,39 @@ export const Composer = memo(function Composer({
       !noteCard &&
       !handoffCard
     ) {
-      const accepted = onBtwCommand(btwCommand.text);
-      if (accepted === false) return;
+      const input = {
+        source: "composer-btw-intent",
+        composerSessionId: sessionId,
+        rawText: value,
+        text: withChatCitations(btwCommand.text, citationsRef.current),
+      };
+      const retained = retainParentInput({
+        kind: "composer-parent",
+        sessionId: logicalParentSessionId,
+        snapshot: () => input,
+      });
+      const accepted = continuation
+        ? onBtwCommand(
+            withChatCitations(btwCommand.text, citationsRef.current),
+            undefined,
+            continuation,
+          )
+        : onBtwCommand(withChatCitations(btwCommand.text, citationsRef.current));
+      if (accepted === false) {
+        retained.release();
+        setPasteError(t("The message was not accepted. Your text and files are kept."));
+        return;
+      }
+      retained.update({ ...input, disposition: "accepted-unknown" });
       pasteGenerationRef.current += 1;
       clearComposer();
       setPlusOpen(false);
+      setModeOpen(false);
       setSlash(null);
       setMention(null);
       setCreatingSkill(false);
       setCreateError(null);
-      syncHasValue("", []);
+      syncHasText("");
       return;
     }
     if (folderCommand.matched && onPlaceInFolder && !sessionFolderSelected) {
@@ -2235,16 +2137,17 @@ export const Composer = memo(function Composer({
     }
 
     if (isCompactCommand(value)) {
-      if (!onCompactContext?.()) return;
+      if (!onCompactContext?.(...continuationArgs)) return;
       if (!ref.current) return;
       pasteGenerationRef.current += 1;
       clearComposer();
       setPlusOpen(false);
+      setModeOpen(false);
       setSlash(null);
       setMention(null);
       setCreatingSkill(false);
       setCreateError(null);
-      syncHasValue("", attachmentsRef.current);
+      syncHasText("");
       return;
     }
 
@@ -2265,13 +2168,25 @@ export const Composer = memo(function Composer({
     const text = isNativeCommandPrompt(orchestratorCommand.text, harness)
       ? orchestratorCommand.text
       : composeInboxMessage(inboxCard, orchestratorCommand.text);
-    const submittedText =
-      operatorSelected && !consumeOperatorCommand(text).matched ? `/operator ${text}` : text;
+    const submittedCitations = [...citationsRef.current];
+    const submittedText = withChatCitations(
+      operatorSelected && !consumeOperatorCommand(text).matched ? `/operator ${text}` : text,
+      submittedCitations,
+    );
     const files = attachmentsRef.current;
-    if (!text && files.length === 0 && !noteCard && !handoffCard) return;
+    if (!text && submittedCitations.length === 0 && files.length === 0 && !noteCard && !handoffCard)
+      return;
+    // The files stay in the draft; say why they are not going out.
+    if (files.length > 0 && !harnessSupportsAttachments(harness)) {
+      setPasteError(
+        t("This provider cannot take attachments. They are kept; remove them or switch provider."),
+      );
+      return;
+    }
     // `!command` runs in the shell: it goes out exactly as typed, with none of
     // the context a prompt would carry.
     const shellLine =
+      submittedCitations.length === 0 &&
       files.length === 0 &&
       !resendEdited &&
       !inboxCard &&
@@ -2285,7 +2200,35 @@ export const Composer = memo(function Composer({
     const resendDraftRevision = draftRevisionRef.current;
     const resendBorrowedAttachmentIds = new Set(borrowedAttachmentIdsRef.current);
     const resendSelectedMcp = selectedMcp;
-    onDraftChange?.("");
+    const originalParentIdentity = parentChanged.identity();
+    const dispatchInput = {
+      source: "composer-dispatch-intent",
+      disposition: "dispatching",
+      composerSessionId: sessionId,
+      rawText: value,
+      text: submittedText,
+      attachments: files,
+      selectedMcp: resendSelectedMcp,
+      plan: planSelected || command.planning,
+      operator: operatorSelected,
+      orchestration: orchestrationSelected || orchestratorCommand.matched,
+      resendEdited,
+      queue,
+      busy,
+      harness,
+      model,
+      modelSettings,
+      runtimeMode,
+      providerAccountId,
+      draftRevision: resendDraftRevision,
+    };
+    const retained = retainParentInput({
+      kind: "composer-parent",
+      sessionId: logicalParentSessionId,
+      snapshot: () => dispatchInput,
+      missingCoverage: ["decision-conservation"],
+    });
+    publishDraft("", false);
     const accepted = onSubmit(
       shellLine
         ? value.trim()
@@ -2293,7 +2236,11 @@ export const Composer = memo(function Composer({
       files,
       {
         // The primary action steers; only the explicit queue action defers.
-        ...(busy ? { followUpBehavior: queue ? ("queue" as const) : ("steer" as const) } : {}),
+        ...(busy || queue
+          ? {
+              followUpBehavior: queue ? ("queue" as const) : ("steer" as const),
+            }
+          : {}),
         intent: shellLine
           ? "default"
           : planSelected || command.planning
@@ -2304,10 +2251,26 @@ export const Composer = memo(function Composer({
         // Both project preparation and remote reconnect may reject after the
         // composer cleared. A newer draft keeps ownership of the composer.
         onSendRejected: () => {
+          retained.update({
+            ...dispatchInput,
+            disposition: "late-send-rejection",
+          });
+          if (parentChanged.identity() !== originalParentIdentity) return false;
           // Only into an empty composer: never over what was typed since.
-          if (!ref.current || ref.current.value || attachmentsRef.current.length) return false;
-          restoreDraft(text, files, resendBorrowedAttachmentIds);
-          setSelectedMcp(resendSelectedMcp);
+          if (
+            !ref.current ||
+            ref.current.value ||
+            attachmentsRef.current.length ||
+            citationsRef.current.length
+          )
+            return false;
+          restoreDraft(
+            withChatCitations(text, submittedCitations),
+            files,
+            resendBorrowedAttachmentIds,
+          );
+          selectedMcpRef.current = resendSelectedMcp;
+          setSelectedMcpState(resendSelectedMcp);
           setPlanSelected(planSelected || command.planning);
           setOperatorSelected(operatorSelected);
           setOrchestrationSelected(orchestrationSelected || orchestratorCommand.matched);
@@ -2317,23 +2280,45 @@ export const Composer = memo(function Composer({
           ? {
               resendEdited: true,
               onResendRejected: ({ providerRewound }) => {
+                retained.update({
+                  ...dispatchInput,
+                  disposition: "late-resend-rejection",
+                  providerRewound,
+                });
+                if (parentChanged.identity() !== originalParentIdentity) return;
                 if (draftRevisionRef.current !== resendDraftRevision) return;
-                restoreDraft(text, files, resendBorrowedAttachmentIds);
-                setSelectedMcp(resendSelectedMcp);
+                restoreDraft(
+                  withChatCitations(text, submittedCitations),
+                  files,
+                  resendBorrowedAttachmentIds,
+                );
+                selectedMcpRef.current = resendSelectedMcp;
+                setSelectedMcpState(resendSelectedMcp);
                 setResendEdited(!providerRewound);
-                onEditingLastTurnChange?.(!providerRewound);
               },
             }
           : {}),
       },
+      ...continuationArgs,
     );
     // The app can reject a turn before it is recorded (for example while an
     // orchestration is paused). Keep the user's text, files and selected mode
     // intact so resolving the blocker never destroys their work.
     if (accepted === false) {
-      restoreDraft(text, files);
+      retained.release();
+      // Restore the typed text without the inbox prompt (its card is still
+      // attached) and bring back the mode the typed /plan or /orchestrate
+      // selected, so Enter cannot send a normal turn that may edit files.
+      restoreDraft(
+        withChatCitations(shellLine ? value : orchestratorCommand.text, submittedCitations),
+        files,
+      );
+      if (command.planning) setPlanSelected(true);
+      if (orchestratorCommand.matched) setOrchestrationSelected(true);
+      setPasteError(t("The message was not accepted. Your text and files are kept."));
       return;
     }
+    retained.update({ ...dispatchInput, disposition: "accepted-unknown" });
     pasteGenerationRef.current += 1;
     historyRef.current = null;
     clearComposer();
@@ -2342,23 +2327,38 @@ export const Composer = memo(function Composer({
     setAttachments([]);
     setSelectedMcp([]);
     setResendEdited(false);
-    onEditingLastTurnChange?.(false);
     setPlanSelected(false);
     setOperatorSelected(false);
     setOrchestrationSelected(false);
     setSessionFolderSelected(false);
     setSessionFolderOpen(false);
     setPlusOpen(false);
+    setModeOpen(false);
     setSlash(null);
     setMention(null);
     setCreatingSkill(false);
     setCreateError(null);
     setPasteError(null);
-    syncHasValue("", []);
+    syncHasText("");
   };
+  useLayoutEffect(() => {
+    submitContinuationRef.current = completeSubmit;
+  });
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (disabled) return;
     if (isImeComposition(e.nativeEvent)) return;
+    if (!canMutateDraft()) {
+      if (
+        busy &&
+        onStop &&
+        (keybindingPressed(STOP_TURN_COMMAND, e, isDefaultStopChord(e)) ||
+          isInterruptChord(e, e.currentTarget.selectionStart !== e.currentTarget.selectionEnd))
+      ) {
+        e.preventDefault();
+        stopPendingSend();
+      }
+      return;
+    }
     if (creatingSkill) return;
     if (
       !e.shiftKey &&
@@ -2368,7 +2368,7 @@ export const Composer = memo(function Composer({
       !(slash || mentionOpen || pickerOpen)
     ) {
       const version = translationHistoryKey(
-        translationHistoryRef.current,
+        currentTranslationHistory(),
         e.currentTarget.value,
         e.key,
       );
@@ -2557,7 +2557,7 @@ export const Composer = memo(function Composer({
           disabled: disabled || worktreeRemoved,
           popupOpen: false,
           draftMode: draftActive,
-          text: e.currentTarget.value,
+          text: withChatCitations(e.currentTarget.value, citationsRef.current),
           attachmentCount: attachmentsRef.current.length,
         })
       ) {
@@ -2611,30 +2611,43 @@ export const Composer = memo(function Composer({
     }
     e.preventDefault();
     e.stopPropagation();
-    const next = (workspaceMode ?? "current") === "current" ? "worktree" : "current";
+    const next = workspaceCreation.mode === "current" ? "worktree" : "current";
     if (next === "worktree" && !resolvedWorktreeBase) return;
-    onWorkspaceModeChange(next, next === "worktree" ? resolvedWorktreeBase : undefined);
+    if (!canMutateDraft()) return;
+    mutateParentInput(parentChanged, () =>
+      onWorkspaceModeChange(next, next === "worktree" ? resolvedWorktreeBase : undefined),
+    );
     ref.current?.focus();
   };
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!canMutateDraft()) {
+      e.preventDefault();
+      return;
+    }
     setPasteError(null);
     const messageFiles = messageFilesFromClipboard(e.clipboardData);
     if (messageFiles) {
       e.preventDefault();
-      const generation = pasteGenerationRef.current;
       const captured = captureDraft(e.currentTarget);
       const text = e.clipboardData.getData("text/plain");
       if (captured) insertRestoredText(captured, text);
-      if (!attachmentsSupported) return;
-      rememberAttachmentRead(
-        attachmentsFromFiles(messageFiles).then((pasted) => {
-          if (pasteGenerationRef.current !== generation) {
-            pasted.forEach(revokeAttachment);
-            return;
-          }
-          addAttachments(pasted);
-        }),
+      if (!attachmentsSupported) {
+        setPasteError(t("This conversation does not accept attachments."));
+        return;
+      }
+      rememberAttachmentRead((accepted) =>
+        attachmentsFromFiles(messageFiles).then((pasted) =>
+          accepted.apply(() => {
+            if (!accepted.isCurrent()) {
+              pasted.forEach(revokeAttachment);
+              return;
+            }
+            addAttachments(pasted);
+            const skipped = skippedPastedFiles(messageFiles, pasted);
+            if (skipped) setPasteError(skipped);
+          }),
+        ),
       );
       return;
     }
@@ -2643,7 +2656,12 @@ export const Composer = memo(function Composer({
       // A webview reports a paste as text only, so a screenshot or a file
       // copied in a file manager arrives with nothing to attach; both live on
       // the native clipboard.
-      if (!attachmentsSupported) return;
+      if (!attachmentsSupported) {
+        // A screenshot arrives with no text; say it was not taken.
+        if (!e.clipboardData.getData("text/plain"))
+          setPasteError(t("This conversation does not accept attachments."));
+        return;
+      }
       const text = e.clipboardData.getData("text/plain");
       // Prose and whitespace alike are the webview's to insert.
       if (text && !isFileReferenceText(text)) return;
@@ -2652,60 +2670,67 @@ export const Composer = memo(function Composer({
       e.preventDefault();
       // Captured before the read crosses an IPC hop. Send and draft reset bump
       // the generation, so a finished read cannot attach onto a draft that is gone.
-      const generation = pasteGenerationRef.current;
       const captured = isFileReferenceText(text) ? captureDraft(e.currentTarget) : null;
-      rememberAttachmentRead(
+      rememberAttachmentRead((accepted) =>
         nativeClipboardAttachments(text)
-          .then(({ files: pasted, warning }) => {
-            if (pasteGenerationRef.current !== generation) {
-              pasted.forEach(revokeAttachment);
-              return;
-            }
-            if (pasted.length) {
-              // WebKit can insert the URI after preventDefault. The chip
-              // replaces it, so the draft must not keep that text.
-              if (captured) dropPastedText(captured, text);
-              addAttachments(pasted);
-            } else if (captured) insertRestoredText(captured, text);
-            if (warning) setPasteError(warning);
-          })
+          .then(({ files: pasted, warning }) =>
+            accepted.apply(() => {
+              if (!accepted.isCurrent()) {
+                pasted.forEach(revokeAttachment);
+                return;
+              }
+              if (pasted.length) {
+                // WebKit can insert the URI after preventDefault. The chip
+                // replaces it, so the draft must not keep that text.
+                if (captured) dropPastedText(captured, text);
+                addAttachments(pasted);
+              } else if (captured) insertRestoredText(captured, text);
+              if (warning) setPasteError(warning);
+            }),
+          )
           .catch((reason: unknown) => {
-            if (pasteGenerationRef.current !== generation) return;
+            if (!accepted.isCurrent()) return;
+            accepted.fail(reason);
             setPasteError(reason instanceof Error ? reason.message : String(reason));
           }),
       );
       return;
     }
     e.preventDefault();
-    if (!attachmentsSupported) return;
-    const generation = pasteGenerationRef.current;
-    rememberAttachmentRead(
-      attachmentsFromFiles(files).then((pasted) => {
-        if (pasteGenerationRef.current !== generation) {
-          pasted.forEach(revokeAttachment);
-          return;
-        }
-        addAttachments(pasted);
-      }),
+    if (!attachmentsSupported) {
+      setPasteError(t("This conversation does not accept attachments."));
+      return;
+    }
+    rememberAttachmentRead((accepted) =>
+      attachmentsFromFiles(files).then((pasted) =>
+        accepted.apply(() => {
+          if (!accepted.isCurrent()) {
+            pasted.forEach(revokeAttachment);
+            return;
+          }
+          addAttachments(pasted);
+          const skipped = skippedPastedFiles(files, pasted);
+          if (skipped) setPasteError(skipped);
+        }),
+      ),
     );
   };
 
   const attachFromPicker = () => {
-    if (!attachmentsSupported) return;
-    const generation = pasteGenerationRef.current;
+    if (!attachmentsSupported || !canMutateDraft()) return;
+    const selection = retainAttachmentPickerSelection();
     setPasteError(null);
-    rememberAttachmentRead(
-      pickAttachments().then((files) => {
-        if (
-          pasteGenerationRef.current !== generation ||
-          !fileDropStateRef.current.attachmentsSupported
-        ) {
-          files.forEach(revokeAttachment);
-          return;
-        }
-        fileDropStateRef.current.addAttachments(files);
-        ref.current?.focus();
-      }),
+    rememberAttachmentRead((accepted) =>
+      pickAttachments(selection).then((files) =>
+        accepted.apply(() => {
+          if (!accepted.isCurrent() || !attachmentSink.current.attachmentsSupported) {
+            files.forEach(revokeAttachment);
+            return;
+          }
+          attachmentSink.current.addAttachments(files);
+          ref.current?.focus();
+        }),
+      ),
     );
   };
 
@@ -2724,27 +2749,165 @@ export const Composer = memo(function Composer({
     ref.current?.focus({ preventScroll: true });
   };
 
+  const sessionDirectoryPicker =
+    showSessionDirs && sessionId ? (
+      <SessionDirsPicker
+        sessionId={sessionId}
+        project={cwd ?? executionCwd}
+        workingDirectory={executionCwd}
+        recents={recents}
+        onProjectChange={
+          hideProjectPicker || hideTopBar
+            ? undefined
+            : (...args) => mutateParentInput(parentChanged, () => onCwdChange(...args))
+        }
+        enabled={enabled}
+        onClose={() => ref.current?.focus()}
+      />
+    ) : null;
+
+  // Operation modes are separate from adding context to the message.
+  const modeChoices = [
+    ...(!remote || remoteFeatures?.plan
+      ? [
+          {
+            kind: "item" as const,
+            id: "plan",
+            label: t("Plan mode"),
+            icon: <AiIdea />,
+            checked: planActive,
+            disabled: !!planUnavailableReason(harness),
+            title: planUnavailableReason(harness),
+            description: planUnavailableReason(harness)
+              ? t("Unavailable: {p0}", { p0: planUnavailableReason(harness) })
+              : t("Review a plan before building"),
+          },
+        ]
+      : []),
+    ...(!remote
+      ? [
+          {
+            kind: "item" as const,
+            id: "operator",
+            label: t("Operator"),
+            icon: <CursorMagicSelection />,
+            checked: operatorActive,
+            description: t("Give this thread access to") + " " + PRODUCT_IDENTITY.displayName,
+          },
+        ]
+      : []),
+    ...(!remote && !hideTopBar
+      ? [
+          {
+            kind: "item" as const,
+            id: "orchestrator",
+            label: t("Orchestrator"),
+            icon: <Share />,
+            badge: "v1",
+            checked: orchestrationActive,
+            description: t("Plan and coordinate agent work"),
+          },
+        ]
+      : []),
+    ...(canSaveDraft && onSaveDraft
+      ? [
+          {
+            kind: "item" as const,
+            id: "draft",
+            label: t("Draft"),
+            icon: <CircleDashed />,
+            checked: draftActive,
+            description: t("Save this message without starting the agent"),
+          },
+        ]
+      : []),
+  ];
+
+  // Reading mode tucks the workspace row away unless it has something to say.
+  const workspaceNeedsAttention =
+    !!workspaceCreationError || workspaceCreation.pending || !!worktreeRemoved;
+
+  // The project picker belongs to the execution context under the writing
+  // surface, beside workspace and branch, not inside the box.
+  const projectContextPicker =
+    !hideTopBar && !remote && !hideProjectPicker ? (
+      <div data-composer-context className="flex min-w-0 items-center">
+        <CwdPicker
+          cwd={cwd}
+          recents={recents}
+          projectLogoPath={projectLogoPath}
+          enabled={enabled}
+          onCwdChange={(...args) => mutateParentInput(parentChanged, () => onCwdChange(...args))}
+          onNewTerminal={worktreeRemoved ? undefined : onNewTerminal}
+          onClose={() => ref.current?.focus()}
+        />
+      </div>
+    ) : null;
+
+  // Typing re-renders this component; stable callbacks let the memoized picker skip it.
+  const onPickerModelChange = useStableCallback((...args: Parameters<typeof onModelChange>) =>
+    mutateParentInput(parentChanged, () => onModelChange(...args)),
+  );
+  const onPickerSettingsChange = useStableCallback((settings: Record<string, string>) =>
+    mutateParentInput(parentChanged, () => onModelSettingsChange?.(settings)),
+  );
+  const onPickerClose = useStableCallback(() => ref.current?.focus());
   return (
     <div
       data-composer
       data-usage-guide="composer"
       data-usage-guide-active={hotkeys ? "true" : undefined}
+      data-composer-reading={reading ? "true" : undefined}
       className={`relative shrink-0 ${shell || compact ? "" : "p-1.5 pt-0"}`}
       onMouseDown={disabled ? undefined : onFocus}
       onKeyDownCapture={disabled ? undefined : onComposerKeyDown}
     >
-      {question && onQuestionReply ? (
-        <QuestionForm
-          prompt={question}
-          onReply={onQuestionReply}
-          onInteraction={onQuestionInteraction}
-        />
+      <ComposerQuestionForm
+        question={question}
+        sessionId={sessionId}
+        parentSessionId={logicalParentSessionId}
+        draftScope={questionDraftScope}
+        onReply={onQuestionReply}
+        onInteraction={onQuestionInteraction}
+        attachmentsSupported={attachmentsSupported}
+        remoteFeatures={remoteFeatures}
+        remote={remote}
+      />
+      {parentClosed ? (
+        <p role="status" className="px-3 text-ui-micro text-(--ui-text-secondary)">
+          {t("Preparing session checkpoint. Your draft is kept.")}
+        </p>
       ) : null}
       {children}
+      {sessionId ? <WorkspaceRewindPreviewHost sessionId={sessionId} /> : null}
+      {sessionId && !draftWorkspace ? (
+        <SessionWorkspaceActions
+          key={`workspace-actions:${sessionId}`}
+          sessionId={sessionId}
+          cwd={cwd}
+          enabled={enabled}
+        />
+      ) : null}
+      {draftWorkspace && workspaceCreationError && (hideTopBar || hideBranchPicker) ? (
+        <div className="px-3 py-2">
+          <WorkspaceCreationStatus
+            pending={false}
+            error={workspaceCreationError}
+            onRetry={workspaceCreation.refresh}
+            onUseCurrentCheckout={
+              workspaceHostUpdateRequired && enabled && !busy && onWorkspaceModeChange
+                ? () => onWorkspaceModeChange("current")
+                : undefined
+            }
+          />
+        </div>
+      ) : null}
       <TranscriptSelectionMenu
+        allowReprompt
         selection={translationSelection.selection}
         onDismiss={translationSelection.dismissSelection}
         onTranslate={(target) => {
+          if (!canMutateDraft()) return;
           const selection = translationSelection.selection;
           if (selection) setTranslationRequest({ selection, target });
         }}
@@ -2752,10 +2915,16 @@ export const Composer = memo(function Composer({
       {translationRequest ? (
         <TranslationResultDialog
           text={translationRequest.selection.text}
+          surroundingText={repromptReference(
+            translationRequest.selection.value,
+            translationRequest.selection.start,
+            translationRequest.selection.end,
+          )}
           target={translationRequest.target}
           context={translationContext}
           onClose={() => setTranslationRequest(null)}
           onApply={(translation) => {
+            if (!canMutateDraft()) throw new Error("Composer input is temporarily closed.");
             const el = ref.current;
             const selected = translationRequest.selection;
             if (!el || el.value !== selected.value) throw new Error("Draft changed");
@@ -2765,7 +2934,7 @@ export const Composer = memo(function Composer({
               selected.end,
               translation,
             );
-            translationHistoryRef.current = history;
+            translationHistoryRef.current = { epoch: translationScope.epoch, history };
             applyTextareaEdit(el, history.translated, selected.start + translation.length);
             el.focus();
           }}
@@ -2776,19 +2945,44 @@ export const Composer = memo(function Composer({
           limit={usageLimit}
           provider={accountProvider}
           accountId={providerAccountId}
-          onResume={onUsageLimitResume}
-          onResumeAtReset={onUsageLimitResumeAtReset}
+          onResume={
+            onUsageLimitResume
+              ? () => {
+                  mutateParentInput(parentChanged, onUsageLimitResume);
+                }
+              : undefined
+          }
+          onResumeAtReset={
+            onUsageLimitResumeAtReset
+              ? (...args) => {
+                  mutateParentInput(parentChanged, () => onUsageLimitResumeAtReset(...args));
+                }
+              : undefined
+          }
           onSwitchAccount={
             accountProvider && onSelectProviderAccount
-              ? (accountId) => onSelectProviderAccount(accountProvider, accountId)
+              ? (accountId) => {
+                  mutateParentInput(parentChanged, () =>
+                    onSelectProviderAccount(accountProvider, accountId),
+                  );
+                }
               : undefined
           }
           onSwitchModel={() => setModelPickerRequest((count) => count + 1)}
-          onDismiss={onUsageLimitDismiss}
+          onDismiss={
+            onUsageLimitDismiss
+              ? () => {
+                  mutateParentInput(parentChanged, onUsageLimitDismiss);
+                }
+              : undefined
+          }
         />
       ) : null}
-      <DeliveryProgressNotice sessionId={sessionId} messages={queuedMessages} />
+      {queuedMessages.length === 0 ? (
+        <DeliveryProgressNotice sessionId={sessionId} messages={queuedMessages} />
+      ) : null}
       <MessageQueue
+        parentSessionId={logicalParentSessionId}
         key={sessionId}
         sessionId={sessionId}
         messages={queuedMessages}
@@ -2796,7 +2990,10 @@ export const Composer = memo(function Composer({
         canAttach={attachmentsSupported}
         remote={remote && !remoteFeatures?.steer}
         busy={busy}
-        steerSupported={remote ? !!remoteFeatures?.steer : canSteerHarness(harness)}
+        runningTarget={remote ? undefined : { harness, model, modelSettings, runningModelTarget }}
+        steerSupported={
+          remote ? !!remoteFeatures?.steer : canSteerHarness(runningModelTarget?.harness ?? harness)
+        }
         onDelete={onDeleteQueuedMessage}
         onEdit={onEditQueuedMessage}
         onEditingChange={onQueuedMessageEditingChange}
@@ -2808,12 +3005,13 @@ export const Composer = memo(function Composer({
         {mcpPickerOpen ? (
           <ComposerSuggestions anchor={boxRef} below={shell}>
             <McpServerPicker
-              connections={mcpConnections}
+              connections={mcpCatalog.connections}
               harness={harness}
               claudeStatus={mcpStatus}
               loading={mcpLoading}
               error={mcpError}
               onPick={(server) => {
+                if (!canMutateDraft()) return;
                 const el = ref.current;
                 if (!el) return;
                 const previous = selectedMcp.find(
@@ -2838,7 +3036,7 @@ export const Composer = memo(function Composer({
                   el.setSelectionRange(at + insertion.length, at + insertion.length);
                   draftRevisionRef.current += 1;
                   setDraft(next);
-                  syncHasValue(next, attachmentsRef.current);
+                  syncHasText(next);
                   setMention(null);
                 }
                 mcpInsertAt.current = null;
@@ -2862,22 +3060,58 @@ export const Composer = memo(function Composer({
             <SessionFolderPicker
               folders={sessionFolders}
               onPick={(target) => {
-                setSessionFolderOpen(false);
-                setSessionFolderSelected(true);
-                onPlaceInFolder?.(target);
-                const el = ref.current;
-                if (!el) return;
-                const cursor = el.selectionStart ?? el.value.length;
-                if (/^\s*\/add-to-folder$/i.test(el.value)) {
-                  el.value = `${el.value} `;
-                  resizeComposer(el);
-                  setDraft(el.value);
-                  syncHasValue(el.value, attachmentsRef.current);
-                  el.setSelectionRange(el.value.length, el.value.length);
-                } else {
-                  el.setSelectionRange(cursor, cursor);
-                }
-                requestAnimationFrame(() => el.focus());
+                if (
+                  !canMutateDraft() ||
+                  sessionFolderLoading.current ||
+                  sessionFolderMutationBlocked.current
+                )
+                  return;
+                sessionFolderLoading.current = true;
+                setSessionFolderPending(true);
+                setSessionFolderSaving(true);
+                setSessionFolderError(null);
+                void (async () => {
+                  const result = await onPlaceInFolder?.(target);
+                  if (result === false) return;
+                  if (result && result.state === "unknown") {
+                    sessionFolderMutationBlocked.current = true;
+                    setSessionFolderError(
+                      `Folder change outcome is unknown: ${result.operationId}`,
+                    );
+                    return;
+                  }
+                  if (result && result.state === "conflict") {
+                    setSessionFolderError("Folder change conflicted; refresh before retrying.");
+                    return;
+                  }
+                  if (result && result.state === "applied-unavailable") {
+                    sessionFolderMutationBlocked.current = true;
+                    setSessionFolderError(
+                      `Folder change was applied, but refresh failed: ${result.operationId}`,
+                    );
+                  }
+                  setSessionFolderOpen(false);
+                  setSessionFolderSelected(true);
+                  const el = ref.current;
+                  if (!el) return;
+                  const cursor = el.selectionStart ?? el.value.length;
+                  if (/^\s*\/add-to-folder$/i.test(el.value)) {
+                    el.value = `${el.value} `;
+                    resizeComposer(el);
+                    setDraft(el.value);
+                    syncHasText(el.value);
+                    el.setSelectionRange(el.value.length, el.value.length);
+                  } else {
+                    el.setSelectionRange(cursor, cursor);
+                  }
+                  requestAnimationFrame(() => el.focus());
+                })()
+                  .catch((error: unknown) => setSessionFolderError(String(error)))
+                  .finally(() => {
+                    sessionFolderLoading.current = false;
+                    setSessionFolderPending(false);
+                    setSessionFolderSaving(false);
+                  });
               }}
               onDismiss={() => {
                 setSessionFolderOpen(false);
@@ -2888,6 +3122,7 @@ export const Composer = memo(function Composer({
         ) : skillPickerOpen ? (
           <ComposerSuggestions anchor={boxRef} below={shell}>
             <SkillPicker
+              parentSessionId={logicalParentSessionId}
               skills={rankedSkills}
               prefix={slash?.trigger ?? "/"}
               showCreate={slash?.trigger !== "$"}
@@ -2900,6 +3135,7 @@ export const Composer = memo(function Composer({
               onActive={setSkillActive}
               onPick={pickSkill}
               onStartCreate={() => {
+                if (!canMutateDraft()) return;
                 setCreatingSkill(true);
                 setCreateError(null);
               }}
@@ -2911,34 +3147,59 @@ export const Composer = memo(function Composer({
                 el?.focus();
               }}
               onCreate={(name, scope) => {
+                if (!canMutateDraft()) return;
+                let parentAttempt = parentInputRef.current?.admit() ?? null;
+                if (!parentAttempt) return;
+                const initialParentAttempt = parentAttempt;
                 setCreateBusy(true);
                 setCreateError(null);
-                void createBlankSkill({ cwd: executionCwd, name, scope })
-                  .then((path) => {
-                    const el = ref.current;
-                    const token = slashRef.current;
-                    if (el && token) {
-                      const rest = el.value.slice(token.end).replace(/^\s/, "");
-                      const next = `${el.value.slice(0, token.start)}${rest}`;
-                      el.value = next;
-                      resizeComposer(el);
-                      el.setSelectionRange(token.start, token.start);
-                      setDraft(next);
-                      syncHasValue(next, attachments);
-                    }
-                    setCreatingSkill(false);
-                    setSlash(null);
-                    setCreateError(null);
-                    void skillCatalog.refresh({ refresh: true }).catch((error) => {
-                      console.warn("Composer operation failed", error);
+                let createdPath: string | undefined;
+                void mountedClosure
+                  .prepare(async (accepted) => {
+                    if (parentAttempt!.settled) parentAttempt = parentAttempt!.resume();
+                    const attempt = parentAttempt;
+                    if (!attempt) throw new Error("Parent preparation owner changed.");
+                    void accepted.whenSettled?.().then(attempt.finish, attempt.finish);
+                    // A successful file creation is never repeated merely because
+                    // its later mounted capture/Native draft ACK needs retry.
+                    createdPath ??= await createBlankSkill({
+                      cwd: executionCwd,
+                      name,
+                      scope,
                     });
-                    onOpenFile?.(path);
-                    el?.focus();
+                    const path = createdPath;
+                    attempt.apply(() =>
+                      accepted.apply(() => {
+                        const el = ref.current;
+                        const token = slashRef.current;
+                        if (el && token) {
+                          const rest = el.value.slice(token.end).replace(/^\s/, "");
+                          const next = `${el.value.slice(0, token.start)}${rest}`;
+                          el.value = next;
+                          resizeComposer(el);
+                          el.setSelectionRange(token.start, token.start);
+                          setDraft(next);
+                          syncHasText(next);
+                        }
+                        setCreatingSkill(false);
+                        setSlash(null);
+                        setCreateError(null);
+                        void skillCatalog.refresh({ refresh: true }).catch((error) => {
+                          console.warn("Composer operation failed", error);
+                        });
+                        onOpenFile?.(path);
+                        el?.focus();
+                      }),
+                    );
                   })
                   .catch((err: unknown) => {
+                    initialParentAttempt.finish();
                     setCreateError(err instanceof Error ? err.message : String(err));
                   })
-                  .finally(() => setCreateBusy(false));
+                  .finally(() => {
+                    initialParentAttempt.finish();
+                    setCreateBusy(false);
+                  });
               }}
             />
           </ComposerSuggestions>
@@ -2959,42 +3220,31 @@ export const Composer = memo(function Composer({
         <div
           ref={boxRef}
           data-composer-box
+          data-ui-focus-group=""
+          data-ui-focus-quiet=""
           onPointerDown={focusFromComposerSpace}
           data-composer-editing={resendEdited ? "" : undefined}
-          className={`relative z-10 border bg-(--ui-surface-raised) backdrop-blur-sm ${
-            resendEdited
-              ? "edit-last-turn-composer rounded-lg"
-              : "rounded-lg border-(--ui-tone-neutral-border) has-focus:border-(--ui-tone-neutral-border)"
-          } ${
-            fileDrag
-              ? "border-(--ui-tone-accent-border)"
-              : resendEdited
-                ? ""
-                : "border-(--ui-tone-neutral-border) has-focus:border-(--ui-tone-neutral-border)"
-          }`}
+          // z-10: in-pane stacking above sibling layers; no in-pane layer scale exists, so the literal stays.
+          className={`relative z-(--layer-pane-sheet) rounded-xl border ${resendEdited ? "edit-last-turn-composer" : ""}`}
         >
-          {fileDrag ? (
-            <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-lg bg-(--ui-tone-accent-subtle) text-[12px] text-(--ui-text-secondary)">
-              {t("Drop files to attach")}
-            </div>
-          ) : null}
-          {!hideTopBar && !remote && !hideProjectPicker ? (
-            <div
-              data-composer-context
-              className="flex min-w-0 flex-wrap items-center gap-2 px-3 pt-2"
-            >
-              <CwdPicker
-                cwd={cwd}
-                recents={recents}
-                projectLogoPath={projectLogoPath}
-                enabled={enabled}
-                onCwdChange={onCwdChange}
-                onNewTerminal={worktreeRemoved ? undefined : onNewTerminal}
-                onClose={() => ref.current?.focus()}
-              />
-            </div>
-          ) : null}
-
+          <ComposerCitations
+            citations={citations}
+            disabled={parentClosed || !!submission}
+            onChange={(next, removed) => {
+              if (!canMutateDraft()) return;
+              parentChanged();
+              const el = ref.current;
+              replaceCitations(next);
+              draftRevisionRef.current += 1;
+              // Removing a quote takes its `[quoteN]` token and renumbers the rest.
+              const text = el
+                ? removeCitationFromText(el.value, citations.length, removed ?? -1)
+                : "";
+              if (el && text !== el.value)
+                applyTextareaEdit(el, text, Math.min(el.selectionStart, text.length));
+              else publishDraft(el?.value ?? draftTextRef.current);
+            }}
+          />
           {attachments.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-3 pt-2">
               {attachments.map((file, index) => (
@@ -3010,17 +3260,86 @@ export const Composer = memo(function Composer({
           ) : null}
 
           {pasteError ? (
-            <Alert tone="danger" role="alert">
+            <Alert tone="danger" action={<MicrophoneRecoveryAction message={pasteError} />}>
               {pasteError}
             </Alert>
           ) : null}
+          {sessionFolderError ? (
+            <Alert
+              tone="danger"
+              action={
+                sessionFolderMutationBlocked.current ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      void unresolvedSessionOrganizationGestures()
+                        .then(async (pending) => {
+                          if (pending.length) {
+                            setSessionFolderError(
+                              `Folder change outcome is unknown: ${pending[0].operationId}`,
+                            );
+                            return;
+                          }
+                          const remaining = (await listPinSagas()).filter(
+                            (entry) => entry.state !== "applied" && entry.state !== "accepted",
+                          );
+                          if (remaining.length) {
+                            setSessionFolderError(
+                              `Pin change needs review in the sidebar: ${remaining[0].id}`,
+                            );
+                            return;
+                          }
+                          await hydrateSessionOrganization();
+                          sessionFolderMutationBlocked.current = false;
+                          setSessionFolderError("Folder state refreshed. Review your change.");
+                        })
+                        .catch((error: unknown) => setSessionFolderError(String(error)));
+                    }}
+                  >
+                    {t("Check again")}
+                  </Button>
+                ) : undefined
+              }
+            >
+              {sessionFolderError}
+            </Alert>
+          ) : null}
+          {sessionFolderPending ? (
+            <Alert>{sessionFolderSaving ? t("Saving…") : t("Loading folders…")}</Alert>
+          ) : null}
 
-          {inboxCard ? <InboxMiniCard card={inboxCard} onDismiss={onInboxCardDismiss} /> : null}
+          {inboxCard ? (
+            <InboxMiniCard
+              card={inboxCard}
+              onDismiss={
+                onInboxCardDismiss
+                  ? () => mutateParentInput(parentChanged, onInboxCardDismiss)
+                  : undefined
+              }
+            />
+          ) : null}
 
-          {noteCard ? <NoteMiniCard card={noteCard} onDismiss={onNoteCardDismiss} /> : null}
+          {noteCard ? (
+            <NoteMiniCard
+              card={noteCard}
+              onDismiss={
+                onNoteCardDismiss
+                  ? () => mutateParentInput(parentChanged, onNoteCardDismiss)
+                  : undefined
+              }
+            />
+          ) : null}
 
           {handoffCard ? (
-            <HandoffMiniCard card={handoffCard} onDismiss={onHandoffCardDismiss} />
+            <HandoffMiniCard
+              card={handoffCard}
+              onDismiss={
+                onHandoffCardDismiss
+                  ? () => mutateParentInput(parentChanged, onHandoffCardDismiss)
+                  : undefined
+              }
+            />
           ) : null}
 
           <div className="relative">
@@ -3029,7 +3348,7 @@ export const Composer = memo(function Composer({
                 ref={highlightRef}
                 aria-hidden
                 style={{ textIndent: modeIndent }}
-                className={`composer-highlight pointer-events-none absolute inset-0 max-h-40 overflow-hidden whitespace-pre-wrap wrap-break-word px-3 text-sm leading-5.5 text-(--ui-tone-neutral-fg) font-sans ${
+                className={`composer-highlight pointer-events-none absolute inset-0 max-h-40 overflow-hidden whitespace-pre-wrap wrap-break-word px-3 text-ui-body leading-5.5 text-(--ui-tone-neutral-fg) font-sans ${
                   shell ? "py-4" : "py-3"
                 }`}
               >
@@ -3037,17 +3356,23 @@ export const Composer = memo(function Composer({
                   text={draft}
                   mode={leadingMode}
                   names={skillNames}
+                  skillParts={skillTextParts}
                   mentions={mentionIndex.labels}
                   mcpTags={selectedMcp}
+                  attachments={attachments}
+                  citations={citations.length}
                 />
               </div>
             ) : null}
+            {/* ui-drift-ignore: raw-native-control -- bespoke composer editor: overlay highlight, auto-resize, mention/skill keyboard */}
             <textarea
               ref={ref}
+              readOnly={parentClosed}
+              data-ui-focus="group"
               data-composer-empty={navigationEmpty ? "true" : undefined}
               data-composer-plain={plainDraft ? "true" : undefined}
               style={{ textIndent: modeIndent }}
-              rows={2}
+              rows={reading ? 1 : 2}
               spellCheck={spelling}
               autoCorrect={spelling ? "on" : "off"}
               defaultValue={mountDraft}
@@ -3069,7 +3394,7 @@ export const Composer = memo(function Composer({
               }
               aria-label={inputAriaLabel}
               disabled={disabled}
-              className={`composer-field scrollbar-none relative max-h-40 w-full resize-none overflow-x-hidden whitespace-pre-wrap wrap-break-word bg-transparent px-3 text-sm leading-5.5 outline-none placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap font-sans ${
+              className={`composer-field scrollbar-none relative max-h-40 w-full resize-none overflow-x-hidden whitespace-pre-wrap wrap-break-word bg-transparent px-3 text-ui-body leading-5.5 placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap font-sans ${
                 shell ? "py-4" : "py-3"
               }`}
               onFocus={onFocus}
@@ -3080,8 +3405,12 @@ export const Composer = memo(function Composer({
               onKeyUp={(e) => syncTokensFromTextarea(e.currentTarget)}
               onSelect={(e) => syncTokensFromTextarea(e.currentTarget)}
               onInput={(e) => {
+                if (!parentChanged.canMutate()) {
+                  parentChanged();
+                  return;
+                }
                 const el = e.currentTarget;
-                const history = translationHistoryRef.current;
+                const history = currentTranslationHistory();
                 if (history && el.value !== history.original && el.value !== history.translated)
                   translationHistoryRef.current = null;
                 // A user edit that took a token out of the text takes its
@@ -3108,25 +3437,23 @@ export const Composer = memo(function Composer({
                 if (sessionFolderSelected && !consumeSessionFolderCommand(el.value).matched) {
                   setSessionFolderSelected(false);
                 }
-                syncHasValue(el.value, attachmentsRef.current);
+                syncHasText(el.value);
                 syncTokensFromTextarea(el);
               }}
             />
           </div>
 
-          {hideTopBar || hideBranchPicker ? (
-            <div className="composer-session-meta">
-              <ComposerTips active={focused && !disabled} />
-            </div>
-          ) : null}
           <div className="composer-controls flex items-center gap-1 px-2 pb-2">
+            {queuedMessages.length === 0 ? (
+              <DeliveryProgressIndicator sessionId={sessionId} />
+            ) : null}
             <div
               data-composer-model-controls
               data-usage-guide="model-controls"
               className="composer-toolbar flex min-w-0 flex-1 items-center"
             >
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-                <ModelPicker
+                <MemoModelPicker
                   harness={harness}
                   model={model}
                   values={modelSettings}
@@ -3138,266 +3465,207 @@ export const Composer = memo(function Composer({
                   accountId={providerAccountId}
                   accountChoices={Boolean(onSelectProviderAccount)}
                   extrasDisabled={disabled || !onModelSettingsChange}
-                  onChange={onModelChange}
-                  onSettingsChange={(settings) => onModelSettingsChange?.(settings)}
-                  onClose={() => ref.current?.focus()}
+                  onChange={onPickerModelChange}
+                  onSettingsChange={onPickerSettingsChange}
+                  onClose={onPickerClose}
                 />
                 {!compact && harness !== "fx" ? (
                   <AccessPicker
                     value={runtimeMode}
                     busy={busy}
                     unavailable={unavailableRuntimeModes(harness)}
-                    onChange={onRuntimeModeChange}
+                    onChange={(...args) =>
+                      mutateParentInput(parentChanged, () => onRuntimeModeChange(...args))
+                    }
                     onClose={() => ref.current?.focus()}
                   />
                 ) : null}
-                {showSessionDirs && sessionId ? (
-                  <SessionDirsPicker
-                    sessionId={sessionId}
-                    project={cwd ?? executionCwd}
-                    workingDirectory={executionCwd}
-                    recents={recents}
-                    onProjectChange={hideProjectPicker || hideTopBar ? undefined : onCwdChange}
-                    enabled={enabled}
-                    onClose={() => ref.current?.focus()}
-                  />
+                {!compact && modeChoices.length > 0 ? (
+                  <div className="relative flex shrink-0">
+                    <Button
+                      ref={modeRef}
+                      size="sm"
+                      variant="ghost"
+                      iconOnly
+                      label={t("Mode")}
+                      tooltip={t("Mode")}
+                      selected={modeOpen}
+                      aria-haspopup="menu"
+                      aria-expanded={modeOpen}
+                      data-composer-mode-trigger
+                      onClick={() => setModeOpen((open) => !open)}
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowDown") {
+                          event.preventDefault();
+                          setModeOpen(true);
+                        }
+                      }}
+                    >
+                      <SlidersHorizontal className="icon-sm" />
+                    </Button>
+                    {modeOpen ? (
+                      <DropdownMenu
+                        anchor={modeRef}
+                        returnFocusRef={modeRef}
+                        label={t("Mode")}
+                        side="top"
+                        align="start"
+                        width={280}
+                        onClose={() => setModeOpen(false)}
+                        data-composer-mode-menu
+                        items={[
+                          {
+                            kind: "group",
+                            id: "mode",
+                            label: t("Mode"),
+                            items: modeChoices,
+                          },
+                        ]}
+                        onPick={(id) => {
+                          if (!canMutateDraft()) return;
+                          if (id === "plan") {
+                            setPlanSelected(!planActive);
+                            if (planActive) clearLeadingMode(PLAN_COMMAND.name);
+                            setOperatorSelected(false);
+                            setOrchestrationSelected(false);
+                            setDraftSelected(false);
+                          } else if (id === "operator") {
+                            setOperatorSelected(!operatorActive);
+                            if (operatorActive) clearLeadingMode(OPERATOR_COMMAND.name);
+                            setPlanSelected(false);
+                            setOrchestrationSelected(false);
+                            setDraftSelected(false);
+                          } else if (id === "orchestrator") {
+                            setOrchestrationSelected(!orchestrationActive);
+                            if (orchestrationActive) clearLeadingMode(ORCHESTRATOR_COMMAND.name);
+                            setPlanSelected(false);
+                            setOperatorSelected(false);
+                            setDraftSelected(false);
+                          } else if (id === "draft") {
+                            setDraftSelected(!draftActive);
+                            if (draftActive) clearLeadingMode(DRAFT_COMMAND.name);
+                            setPlanSelected(false);
+                            setOperatorSelected(false);
+                            setOrchestrationSelected(false);
+                          }
+                          ref.current?.focus();
+                        }}
+                      />
+                    ) : null}
+                  </div>
                 ) : null}
+                {hideTopBar || hideBranchPicker ? sessionDirectoryPicker : null}
               </div>
             </div>
-            <div ref={plusRef} className={compact ? "hidden" : "relative flex shrink-0"}>
-              <ToolButton
-                label={t("Add files or choose a mode")}
-                active={plusOpen}
+            {/* Without the context row below, the tip sits with the trailing
+                actions instead of adding an extra row inside the writing surface. */}
+            {hideTopBar || hideBranchPicker ? <ComposerTips active={focused && !disabled} /> : null}
+            <div className={compact ? "hidden" : "relative flex shrink-0"}>
+              <Button
+                ref={plusRef}
+                variant="ghost"
+                iconOnly
+                label={t("Add files or skills")}
+                tooltip={t("Add files or skills")}
+                data-usage-guide="composer-plus"
+                selected={plusOpen}
+                aria-haspopup="menu"
+                aria-expanded={plusOpen}
                 onClick={() => setPlusOpen((open) => !open)}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    setPlusOpen(true);
+                  }
+                }}
               >
-                <Plus className="size-3.5" strokeWidth={1.5} />
-              </ToolButton>
+                <Plus className="icon-sm" />
+              </Button>
               {plusOpen ? (
-                <Popover
+                <DropdownMenu
                   anchor={plusRef}
+                  returnFocusRef={plusRef}
+                  label={t("Add files or skills")}
                   side="top"
-                  align="start"
-                  width={250}
-                  onDismiss={() => setPlusOpen(false)}
+                  align="end"
+                  width={280}
+                  onClose={() => setPlusOpen(false)}
                   data-composer-plus
-                  className="p-1.5"
-                >
-                  <p className="px-2 pb-1 pt-0.5 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
-                    {t("Add to message")}
-                  </p>
-                  <Button
-                    fullWidth
-                    layout="stacked"
-                    variant="item"
-                    type="button"
-                    disabled={!attachmentsSupported}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      setPlusOpen(false);
+                  items={[
+                    {
+                      kind: "group",
+                      id: "add",
+                      label: t("Add to message"),
+                      items: [
+                        {
+                          kind: "item",
+                          id: "upload",
+                          label: t("Upload file"),
+                          icon: <FilePlus />,
+                          disabled: !attachmentsSupported,
+                          description: attachmentsSupported
+                            ? undefined
+                            : remote && !remoteFeatures?.attachments
+                              ? t("Update this machine’s host to attach files")
+                              : t("{p0} does not support attachments", {
+                                  p0: HARNESS_TITLE[harness],
+                                }),
+                        },
+                        ...(!remote
+                          ? [
+                              {
+                                kind: "item" as const,
+                                id: "skills",
+                                label: t("Skills"),
+                                icon: <CursorMagicSelection />,
+                                description:
+                                  harness === "codex"
+                                    ? t("Choose a skill or type $name")
+                                    : t("Choose a skill or type /name"),
+                              },
+                            ]
+                          : []),
+                      ],
+                    },
+                  ]}
+                  onPick={(id) => {
+                    if (!canMutateDraft()) return;
+                    if (id === "upload") {
                       attachFromPicker();
-                    }}
-                    className="w-full text-left"
-                  >
-                    <FilePlus className="mt-0.5 size-4 shrink-0" />
-                    <span className="min-w-0">
-                      <span className="block text-[13px]">{t("Upload file")}</span>
-                      <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-(--ui-text-secondary)">
-                        {attachmentsSupported
-                          ? t("Attach files or images")
-                          : remote && !remoteFeatures?.attachments
-                            ? t("Update this machine’s host to attach files")
-                            : t("{p0} does not support attachments", {
-                                p0: HARNESS_TITLE[harness],
-                              })}
-                      </span>
-                    </span>
-                  </Button>
-                  {!remote ? (
-                    <Button
-                      fullWidth
-                      layout="stacked"
-                      variant="item"
-                      type="button"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        const el = ref.current;
-                        if (!el) return;
-                        const prefix = harness === "codex" ? "$" : "/";
-                        const lead = el.value && !/\s$/.test(el.value) ? " " : "";
-                        const start = el.value.length + lead.length;
-                        const next = `${el.value}${lead}${prefix}`;
-                        el.value = next;
-                        el.setSelectionRange(next.length, next.length);
-                        resizeComposer(el);
-                        setDraft(next);
-                        syncHasValue(next, attachmentsRef.current);
-                        setSlash({
-                          start,
-                          end: next.length,
-                          query: "",
-                          ...(prefix === "$" ? { trigger: "$" as const } : {}),
-                        });
-                        setSkillActive(0);
-                        setPlusOpen(false);
-                        el.focus();
-                      }}
-                      className="w-full text-left"
-                    >
-                      <CursorMagicSelection className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-[13px]">{t("Skills")}</span>
-                        <span className="block text-[11px] leading-4 text-(--ui-text-secondary)">
-                          {harness === "codex"
-                            ? t("Choose a skill or type $name")
-                            : t("Choose a skill or type /name")}
-                        </span>
-                      </span>
-                    </Button>
-                  ) : null}
-                  {!remote || remoteFeatures?.plan ? (
-                    <Button
-                      fullWidth
-                      layout="stacked"
-                      variant="item"
-                      type="button"
-                      aria-pressed={planActive}
-                      disabled={!!planUnavailableReason(harness)}
-                      title={planUnavailableReason(harness)}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => {
-                        setPlanSelected(!planActive);
-                        if (planActive) clearLeadingMode(PLAN_COMMAND.name);
-                        setOperatorSelected(false);
-                        setOrchestrationSelected(false);
-                        setDraftSelected(false);
-                        setPlusOpen(false);
-                        ref.current?.focus();
-                      }}
-                      className="w-full text-left"
-                    >
-                      <AiIdea className="mt-0.5 size-4 shrink-0 text-(--ui-tone-warning-fg)" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-[13px]">{t("Plan mode")}</span>
-                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-(--ui-text-secondary)">
-                          {planUnavailableReason(harness)
-                            ? t("Unavailable: {p0}", { p0: planUnavailableReason(harness) })
-                            : t("Review a plan before building")}
-                        </span>
-                      </span>
-                      {planActive ? (
-                        <Check className="mt-0.5 size-3.5 shrink-0 text-(--ui-tone-accent-fg)" />
-                      ) : null}
-                    </Button>
-                  ) : null}
-                  {!remote ? (
-                    <Button
-                      fullWidth
-                      layout="stacked"
-                      variant="item"
-                      type="button"
-                      aria-pressed={operatorActive}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        setOperatorSelected(!operatorActive);
-                        if (operatorActive) {
-                          clearLeadingMode(OPERATOR_COMMAND.name);
-                        }
-                        setPlanSelected(false);
-                        setOrchestrationSelected(false);
-                        setDraftSelected(false);
-                        setPlusOpen(false);
-                        ref.current?.focus();
-                      }}
-                      className="w-full text-left"
-                    >
-                      <CursorMagicSelection className="mt-0.5 size-4 shrink-0 text-(--ui-tone-info-fg)" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-[13px]">{t("Operator")}</span>
-                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-(--ui-text-secondary)">
-                          {t("Give this thread access to")} {PRODUCT_IDENTITY.displayName}
-                        </span>
-                      </span>
-                      {operatorActive ? (
-                        <Check className="mt-0.5 size-3.5 shrink-0 text-(--ui-tone-info-fg)" />
-                      ) : null}
-                    </Button>
-                  ) : null}
-                  {!remote && !hideTopBar && (
-                    <Button
-                      fullWidth
-                      layout="stacked"
-                      variant="item"
-                      type="button"
-                      aria-pressed={orchestrationActive}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        setOrchestrationSelected(!orchestrationActive);
-                        if (orchestrationActive) {
-                          clearLeadingMode(ORCHESTRATOR_COMMAND.name);
-                        }
-                        setPlanSelected(false);
-                        setOperatorSelected(false);
-                        setDraftSelected(false);
-                        setPlusOpen(false);
-                        ref.current?.focus();
-                      }}
-                      className="w-full text-left"
-                    >
-                      <Share className="mt-0.5 size-4 shrink-0 text-orchestration/65" />
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5">
-                          <span className="text-[13px]">{t("Orchestrator")}</span>
-                          <Badge tone="neutral" className="mb-px">
-                            v1
-                          </Badge>
-                        </span>
-                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-(--ui-text-secondary)">
-                          {t("Plan and coordinate agent work")}
-                        </span>
-                      </span>
-                      {orchestrationActive && (
-                        <Check className="mt-0.5 size-3.5 shrink-0 text-orchestration/80" />
-                      )}
-                    </Button>
-                  )}
-                  {canSaveDraft && onSaveDraft ? (
-                    <Button
-                      fullWidth
-                      layout="stacked"
-                      variant="item"
-                      type="button"
-                      aria-pressed={draftActive}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        setDraftSelected(!draftActive);
-                        if (draftActive) clearLeadingMode(DRAFT_COMMAND.name);
-                        setPlanSelected(false);
-                        setOperatorSelected(false);
-                        setOrchestrationSelected(false);
-                        setPlusOpen(false);
-                        ref.current?.focus();
-                      }}
-                      className="w-full text-left"
-                    >
-                      <CircleDashed className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-[13px]">{t("Draft")}</span>
-                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-(--ui-text-secondary)">
-                          {t("Save this message without starting the agent")}
-                        </span>
-                      </span>
-                      {draftActive ? (
-                        <Check className="mt-0.5 size-3.5 shrink-0 text-(--ui-tone-accent-fg)" />
-                      ) : null}
-                    </Button>
-                  ) : null}
-                </Popover>
+                      return;
+                    }
+                    if (id === "skills") {
+                      const el = ref.current;
+                      if (!el) return;
+                      const prefix = harness === "codex" ? "$" : "/";
+                      const lead = el.value && !/\s$/.test(el.value) ? " " : "";
+                      const start = el.value.length + lead.length;
+                      const next = el.value + lead + prefix;
+                      el.value = next;
+                      el.setSelectionRange(next.length, next.length);
+                      resizeComposer(el);
+                      setDraft(next);
+                      syncHasText(next);
+                      setSlash({
+                        start,
+                        end: next.length,
+                        query: "",
+                        ...(prefix === "$" ? { trigger: "$" as const } : {}),
+                      });
+                      setSkillActive(0);
+                      el.focus();
+                      return;
+                    }
+                    ref.current?.focus();
+                  }}
+                />
               ) : null}
             </div>
             {!compact && operatorActive ? (
               <ModeCommandPill
                 name={OPERATOR_COMMAND.name}
                 onClear={() => {
+                  if (!canMutateDraft()) return;
                   setOperatorSelected(false);
                   clearLeadingMode(OPERATOR_COMMAND.name);
                   ref.current?.focus();
@@ -3408,6 +3676,7 @@ export const Composer = memo(function Composer({
               <ModeCommandPill
                 name={ORCHESTRATOR_COMMAND.name}
                 onClear={() => {
+                  if (!canMutateDraft()) return;
                   setOrchestrationSelected(false);
                   clearLeadingMode(ORCHESTRATOR_COMMAND.name);
                   ref.current?.focus();
@@ -3418,6 +3687,7 @@ export const Composer = memo(function Composer({
               <ModeCommandPill
                 name={PLAN_COMMAND.name}
                 onClear={() => {
+                  if (!canMutateDraft()) return;
                   setPlanSelected(false);
                   clearLeadingMode(PLAN_COMMAND.name);
                   ref.current?.focus();
@@ -3439,14 +3709,14 @@ export const Composer = memo(function Composer({
               <Button
                 variant="ghost"
                 type="button"
-                title={t("Stop editing last message")}
+                tooltip={t("Stop editing last message")}
                 shortcut="Esc"
                 aria-label={t("Stop editing last message")}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={exitEditMode}
                 className="shrink-0"
               >
-                <X className="size-3" strokeWidth={1.8} />
+                <X className="icon-xs" />
                 <span>{t("Cancel edit")}</span>
               </Button>
             ) : null}
@@ -3465,7 +3735,7 @@ export const Composer = memo(function Composer({
                 onClick={recallLastTurn}
                 disabled={disabled || worktreeRemoved}
               >
-                <Undo2 className="size-3.5" />
+                <Undo2 className="icon-sm" />
               </Button>
             ) : null}
             <div
@@ -3478,14 +3748,28 @@ export const Composer = memo(function Composer({
                   contextBlocks={contextBlocks}
                   empty={contextEmpty}
                   sessionUsage={sessionUsage}
-                  onCompact={compactSupported && !worktreeRemoved ? onCompactContext : undefined}
+                  onCompact={
+                    compactSupported && !worktreeRemoved && onCompactContext
+                      ? () => mutateParentInput(parentChanged, onCompactContext)
+                      : undefined
+                  }
                   compactDisabled={busy}
                   working={busy && enabled}
                 />
               ) : null}
+              <DictationButton
+                sessionId={sessionId}
+                disabled={disabled}
+                onText={(text, final, run) => {
+                  if (ref.current && canMutateDraft())
+                    insertDictatedText(ref.current, text, final, run);
+                }}
+                onError={setPasteError}
+              />
               <ComposerAction
                 busy={busy}
-                disabled={disabled}
+                submitting={submission?.sessionId === sessionId ? submission?.action : null}
+                disabled={disabled || workspaceActionBlocked}
                 hasValue={hasValue && !worktreeRemoved}
                 allowBusySubmit={allowBusySubmit}
                 label={draftActive ? t("Save draft") : t("Send")}
@@ -3493,7 +3777,9 @@ export const Composer = memo(function Composer({
                   draftActive
                     ? undefined
                     : t(
-                        !(remote ? remoteFeatures?.steer : canSteerHarness(harness)) ||
+                        !(remote
+                          ? remoteFeatures?.steer
+                          : canSteerHarness(runningModelTarget?.harness ?? harness)) ||
                           resolveFollowUpRoute({
                             busy,
                             worktreePreparing,
@@ -3511,17 +3797,23 @@ export const Composer = memo(function Composer({
                           : "Steer",
                       )
                 }
-                blockedReason={sendHeldReason ?? sendBlockedReason}
+                blockedReason={
+                  sendHeldReason ??
+                  sendBlockedReason ??
+                  (workspaceActionBlocked
+                    ? workspaceCreationError || t("Checking workspace policy…")
+                    : undefined)
+                }
                 onSend={() => submit(ref.current?.value ?? "")}
                 onQueue={
                   queueShortcutApplies({
                     busy,
                     backgroundOnly,
                     allowBusySubmit,
-                    disabled: disabled || worktreeRemoved,
+                    disabled: disabled || worktreeRemoved || workspaceSendBlocked,
                     popupOpen: false,
                     draftMode: draftActive,
-                    text: draft,
+                    text: withChatCitations(draft, citations),
                     attachmentCount: attachments.length,
                   })
                     ? () => submit(ref.current?.value ?? "", true)
@@ -3529,78 +3821,161 @@ export const Composer = memo(function Composer({
                 }
                 queueShortcut={queueShortcut}
                 stopShortcut={stopShortcut ? `${stopShortcut} / Ctrl+C` : "Ctrl+C"}
+                stopping={stopping}
                 onStop={stopPendingSend}
               />
             </div>
           </div>
         </div>
+        {!hideTopBar && hideBranchPicker && projectContextPicker ? (
+          <div
+            data-composer-secondary=""
+            data-composer-attention={workspaceNeedsAttention ? "" : undefined}
+            role="group"
+            aria-label={t("Chat workspace")}
+            className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-2 pb-1 pt-1.5"
+          >
+            {projectContextPicker}
+          </div>
+        ) : null}
         {!hideTopBar && !hideBranchPicker ? (
           <div
             data-composer-workspace
+            data-composer-secondary=""
+            data-composer-attention={workspaceNeedsAttention ? "" : undefined}
             onPointerDown={focusFromComposerSpace}
             role="group"
             aria-label={t("Chat workspace")}
-            className="flex min-w-0 items-center justify-between gap-2 rounded-b-xl border border-t-0 border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 pb-1.5 pt-2"
+            className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-2 pb-1 pt-1.5"
           >
-            {draftWorkspace && onWorkspaceModeChange && onWorktreeBaseChange ? (
-              <>
-                <WorkspacePicker
-                  alignBase="end"
-                  cwd={executionCwd}
-                  mode={workspaceMode ?? "current"}
-                  base={resolvedWorktreeBase}
-                  enabled={enabled && !busy}
-                  onModeChange={onWorkspaceModeChange}
-                  onBaseChange={onWorktreeBaseChange}
-                  onSelectWorktree={onWorktreeChange}
-                  onOpenSettings={onManageWorktrees}
-                  onClose={() => ref.current?.focus()}
-                >
-                  <ComposerTips active={focused && !disabled} />
-                </WorkspacePicker>
-                {(workspaceMode ?? "current") === "current" ? (
-                  <div className="ml-auto flex min-w-0 justify-end">
+            <div
+              data-composer-workspace-controls
+              className="flex min-w-0 flex-1 flex-wrap items-center justify-start gap-x-3 gap-y-1"
+            >
+              {projectContextPicker}
+              {draftWorkspace && onWorkspaceModeChange && onWorktreeBaseChange ? (
+                <>
+                  {workspaceCreationError ? (
+                    <WorkspaceIdentity worktree={workspaceCreation.mode === "worktree"} />
+                  ) : (
+                    <WorkspacePicker
+                      alignBase="inline"
+                      cwd={executionCwd}
+                      mode={workspaceCreation.mode}
+                      base={resolvedWorktreeBase}
+                      enabled={enabled && !busy && !workspaceCreation.pending}
+                      onModeChange={(...args) =>
+                        mutateParentInput(parentChanged, () => onWorkspaceModeChange?.(...args))
+                      }
+                      onBaseChange={(...args) =>
+                        mutateParentInput(parentChanged, () => onWorktreeBaseChange?.(...args))
+                      }
+                      onSelectWorktree={
+                        onWorktreeChange
+                          ? async (...args) => {
+                              const result = mutateParentInput(parentChanged, () =>
+                                onWorktreeChange(...args),
+                              );
+                              if (result === false)
+                                throw new Error("Session input is temporarily closed.");
+                              return await result;
+                            }
+                          : undefined
+                      }
+                      onOpenSettings={onManageWorktrees}
+                      onClose={() => ref.current?.focus()}
+                    />
+                  )}
+                  {workspaceCreation.mode === "current" ? (
+                    <div className="flex min-w-0 justify-end">
+                      <BranchPicker
+                        cwd={executionCwd}
+                        branch={branch}
+                        enabled={enabled && !busy}
+                        onChange={
+                          onBranchChange
+                            ? () => {
+                                mutateParentInput(parentChanged, onBranchChange);
+                              }
+                            : undefined
+                        }
+                        onClose={() => ref.current?.focus()}
+                      />
+                    </div>
+                  ) : null}
+                </>
+              ) : worktreeRemoved && onWorktreeChange ? (
+                <>
+                  <WorktreePicker
+                    cwd={cwd}
+                    executionCwd={executionCwd}
+                    enabled={enabled && !busy}
+                    onSelect={async (...args) => {
+                      const select = onWorktreeChange;
+                      if (!select) throw new Error("Worktree selection is unavailable.");
+                      const result = mutateParentInput(parentChanged, () => select(...args));
+                      if (result === false) throw new Error("Session input is temporarily closed.");
+                      return await result;
+                    }}
+                    worktreeRemoved={worktreeRemoved}
+                    onBranchChange={
+                      onBranchChange
+                        ? () => {
+                            mutateParentInput(parentChanged, onBranchChange);
+                          }
+                        : undefined
+                    }
+                    onManage={onManageWorktrees}
+                    onClose={() => ref.current?.focus()}
+                  />
+                </>
+              ) : (
+                <>
+                  {onWorktreeChange ? (
+                    <WorkspaceIdentity worktree={pathKey(cwd) !== pathKey(executionCwd)} />
+                  ) : null}
+                  <div className="flex min-w-0 justify-end">
                     <BranchPicker
                       cwd={executionCwd}
                       branch={branch}
                       enabled={enabled && !busy}
-                      onChange={onBranchChange}
+                      onChange={
+                        onBranchChange
+                          ? () => {
+                              mutateParentInput(parentChanged, onBranchChange);
+                            }
+                          : undefined
+                      }
                       onClose={() => ref.current?.focus()}
                     />
                   </div>
-                ) : null}
-              </>
-            ) : worktreeRemoved && onWorktreeChange ? (
-              <>
-                <WorktreePicker
-                  cwd={cwd}
-                  executionCwd={executionCwd}
-                  enabled={enabled && !busy}
-                  onSelect={onWorktreeChange}
-                  worktreeRemoved={worktreeRemoved}
-                  onBranchChange={onBranchChange}
-                  onManage={onManageWorktrees}
-                  onClose={() => ref.current?.focus()}
-                />
-                <ComposerTips active={focused && !disabled} />
-              </>
-            ) : (
-              <>
-                {onWorktreeChange ? (
-                  <WorkspaceIdentity worktree={pathKey(cwd) !== pathKey(executionCwd)} />
-                ) : null}
-                <ComposerTips active={focused && !disabled} />
-                <div className="ml-auto flex min-w-0 justify-end">
-                  <BranchPicker
-                    cwd={executionCwd}
-                    branch={branch}
-                    enabled={enabled && !busy}
-                    onChange={onBranchChange}
-                    onClose={() => ref.current?.focus()}
-                  />
+                </>
+              )}
+              {sessionDirectoryPicker ? (
+                <div data-composer-directories className="flex min-w-0 justify-end">
+                  {sessionDirectoryPicker}
                 </div>
-              </>
-            )}
+              ) : null}
+              <RemoteOriginMark origin={remoteOrigin} labelled />
+            </div>
+            <ComposerTips active={focused && !disabled} />
+            {draftWorkspace ? (
+              <div className="basis-full pb-1">
+                <WorkspaceCreationStatus
+                  preview={
+                    workspaceCreation.mode === "worktree" ? workspaceCreation.preview : undefined
+                  }
+                  pending={workspaceCreation.pending && !workspaceCreationError}
+                  error={workspaceCreationError}
+                  onRetry={workspaceCreation.refresh}
+                  onUseCurrentCheckout={
+                    workspaceHostUpdateRequired && enabled && !busy && onWorkspaceModeChange
+                      ? () => onWorkspaceModeChange("current")
+                      : undefined
+                  }
+                />
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -3608,119 +3983,29 @@ export const Composer = memo(function Composer({
   );
 });
 
-function ComposerHighlight({
-  text,
-  mode,
-  names,
-  mentions,
-  mcpTags,
-}: {
-  text: string;
-  mode: ModeCommandToken | null;
-  names: ReadonlySet<string>;
-  mentions: ReadonlyMap<string, ProjectFile>;
-  mcpTags: McpTag[];
-}) {
-  useLocale();
-  const rest = mode ? text.slice(mode.end) : text;
-  const parts = skillTextParts(rest, names);
-  return (
-    <>
-      {mode ? <ModeCommandText text={text} mode={mode} /> : null}
-      {parts.map((part, index) =>
-        part.skill ? (
-          <span key={index} className="text-skill">
-            {part.text}
-          </span>
-        ) : (
-          // Skill tokens always end on whitespace, so each remaining run still
-          // starts on a boundary `@mention` matching can rely on.
-          <MentionRuns key={index} text={part.text} mentions={mentions} mcpTags={mcpTags} />
-        ),
-      )}
-      {text.endsWith("\n") ? "\n" : null}
-    </>
-  );
-}
-
-function MentionRuns({
-  text,
-  mentions,
-  mcpTags,
-}: {
-  text: string;
-  mentions: ReadonlyMap<string, ProjectFile>;
-  mcpTags: McpTag[];
-}) {
-  useLocale();
-  return (
-    <>
-      {mcpTagParts(text, mcpTags).map((part, index) =>
-        part.tag ? (
-          <span key={index} className="text-mention" data-mcp-tag={part.tag.token}>
-            {part.text}
-          </span>
-        ) : (
-          <FileMentionRuns key={index} text={part.text} mentions={mentions} />
-        ),
-      )}
-    </>
-  );
-}
-
-function FileMentionRuns({
-  text,
-  mentions,
-}: {
-  text: string;
-  mentions: ReadonlyMap<string, ProjectFile>;
-}) {
-  useLocale();
-  const parts = fileMentionParts(text, mentions);
-  return (
-    <>
-      {parts.map((part, index) =>
-        part.file ? (
-          <span key={index} className="text-mention">
-            {/* The `@` keeps its width so the textarea underneath stays in
-                lockstep; the file icon sits on top of it. */}
-            <span className="relative text-transparent">
-              {"@"}
-              {/* `indent-0`: a leading mode command indents the first line,
-                  and this box would otherwise inherit that indent. */}
-              <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 indent-0">
-                {part.file && isNoteMentionPath(part.file.path) ? (
-                  <StickyNote className="size-3.5" strokeWidth={1.75} />
-                ) : (
-                  <FileTypeIcon name={part.file.name} isDir={Boolean(part.file.isDir)} size={13} />
-                )}
-              </span>
-            </span>
-            {part.text.slice(1)}
-          </span>
-        ) : (
-          part.text
-        ),
-      )}
-    </>
-  );
-}
+const MemoModelPicker = memo(ModelPicker);
+// A stable default keeps the memoized picker from re-rendering on every keystroke.
+const NO_MODEL_SETTINGS: Record<string, string> = {};
 
 export function ComposerAction({
   busy,
+  submitting = null,
   disabled = false,
   hasValue,
   allowBusySubmit = true,
-  label = t("Send"),
+  label: labelProp,
   busyLabel,
   blockedReason,
   onSend,
   onQueue,
   queueShortcut,
   stopShortcut = "Esc",
+  stopping = false,
   onStop,
 }: {
   busy: boolean;
+  /** Submission can wait for attachments independently of the running turn. */
+  submitting?: "send" | "queue" | null;
   disabled?: boolean;
   hasValue: boolean;
   allowBusySubmit?: boolean;
@@ -3734,20 +4019,33 @@ export function ComposerAction({
   onQueue?: () => void;
   queueShortcut?: string | null;
   stopShortcut?: string | null;
+  /** Stop was requested and the provider has not confirmed yet. */
+  stopping?: boolean;
   onStop: () => void;
 }) {
-  useLocale();
-  if (disabled && !busy) {
+  const t = useT();
+  const label = labelProp ?? t("Send");
+  if (disabled && !busy && !submitting) {
     return (
-      <Button variant="primary" motion="none" iconOnly label={label} shortcut="Enter" disabled>
-        <ArrowUp className="size-3.5" strokeWidth={2.25} />
+      <Button
+        variant="primary"
+        tone="accent"
+        motion="none"
+        iconOnly
+        label={blockedReason ? `${label}. ${blockedReason}` : label}
+        tooltip={blockedReason ?? label}
+        shortcut={blockedReason ? null : "Enter"}
+        aria-description={blockedReason}
+        disabled
+      >
+        <ArrowUp className="icon-sm" strokeWidth={2} />
       </Button>
     );
   }
   if (busy) {
     return (
       <>
-        {hasValue && allowBusySubmit && !disabled ? (
+        {(hasValue && allowBusySubmit && !disabled) || submitting ? (
           <>
             {onQueue ? (
               <Button
@@ -3757,35 +4055,50 @@ export function ComposerAction({
                 tooltip={t("Queue message for when this turn finishes")}
                 shortcut={queueShortcut}
                 data-usage-guide="queue-button"
+                loading={submitting === "queue"}
+                loadingLabel={t("Sending…")}
+                disabled={submitting === "send"}
                 onClick={onQueue}
               >
-                <ListEnd className="size-3.5" strokeWidth={1.75} />
+                <ListEnd className="icon-sm" strokeWidth={1.75} />
               </Button>
             ) : null}
             <Button
               variant="primary"
+              tone="accent"
               motion="none"
               iconOnly={!busyLabel}
               label={label}
               tooltip={busyLabel ?? label}
               shortcut="Enter"
               aria-description={busyLabel}
+              loading={submitting === "send"}
+              loadingLabel={t("Sending…")}
+              disabled={submitting === "queue"}
+              startIcon={busyLabel ? <ArrowUp className="icon-sm" strokeWidth={2} /> : undefined}
               onClick={onSend}
             >
-              {busyLabel ? <span>{busyLabel}</span> : null}
-              <ArrowUp className="size-3.5" strokeWidth={2.25} />
+              {busyLabel ? (
+                <span>{busyLabel}</span>
+              ) : (
+                <ArrowUp className="icon-sm" strokeWidth={2} />
+              )}
             </Button>
           </>
         ) : null}
         <Button
+          variant="primary"
+          tone="danger"
           motion="none"
           iconOnly
           label={t("Stop")}
           shortcut={stopShortcut}
           data-usage-guide="stop-button"
+          loading={stopping}
+          loadingLabel={t("Stopping…")}
           onClick={onStop}
         >
-          <Square className="size-2.5 fill-current" strokeWidth={0} />
+          <Square className="size-2.5 fill-current stroke-none" />
         </Button>
       </>
     );
@@ -3794,32 +4107,19 @@ export function ComposerAction({
   return (
     <Button
       variant="primary"
+      tone="accent"
       motion="none"
       iconOnly
       label={blockedReason ? `${label}. ${blockedReason}` : label}
       tooltip={blockedReason ?? label}
       shortcut={blockedReason ? null : "Enter"}
-      disabled={!hasValue}
+      disabled={!hasValue && !submitting}
+      loading={submitting !== null}
+      loadingLabel={t("Sending…")}
       onClick={onSend}
       aria-description={blockedReason}
     >
-      <ArrowUp className="size-3.5" strokeWidth={2.25} />
+      <ArrowUp className="icon-sm" strokeWidth={2} />
     </Button>
-  );
-}
-
-/** Edits the textarea the way typing would, so React and every draft listener see it. */
-function applyTextareaEdit(el: HTMLTextAreaElement, text: string, caret: number) {
-  el.value = text;
-  el.setSelectionRange(caret, caret);
-  el.dispatchEvent(new Event("input", { bubbles: true }));
-}
-
-function hasFiles(data: DataTransfer | null): data is DataTransfer {
-  if (!data) return false;
-  return (
-    data.files.length > 0 ||
-    [...data.types].some((type) => type === "Files" || type === "application/x-moz-file") ||
-    Array.from(data.items ?? []).some((item) => item.kind === "file")
   );
 }

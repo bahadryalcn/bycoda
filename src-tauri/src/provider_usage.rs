@@ -9,15 +9,18 @@
 //! Parsing a transcript is the expensive part, so each file's requests are
 //! kept in an on-disk cache keyed by path, size and modification time. A scan
 //! only reparses files that are new or have changed; everything else is read
-//! back from the cache, and the cutoff is applied afterwards.
+//! back from the cache, and the cutoff is applied afterwards. A plain log that
+//! only grew is read from the byte where the last scan stopped, with the
+//! parser's carried state, instead of from the start. The cache stays in memory
+//! between scans and each changed scan is persisted.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
 /// Bucket width. Fine enough that every time zone offset (including the
@@ -132,10 +135,12 @@ enum Provider {
 }
 
 impl Provider {
-    fn parse(self, path: &Path, requests: &mut Requests) {
+    /// Parses the log from byte `start` into `requests` and returns the offset to
+    /// resume from. `carry` is state the parser keeps between lines.
+    fn parse(self, path: &Path, start: u64, carry: &mut Carry, requests: &mut Requests) -> u64 {
         match self {
-            Provider::Claude => parse_claude_file(path, requests),
-            Provider::Codex => parse_codex_file(path, requests),
+            Provider::Claude => parse_claude_file(path, start, requests),
+            Provider::Codex => parse_codex_file(path, start, carry, requests),
         }
     }
 
@@ -181,17 +186,30 @@ fn fnv1a(text: &str) -> u64 {
 }
 
 /// Bumped whenever the parsers or this layout change what a file yields.
-const CACHE_VERSION: u32 = 1;
+const CACHE_VERSION: u32 = 2;
 
 /// One request in the cache: key, time, model and project (indexes into the
 /// file's strings), then the five token counts.
 #[derive(Serialize, Deserialize)]
 struct CachedRequest(u64, i64, u32, u32, u64, u64, u64, u64, u64);
 
+/// What the Codex parser remembers between lines: needed to continue a log from
+/// the middle.
+#[derive(Clone, Default, Serialize, Deserialize)]
+struct Carry {
+    model: String,
+    project: String,
+    last_total: Option<u64>,
+}
+
 #[derive(Serialize, Deserialize)]
 struct CachedFile {
     size: u64,
     modified_ms: i64,
+    /// Where the next incremental read starts: just after the last complete line.
+    /// Always 0 for compressed logs, which are reparsed whole.
+    offset: u64,
+    carry: Carry,
     strings: Vec<String>,
     requests: Vec<CachedRequest>,
 }
@@ -203,7 +221,7 @@ struct ScanCache {
 }
 
 impl CachedFile {
-    fn new(size: u64, modified_ms: i64, requests: Requests) -> Self {
+    fn new(size: u64, modified_ms: i64, offset: u64, carry: Carry, requests: Requests) -> Self {
         let mut strings: Vec<String> = Vec::new();
         let mut index: HashMap<String, u32> = HashMap::new();
         let mut intern = |text: &str| -> u32 {
@@ -232,9 +250,19 @@ impl CachedFile {
         CachedFile {
             size,
             modified_ms,
+            offset,
+            carry,
             strings,
             requests,
         }
+    }
+
+    /// This file's requests, to keep appending to after an incremental read.
+    fn to_requests(&self) -> Requests {
+        self.requests
+            .iter()
+            .filter_map(|cached| self.decode(cached))
+            .collect()
     }
 
     fn decode(&self, cached: &CachedRequest) -> Option<(u64, Request)> {
@@ -259,6 +287,66 @@ impl CachedFile {
     }
 }
 
+/// A scan cache held in memory between scans, and whether it has changes the
+/// disk copy lacks.
+struct MemoryCache {
+    cache: ScanCache,
+    saved_at: Option<Instant>,
+    unsaved: bool,
+}
+
+static CACHES: std::sync::Mutex<Option<HashMap<PathBuf, MemoryCache>>> =
+    std::sync::Mutex::new(None);
+
+/// The cache for `path`: the in-memory copy from the last scan, else the file.
+/// Also when it was last written and whether it holds unwritten changes.
+fn take_cache(path: &Path) -> (ScanCache, Option<Instant>, bool) {
+    let held = CACHES
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .as_mut()
+        .and_then(|caches| caches.remove(path));
+    match held {
+        Some(held) => (held.cache, held.saved_at, held.unsaved),
+        None => (load_cache(path), None, false),
+    }
+}
+
+/// Drops the in-memory copy, as a fresh process would not have it.
+#[cfg(test)]
+fn forget_cache(path: &Path) {
+    if let Some(caches) = CACHES.lock().unwrap().as_mut() {
+        caches.remove(path);
+    }
+}
+
+/// Keeps a bounded in-memory cache and persists each changed scan.
+fn keep_cache(path: &Path, cache: ScanCache, saved_at: Option<Instant>, unsaved: bool) {
+    let mut saved_at = saved_at;
+    let mut unsaved = unsaved;
+    // Persist each changed scan: a final scan may be followed immediately by
+    // process exit, with no later call available to flush the cache.
+    if unsaved && save_cache(path, &cache) {
+        saved_at = Some(Instant::now());
+        unsaved = false;
+    }
+    let mut held = CACHES.lock().unwrap_or_else(|error| error.into_inner());
+    let caches = held.get_or_insert_with(HashMap::new);
+    if caches.len() >= 8 && !caches.contains_key(path) {
+        if let Some(old) = caches.keys().next().cloned() {
+            caches.remove(&old);
+        }
+    }
+    caches.insert(
+        path.to_path_buf(),
+        MemoryCache {
+            cache,
+            saved_at,
+            unsaved,
+        },
+    );
+}
+
 fn load_cache(path: &Path) -> ScanCache {
     std::fs::read(path)
         .ok()
@@ -269,17 +357,21 @@ fn load_cache(path: &Path) -> ScanCache {
 
 /// Written beside the target and renamed into place, so a crash mid-write
 /// leaves the previous cache intact. Failure only costs the next scan time.
-fn save_cache(path: &Path, cache: &ScanCache) {
+fn save_cache(path: &Path, cache: &ScanCache) -> bool {
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
     let Ok(bytes) = serde_json::to_vec(cache) else {
-        return;
+        return false;
     };
     let temp = path.with_extension("tmp");
-    if std::fs::write(&temp, bytes).is_ok() && std::fs::rename(&temp, path).is_err() {
+    let saved = std::fs::write(&temp, bytes)
+        .and_then(|_| std::fs::rename(&temp, path))
+        .is_ok();
+    if !saved {
         let _ = std::fs::remove_file(&temp);
     }
+    saved
 }
 
 /// Size and modification time in milliseconds: what says a file is unchanged.
@@ -294,8 +386,9 @@ fn file_stamp(path: &Path) -> Option<(u64, i64)> {
     Some((metadata.len(), modified))
 }
 
-/// A transcript to (re)parse: cache key, path, size and modification time.
-type StaleFile = (String, PathBuf, u64, i64);
+/// A transcript to (re)parse: cache key, path, size, modification time, and the
+/// cached state to continue from when it only grew.
+type StaleFile = (String, PathBuf, u64, i64, Option<CachedFile>);
 
 /// Parses every changed file, spread across the available cores.
 fn parse_files(provider: Provider, stale: &[StaleFile]) -> Vec<CachedFile> {
@@ -310,12 +403,18 @@ fn parse_files(provider: Provider, stale: &[StaleFile]) -> Vec<CachedFile> {
                     let mut out = Vec::new();
                     loop {
                         let index = next.fetch_add(1, Ordering::Relaxed);
-                        let Some((_, path, size, modified)) = stale.get(index) else {
+                        let Some((_, path, size, modified, prior)) = stale.get(index) else {
                             return out;
                         };
-                        let mut requests = Requests::new();
-                        provider.parse(path, &mut requests);
-                        out.push((index, CachedFile::new(*size, *modified, requests)));
+                        let (mut requests, mut carry, start) = match prior {
+                            Some(prior) => (prior.to_requests(), prior.carry.clone(), prior.offset),
+                            None => (Requests::new(), Carry::default(), 0),
+                        };
+                        let end = provider.parse(path, start, &mut carry, &mut requests);
+                        out.push((
+                            index,
+                            CachedFile::new(*size, *modified, end, carry, requests),
+                        ));
                     }
                 })
             })
@@ -356,9 +455,11 @@ fn scan(
     // once, under the transcript that first recorded it.
     files.sort_by_key(|(modified, _)| *modified);
 
-    let mut cache = cache_path.map(load_cache).unwrap_or_default();
+    let (mut cache, saved_at, mut dirty) = match cache_path {
+        Some(path) => take_cache(path),
+        None => (ScanCache::default(), None, false),
+    };
     cache.version = CACHE_VERSION;
-    let mut dirty = false;
     let mut stale = Vec::new();
     let mut seen = HashSet::new();
     for (_, path) in &files {
@@ -366,12 +467,19 @@ fn scan(
             continue;
         };
         let key = path.to_string_lossy().into_owned();
-        let fresh = cache
-            .files
-            .get(&key)
-            .is_some_and(|entry| entry.size == size && entry.modified_ms == modified);
+        let known = cache.files.get(&key);
+        let fresh = known.is_some_and(|entry| entry.size == size && entry.modified_ms == modified);
         if !fresh {
-            stale.push((key.clone(), path.clone(), size, modified));
+            // A plain log that only grew continues from where the last scan stopped;
+            // anything else (new, shrunk, compressed) is read from the start.
+            let grown = !is_compressed(path)
+                && known.is_some_and(|entry| entry.size < size && entry.offset <= size);
+            let prior = if grown {
+                cache.files.remove(&key)
+            } else {
+                None
+            };
+            stale.push((key.clone(), path.clone(), size, modified, prior));
         }
         seen.insert(key);
     }
@@ -404,10 +512,8 @@ fn scan(
         .files
         .retain(|key, _| seen.contains(key) || Path::new(key).exists());
     dirty |= cache.files.len() != before;
-    if dirty {
-        if let Some(path) = cache_path {
-            save_cache(path, &cache);
-        }
+    if let Some(path) = cache_path {
+        keep_cache(path, cache, saved_at, dirty);
     }
 
     let mut totals = Totals::new();
@@ -506,10 +612,52 @@ fn lines(path: &Path) -> Box<dyn Iterator<Item = String>> {
     }
 }
 
+fn is_compressed(path: &Path) -> bool {
+    path.extension().and_then(|ext| ext.to_str()) == Some("zst")
+}
+
+/// Hands each complete line of a log to `each`, starting at byte `start` for a
+/// plain log, and returns the offset to resume from. A last line with no newline
+/// yet counts only once it is valid JSON, so a half-written record is read again
+/// when it is finished. Compressed logs are read whole and return 0.
+fn read_lines(path: &Path, start: u64, mut each: impl FnMut(&str)) -> u64 {
+    if is_compressed(path) {
+        for line in lines(path) {
+            each(&line);
+        }
+        return 0;
+    }
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return start;
+    };
+    if start > 0 && file.seek(SeekFrom::Start(start)).is_err() {
+        return start;
+    }
+    let mut reader = BufReader::with_capacity(1 << 20, file);
+    let mut position = start;
+    let mut buffer = Vec::new();
+    loop {
+        buffer.clear();
+        let read = match reader.read_until(b'\n', &mut buffer) {
+            Ok(0) | Err(_) => break,
+            Ok(read) => read,
+        };
+        let complete = buffer.last() == Some(&b'\n');
+        let text = String::from_utf8_lossy(&buffer);
+        let line = text.trim_end_matches(['\n', '\r']);
+        if !complete && serde_json::from_str::<serde::de::IgnoredAny>(line).is_err() {
+            break;
+        }
+        each(line);
+        position += read as u64;
+    }
+    position
+}
+
 /// A transcript opened for reading, decompressed on the fly for `.zst` files.
 pub(crate) fn open_log(path: &Path) -> Option<Box<dyn BufRead>> {
     let file = BufReader::new(std::fs::File::open(path).ok()?);
-    if path.extension().and_then(|ext| ext.to_str()) == Some("zst") {
+    if is_compressed(path) {
         let frames = ZstdFrames {
             source: Some(file),
             decoder: None,
@@ -559,13 +707,13 @@ fn count(value: &Value, key: &str) -> u64 {
 /// repeating the message's usage, so requests are keyed by message and request
 /// id and counted once. An early line can carry a partial snapshot (output
 /// still streaming), so each count keeps the largest value logged for it.
-fn parse_claude_file(path: &Path, requests: &mut Requests) {
-    for line in lines(path) {
+fn parse_claude_file(path: &Path, start: u64, requests: &mut Requests) -> u64 {
+    read_lines(path, start, |line| {
         if !line.contains("\"usage\"") || !line.contains("\"assistant\"") {
-            continue;
+            return;
         }
-        let Ok(entry) = serde_json::from_str::<Value>(&line) else {
-            continue;
+        let Ok(entry) = serde_json::from_str::<Value>(line) else {
+            return;
         };
         if let Some((timestamp, model, project, usage, key)) = claude_usage(&entry) {
             Provider::Claude.merge(
@@ -579,7 +727,7 @@ fn parse_claude_file(path: &Path, requests: &mut Requests) {
                 },
             );
         }
-    }
+    })
 }
 
 fn claude_usage(entry: &Value) -> Option<(i64, String, String, UsageRow, String)> {
@@ -638,83 +786,84 @@ fn claude_usage(entry: &Value) -> Option<(i64, String, String, UsageRow, String)
 /// is that response alone; a repeated total means the same response was
 /// reported twice. A resumed or forked session replays earlier lines into a
 /// new rollout, so responses are also keyed across files and counted once.
-fn parse_codex_file(path: &Path, requests: &mut Requests) {
-    let mut model = String::new();
-    let mut project = String::new();
-    let mut last_total: Option<u64> = None;
-    for line in lines(path) {
-        let wanted = line.contains("token_count")
-            || line.contains("turn_context")
-            || line.contains("session_meta");
-        if !wanted {
-            continue;
-        }
-        let Ok(entry) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-        let Some(payload) = entry.get("payload") else {
-            continue;
-        };
-        match entry.get("type").and_then(Value::as_str) {
-            Some("session_meta") | Some("turn_context") => {
-                if let Some(cwd) = payload.get("cwd").and_then(Value::as_str) {
-                    project = cwd.to_string();
-                }
-                if let Some(name) = payload.get("model").and_then(Value::as_str) {
-                    model = name.to_string();
-                }
+fn parse_codex_file(path: &Path, start: u64, carry: &mut Carry, requests: &mut Requests) -> u64 {
+    read_lines(path, start, |line| codex_line(line, carry, requests))
+}
+
+fn codex_line(line: &str, carry: &mut Carry, requests: &mut Requests) {
+    let wanted = line.contains("token_count")
+        || line.contains("turn_context")
+        || line.contains("session_meta");
+    if !wanted {
+        return;
+    }
+    let Ok(entry) = serde_json::from_str::<Value>(line) else {
+        return;
+    };
+    let Some(payload) = entry.get("payload") else {
+        return;
+    };
+    match entry.get("type").and_then(Value::as_str) {
+        Some("session_meta") | Some("turn_context") => {
+            if let Some(cwd) = payload.get("cwd").and_then(Value::as_str) {
+                carry.project = cwd.to_string();
             }
-            Some("event_msg")
-                if payload.get("type").and_then(Value::as_str) == Some("token_count") =>
-            {
-                let Some(info) = payload.get("info").filter(|info| !info.is_null()) else {
-                    continue;
-                };
-                let total = info
-                    .get("total_token_usage")
-                    .map(|usage| count(usage, "total_tokens"));
-                if total.is_some() && total == last_total {
-                    continue;
-                }
-                last_total = total;
-                let Some(usage) = info.get("last_token_usage") else {
-                    continue;
-                };
-                let Some(timestamp) = entry
-                    .get("timestamp")
-                    .and_then(Value::as_str)
-                    .and_then(parse_timestamp)
-                else {
-                    continue;
-                };
-                let input = count(usage, "input_tokens");
-                let cached = count(usage, "cached_input_tokens").min(input);
-                let row = UsageRow {
-                    input: input - cached,
-                    cache_read: cached,
-                    output: count(usage, "output_tokens"),
-                    ..UsageRow::default()
-                };
-                let name = if model.is_empty() { "codex" } else { &model };
-                let key = format!(
-                    "{}|{}|{}",
-                    entry.get("timestamp").and_then(Value::as_str).unwrap_or(""),
-                    info.get("total_token_usage").unwrap_or(&Value::Null),
-                    usage,
-                );
-                Provider::Codex.merge(
-                    requests,
-                    fnv1a(&key),
-                    Request {
-                        timestamp,
-                        model: name.to_string(),
-                        project: project.clone(),
-                        usage: row,
-                    },
-                );
+            if let Some(name) = payload.get("model").and_then(Value::as_str) {
+                carry.model = name.to_string();
             }
-            _ => {}
         }
+        Some("event_msg") if payload.get("type").and_then(Value::as_str) == Some("token_count") => {
+            let Some(info) = payload.get("info").filter(|info| !info.is_null()) else {
+                return;
+            };
+            let total = info
+                .get("total_token_usage")
+                .map(|usage| count(usage, "total_tokens"));
+            if total.is_some() && total == carry.last_total {
+                return;
+            }
+            carry.last_total = total;
+            let Some(usage) = info.get("last_token_usage") else {
+                return;
+            };
+            let Some(timestamp) = entry
+                .get("timestamp")
+                .and_then(Value::as_str)
+                .and_then(parse_timestamp)
+            else {
+                return;
+            };
+            let input = count(usage, "input_tokens");
+            let cached = count(usage, "cached_input_tokens").min(input);
+            let row = UsageRow {
+                input: input - cached,
+                cache_read: cached,
+                output: count(usage, "output_tokens"),
+                ..UsageRow::default()
+            };
+            let name = if carry.model.is_empty() {
+                "codex"
+            } else {
+                &carry.model
+            };
+            let key = format!(
+                "{}|{}|{}",
+                entry.get("timestamp").and_then(Value::as_str).unwrap_or(""),
+                info.get("total_token_usage").unwrap_or(&Value::Null),
+                usage,
+            );
+            Provider::Codex.merge(
+                requests,
+                fnv1a(&key),
+                Request {
+                    timestamp,
+                    model: name.to_string(),
+                    project: carry.project.clone(),
+                    usage: row,
+                },
+            );
+        }
+        _ => {}
     }
 }
 
@@ -1360,8 +1509,10 @@ mod tests {
         let outdated =
             std::fs::read_to_string(&cache)
                 .unwrap()
-                .replacen("\"version\":1", "\"version\":0", 1);
+                .replacen("\"version\":2", "\"version\":0", 1);
         std::fs::write(&cache, outdated).unwrap();
+        // A new run starts from the file, not from this run's memory.
+        forget_cache(&cache);
         let rebuilt = scan(&roots, 0, Provider::Claude, Some(&cache));
         assert_eq!((rebuilt.files_parsed, total_output(&rebuilt)), (1, 4));
         std::fs::remove_dir_all(dir).ok();

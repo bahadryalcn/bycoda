@@ -2,13 +2,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const transport = vi.hoisted(() => ({
   onWrite: async (_sessionId: string, _line: string): Promise<void> => {},
+  invoke: vi.fn(),
 }));
 
-vi.mock("./child", () => ({
-  writeChild: (sessionId: string, line: string) => transport.onWrite(sessionId, line),
+vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
+  invoke: transport.invoke,
+}));
+
+vi.mock("./child", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./child")>()),
+  writeChild: (handle: import("./child").ChildProcessHandle, line: string) =>
+    transport.onWrite(handle.sessionId, line),
 }));
 
 import { JsonRpcClient } from "./jsonRpc";
+import { createChildProcessHandle, spawnChild } from "./child";
 import { DeliveryUnknownError } from "../../../shared/lib/deliveryUnknown";
 
 describe("JsonRpcClient", () => {
@@ -18,7 +27,7 @@ describe("JsonRpcClient", () => {
 
   it("ignores malformed envelopes without dropping the next valid frame", () => {
     const onNotification = vi.fn();
-    const client = new JsonRpcClient("invalid", { onNotification });
+    const client = new JsonRpcClient(createChildProcessHandle("invalid"), { onNotification });
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       for (const message of [
@@ -43,7 +52,10 @@ describe("JsonRpcClient", () => {
   it("ignores late requests and notifications after the client closes", () => {
     const onNotification = vi.fn();
     const onRequest = vi.fn();
-    const client = new JsonRpcClient("closed", { onNotification, onRequest });
+    const client = new JsonRpcClient(createChildProcessHandle("closed"), {
+      onNotification,
+      onRequest,
+    });
     client.close();
     client.pushLine(JSON.stringify({ method: "progress" }));
     client.pushLine(JSON.stringify({ id: 1, method: "approval" }));
@@ -63,7 +75,7 @@ describe("JsonRpcClient", () => {
         }),
       );
     };
-    client = new JsonRpcClient("fast", {});
+    client = new JsonRpcClient(createChildProcessHandle("fast"), {});
 
     await expect(client.request("session/set_mode")).resolves.toEqual({
       ok: true,
@@ -74,7 +86,7 @@ describe("JsonRpcClient", () => {
     transport.onWrite = async () => {
       throw new Error("pipe closed");
     };
-    const client = new JsonRpcClient("failed", {});
+    const client = new JsonRpcClient(createChildProcessHandle("failed"), {});
 
     await expect(client.request("initialize")).rejects.toThrow("pipe closed");
   });
@@ -87,7 +99,7 @@ describe("JsonRpcClient", () => {
     };
     vi.useFakeTimers();
     try {
-      client = new JsonRpcClient("mac-ipc", {});
+      client = new JsonRpcClient(createChildProcessHandle("mac-ipc"), {});
       await expect(client.request("turn/start")).resolves.toEqual({ ok: true });
       await vi.advanceTimersByTimeAsync(16_000);
     } finally {
@@ -99,7 +111,7 @@ describe("JsonRpcClient", () => {
     vi.useFakeTimers();
     try {
       const client = new JsonRpcClient(
-        "no-response",
+        createChildProcessHandle("no-response"),
         {},
         { label: "codex", defaultRequestTimeoutMs: 100 },
       );
@@ -117,7 +129,11 @@ describe("JsonRpcClient", () => {
     transport.onWrite = async (_session, line) => {
       writes.push(JSON.parse(line));
     };
-    const client = new JsonRpcClient("late-steer", {}, { defaultRequestTimeoutMs: 100 });
+    const client = new JsonRpcClient(
+      createChildProcessHandle("late-steer"),
+      {},
+      { defaultRequestTimeoutMs: 100 },
+    );
     try {
       const outcome = client.request("turn/steer", {}).catch((error: unknown) => error);
       await vi.advanceTimersByTimeAsync(101);
@@ -134,7 +150,11 @@ describe("JsonRpcClient", () => {
 
   it("keeps a written Steer unknown if its process exits before acknowledgement", async () => {
     vi.useFakeTimers();
-    const client = new JsonRpcClient("closed-steer", {}, { defaultRequestTimeoutMs: 100 });
+    const client = new JsonRpcClient(
+      createChildProcessHandle("closed-steer"),
+      {},
+      { defaultRequestTimeoutMs: 100 },
+    );
     try {
       const outcome = client.request("turn/steer", {}).catch((error: unknown) => error);
       await vi.advanceTimersByTimeAsync(101);
@@ -149,7 +169,7 @@ describe("JsonRpcClient", () => {
 
   it("does not classify process exit before the response deadline as definite non-delivery", async () => {
     const client = new JsonRpcClient(
-      "exit-before-deadline",
+      createChildProcessHandle("exit-before-deadline"),
       {},
       { defaultRequestTimeoutMs: 60_000 },
     );
@@ -165,7 +185,7 @@ describe("JsonRpcClient", () => {
     vi.useFakeTimers();
     try {
       transport.onWrite = () => new Promise<void>(() => undefined);
-      const client = new JsonRpcClient("reply", {}, { label: "codex" });
+      const client = new JsonRpcClient(createChildProcessHandle("reply"), {}, { label: "codex" });
       client.pushLine(JSON.stringify({ id: 3, method: "currentTime/read" }));
       const outcome = client
         .respond(3, { privateValue: "secret" })
@@ -178,11 +198,56 @@ describe("JsonRpcClient", () => {
     }
   });
 
+  it.each(["resolve", "reject"] as const)(
+    "exposes the original %s write beyond its bounded response timeout",
+    async (settlement) => {
+      vi.useFakeTimers();
+      let finish!: () => void;
+      let fail!: (error: Error) => void;
+      const actual = new Promise<void>((resolve, reject) => {
+        finish = resolve;
+        fail = reject;
+      });
+      let retained: Promise<void> | undefined;
+      let drained = false;
+      const client = new JsonRpcClient(createChildProcessHandle("retained-reply"), {});
+      transport.onWrite = () => actual;
+      try {
+        const waiter = client
+          .respond(7, { outcome: "cancelled" }, (write) => {
+            retained = write;
+            void write.then(
+              () => {
+                drained = true;
+              },
+              () => {
+                drained = true;
+              },
+            );
+          })
+          .catch((error: Error) => error);
+        expect(retained).toBeDefined();
+        await vi.advanceTimersByTimeAsync(16_000);
+        expect(await waiter).toBeInstanceOf(Error);
+        expect(drained).toBe(false);
+        if (settlement === "resolve") finish();
+        else fail(new Error("original write failed"));
+        await retained!.catch(() => {});
+        expect(drained).toBe(true);
+      } finally {
+        finish();
+        await actual.catch(() => {});
+        client.close();
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it("bounds a blocked write instead of outliving the request deadline", async () => {
     vi.useFakeTimers();
     try {
       transport.onWrite = () => new Promise<void>(() => undefined);
-      const client = new JsonRpcClient("wedged", {});
+      const client = new JsonRpcClient(createChildProcessHandle("wedged"), {});
       const outcome = client.request("initialize", undefined, 60_000).then(
         () => "resolved",
         (e: Error) => e.message,
@@ -202,7 +267,7 @@ describe("JsonRpcClient", () => {
     process.on("unhandledRejection", onUnhandled);
     try {
       transport.onWrite = () => new Promise<void>(() => undefined);
-      const client = new JsonRpcClient("quiet", {});
+      const client = new JsonRpcClient(createChildProcessHandle("quiet"), {});
       const request = client.request("initialize", undefined, 5_000);
       const settled = request.catch((e: Error) => e.message);
       // At 5s the request's own deadline fires while the write stays blocked;
@@ -219,9 +284,9 @@ describe("JsonRpcClient", () => {
   });
 });
 
-it("eşleşmeyen ve eksik RPC yanıtlarını içeriksiz tanılar", () => {
+it("diagnoses unmatched and missing RPC responses without content", () => {
   const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-  const client = new JsonRpcClient("test", {});
+  const client = new JsonRpcClient(createChildProcessHandle("test"), {});
   client.pushLine(JSON.stringify({ id: 99, result: "secret-value" }));
   client.pushLine(JSON.stringify({ id: 100 }));
   expect(warning).toHaveBeenCalledWith(expect.stringContaining("unmatched JSON-RPC response"), {
@@ -234,9 +299,9 @@ it("eşleşmeyen ve eksik RPC yanıtlarını içeriksiz tanılar", () => {
   warning.mockRestore();
 });
 
-it("asenkron server request hatasını sır içermeden yakalar", async () => {
+it("catches an async server request error without including secrets", async () => {
   const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-  const client = new JsonRpcClient("test", {
+  const client = new JsonRpcClient(createChildProcessHandle("test"), {
     onRequest: async () => {
       throw new Error("private-token");
     },
@@ -247,4 +312,147 @@ it("asenkron server request hatasını sır içermeden yakalar", async () => {
   expect(warning).toHaveBeenCalledWith("[bycoda] rpc server request handler failed");
   expect(JSON.stringify(warning.mock.calls)).not.toContain("private-token");
   warning.mockRestore();
+});
+
+it("forgets a server request once its handler throws, rejects or settles without replying", async () => {
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const written: string[] = [];
+  transport.onWrite = async (_sessionId, line) => {
+    written.push(line);
+  };
+  const tracked = (client: JsonRpcClient) =>
+    (client as unknown as { serverRequests: Map<string, string> }).serverRequests;
+  let replyLater: (() => Promise<void>) | undefined;
+  const client: JsonRpcClient = new JsonRpcClient(createChildProcessHandle("forget"), {
+    onRequest: (id, method) => {
+      if (method === "throws-sync") throw new Error("sync failure");
+      if (method === "rejects") return Promise.reject(new Error("async failure"));
+      if (method === "replies") return client.respond(id, { ok: true });
+      if (method === "replies-later") replyLater = () => client.respond(id, { late: true });
+      return undefined;
+    },
+  });
+  for (const [id, method] of [
+    [1, "throws-sync"],
+    [2, "rejects"],
+    [3, "silent"],
+    [4, "replies"],
+    [5, "replies-later"],
+  ] as const)
+    client.pushLine(JSON.stringify({ id, method }));
+  // Before the fix every entry but the replied one stayed for the life of the client.
+  await vi.waitFor(() => expect(tracked(client).size).toBe(0));
+  expect(JSON.parse(written[0])).toMatchObject({ id: 4, result: { ok: true } });
+  // A handler that replies after it returned still can; only the label is gone.
+  await replyLater!();
+  expect(JSON.parse(written[1])).toMatchObject({ id: 5, result: { late: true } });
+  expect(warning).toHaveBeenCalledWith("[bycoda] rpc server request handler failed");
+  expect(JSON.stringify(warning.mock.calls)).not.toContain("async failure");
+  warning.mockRestore();
+});
+
+describe("Native response and callback causality", () => {
+  it("keeps the actual async response consumer owned across client close and waiter detachment", async () => {
+    const api = await import("./nativeOutputDelivery");
+    const { nativeOutputFrame } = await import("./nativeOutputDelivery.testSupport");
+    transport.onWrite = async () => {};
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const event = {};
+    const handle = createChildProcessHandle("rpc-response-causal");
+    const client = new JsonRpcClient(handle, {});
+    const result = client.requestWithNativeOutput("session/prompt", {}, async (value, work) => {
+      await gate;
+      api.nativeOutputSink(work, () =>
+        api.captureNativeOutputEvent("rpc-response-causal", event),
+      )();
+      return value;
+    });
+    const line = JSON.stringify({ id: 1, result: { ok: true } });
+    const inspect = nativeOutputFrame("rpc-response-causal", line, () => client.pushLine(line));
+    // This protocol fixture binds its actual opaque handle to the same synthetic
+    // Native stream before asserting physical-construction close invalidation.
+    transport.invoke.mockResolvedValueOnce({
+      version: 1,
+      backend: "native",
+      sessionId: handle.sessionId,
+      pid: 42,
+      constructionId: inspect().streamEpoch,
+    });
+    await spawnChild(handle, "fixture-agent", [], "/fixture");
+    await Promise.resolve();
+    expect(inspect().pendingCausalWork).toBe(1);
+    client.close();
+    await Promise.race([result, Promise.resolve("detached waiter")]);
+    expect(inspect().pendingCausalWork).toBe(1);
+    release();
+    await result;
+    expect(api.getNativeOutputEventOrigin(event)).not.toBeNull();
+    expect(inspect()).toMatchObject({
+      pendingCausalWork: 0,
+      unavailableReason: "rpc-client-closed",
+      applicationThrough: null,
+    });
+  });
+
+  it("keeps a real pending write after its reply waiter times out", async () => {
+    const api = await import("./nativeOutputDelivery");
+    const { nativeOutputFrame } = await import("./nativeOutputDelivery.testSupport");
+    vi.useFakeTimers();
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let release!: () => void;
+    transport.onWrite = () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    const event = {};
+    const client = new JsonRpcClient(createChildProcessHandle("rpc-write-causal"), {
+      onRequest: async (id, _method, _params, work) => {
+        await Promise.resolve();
+        api.nativeOutputSink(work ?? null, () =>
+          api.captureNativeOutputEvent("rpc-write-causal", event),
+        )();
+        await api.nativeOutputSink(work ?? null, () => client.respond(id, {}))();
+      },
+    });
+    try {
+      const line = JSON.stringify({ id: 17, method: "approval", params: {} });
+      const inspect = nativeOutputFrame("rpc-write-causal", line, () => client.pushLine(line));
+      await Promise.resolve();
+      expect(inspect().pendingCausalWork).toBe(2);
+      await vi.advanceTimersByTimeAsync(15_001);
+      expect(inspect()).toMatchObject({
+        pendingCausalWork: 1,
+        unavailableReason: "causal-work-rejected",
+        applicationThrough: null,
+      });
+      release();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(inspect().pendingCausalWork).toBe(0);
+      expect(api.getNativeOutputEventOrigin(event)).not.toBeNull();
+    } finally {
+      client.close();
+      vi.useRealTimers();
+      warning.mockRestore();
+    }
+  });
+
+  it("marks a bare await and unmatched late response unqualified rather than inventing continuation coverage", async () => {
+    const { nativeOutputFrame } = await import("./nativeOutputDelivery.testSupport");
+    transport.onWrite = async () => {};
+    const client = new JsonRpcClient(createChildProcessHandle("rpc-untracked"), {});
+    const response = client.request("configuration", {});
+    const line = JSON.stringify({ id: 1, result: {} });
+    const inspect = nativeOutputFrame("rpc-untracked", line, () => client.pushLine(line));
+    await response;
+    expect(inspect()).toMatchObject({
+      pendingCausalWork: 0,
+      unavailableReason: "rpc-response-consumer-untracked",
+      applicationThrough: null,
+    });
+    client.close();
+  });
 });

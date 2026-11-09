@@ -1,6 +1,12 @@
 /// <reference lib="webworker" />
 
 import type { NewThreadBackgroundEffect } from "./appearance";
+import {
+  BackgroundEffectCache,
+  BACKGROUND_MAX_EDGE,
+  BACKGROUND_SOURCE_BYTES,
+  BACKGROUND_RENDER_BYTES,
+} from "./backgroundEffectCache";
 
 type Source = {
   width: number;
@@ -26,28 +32,14 @@ type RenderRequest = {
 
 type WorkerRequest = LoadRequest | RenderRequest;
 
-const sources = new Map<string, Source>();
-const rendered = new Map<string, Blob>();
-const MAX_CACHED_REVISIONS = 3;
-
-function revisionOf(key: string) {
-  const match = /[?&]v=(\d+)/.exec(key);
-  return match ? Number(match[1]) : 0;
-}
-
-/** A late stale job may discard itself, but must never evict a newer source. */
-function pruneByRevision(map: Map<string, unknown>) {
-  const revisions = new Set<number>();
-  for (const key of map.keys()) revisions.add(revisionOf(key));
-  if (revisions.size <= MAX_CACHED_REVISIONS) return;
-  const keep = new Set([...revisions].sort((a, b) => b - a).slice(0, MAX_CACHED_REVISIONS));
-  for (const key of map.keys()) {
-    if (!keep.has(revisionOf(key))) map.delete(key);
-  }
-}
+const sources = new BackgroundEffectCache<Source>(
+  BACKGROUND_SOURCE_BYTES,
+  (source) => source.pixels.buffer.byteLength + source.luma.buffer.byteLength,
+);
+const rendered = new BackgroundEffectCache<Blob>(BACKGROUND_RENDER_BYTES, (blob) => blob.size);
 
 function post(id: number, result?: Blob, error?: string) {
-  self.postMessage({ id, result, error });
+  self.postMessage({ id, result, error, sourceKeys: [...sources.keys()] });
 }
 
 function coverIndex(source: Source, x: number, y: number) {
@@ -185,24 +177,43 @@ function scanlinePixels(source: Source, light: boolean) {
 
 async function loadSource(sourceKey: string, bytes: ArrayBuffer) {
   const decoded = await createImageBitmap(new Blob([bytes]));
-  const scale = Math.min(1, 2048 / decoded.width, 2048 / decoded.height);
-  const width = Math.max(1, Math.round(decoded.width * scale));
-  const height = Math.max(1, Math.round(decoded.height * scale));
-  const canvas = new OffscreenCanvas(width, height);
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) throw new Error("Unable to prepare the background image.");
-  context.drawImage(decoded, 0, 0, width, height);
-  decoded.close();
-  const pixels = context.getImageData(0, 0, width, height).data;
-  const luma = new Uint8Array(width * height);
-  for (let pixel = 0; pixel < luma.length; pixel += 1) {
-    const offset = pixel * 4;
-    luma[pixel] = Math.round(
-      pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722,
+  let decodedOpen = true;
+  const closeDecoded = () => {
+    if (decodedOpen) {
+      decodedOpen = false;
+      decoded.close();
+    }
+  };
+  try {
+    const scale = Math.min(
+      1,
+      BACKGROUND_MAX_EDGE / decoded.width,
+      BACKGROUND_MAX_EDGE / decoded.height,
     );
+    const width = Math.max(1, Math.round(decoded.width * scale));
+    const height = Math.max(1, Math.round(decoded.height * scale));
+    const canvas = new OffscreenCanvas(width, height);
+    try {
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) throw new Error("Unable to prepare the background image.");
+      context.drawImage(decoded, 0, 0, width, height);
+      closeDecoded();
+      const pixels = context.getImageData(0, 0, width, height).data;
+      const luma = new Uint8Array(width * height);
+      for (let pixel = 0; pixel < luma.length; pixel += 1) {
+        const offset = pixel * 4;
+        luma[pixel] = Math.round(
+          pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722,
+        );
+      }
+      sources.set(sourceKey, { width, height, pixels, luma });
+    } finally {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+  } finally {
+    closeDecoded();
   }
-  sources.set(sourceKey, { width, height, pixels, luma });
-  pruneByRevision(sources);
 }
 
 async function render(sourceKey: string, effect: NewThreadBackgroundEffect, light: boolean) {
@@ -223,26 +234,34 @@ async function render(sourceKey: string, effect: NewThreadBackgroundEffect, ligh
             ? halftonePixels(source, light)
             : scanlinePixels(source, light);
   const canvas = new OffscreenCanvas(source.width, source.height);
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Unable to render the background effect.");
-  context.putImageData(new ImageData(pixels, source.width, source.height), 0, 0);
-  const blob = await canvas.convertToBlob({ type: "image/png" });
-  rendered.set(cacheKey, blob);
-  pruneByRevision(rendered);
-  return blob;
+  try {
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Unable to render the background effect.");
+    context.putImageData(new ImageData(pixels, source.width, source.height), 0, 0);
+    const blob = await canvas.convertToBlob({ type: "image/png" });
+    rendered.set(cacheKey, blob);
+    return blob;
+  } finally {
+    canvas.width = 0;
+    canvas.height = 0;
+  }
 }
 
-self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
-  try {
-    if (event.data.kind === "load") {
-      await loadSource(event.data.sourceKey, event.data.bytes);
-      post(event.data.id);
-    } else {
-      post(event.data.id, await render(event.data.sourceKey, event.data.effect, event.data.light));
-    }
-  } catch (error) {
-    post(event.data.id, undefined, error instanceof Error ? error.message : String(error));
-  }
+let jobs = Promise.resolve();
+self.onmessage = (event: MessageEvent<WorkerRequest>) => {
+  const data = event.data;
+  jobs = jobs
+    .then(async () => {
+      try {
+        if (data.kind === "load") {
+          await loadSource(data.sourceKey, data.bytes);
+          post(data.id);
+        } else post(data.id, await render(data.sourceKey, data.effect, data.light));
+      } catch (error) {
+        post(data.id, undefined, error instanceof Error ? error.message : String(error));
+      }
+    })
+    .catch(() => {});
 };
 
 export {};

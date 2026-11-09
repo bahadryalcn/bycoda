@@ -4,13 +4,6 @@ import {
   type SessionRecovery,
 } from "../../../features/workspace/model/sessionRecovery";
 import type { SessionDeleteDialogState } from "../layout/WorkspaceDialogs";
-import type { WindowTransferPayload } from "../../model/windowTransfer";
-import type { ToolWindow } from "../../model/toolWindows";
-
-export interface SessionRecoveryStateDeps {
-  windowTransfer: WindowTransferPayload | null;
-  toolWindow: ToolWindow | null;
-}
 
 export interface SessionRecoveryState {
   sessionRecovery: SessionRecovery | null;
@@ -21,16 +14,14 @@ export interface SessionRecoveryState {
   setSessionDeleteDialog: Dispatch<SetStateAction<SessionDeleteDialogState | undefined>>;
 }
 
-/** Recovery snapshot and the open/close and delete-dialog state around it. */
-export function useSessionRecoveryState({
-  windowTransfer,
-  toolWindow,
-}: SessionRecoveryStateDeps): SessionRecoveryState {
+/**
+ * Recovery snapshot and the open/close and delete-dialog state around it. The
+ * dialog starts closed: `useRecoveryAutoResolve` opens it after boot only when
+ * interrupted work still needs attention.
+ */
+export function useSessionRecoveryState(): SessionRecoveryState {
   const [sessionRecovery, updateSessionRecovery] = useState(getSessionRecovery);
-  const [recoveryOpen, setRecoveryOpen] = useState(
-    () =>
-      !windowTransfer && !toolWindow && !!getSessionRecovery() && !getSessionRecovery()?.dismissed,
-  );
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [sessionDeleteDialog, setSessionDeleteDialog] = useState<SessionDeleteDialogState>();
   return {
     sessionRecovery,

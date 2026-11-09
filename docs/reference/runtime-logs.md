@@ -4,7 +4,13 @@ The **Logs** tab in Conversation Tools combines console output and runtime error
 from the managed host browser with output from development servers and native
 bycoda terminals. Terminal capture runs outside the webview, so switching tabs or
 closing the log panel does not interrupt it. Output belongs to the terminal's
-launch directory on the local machine and is redacted before host retention. It runs on the selected tool machine and defaults to the conversation's
+launch directory on the local machine and is redacted before host retention.
+Background terminal capture remains enabled by default. A Host owner can set
+`BYCODA_TERMINAL_LOG_BACKGROUND=0` before starting the Host to capture terminal
+output only while a Logs panel is actively monitoring its project or computer.
+Monitor leases expire after 30 seconds without renewal. Output produced outside
+capture is unavailable; resumption reports a capture gap rather than joining
+partial lines. Previously retained logs are not deleted. It runs on the selected tool machine and defaults to the conversation's
 project host.
 
 Monitoring is stopped on entry. Click **Read logs** to read the project's

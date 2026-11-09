@@ -1,6 +1,6 @@
 import type { Block, Session } from "./session";
 import { deriveActivityDock, type DockAgent } from "./activityDock";
-import { groupTurns, toolCallState } from "./transcriptActivity";
+import { lastTurn, toolCallState } from "./transcriptActivity";
 import type { CrewRole } from "../ui/crewMotion";
 import { contextRatio } from "./contextUsage";
 
@@ -22,9 +22,9 @@ export function isAdvisorBlock(block: Block): boolean {
 
 function advisorWorking(session: Session): boolean {
   if (!session.busy) return false;
-  const turns = groupTurns(session.blocks);
-  const turn = turns[turns.length - 1] ?? [];
-  return turn.some((block) => isAdvisorBlock(block) && toolCallState(block) === "pending");
+  return lastTurn(session.blocks).some(
+    (block) => isAdvisorBlock(block) && toolCallState(block) === "pending",
+  );
 }
 
 /** Seats of one session's crew. Only that session and its own worker sessions are considered. */

@@ -3,12 +3,17 @@ import {
   defaultDateRangePresets,
   type DateRangePickerProps,
 } from "./arc/date-range-picker/date-range-picker";
-import { t, useLocale, getLocale } from "../i18n";
+import { getLocale, useT } from "../i18n";
 
 export type { DateRange } from "./arc/date-range-picker/date-range-picker";
 
+/**
+ * Inclusive local-day range calendar with presets. Only used inside DateTimeRangePicker; features use that component instead.
+ * @group fields
+ * @status internal
+ */
 export function DateRangePicker(props: DateRangePickerProps) {
-  useLocale();
+  const t = useT();
   return (
     <ArcDateRangePicker
       locale={getLocale()}

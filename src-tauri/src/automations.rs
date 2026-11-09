@@ -1,13 +1,35 @@
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{Emitter, Manager, State};
 use uuid::Uuid;
 
 use crate::session_store::{now_millis, validate_id, SessionStore};
 
 pub(crate) const CHANGED: &str = "bycoda:automations-changed";
+static RECOVERY_DONE: Mutex<Option<(String, Vec<DueAutomationRun>)>> = Mutex::new(None);
+
+fn recover_once<T: Clone>(
+    guard: &Mutex<Option<(String, Vec<T>)>>,
+    owner: &str,
+    recover: impl FnOnce() -> Result<Vec<T>, String>,
+) -> Result<Vec<T>, String> {
+    let mut done = guard
+        .lock()
+        .map_err(|_| "Automation recovery unavailable".to_string())?;
+    if let Some((original_owner, result)) = &*done {
+        return Ok(if original_owner == owner {
+            result.clone()
+        } else {
+            Vec::new()
+        });
+    }
+    let result = recover()?;
+    *done = Some((owner.to_owned(), result.clone()));
+    Ok(result)
+}
 
 const MAX_NAME: usize = 200;
 const MAX_PROMPT: usize = 1_000_000;
@@ -29,7 +51,9 @@ pub struct Automation {
     #[serde(default)]
     model_settings: HashMap<String, String>,
     cwd: String,
-    workspace_mode: String,
+    /// None inherits the execution Host's project workspace policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    workspace_mode: Option<String>,
     #[serde(default)]
     worktree_cwd: String,
     #[serde(default)]
@@ -81,7 +105,8 @@ pub struct AutomationUpsert {
     #[serde(default)]
     model_settings: HashMap<String, String>,
     cwd: String,
-    workspace_mode: String,
+    #[serde(default)]
+    workspace_mode: Option<String>,
     #[serde(default)]
     worktree_cwd: String,
     #[serde(default)]
@@ -299,12 +324,12 @@ fn validate_upsert(input: &AutomationUpsert, now: i64) -> Result<(), String> {
         return Err("Choose a project for this automation.".into());
     }
     if !matches!(
-        input.workspace_mode.as_str(),
-        "current" | "worktree" | "existing"
+        input.workspace_mode.as_deref(),
+        None | Some("current" | "worktree" | "existing")
     ) {
         return Err("Invalid automation workspace mode.".into());
     }
-    if input.workspace_mode == "existing" {
+    if input.workspace_mode.as_deref() == Some("existing") {
         let path = input.worktree_cwd.trim();
         if path.is_empty() || path.len() > 1_000 {
             return Err("Choose an existing worktree for this automation.".into());
@@ -748,18 +773,31 @@ fn apply_run_summary(automation: &mut Automation, run: &AutomationRun) {
 
 #[tauri::command(async)]
 pub fn automations_list(store: State<'_, SessionStore>) -> Result<Vec<Automation>, String> {
-    let conn = store.lock_conn()?;
-    Ok(list(&conn)?
-        .into_iter()
-        .filter(|automation| !is_ssh(automation))
-        .collect())
+    store.with_read_conn(|conn| {
+        Ok(list(conn)?
+            .into_iter()
+            .filter(|automation| !is_ssh(automation))
+            .collect())
+    })
 }
 
 #[tauri::command(async)]
 pub fn automations_upsert(
-    app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     automation: AutomationUpsert,
+) -> Result<Automation, String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        automations_upsert_with(&store, automation, || {
+            let _ = window.app_handle().emit(CHANGED, ());
+        })
+    })
+}
+
+fn automations_upsert_with(
+    store: &SessionStore,
+    automation: AutomationUpsert,
+    notify: impl FnOnce(),
 ) -> Result<Automation, String> {
     let now = now_millis();
     validate_upsert(&automation, now)?;
@@ -773,7 +811,7 @@ pub fn automations_upsert(
         .as_ref()
         .map(|value| value.created_at)
         .unwrap_or(now);
-    let worktree_cwd = if automation.workspace_mode == "existing" {
+    let worktree_cwd = if automation.workspace_mode.as_deref() == Some("existing") {
         automation.worktree_cwd.trim().to_string()
     } else {
         String::new()
@@ -818,15 +856,27 @@ pub fn automations_upsert(
     };
     write_automation(&conn, &saved)?;
     drop(conn);
-    let _ = app.emit(CHANGED, ());
+    notify();
     Ok(saved)
 }
 
 #[tauri::command(async)]
 pub fn automations_delete(
-    app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     id: String,
+) -> Result<(), String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        automations_delete_with(&store, id, || {
+            let _ = window.app_handle().emit(CHANGED, ());
+        })
+    })
+}
+
+fn automations_delete_with(
+    store: &SessionStore,
+    id: String,
+    notify: impl FnOnce(),
 ) -> Result<(), String> {
     validate_id(&id, "automation")?;
     let conn = store.lock_conn()?;
@@ -837,7 +887,7 @@ pub fn automations_delete(
     conn.execute("DELETE FROM automations WHERE id = ?1", [id])
         .map_err(|error| error.to_string())?;
     drop(conn);
-    let _ = app.emit(CHANGED, ());
+    notify();
     Ok(())
 }
 
@@ -847,22 +897,38 @@ pub fn automation_runs_list(
     automation_id: String,
 ) -> Result<Vec<AutomationRun>, String> {
     validate_id(&automation_id, "automation")?;
-    let conn = store.lock_conn()?;
-    let mut runs = list_runs(&conn, &automation_id)?;
-    // Launch prompts can be large and are only needed by restart recovery, not
-    // by the run-history surface.
-    for run in &mut runs {
-        run.prompt = None;
-    }
-    Ok(runs)
+    store.with_read_conn(|conn| {
+        let mut runs = list_runs(conn, &automation_id)?;
+        // Launch prompts can be large and are only needed by restart recovery, not
+        // by the run-history surface.
+        for run in &mut runs {
+            run.prompt = None;
+        }
+        Ok(runs)
+    })
 }
 
 #[tauri::command(async)]
 pub fn automation_runs_recover(
-    app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     started_before: i64,
     now: i64,
+) -> Result<Vec<DueAutomationRun>, String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        recover_once(&RECOVERY_DONE, window.label(), || {
+            automation_runs_recover_with(&store, started_before, now, || {
+                let _ = window.app_handle().emit(CHANGED, ());
+            })
+        })
+    })
+}
+
+fn automation_runs_recover_with(
+    store: &SessionStore,
+    started_before: i64,
+    now: i64,
+    notify: impl FnOnce(),
 ) -> Result<Vec<DueAutomationRun>, String> {
     let mut conn = store.lock_conn()?;
     let tx = conn.transaction().map_err(|error| error.to_string())?;
@@ -934,17 +1000,30 @@ pub fn automation_runs_recover(
     tx.commit().map_err(|error| error.to_string())?;
     drop(conn);
     if changed || !due.is_empty() {
-        let _ = app.emit(CHANGED, ());
+        notify();
     }
     Ok(due)
 }
 
 #[tauri::command(async)]
 pub fn automation_run_now(
-    app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     automation_id: String,
     now: i64,
+) -> Result<AutomationRun, String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        automation_run_now_with(&store, automation_id, now, || {
+            let _ = window.app_handle().emit(CHANGED, ());
+        })
+    })
+}
+
+fn automation_run_now_with(
+    store: &SessionStore,
+    automation_id: String,
+    now: i64,
+    notify: impl FnOnce(),
 ) -> Result<AutomationRun, String> {
     validate_id(&automation_id, "automation")?;
     let mut conn = store.lock_conn()?;
@@ -961,21 +1040,46 @@ pub fn automation_run_now(
     trim_history(&tx, &automation_id)?;
     tx.commit().map_err(|error| error.to_string())?;
     drop(conn);
-    let _ = app.emit(CHANGED, ());
+    notify();
     Ok(run)
 }
 
 #[tauri::command(async)]
 pub fn automations_claim_due(
-    app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     automation_id: String,
     expected_next_run_at: i64,
+    scheduled_for: Option<i64>,
     next_run_at: i64,
     now: i64,
 ) -> Result<Option<DueAutomationRun>, String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        automations_claim_due_with(
+            &store,
+            automation_id,
+            expected_next_run_at,
+            scheduled_for.unwrap_or(expected_next_run_at),
+            next_run_at,
+            now,
+            || {
+                let _ = window.app_handle().emit(CHANGED, ());
+            },
+        )
+    })
+}
+
+fn automations_claim_due_with(
+    store: &SessionStore,
+    automation_id: String,
+    expected_next_run_at: i64,
+    scheduled_for: i64,
+    next_run_at: i64,
+    now: i64,
+    notify: impl FnOnce(),
+) -> Result<Option<DueAutomationRun>, String> {
     validate_id(&automation_id, "automation")?;
-    if next_run_at <= expected_next_run_at {
+    if scheduled_for < expected_next_run_at || scheduled_for > now || next_run_at <= now {
         return Err("The following automation occurrence must advance the schedule.".into());
     }
     let mut conn = store.lock_conn()?;
@@ -1003,12 +1107,12 @@ pub fn automations_claim_due(
     let mut run = new_run(
         &automation_id,
         "scheduled",
-        expected_next_run_at,
+        scheduled_for,
         now,
         &automation.prompt,
     );
     let grace_ms = automation.missed_run_grace_minutes.saturating_mul(60_000);
-    let missed = now.saturating_sub(expected_next_run_at);
+    let missed = now.saturating_sub(scheduled_for);
     let dispatch = missed <= grace_ms;
     if !dispatch {
         run.status = "skipped".into();
@@ -1023,18 +1127,33 @@ pub fn automations_claim_due(
     trim_history(&tx, &automation_id)?;
     tx.commit().map_err(|error| error.to_string())?;
     drop(conn);
-    let _ = app.emit(CHANGED, ());
+    notify();
     Ok(Some(DueAutomationRun { automation, run }))
 }
 
 #[tauri::command(async)]
 pub fn automations_claim_event(
-    app: AppHandle,
     window: tauri::WebviewWindow,
     store: State<'_, SessionStore>,
     automation_id: String,
     claim: AutomationEventClaim,
     now: i64,
+) -> Result<Option<DueAutomationRun>, String> {
+    let native_window = window.as_ref().window();
+    crate::native_window_lifecycle::persistence_write(&native_window, || {
+        automations_claim_event_with(&store, window.label(), automation_id, claim, now, || {
+            let _ = window.app_handle().emit(CHANGED, ());
+        })
+    })
+}
+
+fn automations_claim_event_with(
+    store: &SessionStore,
+    window_label: &str,
+    automation_id: String,
+    claim: AutomationEventClaim,
+    now: i64,
+    notify: impl FnOnce(),
 ) -> Result<Option<DueAutomationRun>, String> {
     validate_id(&automation_id, "automation")?;
     validate_event_key(&claim.event_key)?;
@@ -1071,7 +1190,7 @@ pub fn automations_claim_event(
         .as_deref()
         .map(|token| {
             Uuid::parse_str(token)
-                .map(|token| format!("{}:{token}", window.label()))
+                .map(|token| format!("{}:{token}", window_label))
                 .map_err(|_| "Invalid automation claim recovery token.".to_string())
         })
         .transpose()?;
@@ -1107,19 +1226,35 @@ pub fn automations_claim_event(
     trim_history(&tx, &automation_id)?;
     tx.commit().map_err(|error| error.to_string())?;
     drop(conn);
-    let _ = app.emit(CHANGED, ());
+    notify();
     Ok(Some(DueAutomationRun { automation, run }))
 }
 
 #[tauri::command(async)]
 pub fn automation_run_update(
-    app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     run_id: String,
     status: String,
     session_id: Option<String>,
     error: Option<String>,
     now: i64,
+) -> Result<AutomationRun, String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        automation_run_update_with(&store, run_id, status, session_id, error, now, || {
+            let _ = window.app_handle().emit(CHANGED, ());
+        })
+    })
+}
+
+fn automation_run_update_with(
+    store: &SessionStore,
+    run_id: String,
+    status: String,
+    session_id: Option<String>,
+    error: Option<String>,
+    now: i64,
+    notify: impl FnOnce(),
 ) -> Result<AutomationRun, String> {
     validate_id(&run_id, "automation run")?;
     if let Some(session_id) = session_id.as_deref() {
@@ -1146,6 +1281,19 @@ pub fn automation_run_update(
     if run.executor == Some(crate::ssh_runbooks::Executor::Ssh) || run.ssh_execution.is_some() {
         return Err("SSH execution outcomes are owned by the native execution engine".into());
     }
+    let attach_session = run.status == "running"
+        && status == "running"
+        && run.session_id.is_none()
+        && session_id.is_some();
+    if !attach_session
+        && !matches!(
+            (run.status.as_str(), status.as_str()),
+            ("pending", "running" | "failed" | "skipped" | "cancelled")
+                | ("running", "succeeded" | "failed" | "skipped" | "cancelled")
+        )
+    {
+        return Err("Invalid automation run status transition.".into());
+    }
     run.status = status;
     if run.status == "running" && run.started_at.is_none() {
         run.started_at = Some(now);
@@ -1169,488 +1317,12 @@ pub fn automation_run_update(
     trim_history(&tx, &run.automation_id)?;
     tx.commit().map_err(|error| error.to_string())?;
     drop(conn);
-    let _ = app.emit(CHANGED, ());
+    notify();
     Ok(run)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod admission_tests;
 
-    #[test]
-    fn typed_ssh_automations_never_enter_the_legacy_agent_launcher() {
-        let mut value = serde_json::json!({
-            "id":"ssh-book","name":"SSH book","prompt":"agent-shaped input","harness":"codex","model":"model",
-            "cwd":"/tmp","workspaceMode":"current","reuseSession":false,"runtimeMode":"supervised",
-            "scheduleKind":"daily","minute":0,"time":"09:00","dayOfWeek":1,"missedRunGraceMinutes":0,
-            "enabled":false,"nextRunAt":1000,"createdAt":1,"updatedAt":1,"executor":"ssh",
-            "sshRunbook":{"revision":1,"script":"pwd","shell":"posix","targetIds":["server-one"],"limits":{"concurrency":1,"timeoutSeconds":10}}
-        });
-        let ssh: Automation = serde_json::from_value(value.clone()).unwrap();
-        assert!(is_ssh(&ssh));
-        assert!(require_agent(&ssh).is_err());
-        let upsert: AutomationUpsert = serde_json::from_value(value.clone()).unwrap();
-        assert!(validate_upsert(&upsert, 1).is_err());
-        value.as_object_mut().unwrap().remove("executor");
-        let metadata_only: Automation = serde_json::from_value(value.clone()).unwrap();
-        assert!(require_agent(&metadata_only).is_err());
-        value.as_object_mut().unwrap().remove("sshRunbook");
-        let legacy: Automation = serde_json::from_value(value).unwrap();
-        require_agent(&legacy).unwrap();
-        assert!(validate_event_key("ssh-run:reserved-native-id").is_err());
-    }
-
-    #[test]
-    fn accepts_task_and_social_triggers_without_accepting_unknown_sources() {
-        for (kind, event) in [("tasks", "task_blocked"), ("social", "message_received")] {
-            let mut trigger: AutomationTrigger = serde_json::from_value(serde_json::json!({
-                "id": "event-trigger", "kind": kind, "event": event
-            }))
-            .unwrap();
-            assert!(validate_trigger(&trigger).is_ok());
-            trigger.kind = "unknown-source".into();
-            assert!(validate_trigger(&trigger).is_err());
-        }
-    }
-
-    #[test]
-    fn validates_time_fields() {
-        assert!(valid_time("09:30"));
-        assert!(valid_time("23:59"));
-        assert!(!valid_time("24:00"));
-        assert!(!valid_time("9:30"));
-    }
-
-    #[test]
-    fn existing_automations_default_to_time_triggers() {
-        let automation = Automation {
-            executor: None,
-            ssh_runbook: None,
-            id: "automation-id".into(),
-            name: "Audit".into(),
-            prompt: "Review the repository".into(),
-            harness: "codex".into(),
-            model: "model".into(),
-            model_settings: HashMap::new(),
-            cwd: "/tmp".into(),
-            workspace_mode: "worktree".into(),
-            worktree_cwd: String::new(),
-            session_folder_id: String::new(),
-            reuse_session: false,
-            runtime_mode: "auto".into(),
-            trigger_kind: "github".into(),
-            trigger_event: "pull_request_opened".into(),
-            schedule_kind: "weekdays".into(),
-            minute: 0,
-            time: "09:00".into(),
-            day_of_week: 1,
-            triggers: None,
-            missed_run_grace_minutes: 720,
-            max_run_minutes: 0,
-            max_runs_per_day: 0,
-            enabled: true,
-            next_run_at: 1,
-            last_run_at: None,
-            last_run_status: None,
-            last_run_error: None,
-            last_session_id: None,
-            created_at: 1,
-            updated_at: 1,
-        };
-        let mut stored = serde_json::to_value(automation).unwrap();
-        stored
-            .as_object_mut()
-            .unwrap()
-            .remove("triggerKind")
-            .unwrap();
-        stored
-            .as_object_mut()
-            .unwrap()
-            .remove("triggerEvent")
-            .unwrap();
-
-        let restored: Automation = serde_json::from_value(stored).unwrap();
-        assert_eq!(restored.trigger_kind, "time");
-        assert!(restored.trigger_event.is_empty());
-    }
-
-    #[test]
-    fn missing_triggers_hydrate_from_legacy_fields() {
-        let automation = Automation {
-            executor: None,
-            ssh_runbook: None,
-            id: "automation-id".into(),
-            name: "Audit".into(),
-            prompt: "Review the repository".into(),
-            harness: "codex".into(),
-            model: "model".into(),
-            model_settings: HashMap::new(),
-            cwd: "/tmp".into(),
-            workspace_mode: "worktree".into(),
-            worktree_cwd: String::new(),
-            session_folder_id: String::new(),
-            reuse_session: false,
-            runtime_mode: "auto".into(),
-            trigger_kind: "gitlab".into(),
-            trigger_event: "merge_request_opened".into(),
-            schedule_kind: "weekdays".into(),
-            minute: 0,
-            time: "09:00".into(),
-            day_of_week: 1,
-            triggers: None,
-            missed_run_grace_minutes: 720,
-            max_run_minutes: 0,
-            max_runs_per_day: 0,
-            enabled: true,
-            next_run_at: 1,
-            last_run_at: None,
-            last_run_status: None,
-            last_run_error: None,
-            last_session_id: None,
-            created_at: 1,
-            updated_at: 1,
-        };
-        let mut stored = serde_json::to_value(&automation).unwrap();
-        stored.as_object_mut().unwrap().remove("triggers");
-        let mut restored: Automation = serde_json::from_value(stored).unwrap();
-        assert!(restored.triggers.is_none());
-        hydrate_triggers(&mut restored);
-        let triggers = restored.triggers.as_ref().unwrap();
-        assert_eq!(triggers.len(), 1);
-        assert_eq!(triggers[0].kind, "gitlab");
-        assert_eq!(triggers[0].event, "merge_request_opened");
-    }
-
-    #[test]
-    fn empty_triggers_stay_empty() {
-        let mut restored: Automation = serde_json::from_value(serde_json::json!({
-            "id": "automation-id",
-            "name": "Audit",
-            "prompt": "Review the repository",
-            "harness": "codex",
-            "model": "model",
-            "cwd": "/tmp",
-            "workspaceMode": "worktree",
-            "reuseSession": false,
-            "runtimeMode": "auto",
-            "triggerKind": "time",
-            "triggerEvent": "",
-            "scheduleKind": "weekdays",
-            "minute": 0,
-            "time": "09:00",
-            "dayOfWeek": 1,
-            "triggers": [],
-            "missedRunGraceMinutes": 720,
-            "enabled": true,
-            "nextRunAt": 1,
-            "createdAt": 1,
-            "updatedAt": 1
-        }))
-        .unwrap();
-        hydrate_triggers(&mut restored);
-        assert!(restored.triggers.as_ref().unwrap().is_empty());
-    }
-
-    #[test]
-    fn trims_run_history_to_the_configured_limit() {
-        let conn = Connection::open_in_memory().unwrap();
-        ensure_tables(&conn).unwrap();
-        conn.execute(
-            "INSERT INTO automations (id, definition_json, enabled, next_run_at, updated_at)
-             VALUES ('automation-id', '{}', 1, 1, 1)",
-            [],
-        )
-        .unwrap();
-        for index in 0..=MAX_RUNS_PER_AUTOMATION {
-            let run = AutomationRun {
-                executor: None,
-                ssh_execution: None,
-                id: format!("run-{index}"),
-                automation_id: "automation-id".into(),
-                trigger: "manual".into(),
-                scheduled_for: index,
-                created_at: index,
-                started_at: None,
-                completed_at: Some(index),
-                status: "succeeded".into(),
-                session_id: None,
-                error: None,
-                event_key: None,
-                event_kind: None,
-                event: None,
-                prompt: Some("Run the automation".into()),
-            };
-            write_run(&conn, &run).unwrap();
-        }
-
-        trim_history(&conn, "automation-id").unwrap();
-
-        let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM automation_runs WHERE automation_id = 'automation-id'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(count, MAX_RUNS_PER_AUTOMATION);
-    }
-
-    #[test]
-    fn trim_history_preserves_nonterminal_runs() {
-        let conn = Connection::open_in_memory().unwrap();
-        ensure_tables(&conn).unwrap();
-        conn.execute(
-            "INSERT INTO automations (id, definition_json, enabled, next_run_at, updated_at)
-             VALUES ('automation-id', '{}', 1, 1, 1)",
-            [],
-        )
-        .unwrap();
-        for index in 0..=MAX_RUNS_PER_AUTOMATION {
-            let run = AutomationRun {
-                executor: None,
-                ssh_execution: None,
-                id: format!("run-{index}"),
-                automation_id: "automation-id".into(),
-                trigger: "manual".into(),
-                scheduled_for: index,
-                created_at: index,
-                started_at: None,
-                completed_at: None,
-                status: "pending".into(),
-                session_id: None,
-                error: None,
-                event_key: None,
-                event_kind: None,
-                event: None,
-                prompt: Some("Run the automation".into()),
-            };
-            write_run(&conn, &run).unwrap();
-        }
-
-        trim_history(&conn, "automation-id").unwrap();
-
-        let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM automation_runs WHERE automation_id = 'automation-id'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(count, MAX_RUNS_PER_AUTOMATION + 1);
-    }
-
-    #[test]
-    fn accepts_inbox_event_keys() {
-        assert!(validate_event_key("github:pr:acme/web:12").is_ok());
-        assert!(validate_event_key("linear:issue:eng-12").is_ok());
-        assert!(validate_event_key("jira:issue:10042").is_ok());
-        assert!(validate_event_key("azuredevops:pr:acme/web:12").is_ok());
-        assert!(validate_event_key("").is_err());
-        assert!(validate_event_key("github:pr:acme web:12").is_err());
-    }
-
-    #[test]
-    fn accepts_jira_triggers() {
-        let trigger = trigger_from_fields(
-            "jira-trigger",
-            "jira",
-            "issue_created",
-            "weekdays",
-            0,
-            "09:00",
-            1,
-        );
-        assert!(validate_trigger(&trigger).is_ok());
-    }
-
-    #[test]
-    fn accepts_azure_devops_triggers() {
-        let trigger = trigger_from_fields(
-            "trigger-id",
-            "azuredevops",
-            "pull_request_appeared",
-            "weekdays",
-            0,
-            "09:00",
-            1,
-        );
-        assert!(validate_trigger(&trigger).is_ok());
-    }
-
-    #[test]
-    fn claims_each_event_key_once() {
-        let conn = Connection::open_in_memory().unwrap();
-        ensure_tables(&conn).unwrap();
-        conn.execute(
-            "INSERT INTO automations (id, definition_json, enabled, next_run_at, updated_at)
-             VALUES ('automation-id', '{}', 1, 1, 1)",
-            [],
-        )
-        .unwrap();
-        let claim = || {
-            conn.execute(
-                "INSERT OR IGNORE INTO automation_event_claims
-                 (automation_id, event_key, created_at) VALUES (?1, ?2, ?3)",
-                params!["automation-id", "github:pr:acme/web:12", 1],
-            )
-            .unwrap()
-        };
-
-        assert_eq!(claim(), 1);
-        assert_eq!(claim(), 0);
-    }
-
-    #[test]
-    fn pending_event_claim_retry_recovers_only_unstarted_committed_run() {
-        let conn = Connection::open_in_memory().unwrap();
-        ensure_tables(&conn).unwrap();
-        conn.execute(
-            "INSERT INTO automations VALUES ('automation-id', '{}', 1, 1, 1)",
-            [],
-        )
-        .unwrap();
-        let mut run = new_event_run(
-            "automation-id",
-            "tasks:event-a",
-            "tasks",
-            "task_blocked",
-            1,
-            2,
-            "original prompt",
-        );
-        let owner = "window-a:original-mounted-poller";
-        assert!(claim_event_key(&conn, "automation-id", "tasks:event-a", 2, Some(owner)).unwrap());
-        write_run(&conn, &run).unwrap();
-        // B receives neither a new claim nor A's pending run, even if A's reply
-        // was lost. Only the original native window can resume that claim.
-        for stranger in [
-            "window-b:original-mounted-poller",
-            "window-a:different-mounted-poller",
-        ] {
-            assert!(
-                !claim_event_key(&conn, "automation-id", "tasks:event-a", 3, Some(stranger))
-                    .unwrap()
-            );
-            assert!(
-                pending_event_run(&conn, "automation-id", "tasks:event-a", stranger)
-                    .unwrap()
-                    .is_none()
-            );
-        }
-        assert!(!claim_event_key(&conn, "automation-id", "tasks:event-a", 3, Some(owner)).unwrap());
-        let retry = pending_event_run(&conn, "automation-id", "tasks:event-a", owner)
-            .unwrap()
-            .unwrap();
-        assert_eq!(retry.id, run.id);
-        assert_eq!(retry.prompt.as_deref(), Some("original prompt"));
-        assert!(pending_event_run(&conn, "other", "tasks:event-a", owner)
-            .unwrap()
-            .is_none());
-        for status in ["running", "succeeded", "failed", "cancelled"] {
-            run.status = status.into();
-            write_run(&conn, &run).unwrap();
-            assert!(
-                pending_event_run(&conn, "automation-id", "tasks:event-a", owner)
-                    .unwrap()
-                    .is_none()
-            );
-        }
-    }
-
-    #[test]
-    fn pending_event_claim_retry_keeps_unknown_legacy_ownership_closed() {
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch("CREATE TABLE automation_event_claims (automation_id TEXT NOT NULL, event_key TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (automation_id, event_key));").unwrap();
-        ensure_tables(&conn).unwrap();
-        conn.execute(
-            "INSERT INTO automations VALUES ('automation-id', '{}', 1, 1, 1)",
-            [],
-        )
-        .unwrap();
-        conn.execute("INSERT INTO automation_event_claims (automation_id, event_key, created_at) VALUES ('automation-id', 'tasks:legacy', 1)", []).unwrap();
-        let run = new_event_run(
-            "automation-id",
-            "tasks:legacy",
-            "tasks",
-            "task_blocked",
-            1,
-            2,
-            "legacy prompt",
-        );
-        write_run(&conn, &run).unwrap();
-        for owner in ["window-a", "window-b"] {
-            assert!(
-                !claim_event_key(&conn, "automation-id", "tasks:legacy", 3, Some(owner)).unwrap()
-            );
-            assert!(
-                pending_event_run(&conn, "automation-id", "tasks:legacy", owner)
-                    .unwrap()
-                    .is_none()
-            );
-        }
-    }
-
-    #[test]
-    fn accepts_event_keys_for_changes_after_opening() {
-        assert!(validate_event_key("github:issue:acme/web:12:reopened:1790000000000").is_ok());
-        assert!(validate_event_key(
-            "github:issue:acme/web:12:labeled:good_first_issue:1790000000000"
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn stored_triggers_without_a_label_wait_for_any_label() {
-        let trigger: AutomationTrigger =
-            serde_json::from_str(r#"{"id":"t","kind":"github","event":"issue_labeled"}"#).unwrap();
-        assert_eq!(trigger.label, "");
-        assert!(validate_trigger(&trigger).is_ok());
-    }
-
-    #[test]
-    fn saving_keeps_the_trigger_label_and_trims_it() {
-        let upsert: AutomationUpsert = serde_json::from_value(serde_json::json!({
-            "id": "automation-id",
-            "name": "Fix labeled issues",
-            "prompt": "Fix it",
-            "harness": "claude",
-            "model": "model",
-            "cwd": "/tmp",
-            "workspaceMode": "worktree",
-            "runtimeMode": "auto",
-            "scheduleKind": "weekdays",
-            "minute": 0,
-            "time": "09:00",
-            "dayOfWeek": 1,
-            "missedRunGraceMinutes": 60,
-            "nextRunAt": 1,
-            "triggers": [
-                {"id": "t", "kind": "github", "event": "issue_labeled", "label": "  auto-fix "}
-            ]
-        }))
-        .unwrap();
-        let triggers = normalize_triggers(&upsert);
-        assert_eq!(triggers[0].label, "auto-fix");
-        assert_eq!(
-            serde_json::to_value(&triggers[0]).unwrap()["label"],
-            "auto-fix"
-        );
-    }
-
-    #[test]
-    fn rejects_an_overlong_trigger_label() {
-        let mut trigger = trigger_from_fields(
-            "trigger-id",
-            "github",
-            "issue_labeled",
-            "weekdays",
-            0,
-            "09:00",
-            1,
-        );
-        trigger.label = "x".repeat(200);
-        assert!(validate_trigger(&trigger).is_ok());
-        trigger.label = "x".repeat(201);
-        assert!(validate_trigger(&trigger).is_err());
-    }
-}
+#[cfg(test)]
+mod tests;

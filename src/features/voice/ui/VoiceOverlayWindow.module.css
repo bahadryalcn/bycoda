@@ -1,0 +1,131 @@
+/* The native window is exactly this surface; its page background is clear. */
+.panel {
+  display: grid;
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-block-size: 640px;
+  overflow: hidden;
+  border: 1px solid var(--ui-tone-neutral-border);
+  border-radius: var(--radius-panel);
+  background: var(--ui-surface);
+  color: var(--ui-tone-neutral-fg);
+  font-size: var(--ui-font-caption);
+  user-select: none;
+}
+.panel[data-compact] {
+  block-size: 100vh;
+  align-content: center;
+  border-radius: var(--radius-pill);
+}
+.header {
+  display: flex;
+  min-inline-size: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 6px;
+}
+.panel[data-compact] .header {
+  padding-block: 0;
+}
+.handle {
+  flex-shrink: 0;
+  touch-action: none;
+  cursor: grab;
+}
+.handle [data-small] {
+  inline-size: 40px;
+  block-size: 32px;
+}
+.heading {
+  display: grid;
+  flex: 1;
+  min-inline-size: 0;
+  line-height: 1.3;
+}
+.title,
+.summary {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
+}
+.title {
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+}
+.summary {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-micro);
+}
+.status {
+  padding: 0 14px;
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+  line-height: 1.5;
+}
+.body {
+  max-block-size: 420px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 2px 14px 12px;
+  user-select: text;
+}
+.heard {
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid var(--ui-tone-neutral-border);
+}
+.feedback {
+  margin-block-start: 12px;
+  color: var(--ui-text-secondary);
+}
+.feedback > p {
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.caption {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.4;
+}
+.turn {
+  margin: 10px 0;
+}
+.message {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: var(--ui-font-secondary);
+  line-height: 1.55;
+}
+.error {
+  margin: 8px 0;
+  color: var(--ui-tone-danger-fg);
+  line-height: 1.5;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 10px 14px;
+  border-block-start: 1px solid var(--ui-tone-neutral-border);
+}
+.actions > :first-child {
+  margin-inline-end: auto;
+}
+.actions > * {
+  flex-shrink: 0;
+}
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

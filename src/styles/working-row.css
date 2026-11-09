@@ -1,0 +1,56 @@
+/*
+ * A project with a working agent reads at a glance: a soft active tint, and a band of light that pulses
+ * across the row. The layer sits above the row's ground and state fills but below its content, so a custom
+ * row colour, hover and selection all stay visible. Reduced motion and the no-shimmer performance switch
+ * keep the tint and stop the sweep; the spinner and the "Working" name and tooltip carry the state as well.
+ * Appearance > Motion picks the colour and strength (tokens in index.css) and the style: "steady" keeps the
+ * tint without the pulse, "off" drops the row decoration and leaves the spinner.
+ */
+[data-project-row][data-project-working] {
+  isolation: isolate;
+}
+
+[data-project-row][data-project-working]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--ui-working-row-tint-layer);
+}
+
+[data-project-row][data-project-working]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--ui-working-row-sweep-layer);
+  animation: project-row-working-pulse 2.4s ease-in-out infinite alternate;
+}
+
+@keyframes project-row-working-pulse {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-project-row][data-project-working]::after {
+    display: none;
+  }
+}
+
+:root[data-working-indicator="off"] [data-project-row][data-project-working]::before,
+:root[data-working-indicator="off"] [data-project-row][data-project-working]::after,
+:root[data-working-indicator="steady"] [data-project-row][data-project-working]::after,
+:root[data-performance-no-shimmer] [data-project-row][data-project-working]::after,
+:root[data-decorative-motion="off"] [data-project-row][data-project-working]::after,
+:root[data-window-focus="off"] [data-project-row][data-project-working]::after {
+  display: none;
+}

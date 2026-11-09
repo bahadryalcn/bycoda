@@ -123,9 +123,9 @@ it("restores loaded history and a turn-relative offset after earlier rows change
     anchorId: "u-42",
     anchorOffset: -50,
     bottomFollow: false,
-    visibleTurnCount: 100,
+    visibleTurnCount: 60,
     firstLoadedTurnId: "u-0",
-    lastLoadedTurnId: "u-99",
+    lastLoadedTurnId: "u-59",
   });
   render(false);
   expect(navigate).toBeNull();
@@ -136,7 +136,7 @@ it("restores loaded history and a turn-relative offset after earlier rows change
   render(true);
   const restored = host.querySelector<HTMLElement>(".agent-transcript")!;
   expect(restored).not.toBe(scroller);
-  expect(restored.querySelectorAll("[data-transcript-turn]")).toHaveLength(100);
+  expect(restored.querySelectorAll("[data-transcript-turn]")).toHaveLength(60);
   expect(restored.scrollTop).toBe(6350);
   expect(navigate).toBeTypeOf("function");
 }, 20_000);

@@ -1,7 +1,19 @@
 import { message } from "@tauri-apps/plugin-dialog";
-import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useCallback,
+  useEffect,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import { confirmSessionDelete } from "../../../features/sessions/model/confirmSessionDelete";
 import { createSessionRemover } from "../../../features/sessions/model/sessionRemoval";
+import {
+  dismissSessionDeletionStatus,
+  setSessionDeletionStatus,
+  type SessionDeletionStatus,
+  type SessionDeletionStage,
+} from "../../../features/sessions/model/sessionDeletionStatus";
 import { type SessionDeleteChoice } from "../../../features/sessions/ui/DeleteSessionDialog";
 import { type Session, sessionDisplayTitle } from "../../../features/sessions/model/session";
 import { rememberLoadedSession } from "../../../features/sessions/data/sessionCache";
@@ -15,7 +27,10 @@ import {
 } from "../../../features/sessions/data/sessionStore";
 import { releaseOrchestrationWorker } from "../../../features/orchestration/model/orchestrationWorkspace";
 import { isRemoteProjectPath, sameProjectPath } from "../../../features/projects/model/recents";
-import { listWorktrees, worktreeSessionIds } from "../../../features/source-control/model/worktrees";
+import {
+  listWorktrees,
+  worktreeSessionIds,
+} from "../../../features/source-control/model/worktrees";
 import { worktreeFocus } from "../../../features/source-control/model/worktreeFocus";
 import { confirmCloseTerminals } from "../../../features/terminal/model/terminalClose";
 import {
@@ -26,6 +41,7 @@ import {
 import { appName } from "../../../shared/lib/appName";
 import { pathKey } from "../../../shared/lib/paths";
 import { confirmDiscardUnsaved } from "../helpers/appHelpers";
+import { t } from "../../../shared/i18n";
 import { filesInWorkspaceTabs } from "../helpers/tabHelpers";
 import type { useSessionLoading } from "./useSessionLoading";
 import type { useTabActivation } from "../tabs/useTabActivation";
@@ -107,11 +123,19 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
   const {
     removingSessionIds,
     switchingWorktrees,
-    deleteConfirmationPending,
+    deleteConfirmationPending: deleteConfirmationPendingRef,
     setSessionDeleteDialog,
     stopSessionForRemoval,
     onRemoveWorktree,
   } = deps.removal;
+
+  // A confirmation left open by an unmounting dialog must not lock later deletes.
+  useEffect(
+    () => () => {
+      deleteConfirmationPendingRef.current = false;
+    },
+    [],
+  );
 
   const onRemoveHistorySession = useCallback(
     async (
@@ -120,59 +144,99 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
       skipDeleteConfirm = false,
       // A bulk caller collects errors itself instead of one dialog each.
       onError?: (detail: string) => void,
+      // A cross-project list row the current project's history does not hold.
+      listed?: SessionSummary,
     ): Promise<boolean> => {
-      if (
-        removingSessionIds.current.has(sessionId) ||
-        switchingWorktrees.current.has(sessionId) ||
-        deleteConfirmationPending.current
-      )
+      if (removingSessionIds.current.has(sessionId)) return false;
+      if (switchingWorktrees.current.has(sessionId) || deleteConfirmationPendingRef.current) {
+        const reason = switchingWorktrees.current.has(sessionId)
+          ? "This conversation's checkout is being switched."
+          : "Another conversation delete is waiting for confirmation.";
+        if (onError) onError(reason);
+        else
+          void message(
+            `Could not ${mode} this conversation.
+
+${reason}`,
+            {
+              title: appName(),
+              kind: "warning",
+            },
+          );
         return false;
+      }
       const open = sessionsRef.current.find((session) => session.id === sessionId);
-      const summary = history.find((entry) => entry.id === sessionId);
+      const summary = history.find((entry) => entry.id === sessionId) ?? listed;
       const seed = open ?? summary;
       const label = seed ? sessionDisplayTitle(seed.title, seed.harness) : "this session";
       removingSessionIds.current.add(sessionId);
+      let deletionStatus: SessionDeletionStatus | undefined =
+        mode === "delete"
+          ? {
+              sessionId,
+              cwd: seed?.cwd ?? sidebarCwd,
+              title: label,
+              stage: "preparing",
+              startedAt: Date.now(),
+            }
+          : undefined;
+      const progress = (stage: SessionDeletionStage) => {
+        if (!deletionStatus) return;
+        deletionStatus = { ...deletionStatus, stage };
+        setSessionDeletionStatus(deletionStatus);
+      };
+      progress("preparing");
       let deleteWorktreePath: string | undefined;
-      if (mode === "delete" && !skipDeleteConfirm) {
-        deleteConfirmationPending.current = true;
-        let unusedWorktree: string | undefined;
-        if (seed?.worktreeCwd) {
-          try {
-            const { worktrees } = await listWorktrees(seed.cwd);
-            const tree = worktrees.find(
-              (entry) => pathKey(entry.path) === pathKey(seed.worktreeCwd!),
-            );
-            if (
-              tree &&
-              !tree.isMain &&
-              !tree.locked &&
-              tree.branch &&
-              worktreeSessionIds(tree, sessionsRef.current).every((id) => id === sessionId)
-            )
-              unusedWorktree = tree.path;
-          } catch {
-            // A failed lookup must never offer filesystem cleanup.
-          }
-        }
-        if (!unusedWorktree) {
-          deleteConfirmationPending.current = false;
-        } else {
-          const choice = await new Promise<SessionDeleteChoice>((resolve) => {
-            setSessionDeleteDialog({ title: label, unusedWorktree, resolve });
-          });
-          deleteConfirmationPending.current = false;
-          if (!choice.confirmed) {
-            removingSessionIds.current.delete(sessionId);
-            return false;
-          }
-          if (choice.deleteWorktree) deleteWorktreePath = unusedWorktree;
-        }
-      }
-      invalidateLoadedSession(sessionId);
-      pendingPersist.current.delete(sessionId);
+      let ownsDeleteConfirmation = false;
+      // Provider/run cleanup that could not be confirmed (the delete still went ahead).
+      const cleanup: { warning?: string } = {};
       try {
+        if (mode === "delete" && !skipDeleteConfirm) {
+          deleteConfirmationPendingRef.current = true;
+          ownsDeleteConfirmation = true;
+          let unusedWorktree: string | undefined;
+          if (seed?.worktreeCwd) {
+            try {
+              const { worktrees } = await listWorktrees(seed.cwd);
+              const tree = worktrees.find(
+                (entry) => pathKey(entry.path) === pathKey(seed.worktreeCwd!),
+              );
+              if (
+                tree &&
+                !tree.isMain &&
+                !tree.locked &&
+                tree.branch &&
+                worktreeSessionIds(tree, sessionsRef.current).every((id) => id === sessionId)
+              )
+                unusedWorktree = tree.path;
+            } catch {
+              // A failed lookup must never offer filesystem cleanup.
+            }
+          }
+          if (!unusedWorktree) {
+            deleteConfirmationPendingRef.current = false;
+            ownsDeleteConfirmation = false;
+          } else {
+            const choice = await new Promise<SessionDeleteChoice>((resolve) => {
+              setSessionDeleteDialog({ title: label, unusedWorktree, resolve });
+            });
+            deleteConfirmationPendingRef.current = false;
+            ownsDeleteConfirmation = false;
+            if (!choice.confirmed) {
+              removingSessionIds.current.delete(sessionId);
+              return false;
+            }
+            if (choice.deleteWorktree) deleteWorktreePath = unusedWorktree;
+          }
+        }
+        invalidateLoadedSession(sessionId);
+        pendingPersist.current.delete(sessionId);
         const remover = createSessionRemover({
           mode,
+          onProgress: progress,
+          onWarning: (detail) => {
+            cleanup.warning ??= detail;
+          },
           scope: tabCloseScope,
           worktreeOf: tabWorktreeOf,
           // The blank replacement stays in the tab's worktree, unless that
@@ -295,14 +359,20 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
           },
           confirm: async (closedTabs, removalMode) => {
             const files = filesInWorkspaceTabs(closedTabs);
-            const unsaved = files.some(
+            const unsaved = files.filter(
               (file) => isFilesystemTab(file) && dirtyFilesRef.current.has(file.id),
             );
             if (
-              unsaved &&
-              !(await confirmDiscardUnsaved(
-                `${removalMode === "archive" ? "Archive" : "Delete"} this conversation with unsaved files?`,
-              ))
+              unsaved.length > 0 &&
+              !(await confirmDiscardUnsaved({
+                title:
+                  removalMode === "archive"
+                    ? t("Archive conversation with unsaved files?")
+                    : t("Delete conversation with unsaved files?"),
+                confirmLabel:
+                  removalMode === "archive" ? t("Discard and archive") : t("Discard and delete"),
+                files: unsaved,
+              }))
             )
               return false;
             const terminals = files.filter((file) => file.terminal);
@@ -311,19 +381,37 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
           stop: stopSessionForRemoval,
         });
         const removed = await remover.remove(sessionId);
-        if (removed && deleteWorktreePath && seed) {
+        let worktreeError: string | undefined;
+        if (removed && deleteWorktreePath && seed && cleanup.warning) {
+          // A process may still run in that checkout: removing it would be unsafe.
+          worktreeError = `Worktree kept because cleanup was not confirmed. ${cleanup.warning}`;
+        } else if (removed && deleteWorktreePath && seed) {
+          progress("worktree");
           try {
             await onRemoveWorktree(seed.cwd, deleteWorktreePath, false);
           } catch (error) {
+            worktreeError = String(error);
             void message(
               `The session was deleted. Its worktree was kept.\n\n${String(error)}\n\nYou can manage it in Settings → Worktrees.`,
               { title: appName(), kind: "warning" },
             );
           }
         }
+        if (removed && deletionStatus) {
+          deletionStatus = {
+            ...deletionStatus,
+            outcome: "deleted",
+            error: worktreeError ?? cleanup.warning,
+          };
+          setSessionDeletionStatus(deletionStatus);
+        }
         return removed;
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
+        if (deletionStatus) {
+          deletionStatus = { ...deletionStatus, outcome: "failed", error: detail };
+          setSessionDeletionStatus(deletionStatus);
+        }
         if (onError) {
           onError(detail);
           return false;
@@ -334,6 +422,8 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
         });
         return false;
       } finally {
+        if (ownsDeleteConfirmation) deleteConfirmationPendingRef.current = false;
+        if (deletionStatus && !deletionStatus.outcome) dismissSessionDeletionStatus(sessionId);
         removingSessionIds.current.delete(sessionId);
       }
     },
@@ -362,7 +452,8 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
   );
 
   const onDeleteHistorySession = useCallback(
-    (sessionId: string) => onRemoveHistorySession(sessionId, "delete"),
+    (sessionId: string, listed?: SessionSummary) =>
+      onRemoveHistorySession(sessionId, "delete", false, undefined, listed),
     [onRemoveHistorySession],
   );
 
@@ -370,16 +461,20 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
     async (sessionIds: readonly string[]) => {
       if (sessionIds.length === 0) return;
       if (
-        !(await confirmSessionDelete(
-          `Delete ${sessionIds.length} selected conversations? This can’t be undone.`,
-        ))
+        !(await confirmSessionDelete({
+          count: sessionIds.length,
+          title:
+            sessionIds.length === 1
+              ? history.find((entry) => entry.id === sessionIds[0])?.title
+              : undefined,
+        }))
       )
         return;
       for (const sessionId of sessionIds) {
         if (!(await onRemoveHistorySession(sessionId, "delete", true))) break;
       }
     },
-    [onRemoveHistorySession],
+    [history, onRemoveHistorySession],
   );
 
   const onDeleteHistorySessionNow = useCallback(

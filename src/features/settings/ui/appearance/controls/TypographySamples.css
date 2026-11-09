@@ -1,0 +1,189 @@
+/* Pairings are compact chips; code theme chips use RadioTiles too. Hover comes from the shared
+   item Button; selection is the accent border role shared with the mode and palette cards. */
+.font-pairings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 0;
+}
+.font-pairing {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  width: auto;
+  height: auto;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  padding: 4px 10px;
+  text-align: start;
+  border: 1px solid var(--ui-settings-hairline);
+  border-radius: var(--ui-radius-card);
+}
+.font-pairing-interface {
+  font-size: var(--ui-font-body);
+  line-height: 1.3;
+  color: var(--color-content);
+}
+.font-pairing-code {
+  font-size: var(--ui-font-caption);
+  line-height: 1.3;
+  color: var(--ui-text-secondary);
+}
+.font-pairing > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.font-pairing[aria-checked="true"],
+.code-theme-chip[aria-checked="true"] {
+  border-color: var(--ui-border-accent);
+  box-shadow: inset 0 0 0 1px var(--ui-border-accent);
+}
+
+/* Typography tab: controls left, one sticky preview right; stacked (preview last) when narrow. */
+.typography-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+  min-inline-size: 0;
+}
+@media (min-width: 1000px) {
+  .typography-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 26rem);
+  }
+  .typography-preview {
+    position: sticky;
+    inset-block-start: calc(
+      var(--ui-control-height-compact) + 28px + var(--appearance-generator-height, 0px)
+    );
+  }
+}
+.typography-controls {
+  min-inline-size: 0;
+}
+.typography-preview {
+  display: grid;
+  gap: 14px;
+  min-inline-size: 0;
+}
+.typography-preview-block {
+  display: grid;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.typography-preview-label {
+  margin: 0;
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+  color: var(--ui-text-muted);
+}
+
+/* Interface specimen */
+.font-specimen {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--ui-settings-hairline);
+  border-radius: var(--ui-control-radius);
+  color: var(--color-content);
+  line-height: 1.45;
+  min-inline-size: 0;
+}
+.font-specimen-headline {
+  margin: 0;
+  font-size: 1.8em;
+  font-weight: 500;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.font-specimen-body {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* Code sample: a code viewer surface inside its labeled Preview row. */
+.code-sample {
+  margin: 0;
+  inline-size: 100%;
+  padding: 10px 0;
+  border: 1px solid var(--ui-settings-hairline);
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface);
+  font-family: var(--font-mono);
+  font-size: var(--appearance-code-size);
+  line-height: 1.6;
+  overflow: hidden;
+}
+.code-sample-line {
+  display: block;
+  padding: 0 14px;
+  white-space: pre;
+  color: var(--color-content);
+}
+.code-sample-comment {
+  color: var(--syntax-comment);
+}
+.code-sample-keyword {
+  color: var(--syntax-keyword);
+}
+.code-sample-string {
+  color: var(--syntax-string);
+}
+.code-sample-callable {
+  color: var(--syntax-callable);
+}
+.code-sample-line[data-diff="del"] {
+  background: var(--color-diff-del-bg);
+  color: var(--color-diff-del-fg);
+}
+.code-sample-line[data-diff="add"] {
+  background: var(--color-diff-add-bg);
+  color: var(--color-diff-add-fg);
+}
+
+/* Code theme chips: the swatch paints three syntax colors of each theme. */
+.code-theme-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.code-theme-chip {
+  width: auto;
+  gap: 8px;
+  border: 1px solid var(--ui-settings-hairline);
+  font-size: var(--ui-font-caption);
+}
+.code-theme-swatch {
+  display: inline-flex;
+  width: 1.75rem;
+  height: 1.125rem;
+  overflow: hidden;
+  border-radius: var(--ui-control-radius);
+}
+.code-theme-swatch > span {
+  flex: 1;
+}
+.code-theme-swatch > span:nth-child(1) {
+  background: var(--swatch-1);
+}
+.code-theme-swatch > span:nth-child(2) {
+  background: var(--swatch-2);
+}
+.code-theme-swatch > span:nth-child(3) {
+  background: var(--swatch-3);
+}
+
+/* Terminal sample: a terminal viewer surface inside its labeled Preview row. */
+.terminal-sample {
+  margin: 0;
+  inline-size: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--ui-settings-hairline);
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface);
+  color: var(--color-content);
+  white-space: pre;
+  overflow: hidden;
+}

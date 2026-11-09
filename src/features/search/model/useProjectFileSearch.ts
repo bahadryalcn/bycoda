@@ -15,6 +15,7 @@ export function useProjectFileSearch(enabled: boolean, cwd: string, query: strin
     result: EMPTY,
     error: null as string | null,
     loading: false,
+    attempt: 0,
   });
   const retry = useCallback(() => setRetryTick((value) => value + 1), []);
 
@@ -26,20 +27,29 @@ export function useProjectFileSearch(enabled: boolean, cwd: string, query: strin
     const options = request.current;
     const timer = window.setTimeout(() => {
       started = true;
-      setState({ key, result: EMPTY, error: null, loading: true });
+      setState((previous) => ({
+        key,
+        result: previous.key === key ? previous.result : EMPTY,
+        error: null,
+        loading: true,
+        attempt: retryTick,
+      }));
       void searchProject({ ...options, searchId })
         .then(
           (result) => {
-            if (!cancelled) setState({ key, result, error: null, loading: false });
+            if (!cancelled) {
+              setState({ key, result, error: null, loading: false, attempt: retryTick });
+            }
           },
           (cause: unknown) => {
             if (!cancelled)
-              setState({
+              setState((previous) => ({
                 key,
-                result: EMPTY,
+                result: previous.key === key ? previous.result : EMPTY,
                 error: cause instanceof Error ? cause.message : String(cause),
                 loading: false,
-              });
+                attempt: retryTick,
+              }));
           },
         )
         .finally(() => {
@@ -58,7 +68,7 @@ export function useProjectFileSearch(enabled: boolean, cwd: string, query: strin
   return {
     result: current ? state.result : EMPTY,
     error: current ? state.error : null,
-    loading: active && (!current || state.loading),
+    loading: active && (!current || state.attempt !== retryTick || state.loading),
     retry,
   };
 }

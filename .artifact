@@ -14,9 +14,12 @@ and contributors. Preserve existing work and use the established locations.
 | Platform bridges | `src/platform/` |
 | Provider adapters and integration contracts | `src/integrations/` |
 | Host runtime and its tests | `host/` |
-| Expo mobile routes, feature code, shared UI, tests and package tooling | `mobile/` |
+| Expo mobile routes, feature code, shared UI, tests and package tooling (separate nested Git repository; ignored here) | `mobile/` |
 | Native application and Tauri configuration | `src-tauri/` |
 | Browser scenarios, fixtures, servers, and fixture configurations | `tests/browser/` |
+| Offline model behavior cases, deterministic graders and harness | `evals/` |
+| Application workspace entrypoints and independent commands | `apps/<application>/` |
+| Reusable private workspace modules and their public exports/tests | `packages/<package>/` |
 | Assets required by the product | `public/`; branding in `public/brand/` |
 | Vendored dependencies and their license notices | `vendor/` |
 | Platform build helpers | `scripts/build/` |
@@ -26,6 +29,7 @@ and contributors. Preserve existing work and use the established locations.
 | Translation maintenance | `scripts/i18n/` |
 | Local update implementation, configuration, and tests | `scripts/local-update/` |
 | Public local update commands | `scripts/update-local.ps1`, `scripts/update-local.sh` |
+| Project skills and feature cards | `.agents/skills/` |
 | User guides | `docs/guides/` |
 | Integration and host workflow guides | `docs/integrations/` |
 | Architecture and maintenance references | `docs/reference/` |
@@ -104,7 +108,7 @@ when cleaning up; do not delete it without task authorization.
   under `temp/archive/`; preserved history recovery bundles under `temp/history/`.
   Files previously deleted without a Git record or backup could not be recovered.
 - Started maintained history with a single consolidated first commit by the
-  maintainer. Kept original license notices and explicit Upstream v0.6 attribution
+  maintainer. Kept original license notices and explicit original-author attribution
   and thanks in the project documentation.
 
 This records file organization, not a claim that every test or installed runtime

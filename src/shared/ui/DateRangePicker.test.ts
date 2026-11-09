@@ -141,3 +141,25 @@ it("rejects an invalid controlled range and permits calendar recovery within cur
   await act(async () => button("Apply").click());
   expect(change).toHaveBeenCalledExactlyOnceWith(range(10, 20));
 });
+
+it("keeps a disabled or read-only trigger closed and exposes the state on the frame", async () => {
+  await render({ value: range(10, 12), disabled: true });
+  const trigger = container.querySelector<HTMLButtonElement>("button")!;
+  expect(trigger.disabled).toBe(true);
+  expect(container.querySelector("[data-disabled]")).not.toBeNull();
+  await act(async () => trigger.click());
+  expect(container.querySelector('[role="dialog"]')).toBeNull();
+
+  await render({ value: range(10, 12), readOnly: true });
+  const quiet = container.querySelector<HTMLButtonElement>("button")!;
+  expect(quiet.disabled).toBe(false);
+  expect(quiet.hasAttribute("aria-haspopup")).toBe(false);
+  expect(container.querySelector("[data-readonly]")).not.toBeNull();
+  await act(async () => quiet.click());
+  expect(container.querySelector('[role="dialog"]')).toBeNull();
+
+  await render({ value: range(10, 12), invalid: true });
+  expect(container.querySelector("[data-invalid]")).not.toBeNull();
+  await open();
+  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+});

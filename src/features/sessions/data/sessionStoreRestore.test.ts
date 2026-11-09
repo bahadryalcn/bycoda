@@ -6,7 +6,9 @@ import { PERSISTED_AGENT_OUTPUT_RUN_CHARS } from "../model/agentOutput";
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
 
-const { getSession } = await import("./sessionStore");
+const { getSession, sanitizeSessionForPersist } = await import("./sessionStore");
+const { newSession } = await import("../model/session");
+const { conversationReplayPrompt } = await import("../model/conversationRewind");
 
 /** A saved Codex session holding the one row this PR repairs. */
 function codexRecord(): SessionRecord {
@@ -39,6 +41,64 @@ function codexRecord(): SessionRecord {
 
 describe("restoring a session whose repair cannot be persisted", () => {
   beforeEach(() => invoke.mockReset());
+
+  it("preserves managed execution identity through serialization and reload", async () => {
+    const session = {
+      ...newSession("codex", "/repo"),
+      workspaceId: "workspace-owned",
+      workspaceRevision: 7,
+      worktreeCwd: "/repo-worktrees/session",
+      blocks: [{ id: "u1", role: "user" as const, text: "Keep execution isolated" }],
+    };
+    const record = sanitizeSessionForPersist(session);
+    expect(record).toMatchObject({ workspaceId: "workspace-owned", workspaceRevision: 7 });
+    invoke.mockImplementation(async (command: string) =>
+      command === "session_get" ? record : null,
+    );
+    expect(await getSession(session.id)).toMatchObject({
+      workspaceId: "workspace-owned",
+      workspaceRevision: 7,
+      worktreeCwd: "/repo-worktrees/session",
+    });
+  });
+
+  it("recovers a stored Codex/Gemini mixed identity without losing the chat or its selected model", async () => {
+    const record = {
+      ...codexRecord(),
+      title: "Earlier conversation",
+      model: "antigravity:gemini-3.8-flash-high",
+    };
+    invoke.mockImplementation(async (command: string) =>
+      command === "session_get" ? record : null,
+    );
+    const restored = await getSession(record.id);
+    expect(restored).toMatchObject({ id: record.id, harness: "antigravity", model: record.model });
+    expect(restored?.providerSessionId).toBeUndefined();
+    expect(restored?.blocks[0]).toEqual(record.blocks[0]);
+    expect(restored?.pendingSwitch?.from).toBe("codex");
+    expect(restored?.pendingSwitch?.fromProviderSessionId).toBe(record.providerSessionId);
+  });
+
+  it("reopens an unsent provider switch in the same conversation with durable context", async () => {
+    const session = newSession("claude", "/repo");
+    session.blocks = [
+      { id: "u1", role: "user", text: "Preserve the parser contract" },
+      { id: "a1", role: "assistant", text: "Parser callers verified" },
+    ];
+    session.pendingSwitch = { from: "codex", fromModel: "gpt", fromSettings: {} };
+    const record = sanitizeSessionForPersist(session) as SessionRecord;
+    invoke.mockImplementation(async (command: string) =>
+      command === "session_get" ? record : null,
+    );
+    const restored = await getSession(session.id);
+    expect(restored).toMatchObject({ id: session.id, harness: "claude", model: session.model });
+    expect(restored?.blocks).toEqual(session.blocks);
+    expect(restored?.providerSessionId).toBeUndefined();
+    expect(restored?.pendingSwitch).toBeUndefined();
+    expect(restored?.pendingContextReplay).toContain("Preserve the parser contract");
+    expect(restored?.pendingContextReplay).toContain("Parser callers verified");
+    expect(conversationReplayPrompt(restored!)).toContain("Preserve the parser contract");
+  });
 
   it("caps inspection on load and budgets saved subagent inputs with their outputs", async () => {
     const record = codexRecord();
@@ -105,12 +165,14 @@ describe("restoring a session whose repair cannot be persisted", () => {
     const record = codexRecord();
     record.blocks[0].turnOutcome = "stopped";
     record.blocks[0].turnStoppedAt = 789;
-    record.rewindHistory = [{
-      id: "rewind-1",
-      createdAt: 123,
-      fromBlockId: "removed-user",
-      blocks: [{ id: "removed-user", role: "user", text: "archived only" }],
-    }];
+    record.rewindHistory = [
+      {
+        id: "rewind-1",
+        createdAt: 123,
+        fromBlockId: "removed-user",
+        blocks: [{ id: "removed-user", role: "user", text: "archived only" }],
+      },
+    ];
     record.pendingContextReplay = "retained prefix only";
     invoke.mockImplementation(async (command: string) =>
       command === "session_get" ? record : null,
@@ -124,15 +186,70 @@ describe("restoring a session whose repair cannot be persisted", () => {
     expect(restored?.blocks.some((block) => block.text === "archived only")).toBe(false);
   });
 
+  it("restores a flagged host divergence as a record that locks nothing, and an answered one as answered", async () => {
+    const restore = async (stored: string | undefined) => {
+      const record = codexRecord();
+      record.adoptedDivergence = stored;
+      invoke.mockImplementation(async (command: string) =>
+        command === "session_get" ? record : null,
+      );
+      return getSession("s1");
+    };
+    // A stale flag must not hold sending while the host cannot be reached (or
+    // after a downgrade); only a pass that reaches the host flags it again.
+    const unanswered = await restore(JSON.stringify({ key: "3:a:b:x:y" }));
+    expect(unanswered).toMatchObject({ adoptedDivergence: { key: "3:a:b:x:y" } });
+    expect(unanswered?.adoptedSyncConflict).toBeUndefined();
+    const answered = await restore(JSON.stringify({ key: "3:a:b:x:y", keep: true }));
+    expect(answered?.adoptedDivergence).toEqual({ key: "3:a:b:x:y", keep: true });
+    expect(answered?.adoptedSyncConflict).toBeUndefined();
+    for (const damaged of [undefined, "", "not json", "[]", '{"key":""}', '{"keep":true}'])
+      expect(await restore(damaged)).not.toHaveProperty("adoptedDivergence");
+  });
+
+  it("restores the agreed base, the host head of a divergence, and ignores damaged ones", async () => {
+    const restore = async (base: string | undefined, divergence?: string) => {
+      const record = codexRecord();
+      record.adoptedBase = base;
+      record.adoptedDivergence = divergence;
+      invoke.mockImplementation(async (command: string) =>
+        command === "session_get" ? record : null,
+      );
+      return getSession("s1");
+    };
+    const head = { count: 2, chain: "0123456789abcdef0123456789abcdef" };
+    const restored = await restore(
+      JSON.stringify(head),
+      JSON.stringify({ key: "heads::2.x", hostHead: head }),
+    );
+    expect(restored?.adoptedBase).toEqual(head);
+    expect(restored?.adoptedDivergence).toEqual({ key: "heads::2.x", hostHead: head });
+    for (const damaged of [
+      undefined,
+      "",
+      "not json",
+      "[]",
+      '{"count":-1,"chain":""}',
+      '{"count":2,"chain":"short"}',
+      JSON.stringify({ count: 2, chain: "f".repeat(5_000) }),
+    ])
+      expect(await restore(damaged)).not.toHaveProperty("adoptedBase");
+    // A damaged head does not discard the divergence it came with.
+    const partial = await restore(undefined, JSON.stringify({ key: "k", hostHead: { count: 1 } }));
+    expect(partial?.adoptedDivergence).toEqual({ key: "k" });
+  });
+
   it("restores an archived conversation when rewind left no active user blocks", async () => {
     const record = codexRecord();
     record.blocks = [];
-    record.rewindHistory = [{
-      id: "rewind-empty-prefix",
-      createdAt: 123,
-      fromBlockId: "first-user",
-      blocks: [{ id: "first-user", role: "user", text: "archived first prompt" }],
-    }];
+    record.rewindHistory = [
+      {
+        id: "rewind-empty-prefix",
+        createdAt: 123,
+        fromBlockId: "first-user",
+        blocks: [{ id: "first-user", role: "user", text: "archived first prompt" }],
+      },
+    ];
     invoke.mockImplementation(async (command: string) =>
       command === "session_get" ? record : null,
     );

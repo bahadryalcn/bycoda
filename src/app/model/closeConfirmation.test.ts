@@ -1,11 +1,11 @@
 import { expect, it, vi } from "vitest";
 import { confirmWorkspaceClose } from "./closeConfirmation";
-it("ilk red sonrası terminal onayını açmaz", async () => {
+it("does not open the terminal confirmation after the first rejection", async () => {
   const terminal = vi.fn();
   expect(await confirmWorkspaceClose(async () => false, terminal)).toBe(false);
   expect(terminal).not.toHaveBeenCalled();
 });
-it("onayları sırayla bekler ve terminal reddini korur", async () => {
+it("waits for confirmations in order and preserves the terminal rejection", async () => {
   const order: string[] = [];
   expect(
     await confirmWorkspaceClose(

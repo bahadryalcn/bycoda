@@ -1,6 +1,127 @@
 import { expect, test } from "@playwright/test";
 
 for (const light of [false, true]) {
+  test(`composer action menu stays compact and keeps keyboard selection stable in ${light ? "light" : "dark"}`, async ({
+    page,
+  }, info) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/tests/browser/session-usability.html${light ? "?light" : ""}`);
+    const input = page.getByRole("textbox");
+    const addTrigger = page.getByRole("button", {
+      name: "Add files or skills",
+      exact: true,
+    });
+    const addMenu = page.getByRole("menu", {
+      name: "Add files or skills",
+      exact: true,
+    });
+    const trigger = page.getByRole("button", { name: "Mode", exact: true });
+    const menu = page.getByRole("menu", { name: "Mode", exact: true });
+    const geometryOf = (target: typeof menu) =>
+      target.evaluate((node) => {
+        const bounds = node.getBoundingClientRect();
+        return {
+          inside:
+            bounds.left >= 0 &&
+            bounds.right <= innerWidth &&
+            bounds.top >= 0 &&
+            bounds.bottom <= innerHeight,
+          rows: [...node.querySelectorAll("button")].map((row) => {
+            const icon = row.children[0].getBoundingClientRect();
+            const copy = row.children[1].getBoundingClientRect();
+            return {
+              aligned: icon.right <= copy.left,
+              fits: row.scrollWidth <= row.clientWidth + 1,
+            };
+          }),
+        };
+      });
+    for (const width of [390, 1000]) {
+      await page.setViewportSize({ width, height: 800 });
+      await addTrigger.focus();
+      await addTrigger.press("ArrowDown");
+      await expect(
+        addMenu.getByRole("menuitem", { name: "Upload file", exact: true }),
+      ).toBeFocused();
+      await page.keyboard.press("ArrowDown");
+      await expect(addMenu.getByRole("menuitem", { name: "Skills", exact: true })).toBeFocused();
+      const addGeometry = await geometryOf(addMenu);
+      expect(addGeometry.inside).toBe(true);
+      expect(addGeometry.rows).toHaveLength(2);
+      expect(addGeometry.rows.every((row) => row.aligned && row.fits)).toBe(true);
+      await page.keyboard.press("Escape");
+      await expect(addMenu).toHaveCount(0);
+      await expect(addTrigger).toBeFocused();
+
+      await trigger.focus();
+      await trigger.press("ArrowDown");
+      const plan = menu.getByRole("menuitemcheckbox", {
+        name: "Plan mode",
+        exact: true,
+      });
+      await expect(plan).toBeFocused();
+      const initialHeight = (await plan.boundingBox())!.height;
+      await plan.press("Enter");
+      await expect(menu).toHaveCount(0);
+      await expect(input).toBeFocused();
+      await expect(input).toHaveValue("Keep this integrated draft");
+      await trigger.click();
+      await expect(plan).toHaveAttribute("aria-checked", "true");
+      expect(Math.abs((await plan.boundingBox())!.height - initialHeight)).toBeLessThan(1);
+      const geometry = await geometryOf(menu);
+      expect(geometry.inside).toBe(true);
+      expect(geometry.rows).toHaveLength(4);
+      expect(geometry.rows.every((row) => row.aligned && row.fits)).toBe(true);
+      await page.screenshot({
+        path: info.outputPath(`composer-menu-${width}.png`),
+      });
+      await plan.click();
+      await trigger.click();
+      await expect(plan).toHaveAttribute("aria-checked", "false");
+      await page.keyboard.press("Escape");
+      await expect(trigger).toBeFocused();
+      await expect(input).toHaveValue("Keep this integrated draft");
+    }
+    expect(await page.evaluate(() => window.sessionUsability.events.sends)).toBe(0);
+  });
+
+  test(`translated composer menu keeps long descriptions readable in ${light ? "light" : "dark"}`, async ({
+    page,
+  }, info) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.goto(`/tests/browser/session-usability.html?lang=tr${light ? "&light" : ""}`);
+    const trigger = page.getByRole("button", { name: "Mod", exact: true });
+    await trigger.click();
+    const menu = page.getByRole("menu", { name: "Mod", exact: true });
+    await expect(
+      menu.getByRole("menuitemcheckbox", { name: "Plan modu", exact: true }),
+    ).toBeFocused();
+    const fits = await menu.evaluate((node) => {
+      const bounds = node.getBoundingClientRect();
+      return (
+        bounds.left >= 0 &&
+        bounds.right <= innerWidth &&
+        bounds.top >= 0 &&
+        bounds.bottom <= innerHeight &&
+        [...node.querySelectorAll("button[aria-description]")].every((row) => {
+          const description = row.children[1].lastElementChild!;
+          return (
+            description.scrollWidth <= description.clientWidth + 1 &&
+            description.scrollHeight <= description.clientHeight + 1
+          );
+        })
+      );
+    });
+    expect(fits).toBe(true);
+    await page.screenshot({
+      path: info.outputPath("composer-menu-tr-390.png"),
+    });
+    await menu.getByRole("menuitemcheckbox", { name: "Plan modu", exact: true }).click();
+    await expect(page.getByRole("textbox")).toHaveValue("Keep this integrated draft");
+    await expect(page.getByRole("textbox")).toBeFocused();
+  });
+
   test(`integrated session keeps writing and recovery available in ${light ? "light" : "dark"}`, async ({
     page,
   }, info) => {
@@ -28,7 +149,9 @@ for (const light of [false, true]) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      await page.screenshot({ path: info.outputPath(`integrated-idle-${width}.png`) });
+      await page.screenshot({
+        path: info.outputPath(`integrated-idle-${width}.png`),
+      });
     }
     await input.fill("Keep this changed draft");
     await page.getByRole("button", { name: "Send", exact: true }).click();
@@ -38,7 +161,9 @@ for (const light of [false, true]) {
     await page.setViewportSize({ width: 320, height: 800 });
     const stop = page.getByRole("button", { name: "Stop", exact: true });
     await expect(stop).toBeInViewport();
-    await page.screenshot({ path: info.outputPath("integrated-working-320.png") });
+    await page.screenshot({
+      path: info.outputPath("integrated-working-320.png"),
+    });
     await stop.press("Enter");
     expect(await page.evaluate(() => window.sessionUsability.events.stops)).toBe(1);
     await expect(input).toHaveValue("Keep this changed draft");
@@ -48,7 +173,9 @@ for (const light of [false, true]) {
     await page.evaluate(() => window.sessionUsability.mode("approval"));
     const allow = page.getByRole("button", { name: "Allow", exact: true });
     await expect(allow).toBeVisible();
-    await page.screenshot({ path: info.outputPath("integrated-approval-320.png") });
+    await page.screenshot({
+      path: info.outputPath("integrated-approval-320.png"),
+    });
     await allow.press("Enter");
     expect(await page.evaluate(() => window.sessionUsability.events.approvals)).toBe(1);
     await page.evaluate(() => window.sessionUsability.mode("unknown"));
@@ -58,11 +185,20 @@ for (const light of [false, true]) {
     );
     await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeDisabled();
     await expect(input).toHaveValue("Keep this changed draft");
+    // The unconfirmed message stays visible in the queue and in the delivery notice that settles it.
+    const retained = "Retained follow-up with unknown delivery";
+    const queueRows = page.locator("[data-message-queue-rows]");
+    const queuedMessage = queueRows.getByText(retained, { exact: true });
+    await expect(queuedMessage).toHaveCount(1);
+    await expect(queuedMessage).toBeVisible();
+    await expect(queueRows.getByRole("button", { name: "Remove", exact: true })).toHaveCount(1);
     await expect(
-      page.getByText("Retained follow-up with unknown delivery", { exact: true }),
+      page.locator("[data-delivery-progress]").getByText(retained, { exact: true }),
     ).toBeVisible();
     expect(await page.evaluate(() => window.sessionUsability.events.queueAttempts)).toBe(0);
-    await page.screenshot({ path: info.outputPath("integrated-unknown-320.png") });
+    await page.screenshot({
+      path: info.outputPath("integrated-unknown-320.png"),
+    });
     expect(errors).toEqual([]);
   });
 }

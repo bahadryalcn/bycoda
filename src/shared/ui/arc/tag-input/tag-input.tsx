@@ -5,17 +5,33 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { ComponentPropsWithRef, KeyboardEvent, MouseEvent } from "react";
 import { AnimatePresence, motion, useAnimate, useReducedMotion } from "motion/react";
 import { X as Xmark } from "../../icons";
-import { Button } from "../../Button";
+import { InlineAction } from "../../ActionHost";
 import { motionTokens } from "../lib/motion-tokens";
+import { FieldMessage } from "../lib/field-message";
+import { useT } from "../../../i18n";
+import { fieldDescribedBy, fieldMessageIds } from "../lib/field-ids";
 import styles from "./tag-input.module.css";
+import { copyNativeCaptureData } from "../../../lib/native-capture-json";
+import {
+  createNativeInputControlPort,
+  nativeInputControlKey,
+  consumeNativeInputPublication,
+  issueNativeInputPublication,
+  type NativeInputObserver,
+  type NativeInputPublication,
+  type NativeInputRead,
+  type NativeInputWork,
+} from "../../../lib/native-input-observer";
 
 export interface TagInputProps {
   label: string;
   value?: string[];
   defaultValue?: string[];
-  onValueChange?: (value: string[]) => void;
+  onValueChange?: (value: string[]) => unknown;
   placeholder?: string;
   description?: string;
+  /** Local validation message. It precedes the helper, marks the field invalid and is announced as an alert. */
+  error?: string;
   id?: string;
   className?: string;
   /** Native draft-input props. `name` serializes draft text, not committed tags. */
@@ -28,118 +44,8 @@ export interface TagInputProps {
   removedAnnouncement?: (tag: string) => string;
   formatTag?: (tag: string) => string;
   hideLabel?: boolean;
-}
-
-/** Changed words rise in and unblur while unchanged words hold still. Assistive tech reads the plain copy. */
-function MotionText({ text }: { text: string }) {
-  const reduced = useReducedMotion();
-  const words = text.split(" ");
-  return (
-    <>
-      <span className={styles.srOnly}>{text}</span>
-      <span className={styles.words} aria-hidden="true">
-        <AnimatePresence initial={false} mode="popLayout">
-          {words.map((word, index) => (
-            <motion.span
-              key={`${index}:${word}`}
-              className={styles.word}
-              initial={
-                reduced
-                  ? { opacity: 0 }
-                  : { opacity: 0, y: "0.35em", filter: `blur(${motionTokens.blur.soft}px)` }
-              }
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              exit={
-                reduced
-                  ? { opacity: 0, transition: { duration: 0 } }
-                  : {
-                      opacity: 0,
-                      y: "-0.35em",
-                      filter: `blur(${motionTokens.blur.subtle}px)`,
-                      transition: {
-                        duration: motionTokens.duration.instant,
-                        ease: [...motionTokens.ease.standard],
-                      },
-                    }
-              }
-              transition={
-                reduced
-                  ? { duration: motionTokens.duration.instant }
-                  : { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] }
-              }
-            >
-              {index < words.length - 1 ? `${word} ` : word}
-            </motion.span>
-          ))}
-        </AnimatePresence>
-      </span>
-    </>
-  );
-}
-
-/** Helper copy: the row opens its height on a spring, then the words settle in. */
-function FieldMessage({ id, text, className }: { id?: string; text?: string; className?: string }) {
-  return (
-    <AnimatePresence initial={false}>
-      {text ? <MessageRow key="message" id={id} text={text} className={className} /> : null}
-    </AnimatePresence>
-  );
-}
-
-/** The row tracks the measured copy, so a longer message that wraps opens its next line instead of snapping. */
-function MessageRow({ id, text, className }: { id?: string; text: string; className?: string }) {
-  const reduced = useReducedMotion();
-  const copyRef = useRef<HTMLSpanElement>(null);
-  const [height, setHeight] = useState<number | "auto">("auto");
-  useEffect(() => {
-    const node = copyRef.current;
-    if (!node || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(([entry]) =>
-      setHeight(entry?.borderBoxSize?.[0]?.blockSize ?? node.offsetHeight),
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-  // Reduced motion mounts the row at full height: a zero-duration open would still paint one collapsed frame.
-  return (
-    <motion.span
-      className={styles.messageSlot}
-      initial={reduced ? false : { height: 0, opacity: 0 }}
-      animate={{ height, opacity: 1 }}
-      exit={{
-        height: 0,
-        opacity: 0,
-        transition: reduced
-          ? { duration: 0 }
-          : {
-              height: motionTokens.spring.smooth,
-              opacity: { duration: motionTokens.duration.instant },
-            },
-      }}
-      transition={
-        reduced
-          ? { duration: 0 }
-          : {
-              height: motionTokens.spring.smooth,
-              opacity: { duration: motionTokens.duration.fast },
-            }
-      }
-    >
-      <motion.span
-        ref={copyRef}
-        id={id}
-        className={className}
-        initial={reduced ? false : { y: "0.35em", filter: `blur(${motionTokens.blur.soft}px)` }}
-        animate={{ y: 0, filter: "blur(0px)" }}
-        transition={{
-          duration: reduced ? 0 : motionTokens.duration.standard,
-          ease: [...motionTokens.ease.enter],
-        }}
-      >
-        <MotionText text={text} />
-      </motion.span>
-    </motion.span>
-  );
+  inputObserver?: NativeInputObserver;
+  inputPublication?: NativeInputPublication;
 }
 
 /**
@@ -147,13 +53,18 @@ function MessageRow({ id, text, className }: { id?: string; text: string; classN
  * leaves its slot and the rest glide in, and the shell follows wrapped rows on a spring. Backspace or the arrow keys
  * pick a tag first, a ring glides to it, and the next Backspace removes it.
  */
-export function TagInput({
+export function TagInput(props: TagInputProps) {
+  return <TagInputControl key={nativeInputControlKey(props.inputObserver)} {...props} />;
+}
+
+function TagInputControl({
   label,
   value,
   defaultValue = [],
   onValueChange,
   placeholder = "Add a tag",
   description,
+  error,
   id,
   className,
   inputProps,
@@ -165,10 +76,17 @@ export function TagInput({
   removedAnnouncement = (tag) => `Removed ${tag}`,
   formatTag = (tag) => tag,
   hideLabel = false,
+  inputObserver,
+  inputPublication,
 }: TagInputProps) {
+  const t = useT();
+  const [admissionError, setAdmissionError] = useState<string>();
   const generatedId = useId();
   const inputId = id ?? generatedId;
-  const hintId = description ? `${inputId}-description` : undefined;
+  const { description: hintId, error: errorId } = fieldMessageIds(inputId, {
+    description,
+    error: error || admissionError,
+  });
   const [internal, setInternal] = useState(defaultValue);
   const [draft, setDraft] = useState("");
   const [picked, setPicked] = useState<string | null>(null);
@@ -184,6 +102,282 @@ export function TagInput({
   const [height, setHeight] = useState<number | "auto">("auto");
   const tags = value ?? internal;
   const active = picked !== null && tags.includes(picked) ? picked : null;
+  const inputPort = useRef<ReturnType<typeof createNativeInputControlPort> | null>(null);
+  const requestedClosed = useRef(false);
+  const [inputReadOnly, setInputReadOnly] = useState(false);
+  const rawDraft = useRef("");
+  const readInput = useRef<() => NativeInputRead>(() => ({ snapshot: {} }));
+  const previousValue = useRef(value);
+  const previousPublication = useRef(inputPublication);
+  type AcceptedChange = {
+    data: Readonly<{
+      kind: string;
+      raw: string;
+      tags: readonly string[] | null;
+      outcome: "pending" | "unverified" | "settled-without-view";
+    }>;
+    bytes: number;
+  };
+  // Conservative retained data budgets, not physical RSS. Unknown callbacks
+  // keep their exact original data; a later success cannot evict them.
+  const acceptedChanges = useRef<readonly AcceptedChange[]>([]);
+  const retainedBytes = useRef(0);
+  type ViewCommit = {
+    port: ReturnType<typeof createNativeInputControlPort>;
+    work: NativeInputWork;
+    token: object;
+    proof?: NativeInputPublication;
+    change: AcceptedChange;
+    settled: boolean;
+    failed: boolean;
+    viewCommitted: boolean;
+    retired: boolean;
+    finished: boolean;
+    complete(): void;
+  };
+  const pendingViews = useRef<readonly ViewCommit[]>([]);
+  const [committedViews, setCommittedViews] = useState<
+    readonly {
+      pending: ViewCommit;
+      token: object;
+      proof?: NativeInputPublication;
+    }[]
+  >([]);
+  const baseReadOnly = useRef(!!inputProps?.readOnly || tags.length >= maxTags);
+  useLayoutEffect(() => {
+    baseReadOnly.current = !!inputProps?.readOnly || tags.length >= maxTags;
+    readInput.current = () => ({
+      snapshot: {
+        source: "tag-input",
+        tags: [...tags],
+        internal: [...internal],
+        draft: inputRef.current?.value ?? rawDraft.current,
+        stateDraft: draft,
+        picked,
+        active,
+        notice,
+        composing: composing.current,
+        acceptedChanges: acceptedChanges.current.map((change) => change.data),
+      },
+      ...(composing.current ? { busy: "tag-input-composition" } : {}),
+    });
+    if (previousValue.current !== value || previousPublication.current !== inputPublication) {
+      previousValue.current = value;
+      previousPublication.current = inputPublication;
+      const committed =
+        inputObserver &&
+        consumeNativeInputPublication(inputPublication, inputObserver, value, () =>
+          inputPort.current?.changed(),
+        );
+      if (!committed) inputPort.current?.external(() => {});
+    }
+    inputPort.current?.refresh();
+    for (const view of committedViews)
+      if (pendingViews.current.includes(view.pending) && view.pending.token === view.token)
+        consumeNativeInputPublication(view.proof, view.pending.port, view.token, () =>
+          view.pending.port.changed(),
+        );
+  });
+  useLayoutEffect(() => {
+    if (!inputObserver) {
+      requestedClosed.current = false;
+      setInputReadOnly(false);
+      return;
+    }
+    const port = createNativeInputControlPort(inputObserver, () => readInput.current(), {
+      canClose: () => !composing.current,
+      close: (closed) => {
+        requestedClosed.current = closed;
+        if (composing.current) return;
+        if (inputRef.current) inputRef.current.readOnly = closed || baseReadOnly.current;
+        setInputReadOnly(closed);
+      },
+    });
+    inputPort.current = port;
+    requestedClosed.current = port.closed();
+    if (!composing.current) setInputReadOnly(port.closed());
+    return () => {
+      port.retire();
+      const retired = pendingViews.current.filter((pending) => pending.port === port);
+      pendingViews.current = pendingViews.current.filter((pending) => pending.port !== port);
+      for (const pending of retired) {
+        pending.retired = true;
+        pending.complete();
+      }
+      if (inputPort.current === port) inputPort.current = null;
+    };
+  }, [inputObserver]);
+  useLayoutEffect(() => {
+    const node = inputRef.current;
+    if (!inputObserver || !node) return;
+    const guard = (event: Event) => {
+      if (inputPort.current && !inputPort.current.allowed() && !composing.current)
+        event.preventDefault();
+    };
+    for (const type of ["beforeinput", "paste", "drop"]) node.addEventListener(type, guard, true);
+    return () => {
+      for (const type of ["beforeinput", "paste", "drop"])
+        node.removeEventListener(type, guard, true);
+    };
+  });
+
+  function mutateInput(kind: string, apply: () => unknown, requestedTags?: readonly string[]) {
+    const port = inputPort.current;
+    if (!port) {
+      apply();
+      return true;
+    }
+    if (!port.allowed()) return false;
+    const unavailable = () =>
+      setAdmissionError(
+        t(
+          "The input limit is busy. Your draft is kept; try again after another operation finishes.",
+        ),
+      );
+    let change: AcceptedChange;
+    try {
+      const data = copyNativeCaptureData({
+        kind,
+        raw: rawDraft.current,
+        tags: requestedTags ?? null,
+        outcome: "pending" as const,
+      });
+      const bytes = new TextEncoder().encode(JSON.stringify(data)).byteLength + 512;
+      if (acceptedChanges.current.length >= 16 || bytes > 1024 * 1024 - retainedBytes.current) {
+        setAdmissionError(t("The input limit is full or unavailable. Your draft is kept."));
+        return false;
+      }
+      change = { data, bytes };
+    } catch {
+      setAdmissionError(t("The input limit is full or unavailable. Your draft is kept."));
+      return false;
+    }
+    const work = port.operation(kind);
+    if (!work) {
+      if (!port.closed()) unavailable();
+      return false;
+    }
+    acceptedChanges.current = [...acceptedChanges.current, change];
+    retainedBytes.current += change.bytes;
+    const currentOwner = () => port.live && inputPort.current === port;
+    const pending: ViewCommit = {
+      port,
+      work,
+      token: {},
+      change,
+      settled: false,
+      failed: false,
+      viewCommitted: false,
+      retired: false,
+      finished: false,
+      complete: () => {
+        if (pending.finished || !pending.settled || (!pending.viewCommitted && !pending.retired))
+          return;
+        pending.finished = true;
+        pendingViews.current = pendingViews.current.filter((item) => item !== pending);
+        if (!pending.failed && pending.viewCommitted) {
+          acceptedChanges.current = acceptedChanges.current.filter((item) => item !== change);
+          retainedBytes.current -= change.bytes;
+        }
+        if (!currentOwner())
+          port.retiredOutcome({
+            acceptedChanges: acceptedChanges.current.map((item) => item.data),
+          });
+        port.changed();
+        port.finish(work);
+      },
+    };
+    const publishView = () => {
+      pending.viewCommitted = false;
+      const token = {};
+      pending.token = token;
+      pending.proof = issueNativeInputPublication({
+        target: port,
+        value: token,
+        current: () =>
+          currentOwner() && pending.token === token && pendingViews.current.includes(pending),
+        apply: (callback) => work.apply(callback),
+        committed: () => {
+          pending.viewCommitted = true;
+          pending.complete();
+        },
+      });
+      // New record identity binds the exact React publication, including a
+      // rejected callback's final feedback. An earlier render is not its ACK.
+      setCommittedViews(
+        pendingViews.current.map((item) => ({
+          pending: item,
+          token: item.token,
+          proof: item.proof,
+        })),
+      );
+    };
+    pendingViews.current = [...pendingViews.current, pending];
+    const settleResult = (failed: boolean) => {
+      if (pending.settled) return;
+      const outcome = () => {
+        pending.failed = failed;
+        pending.settled = true;
+        if (failed)
+          change.data = copyNativeCaptureData({ ...change.data, outcome: "unverified" as const });
+        if (currentOwner()) {
+          if (failed) {
+            setAdmissionError(t("Could not verify the tag change. Your current tags are kept."));
+            publishView();
+          }
+        } else {
+          pending.retired = true;
+          if (!failed && !pending.viewCommitted)
+            change.data = copyNativeCaptureData({
+              ...change.data,
+              outcome: "settled-without-view" as const,
+            });
+          port.retiredOutcome({
+            acceptedChanges: acceptedChanges.current.map((item) => item.data),
+          });
+        }
+        port.changed();
+        pending.complete();
+      };
+      try {
+        work.apply(outcome);
+      } catch {
+        // Bookkeeping failure supplies no success or replay permission. Keep
+        // exact request bytes and invalidate the cut before releasing the job.
+        pending.failed = true;
+        pending.settled = true;
+        change.data = copyNativeCaptureData({ ...change.data, outcome: "unverified" as const });
+        port.external(() => {});
+        if (!currentOwner()) {
+          pending.retired = true;
+          port.retiredOutcome({
+            acceptedChanges: acceptedChanges.current.map((item) => item.data),
+          });
+        }
+        pending.complete();
+      }
+    };
+    let result: unknown;
+    try {
+      result = work.apply(apply);
+      port.changed();
+    } catch {
+      settleResult(true);
+      return true;
+    }
+    if (currentOwner()) publishView();
+    else pending.retired = true;
+    void Promise.resolve(result)
+      .then(
+        () => settleResult(false),
+        () => settleResult(true),
+      )
+      .catch(() => {
+        // A final bookkeeping failure leaves the actual job held. It cannot
+        // orphan a rejection, fabricate a successful capture or replay a callback.
+      });
+    return true;
+  }
   useEffect(() => {
     const node = contentRef.current;
     if (!node || typeof ResizeObserver === "undefined") return;
@@ -247,15 +441,19 @@ export function TagInput({
   }
   function update(next: string[]) {
     if (value === undefined) setInternal(next);
-    onValueChange?.(next);
+    return onValueChange?.(next);
   }
   function pick(tag: string | null) {
+    const port = inputPort.current;
+    if (port && !port.allowed()) return;
     setPicked(tag);
     if (tag !== null) say(selectedAnnouncement(tag));
+    port?.changed();
   }
   function add(input = draft) {
+    if (inputPort.current && !inputPort.current.allowed()) return false;
     const tag = input.trim();
-    if (!tag || composing.current || inputProps?.disabled || tags.length >= maxTags) return;
+    if (!tag || composing.current || inputProps?.disabled || tags.length >= maxTags) return false;
     const next = (
       normalize
         ? normalize([...tags, tag])
@@ -263,18 +461,38 @@ export function TagInput({
           ? tags
           : [...tags, tag]
     ).slice(0, maxTags);
-    setDraft("");
-    setPicked(null);
-    if (next.length !== tags.length || next.some((value, index) => value !== tags[index]))
-      update(next);
+    return mutateInput(
+      "tag-add",
+      () => {
+        setAdmissionError(undefined);
+        rawDraft.current = "";
+        setDraft("");
+        setPicked(null);
+        if (next.length !== tags.length || next.some((value, index) => value !== tags[index]))
+          return update(next);
+      },
+      next,
+    );
   }
   function remove(tag: string) {
-    update(tags.filter((item) => item !== tag));
-    setPicked(null);
-    say(removedAnnouncement(tag));
-    inputRef.current?.focus();
+    const next = tags.filter((item) => item !== tag);
+    mutateInput(
+      "tag-remove",
+      () => {
+        const result = update(next);
+        setPicked(null);
+        say(removedAnnouncement(tag));
+        inputRef.current?.focus();
+        return result;
+      },
+      next,
+    );
   }
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (inputPort.current && !inputPort.current.allowed()) {
+      if (["Enter", ",", "Backspace", "Delete"].includes(event.key)) event.preventDefault();
+      return;
+    }
     inputProps?.onKeyDown?.(event);
     if (
       event.defaultPrevented ||
@@ -321,6 +539,11 @@ export function TagInput({
       <motion.div
         ref={scope}
         className={styles.control}
+        data-invalid={error ? "" : undefined}
+        data-disabled={inputProps?.disabled ? "" : undefined}
+        data-readonly={
+          (inputReadOnly || inputProps?.readOnly) && !inputProps?.disabled ? "" : undefined
+        }
         data-ui-focus-group
         initial={false}
         animate={{ height }}
@@ -412,17 +635,15 @@ export function TagInput({
                 }
               >
                 <span className={styles.tagLabel}>{formatTag(tag)}</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  iconOnly
-                  type="button"
+                <InlineAction
+                  reveal="always"
                   disabled={inputProps?.disabled}
+                  aria-disabled={inputReadOnly || undefined}
                   onClick={() => remove(tag)}
                   label={removeLabel(tag)}
                 >
-                  <Xmark width={14} height={14} aria-hidden="true" />
-                </Button>
+                  <Xmark aria-hidden="true" />
+                </InlineAction>
               </motion.span>
             ))}
           </AnimatePresence>
@@ -438,47 +659,80 @@ export function TagInput({
             }}
             id={inputId}
             value={draft}
-            readOnly={inputProps?.readOnly || tags.length >= maxTags}
+            readOnly={inputReadOnly || inputProps?.readOnly || tags.length >= maxTags}
+            onBeforeInput={(event) => {
+              if (inputPort.current && !inputPort.current.allowed()) {
+                event.preventDefault();
+                return;
+              }
+              inputProps?.onBeforeInput?.(event);
+            }}
             onChange={(event) => {
               const next = event.currentTarget.value;
+              const port = inputPort.current;
+              if (port && !port.allowed()) {
+                port.external(() => {
+                  rawDraft.current = next;
+                  setDraft(next);
+                });
+                return;
+              }
+              rawDraft.current = next;
+              setAdmissionError(undefined);
               inputProps?.onChange?.(event);
               if (
                 !composing.current &&
                 !(event.nativeEvent as InputEvent).isComposing &&
                 next.endsWith(",")
-              )
-                add(next.slice(0, -1));
-              else {
+              ) {
+                if (!add(next.slice(0, -1)) && port) {
+                  // A refused registered commit retains every raw character,
+                  // including the comma that triggered it.
+                  setDraft(next);
+                  setPicked(null);
+                }
+              } else {
                 setDraft(next);
                 setPicked(null);
               }
+              port?.changed();
             }}
             onCompositionStart={(event) => {
               composing.current = true;
+              inputPort.current?.external(() => {});
               inputProps?.onCompositionStart?.(event);
             }}
             onCompositionEnd={(event) => {
               composing.current = false;
+              setInputReadOnly(requestedClosed.current);
+              inputPort.current?.changed();
               inputProps?.onCompositionEnd?.(event);
             }}
             onKeyDown={onKeyDown}
             onBlur={(event) => {
-              inputProps?.onBlur?.(event);
-              if (!event.defaultPrevented) {
-                add();
-                setPicked(null);
-              }
+              if (inputPort.current && !inputPort.current.allowed()) return;
+              mutateInput("tag-blur", () => {
+                inputProps?.onBlur?.(event);
+                if (!event.defaultPrevented) {
+                  add();
+                  setPicked(null);
+                }
+              });
             }}
             placeholder={placeholder}
-            aria-describedby={
-              [inputProps?.["aria-describedby"], hintId].filter(Boolean).join(" ") || undefined
-            }
+            aria-invalid={error ? true : inputProps?.["aria-invalid"]}
+            aria-describedby={fieldDescribedBy(
+              inputId,
+              { description, error },
+              inputProps?.["aria-describedby"],
+            )}
           />
         </div>
       </motion.div>
       <span className={styles.srOnly} aria-live="polite">
         {notice}
       </span>
+      <FieldMessage id={errorId} text={error || admissionError} className={styles.error} alert />
       <FieldMessage id={hintId} text={description} className={styles.hint} />
     </div>
   );

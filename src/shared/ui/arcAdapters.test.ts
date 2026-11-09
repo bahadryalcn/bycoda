@@ -3,7 +3,6 @@ import { act, createElement, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Button } from "./Button";
-import { SecondaryButton } from "./SecondaryButton";
 import { TextField } from "./TextField";
 import { TextareaField } from "./TextareaField";
 
@@ -279,22 +278,42 @@ it("uses an explicit name and tooltip for icon buttons while preserving caller A
   );
   const button = container.querySelector("button")!;
   expect(button.getAttribute("aria-label")).toBe("Refresh logs");
-  expect(button.title).toBe("Refresh from host");
+  // The hint rides in the shared tooltip, linked while shown; never a native title.
+  expect(button.title).toBe("");
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  await act(async () => {
+    button.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const tooltip = document.querySelector('[role="tooltip"]')!;
+  expect(tooltip.textContent).toBe("Refresh from host");
+  expect(button.getAttribute("aria-describedby")).toBe(tooltip.id);
+  await act(async () => {
+    button.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
   expect(button.getAttribute("aria-pressed")).toBe("true");
   expect(button.querySelector("[data-icon]")!.parentElement!.getAttribute("aria-hidden")).toBe(
     "true",
   );
 });
 
-it("extends SecondaryButton without changing its danger, ref or submit contract", async () => {
+it("extends Button without changing its danger, ref or submit contract", async () => {
   const ref = createRef<HTMLButtonElement>();
   await act(async () =>
     root.render(
       createElement(
-        SecondaryButton,
+        Button,
         {
           ref,
-          danger: true,
+          variant: "danger",
           iconOnly: true,
           label: "Delete note",
           shape: "pill",

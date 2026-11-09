@@ -1,35 +1,56 @@
+export { formatRecentRelative as formatRelative } from "../../../shared/i18n/format";
 import { sessionIssue } from "./sessionIssue";
+import {
+  isUserConversation,
+  type DelegationCollectionMetadata,
+} from "../../../shared/model/host-contracts/delegation";
+import { wasTurnInterrupted } from "./inFlight";
 import { sessionActivityAt } from "./sessionActivity";
 import { pathKey } from "../../../shared/lib/paths";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 import { sessionDisplayTitle, sessionNeedsInput, type HarnessId, type Session } from "./session";
 
 /** Minimal shape of a stored session row; `SessionSummary` satisfies it. */
-export type StoredSessionRow = {
+export type StoredSessionRow = DelegationCollectionMetadata & {
+  recentPinTarget?: import("../data/sessionPinReceipts").PinTarget | null;
+  managedBy?: Session["managedBy"];
   id: string;
   cwd: string;
   title: string;
   harness: HarnessId;
   model: string;
   updatedAt: number;
+  lastActivityAt?: number;
   pinned?: boolean;
+  interrupted?: boolean;
 };
 
-export type RecentSessionStatus = "working" | "input" | "done" | "retrying" | "failed";
+export type RecentSessionStatus =
+  | "working"
+  | "input"
+  | "done"
+  | "retrying"
+  | "failed"
+  | "interrupted";
 
 /** What the in-memory sessions add to the stored rows. */
-export type LiveSessionInfo = {
+export type LiveSessionInfo = DelegationCollectionMetadata & {
+  managedBy?: Session["managedBy"];
   id: string;
   cwd: string;
   title: string;
   harness: HarnessId;
   model: string;
   status?: RecentSessionStatus;
+  /** False when transcript hydration cannot yet establish the latest turn. */
+  interruptionKnown?: boolean;
   /** Last user turn, for sessions the store does not hold (remote machines). */
   activityAt: number;
 };
 
 export type RecentSessionRow = {
+  pinTarget?: import("../data/sessionPinReceipts").PinTarget | null;
+  managedBy?: Session["managedBy"];
   id: string;
   cwd: string;
   title: string;
@@ -42,6 +63,18 @@ export type RecentSessionRow = {
   remote: boolean;
   status?: RecentSessionStatus;
 };
+
+/** `cwd` of a session started without a project. Such sessions belong to no rail project. */
+export const PROJECTLESS_CWD = "~";
+
+export function isProjectlessCwd(cwd: string): boolean {
+  return cwd === PROJECTLESS_CWD;
+}
+
+/** Project keys a recent-sessions list may show: the given projects plus projectless sessions. */
+export function withProjectlessKey(keys: Iterable<string>): Set<string> {
+  return new Set([...keys, pathKey(PROJECTLESS_CWD)]);
+}
 
 /** Row counts the header offers. The last one is "All recent". */
 export const RECENT_SESSION_COUNTS = [3, 5, 10, 20, 50] as const;
@@ -98,7 +131,7 @@ export function liveSessionInfos(
 ): LiveSessionInfo[] {
   const infos: LiveSessionInfo[] = [];
   for (const session of sessions) {
-    if (session.inboxAsk || session.orchestrationLeadId) continue;
+    if (session.inboxAsk || session.orchestrationLeadId || !isUserConversation(session)) continue;
     if (!hasSentTurn(session)) continue;
     const needsInput = sessionNeedsInput(session);
     const busy = !session.worktreeRemoved && (!!session.busy || !!session.continuingElsewhere);
@@ -114,10 +147,14 @@ export function liveSessionInfos(
           ? "input"
           : busy
             ? "working"
-            : unseenFinishedIds.has(session.id)
-              ? "done"
-              : undefined),
+            : wasTurnInterrupted(session)
+              ? "interrupted"
+              : unseenFinishedIds.has(session.id)
+                ? "done"
+                : undefined),
+      interruptionKnown: !session.historyPartial && !session.historyLoading,
       activityAt: sessionActivityAt(session),
+      managedBy: session.managedBy,
     });
   }
   return infos;
@@ -138,7 +175,10 @@ export function sameLiveSessionInfos(
         left.harness === right.harness &&
         left.model === right.model &&
         left.status === right.status &&
-        left.activityAt === right.activityAt
+        left.interruptionKnown === right.interruptionKnown &&
+        left.activityAt === right.activityAt &&
+        left.managedBy?.jobId === right.managedBy?.jobId &&
+        left.managedBy?.managedAt === right.managedBy?.managedAt
       );
     })
   );
@@ -152,7 +192,7 @@ function comparePinnedThenRecent(a: RecentSessionRow, b: RecentSessionRow) {
 
 /**
  * Stored rows overlaid with what is running now, restricted to the projects on
- * the rail. Pinned sessions come first (most recent first), within the same
+ * the rail, plus projectless sessions. Pinned sessions come first (most recent first), within the same
  * total row limit as the remaining recent sessions.
  */
 export function buildRecentSessions({
@@ -168,33 +208,50 @@ export function buildRecentSessions({
   limit: number;
   now: number;
 }): RecentSessionRow[] {
-  const liveById = new Map(live.map((info) => [info.id, info]));
+  const identity = (cwd: string, id: string) => JSON.stringify([pathKey(cwd), id]);
+  const liveById = new Map(live.map((info) => [identity(info.cwd, info.id), info]));
   const rows = new Map<string, RecentSessionRow>();
   for (const row of stored) {
-    if (!projectKeys.has(pathKey(row.cwd))) continue;
-    const info = liveById.get(row.id);
+    if (!isUserConversation(row)) continue;
+    const projectless = isProjectlessCwd(row.cwd);
+    if (!projectless && !projectKeys.has(pathKey(row.cwd))) continue;
+    const info = liveById.get(identity(row.cwd, row.id));
     const active = info?.status === "working" || info?.status === "input";
-    rows.set(row.id, {
+    rows.set(identity(row.cwd, row.id), {
+      pinTarget: row.recentPinTarget ?? null,
       id: row.id,
       cwd: row.cwd,
       title: sessionDisplayTitle(info?.title ?? row.title, row.harness),
       harness: row.harness,
       model: info?.model || row.model,
-      updatedAt: Math.max(row.updatedAt, info?.activityAt ?? 0, active ? now : 0),
+      updatedAt: Math.max(
+        row.lastActivityAt ?? row.updatedAt,
+        info?.activityAt ?? 0,
+        active ? now : 0,
+      ),
       pinned: !!row.pinned,
-      pinnable: true,
+      // shortcut: the pin owner layer refuses cwd "~", so projectless rows are not pinnable yet.
+      pinnable: !projectless,
       remote: isRemoteProjectPath(row.cwd),
-      status: info?.status,
+      status:
+        info?.status ??
+        (row.interrupted && (!info || info.interruptionKnown === false)
+          ? "interrupted"
+          : undefined),
+      managedBy: info?.managedBy ?? row.managedBy,
     });
   }
   // A session the store does not hold: a remote one, or a local one that has
   // only just started. An idle local one is skipped, since it is either older
   // than the stored window or about to arrive with the next fetch.
   for (const info of live) {
-    if (rows.has(info.id) || !projectKeys.has(pathKey(info.cwd))) continue;
+    if (!isUserConversation(info)) continue;
+    if (rows.has(identity(info.cwd, info.id))) continue;
+    if (!isProjectlessCwd(info.cwd) && !projectKeys.has(pathKey(info.cwd))) continue;
     const remote = isRemoteProjectPath(info.cwd);
     if (!remote && !info.status) continue;
-    rows.set(info.id, {
+    rows.set(identity(info.cwd, info.id), {
+      pinTarget: null,
       id: info.id,
       cwd: info.cwd,
       title: sessionDisplayTitle(info.title, info.harness),
@@ -205,32 +262,9 @@ export function buildRecentSessions({
       pinnable: false,
       remote,
       status: info.status,
+      managedBy: info.managedBy,
     });
   }
   const sorted = [...rows.values()].sort(comparePinnedThenRecent);
   return sorted.slice(0, limit);
-}
-
-/** Compact age: "now", "5m", "3h 20m", "2d", then a short date. */
-export function formatRelative(value: number, now: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "";
-  const seconds = Math.max(0, Math.round((now - value) / 1000));
-  if (seconds < 60) return "now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    const rest = minutes % 60;
-    return rest ? `${hours}h ${rest}m` : `${hours}h`;
-  }
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d`;
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      month: "short",
-      day: "numeric",
-    }).format(new Date(value));
-  } catch {
-    return "";
-  }
 }

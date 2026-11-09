@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Existing UI drift counted per file and rule by scripts/checks/check-ui-drift.mjs. Counts may only fall; regenerate with --update-baseline after reducing them.",
+  "counts": {}
+}

@@ -1,17 +1,24 @@
+import { Row } from "../../settings/public/settingsControls";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Alert } from "../../../shared/ui/Alert";
+import { Divider } from "../../../shared/ui/Divider";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Surface } from "../../../shared/ui/Surface";
 import "./connections-settings.css";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
-import { NativeSelect } from "../../../shared/ui/Select";
-import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { t, useLocale } from "../../../shared/i18n";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { Modal } from "../../../shared/ui/Modal";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
-import { Internet, Copy, Loader } from "../../../shared/ui/icons";
+import { Internet, Copy } from "../../../shared/ui/icons";
 import type {
   ExternalTunnel,
   TunnelProvider,
@@ -23,6 +30,7 @@ import {
   type TunnelUiIssue,
 } from "../model/externalTunnelController";
 import { isLocalSyncMachine } from "../model/localSync";
+import { remoteBackoffDelay } from "../model/remotePollingPolicy";
 import type { RemoteMachine } from "../model/protocol";
 import { phonePairingApi } from "../model/phonePairingApi";
 import { usePhonePairing } from "../model/usePhonePairing";
@@ -62,6 +70,14 @@ const stateCopy = {
   stopped: "Stopped",
   error: "Error",
   interrupted: "Interrupted",
+};
+const stateTone: Record<keyof typeof stateCopy, BadgeTone> = {
+  starting: "info",
+  ready: "success",
+  stopping: "warning",
+  stopped: "neutral",
+  error: "danger",
+  interrupted: "warning",
 };
 const providerName = (provider: TunnelProvider) => (provider === "ngrok" ? "ngrok" : "Cloudflare");
 
@@ -122,21 +138,29 @@ function TunnelUrl({ tunnel, machine }: { tunnel: ExternalTunnel; machine: Remot
     <div className="external-tunnel-url">
       <code>{tunnel.publicUrl}</code>
       <div className="external-tunnel-actions">
-        <SecondaryButton disabled={copied === "pending"} onClick={() => void copy()}>
-          <Copy className="size-3.5" aria-hidden />
+        <Button
+          stableWidth
+          type="button"
+          className="shrink-0"
+          disabled={copied === "pending"}
+          onClick={() => void copy()}
+        >
+          <Copy className="icon-sm" aria-hidden />
           {t("Copy URL")}
-        </SecondaryButton>
-        <SecondaryButton onClick={() => setQr(true)}>{t("Show QR code")}</SecondaryButton>
+        </Button>
+        <Button stableWidth type="button" className="shrink-0" onClick={() => setQr(true)}>
+          {t("Show QR code")}
+        </Button>
         {tunnel.target === "host" ? (
-          <SecondaryButton onClick={() => setPair(true)}>{t("Connect your phone")}</SecondaryButton>
+          <Button stableWidth type="button" className="shrink-0" onClick={() => setPair(true)}>
+            {t("Connect your phone")}
+          </Button>
         ) : null}
       </div>
       {copied === "done" ? (
-        <p role="status">{t("URL copied")}</p>
+        <InlineMessage tone="success">{t("URL copied")}</InlineMessage>
       ) : copied === "error" ? (
-        <Alert role="alert" tone="danger">
-          {t("The URL could not be copied. Try again.")}
-        </Alert>
+        <Alert tone="danger">{t("The URL could not be copied. Try again.")}</Alert>
       ) : null}
       <p>{t("Public access has not been verified.")}</p>
       {qr ? (
@@ -183,14 +207,21 @@ export function TunnelControls({
   const [target, setTarget] = useState<TunnelTarget>("dev-server");
   const [localUrl, setLocalUrl] = useState(initialLocalUrl);
   const [token, setToken] = useState("");
+  const [repairNoticeDismissed, setRepairNoticeDismissed] = useState(false);
   useEffect(() => {
     controller.activate();
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
+    // Consecutive failed reads lengthen the wait, as the other machine pollers do.
+    let failures = 0;
     const poll = async (fresh = false) => {
       if (disposed) return;
-      if (!document.hidden || fresh) await controller.refresh(fresh);
-      if (!disposed) timer = setTimeout(() => void poll(), 3_000);
+      if (!document.hidden || fresh) {
+        await controller.refresh(fresh);
+        failures = controller.getSnapshot().phase === "error" ? failures + 1 : 0;
+      }
+      if (!disposed)
+        timer = setTimeout(() => void poll(), failures ? remoteBackoffDelay(failures) : 3_000);
     };
     void poll(true);
     return () => {
@@ -208,31 +239,87 @@ export function TunnelControls({
       className="external-tunnel-controls"
       aria-busy={state.pending || state.phase === "loading"}
     >
-      <details className="connection-disclosure">
-        <summary>{t("Tunnel setup")}</summary>
-        <p className="external-tunnel-machine">{t("Tunnel runs on: {p0}", { p0: machineLabel })}</p>
-        <p>
+      <div className="external-tunnel-list" aria-label={t("Tunnel status")}>
+        {overview?.tunnels.length === 0 ? (
+          <EmptyState size="inline" kind="empty" description={t("No tunnels on this computer.")} />
+        ) : null}
+        {[...(overview?.tunnels ?? [])].reverse().map((tunnel) => (
+          <article key={tunnel.id} className="external-tunnel-item">
+            <Divider decorative />
+            <div className="external-tunnel-actions">
+              <strong>
+                {providerName(tunnel.provider)} ·{" "}
+                {t(tunnel.target === "host" ? "bycoda host access" : "Dev server sharing")}
+              </strong>
+              <Badge variant="dot" size="sm" tone={stateTone[tunnel.state]} role="status">
+                {t(stateCopy[tunnel.state])}
+              </Badge>
+              {tunnel.canStop ? (
+                <Button
+                  stableWidth
+                  type="button"
+                  className="shrink-0"
+                  disabled={state.pending || tunnel.state === "stopping"}
+                  onClick={() => void controller.stop(tunnel.id)}
+                >
+                  {t("Stop tunnel")}
+                </Button>
+              ) : null}
+            </div>
+            <code>{tunnel.localUrl}</code>
+            {tunnel.issue ? (
+              tunnel.state === "error" ? (
+                <InlineError>{t(issueCopy[tunnel.issue])}</InlineError>
+              ) : (
+                <InlineMessage tone="warning">{t(issueCopy[tunnel.issue])}</InlineMessage>
+              )
+            ) : null}
+            {ready && tunnel.state === "ready" ? (
+              <TunnelUrl
+                key={`${tunnel.id}:${tunnel.publicUrl}`}
+                tunnel={tunnel}
+                machine={machine}
+              />
+            ) : null}
+          </article>
+        ))}
+      </div>
+      <div className="external-tunnel-actions">
+        <Badge variant="dot" tone={selected?.installed ? "success" : "neutral"}>
+          {t(selected?.installed ? "{p0} CLI ready" : "{p0} CLI needed", {
+            p0: provider === "cloudflare" ? "Cloudflare" : "ngrok",
+          })}
+        </Badge>
+        <InfoPopover label={t("Tunnel setup")}>
           {t(
             "Provider CLI and authentication must be available on the selected computer. Local URLs and ports refer to that computer.",
           )}
-        </p>
-      </details>
+        </InfoPopover>
+      </div>
       <div className="external-tunnel-actions">
-        <SecondaryButton disabled={state.pending} onClick={() => void controller.refresh(true)}>
+        <Button
+          stableWidth
+          type="button"
+          className="shrink-0"
+          disabled={state.pending}
+          onClick={() => void controller.refresh(true)}
+        >
           {t("Check again")}
-        </SecondaryButton>
+        </Button>
         {state.phase === "loading" || state.pending ? (
-          <span role="status" className="inline-flex items-center gap-2">
-            <Loader className="size-3.5 motion-safe:animate-spin" aria-hidden />
+          <LoadingText delay={!state.pending}>
             {state.pending ? t("Working…") : t("Checking tunnel access…")}
-          </span>
+          </LoadingText>
         ) : null}
       </div>
-      {state.issue ? (
-        <Alert role="alert" tone="danger">
-          {t(issueCopy[state.issue])}
+      {overview?.repair && !repairNoticeDismissed ? (
+        <Alert tone="info" onDismiss={() => setRepairNoticeDismissed(true)}>
+          {t("Tunnel settings were damaged and repaired; {p0} entries could not be recovered.", {
+            p0: String(overview.repair.dropped),
+          })}
         </Alert>
       ) : null}
+      {state.issue ? <Alert tone="danger">{t(issueCopy[state.issue])}</Alert> : null}
       <form
         className="external-tunnel-form"
         onSubmit={(event) => {
@@ -249,56 +336,53 @@ export function TunnelControls({
             });
         }}
       >
-        <label htmlFor={`${id}-provider`}>
-          {t("Tunnel provider")}
-          <NativeSelect
-            id={`${id}-provider`}
+        <Row label={t("Provider")}>
+          <SegmentedControl
+            label={t("Tunnel provider")}
             value={provider}
-            disabled={state.pending}
-            onChange={(event) => setProvider(event.target.value as TunnelProvider)}
-          >
-            <option value="cloudflare">Cloudflare</option>
-            <option value="ngrok">ngrok</option>
-          </NativeSelect>
-        </label>
-        <label htmlFor={`${id}-target`}>
-          {t("Tunnel target")}
-          <NativeSelect
-            id={`${id}-target`}
-            value={target}
-            disabled={state.pending}
-            onChange={(event) => setTarget(event.target.value as TunnelTarget)}
-          >
-            <option value="dev-server">{t("Dev server sharing")}</option>
-            <option value="host">{t("bycoda host access")}</option>
-          </NativeSelect>
-        </label>
-        <label htmlFor={`${id}-url`}>
-          {t("Local URL or port")}
-          <TextField
-            id={`${id}-url`}
-            value={target === "host" ? (overview?.hostLocalUrl ?? "") : localUrl}
-            readOnly={target === "host"}
-            disabled={state.pending}
-            placeholder="http://127.0.0.1:3000"
-            onChange={(event) => setLocalUrl(event.target.value)}
-            autoCapitalize="none"
-            spellCheck={false}
-            label=""
-            hideLabel
-            fieldClassName="min-w-0 flex-1"
+            onValueChange={(value) => {
+              if (!state.pending) setProvider(value as TunnelProvider);
+            }}
+            options={[
+              { value: "cloudflare", label: "Cloudflare" },
+              { value: "ngrok", label: "ngrok" },
+            ]}
           />
-        </label>
+        </Row>
+        <Row label={t("What to share")}>
+          <SegmentedControl
+            label={t("Tunnel target")}
+            value={target}
+            onValueChange={(value) => {
+              if (!state.pending) setTarget(value as TunnelTarget);
+            }}
+            options={[
+              { value: "dev-server", label: t("Dev server sharing") },
+              { value: "host", label: t("bycoda host access") },
+            ]}
+          />
+        </Row>
+        <TextField
+          label={t("Local URL or port")}
+          id={`${id}-url`}
+          value={target === "host" ? (overview?.hostLocalUrl ?? "") : localUrl}
+          readOnly={target === "host"}
+          disabled={state.pending}
+          placeholder="http://127.0.0.1:3000"
+          onChange={(event) => setLocalUrl(event.target.value)}
+          autoCapitalize="none"
+          spellCheck={false}
+          fieldClassName="min-w-0 flex-1"
+        />
         <p className="external-tunnel-wide">
           {target === "host"
             ? t(
                 "Host access keeps device authentication and pairing. The public URL contains no device credential.",
               )
-            : t(
-                "Anyone with the public URL can reach this dev server. Use the server's own access controls.",
-              )}
+            : t("Anyone with this URL can reach the dev server. Keep access controls enabled.")}
         </p>
         <Button
+          stableWidth
           type="submit"
 
           disabled={
@@ -312,22 +396,22 @@ export function TunnelControls({
         </Button>
       </form>
       {selected && !selected.installed ? (
-        <p role="status">
+        <InlineMessage tone="warning">
           {t("Install {p0} on {p1}, then check again.", {
             p0: provider === "cloudflare" ? "cloudflared" : "ngrok",
             p1: machineLabel,
           })}
-        </p>
+        </InlineMessage>
       ) : null}
       {provider === "cloudflare" ? (
-        <p>
+        <InfoPopover label={t("Cloudflare")}>
           {t(
             "Cloudflare Quick Tunnels need no account. URLs are temporary and SSE is not supported.",
           )}
-        </p>
+        </InfoPopover>
       ) : (
         <div className="external-tunnel-credentials">
-          <p role="status">
+          <InlineMessage tone={selected?.credential === "saved" ? "success" : "warning"}>
             {t(
               selected?.credential === "saved"
                 ? "ngrok authtoken is saved securely on this computer."
@@ -335,7 +419,7 @@ export function TunnelControls({
                   ? issueCopy["credential-store-unavailable"]
                   : issueCopy["credential-missing"],
             )}
-          </p>
+          </InlineMessage>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -346,67 +430,34 @@ export function TunnelControls({
               }
             }}
           >
-            <label htmlFor={`${id}-token`}>
-              {t("ngrok authtoken")}
-              <PasswordField
-                id={`${id}-token`}
+            <PasswordField
+              label={t("ngrok authtoken")}
+              id={`${id}-token`}
 
-                value={token}
-                disabled={state.pending}
-                autoComplete="new-password"
-                spellCheck={false}
-                onChange={(event) => setToken(event.target.value)}
-                label=""
-                hideLabel
-                fieldClassName="min-w-0 flex-1"
-              />
-            </label>
-            <Button type="submit" disabled={!ready || !token} variant="primary">
+              value={token}
+              disabled={state.pending}
+              autoComplete="new-password"
+              spellCheck={false}
+              onChange={(event) => setToken(event.target.value)}
+              fieldClassName="min-w-0 flex-1"
+            />
+            <Button stableWidth type="submit" disabled={!ready || !token} variant="primary">
               {t("Save token securely")}
             </Button>
             {selected?.credential === "saved" ? (
-              <SecondaryButton disabled={!ready} onClick={() => void controller.credential("")}>
+              <Button
+                stableWidth
+                type="button"
+                className="shrink-0"
+                disabled={!ready}
+                onClick={() => void controller.credential("")}
+              >
                 {t("Forget saved token")}
-              </SecondaryButton>
+              </Button>
             ) : null}
           </form>
         </div>
       )}
-      <div className="external-tunnel-list" aria-label={t("Tunnel status")}>
-        {overview?.tunnels.length === 0 ? <p>{t("No tunnels on this computer.")}</p> : null}
-        {[...(overview?.tunnels ?? [])].reverse().map((tunnel) => (
-          <article key={tunnel.id} className="external-tunnel-item">
-            <div className="external-tunnel-actions">
-              <strong>
-                {providerName(tunnel.provider)} ·{" "}
-                {t(tunnel.target === "host" ? "bycoda host access" : "Dev server sharing")}
-              </strong>
-              <span role="status">{t(stateCopy[tunnel.state])}</span>
-              {tunnel.canStop ? (
-                <SecondaryButton
-                  disabled={state.pending || tunnel.state === "stopping"}
-                  onClick={() => void controller.stop(tunnel.id)}
-                >
-                  {t("Stop tunnel")}
-                </SecondaryButton>
-              ) : null}
-            </div>
-            <code>{tunnel.localUrl}</code>
-            {tunnel.issue ? (
-              <p role={tunnel.state === "error" ? "alert" : "status"}>
-                {t(issueCopy[tunnel.issue])}
-              </p>
-            ) : null}
-            {ready && tunnel.state === "ready" ? (
-              <TunnelUrl
-                key={`${tunnel.id}:${tunnel.publicUrl}`}
-                tunnel={tunnel}
-                machine={machine}
-              />
-            ) : null}
-          </article>
-        ))}
-      </div>
     </div>
   );
 }
@@ -428,41 +479,45 @@ export function ExternalTunnelsPanel({
   );
   const machine = selected ? ordered.find((entry) => entry.id === selected) : ordered[0];
   return (
-    <section
-      className="external-tunnels-panel rounded-xl border border-stroke bg-(--ui-surface-raised) p-4"
+    <Surface
+      as="section"
+      variant="outline"
+      padding="lg"
+      className="external-tunnels-panel"
       aria-label={t("External tunnels")}
     >
       <div className="external-tunnel-actions">
-        <Internet className="size-5 shrink-0 text-(--ui-text-muted)" aria-hidden />
+        <Internet className="icon-lg shrink-0 text-(--ui-text-muted)" aria-hidden />
         <div>
-          <h2 className="text-[14px] font-medium text-content">{t("External tunnels")}</h2>
+          <h2 className="text-ui-body font-medium text-content">{t("External tunnels")}</h2>
           <p>{t("Share a dev server or connect to a bycoda host through ngrok or Cloudflare.")}</p>
         </div>
       </div>
-      <label htmlFor={`${id}-machine`}>
-        {t("Computer")}
-        <NativeSearchableSelect
-          label={t("Computer")}
-          id={`${id}-machine`}
-          value={machine?.id ?? ""}
-          disabled={!loaded || loading}
-          onChange={(event) => setSelected(event.target.value)}
-          options={[
-            ...(!machine ? [{ value: "", label: t("Choose a computer") }] : []),
-            ...ordered.map((entry) => ({
-              value: entry.id,
-              label: isLocalSyncMachine(entry) ? t("This computer") : entry.name,
-            })),
-          ]}
-        />
-      </label>
+      <SearchableSelect
+        label={t("Computer")}
+        triggerProps={{ id: `${id}-machine` }}
+        value={machine?.id ?? ""}
+        disabled={!loaded || loading}
+        onChange={setSelected}
+        options={[
+          ...(!machine ? [{ value: "", label: t("Choose a computer") }] : []),
+          ...ordered.map((entry) => ({
+            value: entry.id,
+            label: isLocalSyncMachine(entry) ? t("This computer") : entry.name,
+          })),
+        ]}
+      />
       {!loaded || loading ? (
-        <p role="status">{t("Checking tunnel access…")}</p>
+        <LoadingText>{t("Checking tunnel access…")}</LoadingText>
       ) : machine ? (
         <TunnelControls key={`${machine.id}:${machine.environmentId}`} machine={machine} />
       ) : (
-        <p role="status">{t("Choose a connected computer to manage its tunnels.")}</p>
+        <EmptyState
+          size="inline"
+          kind="empty"
+          description={t("Choose a connected computer to manage its tunnels.")}
+        />
       )}
-    </section>
+    </Surface>
   );
 }

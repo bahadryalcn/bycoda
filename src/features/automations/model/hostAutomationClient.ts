@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "../../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { remoteRequest } from "../../connections/model/connections";
 import { isLocalSyncMachine } from "../../connections/model/localSync";
@@ -38,7 +39,7 @@ export async function previewHostAutomation(machineId: string, schedule: Automat
   if (!preview || typeof preview.timeZone !== "string" || !Number.isFinite(preview.nextRunAt))
     throw new Error("Host schedule preview unavailable");
   // Validate the host's IANA zone before the render path formats its instant.
-  new Intl.DateTimeFormat(undefined, { timeZone: preview.timeZone }).format(preview.nextRunAt);
+  dateTimeFormat(undefined, { timeZone: preview.timeZone }).format(preview.nextRunAt);
   return preview;
 }
 
@@ -150,7 +151,9 @@ export function automationFromHost(
     model: host.model,
     modelSettings: host.modelSettings,
     cwd,
-    workspaceMode: "current",
+    ...(typeof host.isolate === "boolean"
+      ? { workspaceMode: host.isolate ? ("worktree" as const) : ("current" as const) }
+      : {}),
     reuseSession: false,
     runtimeMode: host.runtimeMode,
     triggerKind: "time",
@@ -181,6 +184,7 @@ export function automationFromHost(
     updatedAt: host.updatedAt,
     host: {
       machineId: machine.id,
+      environmentId: machine.environmentId,
       machineName: isLocalSyncMachine(machine) ? "this computer" : machine.name,
       projectId: host.projectId,
       ...(host.needsInput ? { needsInput: true } : {}),
@@ -212,6 +216,11 @@ export function hostAutomationFromDraft(
     minute: trigger.minute,
     time: trigger.time,
     dayOfWeek: trigger.dayOfWeek,
+    ...(draft.workspaceMode === "worktree"
+      ? { isolate: true }
+      : draft.workspaceMode === "current"
+        ? { isolate: false }
+        : {}),
     maxRunMinutes: draft.maxRunMinutes,
     maxRunsPerDay: draft.maxRunsPerDay,
     enabled: draft.enabled,
@@ -231,8 +240,22 @@ export function listHostAutomationResults(
     machines,
     async (machine) => {
       const [automations, projects] = await Promise.all([
-        remoteRequest<HostAutomation[]>(machine.id, "automations.list"),
-        machineProjects(machine),
+        remoteRequest<HostAutomation[]>(
+          machine.id,
+          "automations.list",
+          {},
+          false,
+          false,
+          machine.environmentId,
+        ),
+        remoteRequest<HostProject[]>(
+          machine.id,
+          "projects.list",
+          {},
+          false,
+          false,
+          machine.environmentId,
+        ),
       ]);
       return automations.flatMap((automation) => {
         const project = projects.find((entry) => entry.id === automation.projectId);

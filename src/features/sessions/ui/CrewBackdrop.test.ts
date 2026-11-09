@@ -2,7 +2,8 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { CrewBackdrop } from "./CrewBackdrop";
+import { CrewBackdrop, isReplyStreaming } from "./CrewBackdrop";
+import type { Session } from "../model/session";
 import { saveCrewSceneEnabled } from "../../settings/model/settings";
 
 vi.mock("./CrewScene", () => ({
@@ -45,4 +46,13 @@ it("uses a background scene and responds to the shared setting without replacing
 it("does not mount decorative observers for an invisible session", () => {
   act(() => root.render(createElement(CrewBackdrop, { visible: false })));
   expect(container.querySelector("[data-scene]")).toBeNull();
+});
+it("treats only a busy session whose last assistant block streams as streaming", () => {
+  const session = (busy: boolean, role: string, streaming: boolean) =>
+    ({ busy, blocks: [{ role, streaming }] }) as unknown as Session;
+  expect(isReplyStreaming(session(true, "assistant", true))).toBe(true);
+  expect(isReplyStreaming(session(false, "assistant", true))).toBe(false);
+  expect(isReplyStreaming(session(true, "tool", true))).toBe(false);
+  expect(isReplyStreaming(session(true, "assistant", false))).toBe(false);
+  expect(isReplyStreaming(undefined)).toBe(false);
 });

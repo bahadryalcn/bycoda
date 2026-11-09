@@ -1,4 +1,5 @@
 use std::path::{Component, Path, PathBuf};
+#[cfg(test)]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -6,6 +7,9 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
 use crate::fs::expand_home;
+use crate::native_window_lifecycle::{
+    admit_window_buffers, run_admitted_blocking, NativeWriteAdmission,
+};
 use crate::session_store::{now_millis, validate_id, SessionStore};
 
 const TITLE_MAX: usize = 200;
@@ -84,6 +88,20 @@ pub struct NoteImageAsset {
 }
 
 pub fn ensure_notes_table(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch("SAVEPOINT notes_schema_migration")?;
+    let result = ensure_notes_table_inner(conn);
+    match result {
+        Ok(()) => conn.execute_batch("RELEASE notes_schema_migration"),
+        Err(error) => {
+            let _ = conn.execute_batch(
+                "ROLLBACK TO notes_schema_migration; RELEASE notes_schema_migration",
+            );
+            Err(error)
+        }
+    }
+}
+
+fn ensure_notes_table_inner(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS notes (
            id TEXT PRIMARY KEY,
@@ -166,36 +184,37 @@ pub fn ensure_notes_table(conn: &Connection) -> rusqlite::Result<()> {
             [],
         )?;
     }
+    crate::assistant_observation_outbox::install_notes(conn)?;
     Ok(())
 }
 
 #[tauri::command(async)]
 pub fn notes_list(store: State<'_, SessionStore>) -> Result<Vec<Note>, String> {
-    let conn = store.lock_conn()?;
-    list_notes(&conn).map_err(|e| e.to_string())
+    store.with_read_conn(|conn| list_notes(conn).map_err(|e| e.to_string()))
 }
 
 #[tauri::command(async)]
 pub fn notes_list_summaries(store: State<'_, SessionStore>) -> Result<Vec<NoteSummary>, String> {
-    let conn = store.lock_conn()?;
-    list_note_summaries(&conn).map_err(|error| error.to_string())
+    store.with_read_conn(|conn| list_note_summaries(conn).map_err(|error| error.to_string()))
 }
 
 #[tauri::command(async)]
 pub fn notes_search(store: State<'_, SessionStore>, query: String) -> Result<Vec<String>, String> {
-    let conn = store.lock_conn()?;
-    search_notes(&conn, &query).map_err(|error| error.to_string())
+    store.with_read_conn(|conn| search_notes(conn, &query).map_err(|error| error.to_string()))
 }
 
 #[tauri::command(async)]
 pub fn notes_get(store: State<'_, SessionStore>, id: String) -> Result<Option<Note>, String> {
     validate_id(&id, "note")?;
-    let conn = store.lock_conn()?;
-    get_note(&conn, &id).map_err(|e| e.to_string())
+    store.with_read_conn(|conn| get_note(conn, &id).map_err(|e| e.to_string()))
 }
 
 #[tauri::command(async)]
-pub fn notes_upsert(store: State<'_, SessionStore>, note: NoteUpsert) -> Result<Note, String> {
+pub fn notes_upsert(
+    window: tauri::Window,
+    store: State<'_, SessionStore>,
+    note: NoteUpsert,
+) -> Result<Note, String> {
     validate_id(&note.id, "note")?;
     if let Some(session_id) = note.source_session_id.as_deref() {
         if !session_id.is_empty() {
@@ -205,20 +224,23 @@ pub fn notes_upsert(store: State<'_, SessionStore>, note: NoteUpsert) -> Result<
     if note.body.len() > BODY_MAX {
         return Err("Note is too large".into());
     }
-    let conn = store.lock_conn()?;
-    checked_upsert_note(&conn, &note)
+    let admission = admit_window_buffers(&window)?;
+    with_admitted_note_connection(admission, &store, |conn| checked_upsert_note(conn, &note))
 }
 
 #[tauri::command(async)]
 pub fn notes_link_session(
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     id: String,
     session_id: String,
 ) -> Result<Note, String> {
     validate_id(&id, "note")?;
     validate_id(&session_id, "session")?;
-    let conn = store.lock_conn()?;
-    link_note_session(&conn, &id, &session_id).map_err(|e| e.to_string())
+    let admission = admit_window_buffers(&window)?;
+    with_admitted_note_connection(admission, &store, |conn| {
+        link_note_session(conn, &id, &session_id).map_err(|error| error.to_string())
+    })
 }
 
 fn link_note_session(conn: &Connection, id: &str, session_id: &str) -> rusqlite::Result<Note> {
@@ -231,49 +253,60 @@ fn link_note_session(conn: &Connection, id: &str, session_id: &str) -> rusqlite:
 
 #[tauri::command(async)]
 pub fn notes_delete(
+    window: tauri::Window,
     app: AppHandle,
     store: State<'_, SessionStore>,
     id: String,
     expected_updated_at: i64,
 ) -> Result<(), String> {
     validate_id(&id, "note")?;
-    let conn = store.lock_conn()?;
-    checked_delete_note(&conn, &id, expected_updated_at)?;
-    drop(conn);
-    // The note deletion is authoritative. A cleanup failure should not leave a
-    // successfully deleted note visible in the UI.
-    let _ = remove_note_assets(&app, &id);
-    Ok(())
+    let admission = admit_window_buffers(&window)?;
+    delete_admitted_note(admission, &store, &id, expected_updated_at, || {
+        remove_note_assets(&app, &id)
+    })
 }
 
 /// Roll back only an abandoned recovery attempt, never a persisted note's assets.
 #[tauri::command(async)]
 pub fn notes_discard_recovery_assets(
+    window: tauri::Window,
     app: AppHandle,
     store: State<'_, SessionStore>,
     id: String,
 ) -> Result<bool, String> {
-    let conn = store.lock_conn()?;
-    checked_discard_recovery_assets(&conn, &id, || remove_note_assets(&app, &id))
+    let admission = admit_window_buffers(&window)?;
+    with_admitted_note_connection(admission, &store, |conn| {
+        checked_discard_recovery_assets(conn, &id, || remove_note_assets(&app, &id))
+    })
 }
 
 #[tauri::command]
 pub async fn notes_save_image(
+    window: tauri::Window,
     app: AppHandle,
     note_id: String,
     source_path: String,
 ) -> Result<NoteImageAsset, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         crate::file_access::require(&app, &expand_home(&source_path), false)?;
         save_note_image_sync(&app, &note_id, &source_path)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command(async)]
-pub fn notes_image_path(app: AppHandle, asset: String) -> Result<String, String> {
-    let relative = validate_note_asset_path(&asset)?;
+pub fn notes_image_path(
+    window: tauri::Window,
+    app: AppHandle,
+    asset: String,
+) -> Result<String, String> {
+    let admission = admit_window_buffers(&window)?;
+    admission.finish(resolve_note_image_path(&app, &asset))
+}
+
+fn resolve_note_image_path(app: &AppHandle, asset: &str) -> Result<String, String> {
+    let relative = validate_note_asset_path(asset)?;
     let path = app
         .path()
         .app_data_dir()
@@ -283,12 +316,46 @@ pub fn notes_image_path(app: AppHandle, asset: String) -> Result<String, String>
         return Err("Note image was not found".into());
     }
     crate::file_access::grant_produced_file(
-        &app,
+        app,
         &path,
         &app.path().app_data_dir().map_err(|e| e.to_string())?,
         NOTE_ASSET_DIR,
     )?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// Admission precedes the SQL lock. The work owns its guard only inside this
+/// scope, so completion cannot advertise idle while the connection is locked.
+fn with_admitted_note_connection<T>(
+    admission: NativeWriteAdmission,
+    store: &SessionStore,
+    work: impl FnOnce(&Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    let result = (|| {
+        let conn = store.lock_conn()?;
+        work(&conn)
+    })();
+    admission.finish(result)
+}
+
+fn delete_admitted_note(
+    admission: NativeWriteAdmission,
+    store: &SessionStore,
+    id: &str,
+    expected_updated_at: i64,
+    remove_assets: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    let deleted = (|| {
+        let conn = store.lock_conn()?;
+        checked_delete_note(&conn, id, expected_updated_at)
+    })();
+    if deleted.is_err() {
+        return admission.finish(deleted);
+    }
+    // SQL deletion remains authoritative for the UI. Failed best-effort asset
+    // cleanup still makes the native observation unavailable for an idle proof.
+    let observation = remove_assets().map_err(|_| ());
+    admission.finish_observed(Ok(()), observation)
 }
 
 fn note_assets_dir(app: &AppHandle, note_id: &str) -> Result<PathBuf, String> {
@@ -312,44 +379,123 @@ fn save_note_image_sync(
         return Err("Not a file".into());
     }
     if meta.len() > IMAGE_MAX_BYTES {
-        return Err(format!(
-            "Image is too large (maximum {} MB).",
-            IMAGE_MAX_BYTES / 1024 / 1024
-        ));
+        return Err(image_size_error());
     }
 
-    let (display_name, safe_name) = note_image_names(&source)?;
+    let names = note_image_names(&source)?;
     let dir = note_assets_dir(app, note_id)?;
-    crate::file_access::produced_target(
+    let allowed_root = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    copy_note_image(
+        &source,
         &dir,
-        &app.path().app_data_dir().map_err(|e| e.to_string())?,
-        NOTE_ASSET_DIR,
-    )?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let stored_name = format!("{stamp}-{safe_name}");
-    let destination = dir.join(&stored_name);
-    crate::file_access::produced_target(
-        &destination,
-        &app.path().app_data_dir().map_err(|e| e.to_string())?,
-        NOTE_ASSET_DIR,
-    )?;
-    std::fs::copy(&source, &destination).map_err(|e| format!("{}: {e}", destination.display()))?;
+        &allowed_root,
+        note_id,
+        names,
+        |destination| {
+            crate::file_access::grant_produced_file(
+                app,
+                destination,
+                &app.path().app_data_dir().map_err(|e| e.to_string())?,
+                NOTE_ASSET_DIR,
+            )
+        },
+    )
+}
 
-    crate::file_access::grant_produced_file(
-        app,
-        &destination,
-        &app.path().app_data_dir().map_err(|e| e.to_string())?,
-        NOTE_ASSET_DIR,
-    )?;
+/// Only the native AppHandle path resolver supplies the production roots and
+/// grant callback. This private boundary keeps copy and grant in one real job.
+fn copy_note_image(
+    source: &Path,
+    dir: &Path,
+    allowed_root: &Path,
+    note_id: &str,
+    (display_name, safe_name): (String, String),
+    grant: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<NoteImageAsset, String> {
+    copy_note_image_with_sync(
+        source,
+        dir,
+        allowed_root,
+        note_id,
+        (display_name, safe_name),
+        std::fs::File::sync_all,
+        grant,
+    )
+}
+
+fn image_size_error() -> String {
+    format!(
+        "Image is too large (maximum {} MB).",
+        IMAGE_MAX_BYTES / 1024 / 1024
+    )
+}
+
+/// A source can grow after its metadata was read. Limit the actual stream too;
+/// an oversized or uncertain copy is never synchronized, granted or published.
+fn write_note_image_data(
+    source: impl std::io::Read,
+    destination: &mut std::fs::File,
+) -> Result<(), String> {
+    let copied = std::io::copy(&mut source.take(IMAGE_MAX_BYTES + 1), destination)
+        .map_err(|error| error.to_string())?;
+    if copied > IMAGE_MAX_BYTES {
+        return Err(image_size_error());
+    }
+    Ok(())
+}
+
+/// Only the private native worker supplies sync/grant. Sync is explicit here so
+/// tests can hold the real file flush and verify the original admission lifetime.
+/// File-byte acknowledgement is not a directory/power-loss or migration receipt.
+fn copy_note_image_with_sync(
+    source: &Path,
+    dir: &Path,
+    allowed_root: &Path,
+    note_id: &str,
+    (display_name, safe_name): (String, String),
+    sync: impl FnOnce(&std::fs::File) -> std::io::Result<()>,
+    grant: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<NoteImageAsset, String> {
+    let input =
+        std::fs::File::open(source).map_err(|error| format!("{}: {error}", source.display()))?;
+    let metadata = input.metadata().map_err(|error| error.to_string())?;
+    if !metadata.is_file() {
+        return Err("Not a file".into());
+    }
+    if metadata.len() > IMAGE_MAX_BYTES {
+        return Err(image_size_error());
+    }
+    crate::file_access::produced_target(dir, allowed_root, NOTE_ASSET_DIR)?;
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    // Each accepted copy owns a fresh file. A clock collision or concurrent save
+    // must never truncate a previously returned asset.
+    let stored_name = format!("{}-{safe_name}", uuid::Uuid::new_v4());
+    let destination = dir.join(&stored_name);
+    crate::file_access::produced_target(&destination, allowed_root, NOTE_ASSET_DIR)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut output = options
+        .open(&destination)
+        .map_err(|error| format!("{}: {error}", destination.display()))?;
+    write_note_image_data(input, &mut output)?;
+    // Keep an uncertain private copy if copy/sync/grant fails. No pathname-based
+    // cleanup may delete a replacement, and no failure fabricates a public ACK.
+    sync(&output).map_err(|error| format!("{}: {error}", destination.display()))?;
+    grant(&destination)?;
     Ok(NoteImageAsset {
         name: display_name,
         markdown_path: format!("/{NOTE_ASSET_DIR}/{note_id}/{stored_name}"),
     })
 }
+
+#[cfg(test)]
+#[path = "notes/admission_tests.rs"]
+mod admission_tests;
 
 fn note_image_names(source: &Path) -> Result<(String, String), String> {
     let extension = source
@@ -754,14 +900,13 @@ fn normalize_title(title: &str) -> String {
     }
 }
 
-/// Lowercase ASCII words of `title` joined by single hyphens, untruncated.
+/// Lowercase title words joined by single hyphens, untruncated.
 fn slug_words(title: &str) -> String {
     let mut out = String::new();
     let mut dash = false;
     for ch in title.chars() {
-        let c = ch.to_ascii_lowercase();
-        if c.is_ascii_alphanumeric() {
-            out.push(c);
+        if ch.is_alphanumeric() {
+            out.extend(ch.to_lowercase());
             dash = false;
         } else if !out.is_empty() && !dash {
             out.push('-');
@@ -773,7 +918,11 @@ fn slug_words(title: &str) -> String {
 
 fn slugify(title: &str) -> String {
     let words = slug_words(title);
-    let slug = words[..words.len().min(48)].trim_end_matches('-');
+    let mut end = words.len().min(48);
+    while !words.is_char_boundary(end) {
+        end -= 1;
+    }
+    let slug = words[..end].trim_end_matches('-');
     if slug.is_empty() {
         "note".into()
     } else {
@@ -786,6 +935,13 @@ fn slugify(title: &str) -> String {
 /// another; the note stays pending until it gets a real title. Checks the
 /// whole title so text past the slug length cutoff still counts.
 fn is_placeholder_title(title: &str) -> bool {
+    // Do not discard non-ASCII letters when deciding whether a title is real.
+    if title
+        .chars()
+        .any(|ch| !ch.is_ascii() && ch.is_alphanumeric())
+    {
+        return false;
+    }
     let words = slug_words(title);
     match words.strip_prefix("untitled") {
         Some("") => true,
@@ -1491,6 +1647,6 @@ mod tests {
     fn slugify_strips_punctuation() {
         assert_eq!(slugify("Hello, World!"), "hello-world");
         assert_eq!(slugify("***"), "note");
-        assert_eq!(slugify("Ä"), "note");
+        assert_eq!(slugify("Ä"), "ä");
     }
 }

@@ -4,8 +4,12 @@
 export function shouldPollTerminalMeta(state: {
   onScreen: boolean;
   documentHidden: boolean;
+  /** A blurred window keeps its last title; focusing it refreshes at once. */
+  documentFocused?: boolean;
   /** `false` once a status reply said `supported: false`. */
   supported: boolean;
 }): boolean {
-  return state.supported && state.onScreen && !state.documentHidden;
+  return (
+    state.supported && state.onScreen && !state.documentHidden && state.documentFocused !== false
+  );
 }

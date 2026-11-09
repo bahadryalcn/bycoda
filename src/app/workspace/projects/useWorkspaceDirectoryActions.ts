@@ -1,7 +1,10 @@
+import type { PrivacyMutationToken } from "../../../features/group-lock/model/roomPrivacyProjection";
+import { rememberProjectInMutation } from "../../../features/projects/model/recents";
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
 import {
   newSession,
+  newSessionForProject,
   retargetSessionToProject,
   type Session,
   type WorkspaceMode,
@@ -31,6 +34,7 @@ import { notifyGitChanged } from "../../../platform/tauri/fs";
 import { forgetHarnessSession } from "../../../integrations/harness";
 import { projectName } from "../../../shared/lib/paths";
 import type { WorktreeFocus } from "../../../features/source-control/model/worktreeFocus";
+import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
 
 export interface WorkspaceDirectoryActionsDeps {
   activeTab: WorkspaceTab | undefined;
@@ -89,28 +93,38 @@ export function useWorkspaceDirectoryActions({
   }, []);
 
   const onCwdChange = useCallback(
-    (sessionId: string, cwd: string) => {
+    (sessionId: string, cwd: string, token?: PrivacyMutationToken) => {
+      const remember = (path: string) => {
+        if (token) setRecents(rememberProjectInMutation(path, token));
+        else
+          void rememberProject(path)
+            .then(setRecents)
+            .catch((error: unknown) => console.error("Could not remember project", error));
+      };
       const normalized = normalizeProjectPath(cwd);
       const current = sessionsRef.current.find((s) => s.id === sessionId);
       const previous = current?.cwd;
+      const owner = current && hostSessionBinding(current);
+      if (owner && previous && sameProjectPath(previous, normalized)) return;
       // Threads stay bound to their project. Switching from the composer opens a
       // new tab instead of retargeting the conversation.
       if (
         current &&
         previous &&
-        looksLikeProject(previous) &&
         !sameProjectPath(previous, normalized) &&
-        !isBlankSession(current)
+        (owner || (looksLikeProject(previous) && !isBlankSession(current)))
       ) {
         setProjectCwd(normalized);
-        setRecents(rememberProject(normalized));
-        const session = newSession(
-          current.harness,
-          normalized,
-          current.model,
-          current.runtimeMode,
-          current.modelSettings,
-        );
+        remember(normalized);
+        const session = owner
+          ? newSessionForProject(current, normalized)
+          : newSession(
+              current.harness,
+              normalized,
+              current.model,
+              current.runtimeMode,
+              current.modelSettings,
+            );
         const tab = newTab(session.id);
         setSessions((prev) => [...prev, session]);
         appendTab(tab, normalized);
@@ -118,13 +132,14 @@ export function useWorkspaceDirectoryActions({
         setComposerFocused(true);
         return;
       }
+      if (owner) return;
       if (previous && !sameProjectPath(previous, normalized) && previous !== "~") {
         void keepSessionChanges(sessionId, previous).catch((error) => {
           console.warn("App operation failed", error);
         });
       }
       setProjectCwd(normalized);
-      setRecents(rememberProject(normalized));
+      remember(normalized);
       setSessions((prev) =>
         prev.map((s) => {
           if (s.id !== sessionId) return s;
@@ -167,8 +182,9 @@ export function useWorkspaceDirectoryActions({
 
   const onBranchChange = useCallback(
     (sessionId: string) => {
-      notifyGitChanged();
       const current = sessionsRef.current.find((s) => s.id === sessionId);
+      if (current && hostSessionBinding(current)) return;
+      notifyGitChanged();
       if (!current) return;
       void forgetHarnessSession(current.harness, sessionId);
       const next = {
@@ -191,22 +207,21 @@ export function useWorkspaceDirectoryActions({
         prev.map((session) => {
           if (
             session.id !== sessionId ||
+            hostSessionBinding(session) ||
             (!isBlankSession(session) &&
               !(session.workspaceMode && !session.worktreeCwd && !session.busy))
           ) {
             return session;
           }
           return mode === "worktree"
-            ? base || session.worktreeBase
-              ? {
-                  ...session,
-                  workspaceMode: "worktree",
-                  worktreeBase: base || session.worktreeBase,
-                }
-              : session
+            ? {
+                ...session,
+                workspaceMode: "worktree",
+                worktreeBase: base || session.worktreeBase,
+              }
             : {
                 ...session,
-                workspaceMode: undefined,
+                workspaceMode: "current",
                 worktreeBase: undefined,
               };
         }),
@@ -219,9 +234,10 @@ export function useWorkspaceDirectoryActions({
     setSessions((prev) =>
       prev.map((session) =>
         session.id === sessionId &&
+        !hostSessionBinding(session) &&
         (isBlankSession(session) ||
           (!!session.workspaceMode && !session.worktreeCwd && !session.busy)) &&
-        session.workspaceMode === "worktree"
+        session.workspaceMode !== "current"
           ? { ...session, worktreeBase: base }
           : session,
       ),

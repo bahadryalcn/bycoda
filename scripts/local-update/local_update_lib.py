@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import sqlite3
 import subprocess
 import time
@@ -23,15 +24,75 @@ def package_identity(manifest):
         raise RuntimeError('Package identity is missing or incompatible; rebuild the bycoda package')
     return identity
 
+def package_components(manifest, requested):
+    """Validate all selected artifacts before any install job can be scheduled."""
+    available = manifest.get('components')
+    if available is None:
+        # Older full packages are readable, but absent artifacts never become implicit.
+        available = [name for name, field in (('host', 'hostHashes'), ('app', 'appHashes'))
+                     if manifest.get(field)]
+    if (not isinstance(available, list) or not available or
+            any(name not in ('host', 'app') for name in available) or len(set(available)) != len(available)):
+        raise RuntimeError('Package component manifest is invalid')
+    for component in requested:
+        if component not in available or not manifest.get('hostHashes' if component == 'host' else 'appHashes'):
+            raise RuntimeError(f'Package does not contain {component}; build the selected component first')
+        if component == 'app' and not manifest.get('binaryHash'):
+            raise RuntimeError('Package app executable identity is missing')
+    return available
+
 def digest(path):
     with pathlib.Path(path).open('rb') as f:
         return hashlib.file_digest(f, 'sha256').hexdigest()
 
 def windows_binary_digest(path):
     """Tauri embeds NSS during NSIS packaging, then restores UNK in the build EXE.
-    Normalize only that single marker; every other executable byte is verified.
+    Normalize its marker and bounded Authenticode metadata; retain payload bytes.
     """
-    data = pathlib.Path(path).read_bytes()
+    data = bytearray(pathlib.Path(path).read_bytes())
+    if len(data) >= 64 and data[:2] == b'MZ':
+        def require(condition, message):
+            if not condition:
+                raise RuntimeError(message)
+        def integer(offset, size=4):
+            require(0 <= offset <= len(data) - size, 'Truncated PE header')
+            return int.from_bytes(data[offset:offset + size], 'little')
+        pe = integer(0x3c)
+        require(64 <= pe <= len(data) - 24 and integer(pe) == 0x4550, 'Invalid PE header')
+        optional, optional_size = pe + 24, integer(pe + 20, 2)
+        require(optional_size >= 68 and optional + optional_size <= len(data), 'Invalid PE optional header')
+        magic = integer(optional, 2)
+        require(magic in (0x10b, 0x20b), 'Unsupported PE image')
+        directories = optional + (112 if magic == 0x20b else 96)
+        security = directories + 32
+        require(security + 8 <= optional + optional_size and integer(directories - 4) >= 5,
+                'Missing PE security directory')
+        certificate, certificate_size = integer(security), integer(security + 4)
+        section_count, sections = integer(pe + 6, 2), optional + optional_size
+        require(section_count <= 96 and sections + section_count * 40 <= len(data), 'Invalid PE section table')
+        content_end = integer(optional + 60)
+        require(sections + section_count * 40 <= content_end <= len(data), 'Invalid PE headers size')
+        for index in range(section_count):
+            section = sections + index * 40
+            end = integer(section + 20) + integer(section + 16)
+            require(end <= len(data), 'Invalid PE section extent')
+            content_end = max(content_end, end)
+        if certificate or certificate_size:
+            require(certificate >= content_end and certificate % 8 == 0 and certificate_size >= 8 and
+                    certificate + certificate_size == len(data), 'Invalid trailing PE certificate table')
+            cursor = certificate
+            while cursor < len(data):
+                require(cursor <= len(data) - 8, 'Truncated PE certificate record')
+                size = integer(cursor)
+                padded = (size + 7) // 8 * 8
+                require(size >= 8 and padded <= len(data) - cursor and integer(cursor + 4, 2) == 0x200 and
+                        integer(cursor + 6, 2) == 2, 'Invalid PE certificate record')
+                require(not any(data[cursor + size:cursor + padded]), 'Invalid PE certificate padding')
+                cursor += padded
+        data[optional + 64:optional + 68] = b'\0' * 4
+        data[security:security + 8] = b'\0' * 8
+        if certificate:
+            data = data[:certificate]
     marker = b'__TAURI_BUNDLE_TYPE_VAR_'
     if data.count(marker) != 1:
         raise RuntimeError('Expected one Tauri bundle type marker')
@@ -121,19 +182,110 @@ def ps(script):
 def ps_quote(value):
     return "'" + str(value).replace("'", "''") + "'"
 
+class UpdaterLaunchRefused(RuntimeError):
+    pass
+
+def spawn_windows_updater(args, cwd, receipt=None, launch_key=None):
+    """The local WMI broker outlives an app-owned kill-on-close job.
+
+    This uses the current user, without elevation, credentials or a persistent
+    task. CREATE_NO_WINDOW alone does not detach a CreateProcess descendant.
+    0x09000000 combines NO_WINDOW with breakaway from WMI's own provider quota
+    job, not from the caller's deliberately non-breakaway app-managed job.
+    """
+    command = subprocess.list2cmdline([str(value) for value in args])
+    receipt_script = ''
+    if receipt is not None:
+        if not launch_key:
+            raise ValueError('Updater launch receipt requires a key')
+        receipt_script = (
+            '$receipt=@{pid=[int]$result.ProcessId;verified=$verified;launchKey=' + ps_quote(launch_key) + '};'
+            '[IO.File]::WriteAllText(' + ps_quote(receipt) + ',($receipt|ConvertTo-Json -Compress),'
+            '(New-Object Text.UTF8Encoding($false)));'
+        )
+    script = (
+        '$startup=New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly '
+        '-Property @{ShowWindow=[uint16]0;CreateFlags=[uint32]150994944};'
+        '$result=Invoke-CimMethod -ClassName Win32_Process -MethodName Create '
+        '-Arguments @{CommandLine=' + ps_quote(command) + ';CurrentDirectory=' + ps_quote(cwd) +
+        ';ProcessStartupInformation=$startup};'
+        'if($result.ReturnValue -ne 0){throw ("BYCODA_CREATE_REFUSED:"+$result.ReturnValue)};'
+        '$verified=$false;' + receipt_script +
+        '$child=Get-CimInstance Win32_Process -Filter ("ProcessId="+$result.ProcessId);'
+        'if(-not $child){throw "Updater broker process exited during launch"};'
+        'if($child.SessionId -ne [Diagnostics.Process]::GetCurrentProcess().SessionId)'
+        '{throw "Updater broker session mismatch"};'
+        '$owner=Invoke-CimMethod -InputObject $child -MethodName GetOwnerSid;'
+        'if($owner.ReturnValue -ne 0 -or $owner.Sid -ne '
+        '[Security.Principal.WindowsIdentity]::GetCurrent().User.Value)'
+        '{throw "Updater broker process owner mismatch"};'
+        '$verified=$true;' + receipt_script +
+        '[Console]::Write($result.ProcessId)'
+    )
+    try:
+        value = ps(script)
+    except subprocess.CalledProcessError as error:
+        if 'BYCODA_CREATE_REFUSED:' in (error.stderr or ''):
+            raise UpdaterLaunchRefused('Updater broker refused process creation') from error
+        raise RuntimeError('Updater broker verification did not complete') from error
+    try:
+        pid = int(value)
+    except (TypeError, ValueError):
+        raise RuntimeError('Updater broker did not return a process id') from None
+    if pid <= 0 or not alive(pid):
+        raise RuntimeError('Updater broker process exited during launch')
+    return pid
+
+def windows_installer_idle(processes, release, app, previous_helper=None):
+    """Classify only updater ownership and relevant installer ambiguity; never kill."""
+    normalize = lambda value: str(value or '').replace('/', '\\').lower()
+    release_path, app_path = normalize(release), normalize(app.parent)
+    setup, uninstall = release_path + '\\setup.exe', app_path + '\\uninstall.exe'
+    owned = {previous_helper} if type(previous_helper) is int and previous_helper > 0 else set()
+    if not isinstance(processes, list):
+        raise RuntimeError('Cannot verify Windows installer idle state')
+    for row in processes:
+        if not isinstance(row, dict) or type(row.get('ProcessId')) is not int:
+            raise RuntimeError('Cannot verify Windows installer idle state')
+    while True:
+        descendants = {row['ProcessId'] for row in processes if row.get('ParentProcessId') in owned}
+        if descendants <= owned:
+            break
+        owned |= descendants
+    for row in processes:
+        path, command, name = normalize(row.get('ExecutablePath')), normalize(row.get('CommandLine')), normalize(row.get('Name'))
+        relevant_name = name == 'setup.exe' or bool(re.match(r'(bycoda.*setup|unins.*)\.exe$', name))
+        nsis_temp = bool(re.search(r'\\(?:~?ns[isu][^\\]*|ns[0-9a-f]+)\.tmp(?:\\|$)', path))
+        product_setup = bool(re.match(r'bycoda.*setup.*\.exe$', name))
+        if row['ProcessId'] in owned or path in (setup, uninstall) or setup in command or uninstall in command or nsis_temp or product_setup or (relevant_name and (app_path in command or release_path in command or not path or not command)):
+            raise RuntimeError('Windows installation/recovery process is still running or ambiguous; recovery required')
+
+def assert_windows_installer_idle(release, app, previous_helper=None):
+    raw = ps('@(Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine) | ConvertTo-Json -Compress')
+    try:
+        rows = json.loads(raw)
+    except (ValueError, TypeError):
+        raise RuntimeError('Cannot verify Windows installer idle state') from None
+    if isinstance(rows, dict):
+        rows = [rows]
+    windows_installer_idle(rows, release, app, previous_helper)
+
 def count(db, sql):
     # Failure must never look like zero active sessions.
     with contextlib.closing(sqlite3.connect(pathlib.Path(db).resolve().as_uri() + '?mode=ro', uri=True, timeout=3)) as con:
         return con.execute(sql).fetchone()[0]
 
 def backup(db, destination, seconds=15):
-    deadline = time.monotonic() + seconds
-    def progress(status, remaining, total):
-        if time.monotonic() > deadline:
-            raise TimeoutError(f'Database backup exceeded {seconds}s')
+    # One backup step under a single read snapshot: an incremental copy (pages=128)
+    # restarts from page one whenever the live Host or desktop writes between steps,
+    # so a busy 1-2 GB database never finished inside the budget. A single step copies
+    # the whole file at disk speed (about 6 s for 1.9 GB) and writers cannot restart it.
+    started = time.monotonic()
     with contextlib.closing(sqlite3.connect(pathlib.Path(db).resolve().as_uri() + '?mode=ro', uri=True, timeout=1)) as source:
         with contextlib.closing(sqlite3.connect(destination, timeout=1)) as target:
-            source.backup(target, pages=128, progress=progress, sleep=0.05)
+            source.backup(target, pages=-1)
+            if time.monotonic() - started > seconds:
+                raise TimeoutError(f'Database backup exceeded {seconds}s')
             if target.execute('pragma quick_check').fetchone()[0] != 'ok':
                 raise RuntimeError('Backup integrity check failed')
 

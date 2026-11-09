@@ -1,9 +1,19 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+/* External layout shares the components layer so a caller utility can size or place the control.
+   Presentation (type, ink, track, thumb, states) stays unlayered so a caller class cannot reskin it. */
+@layer components {
+  .root {
+    display: grid;
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+}
+
 .root {
   --slider-thumb: 22px;
   --slider-track: 6px;
-  display: grid;
-  width: 100%;
-  min-width: 0;
   color: var(--foreground);
   font-size: var(--text-sm);
   line-height: var(--leading-body);
@@ -91,10 +101,10 @@
   height: 4px;
   margin: -2px 0 0 -2px;
   border-radius: var(--radius-pill);
-  background: color-mix(in oklab, var(--foreground) 30%, transparent);
+  background: var(--ui-text-disabled);
 }
 .fill .tick {
-  background: color-mix(in oklab, var(--control-glyph) 60%, transparent);
+  background: var(--control-glyph);
 }
 .thumbs {
   position: absolute;
@@ -116,13 +126,20 @@
   width: var(--slider-thumb);
   height: var(--slider-thumb);
   translate: 50% -50%;
-  border: 0;
+  border: 1px solid var(--ui-control-thumb-border);
   border-radius: var(--radius-pill);
   background: var(--control-thumb);
   box-shadow: var(--control-thumb-shadow);
   pointer-events: auto;
   cursor: grab;
+  outline: none;
   transition: box-shadow var(--duration-fast) var(--ease-standard);
+}
+/* Keyboard focus is a ring around the thumb, written one class stronger than the shared [tabindex] rule so the
+   thumb's own scale and offset stay in control. Pointer focus stays quiet. */
+.thumb.thumb:focus-visible {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
 }
 .thumb::after {
   content: "";
@@ -158,13 +175,13 @@
   min-height: 1.75rem;
   align-items: center;
   padding: 0 var(--space-3);
-  border: 1px solid color-mix(in oklab, var(--background) 14%, var(--foreground));
   border-radius: var(--radius-pill);
   background: var(--foreground);
   color: var(--background);
   box-shadow: var(--shadow-raised);
   font-size: var(--text-sm);
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   transform-origin: 50% 100%;
 }
@@ -201,7 +218,22 @@
   }
 }
 .root[data-disabled] {
-  opacity: 0.5;
+  color: var(--ui-text-disabled);
+}
+/* Disabled dims through its semantic pair: a muted fill and a thumb on the disabled surface and border. */
+.root[data-disabled] .fill {
+  background: var(--ui-text-disabled);
+}
+.root[data-disabled] .fill .tick {
+  background: var(--ui-control-disabled-surface);
+}
+.root[data-disabled] .thumb {
+  border-color: var(--ui-control-disabled-border);
+  background: var(--ui-control-disabled-surface);
+}
+.root[data-disabled] .readout,
+.root[data-disabled] .markLabel {
+  color: var(--ui-text-disabled);
 }
 .root[data-disabled] .control,
 .root[data-disabled] .thumb,

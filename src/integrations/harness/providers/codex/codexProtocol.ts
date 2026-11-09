@@ -13,16 +13,22 @@ import {
   isVisionImage,
   normalizeImageMime,
   promptText,
-} from "../../../../features/sessions/model/attachments";
+} from "../../../../features/sessions/model/attachmentPrompt";
 import { displayPath } from "../../../../shared/lib/paths";
 import { normalizeTaskListStatus } from "../../../../features/sessions/model/taskList";
+import { MAX_TOOL_DETAIL_CHARS } from "../../core/toolDetailLimits";
 import { composeToolTitle, extractToolPreview, formatAgentType } from "../../core/preview";
 import { formatShellIntent, inferShellIntent } from "../../core/shellIntent";
 import { streamTextDelta } from "../../core/streamText";
-import type { HarnessEvent } from "../../core/types";
+import type { HarnessEvent, HarnessFileChange } from "../../core/types";
 import { dollarTokenAt } from "../../../../features/skills/model/slashCommands";
 import { retainToolInspection } from "../../../../features/sessions/model/toolInspection";
 import { codexStructuredResultText } from "./codexStructuredResult";
+import {
+  COMPACTED_TEXT,
+  COMPACTING_TEXT,
+  COMPACTION_STATUS_KEY,
+} from "../../../../features/sessions/model/compactionStatus";
 
 /** Codex approval / sandbox settings for thread/start and turn/start. */
 export type CodexThreadConfig = {
@@ -152,7 +158,6 @@ export function buildTurnSteerParams(input: {
 }
 
 export function buildTurnStartParams(input: {
-  skillInstructions?: string;
   threadId: string;
   runtimeMode: RuntimeMode;
   controlsAgents?: boolean;
@@ -200,7 +205,9 @@ export function buildTurnStartParams(input: {
             settings: {
               model: input.model.trim(),
               reasoning_effort: input.effort ?? null,
-              developer_instructions: input.skillInstructions ?? null,
+              // A non-null value replaces the mode's built-in instructions
+              // (including Plan). Owner policy travels in the turn input instead.
+              developer_instructions: null,
             },
           },
         }
@@ -432,6 +439,33 @@ export interface CodexTurnUsageState {
 }
 
 /**
+ * Running command output, owned per command item id. Codex streams raw chunks;
+ * the shared layer replaces `tool.updated.detail`, so the provider sends the
+ * accumulated tail instead of each chunk. Entries are removed when the item
+ * completes and when the turn ends.
+ */
+export type CodexCommandOutputState = Map<string, { text: string; truncated: boolean }>;
+
+function appendCommandOutput(
+  state: CodexCommandOutputState,
+  itemId: string,
+  delta: string,
+): { text: string; truncated: boolean } {
+  const prev = state.get(itemId);
+  let text = (prev?.text ?? "") + delta;
+  let truncated = prev?.truncated ?? false;
+  // Keep the tail: the latest lines matter while a command runs. Whitespace and
+  // repeated characters are kept verbatim; the shared layer trims for display.
+  if (text.length > MAX_TOOL_DETAIL_CHARS) {
+    text = text.slice(text.length - MAX_TOOL_DETAIL_CHARS);
+    truncated = true;
+  }
+  const next = { text, truncated };
+  state.set(itemId, next);
+  return next;
+}
+
+/**
  * Translate a Codex app-server notification into Bycoda HarnessEvents.
  * Unknown methods return empty events (non-fatal).
  */
@@ -439,6 +473,7 @@ export function mapCodexNotification(
   method: string,
   params: unknown,
   turnUsage?: CodexTurnUsageState,
+  commandOutput?: CodexCommandOutputState,
 ): MappedCodexNotification {
   const rec = asRecord(params);
   if (!rec) return { events: [] };
@@ -506,6 +541,12 @@ export function mapCodexNotification(
   }
 
   if (method === "item/started" || method === "item/completed") {
+    // The completed item carries the aggregate (or none); either way the
+    // running accumulator for this call is finished.
+    if (method === "item/completed") {
+      const doneId = stringField(asRecord(rec.item), "id");
+      if (doneId) commandOutput?.delete(doneId);
+    }
     return mapItemLifecycle(method, rec);
   }
 
@@ -513,13 +554,16 @@ export function mapCodexNotification(
     const itemId = stringField(rec, "itemId") ?? "";
     const delta = streamTextDelta(rec.delta);
     if (!itemId || !delta) return { events: [] };
+    // Without an owner (subagent mirroring) fall back to the raw chunk.
+    const acc = commandOutput ? appendCommandOutput(commandOutput, itemId, delta) : undefined;
     return {
       events: [
         {
           type: "tool.updated",
           callId: itemId,
           kind: "execute",
-          detail: delta,
+          detail: acc ? acc.text : delta,
+          ...(acc?.truncated ? { detailTruncated: true } : {}),
           status: "in_progress",
         },
       ],
@@ -544,6 +588,7 @@ export function mapCodexNotification(
   }
 
   if (method === "turn/completed" || method === "turn/aborted") {
+    commandOutput?.clear();
     return mapTurnTerminal(method, rec);
   }
 
@@ -588,7 +633,7 @@ export function mapCodexNotification(
 }
 
 /** Codex thread items Bycoda already renders elsewhere or that are internal metadata. */
-const SILENT_ITEM_TYPES = new Set(["userMessage", "contextCompaction", "enteredReviewMode"]);
+const SILENT_ITEM_TYPES = new Set(["userMessage", "enteredReviewMode"]);
 
 /**
  * Codex reports both `last` (the most recent request) and `total` (cumulative
@@ -696,6 +741,17 @@ function mapItemLifecycle(method: string, rec: Record<string, unknown>): MappedC
   if (!callId) return { events: [] };
   const itemType = stringField(item, "type") ?? "";
   const completed = method === "item/completed";
+
+  // Codex brackets a compaction with started/completed items: one row follows it.
+  if (itemType === "contextCompaction") {
+    return {
+      events: [
+        completed
+          ? { type: "status", key: COMPACTION_STATUS_KEY, running: false, text: COMPACTED_TEXT }
+          : { type: "status", key: COMPACTION_STATUS_KEY, running: true, text: COMPACTING_TEXT },
+      ],
+    };
+  }
 
   if (SILENT_ITEM_TYPES.has(itemType)) {
     return { events: [] };
@@ -1003,11 +1059,17 @@ function mapSubAgentActivity(
   item: Record<string, unknown>,
   callId: string,
   completed: boolean,
-): HarnessEvent {
+): HarnessEvent | null {
   const kind = (stringField(item, "kind") ?? "").toLowerCase();
   const path = stringField(item, "agentPath") ?? stringField(item, "agent_path");
-  const leaf = path?.split(/[/\\]/).filter(Boolean).pop();
+  const segments = path?.split(/[/\\]/).filter(Boolean) ?? [];
+  // `/root` is the parent turn itself (a child messaged it), never a row it waits on.
+  if (segments.length === 1 && segments[0] === "root") return null;
+  const leaf = segments[segments.length - 1];
   const title = leaf ? `${formatAgentType(leaf)} subagent` : "Subagent";
+  if (kind === "completed") {
+    return { type: "tool.updated", callId, title, kind: "agent", status: "completed" };
+  }
   if (kind === "interrupted") {
     return {
       type: "tool.updated",
@@ -1102,6 +1164,7 @@ const TERMINAL_AGENT_STATES = new Set([
   "notfound",
   "not_found",
   "closed",
+  "shutdown",
   "interrupted",
   "stopped",
   "cancelled",
@@ -1115,6 +1178,14 @@ const FAILED_AGENT_STATES = new Set([
   "notfound",
   "not_found",
   "interrupted",
+]);
+
+const INTERRUPTED_AGENT_STATES = new Set([
+  "shutdown",
+  "closed",
+  "stopped",
+  "cancelled",
+  "canceled",
 ]);
 
 /**
@@ -1134,7 +1205,11 @@ export function codexSubagentStates(
     return [
       {
         threadId,
-        status: FAILED_AGENT_STATES.has(status) ? "failed" : "completed",
+        status: FAILED_AGENT_STATES.has(status)
+          ? "failed"
+          : INTERRUPTED_AGENT_STATES.has(status)
+            ? "interrupted"
+            : "completed",
         ...(message ? { message } : {}),
       },
     ];
@@ -1261,6 +1336,21 @@ function collabAgentFailureDetail(item: Record<string, unknown>): string | undef
   return stringField(item, "status") === "failed" ? "Subagent operation failed." : undefined;
 }
 
+function fileChangeEvidence(changes: unknown[]): HarnessFileChange[] {
+  return changes.flatMap((change) => {
+    const row = asRecord(change);
+    const path = stringField(row, "path");
+    const kind = typeof row?.kind === "string" ? row.kind : asRecord(row?.kind)?.type;
+    if (
+      !path ||
+      (kind !== "add" && kind !== "delete" && kind !== "update") ||
+      typeof row?.diff !== "string"
+    )
+      return [];
+    return [{ path, kind, contents: row.diff }];
+  });
+}
+
 function mapFileChangeItem(
   item: Record<string, unknown>,
   callId: string,
@@ -1290,6 +1380,7 @@ function mapFileChangeItem(
       kind: "edit",
       status,
       preview,
+      fileChanges: fileChangeEvidence(changes),
       ...(paths.length ? { paths } : {}),
     };
   }
@@ -1300,6 +1391,7 @@ function mapFileChangeItem(
     kind: "edit",
     status,
     preview,
+    fileChanges: fileChangeEvidence(changes),
     ...(paths.length ? { paths } : {}),
   };
 }
@@ -1331,6 +1423,7 @@ function mapFileChangePatch(rec: Record<string, unknown>): MappedCodexNotificati
         kind: "edit",
         status: "in_progress",
         preview,
+        fileChanges: fileChangeEvidence(changes),
         ...(paths.length ? { paths } : {}),
       },
     ],

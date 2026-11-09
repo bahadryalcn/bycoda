@@ -1,0 +1,150 @@
+@layer properties, theme, base, components, utilities;
+/* Placement belongs to the caller; presentation below stays unlayered and mirrors the Input roles. */
+@layer components {
+  .field {
+    min-inline-size: 0;
+  }
+}
+.field {
+  display: grid;
+  align-content: start;
+}
+.label {
+  margin-block-end: var(--space-2);
+  color: var(--foreground);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.description,
+.error {
+  display: block;
+  padding-block-start: var(--space-2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.description {
+  color: var(--text-secondary);
+}
+.error {
+  color: var(--danger);
+}
+/* Compact: toolbars and inline filters. Quiet caption label, tight messages. */
+.field[data-variant="compact"] .label {
+  margin-block-end: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+.field[data-variant="compact"] :is(.description, .error) {
+  padding-block-start: var(--space-1);
+}
+
+.control {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+  border: 1px solid var(--ui-field-border);
+  border-radius: var(--ui-field-radius);
+  background: var(--ui-surface-muted);
+}
+.editor {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-inline-size: 0;
+}
+.editor > :is(input, textarea) {
+  flex: 1;
+  min-inline-size: 0;
+}
+/* The frame owns focus (arc.css treats [data-field-control] editors as focus-group members, so
+   they draw no ring or outline of their own); the native editor keeps its ref, events and resize. */
+.control[data-field-control] :is(input, textarea) {
+  border: 0;
+  border-radius: var(--ui-field-radius);
+  background: transparent;
+  padding-inline: var(--space-3);
+  outline: none;
+  box-shadow: none;
+}
+.control:hover {
+  border-color: var(--ui-field-border-hover);
+}
+.control:focus-within {
+  border-color: var(--ui-field-border-focus);
+  box-shadow: var(--ui-focus-ring);
+}
+.control:has([aria-invalid="true"]) {
+  border-color: var(--ui-field-border-invalid);
+}
+.control:has([aria-invalid="true"]):focus-within {
+  box-shadow: var(--ui-focus-ring-invalid);
+}
+.control:has(:is(input, textarea):disabled) {
+  border-color: var(--ui-control-disabled-border);
+}
+.control:has(:is(input, textarea):disabled) {
+  background: var(--ui-control-disabled-surface);
+}
+.adornment {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 2px;
+  padding: 3px;
+}
+.control:has(textarea) {
+  align-items: flex-start;
+}
+.control[data-field-appearance="quiet"]:not(:focus-within):not(:has([aria-invalid="true"])) {
+  border-color: transparent;
+  background: transparent;
+}
+.control[data-field-appearance="quiet"]:hover:not(:focus-within) {
+  background: var(--ui-surface-hover);
+}
+/* Bare: no frame at all (an editor that fills its own panel); the editor keeps its ref, events and type. */
+.control[data-field-appearance="bare"] {
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.control[data-field-appearance="bare"] :is(input, textarea) {
+  border-radius: 0;
+}
+@media (forced-colors: active) {
+  .control:focus-within {
+    outline: 1px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+.control {
+  --field-slot-height: var(--ui-field-height-md);
+}
+.control[data-field-size="sm"] {
+  --field-slot-height: var(--ui-field-height-sm);
+}
+.control[data-field-control] input {
+  min-block-size: calc(var(--field-slot-height) - 2px);
+}
+.control[data-field-control] input:disabled {
+  background: transparent;
+}
+.control:has(:is(input, textarea)[readonly]):not(:focus-within) {
+  background: transparent;
+}
+
+.control[data-field-control] input[data-search-appearance] {
+  block-size: calc(var(--field-slot-height) - 2px);
+}
+.control[data-field-control] :is(input, textarea):disabled {
+  opacity: 1;
+}
+
+.control:has(:is(input, textarea)[readonly]) {
+  --ui-field-border-hover: var(--ui-field-border);
+}

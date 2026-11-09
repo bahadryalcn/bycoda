@@ -1,0 +1,40 @@
+/* Memory list: compact rows on a quiet surface, separated by spacing. */
+.body {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.add {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+.add > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 6px 6px 12px;
+  background: var(--ui-surface);
+  border-radius: var(--ui-radius-card);
+}
+.text {
+  flex: 1;
+  min-width: 0;
+  color: var(--color-content);
+  font-size: var(--text-ui-body);
+  line-height: var(--text-ui-body--line-height);
+  overflow-wrap: anywhere;
+}

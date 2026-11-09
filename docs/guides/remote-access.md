@@ -1,10 +1,240 @@
 # Remote access (experimental)
 
+Host `status` and `stop` verify ownership when lifecycle metadata is unavailable
+or the endpoint does not respond. An active owner reports unconfirmed shutdown;
+unverifiable legacy ownership reports unknown. Neither result means work stopped.
+Keep corrupt state for inspection and repair instead of deleting it to force a start.
+Tunnel storage errors likewise preserve recorded tunnels and prevent a new launch;
+after the stored state is repaired, the same Host can retry initialization.
+
+Development Host input changes keep a stopped operation's cleanup separate from
+permission to send another prompt. If its original target or cleanup cannot be
+verified, the operation remains unresolved. This work has not enabled automatic
+migration of existing conversations or installed a new Windows application.
+
 bycoda can run Claude Code, Codex, Cursor, Grok Build, OpenCode, Pi, OMP, fx, Hermes Agent, and Antigravity sessions on a separate Windows, Linux, or macOS host. The host owns the provider processes and session database. Closing the desktop, closing a session tab, or losing the SSH tunnel does not stop a host session.
 
 A folder on a connected machine is a project in the rail, marked with a globe. Every session in it runs on that machine, in the same session view and composer as a local session. The Sessions sidebar lists that machine's sessions for the project.
 
+When a continued Codex conversation is archived in Codex, sending a follow-up asks the owning provider to restore that same thread before starting the turn. Opening history alone does not restore it. If restoration or identity verification fails, the follow-up fails rather than silently starting an empty thread. Check the owning machine and account before retrying.
+
+## Create a Host conversation on this computer
+
+Windows Host packages include a native background launcher. Its per-user login
+task starts the bundled Node runtime directly; it does not compile an executable
+on the computer or run an encoded PowerShell command. The launcher keeps
+`host.log`, rotates its previous copy, and restarts a Host that exits with an error.
+A normal shutdown does not restart it.
+
+Updating a stopped legacy task migrates it to this launcher. A running Host must
+finish and stop before its task, runtime or configuration can change. An incomplete
+package without the launcher fails explicitly; it does not fall back to the old
+PowerShell runner. Development source runs need a prepared launcher beside the
+built Host entry before installing the Windows login task; ordinary JavaScript
+builds and foreground `serve` do not require it.
+
+Authenticode signing depends on the Windows packaging certificate configuration;
+the updater signature does not establish Windows publisher identity. If security
+software blocks the login task, retain its detection report for review. Do not
+disable protection or repeatedly recreate the blocked task. Changing the launcher
+does not by itself establish antivirus acceptance for an installed package.
+
+Use matching current desktop and Host builds. Delayed input or cleanup for an
+older provider process cannot target its replacement. A client without the
+original process receipt must update before targeted write/stop actions. If
+Native cleanup cannot identify the original running processes, it remains
+unconfirmed and keeps the workspace reserved for recovery.
+
+On Windows, a Host package containing the native provider guardian waits for
+the original process and its owned input/output work to finish. If that
+guardian is lost before cleanup can be confirmed, the same session cannot start
+a replacement process. Other sessions remain available. Reconnecting from
+another device does not clear the original uncertainty. Packages using the
+legacy guard retain its existing, more limited cleanup evidence.
+
+A timed-out CLI check does not prove that its process stopped. Sign-in state
+stays unknown while an original check is unresolved; repeating the check joins
+that same work. Other account profiles remain available. Cleanup can remain
+pending until the original process and its accepted input actually finish.
+Command output can be available while cleanup remains unconfirmed. That output
+does not release a workspace reservation whose original cleanup is still unknown.
+
+Stopping an older process cannot stop its replacement, even when both belong to
+the same conversation. If Stop fails and the original outcome remains unknown,
+another click retains that failure instead of silently starting a second stop
+against whichever process is now current. The conversation can remain blocked
+until its original cleanup is confirmed; unrelated conversations remain usable.
+
+Matching development desktop and Native builds can keep a provider process warm
+between messages while retaining each message's original input writer. A new
+message can wait for accepted earlier writes to finish. Uncertain original input
+can keep that conversation held for recovery; retry does not transfer it to a
+newer message. This input layer does not complete app-tool or device migration.
+
+Existing Native conversations are not automatically moved to the Host. Draft
+checkpoint retention and a successful remote action are separate outcomes: a
+retained draft does not mean that a message was sent or applied. If an operation's
+outcome is uncertain, bycoda keeps it unresolved rather than sending it again.
+
+Remote Stop, approval and question answers for an active desktop conversation
+require matching Host and desktop protocol support. A saved command receipt
+confirms acceptance, not that the provider finished the action. If the reply is
+lost or the owning app restarts, the original command stays held rather than
+running against a replacement turn. Check the original conversation's state
+before issuing another action. An update-required message means the owning
+desktop cannot supply the required control identity.
+
+Private Native checkpoints can retain unsent question answers, queue edits and
+source/merge editor drafts as recovery data. They do not submit those inputs.
+The regular question draft still clears when discarded; earlier private
+checkpoint snapshots are separate retained data with no permission to restore
+or answer the question. Editor checkpoint retention also does not report a
+successful save to the file on disk.
+
+While a Native checkpoint is preparing, affected inputs can temporarily become
+read-only. Work already accepted can finish; preparation does not send a new
+message, save a file or commit an unfinished IME composition on your behalf.
+Cancellation waits for the Native preparation to release its input gates.
+
+Pending local file, attachment or Notes operations can prevent preparation from
+completing. Closing their initiating view or losing a reply does not cancel the
+original work or make it safe to repeat. These checks do not move Notes or their
+unsaved edits to another computer; that migration remains unavailable.
+
+If a Host Notes request loses its reply while the operation is still running,
+later Notes requests stay queued until the original operation really finishes.
+A failed response alone does not mean it is safe to repeat the save.
+
+Preparation can also retain unsaved Notes from the library, session dock and
+closed editor views, including unfinished titles or tags. It keeps those inputs
+as private recovery data. It does not save the note, insert an image or apply a
+recovery choice. A pending operation keeps its original result even after its
+view closes; an uncertain outcome is held for reconciliation without replay.
+
+If a Notes field closes with unconfirmed input, **Retained note input** lets you
+copy its exact text and open the note to check it. Reusing that input is an
+explicit choice. Empty text, spaces and unfinished composition are preserved;
+opening the note does not automatically apply or save them. When private recovery
+capacity is full, new operations wait while the retained input stays available.
+When inserting several images, a later failure preserves references to images
+already saved so their outcome can be checked before another attempt.
+
+For a local project, open its project menu and choose **New conversation on this
+computer's Host**. bycoda connects to this computer's Host before opening the new
+conversation. Send the first message to create it there. The project and selected
+worktree remain on this computer, while the Host owns execution and transcript
+storage. If the Host is unavailable, the action shows an error; it does not start
+the conversation through Native execution.
+
+Model and account choices come from that Host. Named accounts must already exist
+on the Host; changing or clearing the account uses the Host's settings. Closing
+the tab or losing the connection does not stop an accepted turn. An uncertain
+send retains its command ID for receipt recovery.
+
+Unreadable saved requests remain held for review. Archived recovery evidence also
+uses local storage, so new requests can be refused when that storage budget is
+full. A refused request is not sent; retain its draft while recovering earlier
+requests.
+
+Session owner records also use IndexedDB. Startup waits for their routing fences
+before loading conversations; a loading or unreadable owner is never treated as
+an ordinary local conversation. New ownership is reserved before a tab can send,
+and commands wait for its durable publication. If saving fails, sending stays
+held and the original owner and draft remain available for retry. Compatibility
+records and distinct original bytes are retained while older writers may exist.
+
+This is an explicit option for new conversations. Existing local conversations
+and the ordinary new-conversation action keep their current execution behavior.
+It does not migrate an existing conversation.
+
+The Host conversation stays attached to its project even before its first send.
+Selecting another project opens a separate conversation using the ordinary
+project defaults.
+
+Use the existing Host connection and pairing workflow to reach Host conversations
+from another device; installed
+cross-device acceptance of this new local entry point is still pending.
+
+## Connection changes and active tools
+
+SSH forwarding rules show **Stopping** while a stop is in progress. If the local
+process exit cannot be confirmed, the rule shows **Status unknown** and offers
+**Retry stop** before it can be started or removed again.
+
+When a Host connection is blocked, the conversation shows one connection recovery
+notice. Use **Reconnect** there to verify the saved machine and open a fresh
+connection. The conversation, queue and workspace reload after recovery; a failed
+queue read continues to hold sending. Reconnecting never resends a message whose
+delivery is uncertain. Authentication or machine identity failures may require
+signing in or correcting the saved connection in **Connection settings**.
+
+A workspace path belongs to the computer that stores that project. A local
+Windows project must be opened through that computer's Host, with the project
+registered there. A remote server cannot use its own Host to write a path on your
+computer. A path rejection remains a separate workspace error once connectivity
+is restored; reconnecting does not grant access to folders outside registered
+projects.
+
+Terminal log streams, pending desktop tools and development previews keep the
+computer selected when that operation started. Replacing or removing a connection
+stops new access through the old operation; it does not send its remaining output
+or actions to another computer. Reopen a development link after reconnecting.
+An interrupted reply does not automatically repeat a potentially accepted action.
+
+Device actions follow that same rule. If a computer connection changes after an
+action starts, its outcome may be unknown even when no result reaches this view.
+Inspect the original device or preview status before repeating an input. A preview
+whose original permission has expired cannot supply another stored screenshot;
+start a separately authorized capture when you need a current view.
+The same uncertainty can occur while setting up device tools or stopping the
+device service. Reconnect and check that computer's device-tool status before
+trying again. Mobile previews keep their original computer, project and access;
+switching projects does not transfer an existing preview to the new project.
+
+Completed device-preview receipts remain available for ten minutes. After expiry,
+the old request cannot run again or supply a stored screenshot; request a new
+preview explicitly. Work whose device effects are still pending or unknown stays
+tracked and can continue to occupy capacity. Expiry does not stop a device or
+remove an installed app.
+
+A social authority needs a stable HTTPS address, or a local loopback address for
+local use. An SSH connection alone is not an address that another Host can store
+and contact as its authority. The setup checks both peer addresses before issuing
+an enrollment token.
+
 ## Connect through SSH
+
+### Servers catalog and terminal tabs
+
+The Servers catalog distinguishes saved SSH terminal targets from machines running
+bycoda Host. Machine connection status comes from the connection state; a saved SSH
+entry alone does not establish that its destination is reachable. Use **Connect**
+to open a terminal, or select an entry to inspect its address and connection,
+forwarding, automation, organization and activity tools. Applied filters are shown
+beside the catalog; **Recently used first** changes order without filtering entries.
+
+SSH tabs support the close action, middle click and Delete on the focused tab.
+The existing terminal close policy asks before closing foreground work or a terminal
+whose process status cannot be determined. Closing the active tab selects a surviving
+neighbor. Opening, running, failed and exited labels describe the terminal lifecycle;
+an opened terminal does not by itself verify remote SSH authentication.
+
+While a terminal is open, **Saved SSH tabs** holds the restore preference and pending
+entries. Only saved connections can be remembered. Restoring an entry requires
+**Connect**, opens a new shell and does not replay previous commands. Exact endpoint
+and identity-file details remain available from the terminal's connection information.
+
+Agents use `servers.ssh.execute` to request a command on a saved SSH target.
+The connected desktop asks for approval inside bycoda of the exact target and command unless
+the original coding session has **Full access**. The Host rechecks that permission
+before execution; reducing access stops a command that skipped approval. Other
+modes and Assistant Room still ask. No existing private terminal is shared. `servers.ssh.status` returns bounded output
+and exit status. Cancel and timeout stop local SSH but can leave the remote
+outcome unknown. Results are process-local and commands are never replayed on
+restore. See [Working with bycoda tools](agent-tools.md) for the agent workflow.
+
+SSH settings load keys, known hosts and agent information independently. A failed
+section has its own **Retry** action; successfully loaded sections remain available.
 
 In **Settings → Connections → Add machine**, enter an SSH address (`user@my-mac-mini`) or an alias from your SSH config and click **Connect**. The machine picker also links to this Settings page. An optional name and SSH port are available.
 
@@ -21,6 +251,10 @@ Prerequisites:
 
 SSH host verification and password/passphrase prompts appear in Settings. Changed host keys are rejected by OpenSSH. Passwords/passphrases are used only for the current authentication, not saved. When key/agent authentication is available, opening the remote view restores a lost tunnel automatically. If SSH needs another prompt, use **Reconnect** in Settings. Reconnecting uses the saved device credential and checks the host's identity.
 
+A machine can be reached at more than one address, for example its Tailscale address and its home-network address. Besides the address you saved and its optional other address, a connected host reports its own home-network and Tailscale IPv4 addresses, and the desktop remembers them for that machine. Each connection checks all of these addresses at once and uses the saved address when it answers, otherwise the first one that does. So a Mac saved under its Tailscale address still connects over the home network while Tailscale is signed out. A remembered address is only a hint: it must present the saved address's SSH host key and answer as the same host, so another computer that takes over that address later is never used. Saved addresses never change, and each new report from the host replaces the addresses it reported before. When a connection had to use a later address, the desktop checks the preferred ones every minute and moves to the best one that signs in completely; requests in progress then continue over the new connection. An address that stays silent or fails is checked less often, up to every 30 minutes. **Connections** settings lists every address under **Addresses**, in the order a connection tries them: the SSH address, the other address and the ones the host found. Each row shows its kind (home network or Tailscale), whether its SSH port responds right now, and which one is in use. The SSH and other address are always tried; change them with **Edit name and address…**. An address the host found can be turned off, for example one on a VPN or virtual adapter that this computer cannot reach; it is then never tried, and a connection already using it moves to another address within a minute. Turning an address on or off never reorders the list. **Try first** chooses whether the SSH address, home-network addresses or Tailscale addresses are tried first. These choices are kept when the host reports its addresses again. Hosts do not report addresses on adapters named as virtual (Hyper-V, WSL, Docker, VPN).
+
+While a machine is off or out of reach, bycoda checks it again in the background, waiting about twice as long each time, from 2 seconds up to 5 minutes, and at once when the window regains focus or the network returns. A connection that drops again within 30 seconds keeps the longer wait. Nothing is checked while the computer is offline, and checks stop after the window has been hidden for 10 minutes. They stay quiet: the **Reconnect** button and the project row show progress only for a reconnect you start. Turn off **Automatically reconnect to remote machines** to stop them.
+
 The forward binds to a temporary port on the laptop's loopback interface. Quitting the desktop closes only that forward. It does not stop the host service or its agent sessions.
 
 **Remove** in Settings asks for confirmation and offers two choices. **Remove from this desktop only** deletes the saved connection and closes its forward. The host keeps running, and this desktop's device credential stays valid on it. **Revoke access and remove** first asks the host to revoke the credential this desktop is using, then removes the connection. It needs the machine to be reachable, and if revocation fails the connection is kept. Neither option stops the host, affects other desktops' credentials, or deletes sessions. Adding the same machine again reconnects its projects, tabs, and history.
@@ -35,7 +269,7 @@ The composer's model picker lists models for the providers installed on the host
 
 The **Explorer** sidebar and Go to File use the normal file views for host folders and files. Opening a text file uses the normal editor tabs. Saving writes back to the host; remote reads and edits are limited to 1 MiB text files. File creation, rename, deletion, and project search use the same controls as local projects. The **Changes** sidebar and Git history graph use the normal Git views, including file diffs, staging, discarding, commits, pushing, and pull request creation through `gh` on the host. Remote pull requests use the host's commit list and diff summary for their title and body. An ordinary folder outside Git shows an empty Changes state. Git changes are refreshed every few seconds. Generated commit messages are not available remotely yet.
 
-The composer’s **+** menu supports file and image attachments, Plan mode, and saved drafts when the host advertises these capabilities. Attachments are copied to the host’s private data directory before the turn or draft is recorded; each file is limited to 20 MiB. Image previews are restored from the host when you reopen a conversation. A draft can be sent or removed from its transcript card. Plan mode uses the host provider and produces a reviewable plan card whose Build action continues on the host with the session’s current model. Update older hosts to enable these menu actions.
+The composer’s **+** menu supports file and image attachments, and its **Mode** menu offers Plan mode and saved drafts, when the host advertises these capabilities. Attachments are copied to the host’s private data directory before the turn or draft is recorded; each file is limited to 20 MiB. Image previews are restored from the host when you reopen a conversation. A draft can be sent or removed from its transcript card; editing a saved draft back into the composer is available only for chats on this computer. Plan mode uses the host provider and produces a reviewable plan card whose Build action continues on the host with the session’s current model. Update older hosts to enable these actions.
 
 Features that read or run on this computer are not available in these projects: `@` file mentions, skills and slash commands other than `/plan` and `/compact`, operator mode, and terminals. Worktree deletion and the local worktree settings page are not available remotely yet. Plans from the transcript open normal read-only plan tabs. Source files stay on the host; this feature shares host-owned sessions, not working-directory synchronization.
 
@@ -66,6 +300,13 @@ Under **Settings → Connections → Connect to an existing host by URL**, enter
 
 When the laptop wakes, restore the SSH tunnel. The remote view reconnects automatically and loads the host's latest persisted snapshot. An uncertain request retains its original command ID, including creation of a new session and its first message. **Retry** asks the host for that same command’s receipt, so a lost response does not create another conversation or submit the prompt again. Pending requests survive restarting the desktop and belong to the tab that created them.
 
+The desktop-to-Host migration is still under development. Its internal preparation
+check refuses a running or uncertain Native session and leaves the provider
+working. An idle preparation may briefly hold new input while windows save their
+state; cancellation releases it after accepted storage work finishes. This check
+does not move an existing conversation to another computer or enable a new
+execution default. Installed multi-device migration still requires acceptance.
+
 HTTPS endpoints can also be entered if you operate a reverse proxy to the loopback host. Plain HTTP is accepted only for loopback endpoints. Native desktop HTTP carries the saved credential; it is not exposed to the renderer or browser storage. The native connection store is `remote-machines.json` in the desktop app's data directory, with mode 0600 on Unix. This initial implementation does not use the OS keychain.
 
 ## Manage the host
@@ -92,11 +333,118 @@ On Windows, the launcher is `%USERPROFILE%\.bycoda-host\bin\bycoda-host.cmd`. Th
 
 `pnpm run host:package` builds a self-contained package for the current Windows/Mac/Linux architecture. `pnpm run host:package -- --all` builds all six archives, using pinned official Node binaries and checksums. Archives contain the host bundle, runtime, launcher, and licenses. `host/package.mjs` pins the runtime version. Cross-packaging Windows on Unix requires `zip` and `unzip`; native Windows packaging uses PowerShell.
 
+The optional physical admission module has an explicit native build:
+
+```sh
+pnpm run host:admission:build --target win32-x64
+pnpm run host:package -- --target win32-x64 --native-admission
+```
+
+The native command requires the selected Rust target and its linker to be
+available; it does not install toolchains. It writes a target-specific bundle
+under `build/host-native/`. Packaging verifies its target, checksum and current
+native source fingerprint before replacing a package. For `--all`, first build
+all six native bundles. `--native-admission-dir` selects an alternate directory
+containing those target folders. Ordinary `host:build` and `host:package` remain
+usable without a native module.
+
+For a development Host, build JavaScript normally and use
+`pnpm run host:admission:build --output build/host` to place the native manifest
+beside its worker. Images use immutable hash filenames; rebuilding changes
+the manifest without overwriting a loaded image. A running Host keeps its original
+module until it exits. Missing or unsupported native admission leaves an ordinary
+Host explicitly unjoined; a corrupt configured module or a fault after joining
+holds protected work. Windows actual-connection attestation and participating
+writer fences do not establish complete actor coverage. Linux/macOS actual SQLite
+connection attestation and full migration qualification remain pending.
+
+Windows Node/SQLite limits the UTF-8 extension loading path, including the
+Windows namespace prefix, to 260 bytes. The flat image filename keeps the bundle
+compact; a longer configured path is refused before joining. Choose a shorter
+build/package location for that case. No working-directory change or unverified
+alternate image is used.
+
 Each tagged release publishes `bycoda-host-{darwin,linux}-{arm64,x64}.tar.gz`, `bycoda-host-win32-{arm64,x64}.zip`, and their `.sha256` files alongside the desktop installers, and its desktop builds are configured with that release's download address (`BYCODA_HOST_RELEASE_URL`). SSH setup installs the matching version under `~/.bycoda-host/runtime`.
 
 **The host on this computer** ships inside the Windows and macOS installers. On start, an installed release app installs that host if this computer has none, and upgrades it when the bundled version is newer, using the same verified installer as SSH setup. It never downgrades, waits while the host has running sessions or another update is being installed, and treats an unreadable host database as busy. A waiting or failed update is shown in Settings → Connections and retried while the app is open.
 
 **Unreleased development builds:** automatic first-time installation and **Update Host** require host archives published for the desktop version. Tagged releases include the matching archives; an unreleased checkout does not. Until the matching release is available, use the manual development connection above. A missing archive produces an explicit error in Settings. No fallback to an arbitrary latest release or unverified download is used. Connecting does not automatically upgrade a running host. When an SSH host lacks Explorer or Changes, Settings → Connections offers **Update Host**. This downloads and verifies the matching package, restarts the host service, and reconnects using the existing device credential. The restart interrupts active agent turns; sessions and history remain on the host. URL connections must be updated on the host manually.
+
+## Automations during a connection outage
+
+An unreachable machine shows a warning in Automations. Available records and the
+automation picker remain usable; an unread remote list is not treated as empty.
+Previously loaded remote records remain marked as out of date. **Retry** in the
+warning requests a fresh connection check, including recovery of a dropped SSH
+tunnel. Retrying preserves the open draft and does not save or run an automation.
+
+## Interrupted Native helper requests
+
+Local reminder and SSH setting changes can also be temporarily refused during
+workspace capture. Refused changes leave their saved values intact. Reminders
+that become due while new work is closed remain pending for a later timer tick.
+An already claimed reminder is not sent again merely because a notification or
+reply failed. Notes images return a usable path only after their file bytes are
+written and synchronized; a failed or uncertain outcome keeps its original
+status and should be checked before inserting the image again.
+
+When a local workspace capture temporarily refuses a local automation change,
+the refused request leaves saved rows unchanged. A failed save keeps its editor
+draft; retry after capture finishes. Time-based scheduling and startup recovery
+retry on their normal next evaluation. An accepted local write finishes before
+capture proceeds.
+
+Workspace capture can also temporarily refuse SSH runbook changes, new runs,
+scheduled review refreshes and recovery from saved run records. A refused change
+leaves the saved records unchanged; retry after capture finishes. An already
+accepted run keeps its original permission through its last local status write
+and worker cleanup. Its cached status and Stop control remain available while
+new work is refused. Stopping the local SSH process can still leave the remote
+script's outcome unknown; check that outcome before starting another run.
+
+Development source now retains the original Native editor buffer report and
+desktop finish/format request before sending it. If the connection breaks after
+the Host may have accepted the request, recovery asks for that original's outcome
+instead of repeating the operation. An unknown outcome stays pending; it does
+not mean the operation failed. In particular, formatting must not be repeated
+automatically and an old buffer receipt cannot mark a newer editor state saved.
+After the local result has been safely consumed, a separate acknowledgement lets
+the Host release its large retained result. If that acknowledgement is interrupted,
+the app retries cleanup without repeating the original operation. Pending cleanup
+does not undo a successful local result. When retained result capacity is full,
+the Host rejects new formatting before starting it.
+This source behavior still requires installed-platform acceptance; it is not a
+claim about the version currently installed on your computer.
+
+In the development source, the Host database also retains buffer reports and
+their recovery metadata. These are paths and dirty/unknown flags, not an extra
+copy of unsaved editor text. Existing report/archive JSON files are legacy copies;
+copying them alone does not back up new reports. Keep a coherent Host database
+backup for restoration. Reading a recovered report does not mark an old editor
+owner current or authorize resolving dirty buffers.
+
+If the Host's helper handler has finished but its result is still unknown,
+development source can release that request's reserved result capacity without
+repeating it. Later requests can proceed while the original remains pending.
+Requests whose helper is still running, or whose admission was interrupted, keep
+their reservation. Releasing capacity does not mean the original failed or that
+it is safe to send it again.
+
+Compatible new Hosts also tell the desktop when an exact unknown format request
+can no longer produce a recorded result. The desktop then releases that result's
+reservation while keeping the original request protected against replay. New
+format requests use the formatter's smaller enforced output limit and separate
+native capacity from control operations; retained older requests keep their
+original limits. A recovered completed format result can be discarded after its
+original caller is gone, without applying old text to the current editor.
+
+New development clients can also clean up completed delivery records in ordered
+groups while retaining a permanent guard against replay. Interrupted cleanup does
+not repeat the operation. Missing or uncertain outcomes stop cleanup until their
+original state is known. After a computer connection starts using this protocol,
+older clients must update before sending new buffer reports, finish replies or
+formatting requests through that connection; existing outcomes can still be read.
+This remains development-source behavior pending installed-platform acceptance.
 
 ## Scope of this first version
 
@@ -107,6 +455,24 @@ Remote history appears in the Sessions sidebar of each project on a machine. Hos
 The headless host runs the reused TypeScript adapters with a Node process backend. It proves the execution boundary without introducing the planned Rust daemon/worker IPC yet. Node is included in host release archives, separately from the desktop application.
 
 ## Verify
+
+### Conversation read failures
+
+Saving a running desktop conversation while another device reads it does not
+invalidate an already coherent snapshot. The Host still verifies the physical
+database, project and conversation owner before returning it. Replacement,
+deletion or a backwards revision requires a fresh read.
+
+Read capacity and owner transitions report a temporary read failure; the viewer
+keeps the last loaded conversation and retries through its existing refresh flow.
+A machine that refuses a read because it is busy is not shown as an error: the
+view keeps its data, shows **The machine is busy. Retrying…** and retries after
+2, 4, 8 and 16 seconds before it reports the failure. The model list and the
+background check for delegated runs retry the same way, and a lost connection is
+explained once by the machine's connection notice.
+The readonly helper keeps its 32 MiB full-snapshot safety limit. Exceeding that
+limit reports an explicit size error rather than a generic Host read failure;
+automatic retries cannot resolve that limit.
 
 ```sh
 pnpm run host:build
@@ -122,3 +488,9 @@ Host tests use fake provider executables and temporary loopback servers. They do
 For the real OpenSSH transport and native askpass smoke test on Linux/macOS, build with `pnpm run host:package` and `cargo build --bin bycoda`, then run `python3 scripts/checks/test-remote-ssh.py`. It uses a disposable loopback sshd, temporary keys and known-hosts file, and an isolated packaged host. It leaves personal SSH configuration, provider credentials, and OS services untouched.
 
 Host CI runs on Windows, macOS, and Linux. Windows-specific tests cover ACL inheritance, Task Scheduler definitions, bootstrap parsing/installation, and provider child-process cleanup. They use temporary data and mocked task registration so normal test runs do not install or replace a real user's background task. Full SSH-to-Task-Scheduler setup must also be validated on a signed-in Windows host before a supported release.
+
+## Where approvals appear
+
+Required approvals appear inside the source conversation when it is visible, or in an application confirmation when it is not. SSH, desktop actions, management, Inbox, Room delegation, file access, privacy recovery and quit confirmations use this flow. The exact target and operation remain visible. Expired requests, closed source windows and changed privacy scope cannot authorize work. Application-owned approvals never fall back to an operating-system or browser confirmation dialog; system permission prompts and file pickers remain platform-owned.
+
+Full access reuses execution permission for saved SSH commands in the original coding session. It does not grant publication, credentials, clipboard or physical input, persistent file access, privacy changes or delegation. Those decisions keep their existing approval boundaries.

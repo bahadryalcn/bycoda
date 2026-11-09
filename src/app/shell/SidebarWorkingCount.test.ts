@@ -15,6 +15,10 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 vi.mock("../../features/source-control/hooks/useProjectDiffStats", () => ({
   useProjectDiffStats: () => null,
+  useProjectsDiffStats: () => [],
+}));
+vi.mock("../../features/source-control/hooks/useProjectWorktrees", () => ({
+  useProjectWorktrees: () => ({ data: undefined, refresh: async () => false }),
 }));
 vi.mock("../../features/source-control/hooks/useGitFileStatuses", () => ({
   useGitFileStatuses: () => ({ files: new Map(), dirs: new Map() }),
@@ -85,18 +89,24 @@ async function render() {
   await act(async () => {});
 }
 
-it("keeps Servers reachable in the compact rail before opening a project", async () => {
+it("keeps Servers reachable through compact rail Tools before opening a project", async () => {
   props.cwd = "";
   props.projectRailOpen = false;
   props.compactProjectRail = true;
   props.onOpenServers = vi.fn();
   props.serversActive = true;
   await render();
-  const button = container.querySelector<HTMLButtonElement>('button[aria-label="Servers"]')!;
+  const tools = container.querySelector<HTMLButtonElement>('button[aria-label="Tools"]')!;
+  expect(tools.getAttribute("aria-expanded")).toBe("false");
+  await act(async () => tools.click());
+  const dialog = document.querySelector('[role="dialog"][aria-label="Tools"]')!;
+  const button = dialog.querySelector<HTMLButtonElement>('button[aria-label="Servers"]')!;
   expect(button).not.toBeNull();
   await act(async () => button.click());
   expect(props.onOpenServers).toHaveBeenCalledOnce();
   expect(props.onSelectProject).not.toHaveBeenCalled();
+  expect(tools.getAttribute("aria-expanded")).toBe("false");
+  expect(document.querySelector('[role="dialog"][aria-label="Tools"]')).toBeNull();
 });
 
 it("keeps Explorer and Changes reachable from the workspace beside a compact rail", async () => {
@@ -117,13 +127,31 @@ function badge() {
   return container.querySelector("[data-workspace-working-count]");
 }
 
+it("caps the displayed working count without losing the real accessible total or live mark", async () => {
+  props.sessions = Array.from({ length: 128 }, (_, index) => ({
+    id: `working-${index}`,
+    cwd: props.cwd,
+    harness: "codex" as const,
+    model: "",
+    runtimeMode: "supervised" as const,
+    title: `Working ${index}`,
+    createdAt: 1,
+    updatedAt: 1,
+  }));
+  props.busySessionIds = new Set(props.sessions.map((session) => session.id));
+  await render();
+  expect(badge()?.textContent).toBe("99+");
+  expect(badge()?.getAttribute("aria-label")).toBe("128 working sessions");
+  expect(badge()?.querySelector('[data-size="xs"][aria-hidden="true"]')).not.toBeNull();
+});
+
 it("collapses and reopens Working in the workspace when the project rail is closed", async () => {
   props.projectRailOpen = false;
   props.onSelectAgent = vi.fn();
   props.liveAgents = [
     {
       id: "background",
-      cwd: props.cwd,
+      cwd: "/other/project",
       title: "Background work",
       harness: "codex",
       activity: "Working",
@@ -169,14 +197,16 @@ it("counts each working conversation once in this workspace and clears on comple
   props.busySessionIds = new Set(["first", "second", "waiting", "other", "new"]);
   props.approvalSessionIds = new Set(["waiting"]);
   await render();
-  expect(badge()?.textContent).toBe("3");
-  expect(badge()?.getAttribute("aria-label")).toBe("3 working sessions");
+  expect(badge()?.getAttribute("aria-label")).toMatch(/^3 working session/);
   expect(badge()?.closest('[role="tab"]')?.textContent).toContain("Sessions");
   expect(container.querySelectorAll("[data-workspace-working-count]")).toHaveLength(1);
+  expect(badge()?.getAttribute("data-variant")).toBe("count");
+  expect(badge()?.textContent).toBe("3");
+  expect(badge()?.querySelector('[data-size="xs"][aria-hidden="true"]')).not.toBeNull();
 
   props.busySessionIds = new Set(["first"]);
   await render();
-  expect(badge()?.textContent).toBe("1");
+  expect(badge()?.getAttribute("aria-label")).toMatch(/^1 working session/);
   props.busySessionIds = new Set();
   await render();
   expect(badge()).toBeNull();
@@ -203,7 +233,7 @@ it.each([true, false])(
     await render();
     const tab = badge()?.closest('[role="tab"]');
     expect(compact ? tab?.getAttribute("aria-label") : tab?.textContent).toContain("Sessions");
-    expect(badge()?.textContent).toBe("1");
+    expect(badge()?.getAttribute("aria-label")).toMatch(/^1 working session/);
   },
 );
 
@@ -272,7 +302,7 @@ it("counts host work without opening its sessions and updates when it finishes",
     },
   ];
   await render();
-  expect(badge()?.textContent).toBe("2");
+  expect(badge()?.getAttribute("aria-label")).toMatch(/^2 working session/);
   hostSessions = hostSessions.map((session) => ({
     ...session,
     status: "idle",
@@ -282,7 +312,7 @@ it("counts host work without opening its sessions and updates when it finishes",
   expect(badge()).toBeNull();
 });
 
-it("shows the same turn clock in Working and Sessions, then removes it when work ends", async () => {
+it("keeps the turn clock in Sessions while Working summarizes this project", async () => {
   vi.useFakeTimers();
   vi.setSystemTime(200_000);
   try {
@@ -313,15 +343,24 @@ it("shows the same turn clock in Working and Sessions, then removes it when work
       },
     ];
     await render();
+    // This project's duplicate row becomes a count; its session card retains the live clock.
     const rail = () =>
-      container.querySelector('[data-live-agent-card="timed"] [data-session-working-status]');
+      container.querySelector('[data-live-agent-card="timed"] [data-live-agent-elapsed]');
     const card = () =>
       container.querySelector('[data-session-card="timed"] [data-session-working-status]');
-    expect(rail()?.textContent).toContain("3m 10s");
-    expect(card()?.textContent).toBe(rail()?.textContent);
+    expect(rail()).toBeNull();
+    expect(container.querySelector("[data-live-agents-project-summary]")?.textContent).toBe(
+      "1 working in this project",
+    );
+    expect(card()?.textContent).toContain("3m");
     act(() => vi.advanceTimersByTime(1000));
-    expect(card()?.textContent).toContain("3m 11s");
-    expect(card()?.textContent).toBe(rail()?.textContent);
+    expect(rail()).toBeNull();
+    expect(card()?.textContent).toContain("3m");
+    props.lastSessionsOpen = true;
+    await render();
+    expect(container.querySelector("[data-live-agents-project-summary]")).toBeNull();
+    expect(rail()?.textContent).toBe("3m");
+    props.lastSessionsOpen = false;
     props.busySessionIds = new Set();
     props.liveAgents = [];
     await render();

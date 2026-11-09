@@ -1,16 +1,60 @@
+/* Primary action and options trigger form one joined control with independent gates.
+   The seam is a 1px gap for solid actions and a shared border for outlined ones; only
+   the outer corners stay rounded. */
+@layer properties, theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .group {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+}
 .group {
   display: inline-flex;
-  align-items: center;
-  gap: 0.125rem;
-  min-inline-size: 0;
-  max-inline-size: 100%;
+  align-items: stretch;
+  gap: 0;
+}
+
+.group[data-split-seam="gap"] {
+  gap: 1px;
+}
+
+.group[data-split-seam="shared"] > [data-split-part="menu"] {
+  margin-inline-start: -1px;
+}
+
+.group > [data-split-part][data-button-tone] {
+  position: relative;
+}
+
+/* The options trigger never gives up width to a long or truncated primary label. */
+.group > [data-split-part="menu"] {
+  flex: none;
+}
+
+.group > [data-split-part="primary"][data-button-tone] {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.group > [data-split-part="menu"][data-button-tone] {
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+}
+
+/* The ring of either part is raised above its neighbour instead of being clipped by it. */
+.group > [data-split-part]:focus-visible,
+.group > [data-split-part][aria-expanded="true"] {
+  z-index: 1;
 }
 
 .fullWidth {
   display: flex;
   inline-size: 100%;
 }
-.fullWidth > button:first-child {
+
+.fullWidth > [data-split-part="primary"] {
   flex: 1;
   min-inline-size: 0;
 }

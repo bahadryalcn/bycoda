@@ -88,12 +88,40 @@ try {
     $expected = ((Get-Content -LiteralPath $checksum -Raw).Trim() -split '\s+')[0]
     if ($expected -notmatch '^[a-fA-F0-9]{64}$') { throw 'Invalid host package checksum.' }
     if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expected) { throw 'bycoda Host package checksum mismatch.' }
-    $unpacked = Join-Path $temporary 'unpacked'
-    Expand-Archive -LiteralPath $archive -DestinationPath $unpacked
-    $actual = & (Join-Path $unpacked 'node.exe') (Join-Path $unpacked 'host.mjs') --version
-    if ($LASTEXITCODE -ne 0 -or $actual -ne $version) { throw 'bycoda Host version mismatch.' }
     $runtime = Join-Path $runtimeRoot ("$version-$target-" + [Guid]::NewGuid().ToString('N'))
-    Move-Item -LiteralPath $unpacked -Destination $runtime
+    $reusePackage = $env:BYCODA_HOST_REUSE_PACKAGE -eq '1'
+    if ($reusePackage) { $runtime = Join-Path $runtimeRoot ("$version-$target-package-" + $expected.ToLowerInvariant()) }
+    if (Test-Path -LiteralPath $runtime) {
+      # Never overwrite a runtime that may still serve requests. Reuse only
+      # bytes inventoried after the archive's checksum was verified.
+      $inventoryPath = Join-Path $runtime '.package-files.json'
+      if (-not (Test-Path -LiteralPath $inventoryPath)) { throw 'The cached host package is incomplete. Reinstall the host with the local update coordinator.' }
+      $inventory = Get-Content -LiteralPath $inventoryPath -Raw | ConvertFrom-Json
+      if ($inventory.Count -eq 0) { throw 'The cached host package inventory is empty.' }
+      # Normalize both sides: Windows PowerShell's GetFullPath expands 8.3 short
+      # names (RUNNER~1) that $runtime may still contain.
+      $runtimeFull = [IO.Path]::GetFullPath($runtime).TrimEnd([IO.Path]::DirectorySeparatorChar)
+      foreach ($item in $inventory) {
+        $file = [IO.Path]::GetFullPath((Join-Path $runtime $item.path))
+        if (-not $file.StartsWith($runtimeFull + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Invalid cached host package path.' }
+        if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $item.hash) { throw 'The cached host package changed. Reinstall the host with the local update coordinator.' }
+      }
+    } else {
+      $unpacked = Join-Path $temporary 'unpacked'
+      Expand-Archive -LiteralPath $archive -DestinationPath $unpacked
+      $actual = & (Join-Path $unpacked 'node.exe') (Join-Path $unpacked 'host.mjs') --version
+      if ($LASTEXITCODE -ne 0 -or $actual -ne $version) { throw 'bycoda Host version mismatch.' }
+      if ($reusePackage) {
+        # Relative paths come from equally normalized full paths; child FullName
+        # values may spell an 8.3 prefix (RUNNER~1) differently from $unpacked.
+        $unpackedFull = [IO.Path]::GetFullPath($unpacked).TrimEnd([IO.Path]::DirectorySeparatorChar)
+        $inventory = @(Get-ChildItem -LiteralPath $unpacked -File -Recurse | ForEach-Object {
+          @{ path = [IO.Path]::GetFullPath($_.FullName).Substring($unpackedFull.Length + 1); hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+        })
+        [IO.File]::WriteAllText((Join-Path $unpacked '.package-files.json'), (ConvertTo-Json -InputObject $inventory), (New-Object Text.UTF8Encoding($false)))
+      }
+      Move-Item -LiteralPath $unpacked -Destination $runtime
+    }
     $bin = Join-Path $base 'bin'
     New-Item -ItemType Directory -Force -Path $bin | Out-Null
     $runtimeName = Split-Path -Leaf $runtime
@@ -124,10 +152,22 @@ try {
       $published = $true
       [IO.File]::WriteAllText((Join-Path $bin 'bycoda-host.cmd'), $launcher, [Text.Encoding]::ASCII)
       # Every install unpacks a fresh runtime (with its Node engine) beside the
-      # old ones. The new service answers now, so drop the others; an old
-      # node.exe still exiting stays locked and is removed by the next install.
-      foreach ($old in Get-ChildItem -LiteralPath $runtimeRoot -Directory) {
-        if ($old.Name.StartsWith('.') -or $old.FullName -eq $runtime) { continue }
+      # old ones. The new service answers now, so drop the others except the
+      # previous runtime, which sessions started from it (and a rollback) may
+      # still launch. An old node.exe still exiting stays locked; the next
+      # install removes it.
+      # Runtimes are compared by folder name: every runtime lives directly in
+      # $runtimeRoot, and full paths differ in form (8.3 short names such as
+      # RUNNER~1 in $base versus the long names Get-ChildItem returns).
+      $previousPointer = Join-Path $base 'previous-runtime-path'
+      $current = Split-Path -Leaf $runtime
+      if ($previousRuntime -and (Split-Path -Leaf $previousRuntime) -ne $current) {
+        [IO.File]::WriteAllText($previousPointer, $previousRuntime, (New-Object Text.UTF8Encoding($false)))
+      }
+      $keep = if (Test-Path -LiteralPath $previousPointer) { Split-Path -Leaf ([IO.File]::ReadAllText($previousPointer).Trim()) } else { $null }
+      $runtimes = if (Test-Path -LiteralPath (Join-Path $runtimeRoot $current)) { Get-ChildItem -LiteralPath $runtimeRoot -Directory } else { @() }
+      foreach ($old in $runtimes) {
+        if ($old.Name.StartsWith('.') -or $old.Name -eq $current -or $old.Name -eq $keep) { continue }
         Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
       }
     }

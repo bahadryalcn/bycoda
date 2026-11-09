@@ -1,5 +1,12 @@
 import { expect, it } from "vitest";
-import { applySessionSync, sessionReferenceKey, type HostSession } from "./protocol";
+import {
+  applySessionSync,
+  HOST_PROTOCOL_VERSION,
+  protocolMismatchMessage,
+  requireHostDescriptor,
+  sessionReferenceKey,
+  type HostSession,
+} from "./protocol";
 
 const known: HostSession = {
   projectId: "project",
@@ -130,4 +137,29 @@ it("rejects deltas that do not apply, so the caller loads a snapshot", () => {
     }),
   ).toThrow();
   expect(() => applySessionSync(undefined, { kind: "unchanged", revision: 4 })).toThrow();
+});
+
+it("keeps a Host with unknown providers reachable and offers only the known ones", () => {
+  const descriptor = requireHostDescriptor({
+    protocolVersion: HOST_PROTOCOL_VERSION,
+    environmentId: "env",
+    name: "mac",
+    providers: ["codex", "future-provider" as never, "claude"],
+    capabilities: [],
+  });
+  expect(descriptor.providers).toEqual(["codex", "claude"]);
+});
+
+it("names the side to update when protocol versions differ", () => {
+  const base = { environmentId: "env", name: "mac", providers: [], capabilities: [] };
+  expect(() =>
+    requireHostDescriptor({ ...base, protocolVersion: HOST_PROTOCOL_VERSION + 1 }),
+  ).toThrow(/Update this app/);
+  expect(() =>
+    requireHostDescriptor({ ...base, protocolVersion: HOST_PROTOCOL_VERSION - 1 }),
+  ).toThrow(/Update the bycoda Host/);
+  expect(protocolMismatchMessage(HOST_PROTOCOL_VERSION, HOST_PROTOCOL_VERSION)).toBeNull();
+  expect(protocolMismatchMessage(undefined, HOST_PROTOCOL_VERSION)).toMatch(
+    /Update the bycoda Host/,
+  );
 });

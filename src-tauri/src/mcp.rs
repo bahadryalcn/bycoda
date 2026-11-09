@@ -6,6 +6,13 @@ use tauri::State;
 
 use crate::dirs_home;
 use crate::fs::expand_home;
+mod config;
+pub(crate) mod enablement;
+#[path = "mcp_jsonc.rs"]
+mod jsonc;
+use config::write_json_config;
+#[cfg(test)]
+use config::{publish_config, publish_new_config, write_json_config_inner};
 
 fn claude_desktop_config(home: &Path) -> PathBuf {
     #[cfg(target_os = "macos")]
@@ -363,63 +370,6 @@ fn write_json_server(path: &Path, name: &str, server: Value) -> Result<(), Strin
     })
 }
 
-fn write_json_config(
-    path: &Path,
-    update: impl FnOnce(&mut Value) -> Result<(), String>,
-) -> Result<(), String> {
-    let parent = path.parent().ok_or("Invalid config path")?;
-    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let lock_path = parent.join(format!(
-        ".{}.lock",
-        path.file_name()
-            .and_then(|part| part.to_str())
-            .unwrap_or("mcp")
-    ));
-    let lock = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(lock_path)
-        .map_err(|e| e.to_string())?;
-    lock.lock().map_err(|e| e.to_string())?;
-    let mut root: Value = if path.exists() {
-        let raw = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-        serde_json::from_str(&raw)
-            .or_else(|_| serde_json::from_str(&strip_jsonc(&raw)))
-            .map_err(|e| format!("Existing config is invalid JSON: {e}"))?
-    } else {
-        serde_json::json!({})
-    };
-    update(&mut root)?;
-    let encoded = serde_json::to_vec_pretty(&root).map_err(|e| e.to_string())?;
-    let temporary = parent.join(format!(
-        ".{}.{}.tmp",
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("mcp"),
-        uuid::Uuid::new_v4()
-    ));
-    let result = (|| -> std::io::Result<()> {
-        use std::io::Write;
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options.open(&temporary)?;
-        file.write_all(&encoded)?;
-        file.sync_all()?;
-        std::fs::rename(&temporary, path)
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&temporary);
-    }
-    result.map_err(|e| e.to_string())
-}
-
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpConnection {
@@ -439,13 +389,13 @@ pub async fn mcp_discover(cwd: String) -> Result<Vec<McpConnection>, String> {
         let codex_home = std::env::var_os("CODEX_HOME").map(PathBuf::from);
         let desktop_config = claude_desktop_config(Path::new(&home));
         let opencode_config = std::env::var_os("OPENCODE_CONFIG").map(PathBuf::from);
-        Ok(discover(
+        discover(
             Path::new(&home),
             &project,
             codex_home.as_deref(),
             &desktop_config,
             opencode_config.as_deref(),
-        ))
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -457,10 +407,14 @@ fn discover(
     codex_home_override: Option<&Path>,
     desktop_config: &Path,
     opencode_config: Option<&Path>,
-) -> Vec<McpConnection> {
+) -> Result<Vec<McpConnection>, String> {
     let mut connections = Vec::new();
     let claude = home.join(".claude.json");
-    if let Some(config) = read_json(&claude) {
+    let claude_config = read_json(&claude).unwrap_or_else(|| serde_json::json!({}));
+    let claude_project =
+        enablement::claude_project_key(&claude_config, &project.to_string_lossy())?;
+    if claude.exists() {
+        let config = &claude_config;
         add_json_servers(
             &mut connections,
             "claude",
@@ -475,7 +429,7 @@ fn discover(
             &claude,
             config
                 .get("projects")
-                .and_then(|projects| projects.get(project.to_string_lossy().as_ref()))
+                .and_then(|projects| projects.get(&claude_project))
                 .and_then(|entry| entry.get("mcpServers")),
         );
     }
@@ -556,6 +510,13 @@ fn discover(
             break;
         }
     }
+    // Claude opt-outs belong to the current project and apply to every scope.
+    for connection in &mut connections {
+        if connection.provider == "claude" {
+            connection.enabled =
+                !enablement::claude_disabled(&claude_config, &claude_project, &connection.name);
+        }
+    }
     connections.sort_by(|a, b| {
         (&a.provider, &a.name, &a.scope, &a.config_path).cmp(&(
             &b.provider,
@@ -564,7 +525,7 @@ fn discover(
             &b.config_path,
         ))
     });
-    connections
+    Ok(connections)
 }
 
 fn add_json_file(
@@ -788,7 +749,9 @@ mod tests {
             r#"{"type":"local","command":["npx","-y","docs"],"environment":{"TOKEN":"{env:DOCS_TOKEN}"},"enabled":true}"#,
         ).unwrap();
         write_opencode_server(&path, "docs", server, 1).unwrap();
-        let config: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("// keep this setting"));
+        let config: Value = serde_json::from_str(&strip_jsonc(&raw)).unwrap();
         assert_eq!(config["theme"], "dark");
         assert_eq!(config["mcp"]["existing"]["url"], "https://example.com");
         assert_eq!(
@@ -991,7 +954,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn replacing_config_restricts_permissions() {
+    fn replacing_config_preserves_permissions() {
         use std::os::unix::fs::PermissionsExt;
 
         let root = std::env::temp_dir().join(format!("bycoda-mcp-mode-{}", uuid::Uuid::new_v4()));
@@ -1002,7 +965,7 @@ mod tests {
         write_json_server(&path, "new", serde_json::json!({"command":"npx"})).unwrap();
         assert_eq!(
             std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-            0o600
+            0o644
         );
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1037,9 +1000,235 @@ mod tests {
         )
         .unwrap();
         write_json_server(&path, "new", serde_json::json!({"command":"npx"})).unwrap();
-        let value: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("// existing server"));
+        let value: Value = serde_json::from_str(&strip_jsonc(&raw)).unwrap();
         assert_eq!(value["mcpServers"]["old"]["command"], "node");
         assert_eq!(value["mcpServers"]["new"]["command"], "npx");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn jsonc_preserves_comments_order_crlf_and_string_markers() {
+        let root = std::env::temp_dir().join(format!("bycoda-mcp-cst-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("mcp.json");
+        let original = "{\r\n  // leave this comment\r\n  \"url\": \"https://example.test/a//b\",\r\n  \"mcpServers\": {\r\n    \"old\": { \"command\": \"node\" }, // old server\r\n  },\r\n  \"after\": true\r\n}\r\n";
+        std::fs::write(&path, original).unwrap();
+        write_json_server(&path, "new", serde_json::json!({"command":"npx"})).unwrap();
+        let output = std::fs::read_to_string(&path).unwrap();
+        assert!(output.contains("// leave this comment\r\n"));
+        assert!(output.contains("https://example.test/a//b"));
+        assert!(output.contains("// old server\r\n"));
+        assert!(output.find("\"url\"").unwrap() < output.find("\"mcpServers\"").unwrap());
+        assert!(output.find("\"mcpServers\"").unwrap() < output.find("\"after\"").unwrap());
+        assert!(!output.replace("\r\n", "").contains('\n'));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn duplicate_or_invalid_jsonc_is_not_rewritten() {
+        let root =
+            std::env::temp_dir().join(format!("bycoda-mcp-invalid-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("mcp.json");
+        for raw in [
+            r#"{"mcpServers":{},"mcpServers":{}}"#,
+            r#"{"other":{"same":1,"same":2}}"#,
+            r#"{"mcpServers": {"#,
+        ] {
+            std::fs::write(&path, raw).unwrap();
+            assert!(write_json_server(&path, "new", serde_json::json!({"command":"npx"})).is_err());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), raw);
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn external_change_before_publication_is_not_overwritten() {
+        let root = std::env::temp_dir().join(format!("bycoda-mcp-race-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("mcp.json");
+        std::fs::write(&path, r#"{"mcpServers":{}}"#).unwrap();
+        let result = write_json_config_inner(
+            &path,
+            |root| {
+                root["mcpServers"]["new"] = serde_json::json!({"command":"npx"});
+                Ok(())
+            },
+            || {
+                std::fs::write(&path, r#"{"external":true}"#).unwrap();
+            },
+            publish_config,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            r#"{"external":true}"#
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn publication_failure_does_not_report_success() {
+        let root =
+            std::env::temp_dir().join(format!("bycoda-mcp-publish-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("mcp.json");
+        let original = r#"{"mcpServers":{}}"#;
+        std::fs::write(&path, original).unwrap();
+        let error = write_json_config_inner(
+            &path,
+            |value| {
+                value["mcpServers"]["new"] = serde_json::json!({"command":"npx"});
+                Ok(())
+            },
+            || {},
+            |_, _, _| Err(std::io::Error::other("injected replacement failure")),
+        )
+        .unwrap_err();
+        assert!(error.contains("injected replacement failure"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        #[cfg(windows)]
+        assert!(std::fs::read_dir(&root).unwrap().any(|entry| entry
+            .unwrap()
+            .path()
+            .extension()
+            .is_some_and(|ext| ext == "tmp")));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn successful_new_publication_survives_temporary_cleanup_failure() {
+        let root =
+            std::env::temp_dir().join(format!("bycoda-mcp-cleanup-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let temporary = root.join("config.tmp");
+        let target = root.join("config.json");
+        std::fs::write(&temporary, b"saved").unwrap();
+        publish_new_config(&temporary, &target, |_| {
+            Err(std::io::Error::other("injected cleanup failure"))
+        })
+        .unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"saved");
+        assert_eq!(std::fs::read(&temporary).unwrap(), b"saved");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn replacement_preserves_existing_windows_alternate_stream() {
+        let root = std::env::temp_dir().join(format!("bycoda-mcp-stream-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("mcp.json");
+        let stream = format!("{}:bycoda-mcp-test", path.display());
+        std::fs::write(&path, r#"{"mcpServers":{}}"#).unwrap();
+        std::fs::write(&stream, b"keep-stream").unwrap();
+        write_json_server(&path, "new", serde_json::json!({"command":"npx"})).unwrap();
+        assert_eq!(std::fs::read(&stream).unwrap(), b"keep-stream");
+        assert!(!std::fs::read_dir(&root).unwrap().any(|entry| entry
+            .unwrap()
+            .path()
+            .extension()
+            .is_some_and(|ext| ext == "backup")));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn uncertain_replacement_keeps_original_backup_and_new_temporary_file() {
+        let root =
+            std::env::temp_dir().join(format!("bycoda-mcp-recovery-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("mcp.json");
+        let backup = root.join("simulated-replacement.backup");
+        let original = r#"{"mcpServers":{}}"#;
+        std::fs::write(&path, original).unwrap();
+        let error = write_json_config_inner(
+            &path,
+            |value| {
+                value["mcpServers"]["new"] = serde_json::json!({"command":"npx"});
+                Ok(())
+            },
+            || {},
+            |_, target, _| {
+                // ast-grep-ignore: rust-rename-without-fsync -- fault injection simulates a partial replacement
+                std::fs::rename(target, &backup)?;
+                Err(std::io::Error::other("injected partial replacement"))
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("replacement recovery file"));
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), original);
+        let temp = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| path.extension().is_some_and(|ext| ext == "tmp"))
+            .unwrap();
+        assert!(std::fs::read_to_string(temp).unwrap().contains("\"new\""));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn follows_existing_symlink_and_refuses_dangling_link() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("bycoda-mcp-link-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let target = root.join("target.json");
+        let link = root.join("mcp.json");
+        std::fs::write(&target, "{\"mcpServers\":{}} ").unwrap();
+        symlink(&target, &link).unwrap();
+        write_json_server(&link, "new", serde_json::json!({"command":"npx"})).unwrap();
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(std::fs::read_to_string(&target)
+            .unwrap()
+            .contains("\"new\""));
+        std::fs::remove_file(&target).unwrap();
+        assert!(write_json_server(&link, "other", serde_json::json!({"command":"npx"})).is_err());
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlink_swap_before_publication() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("bycoda-mcp-swap-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let first = root.join("first.json");
+        let second = root.join("second.json");
+        let link = root.join("mcp.json");
+        std::fs::write(&first, r#"{"mcpServers":{}}"#).unwrap();
+        std::fs::write(&second, r#"{"other":true}"#).unwrap();
+        symlink(&first, &link).unwrap();
+        let result = write_json_config_inner(
+            &link,
+            |value| {
+                value["mcpServers"]["new"] = serde_json::json!({"command":"npx"});
+                Ok(())
+            },
+            || {
+                std::fs::remove_file(&link).unwrap();
+                symlink(&second, &link).unwrap();
+            },
+            publish_config,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::read_to_string(&first).unwrap(),
+            r#"{"mcpServers":{}}"#
+        );
+        assert_eq!(
+            std::fs::read_to_string(&second).unwrap(),
+            r#"{"other":true}"#
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -1089,7 +1278,7 @@ mod tests {
         let codex_config: toml::Value = toml::from_str(&codex_raw).unwrap();
         assert!(codex_config.get("mcp_servers").is_some());
         std::fs::write(home.join(".config/opencode/opencode.jsonc"), "{\"mcp\": {\"servers\": {\"four\": {\"type\": \"remote\", \"url\": \"https://example.com\",},},}}").unwrap();
-        let found = discover(&home, &project, None, &desktop, None);
+        let found = discover(&home, &project, None, &desktop, None).unwrap();
         let names: Vec<_> = found
             .iter()
             .map(|entry| (entry.provider.as_str(), entry.name.as_str()))
@@ -1216,7 +1405,7 @@ mod tests {
             r#"{"mcpServers":{"servers":{"command":"npx"},"docs":{"command":"node"}}}"#,
         )
         .unwrap();
-        let found = discover(&root, &project, None, &root.join("desktop.json"), None);
+        let found = discover(&root, &project, None, &root.join("desktop.json"), None).unwrap();
         assert_eq!(found.len(), 2);
         assert!(found.iter().all(|server| server.scope == "user"));
         assert!(found.iter().any(|server| server.name == "servers"));

@@ -1,6 +1,4 @@
 import { invokeWorkspace } from "../../../platform/tauri/fs";
-import { invoke } from "@tauri-apps/api/core";
-import { isLocalProject } from "../../projects/model/recents";
 import { pathKey, slash } from "../../../shared/lib/paths";
 
 export type ProjectSearchMatch = {
@@ -38,6 +36,8 @@ export type EditorNavigationTarget = EditorNavigation & {
 };
 
 export type FileOpenOptions = {
+  /** Keep contextual previews beside the conversation, regardless of file-tab preference. */
+  placement?: "pane";
   /** The caller obtained this concrete path from the filesystem or file index. */
   exact?: boolean;
   /** Open as a permanent tab instead of the pane's preview tab. */
@@ -63,8 +63,5 @@ export function searchProject(options: ProjectSearchOptions): Promise<ProjectSea
 }
 
 export function cancelProjectSearch(cwd: string, searchId: string): Promise<void> {
-  // Remote results are discarded by the caller; hosts do not yet expose
-  // cancellation for workspace search. Never route their paths to local IPC.
-  if (!isLocalProject(cwd)) return Promise.resolve();
-  return invoke<void>("cancel_project_search", { cwd, searchId });
+  return invokeWorkspace<void>("cancel_project_search", { cwd, searchId });
 }

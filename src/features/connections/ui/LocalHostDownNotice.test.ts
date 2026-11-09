@@ -55,7 +55,7 @@ async function render() {
 }
 
 const poll = () => act(async () => void (await vi.advanceTimersByTimeAsync(15_000)));
-const notice = () => document.body.querySelector('[role="alert"]');
+const notice = () => document.body.querySelector('[role="status"]');
 const openNotifications = () =>
   act(async () => {
     document.body.querySelector<HTMLButtonElement>('button[aria-label="Notifications"]')!.click();

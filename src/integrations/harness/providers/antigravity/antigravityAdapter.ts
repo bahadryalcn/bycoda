@@ -19,6 +19,7 @@ import {
 import { resolveAntigravityBinary } from "../../core/child";
 import type { SendTurnInput } from "../../core/types";
 import { registerHarness, type HarnessAdapter } from "../../core/registry";
+import { settleProviderRetirements } from "../../core/providerRetirement";
 
 /**
  * Transport comes from the binary the host found, not the platform: ACP where
@@ -39,17 +40,23 @@ export const antigravityAdapter: HarnessAdapter = {
   canSteer: false,
   sendTurn,
   steerTurn: steerAntigravityTurn,
-  cancelTurn: async (sessionId) => {
-    await Promise.all([cancelAntigravityTurn(sessionId), cancelAntigravityStreamTurn(sessionId)]);
+  cancelTurn: async (sessionId, context) => {
+    await settleProviderRetirements([
+      cancelAntigravityTurn(sessionId, context),
+      cancelAntigravityStreamTurn(sessionId, context),
+    ]);
   },
   respondApproval: respondAntigravityApproval,
-  stopSession: async (sessionId) => {
-    await Promise.all([stopAntigravitySession(sessionId), stopAntigravityStreamSession(sessionId)]);
+  stopSession: async (sessionId, context) => {
+    await settleProviderRetirements([
+      stopAntigravitySession(sessionId, context),
+      stopAntigravityStreamSession(sessionId, context),
+    ]);
   },
-  forgetSession: async (sessionId) => {
-    await Promise.all([
-      forgetAntigravitySession(sessionId),
-      forgetAntigravityStreamSession(sessionId),
+  forgetSession: async (sessionId, context) => {
+    await settleProviderRetirements([
+      forgetAntigravitySession(sessionId, context),
+      forgetAntigravityStreamSession(sessionId, context),
     ]);
   },
   bindSession: (threadId, providerSessionId, cwd) => {

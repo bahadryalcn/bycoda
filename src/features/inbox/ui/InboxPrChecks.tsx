@@ -1,5 +1,15 @@
+import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
+import { Disclosure } from "../../../shared/ui/Disclosure";
+import { LiveText } from "../../../shared/ui/LiveText";
+import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Tab } from "../../../shared/ui/Tabs";
+import { useTooltip } from "../../../shared/ui/Tooltip";
 import { fetchCheckDetails, hasCheckDetails } from "../model/prChecks";
 import { t, useLocale } from "../../../shared/i18n";
 import { CheckRepairForm, type CheckRepair } from "./CheckRepairForm";
@@ -11,7 +21,8 @@ import {
   type RepairGroup,
 } from "./CheckRepairProgress";
 import { CheckEvidence } from "./CheckEvidence";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { selectedChecksStillFailed } from "./prCheckSelection";
+import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import { useEffect, useId, useRef, useState } from "react";
 import {
   AlertCircle,
@@ -21,7 +32,6 @@ import {
   CircleHelp,
   CircleX,
   ExternalLink,
-  LoaderCircle,
   Minus,
   RefreshCw,
   Sparkles,
@@ -42,111 +52,71 @@ import {
   type GithubCheckDetails,
 } from "../model/githubPrChecks";
 
-function overallMark(overall: GithubPrChecksOverall): {
-  Icon: IconComponent;
-  className: string;
-} {
+/** A state glyph; `"spinner"` is the shared pending Spinner instead of an icon. */
+type Mark = { Icon: IconComponent | "spinner"; tone: BadgeTone };
+
+function overallMark(overall: GithubPrChecksOverall): Mark {
   switch (overall.kind) {
     case "loading":
-      return { Icon: LoaderCircle, className: "animate-spin text-(--ui-text-secondary)" };
+      return { Icon: "spinner", tone: "neutral" };
     case "error":
-      return { Icon: AlertCircle, className: "text-(--ui-tone-danger-fg)" };
+      return { Icon: AlertCircle, tone: "danger" };
     case "fail":
-      return { Icon: CircleX, className: "text-(--ui-tone-danger-fg)" };
+      return { Icon: CircleX, tone: "danger" };
     case "pending":
-      return {
-        Icon: LoaderCircle,
-        className: "animate-spin text-(--ui-tone-warning-fg)",
-      };
+      return { Icon: "spinner", tone: "accent" };
     case "pass":
-      return { Icon: CheckCircle, className: "text-(--ui-tone-success-fg)" };
+      return { Icon: CheckCircle, tone: "success" };
     case "neutral":
-      return { Icon: CircleDashed, className: "text-(--ui-text-secondary)" };
+      return { Icon: CircleDashed, tone: "neutral" };
   }
 }
 
-function checkMark(state: GithubPrCheckState): {
-  Icon: IconComponent;
-  className: string;
-} {
+function checkMark(state: GithubPrCheckState): Mark {
   switch (state) {
     case "pass":
-      return { Icon: CheckCircle, className: "text-(--ui-tone-success-fg)" };
+      return { Icon: CheckCircle, tone: "success" };
     case "fail":
-      return { Icon: CircleX, className: "text-(--ui-tone-danger-fg)" };
+      return { Icon: CircleX, tone: "danger" };
     case "pending":
-      return { Icon: LoaderCircle, className: "animate-spin text-(--ui-text-secondary)" };
+      return { Icon: "spinner", tone: "accent" };
     case "cancel":
-      return { Icon: Minus, className: "text-(--ui-text-secondary)" };
+      return { Icon: Minus, tone: "neutral" };
     case "unknown":
-      return { Icon: CircleHelp, className: "text-(--ui-text-secondary)" };
+      return { Icon: CircleHelp, tone: "neutral" };
     case "skipping":
-      return { Icon: CircleDashed, className: "text-(--ui-text-secondary)" };
+      return { Icon: CircleDashed, tone: "neutral" };
   }
 }
 
-/** The Checks tab: label plus an overall mark whose name spells out the counts. */
-export function PrChecksTab({
-  id,
-  controls,
-  overall,
-  selected,
-  onSelect,
-}: {
-  id?: string;
-  controls?: string;
-  overall: GithubPrChecksOverall;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  useLocale();
-  const mark = overallMark(overall);
-  const label = `Checks: ${overall.description}`;
-  const failClass = mark.className.split(" ").find((entry) => entry.startsWith("text-")) ?? "";
+function MarkGlyph({ mark, size }: { mark: Mark; size: "sm" | "md" }) {
   return (
-    <Button
-      variant="tab"
-      type="button"
-      role="tab"
-      id={id}
-      aria-controls={controls}
-      tabIndex={selected ? 0 : -1}
-      aria-selected={selected}
-      aria-label={label}
-      title={label}
-      onClick={onSelect}
-    >
-      <span className="leading-none">{t("Checks")}</span>
-      <mark.Icon className={`size-3.5 shrink-0 ${mark.className}`} strokeWidth={1.75} />
-      {overall.kind === "fail" ? (
-        <span className={`tabular-nums leading-none ${failClass}`}>{overall.failed}</span>
-      ) : null}
-      {selected ? (
-        <span className="absolute inset-x-0 bottom-0 h-0.5 bg-(--ui-tone-neutral-solid)" />
-      ) : null}
-    </Button>
+    <Badge
+      appearance="subtle"
+      size="xs"
+      tone={mark.tone}
+      aria-hidden="true"
+      icon={mark.Icon === "spinner" ? <Spinner size={size} /> : <mark.Icon strokeWidth={1.75} />}
+    />
   );
 }
 
-function selectedChecksStillFailed(
-  selected: readonly GithubPrCheck[],
-  current: readonly GithubPrCheck[],
-): boolean {
-  const failures = new Map<string, number>();
-  const identity = (check: GithubPrCheck) =>
-    JSON.stringify([check.workflow, check.name, check.url]);
-  for (const check of current) {
-    if (check.state !== "fail") continue;
-    const key = identity(check);
-    failures.set(key, (failures.get(key) ?? 0) + 1);
-  }
-  return selected.every((check) => {
-    const key = identity(check);
-    const count = failures.get(key) ?? 0;
-    if (count === 0) return false;
-    failures.set(key, count - 1);
-    return true;
-  });
+/** PR detail Checks tab; its accessible name includes the overall counts. */
+export function PrChecksTab({ overall }: { overall: GithubPrChecksOverall }) {
+  useLocale();
+  const mark = overallMark(overall);
+  const label = `Checks: ${overall.description}`;
+  return (
+    <Tab value="checks" aria-label={label} tooltip={label}>
+      <span className="leading-none">{t("Checks")}</span>
+      <MarkGlyph mark={mark} size="sm" />
+      {overall.kind === "fail" ? (
+        <Badge variant="count" size="xs">
+          {overall.failed}
+        </Badge>
+      ) : null}
+    </Tab>
+  );
 }
 
 function PrCheckRow({
@@ -198,8 +168,11 @@ function PrCheckRow({
     scroller.scrollTop +=
       (row.getBoundingClientRect().top - bounds.top) / (scaleY || 1) - scroller.clientTop;
   }, [revealToken, expandable]);
-  const [details, setDetails] = useState<GithubCheckDetails | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<{
+    key: string;
+    details: GithubCheckDetails | null;
+    error: string | null;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   const [retry, setRetry] = useState(0);
   const detailsId = useId();
@@ -214,25 +187,35 @@ function PrCheckRow({
     check.startedAt,
     check.completedAt,
   ]);
-  useEffect(() => {
-    if (autoExpand && expandable) setExpanded(true);
-  }, [autoExpand, expandable]);
-  useEffect(() => {
-    setDetails(null);
-  }, [detailsKey]);
+  // Details belong to the check revision they were fetched for, so a new key
+  // starts empty without a clearing effect.
+  const current = loaded?.key === detailsKey ? loaded : null;
+  const details = current?.details ?? null;
+  const error = current?.error ?? null;
+  const wantsAutoExpand = autoExpand && expandable;
+  const [previousWantsAutoExpand, setPreviousWantsAutoExpand] = useState(wantsAutoExpand);
+  if (previousWantsAutoExpand !== wantsAutoExpand) {
+    setPreviousWantsAutoExpand(wantsAutoExpand);
+    if (wantsAutoExpand) setExpanded(true);
+  }
   useEffect(() => {
     if (!expanded || !jobId || (!cwd && (!check.provider || check.provider === "github"))) return;
     let active = true;
     setLoading(true);
-    setError(null);
     // Routine polls keep evidence mounted while fetching updated job steps.
     fetchCheckDetails(cwd, repo, check)
       .then(
         (result) => {
-          if (active) setDetails(result);
+          if (active) setLoaded({ key: detailsKey, details: result, error: null });
         },
         (reason: unknown) => {
-          if (active) setError(reason instanceof Error ? reason.message : String(reason));
+          if (!active) return;
+          const message = reason instanceof Error ? reason.message : String(reason);
+          setLoaded((previous) => ({
+            key: detailsKey,
+            details: previous?.key === detailsKey ? previous.details : null,
+            error: message,
+          }));
         },
       )
       .finally(() => {
@@ -257,34 +240,46 @@ function PrCheckRow({
     .find((annotation) => annotation.level === "failure")
     ?.message.split(/\r?\n/)
     .find((line) => line.trim());
-  const subtitle = failureMessage || (failedStep ? `Failed at ${failedStep}` : status);
-  const title = `${check.name} · ${status}${duration ? `, took ${duration}` : ""}${workflow ? `, ${workflow}` : ""}`;
+  const subtitle =
+    failureMessage || (failedStep ? t("Failed at {p0}", { p0: failedStep }) : status);
+  const title = `${check.name} · ${status}${duration ? `, ${t("took {p0}", { p0: duration })}` : ""}${workflow ? `, ${workflow}` : ""}`;
+  const rowHint = useTooltip({
+    label: [
+      check.name,
+      workflow,
+      failureMessage || failedStep ? subtitle : undefined,
+      status,
+      duration,
+      failureMessage && failedStep ? t("Failed at {p0}", { p0: failedStep }) : undefined,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    when: "overflow",
+  });
   const url = check.url;
   const linked = isHttpUrl(url);
   const body = (
     <>
       <span className="grid h-7 w-5 shrink-0 place-items-center">
-        <mark.Icon className={`size-4 ${mark.className}`} strokeWidth={1.75} />
+        <MarkGlyph mark={mark} size="md" />
       </span>
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex min-w-0 items-baseline gap-2.5">
           <span
             data-check-name
-            title={check.name}
-            className={`min-w-0 ${expanded ? "break-words" : "truncate"} text-[14px] font-medium leading-snug tracking-[-0.15px] text-(--ui-tone-neutral-fg) @max-[420px]/checks:text-[12px]`}
+            className={`min-w-0 ${expanded ? "break-all" : "truncate"} text-ui-secondary font-medium text-(--ui-tone-neutral-fg)`}
           >
             {check.name}
           </span>
           {workflow ? (
-            <span className="min-w-0 shrink-[2] truncate text-[11px] text-(--ui-text-secondary) @max-[560px]/checks:hidden">
+            <span className="min-w-0 shrink-[2] truncate text-ui-micro text-(--ui-text-secondary) @max-[560px]/checks:hidden">
               {workflow}
             </span>
           ) : null}
         </span>
         {(!repairItem || expanded) && (failureMessage || failedStep) ? (
           <span
-            title={subtitle}
-            className="mt-0.5 min-w-0 truncate text-[12px] leading-relaxed text-(--ui-text-secondary) @max-[420px]/checks:text-[11px]"
+            className={`mt-0.5 min-w-0 ${expanded ? "break-words" : "truncate"} text-ui-caption text-(--ui-text-secondary)`}
           >
             {subtitle}
           </span>
@@ -296,14 +291,29 @@ function PrCheckRow({
       </span>
     </>
   );
-  const className = "flex w-full min-w-0 flex-1 items-center gap-2.5 rounded-md text-left";
+  const className =
+    "flex w-full min-w-0 flex-1 items-center gap-2.5 rounded-(--ui-control-radius) text-left";
   return (
     <li
+      {...rowHint.trigger}
+      onPointerEnter={(event) => {
+        if (event.target instanceof Element && event.target.closest("[data-no-drag]")) return;
+        rowHint.trigger.onPointerEnter(event);
+      }}
+      onPointerOver={(event) => {
+        if (event.target instanceof Element && event.target.closest("[data-no-drag]"))
+          rowHint.hide();
+        else rowHint.trigger.onPointerEnter(event);
+      }}
+      onFocus={(event) => {
+        if (event.target.closest("[data-no-drag]")) rowHint.hide();
+        else rowHint.trigger.onFocus(event);
+      }}
       ref={rowRef}
       tabIndex={-1}
-      className={`min-w-0 rounded-xl outline-none ${expanded ? "bg-(--ui-surface-hover)" : ""}`}
+      className="min-w-0 rounded-(--ui-control-radius)"
     >
-      <div className="group/check flex min-w-0 items-center gap-2 rounded-xl px-2 py-2 hover:bg-(--ui-surface-hover) @max-[420px]/checks:gap-1">
+      <ActionHost className="min-w-0 gap-2 px-2 py-1 @max-[420px]/checks:gap-1">
         {expandable ? (
           <Button
             variant="item"
@@ -327,27 +337,24 @@ function PrCheckRow({
             motion="none"
             className="w-full min-w-0 flex-1 text-left"
             type="button"
-            title={title}
             aria-label={title}
-            onClick={() => void openUrl(url)}
+            onClick={() => openUrlSafely(url)}
           >
             {body}
           </Button>
         ) : (
-          <div title={title} className={className}>
-            {body}
-          </div>
+          <div className={className}>{body}</div>
         )}
         <span className={`shrink-0 text-left ${wideStatus ? "w-24" : "w-14"}`}>
           {repairItem ? (
             <CheckRepairStatus item={repairItem} />
           ) : (
-            <span className={`text-[11px] ${mark.className.replace("animate-spin", "")}`}>
+            <Badge tone={mark.tone} size="xs" appearance="subtle">
               {status}
-            </span>
+            </Badge>
           )}
         </span>
-        <span className="mr-1 w-11 shrink-0 whitespace-nowrap text-right text-(length:--ui-font-caption) tabular-nums text-(--ui-text-secondary) @max-[480px]/checks:hidden">
+        <span className="mr-1 w-11 shrink-0 whitespace-nowrap text-right text-ui-caption tabular-nums text-(--ui-text-secondary) @max-[480px]/checks:hidden">
           {duration}
         </span>
         {onFix ? (
@@ -362,10 +369,11 @@ function PrCheckRow({
             aria-haspopup="dialog"
             aria-expanded={fixOpen}
             aria-label={t("Fix {p0} with AI", { p0: check.name })}
-            title={t("Fix with AI")}
+            tooltip={t("Fix with AI")}
+            data-no-drag=""
             className="shrink-0"
           >
-            <Sparkles className="size-3.5" strokeWidth={1.75} />
+            <Sparkles className="icon-sm" strokeWidth={1.75} />
           </Button>
         ) : (
           <span className="size-7 shrink-0" aria-hidden="true" />
@@ -384,10 +392,11 @@ function PrCheckRow({
             aria-expanded={expanded}
             aria-controls={detailsId}
             onClick={() => setExpanded(!expanded)}
+            data-no-drag=""
             className="shrink-0"
           >
             <ChevronRight
-              className={`size-3 transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
+              className={`icon-xs transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
               strokeWidth={1.75}
             />
           </Button>
@@ -400,36 +409,35 @@ function PrCheckRow({
             label={t("Open {p0} check", { p0: check.name })}
             variant="ghost"
             type="button"
-            title={t("View full log")}
-            className="opacity-60 group-hover/check:opacity-100 focus-visible:opacity-100"
+            tooltip={t("View full log")}
             aria-label={t("Open {p0} check", { p0: check.name })}
-            onClick={() => void openUrl(url)}
+            data-no-drag=""
+            onClick={() => openUrlSafely(url)}
           >
-            <ExternalLink className="size-3" strokeWidth={1.75} />
+            <ExternalLink className="icon-xs" strokeWidth={1.75} />
           </Button>
         ) : (
           <span className="size-6 shrink-0" aria-hidden="true" />
         )}
-      </div>
+      </ActionHost>
       {expanded ? (
         <div
           id={detailsId}
-          className="min-w-0 space-y-3 py-3 pl-10 pr-3 text-[12px] @max-[420px]/checks:pl-3"
+          className="min-w-0 space-y-3 py-3 pl-10 pr-3 text-ui-caption @max-[420px]/checks:pl-3"
         >
-          {loading && !details ? (
-            <p
-              role="status"
-              className="flex items-center gap-2 px-2 py-1 text-(--ui-text-secondary)"
-            >
-              <LoaderCircle className="size-4 shrink-0 animate-spin" strokeWidth={1.75} />
-              {t("Loading steps…")}
-            </p>
+          {loading && !details && !error ? (
+            <LoadingText className="px-2 py-1">{t("Loading steps…")}</LoadingText>
           ) : null}
           {error ? (
-            <Alert tone="info" role="alert">
+            <Alert tone="danger">
               <p>{t("Could not load job details.")}</p>
-              <p className="break-words text-[11px]">{error}</p>
-              <Button variant="ghost" type="button" onClick={() => setRetry((value) => value + 1)}>
+              <p className="break-words text-ui-micro">{error}</p>
+              <Button
+                variant="ghost"
+                type="button"
+                loading={loading}
+                onClick={() => setRetry((value) => value + 1)}
+              >
                 {t("Retry details")}
               </Button>
             </Alert>
@@ -445,14 +453,17 @@ function PrCheckRow({
                 />
               ) : null}
               {details.steps.length ? (
-                <details className="group/steps">
-                  <summary className="flex cursor-pointer list-none items-center gap-1 text-[11px] text-(--ui-text-secondary) hover:text-(--ui-tone-neutral-fg) [&::-webkit-details-marker]:hidden">
-                    <ChevronRight className="size-3 transition-transform group-open/steps:rotate-90 motion-reduce:transition-none" />
-                    {t("View run steps")}
-                    <span className="ml-auto pl-2 text-right text-(length:--ui-font-caption) text-(--ui-text-secondary) @max-[420px]/checks:hidden">
-                      {describeCheckCounts(countChecks(details.steps))}
-                    </span>
-                  </summary>
+                <Disclosure
+                  size="sm"
+                  summary={
+                    <>
+                      {t("View run steps")}{" "}
+                      <span className="text-ui-caption text-(--ui-text-secondary) @max-[420px]/checks:hidden">
+                        {describeCheckCounts(countChecks(details.steps))}
+                      </span>
+                    </>
+                  }
+                >
                   <ol className="space-y-1" aria-label={t("{p0} steps", { p0: check.name })}>
                     {details.steps.map((step, index) => {
                       const stepMark = checkMark(step.state);
@@ -461,10 +472,7 @@ function PrCheckRow({
                           key={index}
                           className={`flex items-center gap-2 rounded px-2 py-1 ${step.state === "fail" ? "bg-(--ui-tone-danger-subtle)" : ""}`}
                         >
-                          <stepMark.Icon
-                            className={`size-4 shrink-0 ${stepMark.className}`}
-                            strokeWidth={1.75}
-                          />
+                          <MarkGlyph mark={stepMark} size="md" />
                           <span className="min-w-0 flex-1 break-words text-(--ui-text-secondary)">
                             {step.name}
                             <span className="sr-only">: {checkStateLabel(step.state)}</span>
@@ -476,32 +484,40 @@ function PrCheckRow({
                       );
                     })}
                   </ol>
-                </details>
+                </Disclosure>
               ) : (
-                <p className="text-(--ui-text-secondary)">{t("No steps reported for this job.")}</p>
+                <EmptyState
+                  size="inline"
+                  kind="empty"
+                  description={t("No steps reported for this job.")}
+                />
               )}
               {check.state === "fail" && !details.annotations.length && !details.notice ? (
-                <p className="mt-3 text-(--ui-text-secondary)">
-                  {t("No error annotations reported. View the full log at the check URL.")}
-                </p>
+                <EmptyState
+                  size="inline"
+                  kind="empty"
+                  description={t(
+                    "No error annotations reported. View the full log at the check URL.",
+                  )}
+                />
               ) : null}
               {details.log ? (
-                <details className="mt-3">
-                  <summary>{t("View logs")}</summary>
-                  <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap text-[11px]">
+                <Disclosure size="sm" className="mt-3" summary={t("View logs")}>
+                  <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap text-ui-micro">
                     {details.log}
                   </pre>
-                </details>
+                </Disclosure>
               ) : null}
-              {details.notice ? (
-                <p role="status" className="mt-3 text-(--ui-text-secondary)">
-                  {details.notice}
-                </p>
-              ) : null}
+              {/* Always mounted so a notice is announced when it first appears. */}
+              <LiveText
+                className="mt-3 block text-(--ui-text-secondary) empty:hidden"
+                text={details.notice ?? ""}
+              />
             </>
           ) : null}
         </div>
       ) : null}
+      {rowHint.tooltip}
     </li>
   );
 }
@@ -548,30 +564,22 @@ export function InboxPrChecks({
     selection.scope === revealScope &&
     selectedChecksStillFailed(selection.checks, checks.checks),
   );
-  useEffect(() => {
-    if (selection && !selectionValid) setSelection(null);
-  }, [selection, selectionValid]);
-  if (loading) {
-    return (
-      <div className="flex justify-center py-10 text-(--ui-text-secondary)">
-        <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
-      </div>
-    );
+  if (selection && !selectionValid) setSelection(null);
+  if (loading && !checks && !error) {
+    return <LoadingText className="py-5">{t("Loading checks…")}</LoadingText>;
   }
   if (!checks && error) {
     return (
       <div className="flex flex-col items-start gap-2" data-inbox-pr-checks>
-        <Alert tone="info" role="alert">
-          {error}
-        </Alert>
+        <Alert tone="danger">{error}</Alert>
         <Button
           variant="ghost"
           type="button"
-          title={t("Retry loading checks")}
           aria-label={t("Retry loading checks")}
+          loading={loading || refreshing}
+          startIcon={<RefreshCw className="icon-sm" strokeWidth={1.75} />}
           onClick={onRefresh}
         >
-          <RefreshCw className="size-3.5" strokeWidth={1.75} />
           {t("Retry")}
         </Button>
       </div>
@@ -607,26 +615,35 @@ export function InboxPrChecks({
       className="@container/checks flex min-w-0 flex-col gap-2"
     >
       {checks?.pipelineOid && checks.pipelineOid !== checks.headOid ? (
-        <p className="px-2 text-xs text-(--ui-text-secondary)">
+        <p className="px-2 text-ui-caption text-(--ui-text-secondary)">
           {t("Pipeline commit")}: {checks.pipelineOid.slice(0, 12)} · {t("Source commit")}:{" "}
           {checks.headOid.slice(0, 12)}
         </p>
       ) : null}
-      <div className="mb-3 flex min-w-0 flex-wrap items-start justify-between gap-3 px-2">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2 px-2">
         <div className="min-w-0">
-          {rows.length ? (
-            <>
-              <h2 className="text-[18px] font-medium leading-snug tracking-[-0.35px] @max-[420px]/checks:text-[16px]">
-                {headline}
-              </h2>
-              {summary ? (
-                <p className="mt-1 text-[12px] text-(--ui-text-secondary)">
-                  {summary.charAt(0).toUpperCase() + summary.slice(1)}.
-                </p>
-              ) : null}
-              <span className="sr-only">{describeCheckCounts(counts)}</span>
-            </>
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+            <h2 className="text-ui-title font-medium leading-snug">{t(headline)}</h2>
+            {stale ? (
+              <Badge tone="warning" size="xs">
+                {t("Saved results")}
+              </Badge>
+            ) : null}
+          </div>
+          {checks?.headOid ? (
+            <p className="mt-1 break-all text-ui-caption text-(--ui-text-secondary)">
+              {t("Checked commit")}:{" "}
+              <span className="font-mono" title={checks.headOid}>
+                {checks.headOid.slice(0, 12)}
+              </span>
+            </p>
           ) : null}
+          {summary ? (
+            <p className="mt-1 text-ui-caption text-(--ui-text-secondary)">
+              {summary.charAt(0).toUpperCase() + summary.slice(1)}.
+            </p>
+          ) : null}
+          <span className="sr-only">{describeCheckCounts(counts)}</span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {repair && rows.some((row) => row.state === "fail") ? (
@@ -647,32 +664,39 @@ export function InboxPrChecks({
               aria-expanded={Boolean(selection && selection.anchor === allFixRef.current)}
               className="shrink-0"
             >
-              <Sparkles className="size-3.5" strokeWidth={1.75} />
+              <Sparkles className="icon-sm" strokeWidth={1.75} />
               {t("Fix all failed")}
-              <span
-                aria-hidden="true"
-                className="ml-1 border-l border-current/20 pl-2 text-(length:--ui-font-caption) opacity-55"
-              >
+              <Badge variant="count" size="xs" aria-hidden="true">
                 {counts.fail}
-              </span>
+              </Badge>
             </Button>
           ) : null}
           <Button
             variant="ghost"
             type="button"
-            title={t("Refresh checks")}
-            aria-label={t("Refresh checks")}
-            disabled={refreshing}
+            iconOnly
+            label={t("Refresh checks")}
+            loading={refreshing}
             onClick={onRefresh}
           >
-            {refreshing ? (
-              <LoaderCircle className="size-3.5 animate-spin" strokeWidth={1.75} />
-            ) : (
-              <RefreshCw className="size-3.5" strokeWidth={1.75} />
-            )}
+            <RefreshCw className="icon-sm" strokeWidth={1.75} />
           </Button>
         </div>
       </div>
+      {stale ? (
+        <Alert tone={error ? "danger" : "warning"}>
+          <p className="text-ui-caption font-medium">
+            {t(error ? "Checks refresh failed" : "Checking the latest revision…")}
+          </p>
+          {error ? <p className="break-words text-ui-caption">{error}</p> : null}
+          <p className="break-words text-ui-caption">{t("Saved results may be out of date.")}</p>
+          {error ? (
+            <Button variant="ghost" loading={refreshing} onClick={onRefresh}>
+              {t("Retry loading checks")}
+            </Button>
+          ) : null}
+        </Alert>
+      ) : null}
       {repair ? (
         <CheckRepairProgress
           cwd={cwd}
@@ -691,11 +715,6 @@ export function InboxPrChecks({
           }}
         />
       ) : null}
-      {stale && error ? (
-        <p role="status" className="px-2 text-[12px] text-(--ui-text-secondary)">
-          {t("Saved results may be out of date.")}
-        </p>
-      ) : null}
       {selection && selectionValid && repair ? (
         <CheckRepairForm
           key={`${selection.scope}:${JSON.stringify(selection.checks)}`}
@@ -710,50 +729,46 @@ export function InboxPrChecks({
         />
       ) : null}
       {rows.length > 0 ? (
-        <div className="flex items-center justify-between gap-3 py-2">
-          <div
-            className="inline-flex gap-0.5 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-hover) p-0.5"
-            aria-label={t("Filter checks")}
-          >
-            {(
-              [
-                ["attention", "Needs attention", attention],
-                ["all", "All checks", rows.length],
-              ] as const
-            ).map(([value, label, count]) => (
-              <Button
-                variant="ghost"
-                key={value}
-                type="button"
-                aria-label={`${label}: ${count}`}
-                aria-pressed={activeFilter === value}
-                disabled={value === "attention" && !attention}
-                onClick={() => {
-                  setFilter(value);
-                  setShowOthers(false);
-                  setSelection(null);
-                }}
-              >
-                {label}
-                <span className="tabular-nums text-(--ui-text-secondary)">{count}</span>
-              </Button>
-            ))}
-          </div>
-          <span className="text-(length:--ui-font-caption) text-(--ui-text-secondary) @max-[420px]/checks:hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 py-1">
+          <SegmentedControl
+            label={t("Filter checks")}
+            selectionRole="pressed"
+            value={activeFilter}
+            onValueChange={(value) => {
+              if (value !== "attention" && value !== "all") return;
+              if (value === "attention" && !attention) return;
+              setFilter(value);
+              setShowOthers(false);
+              setSelection(null);
+            }}
+            options={[
+              {
+                value: "attention",
+                label: t("Needs attention"),
+                accessory: <span className="tabular-nums">{attention}</span>,
+              },
+              {
+                value: "all",
+                label: t("All checks"),
+                accessory: <span className="tabular-nums">{rows.length}</span>,
+              },
+            ]}
+          />
+          <span className="text-ui-caption text-(--ui-text-secondary) @max-[420px]/checks:hidden">
             {counts.fail ? t("Failures first") : ""}
           </span>
         </div>
       ) : null}
       {rows.length === 0 ? (
-        <p className="text-[13px] text-(--ui-text-secondary)">{t("No checks reported")}</p>
+        <EmptyState size="inline" kind="empty" description={t("No checks reported")} />
       ) : (
         <>
           {groups.map((group) =>
             group.rows.length ? (
               <div key={group.state} hidden={group.hidden} className={group.hidden ? "hidden" : ""}>
-                <h3 className="mb-1.5 mt-3 flex items-center gap-2 px-2 text-[12px] font-normal text-(--ui-text-secondary)">
+                <h3 className="mb-1.5 mt-3 flex items-center gap-2 px-2 text-ui-caption font-normal text-(--ui-text-secondary)">
                   {checkStateLabel(group.state)}
-                  <span className="text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+                  <span className="text-ui-caption text-(--ui-text-secondary)">
                     {group.rows.length}
                   </span>
                 </h3>
@@ -821,7 +836,7 @@ export function InboxPrChecks({
               onClick={() => setShowOthers(!showOthers)}
               className="mt-3 text-left"
             >
-              <ChevronRight className={`size-3 ${showOthers ? "rotate-90" : ""}`} />
+              <ChevronRight className={`icon-xs ${showOthers ? "rotate-90" : ""}`} />
               {describeCheckCounts({
                 ...countChecks([]),
                 pass: counts.pass,

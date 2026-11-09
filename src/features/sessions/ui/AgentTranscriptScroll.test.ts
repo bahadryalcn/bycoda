@@ -185,7 +185,10 @@ describe("transcript scrolling", () => {
     });
     const observer = observers.find((item) => item.targets.includes(scroller))!;
     act(() => observer.resize());
-    top -= 4; // No wheel event: scrollbar, touch or keyboard navigation.
+    // No wheel event: scrollbar, touch or keyboard navigation, which a browser
+    // always precedes with its pointer, touch or key input.
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" })));
+    top -= 4;
     act(() => scroller.dispatchEvent(new Event("scroll")));
     const readingTop = top;
     height += 800;
@@ -367,6 +370,128 @@ function mountScroller() {
   return { scroller, geometry, observer };
 }
 
+it.each(["wheel", "keyboard", "touch"])(
+  "keeps following after a recent upward gesture returns to the end, but respects fresh %s input",
+  (gesture) => {
+    let now = 1000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    try {
+      const { scroller, geometry, observer } = mountScroller();
+      act(() => {
+        scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -400 }));
+        geometry.top = 200;
+        scroller.dispatchEvent(new Event("scroll"));
+      });
+      geometry.height = 2000;
+      act(() => observer.resize());
+      expect(geometry.top).toBe(200);
+      now = 1100;
+      act(() => {
+        scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: 20000 }));
+        geometry.top = 1600;
+        scroller.dispatchEvent(new Event("scroll"));
+      });
+      geometry.height = 2100;
+      now = 1120;
+      act(() => observer.resize());
+      expect(geometry.top).toBe(1700);
+      // An off-thread browser scroll replays an older programmatic bottom.
+      // The preceding upward input is still inside its 1000ms window.
+      now = 1140;
+      geometry.top = 1600;
+      act(() => scroller.dispatchEvent(new Event("scroll")));
+      geometry.height = 2200;
+      act(() => observer.resize());
+      expect(geometry.top).toBe(1800);
+
+      // A new real reader action still outranks automatic bottom following.
+      now = 1160;
+      act(() => {
+        if (gesture === "wheel") scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -4 }));
+        else if (gesture === "keyboard")
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" }));
+        else scroller.dispatchEvent(new Event("touchstart"));
+        geometry.top = 1796;
+        scroller.dispatchEvent(new Event("scroll"));
+      });
+      geometry.height = 2300;
+      act(() => observer.resize());
+      expect(geometry.top).toBe(1796);
+    } finally {
+      clock.mockRestore();
+    }
+  },
+);
+
+it("keeps following when a slow streamed layout replays an older bottom offset", () => {
+  let now = 1000;
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+  try {
+    const { scroller, geometry, observer } = mountScroller();
+    geometry.height = 2000;
+    act(() => observer.resize());
+    expect(geometry.top).toBe(1600);
+
+    // The reader stays at the end while a later streamed layout takes time.
+    now = 2600;
+    geometry.height = 2100;
+    act(() => observer.resize());
+    expect(geometry.top).toBe(1700);
+    now = 2620;
+    geometry.top = 1600;
+    act(() => scroller.dispatchEvent(new Event("scroll")));
+    geometry.height = 2200;
+    act(() => observer.resize());
+    expect(geometry.top).toBe(1800);
+
+    // Once following has settled, a new upward scroll must still be honored.
+    now = 4000;
+    geometry.top = 1790;
+    act(() => scroller.dispatchEvent(new Event("scroll")));
+    geometry.height = 2300;
+    act(() => observer.resize());
+    expect(geometry.top).toBe(1790);
+  } finally {
+    clock.mockRestore();
+  }
+});
+
+it("expires old followed offsets even after a newer pin", () => {
+  let now = 1000;
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+  try {
+    const { scroller, geometry, observer } = mountScroller();
+    geometry.height = 2000;
+    act(() => observer.resize());
+    now = 32_000;
+    geometry.height = 2100;
+    act(() => observer.resize());
+    now = 32_020;
+    geometry.top = 1600;
+    act(() => scroller.dispatchEvent(new Event("scroll")));
+    geometry.height = 2200;
+    act(() => observer.resize());
+    expect(geometry.top).toBe(1600);
+  } finally {
+    clock.mockRestore();
+  }
+});
+
+it("does not resume paused history merely because a newer wheel points downward", () => {
+  const { scroller, geometry, observer } = mountScroller();
+  act(() => {
+    scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -400 }));
+    geometry.top = 200;
+    scroller.dispatchEvent(new Event("scroll"));
+    scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 }));
+    geometry.top = 300;
+    scroller.dispatchEvent(new Event("scroll"));
+  });
+  geometry.height = 1100;
+  act(() => observer.resize());
+  expect(geometry.top).toBe(300);
+});
+
 it("keeps following when a queued scroll event lands after content grows", () => {
   const { scroller, geometry, observer } = mountScroller();
   // scrollTop was written by the previous pin, but its event can arrive
@@ -413,6 +538,7 @@ it("does not snap back when a directionless gesture becomes an upward scroll", (
 
 it("pauses following for a scrollbar move inside the bottom margin", () => {
   const { scroller, geometry, observer } = mountScroller();
+  act(() => scroller.dispatchEvent(new Event("pointerdown")));
   geometry.top = 596;
   act(() => scroller.dispatchEvent(new Event("scroll")));
   geometry.height = 1100;

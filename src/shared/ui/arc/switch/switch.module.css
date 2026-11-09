@@ -14,7 +14,7 @@
 }
 .switch:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: var(--ui-disabled-opacity, 0.5);
 }
 .switch[data-compact] .track {
   inline-size: 36px;
@@ -69,11 +69,58 @@
     background: var(--control-track-hover);
   }
 }
-.switch:focus-visible {
+/* The ring belongs to the track, not to the label: it frames what toggles. The doubled
+   class outranks the shared control focus rule that targets the whole button. */
+.switch.switch:focus-visible {
   outline: none;
+}
+.switch:focus-visible .track {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
+}
+/* Text at the start: the label takes the free width so the track sits at the row's end. */
+.switch[data-label-position="start"] {
+  justify-content: space-between;
+}
+.text {
+  display: grid;
+  min-inline-size: 0;
+  text-align: start;
+}
+.switch[data-label-position="start"] .text {
+  flex: 1 1 auto;
 }
 .label {
   line-height: var(--leading-body);
+}
+.description {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+}
+@media (forced-colors: active) {
+  /* Backgrounds are replaced in high contrast; keep the on/off state legible. */
+  .track {
+    outline: 1px solid ButtonText;
+    outline-offset: -1px;
+  }
+  .thumb {
+    background: ButtonText;
+  }
+  .switch[data-state="checked"] .track::before {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+  .switch[data-state="checked"] .thumb {
+    forced-color-adjust: none;
+    background: HighlightText;
+  }
+  .switch:disabled .track {
+    outline-color: GrayText;
+  }
+  .switch:disabled .thumb {
+    background: GrayText;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .track,

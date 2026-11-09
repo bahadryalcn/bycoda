@@ -1,0 +1,12 @@
+/* The trigger is a shared Button; it only needs a stable width and an ellipsized name. */
+.font-picker-trigger {
+  inline-size: 15rem;
+  max-inline-size: 100%;
+  justify-content: space-between;
+}
+.font-picker-trigger-name {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

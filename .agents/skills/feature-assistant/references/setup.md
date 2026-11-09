@@ -1,0 +1,18 @@
+# Setup and profile controls
+
+Scope: the ten-step voice setup, four-step core setup and the same profile controls in Room settings.
+Code paths below are relative to `src/features/assistant/`.
+
+- `ui/AssistantSetup.tsx` owns the initial draft, step verification, original Host binding and final version-checked save. Reopening never opens the microphone. A resumed voice setup must verify its provider, playback and microphone again.
+- `model/assistantSetupDefaults.ts` offers one million tokens for an unconfigured missing/zero budget during draft initialization only. Existing positive custom budgets and completed profiles are retained. This is a draft offer, not a Host policy migration or an execution permission.
+- `ui/AssistantProfileFields.tsx` owns budget presets/custom integer input, hourly recurring ranges, delays and model roles. Keep arbitrary valid saved values selectable. Hour values remain integers 0–23; do not round minute input into this contract. Equal work-hour endpoints mean all-day work.
+- `ui/AssistantSettings.tsx` owns Room settings' explicit save whitelist and six-page navigation; `ui/AssistantView.tsx` opens it. Keep inactive profile and computer controls mounted so section changes retain drafts and model settings. Include every editable profile policy field in the save whitelist, with the original Host/version binding; showing a retained draft does not prove the Host received its hours, notification policy or summary interval.
+- Project scope uses `ui/ManualSessionSupervision.tsx` and a searchable multiple selection with canonical paths for duplicate names. Project policy and computer controls retain their own Save actions, versions and permission gates; the profile Save does not persist them.
+- Profile Save keeps the dialog open and confirms its own saved snapshot. Child controls report independent dirty/pending state; close and rerun-setup require an explicit discard decision for unsaved drafts, and pending operations block leaving. Never infer computer-control connection/activity from helper verification or a draft permission switch. Settings mount performs status reads only.
+- Model effort edits must bind to the actual displayed model, including a resolved default. An explicit inherited-role edit creates the corresponding override while preserving other settings and execution permissions.
+- Enabling job execution with no selected worker binds the verified available default on that explicit choice. Never persist a jobs/supervision profile with a merely displayed fallback and no execution identity. Without a verified catalog, keep the previous mode and show the worker selection error. Setup also verifies and retains the default identity on explicit Next/Start; mounting a form never writes it.
+- `../voice/ui/VoiceSetupSteps.tsx` owns explicit provider checks, playback and microphone tests. Invalidating a previous check must also invalidate its Ready indication and navigation gate.
+
+Use shared fields, selections, disclosure and information controls. Keep one visible step heading, concise progress, a bounded reading/form area and persistent navigation. Optional explanations stay in disclosures; errors, pending operations and permission consequences remain available at the initiating control. Retain drafts, keyboard operation, review, retry and cancellation.
+
+Check setup/profile/model regressions and real production controls in isolated fixtures at light/dark 1280/800. Synthetic ports do not establish provider, acoustic or installed application acceptance. Task coverage, captures and handoffs belong under `temp/`.

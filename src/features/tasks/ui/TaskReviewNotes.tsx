@@ -1,7 +1,10 @@
 import { Button } from "../../../shared/ui/Button";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Badge } from "../../../shared/ui/Badge";
-import { t, useLocale, getLocale } from "../../../shared/i18n";
+import { Timestamp } from "../../../shared/ui/Timestamp";
+import { t, useLocale } from "../../../shared/i18n";
 import type { TaskReviewNote } from "../model/hostTasks";
 import { unreadReviewNotes } from "../model/taskReviewNotes";
 
@@ -12,52 +15,60 @@ type Props = {
   onRead: (noteIds: string[]) => void;
   onResolve: (noteId: string, resolved: boolean) => void;
   onOpenReview: (sessionId: string) => void;
+  isOpeningSession?: (sessionId: string) => boolean;
 };
 
-export function TaskReviewNotes({ notes, busy, stale, onRead, onResolve, onOpenReview }: Props) {
+export function TaskReviewNotes({
+  notes,
+  busy,
+  stale,
+  onRead,
+  onResolve,
+  onOpenReview,
+  isOpeningSession,
+}: Props) {
   useLocale();
   const unread = unreadReviewNotes(notes);
   const open = notes.filter((note) => note.resolvedAt === undefined).length;
   return (
-    <section
-      aria-label={t("Review notes")}
-      className="space-y-2 border-t border-(--ui-tone-neutral-border) pt-3"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-1">
-        <h3 className="text-[12px] font-medium text-(--ui-text-secondary)">
-          {t("Review notes · ")}
-          {open}
-          {t(" open")}
-        </h3>
-        {unread > 0 ? (
-          <Button
-            variant="ghost"
-            type="button"
+    <section aria-label={t("Review notes")} className="grid min-w-0 gap-2">
+      <SectionLabel
+        as="h3"
+        actions={
+          unread > 0 ? (
+            <Button
+              variant="ghost"
+              type="button"
 
-            disabled={busy || stale}
-            onClick={() =>
-              onRead(notes.filter((note) => note.readAt === undefined).map((note) => note.id))
-            }
-          >
-            {t("Mark ")}
-            {unread}
-            {t(" as read")}
-          </Button>
-        ) : null}
-      </div>
+              disabled={busy || stale}
+              onClick={() =>
+                onRead(notes.filter((note) => note.readAt === undefined).map((note) => note.id))
+              }
+            >
+              {t("Mark ")}
+              {unread}
+              {t(" as read")}
+            </Button>
+          ) : null
+        }
+      >
+        {t("Review notes · ")}
+        {open}
+        {t(" open")}
+      </SectionLabel>
       {notes.length === 0 ? (
         <EmptyState description={t("No review notes yet.")} />
       ) : (
-        <ul className="space-y-2">
+        <ul className="grid gap-2">
           {[...notes].reverse().map((note) => {
             const resolved = note.resolvedAt !== undefined;
             return (
               <li
                 key={note.id}
                 data-review-note={note.id}
-                className="space-y-1.5 rounded-md border border-(--ui-tone-neutral-border) p-2"
+                className="space-y-1.5 rounded-(--ui-radius-card) border border-(--ui-pane-border) p-2"
               >
-                <div className="flex flex-wrap items-center gap-2 text-(length:--ui-font-caption)">
+                <div className="flex flex-wrap items-center gap-2 text-ui-caption">
                   <Badge tone={resolved ? "success" : "warning"}>
                     {resolved ? t("Fixed") : t("Open")}
                   </Badge>
@@ -79,27 +90,28 @@ export function TaskReviewNotes({ notes, busy, stale, onRead, onResolve, onOpenR
                       {t(" times")}
                     </span>
                   ) : null}
-                  <time
-                    dateTime={new Date(note.createdAt).toISOString()}
+                  <Timestamp
+                    value={note.createdAt}
+                    format="datetime-seconds"
+                    tooltip={false}
                     className="text-(--ui-text-secondary)"
-                  >
-                    {new Date(note.createdAt).toLocaleString(getLocale())}
-                  </time>
+                  />
                 </div>
-                <p className="whitespace-pre-wrap break-words text-[12px] text-(--ui-text-secondary)">
+                <p className="whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
                   {note.finding}
                 </p>
                 {note.suggestion ? (
-                  <p className="whitespace-pre-wrap break-words text-[12px] text-(--ui-text-secondary)">
+                  <p className="whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
                     {t("Suggested correction: ")}
                     {note.suggestion}
                   </p>
                 ) : null}
                 {note.details ? (
-                  <details className="text-[12px] text-(--ui-text-secondary)">
-                    <summary className="cursor-pointer">{t("Review details")}</summary>
-                    <p className="mt-1 whitespace-pre-wrap break-words">{note.details}</p>
-                  </details>
+                  <Disclosure size="sm" summary={t("Review details")}>
+                    <p className="whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
+                      {note.details}
+                    </p>
+                  </Disclosure>
                 ) : null}
                 <div className="flex flex-wrap gap-1">
                   <Button
@@ -117,14 +129,14 @@ export function TaskReviewNotes({ notes, busy, stale, onRead, onResolve, onOpenR
                       type="button"
 
                       onClick={() => onOpenReview(note.sessionId!)}
+                      loading={isOpeningSession?.(note.sessionId)}
                     >
                       {t("Open review")}
                     </Button>
                   ) : null}
                 </div>
                 {(note.sessionIds?.length ?? 0) > 1 ? (
-                  <details className="text-[11px] text-(--ui-text-secondary)">
-                    <summary className="cursor-pointer">{t("Review history")}</summary>
+                  <Disclosure size="sm" summary={t("Review history")}>
                     <div className="flex flex-wrap gap-1">
                       {note.sessionIds!.map((sessionId, index) => (
                         <Button
@@ -133,20 +145,21 @@ export function TaskReviewNotes({ notes, busy, stale, onRead, onResolve, onOpenR
                           type="button"
 
                           onClick={() => onOpenReview(sessionId)}
+                          loading={isOpeningSession?.(sessionId)}
                         >
                           {t("Review ")}
                           {index + 1}
                         </Button>
                       ))}
                     </div>
-                  </details>
+                  </Disclosure>
                 ) : null}
               </li>
             );
           })}
         </ul>
       )}
-      <p className="text-[11px] text-(--ui-text-secondary)">
+      <p className="text-ui-micro text-(--ui-text-muted)">
         {t("Marking a note fixed does not complete this task. Its checks and review still apply.")}
       </p>
     </section>

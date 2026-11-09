@@ -1,0 +1,168 @@
+import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useState } from "react";
+import { t, useLocale } from "../../../shared/i18n";
+import { Badge } from "../../../shared/ui/Badge";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { Select } from "../../../shared/ui/Select";
+import { Switch } from "../../../shared/ui/Switch";
+import type { RemoteMachine } from "../model/protocol";
+
+export type RoutePreference = "saved" | "lan" | "tailscale";
+type Route = {
+  address: string;
+  kind: "tailscale" | "lan" | "name";
+  source: "saved" | "other" | "reported";
+  enabled: boolean;
+};
+type MachineRoutes = { routes: Route[]; prefer: RoutePreference; active?: string | null };
+type RouteCheck = { address: string; reachable: boolean | null };
+
+const kindLabel = (kind: Route["kind"]) =>
+  kind === "tailscale" ? t("Tailscale") : kind === "lan" ? t("Home network") : t("SSH name");
+const sourceLabel = (source: Route["source"]) =>
+  source === "saved"
+    ? t("SSH address")
+    : source === "other"
+      ? t("Other address")
+      : t("Found by the host");
+
+/** A machine's ways in, in the order a connection tries them, with whether each
+ * answers now and which one is in use. The SSH and other address are the
+ * owner's own entries and are always tried (Edit changes them); an address the
+ * host found can be turned off. The order never moves when a switch changes. */
+export function MachineRoutesLine({ machine }: { machine: RemoteMachine }) {
+  useLocale();
+  const ssh = machine.ssh;
+  const [routes, setRoutes] = useState<MachineRoutes>();
+  const [checks, setChecks] = useState<Record<string, boolean | null>>();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const key = ssh ? JSON.stringify(ssh) : "";
+  useEffect(() => {
+    if (!key) return;
+    let current = true;
+    const target = JSON.parse(key);
+    invoke<MachineRoutes>("remote_machine_routes", { machineId: machine.id, target })
+      .then((value) => current && setRoutes(value))
+      .catch(() => current && setRoutes(undefined));
+    invoke<RouteCheck[]>("remote_machine_route_check", { target })
+      .then(
+        (value) =>
+          current &&
+          setChecks(Object.fromEntries(value.map((check) => [check.address, check.reachable]))),
+      )
+      .catch(() => current && setChecks({}));
+    return () => {
+      current = false;
+    };
+  }, [machine.id, key]);
+  if (!ssh) return null;
+  // Without the desktop's route store only the saved other address is known.
+  if (!routes)
+    return ssh.alternate ? (
+      <div className="mt-1 break-all text-ui-caption text-(--ui-text-muted)">
+        {t("Other address · ")}
+        {ssh.alternate}
+      </div>
+    ) : null;
+  const save = (disabled: string[], prefer: RoutePreference) => {
+    setSaving(true);
+    setError("");
+    invoke<MachineRoutes>("remote_machine_route_settings", {
+      machineId: machine.id,
+      target: ssh,
+      disabled,
+      prefer,
+    })
+      .then(setRoutes)
+      .catch((reason: unknown) => setError(String(reason)))
+      .finally(() => setSaving(false));
+  };
+  const disabled = routes.routes.filter((route) => !route.enabled).map((route) => route.address);
+  const toggle = (address: string, on: boolean) =>
+    save(
+      on ? disabled.filter((value) => value !== address) : [...disabled, address],
+      routes.prefer,
+    );
+  return (
+    <section className="mt-3 flex flex-col gap-2" data-machine-routes aria-label={t("Addresses")}>
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-ui-secondary font-medium">{t("Addresses")}</div>
+          <p className="text-ui-caption text-(--ui-text-muted)">
+            {t("Tried in this order; the first one that answers is used.")}
+          </p>
+        </div>
+        {routes.routes.length > 1 ? (
+          <div className="w-48">
+            <Select
+              label={t("Try first")}
+              fieldSize="sm"
+              value={routes.prefer}
+              onValueChange={(value) => {
+                if (!saving) save(disabled, value as RoutePreference);
+              }}
+              options={[
+                { value: "saved", label: t("SSH address") },
+                { value: "lan", label: t("Home network") },
+                { value: "tailscale", label: t("Tailscale") },
+              ]}
+            />
+          </div>
+        ) : null}
+      </div>
+      <ul className="flex flex-col divide-y divide-stroke rounded-md border border-stroke">
+        {routes.routes.map((route) => {
+          const inUse = route.address === routes.active;
+          const reachable = checks?.[route.address];
+          return (
+            <li
+              key={route.address}
+              data-route={route.address}
+              className="flex min-w-0 items-center gap-3 px-3 py-2"
+            >
+              <div className={`min-w-0 flex-1 ${route.enabled ? "" : "opacity-60"}`}>
+                <div className="truncate font-mono text-ui-secondary">{route.address}</div>
+                <div className="text-ui-caption text-(--ui-text-muted)">
+                  {kindLabel(route.kind)} · {sourceLabel(route.source)}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {inUse ? (
+                  <Badge size="xs" tone="accent">
+                    {t("In use")}
+                  </Badge>
+                ) : null}
+                {!route.enabled ? (
+                  <Badge size="xs">{t("Off")}</Badge>
+                ) : checks === undefined ? (
+                  <Badge size="xs">{t("Checking…")}</Badge>
+                ) : reachable === true ? (
+                  <Badge size="xs" tone="success">
+                    {t("Responds")}
+                  </Badge>
+                ) : reachable === false ? (
+                  <Badge size="xs" tone="warning">
+                    {t("No response")}
+                  </Badge>
+                ) : null}
+                {route.source === "reported" ? (
+                  <Switch
+                    aria-label={t("Use {p0}", { p0: route.address })}
+                    checked={route.enabled}
+                    disabled={saving}
+                    onCheckedChange={(on) => toggle(route.address, on)}
+                  />
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="text-ui-caption text-(--ui-text-muted)">
+        {t("Change the SSH and other address with Edit name and address.")}
+      </p>
+      {error ? <InlineError>{error}</InlineError> : null}
+    </section>
+  );
+}

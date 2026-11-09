@@ -25,10 +25,11 @@ function Fixture() {
       <output data-testid="selected-choice">{choice}</output>
       {open ? (
         <Modal title="Shared controls" onClose={() => setOpen(false)} size="sm">
-          <div className="flex min-w-0 flex-col gap-4 p-4">
+          <div className="flex min-w-0 flex-col gap-4">
             <DateTimePicker value={date} onChange={setDate} />
             <button onClick={() => setDate("2029-03-04T10:00")}>Change date externally</button>
             <SearchableSelect
+              hideLabel
               label="Choice"
               value={choice}
               options={[

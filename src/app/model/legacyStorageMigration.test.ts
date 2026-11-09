@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, expect, it } from "vitest";
-import { migrateLegacyStorage } from "./legacyStorageMigration";
+import { LEGACY_NAME, migrateLegacyStorage } from "./legacyStorageMigration";
 
 const remote = "remote://env/Users/me/projects/family-site";
 const json = (key: string) => JSON.parse(localStorage.getItem(key) ?? "null");
@@ -19,7 +19,7 @@ it("merges legacy projects and groups into the current keys, then drops every le
     JSON.stringify([{ path: "G:/work/web", openedAt: 2 }]),
   );
   localStorage.setItem(
-    "upstream.recentProjects",
+    `${LEGACY_NAME}.recentProjects`,
     JSON.stringify([
       { path: "g:/work/web", openedAt: 1 },
       { path: remote, openedAt: 1 },
@@ -27,7 +27,7 @@ it("merges legacy projects and groups into the current keys, then drops every le
   );
   localStorage.setItem("bycoda.projectGroups", JSON.stringify([{ id: "g1", name: "personal" }]));
   localStorage.setItem(
-    "upstream.projectGroups",
+    `${LEGACY_NAME}.projectGroups`,
     JSON.stringify([
       { id: "g1", name: "old" },
       { id: "g2", name: "work" },
@@ -35,23 +35,29 @@ it("merges legacy projects and groups into the current keys, then drops every le
   );
   localStorage.setItem("bycoda.projectGroupAssignments", JSON.stringify({ "g:/work/web": "g2" }));
   localStorage.setItem(
-    "upstream.projectGroupAssignments",
+    `${LEGACY_NAME}.projectGroupAssignments`,
     JSON.stringify({
       "g:/work/web": "g1",
       [remote]: "g1",
       "/gone": "missing",
     }),
   );
-  localStorage.setItem("upstream.projectRailOrder", JSON.stringify([remote]));
+  localStorage.setItem(`${LEGACY_NAME}.projectRailOrder`, JSON.stringify([remote]));
   localStorage.setItem(
-    "upstream.remote-projects.v2",
+    `${LEGACY_NAME}.remote-projects.v2`,
     JSON.stringify({ [remote]: { key: remote } }),
   );
-  localStorage.setItem("upstream.sync.dismissedRemoteProjects.v2", JSON.stringify(["loc:env:/x"]));
-  localStorage.setItem("upstream:tab-group:mascots", JSON.stringify({ [remote]: "mushroom" }));
-  localStorage.setItem(`upstream.remote-history.v2:${remote}`, "[1]");
-  localStorage.setItem("upstream.uiScale", "1.2");
-  localStorage.setItem("upstream.sync.machineId", "old");
+  localStorage.setItem(
+    `${LEGACY_NAME}.sync.dismissedRemoteProjects.v2`,
+    JSON.stringify(["loc:env:/x"]),
+  );
+  localStorage.setItem(
+    `${LEGACY_NAME}:tab-group:mascots`,
+    JSON.stringify({ [remote]: "mushroom" }),
+  );
+  localStorage.setItem(`${LEGACY_NAME}.remote-history.v2:${remote}`, "[1]");
+  localStorage.setItem(`${LEGACY_NAME}.uiScale`, "1.2");
+  localStorage.setItem(`${LEGACY_NAME}.sync.machineId`, "old");
 
   expect(migrateLegacyStorage()).toBe(true);
 
@@ -71,6 +77,6 @@ it("merges legacy projects and groups into the current keys, then drops every le
   expect(localStorage.getItem(`bycoda.remote-history.v2:${remote}`)).toBe("[1]");
   expect(localStorage.getItem("bycoda.uiScale")).toBeNull();
   expect(localStorage.getItem("bycoda.sync.machineId")).toBeNull();
-  expect(Object.keys(localStorage).filter((key) => key.startsWith("upstream"))).toEqual([]);
+  expect(Object.keys(localStorage).filter((key) => key.startsWith(LEGACY_NAME))).toEqual([]);
   expect(migrateLegacyStorage()).toBe(false);
 });

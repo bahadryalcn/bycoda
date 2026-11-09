@@ -1,7 +1,7 @@
-import { createElement, type ReactNode } from "react";
+import { createElement, type ReactNode, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { Block } from "../model/session";
+import { newSession, type Block } from "../model/session";
 import { AgentTranscript } from "./AgentTranscript";
 
 function tool(id: string, approval?: Block["approval"]): Block {
@@ -62,7 +62,7 @@ describe("AgentTranscript shell commands", () => {
 });
 
 describe("AgentTranscript collapsed work", () => {
-  it("offers edit and return for each rewindable historical user message", () => {
+  it("offers one Edit from here action for each rewindable historical user message", () => {
     const markup = render(
       [
         { id: "first", role: "user", text: "First" },
@@ -74,9 +74,38 @@ describe("AgentTranscript collapsed work", () => {
       { canRewindMessage: () => true, onRewindMessage: () => {} },
     );
 
-    expect(markup).toContain("Edit this message");
-    expect(markup).toContain("Return before this message");
-    expect(markup).toContain("Return before");
+    expect(markup.match(/aria-label="Edit from here"/g)).toHaveLength(2);
+    expect(markup).not.toContain('aria-label="Message actions"');
+    expect(markup).not.toContain("Return before this message");
+  });
+
+  it("keeps draft/internal messages out and disables unavailable Edit from here", () => {
+    const markup = render(
+      [
+        { id: "first", role: "user", text: "First" },
+        { id: "draft", role: "user", text: "Draft", draft: true },
+        { id: "internal", role: "user", text: "Internal", internal: true },
+        { id: "unavailable", role: "user", text: "Unavailable" },
+      ],
+      false,
+      undefined,
+      { canRewindMessage: (id) => id !== "unavailable", onRewindMessage: () => {} },
+    );
+    expect(markup.match(/aria-label="Edit from here"/g)).toHaveLength(2);
+    // The reason rides in the shared tooltip (hover/focus), not a native title in the markup.
+    expect(markup).not.toContain('title="This conversation can no longer be rewound."');
+    expect(markup.match(/disabled=""/g)).toHaveLength(1);
+  });
+
+  it("keeps the action visible but disabled while the session is busy", () => {
+    const markup = render(
+      [{ id: "busy-message", role: "user", text: "Still working" }],
+      true,
+      undefined,
+      { canRewindMessage: () => false, onRewindMessage: () => {} },
+    );
+    expect(markup).toContain('aria-label="Edit from here"');
+    expect(markup).toContain('disabled=""');
   });
 
   it("shows a stopped turn as stopped by the user", () => {
@@ -171,9 +200,17 @@ describe("AgentTranscript collapsed work", () => {
   });
 
   it("shows the full command before approving a Bycoda CLI call", () => {
+    const approvalTranscript = (props: ComponentProps<typeof AgentTranscript>) =>
+      createElement(AgentTranscript, {
+        ...props,
+        approvalContext: {
+          session: { ...newSession("codex", "/repo"), blocks: props.blocks },
+          dispatch: () => {},
+        },
+      });
     const command = 'bycoda app sessions.send --json \'{"prompt":"private-marker"}\'';
     const markup = renderToStaticMarkup(
-      createElement(AgentTranscript, {
+      approvalTranscript({
         blocks: [
           { id: "user", role: "user", text: "Send a follow-up" },
           {
@@ -193,7 +230,7 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).toContain("Allow");
 
     const compound = renderToStaticMarkup(
-      createElement(AgentTranscript, {
+      approvalTranscript({
         blocks: [
           { id: "user", role: "user", text: "List notes" },
           {
@@ -268,7 +305,7 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).not.toContain("<button");
   });
 
-  it("CLI giriş yanıtını giriş penceresine yönlendirirken normal açıklamayı gösterir", () => {
+  it("routes the CLI sign-in reply to the sign-in dialog while showing the normal explanation", () => {
     const markup = renderToStaticMarkup(
       createElement(AgentTranscript, {
         harness: "claude",
@@ -351,10 +388,22 @@ describe("AgentTranscript collapsed work", () => {
     const markup = render([{ id: "draft", role: "user", text: "Explore this", draft: true }]);
 
     expect(markup).toContain('data-draft="true"');
-    expect(markup).toContain("border-dashed");
     expect(markup).toContain('aria-label="Send draft"');
     expect(markup).toContain('aria-label="Remove draft"');
     expect(markup).toContain(">Draft</span>");
+    expect(markup).not.toContain('aria-label="Edit draft"');
+  });
+
+  it("offers editing a saved draft only when the pane can take it back", () => {
+    const blocks: Block[] = [{ id: "draft", role: "user", text: "Explore this", draft: true }];
+    const markup = renderToStaticMarkup(
+      createElement(AgentTranscript, { blocks, onEditDraft: () => true }),
+    );
+
+    expect(markup).toContain('aria-label="Edit draft"');
+    expect(markup.indexOf('aria-label="Edit draft"')).toBeLessThan(
+      markup.indexOf('aria-label="Remove draft"'),
+    );
   });
 
   it("shows uncertain delivery guidance from a restored saved draft", () => {
@@ -466,7 +515,7 @@ describe("AgentTranscript collapsed work", () => {
 
     expect(markup).toContain('data-editing-last-turn="true"');
     expect(markup).toContain("edit-last-turn-bubble");
-    expect(markup).toContain('aria-label="Cancel edit"');
+    expect(markup).toContain('aria-label="Message actions"');
     expect(markup).not.toContain("Editing this message");
   });
 
@@ -529,7 +578,8 @@ describe("AgentTranscript collapsed work", () => {
     );
 
     expect(markup).toContain("Inspect auth");
-    expect(markup).toContain("failed");
+    // The run's state line names the failure; the reason follows in its report.
+    expect(markup).toContain("Failed");
     expect(markup).toContain("Child process disconnected");
     expect(markup).toContain("Hide Inspect auth&#x27;s work");
 
@@ -643,9 +693,10 @@ describe("AgentTranscript collapsed work", () => {
     // Tool details collapse; the stack and every assistant update stay visible.
     expect(markup).not.toContain("hidden-detail-t1");
     expect(markup).toContain("Splitting the review in two.");
-    // A row-length name is capped, and the whole brief stays on the hover.
+    // A row-length name is capped; the whole brief rides in the shared hover tooltip,
+    // which static markup cannot show.
     expect(markup).toContain("Independently review the current repository&#x27;s recent…");
-    expect(markup).toContain("Inspect the uncommitted diff.");
+    expect(markup).not.toContain("Inspect the uncommitted diff.");
   });
 
   it("groups an opened subagent's trail the way the main transcript does", () => {
@@ -742,7 +793,7 @@ describe("AgentTranscript collapsed work", () => {
       },
     ]);
 
-    expect(markup).toContain("3 steps, 1 failed");
+    expect(markup.replace(/<[^>]*>/g, "")).toContain("3 steps, 1 failed");
   });
 
   it("opens a lone subagent straight into its own transcript", () => {

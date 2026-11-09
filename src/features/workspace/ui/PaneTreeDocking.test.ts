@@ -186,6 +186,7 @@ describe("pane docking UI", () => {
     const event = new Event(type, { bubbles: true });
     Object.assign(event, {
       pointerId: 1,
+      isPrimary: true,
       button: 0,
       clientX: x,
       clientY: y,
@@ -207,11 +208,15 @@ describe("pane docking UI", () => {
     expect(document.querySelector('.pointer-drop-hint[data-action="move"]')?.textContent).toContain(
       "Split left",
     );
-    expect(container.querySelector(".pointer-events-none.absolute.inset-0")).not.toBeNull();
+    // The split edge is drawn by the shared drop indicator on the pane, not by a pane child.
+    expect(container.querySelector('[data-pane-id="a"]')?.getAttribute("data-drop-indicator")).toBe(
+      "split-start",
+    );
     pointer(window, "pointerup", 20, 150);
     expect(onMove).toHaveBeenCalledWith("a", "a", "left");
     expect(layoutLeaves(tree).map((pane) => pane.id)).toEqual(["a", "empty"]);
     expect(document.querySelector(".pointer-drop-hint")).toBeNull();
+    expect(document.querySelector("[data-drop-indicator]")).toBeNull();
     expect(document.documentElement.classList.contains("is-grabbing")).toBe(false);
   });
 
@@ -237,14 +242,31 @@ describe("pane docking UI", () => {
     dragStart();
     pointer(window, "pointermove", 200, 150);
     expect(document.querySelector('.pointer-drop-hint[data-action="blocked"]')).not.toBeNull();
+    // Dropping a lone pane on itself has no pane target to mark: the cursor badge says so.
+    expect(document.querySelector("[data-drop-indicator]")).toBeNull();
     pointer(window, "pointerup", 200, 150);
     expect(onMove).not.toHaveBeenCalled();
+    expect(document.querySelector("[data-drop-indicator]")).toBeNull();
     dragStart();
     pointer(window, "pointermove", 390, 150);
+    expect(container.querySelector('[data-pane-id="a"]')?.getAttribute("data-drop-indicator")).toBe(
+      "split-end",
+    );
     act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
     expect(onMove).not.toHaveBeenCalled();
     expect(document.querySelector(".pointer-drop-hint")).toBeNull();
+    expect(document.querySelector("[data-drop-indicator]")).toBeNull();
     expect(document.body.style.cursor).toBe("");
+  });
+
+  it("clears the split target when the pane tree unmounts mid-drag", () => {
+    render(leaf("a"), vi.fn(), vi.fn());
+    dragStart();
+    pointer(window, "pointermove", 20, 150);
+    expect(document.querySelector("[data-drop-indicator]")).not.toBeNull();
+    act(() => root.unmount());
+    expect(document.querySelector("[data-drop-indicator]")).toBeNull();
+    expect(document.querySelector(".pointer-drop-hint")).toBeNull();
   });
 
   it("treats a click without pointer travel as selection without a split", () => {
@@ -283,10 +305,17 @@ describe("pane docking UI", () => {
     const split = splitPane(leaf("a"), "a", "right", "b");
     const tree = setSplitRatio(split, split.id, 0, 0.7);
     render(tree);
+    const maximize = () => container.querySelector<HTMLButtonElement>('[data-pane-maximize="a"]')!;
+    expect(maximize().getAttribute("aria-label")).toBe("Maximize panel");
+    expect(maximize().getAttribute("aria-pressed")).toBe("false");
+    expect(maximize().querySelector(".lucide-maximize-2")).not.toBeNull();
     const draft = container.querySelector<HTMLInputElement>('[data-draft="b"]')!;
     draft.value = "retained work";
     const initialWidth = container.querySelector<HTMLElement>('[data-pane-id="a"]')!.style.width;
     act(() => container.querySelector<HTMLButtonElement>('[data-pane-maximize="a"]')!.click());
+    expect(maximize().getAttribute("aria-label")).toBe("Restore panel layout");
+    expect(maximize().getAttribute("aria-pressed")).toBe("true");
+    expect(maximize().querySelector(".lucide-minimize-2")).not.toBeNull();
     expect(container.querySelector<HTMLElement>('[data-pane-id="a"]')!.style.width).toBe("100%");
     expect(container.querySelector('[role="separator"]')).toBeNull();
     expect(container.querySelector('[data-draft="b"]')).toBe(draft);
@@ -299,6 +328,26 @@ describe("pane docking UI", () => {
     );
     expect(container.querySelector('[role="separator"]')).not.toBeNull();
     expect(draft.value).toBe("retained work");
+    expect(maximize().getAttribute("aria-label")).toBe("Maximize panel");
+    expect(maximize().querySelector(".lucide-maximize-2")).not.toBeNull();
+  });
+
+  it("reflects externally controlled maximization in the pane action", () => {
+    const tree = splitPane(leaf("a"), "a", "right", "b");
+    const toggle = vi.fn();
+    render(tree, vi.fn(), vi.fn(), { maximizedPaneId: null, onToggleMaximizePane: toggle });
+    const button = () => container.querySelector<HTMLButtonElement>('[data-pane-maximize="a"]')!;
+    act(() => button().click());
+    expect(toggle).toHaveBeenCalledWith("a");
+    expect(button().querySelector(".lucide-maximize-2")).not.toBeNull();
+    render(tree, vi.fn(), vi.fn(), { maximizedPaneId: "a", onToggleMaximizePane: toggle });
+    expect(button().getAttribute("aria-label")).toBe("Restore panel layout");
+    expect(button().getAttribute("aria-pressed")).toBe("true");
+    expect(button().querySelector(".lucide-minimize-2")).not.toBeNull();
+    act(() => button().click());
+    expect(toggle).toHaveBeenCalledTimes(2);
+    render(tree, vi.fn(), vi.fn(), { maximizedPaneId: null, onToggleMaximizePane: toggle });
+    expect(button().querySelector(".lucide-maximize-2")).not.toBeNull();
   });
 
   it("lets keyboard users resize and equalize a sash", () => {
@@ -323,8 +372,7 @@ describe("pane docking UI", () => {
 
   it("cleans a sash gesture when its layout disappears", () => {
     render(splitPane(leaf("a"), "a", "right", "b"));
-    const sash = container.querySelector<HTMLElement>('[role="separator"]')!
-      .firstElementChild as HTMLElement;
+    const sash = container.querySelector<HTMLElement>('[role="separator"]')!;
     Object.assign(sash, {
       setPointerCapture: vi.fn(),
       hasPointerCapture: () => true,

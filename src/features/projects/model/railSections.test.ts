@@ -143,18 +143,20 @@ describe("saved section collapse", () => {
   beforeEach(() => localStorage.clear());
 
   it("starts expanded and preserves the other section when toggling", () => {
-    expect(loadRailSectionCollapse()).toEqual({ groups: false, projects: false });
+    expect(loadRailSectionCollapse()).toEqual({ groups: false, crews: false, projects: false });
     toggleRailSectionCollapse("groups");
     toggleRailSectionCollapse("projects");
-    expect(loadRailSectionCollapse()).toEqual({ groups: true, projects: true });
+    expect(loadRailSectionCollapse()).toEqual({ groups: true, crews: false, projects: true });
     toggleRailSectionCollapse("groups");
-    expect(loadRailSectionCollapse()).toEqual({ groups: false, projects: true });
+    expect(loadRailSectionCollapse()).toEqual({ groups: false, crews: false, projects: true });
+    toggleRailSectionCollapse("crews");
+    expect(loadRailSectionCollapse()).toEqual({ groups: false, crews: true, projects: true });
   });
 
   it("ignores malformed storage and non-boolean values", () => {
     localStorage.setItem("bycoda.projectRailSectionCollapse", "{oops");
-    expect(loadRailSectionCollapse()).toEqual({ groups: false, projects: false });
+    expect(loadRailSectionCollapse()).toEqual({ groups: false, crews: false, projects: false });
     localStorage.setItem("bycoda.projectRailSectionCollapse", '{"groups":"false","projects":true}');
-    expect(loadRailSectionCollapse()).toEqual({ groups: false, projects: true });
+    expect(loadRailSectionCollapse()).toEqual({ groups: false, crews: false, projects: true });
   });
 });

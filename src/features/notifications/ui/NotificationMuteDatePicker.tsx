@@ -40,11 +40,11 @@ export function NotificationMuteDatePicker({ projectIds, onChanged, onCancel }: 
         if (!projectIds.length) return;
         const date = parseLocalDateTime(value);
         if (!date) {
-          setError("Choose a valid date and time.");
+          setError(t("Choose a valid date and time."));
           return;
         }
         if (date.getTime() <= Date.now()) {
-          setError("Choose a date and time in the future.");
+          setError(t("Choose a date and time in the future."));
           return;
         }
         try {
@@ -54,11 +54,13 @@ export function NotificationMuteDatePicker({ projectIds, onChanged, onCancel }: 
           setError(null);
           onChanged?.();
         } catch {
-          setError("Could not save notification preferences. Please try again.");
+          setError(t("Could not save notification preferences. Please try again."));
         }
       }}
     >
-      <p className="mb-3 px-1 text-[11px] text-content/45">{t("Mute all notifications until")}</p>
+      <p className="mb-3 px-1 text-ui-micro text-(--ui-text-secondary)">
+        {t("Mute all notifications until")}
+      </p>
       <DateTimePicker
         value={value}
         onChange={(next) => {

@@ -1,41 +1,37 @@
+import { terminalText } from "../../../shared/lib/terminalText";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Alert } from "../../../shared/ui/Alert";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { Spinner } from "../../../shared/ui/Spinner";
 import { Modal } from "../../../shared/ui/Modal";
 import "./search.css";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { projectDisplayName } from "../../projects/model/projectNames";
 import { t, useLocale } from "../../../shared/i18n";
-import {
-  Folder,
-  LoaderCircle,
-  MessageSquare,
-  Search,
-  Maximize2,
-  Minimize2,
-} from "../../../shared/ui/icons";
+import { Search, Maximize2, Minimize2 } from "../../../shared/ui/icons";
 import {
   useDeferredValue,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
-  type ReactNode,
 } from "react";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
-import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
-import { MatchText } from "../../../shared/ui/MatchText";
-import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
+import { rowCopy } from "./searchRowCopy";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import {
   conversationRowsFrom,
   flattenGrouped,
-  groupHits,
+  groupHitsWithCounts,
+  type GroupedHitCounts,
   hitsFromContentMatches,
   hitsFromFileRanks,
   mergeHits,
@@ -44,6 +40,7 @@ import {
   SessionMessageSearch,
   type AppSearchHit,
   type SearchScope,
+  type SearchRequest,
 } from "../model/appSearch";
 import {
   loadProjectFiles,
@@ -115,6 +112,7 @@ type Props = {
   history: SessionSummary[];
   sessions: Session[];
   focusToken?: number;
+  request?: SearchRequest;
   besideRail?: boolean;
   compactRail?: boolean;
   onClose: () => void;
@@ -134,6 +132,7 @@ export function SearchView({
   history,
   sessions,
   focusToken = 0,
+  request,
   besideRail = false,
   compactRail = false,
   onClose,
@@ -150,10 +149,22 @@ export function SearchView({
   const stateKey = `workspace-search:${pathKey(cwd)}`;
   const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
   const [scope, setScope] = useRetainedState<SearchScope>(`${stateKey}:scope`, "all");
-  const [active, setActive] = useState(0);
-  const [fileIndex, setFileIndex] = useState(() => ({ cwd, files: peekProjectFiles(cwd) ?? [] }));
-  const [fileIndexError, setFileIndexError] = useState<{ cwd: string; error: string } | null>(null);
+  const listId = useId();
+  const scopeId = useId();
+  const [selection, setSelection] = useRetainedState<{
+    context: string;
+    id: string | null;
+  }>(`${stateKey}:active`, { context: "", id: null });
+  const [fileIndex, setFileIndex] = useState(() => ({
+    cwd,
+    files: peekProjectFiles(cwd) ?? [],
+  }));
+  const [fileIndexError, setFileIndexError] = useState<{
+    cwd: string;
+    error: string;
+  } | null>(null);
   const [fileRetry, setFileRetry] = useState(0);
+  const [resultCapacity, setResultCapacity] = useState({ context: "", rows: 0 });
   const files = fileIndex.cwd === cwd ? fileIndex.files : [];
   const [chatFilters, setChatFilters] = useRetainedState<ChatFilters>(
     `${stateKey}:filters`,
@@ -162,10 +173,17 @@ export function SearchView({
 
   const trimmed = query.trim();
 
+  const appliedRequest = useRef<SearchRequest | undefined>(undefined);
   useEffect(() => {
-    if (!open) return;
-    setActive(0);
-  }, [open, cwd]);
+    if (!open || !request || appliedRequest.current === request) return;
+    appliedRequest.current = request;
+    setScope(request.scope);
+    if (request.query !== undefined) setQuery(request.query);
+    const conversationScope = request.conversationScope;
+    if (conversationScope) {
+      setChatFilters((filters) => ({ ...filters, scope: conversationScope }));
+    }
+  }, [open, request, setScope, setQuery, setChatFilters]);
 
   useEffect(() => {
     if (!open) return;
@@ -311,10 +329,20 @@ export function SearchView({
     () => hitsFromContentMatches(projectSearch.result.matches),
     [projectSearch.result.matches],
   );
-  const error = projectSearch.error ?? (fileIndexError?.cwd === cwd ? fileIndexError.error : null);
-  const contentTruncated = projectSearch.result.truncated;
-  const loading = projectSearch.loading || conversation.loading || deferredTrimmed !== trimmed;
-  const truncated = contentTruncated || conversation.result.truncated;
+  const error =
+    scope === "all" || scope === "files"
+      ? (projectSearch.error ?? (fileIndexError?.cwd === cwd ? fileIndexError.error : null))
+      : null;
+  const fileMode = scope === "all" || scope === "files";
+  const conversationMode = scope === "all" || scope === "conversations";
+  const conversationError = conversationMode ? conversation.error : null;
+  const loading =
+    (fileMode && projectSearch.loading) ||
+    (conversationMode && conversation.loading) ||
+    deferredTrimmed !== trimmed;
+  const truncated =
+    (fileMode && projectSearch.result.truncated) ||
+    (conversationMode && conversation.result.truncated);
   // "Everywhere" searches every stored conversation, so results from locked
   // groups are dropped here, and again if a group locks while they are shown.
   const lock = useLockSnapshot();
@@ -332,37 +360,98 @@ export function SearchView({
   );
   const chatRows = useMemo(() => chatEntries(chatGroups), [chatGroups]);
 
-  const hits = useMemo(() => {
-    if (!trimmed) return [];
-    return flattenGrouped(
-      groupHits(
-        mergeHits(titleHits, liveMessageHits, remoteHits, fileHits, contentHits, projectHits),
-        scope,
-      ),
-    );
-  }, [contentHits, fileHits, liveMessageHits, projectHits, remoteHits, scope, titleHits, trimmed]);
+  const grouped = useMemo(() => {
+    const eligible = trimmed
+      ? mergeHits(
+          titleHits,
+          liveMessageHits,
+          remoteHits,
+          fileHits,
+          contentHits,
+          projectHits,
+        ).filter(
+          (hit) =>
+            !isProjectLockedIn(
+              lock,
+              hit.kind === "conversation" || hit.kind === "message"
+                ? hit.cwd
+                : hit.kind === "project"
+                  ? hit.path
+                  : cwd,
+            ),
+        )
+      : [];
+    return groupHitsWithCounts(eligible, scope);
+  }, [
+    contentHits,
+    fileHits,
+    liveMessageHits,
+    projectHits,
+    remoteHits,
+    scope,
+    titleHits,
+    trimmed,
+    lock,
+    cwd,
+  ]);
+  const hits = useMemo(() => flattenGrouped(grouped.grouped), [grouped]);
 
   // The Conversations tab lists results by project, with its own rows to step
   // through; every other tab steps through `hits`.
   const chatMode = scope === "conversations";
   const rowCount = chatMode ? chatRows.length : hits.length;
+  const resultsCurrent = deferredTrimmed === trimmed;
+  const rowIds = useMemo(
+    () => (chatMode ? chatRows : hits).map((row) => row.id),
+    [chatMode, chatRows, hits],
+  );
+  const selectionContext = JSON.stringify([cwd, trimmed, scope, filters]);
+  const selectedIndex =
+    selection.context === selectionContext && selection.id !== null
+      ? rowIds.indexOf(selection.id)
+      : -1;
+  const active = selectedIndex >= 0 ? selectedIndex : 0;
+  const setActive = (index: number) =>
+    setSelection({ context: selectionContext, id: rowIds[index] ?? null });
+  const optionId = (index: number) => `${listId}-option-${index}`;
+  const capacity =
+    resultCapacity.context === selectionContext
+      ? Math.max(resultCapacity.rows, rowCount)
+      : rowCount;
+
+  // The list never shrinks within one search context, so the panel keeps its height.
+  if (
+    deferredTrimmed === trimmed &&
+    !(resultCapacity.context === selectionContext && resultCapacity.rows >= rowCount)
+  ) {
+    setResultCapacity({
+      context: selectionContext,
+      rows:
+        resultCapacity.context === selectionContext
+          ? Math.max(resultCapacity.rows, rowCount)
+          : rowCount,
+    });
+  }
 
   useEffect(() => {
-    setActive(0);
-  }, [trimmed, scope, filters]);
-
-  useEffect(() => {
-    if (active >= rowCount) setActive(0);
-  }, [active, rowCount]);
+    if (!resultsCurrent) return;
+    if (
+      selection.context !== selectionContext ||
+      (selection.id !== null && !rowIds.includes(selection.id)) ||
+      (selection.id === null && rowIds.length > 0)
+    ) {
+      setSelection({ context: selectionContext, id: rowIds[0] ?? null });
+    }
+  }, [selection.context, selection.id, selectionContext, rowIds, setSelection, resultsCurrent]);
 
   const openChat = (entry: { sessionId: string; blockId?: string } | undefined) => {
-    if (!entry) return;
+    if (!resultsCurrent || !entry) return;
     onOpenSession(entry.sessionId, entry.blockId, trimmed);
     onClose();
   };
 
   const openHit = (hit: AppSearchHit | null) => {
-    if (!hit) return;
+    if (!resultsCurrent || !hit) return;
     if (hit.kind === "file") {
       onOpenFile(hit.path, undefined, { exact: true });
     } else if (hit.kind === "content") {
@@ -379,14 +468,14 @@ export function SearchView({
     if (isImeComposition(event.nativeEvent)) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      if (rowCount === 0) return;
-      setActive((index) => (index + 1) % rowCount);
+      if (!resultsCurrent || rowCount === 0) return;
+      setActive((active + 1) % rowCount);
       return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      if (rowCount === 0) return;
-      setActive((index) => (index - 1 + rowCount) % rowCount);
+      if (!resultsCurrent || rowCount === 0) return;
+      setActive((active - 1 + rowCount) % rowCount);
       return;
     }
     if (event.key === "Enter") {
@@ -400,16 +489,34 @@ export function SearchView({
   if (!open) return null;
 
   const empty = !trimmed;
-  const noResults = !empty && rowCount === 0 && !loading && !error && !conversation.error;
-  const limitNotice = truncated ? (
-    <p className="px-2.5 py-1 text-[11px] text-content/45">
-      {t("Results limited to the first matches")}
-    </p>
-  ) : null;
+  const indexing = pendingIndex > 0 && (scope === "all" || chatMode);
+  const noResults = !empty && rowCount === 0 && !loading && !error && !conversationError;
+  const projectScope = looksLikeProject(cwd)
+    ? `${projectDisplayName(cwd)} · ${prettyCwd(cwd)}`
+    : t("No project folder");
+  const scopeCopy =
+    scope === "files"
+      ? `${t("Files")}: ${projectScope}`
+      : scope === "projects"
+        ? t("Recent projects")
+        : chatMode
+          ? `${t(filters.scope === "everywhere" ? "Everywhere" : filters.scope === "group" ? "This group" : "This project")}${filters.scope === "everywhere" ? "" : ` · ${projectDisplayName(cwd)}`}`
+          : `${t("Files")}: ${projectScope} · ${t("Conversations")}: ${t("Everywhere")} · ${t("Recent projects")}`;
+  const limitNotice =
+    !empty && (truncated || (!chatMode && grouped.omitted > 0)) ? (
+      <InfoPopover label={t("Search result limits")}>
+        <p>
+          {truncated ? t("Results limited to the first matches") : t("Showing first matches")}
+          {!chatMode && grouped.omitted > 0
+            ? ` · ${grouped.omitted} ${t("more loaded matches")}`
+            : ""}
+        </p>
+      </InfoPopover>
+    ) : null;
   const indexNotice =
-    pendingIndex > 0 && scope !== "files" && scope !== "projects" ? (
-      <p className="px-2.5 py-1 text-[11px] text-content/45">
-        {t("Indexing ")}
+    pendingIndex > 0 && !conversationError && conversationMode ? (
+      <p className="px-2.5 py-1 text-ui-micro text-(--ui-text-muted)">
+        {t("Application-wide indexing")}: {t("Indexing ")}
         {pendingIndex}
         {t(" conversation")}
         {pendingIndex === 1 ? "" : "s"}
@@ -422,27 +529,50 @@ export function SearchView({
       role="search"
       aria-label={t("Search")}
       data-app-search
-      className={`app-search flex min-h-0 min-w-0 flex-1 flex-col text-content ${presentation === "dialog" ? "app-search-dialog" : ""}`}
+      data-search-empty={empty || undefined}
+      data-search-size={capacity <= 4 ? "small" : capacity <= 10 ? "medium" : "large"}
+      className={`app-search @container/search flex min-h-0 min-w-0 flex-1 flex-col text-content ${presentation === "dialog" ? "app-search-dialog" : ""}`}
     >
-      <div className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto]">
-        <div
-          className="col-span-3 grid h-10 grid-cols-subgrid select-none items-center border-b border-stroke"
-          data-tauri-drag-region={presentation === "page" ? "deep" : undefined}
+      <div className="flex shrink-0 flex-col">
+        <PaneHeader
+          dragRegion={presentation === "page"}
+          chromeInset={
+            presentation === "page" ? (!besideRail ? true : compactRail ? "compact" : false) : false
+          }
+          className="select-none"
+          leading={
+            presentation === "page" && !besideRail ? (
+              <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
+            ) : null
+          }
+          actions={
+            presentation === "dialog" ? (
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Full screen")}
+                tooltip={t("Full screen")}
+                onClick={onExpand}
+              >
+                <Maximize2 className="icon-sm" />
+              </Button>
+            ) : onCompact ? (
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Restore")}
+                tooltip={t("Restore")}
+                onClick={onCompact}
+              >
+                <Minimize2 className="icon-sm" />
+              </Button>
+            ) : null
+          }
+          trailing={presentation === "page" && !IS_MAC ? <WindowControls /> : null}
         >
-          <div className="flex items-center">
-            {presentation === "page" ? (
-              <>
-                {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
-                {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
-                {besideRail ? null : (
-                  <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
-                )}
-              </>
-            ) : null}
-          </div>
-          <div className="min-w-0 flex-1 px-3">
+          <div className="min-w-0 flex-1 px-2">
             <SearchInputGroup appearance="field" className="w-full">
-              <Search className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+              <Search className="icon-sm shrink-0" strokeWidth={1.75} aria-hidden="true" />
               <SearchInput
                 type="search"
                 focusOwner="group"
@@ -450,8 +580,16 @@ export function SearchView({
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={onQueryKeyDown}
-                placeholder={t("Search everything...")}
+                placeholder={t("Search files, conversations, and projects")}
                 aria-label={t("Search")}
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={!empty && rowCount > 0}
+                aria-controls={!empty && rowCount > 0 ? listId : undefined}
+                aria-activedescendant={
+                  resultsCurrent && !empty && rowCount > 0 ? optionId(active) : undefined
+                }
+                aria-describedby={scopeId}
                 spellCheck={false}
                 autoComplete="off"
                 autoCorrect="off"
@@ -460,45 +598,14 @@ export function SearchView({
                 className="min-w-0 flex-1 select-text"
               />
               {loading ? (
-                <LoaderCircle
-                  className="size-3.5 shrink-0 animate-spin text-(--ui-text-secondary)"
-                  strokeWidth={1.75}
-                />
+                <Spinner size="sm" className="shrink-0 text-(--ui-text-secondary)" />
               ) : null}
             </SearchInputGroup>
           </div>
-          <div className="flex items-center pe-3">
-            {presentation === "dialog" ? (
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Full screen")}
-                tooltip={t("Full screen")}
-                onClick={onExpand}
-              >
-                <Maximize2 className="size-3.5" />
-              </Button>
-            ) : (
-              <>
-                {onCompact ? (
-                  <Button
-                    variant="ghost"
-                    iconOnly
-                    label={t("Restore")}
-                    tooltip={t("Restore")}
-                    onClick={onCompact}
-                  >
-                    <Minimize2 className="size-3.5" />
-                  </Button>
-                ) : null}
-                {!IS_MAC ? <WindowControls /> : null}
-              </>
-            )}
-          </div>
-        </div>
+        </PaneHeader>
 
-        <div className="col-span-3 grid min-h-9 grid-cols-subgrid items-center border-b border-stroke">
-          <div className="col-start-2 min-w-0 overflow-x-auto px-3 py-1">
+        <div className="app-search-mode-band">
+          <div className="min-w-0 flex-1 overflow-x-auto">
             <SegmentedControl
               label={t("Search in")}
               value={scope}
@@ -516,8 +623,13 @@ export function SearchView({
         </div>
       </div>
 
-      {!empty && (error || conversation.error) ? (
-        <Alert tone="danger" role="alert">
+      <div className="app-search-scope-summary">
+        <p id={scopeId}>{scopeCopy}</p>
+        {limitNotice}
+      </div>
+
+      {!empty && (error || conversationError) ? (
+        <Alert tone="danger" className="mx-2 mt-2 max-h-40 shrink-0 overflow-auto break-words">
           {error ? (
             <p>
               {t("File search failed: ")}
@@ -535,18 +647,16 @@ export function SearchView({
               </Button>
             </p>
           ) : null}
-          {conversation.error ? (
+          {conversationError ? (
             <p>
               {t("Conversation search failed: ")}
-              {conversation.error}{" "}
+              {conversationError}{" "}
               <Button variant="ghost" size="sm" type="button" onClick={conversation.retry}>
                 {t("Retry conversation search")}
               </Button>
             </p>
           ) : null}
-          {rowCount > 0 ? (
-            <p className="text-content/75">{t("Results below may be incomplete.")}</p>
-          ) : null}
+          {rowCount > 0 ? <p>{t("Results below may be incomplete.")}</p> : null}
         </Alert>
       ) : null}
 
@@ -555,42 +665,54 @@ export function SearchView({
         aria-busy={loading}
         className={
           empty
-            ? "flex min-h-0 flex-1 items-center justify-center overflow-y-auto overscroll-none"
+            ? "min-h-0 overflow-y-auto overscroll-none px-3 py-2"
             : "min-h-0 flex-1 overflow-y-auto overscroll-none px-1.5 py-1.5"
         }
       >
+        {!empty && loading && rowCount === 0 ? (
+          <p role="status" className="px-2 py-1.5 text-ui-caption text-(--ui-text-secondary)">
+            {t("Searching…")}
+          </p>
+        ) : null}
         {empty ? (
           <EmptyState
-            icon={<Search className="size-6" />}
+            context="panel"
+            icon={<Search className="icon-md" />}
             description={t("Find files, conversations, messages, and projects.")}
           />
         ) : noResults ? (
           <>
-            <p className="px-2 py-1.5 text-[12px] text-content/50">{t("No results")}</p>
+            <p role="status" className="px-2 py-1.5 text-ui-caption text-(--ui-text-muted)">
+              {t(indexing ? "No indexed matches yet" : "No results")}
+            </p>
             {indexNotice}
-            {limitNotice}
           </>
         ) : chatMode ? (
           <>
             {indexNotice}
-            {limitNotice}
             <ChatSearchResults
+              listId={listId}
               groups={chatGroups}
               entries={chatRows}
-              active={active}
-              onActive={setActive}
+              active={resultsCurrent ? active : -1}
+              onActive={(index) => {
+                if (resultsCurrent) setActive(index);
+              }}
               onOpen={openChat}
             />
           </>
         ) : (
           <>
             {indexNotice}
-            {limitNotice}
             <ResultList
+              listId={listId}
+              counts={grouped.counts}
               hits={hits}
-              active={active}
+              active={resultsCurrent ? active : -1}
               query={trimmed}
-              onActive={setActive}
+              onActive={(index) => {
+                if (resultsCurrent) setActive(index);
+              }}
               onOpen={openHit}
             />
           </>
@@ -598,19 +720,26 @@ export function SearchView({
       </div>
       <footer className="app-search-footer">
         <span>
-          <kbd>↑</kbd> <kbd>↓</kbd> {t("Search results")}
+          <ShortcutKbd size="xs">↑</ShortcutKbd> <ShortcutKbd size="xs">↓</ShortcutKbd>{" "}
+          {t("Navigate")}
         </span>
         <span>
-          <kbd>Enter</kbd> {t("Open")}
+          <ShortcutKbd size="xs">Enter</ShortcutKbd> {t("Open")}
         </span>
         <span>
-          <kbd>Esc</kbd> {t("Close")}
+          <ShortcutKbd size="xs">Esc</ShortcutKbd> {t("Close")}
         </span>
       </footer>
     </div>
   );
   return presentation === "dialog" ? (
-    <Modal title={t("Search")} size="lg" onClose={onClose} className="app-search-modal">
+    <Modal
+      padding="none"
+      title={t("Search")}
+      size="lg"
+      onClose={onClose}
+      className="app-search-modal"
+    >
       {content}
     </Modal>
   ) : (
@@ -619,12 +748,16 @@ export function SearchView({
 }
 
 function ResultList({
+  listId,
+  counts,
   hits,
   active,
   query,
   onActive,
   onOpen,
 }: {
+  listId: string;
+  counts: GroupedHitCounts;
   hits: AppSearchHit[];
   active: number;
   query: string;
@@ -663,112 +796,99 @@ function ResultList({
   };
 
   return (
-    <div role="listbox" aria-label={t("Search results")} onMouseMove={onListMouseMove}>
+    <div id={listId} role="listbox" aria-label={t("Search results")} onMouseMove={onListMouseMove}>
       {hits.map((hit, index) => {
         const highlighted = index === active;
         const row = rowCopy(hit, query);
+        const heading =
+          hit.kind === "conversation"
+            ? t("Conversations")
+            : hit.kind === "message"
+              ? t("Messages")
+              : hit.kind === "file"
+                ? t("Files")
+                : hit.kind === "content"
+                  ? t("File content")
+                  : t("Projects");
+        const count =
+          counts[
+            hit.kind === "conversation"
+              ? "conversations"
+              : hit.kind === "message"
+                ? "messages"
+                : hit.kind === "file"
+                  ? "files"
+                  : hit.kind === "project"
+                    ? "projects"
+                    : "content"
+          ];
+        const fullIdentity =
+          hit.kind === "file"
+            ? hit.path
+            : hit.kind === "content"
+              ? `${hit.path}:${hit.line}:${hit.column}`
+              : hit.kind === "project"
+                ? hit.path
+                : `${terminalText(hit.title).text}\n${hit.cwd}`;
         return (
-          <Button
-            variant="item"
-            motion="none"
-            fullWidth
-            selected={highlighted}
-            className="app-search-result"
-            key={hit.id}
-            ref={highlighted ? activeRef : undefined}
-            type="button"
-            role="option"
-            aria-selected={highlighted}
-            onMouseDown={(event) => event.preventDefault()}
-            onMouseEnter={() => onRowEnter(index)}
-            onClick={() => onOpen(hit)}
-          >
-            <span className="grid size-4 shrink-0 place-items-center">{row.icon}</span>
-            <span className="app-search-result-copy">
-              <span className="app-search-result-title">{row.title}</span>
-              {row.preview ? (
-                <span className="app-search-result-preview">{row.preview}</span>
-              ) : null}
-              <span className="app-search-result-meta">{row.meta}</span>
-            </span>
-            <span className="app-search-result-kind">
-              {t(
-                hit.kind === "conversation"
-                  ? "Conversation"
-                  : hit.kind === "message"
-                    ? "Message"
-                    : hit.kind === "project"
-                      ? "Project"
-                      : "File",
-              )}
-            </span>
-          </Button>
+          <div key={hit.id} role="presentation">
+            {index === 0 || hits[index - 1].kind !== hit.kind ? (
+              <div
+                role="presentation"
+                className="flex items-center gap-2 px-2.5 pb-1 pt-2 text-ui-caption font-medium text-(--ui-text-secondary)"
+              >
+                <span>{heading}</span>
+                <span className="tabular-nums">
+                  {count.shown} {t("shown")}
+                  {count.omitted > 0 ? ` · ${count.omitted} ${t("more loaded matches")}` : ""}
+                </span>
+              </div>
+            ) : null}
+            <Button
+              variant="item"
+              tone="accent"
+              motion="none"
+              fullWidth
+              selected={highlighted}
+              className="app-search-result"
+              id={`${listId}-option-${index}`}
+              ref={highlighted ? activeRef : undefined}
+              type="button"
+              role="option"
+              aria-selected={highlighted}
+              tabIndex={-1}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => onRowEnter(index)}
+              onClick={() => onOpen(hit)}
+            >
+              <span className="grid size-4 shrink-0 place-items-center" aria-hidden="true">
+                {row.icon}
+              </span>
+              <span className="app-search-result-copy">
+                <span className="app-search-result-title">{row.title}</span>
+                {row.preview ? (
+                  <span className="app-search-result-preview">{row.preview}</span>
+                ) : null}
+                <span className="app-search-result-meta">{row.meta}</span>
+                {highlighted ? (
+                  <span className="app-search-result-identity">{fullIdentity}</span>
+                ) : null}
+              </span>
+              <span className="app-search-result-kind sr-only">
+                {t(
+                  hit.kind === "conversation"
+                    ? "Conversation"
+                    : hit.kind === "message"
+                      ? "Message"
+                      : hit.kind === "project"
+                        ? "Project"
+                        : "File",
+                )}
+              </span>
+            </Button>
+          </div>
         );
       })}
     </div>
   );
-}
-
-function rowCopy(
-  hit: AppSearchHit,
-  query: string,
-): { icon: ReactNode; title: ReactNode; meta: string; preview?: ReactNode } {
-  if (hit.kind === "conversation") {
-    return {
-      icon: <HarnessIcon harness={hit.harness} className="size-3.5" />,
-      title: <MatchText text={hit.title} positions={hit.positions} active />,
-      meta: projectDisplayName(hit.cwd),
-    };
-  }
-  if (hit.kind === "message") {
-    return {
-      icon: <MessageSquare className="size-3.5 text-content/55" strokeWidth={1.75} />,
-      title: hit.title,
-      preview: <Highlight text={hit.preview || hit.title} query={query} />,
-      meta: projectDisplayName(hit.cwd),
-    };
-  }
-  if (hit.kind === "file") {
-    return {
-      icon: <FileTypeIcon name={hit.name} isDir={false} size={16} />,
-      title: <MatchText text={hit.name} positions={namePositions(hit)} active />,
-      meta: hit.relative,
-    };
-  }
-  if (hit.kind === "content") {
-    return {
-      icon: <FileTypeIcon name={hit.name} isDir={false} size={16} />,
-      title: hit.name,
-      preview: <Highlight text={hit.preview} query={query} />,
-      meta: `${hit.relative}:${hit.line}`,
-    };
-  }
-  return {
-    icon: <ProjectLogoIcon path={hit.path} className="size-3.5 rounded-sm" fallback={Folder} />,
-    title: <MatchText text={hit.name} positions={hit.positions} active />,
-    meta: prettyCwd(hit.path),
-  };
-}
-
-function Highlight({ text, query }: { text: string; query: string }) {
-  useLocale();
-  const needle = query.trim();
-  if (!needle) return <>{text}</>;
-  const index = text.toLowerCase().indexOf(needle.toLowerCase());
-  if (index < 0) return <>{text}</>;
-  const end = index + needle.length;
-  return (
-    <>
-      {text.slice(0, index)}
-      <span className="text-accent">{text.slice(index, end)}</span>
-      {text.slice(end)}
-    </>
-  );
-}
-
-function namePositions(hit: { name: string; relative: string; positions: number[] }) {
-  const offset = Math.max(0, hit.relative.length - hit.name.length);
-  return hit.positions
-    .map((index) => index - offset)
-    .filter((index) => index >= 0 && index < hit.name.length);
 }

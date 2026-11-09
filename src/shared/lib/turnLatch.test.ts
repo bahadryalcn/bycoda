@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 import { TurnLatch } from "./turnLatch";
 import type { HarnessEvent } from "../../integrations/harness/core/types";
 
-it("ek olayları callbackten önce yayar ve latch'i callbackten önce boşaltır", () => {
+it("emits extra events before the callback and drains the latch before the callback", () => {
   const order: string[] = [];
   const state = {
     turnDone: null as (() => void) | null,
@@ -18,7 +18,7 @@ it("ek olayları callbackten önce yayar ve latch'i callbackten önce boşaltır
   expect(order).toEqual(["event", "done"]);
   expect(state.turnEndPending).toBe(false);
 });
-it("erken bitişi pending tutar, callback bağlanınca bir kez yerleşir", () => {
+it("keeps an early finish pending and settles once when the callback attaches", () => {
   const state = {
     turnDone: null as (() => void) | null,
     turnFailed: null as unknown,
@@ -36,7 +36,7 @@ it("erken bitişi pending tutar, callback bağlanınca bir kez yerleşir", () =>
   TurnLatch.settle(state, () => TurnLatch.finish(state));
   expect(done).toHaveBeenCalledTimes(1);
 });
-it("başarısız turu erken başarılı bitiş gibi yeniden pending yapmaz", () => {
+it("does not make a failed turn pending again like an early successful finish", () => {
   const state = {
     turnDone: null,
     turnFailed: vi.fn(),

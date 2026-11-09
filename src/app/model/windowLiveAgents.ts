@@ -58,6 +58,7 @@ export function mergeWindowLiveAgents(
     (a, b) =>
       Number(b.needsApproval) - Number(a.needsApproval) ||
       Number(a.done) - Number(b.done) ||
+      Number(!!a.waiting) - Number(!!b.waiting) ||
       (a.startedAt ?? Number.MAX_SAFE_INTEGER) - (b.startedAt ?? Number.MAX_SAFE_INTEGER),
   );
 }

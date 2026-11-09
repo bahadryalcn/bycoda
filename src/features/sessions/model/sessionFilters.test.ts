@@ -1,10 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_SESSION_SIDEBAR_FILTERS,
+  filterAssistantManagedSessions,
   filterSessionsByHarness,
   filterSessionsByStatus,
   filterSessionsByTime,
   hasActiveSessionFilters,
+  loadSessionSidebarFilters,
+  saveSessionSidebarFilters,
   timeFilterStart,
 } from "./sessionFilters";
 import type { SessionSummary } from "../data/sessionStore";
@@ -30,6 +33,54 @@ describe("filterSessionsByHarness", () => {
     const rows = [summary("a1", { harness: "cursor" }), summary("a2", { harness: "claude" })];
     expect(filterSessionsByHarness(rows, ["cursor"]).map((row) => row.id)).toEqual(["a2"]);
   });
+});
+
+it("filters only stamped assistant sessions and composes with existing status filters", () => {
+  const rows = [
+    summary("manual", { title: "Managed by Arif" }),
+    summary("managed", { managedBy: { assistant: true, jobId: "job", managedAt: 1 } }),
+    summary("managed-idle", { managedBy: { assistant: true, jobId: "other", managedAt: 2 } }),
+  ];
+  expect(filterAssistantManagedSessions(rows, false)).toBe(rows);
+  const managed = filterAssistantManagedSessions(rows, true);
+  expect(managed.map((row) => row.id)).toEqual(["managed", "managed-idle"]);
+  expect(
+    filterSessionsByStatus(
+      managed,
+      { working: true, needsApproval: false, done: false },
+      new Set(["managed", "manual"]),
+      new Set(),
+      new Set(),
+    ).map((row) => row.id),
+  ).toEqual(["managed"]);
+  expect(
+    hasActiveSessionFilters({ ...DEFAULT_SESSION_SIDEBAR_FILTERS, assistantManaged: true }),
+  ).toBe(true);
+});
+
+it("retains the managed filter across reloads and keeps legacy and malformed stored filters off", () => {
+  const data = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => data.set(key, value),
+  });
+  try {
+    saveSessionSidebarFilters({
+      ...DEFAULT_SESSION_SIDEBAR_FILTERS,
+      assistantManaged: true,
+      time: "7d",
+    });
+    expect(loadSessionSidebarFilters()).toMatchObject({ assistantManaged: true, time: "7d" });
+    data.set("bycoda.sessionSidebarFilters", JSON.stringify({ showArchived: true }));
+    expect(loadSessionSidebarFilters()).toMatchObject({
+      assistantManaged: false,
+      showArchived: true,
+    });
+    data.set("bycoda.sessionSidebarFilters", JSON.stringify({ assistantManaged: "true" }));
+    expect(loadSessionSidebarFilters().assistantManaged).toBe(false);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 describe("filterSessionsByTime", () => {

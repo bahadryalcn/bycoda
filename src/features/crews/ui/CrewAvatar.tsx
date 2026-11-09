@@ -4,7 +4,7 @@ import { crewColor, useCrewAppearances, type CrewAppearance } from "../model/cre
 /** A crew's pixel icon in the color chosen for it on this device. */
 export function CrewAvatar({
   crew,
-  className = "size-3.5",
+  className = "icon-sm",
   active = false,
   look,
 }: {

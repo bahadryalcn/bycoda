@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BinaryFileView } from "./BinaryFileView";
 
 const actions = vi.hoisted(() => ({
+  reveal: vi.fn(async () => {}),
+  copyText: vi.fn(async () => {}),
   copyFileToClipboard: vi.fn(async () => {}),
   readBinaryFile: vi.fn(
     async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -15,7 +17,9 @@ vi.mock("../../../platform/tauri/fs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../platform/tauri/fs")>()),
   copyFileToClipboard: actions.copyFileToClipboard,
   readBinaryFile: actions.readBinaryFile,
+  revealPath: actions.reveal,
 }));
+vi.mock("../../../platform/tauri/clipboard", () => ({ copyText: actions.copyText }));
 
 vi.mock("../model/fileWatch", () => ({
   watchFile: () => () => {},
@@ -59,6 +63,61 @@ async function renderViewer() {
 }
 
 describe("BinaryFileView image copy", () => {
+  it("shows pending and recoverable failure instead of silently losing image-copy errors", async () => {
+    let reject!: (error: Error) => void;
+    actions.copyFileToClipboard.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, fail) => {
+          reject = fail;
+        }),
+    );
+    await renderViewer();
+    const copy = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Copy original file"]',
+    )!;
+    copy.focus();
+    act(() => {
+      copy.click();
+      copy.click();
+    });
+    expect(actions.copyFileToClipboard).toHaveBeenCalledOnce();
+    expect(copy.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(copy);
+    await act(async () => reject(new Error("Clipboard unavailable")));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Clipboard unavailable",
+    );
+    await act(async () => copy.click());
+    expect(actions.copyFileToClipboard).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("keeps unsupported-file actions visible with local pending and error recovery", async () => {
+    actions.readBinaryFile.mockResolvedValueOnce(new Uint8Array([1, 2, 3]));
+    let reject!: (error: Error) => void;
+    actions.reveal.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, fail) => {
+          reject = fail;
+        }),
+    );
+    await renderViewer();
+    const reveal = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Reveal",
+    )!;
+    act(() => {
+      reveal.click();
+      reveal.click();
+    });
+    expect(actions.reveal).toHaveBeenCalledOnce();
+    expect(reveal.getAttribute("aria-busy")).toBe("true");
+    await act(async () => reject(new Error("File manager unavailable")));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "File manager unavailable",
+    );
+    await act(async () => reveal.click());
+    expect(actions.reveal).toHaveBeenCalledTimes(2);
+  });
   it("replaces the webview image menu with an original-file copy action", async () => {
     await renderViewer();
     const image = container.querySelector("img")!;

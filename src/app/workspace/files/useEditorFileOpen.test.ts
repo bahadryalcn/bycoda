@@ -10,8 +10,12 @@ import {
 import {
   newEditorWorkspaceTab,
   newFileTab,
+  newTab,
+  leafIds,
   type WorkspaceTab,
 } from "../../../features/workspace/model/layout";
+import { useSessionPaneProps, type SessionPaneDeps } from "../layout/useSessionPaneProps";
+import type { Session } from "../../../features/sessions/model/session";
 
 const native = vi.hoisted(() => ({ directory: vi.fn(), mode: "pane" }));
 vi.mock("../../../features/settings/model/settings", () => ({
@@ -32,6 +36,84 @@ afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
+
+it.each([
+  "/repo/canım-anam.html",
+  "remote://host/repo/REPORT.HTM",
+  "/repo/report.pdf",
+  "/repo/guide.md",
+  "/repo/main.ts",
+  "/repo/readme.txt",
+  "/repo/photo.png",
+  "/repo/clip.mp4",
+  "/repo/song.mp3",
+])(
+  "opens conversation files beside the retained session regardless of workspace preference: %s",
+  async (path) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    native.mode = "workspace";
+    native.directory.mockResolvedValue(false);
+    const origin = newTab("conversation");
+    const tabs = { current: [origin] };
+    const deps: EditorFileOpenDeps = {
+      activeTabId: origin.id,
+      activeTabIdRef: { current: origin.id },
+      tabsRef: tabs,
+      sessionsRef: { current: [{ id: "conversation", blocks: [{}] } as Session] },
+      gitCwdRef: { current: "/repo" },
+      sidebarCwdRef: { current: "/repo" },
+      activateTab: vi.fn(),
+      insertBesideActive: (previous, tab) => [...previous, tab],
+      setTabs: (update) => {
+        tabs.current = typeof update === "function" ? update(tabs.current) : update;
+      },
+      setActiveTabId: vi.fn(),
+      setComposerFocused: vi.fn(),
+      setProjectTerminalFocused: vi.fn(),
+      setEditorNavigation: vi.fn(),
+      editorNavigationToken: { current: 0 },
+    };
+    let open!: NonNullable<SessionPaneDeps["onOpenFile"]>;
+    function Harness() {
+      const actions = useEditorFileOpen(deps);
+      const { sessionPaneProps } = useSessionPaneProps({
+        tabs: tabs.current,
+        movingWindows: new Set(),
+        workspaceNavigation: { pending: false },
+        visibleRecents: [],
+        onOpenFile: actions.onOpenFile,
+      } as unknown as SessionPaneDeps);
+      open = sessionPaneProps.onOpenFile;
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    try {
+      await act(async () => root.render(createElement(Harness)));
+      await act(async () => open(path, { line: 4 }, { exact: true, pin: true }));
+      expect(tabs.current).toHaveLength(1);
+      expect(tabs.current[0].id).toBe(origin.id);
+      expect(leafIds(tabs.current[0].layout)).toContain("conversation");
+      expect(tabs.current[0].layout).toMatchObject({
+        type: "split",
+        dir: "right",
+      });
+      expect(leafIds(tabs.current[0].layout)[0]).toBe("conversation");
+      expect(deps.activateTab).not.toHaveBeenCalled();
+      expect(deps.setEditorNavigation).toHaveBeenCalledWith({ path, line: 4, token: 1 });
+      expect(tabs.current[0].editorPanes[0].files[0]).toMatchObject({ path });
+      expect(tabs.current[0].editorPanes[0].files[0].preview).toBeUndefined();
+      const paneId = tabs.current[0].editorPanes[0].id;
+      await act(async () => open(path));
+      expect(tabs.current).toHaveLength(1);
+      expect(tabs.current[0].editorPanes).toHaveLength(1);
+      expect(tabs.current[0].editorPanes[0].id).toBe(paneId);
+      expect(tabs.current[0].editorPanes[0].files).toHaveLength(1);
+      expect(deps.sessionsRef.current[0].id).toBe("conversation");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  },
+);
 
 it.each([false, true])(
   "retains delayed pinned batch files after the latest open activates another workspace (already open: %s)",
@@ -160,7 +242,7 @@ it("opens a validated external file without waiting for a second native inspecti
       cwd: "/Downloads",
       external: true,
     });
-    expect(deps.setActiveTabId).toHaveBeenCalledWith(tabs.current[0].id);
+    expect(deps.activateTab).toHaveBeenCalledWith(tabs.current[0].id);
   } finally {
     await act(async () => root.unmount());
   }

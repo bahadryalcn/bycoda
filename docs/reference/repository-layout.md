@@ -9,6 +9,12 @@ adding another top-level folder.
 
 ## Application and runtimes
 
+The workspace also has real desktop entry modules under `apps/desktop/` and
+portable helpers with explicit exports, independent types and tests under
+`packages/core/`. Desktop implementation remains under `src/` during migration.
+`evals/` owns sanitized cases and offline graders; paid runs are explicitly gated.
+`mobile/` remains a separate Expo Git repository with its own dependencies and CI.
+
 | Directory           | Responsibility                                                           |
 | ------------------- | ------------------------------------------------------------------------ |
 | `src/app/`          | Application composition, startup, settings, and desktop shell.           |
@@ -25,17 +31,19 @@ adding another top-level folder.
 Focused tests stay beside their source modules when possible. Browser scenarios
 belong in `tests/browser/`; host and native tests stay with their runtimes.
 
-Browser fixture builds use `tests/browser/vite.config.ts` and
-`tests/browser/vite.composer.config.ts`. The root `playwright.config.ts` remains
-the default browser test entry point; composer scenarios use
-`tests/browser/playwright.composer.config.ts`:
+Browser suite ownership and explicit variants live in `tests/browser/suites.json`.
+Use the shared runner to select the suite and preserve fixture/port/output
+isolation. Legacy config paths remain compatible; the maintained selection guide
+is [Testing and evidence](testing.md):
 
 ```sh
-pnpm exec playwright test --config tests/browser/playwright.composer.config.ts
+pnpm test:browser --suite composer --project chromium
 ```
 
-Composer fixture builds are written to `temp/build/browser-composer/`.
-Playwright test outputs are written to `temp/test-results/<suite>/`.
+Fixture builds remain under ignored `temp/build/`; each runner invocation writes
+its own reports, traces and screenshots below ignored `temp/test-results/`.
+Workspace import ownership and transitive rules are described in
+[Platform foundation](platform-foundation.md).
 
 ## Scripts
 

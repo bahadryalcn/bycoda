@@ -1,32 +1,21 @@
 import { Alert } from "../../../shared/ui/Alert";
-import { Progress } from "../../../shared/ui/Progress";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { createNote } from "../../notes";
-import { requestAddToChat } from "../../sessions/model/quoteDraft";
+import { requestAddToChat } from "../../sessions/public/quoteDraft";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
 
 export function GitLoading({ text }: { text: string }) {
   useLocale();
-  return (
-    <div role="status" className="px-3 py-2">
-      <Progress label={text} compact />
-    </div>
-  );
+  return <LoadingText className="px-3 py-2">{t(text)}</LoadingText>;
 }
 
-export function GitFeedback({
-  kind = "error",
-  title,
-  detail,
-  stale,
-  onRetry,
-  onDismiss,
-  cwd,
-}: {
+type GitFeedbackProps = {
   kind?: "error" | "warning" | "success" | "info";
   title: string;
   detail?: string;
@@ -34,7 +23,28 @@ export function GitFeedback({
   onRetry?: () => void;
   onDismiss?: () => void;
   cwd?: string;
-}) {
+};
+
+export function GitFeedback(props: GitFeedbackProps) {
+  // Each diagnostic owns its pending actions and feedback, even when A is
+  // replaced by B and then returns before an old A request finishes.
+  return (
+    <GitFeedbackContent
+      key={JSON.stringify([props.kind, props.title, props.detail, props.cwd])}
+      {...props}
+    />
+  );
+}
+
+function GitFeedbackContent({
+  kind = "error",
+  title,
+  detail,
+  stale,
+  onRetry,
+  onDismiss,
+  cwd,
+}: GitFeedbackProps) {
   useLocale();
   const [copying, setCopying] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -42,51 +52,43 @@ export function GitFeedback({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const alive = useRef(true);
+  const copyPending = useRef(false);
+  const notePending = useRef(false);
   useEffect(() => {
-    setCopied(false);
-    setSaved(false);
-    setOpen(false);
-    setCopyError(undefined);
-  }, [title, detail, cwd]);
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
   const context = [title, cwd, detail].filter(Boolean).join("\n\n");
   const branchInWorktree =
     kind === "error" && !!detail && /cannot delete branch[\s\S]*used by worktree/i.test(detail);
   return (
     <Alert
       tone={kind === "error" ? "danger" : kind}
-      role={kind === "error" ? "alert" : "status"}
-      className="mx-2 my-1.5 min-w-0 shrink-0"
+      inline
+      className="mx-2 my-0.5 min-w-0 shrink-0"
     >
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <div
-          className={
-            kind === "error"
-              ? "text-danger"
-              : kind === "warning"
-                ? "text-warning"
-                : "text-[var(--color-content)]"
-          }
-        >
-          {detail ? (
-            <Button
-              variant="link"
-              tooltip={t("Details")}
-              onClick={() => setOpen(true)}
-              aria-haspopup="dialog"
-            >
-              {title}
-            </Button>
-          ) : (
-            title
-          )}
-        </div>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        <div className="text-(--color-content)">{title}</div>
+        {detail ? (
+          <Button
+            variant="link"
+            onClick={() => setOpen(true)}
+            aria-label={`${t("Details")}: ${title}`}
+            aria-haspopup="dialog"
+          >
+            {t("Details")}
+          </Button>
+        ) : null}
         {onRetry ? (
-          <Button variant="secondary" onClick={onRetry}>
+          <Button variant="ghost" size="sm" onClick={onRetry}>
             {t("Retry")}
           </Button>
         ) : null}
         {onDismiss ? (
-          <Button variant="ghost" onClick={onDismiss}>
+          <Button variant="ghost" size="sm" onClick={onDismiss}>
             {t("Dismiss")}
           </Button>
         ) : null}
@@ -95,37 +97,29 @@ export function GitFeedback({
         <p className="mt-1 text-[var(--ui-text-secondary)]">{t("Showing what was last loaded.")}</p>
       ) : null}
       {open && detail ? (
-        <Modal title={title} languageDomain="git" onClose={() => setOpen(false)}>
-          <div className="flex min-w-0 flex-col gap-3 p-4">
-            {cwd ? <p className="break-all text-(--ui-text-secondary)">{cwd}</p> : null}
-            {branchInWorktree ? (
-              <p className="[margin-block-start:0.25rem] text-(--ui-text-secondary)">
-                {t(
-                  "This branch is in use by a worktree. Delete the worktree first, then delete the branch.",
-                )}
-              </p>
-            ) : null}
-            <pre
-              tabIndex={0}
-              aria-label={t("Output")}
-              className="max-h-[50dvh] min-w-0 overflow-auto whitespace-pre-wrap break-all select-text font-mono text-xs text-content"
-            >
-              {detail}
-            </pre>
-            <div className="flex flex-wrap gap-2">
+        <Modal
+          title={title}
+          languageDomain="git"
+          onClose={() => setOpen(false)}
+          footer={
+            <ModalActions align="start">
               <Button
                 variant="link"
                 loading={copying}
                 onClick={async () => {
+                  if (copyPending.current) return;
+                  copyPending.current = true;
                   setCopying(true);
                   setCopyError(undefined);
                   try {
                     await copyText(detail);
-                    setCopied(true);
+                    if (alive.current) setCopied(true);
                   } catch (error) {
-                    setCopyError(error instanceof Error ? error.message : String(error));
+                    if (alive.current)
+                      setCopyError(error instanceof Error ? error.message : String(error));
                   } finally {
-                    setCopying(false);
+                    copyPending.current = false;
+                    if (alive.current) setCopying(false);
                   }
                 }}
               >
@@ -135,15 +129,19 @@ export function GitFeedback({
                 loading={saving}
                 disabled={saved}
                 onClick={async () => {
+                  if (notePending.current || saved) return;
+                  notePending.current = true;
                   setSaving(true);
                   setCopyError(undefined);
                   try {
                     await createNote({ title, body: context, sourceCwd: cwd });
-                    setSaved(true);
+                    if (alive.current) setSaved(true);
                   } catch (error) {
-                    setCopyError(error instanceof Error ? error.message : String(error));
+                    if (alive.current)
+                      setCopyError(error instanceof Error ? error.message : String(error));
                   } finally {
-                    setSaving(false);
+                    notePending.current = false;
+                    if (alive.current) setSaving(false);
                   }
                 }}
               >
@@ -157,17 +155,31 @@ export function GitFeedback({
               >
                 {t("Add to chat")}
               </Button>
-            </div>
+            </ModalActions>
+          }
+        >
+          <div className="flex min-w-0 flex-col gap-3">
+            {cwd ? <p className="break-all text-(--ui-text-secondary)">{cwd}</p> : null}
+            {branchInWorktree ? (
+              <p className="[margin-block-start:0.25rem] text-(--ui-text-secondary)">
+                {t(
+                  "This branch is in use by a worktree. Delete the worktree first, then delete the branch.",
+                )}
+              </p>
+            ) : null}
+            <pre
+              tabIndex={0}
+              aria-label={t("Output")}
+              className="max-h-[50dvh] min-w-0 overflow-auto whitespace-pre-wrap break-all select-text font-mono text-ui-caption text-content"
+            >
+              {detail}
+            </pre>
             {copied || saved ? (
               <p role="status" className="text-(--ui-text-secondary)">
                 {t(saved ? "Saved" : "Copied")}
               </p>
             ) : null}
-            {copyError ? (
-              <p role="alert" className="text-danger">
-                {copyError}
-              </p>
-            ) : null}
+            {copyError ? <InlineError>{copyError}</InlineError> : null}
             {branchInWorktree && cwd ? (
               <Button variant="link" onClick={() => requestWorktreeManagement(cwd)}>
                 {t("Manage worktrees…")}

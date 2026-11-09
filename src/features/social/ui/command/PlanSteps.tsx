@@ -1,0 +1,63 @@
+import { t } from "../../../../shared/i18n";
+import { Button } from "../../../../shared/ui/Button";
+import { TechnicalDetails } from "../common/TechnicalDetails";
+import type { AiPlan } from "../../model/socialActions";
+import { pendingApprovalIds, stepStatusLabel, type StepResult } from "./commandModel";
+
+export type PlanStepsProps = {
+  plan: AiPlan;
+  results: Record<string, StepResult>;
+  approved: string[];
+  busy: boolean;
+  onApprove: (ids: string[]) => void;
+  onRun: () => void;
+};
+
+/** The planned steps in order, each with what the Host will do with it, and the plan's run action. */
+export function PlanSteps({ plan, results, approved, busy, onApprove, onRun }: PlanStepsProps) {
+  const pending = pendingApprovalIds(plan.steps, results).filter((id) => !approved.includes(id));
+  return (
+    <section className="command-plan" aria-label={t("Plan")}>
+      <ol className="command-steps">
+        {plan.steps.map((step) => {
+          const result = results[step.id];
+          const isApproved = approved.includes(step.id);
+          return (
+            <li key={step.id} className="command-step">
+              <div className="command-step-head">
+                <span className="command-step-summary">{step.summary}</span>
+                <span className="command-step-status">
+                  {stepStatusLabel(step, result, isApproved)}
+                </span>
+              </div>
+              {result?.message ? (
+                <span className="command-step-reason">{result.message}</span>
+              ) : null}
+              {!result && step.reason ? (
+                <span className="command-step-reason">{step.reason}</span>
+              ) : null}
+              {pending.includes(step.id) ? (
+                <Button variant="secondary" size="sm" onClick={() => onApprove([step.id])}>
+                  {t("Approve")}
+                </Button>
+              ) : null}
+              <TechnicalDetails>
+                <code>{step.action}</code>
+              </TechnicalDetails>
+            </li>
+          );
+        })}
+      </ol>
+      <div className="command-plan-actions">
+        {pending.length > 0 ? (
+          <Button variant="secondary" size="sm" disabled={busy} onClick={() => onApprove(pending)}>
+            {t("Approve all")}
+          </Button>
+        ) : null}
+        <Button variant="primary" size="sm" loading={busy} onClick={onRun}>
+          {t("Run plan")}
+        </Button>
+      </div>
+    </section>
+  );
+}

@@ -10,6 +10,7 @@ import { invalidateProjectFiles } from "../../files/model/fileIndex";
 import { joinPath } from "../../../shared/lib/paths";
 import { isLocalProject, normalizeProjectPath } from "../../projects/model/recents";
 import { skillInvocationTokens } from "./skillTokens";
+import { withInstalledSkillScope } from "./skillProviderScope";
 import type { HarnessId } from "../../sessions/model/session";
 import { getHarness } from "../../../integrations/harness/core/registry";
 import type { NativeCommand } from "../../../integrations/harness/core/nativeCommands";
@@ -183,27 +184,47 @@ export function subscribeSkills(
   onSkills: (skills: Skill[]) => void,
 ): () => void {
   if (context.cwd.startsWith(REMOTE_PATH_PREFIX)) return () => undefined;
-  return (
-    getHarness(context.harness)?.commands?.subscribe?.(context, (commands) => {
-      const key = skillCatalogKey(context);
-      const previous = catalogEntries.get(key);
-      const skills: Skill[] = commands
-        .filter((command) => !skillDisabled(cachedSkillPolicy(), command))
-        .map((command) => ({
-          ...command,
-          kind: "native",
-        }));
-      catalogEntries.set(key, {
-        cwd: normalizeProjectPath(context.cwd),
-        skills,
-        loadedAt: Date.now(),
-        retryAt: 0,
-        generation: (previous?.generation ?? 0) + 1,
-        inFlight: null,
+  let active = true;
+  const unsubscribe = getHarness(context.harness)?.commands?.subscribe?.(context, (commands) => {
+    const key = skillCatalogKey(context);
+    const previous = catalogEntries.get(key);
+    // Reserve the generation before reading scope so an older native probe
+    // cannot publish while this authoritative live inventory is checked.
+    const entry: CatalogEntry = {
+      cwd: normalizeProjectPath(context.cwd),
+      skills: previous?.skills ?? null,
+      loadedAt: 0,
+      retryAt: 0,
+      generation: (previous?.generation ?? 0) + 1,
+      inFlight: null,
+    };
+    catalogEntries.set(key, entry);
+    void Promise.all([listSkills(context.cwd), listSkills(context.cwd, null, context.harness)])
+      .then(([inventory, eligible]) => {
+        if (!active || catalogEntries.get(key) !== entry) return;
+        const policy = withInstalledSkillScope(cachedSkillPolicy(), context.harness, [
+          ...inventory,
+          ...eligible,
+        ]);
+        const skills: Skill[] = commands
+          .filter((command) => !skillDisabled(policy, command))
+          .map((command) => ({ ...command, kind: "native" }));
+        entry.skills = skills;
+        entry.loadedAt = Date.now();
+        onSkills(skills);
+      })
+      .catch(() => {
+        // Unknown installation scope cannot publish a new native inventory.
+        if (active && catalogEntries.get(key) === entry) {
+          entry.skills = [];
+          onSkills([]);
+        }
       });
-      onSkills(skills);
-    }) ?? (() => undefined)
-  );
+  });
+  return () => {
+    active = false;
+    unsubscribe?.();
+  };
 }
 
 export function peekSkills(context: SkillCatalogContext): Skill[] | null {
@@ -255,7 +276,7 @@ export function loadSkills(
     }
     entry.generation += 1;
     entry.retryAt = 0;
-    return startCatalogLoad(key, entry, normalized);
+    return startCatalogLoad(key, entry, normalized, true);
   }
 
   if (entry.inFlight?.generation === entry.generation) {
@@ -282,9 +303,10 @@ function startCatalogLoad(
   key: string,
   entry: CatalogEntry,
   context: SkillCatalogContext,
+  refreshPolicy = false,
 ): Promise<Skill[]> {
   const generation = entry.generation;
-  const promise = loadCatalog(context)
+  const promise = loadCatalog(context, refreshPolicy)
     .then((skills) => {
       if (catalogEntries.get(key) !== entry || entry.generation !== generation) {
         return catalogEntries.get(key)?.skills ?? [];
@@ -321,26 +343,34 @@ function startCatalogLoad(
   return promise;
 }
 
-async function loadCatalog(context: SkillCatalogContext): Promise<Skill[]> {
-  const policy = await loadSkillRestrictions(context.cwd);
+async function loadCatalog(context: SkillCatalogContext, refreshPolicy = false): Promise<Skill[]> {
+  const policy = await loadSkillRestrictions(context.cwd, { refresh: refreshPolicy });
   if (context.cwd.startsWith(REMOTE_PATH_PREFIX)) {
-    const discovered = await listSkills(context.cwd, policy.disabledPaths);
+    const discovered = await listSkills(context.cwd, policy.disabledPaths, context.harness);
     return discovered
       .filter((skill) => skill.userInvocable !== false && !skillDisabled(policy, skill))
       .map(asSkill);
   }
   const provider = getHarness(context.harness)?.commands;
   if (provider) {
-    const commands = await provider.discover(context);
+    const [commands, inventory, eligible] = await Promise.all([
+      provider.discover(context),
+      listSkills(context.cwd),
+      listSkills(context.cwd, null, context.harness),
+    ]);
+    const scopedPolicy = withInstalledSkillScope(policy, context.harness, [
+      ...inventory,
+      ...eligible,
+    ]);
     return commands
-      .filter((command) => !skillDisabled(policy, command))
+      .filter((command) => !skillDisabled(scopedPolicy, command))
       .map((command): NativeSkill => ({
         kind: "native",
         ...command,
       }));
   }
   const disabledPaths = loadDisabledSkillPaths();
-  const discovered = await listSkills(context.cwd, disabledPaths);
+  const discovered = await listSkills(context.cwd, disabledPaths, context.harness);
   const disabled = disabledSkillPathSet();
   return mergeCatalog(
     discovered.filter(
@@ -451,7 +481,11 @@ export async function applySkillsToTurn(
   const catalog = native.disabledPaths.length
     ? mergeCatalog(
         (
-          await listSkills(context.cwd, [...loadDisabledSkillPaths(), ...native.disabledPaths])
+          await listSkills(
+            context.cwd,
+            [...loadDisabledSkillPaths(), ...native.disabledPaths],
+            context.harness,
+          )
         ).filter((skill) => !skillDisabled(policy, skill)),
       )
     : await loadSkills(context, context.harness === "codex" ? { refresh: true } : undefined);

@@ -3,13 +3,13 @@ import {
   setRemoteCommandRunner,
   type FolderListing,
 } from "../../../platform/tauri/fs";
-import { notifyDirsChanged } from "../../files/model/fileTree";
+import { notifyDirsChanged } from "../../files/public/fileTree";
 import { remoteMachineFor, remoteRequest } from "./connections";
 import { subscribeRemoteRecovered } from "./remoteHealth";
 import { parseRemotePath, remotePath } from "./remoteProjects";
 
 /** File commands a connected machine answers exactly as this computer does
- * (see host/workspace-commands.ts). */
+ * (see host/workspaces/workspace-commands.ts). */
 export const HOST_COMMANDS = new Set([
   "session_checkpoint_status",
   "session_checkpoint_file_diff",
@@ -64,7 +64,7 @@ export const HOST_COMMANDS = new Set([
   "git_branches",
   "git_checkout",
   "git_create_branch",
-  // The `git.actions` set (host/git-actions.ts). Their results carry no host
+  // The `git.actions` set (host/git/git-actions.ts). Their results carry no host
   // paths: `git_conflicts` and the file arguments are repo-relative.
   "git_stash",
   "git_trust_repository",
@@ -102,6 +102,7 @@ export const HOST_COMMANDS = new Set([
   "git_worktrees",
   "git_submodules",
   "search_project",
+  "cancel_project_search",
   "list_skills",
   "skill_policy_get",
   "skill_policy_set",
@@ -109,6 +110,8 @@ export const HOST_COMMANDS = new Set([
   "skill_export",
   "skill_delete",
   "skill_import",
+  "skill_catalog_install",
+  "skill_catalog_install_status",
 ]);
 /** Arguments that hold paths; everything else is passed through untouched. */
 const PATH_ARGS = ["path", "cwd", "parent", "from", "destParent", "paths"];
@@ -140,7 +143,16 @@ export function runRemoteCommand(command: string, args: Record<string, unknown>)
 
 /** Skill commands that need no project path: a machine's personal skills are
  * addressed by the machine alone (an empty `cwd` means "no project"). */
-const MACHINE_COMMANDS = new Set(["list_skills", "skill_export", "skill_import", "skill_delete", "skill_policy_get", "skill_policy_set"]);
+const MACHINE_COMMANDS = new Set([
+  "list_skills",
+  "skill_export",
+  "skill_import",
+  "skill_catalog_install",
+  "skill_catalog_install_status",
+  "skill_delete",
+  "skill_policy_get",
+  "skill_policy_set",
+]);
 
 /** Runs a skill command on a given machine without a project path, with the
  * same argument and result translation as `runRemoteCommand`. */
@@ -219,9 +231,28 @@ async function runOnMachine(
     throw reason;
   }
   const fromHost = (path: string) => remotePath(env, path);
-  if ((command === "skill_policy_get" || command === "skill_policy_set") && result && typeof result === "object") {
+  if (
+    (command === "skill_catalog_install" || command === "skill_catalog_install_status") &&
+    result &&
+    typeof result === "object"
+  ) {
+    const installation = result as Record<string, unknown>;
+    return typeof installation.path === "string"
+      ? { ...installation, path: fromHost(installation.path) }
+      : installation;
+  }
+  if (
+    (command === "skill_policy_get" || command === "skill_policy_set") &&
+    result &&
+    typeof result === "object"
+  ) {
     const policy = result as { disabledNames: string[]; disabledPaths: string[] };
-    return { ...policy, disabledPaths: Array.isArray(policy.disabledPaths) ? policy.disabledPaths.map(fromHost) : policy.disabledPaths };
+    return {
+      ...policy,
+      disabledPaths: Array.isArray(policy.disabledPaths)
+        ? policy.disabledPaths.map(fromHost)
+        : policy.disabledPaths,
+    };
   }
   if (
     ["session_checkpoint_status", "session_checkpoint_undo", "session_checkpoint_keep"].includes(
@@ -247,6 +278,15 @@ async function runOnMachine(
       path: fromHost(folder.path),
       parent: folder.parent === null ? null : fromHost(folder.parent),
       entries: folder.entries.map((entry) => ({ ...entry, path: fromHost(entry.path) })),
+    };
+  }
+  if (command === "move_path" && result && typeof result === "object") {
+    const moved = result as { path: string; recoveryPath: string; receiptPath: string };
+    return {
+      ...moved,
+      path: fromHost(moved.path),
+      recoveryPath: fromHost(moved.recoveryPath),
+      receiptPath: fromHost(moved.receiptPath),
     };
   }
   if (PATH_RESULTS.has(command) && typeof result === "string") return fromHost(result);

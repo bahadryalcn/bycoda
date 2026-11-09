@@ -30,18 +30,59 @@
   container: chat-composer / inline-size;
 }
 
-html [data-composer] div[data-composer-box] {
-  background: var(--color-background-base);
-}
-html [data-activity-dock] {
-  background: var(--ui-surface);
+/* The composer box surface, edge and shadow are owned by bycoda.css
+   ([data-composer-box]); nothing here repaints it. */
+/* The turn activity band and the message queue sit on the composer as one frosted glass pane
+   over the transcript; the composer surface is the opaque fallback. */
+html [data-activity-dock],
+html [data-message-queue-card] {
+  background: var(--ui-composer-surface);
 }
 
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  html [data-activity-dock],
+  html [data-message-queue-card] {
+    background: var(--ui-activity-dock-glass);
+    box-shadow: var(--ui-activity-dock-edge);
+    -webkit-backdrop-filter: var(--ui-activity-dock-filter);
+    backdrop-filter: var(--ui-activity-dock-filter);
+  }
+}
+
+html[data-performance-no-blur] [data-activity-dock],
+html[data-performance-no-blur] [data-message-queue-card] {
+  background: var(--ui-composer-surface);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* While a reply streams the transcript repaints every frame; sampling it through a blur
+   behind the dock and composer is the costliest paint, so use the opaque surface. */
+html [data-session-streaming="true"] [data-activity-dock],
+html [data-session-streaming="true"] [data-message-queue-card] {
+  background: var(--ui-composer-surface);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  html [data-activity-dock],
+  html [data-message-queue-card] {
+    background: var(--ui-composer-surface);
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* Transcript activity is part of the reading flow: no frame, fill or stripe. */
 .transcript-activity-group {
-  margin-block: 4px;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-control);
-  background: var(--ui-surface);
+  margin-block: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   overflow: clip;
 }
 .zen-phase-body[data-open="true"] > .zen-phase-summary {
@@ -49,18 +90,6 @@ html [data-activity-dock] {
 }
 .zen-phase-body[data-open="true"] > .zen-phase-summary:has([data-tool-inspection]) {
   max-block-size: none;
-}
-
-.composer-session-meta {
-  display: flex;
-  min-inline-size: 0;
-  align-items: center;
-  gap: 0.75rem;
-  padding-inline: 0.75rem;
-  padding-block-end: 0.375rem;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
 }
 
 .session-header-title > [data-session-agent] {
@@ -88,6 +117,34 @@ html [data-activity-dock] {
 [data-composer] .composer-field::placeholder {
   color: var(--ui-text-disabled);
   -webkit-text-fill-color: var(--ui-text-disabled);
+}
+
+/* Reading mode (composerReading.ts): the reader is away from the end of the
+   transcript with focus elsewhere. The one mounted field drops to a single
+   tight row (its content height is measured by the autosize owner), and the
+   secondary workspace row collapses to nothing so the transcript gets the space.
+   The row is collapsed, hidden and inert. Focusing or using anything in the
+   composer restores the normal layout. The size changes at once;
+   useComposerReadingMotion only settles the writing box with a short fade. */
+[data-composer][data-composer-reading] :is(.composer-field, .composer-highlight) {
+  padding-block: 0.5rem;
+}
+
+[data-composer][data-composer-reading] .composer-field {
+  min-block-size: calc(1lh + 1rem);
+}
+
+[data-composer][data-composer-reading] [data-composer-secondary]:not([data-composer-attention]) {
+  block-size: 0;
+  padding-block: 0;
+  overflow: clip;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+[data-composer][data-composer-reading] .composer-controls {
+  padding-block-end: 0.25rem;
 }
 
 .composer-send-controls {
@@ -134,8 +191,10 @@ html [data-activity-dock] {
   color: var(--ui-text-secondary);
 }
 
+/* One quiet context row under the writing surface: no fill, edge or frame. */
 [data-composer] [data-composer-workspace] {
-  background: var(--color-background-base);
+  background: none;
+  color: var(--ui-text-secondary);
 }
 
 [data-jump-to-bottom] {
@@ -163,10 +222,6 @@ html [data-activity-dock] {
 
 .context-meter-summary svg {
   flex: none;
-}
-
-.context-signal-track {
-  color: var(--color-stroke);
 }
 
 .context-signal-frame {
@@ -213,18 +268,31 @@ html [data-activity-dock] {
   margin-block: 0.75rem;
 }
 
+/* Confirmed-empty context is telemetry, not a command: a bare ring with no
+   bolt, no hit area and no control-sized footprint beside Add and Send. */
 .context-meter-empty {
   justify-content: center;
-  inline-size: var(--ui-control-height-sm);
-  block-size: var(--ui-control-height-sm);
+  inline-size: 1rem;
+  block-size: 1rem;
+  margin-inline: 0.375rem;
   flex-shrink: 0;
-  color: var(--ui-text-secondary);
+  color: var(--ui-text-disabled);
   font-size: var(--ui-font-caption);
 }
 
+.context-meter-empty .context-speed-pulse {
+  display: none;
+}
+
+.context-meter-empty .context-signal-frame,
+.context-meter-empty .context-signal-frame > .context-signal {
+  --meter-ring-size: 1rem;
+  inline-size: 1rem;
+  block-size: 1rem;
+}
+
 .context-meter-heading,
-.context-meter-tokens,
-.context-meter-stats > div {
+.context-meter-tokens {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
@@ -248,28 +316,12 @@ html [data-activity-dock] {
   color: var(--ui-tone-danger-fg);
 }
 
-.context-meter-track {
-  block-size: 0.375rem;
-  margin-block: 0.75rem 0.5rem;
-  overflow: clip;
-  border-radius: var(--radius-control);
-  background: var(--color-stroke);
-}
-
-.context-meter-track > div {
-  block-size: 100%;
-  border-radius: inherit;
-  background: currentColor;
-}
-
 .context-meter-tokens,
-.context-meter-stats dt,
 .context-meter-hint {
   color: var(--ui-text-secondary);
 }
 
-.context-meter-tokens > span:first-child,
-.context-meter-stats dd {
+.context-meter-tokens > span:first-child {
   white-space: nowrap;
 }
 
@@ -279,16 +331,6 @@ html [data-activity-dock] {
   margin-block-start: 0.75rem;
   padding-block-start: 0.75rem;
   border-block-start: 1px solid var(--color-stroke);
-}
-
-.context-meter-stats {
-  display: grid;
-  gap: 0.5rem;
-  margin-block-end: 0;
-}
-
-.context-meter-stats dd {
-  margin: 0;
 }
 
 .context-meter-agent-list {
@@ -336,7 +378,30 @@ html [data-activity-dock] {
   gap: 0.5rem;
   padding-inline: 0.25rem;
   margin-inline-start: -0.25rem;
-  background: var(--ui-surface);
+}
+.activity-dock {
+  container: activity-dock / inline-size;
+}
+.activity-dock-agent-metrics {
+  max-inline-size: 52%;
+  font-variant-numeric: tabular-nums;
+}
+@container activity-dock (max-width: 28rem) {
+  .activity-dock-agent-metrics {
+    flex-direction: column;
+    align-items: flex-end;
+    max-inline-size: 48%;
+  }
+  .activity-dock-summary {
+    flex-basis: 100%;
+  }
+  .activity-dock-summary > span,
+  .activity-dock-summary .truncate {
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+  }
 }
 .activity-dock-clock {
   flex: none;
@@ -346,4 +411,85 @@ html [data-activity-dock] {
 [data-activity-status-row] .activity-dock-label,
 [data-activity-dock] .activity-dock-clock {
   color: var(--ui-text-secondary);
+}
+
+/* Output toggles (Wrap lines) sit in the bare icon row beside Copy, like the message
+   actions: no filled box. "On" is a small dot on the icon (the same cue as an active
+   search filter), so it reads in every accent, including the neutral default. */
+[data-tool-inspection] .bycoda-arc[data-fbg-item][data-button-selected],
+[data-tool-inspection]
+  .bycoda-arc[data-fbg-item][data-button-selected]:hover:not([aria-disabled="true"]) {
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-content);
+}
+[data-tool-inspection] .bycoda-arc[data-fbg-item][data-button-selected]::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 3px;
+  inset-inline-end: 3px;
+  inline-size: 5px;
+  block-size: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--ui-tone-accent-fg);
+  pointer-events: none;
+}
+
+/* Sibling input and queue surfaces sample the same background without nested filters. */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  html:not([data-performance-no-blur]) [data-composer-box],
+  html:not([data-performance-no-blur]) [data-composer-box]:hover,
+  html:not([data-performance-no-blur]) [data-composer-box]:focus-within {
+    background: var(--ui-activity-dock-glass);
+    -webkit-backdrop-filter: var(--ui-activity-dock-filter);
+    backdrop-filter: var(--ui-activity-dock-filter);
+  }
+}
+html [data-session-streaming="true"] [data-composer-box],
+html [data-session-streaming="true"] [data-composer-box]:hover,
+html [data-session-streaming="true"] [data-composer-box]:focus-within {
+  background: var(--ui-composer-surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  html [data-composer-box],
+  html [data-composer-box]:hover,
+  html [data-composer-box]:focus-within {
+    background: var(--ui-composer-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+.delivery-accepted {
+  animation: delivery-accepted-enter var(--motion-notice-duration) var(--motion-ease-out) both;
+}
+@keyframes delivery-accepted-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .delivery-accepted {
+    animation: none;
+  }
+}
+
+.queue-departure {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: queue-departure var(--motion-surface-duration) var(--motion-ease-out) forwards;
+}
+@keyframes queue-departure {
+  to {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .queue-departure {
+    animation: none;
+  }
 }

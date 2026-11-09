@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
@@ -99,5 +100,27 @@ describe("transcript first paint", () => {
       ),
     );
     expect(renderedTurns()).toBe(2);
+  });
+
+  it("marks only the last turn live so settled turns can be contained without size containment", () => {
+    flushSync(() =>
+      root.render(
+        createElement(AgentTranscript, {
+          blocks: conversation(3),
+          visible: true,
+        }),
+      ),
+    );
+    const turns = [...container.querySelectorAll<HTMLElement>("[data-transcript-turn]")];
+    expect(turns.map((turn) => turn.classList.contains("transcript-turn-live"))).toEqual([
+      false,
+      false,
+      true,
+    ]);
+
+    // Settled turns must keep their real height: layout/style containment only.
+    const css = readFileSync("src/styles/index.css", "utf8");
+    const rule = /\.transcript-turn:not\(\.transcript-turn-live\)\s*\{([^}]*)\}/.exec(css);
+    expect(rule?.[1]).toMatch(/contain:\s*layout style;/);
   });
 });

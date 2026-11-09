@@ -1,11 +1,21 @@
-/* Free Arc tree-view row geometry; no hierarchy, focus or drag controller. */
+/* Free Arc tree-view row geometry; no hierarchy, focus or drag controller.
+   State grammar: selected = tinted fill, hover/pressed = neutral fill, keyboard focus = inset ring,
+   drop destination = inset accent frame (never a fill, so it stays distinct from selection),
+   cut/dragging = dimmed content. */
+@layer properties, theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .row {
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+}
 .row {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
-  inline-size: 100%;
-  min-inline-size: 0;
+  gap: 0.5rem;
   block-size: var(--ui-control-height-compact);
   padding-block: 0;
   padding-inline: calc(8px + var(--tree-row-depth, 0) * 12px) 8px;
@@ -20,8 +30,7 @@
   cursor: default;
   user-select: none;
 }
-.row[aria-selected="true"],
-.row[data-tree-drop-target] {
+.row[aria-selected="true"] {
   background: var(--ui-surface-selected);
 }
 @media (hover: hover) and (pointer: fine) {
@@ -31,6 +40,14 @@
 }
 .row:not(:disabled):active {
   background: var(--ui-surface-pressed);
+}
+/* A drop destination keeps the selection fill (when selected) and adds an accent frame, so "selected" and
+   "will receive the drop" read differently with or without hover. */
+.row[data-tree-drop-target] {
+  box-shadow: inset 0 0 0 1px var(--ui-border-accent);
+}
+.row[data-tree-drop-target]:not([aria-selected="true"]) {
+  background: var(--ui-surface-hover);
 }
 .row:focus-visible {
   outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
@@ -43,4 +60,79 @@
 .row[data-tree-cut],
 .row[data-explorer-dragging] {
   opacity: 0.5;
+}
+/* In an ActionHost (row + inline actions) the host paints hover, keyboard focus and
+   selection, so the row and its actions read as one item. A drop destination keeps
+   its own frame and fill. */
+:global([data-action-host]) > .row:not([data-tree-drop-target]),
+:global([data-action-host]) > .row:not([aria-selected="true"]):not(:disabled):hover,
+:global([data-action-host]) > .row:not(:disabled):active {
+  background: transparent;
+}
+/* The destination must stay legible even if the row itself is cut or being dragged. */
+.row[data-tree-drop-target] {
+  opacity: 1;
+}
+
+/* Optional slots for feature rows; geometry only, so the controller keeps ownership of behavior. */
+.toggle {
+  display: grid;
+  flex: none;
+  place-items: center;
+  inline-size: var(--ui-icon-md);
+  block-size: var(--ui-icon-md);
+  color: var(--ui-text-secondary);
+}
+/* Disclosure chevrons are 12px in the 16px slot, whatever size the feature passes. */
+.toggle > svg {
+  inline-size: var(--ui-icon-xs, 12px);
+  block-size: var(--ui-icon-xs, 12px);
+}
+.icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  color: inherit;
+}
+.label {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: var(--leading-label, 1.25);
+}
+/* Reserve a stable end column so counts and badges do not shift the label as values change. */
+.trailing {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-inline-start: auto;
+  min-inline-size: 1.25rem;
+  padding-inline-start: 4px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-micro);
+  font-variant-numeric: tabular-nums;
+}
+.row:disabled .toggle,
+.row:disabled .trailing {
+  color: var(--ui-text-disabled);
+}
+
+@media (forced-colors: active) {
+  .row[aria-selected="true"] {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+  .row[aria-selected="true"] .toggle,
+  .row[aria-selected="true"] .trailing {
+    color: HighlightText;
+  }
+  .row[data-tree-drop-target] {
+    outline: 2px dashed Highlight;
+    outline-offset: -2px;
+  }
 }

@@ -9,15 +9,22 @@ import { clearMcpSettingsCache } from "../model/mcpSettingsCache";
 // External owner-token lifecycle has its own isolated browser coverage. Keep
 // these discovery/cache assertions scoped to provider MCP connections.
 vi.mock("./ExternalMcpAccess", () => ({ ExternalMcpAccess: () => null }));
+// Keep this settings fixture independent of unrelated application barrel cycles.
+vi.mock("../../sessions", () => import("../../sessions/ui/HarnessIcon"));
+vi.mock("../../projects", () => import("../../projects/ui/SearchableProjectPicker"));
 
 const invoke = vi.fn();
 const ask = vi.fn(async () => true);
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
+  convertFileSrc: (path: string) => path,
   invoke: (...args: unknown[]) => invoke(...args),
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   ask: (...args: unknown[]) => ask(...args),
+}));
+vi.mock("../../../shared/model/appConfirm", () => ({
+  confirmInApp: (...args: unknown[]) => ask(...args),
 }));
 
 let container: HTMLDivElement;
@@ -68,6 +75,100 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+async function refreshStatus() {
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')!.click(),
+  );
+}
+
+/** Row status lives on the status dot's accessible name, not in visible text. */
+function statuses() {
+  return [...container.querySelectorAll("[data-mcp-state]")]
+    .map((dot) => dot.getAttribute("aria-label"))
+    .join(" | ");
+}
+function status(name: string) {
+  return container
+    .querySelector(`[aria-label="Actions for ${name}"]`)!
+    .parentElement!.querySelector("[data-mcp-state]")!
+    .getAttribute("aria-label");
+}
+
+it("keeps MCP progress on the exact action and server even when providers share a name", async () => {
+  let finishLogin!: () => void;
+  invoke.mockImplementation(async (command: string) => {
+    if (command === "mcp_discover")
+      return [
+        {
+          provider: "claude",
+          name: "shared-name",
+          scope: "user",
+          configPath: "/home/.claude.json",
+          transport: "http",
+        },
+        {
+          provider: "codex",
+          name: "shared-name",
+          scope: "user",
+          configPath: "/home/.codex/config.toml",
+          transport: "http",
+        },
+      ];
+    if (command === "claude_mcp_list")
+      return "shared-name: https://mcp.example.com - ! Needs authentication";
+    if (command === "mcp_provider_login")
+      return new Promise((resolve) => {
+        finishLogin = () => resolve(undefined);
+      });
+    return undefined;
+  });
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/local-project" })));
+  const signIns = [...container.querySelectorAll<HTMLButtonElement>("button")].filter(
+    (button) => button.textContent === "Sign in",
+  );
+  expect(signIns).toHaveLength(2);
+  await act(async () => signIns[0].click());
+  expect(signIns[0].getAttribute("aria-busy")).toBe("true");
+  expect(
+    container.querySelector('[aria-label="Actions for shared-name"][aria-busy="true"]'),
+  ).toBeNull();
+  await act(async () => signIns[0].click());
+  expect(invoke.mock.calls.filter(([command]) => command === "mcp_provider_login")).toHaveLength(1);
+  await act(async () => finishLogin());
+
+  let finishConfirm!: (confirmed: boolean) => void;
+  ask.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishConfirm = resolve;
+      }),
+  );
+  const remove = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Actions for shared-name"]',
+  )!;
+  await act(async () => remove.click());
+  await act(async () => {
+    [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find((item) => item.textContent === "Remove")!
+      .click();
+  });
+  expect(remove.getAttribute("aria-busy")).toBe("true");
+  expect([...container.querySelectorAll<HTMLButtonElement>('button[aria-busy="true"]')]).toEqual([
+    remove,
+  ]);
+  expect(ask).toHaveBeenCalledTimes(1);
+  expect(ask).toHaveBeenCalledWith(
+    expect.objectContaining({
+      title: "Remove MCP server?",
+      confirmLabel: "Remove server",
+      tone: "danger",
+    }),
+  );
+  await act(async () => finishConfirm(false));
+  expect(remove.getAttribute("aria-busy")).not.toBe("true");
+  expect(invoke.mock.calls.some(([command]) => command === "claude_mcp_remove")).toBe(false);
+});
+
 it("shows unsupported remote targets without local discovery or Add and permits choosing a local project", async () => {
   await act(async () =>
     root.render(
@@ -88,7 +189,7 @@ it("shows unsupported remote targets without local discovery or Add and permits 
   )!;
   await act(async () => picker.click());
   const options = Array.from(
-    document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button[title]'),
+    document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
   );
   expect(options.some((option) => option.textContent?.includes("other-remote"))).toBe(false);
   const local = options.find((option) => option.textContent?.includes("local-project"))!;
@@ -103,9 +204,14 @@ async function selectProject(path: string) {
     container.querySelector<HTMLButtonElement>('[aria-label^="Switch project"]')!.click(),
   );
   expect(document.querySelector('input[placeholder="Search projects..."]')).not.toBeNull();
-  await act(async () =>
-    document.querySelector<HTMLButtonElement>(`[role="dialog"] button[title="${path}"]`)!.click(),
-  );
+  // Each project option names the project's folder (its full path shows only as a tooltip).
+  const name = path.split("/").pop()!;
+  const option = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+  ).find((button) =>
+    Array.from(button.querySelectorAll("span")).some((span) => span.textContent === name),
+  )!;
+  await act(async () => option.click());
 }
 
 async function openFilters() {
@@ -118,9 +224,10 @@ async function openFilters() {
 
 it("lists servers and routes sign in through Claude MCP", async () => {
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  await refreshStatus();
   expect(container.textContent).toContain("sentry");
-  expect(container.textContent).toContain("Needs authentication");
-  expect(container.textContent).toContain("Codex");
+  expect(status("sentry")).toContain("Needs authentication");
+  expect(container.querySelector('[aria-label="docs · Codex · Global"]')).not.toBeNull();
   const signIn = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Sign in",
   )!;
@@ -222,11 +329,12 @@ it("shows configured rows while Claude health is still pending", async () => {
       : discovery(command, args),
   );
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  await refreshStatus();
   expect(container.textContent).toContain("docs");
   expect(container.textContent).toContain("sentry");
   expect(container.textContent).not.toContain("Checking servers…");
   await act(async () => resolveHealth("sentry: https://example.com - Needs authentication"));
-  expect(container.textContent).toContain("Needs authentication");
+  expect(status("sentry")).toBe("Needs authentication");
 });
 
 it("adds a standard mcpServers entry to the selected provider and project", async () => {
@@ -272,7 +380,8 @@ it("adds a standard mcpServers entry to the selected provider and project", asyn
     config: json,
     scope: "project",
   });
-  expect(invoke).toHaveBeenLastCalledWith("claude_mcp_list", { cwd: "/other" });
+  expect(invoke).toHaveBeenCalledWith("claude_mcp_list", { cwd: "/other" });
+  expect(invoke).toHaveBeenCalledWith("codex_mcp_list", { cwd: "/other" });
 });
 
 it("navigates provider choices with arrow keys", async () => {
@@ -314,6 +423,206 @@ it("hides Sign in when a server has no known transport", async () => {
   expect(
     [...container.querySelectorAll("button")].some((button) => button.textContent === "Sign in"),
   ).toBe(false);
+});
+
+it("exposes configured remote sign-in per provider without offering it to disabled or local tools", async () => {
+  const connections = [
+    ...(["claude", "codex", "cursor", "opencode"] as const).map((provider) => ({
+      provider,
+      name: `${provider}-cloudflare`,
+      scope: "user",
+      configPath: `/config/${provider}`,
+      transport: "http",
+    })),
+    {
+      provider: "codex",
+      name: "disabled",
+      scope: "user",
+      configPath: "/config/codex",
+      transport: "http",
+      enabled: false,
+    },
+    {
+      provider: "claude",
+      name: "local-tool",
+      scope: "user",
+      configPath: "/config/claude",
+      transport: "stdio",
+    },
+    {
+      provider: "claude_desktop",
+      name: "desktop",
+      scope: "user",
+      configPath: "/config/desktop",
+      transport: "http",
+    },
+  ];
+  invoke.mockImplementation(async (command: string) =>
+    command === "mcp_discover" ? connections : "",
+  );
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  const signIns = [...container.querySelectorAll<HTMLButtonElement>("button")].filter(
+    (button) => button.textContent === "Sign in",
+  );
+  expect(signIns).toHaveLength(4);
+  for (const provider of ["claude", "codex", "cursor", "opencode"]) {
+    const actions = container.querySelector(`[aria-label="Actions for ${provider}-cloudflare"]`)!;
+    const signIn = [...actions.parentElement!.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Sign in",
+    )!;
+    await act(async () => signIn.click());
+    expect(invoke).toHaveBeenCalledWith("mcp_provider_login", {
+      cwd: "/repo",
+      provider,
+      name: `${provider}-cloudflare`,
+    });
+  }
+  expect(statuses()).toContain("Configured");
+  expect(statuses()).not.toContain("Connected");
+});
+
+it("keeps repeat sign-in in the connected row menu", async () => {
+  invoke.mockImplementation(async (command: string) =>
+    command === "mcp_discover"
+      ? [
+          {
+            provider: "claude",
+            name: "connected",
+            scope: "user",
+            configPath: "/config/claude",
+            transport: "http",
+          },
+        ]
+      : command === "claude_mcp_list"
+        ? "connected: https://example.test/mcp - ✔ Connected"
+        : undefined,
+  );
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  await refreshStatus();
+  expect(
+    [...container.querySelectorAll("button")].some((button) => button.textContent === "Sign in"),
+  ).toBe(false);
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Actions for connected"]')!.click(),
+  );
+  const signIn = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (button) => button.textContent === "Sign in again",
+  )!;
+  expect(signIn).toBeDefined();
+  await act(async () => signIn.click());
+  expect(invoke).toHaveBeenCalledWith("mcp_provider_login", {
+    cwd: "/repo",
+    provider: "claude",
+    name: "connected",
+  });
+});
+
+it("shows checking instead of sign-in until Claude health arrives, then keeps a timed-out partial result", async () => {
+  let finish!: (result: { output: string; timedOut: boolean }) => void;
+  invoke.mockImplementation((command: string) =>
+    command === "mcp_discover"
+      ? Promise.resolve([
+          {
+            provider: "claude",
+            name: "hostinger",
+            scope: "user",
+            configPath: "/config/claude",
+            transport: "http",
+          },
+          {
+            provider: "claude",
+            name: "arc",
+            scope: "user",
+            configPath: "/config/claude",
+            transport: "http",
+          },
+        ])
+      : command === "claude_mcp_list"
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : Promise.resolve(undefined),
+  );
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  await refreshStatus();
+  const signInButtons = () =>
+    [...container.querySelectorAll("button")].filter((button) => button.textContent === "Sign in");
+  expect(statuses()).toContain("Checking…");
+  expect(signInButtons()).toHaveLength(0);
+  // Windows consoles print √; arc was never reached before the CLI was stopped.
+  await act(async () =>
+    finish({ output: "hostinger: https://mcp.hostinger.com (HTTP) - √ Connected", timedOut: true }),
+  );
+  const row = (name: string) =>
+    container.querySelector(`[aria-label="Actions for ${name}"]`)!.parentElement!;
+  expect(status("hostinger")).toBe("√ Connected");
+  expect(row("hostinger").textContent).not.toContain("Sign in");
+  expect(container.textContent).toContain("Claude did not finish checking every server in time.");
+  expect(signInButtons()).toHaveLength(1);
+  expect(row("arc").textContent).toContain("Sign in");
+});
+
+it("uses Codex sign-in state, tags scopes and explains a missing Cursor CLI", async () => {
+  invoke.mockImplementation(async (command: string) =>
+    command === "mcp_discover"
+      ? [
+          {
+            provider: "codex",
+            name: "cloudflare",
+            scope: "user",
+            configPath: "/home/.codex/config.toml",
+            transport: "http",
+          },
+          {
+            provider: "codex",
+            name: "stripe",
+            scope: "user",
+            configPath: "/home/.codex/config.toml",
+            transport: "http",
+          },
+          {
+            provider: "codex",
+            name: "mem0",
+            scope: "user",
+            configPath: "/home/.codex/config.toml",
+            transport: "http",
+          },
+          {
+            provider: "cursor",
+            name: "hostinger",
+            scope: "project",
+            configPath: "/repo/.cursor/mcp.json",
+            transport: "http",
+          },
+        ]
+      : command === "codex_mcp_list"
+        ? [
+            { name: "cloudflare", authStatus: "o_auth" },
+            { name: "stripe", authStatus: "not_logged_in" },
+            { name: "mem0", authStatus: "unsupported" },
+          ]
+        : command === "mcp_provider_login"
+          ? Promise.reject("cursor CLI not found")
+          : command === "claude_mcp_list"
+            ? ""
+            : undefined,
+  );
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  await refreshStatus();
+  const row = (name: string) =>
+    container.querySelector(`[aria-label="Actions for ${name}"]`)!.parentElement!;
+  expect(status("cloudflare")).toBe("Signed in");
+  expect(row("cloudflare").textContent).not.toContain("Sign in");
+  expect(row("stripe").textContent).toContain("Sign in");
+  expect(row("mem0").textContent).not.toContain("Sign in");
+  expect(row("cloudflare").textContent).toContain("Global");
+  expect(row("hostinger").textContent).toContain("Project");
+  const signIn = [...row("hostinger").querySelectorAll("button")].find(
+    (button) => button.textContent === "Sign in",
+  )!;
+  await act(async () => signIn.click());
+  expect(container.textContent).toContain("Cursor CLI (cursor-agent) is not installed.");
+  expect(container.textContent).not.toContain("Showing the last successful result.");
 });
 
 it("shows only configured provider chips until the filter button reveals all", async () => {
@@ -413,15 +722,12 @@ it("reuses the loaded list when returning to the page and reloads on Refresh", a
 
 it("shares the first request across StrictMode and navigation while loading", async () => {
   let resolveDiscovery!: (connections: unknown[]) => void;
-  let resolveHealth!: (output: string) => void;
   invoke.mockImplementation((command: string) =>
     command === "mcp_discover"
       ? new Promise((resolve) => {
           resolveDiscovery = resolve;
         })
-      : new Promise((resolve) => {
-          resolveHealth = resolve;
-        }),
+      : Promise.resolve(""),
   );
   const page = () => createElement(StrictMode, null, createElement(McpSettings, { cwd: "/repo" }));
   await act(async () => root.render(page()));
@@ -430,13 +736,11 @@ it("shares the first request across StrictMode and navigation while loading", as
   await act(async () => root.render(page()));
   expect(invoke).toHaveBeenCalledTimes(1);
   await act(async () => resolveDiscovery([]));
-  expect(invoke).toHaveBeenCalledTimes(2);
+  expect(invoke).toHaveBeenCalledTimes(1);
   await act(async () => root.render(null));
   await act(async () => root.render(page()));
-  expect(invoke).toHaveBeenCalledTimes(2);
-  await act(async () => resolveHealth("remote: https://mcp.example.com - Connected"));
-  expect(container.textContent).toContain("remote");
-  expect(container.textContent).toContain("Connected");
+  expect(invoke).toHaveBeenCalledTimes(1);
+  expect(invoke).not.toHaveBeenCalledWith("claude_mcp_list", expect.anything());
   expect(container.textContent).not.toContain("Checking servers…");
 });
 
@@ -447,7 +751,7 @@ it("caches an empty list until manually refreshed", async () => {
   await act(() => root.render(createElement(McpSettings, { cwd: "/repo" })));
   expect(container.textContent).toContain("No MCP servers configured");
   expect(container.textContent).not.toContain("Checking servers…");
-  expect(invoke).toHaveBeenCalledTimes(2);
+  expect(invoke).toHaveBeenCalledTimes(1);
 });
 
 it("caches discovery failures and lets Refresh retry", async () => {
@@ -463,7 +767,7 @@ it("caches discovery failures and lets Refresh retry", async () => {
   await act(async () => refresh.click());
   expect(container.textContent).toContain("sentry");
   expect(container.textContent).not.toContain("Discovery failed");
-  expect(invoke).toHaveBeenCalledTimes(3);
+  expect(invoke).toHaveBeenCalledTimes(4);
 });
 
 it("uses the shared project picker and caches each project's list", async () => {
@@ -493,17 +797,59 @@ it("uses the shared project picker and caches each project's list", async () => 
   expect(container.textContent).toContain("other-server");
   expect(container.textContent).not.toContain("repo-server");
   expect(invoke).toHaveBeenCalledWith("mcp_discover", { cwd: "/other" });
-  expect(invoke).toHaveBeenCalledWith("claude_mcp_list", { cwd: "/other" });
-  expect(invoke).toHaveBeenCalledTimes(4);
+  expect(invoke).not.toHaveBeenCalledWith("claude_mcp_list", { cwd: "/other" });
+  expect(invoke).toHaveBeenCalledTimes(2);
   await selectProject("/repo");
   expect(container.textContent).toContain("repo-server");
   expect(container.textContent).not.toContain("Checking servers…");
-  expect(invoke).toHaveBeenCalledTimes(4);
+  expect(invoke).toHaveBeenCalledTimes(2);
   await selectProject("/other");
   const refresh = [...container.querySelectorAll("button")].find(
     (button) => button.getAttribute("aria-label") === "Refresh",
   )!;
   await act(async () => refresh.click());
-  expect(invoke).toHaveBeenCalledTimes(6);
+  expect(invoke).toHaveBeenCalledTimes(4);
   expect(invoke).toHaveBeenLastCalledWith("claude_mcp_list", { cwd: "/other" });
+});
+
+it("opens without starting Claude's health helper but reads Codex sign-in state", async () => {
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  expect(invoke.mock.calls.map(([command]) => command)).toEqual(["mcp_discover", "codex_mcp_list"]);
+  expect(container.querySelector("[data-mcp-state]")?.getAttribute("data-mcp-state")).not.toBe(
+    "connected",
+  );
+});
+
+it("dismisses the displayed login error without retrying or hiding a later failure", async () => {
+  let attempt = 0;
+  invoke.mockImplementation(async (command: string) => {
+    if (command === "mcp_discover")
+      return [
+        {
+          provider: "codex",
+          name: "docs",
+          scope: "user",
+          configPath: "/config/codex",
+          transport: "http",
+        },
+      ];
+    if (command === "mcp_provider_login")
+      throw new Error(`failure ${++attempt}: ${"long-server-name-".repeat(20)}`);
+    return "";
+  });
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  const signIn = () =>
+    [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Sign in",
+    )!;
+  await act(async () => signIn().click());
+  const alert = container.querySelector('[role="alert"]')!;
+  expect(alert.textContent).toContain("failure 1:");
+  const dismiss = alert.querySelector<HTMLButtonElement>('[aria-label="Dismiss"]')!;
+  expect(dismiss).toBeTruthy();
+  await act(async () => dismiss.click());
+  expect(invoke.mock.calls.filter(([command]) => command === "mcp_provider_login")).toHaveLength(1);
+  await act(async () => signIn().click());
+  expect(container.textContent).toContain("failure 2:");
+  expect(invoke.mock.calls.filter(([command]) => command === "mcp_provider_login")).toHaveLength(2);
 });

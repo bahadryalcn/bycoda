@@ -1,8 +1,36 @@
 import { invoke } from "@tauri-apps/api/core";
+import { inlineVisualValue } from "../model/inlineVisual";
 import { readToolWindow } from "../../../app/model/toolWindows";
-import { serverTerminalRestoreState } from "../../connections/model/serverTerminalRestoreState";
+import { serverTerminalRestoreState } from "../../connections/public/serverTerminalRestoreState";
 import { buildSessionBlockDelta, type PersistedBlock } from "./sessionDelta";
+import { parseHead, type ConversationHead } from "../../sync/model/conversationHead";
 import { PersistenceBaselines } from "./persistenceBaselines";
+import {
+  hostSessionBinding,
+  hasHostSessionOwnerFence,
+  restoreHostSessionShell,
+  hostSessionShellSummaries,
+  patchHostSessionShellMetadata,
+  forgetHostSessionShell,
+  saveHostSessionBinding,
+  flushHostSessionBindings,
+} from "../../connections/public/sessionExecutionBinding";
+import {
+  captureSessionOutputWrite,
+  acknowledgeSessionOutputWrite,
+  failSessionOutputWrite,
+  releaseSessionOutputWrite,
+  pendingSessionOutputSnapshots,
+  sessionOutputNeedsReplacement,
+  installSessionOutputMutationAccounting,
+  prepareSessionOutputWritePayload,
+  type SessionOutputWrite,
+} from "./sessionOutputProjection";
+import {
+  rendererPersistenceDrain,
+  type PersistenceScope,
+  type PersistenceWork,
+} from "./persistenceDrain";
 import {
   getSessionRecovery,
   hasInitializedSessionRecovery,
@@ -15,6 +43,8 @@ import { pathKey } from "../../../shared/lib/paths";
 import { persistableAttachment } from "../model/attachments";
 import { boundedToolPreview } from "../model/toolInspection";
 import { clearComposerDraft } from "../model/draftCache";
+import { buildConversationReplay } from "../model/conversationRewind";
+import { repairSessionModelIdentity } from "../model/sessionModelIdentity";
 import {
   markMissingAttachments,
   persistableQueue,
@@ -29,8 +59,8 @@ import {
   PERSISTED_AGENT_PROMPT_CHARS,
 } from "../model/agentOutput";
 import type { ContextUsage } from "../model/contextUsage";
-import { isRemoteProjectPath, normalizeProjectPath } from "../../projects/model/recents";
-import { removeSessionAdditionalDirs } from "../../projects/model/additionalDirs";
+import { isRemoteProjectPath, normalizeProjectPath } from "../../projects/public/recents";
+import { removeSessionAdditionalDirs } from "../../projects/public/additionalDirs";
 import {
   claudeShellCommands,
   ompActiveAssistantTexts,
@@ -38,6 +68,7 @@ import {
 } from "../../../platform/tauri/fs";
 import { backfillOmpInterjections, ompStatusSplitTexts } from "../model/ompInterjections";
 import type {
+  AdoptedDivergence,
   AgentRunMeta,
   AgentStep,
   Block,
@@ -59,14 +90,26 @@ import type {
   TurnModel,
   TurnMetrics,
 } from "../model/session";
-
-import { HARNESSES, RUNTIME_MODES } from "../model/session";
-
-import { restoreOrchestrationProposal } from "../../orchestration/model/orchestrationPlan";
-
+import { sanitizeModelSwitch } from "../model/modelSwitchHistory";
+import { HARNESSES } from "../model/session";
+import { asRuntimeMode, withSessionDelegation } from "./storedSessionFields";
+import { assistantSessionManagement, sessionMessageAuthor } from "../model/sessionProvenance";
+import {
+  recoverTaggedOrchestrationProposals,
+  restoreOrchestrationProposal,
+} from "../../orchestration/model/orchestrationPlan";
+import type { DelegationCollectionMetadata } from "../../../shared/model/host-contracts/delegation";
 import type { OrchestrationSummary } from "../../orchestration/model/orchestrationSummary";
 
-export type SessionSummary = {
+export type SessionSummary = DelegationCollectionMetadata & {
+  /** Exact authority captured for Last Sessions pin actions. Null means unidentified. */
+  recentPinTarget?: import("./sessionPinReceipts").PinTarget | null;
+  interrupted?: boolean;
+  lastActivityAt?: number;
+  providerHistory?: import("../model/sessionProviderHistory").SessionProviderHistory;
+  managedBy?: Session["managedBy"];
+  /** Optional actual Native write locator, never a FULL/application receipt. */
+  nativeWriteId?: string;
   issue?: "retrying" | "failed";
   transcriptRevision?: number;
   orchestrationLeadId?: string;
@@ -80,6 +123,9 @@ export type SessionSummary = {
   providerSessionId?: string;
   branch?: string;
   worktreeCwd?: string;
+  workspaceMode?: "current" | "worktree";
+  workspaceId?: string;
+  workspaceRevision?: number;
   worktreeRemoved?: boolean;
   repo?: string;
   additions?: number;
@@ -94,6 +140,7 @@ export type SessionSummary = {
 };
 
 type SessionRecord = {
+  managedBy?: Session["managedBy"];
   transcriptRevision?: number;
   orchestrationLeadId?: string;
   id: string;
@@ -110,16 +157,22 @@ type SessionRecord = {
   contextWindow?: number | null;
   branch?: string | null;
   worktreeCwd?: string | null;
+  workspaceMode?: "current" | "worktree" | null;
+  workspaceId?: string | null;
+  workspaceRevision?: number | null;
   worktreeRemoved?: boolean;
   linkedWorkItem?: LinkedWorkItem | null;
   automationId?: string | null;
   rewindHistory?: ConversationRewindEntry[] | null;
   pendingContextReplay?: string | null;
+  adoptedDivergence?: string | null;
+  adoptedBase?: string | null;
   createdAt: number;
   updatedAt: number;
 };
 
 type SessionUpsertPayload = {
+  managedBy?: Session["managedBy"];
   id: string;
   cwd: string;
   harness: string;
@@ -134,16 +187,22 @@ type SessionUpsertPayload = {
   contextWindow?: number;
   branch?: string;
   worktreeCwd?: string;
+  workspaceMode?: "current" | "worktree";
+  workspaceId?: string;
+  workspaceRevision?: number;
   worktreeRemoved?: boolean;
   linkedWorkItem?: LinkedWorkItem;
   automationId?: string;
   rewindHistory?: ConversationRewindEntry[];
   pendingContextReplay?: string;
+  adoptedDivergence?: string;
+  adoptedBase?: string;
 };
 
 /** Only real chats belong in project history — blank tabs stay ephemeral. */
 export function shouldPersistSession(session: Session): boolean {
   return (
+    !hostSessionBinding(session) &&
     !session.historyPartial &&
     !session.historyLoading &&
     !session.inboxAsk &&
@@ -160,8 +219,16 @@ export function isPersistableId(value: string): boolean {
 }
 
 function persistableMeta(session: Session): Omit<SessionUpsertPayload, "blocks"> {
+  // The picker arms a handoff in memory; a restart before Send loses that
+  // transient plan. Store recovery context without adding it to the live turn,
+  // whose normal handoff already supplies the history.
+  const pendingContextReplay =
+    session.pendingContextReplay ||
+    (session.pendingSwitch ? buildConversationReplay(session.blocks) : "");
   const linkedWorkItem = sanitizeLinkedWorkItem(session.linkedWorkItem);
   const rewindHistory = sanitizeRewindHistory(session.rewindHistory);
+  // Host provenance (`managedBy`, block `author`) is never sent: native storage
+  // keeps an accepted stamp and rejects any stamp it did not already store.
   return {
     id: session.id,
     cwd: normalizeProjectPath(session.cwd),
@@ -180,16 +247,54 @@ function persistableMeta(session: Session): Omit<SessionUpsertPayload, "blocks">
     ...(session.context?.window ? { contextWindow: session.context.window } : {}),
     ...(session.branch ? { branch: session.branch } : {}),
     ...(session.worktreeCwd ? { worktreeCwd: session.worktreeCwd } : {}),
+    ...(session.workspaceMode ? { workspaceMode: session.workspaceMode } : {}),
+    ...(session.workspaceId ? { workspaceId: session.workspaceId } : {}),
+    ...(Number.isSafeInteger(session.workspaceRevision) && session.workspaceRevision! >= 0
+      ? { workspaceRevision: session.workspaceRevision }
+      : {}),
     ...(session.worktreeRemoved ? { worktreeRemoved: true } : {}),
     ...(linkedWorkItem ? { linkedWorkItem } : {}),
     ...(session.automationId && isPersistableId(session.automationId)
       ? { automationId: session.automationId }
       : {}),
     ...(rewindHistory ? { rewindHistory } : {}),
-    ...(typeof session.pendingContextReplay === "string" && session.pendingContextReplay
-      ? { pendingContextReplay: session.pendingContextReplay.slice(0, 24_000) }
+    ...(pendingContextReplay
+      ? { pendingContextReplay: pendingContextReplay.slice(0, 24_000) }
       : {}),
+    ...(session.adoptedDivergence
+      ? { adoptedDivergence: JSON.stringify(session.adoptedDivergence) }
+      : {}),
+    ...(session.adoptedBase ? { adoptedBase: JSON.stringify(session.adoptedBase) } : {}),
   };
+}
+
+/** A flagged host divergence saved with its session: bounded and validated. */
+function parseAdoptedDivergence(value: unknown): AdoptedDivergence | undefined {
+  if (typeof value !== "string" || !value || value.length > 2_048) return undefined;
+  try {
+    const record: unknown = JSON.parse(value);
+    if (!record || typeof record !== "object" || Array.isArray(record)) return undefined;
+    const { key, keep, hostHead } = record as { key?: unknown; keep?: unknown; hostHead?: unknown };
+    if (typeof key !== "string" || !key || key.length > 1_024) return undefined;
+    const head = parseHead(hostHead);
+    return {
+      key,
+      ...(keep === true ? { keep: true as const } : {}),
+      ...(head ? { hostHead: head } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** The transcript head this computer and its host last agreed on. */
+function parseAdoptedBase(value: unknown): ConversationHead | undefined {
+  if (typeof value !== "string" || !value || value.length > 256) return undefined;
+  try {
+    return parseHead(JSON.parse(value));
+  } catch {
+    return undefined;
+  }
 }
 
 function sanitizeRewindHistory(value: unknown): ConversationRewindEntry[] | undefined {
@@ -300,35 +405,92 @@ type LiveWriteOptions = {
   /** Called as the write starts, never for a snapshot that was replaced. */
   onStart?: () => void;
   onFailed?: () => void;
+  /** Called once with whether this snapshot (or a newer write) was persisted. */
+  onSettled?: (saved: boolean) => void;
 };
-type LiveSlot = { session: Session; options: LiveWriteOptions };
+type LiveSlot = {
+  session: Session;
+  options: LiveWriteOptions;
+  outputWrite: SessionOutputWrite | null;
+  settlers: ((saved: boolean) => void)[];
+};
+function settleLiveSlot(slot: LiveSlot, saved: boolean): void {
+  for (const settle of slot.settlers.splice(0)) {
+    try {
+      settle(saved);
+    } catch {
+      /* A waiter cannot change the write's outcome. */
+    }
+  }
+}
 const pendingLiveWrites = new Map<string, LiveSlot>();
+
+const sessionPersistence = rendererPersistenceDrain.reuseModuleProducer("session-store", {
+  flush: (scope, work) => flushSessionWritesStrict(scope, work),
+});
+installSessionOutputMutationAccounting((sessionId) => sessionPersistence.noteMutation([sessionId]));
 
 function enqueueSessionWrite<T>(
   sessionId: string,
-  operation: () => Promise<T>,
+  operation: (work: PersistenceWork) => Promise<T>,
   live = false,
+  parent?: PersistenceWork,
+  key = "transcript",
 ): Promise<T> {
   // Any other write carries newer data than a snapshot that has not started.
-  if (!live) pendingLiveWrites.delete(sessionId);
-  const previous = sessionWriteQueues.get(sessionId) ?? Promise.resolve();
-  const run = previous.catch(() => undefined).then(operation);
-  const tail = run.then(
-    () => undefined,
-    () => undefined,
+  if (!live) {
+    const pending = pendingLiveWrites.get(sessionId);
+    if (pending) releaseSessionOutputWrite(pending.outputWrite);
+    pendingLiveWrites.delete(sessionId);
+  }
+  return sessionPersistence.run(
+    [sessionId],
+    key,
+    (work) => {
+      const previous = sessionWriteQueues.get(sessionId) ?? Promise.resolve();
+      const run = previous.catch(() => undefined).then(() => operation(work));
+      const tail = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      sessionWriteQueues.set(sessionId, tail);
+      void tail.then(() => {
+        if (sessionWriteQueues.get(sessionId) === tail) {
+          sessionWriteQueues.delete(sessionId);
+          sessionWriteLeadById.delete(sessionId);
+        }
+      });
+      return run;
+    },
+    { parent },
   );
-  sessionWriteQueues.set(sessionId, tail);
-  void tail.then(() => {
-    if (sessionWriteQueues.get(sessionId) === tail) {
-      sessionWriteQueues.delete(sessionId);
-      sessionWriteLeadById.delete(sessionId);
-    }
-  });
-  return run;
 }
 
-export function upsertSession(session: Session): Promise<SessionSummary | null> {
-  return persistSession(session);
+/**
+ * Pre-send save. Uses the incremental path the streaming saves use (a delta
+ * against the stored baseline) instead of rewriting the whole transcript, and
+ * falls back to the full replace when there is no usable baseline. Resolves
+ * to whether the snapshot, or a newer write that replaced it, was persisted.
+ */
+export async function saveSessionBeforeSend(session: Session): Promise<boolean> {
+  if (hostSessionBinding(session)) return false;
+  if (!shouldPersistSession(session) || deletedSessionIds.has(session.id)) return false;
+  return new Promise<boolean>((resolve, reject) => {
+    upsertSessionLive(session, { onSettled: resolve }).catch(reject);
+  });
+}
+
+/** Initial timestamps are used only when the native store creates a missing row. */
+export function upsertSession(
+  session: Session,
+  initialTimes?: { createdAt: number; updatedAt: number },
+): Promise<SessionSummary | null> {
+  return persistSession(session, undefined, false, initialTimes);
+}
+
+/** Persist recovery bookkeeping without changing the conversation's activity time. */
+export function upsertSessionPreservingActivity(session: Session): Promise<SessionSummary | null> {
+  return persistSession(session, undefined, false, undefined, undefined, true);
 }
 
 /** Explicit /clear must overwrite an existing transcript even though it is empty. */
@@ -347,6 +509,27 @@ export function upsertClearedSession(session: Session): Promise<SessionSummary |
   return persistSession(session, undefined, true);
 }
 
+/** Explicit Room creation persists its empty conversation before reporting its ID. */
+export async function createRoomSession(session: Session): Promise<SessionSummary> {
+  if (
+    session.blocks.length > 1 ||
+    session.blocks.some((block) => block.role !== "user" || !block.draft || !block.appRequestId) ||
+    session.providerSessionId ||
+    session.pendingContextReplay ||
+    session.historyPartial ||
+    session.historyLoading ||
+    session.inboxAsk ||
+    hostSessionBinding(session) ||
+    isRemoteProjectPath(session.cwd) ||
+    session.cwd === "~"
+  )
+    throw new Error("Invalid Room conversation");
+  const summary = await persistSession(session, { expectMissing: true }, true);
+  if (!summary || summary.id !== session.id)
+    throw new Error("Room conversation creation outcome is unknown");
+  return summary;
+}
+
 /**
  * Mid-turn snapshot for watchers: at most one write in flight and one pending
  * per session, the pending one always the newest. Shares the per-session chain
@@ -355,29 +538,53 @@ export function upsertClearedSession(session: Session): Promise<SessionSummary |
  */
 export function upsertSessionLive(session: Session, options: LiveWriteOptions = {}): Promise<void> {
   if (!shouldPersistSession(session) || deletedSessionIds.has(session.id)) {
+    options.onSettled?.(false);
     return Promise.resolve();
   }
   const id = session.id;
+  const outputWrite = captureSessionOutputWrite(session);
   const pending = pendingLiveWrites.get(id);
   if (pending) {
+    sessionPersistence.noteMutation([id]);
+    releaseSessionOutputWrite(pending.outputWrite);
     pending.session = session;
-    pending.options = options;
+    // A waiter that only wants to know the outcome keeps the joined write's options.
+    if (!options.onSettled || options.shouldWrite || options.onStart || options.onFailed)
+      pending.options = options;
+    if (options.onSettled) pending.settlers.push(options.onSettled);
+    pending.outputWrite = outputWrite;
     return Promise.resolve();
   }
-  const slot: LiveSlot = { session, options };
+  const slot: LiveSlot = {
+    session,
+    options,
+    outputWrite,
+    settlers: options.onSettled ? [options.onSettled] : [],
+  };
   pendingLiveWrites.set(id, slot);
   return enqueueSessionWrite(
     id,
-    async () => {
+    async (work) => {
       // Discarded by a later write, or superseded by a newer slot.
-      if (pendingLiveWrites.get(id) !== slot) return;
+      if (pendingLiveWrites.get(id) !== slot) {
+        releaseSessionOutputWrite(slot.outputWrite);
+        work.fail(new Error("Live snapshot retired before persistence"));
+        // A later full write replaced this snapshot with newer data.
+        settleLiveSlot(slot, true);
+        return;
+      }
       pendingLiveWrites.delete(id);
       const { session: latest, options: latestOptions } = slot;
       if (deletedSessionIds.has(id) || latestOptions.shouldWrite?.() === false) {
+        failSessionOutputWrite(slot.outputWrite);
+        // A deleted session has nothing left to persist; do not leave a failure behind.
+        if (deletedSessionIds.has(id)) work.confirmRecovery();
+        else work.fail(new Error("Live snapshot was not persisted"));
+        settleLiveSlot(slot, false);
         return;
       }
-      latestOptions.onStart?.();
       try {
+        latestOptions.onStart?.();
         const finish = startPerformanceSpan("session-save");
         try {
           const blocks = incrementalBlocks(latest);
@@ -385,20 +592,37 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
           // Every acknowledged delta is durable. Full checkpoints only compact
           // the baseline; keep live recovery at 1.5s without rewriting history
           // every 48s. Eviction and unnormalized baselines still checkpoint now.
-          if (baseline?.normalized && baseline.writes < 256) {
+          // The periodic compaction waits for the turn to end (the settle write
+          // or the next idle live write); a busy session keeps appending deltas.
+          if (
+            baseline?.normalized &&
+            (baseline.writes < 256 || latest.busy) &&
+            !sessionOutputNeedsReplacement(latest)
+          ) {
             const delta = buildSessionBlockDelta(baseline.blocks, blocks);
-            const ack = await invoke<{ updatedAt: number; revision: number } | null>(
+            const ack = await invoke<{
+              updatedAt: number;
+              revision: number;
+              nativeWriteId?: string;
+            } | null>(
               "session_apply_delta",
-              {
-                delta: {
-                  session: { ...persistableMeta(latest), blocks: [] },
-                  expectedUpdatedAt: baseline.updatedAt,
-                  expectedRevision: baseline.revision,
-                  ...delta,
+              prepareSessionOutputWritePayload(
+                slot.outputWrite,
+                {
+                  delta: {
+                    session: { ...persistableMeta(latest), blocks: [] },
+                    expectedUpdatedAt: baseline.updatedAt,
+                    expectedRevision: baseline.revision,
+                    ...delta,
+                  },
                 },
-              },
+                "delta",
+              ),
             );
-            if (!ack) throw new Error("Session changed in another window; reload before saving");
+            if (!ack) {
+              await refreshStaleBaseline(id);
+              throw new Error("Session changed in another window; reload before saving");
+            }
             persistenceBaselines.set(id, {
               blocks,
               updatedAt: ack.updatedAt,
@@ -406,16 +630,32 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
               writes: baseline.writes + 1,
               normalized: true,
             });
-            finish({ blocks: delta.changes.length, revision: ack.revision });
-          } else {
-            const summary = await invoke<SessionSummary | null>("session_upsert", {
-              session: { ...persistableMeta(latest), blocks: blocks.map((item) => item.value) },
-              ...(baseline
-                ? { expectedUpdatedAt: baseline.updatedAt, expectedRevision: baseline.revision }
-                : {}),
+            acknowledgeSessionOutputWrite(slot.outputWrite, {
+              kind: "delta",
+              revision: ack.revision,
+              updatedAt: ack.updatedAt,
+              ...(ack.nativeWriteId === undefined ? {} : { nativeWriteId: ack.nativeWriteId }),
             });
-            if (!summary)
+            finish({ blocks: delta.changes.length, revision: ack.revision });
+            settleLiveSlot(slot, true);
+          } else {
+            const summary = await invoke<SessionSummary | null>(
+              "session_upsert",
+              prepareSessionOutputWritePayload(
+                slot.outputWrite,
+                {
+                  session: { ...persistableMeta(latest), blocks: blocks.map((item) => item.value) },
+                  ...(baseline
+                    ? { expectedUpdatedAt: baseline.updatedAt, expectedRevision: baseline.revision }
+                    : {}),
+                },
+                "replace",
+              ),
+            );
+            if (!summary) {
+              await refreshStaleBaseline(id);
               throw new Error("Session changed in another window; reload before saving");
+            }
             persistenceBaselines.set(id, {
               blocks,
               updatedAt: summary.updatedAt,
@@ -423,27 +663,75 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
               writes: 0,
               normalized: true,
             });
+            if (summary.id === id)
+              acknowledgeSessionOutputWrite(slot.outputWrite, {
+                kind: "replace",
+                revision: summary.transcriptRevision!,
+                updatedAt: summary.updatedAt,
+                ...(summary.nativeWriteId === undefined
+                  ? {}
+                  : { nativeWriteId: summary.nativeWriteId }),
+              });
+            else failSessionOutputWrite(slot.outputWrite);
+            work.confirmRecovery();
             finish({ blocks: blocks.length });
+            settleLiveSlot(slot, true);
           }
         } catch (error) {
           finish();
           throw error;
         }
-      } catch {
+      } catch (error) {
+        failSessionOutputWrite(slot.outputWrite);
+        work.fail(error);
         latestOptions.onFailed?.();
+        settleLiveSlot(slot, false);
       }
     },
     true,
-  );
+  ).catch((error) => {
+    failSessionOutputWrite(slot.outputWrite);
+    throw error;
+  });
 }
 
 /** The stored row's `updatedAt`, read without the load-time backfills (which
  * write), so it is safe to call from inside the write queue. */
 export async function storedSessionUpdatedAt(sessionId: string): Promise<number | null> {
-  const record = await invoke<{ updatedAt?: unknown } | null>("session_get", {
+  // A one-block page carries the same row stamps without reading and parsing
+  // the whole transcript (up to several MB in a long session).
+  const page = await invoke<{ session?: { updatedAt?: unknown } } | null>("session_get_page", {
     sessionId,
+    limit: 1,
   });
-  return record ? (sanitizeTimestamp(record.updatedAt) ?? null) : null;
+  return page ? (sanitizeTimestamp(page.session?.updatedAt) ?? null) : null;
+}
+
+/** A save lost its compare-and-swap, so the remembered stamp is stale and every
+ * later save would lose it too. Adopt the stored row's stamp (or forget it when
+ * the row is gone) so the next save goes through as a full replace. */
+async function refreshStaleBaseline(sessionId: string): Promise<void> {
+  try {
+    const page = await invoke<{
+      session?: { updatedAt?: unknown; transcriptRevision?: unknown };
+    } | null>("session_get_page", { sessionId, limit: 1 });
+    const record = page?.session;
+    const updatedAt = record ? sanitizeTimestamp(record.updatedAt) : undefined;
+    if (updatedAt === undefined) {
+      persistenceBaselines.delete(sessionId);
+      return;
+    }
+    persistenceBaselines.set(sessionId, {
+      blocks: [],
+      updatedAt,
+      revision:
+        typeof record!.transcriptRevision === "number" ? record!.transcriptRevision : undefined,
+      writes: 0,
+      normalized: false,
+    });
+  } catch {
+    // The next conflict tries again; this save already reports its own failure.
+  }
 }
 
 /** Saves only if the row still has the `updatedAt` the caller read before it
@@ -454,56 +742,244 @@ export async function upsertSessionIfUnchanged(
   session: Session,
   expectedUpdatedAt: number | null,
   expectedRevision?: number,
+  parent?: PersistenceWork,
 ): Promise<boolean> {
   const summary = await persistSession(
     session,
     expectedUpdatedAt === null ? { expectMissing: true } : { expectedUpdatedAt, expectedRevision },
+    false,
+    undefined,
+    parent,
   );
   return !!summary;
+}
+
+function noteSessionWriteLead(session: Session): void {
+  if (session.orchestrationLeadId) {
+    sessionWriteLeadById.set(session.id, session.orchestrationLeadId);
+  } else {
+    sessionWriteLeadById.delete(session.id);
+  }
+}
+
+/** Runs inside the session's write chain: the complete transcript under a CAS. */
+async function replaceStoredSession(
+  session: Session,
+  payload: SessionUpsertPayload,
+  outputWrite: SessionOutputWrite | null,
+  work: PersistenceWork,
+  guard?: { expectedUpdatedAt: number; expectedRevision?: number } | { expectMissing: true },
+  initialTimes?: { createdAt: number; updatedAt: number },
+  preserveActivityAt = false,
+): Promise<SessionSummary | null> {
+  if (deletedSessionIds.has(session.id)) {
+    failSessionOutputWrite(outputWrite);
+    // Nothing is left to persist for a deleted session; do not leave a failure behind.
+    work.confirmRecovery();
+    return null;
+  }
+  const baseline = persistenceBaselines.get(session.id);
+  const summary = await invoke<SessionSummary | null>(
+    "session_upsert",
+    prepareSessionOutputWritePayload(
+      outputWrite,
+      {
+        ...(preserveActivityAt ? { preserveActivityAt: true } : {}),
+        session: {
+          ...payload,
+          ...initialTimes,
+          blocks: payload.blocks.map((block) =>
+            block.orchestrationLeadId && deletedSessionIds.has(block.orchestrationLeadId)
+              ? { ...block, orchestrationLeadId: undefined }
+              : block,
+          ),
+        },
+        ...(guard ??
+          (baseline
+            ? { expectedUpdatedAt: baseline.updatedAt, expectedRevision: baseline.revision }
+            : {})),
+      },
+      "replace",
+    ),
+  );
+  if (summary) {
+    if (summary.id === session.id)
+      acknowledgeSessionOutputWrite(outputWrite, {
+        kind: "replace",
+        revision: summary.transcriptRevision!,
+        updatedAt: summary.updatedAt,
+        ...(summary.nativeWriteId === undefined ? {} : { nativeWriteId: summary.nativeWriteId }),
+      });
+    else failSessionOutputWrite(outputWrite);
+    persistenceBaselines.set(session.id, {
+      blocks: incrementalBlocks(session),
+      updatedAt: summary.updatedAt,
+      revision: summary.transcriptRevision,
+      writes: 0,
+      normalized: true,
+    });
+    // This command atomically replaces the complete transcript under its CAS.
+    // A later delta alone cannot recover an earlier unconfirmed write.
+    work.confirmRecovery();
+  } else {
+    failSessionOutputWrite(outputWrite);
+    // An explicit guard belongs to its caller; only our own remembered stamp is repaired.
+    if (!guard) await refreshStaleBaseline(session.id);
+    work.fail(new Error("Session changed in another window; reload before saving"));
+  }
+  return summary;
 }
 
 async function persistSession(
   session: Session,
   guard?: { expectedUpdatedAt: number; expectedRevision?: number } | { expectMissing: true },
   allowEmpty = false,
+  initialTimes?: { createdAt: number; updatedAt: number },
+  parent?: PersistenceWork,
+  preserveActivityAt = false,
 ): Promise<SessionSummary | null> {
-  if ((!allowEmpty && !shouldPersistSession(session)) || deletedSessionIds.has(session.id)) {
+  if (
+    hostSessionBinding(session) ||
+    (!allowEmpty && !shouldPersistSession(session)) ||
+    deletedSessionIds.has(session.id)
+  ) {
     return null;
   }
   const payload = sanitizeSessionForPersist(session);
-  if (session.orchestrationLeadId) {
-    sessionWriteLeadById.set(session.id, session.orchestrationLeadId);
-  } else {
-    sessionWriteLeadById.delete(session.id);
-  }
-  const summary = await enqueueSessionWrite(session.id, async () => {
-    if (deletedSessionIds.has(session.id)) return null;
-    const baseline = persistenceBaselines.get(session.id);
-    const summary = await invoke<SessionSummary | null>("session_upsert", {
-      session: {
-        ...payload,
-        blocks: payload.blocks.map((block) =>
-          block.orchestrationLeadId && deletedSessionIds.has(block.orchestrationLeadId)
-            ? { ...block, orchestrationLeadId: undefined }
-            : block,
-        ),
-      },
-      ...(guard ??
-        (baseline
-          ? { expectedUpdatedAt: baseline.updatedAt, expectedRevision: baseline.revision }
-          : {})),
-    });
-    if (summary)
-      persistenceBaselines.set(session.id, {
-        blocks: incrementalBlocks(session),
-        updatedAt: summary.updatedAt,
-        revision: summary.transcriptRevision,
-        writes: 0,
-        normalized: true,
-      });
-    return summary;
+  const outputWrite = captureSessionOutputWrite(session);
+  noteSessionWriteLead(session);
+  const summary = await enqueueSessionWrite(
+    session.id,
+    (work) =>
+      replaceStoredSession(
+        session,
+        payload,
+        outputWrite,
+        work,
+        guard,
+        initialTimes,
+        preserveActivityAt,
+      ),
+    false,
+    parent,
+  ).catch((error) => {
+    failSessionOutputWrite(outputWrite);
+    throw error;
   });
-  return summary ? normalizeSummary(summary) : null;
+  return summary ? withSessionDelegation(normalizeSummary(summary), session) : null;
+}
+
+/** Whether an earlier write of this session failed and still awaits a full replace. */
+function hasUnrecoveredWrite(sessionId: string): boolean {
+  try {
+    sessionPersistence.assertSuccessful([sessionId]);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Idle save (turn end, rename, model or context change, the 650 ms flush).
+ * With a normalized baseline it sends only the changed blocks and the
+ * metadata, like the pre-send save, instead of re-sending and re-diffing the
+ * whole transcript under the store write lock. The native side still derives
+ * the branch from Git and returns the sidebar summary. The full replace stays
+ * for a missing or unnormalized baseline, a required replacement, periodic
+ * compaction, and an earlier failed write (only a full replace confirms its
+ * recovery). Resolves to `null` when nothing was saved; `summary` is `null`
+ * when the write landed but no summary came back.
+ */
+export async function saveSessionIdle(
+  session: Session,
+): Promise<{ summary: SessionSummary | null } | null> {
+  if (
+    hostSessionBinding(session) ||
+    !shouldPersistSession(session) ||
+    deletedSessionIds.has(session.id)
+  ) {
+    return null;
+  }
+  const id = session.id;
+  const outputWrite = captureSessionOutputWrite(session);
+  noteSessionWriteLead(session);
+  return enqueueSessionWrite(id, async (work) => {
+    const baseline = persistenceBaselines.get(id);
+    if (
+      deletedSessionIds.has(id) ||
+      !baseline?.normalized ||
+      baseline.writes >= 256 ||
+      sessionOutputNeedsReplacement(session) ||
+      hasUnrecoveredWrite(id)
+    ) {
+      const summary = await replaceStoredSession(
+        session,
+        sanitizeSessionForPersist(session),
+        outputWrite,
+        work,
+      );
+      return summary
+        ? { summary: withSessionDelegation(normalizeSummary(summary), session) }
+        : null;
+    }
+    const finish = startPerformanceSpan("session-save");
+    const blocks = incrementalBlocks(session);
+    const delta = buildSessionBlockDelta(baseline.blocks, blocks);
+    let ack: {
+      updatedAt: number;
+      revision: number;
+      nativeWriteId?: string;
+      summary?: SessionSummary;
+    } | null;
+    try {
+      ack = await invoke<typeof ack>(
+        "session_apply_delta",
+        prepareSessionOutputWritePayload(
+          outputWrite,
+          {
+            delta: {
+              session: { ...persistableMeta(session), blocks: [] },
+              expectedUpdatedAt: baseline.updatedAt,
+              expectedRevision: baseline.revision,
+              ...delta,
+            },
+            summary: true,
+          },
+          "delta",
+        ),
+      );
+    } catch (error) {
+      finish();
+      throw error;
+    }
+    if (!ack) {
+      finish();
+      failSessionOutputWrite(outputWrite);
+      await refreshStaleBaseline(id);
+      work.fail(new Error("Session changed in another window; reload before saving"));
+      return null;
+    }
+    persistenceBaselines.set(id, {
+      blocks,
+      updatedAt: ack.updatedAt,
+      revision: ack.revision,
+      writes: baseline.writes + 1,
+      normalized: true,
+    });
+    acknowledgeSessionOutputWrite(outputWrite, {
+      kind: "delta",
+      revision: ack.revision,
+      updatedAt: ack.updatedAt,
+      ...(ack.nativeWriteId === undefined ? {} : { nativeWriteId: ack.nativeWriteId }),
+    });
+    finish({ blocks: delta.changes.length, revision: ack.revision });
+    return {
+      summary: ack.summary ? withSessionDelegation(normalizeSummary(ack.summary), session) : null,
+    };
+  }).catch((error) => {
+    failSessionOutputWrite(outputWrite);
+    throw error;
+  });
 }
 
 /**
@@ -519,8 +995,13 @@ export async function importSessionRecord(
     throw new Error("The conversation has no messages to import");
   }
   if (!isPersistableId(session.id)) throw new Error("Invalid session id");
-  const summary = await invoke<SessionSummary | null>("session_import", {
-    session: { ...sanitizeSessionForPersist(session), ...times },
+  const summary = await sessionPersistence.run([session.id], "transcript", async (work) => {
+    const result = await invoke<SessionSummary | null>("session_import", {
+      session: { ...sanitizeSessionForPersist(session), ...times },
+    });
+    if (result) work.confirmRecovery();
+    else work.fail(new Error("Import did not confirm a new stored conversation"));
+    return result;
   });
   return summary ? normalizeSummary(summary) : null;
 }
@@ -556,30 +1037,118 @@ export function persistFingerprint(session: Session): string {
   return `${JSON.stringify(persistableMeta(session))}|${session.orchestrationLeadId ?? ""}|${blockIdentity}|${turnOutcomes}`;
 }
 
+function summaryActivityAt(row: { updatedAt: number; lastActivityAt?: number }): number {
+  return row.lastActivityAt ?? row.updatedAt;
+}
+
 export async function listSessionsByProject(cwd: string): Promise<SessionSummary[]> {
   if (!cwd || cwd === "~") return [];
   const rows = await invoke<SessionSummary[]>("session_list_by_project", {
     cwd: normalizeProjectPath(cwd),
   });
-  return rows.map(normalizeSummary);
+  const owned = hostSessionShellSummaries().filter(
+    (entry) => normalizeProjectPath(entry.cwd) === normalizeProjectPath(cwd),
+  );
+  if (!owned.length)
+    return rows.filter((row) => !hasHostSessionOwnerFence(row.id)).map(normalizeSummary);
+  return [...rows.filter((row) => !hasHostSessionOwnerFence(row.id)), ...owned]
+    .sort(
+      (a, b) =>
+        Number(!!b.pinned) - Number(!!a.pinned) || summaryActivityAt(b) - summaryActivityAt(a),
+    )
+    .map(normalizeSummary);
 }
 
 export function rebaseProjectSessions(fromCwd: string, toCwd: string): Promise<void> {
-  return invoke<void>("session_rebase_project", {
-    fromCwd: normalizeProjectPath(fromCwd),
-    toCwd: normalizeProjectPath(toCwd),
+  const payload = { fromCwd: normalizeProjectPath(fromCwd), toCwd: normalizeProjectPath(toCwd) };
+  // The affected session IDs are owned by native SQL, so this is conservatively shared.
+  return sessionPersistence.run("profile", `rebase:${JSON.stringify(payload)}`, async (work) => {
+    await invoke<void>("session_rebase_project", payload);
+    work.confirmRecovery();
   });
 }
 
 export async function listLinkedSessions(): Promise<SessionSummary[]> {
   const rows = await invoke<SessionSummary[]>("session_list_linked");
-  return rows.map(normalizeSummary);
+  const owned = hostSessionShellSummaries().filter((entry) => entry.linkedWorkItem);
+  return [...rows.filter((row) => !hasHostSessionOwnerFence(row.id)), ...owned].map(
+    normalizeSummary,
+  );
 }
 
 /** Newest sessions across every project, plus all pinned ones. No transcripts. */
 export async function listRecentSessions(limit: number): Promise<SessionSummary[]> {
   const rows = await invoke<SessionSummary[]>("session_list_recent", { limit });
-  return rows.map(normalizeSummary);
+  const owned = hostSessionShellSummaries();
+  const native = rows.filter((row) => !hasHostSessionOwnerFence(row.id));
+  const nativeRows = native.map((row): SessionSummary => ({
+    ...normalizeSummary(row),
+    recentPinTarget:
+      !row.cwd || row.cwd === "~" || isRemoteProjectPath(row.cwd)
+        ? null
+        : { kind: "native", sessionId: row.id, cwd: row.cwd },
+  }));
+  const ownedRows = owned.map((row): SessionSummary => {
+    const owner = hostSessionBinding({ id: row.id });
+    return {
+      ...normalizeSummary(row),
+      recentPinTarget: owner?.created
+        ? {
+            kind: "host",
+            sessionId: owner.sessionId,
+            machineId: owner.machineId,
+            environmentId: owner.environmentId,
+            projectId: owner.projectId,
+            ...(owner.authorityGeneration === null
+              ? {}
+              : { authorityGeneration: owner.authorityGeneration }),
+          }
+        : null,
+    };
+  });
+  if (!ownedRows.length) return nativeRows;
+  const combined = [...nativeRows, ...ownedRows].sort(
+    (a, b) => summaryActivityAt(b) - summaryActivityAt(a),
+  );
+  return [
+    ...combined.filter((entry) => entry.pinned),
+    ...combined.filter((entry) => !entry.pinned).slice(0, limit),
+  ];
+}
+
+/** All local summaries at or after the cutoff. No pin or row-count limit. */
+export async function listRecentSessionsSince(since: number): Promise<SessionSummary[]> {
+  const rows = await invoke<SessionSummary[]>("session_list_recent_since", { since });
+  return [
+    ...rows.filter((row) => !hasHostSessionOwnerFence(row.id)),
+    ...hostSessionShellSummaries().filter((row) => summaryActivityAt(row) >= since),
+  ].map(normalizeSummary);
+}
+
+export type RecentSessionCursor = { activityAt: number; id: string; revision: number };
+export async function listRecentSessionsSincePage(
+  since: number,
+  cursor: RecentSessionCursor | null,
+): Promise<{ rows: SessionSummary[]; nextCursor: RecentSessionCursor | null }> {
+  const page = await invoke<{ rows: SessionSummary[]; nextCursor: RecentSessionCursor | null }>(
+    "session_list_recent_since_page",
+    { since, cursor },
+  );
+  return {
+    rows: page.rows.filter((row) => !hasHostSessionOwnerFence(row.id)).map(normalizeSummary),
+    nextCursor: page.nextCursor,
+  };
+}
+
+/** Recheck ownership at publication because bindings may change between pages. */
+export function finalizeRecentSessionPages(
+  rows: SessionSummary[],
+  since: number,
+): SessionSummary[] {
+  return [
+    ...rows.filter((row) => !hasHostSessionOwnerFence(row.id)),
+    ...hostSessionShellSummaries().filter((row) => summaryActivityAt(row) >= since),
+  ].map(normalizeSummary);
 }
 
 export type SessionSearchHit = {
@@ -654,6 +1223,8 @@ export type SessionContentResult = {
   truncated: boolean;
   /** Sessions whose text is not indexed yet; searching again later finds more. */
   pending: number;
+  /** Retained index failure; committed results remain usable, automatic polls stop. */
+  indexError?: string;
 };
 
 /** Full-text search over the messages of every stored session. */
@@ -665,6 +1236,7 @@ export async function searchSessionContent(options: {
   includeArchived?: boolean;
   since?: number;
   until?: number;
+  retryIndex?: boolean;
 }): Promise<SessionContentResult> {
   const query = options.query.trim();
   if (!query) return { sessions: [], truncated: false, pending: 0 };
@@ -672,6 +1244,7 @@ export async function searchSessionContent(options: {
     options: {
       query,
       searchOwner: options.searchOwner,
+      ...(options.retryIndex ? { retryIndex: true } : {}),
       ...(options.cwds?.length ? { cwds: options.cwds.map(normalizeProjectPath) } : {}),
       ...(options.harness ? { harness: options.harness } : {}),
       ...(options.includeArchived ? { includeArchived: true } : {}),
@@ -683,6 +1256,7 @@ export async function searchSessionContent(options: {
     sessions: Array.isArray(result?.sessions) ? result.sessions : [],
     truncated: !!result?.truncated,
     pending: typeof result?.pending === "number" ? result.pending : 0,
+    ...(typeof result?.indexError === "string" ? { indexError: result.indexError } : {}),
   };
 }
 
@@ -698,9 +1272,56 @@ type StoredTranscriptPage = {
   revision: number;
 };
 
-export async function getSession(
+export function getSession(
   sessionId: string,
   options: SessionHydrationOptions = {},
+): Promise<Session | null> {
+  if (deletedSessionIds.has(sessionId)) return Promise.resolve(null);
+  const hostShell = restoreHostSessionShell(sessionId);
+  if (hostShell) return Promise.resolve(hostShell);
+  return sessionPersistence.run([sessionId], "hydration", async (work) => {
+    let result: Session | null;
+    try {
+      result = await loadStoredSession(sessionId, options, work);
+    } catch (error) {
+      if ((error instanceof Error ? error.message : String(error)) !== "Session was deleted")
+        throw error;
+      deletedSessionIds.add(sessionId);
+      work.confirmRecovery();
+      return null;
+    }
+    work.confirmRecovery();
+    return deletedSessionIds.has(sessionId) ? null : result;
+  });
+}
+
+export function isSessionDeleted(sessionId: string): boolean {
+  return deletedSessionIds.has(sessionId);
+}
+
+/** Check layout references without hydrating every inactive transcript. */
+export async function listDeletedSessionIds(sessionIds: string[]): Promise<string[]> {
+  const deleted: string[] = [];
+  for (let offset = 0; offset < sessionIds.length; offset += 500) {
+    const batch = sessionIds.slice(offset, offset + 500);
+    const result = await invoke<unknown>("session_deleted_ids", { sessionIds: batch });
+    if (
+      !Array.isArray(result) ||
+      result.some((id) => typeof id !== "string" || !batch.includes(id))
+    )
+      throw new Error("Deleted conversation status could not be verified.");
+    for (const id of result as string[]) {
+      deletedSessionIds.add(id);
+      deleted.push(id);
+    }
+  }
+  return deleted;
+}
+
+async function loadStoredSession(
+  sessionId: string,
+  options: SessionHydrationOptions,
+  work: PersistenceWork,
 ): Promise<Session | null> {
   const finish = startPerformanceSpan("session-load");
   // Consumers without progressive callbacks require complete history and queues.
@@ -708,8 +1329,8 @@ export async function getSession(
   if (!options.onHydrated) {
     try {
       const record = await invoke<SessionRecord | null>("session_get", { sessionId });
-      if (!record) return null;
-      const session = recordToSession(record);
+      if (!record || deletedSessionIds.has(sessionId)) return null;
+      const session = recoverTaggedOrchestrationProposals(recordToSession(record));
       persistenceBaselines.set(sessionId, {
         blocks: incrementalBlocks(session),
         updatedAt: record.updatedAt,
@@ -717,7 +1338,7 @@ export async function getSession(
         writes: 0,
         normalized: false,
       });
-      return await hydrateStoredSession(session, record.updatedAt, record.transcriptRevision);
+      return await hydrateStoredSession(session, record.updatedAt, record.transcriptRevision, work);
     } finally {
       finish();
     }
@@ -729,7 +1350,7 @@ export async function getSession(
     finish();
     throw error;
   }
-  if (!page) {
+  if (!page || deletedSessionIds.has(sessionId)) {
     finish();
     return null;
   }
@@ -747,49 +1368,68 @@ export async function getSession(
     });
   // Publish the tail first. Provider log repair, queue attachment checks and
   // earlier pages cannot delay it. Every page is pinned to the first revision.
-  window.setTimeout(() => {
-    void (async () => {
-      const pages: Block[][] = [session.blocks];
-      let before = page.before;
-      while (before != null) {
-        if (deletedSessionIds.has(sessionId)) return;
-        const previous = await invoke<StoredTranscriptPage | null>("session_get_page", {
-          sessionId,
-          before,
-          revision: page.revision,
-          limit: 200,
-        });
-        if (!previous || (previous.before != null && previous.before >= before))
-          throw new Error("Invalid transcript cursor");
-        pages.push(recordToSession(previous.session).blocks);
-        before = previous.before;
-      }
-      const complete = session.historyLoading
-        ? {
-            ...session,
-            blocks: pages.reverse().flat(),
-            historyLoading: false,
-          }
-        : session;
-      if (deletedSessionIds.has(sessionId)) return;
-      // A tail snapshot never becomes a persistence baseline. Only the complete
-      // logical transcript may be checkpointed or used for provider resume.
-      persistenceBaselines.set(sessionId, {
-        blocks: incrementalBlocks(complete),
-        updatedAt: record.updatedAt,
-        revision: record.transcriptRevision,
-        writes: 0,
-        normalized: false,
-      });
-      if (session.historyLoading) options.onHydrated?.(session, complete);
-      const hydrated = await hydrateStoredSession(
-        complete,
-        record.updatedAt,
-        record.transcriptRevision,
-      );
-      if (!deletedSessionIds.has(sessionId)) options.onHydrated?.(complete, hydrated);
-    })().catch(() => options.onHydrationFailed?.(session));
-  }, 0);
+  // Admit before scheduling: the caller receives the tail while this producer
+  // still owns earlier pages, provider-log repair and their possible writes.
+  void sessionPersistence.run(
+    [sessionId],
+    "hydration",
+    (background) =>
+      new Promise<void>((resolve) => {
+        window.setTimeout(() => {
+          void (async () => {
+            const pages: Block[][] = [session.blocks];
+            let before = page.before;
+            while (before != null) {
+              if (deletedSessionIds.has(sessionId)) return;
+              const previous = await invoke<StoredTranscriptPage | null>("session_get_page", {
+                sessionId,
+                before,
+                revision: page.revision,
+                limit: 200,
+              });
+              if (!previous || (previous.before != null && previous.before >= before))
+                throw new Error("Invalid transcript cursor");
+              pages.push(recordToSession(previous.session).blocks);
+              before = previous.before;
+            }
+            const complete = recoverTaggedOrchestrationProposals(
+              session.historyLoading
+                ? {
+                    ...session,
+                    blocks: pages.reverse().flat(),
+                    historyLoading: false,
+                  }
+                : session,
+            );
+            if (deletedSessionIds.has(sessionId)) return;
+            // A tail snapshot never becomes a persistence baseline. Only the complete
+            // logical transcript may be checkpointed or used for provider resume.
+            persistenceBaselines.set(sessionId, {
+              blocks: incrementalBlocks(complete),
+              updatedAt: record.updatedAt,
+              revision: record.transcriptRevision,
+              writes: 0,
+              normalized: false,
+            });
+            if (session.historyLoading) options.onHydrated?.(session, complete);
+            const hydrated = await hydrateStoredSession(
+              complete,
+              record.updatedAt,
+              record.transcriptRevision,
+              background,
+            );
+            if (!deletedSessionIds.has(sessionId)) options.onHydrated?.(complete, hydrated);
+            background.confirmRecovery();
+          })()
+            .catch((error: unknown) => {
+              background.fail(error);
+              options.onHydrationFailed?.(session);
+            })
+            .finally(resolve);
+        }, 0);
+      }),
+    { parent: work },
+  );
   return session;
 }
 
@@ -797,18 +1437,19 @@ async function hydrateStoredSession(
   original: Session,
   expectedUpdatedAt: number,
   expectedRevision?: number,
+  work?: PersistenceWork,
 ): Promise<Session> {
   const session = { ...original };
   const [repaired, queued] = await Promise.all([
-    repairStoredSession(session, expectedUpdatedAt, expectedRevision),
+    repairStoredSession(session, expectedUpdatedAt, expectedRevision, work),
     withStoredQueue(session),
   ]);
-  return {
+  return repairSessionModelIdentity({
     ...repaired,
     ...(queued.queuedMessages
       ? { queuedMessages: queued.queuedMessages, queueStatus: "restored" as const }
       : {}),
-  };
+  });
 }
 
 /** Which of `paths` still exist on disk. */
@@ -846,19 +1487,31 @@ export async function loadStoredQueue(sessionId: string): Promise<QueuedMessage[
 export async function setSessionQueue(
   sessionId: string,
   queue: QueuedMessage[] | undefined,
+  parent?: PersistenceWork,
 ): Promise<void> {
   if (!isPersistableId(sessionId) || deletedSessionIds.has(sessionId)) return;
   const payload = persistableQueue(queue);
-  await enqueueSessionWrite(sessionId, async () => {
-    if (deletedSessionIds.has(sessionId)) return;
-    await invoke<void>("session_set_queue", { sessionId, queue: payload });
-  });
+  await enqueueSessionWrite(
+    sessionId,
+    async (work) => {
+      if (deletedSessionIds.has(sessionId)) {
+        work.fail(new Error("Session was deleted before its queued follow-ups were saved"));
+        return;
+      }
+      await invoke<void>("session_set_queue", { sessionId, queue: payload });
+      work.confirmRecovery();
+    },
+    false,
+    parent,
+    "queue",
+  );
 }
 
 async function repairStoredSession(
   session: Session,
   expectedUpdatedAt: number,
   expectedRevision?: number,
+  work?: PersistenceWork,
 ): Promise<Session> {
   if (session.harness === "claude" && session.providerSessionId) {
     const toolIds = shellPlaceholderIds(session.blocks);
@@ -872,9 +1525,10 @@ async function repairStoredSession(
         const blocks = backfillClaudeShellCommands(session.blocks, commands);
         if (blocks !== session.blocks) {
           session.blocks = blocks;
-          await upsertSessionIfUnchanged(session, expectedUpdatedAt, expectedRevision);
+          await upsertSessionIfUnchanged(session, expectedUpdatedAt, expectedRevision, work);
         }
-      } catch {
+      } catch (error) {
+        work?.fail(error);
         // A missing or unreadable Claude transcript must not block the session.
       }
     }
@@ -888,7 +1542,7 @@ async function repairStoredSession(
       session.blocks = blocks;
       // A failed write must not cost the reader the session. The repair stays
       // in memory and the next load retries it.
-      await upsertSessionIfUnchanged(session, expectedUpdatedAt, expectedRevision).catch(
+      await upsertSessionIfUnchanged(session, expectedUpdatedAt, expectedRevision, work).catch(
         () => undefined,
       );
     }
@@ -908,9 +1562,10 @@ async function repairStoredSession(
       // Persist only while the original stored revision still owns the row.
       // Re-reading the source on later loads allows partial repairs to retry;
       // deterministic IDs ensure already repaired transcripts are not written.
-      await upsertSessionIfUnchanged(session, expectedUpdatedAt, expectedRevision);
+      await upsertSessionIfUnchanged(session, expectedUpdatedAt, expectedRevision, work);
     }
-  } catch {
+  } catch (error) {
+    work?.fail(error);
     // Source logs may be absent/unreadable. Even a failed write must not stop
     // restore; the recovered in-memory boundaries can still be displayed.
   }
@@ -991,48 +1646,144 @@ export function backfillCodexShellCommands(blocks: Block[]): Block[] {
 }
 
 export async function deleteSession(sessionId: string, imagePaths: string[] = []): Promise<void> {
-  deletedSessionIds.add(sessionId);
-  try {
-    // A lead with workers still has writes in flight. Finish those before
-    // the deletion transaction strips their ownership metadata.
-    const pendingWrites = [...sessionWriteQueues.entries()]
-      .filter(
-        ([queuedSessionId]) =>
-          queuedSessionId === sessionId || sessionWriteLeadById.get(queuedSessionId) === sessionId,
-      )
-      .map(([, pending]) => pending);
-    if (pendingWrites.length > 0) await Promise.all(pendingWrites);
-    await enqueueSessionWrite(sessionId, () =>
-      invoke<void>("session_delete", { sessionId, imagePaths }),
+  await flushHostSessionBindings(sessionId);
+  const owner = hostSessionBinding({ id: sessionId });
+  if (owner) {
+    if (!owner.created)
+      throw new Error("Verify this conversation's pending creation before deleting it.");
+    const { sessionAccessForMachine } = await import("../../connections/public/connections");
+    await sessionAccessForMachine(owner.machineId, false, true, owner.environmentId).delete(
+      owner.sessionId,
+      owner.projectId,
+      owner.authorityGeneration ?? undefined,
     );
-    persistenceBaselines.delete(sessionId);
-    removeSessionAdditionalDirs(sessionId);
-    // The cache's change listener deletes the saved draft row.
+    forgetHostSessionShell(sessionId);
+    await flushHostSessionBindings(sessionId);
     clearComposerDraft(sessionId);
-    const tombstone = setTimeout(() => deletedSessionIds.delete(sessionId), 60_000);
-    if (typeof tombstone === "object") tombstone.unref();
-  } catch (error) {
-    deletedSessionIds.delete(sessionId);
-    throw error;
+    return;
   }
+  // Native deletion can also strip a lead's ownership from stored worker rows.
+  return sessionPersistence.run("profile", `delete:${sessionId}`, async (work) => {
+    deletedSessionIds.add(sessionId);
+    try {
+      // A lead with workers still has writes in flight. Finish those before
+      // the deletion transaction strips their ownership metadata.
+      const pendingWrites = [...sessionWriteQueues.entries()]
+        .filter(
+          ([queuedSessionId]) =>
+            queuedSessionId === sessionId ||
+            sessionWriteLeadById.get(queuedSessionId) === sessionId,
+        )
+        .map(([, pending]) => pending);
+      if (pendingWrites.length > 0) await Promise.all(pendingWrites);
+      await enqueueSessionWrite(
+        sessionId,
+        async (deletion) => {
+          await invoke<void>("session_delete", { sessionId, imagePaths });
+          deletion.confirmRecovery();
+        },
+        false,
+        work,
+        "delete",
+      );
+      persistenceBaselines.delete(sessionId);
+      sessionPersistence.forget?.([sessionId]);
+      removeSessionAdditionalDirs(sessionId);
+      // The cache's change listener deletes the saved draft row.
+      clearComposerDraft(sessionId, work);
+      // IDs are never reused after explicit deletion. A delayed hydration,
+      // recovery or sibling snapshot may still arrive long after one minute.
+      // Native deletion also retains this decision across renderer restarts.
+      work.confirmRecovery();
+    } catch (error) {
+      deletedSessionIds.delete(sessionId);
+      throw error;
+    }
+  });
 }
 
 /** Delete a draft-only record while allowing its still-open blank session id to be saved later. */
 export async function discardDraftSessionRecord(sessionId: string): Promise<void> {
-  await enqueueSessionWrite(sessionId, () =>
-    invoke<void>("session_delete", { sessionId, imagePaths: [] }),
+  if (hostSessionBinding({ id: sessionId })) return;
+  await enqueueSessionWrite(
+    sessionId,
+    async (work) => {
+      await invoke<void>("session_delete", { sessionId, imagePaths: [], allowRecreate: true });
+      work.confirmRecovery();
+    },
+    false,
+    undefined,
+    "delete",
   );
   persistenceBaselines.delete(sessionId);
+  sessionPersistence.forget?.([sessionId]);
 }
 
 export async function setSessionArchived(sessionId: string, archived: boolean): Promise<void> {
-  await enqueueSessionWrite(sessionId, () =>
-    invoke<void>("session_set_archived", { sessionId, archived }),
+  if (await updateOwnedSessionMetadata(sessionId, { archived })) return;
+  await enqueueSessionWrite(
+    sessionId,
+    async (work) => {
+      await invoke<void>("session_set_archived", { sessionId, archived });
+      work.confirmRecovery();
+    },
+    false,
+    undefined,
+    "archived",
   );
 }
 
+export async function updateOwnedSessionMetadata(
+  sessionId: string,
+  patch: {
+    title?: string;
+    archived?: boolean;
+    pinned?: boolean;
+    linkedWorkItem?: LinkedWorkItem | null;
+  },
+): Promise<boolean> {
+  await flushHostSessionBindings(sessionId);
+  const owner = hostSessionBinding({ id: sessionId });
+  if (!owner) return false;
+  if (!owner.created)
+    throw new Error("Verify this conversation's pending creation before changing it.");
+  const { sessionAccessForMachine } = await import("../../connections/public/connections");
+  await sessionAccessForMachine(owner.machineId, false, true, owner.environmentId).update(
+    owner.sessionId,
+    {
+      ...patch,
+      projectId: owner.projectId,
+      ...(owner.authorityGeneration === null
+        ? {}
+        : { authorityGeneration: owner.authorityGeneration }),
+    },
+  );
+  patchHostSessionShellMetadata(sessionId, {
+    ...(patch.archived !== undefined ? { archived: patch.archived } : {}),
+    ...(patch.pinned !== undefined ? { pinned: patch.pinned } : {}),
+  });
+  const cached = restoreHostSessionShell(sessionId);
+  if (cached && (patch.title !== undefined || patch.linkedWorkItem !== undefined))
+    saveHostSessionBinding(
+      {
+        ...cached,
+        ...(patch.title === undefined ? {} : { title: patch.title }),
+        ...(patch.linkedWorkItem === undefined
+          ? {}
+          : { linkedWorkItem: patch.linkedWorkItem ?? undefined }),
+      },
+      owner,
+    );
+  await flushHostSessionBindings(sessionId);
+  return true;
+}
+
 export async function setSessionPinned(sessionId: string, pinned: boolean): Promise<void> {
-  await invoke<void>("session_set_pinned", { sessionId, pinned });
+  if (await updateOwnedSessionMetadata(sessionId, { pinned })) return;
+  await sessionPersistence.run([sessionId], "pinned", async (work) => {
+    await invoke<void>("session_set_pinned", { sessionId, pinned });
+    work.confirmRecovery();
+  });
 }
 
 export async function setSessionLinkedWorkItem(
@@ -1040,17 +1791,42 @@ export async function setSessionLinkedWorkItem(
   value: LinkedWorkItem | undefined,
 ): Promise<void> {
   const linkedWorkItem = sanitizeLinkedWorkItem(value);
-  await enqueueSessionWrite(sessionId, () =>
-    invoke<void>("session_set_linked_work_item", {
-      sessionId,
-      linkedWorkItem: linkedWorkItem ?? null,
-    }),
+  if (await updateOwnedSessionMetadata(sessionId, { linkedWorkItem: linkedWorkItem ?? null }))
+    return;
+  await enqueueSessionWrite(
+    sessionId,
+    async (work) => {
+      await invoke<void>("session_set_linked_work_item", {
+        sessionId,
+        linkedWorkItem: linkedWorkItem ?? null,
+      });
+      work.confirmRecovery();
+    },
+    false,
+    undefined,
+    "linked-work-item",
   );
 }
 
 /** Drain pending saves before a worktree removal changes stored session context. */
 export async function flushSessionWrites(): Promise<void> {
   await Promise.all([...sessionWriteQueues.values()]);
+}
+
+/** Strict renderer accounting only; this does not close producers or prove native idle. */
+export async function flushSessionWritesStrict(
+  scope: PersistenceScope = "profile",
+  current?: PersistenceWork,
+): Promise<void> {
+  // Flush actual accepted model projections even when their debounce/live
+  // interval has not admitted a DB job yet. A flush parent admits descendants;
+  // it does not turn ordinary storage ACKs into a Native/FULL checkpoint.
+  const pending = pendingSessionOutputSnapshots(scope === "profile" ? undefined : scope).filter(
+    (session) => shouldPersistSession(session) && !deletedSessionIds.has(session.id),
+  );
+  for (const session of pending)
+    await persistSession(session, undefined, false, undefined, current);
+  await sessionPersistence.settle(scope, current);
 }
 
 /**
@@ -1064,16 +1840,19 @@ export async function replaceInFlightSessions(
 ): Promise<void> {
   // Tool windows must not replace the main window's recovery list.
   if (readToolWindow()) return;
-  const run = inFlightWrite
-    .catch(() => undefined)
-    .then(() =>
-      invoke("session_set_in_flight", {
-        sessions: refs.map((ref) => ({
-          sessionId: ref.sessionId,
-          cwd: normalizeProjectPath(ref.cwd),
-        })),
+  const run = sessionPersistence.run("profile", "in-flight", (work) =>
+    inFlightWrite
+      .catch(() => undefined)
+      .then(async () => {
+        await invoke("session_set_in_flight", {
+          sessions: refs.map((ref) => ({
+            sessionId: ref.sessionId,
+            cwd: normalizeProjectPath(ref.cwd),
+          })),
+        });
+        work.confirmRecovery();
       }),
-    );
+  );
   inFlightWrite = run;
   await run;
 }
@@ -1086,7 +1865,9 @@ export async function listInFlightSessions(): Promise<{ sessionId: string; cwd: 
 
 /** Destructive: the first window to boot after a quit owns these chats. */
 export async function takeInFlightSessions(): Promise<{ sessionId: string; cwd: string }[]> {
-  const rows = await invoke<{ sessionId: string; cwd: string }[]>("session_take_in_flight");
+  const rows = await sessionPersistence.run("profile", "take-in-flight", () =>
+    invoke<{ sessionId: string; cwd: string }[]>("session_take_in_flight"),
+  );
   return Array.isArray(rows) ? rows : [];
 }
 
@@ -1096,8 +1877,18 @@ export async function takeInFlightSessions(): Promise<{ sessionId: string; cwd: 
  */
 let workspaceWrite: Promise<unknown> = Promise.resolve();
 
-export async function saveWorkspaceSnapshot(snapshot: unknown): Promise<void> {
-  if (readToolWindow()) return;
+import { isPrimaryWorkspaceWindow, trackPrimaryWorkspaceWindow } from "./primaryWorkspaceWindow";
+export { isPrimaryWorkspaceWindow, trackPrimaryWorkspaceWindow };
+
+void trackPrimaryWorkspaceWindow().catch((error: unknown) =>
+  console.warn("Primary workspace window tracking failed", error),
+);
+
+export async function saveWorkspaceSnapshot(
+  snapshot: unknown,
+  recoveryReceipt?: string,
+): Promise<void> {
+  if (readToolWindow() || !isPrimaryWorkspaceWindow()) return;
   const durableSnapshot =
     snapshot && typeof snapshot === "object"
       ? {
@@ -1108,23 +1899,26 @@ export async function saveWorkspaceSnapshot(snapshot: unknown): Promise<void> {
             : {}),
         }
       : snapshot;
-  const run = workspaceWrite
-    .catch(() => undefined)
-    .then(async () => {
-      // Detached windows skip boot recovery. Do not let their quit snapshot
-      // erase a journal captured by the primary window. A failed read aborts.
-      if (
-        durableSnapshot &&
-        typeof durableSnapshot === "object" &&
-        !("sessionRecovery" in durableSnapshot)
-      ) {
-        const saved = await loadWorkspaceSnapshot();
-        if (saved && typeof saved === "object" && "sessionRecovery" in saved) {
-          Object.assign(durableSnapshot, { sessionRecovery: saved.sessionRecovery });
+  const run = sessionPersistence.run("profile", "workspace", (work) =>
+    workspaceWrite
+      .catch(() => undefined)
+      .then(async () => {
+        // Detached windows skip boot recovery. Do not let their quit snapshot
+        // erase a journal captured by the primary window. A failed read aborts.
+        if (
+          durableSnapshot &&
+          typeof durableSnapshot === "object" &&
+          !("sessionRecovery" in durableSnapshot)
+        ) {
+          const saved = await loadWorkspaceSnapshot();
+          if (saved && typeof saved === "object" && "sessionRecovery" in saved) {
+            Object.assign(durableSnapshot, { sessionRecovery: saved.sessionRecovery });
+          }
         }
-      }
-      return invoke("workspace_set_snapshot", { snapshot: durableSnapshot });
-    });
+        await invoke("workspace_set_snapshot", { snapshot: durableSnapshot, recoveryReceipt });
+        work.confirmRecovery();
+      }),
+  );
   workspaceWrite = run;
   await run;
 }
@@ -1140,10 +1934,14 @@ function sanitizeBlock(block: Block, options?: { hydrate?: boolean }): Block | n
     role: block.role,
     text: block.text,
   };
+  const author = options?.hydrate && block.role === "user" && sessionMessageAuthor(block.author);
+  if (author) next.author = author;
   if (block.attachments?.length) {
     next.attachments = block.attachments.map(persistableAttachment);
   }
   const image = sanitizeGeneratedImage(block.image);
+  const inlineVisual = block.role === "tool" ? inlineVisualValue(block.inlineVisual) : undefined;
+  if (inlineVisual) next.inlineVisual = inlineVisual;
   if (block.role === "image" && !image) return null;
   if (image) next.image = image;
   if (block.startedAt != null) next.startedAt = block.startedAt;
@@ -1156,6 +1954,8 @@ function sanitizeBlock(block: Block, options?: { hydrate?: boolean }): Block | n
   const turnModel = sanitizeTurnModel(block.turnModel);
   if (block.role === "user" && turnModel) next.turnModel = turnModel;
   if (block.role === "user" && block.draft) next.draft = true;
+  if (block.role === "user" && block.workspacePreparationPending === true)
+    next.workspacePreparationPending = true;
   if (
     block.role === "user" &&
     block.draft &&
@@ -1242,13 +2042,15 @@ function sanitizeBlock(block: Block, options?: { hydrate?: boolean }): Block | n
   // Interjection chrome survives restarts only on system blocks; a malformed
   // payload keeps the ordinary system row rather than losing its body.
   if (block.role === "system") {
+    // A compaction still running when saved did not survive the restart.
+    if (block.statusRunningSince != null) return null;
     const interjection = sanitizeInterjection(block.interjection);
     if (interjection) next.interjection = interjection;
-    if (block.notice === "error" || block.notice === "interrupt") {
+    if (block.notice === "error" || block.notice === "interrupt" || block.notice === "info") {
       next.notice = block.notice;
     }
-    const shell = sanitizeShellRun(block.shell);
-    if (shell) next.shell = shell;
+    if (block.shell) next.shell = sanitizeShellRun(block.shell);
+    if (block.modelSwitch) next.modelSwitch = sanitizeModelSwitch(block.modelSwitch);
   }
   return next;
 }
@@ -1260,9 +2062,15 @@ function sanitizeShellRun(value: Block["shell"]): Block["shell"] {
   return {
     command: value.command,
     output: typeof value.output === "string" ? value.output : "",
-    exitCode: typeof value.exitCode === "number" && !value.running ? value.exitCode : null,
+    exitCode:
+      typeof value.exitCode === "number" && !value.running && !value.terminationFailed
+        ? value.exitCode
+        : null,
     ...(value.timedOut ? { timedOut: true } : {}),
     ...(value.truncated ? { truncated: true } : {}),
+    ...(typeof value.terminationFailed === "string" && value.terminationFailed
+      ? { terminationFailed: value.terminationFailed }
+      : {}),
   };
 }
 
@@ -1605,8 +2413,11 @@ function sanitizeTaskList(value: unknown): TaskListMeta | null {
 
 function normalizeSummary(summary: SessionSummary): SessionSummary {
   const linkedWorkItem = sanitizeLinkedWorkItem(summary.linkedWorkItem);
+  const { managedBy: rawManagement, ...rest } = summary;
+  const managedBy = assistantSessionManagement(rawManagement);
   return {
-    ...summary,
+    ...rest,
+    ...(managedBy ? { managedBy } : {}),
     harness: asHarness(summary.harness),
     runtimeMode: asRuntimeMode(summary.runtimeMode),
     ...(summary.providerSessionId ? { providerSessionId: summary.providerSessionId } : {}),
@@ -1632,9 +2443,14 @@ function recordToSession(record: SessionRecord): Session {
     : [];
   const linkedWorkItem = sanitizeLinkedWorkItem(record.linkedWorkItem);
   const rewindHistory = sanitizeRewindHistory(record.rewindHistory);
+  const adoptedDivergence = parseAdoptedDivergence(record.adoptedDivergence);
+  const adoptedBase = parseAdoptedBase(record.adoptedBase);
   // Removed Gemini CLI sessions continue in a fresh Antigravity conversation.
   const legacyGemini = record.harness === LEGACY_GEMINI;
   return {
+    ...(assistantSessionManagement(record.managedBy)
+      ? { managedBy: assistantSessionManagement(record.managedBy) }
+      : {}),
     id: record.id,
     cwd: record.cwd,
     harness: asHarness(record.harness),
@@ -1657,6 +2473,13 @@ function recordToSession(record: SessionRecord): Session {
       : {}),
     ...(record.branch ? { branch: record.branch } : {}),
     ...(record.worktreeCwd ? { worktreeCwd: record.worktreeCwd } : {}),
+    ...(record.workspaceMode === "current" || record.workspaceMode === "worktree"
+      ? { workspaceMode: record.workspaceMode }
+      : {}),
+    ...(record.workspaceId ? { workspaceId: record.workspaceId } : {}),
+    ...(Number.isSafeInteger(record.workspaceRevision) && record.workspaceRevision! >= 0
+      ? { workspaceRevision: record.workspaceRevision! }
+      : {}),
     ...(record.worktreeRemoved ? { worktreeRemoved: true } : {}),
     ...(linkedWorkItem ? { linkedWorkItem } : {}),
     ...(record.automationId && isPersistableId(record.automationId)
@@ -1666,6 +2489,11 @@ function recordToSession(record: SessionRecord): Session {
     ...(typeof record.pendingContextReplay === "string" && record.pendingContextReplay
       ? { pendingContextReplay: record.pendingContextReplay.slice(0, 24_000) }
       : {}),
+    // A restored divergence is only a record of what was flagged. It locks
+    // nothing (`adoptedSyncConflict`) until a pass proves it against a
+    // reachable host, so an unreachable or downgraded host cannot hold sending.
+    ...(adoptedDivergence ? { adoptedDivergence } : {}),
+    ...(adoptedBase ? { adoptedBase } : {}),
     ...(contextFromRecord(record) ?? {}),
   };
 }
@@ -1695,7 +2523,7 @@ function asHarness(value: string): HarnessId {
   return (HARNESSES as string[]).includes(value) ? (value as HarnessId) : "cursor";
 }
 
-const HANDOFF_STATUSES: HandoffStatus[] = ["preparing", "ready"];
+const HANDOFF_STATUSES: HandoffStatus[] = ["preparing", "ready", "failed", "cancelled"];
 
 function sanitizeHandoff(value: Block["handoff"]): HandoffMeta | undefined {
   if (!value) return undefined;
@@ -1703,11 +2531,45 @@ function sanitizeHandoff(value: Block["handoff"]): HandoffMeta | undefined {
   if (!(HARNESSES as string[]).includes(value.to)) return undefined;
   if (!HANDOFF_STATUSES.includes(value.status)) return undefined;
   const interrupted = value.status === "preparing";
+  const source = value.source;
+  const settings =
+    source?.fromSettings &&
+    typeof source.fromSettings === "object" &&
+    !Array.isArray(source.fromSettings) &&
+    Object.values(source.fromSettings).every((setting) => typeof setting === "string")
+      ? { ...source.fromSettings }
+      : undefined;
+  const capturedSource =
+    (interrupted || value.status === "failed" || value.status === "cancelled") &&
+    source &&
+    source.from === value.from &&
+    settings &&
+    typeof source.fromModel === "string" &&
+    source.fromModel.trim()
+      ? {
+          from: source.from,
+          fromModel: source.fromModel,
+          fromSettings: settings,
+          ...(typeof source.fromProviderSessionId === "string" &&
+          isPersistableId(source.fromProviderSessionId)
+            ? { fromProviderSessionId: source.fromProviderSessionId }
+            : {}),
+          ...(typeof source.fromProviderAccountId === "string" &&
+          isPersistableId(source.fromProviderAccountId)
+            ? { fromProviderAccountId: source.fromProviderAccountId }
+            : {}),
+          ...(source.fromUsageLimited === true ? { fromUsageLimited: true } : {}),
+        }
+      : undefined;
+  const recoverable =
+    value.status === "failed" || value.status === "cancelled" || (interrupted && !!capturedSource);
   return {
     from: value.from,
     to: value.to,
-    status: "ready",
-    pending: interrupted || !!value.pending,
+    status: recoverable ? (interrupted ? "cancelled" : value.status) : "ready",
+    pending: recoverable ? !capturedSource && !!value.pending : interrupted || !!value.pending,
+    ...(capturedSource ? { source: capturedSource } : {}),
+    ...(recoverable && typeof value.error === "string" ? { error: value.error } : {}),
   };
 }
 
@@ -1742,8 +2604,4 @@ function sanitizeNoteCard(value: Block["noteCard"]): Block["noteCard"] {
     title,
     ...(sourceCwd ? { sourceCwd } : {}),
   };
-}
-
-function asRuntimeMode(value: string): RuntimeMode {
-  return (RUNTIME_MODES as string[]).includes(value) ? (value as RuntimeMode) : "supervised";
 }

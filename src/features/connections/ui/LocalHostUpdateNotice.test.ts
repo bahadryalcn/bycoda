@@ -3,15 +3,34 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-const status = vi.hoisted(() => ({ value: null as unknown }));
+const status = vi.hoisted(() => ({
+  value: null as unknown,
+  machines: [] as unknown[],
+  descriptor: { capabilities: [] as string[] },
+  requests: vi.fn(),
+}));
+vi.mock("../model/connections", () => ({
+  remoteRequest: async () => {
+    status.requests();
+    return status.descriptor;
+  },
+}));
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: async (command: string) => (command === "local_host_bundle_status" ? status.value : null),
+  invoke: async (command: string) =>
+    command === "local_host_bundle_status"
+      ? status.value
+      : command === "remote_machines"
+        ? status.machines
+        : null,
 }));
 
 import { LocalHostUpdateNotice } from "./LocalHostUpdateNotice";
 
 let cleanup: (() => void) | undefined;
-afterEach(() => cleanup?.());
+afterEach(() => {
+  cleanup?.();
+  status.machines = [];
+});
 
 async function render() {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -47,5 +66,33 @@ it("stays silent when the host is current or was just updated", async () => {
     expect((await render()).textContent).toBe("");
     cleanup?.();
     cleanup = undefined;
+  }
+});
+it("reuses the existing notice for an incompatible paired Host without starting one", async () => {
+  status.value = { state: "current" };
+  status.machines = [{ id: "paired-local", localHost: true }];
+  status.descriptor = { capabilities: [] };
+  expect((await render()).textContent).toContain("does not support managed workspace");
+});
+
+it("refreshes compatibility on focus without polling the descriptor", async () => {
+  vi.useFakeTimers();
+  try {
+    status.value = { state: "current", installed: "1", bundled: "1" };
+    status.machines = [{ id: "local", localHost: true }];
+    await render();
+    status.requests.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(status.requests).not.toHaveBeenCalled();
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(status.requests).toHaveBeenCalledTimes(1);
+  } finally {
+    cleanup?.();
+    cleanup = undefined;
+    vi.useRealTimers();
   }
 });

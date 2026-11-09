@@ -10,6 +10,19 @@ vi.mock("../connections/model/hostFeatureClient", () => ({
 }));
 let root: Root;
 let container: HTMLDivElement;
+it("does not take the delayed second sample after its conversation becomes hidden", async () => {
+  vi.mocked(hostFeatureRequest).mockResolvedValue({ samples: [sample] });
+  await act(async () =>
+    root.render(createElement(DiagnosticsPanel, { cwd: "/repo", active: true })),
+  );
+  await act(async () => container.querySelector("button")!.click());
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    root.render(createElement(DiagnosticsPanel, { cwd: "/repo", active: false })),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(1100));
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(1);
+});
 const sample = {
   at: Date.now(),
   host: { totalMemoryBytes: 1024, freeMemoryBytes: 512, logicalCpus: 8, loadAverage: null },
@@ -33,6 +46,9 @@ afterEach(async () => {
 it("samples only on request and offers retry after a failed read", async () => {
   await act(async () => root.render(createElement(DiagnosticsPanel, { cwd: "/repo" })));
   expect(hostFeatureRequest).not.toHaveBeenCalled();
+  expect(container.querySelector(".resource-cards")).toBeNull();
+  expect(container.querySelector(".resource-system-memory")).toBeNull();
+  expect(container.textContent).toContain("Take a sample to start the charts.");
   vi.mocked(hostFeatureRequest)
     .mockRejectedValueOnce(new Error("Host offline"))
     .mockResolvedValueOnce({ samples: [sample] })
@@ -41,12 +57,13 @@ it("samples only on request and offers retry after a failed read", async () => {
     });
   await act(async () => container.querySelector("button")!.click());
   expect(container.querySelector('[role="alert"]')?.textContent).toBe("Host offline");
-  expect(container.querySelector("button")!.textContent).toBe("Retry");
+  expect(container.querySelector("button")!.getAttribute("aria-label")).toBe("Retry");
   await act(async () => container.querySelector("button")!.click());
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.textContent).toContain("Measuring…");
   await act(async () => vi.advanceTimersByTimeAsync(1100));
   expect(container.textContent).toContain("2.5%");
+  expect(container.querySelectorAll(".resource-chart")).toHaveLength(2);
   expect(container.querySelector("button")!.disabled).toBe(false);
   expect(hostFeatureRequest).toHaveBeenCalledTimes(3);
 });
@@ -104,7 +121,11 @@ it("routes explicit machine samples without a conversation identity and drops pr
   );
   await act(async () => finish({ samples: [sample] }));
   expect(container.querySelector("dl")).toBeNull();
-  expect(container.textContent).toContain("Resource usageThis computer");
+  expect(container.textContent).not.toContain("Resource usage");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Measurement details"]')!.click(),
+  );
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("This computer");
   await act(async () => container.querySelector("button")!.click());
   expect(hostToolRequest).toHaveBeenLastCalledWith(
     "remote://macbook/repo",
@@ -134,15 +155,16 @@ it("plots real history with CPU gaps and displays system memory separately", asy
   expect(cpu.querySelectorAll("circle")[1].getAttribute("cx")).toBe("312");
   expect(container.querySelector("[role=meter]")!.getAttribute("aria-valuenow")).toBe("50");
   expect(container.querySelector(".resource-history-caption")?.textContent).toContain("4 / 60");
-  const details = container.querySelector<HTMLButtonElement>(
-    "button[aria-controls][aria-expanded]",
-  )!;
+  const details = container.querySelector<HTMLButtonElement>('[aria-label="Measurement details"]')!;
   expect(details.getAttribute("aria-expanded")).toBe("false");
-  expect(
-    container
-      .querySelector(`[id="${details.getAttribute("aria-controls")}"]`)!
-      .hasAttribute("inert"),
-  ).toBe(true);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await act(async () => details.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Node heap");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Logical CPUs8");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+    "Samples only when requested.",
+  );
+  expect(details.getAttribute("aria-expanded")).toBe("true");
 });
 
 it("keeps the previous charts visible when refreshing fails", async () => {

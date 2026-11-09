@@ -30,9 +30,10 @@ vi.mock("../../../integrations/harness/core/registry", async (importOriginal) =>
   isLiveHarness: () => true,
 }));
 vi.mock("../../sessions/ui/ModelPicker", () => ({ ModelPicker: () => null }));
-vi.mock("../../sessions/ui/SessionReview", () => ({
-  SessionReview: ({ undoLocked }: { undoLocked: boolean }) =>
-    createElement("div", { "data-review-undo-locked": String(undoLocked) }),
+vi.mock("../../sessions/ui/SessionReview", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../sessions/ui/SessionReview")>()),
+  SessionReview: ({ undoLockReason }: { undoLockReason?: "session" | "orchestration" }) =>
+    createElement("div", { "data-review-undo-locked": String(undoLockReason ?? "none") }),
 }));
 vi.mock("../model/orchestration", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../model/orchestration")>()),
@@ -143,6 +144,7 @@ async function press(element: Element, key: string) {
 async function hover(element: Element) {
   await act(async () => {
     element.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    element.dispatchEvent(new Event("pointermove", { bubbles: true }));
   });
 }
 async function input(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
@@ -181,19 +183,19 @@ describe("orchestration composer and card", () => {
         }),
       ),
     );
-    await click(document.querySelector('button[aria-label="Add files or choose a mode"]')!);
+    await click(document.querySelector('button[aria-label="Mode"]')!);
     expect(button("Plan mode")).toBeTruthy();
     await click(button("Orchestrator"));
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.querySelector('[aria-label="Turn off Orchestrator mode"]')).not.toBeNull();
     await click(document.querySelector('[aria-label="Turn off Orchestrator mode"]')!);
     expect(document.querySelector('[aria-label="Turn off Orchestrator mode"]')).toBeNull();
-    await click(document.querySelector('button[aria-label="Add files or choose a mode"]')!);
+    await click(document.querySelector('button[aria-label="Mode"]')!);
     await click(button("Plan mode"));
-    expect(document.querySelector('[title="Turn off Plan mode"]')).not.toBeNull();
-    await click(document.querySelector('button[aria-label="Add files or choose a mode"]')!);
+    expect(document.querySelector('[aria-label="Turn off Plan mode"]')).not.toBeNull();
+    await click(document.querySelector('button[aria-label="Mode"]')!);
     await click(button("Orchestrator"));
-    expect(document.querySelector('[title="Turn off Plan mode"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Turn off Plan mode"]')).toBeNull();
     const textarea = container.querySelector("textarea")!;
     await act(async () =>
       textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
@@ -232,7 +234,7 @@ describe("orchestration composer and card", () => {
         }),
       ),
     );
-    await click(document.querySelector('button[aria-label="Add files or choose a mode"]')!);
+    await click(document.querySelector('button[aria-label="Mode"]')!);
     await click(button("Orchestrator"));
     const textarea = container.querySelector("textarea")!;
     await press(textarea, "Enter");
@@ -304,6 +306,16 @@ describe("orchestration composer and card", () => {
     expect(document.activeElement).toBe(
       document.querySelector('[aria-label="Search assignment models"]'),
     );
+    const modelSearch = document.querySelector<HTMLInputElement>(
+      '[aria-label="Search assignment models"]',
+    )!;
+    expect(modelSearch.getAttribute("role")).toBe("combobox");
+    expect(document.getElementById(modelSearch.getAttribute("aria-controls")!)).not.toBeNull();
+    const activeModel = () =>
+      document.getElementById(modelSearch.getAttribute("aria-activedescendant") ?? "");
+    expect(activeModel()?.getAttribute("role")).toBe("menuitemradio");
+    await input(modelSearch, "No such model");
+    expect(modelSearch.hasAttribute("aria-activedescendant")).toBe(false);
     // Marks the surface as a picker, which is what keeps the composer from
     // pulling focus straight back out of the search field.
     expect(
@@ -324,14 +336,23 @@ describe("orchestration composer and card", () => {
     );
     expect(document.querySelector('[role="menu"][aria-label="Worker One effort"]')).toBeNull();
     await press(document.querySelector('[aria-label="Search assignment models"]')!, "ArrowDown");
+    expect(activeModel()?.textContent).toContain("Worker Two");
     await press(document.querySelector('[aria-label="Search assignment models"]')!, "Enter");
     expect(document.querySelector('[role="menu"][aria-label="Worker Two effort"]')).not.toBeNull();
-    await press(document.querySelector('[aria-label="Search assignment models"]')!, "ArrowUp");
-    await press(document.querySelector('[aria-label="Search assignment models"]')!, "Enter");
+    expect(document.activeElement?.getAttribute("role")).toBe("menuitemradio");
+    await press(document.activeElement!, "Escape");
+    expect(document.activeElement).toBe(modelSearch);
+    expect(document.querySelector('[role="menu"][aria-label="Worker Two effort"]')).toBeNull();
+    await press(modelSearch, "ArrowRight");
+    expect(document.activeElement?.getAttribute("role")).toBe("menuitemradio");
+    await press(document.activeElement!, "ArrowUp");
+    expect(document.activeElement?.textContent).toBe("Extra High");
+    // A focused button turns Enter into a click in the browser; happy-dom does not.
+    await click(document.activeElement!);
     expect(container.textContent).toContain("Worker Two · Extra High");
     // The pointer reaches the same rows.
     await click(document.querySelector('[aria-label="Model for Settings UI"]')!);
-    const workerTwo = [...document.querySelectorAll('[role="option"]')].find((row) =>
+    const workerTwo = [...document.querySelectorAll('[role="menuitemradio"]')].find((row) =>
       row.textContent?.includes("Worker Two"),
     )!;
     await hover(workerTwo);
@@ -444,7 +465,8 @@ describe("orchestration composer and card", () => {
       start.click();
     });
     expect(confirm).toHaveBeenCalledOnce();
-    expect(start.disabled).toBe(true);
+    expect(start.getAttribute("aria-disabled")).toBe("true");
+    expect(start.getAttribute("aria-busy")).toBe("true");
     await act(async () => fail(new Error("Approval unavailable")));
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Approval unavailable",
@@ -726,13 +748,17 @@ describe("orchestration composer and card", () => {
           container
             .querySelector("[data-review-undo-locked]")
             ?.getAttribute("data-review-undo-locked"),
-        ).toBe(String(id !== "unrelated" && (status === "active" || status === "paused")));
+        ).toBe(
+          id !== "unrelated" && (status === "active" || status === "paused")
+            ? "orchestration"
+            : "none",
+        );
       }
     }
     await act(async () => root.render(createElement(LeadPane, { undoLocked: true })));
     expect(
       container.querySelector("[data-review-undo-locked]")?.getAttribute("data-review-undo-locked"),
-    ).toBe("true");
+    ).toBe("session");
   });
 
   it("shows a blocked agent as the lead's to answer, not the user's", async () => {
@@ -928,7 +954,8 @@ describe("orchestration composer and card", () => {
       ),
     );
 
-    expect(container.textContent).toContain(
+    await click(document.querySelector('button[aria-label="Help"]')!);
+    expect(document.querySelector('[role="dialog"][aria-label="Help"]')?.textContent).toContain(
       "Resume continues interrupted workers from their retained checkouts",
     );
     expect(container.textContent).toContain(

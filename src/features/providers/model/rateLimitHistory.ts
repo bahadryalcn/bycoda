@@ -1,3 +1,4 @@
+import { createStore } from "../../../shared/lib/store";
 import { useSyncExternalStore } from "react";
 import type { ProviderRateLimits } from "./rateLimits";
 
@@ -12,13 +13,34 @@ export type QuotaSample = {
 const KEY = "bycoda.quotaHistory.v1";
 const RETENTION = 90 * 86_400_000;
 const MAX_SAMPLES = 16000;
-const listeners = new Set<() => void>();
+const listeners = createStore();
 let snapshot: QuotaSample[] | undefined;
+let cachedRaw: string | null | undefined;
+let hasUnwrittenSamples = false;
+const latest = new Map<string, QuotaSample>();
+const sampleKey = (sample: Pick<QuotaSample, "account" | "kind">) =>
+  JSON.stringify([sample.account, sample.kind]);
+function indexLatest(samples: readonly QuotaSample[]) {
+  latest.clear();
+  for (const sample of samples) latest.set(sampleKey(sample), sample);
+}
 function read(): QuotaSample[] {
+  let raw: string | null;
   try {
-    const data: unknown = JSON.parse(localStorage.getItem(KEY) ?? "[]");
-    if (!Array.isArray(data)) return [];
-    return data
+    raw = localStorage.getItem(KEY);
+  } catch {
+    return snapshot ?? [];
+  }
+  try {
+    if (raw === cachedRaw && snapshot) return snapshot;
+    const data: unknown = JSON.parse(raw ?? "[]");
+    if (!Array.isArray(data)) {
+      cachedRaw = raw;
+      if (hasUnwrittenSamples && snapshot) return snapshot;
+      indexLatest([]);
+      return (snapshot = []);
+    }
+    let next = data
       .filter(
         (s): s is QuotaSample =>
           s &&
@@ -33,18 +55,37 @@ function read(): QuotaSample[] {
           s.minutes > 0 &&
           (s.resetsAt === null || Number.isFinite(s.resetsAt)),
       )
+      .sort((a, b) => a.at - b.at)
       .slice(-MAX_SAMPLES);
+    if (raw !== null && hasUnwrittenSamples && snapshot) {
+      const identity = (sample: QuotaSample) =>
+        JSON.stringify([sample.account, sample.kind, sample.at]);
+      const merged = new Map(next.map((sample) => [identity(sample), sample]));
+      for (const sample of snapshot)
+        if (sample.at > Date.now() - RETENTION) merged.set(identity(sample), sample);
+      next = [...merged.values()].sort((a, b) => a.at - b.at).slice(-MAX_SAMPLES);
+    } else if (raw === null) hasUnwrittenSamples = false;
+    cachedRaw = raw;
+    indexLatest(next);
+    return (snapshot = next);
   } catch {
-    return [];
+    cachedRaw = raw;
+    if (hasUnwrittenSamples && snapshot) return snapshot;
+    indexLatest([]);
+    return (snapshot = []);
   }
 }
 function publish(next: QuotaSample[]) {
   snapshot = next;
-  for (const listener of listeners) listener();
+  listeners.notify();
 }
 export function recordRateLimitHistory(account: string, limits: ProviderRateLimits): void {
   if (limits.status !== "ok" || !Number.isFinite(limits.updatedAt) || limits.updatedAt <= 0) return;
-  const samples = read();
+  const retained = read();
+  const cutoff = Date.now() - RETENTION;
+  const samples =
+    retained[0]?.at <= cutoff ? retained.filter((sample) => sample.at > cutoff) : retained.slice();
+  if (samples.length !== retained.length) indexLatest(samples);
   let changed = false;
   for (const kind of ["session", "weekly", "monthly"] as const) {
     const window = limits[kind];
@@ -55,7 +96,7 @@ export function recordRateLimitHistory(account: string, limits: ProviderRateLimi
       window.usedPercent > 100
     )
       continue;
-    const previous = [...samples].reverse().find((s) => s.account === account && s.kind === kind);
+    const previous = latest.get(sampleKey({ account, kind }));
     if (
       previous &&
       (limits.updatedAt <= previous.at ||
@@ -64,22 +105,36 @@ export function recordRateLimitHistory(account: string, limits: ProviderRateLimi
           previous.resetsAt === window.resetsAt))
     )
       continue;
-    samples.push({
+    const sample: QuotaSample = {
       account,
       at: limits.updatedAt,
       kind,
       used: window.usedPercent,
       minutes: window.windowMinutes,
       resetsAt: window.resetsAt,
-    });
+    };
+    let low = 0,
+      high = samples.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (samples[middle].at <= sample.at) low = middle + 1;
+      else high = middle;
+    }
+    samples.splice(low, 0, sample);
+    latest.set(sampleKey(sample), sample);
     changed = true;
   }
   if (!changed) return;
-  const next = samples.sort((a, b) => a.at - b.at).slice(-MAX_SAMPLES);
+  const next = samples.slice(-MAX_SAMPLES);
+  if (next.length !== samples.length) indexLatest(next);
   try {
-    localStorage.setItem(KEY, JSON.stringify(next));
+    const raw = JSON.stringify(next);
+    localStorage.setItem(KEY, raw);
+    cachedRaw = raw;
+    hasUnwrittenSamples = false;
   } catch {
     /* Still expose this window's real readings. */
+    hasUnwrittenSamples = true;
   }
   publish(next);
 }
@@ -88,16 +143,31 @@ function getSnapshot() {
   return (snapshot ??= read());
 }
 function subscribe(listener: () => void) {
-  listeners.add(listener);
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === KEY || event.key === null) publish(read());
-  };
-  if (listeners.size === 1) snapshot = read();
-  window.addEventListener("storage", onStorage);
+  const unsubscribe = listeners.subscribe(listener);
+  if (listeners.size === 1) {
+    snapshot = read();
+    window.addEventListener("storage", onStorage);
+  }
   return () => {
-    listeners.delete(listener);
-    window.removeEventListener("storage", onStorage);
+    unsubscribe();
+    if (listeners.size === 0) window.removeEventListener("storage", onStorage);
   };
+}
+function onStorage(event: StorageEvent) {
+  if (event.key !== KEY && event.key !== null) return;
+  if (event.key === null || event.newValue === null) {
+    try {
+      if (localStorage.getItem(KEY) === null) {
+        cachedRaw = undefined;
+        snapshot = undefined;
+        hasUnwrittenSamples = false;
+        indexLatest([]);
+      }
+    } catch {
+      // An unreadable store does not prove a clear or discard observed samples.
+    }
+  }
+  publish(read());
 }
 export function useRateLimitHistory() {
   return useSyncExternalStore(subscribe, getSnapshot, () => empty);

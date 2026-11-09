@@ -1,0 +1,109 @@
+/* Two columns on wide panels, one below ~56rem of content. */
+.interface-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 27rem), 1fr));
+  gap: var(--space-4, 1rem);
+  align-items: start;
+}
+.interface-column {
+  display: grid;
+  gap: var(--space-4, 1rem);
+  min-inline-size: 0;
+}
+
+/* Interface scale: a fixed-width track with the readout beside it. */
+.interface-scale-slider {
+  inline-size: 12rem;
+  max-inline-size: 100%;
+}
+
+/* Sidebar row preview and its two switches on one line under Row density. */
+.interface-row-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+/* Row density preview: one miniature sidebar row. */
+.sidebar-row-preview {
+  display: grid;
+  gap: 2px;
+  inline-size: 10rem;
+  padding: 3px;
+  border: 1px solid var(--ui-settings-group-border);
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface);
+  min-inline-size: 0;
+}
+.sidebar-row-preview-row {
+  display: grid;
+  gap: 1px;
+  padding: 3px 8px;
+  border-radius: var(--ui-control-radius);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.sidebar-row-preview-row[data-selected] {
+  background: var(--ui-surface-selected);
+  color: var(--color-content);
+  font-weight: 500;
+}
+.sidebar-row-preview-project,
+.sidebar-row-preview-meta {
+  color: var(--ui-text-muted);
+  font-size: 0.6875rem;
+  font-weight: 400;
+}
+.sidebar-row-preview-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.sidebar-row-preview-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sidebar-row-preview-model {
+  color: var(--ui-text-muted);
+  font-size: 0.6875rem;
+}
+
+/* Diff color swatch cards: each option sets --swatch-add/--swatch-del (bycoda.css). */
+.diff-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 6px;
+}
+.diff-swatch-card {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 2px;
+  width: auto;
+  height: auto;
+  padding: 4px 6px;
+  text-align: start;
+  font-size: var(--ui-font-caption);
+}
+.diff-swatch-bars {
+  display: grid;
+  gap: 2px;
+  inline-size: 100%;
+}
+.diff-swatch-bars > span {
+  height: 6px;
+}
+.diff-swatch-bars > span:first-child {
+  background: var(--swatch-add);
+}
+.diff-swatch-bars > span:last-child {
+  background: var(--swatch-del);
+}
+.diff-swatch-tag {
+  color: var(--ui-text-muted);
+  font-size: 0.65625rem;
+}

@@ -363,7 +363,8 @@ function body(ctx: CanvasRenderingContext2D, id: number, cloth: Outfit) {
     rectangle(ctx, cloth.coatLight, -7, top + 6, 14, 2);
     rectangle(ctx, themePalette.hex413c40, -5, top + 3, 10, 3);
     rectangle(ctx, cloth.coatLight, left + 3, -46, right - left - 5, 1);
-    for (let x = left + 4; x < right - 2; x += 3) rectangle(ctx, themePalette.hex4c454a, x, -61, 1, 14);
+    for (let x = left + 4; x < right - 2; x += 3)
+      rectangle(ctx, themePalette.hex4c454a, x, -61, 1, 14);
   } else {
     polygon(ctx, cloth.coat, [
       [left + 1, top + 7],
@@ -583,7 +584,12 @@ function portrait(ctx: CanvasRenderingContext2D, id: number, action: CrewAction)
     rectangle(ctx, themePalette.hexbebbaa, hx - 5, hy + 24, 1, 3);
     rectangle(ctx, themePalette.hex92948b, hx + 2, hy + 25, 2, 2);
   } else {
-    const moustache = id === 5 ? themePalette.hex3b3d37 : id === 2 ? themePalette.hexa7a999 : themePalette.hex707168;
+    const moustache =
+      id === 5
+        ? themePalette.hex3b3d37
+        : id === 2
+          ? themePalette.hexa7a999
+          : themePalette.hex707168;
     polygon(ctx, moustache, [
       [hx - 5, hy + 21],
       [hx - 1, hy + 20],
@@ -717,7 +723,14 @@ function arms(ctx: CanvasRenderingContext2D, id: number, action: CrewAction, clo
     ]);
     rectangle(ctx, SKIN_LIGHT, hx - 1, hy - 2, 3, 1);
     if (action === "play")
-      rectangle(ctx, id === 0 || id === 4 ? themePalette.hexc6bba2 : themePalette.hex4b4237, hx + side * 4, hy + 2, 3, 2);
+      rectangle(
+        ctx,
+        id === 0 || id === 4 ? themePalette.hexc6bba2 : themePalette.hex4b4237,
+        hx + side * 4,
+        hy + 2,
+        3,
+        2,
+      );
   } else {
     // Newspaper is supported by two hands and softened at its folded crease.
     polygon(ctx, coatSleeve, [

@@ -26,7 +26,7 @@ afterEach(() => {
 });
 
 it.each(["chat", "focus"] as const)(
-  "separates AI questions from accepted user answers in %s layout",
+  "keeps questions and answers together without duplicate message bubbles in %s layout",
   (layout) => {
     act(() =>
       root.render(
@@ -50,11 +50,18 @@ it.each(["chat", "focus"] as const)(
     expect(questions).toHaveLength(2);
     expect(questions[0].textContent).toContain("How should we release?");
     expect(questions[1].textContent).toContain("Any details?");
-    const bubbles = container.querySelectorAll(".user-message-bubble");
-    expect(bubbles).toHaveLength(2);
-    expect(bubbles[0].textContent).toBe("Fix tests first");
-    expect(bubbles[1].textContent).toBe("Keep the API");
-    expect(container.textContent).toContain("Your answer");
+    const card = container.querySelector("[data-question-answer]")!;
+    expect(card.getAttribute("aria-label")).toBe("Question and answer");
+    expect(card.querySelectorAll(".user-message-bubble")).toHaveLength(2);
+    expect(card.querySelectorAll('[data-selectable-agent-response="reply"]')[0].textContent).toBe(
+      "Fix tests first",
+    );
+    expect(card.querySelectorAll('[data-selectable-agent-response="reply"]')[1].textContent).toBe(
+      "Keep the API",
+    );
+    expect(card.querySelectorAll('[aria-label="Copy message"]')).toHaveLength(2);
+    expect(card.textContent).toContain("Answered");
+    expect(card.querySelectorAll('section[aria-label="Your answer"]')).toHaveLength(2);
   },
 );
 
@@ -70,10 +77,13 @@ it("bounds the chat and focus preview, opens the exact full text, and copies the
   const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Show full long text"]')!;
   expect(trigger).not.toBeNull();
   expect(container.textContent).not.toContain("END OF MESSAGE");
-  act(() => trigger.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
-  expect(trigger.getAttribute("aria-describedby")).not.toBeNull();
+  await act(async () => {
+    trigger.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  });
   act(() => trigger.focus());
-  const preview = document.getElementById(trigger.getAttribute("aria-describedby")!);
+  const preview = document.querySelector<HTMLElement>("[data-hover-card]");
+  expect(preview).not.toBeNull();
   expect(preview?.textContent).toContain("Long text preview");
   expect(preview?.textContent).not.toContain("END OF MESSAGE");
   expect(preview?.querySelector("pre")?.classList.contains("select-text")).toBe(true);
@@ -103,7 +113,7 @@ it("bounds the chat and focus preview, opens the exact full text, and copies the
   expect(await navigator.clipboard.readText()).toBe(text);
 });
 
-it("uzun metin penceresinde not kaydetme ve düzenleme mesaj eylemlerini kullanır", async () => {
+it("uses the save-note and edit message actions in the long text dialog", async () => {
   const text = "Long content ".repeat(200).trimEnd();
   const onSaveNote = vi.fn();
   const onEditLastTurn = vi.fn();
@@ -138,7 +148,12 @@ it("uzun metin penceresinde not kaydetme ve düzenleme mesaj eylemlerini kullan�
   );
   act(() =>
     document
-      .querySelector<HTMLButtonElement>('[role="dialog"] [aria-label="Edit and resend"]')!
+      .querySelector<HTMLButtonElement>('[role="dialog"] [aria-label="Message actions"]')!
+      .click(),
+  );
+  act(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+      .find((item) => item.textContent?.includes("Edit and resend"))!
       .click(),
   );
   expect(onEditLastTurn).toHaveBeenCalledOnce();

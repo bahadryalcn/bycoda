@@ -1,3 +1,9 @@
+import { processConstructions } from "../processConstruction.testSupport";
+import {
+  nativeOutputFrame,
+  captureNativeOutputEvent,
+  getNativeOutputEventOrigin,
+} from "../../core/nativeOutputDelivery.testSupport";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -6,26 +12,57 @@ const mocks = vi.hoisted(() => ({
   resolveBinary: vi.fn(),
   spawnChild: vi.fn(),
   killChild: vi.fn(),
+  acquireHarnessBridge: vi.fn(),
   frames: [] as Array<(record: Record<string, unknown>) => void>,
 }));
 
-vi.mock("../../core/child", () => ({
-  killChild: mocks.killChild,
-  resolveOmpBinary: mocks.resolveBinary,
-  resolvePiBinary: mocks.resolveBinary,
-  spawnChild: mocks.spawnChild,
-  unwatchChild: vi.fn(),
-  watchChild: vi.fn(),
-  writeChild: vi.fn(),
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    killChild: mocks.killChild,
+    resolveOmpBinary: mocks.resolveBinary,
+    resolvePiBinary: mocks.resolveBinary,
+    spawnChild: mocks.spawnChild,
+    unwatchChild: vi.fn(),
+    watchChild: vi.fn(),
+    writeChild: vi.fn(),
+    acquireHarnessBridge: mocks.acquireHarnessBridge,
+  }),
+);
 
 vi.mock("./piClient", () => ({
   PiRpc: class {
-    constructor(_sessionId: string, onFrame: (record: Record<string, unknown>) => void) {
+    constructor(
+      private readonly handle: import("../../core/child").ChildProcessHandle,
+      onFrame: (record: Record<string, unknown>) => void,
+    ) {
+      processConstructions.client(handle);
       mocks.frames.push(onFrame);
     }
 
-    request = mocks.request;
+    request = async (
+      command: Record<string, unknown>,
+      timeout?: number,
+      consume?: (
+        value: Record<string, unknown>,
+        work: null,
+      ) => Record<string, unknown> | Promise<Record<string, unknown>>,
+    ) => {
+      const value = await (timeout === undefined
+        ? mocks.request(command)
+        : mocks.request(command, timeout));
+      return consume ? consume(value, null) : value;
+    };
+    assertProcess(handle: import("../../core/child").ChildProcessHandle): void {
+      if (handle !== this.handle)
+        throw new Error("Pi fixture client requires its original process");
+    }
+    withWriter(writer: import("../../core/child").ChildTurnWriter) {
+      return processConstructions.view(this.handle, writer, {
+        request: this.request.bind(this),
+        cancelRequest: this.cancelRequest.bind(this),
+      });
+    }
     close = mocks.close;
     pushLine = vi.fn();
     cancelRequest = vi.fn();
@@ -35,6 +72,25 @@ vi.mock("./piClient", () => ({
 import { compactPiContext, stopPiSession, sendPiTurn, cancelPiTurn, rewindPiLastTurn } from "./pi";
 import type { HarnessEvent } from "../../core/types";
 import { compactOmpContext, stopOmpSession } from "../omp/omp";
+import {
+  bindSession,
+  cancelTurn,
+  compactContext,
+  forgetSession,
+  sendTurn,
+  stopSession,
+} from "./piFamily";
+import { OMP_FLAVOR, PI_FLAVOR } from "./piFlavor";
+import { respondApproval } from "./piFamily";
+import { writeChild } from "../../core/child";
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 describe("Pi live session", () => {
   beforeEach(() => {
@@ -47,6 +103,7 @@ describe("Pi live session", () => {
     mocks.resolveBinary.mockResolvedValue({ path: "/fake/pi" });
     mocks.spawnChild.mockResolvedValue(undefined);
     mocks.killChild.mockResolvedValue(undefined);
+    mocks.acquireHarnessBridge.mockResolvedValue(() => undefined);
     mocks.request.mockImplementation(async (command: Record<string, unknown>) => {
       if (command.type === "get_state") {
         return {
@@ -63,17 +120,600 @@ describe("Pi live session", () => {
     });
   });
 
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "%s keeps active A's callback and process while changed-cwd/planning B is queued and cancelled",
+    async (flavor) => {
+      const sessionId = `${flavor.id}-queued-source-policy`;
+      const aEvents: HarnessEvent[] = [],
+        bEvents: HarnessEvent[] = [],
+        cEvents: HarnessEvent[] = [];
+      const base = {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised" as const,
+        text: "A",
+        attachments: [],
+      };
+      const a = sendTurn(flavor, { ...base, onEvent: (event) => aEvents.push(event) });
+      await vi.waitFor(() =>
+        expect(
+          mocks.request.mock.calls.filter(([command]) => command.type === "prompt"),
+        ).toHaveLength(1),
+      );
+      const physical = processConstructions.created.find(
+        (handle) => handle.sessionId === sessionId,
+      )!;
+      const frame = mocks.frames.at(-1)!;
+      const bOperation = Object.freeze({});
+      const selected = deferred<void>();
+      const b = sendTurn(flavor, {
+        ...base,
+        cwd: "/other-repo",
+        intent: "plan",
+        runtimeMode: "full-access",
+        text: "never B",
+        operationContext: Object.freeze({ operation: bOperation }),
+        onOriginalProcess: () => selected.resolve(undefined),
+        onEvent: (event) => bEvents.push(event),
+      });
+      const outcome = b.catch((error: unknown) => error);
+      await selected.promise;
+      expect(mocks.killChild).not.toHaveBeenCalled();
+      expect(mocks.spawnChild).toHaveBeenCalledTimes(1);
+      frame({ type: "message_update", usage: { totalTokens: 12345 } });
+      expect(aEvents).toContainEqual(expect.objectContaining({ type: "context", used: 12345 }));
+      expect(bEvents).toEqual([]);
+      await cancelTurn(
+        flavor,
+        sessionId,
+        Object.freeze({ operation: bOperation, originalProcesses: Object.freeze([physical]) }),
+      );
+      frame({ type: "agent_end" });
+      await a;
+      expect(String(await outcome)).toContain("cancelled");
+      expect(bEvents).toEqual([]);
+      expect(mocks.killChild).not.toHaveBeenCalled();
+      const c = sendTurn(flavor, {
+        ...base,
+        cwd: "/other-repo",
+        intent: "plan",
+        runtimeMode: "full-access",
+        text: "fresh C",
+        onEvent: (event) => cEvents.push(event),
+      });
+      await vi.waitFor(() =>
+        expect(
+          mocks.request.mock.calls.filter(([command]) => command.type === "prompt"),
+        ).toHaveLength(2),
+      );
+      const cFrame = mocks.frames.at(-1)!;
+      cFrame({ type: "message_update", usage: { totalTokens: 23456 } });
+      expect(cEvents).toContainEqual(expect.objectContaining({ type: "context", used: 23456 }));
+      cFrame({ type: "agent_end" });
+      await c;
+      expect(mocks.spawnChild).toHaveBeenCalledTimes(2);
+      const constructions = processConstructions.created.filter(
+        (handle) => handle.sessionId === sessionId,
+      );
+      expect(constructions).toHaveLength(2);
+      expect(constructions[0]).toBe(physical);
+      expect(constructions[1]).not.toBe(physical);
+      expect(
+        processConstructions.operations
+          .filter((operation) => operation.kind === "kill")
+          .map((operation) => operation.handle),
+      ).toContain(physical);
+      await stopSession(flavor, sessionId);
+    },
+  );
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "%s reports the primary error and retries a failed cleanup when binary resolution fails before Live publication",
+    async (flavor) => {
+      const primary = new Error("Original binary resolution failed");
+      const cleanup = new Error("Original physical construction retirement unknown");
+      mocks.resolveBinary.mockRejectedValueOnce(primary);
+      mocks.killChild.mockRejectedValueOnce(cleanup);
+      const input = {
+        sessionId: `${flavor.id}-retirement-binary-original`,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised" as const,
+        onEvent: () => undefined,
+      };
+      const failed = await compactContext(flavor, input).catch((error: unknown) => error);
+      expect(failed).toBe(primary);
+      const original = processConstructions.created.find(
+        (handle) => handle.sessionId === input.sessionId,
+      )!;
+      expect(original).toBeDefined();
+      expect(
+        processConstructions.operations.filter((op) => op.kind === "spawn" || op.kind === "client"),
+      ).toHaveLength(0);
+      expect(
+        processConstructions.operations.filter((op) => op.kind === "kill").map((op) => op.handle),
+      ).toEqual([original]);
+      // Stop retries the retained physical construction.
+      await expect(stopSession(flavor, input.sessionId)).resolves.toBeUndefined();
+      expect(mocks.resolveBinary).toHaveBeenCalledTimes(1);
+      expect(mocks.killChild).toHaveBeenCalledTimes(2);
+      const other = { ...input, sessionId: `${input.sessionId}-unrelated` };
+      await compactContext(flavor, other);
+      const fresh = processConstructions.created.find(
+        (handle) => handle.sessionId === other.sessionId,
+      )!;
+      expect(
+        processConstructions.operations.filter((op) => op.kind === "spawn").map((op) => op.handle),
+      ).toEqual([fresh]);
+      await stopSession(flavor, other.sessionId);
+      expect(
+        processConstructions.operations.filter((op) => op.kind === "kill").map((op) => op.handle),
+      ).toEqual([original, original, fresh]);
+    },
+  );
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "keeps %s approval decisions bound through a replacement Live and reused UI ID",
+    async (flavor) => {
+      let previous: Extract<HarnessEvent, { type: "approval.requested" }> | undefined;
+      const sessionId = `${flavor.id}-approval-occurrence`;
+      vi.mocked(writeChild).mockResolvedValue(undefined);
+      for (let generation = 0; generation < 2; generation++) {
+        mocks.request.mockClear();
+        vi.mocked(writeChild).mockClear();
+        const events: HarnessEvent[] = [];
+        const done = sendTurn(flavor, {
+          sessionId,
+          cwd: "/repo",
+          model: `${flavor.id}:default`,
+          runtimeMode: "supervised",
+          text: "hi",
+          attachments: [],
+          onEvent: (event) => events.push(event),
+        });
+        await vi.waitFor(() =>
+          expect(mocks.request.mock.calls.some(([command]) => command.type === "prompt")).toBe(
+            true,
+          ),
+        );
+        const construction = processConstructions.created.filter(
+          (handle) => handle.sessionId === sessionId,
+        )[generation]!;
+        expect(construction).toBeDefined();
+        for (const kind of ["client", "watch", "spawn"] as const) {
+          expect(
+            processConstructions.operations
+              .filter((operation) => operation.kind === kind)
+              .map((operation) => operation.handle),
+          ).toContain(construction);
+        }
+        const frame = mocks.frames.at(-1)!;
+        frame({
+          type: "extension_ui_request",
+          id: "reused-confirm",
+          method: "confirm",
+          title: "Continue?",
+          message: "Original request",
+        });
+        await vi.waitFor(() =>
+          expect(events.some((event) => event.type === "approval.requested")).toBe(true),
+        );
+        const asked = events.find(
+          (event): event is Extract<HarnessEvent, { type: "approval.requested" }> =>
+            event.type === "approval.requested",
+        )!;
+        respondApproval(flavor, sessionId, asked.requestId, "allow");
+        if (previous) {
+          expect(asked.requestId).toBe(previous.requestId);
+          expect(asked.occurrenceId).not.toBe(previous.occurrenceId);
+          respondApproval(flavor, sessionId, asked.requestId, "allow", previous.occurrenceId);
+        }
+        await Promise.resolve();
+        expect(writeChild).not.toHaveBeenCalled();
+        respondApproval(flavor, sessionId, asked.requestId, "deny", asked.occurrenceId);
+        await vi.waitFor(() => expect(writeChild).toHaveBeenCalledTimes(1));
+        expect(vi.mocked(writeChild).mock.calls[0][0]).toBe(construction);
+        expect(events).toContainEqual({
+          type: "approval.resolved",
+          requestId: asked.requestId,
+          occurrenceId: asked.occurrenceId,
+          decision: "deny",
+        });
+        respondApproval(flavor, sessionId, asked.requestId, "allow", asked.occurrenceId);
+        await Promise.resolve();
+        expect(writeChild).toHaveBeenCalledTimes(1);
+        previous = asked;
+        frame({ type: "agent_end" });
+        await done;
+        await stopSession(flavor, sessionId);
+        expect(
+          processConstructions.operations.filter((operation) => operation.kind === "kill").at(-1)
+            ?.handle,
+        ).toBe(construction);
+      }
+    },
+  );
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "holds %s agent-end continuation until the actual stats read ends",
+    async (flavor) => {
+      const sessionId = flavor.id + "-causal-end";
+      const events: HarnessEvent[] = [];
+      const original = mocks.request.getMockImplementation()!;
+      let release!: (value: Record<string, unknown>) => void;
+      mocks.request.mockImplementation((command, ...args) =>
+        command.type === "get_session_stats"
+          ? new Promise((resolve) => {
+              release = resolve;
+            })
+          : original(command, ...args),
+      );
+      const done = sendTurn(flavor, {
+        sessionId,
+        cwd: "/repo",
+        model: flavor.id + ":default",
+        runtimeMode: "supervised",
+        text: "hi",
+        attachments: [],
+        onEvent: (event) => {
+          captureNativeOutputEvent(sessionId, event);
+          events.push(event);
+        },
+      });
+      await vi.waitFor(() =>
+        expect(mocks.request.mock.calls.some(([command]) => command.type === "prompt")).toBe(true),
+      );
+      const frame = { type: "agent_end" };
+      const inspect = nativeOutputFrame(sessionId, JSON.stringify(frame), () =>
+        mocks.frames.at(-1)!(frame),
+      );
+      expect(inspect().pendingCausalWork).toBe(1);
+      await vi.waitFor(() => expect(release).toBeDefined());
+      expect(events.some((e) => e.type === "message.completed")).toBe(false);
+      release({ data: {} });
+      await done;
+      const completed = events.find((e) => e.type === "message.completed")!;
+      expect(getNativeOutputEventOrigin(completed)).not.toBeNull();
+      expect(inspect().pendingCausalWork).toBe(0);
+      await stopSession(flavor, sessionId);
+    },
+  );
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "cancels %s binary preparation before launch and preserves a replacement",
+    async (flavor) => {
+      const binary = deferred<{ path: string }>();
+      mocks.resolveBinary.mockReturnValueOnce(binary.promise);
+      const sessionId = `${flavor.id}-held-binary`;
+      const events: HarnessEvent[] = [];
+      const input = {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised" as const,
+        onEvent: (event: HarnessEvent) => events.push(event),
+      };
+      const work = sendTurn(flavor, { ...input, text: "never sent", attachments: [] });
+      const rejected = expect(work).rejects.toThrow("startup cancelled");
+      await vi.waitFor(() => expect(mocks.resolveBinary).toHaveBeenCalledTimes(1));
+      await stopSession(flavor, sessionId);
+      await rejected; // Cancellation settles before the resolver is released.
+      expect(mocks.spawnChild).not.toHaveBeenCalled();
+      try {
+        await compactContext(flavor, { ...input, onEvent: () => undefined });
+        const kills = mocks.killChild.mock.calls.length;
+        binary.resolve({ path: "/late/pi" });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(mocks.spawnChild).toHaveBeenCalledTimes(1);
+        expect(mocks.killChild).toHaveBeenCalledTimes(kills);
+        expect(events).toEqual([]);
+        expect(mocks.request.mock.calls.some(([command]) => command.type === "prompt")).toBe(false);
+      } finally {
+        binary.resolve({ path: "/late/pi" });
+        await stopSession(flavor, sessionId);
+      }
+    },
+  );
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "cancels %s pending spawn without registering late state or killing its replacement",
+    async (flavor) => {
+      const launched = deferred<void>();
+      mocks.spawnChild.mockReturnValueOnce(launched.promise);
+      const sessionId = `${flavor.id}-held-spawn`;
+      const events: HarnessEvent[] = [];
+      const input = {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised" as const,
+        onEvent: (event: HarnessEvent) => events.push(event),
+      };
+      const work = sendTurn(flavor, { ...input, text: "never sent", attachments: [] });
+      const rejected = expect(work).rejects.toThrow("startup cancelled");
+      await vi.waitFor(() => expect(mocks.spawnChild).toHaveBeenCalledTimes(1));
+      await cancelTurn(flavor, sessionId);
+      await rejected;
+      try {
+        await compactContext(flavor, { ...input, onEvent: () => undefined });
+        const kills = mocks.killChild.mock.calls.length;
+        launched.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(mocks.killChild).toHaveBeenCalledTimes(kills);
+        expect(
+          mocks.request.mock.calls.filter(([command]) => command.type === "get_state"),
+        ).toHaveLength(1);
+        expect(events).toEqual([]);
+      } finally {
+        launched.resolve();
+        await stopSession(flavor, sessionId);
+      }
+    },
+  );
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "cancels %s requests queued behind an earlier stop before preparation begins",
+    async (flavor) => {
+      const kill = deferred<void>();
+      const killEntered = deferred<void>();
+      const sessionId = `${flavor.id}-held-stop`;
+      await compactContext(flavor, {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised",
+        onEvent: () => undefined,
+      });
+      const original = processConstructions.created.find(
+        (handle) => handle.sessionId === sessionId,
+      )!;
+      expect(
+        processConstructions.operations
+          .filter((operation) => operation.kind === "client")
+          .map((operation) => operation.handle),
+      ).toContain(original);
+      mocks.resolveBinary.mockClear();
+      mocks.spawnChild.mockClear();
+      mocks.killChild.mockImplementationOnce(() => {
+        killEntered.resolve();
+        return kill.promise;
+      });
+      const firstStop = stopSession(flavor, sessionId);
+      let firstStopped = false;
+      void firstStop.then(() => {
+        firstStopped = true;
+      });
+      const queuedOperation = Object.freeze({});
+      const work = sendTurn(flavor, {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised",
+        onEvent: () => undefined,
+        text: "never sent",
+        attachments: [],
+        operationContext: Object.freeze({ operation: queuedOperation }),
+      });
+      const rejected = expect(work).rejects.toThrow(/cancelled/);
+      // This source operation is queued before construction. Its own Stop closes
+      // admission without creating a guessed B handle or retargeting A.
+      await stopSession(flavor, sessionId, Object.freeze({ operation: queuedOperation }));
+      const secondStop = stopSession(flavor, sessionId);
+      let secondStopped = false;
+      void secondStop.then(() => {
+        secondStopped = true;
+      });
+      try {
+        // Both broad Stops still join A's exact physical retirement. B's scoped
+        // cancellation creates no process and cannot certify that A has closed.
+        await killEntered.promise;
+        await rejected;
+        expect(
+          processConstructions.created.filter((handle) => handle.sessionId === sessionId),
+        ).toEqual([original]);
+        expect(
+          processConstructions.operations
+            .filter((operation) => operation.kind === "kill")
+            .map((operation) => operation.handle),
+        ).toEqual([original]);
+        expect(
+          processConstructions.operations
+            .filter((operation) => operation.kind === "client")
+            .map((operation) => operation.handle),
+        ).toEqual([original]);
+        expect(firstStopped).toBe(false);
+        expect(secondStopped).toBe(false);
+        expect(mocks.resolveBinary).not.toHaveBeenCalled();
+        expect(mocks.spawnChild).not.toHaveBeenCalled();
+      } finally {
+        kill.resolve();
+        await Promise.all([firstStop, secondStop]);
+      }
+      expect(firstStopped).toBe(true);
+      expect(secondStopped).toBe(true);
+      expect(mocks.spawnChild).not.toHaveBeenCalled();
+      expect(
+        processConstructions.operations
+          .filter((operation) => operation.kind === "kill")
+          .map((operation) => operation.handle),
+      ).toEqual([original]);
+      // Only a later explicit owner intent may start after A has settled;
+      // the cancelled queued B above must never become this fresh process.
+      try {
+        await compactContext(flavor, {
+          sessionId,
+          cwd: "/repo",
+          model: `${flavor.id}:default`,
+          runtimeMode: "supervised",
+          onEvent: () => undefined,
+        });
+        const fresh = processConstructions.created
+          .filter((handle) => handle.sessionId === sessionId)
+          .at(-1)!;
+        expect(fresh).not.toBe(original);
+        expect(mocks.resolveBinary).toHaveBeenCalledTimes(1);
+        expect(
+          processConstructions.operations
+            .filter((operation) => operation.kind === "spawn")
+            .map((operation) => operation.handle),
+        ).toEqual([original, fresh]);
+      } finally {
+        await stopSession(flavor, sessionId);
+      }
+    },
+  );
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "shares one %s startup between concurrent same-session requests",
+    async (flavor) => {
+      const state = deferred<Record<string, unknown>>();
+      mocks.request.mockReturnValueOnce(state.promise);
+      const sessionId = `${flavor.id}-shared-startup`;
+      const input = {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised" as const,
+        onEvent: () => undefined,
+      };
+      const first = compactContext(flavor, input);
+      const second = compactContext(flavor, input);
+      await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(1));
+      expect(mocks.spawnChild).toHaveBeenCalledTimes(1);
+      state.resolve({ data: { sessionId: "shared-native" } });
+      await Promise.all([first, second]);
+      expect(
+        mocks.request.mock.calls.filter(([command]) => command.type === "compact"),
+      ).toHaveLength(2);
+      await stopSession(flavor, sessionId);
+    },
+  );
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "does not restart a cancelled %s resume as a fresh session",
+    async (flavor) => {
+      const state = deferred<Record<string, unknown>>();
+      mocks.request.mockReturnValueOnce(state.promise);
+      const sessionId = `${flavor.id}-held-resume`;
+      bindSession(flavor, sessionId, "resume-native", "/repo");
+      const events: HarnessEvent[] = [];
+      const input = {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised" as const,
+        onEvent: (event: HarnessEvent) => events.push(event),
+      };
+      const work = sendTurn(flavor, { ...input, text: "never sent", attachments: [] });
+      const rejected = expect(work).rejects.toThrow("startup cancelled");
+      await vi.waitFor(() =>
+        expect(mocks.request).toHaveBeenCalledWith({ type: "get_state" }, 45_000),
+      );
+      await forgetSession(flavor, sessionId);
+      await rejected;
+      state.resolve({ data: { sessionId: "stale-resume" } });
+      await Promise.resolve();
+      expect(mocks.spawnChild).toHaveBeenCalledTimes(1);
+      expect(events).toEqual([]);
+      await compactContext(flavor, input);
+      expect(mocks.spawnChild).toHaveBeenCalledTimes(2);
+      expect(mocks.spawnChild.mock.calls[0][2]).toContain(flavor.resumeFlag);
+      expect(mocks.spawnChild.mock.calls[1][2]).not.toContain(flavor.resumeFlag);
+      await stopSession(flavor, sessionId);
+    },
+  );
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])("retains genuine %s resume failure fallback", async (flavor) => {
+    const sessionId = `${flavor.id}-resume-failure`;
+    bindSession(flavor, sessionId, "invalid-resume", "/repo");
+    mocks.request.mockRejectedValueOnce(new Error("Unknown native session"));
+    await compactContext(flavor, {
+      sessionId,
+      cwd: "/repo",
+      model: `${flavor.id}:default`,
+      runtimeMode: "supervised",
+      onEvent: () => undefined,
+    });
+    expect(mocks.spawnChild).toHaveBeenCalledTimes(2);
+    expect(mocks.spawnChild.mock.calls[0][2]).toContain(flavor.resumeFlag);
+    expect(mocks.spawnChild.mock.calls[1][2]).not.toContain(flavor.resumeFlag);
+    await stopSession(flavor, sessionId);
+  });
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "cancels %s restricted skill preparation and its isolated probe",
+    async (flavor) => {
+      const catalog = deferred<Record<string, unknown>>();
+      mocks.request.mockReturnValueOnce(catalog.promise);
+      const sessionId = `${flavor.id}-held-skills`;
+      const events: HarnessEvent[] = [];
+      const work = sendTurn(flavor, {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised",
+        onEvent: (event) => events.push(event),
+        text: "never sent",
+        attachments: [],
+        skillPolicy: { disabledNames: ["fixture-disabled"], disabledPaths: [] },
+      });
+      const rejected = expect(work).rejects.toThrow("startup cancelled");
+      await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(1));
+      const probe = mocks.spawnChild.mock.calls[0][0];
+      expect(probe).toMatch(/^bycoda-.*-skills-/);
+      const killed = deferred<void>();
+      mocks.killChild.mockImplementation((id: string) =>
+        id === probe ? killed.promise : Promise.resolve(),
+      );
+      let stopped = false;
+      const stop = stopSession(flavor, sessionId).then(() => {
+        stopped = true;
+      });
+      try {
+        await rejected;
+        await vi.waitFor(() => expect(mocks.killChild).toHaveBeenCalledWith(probe));
+        expect(stopped).toBe(false);
+      } finally {
+        killed.resolve();
+        await stop;
+      }
+      catalog.resolve({ data: { commands: [] } });
+      await Promise.resolve();
+      expect(mocks.spawnChild).toHaveBeenCalledTimes(1);
+      expect(events).toEqual([]);
+    },
+  );
+
   it("does not reuse the old context window after an OMP provider config model change", async () => {
     const events: HarnessEvent[] = [];
-    await compactOmpContext({ sessionId: "pi-model-context", cwd: "/repo", model: "omp:default", runtimeMode: "supervised", onEvent: (event) => events.push(event) });
-    expect(events).toContainEqual({ type: "context", used: 32_000, window: 200_000 });
+    await compactOmpContext({
+      sessionId: "pi-model-context",
+      cwd: "/repo",
+      model: "omp:default",
+      runtimeMode: "supervised",
+      onEvent: (event) => events.push(event),
+    });
+    expect(events).toContainEqual({ type: "context.compacted", used: 32_000, window: 200_000 });
     const frame = mocks.frames[0]!;
     frame({ type: "config_update", model: { provider: "new-provider", id: "new-model" } });
     frame({ type: "message_update", usage: { totalTokens: 100_000 } });
-    expect(events.filter((event) => event.type === "context").at(-1)).toEqual({ type: "context", used: 100_000 });
-    frame({ type: "config_update", model: { provider: "new-provider", id: "another-model", contextWindow: 400_000 } });
+    expect(events.filter((event) => event.type === "context").at(-1)).toEqual({
+      type: "context",
+      used: 100_000,
+    });
+    frame({
+      type: "config_update",
+      model: { provider: "new-provider", id: "another-model", contextWindow: 400_000 },
+    });
     frame({ type: "message_update", usage: { totalTokens: 100_000 } });
-    expect(events.filter((event) => event.type === "context").at(-1)).toEqual({ type: "context", used: 100_000, window: 400_000 });
+    expect(events.filter((event) => event.type === "context").at(-1)).toEqual({
+      type: "context",
+      used: 100_000,
+      window: 400_000,
+    });
     await stopOmpSession("pi-model-context");
   });
 
@@ -147,7 +787,7 @@ describe("Pi live session", () => {
 
     expect(mocks.request).toHaveBeenCalledWith({ type: "compact" }, 30 * 60_000);
     expect(events).toContainEqual({
-      type: "context",
+      type: "context.compacted",
       used: 32_000,
       window: 200_000,
     });
@@ -222,7 +862,7 @@ describe("Pi live session", () => {
     await stopPiSession("pi-caveman");
   });
   it.each(["normal", "cancel"])(
-    "aktif tur arkasındaki compact %s sonucuna uyar",
+    "follows the compact %s result behind the active turn",
     async (action) => {
       const sessionId = `pi-queued-${action}`;
       const input = {
@@ -259,7 +899,7 @@ describe("Pi live session", () => {
     },
   );
 
-  it("rewind iptal sırasında fork göndermemeli", async () => {
+  it("rewind must not send a fork during cancellation", async () => {
     const input = {
       sessionId: "pi-rewind-cancel",
       cwd: "/repo",

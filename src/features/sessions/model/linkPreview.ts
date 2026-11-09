@@ -25,6 +25,8 @@ export type LinkPreviewMetadata = {
 };
 
 const metadataCache = new Map<string, Promise<LinkPreviewMetadata>>();
+/** Each entry can hold a favicon data URL of up to 256 KB, so the cache is bounded. */
+const MAX_CACHED_PREVIEWS = 200;
 
 /** Find the first web URL and preserve the rest of the user's message. */
 export function parseUserMessageLink(text: string): UserMessageLink | null {
@@ -134,10 +136,18 @@ function count(value: string, character: string): number {
 
 export function fetchLinkPreviewMetadata(url: string): Promise<LinkPreviewMetadata> {
   const cached = metadataCache.get(url);
-  if (cached) return cached;
+  if (cached) {
+    // Reading refreshes recency: Map order is the eviction order.
+    metadataCache.delete(url);
+    metadataCache.set(url, cached);
+    return cached;
+  }
 
   const pending = invoke<LinkPreviewMetadata>("fetch_link_preview", { url });
   metadataCache.set(url, pending);
+  while (metadataCache.size > MAX_CACHED_PREVIEWS) {
+    metadataCache.delete(metadataCache.keys().next().value!);
+  }
   pending.catch(() => metadataCache.delete(url));
   return pending;
 }

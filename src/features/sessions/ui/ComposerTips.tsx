@@ -1,5 +1,7 @@
-import { memo, useEffect, useState, type CSSProperties } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { memo, useEffect, useId, useRef, useState } from "react";
+import { useLocale, useT } from "../../../shared/i18n";
+import { Button } from "../../../shared/ui/Button";
+import { Popover } from "../../../shared/ui/Popover";
 import { AiIdea } from "../../../shared/ui/icons";
 import "./ComposerTips.css";
 
@@ -32,17 +34,10 @@ export const COMPOSER_TIPS = [
 
 export const COMPOSER_TIP_INTERVAL = 20_000;
 
-// CSS adaptation of React Bits Fold Text's top hinge, perspective and crease shading.
-// https://reactbits.dev/text-animations/fold-text
-// Copyright (c) 2026 David Haz. License: vendor/react-bits/LICENSE.md.
-function FoldTip({ text, animate }: { text: string; animate: boolean }) {
-  const characters = Array.from(text);
+/** One quiet reveal for the whole hint; the text is complete from the first frame. */
+function TipText({ text, animate }: { text: string; animate: boolean }) {
   const [settled, setSettled] = useState(!animate);
-  useEffect(() => {
-    if (!animate) setSettled(true);
-  }, [animate]);
-  // Long, translated hints should finish unfolding as quickly as short ones.
-  const stagger = Math.min(16, 400 / Math.max(1, characters.length - 1));
+  if (!animate && !settled) setSettled(true);
 
   return (
     <p
@@ -50,31 +45,26 @@ function FoldTip({ text, animate }: { text: string; animate: boolean }) {
       aria-label={text}
       data-tip-fold-animate={animate && !settled ? "true" : undefined}
     >
-      <span aria-hidden="true" data-tip-fold>
-        {characters.map((character, index) => (
-          <span
-            key={index}
-            className="composer-tip-fold-segment"
-            style={{ "--tip-fold-delay": `${index * stagger}ms` } as CSSProperties}
-          >
-            <span
-              className="composer-tip-fold-piece"
-              onAnimationEnd={index === characters.length - 1 ? () => setSettled(true) : undefined}
-            >
-              {character === " " ? "\u00a0" : character}
-            </span>
-          </span>
-        ))}
+      <span
+        aria-hidden="true"
+        data-tip-fold
+        className="composer-tip-reveal"
+        onAnimationEnd={() => setSettled(true)}
+      >
+        {text}
       </span>
     </p>
   );
 }
 
 export const ComposerTips = memo(function ComposerTips({ active }: { active: boolean }) {
+  const t = useT();
   const locale = useLocale();
   const [index, setTip] = useState(() => Math.floor(Math.random() * COMPOSER_TIPS.length));
-  const [hovered, setHovered] = useState(false);
+  const [open, setOpen] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
+  const tipId = useId();
   const [hidden, setHidden] = useState(() => typeof document !== "undefined" && document.hidden);
   useEffect(() => {
     const update = () => setHidden(document.hidden);
@@ -82,36 +72,56 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
     return () => document.removeEventListener("visibilitychange", update);
   }, []);
   useEffect(() => {
-    if (!active || hovered || focusWithin || hidden) return;
+    if (!active || !open || focusWithin || hidden) return;
     const timer = window.setInterval(
       () => setTip((index) => (index + 1) % COMPOSER_TIPS.length),
       COMPOSER_TIP_INTERVAL,
     );
     return () => window.clearInterval(timer);
-  }, [active, hovered, focusWithin, hidden]);
+  }, [active, open, focusWithin, hidden]);
 
   return (
-    <aside
-      data-composer-tips
-      className="composer-tips"
-      aria-label={t("Chat tips")}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onFocus={() => setFocusWithin(true)}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setFocusWithin(false);
-      }}
-    >
-      <span className="composer-tips-icon" aria-hidden="true">
-        <AiIdea size={14} />
-      </span>
-      <div className="composer-tips-copy">
-        <FoldTip
-          key={`${locale}-${index}`}
-          text={t(COMPOSER_TIPS[index])}
-          animate={active && !hovered && !focusWithin && !hidden}
-        />
-      </div>
+    <aside data-composer-tips className="composer-tips" aria-label={t("Chat tips")}>
+      <Button
+        ref={anchor}
+        variant="ghost"
+        size="sm"
+        iconOnly
+        motion="none"
+        label={t(open ? "Next tip" : "Tip")}
+        title=""
+        aria-describedby={open ? tipId : undefined}
+        aria-expanded={open}
+        className="composer-tips-icon"
+        onFocus={() => setFocusWithin(true)}
+        onBlur={() => setFocusWithin(false)}
+        onClick={() => {
+          if (open) setTip((current) => (current + 1) % COMPOSER_TIPS.length);
+          else setOpen(true);
+        }}
+      >
+        <AiIdea className="icon-sm" />
+        <span className="sr-only">{t(open ? "Next tip" : "Tip")}</span>
+      </Button>
+      {open ? (
+        <Popover
+          anchor={anchor}
+          id={tipId}
+          role="tooltip"
+          side="top"
+          align="start"
+          width={320}
+          restoreFocus={false}
+          onDismiss={() => setOpen(false)}
+          className="composer-tips-copy p-3"
+        >
+          <TipText
+            key={`${locale}-${index}`}
+            text={t(COMPOSER_TIPS[index])}
+            animate={active && !hidden}
+          />
+        </Popover>
+      ) : null}
     </aside>
   );
 });

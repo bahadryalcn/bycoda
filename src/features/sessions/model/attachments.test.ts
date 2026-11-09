@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ATTACHMENT_ONLY_PROMPT,
+  attachmentPreviewSrc,
   MAX_ATTACHMENTS,
   displayAttachments,
   filesFromClipboard,
@@ -182,5 +183,33 @@ describe("filesFromClipboard", () => {
         items: [item(png), item(tiff)],
       }),
     ).toEqual([png, tiff]);
+  });
+});
+
+describe("attachmentPreviewSrc", () => {
+  it("returns the same data URL reference for the same attachment", () => {
+    const image = attachment({ id: "img-1", name: "a.png", data: "AAAA" });
+    const first = attachmentPreviewSrc(image);
+    expect(first).toBe("data:image/png;base64,AAAA");
+    expect(attachmentPreviewSrc(image)).toBe(first);
+  });
+
+  it("builds a new URL when the attachment data or type changes", () => {
+    const image = attachment({ id: "img-2", name: "b.png", data: "AAAA" });
+    const first = attachmentPreviewSrc(image);
+    image.data = "BBBB";
+    expect(attachmentPreviewSrc(image)).toBe("data:image/png;base64,BBBB");
+    image.mimeType = "image/jpeg";
+    expect(attachmentPreviewSrc(image)).toBe("data:image/jpeg;base64,BBBB");
+    expect(attachmentPreviewSrc(image)).not.toBe(first);
+  });
+
+  it("falls back to the preview URL for non-image or dataless attachments", () => {
+    expect(
+      attachmentPreviewSrc(attachment({ id: "f", name: "a.txt", kind: "file" })),
+    ).toBeUndefined();
+    expect(attachmentPreviewSrc(attachment({ id: "p", name: "p.png", previewUrl: "blob:p" }))).toBe(
+      "blob:p",
+    );
   });
 });

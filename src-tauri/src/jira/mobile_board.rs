@@ -4,7 +4,6 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use tauri::{Manager, WebviewWindow};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -529,8 +528,7 @@ pub async fn jira_mobile_board_prepare(
             }
         };
         deadline_valid(deadline,now()?)?;
-        let approved=app.dialog().message(format!("Approve this exact Jira board operation?\n\nProject: {cwd}\nSite: {}\nAccount: {}\nBoard: {}\nIssue: {key}\n{description}",snapshot.account.site,snapshot.account.email,snapshot.board_id))
-            .title("bycoda — Inbox operation approval").parent(&window).buttons(MessageDialogButtons::OkCancelCustom("Approve this operation".into(),"Cancel".into())).blocking_show();
+        let approved=crate::control::owner_approval::ask_window_checked(&app, &window, crate::control::owner_approval::Prompt { title: "bycoda — Inbox operation approval", message: &(format!("Approve this exact Jira board operation?\n\nProject: {cwd}\nSite: {}\nAccount: {}\nBoard: {}\nIssue: {key}\n{description}",snapshot.account.site,snapshot.account.email,snapshot.board_id)), confirm: "Approve this operation", cancel: "Cancel" }, || { deadline_valid(deadline,now()?)?; checked_snapshot(&app,&window,&cwd,&filters,&snapshot_id).map(|_| ()) });
         if !approved { return Err("Native owner declined the Jira operation".into()); }
         deadline_valid(deadline,now()?)?;
         checked_snapshot(&app,&window,&cwd,&filters,&snapshot_id)?;

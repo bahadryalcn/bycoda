@@ -9,13 +9,18 @@ import {
   queuedHead,
   queuedMessageForSubmit,
   queuedModelTarget,
+  queuedSteerRoute,
+  queuedTargetSummary,
   reorderQueuedMessages,
   reorderSessionQueue,
   resolveFollowUpRoute,
+  failedTurnQueueNotice,
+  holdQueueAfterFailedTurn,
   holdUndeliveredFollowUp,
   sentQueuedMessage,
 } from "./messageQueue";
-import { newSession, type QueuedMessage, type Session } from "./session";
+import { catalogModelsFor, defaultModelSettings, modelEffortSetting } from "./models";
+import { HARNESSES, newSession, type QueuedMessage, type Session } from "./session";
 
 function queued(id: string, text = id): QueuedMessage {
   return { id, text, attachments: [] };
@@ -97,10 +102,23 @@ it("snapshots model settings and retains them through reordering", () => {
     modelSettings: { effort: "high" },
   });
   expect(queuedMessageForSubmit(changed, "b", "steer")?.modelTarget).toEqual(modelTarget);
-  expect(queuedMessageForSubmit({ ...changed, busy: true }, "b", "steer")).toBeUndefined();
+  // An explicit Steer sends the row whatever model or provider it was saved for.
+  expect(queuedMessageForSubmit({ ...changed, busy: true }, "b", "steer")?.id).toBe("b");
+  expect(
+    queuedMessageForSubmit(
+      { ...changed, busy: true, runningModelTarget: { ...modelTarget, harness: "codex" } },
+      "b",
+      "steer",
+    )?.id,
+  ).toBe("b");
 });
 
-it("checks Steer against the running selection even after the composer changes", () => {
+it("snapshots the selected provider account for a queued message", () => {
+  const session = chat({ providerAccountId: "running", nextProviderAccountId: "selected" });
+  expect(queuedModelTarget(session).providerAccountId).toBe("selected");
+});
+
+it("lets Steer send rows saved for another model or provider", () => {
   const modelTarget = queuedModelTarget(
     chat({ model: "running", modelSettings: { effort: "high" } }),
   );
@@ -118,7 +136,75 @@ it("checks Steer against the running selection even after the composer changes",
     ],
   });
   expect(queuedMessageForSubmit(session, "a", "steer")?.id).toBe("a");
-  expect(queuedMessageForSubmit(session, "b", "steer")).toBeUndefined();
+  expect(queuedMessageForSubmit(session, "b", "steer")?.id).toBe("b");
+  const otherProvider = {
+    ...queued("c"),
+    modelTarget: { harness: "codex" as const, model: "gpt", modelSettings: {} },
+  };
+  expect(
+    queuedMessageForSubmit(
+      { ...session, queuedMessages: [...session.queuedMessages!, otherProvider] },
+      "c",
+      "steer",
+    )?.id,
+  ).toBe("c");
+});
+
+it("treats a selection with its defaults filled in as the same Steer target", () => {
+  const model = catalogModelsFor("claude").find((entry) =>
+    entry.settings?.some((setting) => setting.options.length > 1),
+  );
+  if (!model) throw new Error("expected a Claude model with a choice setting");
+  const defaults = defaultModelSettings(model);
+  const running = { harness: "claude" as const, model: model.id, modelSettings: defaults };
+  const session = chat({
+    busy: true,
+    model: model.id,
+    modelSettings: defaults,
+    runningModelTarget: running,
+    queuedMessages: [{ ...queued("a"), modelTarget: { ...running, modelSettings: {} } }],
+  });
+  expect(queuedSteerRoute(session, session.queuedMessages![0], false)).toBe("join");
+  expect(queuedMessageForSubmit(session, "a", "steer")?.id).toBe("a");
+  const setting = model.settings!.find((entry) => entry.options.length > 1)!;
+  const changed = setting.options.find((option) => option.value !== defaults[setting.id])!.value;
+  const differing = {
+    ...queued("b"),
+    modelTarget: { ...running, modelSettings: { ...defaults, [setting.id]: changed } },
+  };
+  expect(queuedSteerRoute(session, differing, false)).toBe("restart");
+  expect(queuedSteerRoute(session, differing, true)).toBe("join");
+  expect(queuedSteerRoute({ ...session, busy: false }, differing, false)).toBe("join");
+});
+
+it("routes Steer by the provider and model a row was queued for", () => {
+  const running = { harness: "claude" as const, model: "claude:opus", modelSettings: {} };
+  const session = chat({ busy: true, runningModelTarget: running });
+  const row = (modelTarget: QueuedMessage["modelTarget"]) => ({ ...queued("x"), modelTarget });
+  expect(queuedSteerRoute(session, row(undefined), false)).toBe("join");
+  expect(queuedSteerRoute(session, row(running), false)).toBe("join");
+  expect(queuedSteerRoute(session, row({ ...running, model: "claude:sonnet" }), true)).toBe(
+    "restart",
+  );
+  expect(
+    queuedSteerRoute(session, row({ harness: "codex", model: "gpt", modelSettings: {} }), true),
+  ).toBe("switch");
+});
+
+it("summarizes the model and effort a row was queued for", () => {
+  const model = HARNESSES.flatMap((harness) => catalogModelsFor(harness)).find((entry) =>
+    modelEffortSetting(entry),
+  );
+  if (!model) throw new Error("expected a catalog model with an effort setting");
+  const effort = modelEffortSetting(model)!;
+  const choice = effort.options.at(-1)!;
+  expect(
+    queuedTargetSummary({
+      harness: model.harness,
+      model: model.id,
+      modelSettings: { [effort.id]: choice.value },
+    }),
+  ).toEqual({ model: model.name, effort: choice.label });
 });
 
 describe("queuedHead", () => {
@@ -167,6 +253,38 @@ describe("canDispatchQueuedHead", () => {
 
   it("does not dispatch an empty queue", () => {
     expect(canDispatchQueuedHead(chat({ queuedMessages: undefined }))).toBe(false);
+  });
+});
+
+describe("holdQueueAfterFailedTurn", () => {
+  it("pauses an active queue so the next row does not run into the same failure", () => {
+    const held = holdQueueAfterFailedTurn(chat({ queueStatus: "active" }));
+    expect(held.queueStatus).toBe("paused");
+    expect(held.queuedMessages).toEqual(chat().queuedMessages);
+    expect(canDispatchQueuedHead(held)).toBe(false);
+    // A queue that was never given a status is active too.
+    expect(holdQueueAfterFailedTurn(chat({ queueStatus: undefined })).queueStatus).toBe("paused");
+  });
+
+  it("keeps a paused, restored or resuming queue and an empty queue as they are", () => {
+    for (const queueStatus of ["paused", "restored", "resuming"] as const) {
+      const session = chat({ queueStatus });
+      expect(holdQueueAfterFailedTurn(session)).toBe(session);
+    }
+    const empty = chat({ queuedMessages: undefined });
+    expect(holdQueueAfterFailedTurn(empty)).toBe(empty);
+    const none = chat({ queuedMessages: [] });
+    expect(holdQueueAfterFailedTurn(none)).toBe(none);
+  });
+
+  it("explains the hold with the failure when it is known", () => {
+    expect(failedTurnQueueNotice(" provider exited with code 1 ")).toBe(
+      "The queue is paused because this turn failed: provider exited with code 1. Resume it to send the next queued message.",
+    );
+    expect(failedTurnQueueNotice("")).toBe(
+      "The queue is paused because this turn failed. Resume it to send the next queued message.",
+    );
+    expect(failedTurnQueueNotice(undefined)).toBe(failedTurnQueueNotice("   "));
   });
 });
 
@@ -273,7 +391,7 @@ describe("resolveFollowUpRoute", () => {
     );
   });
 
-  it("never parks an explicit queue behind background-only work", () => {
+  it("preserves an explicit queue while only background commands remain", () => {
     expect(
       resolveFollowUpRoute({
         ...base,
@@ -281,7 +399,7 @@ describe("resolveFollowUpRoute", () => {
         backgroundOnly: true,
         requested: "queue",
       }),
-    ).toBe("steer");
+    ).toBe("queue");
   });
 });
 
@@ -404,10 +522,6 @@ it("waits while the host runs the conversation or its turn has not arrived here"
     queuedMessages: [queued("next")],
   });
   expect(canDispatchQueuedHead(session)).toBe(true);
-  expect(canDispatchQueuedHead({ ...session, continuingElsewhere: true })).toBe(
-    false,
-  );
-  expect(canDispatchQueuedHead({ ...session, adoptedSyncConflict: true })).toBe(
-    false,
-  );
+  expect(canDispatchQueuedHead({ ...session, continuingElsewhere: true })).toBe(false);
+  expect(canDispatchQueuedHead({ ...session, adoptedSyncConflict: true })).toBe(false);
 });

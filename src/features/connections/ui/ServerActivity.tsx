@@ -1,6 +1,9 @@
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Star } from "../../../shared/ui/icons";
 import { Switch } from "../../../shared/ui/Switch";
@@ -22,7 +25,7 @@ export function ServerActivity({
   const Container = expanded ? "section" : "details";
   const Heading = expanded ? "h3" : "summary";
   return (
-    <Container className="text-xs">
+    <Container className="text-ui-caption">
       <Heading className="py-1 font-medium">
         {t("Connection activity")} ({activity.length})
       </Heading>
@@ -33,19 +36,19 @@ export function ServerActivity({
           onCheckedChange={setBookmarkedOnly}
         />
       </div>
-      <details className="mbs-2 text-(--ui-text-muted)">
-        <summary className="cursor-pointer">{t("About connection activity")}</summary>
-        <p className="mbs-2">{t("Launch metadata only. Terminal contents are not recorded.")}</p>
-      </details>
-      {error ? (
-        <p className="mbs-2 text-(--ui-tone-danger-fg)" role="alert">
-          {error}
-        </p>
-      ) : null}
+      <Disclosure className="mbs-2 text-(--ui-text-muted)" summary={t("About connection activity")}>
+        <p>{t("Launch metadata only. Terminal contents are not recorded.")}</p>
+      </Disclosure>
+      {error ? <InlineError className="mbs-2">{error}</InlineError> : null}
       {!visibleActivity.length ? (
-        <p className="py-4 text-(--ui-text-muted)">
-          {t(bookmarkedOnly ? "No bookmarked activity." : "No connection activity yet.")}
-        </p>
+        <EmptyState
+          size="inline"
+          kind={bookmarkedOnly ? "filtered" : undefined}
+          description={t(
+            bookmarkedOnly ? "No bookmarked activity." : "No connection activity yet.",
+          )}
+          onReset={bookmarkedOnly ? () => setBookmarkedOnly(false) : undefined}
+        />
       ) : (
         <ul className="mbs-2 max-h-80 overflow-y-auto">
           {[...visibleActivity].reverse().map((event) => (
@@ -75,7 +78,7 @@ export function ServerActivity({
                   }
                 }}
               >
-                <Star className="size-3.5" />
+                <Star className="icon-sm" />
               </Button>
             </li>
           ))}

@@ -1,4 +1,5 @@
 import { sameProjectPath } from "../../projects/model/recents";
+import { createStore } from "../../../shared/lib/store";
 
 const MAX_PENDING_AGE_MS = 10 * 60_000;
 
@@ -21,7 +22,7 @@ type PendingActivity = InboxSelfActivityTarget & { recordedAt: number };
 type Listener = () => void;
 
 const pending: PendingActivity[] = [];
-const listeners = new Set<Listener>();
+const listeners = createStore();
 
 function normalized(value: string | undefined): string {
   return value?.trim().toLowerCase() ?? "";
@@ -52,7 +53,7 @@ function matches(activity: PendingActivity, item: InboxSelfActivityItem) {
 export function recordInboxSelfActivity(target: InboxSelfActivityTarget, now = Date.now()) {
   prune(now);
   pending.push({ ...target, recordedAt: now });
-  for (const listener of listeners) listener();
+  listeners.notify();
 }
 
 /** Consume all coalesced mutations for this revision. A later revision can notify normally. */
@@ -68,8 +69,7 @@ export function consumeInboxSelfActivity(item: InboxSelfActivityItem, now = Date
 }
 
 export function subscribeInboxSelfActivity(listener: Listener): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+  return listeners.subscribe(listener);
 }
 
 export function clearPendingInboxSelfActivity() {

@@ -97,14 +97,15 @@ Try one of these prompts in a project you know:
 
 The getting-started path here runs the desktop app from source. For local
 Windows/macOS packaging and installation, follow the
-[shared update coordinator](docs/local-update.md). Independent release publishing
-and automatic updates are currently disabled; see [release status](docs/reference/fork.md#releases-and-updates).
+[shared update coordinator](docs/local-update.md). Installed release builds check for signed
+updates automatically; releases are published only by an owner-dispatched
+workflow. See [releases and updates](docs/reference/fork.md#releases-and-updates).
 
 ### 1. Prepare your tools
 
-- Install **Node.js**, **Rust**, and Tauri's native build prerequisites for your
+- Install **Node.js 22.12 or newer** (see [.nvmrc](.nvmrc)), **Rust**, and Tauri's native build prerequisites for your
   platform. See [development setup](CONTRIBUTING.md#development-environment).
-- Use the **pnpm version pinned in [package.json](package.json)**.
+- Use **pnpm 12.5.0 or newer**. The version pinned in [package.json](package.json) remains the reproducible build default; local installs accept the `engines.pnpm` range.
 - Install and authenticate at least one supported provider CLI.
 
 ### 2. Run the desktop app
@@ -148,7 +149,7 @@ See the [getting-started guide](docs/guides/onboarding.md) for details.
 - [Software license](LICENSE) and [security reporting](SECURITY.md).
 
 These documents are bundled for offline reading in **Settings → Policies**, with
-English and Turkish policy text. Privacy contact: [info@bahadrhllyalcn.com](mailto:info@bahadrhllyalcn.com).
+English and Turkish policy text. Privacy contact: [info@bycoda.codes](mailto:info@bycoda.codes).
 
 ## Help shape bycoda
 
@@ -162,11 +163,10 @@ you do not need a complete proposal to start a conversation.
 
 ## Built on shared work
 
-bycoda was originally built on **Upstream v0.6**, created by
-[Nick (upstreamdev)](https://github.com/upstreamdev), and has since been developed
-independently. See the [original Upstream project](https://github.com/upstreamdev/upstream).
+bycoda was originally built on an MIT-licensed open source project created by
+Nick, and has since been developed independently.
 
-Thank you to Nick, the Upstream developers, and community contributors for the
+Thank you to Nick, the original developers, and community contributors for the
 foundation, code, and integrations they shared as open source. Their work made
 this project possible, and their contributions remain credited to their authors.
 

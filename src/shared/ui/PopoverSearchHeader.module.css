@@ -1,0 +1,45 @@
+@layer properties, theme, base, components, utilities;
+@layer components {
+  .header {
+    flex: none;
+    min-inline-size: 0;
+  }
+}
+/* One header grammar for popover pickers: glyph, unframed query text, trailing tools, hairline below.
+   The popover is the focus context, so the field draws no ring (SearchInput focusOwner="menu"). */
+.header {
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 0.5rem;
+  min-block-size: 2rem;
+  padding-inline: 0.625rem;
+  color: var(--ui-text-secondary);
+}
+.header[data-size="md"] {
+  min-block-size: 2.5rem;
+  padding-inline: 0.75rem;
+}
+.header[data-divider] {
+  border-block-end: 1px solid var(--ui-tone-neutral-border);
+}
+.icon {
+  flex: none;
+}
+.input.input {
+  flex: 1;
+  min-inline-size: 0;
+  background: transparent;
+  color: var(--ui-tone-neutral-fg);
+  font-size: var(--ui-font-secondary);
+  outline: none;
+}
+.input.input::placeholder {
+  color: var(--ui-text-secondary);
+}
+.trailing {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.125rem;
+}

@@ -1,4 +1,80 @@
 import { test, expect } from "@playwright/test";
+import { mkdirSync } from "node:fs";
+
+test("Git actions show progress in place without losing focus or repeating mutations", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto("/tests/browser/git-workspace.html?action-feedback");
+  await page.locator("#root > div.border-r").evaluate((node) => {
+    node.style.width = "100%";
+  });
+  const sync = page.getByRole("button").filter({ hasText: "Sync Changes" });
+  await sync.focus();
+  await sync.press("Enter");
+  await expect(sync).toHaveAttribute("aria-busy", "true");
+  await expect(sync).toBeFocused();
+  await expect(page.locator("header").first().getByRole("status")).toHaveCount(0);
+  await sync.press("Enter");
+  const calls = (command: string) =>
+    page.evaluate(
+      (name) =>
+        (window as unknown as { gitFixtureCalls: { command: string }[] }).gitFixtureCalls.filter(
+          (call) => call.command === name,
+        ).length,
+      command,
+    );
+  expect(await calls("git_sync")).toBe(1);
+  for (const width of [280, 390]) {
+    await page.setViewportSize({ width, height: 800 });
+    for (const light of [false, true]) {
+      await page.evaluate(
+        (value) => document.documentElement.classList.toggle("theme-light", value),
+        light,
+      );
+      expect(
+        await page
+          .locator("#root > div.border-r")
+          .evaluate((node) => node.scrollWidth <= node.clientWidth),
+      ).toBe(true);
+      await page.screenshot({
+        path: testInfo.outputPath(`git-pending-${width}-${light ? "light" : "dark"}.png`),
+      });
+    }
+  }
+  await page.evaluate(() =>
+    (
+      window as unknown as { gitFixtureFinishAction: (command: string) => void }
+    ).gitFixtureFinishAction("git_sync"),
+  );
+  await expect(sync).not.toHaveAttribute("aria-busy", "true");
+  await page.getByRole("button", { name: /^Stashes/ }).click();
+  // The row's more action is named "Actions for …" at rest and its loading label while busy.
+  const stashMenu = page
+    .getByRole("listitem")
+    .filter({ hasText: "WIP: keyboard navigation" })
+    .locator('button[aria-haspopup="menu"]');
+  await expect(stashMenu).toHaveAccessibleName("Actions for WIP: keyboard navigation");
+  await stashMenu.click();
+  await page.getByRole("menuitem", { name: /^Apply\b/ }).click();
+  await expect(stashMenu).toHaveAttribute("aria-busy", "true");
+  await expect(
+    page.getByRole("button", { name: "Stash all changes", exact: true }),
+  ).not.toHaveAttribute("aria-busy", "true");
+  expect(await calls("git_stash_action")).toBe(1);
+  await page.evaluate(() =>
+    (window as unknown as { gitFixtureRemount: () => Promise<void> }).gitFixtureRemount(),
+  );
+  await expect(stashMenu).toHaveAttribute("aria-busy", "true");
+  await page.evaluate(() =>
+    (
+      window as unknown as { gitFixtureFinishAction: (command: string) => void }
+    ).gitFixtureFinishAction("git_stash_action"),
+  );
+  await expect(stashMenu).not.toHaveAttribute("aria-busy", "true");
+});
 
 test("hunk targets retain identity and allow keyboard and pointer recovery after a mock failure", async ({
   page,
@@ -7,25 +83,32 @@ test("hunk targets retain identity and allow keyboard and pointer recovery after
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/tests/browser/git-workspace.html?diff-usability");
-  await page.locator("#root > div").evaluate((node) => {
+  await page.locator("#root > div.border-r").evaluate((node) => {
     node.style.width = "100%";
   });
   const repository = "/fixture/engineering/long-repository-name-for-working-tree-review";
   const relative =
     "src/features/a-very-long-feature-directory/another-long-nested-directory/selected-hunk-review.ts";
-  await expect(page.getByTitle(repository, { exact: true })).toBeVisible();
+  // The header shows the folder name; the shared tooltip carries the full repository path.
+  const hint = page.getByRole("tooltip");
+  await page.getByText("long-repository-name-for-working-tree-review", { exact: true }).hover();
+  await expect(hint).toHaveText(repository);
+  await page.mouse.move(0, 0);
+  await expect(hint).toHaveCount(0);
   const file = page.locator(`[data-diff-file="${repository}/${relative}"]`);
-  await expect(file.locator("header span[title]").first()).toHaveAttribute(
-    "title",
-    /selected-hunk-review\.ts/,
-  );
+  // The file header is a labelled action group; its middle-truncated path recovers the full path
+  // through the shared overflow hint.
+  await file.getByRole("group").first().locator("[data-middle-truncate]").first().hover();
+  await expect(hint).toContainText(/selected-hunk-review\.ts/);
+  await page.mouse.move(0, 0);
+  await expect(hint).toHaveCount(0);
   const hunks = file.getByRole("button", { name: "Stage hunk", exact: true });
   await expect(hunks.first()).toBeAttached();
   await hunks.first().focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("alert")).toContainText("Fixture index.lock");
   await expect(file).toBeVisible();
-  await expect(file.locator("header button[aria-expanded]")).toHaveAttribute(
+  await expect(file.getByRole("group").first().locator("button[aria-expanded]")).toHaveAttribute(
     "aria-expanded",
     "true",
   );
@@ -79,12 +162,15 @@ test("repository overview collapses with keyboard and preserves open panels and 
   const panel = page.locator('[data-git-repository="/fixture/core-pack"]');
   const row = panel.locator("header button[aria-expanded]").first();
   await expect(row).toHaveAttribute("aria-expanded", "false");
-  // Repository identity occupies one line; its full path remains discoverable.
-  await expect(row).toHaveAttribute("title", /core-pack.*\/fixture\/core-pack/);
-  expect((await panel.locator("header").boundingBox())!.height).toBeLessThanOrEqual(40);
+  // Folder and branch occupy two compact lines; the full path remains discoverable.
+  await row.hover();
+  await expect(page.getByRole("tooltip")).toHaveText(/core-pack.*\/fixture\/core-pack/);
+  await page.mouse.move(0, 0);
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+  expect((await panel.locator("header").boundingBox())!.height).toBeLessThanOrEqual(44);
   for (const width of [280, 390]) {
     await page.setViewportSize({ width, height: 700 });
-    await page.locator("#root > div").evaluate((element, size) => {
+    await page.locator("#root > div.border-r").evaluate((element, size) => {
       (element as HTMLElement).style.width = `${size}px`;
     }, width);
     for (const light of [false, true]) {
@@ -114,7 +200,8 @@ test("repository overview collapses with keyboard and preserves open panels and 
   await expect(message).toHaveValue("Keep my submodule draft");
   await overview.click();
   await selector.click();
-  await page.getByRole("option", { name: "Submodule · core-pack", exact: true }).click();
+  // Option names carry the path description (label + path) in the accessible name.
+  await page.getByRole("option", { name: "core-pack /fixture/core-pack", exact: true }).click();
   await expect(overview).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByRole("textbox", { name: "Commit message", exact: true })).toHaveValue(
     "Keep my submodule draft",
@@ -130,19 +217,20 @@ test("repository choice survives sidebar remount and reload before delayed submo
   const selector = page.getByRole("button", { name: /^Repository:/ });
   await expect(page.locator('[data-git-repository="/fixture/core-pack"]')).toBeVisible();
   await selector.click();
-  await page.getByRole("option", { name: "Submodule · core-pack", exact: true }).click();
-  await expect(selector).toContainText("Submodule · core-pack");
+  // Option names carry the path description (label + path) in the accessible name.
+  await page.getByRole("option", { name: "core-pack /fixture/core-pack", exact: true }).click();
+  await expect(selector).toContainText("core-pack");
   await page.evaluate(async () => {
     await (window as unknown as { gitFixtureRemount: () => Promise<void> }).gitFixtureRemount();
   });
-  await expect(selector).toContainText("Submodule · core-pack");
+  await expect(selector).toContainText("core-pack");
   await expect(page.getByRole("textbox", { name: "Commit message", exact: true })).toHaveCount(1);
   await expect(page.locator("[data-git-repository]")).toHaveCount(0);
   await page.reload();
   await expect(selector).toContainText("core-pack");
   await expect(page.getByRole("textbox", { name: "Commit message", exact: true })).toHaveCount(1);
   await page.waitForTimeout(650);
-  await expect(selector).toContainText("Submodule · core-pack");
+  await expect(selector).toContainText("core-pack");
   await expect(page.getByRole("textbox", { name: "Commit message", exact: true })).toHaveCount(1);
   await page.getByRole("button", { name: "Refresh source control", exact: true }).first().click();
   await expect
@@ -177,8 +265,11 @@ test("submodules keep independent drafts, staging, commits and pushes", async ({
   await expect(module.getByRole("button", { name: "Stage All Changes", exact: true })).toHaveCount(
     0,
   );
+  // Commit leads; Commit & Push is one menu choice away.
   await module.getByRole("button", { name: "Commit options", exact: true }).click();
   await page.getByRole("menuitem", { name: "Commit & Push", exact: true }).click();
+  // The submodule is on its default branch: the push asks first in the in-app dialog.
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(message).toHaveValue("");
   await expect(parentMessage).toHaveValue("Parent draft stays here");
   const calls = await page.evaluate(
@@ -196,7 +287,7 @@ test("submodules keep independent drafts, staging, commits and pushes", async ({
   }
   for (const width of [280, 390, 768]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.locator("#root > div").evaluate((element, size) => {
+    await page.locator("#root > div.border-r").evaluate((element, size) => {
       (element as HTMLElement).style.width = `${size}px`;
     }, width);
     for (const light of [false, true]) {
@@ -276,9 +367,12 @@ test("grouped commit forms retain their height and drafts after disclosure and r
   const panel = page.locator("[data-git-repository]").first();
   const toggle = panel.locator("header button[aria-expanded]").first();
   const message = panel.getByRole("textbox", { name: "Commit message", exact: true });
+  // The borderless editor sits inside a FieldControl frame, which owns the visible height.
+  const frame = message.locator("xpath=ancestor::*[@data-field-control][1]");
   await toggle.click();
   await expect(message).toBeVisible();
-  expect((await message.boundingBox())!.height).toBeGreaterThanOrEqual(32);
+  // The commit message is a compact (fieldSize="sm", 28px) field that grows with its draft.
+  expect((await frame.boundingBox())!.height).toBeGreaterThanOrEqual(28);
   const draft =
     "Preserve the worktree commit draft while its panel is reopened\n\nA longer body that wraps differently as the sidebar width changes.";
   await message.fill(draft);
@@ -288,7 +382,7 @@ test("grouped commit forms retain their height and drafts after disclosure and r
   await expect(message).toHaveValue(draft);
   for (const width of [280, 390, 566]) {
     await page.setViewportSize({ width, height: 650 });
-    await page.locator("#root > div").evaluate((element, size) => {
+    await page.locator("#root > div.border-r").evaluate((element, size) => {
       (element as HTMLElement).style.width = `${size}px`;
     }, width);
     for (const light of [false, true]) {
@@ -296,12 +390,20 @@ test("grouped commit forms retain their height and drafts after disclosure and r
         (value) => document.documentElement.classList.toggle("theme-light", value),
         light,
       );
-      await expect.poll(async () => (await message.boundingBox())!.height).toBeGreaterThan(32);
-      const input = (await message.boundingBox())!;
-      const commit = (await panel
-        .getByRole("button", { name: "Commit", exact: true })
-        .boundingBox())!;
-      expect(commit.y).toBeGreaterThanOrEqual(input.y + input.height);
+      await expect.poll(async () => (await frame.boundingBox())!.height).toBeGreaterThan(32);
+      // One contextual primary (Commit or sync) sits below the message in a single row with
+      // its menu. The autosized message can still be settling after a width or theme change,
+      // so measure all three boxes together until the layout is stable.
+      const primary = panel.locator('[data-split-part="primary"]').first();
+      const optionsButton = panel.getByRole("button", { name: "Commit options", exact: true });
+      await expect
+        .poll(async () => {
+          const input = (await frame.boundingBox())!;
+          const commit = (await primary.boundingBox())!;
+          const options = (await optionsButton.boundingBox())!;
+          return commit.y >= input.y + input.height - 0.5 && Math.abs(options.y - commit.y) < 2;
+        })
+        .toBe(true);
       expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
         true,
       );
@@ -314,7 +416,10 @@ test("grouped commit forms retain their height and drafts after disclosure and r
   await toggle.click();
   await toggle.click();
   await expect(message).toHaveValue(draft);
-  expect((await message.boundingBox())!.height).toBeGreaterThan(32);
+  await expect(message).toBeVisible();
+  // Reopening keeps the draft immediately; ResizeObserver fits the revealed
+  // textarea on the next animation frame. Wait for that actual layout result.
+  await expect.poll(async () => (await message.boundingBox())!.height).toBeGreaterThan(32);
 });
 
 test("compact checkout header and branch fetch remain usable across widths and themes", async ({
@@ -337,7 +442,11 @@ test("compact checkout header and branch fetch remain usable across widths and t
       expect(await header.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
         true,
       );
-      await expect(branch).toHaveAttribute("title", /Switch branch in this working copy/);
+      // The switch hint is the shared tooltip (no native title).
+      await branch.hover();
+      await expect(page.getByRole("tooltip")).toContainText("Switch branch in this working copy");
+      await page.mouse.move(0, 0);
+      await expect(page.getByRole("tooltip")).toHaveCount(0);
       await branch.focus();
       await page.keyboard.press("Enter");
       const picker = page.locator("[data-branch-picker]");
@@ -391,7 +500,7 @@ test("grouped repository files allow wheel scrolling the outer list", async ({ p
   await expect.poll(() => outer.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 });
 
-test("checkout rows preserve identity, keyboard selection and searchable selection", async ({
+test("checkout panels preserve identity, keyboard expansion and searchable selection", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
@@ -399,9 +508,20 @@ test("checkout rows preserve identity, keyboard selection and searchable selecti
   // The picker opens on the session checkout; the overview lists every checkout.
   await page.getByRole("button", { name: /^Working copy:/ }).click();
   await page.getByRole("option", { name: "All checkouts", exact: true }).click();
-  const list = page.locator("[data-checkout-list]");
-  const row = list.locator('button[title="/trees/audit/very-long-worktree-folder-name"]');
-  await expect(list.locator("li")).toHaveCount(3);
+  const list = page.locator("[data-checkout-overview]");
+  const panelFor = (cwd: string) => list.locator(`[data-git-repository="${cwd}"]`);
+  const headerFor = (cwd: string) => panelFor(cwd).locator("header button[aria-expanded]").first();
+  const row = headerFor("/trees/audit/very-long-worktree-folder-name");
+  await expect(list.locator("[data-git-repository]")).toHaveCount(3);
+  await expect(headerFor("/fixture")).toHaveAttribute("aria-expanded", "true");
+  await expect(row).toHaveAttribute("aria-expanded", "false");
+  // The shared tooltip retains exact repository paths without repeating them in rows.
+  for (const path of ["/trees/audit/very-long-worktree-folder-name", "/fixture"]) {
+    await headerFor(path).hover();
+    await expect(page.getByRole("tooltip")).toContainText(path);
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
+  }
   for (const width of [390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 850 });
     for (const light of [false, true]) {
@@ -411,13 +531,11 @@ test("checkout rows preserve identity, keyboard selection and searchable selecti
       );
       await expect(row).toContainText("audit/2026-10-14-long-branch-name-for-responsive-review");
       await expect(row).toContainText("very-long-worktree-folder-name");
-      await expect(row.getByRole("img", { name: "Uncommitted changes" })).toBeVisible();
-      await expect(list.locator('button[title="/fixture"]')).toContainText("This session");
-      // Poll: the picker's value roll briefly overflows while the old label exits.
+      // Full repository panels retain the same horizontal containment as the picker.
       await expect
         .poll(() =>
           list.evaluate((element) =>
-            [element, ...element.querySelectorAll("li")].every(
+            [element, ...element.querySelectorAll("[data-git-repository]")].every(
               (node) => node.scrollWidth <= node.clientWidth,
             ),
           ),
@@ -429,25 +547,133 @@ test("checkout rows preserve identity, keyboard selection and searchable selecti
     }
   }
   await page.emulateMedia({ reducedMotion: "reduce" });
-  const detachedRow = list.locator('button[title="/trees/detached"]');
-  await expect(detachedRow).toContainText("fd3caac");
-  await detachedRow.focus();
+  await row.focus();
   await page.keyboard.press("Enter");
+  await expect(row).toHaveAttribute("aria-expanded", "true");
   await expect(
-    page.getByRole("button", { name: "Working copy: Detached · /trees/detached", exact: true }),
+    panelFor("/trees/audit/very-long-worktree-folder-name").getByText("workspace.tsx", {
+      exact: true,
+    }),
   ).toBeVisible();
-  await expect(list).toHaveCount(0);
-  await page.getByRole("button", { name: /^Working copy:/ }).click();
-  await page.getByRole("option", { name: "All checkouts", exact: true }).click();
-  await expect(list.locator("li")).toHaveCount(3);
   await page.getByRole("button", { name: "Working copy: All checkouts", exact: true }).click();
   await page.getByRole("combobox").fill("audit");
   await page
-    .getByRole("option", {
-      name: "audit/2026-10-14-long-branch-name-for-responsive-review · /trees/audit/very-long-worktree-folder-name",
-      exact: true,
-    })
+    .getByRole("option")
+    .filter({ hasText: "/trees/audit/very-long-worktree-folder-name" })
     .click();
   await expect(list).toHaveCount(0);
   await expect(page.getByRole("button", { name: /^Working copy: audit\// })).toBeVisible();
 });
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800]) {
+    test(`all checkouts expose independent repository changes and drafts: ${theme} ${width}`, async ({
+      page,
+    }) => {
+      await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/tests/browser/git-workspace.html?checkouts&all-repositories");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: /^Working copy:/ }).click();
+      await page.getByRole("option", { name: "All checkouts", exact: true }).click();
+      const overview = page.locator("[data-checkout-overview]");
+      const main = overview.locator('[data-git-repository="/fixture"]');
+      const worktree = overview.locator('[data-git-repository="/trees/cross-provider"]');
+      const mobile = overview.locator('[data-git-repository="/fixture/mobile"]');
+      const toggle = (panel: typeof main) => panel.locator("header button[aria-expanded]").first();
+      const message = (panel: typeof main) =>
+        panel.getByRole("textbox", { name: "Commit message", exact: true });
+      await expect(overview.locator("[data-git-repository]")).toHaveCount(3);
+      await expect(toggle(main)).toHaveAttribute("aria-expanded", "true");
+      await expect(toggle(worktree)).toHaveAttribute("aria-expanded", "false");
+      await expect(toggle(mobile)).toHaveAttribute("aria-expanded", "false");
+      await expect(main.getByText("workspace.tsx", { exact: true })).toBeVisible();
+      await expect(main.getByText("theme.css", { exact: true })).toBeVisible();
+      await message(main).fill("Main checkout draft stays here");
+      const evidence = "temp/verification/2026-11-06-all-checkouts";
+      mkdirSync(evidence, { recursive: true });
+      for (const sidebar of [570, 400]) {
+        await page.locator("#root > div.border-r").evaluate((element, size) => {
+          (element as HTMLElement).style.width = `${size}px`;
+        }, sidebar);
+        await main.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `${evidence}/overview-${theme}-${width}-${sidebar}.png` });
+      }
+      await toggle(worktree).focus();
+      await page.keyboard.press("Enter");
+      await expect(worktree.getByText("parity.ts", { exact: true })).toBeVisible();
+      await expect(worktree.getByText("accounts.ts", { exact: true })).toBeVisible();
+      await message(worktree).fill("Worktree draft stays here");
+      for (const sidebar of [570, 400]) {
+        await page.locator("#root > div.border-r").evaluate((element, size) => {
+          (element as HTMLElement).style.width = `${size}px`;
+        }, sidebar);
+        await worktree.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `${evidence}/worktree-${theme}-${width}-${sidebar}.png` });
+      }
+      await toggle(mobile).click();
+      await expect(mobile.getByText("index.tsx", { exact: true })).toBeVisible();
+      await expect(mobile.getByText("theme.ts", { exact: true })).toBeVisible();
+      await expect(mobile.getByText("app.json", { exact: true })).toBeVisible();
+      await message(mobile).fill("Mobile draft stays here");
+      await toggle(mobile).click();
+      await expect(message(mobile)).not.toBeVisible();
+      await toggle(mobile).click();
+      await expect(message(mobile)).toHaveValue("Mobile draft stays here");
+      for (const sidebar of [570, 400]) {
+        await page.locator("#root > div.border-r").evaluate((element, size) => {
+          (element as HTMLElement).style.width = `${size}px`;
+        }, sidebar);
+        await mobile.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `${evidence}/mobile-${theme}-${width}-${sidebar}.png` });
+        expect(
+          await overview.evaluate((element) => element.scrollWidth <= element.clientWidth),
+        ).toBe(true);
+      }
+      await mobile.getByRole("button", { name: "Stage All Changes", exact: true }).click();
+      await expect(
+        mobile.getByRole("button", { name: "Stage All Changes", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        main.getByRole("button", { name: "Stage All Changes", exact: true }),
+      ).toBeAttached();
+      await expect(
+        worktree.getByRole("button", { name: "Stage All Changes", exact: true }),
+      ).toBeAttached();
+      await expect(message(main)).toHaveValue("Main checkout draft stays here");
+      await expect(message(worktree)).toHaveValue("Worktree draft stays here");
+      const calls = await page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              gitFixtureCalls: { command: string; args: Record<string, unknown> }[];
+            }
+          ).gitFixtureCalls,
+      );
+      expect(
+        calls.filter((call) => call.command === "git_stage_all").map((call) => call.args.cwd),
+      ).toEqual(["/fixture/mobile"]);
+      expect(
+        calls.some(
+          (call) =>
+            call.command === "git_submodules" &&
+            call.args.cwd === "/fixture" &&
+            call.args.includeRepositories === true,
+        ),
+      ).toBe(true);
+      await page.getByRole("button", { name: /^Working copy:/ }).click();
+      await page.getByRole("option").filter({ hasText: "/fixture/mobile" }).click();
+      await expect(page.getByRole("textbox", { name: "Commit message", exact: true })).toHaveValue(
+        "Mobile draft stays here",
+      );
+      await page.getByRole("button", { name: /^Working copy:/ }).click();
+      await page.getByRole("option", { name: "All checkouts", exact: true }).click();
+      await expect(message(main)).toHaveValue("Main checkout draft stays here");
+      await expect(message(worktree)).toHaveValue("Worktree draft stays here");
+      await expect(message(mobile)).toHaveValue("Mobile draft stays here");
+    });
+  }

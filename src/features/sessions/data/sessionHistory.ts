@@ -1,10 +1,13 @@
 import { sessionIssue } from "../model/sessionIssue";
+import { sessionDelegationParent } from "../../../shared/model/host-contracts/delegation";
+import { wasTurnInterrupted } from "../model/inFlight";
+import { sessionProviderHistory } from "../model/sessionProviderHistory";
 import { sessionActivityAt } from "../model/sessionActivity";
 import type { OrchestrationRun } from "../../orchestration/model/orchestration";
 import { summarizeOrchestration } from "../../orchestration/model/orchestrationSummary";
 import { fuzzyMatch } from "../../../shared/lib/fuzzy";
 import { projectName } from "../../../shared/lib/paths";
-import { sameProjectPath } from "../../projects/model/recents";
+import { sameProjectPath } from "../../projects/public/recents";
 import {
   sessionDisplayTitle,
   sessionDraftBlock,
@@ -12,17 +15,13 @@ import {
   type Session,
 } from "../model/session";
 import { shouldPersistSession, type SessionSummary } from "./sessionStore";
+import { compareSessionSummaries } from "../model/compareSessionSummaries";
+export { compareSessionSummaries } from "../model/compareSessionSummaries";
 
 export type SessionGitHint = {
   repo?: string;
   branch?: string;
 };
-
-export function compareSessionSummaries(a: SessionSummary, b: SessionSummary): number {
-  const pin = Number(!!b.pinned) - Number(!!a.pinned);
-  if (pin !== 0) return pin;
-  return b.updatedAt - a.updatedAt || a.id.localeCompare(b.id);
-}
 
 export function mergeHistorySummary(
   current: SessionSummary[],
@@ -97,7 +96,10 @@ function sessionSearchHit(row: SessionSummary, query: string): boolean {
 
 export function summaryFromSession(session: Session, git?: SessionGitHint): SessionSummary {
   return {
+    delegationParent: sessionDelegationParent(session) ?? null,
+    providerHistory: sessionProviderHistory(session),
     issue: sessionIssue(session),
+    interrupted: wasTurnInterrupted(session),
     id: session.id,
     orchestrationLeadId: session.orchestrationLeadId,
     cwd: session.cwd,
@@ -172,19 +174,36 @@ export function historyWithLiveSessions(
       const draft = !!sessionDraftBlock(session);
       const automationId = session.automationId || stored.automationId;
       const linkedWorkItem = session.linkedWorkItem ?? stored.linkedWorkItem;
-      const updatedAt = Math.max(stored.updatedAt, sessionActivityAt(session));
+      const lastActivityAt = Math.max(
+        stored.lastActivityAt ?? stored.updatedAt,
+        sessionActivityAt(session),
+      );
+      const providerHistory =
+        session.historyPartial || session.historyLoading
+          ? (stored.providerHistory ?? sessionProviderHistory(session))
+          : sessionProviderHistory(session);
+      const providerHistoryChanged =
+        JSON.stringify(stored.providerHistory) !== JSON.stringify(providerHistory);
+      const interrupted =
+        session.historyPartial || session.historyLoading
+          ? stored.interrupted
+          : wasTurnInterrupted(session);
       if (
-        stored.updatedAt !== updatedAt ||
+        (stored.lastActivityAt ?? stored.updatedAt) !== lastActivityAt ||
         stored.issue !== sessionIssue(session) ||
+        !!stored.interrupted !== !!interrupted ||
         !!stored.draft !== draft ||
         stored.automationId !== automationId ||
         stored.title !== session.title ||
-        stored.linkedWorkItem !== linkedWorkItem
+        stored.linkedWorkItem !== linkedWorkItem ||
+        providerHistoryChanged
       ) {
         rows[storedIndex] = {
           ...stored,
-          updatedAt,
+          providerHistory,
+          lastActivityAt,
           issue: sessionIssue(session),
+          interrupted,
           title: session.title,
           draft: draft || undefined,
           ...(automationId ? { automationId } : {}),

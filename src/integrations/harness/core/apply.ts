@@ -1,4 +1,14 @@
+import { readableHarnessError } from "./readableError";
+import { applyBackgroundUpdate, withoutBackgroundWait } from "./backgroundWait";
 import { trimAndCapText } from "../../../shared/lib/cappedText";
+import {
+  approvalOccurrenceForEvent,
+  isApprovalOccurrenceId,
+} from "../../../shared/model/approvalOccurrence";
+import {
+  inlineVisualFromResult,
+  isInlineVisualRenderTool,
+} from "../../../features/sessions/model/inlineVisual";
 import { hasReadableText } from "../../../features/sessions/model/transcriptActivity";
 import { executionUserIndex } from "../../../features/sessions/model/executionTurn";
 import { boundedToolPreview } from "../../../features/sessions/model/toolInspection";
@@ -15,7 +25,7 @@ import type {
 } from "../../../features/sessions/model/session";
 import {
   dropContextWindow,
-  mergeContextUsage,
+  applyContextReading,
 } from "../../../features/sessions/model/contextUsage";
 import {
   mergeSessionUsage,
@@ -36,25 +46,54 @@ import {
   capHeadTail,
   capStepOutput,
 } from "../../../features/sessions/model/agentOutput";
-import { joinStreamText } from "./streamText";
+import { MAX_TOOL_DETAIL_CHARS } from "./toolDetailLimits";
 import { registerStreamingTextUpdate } from "../../../features/sessions/model/stableBlocks";
 import { registerBlockChanges } from "../../../features/sessions/model/blockChanges";
 import { taskListText } from "../../../features/sessions/model/taskList";
 import { isReviewablePlan } from "../../../features/sessions/model/plan";
-import { resolveModel } from "../../../features/sessions/model/models";
+import { modelBelongsToHarness, resolveModel } from "../../../features/sessions/model/models";
+import {
+  queuedModelTarget,
+  sameQueuedModelTarget,
+} from "../../../features/sessions/model/messageQueue";
 import { loadResumeAtReset } from "../../../features/settings/model/settings";
 import { selectedAnswerLabels } from "../../../features/sessions/model/userQuestion";
 import type { HarnessEvent } from "./types";
+import {
+  COMPACTING_TEXT,
+  COMPACTION_STATUS_KEY,
+  isRunningCompaction,
+} from "../../../features/sessions/model/compactionStatus";
+
+/** Start timing only once the provider accepts or produces this turn. */
+function startProviderDuration(session: Session): Session {
+  if (!session.busy) return session;
+  const index = executionUserIndex(session.blocks);
+  if (index < 0 || session.blocks[index].startedAt != null) return session;
+  const blocks = session.blocks.slice();
+  blocks[index] = { ...blocks[index], startedAt: Date.now() };
+  return { ...session, blocks };
+}
 
 /** Apply one delivery batch without copying the transcript for every token. */
 export function applyHarnessEvents(session: Session, events: readonly HarnessEvent[]): Session {
   let next = session;
   for (let index = 0; index < events.length; index++) {
     const event = events[index];
+    if (event.type === "tool.updated") {
+      // Command output arrives as one update per chunk, each carrying the whole
+      // tail so far; only the last chunk of a run in this batch changes the result.
+      while (index + 1 < events.length && isSupersededToolUpdate(event, events[index + 1])) {
+        index++;
+      }
+      next = applyHarnessEvent(next, events[index]);
+      continue;
+    }
     if (event.type !== "message.delta" && event.type !== "reasoning.delta") {
       next = applyHarnessEvent(next, event);
       continue;
     }
+    next = startProviderDuration(next);
     const texts = [event.text];
     while (index + 1 < events.length) {
       const following = events[index + 1];
@@ -71,6 +110,35 @@ export function applyHarnessEvents(session: Session, events: readonly HarnessEve
     );
   }
   return next;
+}
+
+type ToolUpdatedEvent = Extract<HarnessEvent, { type: "tool.updated" }>;
+
+/**
+ * True when `following` repeats `event` for the same call and only replaces its
+ * output, so applying `event` first changes nothing the second update would not.
+ */
+function isSupersededToolUpdate(event: ToolUpdatedEvent, following: HarnessEvent): boolean {
+  return (
+    following.type === "tool.updated" &&
+    !!event.callId &&
+    following.callId === event.callId &&
+    following.detail !== undefined &&
+    following.title === event.title &&
+    following.kind === event.kind &&
+    following.status === event.status &&
+    following.preview === event.preview &&
+    following.agentModel === event.agentModel &&
+    following.agentPrompt === event.agentPrompt &&
+    !event.fileChanges &&
+    !following.fileChanges &&
+    !event.paths &&
+    !following.paths &&
+    (following.status === undefined ||
+      (following.status !== "completed" &&
+        following.status !== "failed" &&
+        following.status !== "stopped"))
+  );
 }
 
 export type ApplyHarnessEventOptions = {
@@ -100,6 +168,18 @@ export function applyHarnessEvent(
   ) {
     session = { ...session, retryMessage: undefined };
   }
+  if (
+    [
+      "turn.started",
+      "message.delta",
+      "reasoning.delta",
+      "tool.started",
+      "approval.requested",
+      "question.asked",
+      "image.generated",
+    ].includes(event.type)
+  )
+    session = startProviderDuration(session);
   switch (event.type) {
     case "message.delta":
       return patchStreaming(session, "assistant", event.text, true);
@@ -131,6 +211,7 @@ export function applyHarnessEvent(
         kind: event.kind,
         status: event.status,
         detail: event.detail,
+        ...(event.detailTruncated ? { detailTruncated: true } : {}),
         preview: event.preview,
         streaming:
           event.status !== "completed" && event.status !== "failed" && event.status !== "stopped",
@@ -144,10 +225,25 @@ export function applyHarnessEvent(
     case "approval.requested":
       return attachApproval(session, event);
     case "approval.resolved": {
+      // An unidentified legacy event can resolve only one current pending request;
+      // never rewrite older decided blocks when a provider reuses its numeric ID.
+      if (event.occurrenceId !== undefined && !isApprovalOccurrenceId(event.occurrenceId))
+        throw new Error("Invalid approval occurrence identity");
+      const pending = session.blocks.filter(
+        (block) =>
+          block.approval?.requestId === event.requestId &&
+          (event.occurrenceId !== undefined
+            ? block.approval.occurrenceId === event.occurrenceId
+            : !block.approval.decided),
+      );
+      if (pending.length !== 1) return session;
       const changed: Block[] = [];
       const blocks = session.blocks.map((block) => {
         if (
           block.approval?.requestId !== event.requestId ||
+          (event.occurrenceId !== undefined
+            ? block.approval.occurrenceId !== event.occurrenceId
+            : block !== pending[0]) ||
           block.approval.decided === event.decision
         )
           return block;
@@ -164,25 +260,57 @@ export function applyHarnessEvent(
         ...session,
         pendingQuestion: {
           requestId: event.requestId,
+          ...(event.occurrenceId ? { occurrenceId: event.occurrenceId } : {}),
           questions: event.questions,
+          ...(event.behavior ? { behavior: event.behavior } : {}),
+          ...(event.dismissAction ? { dismissAction: event.dismissAction } : {}),
+          ...(event.providerTurnId ? { providerTurnId: event.providerTurnId } : {}),
+          ...(event.callId ? { callId: event.callId } : {}),
           ...(event.title ? { title: event.title } : {}),
           ...(event.autoResolveAt != null ? { autoResolveAt: event.autoResolveAt } : {}),
         },
       };
-    case "question.updated":
-      return session.pendingQuestion?.requestId === event.requestId &&
-        session.pendingQuestion.autoResolveAt !== event.autoResolveAt
-        ? {
-            ...session,
-            pendingQuestion: {
-              ...session.pendingQuestion,
-              autoResolveAt: event.autoResolveAt,
-            },
-          }
-        : session;
+    case "question.updated": {
+      const pending =
+        session.pendingQuestion?.requestId === event.requestId
+          ? session.pendingQuestion
+          : session.submittedQuestions?.find((question) => question.requestId === event.requestId);
+      if (!pending) return session;
+      const updated = {
+        ...pending,
+        // A delivery-only update must not remove the provider's deadline.
+        ...("autoResolveAt" in event ? { autoResolveAt: event.autoResolveAt } : {}),
+        ...(event.delivery ? { delivery: event.delivery, error: event.error } : {}),
+        ...("error" in event ? { error: event.error } : {}),
+      };
+      const submitted = session.submittedQuestions ?? [];
+      const retain =
+        event.delivery === "queued" ||
+        submitted.some((question) => question.requestId === event.requestId);
+      return {
+        ...session,
+        ...(session.pendingQuestion?.requestId === event.requestId
+          ? { pendingQuestion: updated }
+          : {}),
+        ...(retain
+          ? {
+              submittedQuestions: [
+                ...submitted.filter((question) => question.requestId !== event.requestId),
+                updated,
+              ],
+            }
+          : {}),
+      };
+    }
     case "question.resolved": {
-      const pending = session.pendingQuestion;
-      if (pending?.requestId !== event.requestId) return session;
+      const pending =
+        session.pendingQuestion?.requestId === event.requestId
+          ? session.pendingQuestion
+          : session.submittedQuestions?.find((question) => question.requestId === event.requestId);
+      if (!pending) return session;
+      // Automatic transport retirement cannot establish whether an earlier write arrived.
+      // Explicit owner Stop and new turns clear these held records separately.
+      if (event.decision === "cancelled" && pending.delivery === "unknown") return session;
       const reply = event.decision === "answered" ? event.reply : undefined;
       const questionAnswers = reply
         ? pending.questions.flatMap((question) => {
@@ -193,7 +321,18 @@ export function applyHarnessEvent(
       const text = questionAnswers
         .map(({ prompt, answers }) => `${prompt}\n${answers.join("\n")}`)
         .join("\n\n");
-      const next = { ...session, pendingQuestion: undefined };
+      const remaining = session.submittedQuestions?.filter(
+        (question) => question.requestId !== event.requestId,
+      );
+      const next = {
+        ...session,
+        ...(session.pendingQuestion?.requestId === event.requestId
+          ? { pendingQuestion: undefined }
+          : {}),
+        ...(session.submittedQuestions
+          ? { submittedQuestions: remaining?.length ? remaining : undefined }
+          : {}),
+      };
       // Keep the running turn and its streaming blocks intact. This answer is
       // a mid-turn user message, not a newly submitted turn.
       if (!text) return next;
@@ -201,22 +340,13 @@ export function applyHarnessEvent(
       answered.blocks[answered.blocks.length - 1] = {
         ...answered.blocks[answered.blocks.length - 1],
         questionAnswers,
+        ...(reply?.attachments ? { attachments: Object.values(reply.attachments).flat() } : {}),
       };
       return { ...answered, busy: session.busy };
     }
-    case "context": {
-      const context = mergeContextUsage(session.context, {
-        used: event.used,
-        window: event.window,
-      });
-      if (
-        session.context &&
-        session.context.used === context.used &&
-        session.context.window === context.window
-      )
-        return session;
-      return { ...session, context };
-    }
+    case "context.compacted":
+    case "context":
+      return applyContextReading(session, event);
     case "usage": {
       const usage = mergeSessionUsage(session.usage, event);
       const previous = session.usage;
@@ -237,35 +367,48 @@ export function applyHarnessEvent(
     case "tasks.updated":
       return upsertTaskList(session, event);
     case "background.updated":
-      if (event.tasks.length === 0) {
-        if (!session.backgroundTasks) return session;
-        const { backgroundTasks: _cleared, backgroundAgents: _agents, ...rest } = session;
-        return rest;
-      }
-      if (
-        session.backgroundAgents === event.agents &&
-        session.backgroundTasks?.length === event.tasks.length &&
-        session.backgroundTasks.every((task, index) => task === event.tasks[index])
-      )
-        return session;
-      return {
-        ...session,
-        backgroundTasks: event.tasks,
-        backgroundAgents: event.agents,
-      };
+      return applyBackgroundUpdate(session, event);
     case "plan":
       return upsertPlan(session, event);
     case "session.error":
       return appendBlock(failStreaming(session), {
         id: crypto.randomUUID(),
         role: "system",
-        text: event.message,
+        text: readableHarnessError(event.message),
         notice: "error",
       });
-    case "session.providerBound":
+    case "session.ended": {
+      // The provider process is gone: a card whose delivery is unconfirmed can
+      // never be confirmed, so drop it instead of holding it forever.
+      const held = session.pendingQuestion?.delivery === "unknown";
+      const submitted = session.submittedQuestions?.filter((q) => q.delivery !== "unknown");
+      if (!held && submitted?.length === session.submittedQuestions?.length) return session;
+      return {
+        ...session,
+        ...(held ? { pendingQuestion: undefined } : {}),
+        ...(session.submittedQuestions
+          ? { submittedQuestions: submitted?.length ? submitted : undefined }
+          : {}),
+      };
+    }
+    case "session.providerBound": {
+      const running = session.busy ? session.runningModelTarget : undefined;
+      if (running && running.harness !== session.harness) {
+        const source = session.pendingSwitch;
+        if (
+          source?.from !== running.harness ||
+          source.fromProviderSessionId === event.providerSessionId
+        )
+          return session;
+        return {
+          ...session,
+          pendingSwitch: { ...source, fromProviderSessionId: event.providerSessionId },
+        };
+      }
       return session.providerSessionId === event.providerSessionId
         ? session
         : { ...session, providerSessionId: event.providerSessionId };
+    }
     case "turn.started": {
       const index = lastMatchingBlock(session.blocks, (block) => block.role === "user");
       if (index < 0) return session;
@@ -275,9 +418,29 @@ export function applyHarnessEvent(
       blocks[index] = { ...block, providerTurnId: event.providerTurnId };
       return { ...session, blocks };
     }
-    case "session.configChanged":
+    case "session.configChanged": {
+      const running = session.busy ? session.runningModelTarget : undefined;
+      const receiver = running ?? queuedModelTarget(session);
+      // Settings still apply when only the model is foreign; ignore just that.
+      let eventModel = event.model;
+      if (eventModel && !modelBelongsToHarness(receiver.harness, eventModel)) {
+        console.warn(`[harness] ignoring foreign model "${eventModel}" for "${receiver.harness}"`);
+        eventModel = undefined;
+        if (!event.modelSettings) return session;
+      }
+      const updated = {
+        ...receiver,
+        model: eventModel ?? receiver.model,
+        modelSettings: { ...receiver.modelSettings, ...event.modelSettings },
+      };
+      // The picker can select the next target while this turn is still active.
+      // Runtime updates belong to that active target, not to the unsent choice.
+      if (running && !sameQueuedModelTarget(running, queuedModelTarget(session)))
+        return sameQueuedModelTarget(running, updated)
+          ? session
+          : { ...session, runningModelTarget: updated };
       if (
-        (!event.model || event.model === session.model) &&
+        (!eventModel || eventModel === session.model) &&
         (!event.modelSettings ||
           (session.modelSettings &&
             Object.entries(event.modelSettings).every(
@@ -287,8 +450,9 @@ export function applyHarnessEvent(
         return session;
       return {
         ...session,
-        ...(event.model ? { model: event.model } : {}),
-        ...(event.model && event.model !== session.model
+        ...(running ? { runningModelTarget: updated } : {}),
+        ...(eventModel ? { model: eventModel } : {}),
+        ...(eventModel && eventModel !== session.model
           ? { context: dropContextWindow(session.context) }
           : {}),
         ...(event.modelSettings
@@ -300,7 +464,9 @@ export function applyHarnessEvent(
             }
           : {}),
       };
+    }
     case "status":
+      if (event.key === COMPACTION_STATUS_KEY) return applyCompactionStatus(session, event);
       if (event.key === "provider-retry")
         return session.retryMessage === event.text
           ? session
@@ -351,6 +517,16 @@ function mergeTurnMetrics(
     }
   }
   if (userIndex < 0) return session;
+  // Clarification replies and steers continue the same provider turn. Its
+  // cumulative metrics belong to the root, independently of reply authorship.
+  const continuation = session.blocks[userIndex].continuationOf;
+  if (continuation) {
+    const owner = session.blocks.findIndex(
+      (block) => block.id === continuation && block.role === "user" && !block.continuationOf,
+    );
+    if (owner < 0) return session;
+    userIndex = owner;
+  }
 
   const current = session.blocks[userIndex];
   const metrics = {
@@ -380,9 +556,7 @@ function upsertPlan(session: Session, event: Extract<HarnessEvent, { type: "plan
 
   if (existing >= 0) {
     const current = session.blocks[existing];
-    const text = event.append
-      ? joinStreamText(current.text, event.text)
-      : event.text || current.text;
+    const text = event.append ? current.text + event.text : event.text || current.text;
     const blocks = session.blocks.slice();
     blocks[existing] = {
       ...current,
@@ -565,12 +739,17 @@ export function appendUser(
 ): Session {
   session = settlePendingApprovals(session);
   return appendBlock(
-    { ...session, busy: true, retryMessage: undefined },
+    {
+      ...session,
+      busy: true,
+      retryMessage: undefined,
+      pendingQuestion: undefined,
+      submittedQuestions: undefined,
+    },
     {
       id: crypto.randomUUID(),
       role: "user",
       text,
-      startedAt: Date.now(),
       ...turnModelFields(session),
       ...(attachments.length > 0 ? { attachments } : {}),
       ...userTurnFields(extra),
@@ -604,20 +783,31 @@ export function appendSteerUser(
   };
 }
 
-export function stopStreaming(session: Session, endedAt = Date.now()): Session {
-  const {
-    backgroundTasks: _cleared,
-    backgroundAgents: _agents,
-    ...settled
-  } = settlePendingApprovals(session);
+export function stopStreaming(
+  session: Session,
+  endedAt = Date.now(),
+  retainQuestionDelivery = false,
+): Session {
+  const settled = withoutBackgroundWait(settlePendingApprovals(session));
+  const submitted = retainQuestionDelivery
+    ? session.submittedQuestions?.map((question) => ({ ...question, delivery: "unknown" as const }))
+    : undefined;
+  const held =
+    retainQuestionDelivery &&
+    session.pendingQuestion &&
+    ["sending", "queued", "unknown"].includes(session.pendingQuestion.delivery ?? "")
+      ? { ...session.pendingQuestion, delivery: "unknown" as const }
+      : undefined;
   return {
     ...settled,
     busy: false,
     retryMessage: undefined,
-    pendingQuestion: undefined,
+    pendingQuestion: held ?? submitted?.[submitted.length - 1],
+    submittedQuestions: submitted,
     blocks: stampTurnDuration(
       settled.blocks
-        .filter((block) => !isBareProseStream(block))
+        // A compaction row still running when the turn stops was cut short.
+        .filter((block) => !isBareProseStream(block) && !isRunningCompaction(block))
         .map((block) =>
           stopBlockProgress(block.streaming ? endOpenAgentRun(block, endedAt) : block),
         ),
@@ -677,7 +867,8 @@ function failStreaming(session: Session): Session {
         : [];
     }),
   );
-  const stopped = stopStreaming(session);
+  // The provider failed, so an unconfirmed question card can never resolve.
+  const stopped = stopStreaming(session, Date.now(), false);
   return {
     ...stopped,
     blocks: stopped.blocks.map((block) => {
@@ -805,6 +996,39 @@ function appendStatus(session: Session, text: string): Session {
   });
 }
 
+/**
+ * Compaction is one row from start to finish: "Compacting context…" while it
+ * runs, then the same row reads "Compacted context". An empty settle closes the
+ * row (failed or cancelled); with no running row, a settle is an ordinary
+ * deduplicated status so a repeated "Compacted context" never stacks.
+ */
+function applyCompactionStatus(
+  session: Session,
+  event: Extract<HarnessEvent, { type: "status" }>,
+): Session {
+  const text = event.text.trim();
+  const index = lastMatchingBlock(session.blocks, isRunningCompaction);
+  if (event.running) {
+    if (index >= 0) return session;
+    return appendBlock(session, {
+      id: crypto.randomUUID(),
+      role: "system",
+      text: text || COMPACTING_TEXT,
+      statusKey: COMPACTION_STATUS_KEY,
+      statusRunningSince: Date.now(),
+    });
+  }
+  if (index < 0) return text ? appendStatus(session, text) : session;
+  const blocks = session.blocks.slice();
+  if (text) {
+    const { statusRunningSince: _since, ...settled } = blocks[index];
+    blocks[index] = { ...settled, text };
+  } else {
+    blocks.splice(index, 1);
+  }
+  return { ...session, blocks };
+}
+
 function upsertKeyedStatus(session: Session, key: string, text: string): Session {
   const trimmed = text.trim();
   const turnStart = lastMatchingBlock(session.blocks, (block) => block.role === "user");
@@ -906,6 +1130,10 @@ function attachApproval(
   session: Session,
   event: Extract<HarnessEvent, { type: "approval.requested" }>,
 ): Session {
+  const occurrenceId = approvalOccurrenceForEvent(event);
+  // An actual source event/replay never creates two owners or resurrects a
+  // decided occurrence. Equal content on another event is not this identity.
+  if (session.blocks.some((block) => block.approval?.occurrenceId === occurrenceId)) return session;
   const index = findToolForApproval(session, event);
   if (index >= 0) {
     const blocks = session.blocks.slice();
@@ -936,7 +1164,7 @@ function attachApproval(
               ...(preview ? { preview } : {}),
             }
           : prev.tool,
-      approval: { requestId: event.requestId },
+      approval: { requestId: event.requestId, occurrenceId },
     };
     registerBlockChanges(session.blocks, blocks, [blocks[index]]);
     return { ...session, blocks };
@@ -954,7 +1182,7 @@ function attachApproval(
       kind: event.kind,
       ...(preview ? { preview } : {}),
     },
-    approval: { requestId: event.requestId },
+    approval: { requestId: event.requestId, occurrenceId },
   });
 }
 
@@ -963,7 +1191,9 @@ function findToolForApproval(
   event: Extract<HarnessEvent, { type: "approval.requested" }>,
 ): number {
   if (event.callId) {
-    const byId = session.blocks.findIndex((block) => block.tool?.callId === event.callId);
+    const byId = session.blocks.findIndex(
+      (block) => block.tool?.callId === event.callId && !block.approval,
+    );
     // An explicit call id is authoritative; title similarity is not identity.
     return byId;
   }
@@ -995,6 +1225,8 @@ function upsertTool(
     kind?: string;
     status?: string;
     detail?: string;
+    /** The provider already dropped part of `detail` before sending it. */
+    detailTruncated?: boolean;
     preview?: ToolPreview;
     streaming: boolean;
     agentModel?: string;
@@ -1003,14 +1235,26 @@ function upsertTool(
   },
 ): Session {
   const index = findToolIndex(session, patch);
+  const inlineVisual =
+    !patch.streaming &&
+    !patch.detailTruncated &&
+    isInlineVisualRenderTool(
+      patch.title ?? (index >= 0 ? session.blocks[index].tool?.title : undefined),
+    ) &&
+    !/error|fail|reject|cancel/i.test(patch.status ?? "")
+      ? inlineVisualFromResult(patch.detail)
+      : undefined;
   const prompt = capAgentPrompt(patch.agentPrompt);
   if (index < 0) {
-    const detail = capToolDetail(patch.detail);
+    const capped = capToolDetailMeta(patch.detail);
+    const detail = capped.detail;
+    const truncated = !!detail && (capped.truncated || patch.detailTruncated === true);
     const preview = fillPreview(patch.preview, detail, patch.kind, patch.title);
     const label = finalToolLabel(session, patch.kind, displayLabel(patch), preview);
     return appendBlock(session, {
       id: crypto.randomUUID(),
       role: "tool",
+      ...(inlineVisual ? { inlineVisual } : {}),
       text: label,
       streaming: patch.streaming,
       ...(patch.agentModel || isAgentTool(patch.kind, label)
@@ -1030,13 +1274,20 @@ function upsertTool(
         kind: patch.kind,
         status: patch.status,
         ...(detail ? { detail } : {}),
+        ...(truncated ? { outputTruncated: true } : {}),
         ...(preview ? { preview } : {}),
         ...(patch.background ? { background: true } : {}),
       },
     });
   }
   const prev = session.blocks[index];
-  const detail = capToolDetail(patch.detail) ?? prev.tool?.detail;
+  const capped = capToolDetailMeta(patch.detail);
+  const detail = capped.detail ?? prev.tool?.detail;
+  // A new detail replaces the old one, so its truncation state replaces too;
+  // an update without detail leaves the earlier text and its flag alone.
+  const truncated = capped.detail
+    ? capped.truncated || patch.detailTruncated === true
+    : prev.tool?.outputTruncated === true;
   const preview = fillPreview(
     mergeToolPreview(patch.preview, prev.tool?.preview),
     detail,
@@ -1059,6 +1310,8 @@ function upsertTool(
     prev.tool?.kind === kind &&
     prev.tool?.status === status &&
     prev.tool?.detail === detail &&
+    (!inlineVisual || JSON.stringify(prev.inlineVisual) === JSON.stringify(inlineVisual)) &&
+    (prev.tool?.outputTruncated === true) === truncated &&
     (!patch.agentModel || prev.agentRun?.model === patch.agentModel) &&
     (!prompt || prev.agentRun?.prompt === prompt) &&
     (!prev.agentRun || prev.agentRun.name === agentName) &&
@@ -1070,6 +1323,7 @@ function upsertTool(
   const blocks = session.blocks.slice();
   blocks[index] = {
     ...prev,
+    ...(inlineVisual ? { inlineVisual } : {}),
     text: label,
     streaming: patch.streaming,
     ...(patch.agentModel || prev.agentRun
@@ -1090,6 +1344,7 @@ function upsertTool(
       kind,
       status,
       ...(detail ? { detail } : {}),
+      ...(detail && truncated ? { outputTruncated: true } : {}),
       ...(preview ? { preview } : {}),
       ...(prev.tool?.background ? { background: true } : {}),
       ...(prev.tool?.agentContext ? { agentContext: prev.tool.agentContext } : {}),
@@ -1135,7 +1390,16 @@ function endOpenAgentRun(block: Block, at: number): Block {
   return { ...block, agentRun: { ...block.agentRun, endedAt: at } };
 }
 
-const MAX_TOOL_DETAIL_CHARS = 8_000;
+export { MAX_TOOL_DETAIL_CHARS };
+
+/** Like `capToolDetail`, but says whether the cap dropped any text. */
+function capToolDetailMeta(value: string | undefined): { detail?: string; truncated: boolean } {
+  const text = value?.trim();
+  if (!text) return { truncated: false };
+  return text.length <= MAX_TOOL_DETAIL_CHARS
+    ? { detail: text, truncated: false }
+    : { detail: trimAndCapText(text, MAX_TOOL_DETAIL_CHARS), truncated: true };
+}
 
 function capToolDetail(value: string | undefined): string | undefined {
   return value ? trimAndCapText(value, MAX_TOOL_DETAIL_CHARS) || undefined : undefined;
@@ -1303,9 +1567,12 @@ function capAgentStepText(value: string): string {
 
 function findToolIndex(session: Session, patch: { callId: string; title?: string }): number {
   if (patch.callId) {
-    const byId = session.blocks.findIndex((block) => block.tool?.callId === patch.callId);
     // An explicit call id is authoritative; title similarity is not identity.
-    return byId;
+    // The running call is almost always near the end of a long transcript.
+    for (let index = session.blocks.length - 1; index >= 0; index--) {
+      if (session.blocks[index].tool?.callId === patch.callId) return index;
+    }
+    return -1;
   }
   const needle = normalizeLabel(patch.title || "");
   if (!needle) return -1;

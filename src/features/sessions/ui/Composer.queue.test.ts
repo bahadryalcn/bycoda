@@ -4,6 +4,17 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@tauri-apps/api/core", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@tauri-apps/api/core")>();
+  return {
+    ...original,
+    invoke: (command: string, args?: unknown) =>
+      command === "write_attachment"
+        ? Promise.resolve(`/attachments/${(args as { name: string }).name}`)
+        : original.invoke(command, args),
+  };
+});
+
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }),
 }));
@@ -18,6 +29,19 @@ import { Composer, ComposerAction } from "./Composer";
 import { setHarnessModeLimits, type ComposerTurnOptions } from "../model/session";
 import { submitAfterProjectSync } from "../../../app/model/submissionAcceptance";
 import { savePromptTemplates, type PromptTemplate } from "../model/promptTemplates";
+
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
 
 let container: HTMLDivElement;
 let root: Root;
@@ -84,9 +108,7 @@ describe("retained queue-row actions", () => {
         },
         vi.fn(),
       );
-      const steer = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-        (button) => button.textContent?.trim() === "Steer",
-      )!;
+      const steer = container.querySelector<HTMLButtonElement>('button[aria-label="Steer"]')!;
       expect(steer.disabled).toBe(true);
       await act(async () => {
         steer.click();
@@ -98,6 +120,28 @@ describe("retained queue-row actions", () => {
 });
 
 describe("local asynchronous submission recovery", () => {
+  it("retains a queued provider switch even when the running Claude query cannot steer", async () => {
+    const onSteerQueuedMessage = vi.fn();
+    await renderComposer(
+      {
+        harness: "claude",
+        busy: true,
+        onSteerQueuedMessage,
+        queuedMessages: [
+          {
+            id: "switch",
+            text: "continue on Codex",
+            attachments: [],
+            modelTarget: { harness: "codex", model: "codex:test", modelSettings: {} },
+          },
+        ],
+      },
+      vi.fn(),
+    );
+    const steer = container.querySelector<HTMLButtonElement>('button[aria-label="Steer"]')!;
+    expect(steer.disabled).toBe(false);
+  });
+
   it("restores the prompt, pasted attachment and plan selection after failed project preparation", async () => {
     let failSync!: (error: Error) => void;
     const sync = new Promise<never>((_resolve, reject) => {
@@ -208,7 +252,25 @@ describe("Shift+Tab queues while a turn runs", () => {
     );
   });
 
-  it("keeps Shift+Tab in the composer without sending when idle, empty, or background-only", async () => {
+  it.each(["shortcut", "button"])("queues background-only work through the %s", async (action) => {
+    const onSubmit = vi.fn(() => true);
+    const textarea = await renderComposer({ busy: true, backgroundOnly: true }, onSubmit);
+    await type(textarea, "after the tests, update the rules");
+    const button = container.querySelector<HTMLButtonElement>('[data-usage-guide="queue-button"]');
+    expect(button).not.toBeNull();
+    await act(async () => {
+      if (action === "shortcut") press(textarea, shiftTab);
+      else button!.click();
+    });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledWith(
+      "after the tests, update the rules",
+      [],
+      expect.objectContaining({ followUpBehavior: "queue" }),
+    );
+  });
+
+  it("keeps Shift+Tab in the composer without sending when idle or empty", async () => {
     const onSubmit = vi.fn(() => true);
     const idle = await renderComposer({ busy: false }, onSubmit);
     await type(idle, "hello");
@@ -218,9 +280,6 @@ describe("Shift+Tab queues while a turn runs", () => {
     await type(empty, "");
     expect(press(empty, shiftTab).defaultPrevented).toBe(true);
 
-    const bg = await renderComposer({ busy: true, backgroundOnly: true }, onSubmit);
-    await type(bg, "hello");
-    expect(press(bg, shiftTab).defaultPrevented).toBe(true);
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
@@ -297,7 +356,8 @@ describe("ComposerAction queue entry", () => {
   it("offers Queue with its shortcut next to Send while busy", () => {
     const html = render(vi.fn());
     expect(html).toContain('aria-label="Queue message"');
-    expect(html).toContain("(Shift+Tab)");
+    // The shortcut hint lives in the shared tooltip, which static markup cannot open.
+    expect(html).not.toContain(" title=");
     expect(html).toContain('aria-label="Send"');
     expect(html).toContain('aria-label="Stop"');
   });
@@ -320,7 +380,7 @@ describe("ComposerAction queue entry", () => {
       }),
     );
     expect(html).toContain('aria-label="Stop"');
-    expect(html).toContain('title="Stop (Ctrl+.)"');
+    expect(html).not.toContain(" title=");
     expect(html).not.toContain('aria-label="Send"');
     expect(html).not.toContain('aria-label="Queue message"');
     expect(html).not.toContain("disabled");
@@ -447,12 +507,15 @@ describe("a queue restored after a restart", () => {
       send.click();
     });
     expect(steer).toHaveBeenCalledOnce();
-    expect(send.disabled).toBe(true);
-    expect(container.querySelector('[role="status"]')?.textContent).toContain(
-      "Waiting for confirmation",
-    );
+    expect(send.disabled).toBe(false);
+    expect(send.getAttribute("aria-disabled")).toBe("true");
+    act(() => send.click());
+    expect(steer).toHaveBeenCalledOnce();
+    expect(send.getAttribute("aria-disabled")).toBe("true");
+    expect(container.querySelector("[data-queue-feedback]")).toBeNull();
     await act(async () => finish(false));
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("It remains queued");
+    // A refused send keeps the message queued without an extra notice line.
+    expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(container.textContent).toContain("first");
     expect(send.disabled).toBe(false);
   });
@@ -475,19 +538,21 @@ describe("a queue restored after a restart", () => {
     expect(button.disabled).toBe(false);
     act(() => button.click());
     expect(button.textContent).toContain("Resuming");
-    expect(button.disabled).toBe(true);
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    act(() => button.click());
+    expect(resume).toHaveBeenCalledOnce();
     await act(async () =>
       finish({
         kind: "waiting",
         message: "Queue resumed. Messages will send when this turn finishes.",
       }),
     );
-    expect(container.querySelector('[role="status"]')?.textContent).toContain(
-      "when this turn finishes",
-    );
+    expect(container.querySelector("[data-queue-feedback]")).toBeNull();
+    expect(container.querySelector("[data-delivery-accepted]")).toBeNull();
   });
 
-  it("preserves the acceptance result after the last queued row disappears", async () => {
+  it("does not infer acceptance from a successful action or row removal", async () => {
     await renderQueue(
       [{ id: "q1", text: "first", attachments: [] }],
       vi.fn(async () => true),
@@ -497,7 +562,7 @@ describe("a queue restored after a restart", () => {
     )!;
     await act(async () => button.click());
     await renderQueue([]);
-    expect(container.querySelector('[role="status"]')?.textContent).toContain("Message accepted");
+    expect(container.querySelector("[data-delivery-accepted]")).toBeNull();
   });
 
   it("holds a message whose attachment is gone", async () => {
@@ -573,7 +638,7 @@ describe("reordering queued messages", () => {
   it("labels the handle and moves a row with Alt+Arrow", async () => {
     const onReorder = await renderReorder();
     expect(handle("q2").getAttribute("aria-label")).toBe("Reorder queued message");
-    expect(handle("q2").title).toBe("Drag to reorder (Alt+↑ / Alt+↓)");
+    expect(await tooltipText(handle("q2"))).toBe("Drag to reorderAlt↑/Alt↓");
 
     expect(key("q2", { key: "ArrowUp", altKey: true }).defaultPrevented).toBe(true);
     expect(onReorder).toHaveBeenLastCalledWith(["q2", "q1", "q3"]);

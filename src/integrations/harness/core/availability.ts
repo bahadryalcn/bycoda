@@ -199,6 +199,8 @@ export function probeHarnessAvailability(options?: { force?: boolean }): Promise
     .finally(() => {
       markHarnessAvailabilityProbed();
       inflight = null;
+      // Subscribers waiting on the first probe read "probed" only after the mark above.
+      emitHarnessAvailability();
     });
   return inflight;
 }

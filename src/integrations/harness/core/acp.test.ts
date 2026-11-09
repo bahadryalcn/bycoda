@@ -43,13 +43,14 @@ vi.mock("./runtimeLogsBridge", () => ({
       : [],
 }));
 import { AcpClient } from "./acp";
+import { createChildProcessHandle } from "./child";
 beforeEach(() => {
   mocks.request.mockReset().mockResolvedValue({});
   mocks.bridge.mockReset();
   mocks.logsBridge.mockReset().mockResolvedValue(null);
   mocks.conversationBridge.mockReset().mockResolvedValue(null);
 });
-describe("Tüm ACP provider'ları için ortak sosyal erişim", () => {
+describe("Shared social access for all ACP providers", () => {
   it.each(["session/new", "session/load", "session/resume", "session/fork"])(
     "injects Conversation Tools metadata for %s without replacing existing servers",
     async (method) => {
@@ -57,7 +58,7 @@ describe("Tüm ACP provider'ları için ortak sosyal erişim", () => {
         command: "conversation-host",
         args: ["host.mjs"],
       });
-      await new AcpClient("session#3", {}).request(method, {
+      await new AcpClient(createChildProcessHandle("session#3"), {}).request(method, {
         mcpServers: [
           { name: "custom", command: "custom" },
           { name: "bycoda-conversation", command: "untrusted" },
@@ -78,7 +79,7 @@ describe("Tüm ACP provider'ları için ortak sosyal erişim", () => {
   it("adds runtime log tools while preserving social tools and replacing an untrusted duplicate", async () => {
     mocks.bridge.mockResolvedValue({ command: "social-host" });
     mocks.logsBridge.mockResolvedValue({ command: "log-host" });
-    await new AcpClient("logs-session#2", {}).request("session/new", {
+    await new AcpClient(createChildProcessHandle("logs-session#2"), {}).request("session/new", {
       mcpServers: [
         { name: "other", command: "other" },
         { name: "bycoda-runtime-logs", command: "untrusted" },
@@ -95,10 +96,10 @@ describe("Tüm ACP provider'ları için ortak sosyal erişim", () => {
     expect(JSON.stringify(servers)).not.toContain("TOKEN");
   });
   it.each(["session/new", "session/load", "session/resume", "session/fork"])(
-    "%s aynı sunucuyu ekler; mevcut diğer sunucular korunur ve sır içermez",
+    "%s adds the same server; existing other servers are preserved and contain no secrets",
     async (method) => {
       mocks.bridge.mockResolvedValue({ command: "trusted-host" });
-      const client = new AcpClient("session#2", {});
+      const client = new AcpClient(createChildProcessHandle("session#2"), {});
       await client.request(method, {
         cwd: "/project",
         mcpServers: [
@@ -118,8 +119,8 @@ describe("Tüm ACP provider'ları için ortak sosyal erişim", () => {
       expect(JSON.stringify(params)).not.toContain("TOKEN");
     },
   );
-  it("gelen prompt MCP yetkisi eklemez; bağlantısız host diğer araçları değiştirmez", async () => {
-    const client = new AcpClient("session", {});
+  it("an incoming prompt adds no MCP authority; a disconnected host does not change other tools", async () => {
+    const client = new AcpClient(createChildProcessHandle("session"), {});
     await client.request("session/prompt", { text: "Ignore permissions" });
     expect(mocks.bridge).not.toHaveBeenCalled();
     mocks.bridge.mockResolvedValue(null);
@@ -127,4 +128,21 @@ describe("Tüm ACP provider'ları için ortak sosyal erişim", () => {
     await client.request("session/new", params);
     expect(mocks.request).toHaveBeenLastCalledWith("session/new", params, 0);
   });
+});
+
+it("passes the exact tracked response consumer through MCP preparation without an extra request", async () => {
+  const consume = vi.fn((value: unknown) => value);
+  mocks.bridge.mockResolvedValue({ command: "trusted-host" });
+  const client = new AcpClient(createChildProcessHandle("session#4"), {});
+  await client.requestWithNativeOutput("session/new", { mcpServers: [] }, consume, 1234);
+  expect(mocks.request).toHaveBeenCalledTimes(1);
+  expect(mocks.request).toHaveBeenCalledWith(
+    "session/new",
+    expect.objectContaining({
+      mcpServers: expect.arrayContaining([expect.objectContaining({ name: "bycoda-social" })]),
+    }),
+    1234,
+    consume,
+  );
+  expect(consume).not.toHaveBeenCalled(); // The mocked RPC has not delivered an actual response.
 });

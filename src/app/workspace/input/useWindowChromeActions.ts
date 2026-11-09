@@ -1,4 +1,11 @@
-import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import type { SidebarTabId } from "../../../features/settings/model/appearance";
 import {
   saveProjectRailOpen,
@@ -12,9 +19,13 @@ import {
   zoomInUiScale,
   zoomOutUiScale,
 } from "../../../features/settings/model/uiScale";
-import { confirmReload } from "../../model/appLifecycle";
+import { confirmReload, hasInFlightSessions } from "../../model/appLifecycle";
+import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
 
 export interface WindowChromeActionDeps {
+  /** Committed values, so the toggles persist outside a state updater. */
+  projectRailOpen: boolean;
+  sessionSidebarOpen: boolean;
   setProjectRailOpen: Dispatch<SetStateAction<boolean>>;
   setSessionSidebarOpen: Dispatch<SetStateAction<boolean>>;
   setSearchViewOpen: Dispatch<SetStateAction<boolean>>;
@@ -47,6 +58,8 @@ export interface WindowChromeActions {
 /** Window zoom, sidebar/rail toggles, file-picker/find openers and reload. */
 export function useWindowChromeActions(deps: WindowChromeActionDeps): WindowChromeActions {
   const {
+    projectRailOpen,
+    sessionSidebarOpen,
     setProjectRailOpen,
     setSessionSidebarOpen,
     setSearchViewOpen,
@@ -76,28 +89,27 @@ export function useWindowChromeActions(deps: WindowChromeActionDeps): WindowChro
     void applyUiScale(UI_SCALE_DEFAULT);
   }, []);
 
-  const onToggleSidebar = useCallback(() => {
-    setProjectRailOpen((open) => {
-      const next = !open;
-      saveProjectRailOpen(next);
-      return next;
-    });
-  }, []);
-
-  const onToggleSessionSidebar = useCallback(() => {
-    setSessionSidebarOpen((open) => {
-      const next = !open;
-      saveSessionSidebarOpen(next);
-      return next;
-    });
-  }, []);
+  // The toggles compute the next value from the committed state and persist it
+  // once here; a state updater is not a safe place for storage writes. The ref
+  // also covers a second toggle before React re-renders.
+  const openRef = useRef({ projectRail: projectRailOpen, sessionSidebar: sessionSidebarOpen });
+  useLayoutEffect(() => {
+    openRef.current = { projectRail: projectRailOpen, sessionSidebar: sessionSidebarOpen };
+  }, [projectRailOpen, sessionSidebarOpen]);
 
   const onToggleProjectRail = useCallback(() => {
-    setProjectRailOpen((open) => {
-      const next = !open;
-      saveProjectRailOpen(next);
-      return next;
-    });
+    const next = !openRef.current.projectRail;
+    openRef.current.projectRail = next;
+    setProjectRailOpen(next);
+    saveProjectRailOpen(next);
+  }, []);
+  const onToggleSidebar = onToggleProjectRail;
+
+  const onToggleSessionSidebar = useCallback(() => {
+    const next = !openRef.current.sessionSidebar;
+    openRef.current.sessionSidebar = next;
+    setSessionSidebarOpen(next);
+    saveSessionSidebarOpen(next);
   }, []);
 
   const onGoToFile = useCallback(() => {
@@ -122,7 +134,13 @@ export function useWindowChromeActions(deps: WindowChromeActionDeps): WindowChro
   }, []);
   const onReload = useCallback(() => {
     void (async () => {
-      if (!(await confirmReload(dirtyFilesRef.current.size > 0))) return;
+      if (
+        !(await confirmReload(
+          dirtyFilesRef.current.size > 0,
+          hasInFlightSessions(sessionsRef.current),
+        ))
+      )
+        return;
       window.location.reload();
     })();
   }, []);

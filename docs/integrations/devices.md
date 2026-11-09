@@ -2,7 +2,7 @@
 
 ## Devices
 
-Create one `DeviceHost(hostStateDir, { nodePath?, npmCliPath? })` per host. The default uses the current Node runtime and npm's JS CLI beside it. Packaged runtimes without npm return an explicit setup error; configure a genuine Node/npm toolchain path. Setup never launches shell command strings or visible windows.
+Create one `DeviceHost(hostStateDir, { nodePath?, npmCliPath? })` per host. The default uses the current Node runtime and npm's JS CLI beside it; the Host package ships npm next to its Node runtime. Device tools install on first use (`start` installs the hub, the first control action installs agent-device); **Set up device tools** does the same by hand. Setup never launches shell command strings or visible windows.
 
 Expose authenticated RPC: `devices.status`, `devices.setup({ agentAccess })`, `devices.start`, `devices.stop`, `devices.list`, `devices.boot({ deviceId })`, `devices.capture({ deviceId })`, `devices.action({ deviceId, action })`. Every operation requires paired-host authentication; supplied project IDs are validated. Explicit machine tools omit foreign project/session IDs. Setup/start/stop/control are privileged mutations. When exposing tools to providers, derive their context from the active agent run. `DevicePanel` expects injected callbacks matching `DevicePanelApi`.
 
@@ -36,7 +36,7 @@ successfully opened target for reconnecting its private idle daemon. **Home**
 uses the explicit `com.apple.springboard` target and can initialize control
 without opening an arbitrary app. Opening an app is always a user action.
 
-Select the conversation's Mac project/environment, connect to its host, then open **Conversation tools → Devices**. Set up device tools on that host if required, start the device host, select an iOS simulator, and choose **Boot**. **Live view** requests screenshot frames from the Mac through the authenticated host connection. Enable control explicitly to use Home, typing, accessibility snapshots, or manual logical-point input. The app under test must be built and installed in the simulator through its existing project workflow.
+Select the conversation's Mac project/environment, connect to its host, then open **Conversation tools → Devices**. Start the device host (its tools install automatically the first time), select an iOS simulator, and choose **Boot**. **Live view** requests screenshot frames from the Mac through the authenticated host connection. Enable control explicitly to use Home, typing, accessibility snapshots, or manual logical-point input. The app under test must be built and installed in the simulator through its existing project workflow.
 
 The Windows client does not run iOS locally and does not connect to the device hub's private loopback server. The Mac needs full Xcode, an installed iOS simulator runtime, and an available simulator; interactive actions also need the pinned agent tool's XCTest runner to start successfully. Remote host transport support and current installed host/app versions must be verified separately from source tests. This panel provides screenshots and basic input, not the Mac desktop, build logs, or a full video stream. Physical iOS devices are not enumerated by the current simulator discovery contract.
 

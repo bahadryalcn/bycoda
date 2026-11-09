@@ -1,10 +1,22 @@
-import { startTransition, useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  startTransition,
+  useEffect,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import { applyAddToChatRequest } from "../../../features/sessions/model/addChatToWorkspace";
-import { ADD_TO_CHAT_EVENT, type AddToChatRequest } from "../../../features/sessions/model/quoteDraft";
+import {
+  ADD_TO_CHAT_EVENT,
+  type AddToChatRequest,
+} from "../../../features/sessions/model/quoteDraft";
 import type { Session } from "../../../features/sessions/model/session";
 import { sessionsRef, setSessions } from "../../../features/sessions/model/sessionsStore";
 import { ADD_NOTE_TO_CHAT_EVENT, type NoteComposerCard } from "../../../features/notes";
-import { OPEN_WORKTREE_MANAGEMENT, type WorktreeManagementRequest } from "../../../features/source-control/model/worktreeManagement";
+import {
+  OPEN_WORKTREE_MANAGEMENT,
+  type WorktreeManagementRequest,
+} from "../../../features/source-control/model/worktreeManagement";
 import type { WorkspaceTab } from "../../../features/workspace/model/layout";
 
 export interface AddToChatListenerDeps {

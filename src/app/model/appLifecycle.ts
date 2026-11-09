@@ -3,7 +3,7 @@ import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
 import { serverTerminalRestoreState } from "../../features/connections/model/serverTerminalRestoreState";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ask, message } from "@tauri-apps/plugin-dialog";
+import { message } from "@tauri-apps/plugin-dialog";
 import { prepareEditorsToClose } from "../../features/files/model/editorClose";
 import { confirmCloseTerminals } from "../../features/terminal/model/terminalClose";
 import {
@@ -11,7 +11,7 @@ import {
   forgetHarnessSession,
   isLiveHarness,
 } from "../../integrations/harness/core/registry";
-import { killAllChildren } from "../../integrations/harness/core/child";
+import { forgetWindowChildren, killAllChildren } from "../../integrations/harness/core/child";
 import {
   hasInFlightSessions,
   inFlightRefs,
@@ -22,7 +22,14 @@ import {
   workspaceFromResumed,
   type ResumedWorkspace,
 } from "../../features/sessions/model/inFlight";
-import { leafIds, type WorkspaceTab } from "../../features/workspace/model/layout";
+import { closeLeaf, leafIds, type WorkspaceTab } from "../../features/workspace/model/layout";
+import {
+  abortRestoredSession,
+  claimRestoredSession,
+  remoteSessionOwnershipKey,
+} from "./sessionWindowOwnership";
+import { parseRemotePath } from "../../features/connections/model/remoteProjects";
+import { remoteSessionFor } from "../../features/connections/model/connections";
 import { killPty } from "../../platform/tauri/pty";
 import {
   projectTerminalFileIds,
@@ -34,13 +41,18 @@ import { sessionChildHarnesses } from "../../features/sessions/model/handoff";
 import {
   getSession,
   listInFlightSessions,
+  listDeletedSessionIds,
+  isSessionDeleted,
   listSessionsByProject,
   loadWorkspaceSnapshot,
+  isPrimaryWorkspaceWindow,
+  trackPrimaryWorkspaceWindow,
   replaceInFlightSessions,
   saveWorkspaceSnapshot,
   setSessionQueue,
   shouldPersistSession,
   upsertSession,
+  upsertSessionPreservingActivity,
   type SessionSummary,
 } from "../../features/sessions/data/sessionStore";
 import {
@@ -49,25 +61,24 @@ import {
   parseWorkspaceSnapshot,
 } from "../../features/workspace/model/workspaceSnapshot";
 import { flushComposerDrafts } from "../../features/sessions/data/composerDraftStore";
-import { probeTurnTail, readTurnSteps, type TurnTail } from "../../platform/tauri/turnProbe";
-import { markAutoContinueDue } from "../../features/sessions/model/autoContinue";
-import {
-  classifyTurnRecovery,
-  shouldAutoContinue,
-  withFinishedTurn,
-} from "../../features/sessions/model/turnRecovery";
-import type { TurnSteps } from "../../features/sessions/model/turnSteps";
-import { loadAutoContinueInterrupted } from "../../features/settings/model/settings";
+import { flushAssistantDrafts } from "../../features/assistant/model/assistantDraftFlush";
+import { flushHostSessionBindings } from "../../features/connections/model/sessionExecutionBinding";
 import { loadWindowTransfer } from "./windowTransferBootstrap";
+import { recoverInterruptedTurn } from "./interruptedTurnRecovery";
 import type { WindowTransferPayload } from "./windowTransfer";
 import {
   lastProjectPath,
+  looksLikeProject,
   normalizeProjectPath,
   sameProjectPath,
 } from "../../features/projects/model/recents";
+import { workspaceTabCwd } from "../../features/workspace/model/workspaceTabGroups";
+import { showBootRestoreNotice } from "./bootRestoreNotice";
 import type { ProjectReturnMemory } from "../../features/projects/model/projectReturn";
 import { appName } from "../../shared/lib/appName";
+import { platformConfirm } from "../../shared/model/appConfirm";
 import { readToolWindow } from "./toolWindows";
+import { setSessions } from "../../features/sessions/model/sessionsStore";
 
 export type { ResumedWorkspace };
 import {
@@ -86,17 +97,116 @@ export { hasInFlightSessions };
 export type BootWorkspace = {
   windowTransfer: WindowTransferPayload | null;
   resumed: ResumedWorkspace | null;
-  /** Sidebar rows listed before first paint, so the rail is not empty. */
+  /** Ready sidebar rows; slow history is refreshed by the mounted workspace. */
   history: SessionSummary[];
   historyCwd: string | null;
 };
 
 let resumedPromise: Promise<ResumedWorkspace | null> | null = null;
+/**
+ * The saved workspace could not be read at launch. What the window shows is then
+ * a seed layout, not the person's layout, so it must not be saved over the
+ * stored one until they accept it ("Start fresh") or a retry restores it.
+ */
+let snapshotReadFailed = false;
+let blankWorkspaceAccepted = false;
+const SNAPSHOT_READ_ATTEMPTS = 3;
+const SNAPSHOT_READ_RETRY_MS = 300;
+
+/** True while the workspace snapshot must not be written because its boot read failed. */
+export function workspaceSnapshotWriteBlocked(): boolean {
+  return snapshotReadFailed && !blankWorkspaceAccepted;
+}
+
+/** The person chose to work in the seed layout: saving the workspace resumes. */
+export function acceptBlankWorkspace(): void {
+  blankWorkspaceAccepted = true;
+}
+
+/** One more read of the saved workspace; true when it can be read now. */
+export async function canReadWorkspaceSnapshot(): Promise<boolean> {
+  try {
+    await loadWorkspaceSnapshot();
+    return true;
+  } catch (error) {
+    console.warn("appLifecycle workspace snapshot retry failed", error);
+    return false;
+  }
+}
+
+/** Transient store errors (a busy database) usually pass; only then is it "unreadable". */
+async function readWorkspaceSnapshot(): Promise<{ ok: boolean; raw: unknown }> {
+  for (let attempt = 1; attempt <= SNAPSHOT_READ_ATTEMPTS; attempt += 1) {
+    try {
+      return { ok: true, raw: await loadWorkspaceSnapshot() };
+    } catch (error) {
+      console.warn(`appLifecycle workspace snapshot read failed (attempt ${attempt})`, error);
+      if (attempt < SNAPSHOT_READ_ATTEMPTS)
+        await new Promise((resolve) => setTimeout(resolve, SNAPSHOT_READ_RETRY_MS * attempt));
+    }
+  }
+  return { ok: false, raw: null };
+}
 let bootPromise: Promise<BootWorkspace> | null = null;
 let quitting = false;
 let quitDialogOpen = false;
 let bootingResumed: ResumedWorkspace | null = null;
-let liveWorkspace: {
+/** One hidden chat's history read; `timedOut` publishes the retryable error state. */
+type DeferredBootRead = { run: () => Promise<void>; timedOut: () => void };
+let deferredBootReads: DeferredBootRead[] = [];
+/** A single stuck history read must not hold up the rest of the queue. */
+const BOOT_READ_TIMEOUT_MS = 10_000;
+const HISTORY_LOAD_ERROR = "Earlier messages could not be loaded. Reopen this chat to retry.";
+
+function publishBootSession(original: Session, hydrated: Session): void {
+  if (quitting) return;
+  const owns = (session: Session) =>
+    session.id === original.id &&
+    !session.busy &&
+    session.blocks === original.blocks &&
+    session.queuedMessages === original.queuedMessages;
+  if (bootingResumed)
+    bootingResumed.sessions = bootingResumed.sessions.map((session) =>
+      owns(session) ? hydrated : session,
+    );
+  if (liveWorkspace)
+    setSessions((sessions) => sessions.map((session) => (owns(session) ? hydrated : session)));
+}
+
+function startDeferredBootReads(): void {
+  const jobs = deferredBootReads;
+  deferredBootReads = [];
+  const worker = async () => {
+    while (jobs.length && !quitting) {
+      const job = jobs.shift()!;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const outcome = await Promise.race([
+        job.run().then(
+          () => "done" as const,
+          (error: unknown) => {
+            console.warn("appLifecycle boot hydration failed", error);
+            return "done" as const;
+          },
+        ),
+        new Promise<"timeout">((resolve) => {
+          timer = setTimeout(() => resolve("timeout"), BOOT_READ_TIMEOUT_MS);
+        }),
+      ]);
+      clearTimeout(timer);
+      if (outcome === "timeout") {
+        console.warn("appLifecycle boot hydration timed out; continuing with the next chat");
+        job.timedOut();
+      }
+    }
+    // A quit that was called off must not leave the unread chats stuck loading.
+    if (jobs.length) deferredBootReads = [...jobs.splice(0), ...deferredBootReads];
+  };
+  // Earlier-page hydration shares native storage. Avoid flooding it with all
+  // hidden tabs at once, and never start before the workspace owns live state.
+  void worker();
+  void worker();
+}
+type LiveWorkspace = {
   sessions: () => Session[];
   tabs: () => WorkspaceTab[];
   activeTabId: () => string;
@@ -106,7 +216,8 @@ let liveWorkspace: {
   lastDockSide: () => DockSide | null;
   keepTab?: (tab: WorkspaceTab) => boolean;
   flush: () => void;
-} | null = null;
+};
+let liveWorkspace: LiveWorkspace | null = null;
 
 export function isAppQuitting(): boolean {
   return quitting;
@@ -134,7 +245,26 @@ export function setQuitWorkspace(
     keepTab,
     flush,
   };
+  // Hydration that finished after the workspace read its initial state but before
+  // this registration only reached the booting copy; carry it into live state.
+  const booted = bootingResumed;
   bootingResumed = null;
+  if (booted) {
+    const hydratedById = new Map(
+      booted.sessions.filter((session) => !session.historyLoading).map((s) => [s.id, s]),
+    );
+    setSessions((current) =>
+      current.some((session) => !session.busy && session.historyLoading)
+        ? current.map((session) => {
+            const hydrated = hydratedById.get(session.id);
+            return hydrated && hydrated !== session && !session.busy && session.historyLoading
+              ? hydrated
+              : session;
+          })
+        : current,
+    );
+  }
+  startDeferredBootReads();
   return () => {
     if (liveWorkspace?.sessions === sessions) liveWorkspace = null;
   };
@@ -144,12 +274,28 @@ export function setQuitWorkspace(
  * Persist this window for a quit the coordinator has already confirmed.
  * Exiting is `confirm_quit`'s job, once every window has reported ready.
  */
-export async function handleQuitRequested(): Promise<boolean> {
+export async function handleQuitRequested(commitId?: number): Promise<boolean> {
   if (liveWorkspace) {
     liveWorkspace.flush();
     quitting = true;
     try {
-      if (!(await prepareWindowToClose(liveWorkspace.tabs(), liveWorkspace.projectTerminals()))) {
+      const withDialog =
+        commitId === undefined
+          ? undefined
+          : async <T>(show: () => Promise<T>): Promise<T> => {
+              await invoke("quit_commit_dialog", { id: commitId, open: true });
+              try {
+                return await show();
+              } finally {
+                await invoke("quit_commit_dialog", { id: commitId, open: false });
+              }
+            };
+      const prepared = await prepareWindowToClose(
+        liveWorkspace.tabs(),
+        liveWorkspace.projectTerminals(),
+        withDialog,
+      );
+      if (!prepared) {
         quitting = false;
         return false;
       }
@@ -167,6 +313,16 @@ export async function handleQuitRequested(): Promise<boolean> {
       return true;
     } catch (error) {
       quitting = false;
+      // Abort the native coordinator before opening an error dialog, otherwise
+      // its watchdog could exit while the user is reading the failure.
+      if (commitId !== undefined) {
+        try {
+          await invoke("quit_ready", { id: commitId, persisted: false });
+        } catch (abortError) {
+          console.warn("Aborting quit failed", abortError);
+          return false;
+        }
+      }
       await reportCloseFailure(error);
       return false;
     }
@@ -204,12 +360,11 @@ export async function askQuitConfirmation(id: number, inFlight: number): Promise
   if (!quitDialogOpen) {
     quitDialogOpen = true;
     try {
-      confirmed = await ask(quitWhileBusyMessage(inFlight), {
+      confirmed = await platformConfirm({
         title: appName(),
-        kind: "warning",
-        get okLabel() {
-          return t("Quit");
-        },
+        message: quitWhileBusyMessage(inFlight),
+        confirmLabel: t("Quit"),
+        tone: "danger",
       });
     } catch {
       confirmed = false;
@@ -223,7 +378,7 @@ export async function askQuitConfirmation(id: number, inFlight: number): Promise
 }
 
 export async function commitQuit(id: number): Promise<void> {
-  const persisted = await handleQuitRequested();
+  const persisted = await handleQuitRequested(id);
   await invoke("quit_ready", { id, persisted }).catch((error) => {
     console.warn("appLifecycle operation failed", error);
   });
@@ -233,11 +388,26 @@ export async function commitQuit(id: number): Promise<void> {
  * A quit that stopped part-way because another window could not save. This
  * window is staying open, so it must go back to persisting on unload.
  */
+let transferredWindowState:
+  | { live: LiveWorkspace | null; boot: ResumedWorkspace | null }
+  | undefined;
+
 export function abortQuit(): void {
   quitting = false;
+  if (transferredWindowState) {
+    liveWorkspace = transferredWindowState.live;
+    bootingResumed = transferredWindowState.boot;
+    transferredWindowState = undefined;
+  }
+  if (liveWorkspace && deferredBootReads.length) startDeferredBootReads();
 }
 
 /** A successfully drained pop-out must not save a stale workspace on unload. */
+export function beginTransferredWindowClose(): void {
+  transferredWindowState = { live: liveWorkspace, boot: bootingResumed };
+  quitting = true;
+}
+
 export function relinquishTransferredWindow(): void {
   quitting = true;
   liveWorkspace = null;
@@ -272,6 +442,7 @@ export function loadBootWorkspace(): Promise<BootWorkspace> {
   }
   if (!bootPromise) {
     bootPromise = (async () => {
+      await flushHostSessionBindings();
       const windowTransfer = await loadWindowTransfer();
       if (windowTransfer) {
         // The transfer already contains everything needed to paint its tab.
@@ -283,14 +454,30 @@ export function loadBootWorkspace(): Promise<BootWorkspace> {
           historyCwd: null,
         };
       }
+      // Only the primary window restores the shared snapshot. An unavailable
+      // native identity is not permission to recover another window's turns.
+      // Wait for the primary label first: a boot before the lookup settles would
+      // read the default "main" and could restore another window's turns.
+      try {
+        await trackPrimaryWorkspaceWindow();
+      } catch {
+        // Keep the default label; isPrimaryWorkspaceWindow() decides as before.
+      }
+      if (!isPrimaryWorkspaceWindow()) {
+        return { windowTransfer: null, resumed: null, history: [], historyCwd: null };
+      }
       const hintedCwd = lastProjectPath();
-      const historyHint = listProjectHistory(hintedCwd);
-      const [resumed, hinted] = await Promise.all([loadResumedWorkspace(), historyHint]);
-      const listed = await historyForCwd(
-        resumed?.projectCwd ?? hintedCwd,
-        hintedCwd,
-        Promise.resolve(hinted),
-      );
+      const historyHint: { value: Awaited<ReturnType<typeof listProjectHistory>> } = {
+        value: null,
+      };
+      void listProjectHistory(hintedCwd).then((value) => {
+        historyHint.value = value;
+      });
+      const resumed = await loadResumedWorkspace();
+      const listed =
+        hintedCwd && sameProjectPath(resumed?.projectCwd ?? hintedCwd, hintedCwd)
+          ? historyHint.value
+          : null;
       return {
         windowTransfer: null,
         resumed,
@@ -314,14 +501,27 @@ async function listProjectHistory(
   }
 }
 
-async function historyForCwd(
-  cwd: string | null | undefined,
-  hintedCwd: string | null | undefined,
-  hinted: Promise<{ cwd: string; rows: SessionSummary[] } | null>,
-): Promise<{ cwd: string; rows: SessionSummary[] } | null> {
-  if (!cwd || cwd === "~") return null;
-  if (hintedCwd && sameProjectPath(cwd, hintedCwd)) return hinted;
-  return listProjectHistory(cwd);
+/**
+ * The sidebar, files and Git follow the active tab, while the saved `projectCwd`
+ * can have drifted from it (a file opened from another project, rail history).
+ * Restoring both independently opened the app on a project nobody chose, so the
+ * tab that was on screen decides.
+ */
+function reconcileRestoredProject(workspace: ResumedWorkspace): void {
+  const activeTab = workspace.tabs.find((tab) => tab.id === workspace.activeTabId);
+  const tabCwd = activeTab ? workspaceTabCwd(activeTab, workspace.sessions) : null;
+  console.info("[boot] restored workspace", {
+    activeTabId: workspace.activeTabId,
+    projectCwd: workspace.projectCwd,
+    activeTabProject: tabCwd,
+    tabs: workspace.tabs.length,
+  });
+  if (!tabCwd || !looksLikeProject(tabCwd) || sameProjectPath(tabCwd, workspace.projectCwd)) return;
+  console.warn("[boot] saved project differs from the active tab's project; following the tab", {
+    savedProjectCwd: workspace.projectCwd,
+    activeTabProject: tabCwd,
+  });
+  workspace.projectCwd = normalizeProjectPath(tabCwd);
 }
 
 async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
@@ -332,13 +532,21 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
     // No desktop window authority: leave this optional state uninitialized.
   }
   if (serverRestoreOwner) serverTerminalRestoreState.beginLoad();
-  const [snapshotResult, refs] = await Promise.all([
-    loadWorkspaceSnapshot()
-      .then((raw) => ({ ok: true, raw }))
-      .catch(() => ({ ok: false, raw: null })),
-    listInFlightSessions().catch(() => []),
+  const [snapshotResult, savedRefs] = await Promise.all([
+    readWorkspaceSnapshot(),
+    listInFlightSessions().catch((error) => {
+      console.warn("appLifecycle could not list interrupted sessions", error);
+      return [];
+    }),
   ]);
   const snapshotRaw = snapshotResult.raw;
+  if (!snapshotResult.ok) {
+    snapshotReadFailed = true;
+    console.error(
+      "[boot] the saved workspace could not be read; it is kept as it is and not overwritten",
+    );
+    showBootRestoreNotice({ canRead: canReadWorkspaceSnapshot, startFresh: acceptBlankWorkspace });
+  }
   if (serverRestoreOwner && snapshotResult.ok) {
     serverTerminalRestoreState.initialize(
       snapshotRaw && typeof snapshotRaw === "object" && "serversRestore" in snapshotRaw
@@ -348,27 +556,100 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   } else if (serverRestoreOwner) {
     serverTerminalRestoreState.loadFailed();
   }
-  const interrupted = new Set(refs.map((ref) => ref.sessionId));
-  const snapshot = parseWorkspaceSnapshot(snapshotRaw);
+  let snapshot = parseWorkspaceSnapshot(snapshotRaw);
+  const paneIds = new Set(
+    snapshot?.tabs.flatMap((tab) =>
+      [...tab.editorPanes, ...(tab.terminalPanes ?? [])].map((pane) => pane.id),
+    ) ?? [],
+  );
+  const claimIds = new Set(snapshot?.sessions.map((session) => session.id) ?? []);
+  const remoteKeys = new Map<string, string>();
+  for (const stub of snapshot?.sessions ?? []) {
+    const remoteId = stub.remoteSessionId ?? remoteSessionFor(stub.id);
+    if (remoteId && parseRemotePath(stub.cwd))
+      remoteKeys.set(stub.id, remoteSessionOwnershipKey(stub.cwd, remoteId));
+  }
+  for (const tab of snapshot?.tabs ?? [])
+    for (const id of leafIds(tab.layout)) if (!paneIds.has(id)) claimIds.add(id);
+  for (const ref of savedRefs) claimIds.add(ref.sessionId);
   const savedRecovery = parseSessionRecovery(
     snapshotRaw && typeof snapshotRaw === "object" && "sessionRecovery" in snapshotRaw
       ? snapshotRaw.sessionRecovery
       : null,
   );
+  const deletionCandidates = new Set(claimIds);
+  for (const stub of savedRecovery?.workspace.sessions ?? []) deletionCandidates.add(stub.id);
+  let deleted: Set<string>;
+  try {
+    deleted = new Set(await listDeletedSessionIds([...deletionCandidates]));
+  } catch (error) {
+    // Unknown deletion status cannot authorize recreating saved layout shells.
+    snapshotReadFailed = true;
+    console.warn("[boot] deleted conversations could not be verified", error);
+    showBootRestoreNotice({ canRead: canReadWorkspaceSnapshot, startFresh: acceptBlankWorkspace });
+    return null;
+  }
+  for (const id of deleted) claimIds.delete(id);
+  const foreign = new Set<string>();
+  const claimed = new Set<string>();
+  try {
+    for (const id of claimIds) {
+      const local = await claimRestoredSession(id);
+      if (!local) {
+        foreign.add(id);
+        continue;
+      }
+      claimed.add(id);
+      const remoteKey = remoteKeys.get(id);
+      if (remoteKey) {
+        if (await claimRestoredSession(remoteKey)) claimed.add(remoteKey);
+        else {
+          foreign.add(id);
+          await abortRestoredSession(id);
+          claimed.delete(id);
+        }
+      }
+    }
+  } catch (error) {
+    // Unknown ownership cannot safely paint or rewrite the saved workspace.
+    snapshotReadFailed = true;
+    console.warn("[boot] conversation ownership could not be verified", error);
+    showBootRestoreNotice({ canRead: canReadWorkspaceSnapshot, startFresh: acceptBlankWorkspace });
+    await Promise.all([...claimed].map((id) => abortRestoredSession(id).catch(() => {})));
+    return null;
+  }
+  const refs = savedRefs.filter(
+    (ref) => !foreign.has(ref.sessionId) && !deleted.has(ref.sessionId),
+  );
+  const interrupted = new Set(refs.map((ref) => ref.sessionId));
+  if (snapshot && (foreign.size || deleted.size)) {
+    const tabs = snapshot.tabs.flatMap((original) => {
+      let tab: WorkspaceTab | null = original;
+      for (const id of leafIds(original.layout))
+        if (foreign.has(id) || deleted.has(id)) tab = tab && closeLeaf(tab, id);
+      return tab ? [tab] : [];
+    });
+    snapshot = {
+      ...snapshot,
+      tabs,
+      sessions: snapshot.sessions.filter(
+        (session) => !foreign.has(session.id) && !deleted.has(session.id),
+      ),
+    };
+  }
   // Entries saved before a remote chat was ever sent are not recoverable history.
+  const unsentRecoveryIds: string[] = [];
+  for (const stub of savedRecovery?.workspace.sessions ?? []) {
+    if (
+      isUnsentRemoteShell(
+        stub,
+        await remoteShellState(stub, { bound: !!stub.remoteSessionId, hasDraft: false }),
+      )
+    )
+      unsentRecoveryIds.push(stub.id);
+  }
   const previousRecovery =
-    savedRecovery &&
-    dropRecoverySessions(
-      savedRecovery,
-      savedRecovery.workspace.sessions
-        .filter((stub) =>
-          isUnsentRemoteShell(
-            stub,
-            remoteShellState(stub, { bound: !!stub.remoteSessionId, hasDraft: false }),
-          ),
-        )
-        .map((stub) => stub.id),
-    );
+    savedRecovery && dropRecoverySessions(savedRecovery, [...deleted, ...unsentRecoveryIds]);
   setSessionRecovery(previousRecovery);
 
   const ids = new Set<string>();
@@ -380,15 +661,63 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   }
   for (const ref of refs) ids.add(ref.sessionId);
 
+  const activeIds = new Set(
+    snapshot?.tabs
+      .filter((tab) => tab.id === snapshot.activeTabId)
+      .flatMap((tab) => leafIds(tab.layout)) ?? [],
+  );
+  const savedIds = new Set(snapshot?.sessions.map((session) => session.id));
+  // References absent from the saved layout still need an authoritative record
+  // to reconstruct their tabs. Known inactive tabs can recover after mount.
+  for (const id of interrupted) if (!savedIds.has(id)) activeIds.add(id);
+  // A workspace without a saved layout still needs its recovered references.
+  if (!snapshot) for (const id of ids) activeIds.add(id);
   const loaded = new Map<string, Session>();
   await Promise.all(
-    [...ids].map(async (id) => {
-      const record = await getSession(id).catch(() => null);
+    [...activeIds].map(async (id) => {
+      const record = await getSession(
+        id,
+        interrupted.has(id)
+          ? undefined
+          : {
+              onHydrated: (original, hydrated) => {
+                if (loaded.get(id)?.blocks === original.blocks) loaded.set(id, hydrated);
+                publishBootSession(original, hydrated);
+              },
+              onHydrationFailed: (original) =>
+                publishBootSession(original, {
+                  ...original,
+                  historyLoadError:
+                    "Earlier messages could not be loaded. Reopen this chat to retry.",
+                }),
+            },
+      ).catch(() => null);
+      if (isSessionDeleted(id)) {
+        deleted.add(id);
+        interrupted.delete(id);
+      }
       if (record) loaded.set(id, record);
     }),
   );
 
-  let workspace = snapshot ? hydrateWorkspaceSnapshot(snapshot, loaded, interrupted) : null;
+  let workspace = snapshot
+    ? hydrateWorkspaceSnapshot(snapshot, loaded, interrupted, deleted)
+    : null;
+  if (
+    !workspace &&
+    snapshot &&
+    snapshot.tabs.length === 0 &&
+    snapshot.projectTerminals.length > 0
+  ) {
+    workspace = {
+      tabs: [],
+      sessions: [],
+      activeTabId: "",
+      projectCwd: snapshot.projectCwd,
+      projectTerminals: snapshot.projectTerminals,
+    };
+  }
+  if (workspace) reconcileRestoredProject(workspace);
   if (!workspace && refs.length > 0) {
     const sessions: Session[] = [];
     for (const ref of refs) {
@@ -400,26 +729,130 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   }
 
   if (workspace) {
+    workspace.sessions = workspace.sessions.map((session) => {
+      if (activeIds.has(session.id) || !ids.has(session.id)) return session;
+      const placeholder = { ...session, historyLoading: true };
+      const owns = () =>
+        !!(liveWorkspace?.sessions() ?? bootingResumed?.sessions)?.some(
+          (value) =>
+            value.id === placeholder.id &&
+            !value.busy &&
+            value.blocks === placeholder.blocks &&
+            value.queuedMessages === placeholder.queuedMessages,
+        );
+      if (interrupted.has(session.id)) {
+        const failed = () =>
+          publishBootSession(placeholder, { ...placeholder, historyLoadError: HISTORY_LOAD_ERROR });
+        deferredBootReads.push({
+          timedOut: failed,
+          run: async () => {
+            try {
+              if (!owns()) return;
+              const record = await getSession(session.id);
+              if (!record) throw new Error("Stored session is unavailable.");
+              if (!owns()) return;
+              const recovered = await recoverInterruptedTurn(markTurnInterrupted(record));
+              if (!owns()) return;
+              if (shouldPersistSession(recovered)) await upsertSessionPreservingActivity(recovered);
+              publishBootSession(placeholder, recovered);
+            } catch {
+              failed();
+            }
+          },
+        });
+        return placeholder;
+      }
+      deferredBootReads.push({
+        timedOut: () =>
+          publishBootSession(placeholder, { ...placeholder, historyLoadError: HISTORY_LOAD_ERROR }),
+        run: () =>
+          new Promise<void>((resolve) => {
+            if (!owns()) {
+              resolve();
+              return;
+            }
+            void getSession(session.id, {
+              onHydrated: (original, hydrated) => {
+                publishBootSession(original, hydrated);
+                if (!hydrated.historyLoading) resolve();
+              },
+              onHydrationFailed: (original) => {
+                publishBootSession(original, {
+                  ...original,
+                  historyLoadError:
+                    "Earlier messages could not be loaded. Reopen this chat to retry.",
+                });
+                resolve();
+              },
+            })
+              .then((record) => {
+                publishBootSession(
+                  placeholder,
+                  record ?? { ...placeholder, historyLoading: false },
+                );
+                if (!record?.historyLoading) resolve();
+              })
+              .catch(() => {
+                publishBootSession(placeholder, {
+                  ...placeholder,
+                  historyLoadError:
+                    "Earlier messages could not be loaded. Reopen this chat to retry.",
+                });
+                resolve();
+              });
+          }),
+      });
+      return placeholder;
+    });
+    // Normally the mounting workspace starts these. If it never mounts, still hydrate.
+    if (deferredBootReads.length)
+      setTimeout(() => {
+        if (!liveWorkspace)
+          console.warn("appLifecycle starting boot hydration without a workspace");
+        startDeferredBootReads();
+      }, BOOT_READ_TIMEOUT_MS);
+    // Progressive callbacks can finish while interrupted sessions are being
+    // recovered. Publish into this same object rather than restoring an older
+    // non-interrupted tail after that await.
+    if (!liveWorkspace && !quitting) bootingResumed = workspace;
     const recovered = await Promise.all(
       workspace.sessions.map((session) =>
-        interrupted.has(session.id) ? recoverInterruptedTurn(session) : session,
+        interrupted.has(session.id) && !session.historyLoading
+          ? recoverInterruptedTurn(session)
+          : session,
       ),
     );
-    workspace = { ...workspace, sessions: recovered };
+    const recoveredById = new Map(recovered.map((session) => [session.id, session]));
+    workspace.sessions = workspace.sessions.map((session) =>
+      interrupted.has(session.id) ? (recoveredById.get(session.id) ?? session) : session,
+    );
   }
 
-  bootingResumed = workspace;
+  const paintedIds = new Set(workspace?.tabs.flatMap((tab) => leafIds(tab.layout)) ?? []);
+  for (const id of paintedIds) {
+    const key = remoteKeys.get(id);
+    if (key) paintedIds.add(key);
+  }
+  await Promise.all(
+    [...claimed]
+      .filter((id) => !paintedIds.has(id))
+      .map((id) => abortRestoredSession(id).catch(() => {})),
+  );
+  if (!liveWorkspace && !quitting) bootingResumed = workspace;
   if (workspace) {
-    const recoverable = workspace.sessions.filter(
-      (session) =>
+    // Recovery is for work the app closed in the middle of, not for every open chat.
+    // Remote chats keep running on their Host, so they enter only when the in-flight
+    // list names them. A still-loading placeholder is kept when its id was in flight.
+    const recoverable: Session[] = [];
+    for (const session of workspace.sessions) {
+      if (
+        interrupted.has(session.id) &&
         !session.inboxAsk &&
         !session.orchestrationLeadId &&
-        // Drafts live in their own store and stay with the tab, so they do not keep it here.
-        !isUnsentRemoteChat(session, remoteShellState(session, { hasDraft: false })) &&
-        (session.cwd.startsWith("remote://") ||
-          session.blocks.some((block) => block.role === "user") ||
-          (session.rewindHistory?.length ?? 0) > 0),
-    );
+        !isUnsentRemoteChat(session, await remoteShellState(session, { hasDraft: false }))
+      )
+        recoverable.push(session);
+    }
     if (recoverable.length) {
       setSessionRecovery(
         captureSessionRecovery(
@@ -434,18 +867,20 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
         ),
       );
       // Freeze recovery before the first app paint can replace the workspace.
-      await saveWorkspaceSnapshot(
-        snapshotRaw ??
-          collectWorkspaceSnapshot(
-            workspace.tabs,
-            workspace.sessions,
-            workspace.activeTabId,
-            workspace.projectCwd,
-            workspace.projectReturnMemory ?? new Map(),
-            workspace.projectTerminals,
-            workspace.lastDockSide,
-          ),
-      ).catch((error) => console.warn("Could not persist session recovery", error));
+      if (!workspaceSnapshotWriteBlocked()) {
+        await saveWorkspaceSnapshot(
+          snapshotRaw ??
+            collectWorkspaceSnapshot(
+              workspace.tabs,
+              workspace.sessions,
+              workspace.activeTabId,
+              workspace.projectCwd,
+              workspace.projectReturnMemory ?? new Map(),
+              workspace.projectTerminals,
+              workspace.lastDockSide,
+            ),
+        ).catch((error) => console.warn("Could not persist session recovery", error));
+      }
     }
   }
   if (workspace) {
@@ -454,122 +889,10 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
         // Idle transcripts already came from disk. Rewriting every open chat
         // here serialized/indexed the entire workspace before first paint.
         .filter((session) => interrupted.has(session.id) && shouldPersistSession(session))
-        .map((session) => upsertSession(session).catch(() => null)),
+        .map((session) => upsertSessionPreservingActivity(session).catch(() => null)),
     );
   }
   return workspace;
-}
-
-/**
- * Local CLIs cannot outlive Bycoda: on Windows every harness child is in a
- * kill-on-close job object, and on macOS/Linux each runs in its own process
- * group that `kill_all` signals at exit (a crash leaves orphans, and the next
- * launch reaps them). So at launch a chat that was mid-turn has no live
- * process, and only the transcript can say whether the turn got to finish.
- * Remote chats never come through here: their host keeps running and the app
- * re-attaches to its snapshot.
- */
-const LOCAL_CHILD_LIVENESS = "dead" as const;
-const PROBE_TIMEOUT_MS = 3000;
-
-function transcriptProvider(session: Session): "claude" | "codex" | null {
-  const provider = session.harness;
-  return (provider === "claude" || provider === "codex") && session.providerSessionId
-    ? provider
-    : null;
-}
-
-/** Bounded so a slow disk cannot hold up the first paint. */
-function withinTimeout<T>(work: Promise<T>, fallback: T): Promise<T> {
-  const timeout = new Promise<T>((resolve) =>
-    window.setTimeout(() => resolve(fallback), PROBE_TIMEOUT_MS),
-  );
-  return Promise.race([work, timeout]).catch(() => fallback);
-}
-
-async function transcriptTail(session: Session): Promise<TurnTail | "unsupported"> {
-  const provider = transcriptProvider(session);
-  if (!provider) return "unsupported";
-  return withinTimeout(
-    probeTurnTail({
-      provider,
-      providerSessionId: session.providerSessionId!,
-      cwd: sessionWorkCwd(session),
-      providerAccountId: session.providerAccountId,
-    }),
-    { state: "missing" } as TurnTail,
-  );
-}
-
-/** What the CLI recorded for the last turn, read alongside the tail probe. */
-function readRecordedSteps(session: Session): Promise<TurnSteps | null> {
-  const provider = transcriptProvider(session);
-  if (!provider) return Promise.resolve(null);
-  return withinTimeout(
-    readTurnSteps({
-      provider,
-      providerSessionId: session.providerSessionId!,
-      cwd: sessionWorkCwd(session),
-      providerAccountId: session.providerAccountId,
-    }),
-    null,
-  );
-}
-
-/**
- * Put those steps into the session. Anything that goes wrong leaves it as it
- * was: the quit note and the final reply logic still apply on top.
- */
-async function withRecordedSteps(
-  session: Session,
-  steps: TurnSteps | null,
-  outcome: "finished" | "interrupted",
-): Promise<Session> {
-  if (!steps) return session;
-  try {
-    // The conversion pulls in the provider adapters; boot only pays for them
-    // when there is a turn to rebuild.
-    const { withTurnSteps } = await import("../../features/sessions/model/turnSteps");
-    return withTurnSteps(session, steps, outcome);
-  } catch {
-    return session;
-  }
-}
-
-/**
- * A chat that was mid-turn when Bycoda went away: look at what really
- * happened before anything is sent. A turn that finished is shown as finished;
- * only a turn that was cut off may be continued, and only when that is certain.
- * Either way the steps the CLI recorded while the app was away are filled in.
- */
-async function recoverInterruptedTurn(session: Session): Promise<Session> {
-  const [tail, steps] = await Promise.all([transcriptTail(session), readRecordedSteps(session)]);
-  const recovery = classifyTurnRecovery({
-    wasInFlight: true,
-    liveness: LOCAL_CHILD_LIVENESS,
-    backgroundWorkAlive: false,
-    transcript: tail === "unsupported" ? tail : tail.state,
-  });
-  if (recovery.state === "finished") {
-    return withFinishedTurn(
-      await withRecordedSteps(session, steps, "finished"),
-      tail === "unsupported" ? undefined : tail.finalText,
-    );
-  }
-  const recovered =
-    recovery.state === "interrupted"
-      ? await withRecordedSteps(session, steps, "interrupted")
-      : session;
-  if (
-    shouldAutoContinue({
-      recovery,
-      enabled: loadAutoContinueInterrupted(),
-      queuedCount: recovered.queuedMessages?.length ?? 0,
-    })
-  ) {
-    markAutoContinueDue(recovered.id);
-  }
-  return recovered;
 }
 
 export function bindResumedSessions(sessions: Session[]): void {
@@ -595,14 +918,23 @@ export async function closeCurrentWindow(): Promise<void> {
   await invoke("destroy_window");
 }
 
-export async function confirmReload(hasUnsavedFiles: boolean): Promise<boolean> {
-  if (!hasUnsavedFiles) return true;
-  return ask(t("Reload {p0} and discard unsaved changes?", { p0: PRODUCT_IDENTITY.displayName }), {
-    title: appName(),
-    kind: "warning",
-    get okLabel() {
-      return t("Reload");
-    },
+export async function confirmReload(
+  hasUnsavedFiles: boolean,
+  hasRunningChats = false,
+): Promise<boolean> {
+  if (!hasUnsavedFiles && !hasRunningChats) return true;
+  // The native dialog cannot hang behind page state while the window is going away.
+  return platformConfirm({
+    title: t("Reload {p0}?", { p0: PRODUCT_IDENTITY.displayName }),
+    message: hasRunningChats
+      ? hasUnsavedFiles
+        ? t(
+            "Running chats will be interrupted and unsaved changes in open files will be discarded.",
+          )
+        : t("Running chats will be interrupted.")
+      : t("Unsaved changes in open files will be discarded."),
+    confirmLabel: t("Reload"),
+    tone: "danger",
   });
 }
 
@@ -640,7 +972,7 @@ export async function persistQuitState(
     sessions.map(async (session) => {
       if (!shouldPersistSession(session)) return;
       const payload = interrupted.has(session.id) ? markTurnInterrupted(session) : session;
-      const saved = await write(upsertSession(payload));
+      const saved = await write(upsertSessionPreservingActivity(payload));
       // A revision conflict resolves without a write. Keep this renderer's
       // unique transcript alive rather than reporting it safely persisted.
       if (mode === "quit" && saved === null) {
@@ -652,6 +984,7 @@ export async function persistQuitState(
   );
   // Drafts wait on a short timer; the quit must not.
   await write(flushComposerDrafts());
+  await write(flushAssistantDrafts());
   // The queue hook writes through as it changes; this settles the last edit
   // before the process goes.
   await Promise.all(
@@ -659,23 +992,25 @@ export async function persistQuitState(
       .filter((session) => shouldPersistSession(session) && session.queuedMessages?.length)
       .map((session) => write(setSessionQueue(session.id, session.queuedMessages))),
   );
-  await write(
-    saveWorkspaceSnapshot(
-      collectWorkspaceSnapshot(
-        tabs,
-        sessions,
-        activeTabId,
-        projectCwd,
-        memory,
-        projectTerminals,
-        lastDockSide,
-        keepTab,
+  // A window whose saved layout was unreadable keeps the stored one.
+  if (!workspaceSnapshotWriteBlocked())
+    await write(
+      saveWorkspaceSnapshot(
+        collectWorkspaceSnapshot(
+          tabs,
+          sessions,
+          activeTabId,
+          projectCwd,
+          memory,
+          projectTerminals,
+          lastDockSide,
+          keepTab,
+        ),
       ),
-    ),
-  );
+    );
   // Vite/webview reload must not wipe a restored snapshot: those chats are idle
   // in this process until Continue runs.
-  if (mode === "quit" || refs.length > 0) {
+  if ((mode === "quit" || refs.length > 0) && !workspaceSnapshotWriteBlocked()) {
     await write(replaceInFlightSessions(refs));
   }
 }
@@ -684,21 +1019,22 @@ async function persistBootingResume(workspace: ResumedWorkspace): Promise<void> 
   await Promise.all(
     workspace.sessions
       .filter(shouldPersistSession)
-      .map((session) => upsertSession(session).catch(() => null)),
+      .map((session) => upsertSessionPreservingActivity(session).catch(() => null)),
   );
-  await saveWorkspaceSnapshot(
-    collectWorkspaceSnapshot(
-      workspace.tabs,
-      workspace.sessions,
-      workspace.activeTabId,
-      workspace.projectCwd,
-      workspace.projectReturnMemory ?? new Map(),
-      workspace.projectTerminals ?? [],
-      workspace.lastDockSide,
-    ),
-  ).catch((error) => {
-    console.warn("appLifecycle operation failed", error);
-  });
+  if (!workspaceSnapshotWriteBlocked())
+    await saveWorkspaceSnapshot(
+      collectWorkspaceSnapshot(
+        workspace.tabs,
+        workspace.sessions,
+        workspace.activeTabId,
+        workspace.projectCwd,
+        workspace.projectReturnMemory ?? new Map(),
+        workspace.projectTerminals ?? [],
+        workspace.lastDockSide,
+      ),
+    ).catch((error) => {
+      console.warn("appLifecycle operation failed", error);
+    });
   await replaceInFlightSessions(
     workspace.sessions.filter(wasTurnInterrupted).map((session) => ({
       sessionId: session.id,
@@ -723,16 +1059,13 @@ async function confirmAndCloseWindow(
   quitDialogOpen = true;
   try {
     if (hasInFlightSessions(sessions)) {
-      const ok = await ask(
-        t("Close this window and stop its running chats? Other windows will stay open."),
-        {
-          title: appName(),
-          kind: "warning",
-          get okLabel() {
-            return t("Close window");
-          },
-        },
-      );
+      const ok = await platformConfirm({
+        title: t("Close window and stop running chats?"),
+        message: t("Running chats in this window stop. Other windows stay open."),
+        confirmLabel: t("Close window"),
+        tone: "danger",
+        reveal: true,
+      });
       if (!ok) return;
     }
     quitting = true;
@@ -766,6 +1099,7 @@ async function confirmAndCloseWindow(
 async function prepareWindowToClose(
   tabs: WorkspaceTab[],
   docks: ProjectTerminalDock[],
+  withDialog?: <T>(show: () => Promise<T>) => Promise<T>,
 ): Promise<boolean> {
   const files = [
     ...tabs.flatMap((tab) =>
@@ -776,8 +1110,12 @@ async function prepareWindowToClose(
   const unique = [
     ...new Map(files.filter((file) => file.terminal).map((file) => [file.id, file])).values(),
   ];
-  if (!(await confirmCloseTerminals(unique))) return false;
-  return prepareEditorsToClose();
+  // Native dialog: the window is going away, so page state must not be able to hide the ask.
+  const confirm = withDialog
+    ? (request: Parameters<typeof platformConfirm>[0]) => withDialog(() => platformConfirm(request))
+    : platformConfirm;
+  if (!(await confirmCloseTerminals(unique, confirm))) return false;
+  return prepareEditorsToClose(withDialog);
 }
 
 async function reportCloseFailure(error: unknown): Promise<void> {
@@ -820,11 +1158,10 @@ export async function reapWindowRuntime(
  * same ids and reattaches, and the backend reaps them when the window itself
  * is destroyed.
  */
-export async function reapUnloadRuntime(sessions: Session[]): Promise<void> {
-  await forgetSessionChildren(sessions);
-  await killAllChildren().catch((error) => {
-    console.warn("appLifecycle operation failed", error);
-  });
+export async function reapUnloadRuntime(_sessions: Session[]): Promise<void> {
+  // Native page retirement owns physical child cleanup. Never stop Host turns
+  // or another window's processes from a renderer unload.
+  forgetWindowChildren();
 }
 
 async function forgetSessionChildren(sessions: Session[]): Promise<void> {

@@ -175,7 +175,7 @@ describe("input notification delivery", () => {
     ]);
   });
 
-  it("retains the notification setting and focused-session policy", async () => {
+  it("retains the notification setting and focused-app policy", async () => {
     setWindowFocused(true);
     session = { ...session, blocks: [approval(1, "Visible request")] };
     await render([session], "first");
@@ -184,6 +184,10 @@ describe("input notification delivery", () => {
       ...session,
       pendingQuestion: question(2, "Hidden session question"),
     };
+    await render([session], "other");
+    expect(banners()).toEqual([]);
+    setWindowFocused(false);
+    session = { ...session, pendingQuestion: question(3, "Hidden session question") };
     await render([session], "other");
     expect(banners()).toEqual([{ sessionId: "first", body: "Hidden session question" }]);
     saveNotificationsEnabled(false);

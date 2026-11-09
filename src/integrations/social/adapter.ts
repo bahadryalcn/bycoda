@@ -3,20 +3,43 @@ import type {
   SocialJob,
   SocialPlatform,
   SocialMonitorChannel,
+  Capability,
+  SocialMedia,
+  SocialOperation,
 } from "../../features/social/model/social";
+import type { CaptureSource, CollectedPerson } from "./audience-types";
+import { META_RATE_LIMIT_CODES } from "./meta-codes";
+
+export type { Capability, SocialAccount, SocialJob, SocialMedia, SocialOperation };
+
+/** WhatsApp Cloud API throughput codes on graph.facebook.com. Unverified: from general knowledge, not re-checked live. */
+const WHATSAPP_RATE_LIMIT_CODES: readonly number[] = [80007, 130429, 131056];
+/** Outside the 24-hour customer window; only an approved template may start the conversation. Unverified code. */
+const WHATSAPP_WINDOW_CLOSED_CODE = 131047;
+
+/**
+ * Standard error codes. Contract names: NOT_SUPPORTED=unsupported, AUTH_EXPIRED=expired,
+ * RATE_LIMITED=rate_limit, NEEDS_HUMAN=needs_human, PLATFORM_ERROR=rejected or unknown.
+ */
+export type SocialErrorCode =
+  | "expired"
+  | "denied"
+  | "rate_limit"
+  | "processing"
+  | "unsupported"
+  | "comments_disabled"
+  | "needs_human"
+  | "unknown"
+  | "rejected";
+
+/** Non-secret context for a human step. Never put tokens, cookies or raw provider payloads here. */
+export type SocialErrorDetail = { url?: string; screenshotId?: string; reasonCode?: string };
 
 export class SocialPlatformError extends Error {
   constructor(
-    public readonly code:
-      | "expired"
-      | "denied"
-      | "rate_limit"
-      | "processing"
-      | "unsupported"
-      | "comments_disabled"
-      | "unknown"
-      | "rejected",
+    public readonly code: SocialErrorCode,
     public readonly retryAt?: number,
+    public readonly detail?: SocialErrorDetail,
   ) {
     super(
       {
@@ -24,14 +47,27 @@ export class SocialPlatformError extends Error {
         denied: "Platform permissions or account role do not allow this operation.",
         rate_limit: "Platform rate limit reached.",
         processing:
-          "Platform accepted the video and is processing it. Awaiting publication confirmation.",
+          "Platform accepted the media and is processing it. Awaiting publication confirmation.",
         unsupported: "This content or operation is unsupported by the platform adapter.",
         comments_disabled: "Comments are disabled on the target YouTube video.",
+        needs_human: "Human verification is required in the browser. The job is waiting for you.",
         unknown: "Platform outcome is uncertain. Review before another send.",
         rejected: "Platform rejected the request. Check content and account access.",
       }[code],
     );
   }
+}
+
+/**
+ * Hybrid mode: the browser is tried only when the API could not start the job. An outcome
+ * after `dispatchedAt` is never retried, because the platform may already hold the content.
+ */
+export function fallbackAllowed(job: SocialJob, error: unknown, browserSupports: boolean): boolean {
+  if (!browserSupports || job.dispatchedAt !== undefined) return false;
+  return (
+    error instanceof SocialPlatformError &&
+    (error.code === "rate_limit" || error.code === "unsupported")
+  );
 }
 export type SocialSendResult = {
   platformId: string;
@@ -51,7 +87,13 @@ export type SocialInbound = {
   optedOut?: boolean;
   replyAllowed?: boolean;
 };
+export type SocialOwnedPostPage = (after?: string) => Promise<{
+  posts: string[];
+  next?: string;
+}>;
 export interface SocialAdapter {
+  /** Fetch bounded owned-publication pages only when the pending scan drains. */
+  ownedPostPages?: true;
   creatorInfo?(
     account: SocialAccount,
     token: string,
@@ -61,13 +103,16 @@ export interface SocialAdapter {
     job: SocialJob,
     token: string,
     media: (id: string) => Promise<Uint8Array>,
-    checkpoint?: (state: NonNullable<SocialJob["preparation"]>) => void,
+    checkpoint?: (state: NonNullable<SocialJob["preparation"]>) => void | Promise<void>,
+    /** Long browser flows must revalidate Stop, policy and grants immediately before submitting. */
+    beforeSubmit?: () => Promise<void>,
   ): Promise<SocialSendResult>;
   poll(
     account: SocialAccount,
     token: string,
     posts: string[],
     cursor?: string,
+    ownedPosts?: SocialOwnedPostPage,
   ): Promise<{
     events: SocialInbound[];
     cursor?: string;
@@ -78,17 +123,85 @@ export interface SocialAdapter {
     job: SocialJob,
     token: string,
   ): Promise<SocialSendResult | undefined>;
+  /** Optional operations below are opened per platform by capabilities/<platform>.ts (4E). */
+  deletePost?(account: SocialAccount, token: string, platformId: string): Promise<void>;
+  listPosts?(
+    account: SocialAccount,
+    token: string,
+    cursor?: string,
+  ): Promise<{
+    posts: { id: string; url?: string; at: number; text?: string }[];
+    next?: string;
+  }>;
+  getComments?(
+    account: SocialAccount,
+    token: string,
+    postId: string,
+    cursor?: string,
+  ): Promise<{ events: SocialInbound[]; next?: string }>;
+  getAnalytics?(
+    account: SocialAccount,
+    token: string,
+    postIds: string[],
+  ): Promise<
+    Record<string, { views?: number; likes?: number; comments?: number; shares?: number }>
+  >;
+  getProfile?(
+    account: SocialAccount,
+    token: string,
+  ): Promise<{ name: string; username?: string; followers?: number }>;
+  collectAudience?(
+    account: SocialAccount,
+    token: string,
+    source: CaptureSource,
+    cursor?: string,
+  ): Promise<{ people: CollectedPerson[]; next?: string }>;
+  healthCheck?(
+    account: SocialAccount,
+    token: string,
+  ): Promise<{ ok: boolean; code?: SocialErrorCode }>;
 }
 export type SocialAdapters = Record<SocialPlatform, SocialAdapter>;
+/**
+ * Delay for a rate-limited response. Retry-After wins. Reddit's `X-Ratelimit-Reset` is seconds until the
+ * window resets (relative). X's `x-rate-limit-reset` is an epoch time in seconds (absolute). The headers
+ * are not interchangeable, so each is read with its own meaning.
+ */
 export function retryAfter(headers: Headers, now: number): number {
   const value = headers.get("retry-after");
   const seconds =
     value && /^\d+$/.test(value) ? Number(value) * 1000 : value ? Date.parse(value) - now : NaN;
-  const reset = Number(headers.get("x-rate-limit-reset")) * 1000;
+  const redditSeconds = Number(headers.get("x-ratelimit-reset"));
+  const xEpoch = Number(headers.get("x-rate-limit-reset")) * 1000;
   return Math.max(
     now + 1000,
-    Number.isFinite(seconds) ? now + seconds : reset > now ? reset : now + 60_000,
+    Number.isFinite(seconds)
+      ? now + seconds
+      : Number.isFinite(redditSeconds) && redditSeconds > 0
+        ? now + redditSeconds * 1000
+        : xEpoch > now
+          ? xEpoch
+          : now + 60_000,
   );
+}
+
+/** Allow upload transfer time at 128 KiB/s, plus latency; every request stays bounded. */
+function requestTimeout(
+  body: BodyInit | ArrayBufferView | null | undefined,
+  minimum = 30_000,
+): number {
+  const size = (value: FormDataEntryValue): number =>
+    typeof value === "string" ? new TextEncoder().encode(value).byteLength : value.size;
+  let bytes = 0;
+  if (typeof body === "string") bytes = new TextEncoder().encode(body).byteLength;
+  else if (body instanceof Blob) bytes = body.size;
+  else if (body instanceof ArrayBuffer) bytes = body.byteLength;
+  else if (ArrayBuffer.isView(body)) bytes = body.byteLength;
+  else if (body instanceof FormData) {
+    for (const [key, value] of body) bytes += size(key) + size(value);
+  } else if (body instanceof URLSearchParams)
+    bytes = new TextEncoder().encode(body.toString()).byteLength;
+  return Math.min(15 * 60_000, minimum + Math.ceil(bytes / (128 * 1024)) * 1000);
 }
 
 /** Requests never follow redirects or return platform error bodies containing secrets. */
@@ -99,19 +212,35 @@ export class SocialHttp {
   ) {}
   /** Bot tokens occur in Telegram paths. Never expose fetch errors or response bodies. */
   async telegram(
-    method: "getMe" | "getWebhookInfo" | "getUpdates" | "sendMessage",
+    method:
+      | "getMe"
+      | "getChat"
+      | "getChatMember"
+      | "getWebhookInfo"
+      | "getUpdates"
+      | "sendMessage"
+      | "sendPhoto"
+      | "sendVideo"
+      | "sendPoll"
+      | "editMessageText"
+      | "deleteMessage"
+      | "pinChatMessage"
+      | "unpinChatMessage"
+      | "setWebhook"
+      | "deleteWebhook",
     token: string,
-    body: Record<string, unknown> = {},
+    body: Record<string, unknown> | FormData = {},
   ): Promise<Record<string, any>> {
     if (!/^\d+:[A-Za-z0-9_-]+$/.test(token)) throw new SocialPlatformError("denied");
     let response: Response;
     try {
+      const requestBody = body instanceof FormData ? body : JSON.stringify(body);
       response = await this.fetcher(`https://api.telegram.org/bot${token}/${method}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        ...(body instanceof FormData ? {} : { headers: { "Content-Type": "application/json" } }),
+        body: requestBody,
         redirect: "error",
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(requestTimeout(requestBody)),
       });
     } catch {
       throw new SocialPlatformError("unknown");
@@ -150,6 +279,7 @@ export class SocialHttp {
         "www.googleapis.com",
         "open.tiktokapis.com",
         "businessapi.snapchat.com",
+        "oauth.reddit.com",
       ].includes(parsed.hostname)
     )
       throw new SocialPlatformError("denied");
@@ -160,9 +290,13 @@ export class SocialHttp {
         headers: { Authorization: `Bearer ${token}`, ...options.headers },
         redirect: "error",
         signal: AbortSignal.timeout(
-          parsed.hostname === "www.googleapis.com" && parsed.pathname.startsWith("/upload/youtube/")
-            ? 120_000
-            : 30_000,
+          requestTimeout(
+            options.body,
+            parsed.hostname === "www.googleapis.com" &&
+              parsed.pathname.startsWith("/upload/youtube/")
+              ? 120_000
+              : 30_000,
+          ),
         ),
       });
     } catch {
@@ -209,8 +343,12 @@ export class SocialHttp {
         const code = Number(value?.error?.code);
         if ([102, 190].includes(code)) throw new SocialPlatformError("expired");
         if (code === 10 || (code >= 200 && code <= 299)) throw new SocialPlatformError("denied");
-        if ([4, 17, 341].includes(code))
+        if (META_RATE_LIMIT_CODES.includes(code) || WHATSAPP_RATE_LIMIT_CODES.includes(code))
           throw new SocialPlatformError("rate_limit", retryAfter(response.headers, this.now()));
+        if (code === WHATSAPP_WINDOW_CLOSED_CODE)
+          throw new SocialPlatformError("rejected", undefined, {
+            reasonCode: "whatsapp.window_closed_template_required",
+          });
         if ([1, 2].includes(code)) throw new SocialPlatformError("unknown");
       }
       throw new SocialPlatformError("rejected");
@@ -229,6 +367,13 @@ export class SocialHttp {
     } catch {
       if (response.status === 201) value = {};
       else throw new SocialPlatformError("unknown");
+    }
+    if (parsed.hostname === "open.tiktokapis.com") {
+      // TikTok body error codes. Unverified against live docs: a bad token means reconnect, a quota
+      // limit means wait. Everything else keeps the generic rejection below.
+      if (value?.error?.code === "access_token_invalid") throw new SocialPlatformError("expired");
+      if (value?.error?.code === "rate_limit_exceeded")
+        throw new SocialPlatformError("rate_limit", retryAfter(response.headers, this.now()));
     }
     if (
       (value.error && !(parsed.hostname === "open.tiktokapis.com" && value.error.code === "ok")) ||
@@ -293,7 +438,58 @@ export class SocialHttp {
       body: new Uint8Array(bytes),
     });
   }
-  async uploadLinkedInImage(url: string, token: string, bytes: Uint8Array): Promise<void> {
+  /** Reels transfer uses a fixed host/path, never a server-provided arbitrary upload URL. */
+  async uploadFacebookReel(
+    version: string,
+    videoId: string,
+    token: string,
+    bytes: Uint8Array,
+  ): Promise<void> {
+    if (
+      !/^v\d{1,3}\.\d{1,2}$/.test(version) ||
+      !/^[1-9]\d{0,24}$/.test(videoId) ||
+      bytes.length < 12 ||
+      bytes.length > 64 * 1024 * 1024 ||
+      new TextDecoder().decode(bytes.subarray(4, 8)) !== "ftyp"
+    )
+      throw new SocialPlatformError("unsupported");
+    let response: Response;
+    try {
+      response = await this.fetcher(
+        `https://rupload.facebook.com/video-upload/${version}/${videoId}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `OAuth ${token}`,
+            offset: "0",
+            file_size: String(bytes.length),
+            "Content-Type": "application/octet-stream",
+          },
+          body: new Uint8Array(bytes),
+          redirect: "error",
+          signal: AbortSignal.timeout(requestTimeout(bytes, 120_000)),
+        },
+      );
+    } catch {
+      throw new SocialPlatformError("unknown");
+    }
+    if (response.status === 401) throw new SocialPlatformError("expired");
+    if (response.status === 403) throw new SocialPlatformError("denied");
+    if (response.status === 429)
+      throw new SocialPlatformError("rate_limit", retryAfter(response.headers, this.now()));
+    if (!response.ok)
+      throw new SocialPlatformError(response.status >= 500 ? "unknown" : "rejected");
+    const result = await response.json().catch(() => {
+      throw new SocialPlatformError("unknown");
+    });
+    if (result?.success !== true) throw new SocialPlatformError("unknown");
+  }
+  /** Returns the part ETag, which a multipart upload needs for its finalize call. */
+  async uploadLinkedInImage(
+    url: string,
+    token: string,
+    bytes: Uint8Array,
+  ): Promise<{ etag?: string }> {
     const parsed = new URL(url);
     if (
       parsed.protocol !== "https:" ||
@@ -314,7 +510,7 @@ export class SocialHttp {
         },
         body: new Uint8Array(bytes),
         redirect: "error",
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(requestTimeout(bytes)),
       });
     } catch {
       throw new SocialPlatformError("unknown");
@@ -324,5 +520,6 @@ export class SocialHttp {
     if (response.status === 401) throw new SocialPlatformError("expired");
     if (!response.ok)
       throw new SocialPlatformError(response.status >= 500 ? "unknown" : "rejected");
+    return { etag: response.headers.get("etag") ?? undefined };
   }
 }

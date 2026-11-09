@@ -1,0 +1,121 @@
+.notes {
+  display: grid;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.noteGroup {
+  display: grid;
+  gap: 4px;
+  min-inline-size: 0;
+}
+
+.noteTitle {
+  margin: 0;
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+  color: var(--ui-text-secondary);
+}
+
+.noteList {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-inline-size: 0;
+}
+
+.note {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.note[data-timed] {
+  grid-template-columns: 3rem minmax(0, 1fr);
+}
+.noteTime {
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.noteText {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-secondary);
+  color: var(--ui-text-secondary);
+}
+
+.glance {
+  display: grid;
+  gap: 12px;
+  min-inline-size: 0;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.tile {
+  min-inline-size: 0;
+  overflow: hidden;
+}
+
+.tileBody {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+  padding: 10px 12px;
+}
+
+.tileValue {
+  font-size: var(--ui-font-heading);
+  font-weight: 500;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.tileCaption {
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-muted);
+}
+
+.charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 16px;
+  min-inline-size: 0;
+}
+
+.chart {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  min-inline-size: 0;
+}
+
+.chartTitle {
+  margin: 0;
+  font-size: var(--ui-font-body);
+  font-weight: 500;
+}
+
+.chartBody {
+  min-block-size: 11rem;
+  min-inline-size: 0;
+}
+
+.muted {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
+}

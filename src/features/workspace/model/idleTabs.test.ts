@@ -51,23 +51,55 @@ describe("sessionIsIdle", () => {
     ["background tasks", { backgroundTasks: ["task"] }],
     ["background agents", { backgroundAgents: 1 }],
     ["queued messages", { queuedMessages: [{ id: "m" }] as unknown as Session["queuedMessages"] }],
-    ["streaming block", { blocks: [{ id: "b", role: "assistant", streaming: true }] as unknown as Session["blocks"] }],
-    [
-      "running tool",
-      { blocks: [{ id: "b", role: "assistant", tool: { status: "in_progress" } }] as unknown as Session["blocks"] },
-    ],
     [
       "pending approval",
       {
-        blocks: [{ id: "b", role: "assistant", approval: { decided: false } }] as unknown as Session["blocks"],
+        blocks: [
+          { id: "b", role: "assistant", approval: { decided: false } },
+        ] as unknown as Session["blocks"],
       },
     ],
     [
       "unsent draft turn",
-      { blocks: [{ id: "d", role: "user", text: "draft", draft: true }] as unknown as Session["blocks"] },
+      {
+        blocks: [
+          { id: "d", role: "user", text: "draft", draft: true },
+        ] as unknown as Session["blocks"],
+      },
     ],
   ])("rejects a session with %s", (_label, patch) => {
     expect(sessionIsIdle(session("a", patch), input())).toBe(false);
+  });
+
+  it("ignores streaming blocks and running tools left behind on a session that is not busy", () => {
+    const stale = session("a", {
+      blocks: [
+        { id: "b1", role: "assistant", streaming: true },
+        { id: "b2", role: "assistant", tool: { status: "in_progress" } },
+      ] as unknown as Session["blocks"],
+    });
+    expect(sessionIsIdle(stale, input())).toBe(true);
+    expect(sessionIsIdle(stale, input({ busySessionIds: new Set(["a"]) }))).toBe(false);
+    expect(sessionIsIdle({ ...stale, busy: true }, input())).toBe(false);
+  });
+
+  it("lets an expired unseen badge stop pinning the session without hiding the badge", () => {
+    const unseenFinishedIds = new Set(["a"]);
+    expect(sessionIsIdle(session("a"), input({ unseenFinishedIds }))).toBe(false);
+    expect(
+      sessionIsIdle(session("a"), input({ unseenFinishedIds, expiredUnseenIds: new Set(["a"]) })),
+    ).toBe(true);
+    // Expiry never overrides other work or an unsent draft.
+    const expiredUnseenIds = new Set(["a"]);
+    expect(
+      sessionIsIdle(session("a", { busy: true }), input({ unseenFinishedIds, expiredUnseenIds })),
+    ).toBe(false);
+    expect(
+      sessionIsIdle(
+        session("a"),
+        input({ unseenFinishedIds, expiredUnseenIds, hasComposerDraft: () => true }),
+      ),
+    ).toBe(false);
   });
 
   it("rejects busy, unseen-finished and composer-draft sessions from the caller's sets", () => {
@@ -92,21 +124,32 @@ describe("idleWorkspaceTabIds", () => {
     const ids = idleWorkspaceTabIds(
       input({
         tabs: [tab("active", ["a"]), tab("split", ["x", "y"])],
-        sessions: [session("a"), session("x"), session("y", { queuedMessages: [{ id: "m" }] as unknown as Session["queuedMessages"] })],
+        sessions: [
+          session("a"),
+          session("x"),
+          session("y", { queuedMessages: [{ id: "m" }] as unknown as Session["queuedMessages"] }),
+        ],
       }),
     );
     expect(ids).toEqual([]);
   });
 
   it("keeps tabs with dirty files, terminal panes or moves in flight", () => {
-    const file = { id: "f1", path: "/a.ts" } as unknown as WorkspaceTab["editorPanes"][number]["files"][number];
+    const file = {
+      id: "f1",
+      path: "/a.ts",
+    } as unknown as WorkspaceTab["editorPanes"][number]["files"][number];
     const sessions = [session("a"), session("b"), session("c"), session("d")];
     const ids = idleWorkspaceTabIds(
       input({
         tabs: [
           tab("active", ["z"]),
-          tab("dirty", ["a"], { editorPanes: [{ id: "p", files: [file], activeFileId: "f1" } as never] }),
-          tab("terminal", ["b"], { terminalPanes: [{ id: "t", files: [], activeFileId: "" } as never] }),
+          tab("dirty", ["a"], {
+            editorPanes: [{ id: "p", files: [file], activeFileId: "f1" } as never],
+          }),
+          tab("terminal", ["b"], {
+            terminalPanes: [{ id: "t", files: [], activeFileId: "" } as never],
+          }),
           tab("moving", ["c"]),
           tab("clean", ["d"]),
         ],
@@ -129,9 +172,20 @@ describe("isEmptyNewChat", () => {
   });
 
   it.each<[string, Partial<Session>]>([
-    ["a user turn", { blocks: [{ id: "u", role: "user", text: "hi" }] as unknown as Session["blocks"] }],
-    ["an assistant turn", { blocks: [{ id: "a", role: "assistant", text: "hi" }] as unknown as Session["blocks"] }],
-    ["an unsent draft turn", { blocks: [{ id: "d", role: "user", text: "", draft: true }] as unknown as Session["blocks"] }],
+    [
+      "a user turn",
+      { blocks: [{ id: "u", role: "user", text: "hi" }] as unknown as Session["blocks"] },
+    ],
+    [
+      "an assistant turn",
+      { blocks: [{ id: "a", role: "assistant", text: "hi" }] as unknown as Session["blocks"] },
+    ],
+    [
+      "an unsent draft turn",
+      {
+        blocks: [{ id: "d", role: "user", text: "", draft: true }] as unknown as Session["blocks"],
+      },
+    ],
     ["a provider conversation", { providerSessionId: "thread-1" }],
     ["a pending provider switch", { pendingSwitch: {} as unknown as Session["pendingSwitch"] }],
     ["a seeded composer text", { composerSeed: "Summarise the repo" }],
@@ -163,7 +217,8 @@ describe("unlistedTabIds", () => {
 describe("emptyForeignTabIds", () => {
   const foreign = "/work/alpha";
   const current = "/work/beta";
-  const at = (id: string, cwd: string, patch: Partial<Session> = {}) => session(id, { cwd, ...patch });
+  const at = (id: string, cwd: string, patch: Partial<Session> = {}) =>
+    session(id, { cwd, ...patch });
 
   it("closes only empty new chats of other projects", () => {
     const ids = emptyForeignTabIds(
@@ -179,7 +234,9 @@ describe("emptyForeignTabIds", () => {
           at("a", foreign),
           at("b", current),
           at("c", foreign),
-          at("d", foreign, { blocks: [{ id: "u", role: "user", text: "hi" }] as unknown as Session["blocks"] }),
+          at("d", foreign, {
+            blocks: [{ id: "u", role: "user", text: "hi" }] as unknown as Session["blocks"],
+          }),
           at("e", "/work/gamma"),
         ],
       }),
@@ -206,8 +263,12 @@ describe("emptyForeignTabIds", () => {
         tabs: [
           tab("active", ["z"]),
           tab("busy", ["a"]),
-          tab("editor", ["b"], { editorPanes: [{ id: "p", files: [], activeFileId: "" } as never] }),
-          tab("terminal", ["c"], { terminalPanes: [{ id: "t", files: [], activeFileId: "" } as never] }),
+          tab("editor", ["b"], {
+            editorPanes: [{ id: "p", files: [], activeFileId: "" } as never],
+          }),
+          tab("terminal", ["c"], {
+            terminalPanes: [{ id: "t", files: [], activeFileId: "" } as never],
+          }),
           tab("moving", ["d"]),
           tab("pending", ["e"]),
         ],
@@ -249,10 +310,7 @@ describe("emptyForeignTabIds", () => {
 
   it("never returns tabs without a project path", () => {
     expect(
-      emptyForeignTabIds(
-        input({ tabs: [tab("home", ["a"])], sessions: [at("a", "~")] }),
-        current,
-      ),
+      emptyForeignTabIds(input({ tabs: [tab("home", ["a"])], sessions: [at("a", "~")] }), current),
     ).toEqual([]);
   });
 });

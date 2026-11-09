@@ -1,9 +1,14 @@
+pub mod entry_spelling;
+pub mod large_text;
+#[cfg(test)]
+use large_text::read_text_file_sync;
+pub mod question_attachment;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex, Weak};
+use std::sync::{mpsc, Arc, Mutex, OnceLock, Weak};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -12,7 +17,15 @@ use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 use crate::dirs_home;
+use crate::native_window_lifecycle::{admit_window_buffers, run_admitted_blocking};
 mod attachment_reads;
+mod cross_volume_move;
+use cross_volume_move::move_path_outcome;
+#[cfg(test)]
+use cross_volume_move::move_path_sync;
+#[cfg(test)]
+mod buffer_actor_tests;
+mod text_admission;
 use crate::git_conflicts::{
     find_git_dir, git_unmerged_checked_for, git_unmerged_for, side_stage, stage_has_side,
     unmerged_message, unmerged_stages_for, GitConflictFile,
@@ -129,17 +142,22 @@ pub struct ProjectLocation {
 /// A rename preserves the directory identity. We only inspect direct siblings
 /// of the missing path, which keeps this bounded and avoids a filesystem watch
 /// or a broad disk search.
-#[tauri::command(async)]
-pub fn resolve_project_location(
+#[tauri::command]
+pub async fn resolve_project_location(
     app: AppHandle,
+    window: tauri::Window,
     path: String,
     identity: Option<String>,
 ) -> Result<Option<ProjectLocation>, String> {
-    let location = resolve_project_location_sync(&path, identity.as_deref())?;
-    if let Some(location) = &location {
-        crate::file_access::authorize(&app, &expand_home(&location.path), true)?;
-    }
-    Ok(location)
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
+        let location = resolve_project_location_sync(&path, identity.as_deref())?;
+        if let Some(location) = &location {
+            crate::file_access::authorize(&app, &expand_home(&location.path), true)?;
+        }
+        Ok(location)
+    })
+    .await
 }
 
 fn resolve_project_location_sync(
@@ -931,12 +949,15 @@ pub struct ProjectFileEntry {
 pub struct ProjectFileListing {
     root: String,
     files: Vec<ProjectFileEntry>,
+    truncated: bool,
 }
 
 fn project_file_listing(cwd: &str) -> Result<ProjectFileListing, String> {
-    let files = list_project_files_sync(cwd)?;
+    let truncated = AtomicBool::new(false);
+    let files = list_project_files_inner(cwd, None, &truncated)?;
     Ok(ProjectFileListing {
         root: path_to_js(&expand_home(cwd)),
+        truncated: truncated.load(Ordering::Relaxed),
         files: files
             .into_iter()
             .map(|f| ProjectFileEntry {
@@ -956,6 +977,7 @@ pub async fn list_project_files(cwd: String) -> Result<ProjectFileListing, Strin
         .map_err(|e| e.to_string())?
 }
 
+#[cfg(test)]
 pub(crate) fn list_project_files_sync(cwd: &str) -> Result<Vec<ProjectFile>, String> {
     list_project_files_sync_cancellable(cwd, None)
 }
@@ -970,6 +992,14 @@ pub(crate) fn list_project_files_sync_cancellable(
     cwd: &str,
     cancel: Option<&AtomicBool>,
 ) -> Result<Vec<ProjectFile>, String> {
+    list_project_files_inner(cwd, cancel, &AtomicBool::new(false))
+}
+
+fn list_project_files_inner(
+    cwd: &str,
+    cancel: Option<&AtomicBool>,
+    truncated: &AtomicBool,
+) -> Result<Vec<ProjectFile>, String> {
     let root = expand_home(cwd);
     if !root.is_dir() {
         return Err(format!("{}: Not a directory", root.display()));
@@ -980,7 +1010,7 @@ pub(crate) fn list_project_files_sync_cancellable(
     if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
         return Ok(Vec::new());
     }
-    if let Some(files) = git_ls_files(&root, cancel) {
+    if let Some(files) = git_ls_files_inner(&root, cancel, truncated) {
         return Ok(files);
     }
     // `git_ls_files` returns `None` for "not a git repo", truncation, and
@@ -989,7 +1019,7 @@ pub(crate) fn list_project_files_sync_cancellable(
     if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
         return Ok(Vec::new());
     }
-    Ok(walk_project_files(&root, cancel.into()))
+    Ok(walk_project_files_inner(&root, cancel.into(), truncated))
 }
 
 /// `git check-ignore` queues behind the Windows spawn gate, and the tree
@@ -997,9 +1027,10 @@ pub(crate) fn list_project_files_sync_cancellable(
 /// per folder and keyed on the exact entry names, so an added, removed or
 /// renamed entry always misses. Ignore rules can change without the folder
 /// changing (`.gitignore` higher up, `info/exclude`, global excludes, a file
-/// becoming tracked), so the TTL bounds staleness to a late dimming label; it
-/// matches `GIT_INFO_TTL`.
-const IGNORED_NAMES_TTL: Duration = Duration::from_secs(3);
+/// becoming tracked), so the TTL bounds staleness to a late dimming label. It
+/// outlasts the tree's 3 s poll, so an unchanged folder is not re-checked on
+/// every poll; a rename or new entry still misses at once.
+const IGNORED_NAMES_TTL: Duration = Duration::from_secs(10);
 const IGNORED_NAMES_CACHE_MAX: usize = 256;
 
 type IgnoredNamesEntry = (Instant, Vec<String>, Option<HashSet<String>>);
@@ -1096,7 +1127,16 @@ fn git_ignored_names(dir: &Path, names: &[&str]) -> Option<HashSet<String>> {
 /// bounded by `MAX_PROJECT_FILES` and cancellable.
 const MAX_LS_FILES_BYTES: usize = 8 * 1024 * 1024;
 
+#[cfg(test)]
 fn git_ls_files(root: &Path, cancel: Option<&AtomicBool>) -> Option<Vec<ProjectFile>> {
+    git_ls_files_inner(root, cancel, &AtomicBool::new(false))
+}
+
+fn git_ls_files_inner(
+    root: &Path,
+    cancel: Option<&AtomicBool>,
+    incomplete: &AtomicBool,
+) -> Option<Vec<ProjectFile>> {
     // Routed through the bounded reader rather than `Command::output()`: this
     // is the path a cancelled search actually takes, because a repository with
     // a git index never reaches the walk. `output()` buffers the whole listing
@@ -1110,6 +1150,7 @@ fn git_ls_files(root: &Path, cancel: Option<&AtomicBool>) -> Option<Vec<ProjectF
         cancel,
     )?;
     if truncated {
+        incomplete.store(true, Ordering::Relaxed);
         // A partial listing would silently hide files from search. Fall back to
         // the walk, which is bounded by its own budget.
         return None;
@@ -1140,6 +1181,7 @@ fn git_ls_files(root: &Path, cancel: Option<&AtomicBool>) -> Option<Vec<ProjectF
             relative,
         });
         if files.len() >= MAX_PROJECT_FILES {
+            incomplete.store(true, Ordering::Relaxed);
             break;
         }
     }
@@ -1159,23 +1201,62 @@ pub(crate) struct GitInfo {
 /// can lag by at most `GIT_INFO_TTL`, which only affects a label.
 const GIT_INFO_TTL: Duration = Duration::from_secs(3);
 
-static GIT_INFO_CACHE: Mutex<Option<HashMap<PathBuf, (Instant, GitInfo)>>> = Mutex::new(None);
+type GitInfoFlight = Arc<OnceLock<(Instant, GitInfo)>>;
 
-pub(crate) fn git_info_for(root: &Path) -> GitInfo {
-    if let Ok(mut guard) = GIT_INFO_CACHE.lock() {
-        let cache = guard.get_or_insert_with(HashMap::new);
-        cache.retain(|_, (at, _)| at.elapsed() < GIT_INFO_TTL);
-        if let Some((_, info)) = cache.get(root) {
-            return info.clone();
+struct GitInfoCache {
+    entries: Mutex<HashMap<PathBuf, GitInfoFlight>>,
+    ttl: Duration,
+    capacity: usize,
+}
+
+impl GitInfoCache {
+    fn new(ttl: Duration, capacity: usize) -> Self {
+        Self {
+            entries: Mutex::new(HashMap::new()),
+            ttl,
+            capacity,
         }
     }
-    let info = git_info_uncached(root);
-    if let Ok(mut guard) = GIT_INFO_CACHE.lock() {
-        guard
-            .get_or_insert_with(HashMap::new)
-            .insert(root.to_path_buf(), (Instant::now(), info.clone()));
+
+    fn get(&self, root: PathBuf, lookup: impl FnOnce() -> GitInfo) -> GitInfo {
+        let flight = {
+            let mut entries = self
+                .entries
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            entries.retain(|_, value| value.get().is_none_or(|(at, _)| at.elapsed() < self.ttl));
+            if let Some(value) = entries.get(&root) {
+                Some(value.clone())
+            } else if entries.len() < self.capacity {
+                let value = Arc::new(OnceLock::new());
+                entries.insert(root, value.clone());
+                Some(value)
+            } else {
+                // Do not evict a flight with waiters or block an unrelated
+                // checkout behind a full cache of genuinely active lookups.
+                None
+            }
+        };
+        let Some(flight) = flight else {
+            return lookup();
+        };
+        flight
+            .get_or_init(|| {
+                let value = lookup();
+                (Instant::now(), value)
+            })
+            .1
+            .clone()
     }
-    info
+}
+
+static GIT_INFO_CACHE: OnceLock<GitInfoCache> = OnceLock::new();
+
+pub(crate) fn git_info_for(root: &Path) -> GitInfo {
+    let identity = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    GIT_INFO_CACHE
+        .get_or_init(|| GitInfoCache::new(GIT_INFO_TTL, 256))
+        .get(identity, || git_info_uncached(root))
 }
 
 fn git_info_uncached(root: &Path) -> GitInfo {
@@ -1626,14 +1707,10 @@ pub struct GitHubWorkItem {
     pub assignees: Vec<GitHubAssignee>,
     pub draft: bool,
     pub repo: String,
-}
-
-#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct GitHubStatus {
-    pub connected: bool,
-    pub installed: bool,
-    pub authenticated: bool,
+    /// Set when the action succeeded but the follow-up view failed; the fields above are then a
+    /// minimal placeholder and the caller keeps its earlier data and refreshes later.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_error: Option<String>,
 }
 
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -1647,38 +1724,10 @@ pub enum GitHubStarStatus {
 const BYCODA_STAR_ENDPOINT: &str = "/user/starred/bahadryalcn/bycoda";
 
 /// Whether the GitHub CLI is installed and has an active authenticated account.
+/// A missing gh starts the pinned automatic install (github_cli.rs) and reports it.
 #[tauri::command]
-pub async fn git_github_status() -> Result<GitHubStatus, String> {
-    tauri::async_runtime::spawn_blocking(git_github_status_for)
-        .await
-        .map_err(|error| error.to_string())
-}
-
-fn git_github_status_for() -> GitHubStatus {
-    let Some(program) = crate::harness::resolve_gui_binary("gh") else {
-        return GitHubStatus {
-            connected: false,
-            installed: false,
-            authenticated: false,
-        };
-    };
-    let mut cmd = Command::new(program);
-    cmd.args(["auth", "status", "--active", "--hostname", "github.com"])
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GH_PROMPT_DISABLED", "1")
-        .env("GH_PAGER", "cat")
-        .env("GIT_PAGER", "cat");
-    crate::harness::apply_gui_env(&mut cmd);
-    crate::hide_window_console(&mut cmd);
-    let authenticated = cmd
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false);
-    GitHubStatus {
-        connected: authenticated,
-        installed: true,
-        authenticated,
-    }
+pub async fn git_github_status() -> Result<crate::github_cli::GitHubStatus, String> {
+    crate::github_cli::status().await
 }
 
 /// Whether the active GitHub CLI account has starred the bycoda repository.
@@ -2713,8 +2762,11 @@ fn unmerged_kind(x: char, y: char) -> &'static str {
 /// `dir/`). It only changes when a repository is created or removed above
 /// `root`, so it is asked for once; `None` (not cached) outside a repository.
 fn git_prefix_for(root: &Path) -> Option<String> {
-    if let Ok(guard) = GIT_PREFIX_CACHE.lock() {
-        if let Some(prefix) = guard.as_ref().and_then(|cache| cache.get(root)) {
+    if let Ok(mut guard) = GIT_PREFIX_CACHE.lock() {
+        if let Some(prefix) = guard
+            .as_mut()
+            .and_then(|cache| cache.get(root, Instant::now()))
+        {
             return Some(prefix.clone());
         }
     }
@@ -2723,9 +2775,12 @@ fn git_prefix_for(root: &Path) -> Option<String> {
         .trim_end_matches(['\r', '\n'])
         .to_string();
     if let Ok(mut guard) = GIT_PREFIX_CACHE.lock() {
-        guard
-            .get_or_insert_with(HashMap::new)
-            .insert(root.to_path_buf(), prefix.clone());
+        guard.get_or_insert_with(GitStatusCache::new).insert(
+            root.to_path_buf(),
+            prefix.clone(),
+            prefix.capacity(),
+            Instant::now(),
+        );
     }
     Some(prefix)
 }
@@ -2738,7 +2793,172 @@ fn forget_git_prefix(root: &Path) {
     }
 }
 
-static GIT_PREFIX_CACHE: Mutex<Option<HashMap<PathBuf, String>>> = Mutex::new(None);
+// Bound both repository count and retained payload, including repositories with
+// unusually large status listings. Eviction only causes a fresh Git query.
+const GIT_STATUS_CACHE_CAPACITY: usize = 64;
+const GIT_STATUS_CACHE_BYTES: usize = 8 * 1024 * 1024;
+const GIT_STATUS_CACHE_TTL: Duration = Duration::from_secs(300);
+const GIT_STATUS_CACHE_MAX_AGE: Duration = Duration::from_secs(1800);
+
+struct GitStatusEntry<T> {
+    value: T,
+    accessed: Instant,
+    created: Instant,
+    weight: usize,
+}
+
+struct GitStatusCache<T> {
+    entries: HashMap<PathBuf, GitStatusEntry<T>>,
+    bytes: usize,
+}
+
+impl<T> GitStatusCache<T> {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+            bytes: 0,
+        }
+    }
+
+    fn remove(&mut self, root: &Path) -> Option<T> {
+        let entry = self.entries.remove(root)?;
+        self.bytes -= entry.weight;
+        Some(entry.value)
+    }
+
+    fn expire(&mut self, now: Instant) {
+        self.entries.retain(|_, entry| {
+            let keep = now.saturating_duration_since(entry.accessed) < GIT_STATUS_CACHE_TTL
+                && now.saturating_duration_since(entry.created) < GIT_STATUS_CACHE_MAX_AGE;
+            if !keep {
+                self.bytes -= entry.weight;
+            }
+            keep
+        });
+    }
+
+    fn get(&mut self, root: &Path, now: Instant) -> Option<&T> {
+        self.expire(now);
+        let entry = self.entries.get_mut(root)?;
+        entry.accessed = now;
+        Some(&entry.value)
+    }
+
+    fn insert(&mut self, root: PathBuf, value: T, payload: usize, now: Instant) {
+        self.expire(now);
+        self.remove(&root);
+        let weight = payload
+            .saturating_add(root.capacity().saturating_mul(2))
+            .saturating_add(128);
+        if weight > GIT_STATUS_CACHE_BYTES {
+            return;
+        }
+        while self.entries.len() >= GIT_STATUS_CACHE_CAPACITY
+            || self.bytes.saturating_add(weight) > GIT_STATUS_CACHE_BYTES
+        {
+            let Some(oldest) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.accessed)
+                .map(|(key, _)| key.clone())
+            else {
+                break;
+            };
+            self.remove(&oldest);
+        }
+        self.bytes += weight;
+        self.entries.insert(
+            root,
+            GitStatusEntry {
+                value,
+                accessed: now,
+                created: now,
+                weight,
+            },
+        );
+    }
+}
+
+static GIT_PREFIX_CACHE: Mutex<Option<GitStatusCache<String>>> = Mutex::new(None);
+
+#[cfg(test)]
+mod git_status_cache_tests {
+    use super::*;
+
+    #[test]
+    fn expires_idle_entries_and_refreshes_on_access() {
+        let mut cache = GitStatusCache::new();
+        let now = Instant::now();
+        let key = PathBuf::from("repo");
+        cache.insert(key.clone(), "prefix", 6, now);
+        assert_eq!(
+            cache.get(&key, now + Duration::from_secs(299)),
+            Some(&"prefix")
+        );
+        assert_eq!(
+            cache.get(&key, now + Duration::from_secs(598)),
+            Some(&"prefix")
+        );
+        assert_eq!(cache.get(&key, now + Duration::from_secs(898)), None);
+        assert_eq!(cache.bytes, 0);
+    }
+
+    #[test]
+    fn active_entries_still_expire_at_maximum_age() {
+        let mut cache = GitStatusCache::new();
+        let now = Instant::now();
+        let key = PathBuf::from("repo");
+        cache.insert(key.clone(), 7, 1, now);
+        for second in [299, 598, 897, 1196, 1495, 1794] {
+            assert_eq!(cache.get(&key, now + Duration::from_secs(second)), Some(&7));
+        }
+        assert_eq!(cache.get(&key, now + GIT_STATUS_CACHE_MAX_AGE), None);
+    }
+
+    #[test]
+    fn evicts_least_recent_and_rejects_oversized_payloads() {
+        let mut cache = GitStatusCache::new();
+        let now = Instant::now();
+        for i in 0..GIT_STATUS_CACHE_CAPACITY {
+            cache.insert(
+                PathBuf::from(i.to_string()),
+                i,
+                1,
+                now + Duration::from_millis(i as u64),
+            );
+        }
+        let recent = PathBuf::from("0");
+        cache.get(&recent, now + Duration::from_secs(1));
+        cache.insert(PathBuf::from("extra"), 99, 1, now + Duration::from_secs(2));
+        assert!(cache.entries.contains_key(&recent));
+        assert!(!cache.entries.contains_key(Path::new("1")));
+        assert_eq!(cache.entries.len(), GIT_STATUS_CACHE_CAPACITY);
+        cache.insert(
+            recent.clone(),
+            5,
+            GIT_STATUS_CACHE_BYTES,
+            now + Duration::from_secs(3),
+        );
+        assert!(!cache.entries.contains_key(&recent));
+        assert!(cache.bytes <= GIT_STATUS_CACHE_BYTES);
+    }
+
+    #[test]
+    fn enforces_aggregate_weight_and_removal_accounting() {
+        let mut cache = GitStatusCache::new();
+        let now = Instant::now();
+        cache.insert(PathBuf::from("first"), 1, GIT_STATUS_CACHE_BYTES / 2, now);
+        cache.insert(
+            PathBuf::from("second"),
+            2,
+            GIT_STATUS_CACHE_BYTES / 2,
+            now + Duration::from_secs(1),
+        );
+        assert!(!cache.entries.contains_key(Path::new("first")));
+        assert_eq!(cache.remove(Path::new("second")), Some(2));
+        assert_eq!(cache.bytes, 0);
+    }
+}
 
 struct GitChanges {
     status: StatusSnapshot,
@@ -2784,24 +3004,47 @@ fn numstat_stamp(root: &Path, prefix: &str, text: &str, status: &StatusSnapshot)
 
 type NumstatCached = (NumstatStamp, HashMap<String, FileAcc>);
 
-static GIT_NUMSTAT_CACHE: Mutex<Option<HashMap<PathBuf, NumstatCached>>> = Mutex::new(None);
+static GIT_NUMSTAT_CACHE: Mutex<Option<GitStatusCache<NumstatCached>>> = Mutex::new(None);
 
 /// Line counts for the listing `stamp` describes. The poll asks every couple
 /// of seconds and almost always finds the same listing and the same files, so
 /// the counts are kept and `git diff` only runs when something moved.
 fn git_numstat_cached(root: &Path, stamp: NumstatStamp) -> HashMap<String, FileAcc> {
-    if let Ok(guard) = GIT_NUMSTAT_CACHE.lock() {
-        if let Some((cached, counts)) = guard.as_ref().and_then(|cache| cache.get(root)) {
+    if let Ok(mut guard) = GIT_NUMSTAT_CACHE.lock() {
+        if let Some((cached, counts)) = guard
+            .as_mut()
+            .and_then(|cache| cache.get(root, Instant::now()))
+        {
             if *cached == stamp {
                 return counts.clone();
             }
         }
     }
     let counts = git_numstat_for(root);
+    // Include allocated capacities and conservative per-bucket overhead; this
+    // is a retention budget, not a process allocator measurement.
+    let weight = stamp
+        .status
+        .capacity()
+        .saturating_add(
+            stamp
+                .files
+                .capacity()
+                .saturating_mul(std::mem::size_of::<Option<(u64, Option<SystemTime>)>>()),
+        )
+        .saturating_add(counts.capacity().saturating_mul(128))
+        .saturating_add(
+            counts
+                .keys()
+                .fold(0usize, |total, key| total.saturating_add(key.capacity())),
+        );
     if let Ok(mut guard) = GIT_NUMSTAT_CACHE.lock() {
-        guard
-            .get_or_insert_with(HashMap::new)
-            .insert(root.to_path_buf(), (stamp, counts.clone()));
+        guard.get_or_insert_with(GitStatusCache::new).insert(
+            root.to_path_buf(),
+            (stamp, counts.clone()),
+            weight,
+            Instant::now(),
+        );
     }
     counts
 }
@@ -2927,28 +3170,28 @@ fn git_changes_with(root: &Path, retry: bool) -> Option<GitChanges> {
 }
 
 /// Added and removed lines per path under `root`, working tree against HEAD.
+///
+/// Plumbing only: porcelain `git diff` refreshes the index and writes it back
+/// (whatever `GIT_OPTIONAL_LOCKS` says), which rewrote `.git/index` on every
+/// poll and woke every index watcher. A file whose stat data alone is stale
+/// is listed with `0 0`, which adds nothing.
 fn git_numstat_for(root: &Path) -> HashMap<String, FileAcc> {
-    const BASE: [&str; 6] = [
-        "diff",
-        "--relative",
-        "--no-ext-diff",
-        "--no-renames",
-        "--numstat",
-        "-z",
-    ];
-    let run = |extra: &[&str]| {
-        let mut args = BASE.to_vec();
+    const OPTIONS: [&str; 4] = ["--relative", "--no-renames", "--numstat", "-z"];
+    let run = |command: &str, extra: &[&str]| {
+        let mut args = vec![command];
+        args.extend_from_slice(&OPTIONS);
         args.extend_from_slice(extra);
         args.extend(["--", "."]);
         git_run(root, &args)
     };
     let mut files = HashMap::new();
-    if let Some(text) = run(&["HEAD"]) {
+    if let Some(text) = run("diff-index", &["HEAD"]) {
         add_numstat_z(&text, &mut files);
     } else {
         // No commit yet: everything is in the index or the working tree.
-        for extra in [&[][..], &["--cached"][..]] {
-            if let Some(text) = run(extra) {
+        // `diff --cached` compares only the index and never refreshes it.
+        for (command, extra) in [("diff-files", &[][..]), ("diff", &["--cached"][..])] {
+            if let Some(text) = run(command, extra) {
                 add_numstat_z(&text, &mut files);
             }
         }
@@ -3024,14 +3267,18 @@ const MAX_UNTRACKED_BYTES: u64 = 1024 * 1024;
 /// Line count of an untracked file with the size and time it was counted at.
 type UntrackedLines = HashMap<PathBuf, (u64, Option<SystemTime>, i64)>;
 
-static GIT_UNTRACKED_LINES_CACHE: Mutex<Option<HashMap<PathBuf, UntrackedLines>>> =
-    Mutex::new(None);
+static GIT_UNTRACKED_LINES_CACHE: Mutex<Option<GitStatusCache<UntrackedLines>>> = Mutex::new(None);
 
 fn take_untracked_lines(root: &Path) -> UntrackedLines {
     GIT_UNTRACKED_LINES_CACHE
         .lock()
         .ok()
-        .and_then(|mut guard| guard.as_mut().and_then(|cache| cache.remove(root)))
+        .and_then(|mut guard| {
+            guard.as_mut().and_then(|cache| {
+                cache.expire(Instant::now());
+                cache.remove(root)
+            })
+        })
         .unwrap_or_default()
 }
 
@@ -3040,10 +3287,18 @@ fn store_untracked_lines(root: &Path, seen: UntrackedLines) {
     if seen.is_empty() {
         return;
     }
+    let weight = seen
+        .keys()
+        .fold(seen.capacity().saturating_mul(128), |total, path| {
+            total.saturating_add(path.capacity().saturating_mul(2))
+        });
     if let Ok(mut guard) = GIT_UNTRACKED_LINES_CACHE.lock() {
-        guard
-            .get_or_insert_with(HashMap::new)
-            .insert(root.to_path_buf(), seen);
+        guard.get_or_insert_with(GitStatusCache::new).insert(
+            root.to_path_buf(),
+            seen,
+            weight,
+            Instant::now(),
+        );
     }
 }
 
@@ -3092,6 +3347,102 @@ fn text_line_count(path: &Path) -> i64 {
     lines
 }
 
+/// How much of an oversized side is read to tell text from binary.
+const DIFF_BINARY_PROBE_BYTES: usize = 8 * 1024;
+
+/// One side of a file diff. A side over `MAX_TEXT_FILE_BYTES` is never read whole:
+/// `large` is set, `bytes` stays empty and `binary` comes from the first 8 KiB.
+struct DiffSide {
+    exists: bool,
+    large: bool,
+    binary: bool,
+    bytes: Vec<u8>,
+}
+
+impl DiffSide {
+    fn missing() -> Self {
+        Self {
+            exists: false,
+            large: false,
+            binary: false,
+            bytes: Vec::new(),
+        }
+    }
+
+    fn large(probe: &[u8]) -> Self {
+        Self {
+            exists: true,
+            large: true,
+            binary: probe.contains(&0),
+            bytes: Vec::new(),
+        }
+    }
+
+    fn small(bytes: Vec<u8>) -> Self {
+        Self {
+            exists: true,
+            large: false,
+            binary: bytes.contains(&0),
+            bytes,
+        }
+    }
+
+    /// Without content: no bytes and not oversized.
+    fn is_empty(&self) -> bool {
+        !self.large && self.bytes.is_empty()
+    }
+
+    fn from_file(path: &Path) -> Self {
+        let size = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
+        if size > MAX_TEXT_FILE_BYTES {
+            let mut probe = Vec::new();
+            if let Ok(file) = std::fs::File::open(path) {
+                let _ = file
+                    .take(DIFF_BINARY_PROBE_BYTES as u64)
+                    .read_to_end(&mut probe);
+            }
+            return Self::large(&probe);
+        }
+        Self::small(std::fs::read(path).unwrap_or_default())
+    }
+
+    fn from_blob(root: &Path, spec: &str) -> Self {
+        let Some(size) =
+            git_stdout(root, &["cat-file", "-s", spec]).and_then(|text| text.parse::<u64>().ok())
+        else {
+            return Self::missing();
+        };
+        if size > MAX_TEXT_FILE_BYTES {
+            return Self::large(&git_blob_prefix(root, spec, DIFF_BINARY_PROBE_BYTES));
+        }
+        git_blob(root, spec).map_or_else(Self::missing, Self::small)
+    }
+}
+
+/// The first `limit` bytes of a blob; the git process is stopped once they are read.
+fn git_blob_prefix(root: &Path, spec: &str, limit: usize) -> Vec<u8> {
+    let mut probe = Vec::new();
+    let spawned = git_cmd()
+        .arg("--no-pager")
+        .arg("-C")
+        .arg(root)
+        .args(["cat-file", "-p", spec])
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn();
+    if let Ok(mut child) = spawned {
+        if let Some(stdout) = child.stdout.take() {
+            let _ = stdout.take(limit as u64).read_to_end(&mut probe);
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    probe
+}
+
 fn git_file_diff_for(root: &Path, relative: &str, staged: bool) -> Result<GitFileDiff, String> {
     let relative = resolve_repo_path(root, relative)?;
     let abs = root.join(&relative);
@@ -3102,22 +3453,22 @@ fn git_file_diff_for(root: &Path, relative: &str, staged: bool) -> Result<GitFil
     let index_spec = format!(":{prefix}{relative}");
     let (original, current) = if staged {
         let head_spec = format!("HEAD:{prefix}{relative}");
-        (git_blob(root, &head_spec), git_blob(root, &index_spec))
+        (
+            DiffSide::from_blob(root, &head_spec),
+            DiffSide::from_blob(root, &index_spec),
+        )
     } else {
         let current = if abs.is_file() {
-            Some(std::fs::read(&abs).unwrap_or_default())
+            DiffSide::from_file(&abs)
         } else {
-            None
+            DiffSide::missing()
         };
-        (git_blob(root, &index_spec), current)
+        (DiffSide::from_blob(root, &index_spec), current)
     };
-    let had_original = original.is_some();
-    let had_current = current.is_some();
-    let orig = original.unwrap_or_default();
-    let current = current.unwrap_or_default();
-    let binary = orig.contains(&0) || current.contains(&0);
-    let too_large =
-        orig.len() as u64 > MAX_TEXT_FILE_BYTES || current.len() as u64 > MAX_TEXT_FILE_BYTES;
+    let had_original = original.exists;
+    let had_current = current.exists;
+    let binary = original.binary || current.binary;
+    let too_large = original.large || current.large;
     let status = if !had_original && had_current {
         if staged {
             "added"
@@ -3133,8 +3484,8 @@ fn git_file_diff_for(root: &Path, relative: &str, staged: bool) -> Result<GitFil
         (String::new(), String::new())
     } else {
         (
-            String::from_utf8_lossy(&orig).into_owned(),
-            String::from_utf8_lossy(&current).into_owned(),
+            String::from_utf8_lossy(&original.bytes).into_owned(),
+            String::from_utf8_lossy(&current.bytes).into_owned(),
         )
     };
     Ok(GitFileDiff {
@@ -3417,17 +3768,16 @@ fn git_commit_file_diff_for(root: &Path, sha: &str, relative: &str) -> Result<Gi
     }
     let sha = git_peel_commit(root, sha)?;
     let parent = git_stdout(root, &["rev-parse", "--verify", &format!("{sha}^")]);
-    let original_bytes = match &parent {
-        Some(parent) => git_blob(root, &format!("{parent}:{relative}")).unwrap_or_default(),
-        None => Vec::new(),
+    let original_side = match &parent {
+        Some(parent) => DiffSide::from_blob(root, &format!("{parent}:{relative}")),
+        None => DiffSide::missing(),
     };
-    let current_bytes = git_blob(root, &format!("{sha}:{relative}")).unwrap_or_default();
-    let binary = original_bytes.contains(&0) || current_bytes.contains(&0);
-    let too_large = original_bytes.len() as u64 > MAX_TEXT_FILE_BYTES
-        || current_bytes.len() as u64 > MAX_TEXT_FILE_BYTES;
-    let status = if original_bytes.is_empty() && !current_bytes.is_empty() {
+    let current_side = DiffSide::from_blob(root, &format!("{sha}:{relative}"));
+    let binary = original_side.binary || current_side.binary;
+    let too_large = original_side.large || current_side.large;
+    let status = if original_side.is_empty() && !current_side.is_empty() {
         "added"
-    } else if !original_bytes.is_empty() && current_bytes.is_empty() {
+    } else if !original_side.is_empty() && current_side.is_empty() {
         "deleted"
     } else {
         "modified"
@@ -3436,8 +3786,8 @@ fn git_commit_file_diff_for(root: &Path, sha: &str, relative: &str) -> Result<Gi
         (String::new(), String::new())
     } else {
         (
-            String::from_utf8_lossy(&original_bytes).into_owned(),
-            String::from_utf8_lossy(&current_bytes).into_owned(),
+            String::from_utf8_lossy(&original_side.bytes).into_owned(),
+            String::from_utf8_lossy(&current_side.bytes).into_owned(),
         )
     };
     Ok(GitFileDiff {
@@ -4077,6 +4427,20 @@ fn git_github_work_items_for(
     search: &str,
     limit: u32,
 ) -> Result<Vec<GitHubWorkItem>, String> {
+    git_github_work_items_for_token(root, repo, kind, assigned_to_me, state, search, limit, None)
+}
+
+#[allow(clippy::too_many_arguments)] // GitHub query fields map one-to-one onto the work-item filter; a struct would only rename them.
+pub(crate) fn git_github_work_items_for_token(
+    root: &Path,
+    repo: &str,
+    kind: &str,
+    assigned_to_me: bool,
+    state: &str,
+    search: &str,
+    limit: u32,
+    token: Option<&str>,
+) -> Result<Vec<GitHubWorkItem>, String> {
     let kind = kind.trim();
     if kind != "issue" && kind != "pr" {
         return Err("Unknown GitHub task kind".into());
@@ -4116,7 +4480,10 @@ fn git_github_work_items_for(
         args.push(search.to_string());
     }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let json = gh_checked(root, &refs)?;
+    let json = match token {
+        Some(token) => gh_checked_with_token(root, &refs, token)?,
+        None => gh_checked(root, &refs)?,
+    };
     parse_github_work_items(&json, kind, &repo)
 }
 
@@ -4125,6 +4492,15 @@ fn git_github_work_item_for(
     repo: &str,
     kind: &str,
     number: i64,
+) -> Result<GitHubWorkItem, String> {
+    git_github_work_item_for_token(root, repo, kind, number, None)
+}
+fn git_github_work_item_for_token(
+    root: &Path,
+    repo: &str,
+    kind: &str,
+    number: i64,
+    token: Option<&str>,
 ) -> Result<GitHubWorkItem, String> {
     let kind = kind.trim();
     if kind != "issue" && kind != "pr" {
@@ -4141,10 +4517,11 @@ fn git_github_work_item_for(
     } else {
         "number,title,url,state,stateReason,createdAt,updatedAt,labels,assignees"
     };
-    let json = gh_checked(
-        root,
-        &[kind, "view", &number, "--repo", &repo, "--json", fields],
-    )?;
+    let args = &[kind, "view", &number, "--repo", &repo, "--json", fields];
+    let json = match token {
+        Some(token) => gh_checked_with_token(root, args, token)?,
+        None => gh_checked(root, args)?,
+    };
     parse_github_work_item(&json, kind, &repo)
 }
 
@@ -4195,12 +4572,68 @@ fn git_github_pr_action_for(
     action: &str,
     expected_head_oid: &str,
 ) -> Result<GitHubWorkItem, String> {
+    git_github_pr_action_for_token(root, repo, number, action, expected_head_oid, None)
+}
+pub(crate) fn git_github_pr_action_for_token(
+    root: &Path,
+    repo: &str,
+    number: i64,
+    action: &str,
+    expected_head_oid: &str,
+    token: Option<&str>,
+) -> Result<GitHubWorkItem, String> {
     let args = github_pr_action_args(repo, number, action, expected_head_oid)?;
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     // Successful mutation commands do not always write to stdout. Their exit
     // status confirms the action ran; the follow-up view fetches the new state.
-    gh_run(root, &refs, true)?;
-    git_github_work_item_for(root, repo, "pr", number)
+    match token {
+        Some(token) => gh_run_with_token(root, &refs, true, Some(token))
+            .map_err(|error| error.replace(token, "[redacted]"))?,
+        None => gh_run(root, &refs, true)?,
+    };
+    // The mutation already happened: a failed refresh must not be reported as a failed action.
+    Ok(
+        git_github_work_item_for_token(root, repo, "pr", number, token)
+            .unwrap_or_else(|error| github_pr_action_refresh_failed(repo, number, action, &error)),
+    )
+}
+
+/// Placeholder result for an action that succeeded when re-reading the pull request failed.
+fn github_pr_action_refresh_failed(
+    repo: &str,
+    number: i64,
+    action: &str,
+    error: &str,
+) -> GitHubWorkItem {
+    let action = action.trim();
+    let state = match action {
+        "merge" | "squash" | "rebase" => "merged",
+        "close" => "closed",
+        _ => "open",
+    };
+    // The command only knows the repository slug and number, not the title, so the
+    // canonical URL is derived from them. The title stays empty here; the caller
+    // keeps the title it already has for this pull request.
+    let url = split_github_repo(repo)
+        .map(|(owner, name)| format!("https://github.com/{owner}/{name}/pull/{number}"))
+        .unwrap_or_default();
+    GitHubWorkItem {
+        kind: "pr".to_string(),
+        number,
+        title: String::new(),
+        url,
+        state: state.to_string(),
+        state_reason: String::new(),
+        created_at: String::new(),
+        updated_at: String::new(),
+        labels: Vec::new(),
+        assignees: Vec::new(),
+        draft: action == "draft",
+        repo: repo.to_string(),
+        refresh_error: Some(format!(
+            "The {action} succeeded, but refreshing the pull request failed: {error}"
+        )),
+    }
 }
 
 fn git_github_work_item_details_for(
@@ -4208,6 +4641,15 @@ fn git_github_work_item_details_for(
     repo: &str,
     kind: &str,
     number: i64,
+) -> Result<GitHubWorkItemDetails, String> {
+    git_github_work_item_details_for_token(root, repo, kind, number, None)
+}
+pub(crate) fn git_github_work_item_details_for_token(
+    root: &Path,
+    repo: &str,
+    kind: &str,
+    number: i64,
+    token: Option<&str>,
 ) -> Result<GitHubWorkItemDetails, String> {
     let kind = kind.trim();
     if kind != "issue" && kind != "pr" {
@@ -4224,10 +4666,11 @@ fn git_github_work_item_details_for(
     } else {
         "body,author"
     };
-    let json = gh_checked(
-        root,
-        &[kind, "view", &number, "--repo", &repo, "--json", fields],
-    )?;
+    let args = &[kind, "view", &number, "--repo", &repo, "--json", fields];
+    let json = match token {
+        Some(token) => gh_checked_with_token(root, args, token)?,
+        None => gh_checked(root, args)?,
+    };
     parse_github_work_item_details(&json)
 }
 
@@ -4375,6 +4818,15 @@ fn git_github_work_item_thread_for(
     kind: &str,
     number: i64,
 ) -> Result<GitHubWorkItemThread, String> {
+    git_github_work_item_thread_for_token(root, repo, kind, number, None)
+}
+pub(crate) fn git_github_work_item_thread_for_token(
+    root: &Path,
+    repo: &str,
+    kind: &str,
+    number: i64,
+    token: Option<&str>,
+) -> Result<GitHubWorkItemThread, String> {
     let kind = kind.trim();
     if kind != "issue" && kind != "pr" {
         return Err("Unknown GitHub task kind".into());
@@ -4391,21 +4843,22 @@ fn git_github_work_item_thread_for(
     let owner_field = format!("owner={owner}");
     let name_field = format!("name={name}");
     let number_field = format!("number={number}");
-    let json = gh_checked(
-        root,
-        &[
-            "api",
-            "graphql",
-            "-f",
-            &format!("query={query}"),
-            "-F",
-            &owner_field,
-            "-F",
-            &name_field,
-            "-F",
-            &number_field,
-        ],
-    )?;
+    let args = &[
+        "api",
+        "graphql",
+        "-f",
+        &format!("query={query}"),
+        "-F",
+        &owner_field,
+        "-F",
+        &name_field,
+        "-F",
+        &number_field,
+    ];
+    let json = match token {
+        Some(token) => gh_checked_with_token(root, args, token)?,
+        None => gh_checked(root, args)?,
+    };
     parse_github_work_item_thread(&json, kind)
 }
 
@@ -4436,11 +4889,25 @@ fn git_github_work_item_comment_for(
     body: &str,
     in_reply_to: &str,
 ) -> Result<String, String> {
+    git_github_work_item_comment_for_token(root, repo, kind, number, body, in_reply_to, None)
+}
+pub(crate) fn git_github_work_item_comment_for_token(
+    root: &Path,
+    repo: &str,
+    kind: &str,
+    number: i64,
+    body: &str,
+    in_reply_to: &str,
+    token: Option<&str>,
+) -> Result<String, String> {
     let (kind, body) = github_comment_input(kind, number, body)?;
     let (owner, name) = split_github_repo(repo)?;
     let repo = format!("{owner}/{name}");
     let reply = in_reply_to.trim();
     if !reply.is_empty() {
+        if token.is_some() {
+            return Err("Room threaded replies are unavailable".into());
+        }
         if kind != "pr" {
             return Err("Review replies require a pull request".into());
         }
@@ -4449,18 +4916,19 @@ fn git_github_work_item_comment_for(
     }
     let number = number.to_string();
     with_temp_markdown(body, |path| {
-        let output = gh_checked(
-            root,
-            &[
-                kind,
-                "comment",
-                &number,
-                "--repo",
-                &repo,
-                "--body-file",
-                path,
-            ],
-        )?;
+        let args = &[
+            kind,
+            "comment",
+            &number,
+            "--repo",
+            &repo,
+            "--body-file",
+            path,
+        ];
+        let output = match token {
+            Some(token) => gh_checked_with_token(root, args, token)?,
+            None => gh_checked(root, args)?,
+        };
         github_url_from_output(&output, "GitHub did not return a comment URL")
     })
 }
@@ -5032,6 +5500,27 @@ pub(crate) fn git_github_pr_diff_for(
     number: i64,
     full_context: bool,
 ) -> Result<GitHubPrDiff, String> {
+    git_github_pr_diff_for_token(root, repo, number, full_context, None, || Ok(()))
+}
+pub(crate) fn git_github_pr_diff_for_token(
+    root: &Path,
+    repo: &str,
+    number: i64,
+    full_context: bool,
+    token: Option<&str>,
+    guard: impl Fn() -> Result<(), String>,
+) -> Result<GitHubPrDiff, String> {
+    if token.is_some() && full_context {
+        return Err("Room full-context diff unavailable".into());
+    }
+    let run = |args: &[&str], empty: bool| -> Result<String, String> {
+        guard()?;
+        match token {
+            Some(token) => gh_run_with_token(root, args, empty, Some(token))
+                .map_err(|error| error.replace(token, "[redacted]")),
+            None => gh_run(root, args, empty),
+        }
+    };
     if number <= 0 {
         return Err("Invalid pull request number".into());
     }
@@ -5043,8 +5532,7 @@ pub(crate) fn git_github_pr_diff_for(
     } else {
         "files,additions,deletions,headRefOid"
     };
-    let json = gh_run(
-        root,
+    let json = run(
         &["pr", "view", &number, "--repo", &repo, "--json", fields],
         false,
     )?;
@@ -5059,14 +5547,10 @@ pub(crate) fn git_github_pr_diff_for(
         let (base, head) = parse_github_pr_oids(&json)?;
         git_diff_full_context(root, &base, &head)?
     } else {
-        (
-            gh_run(root, &["pr", "diff", &number, "--repo", &repo], true)?,
-            false,
-        )
+        (run(&["pr", "diff", &number, "--repo", &repo], true)?, false)
     };
     if !full_context {
-        let current = gh_checked(
-            root,
+        let current = run(
             &[
                 "pr",
                 "view",
@@ -5076,6 +5560,7 @@ pub(crate) fn git_github_pr_diff_for(
                 "--json",
                 "headRefOid",
             ],
+            false,
         )?;
         let current: serde_json::Value =
             serde_json::from_str(&current).map_err(|error| error.to_string())?;
@@ -5481,6 +5966,7 @@ fn parse_github_work_items(
                 .collect(),
             draft: row.is_draft,
             repo: repo.to_string(),
+            refresh_error: None,
         })
         .collect())
 }
@@ -5571,9 +6057,28 @@ pub(crate) fn gh_checked(root: &Path, args: &[&str]) -> Result<String, String> {
     gh_run(root, args, false)
 }
 
+/// Run the existing GitHub CLI owner with an explicitly captured credential.
+/// The token stays in the child environment and is redacted from all errors.
+pub(crate) fn gh_checked_with_token(
+    root: &Path,
+    args: &[&str],
+    token: &str,
+) -> Result<String, String> {
+    gh_run_with_token(root, args, false, Some(token))
+        .map_err(|error| error.replace(token, "[redacted]"))
+}
+
 fn gh_run(root: &Path, args: &[&str], allow_empty: bool) -> Result<String, String> {
-    let program = crate::harness::resolve_gui_binary("gh")
-        .ok_or_else(|| "GitHub CLI (`gh`) is not installed.".to_string())?;
+    gh_run_with_token(root, args, allow_empty, None)
+}
+
+fn gh_run_with_token(
+    root: &Path,
+    args: &[&str],
+    allow_empty: bool,
+    token: Option<&str>,
+) -> Result<String, String> {
+    let program = crate::github_cli::gh_program()?;
     let mut cmd = Command::new(&program);
     cmd.current_dir(root)
         .args(args)
@@ -5582,10 +6087,19 @@ fn gh_run(root: &Path, args: &[&str], allow_empty: bool) -> Result<String, Strin
         .env("GH_PAGER", "cat")
         .env("GIT_PAGER", "cat");
     crate::harness::apply_gui_env(&mut cmd);
+    if let Some(token) = token {
+        cmd.env("GH_TOKEN", token)
+            .env_remove("GITHUB_TOKEN")
+            .env_remove("GH_ENTERPRISE_TOKEN")
+            .env_remove("GITHUB_ENTERPRISE_TOKEN");
+    }
     crate::hide_window_console(&mut cmd);
-    let output = cmd.output().map_err(|error| {
+    let output = output_with_timeout(&mut cmd, GIT_NETWORK_TIMEOUT).map_err(|error| {
         if error.kind() == ErrorKind::NotFound {
             "GitHub CLI (`gh`) is not installed.".to_string()
+        } else if error.kind() == ErrorKind::TimedOut {
+            // A stopped mutation may already have completed remotely: tell the user to refresh.
+            "GitHub CLI (`gh`) did not finish in time and was stopped; the operation may still have completed. Refresh before retrying.".to_string()
         } else {
             error.to_string()
         }
@@ -5753,14 +6267,14 @@ fn git_cmd_for_args_with_path(args: &[&str], gui_path: impl FnOnce() -> String) 
 /// How long a push, pull or fetch may run before it is stopped. A stuck
 /// credential helper would otherwise hold the Changes panel busy for good.
 const GIT_NETWORK_TIMEOUT: Duration = Duration::from_secs(300);
-const GIT_LOCAL_TIMEOUT: Duration = Duration::from_secs(120);
+pub(crate) const GIT_LOCAL_TIMEOUT: Duration = Duration::from_secs(120);
 
 fn git_is_network_command(args: &[&str]) -> bool {
     matches!(args.first().copied(), Some("push" | "pull" | "fetch"))
 }
 
 /// `Command::output` with a deadline: the child is killed when it passes.
-fn output_with_timeout(
+pub(crate) fn output_with_timeout(
     cmd: &mut Command,
     timeout: Duration,
 ) -> std::io::Result<std::process::Output> {
@@ -5880,45 +6394,60 @@ impl GitSpawnGate {
         }
     }
 
-    fn enter_cancellable(&'static self, cancel: Option<&AtomicBool>) -> Option<GitSpawnTurn> {
-        if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
+    fn wait_turn(&'static self) -> GitSpawnTurn {
+        self.wait_turn_cancellable(None, None)
+            .unwrap_or(GitSpawnTurn(None))
+    }
+
+    fn enter_until(
+        &'static self,
+        cancel: Option<&AtomicBool>,
+        deadline: Instant,
+    ) -> Option<GitSpawnTurn> {
+        if Instant::now() >= deadline || cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
             return None;
         }
         if cfg!(windows) {
-            self.wait_turn_cancellable(cancel)
+            self.wait_turn_cancellable(cancel, Some(deadline))
         } else {
             Some(GitSpawnTurn(None))
         }
     }
 
-    fn wait_turn(&'static self) -> GitSpawnTurn {
-        self.wait_turn_cancellable(None)
-            .unwrap_or(GitSpawnTurn(None))
-    }
-
-    fn wait_turn_cancellable(&'static self, cancel: Option<&AtomicBool>) -> Option<GitSpawnTurn> {
+    fn wait_turn_cancellable(
+        &'static self,
+        cancel: Option<&AtomicBool>,
+        deadline: Option<Instant>,
+    ) -> Option<GitSpawnTurn> {
         let Ok(mut holder) = self.holder.lock() else {
             return Some(GitSpawnTurn(None));
         };
         while let Some((_, since)) = *holder {
-            if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
+            if deadline.is_some_and(|deadline| Instant::now() >= deadline)
+                || cancel.is_some_and(|token| token.load(Ordering::Acquire))
+            {
                 return None;
             }
             let Some(left) = GIT_STARTUP_WINDOW.checked_sub(since.elapsed()) else {
                 break;
             };
             // A busy gate must not hide cancellation behind other Git callers.
+            let wait = deadline.map_or(left, |deadline| {
+                left.min(deadline.saturating_duration_since(Instant::now()))
+            });
             let wait = if cancel.is_some() {
-                left.min(Duration::from_millis(50))
+                wait.min(Duration::from_millis(50))
             } else {
-                left
+                wait
             };
             holder = match self.freed.wait_timeout(holder, wait) {
                 Ok((holder, _)) => holder,
                 Err(_) => return Some(GitSpawnTurn(None)),
             };
         }
-        if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline)
+            || cancel.is_some_and(|token| token.load(Ordering::Acquire))
+        {
             return None;
         }
         let id = self.next.fetch_add(1, Ordering::Relaxed);
@@ -6037,15 +6566,53 @@ pub(crate) fn git_output(root: &Path, args: &[&str]) -> Option<Vec<u8>> {
 /// a reader parked in `send`. A reader parked in `read` instead is a different
 /// case, and `stop` explains why that one is left detached.
 const GIT_OUTPUT_QUEUE_CHUNKS: usize = 16;
+const MAX_GIT_STREAMS: usize = 4;
+static ACTIVE_GIT_STREAMS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static ACTIVE_NESTED_GIT_STREAMS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
-pub(crate) fn git_output_capped(
+struct GitStreamLease(&'static std::sync::atomic::AtomicUsize);
+impl GitStreamLease {
+    fn acquire(nested: bool) -> Result<Arc<Self>, String> {
+        let counter = if nested {
+            &ACTIVE_NESTED_GIT_STREAMS
+        } else {
+            &ACTIVE_GIT_STREAMS
+        };
+        let mut active = counter.load(Ordering::Acquire);
+        loop {
+            if active >= MAX_GIT_STREAMS {
+                return Err("Git stream capacity is unavailable".into());
+            }
+            match counter.compare_exchange_weak(
+                active,
+                active + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Ok(Arc::new(Self(counter))),
+                Err(actual) => active = actual,
+            }
+        }
+    }
+}
+impl Drop for GitStreamLease {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// Stream a local Git command without retaining its output. A separate owner
+/// enforces the deadline even while the consumer validates a streamed record.
+pub(crate) fn git_stream_output(
     root: &Path,
     args: &[&str],
-    max_bytes: usize,
-    cancel: Option<&AtomicBool>,
-) -> Option<(Vec<u8>, bool)> {
-    let mut child = git_cmd();
-    let child = child
+    deadline: Instant,
+    nested: bool,
+    consume: impl FnMut(&[u8]) -> Result<(), String>,
+) -> Result<(), String> {
+    let mut command = git_cmd();
+    command
         .arg("--no-pager")
         .arg("-C")
         .arg(root)
@@ -6055,94 +6622,342 @@ pub(crate) fn git_output_capped(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    let _turn = GIT_SPAWN_GATE.enter_cancellable(cancel)?;
-    let mut child = child.spawn().ok()?;
+    git_stream_command(command, deadline, nested, consume)
+}
+
+fn git_stream_command(
+    mut command: Command,
+    deadline: Instant,
+    nested: bool,
+    mut consume: impl FnMut(&[u8]) -> Result<(), String>,
+) -> Result<(), String> {
+    if Instant::now() >= deadline {
+        return Err("Git output timed out".into());
+    }
+    let lease = GitStreamLease::acquire(nested)?;
+    let turn = GIT_SPAWN_GATE
+        .enter_until(None, deadline)
+        .ok_or("Git output timed out")?;
+    if Instant::now() >= deadline {
+        return Err("Git output timed out".into());
+    }
+    let mut child = command.spawn().map_err(|_| "Could not start Git")?;
+    drop(turn);
     let Some(mut stdout) = child.stdout.take() else {
         let _ = child.kill();
-        let _ = child.wait();
-        return None;
+        if child.wait().is_err() {
+            std::mem::forget(lease);
+            return Err("Git process retirement is unknown".into());
+        }
+        return Err("Could not read Git output".into());
     };
-    let (sender, receiver) = mpsc::sync_channel(GIT_OUTPUT_QUEUE_CHUNKS);
+    let (chunks_tx, chunks_rx) = mpsc::sync_channel(GIT_OUTPUT_QUEUE_CHUNKS);
+    let reader_lease = Arc::clone(&lease);
     let reader = thread::Builder::new()
-        .name("git-output-reader".to_string())
+        .name("git-stream-reader".into())
         .spawn(move || {
+            let _lease = reader_lease;
             let mut chunk = vec![0u8; 8192];
             loop {
                 match stdout.read(&mut chunk) {
                     Ok(0) => {
-                        let _ = sender.send(Ok(Vec::new()));
+                        let _ = chunks_tx.send(Ok(Vec::new()));
                         break;
                     }
-                    Ok(read) => {
-                        if sender.send(Ok(chunk[..read].to_vec())).is_err() {
+                    Ok(count) => {
+                        if chunks_tx.send(Ok(chunk[..count].to_vec())).is_err() {
                             break;
                         }
                     }
                     Err(error) => {
-                        let _ = sender.send(Err(error));
+                        let _ = chunks_tx.send(Err(error));
                         break;
                     }
                 }
             }
         });
-    let mut reader = match reader {
-        Ok(reader) => Some(reader),
-        Err(_) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return None;
-        }
-    };
-    let stop = |child: &mut std::process::Child, reader: &mut Option<thread::JoinHandle<()>>| {
+    if reader.is_err() {
         let _ = child.kill();
-        let _ = child.wait();
-        // Dropping the handle detaches the reader. A killed git process can leave
-        // a shell descendant holding the pipe, so joining here would re-block the
-        // cancelled search until that unrelated descendant exits.
-        reader.take();
-    };
-
-    let mut buf = Vec::new();
-    loop {
-        if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
-            stop(&mut child, &mut reader);
-            return None;
+        if child.wait().is_err() {
+            std::mem::forget(lease);
+            return Err("Git process retirement is unknown".into());
         }
-        match receiver.recv_timeout(Duration::from_millis(100)) {
-            Ok(Ok(chunk)) if chunk.is_empty() => break,
+        return Err("Could not start Git output reader".into());
+    }
+    let (stop_tx, stop_rx) = mpsc::channel();
+    let (done_tx, done_rx) = mpsc::sync_channel(1);
+    let child = Arc::new(Mutex::new(child));
+    let owned_child = Arc::clone(&child);
+    let owner_lease = Arc::clone(&lease);
+    let owner = thread::Builder::new()
+        .name("git-stream-owner".into())
+        .spawn(move || {
+            let lease = owner_lease;
+            let Ok(mut child) = owned_child.lock() else {
+                std::mem::forget(lease);
+                let _ = done_tx.send(Err("Git process owner unavailable".into()));
+                return;
+            };
+            let result = loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        break if status.success() {
+                            Ok(())
+                        } else {
+                            Err("Git command failed".to_string())
+                        }
+                    }
+                    Err(_) => {
+                        let _ = child.kill();
+                        if child.wait().is_err() {
+                            std::mem::forget(lease);
+                            break Err("Git process retirement is unknown".into());
+                        }
+                        break Err("Could not wait for Git".into());
+                    }
+                    Ok(None) => {}
+                }
+                // The reader thread enforces the same deadline. Both paths report the
+                // same timeout message, so the outcome does not depend on which fires first.
+                let timed_out = Instant::now() >= deadline;
+                if timed_out || stop_rx.try_recv().is_ok() {
+                    let _ = child.kill();
+                    if child.wait().is_err() {
+                        std::mem::forget(lease);
+                        break Err("Git process retirement is unknown".into());
+                    }
+                    break Err(if timed_out {
+                        "Git output timed out"
+                    } else {
+                        "Git command was cancelled"
+                    }
+                    .to_string());
+                }
+                thread::sleep(Duration::from_millis(25));
+            };
+            let _ = done_tx.send(result);
+        });
+    if owner.is_err() {
+        if let Ok(mut child) = child.lock() {
+            let _ = child.kill();
+            if child.wait().is_err() {
+                std::mem::forget(lease);
+                return Err("Git process retirement is unknown".into());
+            }
+        } else {
+            std::mem::forget(lease);
+            return Err("Git process retirement is unknown".into());
+        }
+        return Err("Could not start Git process owner".into());
+    }
+    let result = loop {
+        if Instant::now() >= deadline {
+            break Err("Git output timed out".into());
+        }
+        match chunks_rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(Ok(chunk)) if chunk.is_empty() => break Ok(()),
             Ok(Ok(chunk)) => {
-                let remaining = max_bytes.saturating_sub(buf.len());
-                if chunk.len() > remaining {
-                    buf.extend_from_slice(&chunk[..remaining]);
-                    stop(&mut child, &mut reader);
-                    return Some((buf, true));
-                }
-                buf.extend_from_slice(&chunk);
-            }
-            Ok(Err(_)) => {
-                stop(&mut child, &mut reader);
-                return None;
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
-                    stop(&mut child, &mut reader);
-                    return None;
+                if let Err(error) = consume(&chunk) {
+                    break Err(error);
                 }
             }
+            Ok(Err(_)) => break Err("Could not read Git output".into()),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => {
-                stop(&mut child, &mut reader);
-                return None;
+                break Err("Git output reader stopped".into())
             }
+        }
+    };
+    if result.is_err() {
+        let _ = stop_tx.send(());
+    }
+    drop(chunks_rx);
+    let remaining = deadline
+        .saturating_duration_since(Instant::now())
+        .max(Duration::from_secs(1));
+    let status = done_rx
+        .recv_timeout(remaining)
+        .map_err(|_| "Git process retirement is unknown".to_string())?;
+    if matches!(&status, Err(error) if error == "Git process retirement is unknown" || error == "Git process owner unavailable")
+    {
+        return status;
+    }
+    result.and(status)
+}
+
+#[cfg(test)]
+mod git_stream_process_tests {
+    use super::*;
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn child(name: &str) -> Command {
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        crate::hide_window_console(&mut command);
+        command
+            .args(["--exact", name, "--ignored", "--nocapture"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        command
+    }
+
+    #[test]
+    #[ignore = "isolated child fixture"]
+    fn silent_child() {
+        if let Some(marker) = std::env::var_os("BYCODA_GIT_SILENT_READY") {
+            std::fs::write(marker, b"ready").unwrap();
+        }
+        println!("SILENT_CHILD_READY");
+        std::thread::sleep(Duration::from_secs(30));
+    }
+
+    #[test]
+    #[ignore = "isolated child fixture"]
+    fn inherited_pipe_parent() {
+        let mut hold = child("fs::git_stream_process_tests::inherited_pipe_holder");
+        hold.stdout(Stdio::inherit());
+        // The holder is detached on purpose: it exits by its own deadline and is never waited on.
+        #[allow(clippy::zombie_processes)]
+        let _ = hold.spawn().unwrap();
+        println!("PIPE_HOLDER_READY");
+    }
+
+    #[test]
+    #[ignore = "isolated child fixture"]
+    fn inherited_pipe_holder() {
+        let signal = PathBuf::from(std::env::var_os("BYCODA_STREAM_FIXTURE_RELEASE").unwrap());
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while !signal.exists() && Instant::now() < deadline {
+            std::thread::yield_now();
         }
     }
-    let _ = reader.take().map(thread::JoinHandle::join);
-    let status = child.wait().ok()?;
-    if git_status_ok(&status, args) {
-        Some((buf, false))
-    } else {
-        None
+
+    #[test]
+    fn deadline_retires_silent_child_and_releases_capacity() {
+        let _test = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let before = ACTIVE_GIT_STREAMS.load(Ordering::Acquire);
+        let mut observed = Vec::new();
+        let result = git_stream_command(
+            child("fs::git_stream_process_tests::silent_child"),
+            Instant::now() + Duration::from_secs(5),
+            false,
+            |chunk| {
+                observed.extend_from_slice(chunk);
+                Ok(())
+            },
+        );
+        let error = result.unwrap_err();
+        assert_eq!(error, "Git output timed out");
+        assert!(observed
+            .windows(b"SILENT_CHILD_READY".len())
+            .any(|window| window == b"SILENT_CHILD_READY"));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while ACTIVE_GIT_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert_eq!(ACTIVE_GIT_STREAMS.load(Ordering::Acquire), before);
+    }
+
+    #[test]
+    fn callback_failure_stops_owned_child() {
+        let _test = TEST_LOCK.lock().unwrap();
+        let before = ACTIVE_GIT_STREAMS.load(Ordering::Acquire);
+        let started = Instant::now();
+        let result = git_stream_command(
+            child("fs::git_stream_process_tests::silent_child"),
+            started + Duration::from_secs(3),
+            false,
+            |_| Err("synthetic callback failure".into()),
+        );
+        assert_eq!(result.unwrap_err(), "synthetic callback failure");
+        assert!(started.elapsed() < Duration::from_secs(3));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while ACTIVE_GIT_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert_eq!(ACTIVE_GIT_STREAMS.load(Ordering::Acquire), before);
+    }
+
+    #[test]
+    fn inherited_pipe_retains_capacity_until_reader_retires() {
+        let _test = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let before = ACTIVE_GIT_STREAMS.load(Ordering::Acquire);
+        let release =
+            std::env::temp_dir().join(format!("bycoda-git-stream-release-{}", Uuid::new_v4()));
+        let mut process = child("fs::git_stream_process_tests::inherited_pipe_parent");
+        process.env("BYCODA_STREAM_FIXTURE_RELEASE", &release);
+        let mut observed = Vec::new();
+        let result = git_stream_command(
+            process,
+            Instant::now() + Duration::from_secs(3),
+            false,
+            |chunk| {
+                observed.extend_from_slice(chunk);
+                Ok(())
+            },
+        );
+        assert!(result.is_err());
+        assert!(observed
+            .windows(b"PIPE_HOLDER_READY".len())
+            .any(|window| window == b"PIPE_HOLDER_READY"));
+        assert!(ACTIVE_GIT_STREAMS.load(Ordering::Acquire) > before);
+        std::fs::write(&release, b"release").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(4);
+        while ACTIVE_GIT_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert_eq!(ACTIVE_GIT_STREAMS.load(Ordering::Acquire), before);
+        std::fs::remove_file(release).unwrap();
     }
 }
+
+pub(crate) fn git_output_capped(
+    root: &Path,
+    args: &[&str],
+    max_bytes: usize,
+    cancel: Option<&AtomicBool>,
+) -> Option<(Vec<u8>, bool)> {
+    git_output_capped_with_timeout(root, args, max_bytes, cancel, GIT_LOCAL_TIMEOUT, &[])
+}
+
+/// Like `git_output_capped`, with extra environment variables for the git child
+/// (for example a UTF-8 `LC_ALL` so case folding of non-ASCII text works).
+pub(crate) fn git_output_capped_with_env(
+    root: &Path,
+    args: &[&str],
+    max_bytes: usize,
+    cancel: Option<&AtomicBool>,
+    env: &[(&str, &str)],
+) -> Option<(Vec<u8>, bool)> {
+    git_output_capped_with_timeout(root, args, max_bytes, cancel, GIT_LOCAL_TIMEOUT, env)
+}
+
+fn git_output_capped_with_timeout(
+    root: &Path,
+    args: &[&str],
+    max_bytes: usize,
+    cancel: Option<&AtomicBool>,
+    timeout: Duration,
+    env: &[(&str, &str)],
+) -> Option<(Vec<u8>, bool)> {
+    let deadline = Instant::now() + timeout;
+    let mut child = git_cmd();
+    let child = child
+        .arg("--no-pager")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .envs(env.iter().copied())
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    git_bounded_output::run(child, args, max_bytes, cancel, deadline)
+}
+
+#[path = "fs/git_bounded_output.rs"]
+mod git_bounded_output;
 
 fn git_status_ok(status: &std::process::ExitStatus, args: &[&str]) -> bool {
     status.success()
@@ -7153,7 +7968,16 @@ impl<'a> From<Option<&'a AtomicBool>> for WalkStop<'a> {
     }
 }
 
+#[cfg(test)]
 fn walk_project_files(root: &Path, stop: WalkStop<'_>) -> Vec<ProjectFile> {
+    walk_project_files_inner(root, stop, &AtomicBool::new(false))
+}
+
+fn walk_project_files_inner(
+    root: &Path,
+    stop: WalkStop<'_>,
+    incomplete: &AtomicBool,
+) -> Vec<ProjectFile> {
     let ignore = Ignore::load(root);
     let mut files = Vec::new();
     let mut dirs = vec![root.to_path_buf()];
@@ -7166,6 +7990,7 @@ fn walk_project_files(root: &Path, stop: WalkStop<'_>) -> Vec<ProjectFile> {
         }
         visited += 1;
         if visited > MAX_WALK_DIRS || files.len() >= MAX_PROJECT_FILES {
+            incomplete.store(true, Ordering::Relaxed);
             break;
         }
         let Ok(reader) = std::fs::read_dir(&dir) else {
@@ -7208,6 +8033,7 @@ fn walk_project_files(root: &Path, stop: WalkStop<'_>) -> Vec<ProjectFile> {
                 relative,
             });
             if files.len() >= MAX_PROJECT_FILES {
+                incomplete.store(true, Ordering::Relaxed);
                 break;
             }
         }
@@ -7346,38 +8172,43 @@ fn already_exists(label: &str) -> String {
 
 /// Create a file or folder under `parent`. `name` may contain `/` or `\` to
 /// nest. Returns the created path.
-#[tauri::command(async)]
-pub fn create_path(
+#[tauri::command]
+pub async fn create_path(
     app: AppHandle,
+    window: tauri::Window,
     parent: String,
     name: String,
     is_dir: bool,
 ) -> Result<String, String> {
-    let parent_dir = expand_home(&parent);
-    let dest = resolve_under(&parent_dir, &name)?;
-    crate::file_access::require(&app, &dest, true)?;
-    let label = file_label(&dest, &name);
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
+        let parent_dir = expand_home(&parent);
+        let dest = resolve_under(&parent_dir, &name)?;
+        crate::file_access::require(&app, &dest, true)?;
+        let label = file_label(&dest, &name);
 
-    if dest.exists() {
-        return Err(already_exists(&label));
-    }
-
-    if is_dir {
-        std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
-    } else {
-        if let Some(dir) = dest.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        if dest.exists() {
+            return Err(already_exists(&label));
         }
-        std::fs::File::create_new(&dest).map_err(|e| {
-            if e.kind() == ErrorKind::AlreadyExists {
-                already_exists(&label)
-            } else {
-                e.to_string()
-            }
-        })?;
-    }
 
-    Ok(dest.to_string_lossy().into_owned())
+        if is_dir {
+            std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+        } else {
+            if let Some(dir) = dest.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            }
+            std::fs::File::create_new(&dest).map_err(|e| {
+                if e.kind() == ErrorKind::AlreadyExists {
+                    already_exists(&label)
+                } else {
+                    e.to_string()
+                }
+            })?;
+        }
+
+        Ok(dest.to_string_lossy().into_owned())
+    })
+    .await
 }
 
 pub(crate) fn expand_home(path: &str) -> PathBuf {
@@ -7404,10 +8235,30 @@ pub(crate) fn expand_home(path: &str) -> PathBuf {
 pub(crate) fn path_to_js(path: &Path) -> String {
     let text = path.to_string_lossy();
     if cfg!(windows) {
-        text.replace('\\', "/")
+        let text = text.replace('\\', "/");
+        text.strip_prefix("//?/UNC/")
+            .map(|unc| format!("//{unc}"))
+            .unwrap_or_else(|| text.strip_prefix("//?/").unwrap_or(&text).to_owned())
     } else {
         text.into_owned()
     }
+}
+
+#[cfg(all(test, windows))]
+#[test]
+fn canonical_windows_paths_do_not_leak_verbatim_prefixes_to_git_or_ui() {
+    assert_eq!(
+        path_to_js(Path::new(r"\\?\C:\workspaces\project")),
+        "C:/workspaces/project"
+    );
+    assert_eq!(
+        path_to_js(Path::new(r"\\?\UNC\server\share\project")),
+        "//server/share/project"
+    );
+    assert_eq!(
+        path_to_js(Path::new(r"\\server\share\project")),
+        "//server/share/project"
+    );
 }
 
 #[cfg(all(test, unix))]
@@ -7532,44 +8383,106 @@ fn git_url_repo_name(url: &str) -> Option<String> {
 }
 
 /// First few lines of a text file for tool previews.
-#[tauri::command(async)]
-pub fn read_file_preview(
+#[tauri::command]
+pub async fn read_file_preview(
+    window: tauri::Window,
     path: String,
     max_lines: usize,
     start_line: Option<usize>,
 ) -> Result<Vec<String>, String> {
-    use std::io::{BufRead, BufReader};
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
+        read_file_preview_sync(&path, max_lines, start_line)
+    })
+    .await
+}
 
-    let path = expand_home(&path);
+fn read_file_preview_sync(
+    path: &str,
+    max_lines: usize,
+    start_line: Option<usize>,
+) -> Result<Vec<String>, String> {
+    use std::io::BufReader;
+
+    /// Bytes kept per line. Longer lines are cut here, so one huge line cannot
+    /// allocate unbounded memory; the display cut below is 200 characters.
+    const PREVIEW_LINE_BYTES: usize = 4096;
+
+    let path = expand_home(path);
     let meta = std::fs::metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     if !meta.is_file() {
         return Err("Not a file".into());
     }
 
     let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-    let reader = BufReader::new(file);
+    let mut reader = BufReader::new(file);
     let limit = max_lines.clamp(1, 12);
     let start = start_line.unwrap_or(1).max(1);
     let mut lines = Vec::new();
-    for (i, line) in reader.lines().enumerate() {
-        let line_no = i + 1;
-        if line_no < start {
-            continue;
-        }
+    let mut raw = Vec::new();
+    let mut line_no = 0usize;
+    loop {
         if lines.len() >= limit {
             break;
         }
-        let mut line = line.map_err(|e| e.to_string())?;
-        if line.contains('\0') {
+        let (has_nul, at_eof) = read_capped_line(&mut reader, &mut raw, PREVIEW_LINE_BYTES)
+            .map_err(|e| e.to_string())?;
+        if at_eof {
+            break;
+        }
+        line_no += 1;
+        if line_no < start {
+            continue;
+        }
+        if has_nul {
             return Err("Binary file".into());
         }
+        // Invalid UTF-8 is shown with replacement characters instead of failing.
+        let decoded = String::from_utf8_lossy(&raw);
+        let text = decoded.strip_suffix('\n').unwrap_or(&*decoded);
+        let mut line = text.strip_suffix('\r').unwrap_or(text).to_string();
         if line.len() > 200 {
-            line.truncate(199);
+            let mut end = 199;
+            while !line.is_char_boundary(end) {
+                end -= 1;
+            }
+            line.truncate(end);
             line.push('…');
         }
         lines.push(line);
     }
     Ok(lines)
+}
+
+/// Reads one line into `out` keeping at most `cap` bytes; the rest of the line is
+/// consumed without being stored. Returns `(line contains NUL, input is exhausted)`.
+fn read_capped_line<R: std::io::BufRead>(
+    reader: &mut R,
+    out: &mut Vec<u8>,
+    cap: usize,
+) -> std::io::Result<(bool, bool)> {
+    out.clear();
+    let mut has_nul = false;
+    let mut read_any = false;
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            return Ok((has_nul, !read_any));
+        }
+        read_any = true;
+        let (take, done) = match available.iter().position(|byte| *byte == b'\n') {
+            Some(pos) => (pos + 1, true),
+            None => (available.len(), false),
+        };
+        let chunk = &available[..take];
+        has_nul |= chunk.contains(&0);
+        let room = cap.saturating_sub(out.len());
+        out.extend_from_slice(&chunk[..room.min(take)]);
+        reader.consume(take);
+        if done {
+            return Ok((has_nul, false));
+        }
+    }
 }
 
 const MAX_STAT_FILES: usize = 64;
@@ -7590,8 +8503,16 @@ fn file_mtime_ms(meta: &std::fs::Metadata) -> Option<u64> {
 }
 
 /// Metadata only — used to notice disk changes on currently open editors.
-#[tauri::command(async)]
-pub fn stat_files(paths: Vec<String>) -> Result<Vec<FileMtime>, String> {
+#[tauri::command]
+pub async fn stat_files(
+    window: tauri::Window,
+    paths: Vec<String>,
+) -> Result<Vec<FileMtime>, String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || stat_files_sync(paths)).await
+}
+
+fn stat_files_sync(paths: Vec<String>) -> Result<Vec<FileMtime>, String> {
     if paths.len() > MAX_STAT_FILES {
         return Err("Too many paths".into());
     }
@@ -7623,8 +8544,16 @@ pub struct PathInfo {
 }
 
 /// Metadata for files the composer is attaching (picker, drop, paste).
-#[tauri::command(async)]
-pub fn inspect_paths(paths: Vec<String>) -> Vec<PathInfo> {
+#[tauri::command]
+pub async fn inspect_paths(
+    window: tauri::Window,
+    paths: Vec<String>,
+) -> Result<Vec<PathInfo>, String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || Ok(inspect_paths_sync(paths))).await
+}
+
+fn inspect_paths_sync(paths: Vec<String>) -> Vec<PathInfo> {
     paths
         .into_iter()
         .filter_map(|path| inspect_path_sync(&path))
@@ -7649,13 +8578,17 @@ fn inspect_path_sync(path: &str) -> Option<PathInfo> {
 
 /// Base64-encode a file so vision images can be sent inline over ACP.
 #[tauri::command]
-pub async fn read_file_base64(app: AppHandle, path: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn read_file_base64(
+    app: AppHandle,
+    window: tauri::Window,
+    path: String,
+) -> Result<String, String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         crate::file_access::require(&app, &expand_home(&path), false)?;
         read_file_base64_sync(&path)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 fn read_file_base64_sync(path: &str) -> Result<String, String> {
@@ -7681,33 +8614,35 @@ fn read_file_base64_sync(path: &str) -> Result<String, String> {
 #[tauri::command]
 pub async fn read_attachment_chunk(
     app: AppHandle,
+    window: tauri::Window,
     path: String,
     size: u64,
     offset: u64,
     length: u64,
 ) -> Result<AttachmentChunk, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         let path = crate::file_access::require(&app, &expand_home(&path), false)?;
         attachment_reads::read_chunk(&path, size, offset, length)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Hash the acknowledged prefix with a fixed buffer, outside the renderer thread.
 #[tauri::command]
 pub async fn hash_attachment_prefix(
     app: AppHandle,
+    window: tauri::Window,
     path: String,
     size: u64,
     offset: u64,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         let path = crate::file_access::require(&app, &expand_home(&path), false)?;
         attachment_reads::hash_prefix(&path, size, offset)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Read a file as raw bytes for the image viewer.
@@ -7718,14 +8653,15 @@ pub async fn hash_attachment_prefix(
 #[tauri::command]
 pub async fn read_binary_file(
     app: AppHandle,
+    window: tauri::Window,
     path: String,
 ) -> Result<tauri::ipc::Response, String> {
-    let bytes = tauri::async_runtime::spawn_blocking(move || {
+    let admission = admit_window_buffers(&window)?;
+    let bytes = run_admitted_blocking(admission, move || {
         crate::file_access::require(&app, &expand_home(&path), false)?;
         read_binary_file_sync(&path)
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
     Ok(tauri::ipc::Response::new(bytes))
 }
 
@@ -7770,10 +8706,12 @@ fn document_image_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
 #[tauri::command]
 pub async fn read_project_image(
     app: AppHandle,
+    window: tauri::Window,
     root: String,
     path: String,
 ) -> Result<tauri::ipc::Response, String> {
-    let bytes = tauri::async_runtime::spawn_blocking(move || {
+    let admission = admit_window_buffers(&window)?;
+    let bytes = run_admitted_blocking(admission, move || {
         use std::io::Read;
         let path = document_image_path(&expand_home(&root), &path)?;
         crate::file_access::require(&app, &path, false)?;
@@ -7791,19 +8729,19 @@ pub async fn read_project_image(
         }
         Ok::<_, String>(bytes)
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
     Ok(tauri::ipc::Response::new(bytes))
 }
 
-/// Persist a pasted blob so non-image attachments have a real path.
 #[tauri::command]
 pub async fn write_attachment(
     app: AppHandle,
+    window: tauri::Window,
     name: String,
     data: String,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let admission = crate::native_window_lifecycle::admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         let path = write_attachment_sync(&name, &data)?;
         crate::file_access::grant_produced_file(
             &app,
@@ -7814,7 +8752,6 @@ pub async fn write_attachment(
         Ok(path)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 fn write_attachment_sync(name: &str, data: &str) -> Result<String, String> {
@@ -7851,7 +8788,12 @@ fn write_attachment_sync(name: &str, data: &str) -> Result<String, String> {
     }
     options
         .open(&path)
-        .and_then(|mut file| file.write_all(&bytes))
+        .and_then(|mut file| {
+            file.write_all(&bytes)?;
+            // This path remains an ephemeral attachment, not a profile-retention
+            // or directory-durability receipt. Flush file bytes before its ACK.
+            file.sync_all()
+        })
         .map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(path.to_string_lossy().into_owned())
 }
@@ -7859,10 +8801,12 @@ fn write_attachment_sync(name: &str, data: &str) -> Result<String, String> {
 #[tauri::command]
 pub async fn save_generated_image(
     app: AppHandle,
+    window: tauri::Window,
     data: String,
     name: String,
 ) -> Result<GeneratedImageAsset, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         let asset = save_generated_image_sync(&app, &data, &name)?;
         crate::file_access::grant_produced_file(
             &app,
@@ -7873,7 +8817,6 @@ pub async fn save_generated_image(
         Ok(asset)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 fn save_generated_image_sync(
@@ -7937,10 +8880,16 @@ fn save_generated_image_sync(
 }
 
 #[tauri::command]
-pub async fn delete_generated_images(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || delete_generated_images_sync(&app, &paths))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn delete_generated_images(
+    app: AppHandle,
+    window: tauri::Window,
+    paths: Vec<String>,
+) -> Result<(), String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
+        delete_generated_images_sync(&app, &paths)
+    })
+    .await
 }
 
 pub(crate) fn delete_generated_images_sync(
@@ -8004,11 +8953,13 @@ fn safe_attachment_name(name: &str) -> String {
 #[tauri::command]
 pub async fn format_text_file(
     app: AppHandle,
+    window: tauri::Window,
     path: String,
     source: String,
     cursor_offset: usize,
 ) -> Result<serde_json::Value, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let admission = crate::native_window_lifecycle::admit_window_buffers(&window)?;
+    text_admission::run(admission, move || {
         let path = expand_home(&path);
         crate::file_access::require(&app, &path, false)?;
         crate::remote::local_editor_format_rpc(
@@ -8017,52 +8968,25 @@ pub async fn format_text_file(
         )
     })
     .await
-    .map_err(|e| e.to_string())?
-}
-
-/// Read a reasonably sized UTF-8 file for the editor.
-#[tauri::command]
-pub async fn read_text_file(app: AppHandle, path: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::file_access::require(&app, &expand_home(&path), false)?;
-        read_text_file_sync(&path)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-fn read_text_file_sync(path: &str) -> Result<String, String> {
-    let path = expand_home(path);
-    let meta = std::fs::metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    if !meta.is_file() {
-        return Err("Not a file".into());
-    }
-    if meta.len() > MAX_TEXT_FILE_BYTES {
-        return Err(format!(
-            "File is too large to edit (maximum {} MB).",
-            MAX_TEXT_FILE_BYTES / 1024 / 1024
-        ));
-    }
-
-    let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    if bytes.contains(&0) {
-        return Err("Binary files cannot be edited.".into());
-    }
-    String::from_utf8(bytes).map_err(|_| "File is not valid UTF-8.".into())
 }
 
 /// Atomically replace a text file from a temporary file in the same directory.
 #[tauri::command]
-pub async fn write_text_file(app: AppHandle, path: String, content: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn write_text_file(
+    app: AppHandle,
+    window: tauri::Window,
+    path: String,
+    content: String,
+) -> Result<(), String> {
+    let admission = crate::native_window_lifecycle::admit_window_buffers(&window)?;
+    text_admission::run(admission, move || {
         crate::file_access::require(&app, &expand_home(&path), true)?;
         write_text_file_sync(&path, &content)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
-fn write_text_file_sync(path: &str, content: &str) -> Result<(), String> {
+pub(crate) fn write_text_file_sync(path: &str, content: &str) -> Result<(), String> {
     if content.len() as u64 > MAX_TEXT_FILE_BYTES {
         return Err(format!(
             "File is too large to save (maximum {} MB).",
@@ -8123,7 +9047,7 @@ fn write_text_file_sync(path: &str, content: &str) -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
         }
         drop(file);
-        std::fs::rename(&temporary_path, &destination).map_err(|e| e.to_string())?;
+        rename_atomic_with_retry(&temporary_path, &destination).map_err(|e| e.to_string())?;
         if let Ok(dir) = std::fs::File::open(parent) {
             let _ = dir.sync_all();
         }
@@ -8136,16 +9060,52 @@ fn write_text_file_sync(path: &str, content: &str) -> Result<(), String> {
     write_result
 }
 
+fn rename_atomic_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
+    for attempt in 0..5 {
+        // ast-grep-ignore: rust-rename-without-fsync -- sole caller syncs the temporary file before this retry helper
+        match std::fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                #[cfg(windows)]
+                let transient = matches!(error.raw_os_error(), Some(5 | 32 | 33));
+                #[cfg(not(windows))]
+                let transient = false;
+                if !transient || attempt == 4 {
+                    return Err(error);
+                }
+                std::thread::sleep(Duration::from_millis(25 * (attempt + 1)));
+            }
+        }
+    }
+    unreachable!()
+}
+
+/// True when `a` and `b` name the same directory entry (for a case-only rename on a
+/// case-insensitive volume). Symbolic links are never followed: a link is the same
+/// entry only as itself, so renaming a link to its target's name cannot replace the
+/// target.
 fn same_entry(a: &Path, b: &Path) -> bool {
     if a == b {
         return true;
     }
-    let Ok(a_meta) = std::fs::metadata(a) else {
+    let Ok(a_meta) = std::fs::symlink_metadata(a) else {
         return false;
     };
-    let Ok(b_meta) = std::fs::metadata(b) else {
+    let Ok(b_meta) = std::fs::symlink_metadata(b) else {
         return false;
     };
+    if a_meta.file_type().is_symlink() || b_meta.file_type().is_symlink() {
+        // Links compare by their own identity; a link and its target never match.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            return a_meta.dev() == b_meta.dev() && a_meta.ino() == b_meta.ino();
+        }
+        #[cfg(not(unix))]
+        {
+            return false;
+        }
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -8153,7 +9113,6 @@ fn same_entry(a: &Path, b: &Path) -> bool {
     }
     #[cfg(not(unix))]
     {
-        let _ = (a_meta, b_meta);
         match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
             (Ok(left), Ok(right)) => left == right,
             _ => false,
@@ -8177,7 +9136,7 @@ fn unique_name_in(dir: &Path, name: &str) -> String {
             1 => format!("{stem} copy{ext}"),
             _ => format!("{stem} copy {n}{ext}"),
         };
-        if !dir.join(&candidate).exists() {
+        if std::fs::symlink_metadata(dir.join(&candidate)).is_err() {
             return candidate;
         }
         n += 1;
@@ -8192,7 +9151,25 @@ fn unique_name_in(dir: &Path, name: &str) -> String {
 }
 
 fn copy_recursive(from: &Path, to: &Path) -> Result<(), String> {
-    let meta = std::fs::metadata(from).map_err(|e| format!("{}: {e}", from.display()))?;
+    let meta = std::fs::symlink_metadata(from).map_err(|e| format!("{}: {e}", from.display()))?;
+    if meta.file_type().is_symlink() {
+        let target = std::fs::read_link(from).map_err(|e| format!("{}: {e}", from.display()))?;
+        #[cfg(unix)]
+        return std::os::unix::fs::symlink(target, to)
+            .map_err(|e| format!("{}: {e}", to.display()));
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            let result = if meta.file_attributes() & 0x10 != 0 {
+                std::os::windows::fs::symlink_dir(target, to)
+            } else {
+                std::os::windows::fs::symlink_file(target, to)
+            };
+            return result.map_err(|e| format!("{}: {e}", to.display()));
+        }
+        #[cfg(not(any(unix, windows)))]
+        return Err("Copying symbolic links is not supported on this platform".into());
+    }
     if meta.is_dir() {
         std::fs::create_dir(to).map_err(|e| format!("{}: {e}", to.display()))?;
         for ent in std::fs::read_dir(from).map_err(|e| format!("{}: {e}", from.display()))? {
@@ -8209,7 +9186,7 @@ fn copy_recursive(from: &Path, to: &Path) -> Result<(), String> {
 
 fn rename_path_sync(path: &str, name: &str) -> Result<String, String> {
     let from = expand_home(path);
-    if !from.exists() {
+    if std::fs::symlink_metadata(&from).is_err() {
         return Err(format!("{}: No such file or directory", from.display()));
     }
     let parent = from
@@ -8235,7 +9212,7 @@ fn rename_path_sync(path: &str, name: &str) -> Result<String, String> {
         }
         return Ok(dest.to_string_lossy().into_owned());
     }
-    if dest.exists() {
+    if std::fs::symlink_metadata(&dest).is_ok() {
         return Err(already_exists(&file_label(&dest, name)));
     }
     if dest.starts_with(&from) {
@@ -8250,25 +9227,39 @@ fn rename_path_sync(path: &str, name: &str) -> Result<String, String> {
 
 /// Rename `path` to `name` (relative to the current parent; `/` nests).
 #[tauri::command]
-pub async fn rename_path(app: AppHandle, path: String, name: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn rename_path(
+    app: AppHandle,
+    window: tauri::Window,
+    path: String,
+    name: String,
+) -> Result<String, String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         let source = expand_home(&path);
-        crate::file_access::require(&app, &source, true)?;
         let parent = source.parent().ok_or("File has no parent directory")?;
+        if std::fs::symlink_metadata(&source).is_ok_and(|meta| meta.file_type().is_symlink()) {
+            crate::file_access::require(&app, parent, true)?;
+        } else {
+            crate::file_access::require(&app, &source, true)?;
+        }
         let destination = resolve_under(parent, &name)?;
         crate::file_access::require(&app, &destination, true)?;
         rename_path_sync(&path, &name)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 fn delete_path_sync(path: &str) -> Result<(), String> {
     let path = expand_home(path);
-    if !path.exists() {
-        return Err(format!("{}: No such file or directory", path.display()));
+    let meta = std::fs::symlink_metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    #[cfg(windows)]
+    if meta.file_type().is_symlink() {
+        use std::os::windows::fs::MetadataExt;
+        if meta.file_attributes() & 0x10 != 0 {
+            return std::fs::remove_dir(&path).map_err(|e| format!("{}: {e}", path.display()));
+        }
     }
-    if path.is_dir() {
+    if meta.is_dir() && !meta.file_type().is_symlink() {
         std::fs::remove_dir_all(&path).map_err(|e| format!("{}: {e}", path.display()))
     } else {
         std::fs::remove_file(&path).map_err(|e| format!("{}: {e}", path.display()))
@@ -8276,13 +9267,22 @@ fn delete_path_sync(path: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn delete_path(app: AppHandle, path: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::file_access::require(&app, &expand_home(&path), true)?;
+pub async fn delete_path(
+    app: AppHandle,
+    window: tauri::Window,
+    path: String,
+) -> Result<(), String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
+        let source = expand_home(&path);
+        if std::fs::symlink_metadata(&source).is_ok_and(|meta| meta.file_type().is_symlink()) {
+            crate::file_access::require(&app, source.parent().ok_or("Link has no parent")?, true)?;
+        } else {
+            crate::file_access::require(&app, &source, true)?;
+        }
         delete_path_sync(&path)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 fn dir_contains(dir: &Path, dest_parent: &Path) -> bool {
@@ -8303,14 +9303,17 @@ fn copy_path_checked(
     validate: impl FnOnce(&Path, &Path) -> Result<(), String>,
 ) -> Result<String, String> {
     let from = expand_home(from);
-    if !from.exists() {
+    if std::fs::symlink_metadata(&from).is_err() {
         return Err(format!("{}: No such file or directory", from.display()));
     }
     let dest_parent = expand_home(dest_parent);
     if !dest_parent.is_dir() {
         return Err(format!("{} is not a folder", dest_parent.display()));
     }
-    if from.is_dir() && dir_contains(&from, &dest_parent) {
+    if std::fs::symlink_metadata(&from)
+        .is_ok_and(|meta| meta.is_dir() && !meta.file_type().is_symlink())
+        && dir_contains(&from, &dest_parent)
+    {
         return Err("Cannot paste a folder into itself.".into());
     }
     let name = unique_name_in(
@@ -8326,63 +9329,45 @@ fn copy_path_checked(
 #[tauri::command]
 pub async fn copy_path(
     app: AppHandle,
+    window: tauri::Window,
     from: String,
     dest_parent: String,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         let source = expand_home(&from);
         let parent = expand_home(&dest_parent);
-        crate::file_access::require(&app, &source, false)?;
+        if std::fs::symlink_metadata(&source).is_ok_and(|meta| meta.file_type().is_symlink()) {
+            crate::file_access::require(&app, source.parent().ok_or("Link has no parent")?, false)?;
+        } else {
+            crate::file_access::require(&app, &source, false)?;
+        }
         crate::file_access::require(&app, &parent, false)?;
         copy_path_checked(&from, &dest_parent, |source, destination| {
             crate::file_access::validate_copy_tree(&app, source, destination)
         })
     })
     .await
-    .map_err(|e| e.to_string())?
-}
-
-fn move_path_sync(from: &str, dest_parent: &str) -> Result<String, String> {
-    let from = expand_home(from);
-    if !from.exists() {
-        return Err(format!("{}: No such file or directory", from.display()));
-    }
-    let dest_parent = expand_home(dest_parent);
-    if !dest_parent.is_dir() {
-        return Err(format!("{} is not a folder", dest_parent.display()));
-    }
-    if from.is_dir() && dir_contains(&from, &dest_parent) {
-        return Err("Cannot paste a folder into itself.".into());
-    }
-    let name = file_label(&from, from.to_str().unwrap_or("item"));
-    let dest = dest_parent.join(&name);
-    if same_entry(&from, &dest) {
-        return Ok(from.to_string_lossy().into_owned());
-    }
-    if dest.exists() {
-        return Err(already_exists(&name));
-    }
-    std::fs::rename(&from, &dest).map_err(|e| e.to_string())?;
-    Ok(dest.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
 pub async fn move_path(
     app: AppHandle,
+    window: tauri::Window,
     from: String,
     dest_parent: String,
-) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> Result<cross_volume_move::MoveOutcome, String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         let source = expand_home(&from);
         let parent = expand_home(&dest_parent);
         crate::file_access::require(&app, &source, true)?;
         crate::file_access::require(&app, &parent, false)?;
         let destination = parent.join(file_label(&source, "item"));
         crate::file_access::validate_copy_tree(&app, &source, &destination)?;
-        move_path_sync(&from, &dest_parent)
+        move_path_outcome(&from, &dest_parent)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command(async)]
@@ -8479,6 +9464,113 @@ fn normalize_native_separators(path: &std::path::Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn git_info_singleflight_shares_cold_requests_and_preserves_parallel_roots() {
+        use std::sync::Barrier;
+        let old = Arc::new(Mutex::new(HashMap::<PathBuf, GitInfo>::new()));
+        let old_gate = Arc::new(Barrier::new(50));
+        let old_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let controls: Vec<_> = (0..50)
+            .map(|_| {
+                let old = old.clone();
+                let gate = old_gate.clone();
+                let calls = old_calls.clone();
+                std::thread::spawn(move || {
+                    if old.lock().unwrap().get(&PathBuf::from("shared")).is_none() {
+                        // The old TTL cache released its lock for the subprocess.
+                        // All clients begin on a genuinely cold cache together.
+                        gate.wait();
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        std::thread::sleep(Duration::from_millis(20));
+                        old.lock()
+                            .unwrap()
+                            .insert(PathBuf::from("shared"), GitInfo::default());
+                    }
+                })
+            })
+            .collect();
+        for thread in controls {
+            thread.join().unwrap();
+        }
+        assert_eq!(old_calls.load(Ordering::SeqCst), 50);
+        let cache = Arc::new(GitInfoCache::new(Duration::from_secs(1), 4));
+        let gate = Arc::new(Barrier::new(50));
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let threads: Vec<_> = (0..50)
+            .map(|_| {
+                let cache = cache.clone();
+                let gate = gate.clone();
+                let calls = calls.clone();
+                std::thread::spawn(move || {
+                    gate.wait();
+                    cache.get(PathBuf::from("shared"), || {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        std::thread::sleep(Duration::from_millis(20));
+                        GitInfo {
+                            branch: Some("main".into()),
+                            repo: Some("repo".into()),
+                        }
+                    })
+                })
+            })
+            .collect();
+        for thread in threads {
+            assert_eq!(thread.join().unwrap().branch.as_deref(), Some("main"));
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        println!(
+            "native same-root cold 50 readers: old lookup control50; singleflight {}",
+            calls.load(Ordering::SeqCst)
+        );
+        let gate = Arc::new(Barrier::new(2));
+        let (send, receive) = mpsc::channel();
+        for root in ["a", "b"] {
+            let cache = cache.clone();
+            let gate = gate.clone();
+            let send = send.clone();
+            std::thread::spawn(move || {
+                cache.get(PathBuf::from(root), || {
+                    gate.wait();
+                    GitInfo::default()
+                });
+                send.send(()).unwrap();
+            });
+        }
+        receive.recv_timeout(Duration::from_secs(2)).unwrap();
+        receive.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(cache.entries.lock().unwrap().len() <= 4);
+    }
+
+    #[test]
+    fn git_info_singleflight_expires_after_completion_and_recovers_panicked_lookup() {
+        let cache = GitInfoCache::new(Duration::from_millis(5), 1);
+        let root = PathBuf::from("expiry");
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            cache.get(root.clone(), || panic!("lookup failed"));
+        }));
+        assert_eq!(
+            cache
+                .get(root.clone(), || GitInfo {
+                    branch: Some("first".into()),
+                    ..Default::default()
+                })
+                .branch
+                .as_deref(),
+            Some("first")
+        );
+        std::thread::sleep(Duration::from_millis(10));
+        assert_eq!(
+            cache
+                .get(root, || GitInfo {
+                    branch: Some("second".into()),
+                    ..Default::default()
+                })
+                .branch
+                .as_deref(),
+            Some("second")
+        );
+    }
+
     #[test]
     fn commit_stats_keep_literal_paths_and_rename_destinations() {
         let mut counts = HashMap::new();
@@ -8801,7 +9893,7 @@ mod tests {
         let path_string = path.to_string_lossy().into_owned();
         let missing = dir.0.join("gone.md").to_string_lossy().into_owned();
 
-        let stats = stat_files(vec![
+        let stats = stat_files_sync(vec![
             path_string.clone(),
             missing.clone(),
             dir.0.to_string_lossy().into_owned(),
@@ -8959,7 +10051,7 @@ mod tests {
         let dir = tmp("inspect-paths");
         let file = dir.0.join("notes.md");
         std::fs::write(&file, "hello\n").unwrap();
-        let infos = inspect_paths(vec![
+        let infos = inspect_paths_sync(vec![
             file.to_string_lossy().into_owned(),
             dir.0.to_string_lossy().into_owned(),
         ]);
@@ -9910,6 +11002,23 @@ mod tests {
         assert_eq!(diff.current, "alpha\ngamma\ndelta\n");
         assert!(!diff.binary);
         assert!(!diff.too_large);
+    }
+
+    #[test]
+    fn git_file_diff_oversized_working_file_is_not_read_whole() {
+        let dir = tmp("git-file-diff-large");
+        if !init_git_commit(&dir.0, &[("big.txt", "small\n")]) {
+            return;
+        }
+        let mut big = vec![b'a'; MAX_TEXT_FILE_BYTES as usize + 1];
+        big[10] = 0;
+        std::fs::write(dir.0.join("big.txt"), &big).unwrap();
+
+        let diff = git_file_diff_for(&dir.0, "big.txt", false).unwrap();
+        assert!(diff.too_large);
+        assert!(diff.binary);
+        assert!(diff.original.is_empty() && diff.current.is_empty());
+        assert_eq!(diff.status, "modified");
     }
 
     #[test]
@@ -11296,6 +12405,16 @@ mod tests {
     }
 
     #[test]
+    fn pr_action_refresh_failure_still_reports_the_action_as_done() {
+        let item = github_pr_action_refresh_failed("acme/web", 42, "squash", "timeout");
+        assert_eq!(item.state, "merged");
+        assert_eq!(item.number, 42);
+        assert!(item.refresh_error.unwrap().contains("succeeded"));
+        let closed = github_pr_action_refresh_failed("acme/web", 42, "close", "x");
+        assert_eq!(closed.state, "closed");
+    }
+
+    #[test]
     fn parse_github_work_item_thread_merges_conversation() {
         let json = r#"{
             "data": {
@@ -12148,9 +13267,23 @@ mod tests {
             thread::sleep(Duration::from_millis(20));
             setter.store(true, Ordering::Release);
         });
-        assert!(GATE.wait_turn_cancellable(Some(&cancel)).is_none());
+        assert!(GATE.wait_turn_cancellable(Some(&cancel), None).is_none());
         worker.join().unwrap();
         // Cancellation must not replace the claim of the running process.
+        assert_eq!(GATE.holder.lock().unwrap().as_ref().unwrap().0, 0);
+    }
+
+    #[test]
+    fn queued_git_spawn_respects_original_deadline_without_replacing_owner() {
+        static GATE: GitSpawnGate = GitSpawnGate {
+            holder: Mutex::new(None),
+            freed: std::sync::Condvar::new(),
+            next: std::sync::atomic::AtomicU64::new(0),
+        };
+        let _held = GATE.wait_turn();
+        assert!(GATE
+            .wait_turn_cancellable(None, Some(Instant::now()))
+            .is_none());
         assert_eq!(GATE.holder.lock().unwrap().as_ref().unwrap().0, 0);
     }
 
@@ -12178,6 +13311,37 @@ mod tests {
 
         assert!(result.is_none());
         assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[test]
+    fn git_output_capped_deadline_stops_a_silent_child_without_cancellation() {
+        let dir = tmp("git-output-deadline-silent");
+        let marker = dir.0.join("child-ready");
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        crate::hide_window_console(&mut command);
+        command
+            .args([
+                "--exact",
+                "fs::git_stream_process_tests::silent_child",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("BYCODA_GIT_SILENT_READY", &marker)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        let result = git_bounded_output::run(
+            &mut command,
+            &[],
+            1024,
+            None,
+            Instant::now() + Duration::from_secs(5),
+        );
+        assert!(result.is_none());
+        assert!(
+            marker.is_file(),
+            "the actual child must reach its silent wait before the deadline"
+        );
     }
 
     #[test]
@@ -12895,6 +14059,108 @@ mod tests {
         assert!(git_commit_message_for(&dir.0, "--help").is_err());
         let blob = git_stdout(&dir.0, &["rev-parse", "HEAD:new.txt"]).unwrap();
         assert!(git_commit_message_for(&dir.0, &blob).is_err());
+    }
+
+    #[test]
+    fn git_status_recomputes_after_cache_eviction() {
+        let repo = tmp("git-status-cache-eviction");
+        assert!(init_git_commit(&repo.0, &[("tracked.txt", "one\n")]));
+        std::fs::write(repo.0.join("tracked.txt"), "one\ntwo\n").unwrap();
+        std::fs::write(repo.0.join("new.txt"), "first\nsecond\n").unwrap();
+        let read = || {
+            let changes = git_changes_for(&repo.0).unwrap();
+            changes
+                .files
+                .into_iter()
+                .map(|file| (file.relative, file.additions, file.deletions))
+                .collect::<Vec<_>>()
+        };
+        let before = read();
+        {
+            let mut cache = GIT_PREFIX_CACHE.lock().unwrap();
+            cache.get_or_insert_with(GitStatusCache::new).insert(
+                repo.0.clone(),
+                "stale/".into(),
+                6,
+                Instant::now() - GIT_STATUS_CACHE_MAX_AGE,
+            );
+        }
+        assert_eq!(git_prefix_for(&repo.0).as_deref(), Some(""));
+        let oversized = NumstatStamp {
+            status: "x".repeat(GIT_STATUS_CACHE_BYTES),
+            index: None,
+            files: Vec::new(),
+        };
+        let counts = git_numstat_cached(&repo.0, oversized);
+        assert_eq!(counts.get("tracked.txt").unwrap().additions, 1);
+        assert!(!GIT_NUMSTAT_CACHE
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .entries
+            .contains_key(&repo.0));
+        let mut oversized_untracked = UntrackedLines::new();
+        oversized_untracked.insert(
+            PathBuf::from("x".repeat(GIT_STATUS_CACHE_BYTES)),
+            (1, None, 1),
+        );
+        store_untracked_lines(&repo.0, oversized_untracked);
+        assert!(take_untracked_lines(&repo.0).is_empty());
+        forget_git_prefix(&repo.0);
+        if let Ok(mut cache) = GIT_NUMSTAT_CACHE.lock() {
+            if let Some(cache) = cache.as_mut() {
+                cache.remove(&repo.0);
+            }
+        }
+        if let Ok(mut cache) = GIT_UNTRACKED_LINES_CACHE.lock() {
+            if let Some(cache) = cache.as_mut() {
+                cache.remove(&repo.0);
+            }
+        }
+        assert_eq!(read(), before);
+        std::fs::write(repo.0.join("new.txt"), "first\nsecond\nthird\n").unwrap();
+        assert!(read()
+            .iter()
+            .any(|(path, additions, _)| path == "new.txt" && *additions == 3));
+    }
+
+    #[test]
+    fn change_counts_do_not_rewrite_the_git_index() {
+        let repo = tmp("numstat-index");
+        assert!(init_git_commit(
+            &repo.0,
+            &[("a.txt", "one\n"), ("b.txt", "one\n")]
+        ));
+        // Stale stat caches: a read that refreshed the index would rewrite it.
+        // `a.txt` stays really modified so the counts are computed.
+        thread::sleep(Duration::from_millis(1100));
+        std::fs::write(repo.0.join("b.txt"), "two\n").unwrap();
+        std::fs::write(repo.0.join("b.txt"), "one\n").unwrap();
+        std::fs::write(repo.0.join("a.txt"), "one\nadded\n").unwrap();
+        let index = repo.0.join(".git").join("index");
+        let before = std::fs::read(&index).unwrap();
+        let modified = std::fs::metadata(&index).unwrap().modified().unwrap();
+
+        let changes = git_changes_for(&repo.0).unwrap();
+        let a = changes
+            .files
+            .iter()
+            .find(|f| f.relative == "a.txt")
+            .unwrap();
+        assert_eq!((a.additions, a.deletions), (1, 0));
+        assert_eq!(changes.files.len(), 1, "only a.txt differs from HEAD");
+
+        assert_eq!(
+            std::fs::read(&index).unwrap(),
+            before,
+            "index bytes changed"
+        );
+        assert_eq!(
+            std::fs::metadata(&index).unwrap().modified().unwrap(),
+            modified,
+            "index was rewritten"
+        );
     }
 }
 

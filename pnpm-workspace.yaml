@@ -1,14 +1,20 @@
 # The local update coordinator alone decides when dependencies need installation.
 verifyDepsBeforeRun: false
+# Accept the supported engines.pnpm range without switching to the build pin.
+pmOnFail: ignore
+packages:
+  - apps/*
+  - packages/*
 allowBuilds:
   esbuild: true
   core-js: false
   tsc-rs: true
+  "@ast-grep/cli": false
 minimumReleaseAgeExclude:
-  - '@tsc-rs/darwin-arm64@0.7.0'
-  - '@tsc-rs/darwin-x64@0.7.0'
-  - '@tsc-rs/linux-arm64@0.7.0'
-  - '@tsc-rs/linux-x64@0.7.0'
-  - '@tsc-rs/win32-arm64@0.7.0'
-  - '@tsc-rs/win32-x64@0.7.0'
-  - tsc-rs@0.7.0
+  - "@tsc-rs/darwin-arm64@0.8.0"
+  - "@tsc-rs/darwin-x64@0.8.0"
+  - "@tsc-rs/linux-arm64@0.8.0"
+  - "@tsc-rs/linux-x64@0.8.0"
+  - "@tsc-rs/win32-arm64@0.8.0"
+  - "@tsc-rs/win32-x64@0.8.0"
+  - tsc-rs@0.8.0

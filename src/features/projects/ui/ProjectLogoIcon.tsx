@@ -2,6 +2,7 @@ import { Folder, type IconComponent } from "../../../shared/ui/icons";
 import { useEffect, useState } from "react";
 import { projectLogoSrc } from "../model/projectLogos";
 import { t, useLocale } from "../../../shared/i18n";
+import { identityClassName, type IdentitySize } from "../../../shared/ui/identity/identitySize";
 import {
   TAB_GROUP_LOGOS_CHANGED,
   tabGroupLogoDisplayRevision,
@@ -9,6 +10,8 @@ import {
 
 type Props = {
   path?: string | null;
+  /** Shared icon scale (icon-xs/sm/md/lg); `className` then only adds. */
+  size?: IdentitySize;
   className?: string;
   imageClassName?: string;
   fallback?: IconComponent;
@@ -17,12 +20,14 @@ type Props = {
 
 export function ProjectLogoIcon({
   path,
-  className = "size-3.5 shrink-0",
+  size,
+  className: classNameProp,
   imageClassName,
   fallback: Fallback = Folder,
   fallbackStrokeWidth = 1.5,
 }: Props) {
   useLocale();
+  const className = identityClassName(size, classNameProp, "size-3.5 shrink-0");
   const [revision, setRevision] = useState(tabGroupLogoDisplayRevision);
   const [failedImage, setFailedImage] = useState<string | null>(null);
 

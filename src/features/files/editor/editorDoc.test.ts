@@ -1,10 +1,12 @@
 import { EditorState } from "@codemirror/state";
-import { describe, expect, it } from "vitest";
+import { Chunk } from "@codemirror/merge";
+import { describe, expect, it, vi } from "vitest";
 import {
   detectLineEnding,
   editorDocChanges,
   normalizeLineBreaks,
   restoreLineEnding,
+  restoreMixedLineEndings,
 } from "./editorDoc";
 
 describe("editorDocChanges", () => {
@@ -63,4 +65,53 @@ describe("line-ending round trip", () => {
       expect(restored).toBe(raw);
     },
   );
+});
+
+describe("mixed line ending provenance", () => {
+  it("preserves a short unchanged separator between nearby edits", () => {
+    expect(restoreMixedLineEndings("new\nx\nother\n", "old\r\nx\rold\n")).toBe("new\r\nx\rother\n");
+  });
+  it("chooses the majority and breaks ties by first appearance", () => {
+    expect(detectLineEnding("a\r\nb\nc\n")).toBe("\n");
+    expect(detectLineEnding("a\rb\rc\n")).toBe("\r");
+    expect(detectLineEnding("a\nb\r\n")).toBe("\n");
+    expect(detectLineEnding("no breaks")).toBe("\n");
+  });
+  it("refuses an imprecise diff instead of rewriting unknown separators", () => {
+    const build = vi.spyOn(Chunk, "build").mockReturnValueOnce([{ precise: false }] as never);
+    try {
+      expect(() => restoreMixedLineEndings("changed\nsecond\n", "first\r\nsecond\n")).toThrow(
+        "Cannot safely preserve mixed line endings",
+      );
+    } finally {
+      build.mockRestore();
+    }
+  });
+  it("retains every separator in a large file with distant sparse edits", () => {
+    const lines = Array.from({ length: 12_000 }, (_, i) => `line-${i}`);
+    const raw = lines
+      .map((line, i) => line + (i % 3 === 0 ? "\r\n" : i % 3 === 1 ? "\n" : "\r"))
+      .join("");
+    const edited = normalizeLineBreaks(raw)
+      .replace("line-10\n", "LINE-10\n")
+      .replace("line-11990\n", "LINE-11990\n");
+    expect(restoreMixedLineEndings(edited, raw)).toBe(
+      raw.replace("line-10\n", "LINE-10\n").replace("line-11990\r", "LINE-11990\r"),
+    );
+  });
+  it("round trips and preserves separators around edits and undo", () => {
+    const raw = "first\r\nsecond\nthird\rfourth\r\n";
+    const original = normalizeLineBreaks(raw);
+    expect(restoreMixedLineEndings(original, raw)).toBe(raw);
+    expect(restoreMixedLineEndings("FIRST\nsecond\nnew\nthird\nfourth\n", raw)).toBe(
+      "FIRST\r\nsecond\nnew\r\nthird\rfourth\r\n",
+    );
+    expect(restoreMixedLineEndings("first\nthird\nfourth\n", raw)).toBe(
+      "first\r\nthird\rfourth\r\n",
+    );
+    expect(restoreMixedLineEndings(original, raw)).toBe(raw);
+    expect(restoreMixedLineEndings("first\nsecond\nthird\nfourth", raw)).toBe(
+      "first\r\nsecond\nthird\rfourth",
+    );
+  });
 });

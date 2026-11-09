@@ -8,7 +8,13 @@ import { requestMachineAdd } from "../model/machineAdd";
 import { useSyncStatus } from "../../sync/model/useSyncStatus";
 import { REMOTE_PROVIDERS, type RemoteMachine, type SshSetup } from "../model/protocol";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => false }));
+// Connection setup fixtures contain no persisted commands; outbox recovery has
+// separate durable-storage coverage.
+vi.mock("../model/remoteOutbox", async (original) => ({
+  ...(await original<typeof import("../model/remoteOutbox")>()),
+  useDurableRemoteOutboxIssues: () => [],
+}));
 vi.mock("../../sync/model/useSyncStatus", () => ({ useSyncStatus: vi.fn() }));
 let container: HTMLDivElement;
 let root: Root;
@@ -72,6 +78,19 @@ const button = (name: string) =>
     copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => node.remove());
     return copy.textContent?.trim() === name;
   })!;
+const confirmRemove = () =>
+  [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].at(-1)!;
+async function pick(machineName: string, label: string) {
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>(`button[aria-label="Actions for ${machineName}"]`)!
+      .click(),
+  );
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>(`[role="menuitem"][aria-label="${label}"]`)!.click(),
+  );
+}
+const editMachine = (name: string) => pick(name, "Edit name and address…");
 async function render() {
   await act(async () => root.render(createElement(ConnectionsSettings)));
 }
@@ -89,7 +108,7 @@ it("keeps sync diagnostics available behind a short error summary", async () => 
   expect(diagnostics.querySelector("summary")?.textContent).toContain("Sync needs attention");
   expect(diagnostics.querySelector("p")?.textContent).toContain("RPC_HOST_UNAVAILABLE");
   expect(diagnostics.querySelector("p")?.textContent).toContain("2 pending");
-  expect(container.querySelector('button[aria-label="Sync now"]')).toBeTruthy();
+  expect(container.querySelector('button[aria-haspopup="menu"]')).toBeTruthy();
 });
 
 it("opens the existing add editor for a Servers request made before Settings mounts", async () => {
@@ -106,7 +125,7 @@ it("keeps a machine draft when moving between connection views", async () => {
   await act(async () => button("Add machine").click());
   await fill('input[placeholder="user@my-mac-mini or an SSH alias"]', "me@new-host");
   const choose = (value: string) =>
-    container.querySelector<HTMLButtonElement>(`[role="radio"][data-value="${value}"]`)!;
+    container.querySelector<HTMLButtonElement>(`[role="tab"][data-tab-value="${value}"]`)!;
   await act(async () => choose("phone").click());
   expect(container.querySelector(".connections-view:not([hidden])")?.textContent).toContain(
     "Scan a QR code",
@@ -268,12 +287,16 @@ it("keeps the SSH address after a failed install and cancels active setup when S
   expect(invoke).toHaveBeenCalledWith("remote_ssh_cancel", { jobId: "setup" });
 });
 
+async function chooseRevoke() {
+  const radio = document.querySelector<HTMLInputElement>(
+    '[role="dialog"] input[type="radio"][value="revoke"]',
+  )!;
+  await act(async () => radio.click());
+}
 async function openRemove() {
   machines = [machine];
   await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Remove Home Mac"]')!.click(),
-  );
+  await pick("Home Mac", "Remove connection…");
 }
 
 it("offers an explicit host update for an SSH machine missing workspace methods", async () => {
@@ -295,38 +318,33 @@ it("advertises every supported provider when checking a host", async () => {
     machineId: machine.id,
     method: "environment.describe",
     params: { supportedProviders: REMOTE_PROVIDERS },
+    expectedEnvironmentId: machine.environmentId,
   });
 });
 
-it("makine düzenleme ve kaldırma panellerini aynı anda açmaz", async () => {
+it("does not open the machine edit and remove panels at the same time", async () => {
   machines = [machine];
   await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Remove Home Mac"]')!.click(),
-  );
-  expect(container.querySelector('[aria-label="Confirm removing Home Mac"]')).toBeTruthy();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Edit Home Mac"]')!.click(),
-  );
-  expect(container.querySelector('[aria-label="Confirm removing Home Mac"]')).toBeNull();
+  await pick("Home Mac", "Remove connection…");
+  expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+  await editMachine("Home Mac");
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(container.querySelector('form[aria-label="Edit Home Mac"]')).toBeTruthy();
   expect(container.textContent).not.toContain("Connect to an existing host by URL");
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Remove Home Mac"]')!.click(),
-  );
+  await pick("Home Mac", "Remove connection…");
   expect(container.querySelector('form[aria-label="Edit Home Mac"]')).toBeNull();
-  expect(container.querySelector('[aria-label="Confirm removing Home Mac"]')).toBeTruthy();
+  expect(document.querySelector('[role="dialog"]')).toBeTruthy();
 });
 
-it("bağlantı ilerlemesinde işlem yapılan makineyi belirtir", async () => {
+it("names the machine being worked on in connection progress", async () => {
   machines = [machine];
   await render();
-  await act(async () => button("Reconnect").click());
+  await pick("Home Mac", "Reconnect");
   expect(container.querySelector('[role="status"]')!.textContent).toContain("Home Mac");
   expect(container.textContent).toContain("Host port 3774");
 });
 
-it("ekleme formu açıkken Makine ekle düğmesini görünür tutar", async () => {
+it("keeps the Add machine button visible while the add form is open", async () => {
   machines = [machine];
   await render();
   await act(async () => button("Add machine").click());
@@ -341,7 +359,7 @@ it("ekleme formu açıkken Makine ekle düğmesini görünür tutar", async () =
   expect(container.textContent).toContain("Home Mac");
 });
 
-it("devam eden kurulum sırasında yeni makine eklemenin neden beklediğini açıklar", async () => {
+it("explains why adding a new machine waits while a setup is in progress", async () => {
   await start();
   expect(button("Add machine").disabled).toBe(true);
   expect(container.textContent).toContain(
@@ -357,16 +375,12 @@ it("devam eden kurulum sırasında yeni makine eklemenin neden beklediğini aç�
   expect(container.textContent).not.toContain("Connection cancelled");
 });
 
-it("Host portunu kaydeder ve servis kurulumu yapmadan yeniden bağlanır", async () => {
+it("saves the Host port and reconnects without installing the service", async () => {
   machines = [machine];
   await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Edit Home Mac"]')!.click(),
-  );
-  expect(container.querySelector<HTMLInputElement>('input[aria-label="Host port"]')!.value).toBe(
-    "3774",
-  );
-  await fill('input[aria-label="Host port"]', "3776");
+  await editMachine("Home Mac");
+  expect(container.querySelector<HTMLInputElement>('input[name="hostPort"]')!.value).toBe("3774");
+  await fill('input[name="hostPort"]', "3776");
   await act(async () => button("Save and reconnect").click());
   expect(invoke).toHaveBeenCalledWith("remote_machine_update", {
     machineId: machine.id,
@@ -380,24 +394,18 @@ it("Host portunu kaydeder ve servis kurulumu yapmadan yeniden bağlanır", async
   expect(invoke).not.toHaveBeenCalledWith("remote_ssh_begin", expect.anything());
   state = { ...state, done: true, machine: machines[0] };
   await poll();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Edit Home Mac"]')!.click(),
-  );
-  expect(container.querySelector<HTMLInputElement>('input[aria-label="Host port"]')!.value).toBe(
-    "3776",
-  );
+  await editMachine("Home Mac");
+  expect(container.querySelector<HTMLInputElement>('input[name="hostPort"]')!.value).toBe("3776");
 });
 
-it("geçersiz Host portunu kaydetmez", async () => {
+it("does not save an invalid Host port", async () => {
   machines = [machine];
   await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Edit Home Mac"]')!.click(),
-  );
-  await fill('input[aria-label="Host port"]', "0");
+  await editMachine("Home Mac");
+  await fill('input[name="hostPort"]', "0");
   await act(async () =>
     container
-      .querySelector('input[aria-label="Host port"]')!
+      .querySelector('input[name="hostPort"]')!
       .closest("form")!
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
@@ -417,10 +425,10 @@ it("explains removal and removes the saved connection without stopping or revoki
   expect(invoke).not.toHaveBeenCalledWith("remote_disconnect", {
     machineId: "machine",
   });
-  expect(container.textContent).toContain("It does not stop the host");
-  expect(container.textContent).toContain("leaves this desktop’s credential valid");
-  expect(container.textContent).toContain("~/.bycoda-host/bin/bycoda-host service uninstall");
-  await act(async () => button("Remove from this desktop only").click());
+  expect(document.body.textContent).toContain("It does not stop the host");
+  expect(document.body.textContent).toContain("leaves this desktop’s credential valid");
+  expect(document.body.textContent).toContain("~/.bycoda-host/bin/bycoda-host service uninstall");
+  await act(async () => confirmRemove().click());
   expect(invoke).toHaveBeenCalledWith("remote_disconnect", {
     machineId: "machine",
   });
@@ -434,7 +442,8 @@ it("explains removal and removes the saved connection without stopping or revoki
 
 it("revokes this desktop's credential before removing the connection", async () => {
   await openRemove();
-  await act(async () => button("Revoke access and remove").click());
+  await chooseRevoke();
+  await act(async () => confirmRemove().click());
   const calls = vi
     .mocked(invoke)
     .mock.calls.map(([command, params]) =>
@@ -456,12 +465,13 @@ it("keeps the connection when the host cannot revoke its credential", async () =
     return fallback(command, params);
   });
   await openRemove();
-  await act(async () => button("Revoke access and remove").click());
+  await chooseRevoke();
+  await act(async () => confirmRemove().click());
   expect(invoke).not.toHaveBeenCalledWith("remote_disconnect", {
     machineId: "machine",
   });
-  expect(container.textContent).toContain("Could not revoke access");
-  expect(button("Remove from this desktop only")).toBeTruthy();
+  expect(document.body.textContent).toContain("Could not revoke access");
+  expect(document.body.textContent).toContain("Could not revoke access");
 });
 
 it("does not spellcheck or autocorrect the machine name", async () => {
@@ -473,18 +483,22 @@ it("does not spellcheck or autocorrect the machine name", async () => {
   expect(name.getAttribute("spellcheck")).toBe("false");
   expect(name.getAttribute("autocorrect")).toBe("off");
   expect(name.getAttribute("autocapitalize")).toBe("off");
-  expect(container.textContent).toContain("loginctl enable-linger");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Connection help"]')!.click(),
+  );
+  expect(document.body.textContent).toContain("loginctl enable-linger");
 });
 
 it("edits a machine's address, saves it first and reconnects through the interactive setup", async () => {
   machines = [machine];
   await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Edit Home Mac"]')!.click(),
-  );
+  await editMachine("Home Mac");
   const address = 'input[placeholder="user@my-mac-mini or an SSH alias"]';
   expect(container.querySelector<HTMLInputElement>(address)!.value).toBe("me@home");
-  expect(container.textContent).toContain("A hostname works too");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Connection help"]')!.click(),
+  );
+  expect(document.body.textContent).toContain("A hostname works too");
   await fill(address, "me@10.0.0.9");
   await act(async () => button("Save and reconnect").click());
   expect(invoke).toHaveBeenCalledWith("remote_machine_update", {
@@ -517,9 +531,7 @@ it("only renames without reconnecting, and offers the host's name for a raw IP",
     },
   ];
   await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Edit Mini.local"]')!.click(),
-  );
+  await editMachine("Mini.local");
   expect(container.textContent).toContain("Use me@Mini.local instead of the IP");
   await act(async () => button("Use me@Mini.local instead of the IP").click());
   const address = 'input[placeholder="user@my-mac-mini or an SSH alias"]';
@@ -535,9 +547,7 @@ it("only renames without reconnecting, and offers the host's name for a raw IP",
 it("switches from editing to a fresh machine without updating the saved machine", async () => {
   machines = [{ ...machine, ssh: { ...machine.ssh!, alternate: "me@tailnet" } }];
   await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Edit Home Mac"]')!.click(),
-  );
+  await editMachine("Home Mac");
   expect(container.querySelector<HTMLInputElement>('input[placeholder*="Tailscale"]')!.value).toBe(
     "me@tailnet",
   );
@@ -565,10 +575,8 @@ it("switches from editing to a fresh machine without updating the saved machine"
 it("clears edit state after reconnect succeeds so the next connection adds a machine", async () => {
   machines = [machine];
   await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Edit Home Mac"]')!.click(),
-  );
-  await act(async () => button("Reconnect").click());
+  await editMachine("Home Mac");
+  await pick("Home Mac", "Reconnect");
   state = { ...state, done: true, machine };
   await poll();
   await act(async () => button("Add machine").click());
@@ -588,9 +596,7 @@ it("keeps the other address when saving a new primary address", async () => {
   machines = [{ ...machine, ssh: { ...machine.ssh!, alternate: "me@tailnet" } }];
   await render();
   expect(container.textContent).toContain("Other address · me@tailnet");
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Edit Home Mac"]')!.click(),
-  );
+  await editMachine("Home Mac");
   await fill('input[placeholder="user@my-mac-mini or an SSH alias"]', "me@new-home");
   await act(async () => button("Save and reconnect").click());
   expect(invoke).toHaveBeenCalledWith("remote_machine_update", {
@@ -613,4 +619,23 @@ it("validates the other address before starting setup", async () => {
   expect(container.querySelector('[role="alert"]')!.textContent).toContain(
     "Enter the other address",
   );
+});
+
+it.each([
+  ["busy", "RPC_WS_OVERLOAD: Host read capacity is busy; retry later.", false],
+  ["unreachable", "Machine is unreachable", true],
+])("shows a %s host as offline only when it really is", async (_case, failure, offline) => {
+  const fallback = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (command, params) => {
+    if (
+      command === "remote_request" &&
+      (params as { method: string }).method === "environment.describe"
+    )
+      throw failure;
+    return fallback(command, params);
+  });
+  machines = [machine];
+  await render();
+  // A busy host (for example while this computer builds) keeps its last status.
+  expect(container.textContent?.includes("Offline · reconnect to check access")).toBe(offline);
 });

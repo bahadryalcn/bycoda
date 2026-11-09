@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
-import { allComposerAttachmentIds, getComposerAttachments } from "../../sessions/model/draftCache";
+import { allComposerAttachmentIds, getComposerAttachments } from "../../sessions/public/draftCache";
 import { attachmentOwnershipSourceNames, type AttachmentOwnership } from "./attachmentOwnership";
-import { pendingRemoteAttachmentIds, pendingRemoteEnvironmentAttachmentIds } from "./remoteOutbox";
+import { durableRemoteAttachmentIds } from "./remoteOutbox";
 
 /** Native storage reads establish absence; any failure preserves every claim. */
 export async function desktopAttachmentInventory(
@@ -34,7 +34,7 @@ export async function desktopAttachmentInventory(
         ...getComposerAttachments(shellId).map((file) => file.id),
       ]),
     ],
-    pending: pendingRemoteAttachmentIds(project, environmentId, shellId),
+    pending: await durableRemoteAttachmentIds(environmentId, project, shellId),
   };
   for (const id of queues) sources[`queue:${id}`] = attachmentIds(raw.queues[id]);
   return sources;
@@ -69,6 +69,6 @@ export async function globalDesktopAttachmentInventory(
   return {
     draft: [...new Set([...attachmentIds(raw.draftIds), ...allComposerAttachmentIds()])],
     queues: Object.values(raw.queues).flatMap(attachmentIds),
-    pending: pendingRemoteEnvironmentAttachmentIds(environmentId),
+    pending: await durableRemoteAttachmentIds(environmentId),
   };
 }

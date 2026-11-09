@@ -1,5 +1,6 @@
+import "./PromptOutline.css";
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import {
   memo,
   useCallback,
@@ -7,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type FocusEvent as ReactFocusEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type RefObject,
@@ -28,7 +30,7 @@ import { Popover } from "../../../shared/ui/Popover";
 
 const OPEN_DELAY_MS = 25;
 const SCROLL_INSET_PX = 8;
-const POPOVER_WIDTH = 288;
+const POPOVER_WIDTH = 320;
 const MIN_PROMPTS = 2;
 const BAR_HEIGHT_PX = 2;
 const BAR_WIDTH_PX = 11;
@@ -66,7 +68,7 @@ export const PromptOutline = memo(function PromptOutline({
   revealBlock,
   onOpenChange,
 }: Props) {
-  useLocale();
+  const t = useT();
   const prompts = useMemo(() => promptBlocks(blocks), [blocks]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [stackBudget, setStackBudget] = useState(BAR_STACK_MAX_PX);
@@ -149,6 +151,24 @@ export const PromptOutline = memo(function PromptOutline({
     openTimer.current = null;
   };
   useEffect(() => cancelOpen, []);
+  // A container query hides the rail in narrow panes. WebKit sends no
+  // mouseleave or blur when the hovered or focused bar stops rendering, so
+  // close the card once the rail has no boxes left.
+  useEffect(() => {
+    const el = rail.current;
+    if (!el || (!open && !hover)) return;
+    const observer = new ResizeObserver(() => {
+      if (el.getClientRects().length > 0) return;
+      if (openTimer.current != null) {
+        window.clearTimeout(openTimer.current);
+        openTimer.current = null;
+      }
+      setHover(null);
+      setOpen(false);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [open, hover]);
 
   /** The ripple follows the pointer at once. The card waits out a pass-through. */
   const hoverBar = (id: string, el: HTMLElement) => {
@@ -248,7 +268,8 @@ export const PromptOutline = memo(function PromptOutline({
       onMouseLeave={leaveRail}
       onBlur={blurRail}
       onKeyDown={onKeyDown}
-      className="absolute top-1/2 right-4 z-30 flex -translate-y-1/2 flex-col items-end @max-[58rem]:hidden"
+      // z-30: in-pane overlay above the transcript; no in-pane layer scale exists, so the literal stays.
+      className="absolute top-1/2 right-4 z-(--layer-pane-sheet) flex -translate-y-1/2 flex-col items-end @max-[58rem]:hidden"
     >
       {bars.map((prompt, index) => {
         const lift = barLift(index, hoverIndex);
@@ -261,6 +282,7 @@ export const PromptOutline = memo(function PromptOutline({
             fullWidth
             iconOnly
             label={promptLabel(prompt)}
+            title=""
             variant="item"
             key={prompt.id}
             type="button"
@@ -278,26 +300,21 @@ export const PromptOutline = memo(function PromptOutline({
               }
             }}
             onClick={() => jumpTo(prompt.id)}
-            // This is a ruler hit area, not a square icon action. Override the
-            // shared icon target minimum so dense histories honor the budget.
-            style={{
-              height: BAR_HEIGHT_PX + stack.gap,
-              minBlockSize: 0,
-              padding: 0,
-              aspectRatio: "auto",
-            }}
-            className="w-full shrink-0"
+            style={{ "--bar-pitch": `${BAR_HEIGHT_PX + stack.gap}px` } as CSSProperties}
+            className="prompt-outline-bar w-full shrink-0"
           >
             <span
               aria-hidden="true"
-              style={{
-                height: BAR_HEIGHT_PX,
-                width: BAR_WIDTH_PX + (BAR_WIDTH_LIFTED_PX - BAR_WIDTH_PX) * lift,
-                opacity: lit ? BAR_OPACITY_LIT : BAR_OPACITY_IDLE,
-                // The wave reaches the outer bars a beat after the hovered one.
-                transitionDelay: `${Math.min(distance, RIPPLE_SPAN) * RIPPLE_STEP_MS}ms`,
-              }}
-              className="rounded-full bg-(--ui-tone-neutral-solid) transition-[width,opacity] duration-200 ease-out"
+              style={
+                {
+                  "--bar-height": `${BAR_HEIGHT_PX}px`,
+                  "--bar-width": `${BAR_WIDTH_PX + (BAR_WIDTH_LIFTED_PX - BAR_WIDTH_PX) * lift}px`,
+                  "--bar-opacity": lit ? BAR_OPACITY_LIT : BAR_OPACITY_IDLE,
+                  // The wave reaches the outer bars a beat after the hovered one.
+                  "--bar-delay": `${Math.min(distance, RIPPLE_SPAN) * RIPPLE_STEP_MS}ms`,
+                } as CSSProperties
+              }
+              className="prompt-outline-mark rounded-full bg-(--ui-tone-neutral-solid) transition-[width,opacity] duration-200 ease-out"
             />
           </Button>
         );
@@ -309,21 +326,17 @@ export const PromptOutline = memo(function PromptOutline({
           align="center"
           gap={10}
           width={POPOVER_WIDTH}
+          solid
           onDismiss={close}
           aria-label={t("Prompt preview")}
-          className="pointer-events-none flex flex-col gap-1.5 p-3 font-sans"
+          className="pointer-events-none flex flex-col gap-1 p-3 font-sans"
         >
-          <p className="line-clamp-2 text-sm leading-snug text-(--ui-tone-neutral-fg)">
+          <p className="truncate text-ui-body font-medium leading-snug text-(--color-content)">
             {preview.title}
           </p>
           {preview.reply ? (
-            <p className="line-clamp-2 text-sm leading-snug text-(--ui-text-secondary)">
-              {preview.reply}
-            </p>
-          ) : null}
-          {preview.detail ? (
-            <p className="line-clamp-2 border-l-2 border-(--ui-tone-neutral-border) pl-3 text-sm leading-snug text-(--ui-text-secondary)">
-              {preview.detail}
+            <p className="line-clamp-2 text-ui-body leading-snug text-(--ui-text-secondary)">
+              {[preview.reply, preview.detail].filter(Boolean).join(" ")}
             </p>
           ) : null}
         </Popover>

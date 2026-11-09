@@ -1,0 +1,205 @@
+/* Room shell: header, tab row, notices, status popovers, undo bars and the setup prompt. */
+
+.room {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  min-block-size: 0;
+  min-inline-size: 0;
+  color: var(--color-content);
+  font-size: var(--ui-font-secondary);
+  background: var(--ui-workspace-canvas-chat);
+}
+
+/* Header: identity on the left, quiet status and controls on the right, one row. */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+  min-inline-size: 0;
+  padding: 8px 16px;
+}
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+.avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  inline-size: 32px;
+  block-size: 32px;
+  border-radius: var(--radius-pill);
+  background: var(--ui-fill-subtle);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+  line-height: 1;
+  overflow: clip;
+  user-select: none;
+}
+/* No avatar chosen: the first letter of the name, drawn from the attribute so it is not text. */
+.avatar:empty::before {
+  content: attr(data-initial);
+}
+.name {
+  min-inline-size: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-title);
+  font-weight: 500;
+}
+.mode {
+  flex: none;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+.presence {
+  flex: none;
+}
+
+@media (max-width: 720px) {
+  .header {
+    padding-inline: 12px;
+  }
+}
+
+/* Tab row: the shared strip sits on a hairline, flush with the header padding. */
+.tabRow {
+  flex: none;
+  padding-inline: 12px;
+  border-block-end: 1px solid var(--ui-pane-border);
+  overflow-x: auto;
+}
+
+/* Notices between the header and the tabs. */
+.notice {
+  flex: none;
+  margin: 0 16px 8px;
+  min-inline-size: 0;
+}
+.noticeBody {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-inline-size: 0;
+}
+.muted {
+  margin: 0 16px 8px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  overflow-wrap: anywhere;
+}
+.empty {
+  margin: 0;
+  padding: 16px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+/* First run: a short prompt on the canvas. */
+.setupPrompt {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 12px;
+  inline-size: 100%;
+  max-inline-size: 560px;
+  margin-inline: auto;
+  padding: 40px 20px;
+}
+.setupPrompt h2 {
+  margin: 0;
+  font-size: var(--ui-font-title);
+  font-weight: 500;
+}
+.setupPrompt p {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  line-height: 1.5;
+}
+
+/* Pending operation line below the content. */
+.footer {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 8px;
+  padding: 6px 16px;
+  border-block-start: 1px solid var(--ui-pane-border);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+/* Undo bar: a thin frame under the content, message left, actions right. */
+.undo {
+  display: flex;
+  align-items: center;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 16px 12px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--ui-radius-card);
+  min-inline-size: 0;
+}
+.undoText {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.undoActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: auto;
+}
+
+/* Status popovers (assistant status, presence, filter). */
+.popover {
+  display: grid;
+  gap: 12px;
+  inline-size: min(20rem, calc(100vw - 2rem));
+  padding: 12px;
+  font-size: var(--ui-font-caption);
+}
+.popover p {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  line-height: 1.5;
+}
+.popover > button {
+  justify-self: start;
+}
+.popoverRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.filterPanel {
+  display: grid;
+  gap: 10px;
+  min-inline-size: 14rem;
+  padding: 12px;
+}
+.filterActions {
+  display: flex;
+  justify-content: flex-end;
+}

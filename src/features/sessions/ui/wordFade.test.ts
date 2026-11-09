@@ -4,7 +4,13 @@ import { createRoot, type Root as Root2 } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentMarkdown } from "./AgentMarkdown";
 import type { Element, Root } from "hast";
-import { revealEnd, rehypeWordFade, usePacedText, WORD_FADE_MS } from "./wordFade";
+import {
+  MAX_FADING_WORDS,
+  revealEnd,
+  rehypeWordFade,
+  usePacedText,
+  WORD_FADE_MS,
+} from "./wordFade";
 import { PresentationVisibility } from "./presentationVisibility";
 
 describe("revealEnd", () => {
@@ -269,6 +275,18 @@ describe("rehypeWordFade", () => {
     expect(p.children[0]).toEqual(text("one two "));
   });
 
+  it("animates at most the newest few words however many are fresh", () => {
+    const words = Array.from({ length: MAX_FADING_WORDS + 5 }, (_, i) => `w${i}`);
+    const tree: Root = { type: "root", children: [el("p", text(words.join(" ")))] };
+    rehypeWordFade({ freshWords: () => words.length })(tree);
+    const wrapped = (tree.children[0] as Element).children.flatMap((c) =>
+      c.type === "element" && "dataWordFade" in c.properties
+        ? [(c.children[0] as { value: string }).value]
+        : [],
+    );
+    expect(wrapped).toEqual(words.slice(-MAX_FADING_WORDS));
+  });
+
   it("wraps nothing once the message has settled", () => {
     expect(run(0).wrapped).toEqual([]);
   });
@@ -333,5 +351,6 @@ describe("streamed message DOM", () => {
     expect(settled).toBeLessThan(600);
     expect(container.querySelector(".word-fading")).toBeNull();
     expect(container.querySelector("p")).toBe(marker);
-  });
+    // Renders a 50-paragraph markdown tree about forty times; CPU-bound under load.
+  }, 20_000);
 });

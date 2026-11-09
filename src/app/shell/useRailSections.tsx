@@ -1,5 +1,6 @@
-import { Button } from "../../shared/ui/Button";
-import { t, useLocale } from "../../shared/i18n";
+import { InlineAction } from "../../shared/ui/ActionHost";
+import { SectionLabel } from "../../shared/ui/SectionLabel";
+import { useT } from "../../shared/i18n";
 import {
   useEffect,
   useMemo,
@@ -17,25 +18,115 @@ import {
   loadRailSectionOrder,
   loadRailSectionCollapse,
   toggleRailSectionCollapse,
-  moveRailSection,
   resetRailSectionOrder,
   saveRailSectionOrder,
   subscribeRailSectionOrder,
+  type CollapsibleRailSection,
   type RailSectionId,
 } from "../../features/projects/model/railSections";
-import type { MoveStep } from "../../shared/lib/reorder";
 import { useAnimatedReorder } from "../../shared/hooks/useAnimatedReorder";
 
 /** Classes for a header that drags: grab cursor, and no touch scrolling. */
 export const RAIL_DRAG_HANDLE = "cursor-grab touch-none";
 
 /**
- * Every section header is the same height, so the sections stay the same size
- * while one is dragged with only its header showing.
+ * Every section header is one compact 28px row (the shared compact control
+ * height, so it follows the density setting) with no extra block padding: the
+ * sections stay the same size while one is dragged with only its header
+ * showing.
  */
-export const RAIL_SECTION_HEADER = "group flex min-h-[30px] items-center gap-1 px-3 pb-1.5 pt-1";
+export const RAIL_SECTION_HEADER =
+  "group flex min-h-(--ui-control-height-compact) items-center gap-1 px-2";
 
-/** The "..." on a section header; it shows on hover or keyboard focus. */
+/** Label style shared by every section header, whether it collapses or not. */
+export const RAIL_SECTION_LABEL = "text-ui-caption font-medium text-(--ui-text-secondary)";
+
+/**
+ * The block around one section (header plus body). Two spacing roles live here, not in
+ * the ledger: an open section leaves 12px after its body, a collapsed one only a hairline
+ * so a closed rail stays a tight list of headers. Pass `data-collapsed` when closed.
+ */
+export const RAIL_SECTION_BLOCK =
+  "reorder-item rail-reorder-block mb-3 shrink-0 data-[collapsed]:mb-0.5";
+
+/**
+ * One header for every rail section. Anatomy, left to right: a flexible label track
+ * (optional leading icon, which turns into the collapse chevron on hover or focus; label;
+ * optional count) and a persistent right-aligned slot with the section's own actions and,
+ * when the section can be reordered, its options menu. Dragging starts anywhere on the
+ * header except that slot.
+ */
+export function RailSectionHeader({
+  label,
+  drag,
+  collapsed = false,
+  onToggleCollapsed,
+  controlsId,
+  icon,
+  count,
+  actions,
+}: {
+  label: string;
+  /** Present when the section can be reordered; adds the drag handle, shortcuts and options menu. */
+  drag?: RailSectionDrag;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
+  /** Id of the element the toggle shows and hides. */
+  controlsId?: string;
+  /** Leading mark, for example a clock or a status dot. Without one the chevron is always shown. */
+  icon?: ReactNode;
+  count?: ReactNode;
+  actions?: ReactNode;
+}) {
+  const t = useT();
+  const collapsible = onToggleCollapsed != null;
+  return (
+    <SectionLabel
+      host
+      compactRail
+      collapsible={collapsible}
+      expanded={!collapsed}
+      onExpandedChange={onToggleCollapsed}
+      controls={controlsId}
+      icon={icon}
+      chevron="hover"
+      // SectionLabel types `count` as a number; it renders any node, and LiveAgentsPreview passes one.
+      count={count as number | null | undefined}
+      headerProps={{
+        ...drag?.headerProps,
+        tabIndex: drag ? 0 : undefined,
+        "aria-keyshortcuts": drag ? "Alt+ArrowUp Alt+ArrowDown" : undefined,
+        title: drag ? t("Drag to reorder") : undefined,
+      }}
+      className={`px-2 ${drag ? RAIL_DRAG_HANDLE : ""} rounded-md focus-visible:bg-(--ui-surface-hover) @max-[140px]/rail:px-0`}
+      classNames={{
+        heading: collapsible ? undefined : "px-2",
+        count: "ms-auto ps-1",
+        actions: "cursor-default",
+      }}
+      actionsProps={{ "data-rail-section-actions": "" }}
+      actions={
+        actions || drag ? (
+          <>
+            {actions}
+            {drag ? (
+              <span className="contents @max-[140px]/rail:hidden">
+                <SectionMenuButton label={label} onOpen={drag.openMenu} />
+              </span>
+            ) : null}
+          </>
+        ) : undefined
+      }
+    >
+      {label}
+    </SectionLabel>
+  );
+}
+
+/**
+ * The "..." on a section header. Unlike row actions it is always visible, so the
+ * section menu never depends on hover; it sits in the header's trailing slot.
+ */
 export function SectionMenuButton({
   label,
   onOpen,
@@ -43,46 +134,26 @@ export function SectionMenuButton({
   label: string;
   onOpen: (x: number, y: number) => void;
 }) {
-  useLocale();
+  const t = useT();
   return (
-    <Button
-      iconOnly
+    <InlineAction
+      reveal="always"
       label={t("{p0} section options", { p0: label })}
-      variant="ghost"
       motion="none"
       type="button"
       data-no-drag
-      title={t("Section options")}
+      tooltip={t("Section options")}
       aria-label={t("{p0} section options", { p0: label })}
       aria-haspopup="menu"
       onClick={(event) => {
         const rect = event.currentTarget.getBoundingClientRect();
         onOpen(rect.left, rect.bottom);
       }}
-      className="hidden size-5 shrink-0 place-items-center group-hover:grid group-has-[button:focus-visible]:grid"
+      className="shrink-0"
     >
-      <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
-    </Button>
+      <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
+    </InlineAction>
   );
-}
-
-/** Alt+Up / Alt+Down, the keyboard way to move a section or a group. */
-export function moveStepForKey(event: KeyboardEvent): "up" | "down" | null {
-  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
-    return null;
-  }
-  if (event.key === "ArrowUp") return "up";
-  if (event.key === "ArrowDown") return "down";
-  return null;
-}
-
-/** A move reorders the DOM, which can drop focus; put it back. */
-export function keepFocus(element: HTMLElement) {
-  requestAnimationFrame(() => {
-    if (element.isConnected && document.activeElement !== element) {
-      element.focus();
-    }
-  });
 }
 
 /** What one section needs to be draggable by its header. */
@@ -108,6 +179,7 @@ export type RailSectionDrag = {
  * `shown` lists the sections currently on screen; the others keep their slot.
  */
 export function useRailSections(shown: ReadonlySet<RailSectionId>) {
+  const t = useT();
   const [collapsed, setCollapsed] = useState(loadRailSectionCollapse);
   useEffect(() => subscribeRailSectionOrder(() => setCollapsed(loadRailSectionCollapse())), []);
   const [order, setOrder] = useState(loadRailSectionOrder);
@@ -122,16 +194,21 @@ export function useRailSections(shown: ReadonlySet<RailSectionId>) {
     setOrder(next);
     saveRailSectionOrder(next);
   };
-  const move = (id: RailSectionId, step: MoveStep) => {
-    const next = moveRailSection(order, id, step, shown);
-    if (next.join() !== order.join()) commit(next);
-  };
+  // Spoken name of a section: its header title, announced with its new place after a move.
+  const sectionName = (id: RailSectionId) =>
+    ({
+      "last-sessions": t("Last sessions"),
+      pinned: t("Pinned"),
+      groups: t("Groups"),
+      crews: t("Crews"),
+      projects: t("Projects"),
+    })[id];
   const sortable = useAnimatedReorder(
     shownOrder,
     (ids) => commit(applyShownSectionOrder(order, ids)),
     "y",
     undefined,
-    { foldOnDrag: true },
+    { foldOnDrag: true, label: sectionName },
   );
   const folded = sortable.draggingId !== null;
 
@@ -153,13 +230,9 @@ export function useRailSections(shown: ReadonlySet<RailSectionId>) {
         event.stopPropagation();
       },
       onKeyDown: (event) => {
-        const step = moveStepForKey(event);
-        if (step) {
-          event.preventDefault();
-          event.stopPropagation();
-          move(id, step);
-          keepFocus(event.target as HTMLElement);
-        } else if (
+        // Alt+Up / Alt+Down: the same move, announcement and focus restore as a drag.
+        if (sortable.onItemKeyDown(id, event)) return;
+        if (
           event.target === event.currentTarget &&
           (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))
         ) {
@@ -212,14 +285,14 @@ export function useRailSections(shown: ReadonlySet<RailSectionId>) {
       onPick={(action) => {
         const id = menu.id;
         setMenu(null);
-        if (action === "up" || action === "down") move(id, action);
+        if (action === "up" || action === "down") sortable.moveBy(id, action === "up" ? -1 : 1);
         else if (action === "reset") resetRailSectionOrder();
       }}
       onClose={() => setMenu(null)}
     />
   ) : null;
 
-  const toggleCollapsed = (id: "groups" | "projects") => {
+  const toggleCollapsed = (id: CollapsibleRailSection) => {
     setCollapsed(toggleRailSectionCollapse(id, !collapsed[id]));
   };
   return { order, drag, folded, element, collapsed, toggleCollapsed };

@@ -139,10 +139,17 @@ describe("GitHub pull request actions", () => {
       ),
     );
 
-    const close = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent?.trim() === "Close pull request",
-    )!;
-    act(() => close.click());
+    const openClose = () => {
+      const more = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="More pull request actions"]',
+      )!;
+      act(() => more.click());
+      const close = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+        (entry) => entry.textContent?.trim() === "Close pull request",
+      )!;
+      act(() => close.click());
+    };
+    openClose();
     const dialog = document.querySelector<HTMLElement>(
       '[role="dialog"][aria-label="Close this pull request?"]',
     )!;
@@ -164,7 +171,7 @@ describe("GitHub pull request actions", () => {
       "close",
       undefined,
     );
-    act(() => close.click());
+    openClose();
     expect(
       document.querySelector('[role="dialog"][aria-label="Close this pull request?"]'),
     ).not.toBeNull();

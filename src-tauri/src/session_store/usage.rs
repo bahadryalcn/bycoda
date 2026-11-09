@@ -28,13 +28,28 @@ pub struct UsageTurnReport {
     truncated: bool,
 }
 
+// Restrict normalized blocks by their indexed start date before joining sessions.
+// Legacy checkpoints use a transactionally maintained projection with the same
+// date index; malformed checkpoints retain the original error behavior.
 fn query(conn: &Connection, since_ms: i64, until_ms: i64) -> Result<UsageTurnReport, String> {
     let mut statement = conn.prepare(
         "WITH blocks AS (
-          SELECT b.session_id, b.ordinal, b.block_json AS value FROM session_blocks b
-           JOIN session_block_state st ON st.session_id=b.session_id WHERE st.length>=0
+          SELECT b.session_id, b.ordinal, b.block_json AS value FROM session_blocks b INDEXED BY session_blocks_usage_started
+           JOIN session_block_state st ON st.session_id=b.session_id AND st.length>=0
+           WHERE json_extract(b.block_json,'$.role')='user'
+             AND COALESCE(json_extract(b.block_json,'$.draft'),0)=0
+             AND json_type(b.block_json,'$.startedAt') IN ('integer','real')
+             AND json_extract(b.block_json,'$.startedAt') < ?2
           UNION ALL
-          SELECT s.id, CAST(b.key AS INTEGER), b.value FROM sessions s, json_each(s.blocks_json) b
+          SELECT b.session_id, b.ordinal, b.block_json FROM session_usage_legacy b INDEXED BY session_usage_legacy_started
+           WHERE json_extract(b.block_json,'$.role')='user'
+             AND COALESCE(json_extract(b.block_json,'$.draft'),0)=0
+             AND json_type(b.block_json,'$.startedAt') IN ('integer','real')
+             AND json_extract(b.block_json,'$.startedAt') < ?2
+             AND NOT EXISTS(SELECT 1 FROM session_block_state st WHERE st.session_id=b.session_id AND st.length>=0)
+          UNION ALL
+          SELECT s.id, CAST(b.key AS INTEGER), b.value FROM session_usage_invalid invalid
+           JOIN sessions s ON s.id=invalid.session_id, json_each(NULLIF(s.blocks_json,'')) b
            WHERE NOT EXISTS(SELECT 1 FROM session_block_state st WHERE st.session_id=s.id AND st.length>=0)
          ) SELECT s.id, s.title, s.cwd,
           COALESCE(json_extract(b.value, '$.turnModel.harness'), s.harness), s.provider_account_id,
@@ -88,7 +103,42 @@ pub async fn session_usage_report(
     }
     tauri::async_runtime::spawn_blocking(move || {
         let store: State<'_, SessionStore> = app.state();
-        store.with_read_conn(|conn| query(conn, since_ms, until_ms))
+        store.with_background_conn(|conn| query(conn, since_ms, until_ms))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// One session's finished working time: normalized blocks when present, otherwise
+// the legacy checkpoint. Malformed checkpoints count as no recorded time.
+fn worked_ms(conn: &Connection, session_id: &str) -> Result<i64, String> {
+    conn.query_row(
+        "WITH blocks AS (
+          SELECT b.block_json AS value FROM session_blocks b
+           JOIN session_block_state st ON st.session_id=b.session_id AND st.length>=0
+           WHERE b.session_id=?1
+          UNION ALL
+          SELECT b.value FROM sessions s,
+           json_each(CASE WHEN json_valid(s.blocks_json) THEN s.blocks_json END) b
+           WHERE s.id=?1
+             AND NOT EXISTS(SELECT 1 FROM session_block_state st WHERE st.session_id=s.id AND st.length>=0)
+         ) SELECT COALESCE(SUM(MAX(0, json_extract(value,'$.durationMs'))), 0) FROM blocks
+         WHERE json_extract(value,'$.role')='user'
+           AND COALESCE(json_extract(value,'$.draft'),0)=0
+           AND json_type(value,'$.durationMs') IN ('integer','real')",
+        [session_id],
+        |row| row.get::<_, f64>(0),
+    )
+    .map(|total| total.round() as i64)
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn session_worked_ms(app: tauri::AppHandle, session_id: String) -> Result<i64, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || {
+        let store: State<'_, SessionStore> = app.state();
+        store.with_background_conn(|conn| worked_ms(conn, &session_id))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -97,6 +147,41 @@ pub async fn session_usage_report(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sums_finished_user_turns_from_normalized_or_legacy_blocks() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE sessions (id TEXT PRIMARY KEY, title TEXT, cwd TEXT, harness TEXT, model TEXT, provider_account_id TEXT, blocks_json TEXT);").unwrap();
+        super::super::incremental::ensure_schema(&conn).unwrap();
+        let legacy = serde_json::json!([
+            {"role":"user","startedAt":1,"durationMs":1500},
+            {"role":"user","startedAt":2,"durationMs":500.4},
+            {"role":"user","startedAt":3,"durationMs":900,"draft":true},
+            {"role":"assistant","durationMs":7000},
+            {"role":"user","startedAt":4}
+        ]);
+        conn.execute(
+            "INSERT INTO sessions VALUES ('s','T','/app','codex','gpt',NULL,?1)",
+            [legacy.to_string()],
+        )
+        .unwrap();
+        assert_eq!(worked_ms(&conn, "s").unwrap(), 2000);
+        conn.execute("INSERT INTO session_block_state VALUES ('s', 1, 1)", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO session_blocks VALUES ('s', 0, 'u', ?1, 1)",
+            [serde_json::json!({"role":"user","startedAt":5,"durationMs":250}).to_string()],
+        )
+        .unwrap();
+        assert_eq!(worked_ms(&conn, "s").unwrap(), 250);
+        conn.execute(
+            "INSERT INTO sessions VALUES ('bad','T','/app','codex','gpt',NULL,'not json')",
+            [],
+        )
+        .unwrap();
+        assert_eq!(worked_ms(&conn, "bad").unwrap(), 0);
+        assert_eq!(worked_ms(&conn, "missing").unwrap(), 0);
+    }
     #[test]
     fn projects_only_turn_metadata_and_includes_overlapping_intervals() {
         let conn = Connection::open_in_memory().unwrap();
@@ -128,5 +213,25 @@ mod tests {
         assert_eq!(report.turns[0].model, "turn-model");
         assert_eq!(report.turns[0].provider, "claude");
         assert_eq!(report.turns[0].duration_ms, Some(500));
+        // Date indexing must retain turns that started before the interval but
+        // overlap it, and must exclude future turns and drafts.
+        conn.execute(
+            "INSERT INTO session_blocks VALUES ('s', 1, 'long', ?1, 1)",
+            [serde_json::json!({"role":"user","startedAt":100,"durationMs":2500}).to_string()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO session_blocks VALUES ('s', 2, 'future', ?1, 1)",
+            [serde_json::json!({"role":"user","startedAt":5000}).to_string()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO session_blocks VALUES ('s', 3, 'draft', ?1, 1)",
+            [serde_json::json!({"role":"user","startedAt":2300,"draft":true}).to_string()],
+        )
+        .unwrap();
+        let report = query(&conn, 2000, 5000).unwrap();
+        assert_eq!(report.turns.len(), 2);
+        assert_eq!(report.turns[1].started_at, 100);
     }
 }

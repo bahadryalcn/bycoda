@@ -1,5 +1,6 @@
+import { focusManager, useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { fetchPrChecks, type CodeHostProvider } from "../model/prChecks";
-import { useCallback, useEffect, useRef, useState } from "react";
 import { type GithubPrChecks } from "../model/githubPrChecks";
 
 const POLL_MS = 30_000;
@@ -17,12 +18,65 @@ export type GithubPrChecksView = {
   refresh: () => void;
 };
 
+/** One answer of the read: the failure message travels with the results it left in place. */
+type PrChecksRead = { checks: GithubPrChecks | null; error: string | null };
+
+/**
+ * Account generations. A GitLab or Azure DevOps account change replaces the
+ * instance behind the same PR number, so it is part of the query identity and
+ * drops saved results. GitHub has no account event. One shared listener pair
+ * serves every subscriber; snapshots are plain numbers, so they stay cached.
+ */
+const ACCOUNT_EVENTS = {
+  gitlab: "bycoda:gitlab-change",
+  azuredevops: "bycoda:azuredevops-change",
+} as const;
+const accountGenerations = { gitlab: 0, azuredevops: 0 };
+const accountListeners = new Set<() => void>();
+function subscribeAccounts(listener: () => void) {
+  if (accountListeners.size === 0) {
+    window.addEventListener(ACCOUNT_EVENTS.gitlab, onGitlabChange);
+    window.addEventListener(ACCOUNT_EVENTS.azuredevops, onAzureDevOpsChange);
+  }
+  accountListeners.add(listener);
+  return () => {
+    accountListeners.delete(listener);
+    if (accountListeners.size === 0) {
+      window.removeEventListener(ACCOUNT_EVENTS.gitlab, onGitlabChange);
+      window.removeEventListener(ACCOUNT_EVENTS.azuredevops, onAzureDevOpsChange);
+    }
+  };
+}
+function bumpAccount(provider: keyof typeof accountGenerations) {
+  accountGenerations[provider] += 1;
+  for (const listener of Array.from(accountListeners)) listener();
+}
+function onGitlabChange() {
+  bumpAccount("gitlab");
+}
+function onAzureDevOpsChange() {
+  bumpAccount("azuredevops");
+}
+const accountGenerationOf = {
+  github: () => 0,
+  gitlab: () => accountGenerations.gitlab,
+  azuredevops: () => accountGenerations.azuredevops,
+} satisfies Record<CodeHostProvider, () => number>;
+
+const IDENTITY_LENGTH = 7;
+
 /**
  * Loads PR checks on mount regardless of the active tab, keeps them fresh for
  * open PRs while mounted and visible, and allows initial and manual loads only
  * for closed or merged ones. Results are replaced together with headOid, never
  * merged across commits, and a late answer cannot outlive a PR change, a
  * revision change, or unmount.
+ *
+ * The query key is the PR identity (provider, account generation, cwd, repo,
+ * number) plus the list revision. A revision change starts a new read while the
+ * previous head stays visible as stale; a PR or account change shows nothing
+ * until its own answer arrives. A failed read keeps the last good results of the
+ * same PR and reports the error beside them.
  */
 export function useGithubPrChecks(params: {
   provider?: CodeHostProvider;
@@ -45,162 +99,75 @@ export function useGithubPrChecks(params: {
     poll = true,
     revision = 0,
   } = params;
-  const [checks, setChecks] = useState<GithubPrChecks | null>(null);
-  const [loading, setLoading] = useState(enabled);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [stale, setStale] = useState(false);
-  const [manualTick, setManualTick] = useState(0);
-  const [accountTick, setAccountTick] = useState(0);
-  useEffect(() => {
-    if (provider === "github") return;
-    const event = provider === "gitlab" ? "bycoda:gitlab-change" : "bycoda:azuredevops-change";
-    const changed = () => setAccountTick((tick) => tick + 1);
-    window.addEventListener(event, changed);
-    return () => window.removeEventListener(event, changed);
-  }, [provider]);
-
-  const mountedRef = useRef(true);
-  const hasDataRef = useRef(false);
-  const identityRef = useRef<string | null>(null);
-  const epochRef = useRef(0);
-  const revisionRef = useRef(revision);
-  revisionRef.current = revision;
-  const previousRevisionRef = useRef(revision);
-  const flightRef = useRef<{ epoch: number; revision: number } | null>(null);
-  /** Trigger waiting behind an in-flight request; polls never outrank manual loads. */
-  const queuedRef = useRef<"manual" | "auto" | null>(null);
-  const openRef = useRef(open);
-  openRef.current = open;
-  const pollRef = useRef(poll);
-  pollRef.current = poll;
-  const previousPollRef = useRef(poll);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  const refresh = useCallback(() => setManualTick((tick) => tick + 1), []);
-
-  const run = useCallback(
-    (mode?: "auto") => {
-      const automatic = mode === "auto";
-      // One request per PR revision; a trigger landing while it runs coalesces
-      // into a single follow-up instead of being dropped or overlapped. A manual
-      // load always outranks a queued poll tick.
-      const flight = flightRef.current;
-      if (flight && flight.epoch === epochRef.current) {
-        if (!automatic || queuedRef.current == null) {
-          queuedRef.current = automatic ? "auto" : "manual";
-        }
-        return;
-      }
-      queuedRef.current = null;
-      const ticket = { epoch: epochRef.current, revision: revisionRef.current };
-      flightRef.current = ticket;
-      const initial = !hasDataRef.current;
-      if (initial) setLoading(true);
-      else setRefreshing(true);
-      fetchPrChecks(provider, cwd, repo, number)
-        .then((next) => {
-          if (
-            !mountedRef.current ||
-            ticket.epoch !== epochRef.current ||
-            ticket.revision !== revisionRef.current
-          )
-            return;
-          hasDataRef.current = true;
-          // headOid and checks land together, so two commits never mix.
-          setChecks(next);
-          setError(null);
-          setStale(false);
-        })
-        .catch((reason: unknown) => {
-          if (
-            !mountedRef.current ||
-            ticket.epoch !== epochRef.current ||
-            ticket.revision !== revisionRef.current
-          )
-            return;
-          setError(reason instanceof Error ? reason.message : String(reason));
-          if (hasDataRef.current) setStale(true);
-        })
-        .finally(() => {
-          if (flightRef.current !== ticket) return;
-          flightRef.current = null;
-          if (!mountedRef.current || ticket.epoch !== epochRef.current) return;
-          setLoading(false);
-          setRefreshing(false);
-          const queued = queuedRef.current;
-          if (!queued) return;
-          queuedRef.current = null;
-          // An automatic follow-up waits for an open PR and a visible document;
-          // visibilitychange or the next tick picks the work back up.
-          if (queued === "auto" && (document.hidden || !openRef.current || !pollRef.current))
-            return;
-          runRef.current(queued === "auto" ? "auto" : undefined);
-        });
-    },
-    [provider, cwd, repo, number],
+  const accountGeneration = useSyncExternalStore(
+    subscribeAccounts,
+    accountGenerationOf[provider],
+    accountGenerationOf[provider],
   );
-  const runRef = useRef(run);
-  runRef.current = run;
+  const identity = ["inbox", "prChecks", provider, accountGeneration, cwd, repo, number] as const;
+  const identityId = identity.join("\u0000");
+  /** Last good results per identity; a failed read hands them back with its error. */
+  const lastGood = useRef<{ identityId: string; checks: GithubPrChecks } | null>(null);
+  const polling = enabled && open && poll;
 
+  const query = useQuery({
+    queryKey: [...identity, revision] as const,
+    queryFn: async (): Promise<PrChecksRead> => {
+      try {
+        const checks = await fetchPrChecks(provider, cwd, repo, number);
+        // headOid and checks land together, so two commits never mix.
+        lastGood.current = { identityId, checks };
+        return { checks, error: null };
+      } catch (reason) {
+        const previous =
+          lastGood.current?.identityId === identityId ? lastGood.current.checks : null;
+        return {
+          checks: previous,
+          error: reason instanceof Error ? reason.message : String(reason),
+        };
+      }
+    },
+    enabled,
+    // Keep the previous head on screen while a new revision of the same PR loads.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey.slice(0, IDENTITY_LENGTH).join("\u0000") === identityId
+        ? previous
+        : undefined,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    refetchInterval: polling ? POLL_MS : false,
+    refetchIntervalInBackground: false,
+    // Returning to a visible document refreshes an open, polled PR.
+    refetchOnWindowFocus: polling,
+    refetchOnReconnect: false,
+  });
+
+  const { refetch } = query;
+  const previousPoll = useRef(poll);
   useEffect(() => {
-    if (!enabled) {
-      epochRef.current += 1;
-      flightRef.current = null;
-      queuedRef.current = null;
-      identityRef.current = null;
-      hasDataRef.current = false;
-      setChecks(null);
-      setLoading(false);
-      setRefreshing(false);
-      setError(null);
-      setStale(false);
-      return;
+    const resumed = poll && !previousPoll.current;
+    previousPoll.current = poll;
+    if (resumed && enabled && open && focusManager.isFocused()) {
+      void refetch({ cancelRefetch: false });
     }
-    const identity = `${provider}\u0000${accountTick}\u0000${cwd}\u0000${repo}\u0000${number}`;
-    if (identityRef.current !== identity) {
-      // A different PR: drop the in-flight answer, any queue, and saved results.
-      epochRef.current += 1;
-      identityRef.current = identity;
-      queuedRef.current = null;
-      hasDataRef.current = false;
-      setChecks(null);
-      setError(null);
-      setStale(false);
-    } else if (previousRevisionRef.current !== revision) {
-      // Keep a previous head visible, but never present it as current while
-      // its replacement is queued behind an earlier network request.
-      setStale(hasDataRef.current);
-      setError(null);
-    }
-    previousRevisionRef.current = revision;
-    runRef.current();
-  }, [provider, accountTick, cwd, repo, number, enabled, revision, manualTick]);
+  }, [poll, enabled, open, refetch]);
 
-  useEffect(() => {
-    const resumed = poll && !previousPollRef.current;
-    previousPollRef.current = poll;
-    if (!enabled || !open || !poll) return;
-    if (resumed && !document.hidden) runRef.current("auto");
-    const timer = window.setInterval(() => {
-      if (document.hidden) return;
-      runRef.current("auto");
-    }, POLL_MS);
-    const onVisibility = () => {
-      if (!document.hidden) runRef.current("auto");
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [enabled, open, poll]);
+  const refresh = useCallback(() => {
+    if (enabled) void refetch({ cancelRefetch: false });
+  }, [enabled, refetch]);
 
-  return { provider, checks, loading, refreshing, error, stale, refresh };
+  const read = enabled ? query.data : undefined;
+  const checks = read?.checks ?? null;
+  const showing = checks != null;
+  return {
+    provider,
+    checks,
+    loading: enabled && !showing && query.isFetching,
+    refreshing: enabled && showing && query.isFetching,
+    // A placeholder belongs to the previous revision; its error is not this read's.
+    error: read && !query.isPlaceholderData ? read.error : null,
+    stale: showing && (query.isPlaceholderData || read?.error != null),
+    refresh,
+  };
 }

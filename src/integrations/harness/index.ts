@@ -162,6 +162,7 @@ export {
   canCompactHarnessContext,
   steerHarnessTurn,
   canSteerHarness,
+  steerAppliesModelSettings,
   canRewindHarnessLastTurn,
   rewindHarnessLastTurn,
   cancelHarnessTurn,
@@ -181,6 +182,7 @@ export {
   canRunHarnessTextPrompt,
   runHarnessTextPrompt,
   stopHarnessTextPrompts,
+  warmupHarnessText,
 } from "./core/registry";
 export type {
   ApprovalDecision,

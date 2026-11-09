@@ -1,7 +1,10 @@
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useState } from "react";
-import { getLocale, t, useLocale } from "../../../shared/i18n";
+import { formatNumber, getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { SortableDataTable } from "../../../shared/ui/SortableDataTable";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 
 import type { UsageMetric, UsageResolution } from "../model/usageAnalytics";
 
@@ -16,12 +19,12 @@ export const metricNames: Record<UsageMetric, string> = {
 };
 export function formatMetric(value: number, metric: UsageMetric): string {
   if (metric === "cost")
-    return new Intl.NumberFormat(getLocale(), {
+    return formatNumber(value, {
       style: "currency",
       currency: "USD",
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(value);
+    });
   if (metric === "duration") {
     const minutes = Math.floor(value / 60_000);
     return minutes >= 60
@@ -30,17 +33,27 @@ export function formatMetric(value: number, metric: UsageMetric): string {
         ? `${minutes}m`
         : `${Math.round(value / 1000)}s`;
   }
-  return new Intl.NumberFormat(getLocale(), {
+  return formatNumber(value, {
     notation: "compact",
     maximumFractionDigits: 1,
-  }).format(value);
+  });
 }
 export function formatUsagePercent(value: number): string {
-  return new Intl.NumberFormat(getLocale(), {
+  return formatNumber(value / 100, {
     style: "percent",
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
-  }).format(value / 100);
+  });
+}
+/** Axis space is bounded; tooltips and tables keep the exact formatted value. */
+export function formatMetricTick(value: number, metric: UsageMetric): string {
+  if (metric !== "cost") return formatMetric(value, metric);
+  return formatNumber(value, {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  });
 }
 export function formatBucket(at: number, resolution: UsageResolution): string {
   return new Date(at).toLocaleString(
@@ -56,21 +69,42 @@ export function formatBucket(at: number, resolution: UsageResolution): string {
       : { month: "short", day: "numeric", year: "numeric" },
   );
 }
-export function PagedUsageTable({
+export function ContinuousUsageTable({
   rows,
   caption,
   metric,
   onSelect,
+  stateKey,
 }: {
   rows: (Record<string, unknown> & { key: string; label: string })[];
   caption: string;
   metric: UsageMetric;
   onSelect?: (key: string) => void;
+  stateKey?: string;
 }) {
   useLocale();
-  const [page, setPage] = useState(0);
-  const [sort, setSort] = useState({ key: metric as string, direction: "desc" as "asc" | "desc" });
-  const total = rows.reduce((n, row) => n + Number(row[metric] ?? 0), 0);
+  const tableKey = stateKey ?? `usage:${caption}`;
+  const [allMetrics, setAllMetrics] = useState(false);
+  const [sort, setSort] = useRetainedState(`${tableKey}:sort`, {
+    key: metric as string,
+    direction: "desc" as "asc" | "desc",
+  });
+  const available = (row: Record<string, unknown>, key: UsageMetric) =>
+    row[key] != null &&
+    Number.isFinite(Number(row[key])) &&
+    !(key === "duration"
+      ? row.timedSamples === 0 || row.timedTurns === 0
+      : row.logSamples === 0 || row.meteredTurns === 0) &&
+    !(key === "cost" && Number(row.unpricedTokens) > 0 && row.unpricedTokens === row.tokens);
+  const total = rows.reduce((n, row) => n + (available(row, metric) ? Number(row[metric]) : 0), 0);
+  // A share needs a complete denominator; unpriced cost rows make every share unknown.
+  const shareKnown = (row: Record<string, unknown>) =>
+    available(row, metric) &&
+    !(
+      metric === "cost" &&
+      rows.some((entry) => Number(entry.unpricedTokens ?? entry.unpricedTurns ?? 0) > 0)
+    );
+  const showShare = rows.some(shareKnown);
   const ordered = [...rows].sort((a, b) => {
     const av = a[sort.key],
       bv = b[sort.key];
@@ -81,20 +115,32 @@ export function PagedUsageTable({
       (sort.direction === "asc" ? 1 : -1)
     );
   });
-  const lastPage = Math.max(0, Math.ceil(rows.length / 20) - 1);
-  const current = Math.min(page, lastPage);
   return (
     <>
+      <div className="usage-section-heading">
+        <span className="usage-muted">
+          {rows.length.toLocaleString(getLocale())} {t("records")}
+        </span>
+        <Button
+          variant="ghost"
+          aria-expanded={allMetrics}
+          onClick={() => {
+            setAllMetrics(!allMetrics);
+            if (allMetrics) setSort({ key: metric, direction: "desc" });
+          }}
+        >
+          {t(allMetrics ? "Show fewer metrics" : "Show all metrics")}
+        </Button>
+      </div>
       <SortableDataTable
-        key={`${current}:${sort.key}:${sort.direction}`}
+        key={tableKey}
+        scrollKey={tableKey}
         caption={caption}
         rowKey="key"
-        rows={ordered.slice(current * 20, current * 20 + 20)}
+        rows={ordered}
         defaultSort={sort}
-        onSortChange={(next) => {
-          setSort(next);
-          setPage(0);
-        }}
+        sortState={sort}
+        onSortChange={setSort}
         columns={[
           {
             key: "label",
@@ -102,62 +148,122 @@ export function PagedUsageTable({
             sortable: true,
             render: (_, row) =>
               onSelect ? (
-                <Button variant="link" onClick={() => onSelect(row.key)} title={row.label}>
+                <Button variant="link" onClick={() => onSelect(row.key)}>
                   {t(row.label)}
                 </Button>
               ) : (
-                <span title={row.label}>{t(row.label)}</span>
+                <span>{t(row.label)}</span>
               ),
           },
           ...(
-            [
-              "cost",
-              "input",
-              "output",
-              "cacheRead",
-              "cacheWrite",
-              "tokens",
-              ...(metric === "duration" || rows.some((r) => Number(r.duration) > 0)
-                ? ["duration"]
-                : []),
-            ] as UsageMetric[]
+            (allMetrics
+              ? [
+                  "cost",
+                  "input",
+                  "output",
+                  "cacheRead",
+                  "cacheWrite",
+                  "tokens",
+                  ...(metric === "duration" || rows.some((r) => Number(r.duration) > 0)
+                    ? ["duration"]
+                    : []),
+                ]
+              : [...new Set([metric, "cost", "tokens"])]) as UsageMetric[]
           ).map((key) => ({
             key,
             label: t(metricNames[key]),
             numeric: true,
             sortable: true,
             render: (_: unknown, row: Record<string, unknown>) =>
-              row[key] == null ||
-              (key === "duration" ? row.timedSamples === 0 : row.logSamples === 0) ||
-              (key === "cost" &&
-                Number(row.unpricedTokens) > 0 &&
-                row.unpricedTokens === row.tokens)
+              !available(row, key)
                 ? "—"
                 : `${key === "cost" && Number(row.unpricedTokens ?? row.unpricedTurns ?? 0) > 0 ? "≥ " : ""}${formatMetric(Number(row[key]), key)}`,
           })),
-          {
-            key: "share",
-            label: t("Share"),
-            numeric: true,
-            render: (_, row) => formatUsagePercent(total ? (Number(row[metric]) / total) * 100 : 0),
-          },
+          ...(showShare
+            ? [
+                {
+                  key: "share",
+                  label: t("Share"),
+                  numeric: true,
+                  render: (_: unknown, row: Record<string, unknown>) =>
+                    shareKnown(row)
+                      ? formatUsagePercent(total ? (Number(row[metric]) / total) * 100 : 0)
+                      : "—",
+                },
+              ]
+            : []),
         ]}
       />
-      <div className="usage-pagination">
-        <span>
-          {rows.length.toLocaleString(getLocale())} {t("records")} · {current + 1}/{lastPage + 1}
-        </span>
-        <Button variant="ghost" disabled={current === 0} onClick={() => setPage(current - 1)}>
-          {t("Previous")}
-        </Button>
-        <Button
-          variant="ghost"
-          disabled={current === lastPage}
-          onClick={() => setPage(current + 1)}
-        >
-          {t("Next")}
-        </Button>
-      </div>
     </>
+  );
+}
+
+export function UsageDataNotes({
+  unpriced,
+  pricedCoverage,
+  pricesUnavailable,
+  sessionDurationUnavailable,
+  timedTurns,
+  turns,
+  truncated,
+}: {
+  unpriced: string[];
+  pricedCoverage: string;
+  pricesUnavailable: boolean;
+  sessionDurationUnavailable: boolean;
+  timedTurns: number;
+  turns: number;
+  truncated: boolean;
+}) {
+  return (
+    <Disclosure
+      size="sm"
+      className="usage-data-notes"
+      summary={
+        <>
+          {t("Data sources and coverage")}
+          {unpriced.length ? ` · ${t("Models without prices")}: ${unpriced.length}` : ""}
+        </>
+      }
+    >
+      <p>
+        {t("API-equivalent estimates from local session logs, not what a subscription plan bills.")}{" "}
+        {t("Priced token coverage")}: {pricedCoverage}.
+      </p>
+      {unpriced.length > 0 && (
+        <>
+          <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0">{t("Models without prices")}:</span>
+            <BadgeList
+              label={t("Models without prices")}
+              size="xs"
+              className="min-w-0 flex-1"
+              items={unpriced.map((model, index) => ({
+                id: `${index}:${model}`,
+                label: model,
+              }))}
+            />
+          </div>
+          <p>{t("Their tokens are included; their cost is unavailable.")}</p>
+        </>
+      )}
+      {pricesUnavailable && (
+        <p>{t("OpenRouter prices could not be loaded, so built-in prices are used.")}</p>
+      )}
+      {sessionDurationUnavailable ? (
+        <p>{t("Session duration data is unavailable on this app version or could not be read.")}</p>
+      ) : (
+        <p>
+          {t(
+            "Agent time sums recorded completed turn intervals and may include waiting. Parallel sessions can exceed wall-clock time.",
+          )}{" "}
+          {timedTurns}/{turns} {t("turns with duration")}.
+        </p>
+      )}
+      {truncated && (
+        <p>{t("Session data is limited to the latest 50,000 turns. Select a shorter interval.")}</p>
+      )}
+      <p>{t("Token timestamps have 15-minute precision. End time is exclusive.")}</p>
+    </Disclosure>
   );
 }

@@ -1,41 +1,54 @@
+import { LiveText } from "../../../shared/ui/LiveText";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { t, useLocale, useT } from "../../../shared/i18n";
 import { memo, useEffect, useRef, useState } from "react";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { Shimmer } from "../../../shared/ui/Shimmer";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
+import { useDelegatedRunDiscovery } from "../../connections/public/delegatedRuns";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { AccountColorDot } from "../../providers/public/accountIdentity";
 import {
-  Bot,
-  Check,
-  ChevronRight,
-  ChevronUp,
-  CircleAlert,
-  Square,
-  X,
-} from "../../../shared/ui/icons";
-import {
-  deriveActivityDock,
-  dockCountLabel,
-  dockStateLabel,
-  nextUnseenDone,
-  type ActivityDock as ActivityDockModel,
-  type DockAgent,
-} from "../model/activityDock";
-import { canStopAgent, stopAllControl } from "../model/backgroundStop";
-import type { Block } from "../model/session";
+  providerAccounts,
+  supportsProviderAccounts,
+} from "../../providers/public/providerAccounts";
+import { Check, ChevronRight, ChevronUp, CircleAlert, Square, X } from "../../../shared/ui/icons";
+import { useActivityDock, useDockCountLabel, useStopAllControl } from "../model/reactiveReads";
+import { type ActivityDock as ActivityDockModel, type DockAgent } from "../model/activityDock";
+import { canStopAgent } from "../model/backgroundStop";
+import { hasPendingApproval, type Block, type HarnessId } from "../model/session";
+import { executionUserIndex } from "../model/executionTurn";
+import { turnClockOrigin, useTurnClockInTranscript } from "../model/turnActivity";
 import { AgentClock } from "./AgentClock";
+import { SubagentMarks, SubagentStatusSummary } from "./SubagentAnatomy";
 import { formatElapsed, useElapsedFrom } from "./useElapsedFrom";
 import { STOP_ALL, useStopRequests } from "./useStopRequests";
 import { PacingUncle } from "./PacingUncle";
 import "./chat-controls.css";
 
-/** Expanded or not, per session, for as long as the app is open. */
 const expandedBySession = new Map<string, boolean>();
+const activeSessions = new Map<string, number>();
+function trimExpandedSessions() {
+  let retired = [...expandedBySession.keys()].filter((key) => !activeSessions.has(key)).length;
+  for (const key of expandedBySession.keys()) {
+    if (retired <= 256) break;
+    if (activeSessions.has(key)) continue;
+    expandedBySession.delete(key);
+    retired--;
+  }
+}
 
 type Props = {
   sessionId: string;
+  harness?: HarnessId;
   blocks: Block[];
   busy: boolean;
   pendingQuestion: boolean;
+  /** A visible question form already owns its status; keep only additional activity here. */
+  questionPresented?: boolean;
+  /** The previous turn ended, but a queued send still has no delivery acknowledgement. */
+  deliveryUnconfirmed?: boolean;
   backgroundTasks?: string[];
   backgroundAgents?: number;
   /** False while another tab is in front; nothing counts as seen then. */
@@ -52,6 +65,8 @@ type Props = {
   onStopAgent?: (agent: DockAgent) => Promise<void>;
   /** Stops all background work, or interrupts the turn when it cannot be split. */
   onStopAll?: () => Promise<void>;
+  /** Cross-provider children of this session, already mapped to rows. */
+  delegatedAgents?: DockAgent[];
 };
 
 /**
@@ -61,9 +76,12 @@ type Props = {
  */
 export const ActivityDock = memo(function ActivityDock({
   sessionId,
+  harness,
   blocks,
   busy,
   pendingQuestion,
+  questionPresented = false,
+  deliveryUnconfirmed = false,
   backgroundTasks,
   backgroundAgents,
   visible = true,
@@ -72,58 +90,91 @@ export const ActivityDock = memo(function ActivityDock({
   perItemStop = false,
   onStopAgent,
   onStopAll,
+  delegatedAgents,
 }: Props) {
   useLocale();
+  const t = useT();
+  const discovery = useDelegatedRunDiscovery(sessionId, visible);
   const stops = useStopRequests();
   const root = useRef<HTMLDivElement>(null);
-  const [unseenDone, setUnseenDone] = useState(false);
-  const wasBusy = useRef(busy);
-  const wasAtEnd = useRef(atEnd);
+  let turnId: string | undefined;
+  let turnHasActivity = false;
+  for (let index = blocks.length - 1; index >= 0; index--) {
+    if (blocks[index].role === "user") {
+      turnId = blocks[index].id;
+      turnHasActivity = index < blocks.length - 1;
+      break;
+    }
+  }
+  const [completedTurn, setCompletedTurn] = useState<string>();
+  const previous = useRef({ busy, turnId, sessionId });
 
   useEffect(() => {
-    setUnseenDone((unseen) => nextUnseenDone(unseen, wasBusy.current, busy));
-    wasBusy.current = busy;
-  }, [busy]);
+    const prior = previous.current;
+    if (busy || (visible && atEnd) || prior.turnId !== turnId || prior.sessionId !== sessionId) {
+      setCompletedTurn(undefined);
+    } else if (prior.busy) {
+      setCompletedTurn(turnId);
+    }
+    previous.current = { busy, turnId, sessionId };
+  }, [busy, turnId, sessionId, visible, atEnd]);
 
-  // The result has been seen once the reader is at the input or back at the
-  // end of the transcript. Hidden panes do not count: nobody is looking.
-  useEffect(() => {
-    const arrivedAtEnd = atEnd && !wasAtEnd.current;
-    wasAtEnd.current = atEnd;
-    if (arrivedAtEnd && visible) setUnseenDone(false);
-  }, [atEnd, visible]);
   useEffect(() => {
     const composer = root.current?.closest("[data-composer]");
     if (!composer) return;
-    const acknowledge = () => setUnseenDone(false);
+    const acknowledge = () => setCompletedTurn(undefined);
     composer.addEventListener("focusin", acknowledge);
     return () => composer.removeEventListener("focusin", acknowledge);
   }, []);
 
-  const dock = deriveActivityDock({
+  const { dock, label } = useActivityDock({
     blocks,
     busy,
     pendingQuestion,
     backgroundTasks,
     backgroundAgents,
-    unseenDone,
+    delegatedAgents,
+    // A new user block may arrive before the provider's busy acknowledgement.
+    // Never label that new turn with the previous turn's completion state.
+    unseenDone:
+      turnHasActivity && !!completedTurn && completedTurn === turnId && !(visible && atEnd),
   });
-  const label = dockStateLabel(dock);
+  const displayLabel =
+    dock.state === "done" && deliveryUnconfirmed
+      ? `${t("Turn activity")}: ${t("Finished")}`
+      : label;
+  // The transcript's activity line shows the same clock while the turn has
+  // nothing else to show; with the reader at the end it is on screen, so the
+  // dock keeps its state, controls and figure but leaves the number out.
+  const clockInTranscript = useTurnClockInTranscript(sessionId) && visible && atEnd;
+  const clockOrigin = busy ? turnClockOrigin(blocks[executionUserIndex(blocks)]) : undefined;
+  const questionOnlyNotice =
+    questionPresented &&
+    pendingQuestion &&
+    dock.state === "needs-input" &&
+    !hasPendingApproval(blocks) &&
+    dock.agents.length === 0 &&
+    dock.backgroundCount === 0 &&
+    !backgroundAgents;
 
   return (
     <div ref={root}>
+      {discovery.error ? (
+        <InlineError retry={{ onRetry: discovery.retry }}>{discovery.error}</InlineError>
+      ) : null}
       {/* Always mounted, so a state change is announced rather than the dock
           appearing. The ticking clock stays out of it. */}
-      <span className="sr-only" aria-live="polite" aria-atomic="true">
-        {label}
-      </span>
-      {dock.state === "idle" ? null : (
+      <LiveText className="sr-only" text={questionOnlyNotice ? "" : displayLabel} />
+      {dock.state === "idle" || questionOnlyNotice ? null : (
         <DockBody
           key={dock.state === "done" ? "done" : "live"}
           sessionId={sessionId}
+          harness={harness}
           dock={dock}
           visible={visible}
-          label={label}
+          label={displayLabel}
+          clockOrigin={clockOrigin ?? dock.startedAt}
+          clockInTranscript={clockInTranscript}
           onOpenAgent={onOpenAgent}
           stop={{
             ...stops,
@@ -145,38 +196,55 @@ type DockStop = ReturnType<typeof useStopRequests> & {
 
 function DockBody({
   sessionId,
+  harness,
   dock,
   visible,
   label,
+  clockOrigin,
+  clockInTranscript,
   onOpenAgent,
   stop,
 }: {
   sessionId: string;
+  harness?: HarnessId;
   dock: ActivityDockModel;
   visible: boolean;
   label: string;
+  clockOrigin?: number;
+  clockInTranscript: boolean;
   onOpenAgent: (agent: DockAgent) => void;
   stop: DockStop;
 }) {
-  useLocale();
+  const t = useT();
   const [expanded, setExpandedState] = useState(() => expandedBySession.get(sessionId) ?? false);
-  const lockList = useLockOverscroll<HTMLDivElement>();
+  useEffect(() => {
+    activeSessions.set(sessionId, (activeSessions.get(sessionId) ?? 0) + 1);
+    return () => {
+      const remaining = (activeSessions.get(sessionId) ?? 1) - 1;
+      if (remaining) activeSessions.set(sessionId, remaining);
+      else activeSessions.delete(sessionId);
+      trimExpandedSessions();
+    };
+  }, [sessionId]);
   const setExpanded = (next: boolean) => {
+    expandedBySession.delete(sessionId);
     expandedBySession.set(sessionId, next);
     setExpandedState(next);
   };
+  const lockList = useLockOverscroll<HTMLDivElement>();
   const hasAgents = dock.agents.length > 0;
   const open = expanded && hasAgents;
   const listId = `activity-dock-agents-${sessionId}`;
-  const counts = dockCountLabel(dock);
-  const clock = dock.state === "working" || dock.state === "waiting";
-  const stopAll = stop.onAll ? stopAllControl(dock, stop.perItem) : null;
+  const counts = useDockCountLabel(dock);
+  const clock = (dock.state === "working" || dock.state === "waiting") && !clockInTranscript;
+  const stopAllWhenWired = useStopAllControl(dock, stop.perItem);
+  const stopAll = stop.onAll ? stopAllWhenWired : null;
 
   return (
     <section
       aria-label={t("Turn activity")}
       data-activity-dock={dock.state}
-      className={`mb-1.5 overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) font-sans text-xs ${
+      className={`activity-dock mb-1.5 overflow-hidden rounded-lg font-sans text-ui-caption ${
         dock.state === "done" ? "activity-dock-done" : ""
       }`}
     >
@@ -201,7 +269,7 @@ function DockBody({
                 label
               )}
             </span>
-            {clock ? <DockClock startedAt={dock.startedAt} /> : null}
+            {clock ? <DockClock startedAt={clockOrigin} /> : null}
           </div>
           {dock.state === "working" || dock.state === "waiting" ? (
             <div
@@ -216,11 +284,11 @@ function DockBody({
               className="shrink-0"
               variant="ghost"
               type="button"
-              title={stopAll.title}
+              tooltip={stopAll.title}
               disabled={stop.stopping.has(STOP_ALL)}
               onClick={() => stop.request(STOP_ALL, () => stop.onAll!())}
             >
-              <Square className="size-3" strokeWidth={1.75} />
+              <Square className="icon-xs" strokeWidth={1.75} />
               {stop.stopping.has(STOP_ALL)
                 ? t("Stopping…")
                 : stop.failed.has(STOP_ALL)
@@ -229,28 +297,30 @@ function DockBody({
             </Button>
           ) : null}
           {hasAgents ? (
-            <Button
-              variant="ghost"
-              type="button"
-              aria-expanded={open}
-              aria-controls={listId}
-              aria-label={t(
-                open ? "Background agents, {p0}. Hide list" : "Background agents, {p0}. Show list",
-                { p0: counts },
-              )}
-              title={open ? t("Hide agents") : t("Show agents")}
-              onClick={() => setExpanded(!open)}
-              className="shrink-0"
-            >
-              <Bot className="size-3" strokeWidth={1.75} />
-              <span className="tabular-nums">{counts}</span>
-              <ChevronUp
-                className={`size-3 transition-transform duration-150 motion-reduce:transition-none ${
-                  open ? "" : "rotate-180"
-                }`}
-                strokeWidth={1.75}
-              />
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                type="button"
+                aria-expanded={open}
+                aria-controls={listId}
+                data-dock-toggle=""
+                label={t(
+                  open ? "Background work, {p0}. Hide list" : "Background work, {p0}. Show list",
+                  { p0: counts },
+                )}
+                tooltip={open ? t("Hide background work") : t("Show background work")}
+                onClick={() => setExpanded(!open)}
+                className="shrink-0"
+              >
+                <span className="tabular-nums">{counts}</span>
+                <ChevronUp
+                  className={`icon-xs shrink-0 transition-transform duration-150 motion-reduce:transition-none ${
+                    open ? "rotate-180" : ""
+                  }`}
+                  strokeWidth={1.75}
+                />
+              </Button>
+            </>
           ) : null}
         </div>
       </div>
@@ -258,14 +328,20 @@ function DockBody({
         <div
           id={listId}
           ref={lockList}
-          className="activity-dock-list flex max-h-60 flex-col overflow-x-hidden overflow-y-auto overscroll-none border-t border-(--ui-tone-neutral-border) px-1"
+          className="activity-dock-list flex max-h-60 flex-col gap-0.5 overflow-x-hidden overflow-y-auto overscroll-none px-1 pb-1"
         >
           {/* Running rows lead, so their Stop buttons are not buried under
               finished ones. The sort is stable: transcript order otherwise. */}
           {[...dock.agents]
             .sort((a, b) => Number(b.status === "running") - Number(a.status === "running"))
             .map((agent) => (
-              <DockAgentRow key={agent.blockId} agent={agent} onOpen={onOpenAgent} stop={stop} />
+              <DockAgentRow
+                key={agent.blockId}
+                agent={agent}
+                harness={harness}
+                onOpen={onOpenAgent}
+                stop={stop}
+              />
             ))}
         </div>
       ) : null}
@@ -285,78 +361,111 @@ function DockMark({ state }: { state: ActivityDockModel["state"] }) {
   if (state === "done" || state === "background") {
     return (
       <Check
-        className={`size-3.5 shrink-0 ${
+        className={`icon-sm shrink-0 ${
           state === "done"
             ? "activity-dock-check text-(--ui-tone-success-fg)"
             : "text-(--ui-tone-success-fg)"
         }`}
-        strokeWidth={2.25}
+        strokeWidth={2}
       />
     );
   }
   if (state === "needs-input") {
     return (
-      <CircleAlert className="size-3.5 shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={1.75} />
+      <CircleAlert className="icon-sm shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={1.75} />
     );
   }
   return (
-    <span
+    <StatusDot
+      label={t(state === "working" ? "Working" : "Waiting")}
       aria-hidden
-      className={`size-1.5 shrink-0 rounded-full bg-(--ui-tone-accent-subtle) ${
-        state === "working"
-          ? "shadow-[0_0_8px_var(--color-accent)] motion-safe:animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_3]"
-          : "activity-dock-waiting"
-      }`}
+      tone={state === "working" ? "accent" : "neutral"}
     />
   );
 }
 
 function DockAgentRow({
   agent,
+  harness,
   onOpen,
   stop,
 }: {
   agent: DockAgent;
+  harness?: HarnessId;
   onOpen: (agent: DockAgent) => void;
   stop: DockStop;
 }) {
-  useLocale();
-  const summary = [agent.name, agent.model, agent.detail, agent.status].filter(Boolean).join(", ");
+  const t = useT();
+  const statusWord = {
+    running: t("Running"),
+    done: t("Done"),
+    failed: t("Failed"),
+    stopped: t("Stopped by you"),
+    interrupted: t("Interrupted"),
+  }[agent.status];
+  const provider = agent.harness ?? harness;
+  const account =
+    provider && agent.providerAccountId && supportsProviderAccounts(provider)
+      ? providerAccounts(provider).find((item) => item.id === agent.providerAccountId)
+      : undefined;
+  const accountLabel = account?.label ?? agent.providerAccountId;
+  const summary = [agent.name, agent.model, accountLabel, agent.detail, statusWord]
+    .filter(Boolean)
+    .join(", ");
   const key = agent.callId ?? agent.blockId;
-  const stoppable = canStopAgent(agent, stop.perItem);
+  const stoppable = canStopAgent(agent, stop.perItem) && !!stop.onAgent;
   const stopping = stop.stopping.has(key);
   return (
-    <div className="activity-dock-item flex min-w-0 items-start border-t border-(--ui-tone-neutral-border) py-1 first:border-t-0">
+    <div className="activity-dock-item flex min-w-0 items-start py-0.5">
       <Button
         variant="item"
         type="button"
-        aria-label={`${agent.kind === "agent" ? "Open" : "Show"} ${summary}`}
-        title={agent.name}
+        aria-label={t(agent.kind === "agent" ? "Open {p0}" : "Show {p0}", { p0: summary })}
         data-dock-agent={agent.blockId}
+        data-dock-agent-state={agent.status}
         onClick={() => onOpen(agent)}
-        className="min-w-0 flex-1 items-start text-left"
+        className="activity-dock-agent min-w-0 flex-1 items-center text-left"
       >
-        <span className="mt-1 flex shrink-0">
+        <span className="flex shrink-0" aria-hidden="true">
           <AgentStatusDot status={agent.status} />
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block whitespace-pre-wrap text-(--ui-tone-neutral-fg) [overflow-wrap:anywhere]">
+        <span className="activity-dock-agent-identity flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="line-clamp-2 block font-medium whitespace-pre-wrap text-(--ui-tone-neutral-fg) [overflow-wrap:anywhere]">
             {agent.name}
           </span>
-          <span className="flex flex-wrap items-center gap-x-2 text-(--ui-text-secondary) [overflow-wrap:anywhere]">
-            {agent.model ? <span className="min-w-0">{agent.model}</span> : null}
-            {agent.detail ? <span className="min-w-0">{agent.detail}</span> : null}
-            <AgentClock
-              startedAt={agent.startedAt}
-              endedAt={agent.endedAt}
-              live={agent.status === "running"}
-            />
-          </span>
+          {agent.kind === "agent" ? (
+            <span className="flex min-w-0 items-center gap-1.5 text-ui-micro text-(--ui-text-muted)">
+              <SubagentMarks
+                name={agent.name}
+                harness={provider}
+                active={agent.status === "running"}
+                failed={agent.status === "failed"}
+              />
+              <span className="truncate">{agent.model ?? t("Subagent")}</span>
+              {account ? <AccountColorDot account={account} /> : null}
+              {accountLabel ? <span className="truncate">{accountLabel}</span> : null}
+            </span>
+          ) : null}
         </span>
-        <ChevronRight
-          className="mt-1 size-3 shrink-0 text-(--ui-text-secondary)"
-          strokeWidth={1.75}
-        />
+        <span className="activity-dock-agent-metrics flex shrink-0 flex-wrap items-center justify-end gap-x-2 text-(--ui-text-secondary)">
+          {agent.detail ? (
+            <span
+              className={`min-w-0 ${agent.status === "failed" ? "text-(--ui-tone-danger-fg)" : agent.status === "stopped" || agent.status === "interrupted" ? "text-(--ui-tone-warning-fg)" : ""}`}
+            >
+              {agent.detailParts ? (
+                <SubagentStatusSummary parts={agent.detailParts} />
+              ) : (
+                agent.detail
+              )}
+            </span>
+          ) : null}
+          <AgentClock
+            startedAt={agent.startedAt}
+            endedAt={agent.endedAt}
+            live={agent.status === "running"}
+          />
+        </span>
+        <ChevronRight className="icon-xs shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
       </Button>
       {stoppable ? (
         <Button
@@ -364,8 +473,8 @@ function DockAgentRow({
           variant="ghost"
           type="button"
           disabled={stopping}
-          aria-label={`${stopping ? "Stopping" : "Stop"} ${agent.name}`}
-          title={
+          aria-label={t(stopping ? "Stopping {p0}" : "Stop {p0}", { p0: agent.name })}
+          tooltip={
             stop.failed.has(key)
               ? t("Could not stop it. Try again.")
               : stopping
@@ -376,8 +485,12 @@ function DockAgentRow({
           }
           onClick={() => stop.request(key, () => stop.onAgent!(agent))}
         >
-          <Square className="size-3" strokeWidth={1.75} />
-          {stopping ? t("Stopping…") : t("Stop")}
+          <Square className="icon-xs" strokeWidth={1.75} />
+          {stopping
+            ? t("Stopping…")
+            : stop.failed.has(key)
+              ? t("Could not stop. Retry")
+              : t("Stop")}
         </Button>
       ) : null}
     </div>
@@ -386,20 +499,17 @@ function DockAgentRow({
 
 function AgentStatusDot({ status }: { status: DockAgent["status"] }) {
   useLocale();
+  if (status === "running") return <WorkingIndicator size="xs" />;
+  if (status === "done")
+    return <Check className="icon-xs shrink-0 text-(--ui-tone-success-fg)" strokeWidth={2} />;
   if (status === "failed") {
-    return <X className="size-3 shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
+    return <X className="icon-xs shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
   }
   if (status === "stopped") {
-    return <Square className="size-3 shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={2} />;
+    return <Square className="icon-xs shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={2} />;
   }
-  return (
-    <span
-      aria-hidden
-      className={`size-1.5 shrink-0 rounded-full ${
-        status === "running"
-          ? "bg-(--ui-tone-accent-subtle) motion-safe:animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_3]"
-          : "bg-(--ui-tone-success-subtle)"
-      }`}
-    />
-  );
+  if (status === "interrupted") {
+    return <CircleAlert className="icon-xs shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={2} />;
+  }
+  return null;
 }

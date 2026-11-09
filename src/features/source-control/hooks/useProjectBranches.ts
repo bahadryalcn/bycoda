@@ -1,12 +1,14 @@
+import { CheckoutCache } from "../model/checkoutCache";
 import { useCallback, useSyncExternalStore } from "react";
+import { createStore } from "../../../shared/lib/store";
 import {
   gitBranches,
   isGitWatched,
   subscribeGitChanged,
   type GitBranches,
 } from "../../../platform/tauri/fs";
-import { reportRemoteLoad } from "../../connections/model/remoteHealth";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { reportRemoteLoad } from "../../connections/public/remoteHealth";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 
 export type ProjectBranchesState = {
   branches: GitBranches | null;
@@ -19,7 +21,7 @@ const PENDING: ProjectBranchesState = { branches: null, settled: false };
 type Entry = {
   cwd: string;
   state: ProjectBranchesState;
-  listeners: Set<() => void>;
+  listeners: ReturnType<typeof createStore<[]>>;
   inFlight: boolean;
   pending: boolean;
   /** A change arrived while the window was hidden. */
@@ -28,7 +30,10 @@ type Entry = {
   onResume: (() => void) | null;
 };
 
-const entries = new Map<string, Entry>();
+const entries = new CheckoutCache<string, Entry>(
+  (entry) => entry.listeners.size > 0 || !!entry.inFlight,
+  (entry) => entry.state,
+);
 
 function branchesEqual(a: GitBranches | null, b: GitBranches | null): boolean {
   if (a === b) return true;
@@ -57,7 +62,7 @@ function entryFor(cwd: string): Entry {
   const entry: Entry = {
     cwd,
     state: PENDING,
-    listeners: new Set(),
+    listeners: createStore(),
     inFlight: false,
     pending: false,
     missed: false,
@@ -75,7 +80,8 @@ function publish(entry: Entry, branches: GitBranches | null) {
     return;
   }
   entry.state = { branches, settled: true };
-  for (const listener of entry.listeners) listener();
+  entries.refresh(entry.cwd);
+  entry.listeners.notify();
 }
 
 /** Carry an already loaded snapshot into a separate picker webview before
@@ -85,6 +91,7 @@ export function seedProjectBranches(cwd: string, branches: GitBranches) {
 }
 
 async function load(entry: Entry, force = false) {
+  if (entries.get(entry.cwd) !== entry) return;
   if (entry.inFlight) {
     entry.pending ||= force;
     return;
@@ -106,6 +113,7 @@ async function load(entry: Entry, force = false) {
       entry.pending = false;
       void load(entry, true);
     }
+    entries.prune();
   }
 }
 
@@ -148,11 +156,12 @@ export function useProjectBranchesState(cwd: string, enabled: boolean): ProjectB
     (listener: () => void) => {
       if (!active) return () => undefined;
       const entry = entryFor(cwd);
-      entry.listeners.add(listener);
+      const unsubscribe = entry.listeners.subscribe(listener);
       if (entry.listeners.size === 1) start(entry);
       return () => {
-        entry.listeners.delete(listener);
+        unsubscribe();
         if (entry.listeners.size === 0) stop(entry);
+        entries.prune();
       };
     },
     [active, cwd],

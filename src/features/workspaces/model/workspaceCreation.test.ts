@@ -1,0 +1,321 @@
+// @vitest-environment happy-dom
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { loadWorkspaceCreation, useWorkspaceCreation } from "./workspaceCreation";
+import {
+  getWorkspaceCapabilities,
+  requireWorkspaceCapability,
+  resolveWorkspaceContext,
+  workspaceRequest,
+  WorkspaceCapabilityError,
+} from "./workspaceClient";
+import { listWorktrees } from "../../source-control/model/worktrees";
+import { fetchGitIndex } from "../../source-control/model/gitIndexStore";
+import { gitHistory } from "../../../platform/tauri/fs";
+import { notifyRemoteRecovered } from "../../connections/model/remoteHealth";
+import { remotePath } from "../../connections/model/remoteProjects";
+import { invalidateMachineSnapshot } from "../../automations/model/machineSnapshot";
+import type { WorkspaceMode } from "../../sessions/model/session";
+
+const capabilityListeners = vi.hoisted(() => new Set<() => void>());
+vi.mock("../../connections/model/connections", () => ({
+  subscribeRemoteCapabilities: (listener: () => void) => {
+    capabilityListeners.add(listener);
+    return () => capabilityListeners.delete(listener);
+  },
+}));
+vi.mock("../../automations/model/machineSnapshot", () => ({
+  invalidateMachineSnapshot: vi.fn(),
+}));
+
+vi.mock("./workspaceClient", () => ({
+  getWorkspaceCapabilities: vi.fn(async () => ["workspaces.policy.v1", "workspaces.managed.v1"]),
+  resolveWorkspaceContext: vi.fn(async () => ({
+    cwd: "/project",
+    projectId: "project-id",
+    environmentId: "environment",
+  })),
+  WorkspaceCapabilityError: class extends Error {},
+  requireWorkspaceCapability: vi.fn(async () => {}),
+  workspaceRequest: vi.fn(async () => ({
+    resolved: { policy: { defaultMode: "worktree", integrationBranchRef: "refs/heads/main" } },
+  })),
+}));
+vi.mock("../../source-control/model/worktrees", () => ({ listWorktrees: vi.fn() }));
+vi.mock("../../source-control/model/gitIndexStore", () => ({ fetchGitIndex: vi.fn() }));
+vi.mock("../../../platform/tauri/fs", () => ({
+  gitHistory: vi.fn(),
+  subscribeGitChanged: vi.fn(() => () => {}),
+}));
+
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.clearAllMocks();
+  vi.mocked(getWorkspaceCapabilities).mockResolvedValue([
+    "workspaces.policy.v1",
+    "workspaces.managed.v1",
+  ]);
+  vi.mocked(requireWorkspaceCapability).mockResolvedValue(undefined);
+  vi.mocked(listWorktrees).mockResolvedValue({
+    defaultRoot: "/worktrees",
+    worktrees: [{ path: "/project", branch: "main", head: "main-sha", isMain: true }],
+  } as never);
+  vi.mocked(fetchGitIndex).mockResolvedValue({
+    head: "main-sha",
+    branch: "main",
+    files: [{ relative: "one" }, { relative: "one" }, { relative: "two" }],
+    conflicts: [{ relative: "conflict" }],
+  } as never);
+  vi.mocked(gitHistory).mockResolvedValue({ head: "main-sha", commits: [] });
+});
+
+let root: Root | undefined;
+let state: ReturnType<typeof useWorkspaceCreation>;
+function Probe({ choice, cwd, active }: { choice?: WorkspaceMode; cwd: string; active: boolean }) {
+  state = useWorkspaceCreation(cwd, active, choice);
+  return null;
+}
+async function renderCreation(choice?: WorkspaceMode, cwd = "/project", active = true) {
+  root ??= createRoot(document.createElement("div"));
+  await act(async () => root!.render(createElement(Probe, { choice, cwd, active })));
+}
+
+afterEach(async () => {
+  vi.useRealTimers();
+  (console.warn as Partial<{ mockRestore: () => void }>).mockRestore?.();
+  if (root) await act(async () => root!.unmount());
+  root = undefined;
+  expect(capabilityListeners.size).toBe(0);
+  vi.unstubAllGlobals();
+});
+
+it("previews the committed policy baseline and counts unique excluded paths including conflicts", async () => {
+  const result = await loadWorkspaceCreation("/project");
+  expect(result.preview).toEqual({
+    baseRef: "refs/heads/main",
+    baseCommit: "main-sha",
+    excludedPaths: 3,
+  });
+  expect(workspaceRequest).toHaveBeenCalledWith(
+    "projects.workspacePolicy.get",
+    { projectId: "project-id", environmentId: "environment" },
+    expect.anything(),
+  );
+  expect(workspaceRequest).toHaveBeenCalledTimes(1);
+});
+
+it("looks up an explicitly selected remote branch without creating a worktree", async () => {
+  vi.mocked(gitHistory).mockResolvedValue({
+    head: "main-sha",
+    commits: [{ sha: "release-sha", refs: [{ name: "origin/release", kind: "remote" }] }],
+  } as never);
+  expect((await loadWorkspaceCreation("/project", "origin/release")).preview?.baseCommit).toBe(
+    "release-sha",
+  );
+  expect(workspaceRequest).toHaveBeenCalledTimes(1);
+});
+
+it("never presents an unavailable Git status as zero excluded paths", async () => {
+  vi.mocked(fetchGitIndex).mockRejectedValue(new Error("Git status unavailable"));
+  await expect(loadWorkspaceCreation("/project")).rejects.toThrow("Git status unavailable");
+});
+
+it("requires an update before reading or preparing workspaces on an older Host for an explicit worktree", async () => {
+  vi.mocked(requireWorkspaceCapability).mockRejectedValue(new Error("Update bycoda Host"));
+  await expect(loadWorkspaceCreation("/project", undefined, "worktree")).rejects.toThrow(
+    "Update bycoda Host",
+  );
+  expect(workspaceRequest).toHaveBeenCalledWith(
+    "projects.workspacePolicy.get",
+    expect.anything(),
+    expect.anything(),
+  );
+  expect(listWorktrees).not.toHaveBeenCalled();
+});
+
+it("skips all managed reads for an explicit current checkout on an older Host", async () => {
+  vi.mocked(requireWorkspaceCapability).mockRejectedValue(new Error("Update bycoda Host"));
+  await renderCreation("current");
+  expect(state).toMatchObject({
+    mode: "current",
+    pending: false,
+    error: undefined,
+    preview: undefined,
+  });
+  expect(resolveWorkspaceContext).not.toHaveBeenCalled();
+  expect(requireWorkspaceCapability).not.toHaveBeenCalled();
+  expect(workspaceRequest).not.toHaveBeenCalled();
+  await act(async () => {
+    notifyRemoteRecovered();
+    capabilityListeners.forEach((listener) => listener());
+  });
+  expect(requireWorkspaceCapability).not.toHaveBeenCalled();
+});
+
+it("retains a stable update-required classification independently of the error text", async () => {
+  const error = new WorkspaceCapabilityError();
+  error.message = "Host needs an update";
+  vi.mocked(requireWorkspaceCapability).mockRejectedValue(error);
+  await renderCreation("worktree");
+  expect(state).toMatchObject({ updateRequired: true, error: "Host needs an update" });
+  await renderCreation("current");
+  expect(state.updateRequired).toBe(false);
+});
+
+it.each(["worktree"] as const)(
+  "keeps %s mode blocked until the Host supports managed workspaces",
+  async (choice) => {
+    vi.mocked(requireWorkspaceCapability).mockRejectedValue(new Error("Update bycoda Host"));
+    await renderCreation(choice);
+    expect(state).toMatchObject({ mode: "worktree", pending: false, error: "Update bycoda Host" });
+    expect(listWorktrees).not.toHaveBeenCalled();
+  },
+);
+
+it("clears a managed error when the owner chooses current and checks again when they choose worktree", async () => {
+  vi.mocked(requireWorkspaceCapability).mockRejectedValue(new Error("Update bycoda Host"));
+  await renderCreation("worktree");
+  expect(state.error).toBe("Update bycoda Host");
+  await renderCreation("current");
+  expect(state).toMatchObject({ mode: "current", pending: false, error: undefined });
+  expect(requireWorkspaceCapability).toHaveBeenCalledTimes(1);
+  await renderCreation("worktree");
+  expect(state.error).toBe("Update bycoda Host");
+  expect(requireWorkspaceCapability).toHaveBeenCalledTimes(2);
+});
+
+it("reloads a remote project after its Host recovers without reacting to another remote machine", async () => {
+  const cwd = remotePath("environment", "/project");
+  vi.mocked(requireWorkspaceCapability).mockRejectedValue(new Error("Update bycoda Host"));
+  await renderCreation("worktree", cwd);
+  expect(state.error).toBe("Update bycoda Host");
+  vi.mocked(requireWorkspaceCapability).mockResolvedValue(undefined);
+  await act(async () => notifyRemoteRecovered("another-environment"));
+  expect(requireWorkspaceCapability).toHaveBeenCalledTimes(1);
+  expect(state.error).toBe("Update bycoda Host");
+  await act(async () => notifyRemoteRecovered("environment"));
+  expect(state).toMatchObject({
+    pending: false,
+    error: undefined,
+    preview: { baseCommit: "main-sha" },
+  });
+  expect(requireWorkspaceCapability).toHaveBeenCalledTimes(2);
+});
+
+it("reloads local creation after a Host upgrade and invalidates cached capabilities on descriptor changes", async () => {
+  vi.mocked(requireWorkspaceCapability).mockRejectedValue(new Error("Update bycoda Host"));
+  await renderCreation("worktree");
+  vi.mocked(requireWorkspaceCapability).mockResolvedValue(undefined);
+  await act(async () => notifyRemoteRecovered("local-environment"));
+  expect(state.error).toBeUndefined();
+  expect(state.preview?.baseCommit).toBe("main-sha");
+  vi.mocked(requireWorkspaceCapability).mockRejectedValue(new Error("Update bycoda Host"));
+  await act(async () => capabilityListeners.forEach((listener) => listener()));
+  expect(invalidateMachineSnapshot).toHaveBeenCalledTimes(1);
+  expect(state.error).toBe("Update bycoda Host");
+  vi.mocked(requireWorkspaceCapability).mockResolvedValue(undefined);
+  await act(async () => capabilityListeners.forEach((listener) => listener()));
+  expect(invalidateMachineSnapshot).toHaveBeenCalledTimes(2);
+  expect(state.error).toBeUndefined();
+});
+
+it("ignores an older load that fails after the owner selects current checkout", async () => {
+  let reject!: (reason: Error) => void;
+  vi.mocked(requireWorkspaceCapability).mockImplementationOnce(
+    () =>
+      new Promise((_, fail) => {
+        reject = fail;
+      }),
+  );
+  await renderCreation("worktree");
+  expect(state.pending).toBe(true);
+  await renderCreation("current");
+  await act(async () => reject(new Error("Old Host error")));
+  expect(state).toMatchObject({
+    mode: "current",
+    pending: false,
+    error: undefined,
+    preview: undefined,
+  });
+  expect(listWorktrees).not.toHaveBeenCalled();
+});
+
+it("ignores a stale failed request after a newer recovery load succeeds", async () => {
+  let reject!: (reason: Error) => void;
+  vi.mocked(requireWorkspaceCapability).mockImplementationOnce(
+    () =>
+      new Promise((_, fail) => {
+        reject = fail;
+      }),
+  );
+  await renderCreation("worktree");
+  await act(async () => notifyRemoteRecovered());
+  expect(state.preview?.baseCommit).toBe("main-sha");
+  await act(async () => reject(new Error("Old Host error")));
+  expect(state.error).toBeUndefined();
+  expect(state.preview?.baseCommit).toBe("main-sha");
+});
+
+it("settles when the capability read itself announces a new descriptor", async () => {
+  vi.mocked(requireWorkspaceCapability).mockImplementationOnce(async () => {
+    capabilityListeners.forEach((listener) => listener());
+  });
+  await renderCreation("worktree");
+  expect(state).toMatchObject({
+    pending: false,
+    error: undefined,
+    preview: { baseCommit: "main-sha" },
+  });
+  expect(requireWorkspaceCapability).toHaveBeenCalledTimes(2);
+  expect(invalidateMachineSnapshot).toHaveBeenCalledTimes(1);
+});
+
+it("defaults a legacy Host to current without policy or managed Git reads", async () => {
+  vi.mocked(getWorkspaceCapabilities).mockResolvedValue([]);
+  await renderCreation();
+  expect(state).toMatchObject({ mode: "current", pending: false, error: undefined });
+  expect(resolveWorkspaceContext).not.toHaveBeenCalled();
+  expect(requireWorkspaceCapability).not.toHaveBeenCalled();
+  expect(workspaceRequest).not.toHaveBeenCalled();
+  expect(listWorktrees).not.toHaveBeenCalled();
+});
+
+it("loads current policy without managed admission or Git preview", async () => {
+  vi.mocked(workspaceRequest).mockResolvedValueOnce({
+    resolved: { policy: { defaultMode: "current", integrationBranchRef: "refs/heads/main" } },
+  } as never);
+  await renderCreation();
+  expect(state).toMatchObject({ mode: "current", pending: false, error: undefined });
+  expect(requireWorkspaceCapability).not.toHaveBeenCalled();
+  expect(listWorktrees).not.toHaveBeenCalled();
+});
+
+it("falls back to the current checkout with a warning when an Automatic policy lookup fails", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  vi.mocked(workspaceRequest).mockRejectedValueOnce(new Error("Policy unavailable"));
+  await renderCreation();
+  expect(state).toMatchObject({
+    mode: "current",
+    pending: false,
+    error: undefined,
+    warning: "Policy unavailable",
+  });
+  expect(listWorktrees).not.toHaveBeenCalled();
+});
+
+it("falls back to current after 1.5s when the Host never answers the policy read", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  vi.mocked(workspaceRequest).mockReturnValueOnce(new Promise(() => {}) as never);
+  const result = loadWorkspaceCreation("/project");
+  await vi.advanceTimersByTimeAsync(1500);
+  await expect(result).resolves.toMatchObject({ warning: expect.stringContaining("timed out") });
+  vi.useRealTimers();
+});
+
+it("keeps an explicit worktree policy failure as an error", async () => {
+  vi.mocked(workspaceRequest).mockRejectedValueOnce(new Error("Policy unavailable"));
+  await renderCreation("worktree");
+  expect(state.error).toBe("Policy unavailable");
+});

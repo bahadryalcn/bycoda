@@ -1,10 +1,18 @@
 import { TagInput as ArcTagInput, type TagInputProps } from "./arc/tag-input/tag-input";
-import { t, useLocale } from "../i18n";
+import { useT } from "../i18n";
 
 export type { TagInputProps } from "./arc/tag-input/tag-input";
 
+/**
+ * Editable token list: type and press Enter to add, Backspace to select then remove, with localized labels and
+ * screen-reader announcements. The consumer owns the tag array and validation.
+ * @group fields
+ * @use Free-form list of short values (labels, aliases, keywords, rules).
+ * @avoid Choosing from a fixed set: Select or SearchableSelect. One value: TextField.
+ * @arc tag-input
+ */
 export function TagInput({ className, ...props }: TagInputProps) {
-  useLocale();
+  const t = useT();
   return (
     <ArcTagInput
       placeholder={t("Add tag…")}

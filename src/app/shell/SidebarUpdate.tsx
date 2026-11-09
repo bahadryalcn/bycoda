@@ -1,13 +1,18 @@
-import { t, useLocale } from "../../shared/i18n";
+import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
-import { Modal } from "../../shared/ui/Modal";
-import { ArrowDownCircle, Loader } from "../../shared/ui/icons";
+import { Modal, ModalActions } from "../../shared/ui/Modal";
+import { ArrowDownCircle, RefreshCw } from "../../shared/ui/icons";
+import { InlineError } from "../../shared/ui/InlineError";
+import { Spinner } from "../../shared/ui/Spinner";
+import { StatusDot } from "../../shared/ui/StatusDot";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { claimStartupUpdatePrompt, installAppUpdate, useAppUpdater } from "../model/useAppUpdater";
 import { type UpdaterSnapshot } from "../model/updater";
 import type { InstalledUpdate } from "../model/updateNotice";
 import { snoozeUpdatePrompt } from "../model/updatePrompt";
 import { UpdateRailCard } from "./UpdateRailCard";
+import { GithubStarPrompt } from "./GithubStarPrompt";
+import { Disclosure } from "../../shared/ui/Disclosure";
 
 // The update entry point only earns its space when there is something to act on: an
 // update waiting to be installed, one downloading, or an install error to retry.
@@ -25,13 +30,18 @@ export function SidebarUpdateFooter({
   onOpenWhatsNew,
   onDismissUpdate,
   noticesOnly = false,
+  repositoryPrompt = false,
+  icon = false,
 }: {
   update?: InstalledUpdate | null;
   onOpenWhatsNew?: (version: string) => void;
   onDismissUpdate?: () => void;
   noticesOnly?: boolean;
+  repositoryPrompt?: boolean;
+  /** Footer icon button: only the download icon (dot while an update waits) and its dialog. */
+  icon?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const [promptOpen, setPromptOpen] = useState(false);
   const { snapshot, notes, setSnapshot } = useAppUpdater();
   const dismissPrompt = () => {
@@ -55,90 +65,89 @@ export function SidebarUpdateFooter({
       <UpdateRailCard update={update} onOpen={onOpenWhatsNew} onDismiss={onDismissUpdate} />
     ) : null;
   const actionable = isSidebarUpdateActionable(snapshot);
+  const actionLabel =
+    snapshot.phase === "downloading"
+      ? `${t("Downloading")}${snapshot.progress != null ? ` ${snapshot.progress}%` : "…"}`
+      : t("Update to {p0}", { p0: snapshot.availableVersion });
 
   if (noticesOnly) return card;
-  if (!card && !actionable) return null;
+  if (!card && !actionable && !repositoryPrompt && !icon) return null;
+  if (icon && !actionable) return null;
+
+  const updateAction = actionable ? (
+    <Button
+      {...(repositoryPrompt || icon
+        ? { iconOnly: true as const, label: actionLabel }
+        : { label: actionLabel })}
+      variant={repositoryPrompt || icon ? "ghost" : "secondary"}
+      tone={snapshot.phase === "error" ? "warning" : "neutral"}
+      motion="none"
+      tooltip={actionLabel}
+      aria-haspopup="dialog"
+      aria-expanded={promptOpen}
+      onClick={() => setPromptOpen(true)}
+      className="min-w-0"
+    >
+      {snapshot.phase === "downloading" ? (
+        <Spinner size="md" className="shrink-0" />
+      ) : icon ? (
+        <span className="relative grid place-items-center">
+          <ArrowDownCircle className="icon-md shrink-0" aria-hidden />
+          <StatusDot
+            tone={snapshot.phase === "error" ? "warning" : "accent"}
+            appearance="solid"
+            size="compact"
+            className="absolute -end-0.5 -top-0.5"
+          />
+        </span>
+      ) : (
+        <RefreshCw className="icon-md shrink-0" aria-hidden />
+      )}
+      {!repositoryPrompt && !icon ? (
+        <span className="truncate text-ui-caption font-medium leading-tight @max-[140px]/rail:hidden">
+          {snapshot.phase === "downloading"
+            ? snapshot.progress != null
+              ? `${snapshot.progress}%`
+              : t("Downloading")
+            : t("Update")}
+        </span>
+      ) : null}
+    </Button>
+  ) : null;
 
   return (
-    <div className="flex min-w-0 flex-col items-end gap-1.5">
+    <div
+      className={`flex min-w-0 flex-col gap-1.5 empty:hidden ${repositoryPrompt ? "w-full" : icon ? "" : "items-end"}`}
+    >
       {promptOpen && actionable ? (
         <Modal
           title={snapshot.phase === "error" ? t("Retry") : t("Update available")}
           size="sm"
           onClose={dismissPrompt}
-        >
-          <div className="flex flex-col gap-3 p-4">
-            <p className="text-sm text-content">
-              v{snapshot.currentVersion} → v{snapshot.availableVersion}
-            </p>
-            {snapshot.error ? (
-              <p role="alert" className="text-sm text-content">
-                {snapshot.error}
-              </p>
-            ) : null}
-            {notes ? (
-              <details className="text-sm text-content">
-                <summary className="cursor-pointer">{t("Release notes")}</summary>
-                <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-sans text-sm [margin-block-start:0.5rem]">
-                  {notes}
-                </pre>
-              </details>
-            ) : null}
-            <div className="flex flex-wrap justify-end gap-2">
+          footer={
+            <ModalActions>
               <Button onClick={dismissPrompt}>{`${t("Later")} (${t("24 hours")})`}</Button>
               <SidebarUpdate snapshot={snapshot} onSnapshot={setSnapshot} compact />
-            </div>
+            </ModalActions>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            <p className="text-ui-body text-content">
+              v{snapshot.currentVersion} → v{snapshot.availableVersion}
+            </p>
+            {snapshot.error ? <InlineError>{snapshot.error}</InlineError> : null}
+            {notes ? (
+              <Disclosure summary={t("Release notes")}>
+                <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-sans text-ui-secondary [margin-block-start:0.5rem]">
+                  {notes}
+                </pre>
+              </Disclosure>
+            ) : null}
           </div>
         </Modal>
       ) : null}
       {card}
-      {actionable ? (
-        <Button
-          iconOnly
-          shape="pill"
-          variant="secondary"
-          tone={snapshot.phase === "error" ? "warning" : "neutral"}
-          label={
-            snapshot.phase === "downloading"
-              ? `${t("Downloading")}${snapshot.progress != null ? ` ${snapshot.progress}%` : "…"}`
-              : t("Update to {p0}", { p0: snapshot.availableVersion })
-          }
-          tooltip={
-            snapshot.phase === "downloading"
-              ? `${t("Downloading")}${snapshot.progress != null ? ` ${snapshot.progress}%` : "…"}`
-              : t("Update to {p0}", { p0: snapshot.availableVersion })
-          }
-          aria-haspopup="dialog"
-          aria-expanded={promptOpen}
-          onClick={() => setPromptOpen(true)}
-        >
-          {snapshot.phase === "downloading" && snapshot.progress != null ? (
-            <svg
-              className="size-5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              aria-hidden="true"
-            >
-              <circle cx="12" cy="12" r="10" stroke="var(--color-stroke)" />
-              <circle
-                cx="12"
-                cy="12"
-                r="10"
-                pathLength="100"
-                strokeDasharray={`${snapshot.progress} 100`}
-                transform="rotate(-90 12 12)"
-              />
-              <path d="M12 6v10m-4-4 4 4 4-4" />
-            </svg>
-          ) : snapshot.phase === "downloading" ? (
-            <Loader className="size-4 motion-safe:animate-spin" aria-hidden />
-          ) : (
-            <ArrowDownCircle className="size-4" aria-hidden />
-          )}
-        </Button>
-      ) : null}
+      {repositoryPrompt ? <GithubStarPrompt action={updateAction} /> : updateAction}
     </div>
   );
 }
@@ -152,7 +161,7 @@ export function SidebarUpdate({
   onSnapshot: (next: UpdaterSnapshot) => void;
   compact?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const busy = snapshot.phase === "downloading";
   // `busy` only flips after installPendingUpdate awaits readAppVersion, so a
   // second click can still land. The ref closes that window immediately.
@@ -181,18 +190,19 @@ export function SidebarUpdate({
       motion="none"
       label={label}
       tooltip={label}
+      tooltipWhen="overflow"
     >
-      <span className="grid size-[18px] shrink-0 place-items-center">
+      <span className="icon-md grid shrink-0 place-items-center">
         {busy ? (
-          <Loader className="size-4 motion-safe:animate-spin opacity-70" aria-hidden />
+          <Spinner size="md" className="opacity-70" />
         ) : (
-          <ArrowDownCircle className="size-4 text-accent" aria-hidden />
+          <ArrowDownCircle className="icon-md text-accent" aria-hidden />
         )}
       </span>
       <span className="flex min-w-0 flex-1 items-center gap-3">
-        <span className="block truncate text-[12px] font-medium leading-tight">{label}</span>
+        <span className="block truncate text-ui-caption font-medium leading-tight">{label}</span>
         {!compact ? (
-          <span className="ms-auto block shrink-0 text-[11px] text-muted">
+          <span className="ms-auto block shrink-0 text-ui-micro text-muted">
             v{snapshot.currentVersion}
           </span>
         ) : null}

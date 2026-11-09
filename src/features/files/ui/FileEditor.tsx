@@ -1,13 +1,34 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/technical";
-import { AlertCircle, Folder, RotateCcw, Save } from "../../../shared/ui/icons";
+import { Folder, Save } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
+import { LiveText } from "../../../shared/ui/LiveText";
+import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { MarkdownViewShell, useMarkdownMode } from "../../sessions/ui/MarkdownModeToggle";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import type { Text } from "@codemirror/state";
+import type { RecoveredEditorDraft } from "../model/editorDraftRecovery";
+import { readEditorDraftRecovery } from "../data/editorDraftRecovery";
+import {
+  bindEditorDraftDocument,
+  type EditorDraftDocument,
+  type NativeCaptureState,
+} from "../data/editorDraftPersistence";
+import { MarkdownViewShell, useMarkdownMode } from "../../sessions/public/MarkdownModeToggle";
 
 import {
   basename,
@@ -25,21 +46,35 @@ import {
 import { syncWatchedMtime, watchFile } from "../model/fileWatch";
 import { displayPath } from "../../../shared/lib/paths";
 import type { EditorNavigation, OpenFileFn } from "../../search/model/search";
-import { MarkdownDocumentPreview } from "../../sessions/ui/MarkdownDocumentPreview";
+import { MarkdownDocumentPreview } from "../../sessions/public/MarkdownDocumentPreview";
 
 import {
   detectLineEnding,
   type LineEnding,
   normalizeLineBreaks,
+  restoreMixedLineEndings,
   restoreLineEnding,
 } from "../editor/editorDoc";
 
 import { FilePreviewSearch } from "./FilePreviewSearch";
 import { InlineBlameToggle, useInlineBlameUnavailableReason } from "./InlineBlameToggle";
 
-import { CodeMirrorEditor } from "./CodeMirrorEditor";
+import { CodeMirrorEditor, type EditorCarry } from "./CodeMirrorEditor";
+import {
+  fileSourceEditorKey,
+  fileSourceEditorProps,
+  type FileSourceEditorContract,
+} from "./fileSourceEditorProps";
+import {
+  exactMountedEditorDraftReceipt,
+  useMountedEditorClosure,
+  type EditorWorkTicket,
+  type MountedEditorObserver,
+} from "./useMountedEditorClosure";
 import { HtmlPreview } from "./HtmlPreview";
 import { PreviewSelection } from "./PreviewSelection";
+import { DocumentMessage } from "./DocumentMessage";
+import { FileLoadError } from "./FileLoadError";
 export { CodeMirrorEditor } from "./CodeMirrorEditor";
 type EditorNavigationRequest = EditorNavigation & { token: number };
 
@@ -55,8 +90,12 @@ type Props = {
   path: string;
   /** Stable tab identity; filesystem relocation changes the path, not this document. */
   documentId?: string;
+  recoveredEditorDraft?: RecoveredEditorDraft;
   cwd: string;
   active: boolean;
+  /** False while another tab of the pane, or the hidden pane itself, covers this
+   * editor: git and disk reloads wait and run once when it is shown again. */
+  shown?: boolean;
   showDiff?: boolean;
   /** The side the Changes panel opened; saves looking it up before the first diff. */
   changeKind?: GitFileDiffKind;
@@ -75,9 +114,11 @@ type SaveState = { status: "idle" | "saving" | "saved" } | { status: "error"; me
 
 export function FileEditor({
   path,
-  documentId = path,
+  documentId: suppliedDocumentId,
+  recoveredEditorDraft,
   cwd,
   active,
+  shown = true,
   showDiff = false,
   changeKind,
   navigation,
@@ -86,6 +127,14 @@ export function FileEditor({
   onOpenFile,
 }: Props) {
   useLocale();
+  const fallbackDocument = useRef({ path, id: crypto.randomUUID() });
+  if (!suppliedDocumentId && fallbackDocument.current.path !== path)
+    fallbackDocument.current = { path, id: crypto.randomUUID() };
+  const documentId = suppliedDocumentId ?? fallbackDocument.current.id;
+  const shownRef = useRef(shown);
+  shownRef.current = shown;
+  /** Work skipped while hidden, replayed once on show. */
+  const deferred = useRef({ git: false, disk: false, load: false });
   // The path whose "before" side has been looked up, found or not. Until then
   // the editor is not drawn: showing it plain first means tearing it down and
   // building the side-by-side pair a moment later.
@@ -99,12 +148,26 @@ export function FileEditor({
   const [draft, setDraft] = useState("");
   const [dirty, setDirty] = useState(false);
   const [diskConflict, setDiskConflict] = useState(false);
+  const [diskVerificationError, setDiskVerificationError] = useState<string | null>(null);
   const [editorRevision, setEditorRevision] = useState(0);
+  const retainedEditor = useMemo(
+    () => ({ current: null as EditorCarry | null }),
+    [documentId, reloadKey, editorRevision],
+  );
+  const [recoveredText, setRecoveredText] = useState<string | undefined>();
+  const recoveryReviewRef = useRef(false);
+  const draftHandleRef = useRef<EditorDraftDocument | null>(null);
+  const [draftPersistence, setDraftPersistence] = useState<NativeCaptureState | null>(null);
+  const [draftAction, setDraftAction] = useState<"restore" | "replace" | null>(null);
+  const draftActionRef = useRef(false);
+  const draftViewGeneration = useRef(0);
+  const [draftActionError, setDraftActionError] = useState<string | null>(null);
   const editorRootRef = useRef<HTMLDivElement>(null);
   const manualSaveRef = useRef(false);
   const [gitBase, setGitBase] = useState<{
     path: string;
     original: string;
+    originalRaw: string;
     kind: GitFileDiffKind;
     lineEnding: LineEnding;
     eolOnly: boolean;
@@ -112,14 +175,18 @@ export function FileEditor({
   const markdown = isMarkdownPath(path);
   const svg = isSvgPath(path);
   const html = /\.html?$/i.test(basename(path));
-  const saveRequestRef = useRef<(() => Promise<boolean>) | null>(null);
+  const saveRequestRef = useRef<((parent?: EditorWorkTicket) => Promise<boolean>) | null>(null);
+  const editorAdmissionRef = useRef<MountedEditorObserver | null>(null);
   const requestSave = useCallback(async () => {
     if (manualSaveRef.current || !saveRequestRef.current) return;
+    const ticket = editorAdmissionRef.current?.operation("manual-save");
+    if (editorAdmissionRef.current && !ticket) return;
     manualSaveRef.current = true;
     try {
-      await saveRequestRef.current();
+      await saveRequestRef.current(ticket ?? undefined);
     } finally {
       manualSaveRef.current = false;
+      ticket?.();
     }
   }, []);
   useEffect(() => {
@@ -149,8 +216,13 @@ export function FileEditor({
   }, [active, requestSave]);
   const openingRef = useRef(false);
   const [openingChrome, setOpeningChrome] = useState(false);
-  const [chromeError, setChromeError] = useState<string | null>(null);
-  useEffect(() => setChromeError(null), [path]);
+  // The message belongs to the path it was raised for, so another file shows none.
+  const [chromeFailure, setChromeFailure] = useState<{ path: string; message: string } | null>(
+    null,
+  );
+  const chromeError = chromeFailure?.path === path ? chromeFailure.message : null;
+  const setChromeError = (message: string | null) =>
+    setChromeFailure(message === null ? null : { path, message });
   const goLive = async () => {
     if (openingRef.current) return;
     openingRef.current = true;
@@ -177,6 +249,10 @@ export function FileEditor({
     showDiff ? `review:${path}` : path,
     showDiff ? "source" : "preview",
   );
+  const setLoadedMode = useRef(setMode);
+  useLayoutEffect(() => {
+    setLoadedMode.current = setMode;
+  }, [setMode]);
   const sourceNavigationToken = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (
@@ -200,57 +276,277 @@ export function FileEditor({
   currentIdentity.current = { path, documentId };
   /** The file's text as last read or written; tells real disk changes from no-op events. */
   const diskTextRef = useRef<string | null>(null);
+  const draftBaselineRef = useRef<string | null>(null);
+  const latestDocumentRef = useRef<string | Text | null>(null);
   const eolRef = useRef<LineEnding>("\n");
+  const lineEndingSourceRef = useRef("");
   const onDirtyChangeRef = useRef(onDirtyChange);
   const loadedDocumentRef = useRef<{ id: string; reloadKey: number } | null>(null);
   const renderedDocumentRef = useRef<string | null>(null);
+  const [admissionRetry, setAdmissionRetry] = useState(0);
   onDirtyChangeRef.current = onDirtyChange;
 
-  const applyDiskContent = useCallback((raw: string) => {
-    // CodeMirror documents are LF-only; keep the editor in that convention
-    // and restore the file's own line endings on save. Feeding CRLF text
-    // into the LF document doubles every line (see editorDoc.ts).
-    eolRef.current = detectLineEnding(raw);
-    diskTextRef.current = raw;
-    const content = normalizeLineBreaks(raw);
-    setLoadState((current) => {
-      if (current.status === "ready" && current.content === content) {
-        return current;
+  const editorClosure = useMountedEditorClosure(
+    (view) => {
+      const actual = view?.read();
+      const baseline = draftBaselineRef.current;
+      const latest = latestDocumentRef.current;
+      const text = actual?.text ?? null;
+      const eol = eolRef.current === "\r\n" ? "crlf" : eolRef.current === "\r" ? "cr" : "lf";
+      const binding = draftHandleRef.current?.observe();
+      const ack = binding?.acknowledgedDraft;
+      const origin = isRemoteProjectPath(path) ? "remote" : isTauri() ? "local-native" : "web";
+      const receipt = exactMountedEditorDraftReceipt(binding, {
+        origin,
+        documentId,
+        path,
+        text,
+        eol,
+        serializedText:
+          text === null
+            ? undefined
+            : restoreMixedLineEndings(text, lineEndingSourceRef.current, eolRef.current),
+        diskBaseline: baseline,
+      });
+      const exactAck = receipt !== null;
+      let busy: string | undefined;
+      if (!actual || loadState.status !== "ready" || baseline === null || latest === null)
+        busy = "Editor view is not ready";
+      else if (
+        currentIdentity.current.documentId !== documentId ||
+        currentIdentity.current.path !== path ||
+        loadedDocumentRef.current?.id !== documentId ||
+        loadedDocumentRef.current.reloadKey !== reloadKey ||
+        (actual.kind === "source" && text !== latest.toString())
+      )
+        busy = "Editor document is changing";
+      else if (actual.composing) busy = "Editor composition is pending";
+      else if (binding && (binding.documentId !== documentId || binding.path !== path))
+        busy = "Editor draft binding is changing";
+      else if (
+        actual.pendingAutosave ||
+        manualSaveRef.current ||
+        draftActionRef.current ||
+        binding?.initializationDecisionRequired
+      )
+        busy = "Editor action is pending";
+      const missing = ["editor-disk-freshness"];
+      if (origin !== "local-native") missing.push(`editor-${origin}-origin`);
+      if (
+        !binding?.ownerEpoch ||
+        binding.disposed ||
+        binding.error ||
+        binding.phase === "unknown" ||
+        binding.phase === "stale-owner"
+      )
+        missing.push("editor-native-binding");
+      if (!exactAck) missing.push("editor-exact-draft-ack");
+      if (actual?.kind === "merge") missing.push("editor-merge-history");
+      return {
+        ...(busy ? { busy } : {}),
+        missingCoverage: missing,
+        snapshot: {
+          version: 1,
+          qualified: false,
+          documentId,
+          path,
+          origin,
+          text,
+          eol,
+          serializedText:
+            text === null
+              ? null
+              : restoreMixedLineEndings(text, lineEndingSourceRef.current, eolRef.current),
+          diskBaseline: baseline,
+          dirty: dirtyRef.current,
+          readOnly: actual?.readOnly ?? null,
+          viewReady: !!actual,
+          composing: actual?.composing ?? null,
+          editorKind: actual?.kind ?? null,
+          mergeState: actual?.mergeState ?? null,
+          diskConflict: pendingDiskRef.current,
+          recoveryReview: recoveryReviewRef.current,
+          draftBinding: {
+            ownerEpoch: binding?.ownerEpoch ?? null,
+            documentId: binding?.documentId ?? null,
+            path: binding?.path ?? null,
+            phase: binding?.phase ?? "missing",
+            pending: binding?.pending ?? false,
+            disposed: binding?.disposed ?? false,
+            initializationDecisionRequired: binding?.initializationDecisionRequired ?? false,
+            error: binding?.error
+              ? String((binding.error as Error & { code?: string }).code ?? binding.error.name)
+              : null,
+            knownRevision: ack?.revision ?? null,
+            knownState: ack?.state ?? null,
+            exactBodyAcknowledged: exactAck,
+            receipt: receipt ? { ...receipt } : null,
+          },
+        },
+      };
+    },
+    JSON.stringify([documentId, path]),
+    () => {
+      if (deferred.current.disk || deferred.current.git || deferred.current.load) {
+        deferred.current.load = false;
+        setAdmissionRetry((value) => value + 1);
       }
-      return { status: "ready", content };
+    },
+  );
+  useLayoutEffect(() => {
+    editorAdmissionRef.current = editorClosure;
+  });
+
+  const captureRelocatedDraft = useEffectEvent((handle: EditorDraftDocument) => {
+    if (
+      isTauri() &&
+      !isRemoteProjectPath(path) &&
+      loadedDocumentRef.current?.id === documentId &&
+      dirtyRef.current &&
+      latestDocumentRef.current !== null &&
+      draftBaselineRef.current !== null
+    ) {
+      // Relocation preserves the actual immutable dirty document and baseline.
+      handle.capture({
+        captureId: crypto.randomUUID(),
+        text: latestDocumentRef.current,
+        diskBaseline: draftBaselineRef.current,
+        lineEndingSource: lineEndingSourceRef.current,
+        eol: eolRef.current === "\r\n" ? "crlf" : eolRef.current === "\r" ? "cr" : "lf",
+      });
+    }
+  });
+  useEffect(() => {
+    draftViewGeneration.current += 1;
+    setDraftAction(null);
+    draftActionRef.current = false;
+    setDraftActionError(null);
+    const handle = bindEditorDraftDocument({
+      documentId,
+      path,
+      origin: isRemoteProjectPath(path) ? "remote" : isTauri() ? "local-native" : "web",
     });
-    setDraft(content);
-  }, []);
+    draftHandleRef.current = handle;
+    const update = () => {
+      editorClosure.changed();
+      // Keep the previous state object when nothing rendered from it changed
+      // (per-keystroke captureId churn must not re-render the editor).
+      const next = handle.observe();
+      setDraftPersistence((prev) => (prev && sameDraftView(prev, next) ? prev : next));
+    };
+    const unsubscribe = handle.subscribe(update);
+    update();
+    editorClosure.external(() => captureRelocatedDraft(handle));
+    void handle.ready.then(update, update);
+    return () => {
+      unsubscribe();
+      if (draftHandleRef.current === handle) draftHandleRef.current = null;
+      // The manager still owns accepted captures and uncertain Native calls.
+      handle.dispose();
+    };
+  }, [documentId, path, editorClosure]);
+
+  const captureDraft = useCallback(
+    (text: string | Text) => {
+      if (!editorClosure.allowed()) return;
+      if (
+        currentIdentity.current.path !== path ||
+        currentIdentity.current.documentId !== documentId
+      )
+        return;
+      latestDocumentRef.current = text;
+      editorClosure.changed();
+      // Remote files need their own Host-owned origin contract. A local window
+      // receipt must not accidentally stand in for that contract.
+      if (!isTauri() || isRemoteProjectPath(path)) return;
+      const handle = draftHandleRef.current;
+      const baseline = draftBaselineRef.current;
+      if (!handle || baseline === null) return;
+      const owner = handle.observe();
+      if (owner.documentId !== documentId || owner.path !== path) return;
+      return handle.capture({
+        captureId: crypto.randomUUID(),
+        text,
+        diskBaseline: baseline,
+        lineEndingSource: lineEndingSourceRef.current,
+        eol: eolRef.current === "\r\n" ? "crlf" : eolRef.current === "\r" ? "cr" : "lf",
+      });
+    },
+    [documentId, path, editorClosure],
+  );
+
+  const applyDiskContent = useCallback(
+    (raw: string) => {
+      editorClosure.changed();
+      // CodeMirror documents are LF-only; keep the editor in that convention
+      // and restore the file's own line endings on save. Feeding CRLF text
+      // into the LF document doubles every line (see editorDoc.ts).
+      eolRef.current = detectLineEnding(raw);
+      lineEndingSourceRef.current = raw;
+      setDiskVerificationError(null);
+      diskTextRef.current = raw;
+      draftBaselineRef.current = raw;
+      const content = normalizeLineBreaks(raw);
+      latestDocumentRef.current = content;
+      setLoadState((current) => {
+        if (current.status === "ready" && current.content === content) {
+          return current;
+        }
+        return { status: "ready", content };
+      });
+      setDraft(content);
+    },
+    [editorClosure],
+  );
 
   const reloadFromDisk = useCallback(
-    async (force = false) => {
+    async (force = false, parent?: EditorWorkTicket) => {
+      const settled = editorClosure.operation("disk-read", parent);
+      if (!settled) {
+        editorClosure.external(() => {
+          deferred.current.disk = true;
+          if (dirtyRef.current) {
+            pendingDiskRef.current = true;
+            diskChangeVersion.current += 1;
+            setDiskConflict(true);
+          }
+        });
+        return;
+      }
       const generation = ++loadGeneration.current;
       const edits = editVersion.current;
       try {
         const content = await readTextFile(path);
-        if (
-          generation !== loadGeneration.current ||
-          currentIdentity.current.path !== path ||
-          currentIdentity.current.documentId !== documentId
-        )
-          return;
-        // A reload choice applies only to the draft the owner saw when choosing it.
-        if (force && edits !== editVersion.current) return;
-        if (dirtyRef.current && !force) {
-          // Keep unsaved edits; only a real change on disk blocks saving over it.
-          pendingDiskRef.current = content !== diskTextRef.current;
-          setDiskConflict(pendingDiskRef.current);
-          return;
-        }
-        pendingDiskRef.current = false;
-        setDiskConflict(false);
-        if (force && dirtyRef.current) {
-          dirtyRef.current = false;
-          setDirty(false);
-          onDirtyChangeRef.current(path, false);
-          setEditorRevision((value) => value + 1);
-        }
-        applyDiskContent(content);
+        settled.apply(() => {
+          if (
+            generation !== loadGeneration.current ||
+            currentIdentity.current.path !== path ||
+            currentIdentity.current.documentId !== documentId
+          )
+            return;
+          // A reload choice applies only to the draft the owner saw when choosing it.
+          if (force && edits !== editVersion.current) return;
+          if (dirtyRef.current && !force) {
+            // Keep unsaved edits; only a real change on disk blocks saving over it.
+            pendingDiskRef.current =
+              content !==
+              (recoveryReviewRef.current ? draftBaselineRef.current : diskTextRef.current);
+            setDiskConflict(pendingDiskRef.current);
+            return;
+          }
+          pendingDiskRef.current = false;
+          setDiskConflict(false);
+          if (force && dirtyRef.current) {
+            setRecoveredText(undefined);
+            recoveryReviewRef.current = false;
+            dirtyRef.current = false;
+            setDirty(false);
+            onDirtyChangeRef.current(path, false);
+            setEditorRevision((value) => value + 1);
+          }
+          applyDiskContent(content);
+          if (force) captureDraft(normalizeLineBreaks(content));
+        });
       } catch (error: unknown) {
         if (
           generation !== loadGeneration.current ||
@@ -274,15 +570,26 @@ export function FileEditor({
           status: "error",
           message: error instanceof Error ? error.message : String(error),
         });
+      } finally {
+        settled();
       }
     },
-    [applyDiskContent, documentId, path],
+    [applyDiskContent, captureDraft, documentId, path, editorClosure],
   );
 
   useEffect(() => {
     const loaded = loadedDocumentRef.current;
     if (loaded?.id === documentId && loaded.reloadKey === reloadKey) return;
+    const settled = editorClosure.operation("document-load");
+    if (!settled) {
+      deferred.current.load = true;
+      setLoadState((current) => (current.status === "loading" ? current : { status: "loading" }));
+      return;
+    }
+    setRecoveredText(undefined);
+    recoveryReviewRef.current = false;
     dirtyRef.current = false;
+    setDirty(false);
     pendingDiskRef.current = false;
     setDiskConflict(false);
     overwriteVersion.current = null;
@@ -290,23 +597,96 @@ export function FileEditor({
     setLoadState({ status: "loading" });
     setSaveState({ status: "idle" });
     const generation = ++loadGeneration.current;
-    void readTextFile(path)
-      .then((content) => {
+    void (async () => {
+      if (recoveredEditorDraft) {
+        if (recoveredEditorDraft.documentId !== documentId || recoveredEditorDraft.path !== path)
+          throw new Error(t("The recovery copy does not match this document."));
+        const record = await readEditorDraftRecovery({
+          ownerId: recoveredEditorDraft.ownerEpoch,
+          documentId,
+          revision: recoveredEditorDraft.revision,
+          payloadDigest: recoveredEditorDraft.payloadDigest,
+        });
+        const handle = draftHandleRef.current;
+        if (!handle) throw new Error(t("The recovery window is no longer available."));
+        await handle.ready;
+        const verifyLane = () => {
+          const state = handle.observe();
+          const acknowledged = state.acknowledgedDraft;
+          if (
+            state.ownerEpoch !== recoveredEditorDraft.ownerEpoch ||
+            state.pending ||
+            state.error ||
+            state.disposed ||
+            !acknowledged ||
+            acknowledged.revision !== recoveredEditorDraft.revision ||
+            acknowledged.payloadDigest !== recoveredEditorDraft.payloadDigest
+          )
+            throw new Error(
+              t("Open the latest copy again from Recovery. Newer edits may still be pending."),
+            );
+        };
+        verifyLane();
+        let actual: string | null = null;
+        let diskError: string | null = null;
+        try {
+          actual = await readTextFile(path);
+        } catch (error) {
+          diskError = error instanceof Error ? error.message : String(error);
+        }
+        if (cancelled || generation !== loadGeneration.current) return;
+        verifyLane();
+        const state = handle.observe();
+        if (state.initializationDecisionRequired)
+          handle.resolveInitialization({
+            decision: "restore",
+            revision: record.metadata.revision,
+            payloadDigest: record.metadata.payloadDigest,
+          });
+        const payload = record.payload;
+        diskTextRef.current = actual;
+        draftBaselineRef.current = payload.diskBaseline;
+        latestDocumentRef.current = payload.text;
+        eolRef.current = payload.eol === "crlf" ? "\r\n" : payload.eol === "cr" ? "\r" : "\n";
+        lineEndingSourceRef.current =
+          payload.serializedText ?? restoreLineEnding(payload.text, eolRef.current);
+        pendingDiskRef.current = actual === null || actual !== payload.diskBaseline;
+        if (pendingDiskRef.current) diskChangeVersion.current += 1;
+        setDiskConflict(pendingDiskRef.current);
+        setDiskVerificationError(diskError);
+        recoveryReviewRef.current = true;
+        setRecoveredText(payload.text);
+        setDraft(payload.text);
+        setLoadedMode.current("source");
+        loadedDocumentRef.current = { id: documentId, reloadKey };
+        setLoadState({ status: "ready", content: normalizeLineBreaks(payload.diskBaseline) });
+      } else {
+        const content = await readTextFile(path);
         if (cancelled || generation !== loadGeneration.current) return;
         loadedDocumentRef.current = { id: documentId, reloadKey };
-        applyDiskContent(content);
-      })
+        settled.apply(() => applyDiskContent(content));
+      }
+    })()
       .catch((error: unknown) => {
         if (cancelled || generation !== loadGeneration.current) return;
         setLoadState({
           status: "error",
           message: error instanceof Error ? error.message : String(error),
         });
-      });
+      })
+      .finally(settled);
     return () => {
       cancelled = true;
     };
-  }, [applyDiskContent, documentId, path, reloadKey]);
+  }, [
+    applyDiskContent,
+    documentId,
+    path,
+    reloadKey,
+    recoveredEditorDraft,
+    editorClosure,
+    admissionRetry,
+  ]);
 
   useEffect(() => {
     if (!showDiff) {
@@ -335,7 +715,7 @@ export function FileEditor({
     const load = () => {
       const request = ++generation;
       const first = !shown;
-      void (async () => {
+      return (async () => {
         const opened = changeKindRef.current;
         let file = first && opened ? undefined : await listed();
         const kind: GitFileDiffKind =
@@ -368,6 +748,7 @@ export function FileEditor({
         setGitBase({
           path,
           original,
+          originalRaw: diff.original,
           kind,
           lineEnding: detectLineEnding(diff.original || diff.current),
           eolOnly: !!(file?.staged || file?.unstaged) && eolDiffers,
@@ -384,17 +765,41 @@ export function FileEditor({
     load();
     reloadGitRef.current = load;
     const onFocus = () => {
-      if (!document.hidden) load();
+      if (!shownRef.current) deferred.current.git = true;
+      else if (!document.hidden) load();
     };
-    const onGit = () => {
-      if (!document.hidden) load();
-    };
+    const onGit = onFocus;
     let timer = 0;
+    const queued = new Set<EditorWorkTicket>();
     const onDisk = () => {
+      const accepted = editorClosure.operation("diff-watch-reconcile");
+      if (!accepted) {
+        editorClosure.external(() => {
+          deferred.current.git = true;
+          deferred.current.disk = true;
+          if (dirtyRef.current) {
+            pendingDiskRef.current = true;
+            diskChangeVersion.current += 1;
+            setDiskConflict(true);
+          }
+        });
+        return;
+      }
+      if (!shownRef.current) {
+        deferred.current.git = true;
+        deferred.current.disk = true;
+        accepted();
+        return;
+      }
+      queued.add(accepted);
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
-        load();
-        void reloadFromDisk();
+        const original = [...queued];
+        queued.clear();
+        timer = 0;
+        void Promise.allSettled([load(), reloadFromDisk(false, original[0])]).then(() =>
+          original.forEach((ticket) => ticket()),
+        );
       }, 50);
     };
     window.addEventListener("focus", onFocus);
@@ -405,12 +810,14 @@ export function FileEditor({
       cancelled = true;
       reloadGitRef.current = null;
       window.clearTimeout(timer);
+      for (const ticket of queued) ticket();
+      queued.clear();
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
       unsubGit();
       unsubWatch();
     };
-  }, [cwd, path, reloadFromDisk, showDiff]);
+  }, [cwd, path, reloadFromDisk, showDiff, editorClosure]);
 
   // Picking the file's other side in the Changes panel reuses this editor.
   const shownChangeKind = useRef(changeKind);
@@ -426,54 +833,116 @@ export function FileEditor({
   useEffect(() => {
     if (loadState.status !== "ready") return;
     let timer = 0;
+    const queued = new Set<EditorWorkTicket>();
     const stop = watchFile(path, () => {
+      const accepted = editorClosure.operation("watch-reconcile");
+      if (!accepted) {
+        editorClosure.external(() => {
+          deferred.current.disk = true;
+          if (dirtyRef.current) {
+            pendingDiskRef.current = true;
+            diskChangeVersion.current += 1;
+            setDiskConflict(true);
+          }
+        });
+        return;
+      }
       if (dirtyRef.current) {
         // Block saving at once, then clear it if the text on disk is unchanged.
         pendingDiskRef.current = true;
         diskChangeVersion.current += 1;
-        void reloadFromDisk();
+        // Even while hidden: autosave stays blocked until this read clears it.
+        void reloadFromDisk(false, accepted).finally(accepted);
         return;
       }
+      if (!shownRef.current) {
+        deferred.current.disk = true;
+        accepted();
+        return;
+      }
+      queued.add(accepted);
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
-        void reloadFromDisk();
+        const original = [...queued];
+        queued.clear();
+        timer = 0;
+        void reloadFromDisk(false, original[0]).finally(() =>
+          original.forEach((ticket) => ticket()),
+        );
       }, 50);
     });
     return () => {
       window.clearTimeout(timer);
+      for (const ticket of queued) ticket();
+      queued.clear();
       stop();
     };
-  }, [loadState.status, path, reloadFromDisk]);
+  }, [loadState.status, path, reloadFromDisk, editorClosure]);
+
+  // Catch up once on what changed while another tab was in front.
+  useEffect(() => {
+    if (!shown || editorClosure.closed()) return;
+    const pending = deferred.current;
+    if (pending.git) reloadGitRef.current?.();
+    if (pending.disk) void reloadFromDisk();
+    pending.git = false;
+    pending.disk = false;
+  }, [shown, reloadFromDisk, editorClosure, admissionRetry]);
 
   const save = useCallback(
-    async (content: string) => {
+    async (content: string, parent?: EditorWorkTicket) => {
+      // Capture this exact write before queueing or awaiting filesystem work.
+      const settled = editorClosure.operation("filesystem-save", parent);
+      if (!settled) throw new Error(t("Preparing checkpoint…"));
+      const capture = settled.apply(() => captureDraft(content));
+      const draftHandle = draftHandleRef.current;
       const generation = ++saveGeneration.current;
       const allowedOverwrite = overwriteVersion.current;
       overwriteVersion.current = null;
       // Do not let an older watcher read replace the baseline of this save.
       loadGeneration.current += 1;
       setSaveState({ status: "saving" });
-      const serializedContent = restoreLineEnding(content, eolRef.current);
-      const operation = saveQueue.current.then(() => {
-        if (pendingDiskRef.current && allowedOverwrite !== diskChangeVersion.current) {
-          setDiskConflict(true);
-          throw new Error("The file changed on disk. Choose reload or overwrite before saving.");
-        }
-        return writeTextFile(path, serializedContent);
-      });
-      saveQueue.current = operation.catch((error) => {
-        console.warn("FileEditor operation failed", error);
-      });
       try {
-        await operation;
-        diskTextRef.current = serializedContent;
-        pendingDiskRef.current = false;
-        setDiskConflict(false);
-        // Keep the reload prop at the saved baseline, so restoring the initial
-        // text still changes it. CodeMirror preserves any newer dirty edits.
-        setLoadState((current) =>
-          current.status === "ready" ? { status: "ready", content } : current,
+        const serializedContent = restoreMixedLineEndings(
+          content,
+          lineEndingSourceRef.current,
+          eolRef.current,
         );
+        const operation = saveQueue.current.then(() => {
+          if (pendingDiskRef.current && allowedOverwrite !== diskChangeVersion.current) {
+            setDiskConflict(true);
+            throw new Error("The file changed on disk. Choose reload or overwrite before saving.");
+          }
+          return writeTextFile(path, serializedContent);
+        });
+        saveQueue.current = operation.catch((error) => {
+          console.warn("FileEditor operation failed", error);
+        });
+        await operation;
+        if (capture && draftHandle) {
+          // Native reporting is independent of the completed filesystem write.
+          // A retry here must never repeat writeTextFile.
+          void draftHandle.reportSaved(capture).catch(() => {});
+        }
+        if (
+          currentIdentity.current.path !== path ||
+          currentIdentity.current.documentId !== documentId
+        )
+          return;
+        settled.apply(() => {
+          recoveryReviewRef.current = false;
+          diskTextRef.current = serializedContent;
+          setDiskVerificationError(null);
+          draftBaselineRef.current = serializedContent;
+          lineEndingSourceRef.current = serializedContent;
+          pendingDiskRef.current = false;
+          setDiskConflict(false);
+          // Keep the reload prop at the saved baseline, so restoring the initial
+          // text still changes it. CodeMirror preserves any newer dirty edits.
+          setLoadState((current) =>
+            current.status === "ready" ? { status: "ready", content } : current,
+          );
+        });
         await syncWatchedMtime(path);
         notifyGitChanged(cwd, "index");
         if (generation === saveGeneration.current) {
@@ -485,9 +954,52 @@ export function FileEditor({
           setSaveState({ status: "error", message });
         }
         throw error;
+      } finally {
+        settled();
       }
     },
-    [cwd, path],
+    [cwd, path, documentId, captureDraft, editorClosure],
+  );
+
+  // Another editor on this file, showing the same text, wrote `content`: adopt
+  // it as the disk baseline as this editor's own save would, so that write is
+  // not mistaken for a change on disk.
+  const peerSaved = useCallback(
+    (content: string) => {
+      const latest = latestDocumentRef.current;
+      let serializedContent: string;
+      try {
+        serializedContent = restoreMixedLineEndings(
+          content,
+          lineEndingSourceRef.current,
+          eolRef.current,
+        );
+      } catch (error) {
+        setSaveState({
+          status: "error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
+      loadGeneration.current += 1;
+      recoveryReviewRef.current = false;
+      diskTextRef.current = serializedContent;
+      setDiskVerificationError(null);
+      draftBaselineRef.current = serializedContent;
+      lineEndingSourceRef.current = serializedContent;
+      pendingDiskRef.current = false;
+      setDiskConflict(false);
+      setLoadState((current) =>
+        current.status === "ready" ? { status: "ready", content } : current,
+      );
+      const draftHandle = draftHandleRef.current;
+      const capture = captureDraft(content);
+      if (capture && draftHandle) void draftHandle.reportSaved(capture).catch(() => {});
+      // Text typed after that save is still a draft here.
+      if (latest !== null && latest.toString() !== content) captureDraft(latest);
+      setSaveState({ status: "saved" });
+    },
+    [captureDraft],
   );
 
   const stageGit = useCallback(
@@ -504,8 +1016,8 @@ export function FileEditor({
         await gitStageContents(
           cwd,
           relative,
-          restoreLineEnding(contents, gitDiff.lineEnding),
-          restoreLineEnding(gitDiff.original, gitDiff.lineEnding),
+          restoreMixedLineEndings(contents, gitDiff.originalRaw, gitDiff.lineEnding),
+          gitDiff.originalRaw,
         );
         notifyGitChanged(cwd, "index");
       } catch (error) {
@@ -538,10 +1050,96 @@ export function FileEditor({
     (count: number) => onErrorCountChange?.(path, count),
     [onErrorCountChange, path],
   );
-  const docChange = useCallback((content: string) => {
+  const edited = useCallback(() => {
     editVersion.current += 1;
-    setDraft(content);
   }, []);
+  // Only previews read the draft; copying the whole text and re-rendering on
+  // every keystroke is skipped while the source is what is on screen.
+  const docChange = mode === "preview" ? setDraft : undefined;
+
+  const resolveDraft = async (decision: "restore" | "replace") => {
+    const handle = draftHandleRef.current;
+    const record = draftPersistence?.currentDraft;
+    if (!handle || !record || draftActionRef.current) return;
+    const identity = handle.observe();
+    if (identity.documentId !== documentId || identity.path !== path) return;
+    const generation = draftViewGeneration.current;
+    const settled = editorClosure.operation("draft-decision");
+    if (!settled) {
+      setDraftActionError(t("The editor is busy closing or moving. Try again in a moment."));
+      return;
+    }
+    draftActionRef.current = true;
+    setDraftAction(decision);
+    setDraftActionError(null);
+    try {
+      if (decision === "restore" && dirtyRef.current) {
+        throw new Error(t("Keep or save your current edits before restoring this draft."));
+      }
+      handle.resolveInitialization({
+        decision,
+        revision: record.metadata.revision,
+        payloadDigest: record.metadata.payloadDigest,
+      });
+      if (decision === "restore") {
+        const payload = record.payload;
+        // Keep the original disk baseline distinct from the recovered document.
+        // A changed disk file still requires the existing overwrite choice.
+        draftBaselineRef.current = payload.diskBaseline;
+        pendingDiskRef.current = diskTextRef.current !== payload.diskBaseline;
+        if (pendingDiskRef.current) diskChangeVersion.current += 1;
+        setDiskConflict(pendingDiskRef.current);
+        eolRef.current = payload.eol === "crlf" ? "\r\n" : payload.eol === "cr" ? "\r" : "\n";
+        lineEndingSourceRef.current =
+          payload.serializedText ?? restoreLineEnding(payload.text, eolRef.current);
+        recoveryReviewRef.current = true;
+        setLoadState({ status: "ready", content: normalizeLineBreaks(payload.diskBaseline) });
+        setDraft(payload.text);
+        setRecoveredText(payload.text);
+        setEditorRevision((value) => value + 1);
+        setMode("source");
+        captureDraft(payload.text);
+      } else {
+        const text = latestDocumentRef.current;
+        if (text !== null) captureDraft(text);
+      }
+      await handle.flush();
+    } catch (error) {
+      if (generation === draftViewGeneration.current)
+        setDraftActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      settled();
+      if (generation === draftViewGeneration.current) {
+        draftActionRef.current = false;
+        setDraftAction(null);
+      }
+    }
+  };
+
+  const retryDraft = async () => {
+    if (draftActionRef.current) return;
+    const generation = draftViewGeneration.current;
+    const settled = editorClosure.operation("draft-retry");
+    if (!settled) {
+      setDraftActionError(t("The editor is busy closing or moving. Try again in a moment."));
+      return;
+    }
+    draftActionRef.current = true;
+    setDraftAction("replace");
+    setDraftActionError(null);
+    try {
+      await draftHandleRef.current?.retry();
+    } catch (error) {
+      if (generation === draftViewGeneration.current)
+        setDraftActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      settled();
+      if (generation === draftViewGeneration.current) {
+        draftActionRef.current = false;
+        setDraftAction(null);
+      }
+    }
+  };
 
   const relativePath = path.startsWith(`${cwd}/`) ? path.slice(cwd.length + 1) : path;
   const footerBlameReason = useInlineBlameUnavailableReason(cwd, path);
@@ -557,55 +1155,25 @@ export function FileEditor({
 
   if (loadState.status === "loading" || diffPending) {
     return (
-      <div className="grid h-full place-items-center text-[12px] text-[var(--ui-text-muted)]">
-        {t("Opening ")}
-        {basename(path)}…
+      <div
+        role="status"
+        className="grid h-full min-w-0 place-items-center p-3 text-ui-caption text-(--ui-text-muted)"
+      >
+        <span className="max-w-full break-words text-center">
+          {t("Opening ")}
+          {basename(path)}…
+        </span>
       </div>
     );
   }
 
   if (loadState.status === "error") {
     return (
-      <div className="grid h-full place-items-center p-6">
-        <div className="max-w-md text-center">
-          <AlertCircle className="mx-auto mb-3 size-5 text-danger" />
-          <p className="text-[13px] text-content">
-            {t("Couldn’t open ")}
-            {basename(path)}
-          </p>
-          <p className="mt-1 text-[12px] leading-5 text-[var(--ui-text-secondary)]">
-            {loadState.message}
-          </p>
-          <Button
-            size="sm"
-            variant="ghost"
-            motion="none"
-            type="button"
-            onClick={() => setReloadKey((value) => value + 1)}
-            className="mx-auto mt-4 flex items-center gap-1.5"
-          >
-            <RotateCcw className="size-3" strokeWidth={1.75} />
-            {t("Retry")}
-          </Button>
-          {isRemoteProjectPath(path) ? null : (
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              type="button"
-              onClick={() =>
-                void revealPath(path).catch((error) => {
-                  console.warn("FileEditor operation failed", error);
-                })
-              }
-              className="mx-auto mt-2 flex items-center gap-1.5"
-            >
-              <Folder className="size-3" strokeWidth={1.75} />
-              {REVEAL_LABEL}
-            </Button>
-          )}
-        </div>
-      </div>
+      <FileLoadError
+        path={path}
+        message={loadState.message}
+        onRetry={() => setReloadKey((value) => value + 1)}
+      />
     );
   }
 
@@ -613,67 +1181,191 @@ export function FileEditor({
   const saveAction = (
     <Button
       size="sm"
-      variant="ghost"
-      iconOnly
-      label={t("Save")}
-      tooltip={`${t("Save")} (${IS_MAC ? "⌘S" : "Ctrl+S"})`}
-      disabled={!dirty && saveState.status !== "error"}
+      variant={dirty || saveState.status === "error" ? "secondary" : "ghost"}
+      aria-label={t("Save")}
+      shortcut="Mod+S"
+      disabled={editorClosure.closed() || (!dirty && saveState.status !== "error")}
       loading={saveState.status === "saving"}
       loadingLabel={t("Saving…")}
       onClick={() => void requestSave()}
+      className="shrink-0"
     >
-      <Save className="size-3" />
+      <Save className="icon-sm" />
+      {t("Save")}
     </Button>
   );
+  const saveStatusText = editorClosure.closed()
+    ? t("Preparing checkpoint…")
+    : saveState.status === "saving"
+      ? t("Saving…")
+      : saveState.status === "saved" && !dirty
+        ? t("Saved")
+        : saveState.status === "error"
+          ? `${t("Save failed: ")}${saveState.message}`
+          : dirty
+            ? t("Unsaved changes")
+            : "";
+  const saveStatusVisible =
+    editorClosure.closed() ||
+    saveState.status === "saving" ||
+    (saveState.status === "saved" && !dirty) ||
+    saveState.status === "error";
+  const saveStatus = (
+    <LiveText
+      text={saveStatusText}
+      className={
+        !saveStatusVisible
+          ? "sr-only"
+          : saveState.status === "error"
+            ? "min-w-0 basis-full break-words py-1 text-(--ui-tone-danger-fg)"
+            : "min-w-0 max-w-64 truncate"
+      }
+    />
+  );
+  const hasMarkdownShell = Boolean(markdown || svg || html);
+  // One document/save/recovery/capture binding list for the plain file and the
+  // Markdown/SVG/HTML Source pane; they differ only in the view arguments below.
+  const sourceEditorKey = fileSourceEditorKey(documentId, reloadKey, editorRevision);
+  const sourceEditorContract: FileSourceEditorContract = {
+    path,
+    cwd,
+    relativePath,
+    content: loadState.content,
+    initialDraft: recoveredText,
+    recoveryReviewRef,
+    pendingDiskRef,
+    retainedState: retainedEditor,
+    showDiff,
+    gitOriginal,
+    navigation,
+    onDirtyChange: dirtyChange,
+    onErrorCountChange: errorCountChange,
+    onSave: save,
+    onPeerSaved: peerSaved,
+    saveRequestRef,
+    onStageGit: showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined,
+    onDocumentChange: captureDraft,
+    captureObserver: editorClosure,
+    onEdit: edited,
+    onOpenFile,
+  };
 
   return (
     <div ref={editorRootRef} className="flex h-full min-h-0 min-w-0 flex-col">
-      {diskConflict && (
+      {draftPersistence?.initializationDecisionRequired ? (
         <div
-          role="alert"
-          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-2.5 py-1 text-[12px] text-content"
+          role="status"
+          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-2.5 py-1 text-ui-caption text-content"
         >
           <span className="min-w-0 flex-1">
             {t(
-              "File changed on disk. Reload discards your edits; overwrite replaces the disk version.",
+              "A saved draft is available. Restoring keeps its original disk baseline; review it before saving.",
             )}
           </span>
           <Button
             size="sm"
-            variant="ghost"
-            disabled={saveState.status === "saving"}
-            onClick={() => void reloadFromDisk(true)}
+            variant="secondary"
+            disabled={dirty}
+            loading={draftAction === "restore"}
+            onClick={() => void resolveDraft("restore")}
           >
-            {t("Reload from disk")}
+            {t("Restore draft")}
           </Button>
           <Button
             size="sm"
-            variant="secondary"
-            disabled={saveState.status === "saving"}
-            onClick={() => {
-              overwriteVersion.current = diskChangeVersion.current;
-              void requestSave().finally(() => {
-                overwriteVersion.current = null;
-              });
-            }}
+            variant="ghost"
+            loading={draftAction === "replace"}
+            disabled={draftAction === "restore"}
+            onClick={() => void resolveDraft("replace")}
           >
-            {t("Overwrite disk version")}
+            {t("Use current document")}
           </Button>
         </div>
+      ) : null}
+      {draftActionError || (draftPersistence?.error && draftPersistence.phase !== "unsupported") ? (
+        <Alert
+          tone="danger"
+          inline
+          className="shrink-0"
+          action={
+            !draftPersistence?.initializationDecisionRequired &&
+            draftPersistence?.phase !== "stale-owner" ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                loading={draftAction !== null}
+                onClick={() => void retryDraft()}
+              >
+                {t("Retry draft copy")}
+              </Button>
+            ) : undefined
+          }
+        >
+          {draftActionError ??
+            t("Draft recovery copy could not be confirmed. Keep this editor open.")}
+        </Alert>
+      ) : null}
+      {diskConflict && (
+        <Alert
+          tone="warning"
+          className="shrink-0"
+          action={
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                tone="danger"
+                disabled={saveState.status === "saving"}
+                onClick={() => void reloadFromDisk(true)}
+              >
+                {t("Reload from disk")}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                tone="danger"
+                disabled={saveState.status === "saving"}
+                onClick={() => {
+                  overwriteVersion.current = diskChangeVersion.current;
+                  void requestSave().finally(() => {
+                    overwriteVersion.current = null;
+                  });
+                }}
+              >
+                {t("Overwrite disk version")}
+              </Button>
+            </>
+          }
+        >
+          {diskVerificationError
+            ? t(
+                "The disk version could not be verified. Reload reads it again; overwrite writes the recovered draft.",
+              )
+            : t(
+                "File changed on disk. Reload discards your edits; overwrite replaces the disk version.",
+              )}
+        </Alert>
       )}
       {showDiff && gitDiff?.eolOnly && (
         <p
           role="status"
-          className="shrink-0 border-b border-stroke px-3 py-1 text-[12px] text-[var(--ui-text-secondary)]"
+          className="shrink-0 border-b border-stroke px-3 py-1 text-ui-secondary text-(--ui-text-secondary)"
         >
           {gitDiff.kind === "staged" ? t("Staged") : t("Unstaged")}
           {t(" line-ending changes. Line breaks are normalized in this view.")}
         </p>
       )}
-      {markdown || svg || html ? (
+      {hasMarkdownShell ? (
         <MarkdownViewShell
+          zoomable={markdown}
           mode={mode}
           onModeChange={setMode}
+          leading={
+            <>
+              {saveAction}
+              {saveStatus}
+            </>
+          }
           preview={
             markdown ? (
               <PreviewSelection
@@ -685,7 +1377,7 @@ export function FileEditor({
                   <MarkdownDocumentPreview
                     text={draft}
                     documentPath={path}
-                    metadataLabel="Properties"
+                    metadataLabel={t("Properties")}
                     cwd={cwd}
                     onOpenFile={onOpenFile}
                   />
@@ -694,68 +1386,43 @@ export function FileEditor({
             ) : html ? (
               <HtmlPreview path={path} source={draft} active={active && mode === "preview"} />
             ) : (
-              <SvgPreview source={draft} />
+              <SvgPreview source={draft} name={basename(path)} />
             )
           }
           source={
-            <div className="flex h-full min-h-0 min-w-0 flex-col">
+            <div
+              data-file-editor-source-active={shown && mode === "source" ? "true" : "false"}
+              inert={!shown || mode !== "source"}
+              className="flex h-full min-h-0 min-w-0 flex-col"
+            >
               <CodeMirrorEditor
-                key={`${documentId}:${reloadKey}:${editorRevision}`}
-                path={path}
-                cwd={cwd}
-                commentPath={relativePath}
-                value={loadState.content}
-                showDiff={showDiff}
-                gitOriginal={gitOriginal}
-                active={active && mode === "source"}
-                navigation={navigation}
-                onDirtyChange={dirtyChange}
-                onErrorCountChange={errorCountChange}
-                onSave={save}
-                saveRequestRef={saveRequestRef}
-                canAutosave={() => !pendingDiskRef.current}
-                onStageGit={showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined}
-                onDocChange={docChange}
-                onOpenFile={onOpenFile}
+                key={sourceEditorKey}
+                {...fileSourceEditorProps(sourceEditorContract, {
+                  active: active && mode === "source",
+                  shown: shown && mode === "source",
+                  onDocChange: docChange,
+                })}
               />
             </div>
           }
         />
       ) : (
         <CodeMirrorEditor
-          key={`${documentId}:${reloadKey}:${editorRevision}`}
-          path={path}
-          cwd={cwd}
-          commentPath={relativePath}
-          value={loadState.content}
-          showDiff={showDiff}
-          gitOriginal={gitOriginal}
-          active={active}
-          saveRequestRef={saveRequestRef}
-          navigation={navigation}
-          onDirtyChange={dirtyChange}
-          onErrorCountChange={errorCountChange}
-          onSave={save}
-          onDocChange={docChange}
-          canAutosave={() => !pendingDiskRef.current}
-          onStageGit={showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined}
-          onOpenFile={onOpenFile}
+          key={sourceEditorKey}
+          {...fileSourceEditorProps(sourceEditorContract, { active, shown })}
         />
       )}
       {chromeError ? (
-        <p
-          role="alert"
-          className="shrink-0 border-t border-stroke px-2.5 py-1 text-[12px] text-danger"
-        >
+        <InlineError className="shrink-0 border-t border-stroke px-2.5 py-1">
           {chromeError}
-        </p>
+        </InlineError>
       ) : null}
       <footer
-        className={`flex min-h-6 shrink-0 items-center border-t border-stroke px-2.5 font-mono text-[10.5px] text-[var(--ui-text-muted)] ${saveState.status === "error" ? "flex-wrap" : "h-6"}`}
+        className={`flex min-h-[var(--ui-control-height-compact)] shrink-0 items-center gap-1 border-t border-stroke px-2.5 text-ui-micro text-[var(--ui-text-muted)] ${saveState.status === "error" ? "flex-wrap" : ""}`}
       >
-        <span className="min-w-0 flex-1 truncate" title={path}>
-          {relativePath}
-        </span>
+        <Tooltip label={path} when={path === relativePath ? "overflow" : "always"}>
+          <span className="min-w-0 flex-1 truncate font-mono">{relativePath}</span>
+        </Tooltip>
         {html ? (
           <Button
             size="sm"
@@ -768,10 +1435,9 @@ export function FileEditor({
             onClick={() =>
               void revealPath(path).catch((error: unknown) => setChromeError(String(error)))
             }
-            title={REVEAL_LABEL}
             aria-label={REVEAL_LABEL}
           >
-            <Folder className="size-3" />
+            <Folder className="icon-sm" />
           </Button>
         ) : null}
         {html ? (
@@ -781,42 +1447,21 @@ export function FileEditor({
             motion="none"
             type="button"
             disabled={openingChrome || isRemoteProjectPath(path)}
+            loading={openingChrome}
             onClick={() => void goLive()}
-            title={
+            tooltip={
               isRemoteProjectPath(path)
                 ? t("Go Live is available for local HTML files.")
                 : t("Save and open this HTML file in Google Chrome")
             }
-            className="mr-2 shrink-0"
+            className="shrink-0"
           >
-            {openingChrome ? t("Opening…") : t("Go Live")}
+            {t("Go Live")}
           </Button>
         ) : null}
         <InlineBlameToggle reason={footerBlameReason} />
-        {saveAction}
-        <span
-          role="status"
-          aria-live="polite"
-          className={
-            saveState.status === "error"
-              ? "min-w-0 basis-full break-words py-1 text-danger"
-              : "min-w-0 max-w-64 truncate"
-          }
-          title={saveState.status === "error" ? saveState.message : undefined}
-        >
-          {saveState.status === "saving" ? (
-            <span>{t("Saving…")}</span>
-          ) : saveState.status === "saved" && !dirty ? (
-            <span>{t("Saved")}</span>
-          ) : saveState.status === "error" ? (
-            <span>
-              {t("Save failed: ")}
-              {saveState.message}
-            </span>
-          ) : dirty ? (
-            <span className="sr-only">{t("Unsaved changes")}</span>
-          ) : null}
-        </span>
+        {hasMarkdownShell ? null : saveAction}
+        {hasMarkdownShell ? null : saveStatus}
       </footer>
     </div>
   );
@@ -828,21 +1473,54 @@ export function FileEditor({
  * fetches no external reference the document asks for, which is what makes it
  * safe to preview a file the agent may have just written.
  */
-function SvgPreview({ source }: { source: string }) {
+function SvgPreview({ source, name }: { source: string; name: string }) {
   useLocale();
   const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
+    setFailed(false);
     const next = URL.createObjectURL(new Blob([source], { type: "image/svg+xml" }));
     setUrl(next);
     return () => URL.revokeObjectURL(next);
   }, [source]);
 
+  if (!source.trim()) return <DocumentMessage title={t("Empty file")} />;
+  if (failed)
+    return (
+      <DocumentMessage title={t("Couldn’t read this document")} error>
+        {name}
+      </DocumentMessage>
+    );
   if (!url) return null;
   return (
-    <div className="grid h-full place-items-center overflow-auto p-6">
-      <img src={url} alt="" className="max-h-full max-w-full object-contain" />
+    <div
+      tabIndex={0}
+      role="region"
+      aria-label={name}
+      className="grid h-full min-w-0 place-items-center overflow-auto p-6"
+    >
+      <img
+        src={url}
+        alt={name}
+        onError={() => setFailed(true)}
+        className="max-h-full max-w-full object-contain"
+      />
     </div>
+  );
+}
+
+function sameDraftView(a: NativeCaptureState, b: NativeCaptureState): boolean {
+  return (
+    a.phase === b.phase &&
+    a.pending === b.pending &&
+    a.error === b.error &&
+    a.disposed === b.disposed &&
+    a.path === b.path &&
+    a.ownerEpoch === b.ownerEpoch &&
+    a.currentDraft === b.currentDraft &&
+    a.acknowledgedDraft === b.acknowledgedDraft &&
+    a.initializationDecisionRequired === b.initializationDecisionRequired
   );
 }
 

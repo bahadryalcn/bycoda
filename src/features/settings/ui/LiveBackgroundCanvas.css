@@ -1,0 +1,29 @@
+/* Every selected scene belongs to the whole conversation, at every pane width.
+   The isolated pane keeps artwork behind messages and controls. */
+.live-background-rail {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: -1;
+}
+
+.live-background-figure {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.live-background-fallback {
+  display: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+canvas[data-background-renderer="unavailable"] + .live-background-fallback {
+  display: block;
+}

@@ -1,20 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { listenWindowAsync } from "./listenWindow";
 
-type DataPayload = { id: string; data: string };
+type DataPayload = { id: string; data: string; flow?: { generation: number; sequence: number } };
 type ExitPayload = { id: string; code: number | null };
 
-type DataHandler = (data: Uint8Array) => void;
+type DataHandler = (data: Uint8Array, consumed?: () => void) => void;
 type ExitHandler = (code: number | null) => void;
 
 const dataHandlers = new Map<string, DataHandler>();
 const exitHandlers = new Map<string, ExitHandler>();
 const dataBuffer = new Map<string, Uint8Array[]>();
 const dataBufferBytes = new Map<string, number>();
-/** PTYs this window opened. Global `pty-data` still fires for every terminal
- * in the process; decoding those in a window that never mounted them was
- * megabytes of base64 work and a 256KB replay buffer per stranger id. */
+/** PTYs this window opened; ignore data for unmounted, unrelated terminals. */
 const openedPtys = new Set<string>();
+const flowControlled = new Set<string>();
 
 /**
  * Replay budget for a PTY whose view is not mounted. Chunks arrive at up to
@@ -24,6 +24,7 @@ const openedPtys = new Set<string>();
 const MAX_BUFFERED_BYTES = 256 * 1024;
 const MAX_BUFFERED = 200;
 let bridge: Promise<UnlistenFn[]> | null = null;
+let bridgeGeneration = 0;
 let users = 0;
 let teardownTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -93,20 +94,92 @@ function clearBuffered(id: string) {
   dataBufferBytes.delete(id);
 }
 
+type AckSlot = {
+  generation: number;
+  chunks: { sequence: number; consumed: boolean }[];
+  sequence?: number;
+  count: number;
+  timer?: ReturnType<typeof setTimeout>;
+};
+const ackSlots = new Map<string, AckSlot>();
+
+function flushAck(id: string, slot: AckSlot) {
+  clearTimeout(slot.timer);
+  slot.timer = undefined;
+  const sequence = slot.sequence;
+  slot.sequence = undefined;
+  slot.count = 0;
+  if (slot.chunks.length === 0 && ackSlots.get(id) === slot) ackSlots.delete(id);
+  if (sequence !== undefined) {
+    void invoke("pty_output_ack", { id, generation: slot.generation, sequence }).catch(() => {});
+  }
+}
+
+function pendingAck(id: string, flow: DataPayload["flow"]): () => void {
+  if (!flow) return () => {};
+  let slot = ackSlots.get(id);
+  if (!slot || slot.generation !== flow.generation) {
+    if (slot) flushAck(id, slot);
+    slot = { generation: flow.generation, chunks: [], count: 0 };
+    ackSlots.set(id, slot);
+  }
+  const current = slot;
+  const chunk = { sequence: flow.sequence, consumed: false };
+  current.chunks.push(chunk);
+  return () => {
+    if (chunk.consumed || ackSlots.get(id) !== current) return;
+    chunk.consumed = true;
+    // Acknowledge the highest consumed sequence: the backend drains everything up to it, so one
+    // chunk whose callback never runs cannot hold back every later acknowledgement.
+    const highest = Math.max(
+      ...current.chunks.filter((entry) => entry.consumed).map((entry) => entry.sequence),
+    );
+    while (current.chunks[0] && current.chunks[0].sequence <= highest) {
+      const settled = current.chunks.shift()!;
+      settled.consumed = true;
+      current.count += 1;
+    }
+    if (current.sequence === undefined || highest > current.sequence) current.sequence = highest;
+    if (current.sequence === undefined) return;
+    if (current.count >= 16) flushAck(id, current);
+    else current.timer ??= setTimeout(() => flushAck(id, current), 32);
+  };
+}
+
+function flushAcks() {
+  for (const [id, slot] of ackSlots) flushAck(id, slot);
+}
+
 function ensureBridge() {
   if (bridge) return bridge;
+  const generation = ++bridgeGeneration;
   const pending = Promise.allSettled([
-    listen<DataPayload>("pty-data", (event) => {
-      const { id, data } = event.payload;
+    listenWindowAsync<DataPayload>("pty-data", (event) => {
+      if (bridgeGeneration !== generation) return;
+      const { id, data, flow } = event.payload;
+      const acknowledge = pendingAck(id, flow);
       const handler = dataHandlers.get(id);
-      if (!handler && !openedPtys.has(id)) return;
+      if (!handler && !openedPtys.has(id)) {
+        acknowledge();
+        return;
+      }
       const chunk = decodePtyChunk(data);
-      if (!chunk) return;
-      if (handler) handler(chunk);
-      else pushBuffered(id, chunk);
+      if (!chunk) {
+        acknowledge();
+        return;
+      }
+      if (handler && flowControlled.has(id)) handler(chunk, acknowledge);
+      else {
+        if (handler) handler(chunk);
+        else pushBuffered(id, chunk);
+        acknowledge();
+      }
     }),
-    listen<ExitPayload>("pty-exit", (event) => {
+    listenWindowAsync<ExitPayload>("pty-exit", (event) => {
+      if (bridgeGeneration !== generation) return;
       const { id, code } = event.payload;
+      const slot = ackSlots.get(id);
+      if (slot) flushAck(id, slot);
       // The process is gone: nothing more arrives for this id, so stop tracking it
       // and drop any unmounted replay. A mounted view keeps its handlers and gets
       // the exit callback below.
@@ -120,6 +193,7 @@ function ensureBridge() {
     );
     const failure = results.find((result) => result.status === "rejected");
     if (!failure) return listeners;
+    if (bridgeGeneration === generation) bridgeGeneration++;
     // A partly registered bridge must not leak its successful listener or cache
     // a rejected promise forever. A subsequent terminal subscription can retry.
     for (const unlisten of listeners) {
@@ -159,6 +233,8 @@ function release() {
   teardownTimer = setTimeout(() => {
     teardownTimer = undefined;
     if (users > 0) return;
+    flushAcks();
+    bridgeGeneration++;
     bridge = null;
     void pending.then((fns) => fns.forEach((fn) => fn())).catch(() => undefined);
   }, 500);
@@ -204,15 +280,28 @@ export function resizePty(id: string, cols: number, rows: number): Promise<void>
   next.running = (async () => {
     try {
       let sent: [number, number] | null = null;
+      let failure: unknown;
       while (!sent || sent[0] !== next.cols || sent[1] !== next.rows) {
         sent = [next.cols, next.rows];
-        await invoke("pty_resize", { id, cols: sent[0], rows: sent[1] });
+        try {
+          await invoke("pty_resize", { id, cols: sent[0], rows: sent[1] });
+        } catch (error) {
+          failure = error;
+        }
       }
+      if (failure !== undefined) throw failure;
     } finally {
       resizeSlots.delete(id);
     }
   })();
   return next.running;
+}
+
+/** Whether the terminal is on screen. Hidden output is held natively and
+ * released in order when it is shown, instead of streaming events nobody sees. */
+export async function setPtyVisible(id: string, visible: boolean): Promise<void> {
+  if (flowControlled.has(id)) await invoke("pty_output_flow", { id, enabled: true });
+  await invoke("pty_set_visible", { id, visible });
 }
 
 export async function getPtyStatus(
@@ -225,7 +314,11 @@ export async function killPty(id: string): Promise<void> {
   dataHandlers.delete(id);
   exitHandlers.delete(id);
   openedPtys.delete(id);
+  flowControlled.delete(id);
   clearBuffered(id);
+  const slot = ackSlots.get(id);
+  if (slot) flushAck(id, slot);
+  ackSlots.delete(id);
   await invoke("pty_kill", { id }).catch(() => undefined);
 }
 
@@ -233,14 +326,24 @@ export async function killAllPtys(): Promise<void> {
   dataHandlers.clear();
   exitHandlers.clear();
   openedPtys.clear();
+  flowControlled.clear();
   dataBuffer.clear();
   dataBufferBytes.clear();
+  flushAcks();
+  ackSlots.clear();
   await invoke("pty_kill_all").catch(() => undefined);
 }
 
-export function subscribePty(id: string, onData: DataHandler, onExit: ExitHandler): () => void {
+export function subscribePty(
+  id: string,
+  onData: DataHandler,
+  onExit: ExitHandler,
+  controlled = false,
+): () => void {
   retain();
   openedPtys.add(id);
+  if (controlled) flowControlled.add(id);
+  else flowControlled.delete(id);
   dataHandlers.set(id, onData);
   exitHandlers.set(id, onExit);
   const queued = dataBuffer.get(id);
@@ -249,8 +352,13 @@ export function subscribePty(id: string, onData: DataHandler, onExit: ExitHandle
     for (const chunk of queued) onData(chunk);
   }
   return () => {
-    if (dataHandlers.get(id) === onData) dataHandlers.delete(id);
+    const current = dataHandlers.get(id) === onData;
+    if (current) dataHandlers.delete(id);
     if (exitHandlers.get(id) === onExit) exitHandlers.delete(id);
+    if (controlled && current) {
+      flowControlled.delete(id);
+      void invoke("pty_output_flow", { id, enabled: false }).catch(() => {});
+    }
     release();
   };
 }

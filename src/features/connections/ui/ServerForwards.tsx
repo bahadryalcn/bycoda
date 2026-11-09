@@ -1,20 +1,25 @@
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { useForwardStatuses } from "./useForwardStatuses";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { t } from "../../../shared/i18n";
-import { Badge } from "../../../shared/ui/Badge";
+import { Badge, StatusBadge } from "../../../shared/ui/Badge";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Button } from "../../../shared/ui/Button";
+import { NumberField } from "../../../shared/ui/NumberField";
 import { TextField } from "../../../shared/ui/TextField";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SearchInput } from "../../../shared/ui/SearchInput";
+import { errorText } from "./serverActionFeedback";
 import { updateServerMetadata, type ServerRecord } from "../model/serverInventory";
 import {
   forwardRuntimeId,
-  listSshForwards,
   startSshForward,
   stopSshForward,
   validateForwardRule,
-  type ForwardStatus,
 } from "../model/sshForwards";
 
 /** Saved rules belong to canonical records. Mounting/restoring never starts SSH. */
@@ -29,6 +34,8 @@ export function ServerForwards({
 }) {
   const proxy = useSshHttpProxyApproval();
   const locked = useRef(false);
+  const currentSource = useRef(server.id);
+  currentSource.current = server.id;
   const [draft, setDraft] = useRetainedState(`servers:forward-draft:${server.id}`, {
     name: "",
     kind: "local" as "local" | "dynamic",
@@ -36,10 +43,11 @@ export function ServerForwards({
     targetHost: "127.0.0.1",
     targetPort: "",
   });
-  const [statuses, setStatuses] = useState<ForwardStatus[]>([]);
-  const [busy, setBusy] = useState("");
-  const [error, setError] = useState("");
-  const [statusError, setStatusError] = useState("");
+  const { statuses, statusError, refresh } = useForwardStatuses(server.id, active);
+  const [busyState, setBusyState] = useState({ source: server.id, value: "" });
+  const [errorState, setErrorState] = useState({ source: server.id, value: "" });
+  const busy = busyState.source === server.id ? busyState.value : "";
+  const error = errorState.source === server.id ? errorState.value : "";
   const rules = server.metadata.forwards ?? [];
   const [search, setSearch] = useState("");
   const matchingRules = rules.filter((rule) =>
@@ -49,51 +57,26 @@ export function ServerForwards({
   );
   const Container = expanded ? "section" : "details";
   const Heading = expanded ? "h3" : "summary";
-  useEffect(() => {
-    if (!active) return;
-    let disposed = false;
-    let pending = false;
-    const refresh = async () => {
-      if (pending) return;
-      pending = true;
-      try {
-        const result = await listSshForwards();
-        if (!disposed) {
-          setStatuses(result.filter((item) => item.connectionId === server.id));
-          setStatusError("");
-        }
-      } catch {
-        if (!disposed) setStatusError(t("Couldn’t read forwarding status."));
-      } finally {
-        pending = false;
-      }
-    };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 1500);
-    return () => {
-      disposed = true;
-      window.clearInterval(timer);
-    };
-  }, [server.id, active]);
   const run = async (id: string, action: () => Promise<unknown>) => {
     if (locked.current) return;
     locked.current = true;
-    setBusy(id);
-    setError("");
+    refresh(server.id);
+    setBusyState({ source: server.id, value: id });
+    setErrorState({ source: server.id, value: "" });
     try {
       await action();
-      setStatuses((await listSshForwards()).filter((item) => item.connectionId === server.id));
-      setStatusError("");
     } catch (cause) {
-      setError(String(cause));
+      if (currentSource.current === server.id)
+        setErrorState({ source: server.id, value: errorText(cause) });
     } finally {
+      refresh(server.id);
       locked.current = false;
-      setBusy("");
+      if (currentSource.current === server.id) setBusyState({ source: server.id, value: "" });
     }
   };
   return (
     <>
-      <Container className="text-xs">
+      <Container className="text-ui-caption">
         <Heading className="py-1 font-medium">
           {t("Port forwarding")}
           {rules.length ? ` (${rules.length})` : ""}
@@ -108,15 +91,23 @@ export function ServerForwards({
               onChange={(event) => setSearch(event.target.value)}
             />
           ) : (
-            <p className="py-3 text-(--ui-text-muted)">{t("No forwarding rules yet.")}</p>
+            <EmptyState size="inline" description={t("No forwarding rules yet.")} />
           )}
           {rules.length > 0 && matchingRules.length === 0 ? (
-            <p className="py-3 text-(--ui-text-muted)">{t("No matching forwarding rules.")}</p>
+            <EmptyState
+              size="inline"
+              kind="filtered"
+              description={t("No matching forwarding rules.")}
+              onReset={() => setSearch("")}
+            />
           ) : null}
           {matchingRules.map((rule) => {
             const runtimeId = forwardRuntimeId(server.id, rule.id);
             const status = statuses.find((item) => item.id === runtimeId);
-            const running = status?.state === "running" || status?.state === "starting";
+            const stopping = status?.state === "stopping";
+            const unknown = status?.state === "unknown";
+            const running =
+              status?.state === "running" || status?.state === "starting" || stopping || unknown;
             return (
               <div
                 key={rule.id}
@@ -124,31 +115,30 @@ export function ServerForwards({
               >
                 <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                   <span className="min-w-0 break-all font-medium">{rule.name}</span>
-                  <Badge
-                    size="sm"
-                    tone={running ? "success" : status?.state === "failed" ? "danger" : "neutral"}
-                  >
-                    {running
-                      ? t("Running")
-                      : status?.state === "failed"
-                        ? t("Failed")
-                        : t("Stopped")}
-                  </Badge>
+                  {stopping || unknown ? (
+                    <Badge size="sm" tone="neutral">
+                      {t(stopping ? "Stopping" : "Status unknown")}
+                    </Badge>
+                  ) : running ? (
+                    <StatusBadge status="running" />
+                  ) : status?.state === "failed" ? (
+                    <StatusBadge status="failed" />
+                  ) : (
+                    <Badge size="sm" tone="neutral">
+                      {t("Stopped")}
+                    </Badge>
+                  )}
                 </div>
                 <p className="break-all text-(--ui-text-muted)">
                   {rule.kind === "dynamic"
                     ? `SOCKS5 · 127.0.0.1:${rule.localPort}`
                     : `127.0.0.1:${rule.localPort} → ${rule.targetHost}:${rule.targetPort}`}
                 </p>
-                {status?.error ? (
-                  <p role="alert" className="text-(--ui-tone-danger-fg)">
-                    {status.error}
-                  </p>
-                ) : null}
+                {status?.error ? <InlineError>{status.error}</InlineError> : null}
                 <div className="flex flex-wrap gap-2">
                   <Button
                     loading={busy === rule.id}
-                    disabled={Boolean(busy)}
+                    disabled={Boolean(busy) || stopping}
                     onClick={() =>
                       void run(rule.id, async () => {
                         if (running) return stopSshForward(runtimeId);
@@ -174,29 +164,33 @@ export function ServerForwards({
                       })
                     }
                   >
-                    {running ? t("Stop") : t("Start")}
+                    {stopping
+                      ? t("Stopping")
+                      : unknown
+                        ? t("Retry stop")
+                        : running
+                          ? t("Stop")
+                          : t("Start")}
                   </Button>
-                  <Button
-                    variant="ghost"
-                    disabled={Boolean(busy) || running}
-                    onClick={() =>
-                      void run(rule.id, () =>
-                        updateServerMetadata(server.id, {
-                          forwards: rules.filter((item) => item.id !== rule.id),
-                        }),
-                      )
-                    }
-                  >
-                    {t("Remove")}
-                  </Button>
+                  <span className="ms-auto">
+                    <ConfirmMorph
+                      label={t("Remove")}
+                      tone="danger"
+                      disabled={Boolean(busy) || running}
+                      onConfirm={() =>
+                        run(rule.id, () =>
+                          updateServerMetadata(server.id, {
+                            forwards: rules.filter((item) => item.id !== rule.id),
+                          }),
+                        )
+                      }
+                    />
+                  </span>
                 </div>
               </div>
             );
           })}
-          <details>
-            <summary className="cursor-pointer py-1 font-medium">
-              {t("Add forwarding rule")}
-            </summary>
+          <Disclosure summary={t("Add forwarding rule")}>
             <form
               className="flex flex-col gap-3"
               onSubmit={(event) => {
@@ -246,9 +240,8 @@ export function ServerForwards({
                   setDraft((previous) => ({ ...previous, name: event.target.value }))
                 }
               />
-              <TextField
+              <NumberField
                 label={t("Local port")}
-                type="number"
                 min={1}
                 max={65535}
                 required
@@ -269,9 +262,8 @@ export function ServerForwards({
                       setDraft((previous) => ({ ...previous, targetHost: event.target.value }))
                     }
                   />
-                  <TextField
+                  <NumberField
                     label={t("Destination port")}
-                    type="number"
                     min={1}
                     max={65535}
                     required
@@ -296,11 +288,13 @@ export function ServerForwards({
                 </Button>
               </div>
             </form>
-          </details>
+          </Disclosure>
           {error || statusError ? (
-            <p role="alert" className="break-words text-(--ui-tone-danger-fg)">
+            <InlineError
+              retry={!error && statusError ? { onRetry: () => refresh(server.id) } : undefined}
+            >
               {error || statusError}
-            </p>
+            </InlineError>
           ) : null}
         </div>
       </Container>

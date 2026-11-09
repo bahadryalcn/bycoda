@@ -1,8 +1,10 @@
+import { Surface } from "../../../shared/ui/Surface";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
-import { ChevronDown, ChevronRight, FileDiff } from "../../../shared/ui/icons";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
+import { useLocale, useT } from "../../../shared/i18n";
+import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   keepSessionChanges,
   sessionCheckpointStatus,
@@ -10,22 +12,37 @@ import {
   undoSessionChanges,
   type CheckpointFile,
 } from "../model/checkpoint";
-import { invalidateProjectFiles } from "../../files/model/fileIndex";
-import { invalidateWatchedFiles } from "../../files/model/fileWatch";
+import { invalidateProjectFiles } from "../../files/public/fileIndex";
+import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { basename, notifyGitChanged, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { formatInteger } from "../../../shared/lib/numbers";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
-import { useChangedFileMenu } from "../../files/ui/useChangedFileMenu";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
+import { useChangedFileMenu } from "../../files/public/useChangedFileMenu";
 
 type Props = {
   sessionId: string;
   cwd: string;
   enabled?: boolean;
   busy?: boolean;
-  undoLocked?: boolean;
+  undoLockReason?: "session" | "orchestration";
   onOpenFile?: (path: string) => void;
   onOpenDiff: (path?: string, session?: { sessionId: string; cwd: string }) => void;
 };
+
+type UndoLockingRun = {
+  status: string;
+  leadId: string;
+  tasks: readonly { sessionId?: string }[];
+};
+
+/** True while an active or paused orchestration run leads or dispatched this session. */
+export function orchestrationLocksUndo(runs: readonly UndoLockingRun[], sessionId: string) {
+  return runs.some(
+    (run) =>
+      (run.status === "active" || run.status === "paused") &&
+      (run.leadId === sessionId || run.tasks.some((task) => task.sessionId === sessionId)),
+  );
+}
 
 export function SessionReview(props: Props) {
   return <SessionReviewContent key={JSON.stringify([props.sessionId, props.cwd])} {...props} />;
@@ -36,20 +53,27 @@ function SessionReviewContent({
   cwd,
   enabled = true,
   busy = false,
-  undoLocked = false,
+  undoLockReason,
   onOpenFile,
   onOpenDiff,
 }: Props) {
-  useLocale();
+  const t = useT();
   const [files, setFiles] = useState<CheckpointFile[]>([]);
   const [expanded, setExpanded] = useState(false);
   const [acting, setActing] = useState<"keep" | "undo" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [statusStale, setStatusStale] = useState(false);
   const request = useRef(0);
   const actingRef = useRef(false);
   const filesRef = useRef(files);
-  filesRef.current = files;
+  useLayoutEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+  // A running turn owns the workspace: drop the previous result, and a short list cannot stay expanded.
+  if (busy && files.length > 0) setFiles([]);
+  if (expanded && files.length <= 3) setExpanded(false);
 
   const load = useCallback(() => {
     if (actingRef.current) return;
@@ -58,21 +82,26 @@ function SessionReviewContent({
       setFiles([]);
       return;
     }
+    setRefreshing(true);
     return sessionCheckpointStatus(sessionId, cwd)
       .then((status) => {
         if (generation !== request.current) return;
         setFiles(status.files);
+        setStatusStale(false);
         setError(null);
         setRecording(false);
       })
       .catch((cause: unknown) => {
         if (generation === request.current) {
-          setFiles([]);
+          setStatusStale(true);
           const message = cause instanceof Error ? cause.message : String(cause);
           const pending = message.includes("Workspace checkpoint is still recording this turn");
           setRecording(pending);
           setError(pending ? null : message);
         }
+      })
+      .finally(() => {
+        if (generation === request.current) setRefreshing(false);
       });
   }, [sessionId, cwd]);
 
@@ -123,37 +152,42 @@ function SessionReviewContent({
     };
   }, [recording, enabled, busy, load]);
 
-  useEffect(() => {
-    if (files.length <= 3) setExpanded(false);
-  }, [files.length]);
-
-  useEffect(() => {
-    if (busy) setFiles([]);
-  }, [busy]);
-
   // The card represents the result of a turn. Keep it out of the live turn,
   // then refresh and reveal it once the turn has settled.
   if (!enabled || busy || (files.length === 0 && !error && !recording)) return null;
   if (recording) {
     return (
-      <p role="status" className="px-3 py-2 text-xs text-(--ui-text-secondary)">
+      <p role="status" className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
         {t("Loading changes…")}
       </p>
     );
   }
 
   const errorNotice = error ? (
-    <Alert tone="danger" role="alert">
+    <Alert tone="danger">
       {error}{" "}
-      <Button variant="ghost" type="button" onClick={load}>
-        {t("Retry")}
+      {error.startsWith("Workspace checkpoint failed:") && (
+        <p>
+          {t(
+            "This turn's changes could not be fully recorded. Fix the reported error before starting a new turn. Refresh only checks the saved checkpoint.",
+          )}
+        </p>
+      )}
+      <Button
+        variant="ghost"
+        type="button"
+        onClick={load}
+        loading={refreshing}
+        disabled={refreshing}
+      >
+        {t(error.startsWith("Workspace checkpoint failed:") ? "Refresh" : "Retry")}
       </Button>
     </Alert>
   ) : null;
   if (files.length === 0) return errorNotice;
 
-  const disabled = acting != null;
-  const canUndoAll = !undoLocked && files.every((file) => file.undoable);
+  const disabled = acting != null || statusStale;
+  const canUndoAll = !statusStale && !undoLockReason && files.every((file) => file.undoable);
   const visibleFiles = expanded ? files : files.slice(0, 3);
   const hiddenFileCount = files.length - visibleFiles.length;
   const totals = files.reduce(
@@ -165,7 +199,7 @@ function SessionReviewContent({
   );
 
   const run = (action: "keep" | "undo") => {
-    if (actingRef.current) return;
+    if (actingRef.current) return undefined;
     actingRef.current = true;
     const generation = ++request.current;
     setActing(action);
@@ -173,7 +207,7 @@ function SessionReviewContent({
     const op =
       action === "keep" ? keepSessionChanges(sessionId, cwd) : undoSessionChanges(sessionId, cwd);
     const previous = filesRef.current.map((file) => file.path);
-    void op
+    return op
       .then((status) => {
         notifyGitChanged();
         invalidateWatchedFiles(previous);
@@ -192,21 +226,15 @@ function SessionReviewContent({
 
   return (
     <div className="px-4 pt-1 pb-2 font-sans" data-session-review-shell>
-      <div
-        className="overflow-hidden rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
-        data-session-review
-      >
+      <Surface variant="quiet" padding="none" className="overflow-hidden" data-session-review>
         {errorNotice}
         <div className="flex min-w-0 items-center gap-2.5 px-3 py-2.5">
-          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-(--ui-surface-raised) text-(--ui-text-secondary)">
-            <FileDiff className="size-4" strokeWidth={1.75} />
-          </span>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[12px] font-medium text-(--ui-text-secondary)">
+            <div className="truncate text-ui-caption font-medium text-(--ui-text-secondary)">
               {t("Changed ")}
               {files.length} {files.length === 1 ? t("file") : t("files")}
             </div>
-            <div className="flex items-center gap-1.5 font-sans text-[11px] font-semibold tabular-nums -mt-0.5">
+            <div className="flex items-center gap-1.5 font-sans text-ui-micro font-medium tabular-nums -mt-0.5">
               <span className="text-diff-add-fg">+{formatInteger(totals.additions)}</span>
               <span className="text-diff-del-fg">-{formatInteger(totals.deletions)}</span>
             </div>
@@ -215,35 +243,41 @@ function SessionReviewContent({
             <Button
               variant="ghost"
               type="button"
-              title={
-                canUndoAll
-                  ? t("Undo all session changes")
-                  : undoLocked
-                    ? t("Undo is unavailable while another session is running in this project")
-                    : t("Undo is unavailable because a file changed outside this session")
-              }
-              disabled={disabled || !canUndoAll}
-              onClick={() => run("undo")}
-            >
-              {t("Undo")}
-            </Button>
-            <Button
-              variant="ghost"
-              type="button"
-              title={t("Keep all session changes and dismiss this card")}
+              tooltip={t("Keep all session changes and dismiss this card")}
               disabled={disabled}
-              onClick={() => run("keep")}
+              loading={acting === "keep"}
+              onClick={() => void run("keep")}
             >
               {t("Keep")}
             </Button>
             <Button
-              variant="ghost"
+              variant="secondary"
               type="button"
-              title={t("Review changes")}
               onClick={() => onOpenDiff(undefined, { sessionId, cwd })}
             >
               {t("Review")}
             </Button>
+            <span
+              className="ms-1.5 border-s border-(--color-stroke) ps-1.5"
+              title={
+                canUndoAll
+                  ? t("Undo all session changes")
+                  : undoLockReason === "session"
+                    ? t("Undo is unavailable while another session is running in this project")
+                    : undoLockReason === "orchestration"
+                      ? t("Undo is unavailable while an orchestration run is active or paused")
+                      : t("Undo is unavailable because a file changed outside this session")
+              }
+            >
+              <ConfirmMorph
+                label={t("Undo")}
+                prompt={t("Undo all session changes")}
+                confirmLabel={t("Undo")}
+                pendingLabel={t("Restoring…")}
+                disabled={disabled || !canUndoAll}
+                onConfirm={() => run("undo")}
+              />
+            </span>
           </div>
         </div>
         <ul
@@ -273,9 +307,9 @@ function SessionReviewContent({
             className="w-full text-left"
           >
             {expanded ? (
-              <ChevronDown className="size-3.5" strokeWidth={1.75} />
+              <ChevronDown className="icon-sm" strokeWidth={1.75} />
             ) : (
-              <ChevronRight className="size-3.5" strokeWidth={1.75} />
+              <ChevronRight className="icon-sm" strokeWidth={1.75} />
             )}
             <span>
               {expanded
@@ -286,7 +320,7 @@ function SessionReviewContent({
             </span>
           </Button>
         ) : null}
-      </div>
+      </Surface>
     </div>
   );
 }
@@ -306,7 +340,12 @@ function FileRow({
 }) {
   useLocale();
   const name = basename(file.relative);
-  const { menu, ...menuHandlers } = useChangedFileMenu({
+  const {
+    menu,
+    openFrom: _openFrom,
+    isOpen: _isOpen,
+    ...menuHandlers
+  } = useChangedFileMenu({
     path: file.path,
     relative: file.relative,
     deleted: file.status === "deleted",
@@ -320,12 +359,13 @@ function FileRow({
         variant="item"
         {...menuHandlers}
         type="button"
-        title={file.relative}
+        tooltip={file.relative}
+        tooltipWhen="overflow"
         onClick={() => onOpenDiff(file.path, { sessionId, cwd })}
         className="w-full min-w-0 text-left"
       >
-        <FileTypeIcon name={name} isDir={false} size={15} />
-        <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{file.relative}</span>
+        <FileTypeIcon name={name} isDir={false} size="md" />
+        <span className="min-w-0 flex-1 truncate font-mono text-ui-caption">{file.relative}</span>
         <DiffCounts file={file} />
       </Button>
       {menu}
@@ -334,16 +374,16 @@ function FileRow({
 }
 
 function DiffCounts({ file }: { file: CheckpointFile }) {
-  useLocale();
+  const t = useT();
   if (!file.exact) {
     return (
-      <span className="shrink-0 text-[11px] font-medium text-(--ui-tone-warning-fg)">
+      <span className="shrink-0 text-ui-micro font-medium text-(--ui-tone-warning-fg)">
         {t("Mixed changes")}
       </span>
     );
   }
   return (
-    <span className="flex shrink-0 gap-2 font-sans text-[11px] font-semibold tabular-nums">
+    <span className="flex shrink-0 gap-2 font-sans text-ui-micro font-medium tabular-nums">
       <span className="text-diff-add-fg">+{formatInteger(file.additions)}</span>
       <span className="text-diff-del-fg">-{formatInteger(file.deletions)}</span>
     </span>

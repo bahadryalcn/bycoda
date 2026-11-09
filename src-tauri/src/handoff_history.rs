@@ -65,7 +65,9 @@ pub fn handoff_history_read(
     let end = start
         .saturating_add(limit.unwrap_or(20).clamp(1, 100))
         .min(messages.len());
-    Ok(
-        json!({"messages":messages[start..end],"nextCursor":if end < messages.len() {Some(end)} else {None}}),
-    )
+    let mut response = json!({"messages":messages[start..end],"nextCursor":if end < messages.len() {Some(end)} else {None}});
+    if start == 0 && history["retainedContext"].is_string() {
+        response["retainedContext"] = history["retainedContext"].clone();
+    }
+    Ok(response)
 }

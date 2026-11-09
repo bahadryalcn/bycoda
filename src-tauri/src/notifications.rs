@@ -8,8 +8,9 @@
 //! the WinRT toast API via `tauri-winrt-notification`, which likewise has no
 //! runtime permission prompt: toasts are controlled from Windows Settings.
 
+use rusqlite::OptionalExtension;
 use serde::Serialize;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 /// Emitted to every window when the user clicks a notification. Payload is
 /// the session id; the window that owns that session handles it.
@@ -49,14 +50,19 @@ pub async fn notification_permission(app: AppHandle) -> Permission {
     platform::permission(&app).await
 }
 
+/// Read-only capability and OS permission probe. Never requests permission.
+#[tauri::command]
+pub async fn assistant_notification_capability(app: AppHandle) -> serde_json::Value {
+    serde_json::json!({"version":1,"permission":platform::permission(&app).await})
+}
+
 #[tauri::command]
 pub async fn request_notification_permission(app: AppHandle) -> Permission {
     platform::request_permission(&app).await
 }
 
-/// Resolves only once the platform reports the banner as scheduled: the
-/// frontend skips its own turn-finished cue on success, so returning early
-/// would silence a turn that never got a notification.
+/// Returns true only once the platform reports the banner as scheduled.
+/// Foreground suppression returns false so the frontend retains its in-app cue.
 #[tauri::command]
 pub async fn show_notification(
     app: AppHandle,
@@ -65,8 +71,127 @@ pub async fn show_notification(
     subtitle: String,
     body: String,
     sound: bool,
-) -> Result<(), String> {
-    platform::show(&app, &session_id, &title, &subtitle, &body, sound).await
+) -> Result<bool, String> {
+    // Check every bycoda window: another workspace or the quick composer also
+    // means the user is already in the app. Do not trust a webview's cached focus.
+    if app
+        .webview_windows()
+        .into_values()
+        .any(|window| window.is_focused().unwrap_or(false))
+    {
+        return Ok(false);
+    }
+    platform::show(&app, &session_id, &title, &subtitle, &body, sound)
+        .await
+        .map(|()| true)
+}
+
+/// Durable native receipt for a privacy-qualified Assistant notification. The
+/// same canonical ID and scope never produce a second OS enqueue after an
+/// unknown outcome. This owner reports OS queue acceptance, not presentation.
+pub(crate) fn assistant_notification_once(
+    app: &AppHandle,
+    key: &str,
+    scope_hash: &str,
+    work: impl FnOnce() -> Result<bool, String> + Send + 'static,
+) -> Result<&'static str, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| "Notification storage unavailable")?;
+    std::fs::create_dir_all(&dir).map_err(|_| "Notification storage unavailable")?;
+    assistant_notification_once_at(
+        dir.join("assistant-notification-receipts-v1.db"),
+        key,
+        scope_hash,
+        work,
+    )
+}
+fn assistant_notification_once_at(
+    file: std::path::PathBuf,
+    key: &str,
+    scope_hash: &str,
+    work: impl FnOnce() -> Result<bool, String> + Send + 'static,
+) -> Result<&'static str, String> {
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = SERIAL
+        .lock()
+        .map_err(|_| "Notification owner unavailable")?;
+    let conn = rusqlite::Connection::open(&file).map_err(|_| "Notification storage unavailable")?;
+    conn.execute_batch("PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS receipts(id TEXT PRIMARY KEY, scope_hash TEXT NOT NULL, state TEXT NOT NULL)").map_err(|_| "Notification storage unavailable")?;
+    let previous: Option<(String, String)> = conn
+        .query_row(
+            "SELECT scope_hash,state FROM receipts WHERE id=?1",
+            [key],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|_| "Notification storage unavailable")?;
+    if let Some((existing, state)) = previous {
+        if existing != scope_hash {
+            return Err("Notification identity was reused with changed scope".into());
+        }
+        return match state.as_str() {
+            "accepted" => Ok("accepted"),
+            "pending" => Ok("unknown"),
+            "suppressed" => Ok("suppressed"),
+            _ => Err("Invalid notification receipt".into()),
+        };
+    }
+    // A crash after this commit is unknown and is never replayed automatically.
+    conn.execute(
+        "INSERT INTO receipts(id,scope_hash,state) VALUES(?1,?2,'pending')",
+        rusqlite::params![key, scope_hash],
+    )
+    .map_err(|_| "Notification storage unavailable")?;
+    let key = key.to_owned();
+    let hash = scope_hash.to_owned();
+    std::thread::Builder::new().name("assistant-notification".into()).spawn(move || {
+        let outcome = work();
+        if let Ok(shown) = outcome {
+            let state = if shown { "accepted" } else { "suppressed" };
+            if let Ok(db) = rusqlite::Connection::open(file) {
+                let _ = db.execute("UPDATE receipts SET state=?1 WHERE id=?2 AND scope_hash=?3 AND state='pending'", rusqlite::params![state,key,hash]);
+            }
+        }
+    }).map_err(|_| "Notification owner acceptance is uncertain")?;
+    // Native has accepted ownership; this is not OS delivery or display.
+    Ok("accepted")
+}
+pub(crate) fn assistant_notification_status(
+    app: &AppHandle,
+    key: &str,
+    scope_hash: &str,
+) -> Result<&'static str, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| "Notification storage unavailable")?;
+    let file = dir.join("assistant-notification-receipts-v1.db");
+    if !file.exists() {
+        return Ok("unknown");
+    }
+    let conn =
+        rusqlite::Connection::open_with_flags(file, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|_| "Notification storage unavailable")?;
+    let value: Option<(String, String)> = conn
+        .query_row(
+            "SELECT scope_hash,state FROM receipts WHERE id=?1",
+            [key],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|_| "Notification storage unavailable")?;
+    match value {
+        None => Ok("unknown"),
+        Some((hash, _)) if hash != scope_hash => {
+            Err("Notification identity was reused with changed scope".into())
+        }
+        Some((_, state)) if state == "accepted" => Ok("accepted"),
+        Some((_, state)) if state == "suppressed" => Ok("suppressed"),
+        Some((_, state)) if state == "pending" => Ok("unknown"),
+        _ => Err("Invalid notification receipt".into()),
+    }
 }
 
 /// Opens the app's page in the OS notification settings, where the user can
@@ -102,7 +227,11 @@ pub fn set_taskbar_attention(
     {
         use tauri::image::Image;
         use tauri::UserAttentionType;
-        let icon = (count > 0).then(|| Image::new_owned(badge_rgba(count), BADGE_SIZE, BADGE_SIZE));
+        let icon = if count > 0 {
+            Some(Image::new_owned(badge_rgba(count)?, BADGE_SIZE, BADGE_SIZE))
+        } else {
+            None
+        };
         window
             .set_overlay_icon(icon)
             .map_err(|err| err.to_string())?;
@@ -121,90 +250,59 @@ pub fn set_taskbar_attention(
 #[cfg(any(target_os = "windows", test))]
 const BADGE_SIZE: u32 = 32;
 
-/// 3x5 glyphs for `0`-`9` and `+`, one row per entry, MSB-first in 3 bits.
+/// Pre-rendered Segoe UI badges, with optical padding and antialiased edges.
+/// Embedding the atlas keeps rendering independent of installed fonts, theme,
+/// and display settings. Regenerate with scripts/build/generate-taskbar-badges.ps1.
 #[cfg(any(target_os = "windows", test))]
-const GLYPHS: [[u8; 5]; 11] = [
-    [0b111, 0b101, 0b101, 0b101, 0b111],
-    [0b010, 0b110, 0b010, 0b010, 0b111],
-    [0b111, 0b001, 0b111, 0b100, 0b111],
-    [0b111, 0b001, 0b111, 0b001, 0b111],
-    [0b101, 0b101, 0b111, 0b001, 0b001],
-    [0b111, 0b100, 0b111, 0b001, 0b111],
-    [0b111, 0b100, 0b111, 0b101, 0b111],
-    [0b111, 0b001, 0b010, 0b010, 0b010],
-    [0b111, 0b101, 0b111, 0b101, 0b111],
-    [0b111, 0b101, 0b111, 0b001, 0b111],
-    [0b000, 0b010, 0b111, 0b010, 0b000],
-];
-
-/// Red disc with the count in white (`9+` above nine), as RGBA pixels.
-#[cfg(any(target_os = "windows", test))]
-fn badge_rgba(count: u32) -> Vec<u8> {
-    let size = BADGE_SIZE as i32;
-    let glyphs: Vec<usize> = if count > 9 {
-        vec![9, 10]
-    } else {
-        vec![count as usize]
-    };
-    let scale = if glyphs.len() == 1 { 5 } else { 4 };
-    let width = glyphs.len() as i32 * 3 * scale + (glyphs.len() as i32 - 1) * scale;
-    let (left, top) = ((size - width) / 2, (size - 5 * scale) / 2);
-    let mut pixels = vec![0u8; (size * size * 4) as usize];
-    let radius = size as f32 / 2.0;
-    for y in 0..size {
-        for x in 0..size {
-            let (dx, dy) = (x as f32 + 0.5 - radius, y as f32 + 0.5 - radius);
-            if dx * dx + dy * dy > radius * radius {
-                continue;
-            }
-            let (gx, gy) = (x - left, y - top);
-            let lit = gx >= 0 && gy >= 0 && gy < 5 * scale && gx < width && {
-                let slot = gx / (4 * scale);
-                let col = (gx % (4 * scale)) / scale;
-                col < 3
-                    && GLYPHS[glyphs[slot as usize]][(gy / scale) as usize] >> (2 - col) & 1 == 1
-            };
-            let rgba: [u8; 4] = if lit {
-                [255, 255, 255, 255]
-            } else {
-                [215, 38, 61, 255]
-            };
-            let at = ((y * size + x) * 4) as usize;
-            pixels[at..at + 4].copy_from_slice(&rgba);
-        }
+fn badge_rgba(count: u32) -> Result<Vec<u8>, String> {
+    use std::sync::OnceLock;
+    static ATLAS: OnceLock<Result<image::RgbaImage, String>> = OnceLock::new();
+    if count == 0 {
+        return Ok(vec![0; (BADGE_SIZE * BADGE_SIZE * 4) as usize]);
     }
-    pixels
+    let atlas = ATLAS.get_or_init(|| {
+        image::load_from_memory(include_bytes!("../icons/taskbar-badges.png"))
+            .map(|image| image.into_rgba8())
+            .map_err(|error| format!("Could not decode taskbar badges: {error}"))
+    });
+    let atlas = atlas.as_ref().map_err(Clone::clone)?;
+    let slot = count.min(10) - 1;
+    Ok(
+        image::imageops::crop_imm(atlas, slot * BADGE_SIZE, 0, BADGE_SIZE, BADGE_SIZE)
+            .to_image()
+            .into_raw(),
+    )
 }
 
 #[cfg(test)]
 mod badge_tests {
     use super::{badge_rgba, BADGE_SIZE};
 
-    fn white(pixels: &[u8]) -> usize {
-        pixels
-            .chunks(4)
-            .filter(|p| p == &[255, 255, 255, 255])
-            .count()
+    #[test]
+    fn every_badge_has_transparent_padding_and_smooth_edges() {
+        for count in 1..=10 {
+            let pixels = badge_rgba(count).unwrap();
+            assert_eq!(pixels.len(), (BADGE_SIZE * BADGE_SIZE * 4) as usize);
+            let row = (BADGE_SIZE * 4) as usize;
+            assert!(pixels[..row].iter().all(|&byte| byte == 0));
+            assert!(pixels[pixels.len() - row..].iter().all(|&byte| byte == 0));
+            assert!(pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|pixel| pixel[3] > 0 && pixel[3] < 255));
+            assert!(pixels.as_chunks::<4>().0.contains(&[255, 255, 255, 255]));
+        }
     }
 
     #[test]
-    fn badge_is_a_square_rgba_buffer_with_transparent_corners() {
-        let pixels = badge_rgba(3);
-        assert_eq!(pixels.len(), (BADGE_SIZE * BADGE_SIZE * 4) as usize);
-        assert_eq!(&pixels[..4], &[0, 0, 0, 0]);
-        // The glyph for `1` lights 8 cells, each 5x5 pixels.
-        assert_eq!(white(&badge_rgba(1)), 8 * 25);
-    }
-
-    #[test]
-    fn digits_draw_different_glyphs_and_overflow_collapses_to_nine_plus() {
-        assert_ne!(badge_rgba(1), badge_rgba(2));
-        assert_eq!(badge_rgba(10), badge_rgba(99));
-        assert_ne!(badge_rgba(10), badge_rgba(9));
-        assert!(white(&badge_rgba(10)) > 0);
+    fn zero_clears_and_counts_above_nine_share_the_overflow_badge() {
+        assert!(badge_rgba(0).unwrap().iter().all(|&byte| byte == 0));
+        assert_ne!(badge_rgba(1).unwrap(), badge_rgba(2).unwrap());
+        assert_ne!(badge_rgba(9).unwrap(), badge_rgba(10).unwrap());
+        assert_eq!(badge_rgba(10).unwrap(), badge_rgba(u32::MAX).unwrap());
     }
 }
-
 #[cfg(target_os = "macos")]
 mod platform {
     use std::cell::RefCell;
@@ -408,7 +506,11 @@ mod platform {
         std::process::Command::new("open")
             .arg(url)
             .spawn()
-            .map(|_| ())
+            .map(|mut child| {
+                std::thread::spawn(move || {
+                    let _ = child.wait();
+                });
+            })
             .map_err(|err| err.to_string())
     }
 
@@ -425,8 +527,9 @@ mod platform {
         unsafe impl NSObjectProtocol for Delegate {}
 
         unsafe impl UNUserNotificationCenterDelegate for Delegate {
-            /// Without this macOS drops banners while the app is frontmost,
-            /// and a finished background session deserves one either way.
+            /// macOS calls this when a notification arrives in the foreground.
+            /// The app may have gained focus after scheduling; retain in-app
+            /// attention without a duplicate system banner or sound.
             #[unsafe(method(userNotificationCenter:willPresentNotification:withCompletionHandler:))]
             fn will_present(
                 &self,
@@ -434,9 +537,7 @@ mod platform {
                 _notification: &UNNotification,
                 completion: &block2::DynBlock<dyn Fn(UNNotificationPresentationOptions)>,
             ) {
-                completion.call((UNNotificationPresentationOptions::Banner
-                    | UNNotificationPresentationOptions::List
-                    | UNNotificationPresentationOptions::Sound,));
+                completion.call((UNNotificationPresentationOptions::empty(),));
             }
 
             #[unsafe(method(userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:))]
@@ -585,16 +686,20 @@ mod platform {
         if sound {
             notification.sound_name("message-new-instant");
         }
-        let handle = notification.show().map_err(|err| err.to_string())?;
+        let handle = notification
+            .show_async()
+            .await
+            .map_err(|err| err.to_string())?;
         let app = app.clone();
         let session_id = session_id.to_string();
-        // `wait_for_action` blocks until the notification closes.
-        std::thread::spawn(move || {
-            handle.wait_for_action(|action| {
-                if action == "default" {
-                    super::handle_click(&app, &session_id);
-                }
-            });
+        tauri::async_runtime::spawn(async move {
+            handle
+                .wait_for_action_async(|action| {
+                    if action.is_default_action() {
+                        super::handle_click(&app, &session_id);
+                    }
+                })
+                .await;
         });
         Ok(())
     }
@@ -803,7 +908,13 @@ mod platform {
         let mut cmd = std::process::Command::new("cmd");
         cmd.args(["/C", "start", "", "ms-settings:notifications"]);
         crate::hide_window_console(&mut cmd);
-        cmd.spawn().map(|_| ()).map_err(|err| err.to_string())
+        cmd.spawn()
+            .map(|mut child| {
+                std::thread::spawn(move || {
+                    let _ = child.wait();
+                });
+            })
+            .map_err(|err| err.to_string())
     }
 
     #[cfg(test)]
@@ -878,5 +989,86 @@ mod platform {
 
     pub(super) fn open_settings(_app: &AppHandle) -> Result<(), String> {
         Err("notifications are not supported on this platform".into())
+    }
+}
+
+#[cfg(test)]
+mod assistant_receipt_tests {
+    use super::*;
+    #[test]
+    fn pending_receipt_never_replays_and_final_acceptance_is_durable() {
+        let directory =
+            std::env::temp_dir().join(format!("bycoda-notification-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let file = directory.join("receipts.db");
+        let (release, wait) = std::sync::mpsc::channel();
+        let (started, entered) = std::sync::mpsc::channel();
+        assert_eq!(
+            assistant_notification_once_at(file.clone(), "event", "scope", move || {
+                started.send(()).unwrap();
+                wait.recv().unwrap();
+                Ok(true)
+            })
+            .unwrap(),
+            "accepted"
+        );
+        entered.recv().unwrap();
+        assert_eq!(
+            assistant_notification_once_at(file.clone(), "event", "scope", || panic!("replayed"))
+                .unwrap(),
+            "unknown"
+        );
+        assert!(
+            assistant_notification_once_at(file.clone(), "event", "changed", || Ok(true)).is_err()
+        );
+        release.send(()).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let db = rusqlite::Connection::open(&file).unwrap();
+            let state: String = db
+                .query_row("SELECT state FROM receipts WHERE id='event'", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            if state == "accepted" {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert_eq!(
+            assistant_notification_once_at(file.clone(), "event", "scope", || panic!("replayed"))
+                .unwrap(),
+            "accepted"
+        );
+        assert_eq!(
+            assistant_notification_once_at(file.clone(), "suppressed", "scope", || Ok(false))
+                .unwrap(),
+            "accepted"
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let db = rusqlite::Connection::open(&file).unwrap();
+            let state: String = db
+                .query_row(
+                    "SELECT state FROM receipts WHERE id='suppressed'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            if state == "suppressed" {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert_eq!(
+            assistant_notification_once_at(file.clone(), "suppressed", "scope", || panic!(
+                "replayed"
+            ))
+            .unwrap(),
+            "suppressed"
+        );
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

@@ -172,7 +172,7 @@ describe("UsageFooter provider authentication", () => {
     expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(2);
   });
 
-  it("refreshes displayed providers every two minutes and stops on unmount", async () => {
+  it("refreshes Claude every two minutes and Codex every ten, and stops on unmount", async () => {
     vi.useFakeTimers();
     rateLimitsFetch.fetchClaudeRateLimits.mockResolvedValue(connectedLimits("claude"));
     rateLimitsFetch.fetchCodexRateLimits.mockResolvedValue(connectedLimits("codex"));
@@ -186,17 +186,21 @@ describe("UsageFooter provider authentication", () => {
 
     await act(async () => vi.advanceTimersByTimeAsync(10));
     expect(rateLimitsFetch.fetchClaudeRateLimits).toHaveBeenCalledTimes(2);
-    expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(2);
+    expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(1);
 
     await act(async () => vi.advanceTimersByTimeAsync(120_000));
     expect(rateLimitsFetch.fetchClaudeRateLimits).toHaveBeenCalledTimes(3);
-    expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(3);
+    expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(1);
+
+    await act(async () => vi.advanceTimersByTimeAsync(360_000));
+    expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(2);
 
     act(() => root.unmount());
     root = createRoot(container);
+    const claudeCalls = rateLimitsFetch.fetchClaudeRateLimits.mock.calls.length;
     await act(async () => vi.advanceTimersByTimeAsync(120_000));
-    expect(rateLimitsFetch.fetchClaudeRateLimits).toHaveBeenCalledTimes(3);
-    expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(3);
+    expect(rateLimitsFetch.fetchClaudeRateLimits).toHaveBeenCalledTimes(claudeCalls);
+    expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(2);
   });
 
   it("keeps a healthy Grok provider label non-interactive", () => {
@@ -300,7 +304,7 @@ it("pauses usage polls and cache retries while hidden, then force refreshes on f
   rateLimitsFetch.fetchCodexRateLimits.mockResolvedValue(signedOutLimits("codex"));
   await act(async () => root.render(createElement(UsageFooter, { providers: ["codex"] })));
   await act(async () => focusManager.setFocused(false));
-  await act(async () => vi.advanceTimersByTimeAsync(360_000));
+  await act(async () => vi.advanceTimersByTimeAsync(660_000));
   expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(1);
   rateLimitsFetch.fetchCodexRateLimits.mockResolvedValue(connectedLimits("codex"));
   await act(async () => focusManager.setFocused(true));

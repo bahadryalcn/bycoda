@@ -1,21 +1,14 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
-import { Popover } from "../../../shared/ui/Popover";
-import {
-  DashboardSquare,
-  Zap,
-  Inbox,
-  StickyNote,
-  Globe,
-  CircleHelp,
-} from "../../../shared/ui/icons";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { DashboardSquare, Zap, Inbox, StickyNote, Globe } from "../../../shared/ui/icons";
 import {
   useWorkspaceFeatures,
   workspaceFeatureSettings,
   type WorkspaceFeatureId,
 } from "../model/workspaceFeatures";
-import { Row, Toggle } from "./settingsControls";
+import { Row, SettingsFeedback, Toggle } from "./settingsControls";
+import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 
 export const WORKSPACE_FEATURE_CHOICES = [
   {
@@ -57,58 +50,55 @@ export const WORKSPACE_FEATURE_CHOICES = [
 
 export function WorkspaceToolsHelp() {
   useLocale();
-  const [open, setOpen] = useState(false);
-  const anchor = useRef<HTMLButtonElement>(null);
   return (
-    <>
-      <Button
-        ref={anchor}
-        variant="ghost"
-        iconOnly
-        label={t("About workspace tools")}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        onClick={() => setOpen(!open)}
-      >
-        <CircleHelp size={16} />
-      </Button>
-      {open ? (
-        <Popover
-          anchor={anchor}
-          role="dialog"
-          aria-label={t("About workspace tools")}
-          align="end"
-          width={340}
-          autoFocus
-          onDismiss={() => setOpen(false)}
-          className="workspace-tools-help"
-        >
-          <p>
-            {t(
-              "Controls navigation visibility. Hiding this tool does not stop work or change permissions.",
-            )}
-          </p>
-          <dl>
-            {WORKSPACE_FEATURE_CHOICES.map(({ id, label, description }) => (
-              <div key={id}>
-                <dt>{t(label)}</dt>
-                <dd>{t(description)}</dd>
-              </div>
-            ))}
-          </dl>
-          <p>{t("Controls project notes and note references in the composer.")}</p>
-        </Popover>
-      ) : null}
-    </>
+    <InfoPopover label={t("About workspace tools")} width={340}>
+      <p>
+        {t(
+          "Controls navigation visibility. Hiding this tool does not stop work or change permissions.",
+        )}
+      </p>
+      <DescriptionList size="sm">
+        {WORKSPACE_FEATURE_CHOICES.map(({ id, label, description }) => (
+          <DescriptionItem key={id} term={t(label)}>
+            {t(description)}
+          </DescriptionItem>
+        ))}
+      </DescriptionList>
+      <p>{t("Controls project notes and note references in the composer.")}</p>
+    </InfoPopover>
   );
 }
 
 export function WorkspaceFeatureSettings() {
   useLocale();
   const features = useWorkspaceFeatures();
-  return WORKSPACE_FEATURE_CHOICES.map(({ id, label }) => (
-    <Row key={id} id={id === "notes" ? "notes" : `workspace-${id}`} label={t(label)}>
-      <Toggle label={t(label)} on={features[id]} onChange={workspaceFeatureSettings[id].save} />
+  const [errors, setErrors] = useState<Partial<Record<WorkspaceFeatureId, boolean>>>({});
+  return WORKSPACE_FEATURE_CHOICES.map(({ id, label, description }) => (
+    <Row
+      key={id}
+      id={id === "notes" ? "notes" : `workspace-${id}`}
+      label={t(label)}
+      description={t(description)}
+      dependency={
+        id === "notes"
+          ? t("Controls project notes and note references in the composer.")
+          : undefined
+      }
+      feedback={
+        errors[id] ? (
+          <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
+        ) : undefined
+      }
+    >
+      <Toggle
+        label={t(label)}
+        on={features[id]}
+        onChange={(next) => {
+          const setting = workspaceFeatureSettings[id];
+          setting.save(next);
+          setErrors((current) => ({ ...current, [id]: setting.load() !== next }));
+        }}
+      />
     </Row>
   ));
 }

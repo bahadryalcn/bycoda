@@ -35,7 +35,26 @@ export function windowNoteLibrary<NoteItem extends NoteMetadata>(
     offset = groupEnd;
     if (offset >= end) break;
   }
-  return { groups: windowed, start, end, total };
+  const uniqueIds = new Set<string>();
+  const visibleIds = new Set<string>();
+  for (const group of groups) for (const note of group.notes) uniqueIds.add(note.id);
+  for (const group of windowed) for (const note of group.notes) visibleIds.add(note.id);
+  return {
+    groups: windowed,
+    start,
+    end,
+    total,
+    // Ranges count actual rendered rows (headings and repeated tag membership),
+    // while unique totals count each note only once, including collapsed groups.
+    rangeStart: total ? start + 1 : 0,
+    rangeEnd: end,
+    pageNumber: total ? Math.floor(start / LIST_PAGE_SIZE) + 1 : 0,
+    pageCount: Math.ceil(total / LIST_PAGE_SIZE),
+    hasPrevious: start > 0,
+    hasNext: end < total,
+    uniqueTotal: uniqueIds.size,
+    visibleUniqueCount: visibleIds.size,
+  };
 }
 
 export function noteLibraryItemIndex(

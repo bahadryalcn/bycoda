@@ -92,7 +92,7 @@
  *   conversation); whether `--disable-slash-commands` also hides skills from
  *   the model (without it a "/x" prompt is refused in stream-json mode).
  */
-import { promptText } from "../../../../features/sessions/model/attachments";
+import { promptText } from "../../../../features/sessions/model/attachmentPrompt";
 import type { AgentModel } from "../../../../features/sessions/model/models";
 import type {
   Attachment,
@@ -332,11 +332,8 @@ function toolView(name: string, parameters: Record<string, unknown>): ToolView {
 }
 
 function subagentView(info: unknown): ToolView {
-  const first = asRecord(
-    Array.isArray(asRecord(info)?.subagents)
-      ? (asRecord(info)?.subagents as unknown[])[0]
-      : undefined,
-  );
+  const subagents = asRecord(info)?.subagents;
+  const first = asRecord(Array.isArray(subagents) ? subagents[0] : undefined);
   const label = str(first?.role) ?? str(first?.initial_prompt);
   return {
     title: agentToolTitle({ description: label?.slice(0, 80) }),

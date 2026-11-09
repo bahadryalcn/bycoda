@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { invoke } from "@tauri-apps/api/core";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -6,14 +7,18 @@ import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { clearInboxCache, githubWorkItemDetails, type InboxItem } from "../model/githubTasks";
 import type { LinkedWorkItem } from "../../sessions/model/session";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
+import { withQueryClient } from "../../../../tests/browser/queryTest";
 import {
-  InboxDetail,
+  InboxDetail as RawInboxDetail,
   inboxStatusMark,
   inboxShowsFullFileDiff,
-  LinkedWorkItemPanel,
+  LinkedWorkItemPanel as RawLinkedWorkItemPanel,
 } from "./InboxView";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => false }));
+
+const InboxDetail = withQueryClient(RawInboxDetail);
+const LinkedWorkItemPanel = withQueryClient(RawLinkedWorkItemPanel);
 
 function item(overrides: Partial<InboxItem> = {}): InboxItem {
   return {
@@ -48,14 +53,15 @@ function renderDetail(inboxItem: InboxItem, relatedSessions: SessionSummary[] = 
 }
 
 describe("InboxDetail layout", () => {
-  it("uses GitHub's purple check for issues closed as completed", () => {
+  it("marks issues closed as completed with the success check and a Completed label", () => {
     const completed = inboxStatusMark(item({ state: "closed", stateReason: "completed" }));
     expect(completed.Icon.displayName).toBe("CheckCircle");
-    expect(completed.className).toBe("text-(--color-feature)");
+    expect(completed.tone).toBe("success");
+    expect(completed.label).toBe("Completed");
 
     const notPlanned = inboxStatusMark(item({ state: "closed", stateReason: "not_planned" }));
     expect(notPlanned.Icon.displayName).toBe("CircleX");
-    expect(notPlanned.className).toBe("text-(--ui-tone-danger-fg)");
+    expect(notPlanned.tone).toBe("neutral");
   });
 
   it("renders a linked item as a standalone, closable side panel", () => {
@@ -77,7 +83,7 @@ describe("InboxDetail layout", () => {
     expect(markup).toContain("data-linked-work-item-panel");
     expect(markup).toContain('aria-label="Linked issue #157"');
     expect(markup).toContain('aria-label="Resize linked issue panel"');
-    expect(markup).toContain('title="Close issue panel"');
+    expect(markup).toContain('aria-label="Close issue panel"');
     expect(markup).not.toContain("data-app-inbox");
     expect(markup).not.toContain("bg-background-base");
     expect(markup).not.toContain("backdrop-blur");
@@ -89,7 +95,7 @@ describe("InboxDetail layout", () => {
       createdAt: "2026-09-01T08:00:00Z",
     });
     expect(markup).toContain("Created ");
-    expect(markup).toContain('dateTime="2026-09-01T08:00:00Z"');
+    expect(markup).toContain('dateTime="2026-09-01T08:00:00.000Z"');
     expect(markup).toContain("Updated ");
     expect(renderDetail(item({ kind: "pr" }))).not.toContain("Created ");
   });
@@ -105,12 +111,12 @@ describe("InboxDetail layout", () => {
 
     expect(headerIndex).toBeGreaterThan(-1);
     expect(scrollIndex).toBeGreaterThan(headerIndex);
-    expect(header).toContain('title="A long inbox issue"');
+    expect(header).toContain(">A long inbox issue</h1>");
     expect(header).toContain("Send to agent");
     expect(header).toContain("Ask");
     expect(header).toContain("Open on GitHub");
     expect(header).toContain("Unassigned");
-    expect(header).toContain("whitespace-nowrap");
+    expect(identityTag).toContain("flex-wrap");
     expect(header).not.toContain("data-inbox-detail-fixed-header");
     expect(identityTag).not.toContain("border-b");
     expect(header).not.toContain("local-project");
@@ -138,7 +144,7 @@ describe("InboxDetail layout", () => {
     const header = markup.slice(headerIndex, scrollIndex);
 
     expect(header).toContain('aria-label="Checks: Loading checks"');
-    expect(header).toContain('title="Checks: Loading checks"');
+    expect(header).not.toContain('title="Checks: Loading checks"');
     expect(header).toContain(">Checks<");
     // Summary is the first selected tab; loading never steals the selection.
     const summarySelected = markup.indexOf('aria-selected="true"');
@@ -146,7 +152,7 @@ describe("InboxDetail layout", () => {
     expect(summarySelected).toBeLessThan(markup.indexOf('aria-label="Checks: Loading checks"'));
   });
 
-  it("Issue kontrollerini gizler, GitLab ve Azure PR kontrollerini gösterir", () => {
+  it("hides Issue checks and shows GitLab and Azure PR checks", () => {
     expect(renderDetail(item())).not.toContain('aria-label="Checks:');
     for (const provider of ["gitlab", "azuredevops"] as const) {
       expect(
@@ -176,19 +182,19 @@ describe("InboxDetail layout", () => {
 
     expect(markup).toContain("Merge pull request");
     expect(markup).toContain('aria-label="Merge options"');
-    expect(markup).toContain("Convert to draft");
-    expect(markup).toContain("Close pull request");
+    expect(markup).toContain('aria-label="More pull request actions"');
+    expect(markup).not.toContain("Close pull request");
   });
 
   it("adapts pull request actions to draft and closed states", () => {
     const draft = renderDetail(item({ kind: "pr", state: "open", draft: true }));
     expect(draft).toContain("Ready for review");
-    expect(draft).toContain("Close pull request");
+    expect(draft).toContain('aria-label="More pull request actions"');
     expect(draft).not.toContain('aria-label="Merge options"');
 
     const closed = renderDetail(item({ kind: "pr", state: "closed" }));
     expect(closed).toContain("Reopen pull request");
-    expect(closed).not.toContain("Convert to draft");
+    expect(closed).not.toContain('aria-label="More pull request actions"');
 
     const merged = renderDetail(item({ kind: "pr", state: "merged" }));
     expect(merged).not.toContain("Reopen pull request");
@@ -206,8 +212,7 @@ describe("InboxDetail layout", () => {
     );
 
     expect(markup).not.toContain('aria-label="Merge options"');
-    expect(markup).not.toContain("Convert to draft");
-    expect(markup).not.toContain("Close pull request");
+    expect(markup).not.toContain('aria-label="More pull request actions"');
   });
 
   it("pins the linked-item identity above the panel scroller", () => {
@@ -256,12 +261,12 @@ describe("InboxDetail layout", () => {
     expect(fixedHeader).not.toContain("px-5");
     expect(fixedHeader).toContain("border-b");
     expect(fixedHeader).not.toContain("A long inbox issue");
-    expect(markup).toContain("text-[18px]");
+    expect(markup).toContain("text-ui-heading");
     expect(markup).not.toContain("Related thread");
     expect(fixedHeader).not.toContain("Review Bycoda Pull Request");
     // The PR watch panel may offer linked threads as repair targets inside the scroller.
     expect(reviewButton).toContain('data-button-variant="ghost"');
-    expect(fixedHeader).toContain("pr-[34px]");
+    expect(fixedHeader).toContain("pe-8.5");
   });
 
   it("offers full-file diffs only for GitHub pull requests", () => {

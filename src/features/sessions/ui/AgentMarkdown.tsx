@@ -1,9 +1,17 @@
+import { Skeleton } from "../../../shared/ui/Skeleton";
 import { Button } from "../../../shared/ui/Button";
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Link } from "../../../shared/ui/Link";
+import { LiveText } from "../../../shared/ui/LiveText";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Alert } from "../../../shared/ui/Alert";
 import { useTransientFlag } from "../../../shared/hooks/useTransientFlag";
-import { t, useLocale } from "../../../shared/i18n";
+import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { useLocale, useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { openWorkspaceUrl } from "../../connections/model/workspaceUrls";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { resolveNoteImagePath } from "../../notes/notes";
+import { openWorkspaceUrl } from "../../connections/public/workspaceUrls";
 import {
   createContext,
   isValidElement,
@@ -37,28 +45,18 @@ import {
   type BlockProps,
   type Components,
 } from "streamdown";
-import type { Pluggable, PluggableList } from "unified";
-import { PerformanceTraceContext } from "./performanceTraceContext";
-import {
-  createPerformanceTraceId,
-  isPerformanceTracingEnabled,
-  recordPerformanceEvent,
-  startPerformanceSpan,
-} from "../../../shared/lib/performanceTrace";
-import { ExplorerMenu, type ExplorerMenuItem } from "../../files/ui/ExplorerMenu";
-import { FileActionError } from "../../files/ui/FileActionError";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
-import { useCodeHighlightPlugin } from "../../files/editor/useCodeHighlightPlugin";
-import { createLazyMermaidPlugin } from "../../files/editor/mermaidPlugin";
-import {
-  displayPath,
-  isEmailAddress,
-  isExtensionlessFileName,
-  resolveWorkspaceFileReference,
-} from "../../../shared/lib/paths";
+import type { Pluggable, PluggableList, Plugin } from "unified";
+import { useRenderTrace } from "./useRenderTrace";
+import { ExplorerMenu, type ExplorerMenuItem } from "../../files/public/ExplorerMenu";
+import { FileActionError } from "../../files/public/FileActionError";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
+import { useCodeHighlightPlugin } from "../../files/public/useCodeHighlightPlugin";
+import { createLazyMermaidPlugin } from "../../files/public/mermaidPlugin";
+import { displayPath, isEmailAddress, isExtensionlessFileName } from "../../../shared/lib/paths";
+import { useWorkspaceFileResolver } from "../model/reactiveReads";
 import type { EditorNavigation, OpenFileFn } from "../../search/model/search";
-import { remarkWorkspaceFileLinks } from "../../files/model/markdownFileLinks";
-import { isAtxHeadingLine } from "../../files/model/markdownSource";
+import { remarkWorkspaceFileLinks } from "../../files/public/markdownFileLinks";
+import { isAtxHeadingLine } from "../../files/public/markdownSource";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { copyText } from "../../../platform/tauri/clipboard";
@@ -68,14 +66,14 @@ import {
   openPathWithDefaultApp,
   revealPath,
 } from "../../../platform/tauri/fs";
-import { ChatFolderBrowser } from "../../files/ui/ChatFolderBrowser";
+import { ChatFolderBrowser } from "../../files/public/ChatFolderBrowser";
 import { Check, Copy, FolderOpen } from "../../../shared/ui/icons";
-import { resolveFileOpenRequest } from "../../files/model/fileIndex";
-import { existingChatPath } from "../../files/model/chatPathChecks";
+import { resolveFileOpenRequest } from "../../files/public/fileIndex";
+import { existingChatPath } from "../../files/public/chatPathChecks";
 import {
   messageFileCandidates,
   resolveMessageFileReference,
-} from "../../files/model/messagePathContext";
+} from "../../files/public/messagePathContext";
 import { INBOX_MEDIA_PREFIXES, isInboxMediaUrl } from "../../inbox/model/inboxMedia";
 import { isNoteImagePath } from "../../notes";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
@@ -93,45 +91,76 @@ import {
   useWordFading,
   useWordFadeWindow,
 } from "./wordFade";
-import { loadStreamingTextMode, subscribeStreamingTextMode } from "../../settings/model/settings";
+import { loadStreamingTextMode, subscribeStreamingTextMode } from "../../settings/public/settings";
 import { usePresentationVisible } from "./presentationVisibility";
-import { usePrefersReducedMotion } from "../../settings/model/decorativeMotion";
+import { usePrefersReducedMotion } from "../../settings/public/decorativeMotion";
 import { HighlightedCodeBlock } from "./HighlightedCodeBlock";
-import { parseStreamingMarkdown } from "./streamingMarkdown";
-
+import { useParsedMarkdown } from "./useParsedMarkdown";
+import { parseLocalSessionLink } from "../model/localSessionReference";
+import { LocalSessionReferenceLink } from "./LocalSessionReferenceLink";
+import { remarkLocalSessionLinks } from "./remarkLocalSessionLinks";
+import {
+  rehypeHoldLocalSessionLinks,
+  rehypeRestoreLocalSessionLinks,
+} from "./localSessionLinkSources";
+import {
+  highlightLanguageFor,
+  LANGUAGE_FILE_NAMES,
+  LANGUAGE_FROM_EXT,
+  PLAINTEXT_FENCE_LANGUAGES,
+} from "./agentMarkdownLanguages";
 const MERMAID_BASE_CONFIG = {
   startOnLoad: false,
   securityLevel: "strict",
   suppressErrorRendering: true,
 } as const;
-
 const mermaid = createLazyMermaidPlugin({
   config: {
     ...MERMAID_BASE_CONFIG,
     theme: "dark",
   },
 });
+// Extend only href protocols. Every bycoda target is validated before hardening
+// and again at dispatch; images and all other sanitizer rules stay unchanged.
+const [sanitizeMarkdown, markdownSchema] = defaultRehypePlugins.sanitize as [
+  Plugin,
+  { protocols?: Record<string, string[]>; [key: string]: unknown },
+];
+const LOCAL_SESSION_SANITIZE: Pluggable = [
+  sanitizeMarkdown,
+  {
+    ...markdownSchema,
+    protocols: {
+      ...markdownSchema.protocols,
+      href: [...(markdownSchema.protocols?.href ?? []), "bycoda"],
+    },
+  },
+];
 
+const MARKDOWN_HARDEN: Pluggable = [
+  harden,
+  {
+    // MarkdownImage remains the final allowlist. The wildcard lets app-owned
+    // relative note URLs reach that component without changing link parsing.
+    allowedImagePrefixes: ["*"],
+    allowedLinkPrefixes: ["*"],
+    allowDataImages: true,
+    imageBlockPolicy: "remove" as const,
+  },
+];
 
 const MARKDOWN_REHYPE_PLUGINS: PluggableList = [
   defaultRehypePlugins.raw,
-  defaultRehypePlugins.sanitize,
-  [
-    harden,
-    {
-      // MarkdownImage remains the final allowlist. The wildcard lets app-owned
-      // relative note URLs reach that component without changing link parsing.
-      allowedImagePrefixes: ["*"],
-      allowedLinkPrefixes: ["*"],
-      allowDataImages: true,
-      imageBlockPolicy: "remove" as const,
-    },
-  ],
+  LOCAL_SESSION_SANITIZE,
+  rehypeHoldLocalSessionLinks,
+  MARKDOWN_HARDEN,
+  rehypeRestoreLocalSessionLinks,
 ];
 
 const INBOX_MEDIA_REHYPE_PLUGINS: PluggableList = [
   defaultRehypePlugins.raw,
-  defaultRehypePlugins.sanitize,
+  LOCAL_SESSION_SANITIZE,
+  rehypeHoldLocalSessionLinks,
   [
     harden,
     {
@@ -142,13 +171,16 @@ const INBOX_MEDIA_REHYPE_PLUGINS: PluggableList = [
       imageBlockPolicy: "remove" as const,
     },
   ],
+  rehypeRestoreLocalSessionLinks,
 ];
 
 const DOCUMENT_REHYPE_PLUGINS: PluggableList = [
   defaultRehypePlugins.raw,
-  defaultRehypePlugins.sanitize,
+  LOCAL_SESSION_SANITIZE,
+  rehypeHoldLocalSessionLinks,
   rehypeHoldImageSources,
-  MARKDOWN_REHYPE_PLUGINS[2],
+  MARKDOWN_HARDEN,
+  rehypeRestoreLocalSessionLinks,
   rehypeRestoreImageSources,
 ];
 
@@ -188,7 +220,9 @@ const REVEAL_LABEL = IS_MAC
     ? "Reveal in File Explorer"
     : "Open Containing Folder";
 
+/** `t` from `useT()`, so the menu follows a language switch. */
 function fileLinkMenuItems(
+  t: (message: string, values?: Record<string, unknown>) => string,
   canOpenInBycoda: boolean,
   canCopyRelativePath: boolean,
   remote = false,
@@ -197,17 +231,13 @@ function fileLinkMenuItems(
     {
       kind: "item",
       id: "open-bycoda",
-      get label() {
-        return t("Open in {p0}", { p0: PRODUCT_IDENTITY.displayName });
-      },
+      label: t("Open in {p0}", { p0: PRODUCT_IDENTITY.displayName }),
       disabled: !canOpenInBycoda,
     },
     {
       kind: "item",
       id: "open-default",
-      get label() {
-        return t("Open in Default App");
-      },
+      label: t("Open in Default App"),
       disabled: remote,
     },
     {
@@ -220,85 +250,18 @@ function fileLinkMenuItems(
     {
       kind: "item",
       id: "copy-path",
-      get label() {
-        return t("Copy Path");
-      },
+      label: t("Copy Path"),
     },
     ...(canCopyRelativePath
       ? [
           {
             kind: "item" as const,
             id: "copy-relative-path",
-            get label() {
-              return t("Copy Relative Path");
-            },
+            label: t("Copy Relative Path"),
           },
         ]
       : []),
   ];
-}
-
-const LANGUAGE_FROM_EXT: Record<string, string> = {
-  sh: "bash",
-  zsh: "bash",
-  py: "python",
-  rb: "ruby",
-  rs: "rust",
-  ts: "typescript",
-  js: "javascript",
-  md: "markdown",
-  yml: "yaml",
-  cs: "csharp",
-  cpp: "cpp",
-  cc: "cpp",
-  cxx: "cpp",
-};
-
-const LANGUAGE_FILE_NAMES: Record<string, string> = {
-  bash: "code.sh",
-  c: "code.c",
-  cpp: "code.cpp",
-  "c++": "code.cpp",
-  csharp: "code.cs",
-  css: "code.css",
-  go: "code.go",
-  html: "code.html",
-  java: "code.java",
-  javascript: "code.js",
-  js: "code.js",
-  jsx: "code.jsx",
-  json: "code.json",
-  markdown: "code.md",
-  md: "code.md",
-  php: "code.php",
-  python: "code.py",
-  py: "code.py",
-  ruby: "code.rb",
-  rust: "code.rs",
-  rs: "code.rs",
-  shell: "code.sh",
-  sh: "code.sh",
-  sql: "code.sql",
-  swift: "code.swift",
-  toml: "code.toml",
-  ts: "code.ts",
-  tsx: "code.tsx",
-  typescript: "code.ts",
-  xml: "code.xml",
-  yaml: "code.yaml",
-  yml: "code.yaml",
-  zsh: "code.sh",
-};
-
-// Shiki (via Streamdown's CodeBlock) treats these as plaintext and renders no
-// syntax colors at all, which is common in agent output (pseudocode, file
-// trees, command output) fenced as `text` or left untagged. Falling back to
-// the JS grammar for these still colors strings, numbers, and punctuation,
-// matching what most agent-output fences actually look like.
-const PLAINTEXT_FENCE_LANGUAGES = new Set(["text", "plaintext", "txt", ""]);
-
-function highlightLanguageFor(language: string): string {
-  return PLAINTEXT_FENCE_LANGUAGES.has(language.toLowerCase()) ? "js" : language;
 }
 
 type MarkdownLinkProps = Omit<ComponentProps<"a">, "onContextMenu"> & {
@@ -322,18 +285,32 @@ function MarkdownLink({
   const allowRemoteMedia = useContext(RemoteMediaContext);
   const localMedia = useContext(LocalMediaContext);
   const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
+  const resolveFile = useWorkspaceFileResolver();
   const [linkError, setLinkError] = useState<string>();
-  const file = href ? resolveWorkspaceFileReference(href, cwd) : undefined;
+  const file = href ? resolveFile(href, cwd) : undefined;
   const label = textContent(children);
+  const sessionReference = href ? parseLocalSessionLink(href) : null;
+  if (href && sessionReference) {
+    return (
+      <LocalSessionReferenceLink
+        key={href}
+        href={href}
+        reference={sessionReference}
+        className={className}
+      >
+        {children}
+      </LocalSessionReferenceLink>
+    );
+  }
   if (allowRemoteMedia && href && isInboxMediaUrl(href)) {
     return <InboxMedia src={href} alt={label} />;
   }
 
   const link = (
     <>
-      <a
+      <Link
         href={href}
-        className={`text-(--ui-tone-info-fg) hover:text-(--ui-tone-info-fg) hover:underline ${className ?? ""}`}
+        className={className}
         {...props}
         dir={dir ?? "auto"}
         onClick={(event) => {
@@ -359,7 +336,7 @@ function MarkdownLink({
         }}
       >
         {children}
-      </a>
+      </Link>
       {file ? <FileRevealButton path={file.path} /> : null}
       {linkError ? (
         <FileActionError message={linkError} onDismiss={() => setLinkError(undefined)} />
@@ -396,7 +373,7 @@ function FileRevealButton({ path }: { path: string }) {
 }
 
 function VerifiedFileRevealButton({ path }: { path: string }) {
-  useLocale();
+  const t = useT();
   const { onRevealFile } = useContext(FileOpenContext);
   const [exists, setExists] = useState(false);
   useEffect(() => {
@@ -418,7 +395,7 @@ function VerifiedFileRevealButton({ path }: { path: string }) {
       variant="ghost"
       type="button"
       aria-label={t("Open containing folder")}
-      title={t("Open containing folder: {p0}", { p0: path })}
+      tooltip={t("Open containing folder: {p0}", { p0: path })}
       className="ml-1 shrink-0"
       onClick={(event) => {
         event.preventDefault();
@@ -426,7 +403,7 @@ function VerifiedFileRevealButton({ path }: { path: string }) {
         onRevealFile?.(path);
       }}
     >
-      <FolderOpen className="size-3.5" />
+      <FolderOpen className="icon-sm" />
     </Button>
   );
 }
@@ -434,7 +411,7 @@ function VerifiedFileRevealButton({ path }: { path: string }) {
 type MarkdownCodeProps = ComponentProps<"code"> & { node?: unknown };
 
 function EmailCopyButton({ text }: { text: string }) {
-  useLocale();
+  const t = useT();
   const [copied, setCopied] = useTransientFlag(1500);
   const [failed, setFailed] = useState(false);
   const label = failed ? t("Copy failed — try again") : copied ? t("Copied") : t("Copy");
@@ -443,7 +420,7 @@ function EmailCopyButton({ text }: { text: string }) {
       motion="none"
       variant="ghost"
       type="button"
-      title={label}
+      tooltip={label}
       aria-label={label}
       className="shrink-0"
       onClick={(event) => {
@@ -457,10 +434,8 @@ function EmailCopyButton({ text }: { text: string }) {
         );
       }}
     >
-      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-      <span className="sr-only" role="status" aria-live="polite">
-        {failed || copied ? label : ""}
-      </span>
+      {copied ? <Check className="icon-sm" /> : <Copy className="icon-sm" />}
+      <LiveText className="sr-only" text={failed || copied ? label : ""} />
     </Button>
   );
 }
@@ -470,6 +445,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   const incomplete = useIsCodeFenceIncomplete();
   const block = Object.prototype.hasOwnProperty.call(props, "data-block");
   const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
+  const resolveFile = useWorkspaceFileResolver();
   const text = block ? "" : textContent(children);
   const slashCommand = /^\/[\p{L}\p{N}_-]+$/u.test(text.trim());
   const fileName = inlineFileName(text);
@@ -480,7 +456,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
     text.length <= 4096 &&
     /[\\/]/.test(reference) &&
     !/[\r\n]/.test(text)
-      ? resolveWorkspaceFileReference(reference, cwd)
+      ? resolveFile(reference, cwd)
       : undefined;
   const [verifiedPath, setVerifiedPath] = useState<string>();
   const ambiguousPath = candidate?.path;
@@ -497,7 +473,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   if (!block) {
     const file =
       fileName && !text.trim().startsWith("/")
-        ? resolveWorkspaceFileReference(text, cwd)
+        ? resolveFile(text, cwd)
         : candidate?.path === verifiedPath
           ? candidate
           : undefined;
@@ -532,7 +508,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
         >
           {fileName && file ? (
             <span aria-hidden="true">
-              <FileTypeIcon name={fileName} isDir={/[\\/]$/.test(text)} size={14} />
+              <FileTypeIcon name={fileName} isDir={/[\\/]$/.test(text)} size="sm" />
             </span>
           ) : null}
           {children}
@@ -559,7 +535,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   const isPlaintextFallback = PLAINTEXT_FENCE_LANGUAGES.has(fence.language.toLowerCase());
 
   return (
-    <MarkdownCodeShell code={code}>
+    <MarkdownCodeShell code={code} language={fence.language}>
       {iconName ? (
         <span className="markdown-code-icon" aria-hidden="true">
           <FileTypeIcon name={iconName} isDir={false} />
@@ -583,23 +559,35 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   );
 }
 
-function MarkdownCodeShell({ code, children }: { code: string; children: ReactNode }) {
-  useLocale();
+function MarkdownCodeShell({
+  code,
+  language,
+  children,
+}: {
+  code: string;
+  language: string;
+  children: ReactNode;
+}) {
+  const t = useT();
   const [collapsed, setCollapsed] = useState(false);
   const contentId = useId();
   const label = collapsed ? "Expand code block" : "Collapse code block";
+  // Only a collapsed block shows its summary; a streaming one would otherwise
+  // split every line on every frame for nothing.
   const summary = useMemo(() => {
+    if (!collapsed) return { preview: "", lineCount: 0 };
     const lines = code.replace(/\r?\n$/, "").split(/\r?\n/);
     return {
       preview: (lines.find((line) => line.trim())?.trim() || "Code block").slice(0, 160),
       lineCount: code ? lines.length : 0,
     };
-  }, [code]);
+  }, [code, collapsed]);
 
   return (
     <div
       className="markdown-code-shell markdown-code-resizable"
       data-collapsed={collapsed}
+      data-code-identity={JSON.stringify([language, code])}
       dir="ltr"
       tabIndex={0}
       role="region"
@@ -641,7 +629,7 @@ function MarkdownCodeShell({ code, children }: { code: string; children: ReactNo
         variant="ghost"
         type="button"
 
-        title={label}
+        tooltip={label}
         aria-label={label}
         className="markdown-code-copy markdown-code-toggle"
         aria-expanded={!collapsed}
@@ -658,7 +646,7 @@ function MarkdownCodeShell({ code, children }: { code: string; children: ReactNo
           variant="item"
           type="button"
 
-          title={label}
+          tooltip={label}
           aria-label={`${label}: ${summary.preview}`}
           className="markdown-code-summary"
           aria-expanded={false}
@@ -681,8 +669,8 @@ function MarkdownCodeShell({ code, children }: { code: string; children: ReactNo
 function CodeCopyButton({
   code,
   getText,
-  label = t("Copy code"),
-  copiedMessage = t("Code copied."),
+  label: labelProp,
+  copiedMessage: copiedMessageProp,
   className = "",
 }: {
   code: string;
@@ -692,14 +680,10 @@ function CodeCopyButton({
   copiedMessage?: string;
   className?: string;
 }) {
-  useLocale();
-  const [copied, setCopied] = useTransientFlag(1500);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    setCopied(false);
-    setFailed(false);
-  }, [code]);
+  const t = useT();
+  const label = labelProp ?? t("Copy code");
+  const copiedMessage = copiedMessageProp ?? t("Code copied.");
+  const { copied, failed, copy } = useCopyFeedback({ resetKeys: [code], successMs: 1500 });
 
   return (
     <Button
@@ -709,23 +693,17 @@ function CodeCopyButton({
       variant="ghost"
       className={`markdown-code-copy${copied ? " is-copied" : ""}${failed ? " is-failed" : ""} ${className}`}
       type="button"
-      title={failed ? t("Copy failed — try again") : copied ? t("Copied") : label}
+      tooltip={failed ? t("Copy failed — try again") : copied ? t("Copied") : label}
       aria-label={failed ? t("Copy failed — try again") : copied ? t("Copied") : label}
 
       onClick={() => {
-        setFailed(false);
-        const text = getText ? getText() : code.replace(/\r?\n$/, "");
-        void copyText(text).then(
-          () => {
-            setCopied(true);
-          },
-          () => setFailed(true),
-        );
+        copy(() => copyText(getText ? getText() : code.replace(/\r?\n$/, "")));
       }}
     >
-      <span className="sr-only" role="status" aria-live="polite">
-        {failed ? t("Copy failed. Try again.") : copied ? copiedMessage : ""}
-      </span>
+      <LiveText
+        className="sr-only"
+        text={failed ? t("Copy failed. Try again.") : copied ? copiedMessage : ""}
+      />
       <svg viewBox="0 0 20 20" aria-hidden="true">
         <g className="markdown-code-copy-pages">
           <path d="M12 4H6a2 2 0 0 0-2 2v6" />
@@ -752,7 +730,7 @@ function NoteAssetImage({
   useEffect(() => {
     if (src) return;
     let cancelled = false;
-    void invoke<string>("notes_image_path", { asset })
+    void resolveNoteImagePath(asset)
       .then((path) => {
         const next = convertFileSrc(path);
         noteImageSrcCache.delete(asset);
@@ -789,6 +767,7 @@ function MarkdownImage({ src, alt, node: _node, ...props }: MarkdownImageProps) 
   const allowRemoteMedia = useContext(RemoteMediaContext);
   const localMedia = useContext(LocalMediaContext);
   const { cwd, documentPath, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
+  const resolveFile = useWorkspaceFileResolver();
   const url = typeof src === "string" ? src.trim() : "";
   if (documentPath) {
     const image = cwd ? resolveDocumentImage(url, documentPath, cwd) : undefined;
@@ -812,9 +791,9 @@ function MarkdownImage({ src, alt, node: _node, ...props }: MarkdownImageProps) 
     return <img {...props} src={url} alt={alt ?? ""} />;
   }
   if (isNoteImagePath(url)) {
-    return <NoteAssetImage {...props} asset={url} alt={alt} />;
+    return <NoteAssetImage key={url} {...props} asset={url} alt={alt} />;
   }
-  const file = localMedia && url ? resolveWorkspaceFileReference(url, cwd) : undefined;
+  const file = localMedia && url ? resolveFile(url, cwd) : undefined;
   if (file && isLocalMediaPath(file.path)) {
     return (
       <LocalMedia
@@ -836,7 +815,7 @@ function MarkdownImage({ src, alt, node: _node, ...props }: MarkdownImageProps) 
 }
 
 function MarkdownTable(props: ComponentProps<typeof defaultComponents.table>) {
-  useLocale();
+  const t = useT();
   const shell = useRef<HTMLDivElement>(null);
   // Read the rendered table on click so a table still streaming in is copied
   // as it is shown, and links and inline code come out as their text.
@@ -857,7 +836,28 @@ function MarkdownTable(props: ComponentProps<typeof defaultComponents.table>) {
   );
 }
 
+/** Task markers are document content: a checked state shown, never a control that toggles. Other inputs are dropped. */
+function MarkdownInput({
+  node: _node,
+  type,
+  checked,
+}: ComponentProps<"input"> & { node?: unknown }) {
+  if (type !== "checkbox") return null;
+  return (
+    <Checkbox
+      checked={!!checked}
+      onChange={noopChange}
+      tabIndex={-1}
+      aria-readonly="true"
+      className="markdown-task-marker pointer-events-none me-1 align-middle"
+    />
+  );
+}
+
+function noopChange() {}
+
 const MARKDOWN_COMPONENTS = {
+  input: MarkdownInput,
   a: MarkdownLink,
   code: MarkdownCode,
   img: MarkdownImage,
@@ -935,7 +935,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   /** Show a newline inside a block as a line break, as a document does. */
   hardBreaks?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const codePlugin = useCodeHighlightPlugin();
   const markdownPlugins = useMemo(() => ({ code: codePlugin, mermaid }), [codePlugin]);
   const [fileMenu, setFileMenu] = useState<FileLinkMenu | null>(null);
@@ -1010,7 +1010,11 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     [cwd, documentPath, onOpenFile, openFile, onFileContextMenu, onRevealFile],
   );
   const remarkPlugins = useMemo<PluggableList>(
-    () => [...Object.values(defaultRemarkPlugins), [remarkWorkspaceFileLinks, { cwd }]],
+    () => [
+      ...Object.values(defaultRemarkPlugins),
+      remarkLocalSessionLinks,
+      [remarkWorkspaceFileLinks, { cwd }],
+    ],
     [cwd],
   );
   const remoteMedia = !!allowRemoteMedia;
@@ -1043,50 +1047,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     }
     previousPresentation.current = { visible, textMode, reducedMotion };
   }, [visible, textMode, reducedMotion]);
-  const submissionTraceId = useContext(PerformanceTraceContext);
-  const paintTrace = useRef<string | null>(null);
-  const firstPaintRecorded = useRef(false);
-  const receivedText = useRef(text);
-  useEffect(() => {
-    if (!isPerformanceTracingEnabled()) return;
-    if (
-      firstPaintRecorded.current &&
-      receivedText.current === text &&
-      paintTrace.current !== submissionTraceId
-    )
-      return;
-    receivedText.current = text;
-    if (submissionTraceId && paintTrace.current !== submissionTraceId)
-      firstPaintRecorded.current = false;
-    paintTrace.current = submissionTraceId ?? paintTrace.current ?? createPerformanceTraceId();
-    recordPerformanceEvent("renderer-receive", { items: text.length }, paintTrace.current);
-  }, [text, submissionTraceId]);
-  useEffect(() => {
-    if (!isPerformanceTracingEnabled()) return;
-    let second = 0;
-    const first = requestAnimationFrame(() => {
-      second = requestAnimationFrame(() => {
-        if (!firstPaintRecorded.current) {
-          firstPaintRecorded.current = true;
-          recordPerformanceEvent(
-            "first-paint",
-            { items: paced.text.length },
-            paintTrace.current ?? undefined,
-          );
-        }
-        if (!streaming && !paced.revealing)
-          recordPerformanceEvent(
-            "last-paint",
-            { items: paced.text.length },
-            paintTrace.current ?? undefined,
-          );
-      });
-    });
-    return () => {
-      cancelAnimationFrame(first);
-      cancelAnimationFrame(second);
-    };
-  }, [paced.text, paced.revealing, streaming, submissionTraceId]);
+  useRenderTrace(text, paced.text, paced.revealing, streaming);
   const fading = useWordFading(
     !!streaming || paced.revealing || (adaptive && mountEntrance),
     adaptive ? ADAPTIVE_FADE_MAX_MS : undefined,
@@ -1104,14 +1065,18 @@ export const AgentMarkdown = memo(function AgentMarkdown({
       : MARKDOWN_REHYPE_PLUGINS;
   // Publish the tail index with the context value. A mutable ref would let a
   // memoized former tail retain its fading plugin after a new block arrives.
-  const markdownBlocks = useMemo(() => {
-    const end = startPerformanceSpan("markdown-render", { items: paced.text.length });
-    const blocks = parseStreamingMarkdown(paced.text);
-    end({ blocks: blocks.length });
-    return blocks;
-  }, [paced.text]);
+  // Each message keeps its own parse, so a growing reply only lexes its open tail.
+  const markdownStream = useId();
+  const {
+    blocks: markdownBlocks,
+    pending: markdownPending,
+    sourceFallback,
+  } = useParsedMarkdown(paced.text, markdownStream);
   const lastBlock = markdownBlocks.length - 1;
   const parseBlocks = useCallback(() => markdownBlocks, [markdownBlocks]);
+  // Streamdown's memo comparator ignores the parser callback. Its children must
+  // change when a worker parse arrives, even when the original source is unchanged.
+  const parsedSource = useMemo(() => markdownBlocks.join(""), [markdownBlocks]);
   const pacedFadeOptions = useWordFadeWindow(paced.text);
   const arrivalFadeOptions = useArrivalFadeWindow(
     text,
@@ -1175,27 +1140,40 @@ export const AgentMarkdown = memo(function AgentMarkdown({
       <LocalMediaContext.Provider value={!!localMedia}>
         <FileOpenContext.Provider value={fileOpen}>
           <BlockPluginContext.Provider value={blockPlugins}>
-            <div ref={fadeRoot} className="min-w-0">
-              <Streamdown
-                BlockComponent={DirectionalBlock}
-                className={`agent-markdown min-w-0 font-sans text-sm leading-6 ${fading ? "word-fading" : ""} ${className ?? ""}`}
-                components={MARKDOWN_COMPONENTS}
-                controls={false}
-                isAnimating={!!streaming || paced.revealing}
-                parseIncompleteMarkdown={false}
-                parseMarkdownIntoBlocksFn={parseBlocks}
-                plugins={markdownPlugins}
-                remarkPlugins={remarkPlugins}
-                rehypePlugins={rehypePlugins}
-              >
-                {paced.text}
-              </Streamdown>
+            <div ref={fadeRoot} className="min-w-0" aria-busy={markdownPending || undefined}>
+              {sourceFallback ? (
+                <>
+                  <Alert tone="warning" inline>
+                    {t("Formatted preview unavailable. Showing source.")}
+                  </Alert>
+                  <div className="whitespace-pre-wrap">{paced.text}</div>
+                </>
+              ) : (
+                <Streamdown
+                  BlockComponent={DirectionalBlock}
+                  className={`agent-markdown min-w-0 font-sans text-ui-body leading-6 ${fading ? "word-fading" : ""} ${className ?? ""}`}
+                  components={MARKDOWN_COMPONENTS}
+                  controls={false}
+                  isAnimating={!!streaming || paced.revealing}
+                  parseIncompleteMarkdown={false}
+                  parseMarkdownIntoBlocksFn={parseBlocks}
+                  plugins={markdownPlugins}
+                  remarkPlugins={remarkPlugins}
+                  rehypePlugins={rehypePlugins}
+                >
+                  {parsedSource}
+                </Streamdown>
+              )}
+              {markdownPending ? (
+                <LoadingText delay={false}>{t("Rendering Markdown…")}</LoadingText>
+              ) : null}
             </div>
             {fileMenu ? (
               <ExplorerMenu
                 x={fileMenu.x}
                 y={fileMenu.y}
                 items={fileLinkMenuItems(
+                  t,
                   !!onOpenFile,
                   !!cwd,
                   fileMenu.path.startsWith("remote://"),
@@ -1244,7 +1222,7 @@ export const MarkdownPreview = memo(function MarkdownPreview({
   header?: ReactNode;
   hardBreaks?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
 
   return (
@@ -1253,11 +1231,13 @@ export const MarkdownPreview = memo(function MarkdownPreview({
       tabIndex={0}
       role="region"
       aria-label={t("Markdown preview")}
+      data-markdown-region="preview"
       className="markdown-preview h-full overflow-y-auto overscroll-none [overflow-anchor:none]"
     >
-      <div className="px-6 py-8">
+      <div className="mx-auto w-full max-w-[46rem] px-6 py-8">
         {header}
         <AgentMarkdown
+          className="text-ui-body! leading-[1.6]!"
           text={text}
           streaming={streaming}
           cwd={cwd}
@@ -1271,7 +1251,7 @@ export const MarkdownPreview = memo(function MarkdownPreview({
 });
 
 export const MarkdownSource = memo(function MarkdownSource({ text }: { text: string }) {
-  useLocale();
+  const t = useT();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
 
   return (
@@ -1280,9 +1260,10 @@ export const MarkdownSource = memo(function MarkdownSource({ text }: { text: str
       tabIndex={0}
       role="region"
       aria-label={t("Markdown source")}
+      data-markdown-region="source"
       className="markdown-preview h-full overflow-y-auto overscroll-none [overflow-anchor:none]"
     >
-      <pre className="min-h-full min-w-0 whitespace-pre-wrap wrap-break-word px-4 py-3 font-mono text-[13px] leading-5 text-(--ui-text-secondary)">
+      <pre className="min-h-full min-w-0 whitespace-pre-wrap wrap-break-word px-4 py-3 font-mono text-ui-secondary leading-5 text-(--ui-text-secondary)">
         <MarkdownSourceHighlight text={text} />
       </pre>
     </div>
@@ -1309,22 +1290,28 @@ export function MarkdownSourceHighlight({ text }: { text: string }) {
   );
 }
 
+let mermaidRenderSequence = 0;
+
 function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean }) {
   useLocale();
-  const [svg, setSvg] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  // A render result belongs to the code and scheme it was made for: anything
+  // else reads as loading, so no effect has to clear it.
+  const [rendered, setRendered] = useState<{
+    code: string;
+    colorScheme: string;
+    svg?: string;
+    failed?: boolean;
+  } | null>(null);
   const colorScheme = useColorScheme();
+  const current =
+    rendered && rendered.code === code && rendered.colorScheme === colorScheme ? rendered : null;
+  const svg = current?.svg ?? null;
+  const failed = current?.failed ?? false;
 
   useEffect(() => {
-    if (incomplete) {
-      setSvg(null);
-      setFailed(false);
-      return;
-    }
+    if (incomplete) return;
     let cancelled = false;
-    setSvg(null);
-    setFailed(false);
-    const id = `mermaid-${Math.abs(hashCode(code)).toString(36)}-${Date.now().toString(36)}`;
+    const id = `mermaid-${Math.abs(hashCode(code)).toString(36)}-${++mermaidRenderSequence}`;
     void mermaid
       .getMermaid({
         ...MERMAID_BASE_CONFIG,
@@ -1333,10 +1320,10 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
       .render(id, code)
       .then((result) => {
         if (cancelled) return;
-        setSvg(result.svg);
+        setRendered({ code, colorScheme, svg: result.svg });
       })
       .catch(() => {
-        if (!cancelled) setFailed(true);
+        if (!cancelled) setRendered({ code, colorScheme, failed: true });
       });
     return () => {
       cancelled = true;
@@ -1345,7 +1332,7 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
 
   if (incomplete || failed) {
     return (
-      <MarkdownCodeShell code={code}>
+      <MarkdownCodeShell code={code} language="mermaid">
         <span className="markdown-code-icon" aria-hidden="true">
           <FileTypeIcon name="diagram.mmd" isDir={false} />
         </span>
@@ -1356,14 +1343,12 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
   }
 
   if (!svg) {
-    return (
-      <div className="h-32 animate-pulse rounded-[10px] border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)" />
-    );
+    return <Skeleton lines={5} className="h-32 rounded-xl" />;
   }
 
   return (
     <div
-      className="mermaid-block overflow-x-auto rounded-[10px] border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-3"
+      className="mermaid-block overflow-x-auto rounded-xl border border-(--ui-tone-neutral-border) p-3"
       data-streamdown="mermaid-block"
       dir="ltr"
       dangerouslySetInnerHTML={{ __html: svg }}
@@ -1443,25 +1428,22 @@ function parseCodeFence(
 function MarkdownCodePath({ path, startLine }: { path: string; startLine?: number }) {
   useLocale();
   const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
-  const file = resolveWorkspaceFileReference(path, cwd);
+  const resolveFile = useWorkspaceFileResolver();
+  const file = resolveFile(path, cwd);
   if (!file || !onOpenFile) {
     return <span className="markdown-code-path">{path}</span>;
   }
   const navigation =
     file.navigation ?? (startLine && startLine > 0 ? { line: startLine } : undefined);
   return (
-    <span
-      className="markdown-code-path"
-      style={{ display: "flex", alignItems: "center", pointerEvents: "auto" }}
-    >
+    <span className="markdown-code-path">
       <Button
         motion="none"
         variant="ghost"
         type="button"
 
-        style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}
         className="markdown-code-path-link"
-        title={file.path}
+        tooltip={file.path}
         onClick={() => onOpenFile(file.path, navigation)}
         onContextMenu={(event) => onFileContextMenu?.(event, file.path, navigation)}
       >

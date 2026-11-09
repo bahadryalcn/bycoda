@@ -1,8 +1,30 @@
 /** Browser-only PTY transport. The terminal renderer and search addon are real. */
+type FixturePtyCall = {
+  op: "spawn" | "kill" | "resize" | "visible";
+  id: string;
+  cols?: number;
+  rows?: number;
+  visible?: boolean;
+};
+const calls: FixturePtyCall[] = [];
+function record(call: FixturePtyCall) {
+  calls.push(call);
+  document.documentElement.dataset.terminalPtyCalls = JSON.stringify(calls);
+}
 export async function readyPtyBridge() {}
-export async function spawnPty() {}
-export async function killPty() {}
-export async function resizePty() {}
+export async function spawnPty(id: string, _cwd: string, cols: number, rows: number) {
+  record({ op: "spawn", id, cols, rows });
+}
+export async function killPty(id: string) {
+  record({ op: "kill", id });
+}
+export async function resizePty(id: string, cols: number, rows: number) {
+  record({ op: "resize", id, cols, rows });
+}
+export async function setPtyVisible(id: string, visible: boolean) {
+  record({ op: "visible", id, visible });
+  document.documentElement.dataset.terminalPtyVisibility = JSON.stringify({ id, visible });
+}
 export async function getPtyStatus() {
   return { foreground: null, supported: false };
 }

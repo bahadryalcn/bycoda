@@ -6,6 +6,7 @@ export const QUICK_COMPOSER_DEFAULT_SHORTCUT = "Command+Shift+Space";
 type Modifiers = Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "altKey" | "shiftKey">;
 
 const SYMBOLS: Record<string, string> = {
+  Escape: "Esc",
   Space: "Space",
   Backquote: "`",
   Backslash: "\\",

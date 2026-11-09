@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { QueryClient, QueryClientProvider, notifyManager } from "@tanstack/react-query";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -16,6 +17,7 @@ vi.mock("../model/githubTasks", () => ({
   peekGithubPrDiff: () => null,
 }));
 let root: Root;
+let client: QueryClient;
 let data: ReturnType<typeof useInboxDetailData>;
 const base = {
   provider: "github",
@@ -31,22 +33,29 @@ function Harness({ item, panel = false }: { item: InboxItem; panel?: boolean }) 
   return null;
 }
 const render = async (item: InboxItem, panel = false) =>
-  act(async () => root.render(createElement(Harness, { item, panel })));
+  act(async () =>
+    root.render(
+      createElement(QueryClientProvider, { client }, createElement(Harness, { item, panel })),
+    ),
+  );
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.details
     .mockReset()
     .mockImplementation(async () => ({ body: `details-${api.details.mock.calls.length}` }));
-  api.thread
-    .mockReset()
-    .mockImplementation(async () => ({
-      comments: [{ body: `thread-${api.thread.mock.calls.length}` }],
-    }));
+  api.thread.mockReset().mockImplementation(async () => ({
+    comments: [{ body: `thread-${api.thread.mock.calls.length}` }],
+  }));
   api.diff.mockReset().mockResolvedValue({ files: [] });
+  // Complete observer notifications inside async act.
+  notifyManager.setScheduler(queueMicrotask);
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   root = createRoot(document.createElement("div"));
 });
 afterEach(async () => {
   await act(async () => root.unmount());
+  client.clear();
+  notifyManager.setScheduler((callback) => setTimeout(callback, 0));
   vi.unstubAllGlobals();
 });
 
@@ -75,5 +84,16 @@ it("ignores an older in-flight detail response after a newer list revision", asy
   await render({ ...base, updatedAt: "v2" });
   expect(data.details?.body).toBe("details-2");
   await act(async () => release({ body: "stale details" }));
+  expect(data.details?.body).toBe("details-2");
+});
+
+it("keeps a failed read's error visible and clears it for the next item", async () => {
+  api.details.mockRejectedValueOnce(new Error("details failed"));
+  await render(base);
+  expect(data.details).toBeNull();
+  expect(data.loading).toBe(false);
+  expect(data.error).toBe("details failed");
+  await render({ ...base, number: 2 });
+  expect(data.error).toBeNull();
   expect(data.details?.body).toBe("details-2");
 });

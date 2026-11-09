@@ -124,6 +124,11 @@ fn classify(path: &str, git_dir: &str, common_dir: &str) -> Change {
         }
     }
     if let Some(rest) = relative(path, common_dir) {
+        // Checkpoint snapshots write and delete these on every agent turn; no
+        // branch, tag or view depends on them.
+        if rest == "refs/bycoda" || rest.starts_with("refs/bycoda/") {
+            return change;
+        }
         let worktree_entry = rest
             .strip_prefix("worktrees/")
             .is_some_and(|name| !name.contains('/'));
@@ -139,19 +144,39 @@ fn classify(path: &str, git_dir: &str, common_dir: &str) -> Change {
     change
 }
 
+/// Git's own bookkeeping, which `classify` never reports: object writes,
+/// lock files, fetch and gc records. Recognised by name alone, so a burst of
+/// object writes is dropped before any of it is stat'ed.
+fn housekeeping(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    if name.ends_with(".lock") || matches!(name, "FETCH_HEAD" | "gc.log" | "gc.pid") {
+        return true;
+    }
+    // Inside the object store: `objects/<2 hex>/…`, `objects/pack/…` and the
+    // like. A checkout that merely lives under a folder named `objects` is not.
+    let parts: Vec<_> = path.components().map(|part| part.as_os_str()).collect();
+    parts.windows(2).any(|pair| {
+        let next = pair[1].to_string_lossy();
+        pair[0] == "objects"
+            && (matches!(next.as_ref(), "pack" | "info")
+                || next.starts_with("incoming-")
+                || next.starts_with("tmp_objdir")
+                || (next.len() == 2 && next.chars().all(|c| c.is_ascii_hexdigit())))
+    })
+}
+
 /// Paths an event changed in a way git views care about. Reading a folder can
 /// update its access time, which Windows reports as a change to the folder
 /// itself; a real ref change also reports the file inside it.
 fn meaningful_paths(event: notify::Event) -> Vec<PathBuf> {
+    let paths = event.paths.into_iter().filter(|path| !housekeeping(path));
     match event.kind {
         EventKind::Access(_) => Vec::new(),
-        EventKind::Modify(ModifyKind::Name(_)) => event.paths,
-        EventKind::Modify(_) => event
-            .paths
-            .into_iter()
-            .filter(|path| !path.is_dir())
-            .collect(),
-        _ => event.paths,
+        EventKind::Modify(ModifyKind::Name(_)) => paths.collect(),
+        EventKind::Modify(_) => paths.filter(|path| !path.is_dir()).collect(),
+        _ => paths.collect(),
     }
 }
 
@@ -202,16 +227,8 @@ fn watch_plan(git_dir: &Path, common_dir: &Path) -> Vec<Planned> {
 /// The checkout's gitdir and common dir, absolute.
 fn resolve(cwd: &str) -> Result<(PathBuf, PathBuf), String> {
     let root = Path::new(cwd);
-    let text = crate::fs::git_run(
-        root,
-        &[
-            "rev-parse",
-            "--path-format=absolute",
-            "--git-dir",
-            "--git-common-dir",
-        ],
-    )
-    .ok_or_else(|| format!("{cwd} is not a Git checkout"))?;
+    let text = crate::fs::git_run(root, &["rev-parse", "--git-dir", "--git-common-dir"])
+        .ok_or_else(|| format!("{cwd} is not a Git checkout"))?;
     let mut lines = text.lines().map(str::trim).filter(|line| !line.is_empty());
     let mut next = || {
         lines
@@ -639,8 +656,22 @@ mod tests {
         assert!(status.success(), "git {args:?}");
     }
 
+    /// Windows `temp_dir()` can hold 8.3 short names (`RUNNER~1`), while Git records a
+    /// linked worktree's common dir by its long path. Projects open by their canonical
+    /// long path, so the fixture does too. Other platforms keep the raw temp path so
+    /// the macOS `/var` -> `/private/var` resolution stays covered.
+    fn temp_root() -> PathBuf {
+        let temp = std::env::temp_dir();
+        if !cfg!(windows) {
+            return temp;
+        }
+        let canonical = std::fs::canonicalize(&temp).unwrap();
+        let text = canonical.to_string_lossy();
+        PathBuf::from(text.strip_prefix(r"\\?\").unwrap_or(&text))
+    }
+
     fn temp_repo() -> (PathBuf, PathBuf) {
-        let base = std::env::temp_dir().join(format!("git-watch-{}", uuid::Uuid::new_v4()));
+        let base = temp_root().join(format!("git-watch-{}", uuid::Uuid::new_v4()));
         let repo = base.join("repo");
         std::fs::create_dir_all(&repo).unwrap();
         git(&repo, &["init", "-q"]);
@@ -742,5 +773,74 @@ mod tests {
         assert!(receiver.recv_timeout(Duration::from_secs(5)).is_ok());
         drop(watcher);
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn ignores_git_housekeeping_files() {
+        for path in [
+            "/r/.git/HEAD.lock",
+            "/r/.git/shallow.lock",
+            "/r/.git/gc.log",
+            "/r/.git/gc.pid",
+            "/r/.git/FETCH_HEAD",
+            "/r/.git/objects",
+            "/r/.git/objects/pack/pack-1.pack",
+            "/r/.git/objects/info/commit-graph",
+        ] {
+            assert!(!classify(path, GIT, GIT).any(), "{path}");
+        }
+        let mut subs = HashMap::new();
+        subs.insert(("main".to_string(), "/r".to_string()), sub(GIT, GIT));
+        let noise: Vec<String> = ["/r/.git/gc.log", "/r/.git/objects/ab/cd", "/r/.git/x.lock"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert!(reports(&subs, &noise, false).is_empty());
+    }
+
+    #[test]
+    fn checkpoint_refs_are_not_a_ref_change() {
+        // Precondition: ordinary refs still count.
+        assert!(classify("/r/.git/refs/heads/main", GIT, GIT).refs);
+        assert!(classify("/r/.git/refs/tags/v1", GIT, GIT).refs);
+        for path in [
+            "/r/.git/refs/bycoda",
+            "/r/.git/refs/bycoda/checkpoints",
+            "/r/.git/refs/bycoda/checkpoints/s1",
+            "/r/.git/refs/bycoda/checkpoints/s1/turn-1/before",
+            "/r/.git/refs/bycoda/checkpoints/s1/turn-1/after",
+        ] {
+            assert!(!classify(path, GIT, GIT).any(), "{path}");
+        }
+        assert!(!classify(
+            "/r/.git/refs/bycoda/checkpoints/s/t/after",
+            "/r/.git/worktrees/w",
+            GIT
+        )
+        .any());
+    }
+
+    #[test]
+    fn event_filter_discards_housekeeping_paths_before_statting() {
+        let created = EventKind::Create(notify::event::CreateKind::File);
+        let modified = EventKind::Modify(ModifyKind::Any);
+        for kind in [created, modified] {
+            let event = notify::Event::new(kind)
+                .add_path(PathBuf::from("/r/.git/objects/ab/cdef"))
+                .add_path(PathBuf::from("/r/.git/index.lock"))
+                .add_path(PathBuf::from("/r/.git/refs/heads/main.lock"))
+                .add_path(PathBuf::from("/r/.git/FETCH_HEAD"))
+                .add_path(PathBuf::from("/r/.git/gc.log"));
+            let kept = meaningful_paths(event);
+            assert!(kept.is_empty(), "{kept:?}");
+        }
+        // A real ref update still passes.
+        let event = notify::Event::new(EventKind::Create(notify::event::CreateKind::File))
+            .add_path(PathBuf::from("/r/.git/refs/heads/main"));
+        assert_eq!(meaningful_paths(event).len(), 1);
+        // So does one in a checkout that lives under a folder named `objects`.
+        let event = notify::Event::new(EventKind::Create(notify::event::CreateKind::File))
+            .add_path(PathBuf::from("/objects/r/.git/refs/heads/main"));
+        assert_eq!(meaningful_paths(event).len(), 1);
     }
 }

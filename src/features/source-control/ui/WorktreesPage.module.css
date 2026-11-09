@@ -1,136 +1,151 @@
+/* Spacing between the repository, policy, worktree and storage topics comes from the shared
+   .settings-topics column; the collection region and rows come from SettingsCollection.css. */
 .page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
   min-inline-size: 0;
+  /* The two-column composition depends on the room this page gets, not on the whole workbench
+     (which includes the category rail). */
+  container: worktrees-page / inline-size;
 }
 
-.toolbar,
-.listToolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
+/* A named boundary between global Git preferences above and this repository's management. Spacing,
+   not a rule, separates it from the preferences. */
+.boundary {
+  display: grid;
+  gap: 2px;
+  padding-block-start: 12px;
 }
-
-.project {
-  flex: 1 1 240px;
-  min-inline-size: 0;
-}
-
-.scope,
-.path {
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
-  overflow-wrap: anywhere;
-}
-
-.scope {
-  margin-block-start: 4px;
-}
-
-.actions,
-.rowActions,
-.count {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.actions {
-  margin-inline-start: auto;
-}
-
-.count {
-  flex: 1 1 auto;
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-
-.search {
-  flex: 0 1 280px;
-  min-inline-size: min(100%, 180px);
-}
-
-.list {
-  border: 1px solid var(--color-stroke);
-  border-radius: 12px;
-  background: var(--ui-surface);
-}
-
-.row {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 16px;
-}
-
-.row + .row {
-  border-block-start: 1px solid var(--color-stroke);
-}
-
-.treeIcon {
-  inline-size: 16px;
-  block-size: 16px;
-  flex-shrink: 0;
-  margin-block-start: 2px;
-  color: var(--ui-text-muted);
-}
-
-.identity {
-  flex: 1;
-  min-inline-size: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.name {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-
-.branch,
-.metadata {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.boundaryHint {
+  margin: 0;
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
 }
 
-.metadata {
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  font-variant-numeric: tabular-nums;
+/* Narrow: one track. Wide: a scope column (project, storage) beside the managed
+   workspace and worktree collections, which need the room. */
+.columns {
+  display: flex;
+  flex-direction: column;
+  gap: var(--settings-group-gap, 28px);
+  min-inline-size: 0;
+}
+.scopeColumn,
+.mainColumn {
+  min-inline-size: 0;
 }
 
+.project {
+  min-inline-size: 0;
+}
+
+.scope {
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
+  overflow-wrap: anywhere;
+  margin-block-start: 4px;
+}
+
+.actions,
 .rowActions {
-  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Row grammar matches WorkspaceManagedRow: [status dot] [identity] [actions], with details on
+   their own line. The doubled class beats SettingsCollection.css whatever the stylesheet order. */
+.row.row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 10px;
+  min-block-size: 46px;
+  padding: 8px 10px 8px 14px;
+}
+
+.dot {
+  justify-self: center;
+}
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}
+
+.line > * {
+  flex: none;
+}
+
+.title {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+}
+
+.caption {
+  display: block;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--ui-font-caption);
+}
+
+.row .rowActions {
+  justify-self: end;
   gap: 4px;
+  opacity: 0.6;
+}
+
+.row:hover .rowActions,
+.row:focus-within .rowActions,
+.row[data-open] .rowActions {
+  opacity: 1;
+}
+
+.details {
+  grid-column: 2 / -1;
+  min-inline-size: 0;
+}
+
+@media (hover: none) {
+  .row .rowActions {
+    opacity: 1;
+  }
 }
 
 .empty {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding-block: 32px;
+  align-items: flex-start;
+  gap: 4px;
+  padding-block: 8px;
   color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
+}
+.empty > p {
+  margin: 0;
 }
 
 .location {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
   gap: 4px;
-  padding-block: 8px;
+  padding-block: 0;
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
   overflow-wrap: anywhere;
@@ -138,4 +153,18 @@
 
 .location > span {
   color: var(--ui-text-muted);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
 }

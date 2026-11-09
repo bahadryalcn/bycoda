@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   callbacks: new Map<string, (line: string) => void>(),
@@ -9,91 +10,103 @@ const mocks = vi.hoisted(() => ({
   tool: false,
   acp: false,
 }));
-vi.mock("../../core/child", () => ({
-  acquireHarnessBridge: async () => mocks.release,
-  prepareHarnessTextWorkspace: async () => ({
-    cwd: "/private/text",
-    logPath: "/private/text/agent.log",
-  }),
-  readHarnessTextFile: async () => mocks.log,
-  resolveAntigravityBinary: async () => ({
-    path: "/bin/agy",
-    args: [],
-    transport: mocks.acp ? "acp" : "stream-json",
-  }),
-  spawnChild: async (...args: unknown[]) => {
-    mocks.spawn(...args);
-    if (!mocks.acp) mocks.callbacks.get(args[0] as string)!(JSON.stringify({ event: "init" }));
-  },
-  writeChild: async (id: string, text: string) => {
-    mocks.write(id, text);
-    const callback = mocks.callbacks.get(id)!;
-    if (mocks.acp) {
-      const request = JSON.parse(text);
-      if (!request.method) return;
-      if (request.method === "session/prompt") {
-        callback(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            id: 100,
-            method: "session/request_permission",
-            params: {},
-          }),
-        );
-        callback(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            id: 101,
-            method: "fs/read_text_file",
-            params: { path: "/project/secret" },
-          }),
-        );
-        callback(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            method: "session/update",
-            params: {
-              update: {
-                sessionUpdate: "agent_message_chunk",
-                content: { type: "text", text: "你好" },
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    // Protocol fixture only; actual Native source invalidation is exercised in Core.
+    invalidateChildOutput: () => undefined,
+    acquireHarnessBridge: async () => mocks.release,
+    prepareHarnessTextWorkspace: async () => ({
+      cwd: "/private/text",
+      logPath: "/private/text/agent.log",
+    }),
+    readHarnessTextFile: async () => mocks.log,
+    resolveAntigravityBinary: async () => ({
+      path: "/bin/agy",
+      args: [],
+      transport: mocks.acp ? "acp" : "stream-json",
+    }),
+    spawnChild: async (...args: unknown[]) => {
+      mocks.spawn(...args);
+      if (!mocks.acp) mocks.callbacks.get(args[0] as string)!(JSON.stringify({ event: "init" }));
+    },
+    writeChild: async (id: string, text: string) => {
+      mocks.write(id, text);
+      const callback = mocks.callbacks.get(id)!;
+      if (mocks.acp) {
+        const request = JSON.parse(text);
+        if (!request.method) return;
+        if (request.method === "session/prompt") {
+          callback(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: 100,
+              method: "session/request_permission",
+              params: {},
+            }),
+          );
+          callback(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: 101,
+              method: "fs/read_text_file",
+              params: { path: "/project/secret" },
+            }),
+          );
+          callback(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              method: "session/update",
+              params: {
+                update: {
+                  sessionUpdate: "agent_message_chunk",
+                  content: { type: "text", text: "你好" },
+                },
               },
-            },
+            }),
+          );
+        }
+        callback(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: request.id,
+            result:
+              request.method === "session/new"
+                ? {
+                    sessionId: "private",
+                    configOptions: [
+                      { id: "model", category: "model", type: "select", options: [] },
+                    ],
+                  }
+                : request.method === "session/prompt"
+                  ? { stopReason: "end_turn" }
+                  : {},
           }),
         );
+        return;
       }
+      if (mocks.tool)
+        callback(JSON.stringify({ event: "step_update", step_update: { step_type: "tool" } }));
       callback(
-        JSON.stringify({
-          jsonrpc: "2.0",
-          id: request.id,
-          result:
-            request.method === "session/new"
-              ? {
-                  sessionId: "private",
-                  configOptions: [{ id: "model", category: "model", type: "select", options: [] }],
-                }
-              : request.method === "session/prompt"
-                ? { stopReason: "end_turn" }
-                : {},
-        }),
+        JSON.stringify({ event: "result", result: { status: "SUCCESS", response: "你好" } }),
       );
-      return;
-    }
-    if (mocks.tool)
-      callback(JSON.stringify({ event: "step_update", step_update: { step_type: "tool" } }));
-    callback(JSON.stringify({ event: "result", result: { status: "SUCCESS", response: "你好" } }));
-  },
-  killChild: async (...args: unknown[]) => {
-    mocks.kill(...args);
-  },
-  watchChild: (id: string, callback: (line: string) => void) => {
-    mocks.callbacks.set(id, callback);
-  },
-  unwatchChild: (id: string) => {
-    mocks.callbacks.delete(id);
-  },
-}));
+    },
+    killChild: async (...args: unknown[]) => {
+      mocks.kill(...args);
+      // Real killChild detaches only this original construction's watch. This
+      // protocol fake models listener removal, not Native process retirement.
+      mocks.callbacks.delete(args[0] as string);
+    },
+    watchChild: (id: string, callback: (line: string) => void) => {
+      mocks.callbacks.set(id, callback);
+    },
+    unwatchChild: (id: string) => {
+      mocks.callbacks.delete(id);
+    },
+  }),
+);
 import { ANTIGRAVITY_TEXT_AGENT, runAntigravityTextPrompt } from "./antigravityText";
 beforeEach(() => {
+  processConstructions.reset();
   vi.clearAllMocks();
   mocks.log = "Custom agent loaded";
   mocks.tool = false;
@@ -124,6 +137,19 @@ describe("isolated Antigravity text requests", () => {
       outcome: { outcome: "cancelled" },
     });
     expect(messages.find((item) => item.id === 101).error.code).toBe(-32601);
+    const original = processConstructions.operations.find(
+      (entry) => entry.kind === "spawn",
+    )!.handle;
+    expect(
+      processConstructions.operations
+        .filter((entry) => entry.kind === "write")
+        .every((entry) => entry.handle === original),
+    ).toBe(true);
+    expect(
+      processConstructions.operations
+        .filter((entry) => entry.kind === "kill")
+        .every((entry) => entry.handle === original),
+    ).toBe(true);
   });
   it("ignores unrelated CLI configuration fallback diagnostics", async () => {
     mocks.log = "Failed to resolve GeminiDir, falling back to default";
@@ -144,6 +170,19 @@ describe("isolated Antigravity text requests", () => {
     expect(ANTIGRAVITY_TEXT_AGENT).toContain("excludeDefaultComponents: true");
     expect(ANTIGRAVITY_TEXT_AGENT).toContain("inheritMcp: false");
     expect(JSON.parse(mocks.write.mock.calls[0][1]).message.content).toBe("Translate hello");
+    const original = processConstructions.operations.find(
+      (entry) => entry.kind === "spawn",
+    )!.handle;
+    expect(
+      processConstructions.operations
+        .filter((entry) => entry.kind === "write")
+        .every((entry) => entry.handle === original),
+    ).toBe(true);
+    expect(
+      processConstructions.operations
+        .filter((entry) => entry.kind === "kill")
+        .every((entry) => entry.handle === original),
+    ).toBe(true);
     expect(mocks.release).toHaveBeenCalledOnce();
     expect(mocks.callbacks.size).toBe(0);
   });

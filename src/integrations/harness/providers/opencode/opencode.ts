@@ -1,17 +1,54 @@
+import {
+  queueProviderOperation,
+  assertProviderOperation,
+  captureHttpOperation,
+  ownsHttpOperation,
+  beginProviderOperation,
+  finishProviderOperation,
+  observeProviderProcess,
+  cancelQueuedOperation,
+  type HarnessOperationContext,
+} from "../turnWriter";
+
+import { killChild } from "../../core/child";
+import {
+  createProviderRetirementLedger,
+  ProviderRetirementError,
+  preserveProviderFailure,
+  settleProviderRetirements,
+} from "../../core/providerRetirement";
+import {
+  createApprovalOccurrenceId,
+  isApprovalOccurrenceId,
+} from "../../../../shared/model/approvalOccurrence";
+import {
+  runNativeOutputWork,
+  nativeOutputSink,
+  captureNativeOutputCurrentEvent,
+} from "../../core/nativeOutputDelivery";
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { TurnNotReadyError } from "../../core/types";
+import { nativeSessionCapability } from "../../core/controlTurn";
+import {
+  COMPACTED_TEXT,
+  COMPACTING_TEXT,
+  COMPACTION_STATUS_KEY,
+} from "../../../../features/sessions/model/compactionStatus";
 import { modelContextWindow, nativeModelId } from "../../../../features/sessions/model/models";
 import type { RuntimeMode, TurnMetrics } from "../../../../features/sessions/model/session";
 import { taskListFromToolInput } from "../../../../features/sessions/model/taskList";
 import {
+  deliverQuestionReply,
+  QuestionReplyValidationError,
+  type QuestionDelivery,
+} from "../questionDelivery";
+import {
   closeHarnessSse,
   execChild,
   freeHarnessPort,
-  killChild,
   resolveOpenCodeBinary,
   spawnChild,
-  unwatchChild,
   watchChild,
 } from "../../core/child";
 import { OpenCodeClient, OpenCodeHttpError, type OpenCodeMessage } from "./opencodeClient";
@@ -19,7 +56,8 @@ import {
   appendOpenCodeAssistantTextDelta,
   asRecord,
   assertSupportedOpenCodeVersion,
-  buildOpenCodePermissionRules,
+  openCodeTurnRules,
+  type OpenCodePermissionRule,
   contextUsedFromMessageInfo,
   turnMetricsFromMessageInfo,
   detailFromToolPart,
@@ -96,13 +134,14 @@ import {
 } from "../../../../features/sessions/model/userQuestion";
 
 type PendingApproval = {
+  occurrenceId: string;
   id: string;
   sessionId: string;
   sessionDeleted?: boolean;
   resolve: (decision: ApprovalDecision) => void;
 };
 
-type PendingQuestion = {
+type PendingQuestion = QuestionDelivery & {
   id: string;
   sessionId: string;
   sessionDeleted?: boolean;
@@ -110,8 +149,51 @@ type PendingQuestion = {
   resolve: (reply: UserQuestionReply) => void;
 };
 
+import {
+  createChildProcessHandle,
+  associateChildHostRun,
+  type ChildProcessHandle,
+} from "../../core/child";
+import type { HostRunHandle } from "../../core/hostRun";
+
+const operationTailsBySession = new Map<string, Promise<unknown>>();
+
+const retirements = createProviderRetirementLedger("opencode.main", killChild);
+// v2 has no Child handle. Retain its exact client cleanup separately; this is
+// HTTP/SSE operation completion, never a Native process-retirement receipt.
+const wireRetirements = new Map<
+  Live | OpenCodeStartup,
+  { sessionId: string; work: Promise<void> }
+>();
+function retainWireRetirement(
+  sessionId: string,
+  live: Live | OpenCodeStartup,
+  cleanup: () => Promise<void>,
+): Promise<void> {
+  const existing = wireRetirements.get(live);
+  if (existing) return existing.work;
+  // Best-effort: warn on failure and always drop the record.
+  const record = {
+    sessionId,
+    work: Promise.resolve()
+      .then(cleanup)
+      .catch((error: unknown) => console.warn("[opencode] wire cleanup failed", error))
+      .finally(() => {
+        if (wireRetirements.get(live) === record) wireRetirements.delete(live);
+      }),
+  };
+  wireRetirements.set(live, record);
+  return record.work;
+}
+
 type Live = {
+  operation?: object;
+  /** v2 uses an external service and owns no child process. */
+  handle?: ChildProcessHandle;
   client: OpenCodeClient;
+  hostScoped: boolean;
+  /** Immutable original wire cleanup source, never the latest warm run. */
+  birthControlClient?: OpenCodeClient;
   openCodeSessionId: string;
   cwd: string;
   runtimeMode: RuntimeMode;
@@ -163,7 +245,15 @@ type Resume = {
 const SERVER_TIMEOUT_MS = 30_000;
 // Matches the v1 summarize request timeout.
 const COMPACTION_TIMEOUT_MS = 30 * 60_000;
+type OpenCodeStartup = {
+  operation?: object;
+  handle?: ChildProcessHandle;
+  live?: Live;
+  cancelled: boolean;
+  http?: Pick<Live, "client" | "hostScoped" | "openCodeSessionId" | "birthControlClient">;
+};
 const liveByThread = new Map<string, Live>();
+const startingByThread = new Map<string, OpenCodeStartup>();
 const resumeByThread = new Map<string, Resume>();
 const cancelledThreads = new Set<string>();
 
@@ -175,96 +265,176 @@ export function setOpenCodeBinaryResolver(fn: () => Promise<{ path: string }>): 
 }
 
 export async function sendOpenCodeTurn(input: SendTurnInput): Promise<void> {
-  // The shared v2 service has no per-session child environment. Its documented
-  // private ACP process preserves the session-scoped social grant instead.
-  const program = await socialAcpProgram(input);
-  if (program) return sendGenericAcpTurn(input, program);
-  let live: Live;
-  try {
-    live = await ensureLive(input);
-  } catch (error) {
-    cancelledThreads.delete(input.sessionId);
-    throw error;
-  }
-  if (cancelledThreads.delete(input.sessionId)) return;
+  assertProviderOperation(input.operationContext);
 
-  live.onEvent = input.onEvent;
-  live.runtimeMode = input.runtimeMode;
-  live.planning = input.intent === "plan";
-  live.turns = continueAfterFailure(live.turns, async () => {
-    live.cancelled = false;
-    live.muteUpdates = false;
-    try {
-      await runTurn(live, input);
-    } catch (error) {
-      if (live.cancelled) return;
-      throw error;
+  input = { ...input };
+  const hostRun = input.operationContext?.hostRun;
+  const hostControlRun = input.operationContext?.hostControlRun;
+
+  try {
+    const original = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
+    if (original) {
+      captureHttpOperation(original, input.operationContext);
+      if (original.handle) observeProviderProcess(input, original.handle);
     }
-  });
-  await live.turns;
+    return await queueProviderOperation(
+      operationTailsBySession,
+      input.sessionId,
+      input.operationContext,
+      async () => {
+        // The shared v2 service has no per-session child environment. Its documented
+        // private ACP process preserves the session-scoped social grant instead.
+        const program = await socialAcpProgram(input);
+        if (program) return sendGenericAcpTurn(input, program);
+        let live: Live;
+        try {
+          live = await ensureLive(input, hostRun, hostControlRun);
+        } catch (error) {
+          cancelledThreads.delete(input.sessionId);
+          throw error;
+        }
+        if (cancelledThreads.delete(input.sessionId)) return;
+
+        const httpOperation = captureHttpOperation(live, input.operationContext);
+        const client = operationClient(live, hostRun);
+        live.turns = continueAfterFailure(live.turns, async () => {
+          httpOperation.begin();
+          if (live.handle) beginProviderOperation(input.operationContext, live.handle);
+          live.onEvent = input.onEvent;
+          live.planning = input.intent === "plan";
+          await applySessionPolicy(live, input, client);
+          live.cancelled = false;
+          live.muteUpdates = false;
+          try {
+            await runTurn(live, input, client);
+          } catch (error) {
+            if (live.cancelled) return;
+            throw error;
+          }
+        });
+        await live.turns;
+      },
+    );
+  } finally {
+    finishProviderOperation(input.operationContext);
+  }
 }
 
 export async function compactOpenCodeContext(input: CompactContextInput): Promise<void> {
-  const program = await socialAcpProgram(input);
-  if (program) return sendGenericAcpTurn({ ...input, text: "/compact" }, program);
-  let live: Live;
-  try {
-    live = await ensureLive(input);
-  } catch (error) {
-    cancelledThreads.delete(input.sessionId);
-    throw error;
-  }
-  if (cancelledThreads.delete(input.sessionId)) return;
+  assertProviderOperation(input.operationContext);
 
-  const model = parseOpenCodeModelSlug(nativeModelId(input.model));
-  if (!model) {
-    throw new Error(
-      "OpenCode models use provider/model ids. Wait for the catalog to load, then pick a model.",
-    );
-  }
-  live.onEvent = input.onEvent;
-  live.turns = continueAfterFailure(live.turns, async () => {
-    live.cancelled = false;
-    live.muteUpdates = false;
-    try {
-      await runCompaction(live, model);
-    } catch (error) {
-      if (live.cancelled) return;
-      throw error;
+  input = { ...input };
+  const hostRun = input.operationContext?.hostRun;
+  const hostControlRun = input.operationContext?.hostControlRun;
+
+  try {
+    const original = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
+    if (original) {
+      captureHttpOperation(original, input.operationContext);
+      if (original.handle) observeProviderProcess(input, original.handle);
     }
-  });
-  await live.turns;
+    return await queueProviderOperation(
+      operationTailsBySession,
+      input.sessionId,
+      input.operationContext,
+      async () => {
+        const program = await socialAcpProgram(input);
+        if (program) return sendGenericAcpTurn({ ...input, text: "/compact" }, program);
+        let live: Live;
+        try {
+          live = await ensureLive(input, hostRun, hostControlRun);
+        } catch (error) {
+          cancelledThreads.delete(input.sessionId);
+          throw error;
+        }
+        if (cancelledThreads.delete(input.sessionId)) return;
+
+        const model = parseOpenCodeModelSlug(nativeModelId(input.model));
+        if (!model) {
+          throw new Error(
+            "OpenCode models use provider/model ids. Wait for the catalog to load, then pick a model.",
+          );
+        }
+        const httpOperation = captureHttpOperation(live, input.operationContext);
+        const client = operationClient(live, hostRun);
+        live.turns = continueAfterFailure(live.turns, async () => {
+          httpOperation.begin();
+          if (live.handle) beginProviderOperation(input.operationContext, live.handle);
+          live.onEvent = input.onEvent;
+          await applySessionPolicy(live, input, client);
+          live.cancelled = false;
+          live.muteUpdates = false;
+          try {
+            await runCompaction(live, model, client);
+          } catch (error) {
+            if (live.cancelled) return;
+            throw error;
+          }
+        });
+        await live.turns;
+      },
+    );
+  } finally {
+    finishProviderOperation(input.operationContext);
+  }
 }
 
 export async function rewindOpenCodeLastTurn(
   input: RewindLastTurnInput,
 ): Promise<RewindLastTurnResult> {
-  if (socialAcpSessions.has(input.sessionId))
-    throw new Error(
-      "OpenCode ACP does not expose message rewind. Hand off or start a new session.",
-    );
-  let live: Live;
+  assertProviderOperation(input.operationContext);
+
+  input = { ...input };
+  const hostRun = input.operationContext?.hostRun;
+  const hostControlRun = input.operationContext?.hostControlRun;
+
   try {
-    live = await ensureLive(input);
-  } catch (error) {
-    cancelledThreads.delete(input.sessionId);
-    throw error;
-  }
-  if (cancelledThreads.delete(input.sessionId)) return { submitted: false };
+    const original = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
+    if (original) {
+      captureHttpOperation(original, input.operationContext);
+      if (original.handle) observeProviderProcess(input, original.handle);
+    }
+    return await queueProviderOperation(
+      operationTailsBySession,
+      input.sessionId,
+      input.operationContext,
+      async () => {
+        if (socialAcpSessions.has(input.sessionId))
+          throw new Error(
+            "OpenCode ACP does not expose message rewind. Hand off or start a new session.",
+          );
+        let live: Live;
+        try {
+          live = await ensureLive(input, hostRun, hostControlRun);
+        } catch (error) {
+          cancelledThreads.delete(input.sessionId);
+          throw error;
+        }
+        if (cancelledThreads.delete(input.sessionId)) return { submitted: false };
 
-  live.onEvent = input.onEvent;
-  await live.turns;
-  if (live.activeTurn) {
-    throw new Error("Stop the current turn before editing the last message");
-  }
+        const httpOperation = captureHttpOperation(live, input.operationContext);
+        const client = operationClient(live, hostRun);
+        await live.turns;
+        if (live.activeTurn) {
+          throw new Error("Stop the current turn before editing the last message");
+        }
 
-  const messageID = await latestOpenCodeUserMessageId(live);
-  await live.client.revertSession(live.openCodeSessionId, messageID);
-  return { submitted: false };
+        httpOperation.begin();
+        if (live.handle) beginProviderOperation(input.operationContext, live.handle);
+        live.onEvent = input.onEvent;
+        await applySessionPolicy(live, input, client);
+        const messageID = await latestOpenCodeUserMessageId(live, client);
+        await client.revertSession(live.openCodeSessionId, messageID);
+        return { submitted: false };
+      },
+    );
+  } finally {
+    finishProviderOperation(input.operationContext);
+  }
 }
 
-async function latestOpenCodeUserMessageId(live: Live): Promise<string> {
-  const messages = await live.client.getMessages(live.openCodeSessionId);
+async function latestOpenCodeUserMessageId(live: Live, client = live.client): Promise<string> {
+  const messages = await client.getMessages(live.openCodeSessionId);
   const candidates = messages.flatMap((message) => {
     const info = asRecord(message.info);
     if (stringField(info, "role") !== "user") return [];
@@ -294,12 +464,19 @@ async function latestOpenCodeUserMessageId(live: Live): Promise<string> {
 }
 
 export async function steerOpenCodeTurn(input: SteerTurnInput): Promise<void> {
+  assertProviderOperation(input.operationContext);
+
+  input = { ...input };
+  const hostRun = input.operationContext?.hostRun;
+
   if (socialAcpSessions.has(input.sessionId))
     throw new TurnNotReadyError(
       "OpenCode ACP accepts one prompt at a time; wait or stop the current turn.",
     );
   const live = liveByThread.get(input.sessionId);
   if (!live?.activeTurn) throw new TurnNotReadyError("No active turn to steer");
+  if (!ownsHttpOperation(input.operationContext, live))
+    throw new Error("Provider operation replaced before steer");
 
   const parsed = parseOpenCodeModelSlug(nativeModelId(input.model));
   if (!parsed) {
@@ -311,7 +488,8 @@ export async function steerOpenCodeTurn(input: SteerTurnInput): Promise<void> {
   const parts = toOpenCodePromptParts(input.text, input.attachments);
   if (parts.length === 0) return;
 
-  await live.client.promptAsync({
+  const client = operationClient(live, hostRun);
+  await client.promptAsync({
     sessionID: live.openCodeSessionId,
     model: parsed,
     agent: input.modelSettings?.agent,
@@ -325,14 +503,23 @@ export function respondOpenCodeApproval(
   sessionId: string,
   requestId: number,
   decision: ApprovalDecision,
+  approvalOccurrenceId?: string,
 ): void {
   if (socialAcpSessions.has(sessionId)) {
-    respondGenericAcpApproval(sessionId, requestId, decision);
+    respondGenericAcpApproval(sessionId, requestId, decision, approvalOccurrenceId);
     return;
   }
   const live = liveByThread.get(sessionId);
   const pending = live?.approvals.get(requestId);
-  if (!pending) return;
+  if (
+    !live ||
+    live.cancelled ||
+    live.muteUpdates ||
+    !pending ||
+    !isApprovalOccurrenceId(approvalOccurrenceId) ||
+    pending.occurrenceId !== approvalOccurrenceId
+  )
+    return;
   pending.resolve(decision);
 }
 
@@ -340,16 +527,32 @@ export function respondOpenCodeQuestion(
   sessionId: string,
   requestId: number,
   reply: UserQuestionReply,
-): void {
+): boolean {
   const live = liveByThread.get(sessionId);
   const pending = live?.questions.get(requestId);
-  if (!pending) return;
-  pending.resolve(reply);
+  // Nothing is waiting for this answer (the question was resolved or the turn ended).
+  if (!live || !pending) return false;
+  deliverQuestionReply(
+    pending,
+    requestId,
+    reply,
+    live.onEvent,
+    () => live.questions.get(requestId) === pending && !live.cancelled && !live.muteUpdates,
+    () => pending.resolve(reply),
+  );
+  return true;
 }
 
-export async function cancelOpenCodeTurn(sessionId: string): Promise<void> {
-  if (socialAcpSessions.has(sessionId)) return cancelGenericAcpTurn(sessionId);
+export async function cancelOpenCodeTurn(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  const hostControlRun = context?.hostControlRun;
+  if (cancelQueuedOperation(context)) return;
+  if (socialAcpSessions.has(sessionId)) return cancelGenericAcpTurn(sessionId, context);
+  if (startingByThread.has(sessionId)) return stopOpenCodeSession(sessionId, context);
   const live = liveByThread.get(sessionId);
+  if (context && (!live || !ownsHttpOperation(context, live))) return;
   if (!live) {
     cancelledThreads.add(sessionId);
     return;
@@ -360,18 +563,98 @@ export async function cancelOpenCodeTurn(sessionId: string): Promise<void> {
   live.approvals.clear();
   for (const [, pending] of live.questions) pending.resolve({ kind: "skipped" });
   live.questions.clear();
-  await live.client.abortSession(live.openCodeSessionId);
+  try {
+    await cleanupClient(live, hostControlRun, context !== undefined).abortSession(
+      live.openCodeSessionId,
+    );
+  } catch (error) {
+    console.warn("[opencode] abortSession failed; stopping server", error);
+    if (!live.handle) throw error;
+    await retirements.retire(new Set([live.handle]));
+    await stopOpenCodeSession(sessionId, live);
+    return;
+  }
+  if (!ownsHttpOperation(context, live)) return;
   finishActiveTurn(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
 }
 
-export async function stopOpenCodeSession(sessionId: string): Promise<void> {
-  if (socialAcpSessions.has(sessionId)) {
-    await stopGenericAcpSession(sessionId);
+export async function stopOpenCodeSession(
+  sessionId: string,
+  target?: Live | OpenCodeStartup | HarnessOperationContext,
+): Promise<void> {
+  const context =
+    target && !("client" in target) && !("cancelled" in target)
+      ? (target as HarnessOperationContext)
+      : undefined;
+  const expectedOwner = context ? undefined : (target as Live | OpenCodeStartup | undefined);
+  const hostControlRun = context?.hostControlRun;
+  if (cancelQueuedOperation(context)) return;
+  if (!expectedOwner && socialAcpSessions.has(sessionId)) {
+    await stopGenericAcpSession(sessionId, context);
     return;
   }
-  cancelledThreads.delete(sessionId);
-  const live = liveByThread.get(sessionId);
-  liveByThread.delete(sessionId);
+  if (!expectedOwner && !context) cancelledThreads.delete(sessionId);
+  const preparing = startingByThread.get(sessionId);
+  const startup =
+    (!expectedOwner || preparing === expectedOwner) &&
+    (!context || (preparing !== undefined && ownsHttpOperation(context, preparing)))
+      ? preparing
+      : undefined;
+  const candidate = liveByThread.get(sessionId);
+  const originalLive =
+    expectedOwner && ("client" in expectedOwner ? expectedOwner : expectedOwner.live);
+  const live =
+    ((!expectedOwner || candidate === expectedOwner) &&
+    (!context || (candidate !== undefined && ownsHttpOperation(context, candidate)))
+      ? candidate
+      : undefined) ??
+    startup?.live ??
+    originalLive;
+  if (expectedOwner && !("client" in expectedOwner)) expectedOwner.cancelled = true;
+  if (context && !startup && !live) return;
+  const ownsEvents = () => !liveByThread.has(sessionId) && !startingByThread.has(sessionId);
+  const wireSource =
+    live ??
+    startup?.http ??
+    (expectedOwner && !("client" in expectedOwner) ? expectedOwner.http : undefined);
+  const wireOwner = live ?? startup ?? expectedOwner;
+  // Capture before Stop changes activeTurn. This is an observed idle Host
+  // wire, not proof that an unknown SDK job or descendant has retired.
+  const knownIdleHost =
+    !!live?.hostScoped &&
+    !!live.birthControlClient &&
+    !live.activeTurn &&
+    live.idleSessions.has(live.openCodeSessionId) &&
+    !hasActiveDescendant(live, live.openCodeSessionId);
+  const wire =
+    wireSource && wireOwner
+      ? retainWireRetirement(sessionId, wireOwner, () =>
+          settleProviderRetirements([
+            ...(!knownIdleHost
+              ? [
+                  (async () =>
+                    cleanupClient(wireSource, hostControlRun, context !== undefined).abortSession(
+                      wireSource.openCodeSessionId,
+                    ))(),
+                ]
+              : []),
+            ...(ownsEvents() ? [wireSource.client.closeEvents(sessionId)] : []),
+          ]),
+        )
+      : undefined;
+  const originalWire = expectedOwner
+    ? wire
+      ? [wire]
+      : []
+    : [...wireRetirements.values()]
+        .filter((entry) => entry.sessionId === sessionId)
+        .map((entry) => entry.work);
+  if (candidate === live) liveByThread.delete(sessionId);
+  if (startup) {
+    startup.cancelled = true;
+    startingByThread.delete(sessionId);
+  }
+  const handles = new Set([live?.handle, startup?.handle, expectedOwner?.handle]);
   if (live) {
     live.muteUpdates = true;
     for (const [, pending] of live.approvals) pending.resolve("deny");
@@ -382,24 +665,39 @@ export async function stopOpenCodeSession(sessionId: string): Promise<void> {
     live.turnDone?.();
     live.turnDone = null;
     live.turnFailed = null;
-    await live.client.abortSession(live.openCodeSessionId);
-    await live.client.closeEvents(sessionId);
-  } else {
+  } else if (!originalWire.length) {
     // A stream or server that ended on its own already dropped `live`, but
     // its SSE handlers still hold it until the stream is closed.
-    await closeHarnessSse(sessionId).catch(() => undefined);
+    if (ownsEvents()) originalWire.push(closeHarnessSse(sessionId));
   }
-  unwatchChild(sessionId);
-  await killChild(sessionId).catch(() => undefined);
+  await settleProviderRetirements([
+    ...originalWire.map((work) =>
+      work.catch((error: unknown) => {
+        console.warn("[opencode] wire cleanup failed", error);
+      }),
+    ),
+    context || expectedOwner
+      ? retirements.retire(handles)
+      : retirements.retireOwner(sessionId, handles),
+  ]);
 }
 
-export async function forgetOpenCodeSession(sessionId: string): Promise<void> {
-  if (socialAcpSessions.delete(sessionId)) {
-    await forgetGenericAcpSession(sessionId);
+export async function forgetOpenCodeSession(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  // Delete/switch must end the process: clear resume state first and stop by
+  // session when the context no longer owns it.
+  resumeByThread.delete(sessionId);
+  const queuedOnly = cancelQueuedOperation(context);
+  const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
+  const owned = !queuedOnly && (!original || ownsHttpOperation(context, original));
+  await forgetGenericAcpSession(sessionId, owned ? context : undefined);
+  if (socialAcpSessions.has(sessionId)) {
+    socialAcpSessions.delete(sessionId);
     return;
   }
-  resumeByThread.delete(sessionId);
-  await stopOpenCodeSession(sessionId);
+  await stopOpenCodeSession(sessionId, owned ? context : undefined);
 }
 
 export function bindOpenCodeSession(
@@ -413,83 +711,173 @@ export function bindOpenCodeSession(
   bindGenericAcpSession(threadId, sessionId, cwd);
 }
 
-async function ensureLive(input: HarnessSessionInput): Promise<Live> {
+function operationClient(live: Live, hostRun: HostRunHandle | undefined): OpenCodeClient {
+  if (live.hostScoped !== (hostRun !== undefined))
+    throw new Error(
+      "The original OpenCode Host run scope is required; an unqualified client cannot be adopted",
+    );
+  return hostRun ? live.client.withHostRun(hostRun, live.openCodeSessionId) : live.client;
+}
+
+function cleanupClient(
+  source: Pick<Live, "client" | "hostScoped" | "openCodeSessionId" | "birthControlClient">,
+  hostControlRun: HostRunHandle | undefined,
+  explicitContext: boolean,
+): OpenCodeClient {
+  if (!source.hostScoped) {
+    if (hostControlRun)
+      throw new Error("An unqualified OpenCode wire cannot be adopted for Host cleanup");
+    return source.client;
+  }
+  if (explicitContext) {
+    if (!hostControlRun)
+      throw new Error("An original OpenCode Host cleanup control view is required");
+    return source.client.withHostRun(hostControlRun, source.openCodeSessionId);
+  }
+  if (!source.birthControlClient) throw new Error("Original OpenCode wire cleanup is unavailable");
+  return source.birthControlClient;
+}
+
+async function applySessionPolicy(
+  live: Live,
+  input: HarnessSessionInput,
+  client = live.client,
+): Promise<void> {
+  const assertOriginal = () => {
+    assertProviderOperation(input.operationContext);
+    if (!ownsHttpOperation(input.operationContext, live))
+      throw new Error("Provider operation replaced before policy update");
+  };
+  assertOriginal();
+  if (live.runtimeMode !== input.runtimeMode || input.skillPolicy) {
+    await client.updateSession(live.openCodeSessionId, {
+      permission: openCodeTurnRules(input),
+    });
+    assertOriginal();
+  }
+  live.runtimeMode = input.runtimeMode;
+}
+
+async function ensureLive(
+  input: HarnessSessionInput,
+  hostRun?: HostRunHandle,
+  hostControlRun?: HostRunHandle,
+): Promise<Live> {
+  assertProviderOperation(input.operationContext);
+  if (hostRun && !hostControlRun)
+    throw new Error("An original OpenCode Host cleanup control view is required");
+
   const existing = liveByThread.get(input.sessionId);
   if (existing && existing.cwd === input.cwd) {
-    existing.onEvent = input.onEvent;
-    if (existing.runtimeMode !== input.runtimeMode || input.skillPolicy) {
-      await existing.client.updateSession(existing.openCodeSessionId, {
-        permission: buildOpenCodePermissionRules(
-          input.runtimeMode,
-          input.skillPolicy?.disabledNames,
-        ),
-      });
-    }
-    existing.runtimeMode = input.runtimeMode;
+    if (existing.handle) observeProviderProcess(input, existing.handle);
     return existing;
   }
-  if (existing) {
-    resumeByThread.delete(input.sessionId);
-    await stopOpenCodeSession(input.sessionId);
-  }
-
-  const resume = resumeByThread.get(input.sessionId);
-  const canResume = resume != null && resume.cwd === input.cwd;
-  if (resume && resume.cwd !== input.cwd) {
-    resumeByThread.delete(input.sessionId);
-  }
-
-  const { path } = await resolveOpenCodeBinaryImpl();
-  const generation = await assertOpenCodeVersion(path, input.cwd);
-
-  const liveRef: { current: Live | null } = { current: null };
-  const service = generation === "v2" ? await resolveOpenCodeV2Service(path, input.cwd) : undefined;
-  let serverUrl = service?.url ?? "";
-  let serverExited: number | null | undefined;
-
-  if (generation === "v1") {
-    watchChild(
-      input.sessionId,
-      (line) => {
-        const parsed = parseServerUrlFromOutput(line);
-        if (parsed) serverUrl = parsed;
-      },
-      (code) => {
-        serverExited = code;
-        liveByThread.delete(input.sessionId);
-        const live = liveRef.current;
-        if (!live?.muteUpdates) {
-          (live?.onEvent ?? input.onEvent)({ type: "session.ended", code });
-        }
-        if (live) live.muteUpdates = true;
-        live?.turnFailed?.(new Error("OpenCode server exited"));
-        if (live) {
-          for (const pending of live.approvals.values()) pending.resolve("deny");
-          live.approvals.clear();
-          for (const pending of live.questions.values()) pending.resolve({ kind: "skipped" });
-          live.questions.clear();
-          live.turnDone = null;
-          live.turnFailed = null;
-        }
-      },
-      (line) => {
-        const parsed = parseServerUrlFromOutput(line);
-        if (parsed) serverUrl = parsed;
-      },
-    );
-
-    const port = await freeHarnessPort();
-    await spawnChild(
-      input.sessionId,
-      path,
-      ["serve", `--hostname=127.0.0.1`, `--port=${port}`],
-      input.cwd,
-      undefined,
-      "opencode",
-    );
-  }
-
+  const originalCohort = retirements.cohort(input.sessionId);
+  const startup: OpenCodeStartup = {
+    cancelled: false,
+    operation: input.operationContext?.operation,
+  };
+  captureHttpOperation(startup, input.operationContext, "starting");
+  if (wireRetirements.size + liveByThread.size + startingByThread.size >= 512)
+    throw new Error("OpenCode original cleanup capacity exhausted");
+  startingByThread.set(input.sessionId, startup);
+  const checkStartup = () => {
+    if (startup.cancelled || startingByThread.get(input.sessionId) !== startup)
+      throw new Error("OpenCode startup cancelled");
+  };
   try {
+    const { path } = await resolveOpenCodeBinaryImpl();
+    checkStartup();
+    const generation = await assertOpenCodeVersion(path, input.cwd);
+    checkStartup();
+
+    if (generation === "v1") {
+      startup.handle = retirements.admitPending(
+        createChildProcessHandle(input.sessionId, input.nativeControlTurn),
+      );
+      if (hostRun) associateChildHostRun(startup.handle, hostRun);
+      observeProviderProcess(input, startup.handle, "starting");
+    }
+    const pendingWire = [...wireRetirements.values()]
+      .filter((entry) => entry.sessionId === input.sessionId)
+      .map((entry) => entry.work);
+    if (pendingWire.length) {
+      await settleProviderRetirements(pendingWire);
+      checkStartup();
+    }
+    if (existing) {
+      resumeByThread.delete(input.sessionId);
+      await settleProviderRetirements([
+        stopOpenCodeSession(input.sessionId, existing),
+        originalCohort.retire(),
+      ]);
+      checkStartup();
+    } else {
+      await originalCohort.retire();
+      checkStartup();
+    }
+
+    const resume = resumeByThread.get(input.sessionId);
+    const canResume = resume != null && resume.cwd === input.cwd;
+    if (resume && resume.cwd !== input.cwd) {
+      resumeByThread.delete(input.sessionId);
+    }
+
+    const liveRef: { current: Live | null } = { current: null };
+    const capability = input.nativeControlTurn
+      ? nativeSessionCapability(input.nativeControlTurn)
+      : undefined;
+    const service =
+      generation === "v2" ? await resolveOpenCodeV2Service(path, input.cwd, capability) : undefined;
+    let serverUrl = service?.url ?? "";
+    let serverExited: number | null | undefined;
+
+    if (generation === "v1") {
+      checkStartup();
+      const handle = startup.handle!;
+      watchChild(
+        handle,
+        (line) => {
+          const parsed = parseServerUrlFromOutput(line);
+          if (parsed) serverUrl = parsed;
+        },
+        (code) => {
+          serverExited = code;
+          if (liveByThread.get(input.sessionId)?.handle === handle)
+            liveByThread.delete(input.sessionId);
+          const live = liveRef.current;
+          if (!live?.muteUpdates) {
+            (live?.onEvent ?? input.onEvent)({ type: "session.ended", code });
+          }
+          if (live) live.muteUpdates = true;
+          live?.turnFailed?.(new Error("OpenCode server exited"));
+          if (live) {
+            for (const pending of live.approvals.values()) pending.resolve("deny");
+            live.approvals.clear();
+            for (const pending of live.questions.values()) pending.resolve({ kind: "skipped" });
+            live.questions.clear();
+            live.turnDone = null;
+            live.turnFailed = null;
+          }
+        },
+        (line) => {
+          const parsed = parseServerUrlFromOutput(line);
+          if (parsed) serverUrl = parsed;
+        },
+      );
+
+      const port = await freeHarnessPort();
+      await spawnChild(
+        handle,
+        path,
+        ["serve", `--hostname=127.0.0.1`, `--port=${port}`],
+        input.cwd,
+        undefined,
+        "opencode",
+      );
+    }
+
+    checkStartup();
     const url =
       generation === "v2"
         ? serverUrl
@@ -498,21 +886,53 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
             () => serverExited,
             SERVER_TIMEOUT_MS,
           );
-    const client = new OpenCodeClient(url, input.cwd, generation, service?.password);
-    const openCodeSession = await resolveSession(client, {
-      resume: canResume ? resume : undefined,
-      runtimeMode: input.runtimeMode,
-      cwd: input.cwd,
-      disabledSkills: input.skillPolicy?.disabledNames,
+    checkStartup();
+    const client = new OpenCodeClient(
+      url,
+      input.cwd,
+      generation,
+      service?.password,
+      input.sessionId,
+      undefined,
+      capability,
+      service?.nativeOwnedService,
+    );
+    const bootstrapClient = hostRun ? client.withHostRun(hostRun) : client;
+    const openCodeSession = await resolveSession(
+      bootstrapClient,
+      {
+        resume: canResume ? resume : undefined,
+        permission: openCodeTurnRules(input),
+        cwd: input.cwd,
+      },
+      hostControlRun
+        ? (forkId) => client.withHostRun(hostControlRun, forkId).deleteSession(forkId)
+        : undefined,
+    );
+    const birthControlClient = hostControlRun
+      ? client.withHostRun(hostControlRun, openCodeSession.id)
+      : undefined;
+    startup.http = Object.freeze({
+      client,
+      hostScoped: hostRun !== undefined,
+      openCodeSessionId: openCodeSession.id,
+      birthControlClient,
     });
+    checkStartup();
     if (canResume) {
-      await repairUnsupportedFileTurn(client, openCodeSession.id).catch((error: unknown) =>
+      const recoveryClient = hostRun ? client.withHostRun(hostRun, openCodeSession.id) : client;
+      await repairUnsupportedFileTurn(recoveryClient, openCodeSession.id).catch((error: unknown) =>
         console.debug("[bycoda] opencode attachment recovery", error),
       );
     }
 
+    checkStartup();
     const live: Live = {
+      operation: input.operationContext?.operation,
+      handle: startup.handle,
       client,
+      hostScoped: hostRun !== undefined,
+      birthControlClient,
       openCodeSessionId: openCodeSession.id,
       cwd: input.cwd,
       runtimeMode: input.runtimeMode,
@@ -544,6 +964,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       awaitedInbox: null,
     };
     liveRef.current = live;
+    startup.live = live;
     liveByThread.set(input.sessionId, live);
     resumeByThread.set(input.sessionId, {
       sessionId: openCodeSession.id,
@@ -555,15 +976,21 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       (event) => {
         if (live.muteUpdates) return;
         const turn = live.turnDone;
-        void handleEvent(live, event).catch((error: unknown) => {
-          if (live.muteUpdates || live.turnDone !== turn) return;
-          // Failed ancestry lookups or replies must end the turn visibly;
-          // otherwise a child can remain blocked on an unanswered request.
-          live.onEvent({
-            type: "session.error",
-            message: `Could not route OpenCode event: ${error instanceof Error ? error.message : String(error)}`,
-          });
-          finishActiveTurn(live);
+        void runNativeOutputWork(async (work) => {
+          try {
+            await handleEvent(live, event);
+          } catch (error: unknown) {
+            if (live.muteUpdates || live.turnDone !== turn) return;
+            // Failed ancestry lookups or replies must end the turn visibly;
+            // otherwise a child can remain blocked on an unanswered request.
+            nativeOutputSink(work, () =>
+              live.onEvent({
+                type: "session.error",
+                message: `Could not route OpenCode event: ${error instanceof Error ? error.message : String(error)}`,
+              }),
+            )();
+            nativeOutputSink(work, finishActiveTurn)(live);
+          }
         });
       },
       (error) => {
@@ -572,7 +999,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
         // prompt_async has no response body to await; the SSE stream is its
         // only completion channel. Reusing a Live after this point accepts the
         // next prompt but can never observe it, which looks like a dead thread.
-        liveByThread.delete(input.sessionId);
+        if (liveByThread.get(input.sessionId) === live) liveByThread.delete(input.sessionId);
         const failed = live.turnFailed;
         live.turnDone = null;
         live.turnFailed = null;
@@ -581,19 +1008,25 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
         live.approvals.clear();
         for (const pending of live.questions.values()) pending.resolve({ kind: "skipped" });
         live.questions.clear();
-        unwatchChild(input.sessionId);
-        void killChild(input.sessionId)
-          .catch(() => undefined)
-          .then(() => {
-            if (failed) {
-              failed(new Error(message));
-            } else {
-              live.onEvent({ type: "session.error", message });
-            }
-          });
+        const report = (failure: Error) => {
+          if (failed) failed(failure);
+          else live.onEvent({ type: "session.error", message: failure.message });
+        };
+        void stopOpenCodeSession(input.sessionId, live).then(
+          () => report(new Error(message)),
+          (retirement) =>
+            report(
+              new ProviderRetirementError(
+                "opencode.wire",
+                [new Error(message), retirement],
+                "OpenCode stream ended and original cleanup failed",
+              ),
+            ),
+        );
       },
     );
 
+    checkStartup();
     live.onEvent({
       type: "session.providerBound",
       providerSessionId: openCodeSession.id,
@@ -601,8 +1034,9 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     live.onEvent({ type: "session.started" });
     return live;
   } catch (error) {
-    await stopOpenCodeSession(input.sessionId);
-    throw error;
+    return preserveProviderFailure(error, stopOpenCodeSession(input.sessionId, startup));
+  } finally {
+    if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);
   }
 }
 
@@ -610,12 +1044,12 @@ async function resolveSession(
   client: OpenCodeClient,
   input: {
     resume?: Resume;
-    runtimeMode: RuntimeMode;
+    permission: OpenCodePermissionRule[];
     cwd: string;
-    disabledSkills?: string[];
   },
+  cleanupFork?: (actualForkId: string) => Promise<void>,
 ) {
-  const permission = buildOpenCodePermissionRules(input.runtimeMode, input.disabledSkills);
+  const { permission } = input;
   if (input.resume) {
     try {
       const adopted = await client.getSession(input.resume.sessionId);
@@ -623,7 +1057,7 @@ async function resolveSession(
         await client.updateSession(adopted.id, { permission });
         return adopted;
       }
-      const forked = await client.forkSession(adopted.id, input.cwd);
+      const forked = await client.forkSession(adopted.id, input.cwd, cleanupFork);
       await client.updateSession(forked.id, { permission });
       return forked;
     } catch (error) {
@@ -643,7 +1077,7 @@ function isEmptySessionFork(error: unknown): boolean {
   );
 }
 
-async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
+async function runTurn(live: Live, input: SendTurnInput, client = live.client): Promise<void> {
   const parsed = parseOpenCodeModelSlug(nativeModelId(input.model));
   if (!parsed) {
     throw new Error(
@@ -659,12 +1093,12 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
   });
   live.activeTurn = true;
   live.turnMetricsByMessageId.clear();
-  const v2 = live.client.generation === "v2";
+  const v2 = client.generation === "v2";
   live.awaitedInbox = v2 ? { kind: "turn" } : null;
   settlePendingTurn(live);
 
   try {
-    const inboxID = await live.client.promptAsync({
+    const inboxID = await client.promptAsync({
       sessionID: live.openCodeSessionId,
       model: parsed,
       agent: openCodeAgentForTurn(input),
@@ -694,12 +1128,13 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
 async function runCompaction(
   live: Live,
   model: { providerID: string; modelID: string },
+  client = live.client,
 ): Promise<void> {
-  if (live.client.generation !== "v2") {
+  if (client.generation !== "v2") {
     // Unlike prompt_async, summarize responds only after the compaction pass.
     // Keep this outside the normal turn latch: its eventual session.status=idle
     // must not become a pending completion for the next user turn.
-    await live.client.summarizeSession(live.openCodeSessionId, model);
+    await client.summarizeSession(live.openCodeSessionId, model);
     return;
   }
   // v2 only queues the compaction. Hold the turn chain until it actually
@@ -716,7 +1151,7 @@ async function runCompaction(
     COMPACTION_TIMEOUT_MS,
   );
   try {
-    const inboxID = await live.client.summarizeSession(live.openCodeSessionId, model);
+    const inboxID = await client.summarizeSession(live.openCodeSessionId, model);
     admitAwaitedInbox(live, inboxID);
     await finished;
   } finally {
@@ -893,318 +1328,370 @@ function pruneStreamCaches(live: Live): void {
 }
 
 async function handleEvent(live: Live, event: Record<string, unknown>): Promise<void> {
-  pruneStreamCaches(live);
-  const type = typeof event.type === "string" ? event.type : "";
-  const properties = asRecord(event.properties) ?? {};
-  // Session lifecycle events establish ancestry, including nested subagents.
-  // Record them before applying the parent transcript's session filter.
-  if (type === "session.created" || type === "session.updated") {
-    const info = asRecord(properties.info);
-    const id = stringField(info, "id");
-    if (id) {
-      const parentId = stringField(info, "parentID");
-      live.sessionParentById.set(id, parentId);
-      pruneStreamCaches(live);
+  return runNativeOutputWork(async (outputWork) => {
+    const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+      live.onEvent(event),
+    );
+    nativeOutputSink(outputWork, pruneStreamCaches)(live);
+    const type = typeof event.type === "string" ? event.type : "";
+    const properties = asRecord(event.properties) ?? {};
+    // Session lifecycle events establish ancestry, including nested subagents.
+    // Record them before applying the parent transcript's session filter.
+    if (type === "session.created" || type === "session.updated") {
+      const info = asRecord(properties.info);
+      const id = stringField(info, "id");
+      if (id) {
+        const parentId = stringField(info, "parentID");
+        live.sessionParentById.set(id, parentId);
+        nativeOutputSink(outputWork, pruneStreamCaches)(live);
+      }
+      return;
     }
-    return;
-  }
 
-  const payloadSessionId = eventSessionId(event);
-  if (type === "message.removed") {
-    const messageID = stringField(properties, "messageID");
-    if (
-      messageID &&
-      (!payloadSessionId || live.messageSessionById.get(messageID) === payloadSessionId)
-    ) {
-      live.completedMessages.delete(messageID);
-      forgetStreamMessage(live, messageID);
+    const payloadSessionId = eventSessionId(event);
+    if (type === "message.removed") {
+      const messageID = stringField(properties, "messageID");
+      if (
+        messageID &&
+        (!payloadSessionId || live.messageSessionById.get(messageID) === payloadSessionId)
+      ) {
+        live.completedMessages.delete(messageID);
+        nativeOutputSink(outputWork, forgetStreamMessage)(live, messageID);
+      }
+      return;
     }
-    return;
-  }
-  if (type === "session.deleted") {
-    const id = stringField(asRecord(properties.info), "id") ?? payloadSessionId;
-    if (id && id !== live.openCodeSessionId) {
-      const doomed = new Set([id]);
-      for (let changed = true; changed;) {
-        changed = false;
-        for (const [child, parent] of live.sessionParentById) {
-          if (parent && doomed.has(parent) && !doomed.has(child)) {
-            doomed.add(child);
-            changed = true;
+    if (type === "session.deleted") {
+      const id = stringField(asRecord(properties.info), "id") ?? payloadSessionId;
+      if (id && id !== live.openCodeSessionId) {
+        const doomed = new Set([id]);
+        for (let changed = true; changed;) {
+          changed = false;
+          for (const [child, parent] of live.sessionParentById) {
+            if (parent && doomed.has(parent) && !doomed.has(child)) {
+              doomed.add(child);
+              changed = true;
+            }
+          }
+        }
+        for (const pending of live.approvals.values()) {
+          if (doomed.has(pending.sessionId)) {
+            pending.sessionDeleted = true;
+            pending.resolve("deny");
+          }
+        }
+        for (const pending of live.questions.values()) {
+          if (doomed.has(pending.sessionId)) {
+            pending.sessionDeleted = true;
+            pending.resolve({ kind: "skipped" });
+          }
+        }
+        for (const child of doomed) nativeOutputSink(outputWork, forgetSessionCache)(live, child);
+      }
+      return;
+    }
+    if (type === "message.part.removed") {
+      const id = stringField(properties, "partID");
+      const part = id ? live.partById.get(id) : undefined;
+      if (
+        id &&
+        (!payloadSessionId ||
+          (part?.messageID && live.messageSessionById.get(part.messageID) === payloadSessionId))
+      ) {
+        live.partById.delete(id);
+        live.emittedTextByPartId.delete(id);
+      }
+      return;
+    }
+    if (
+      payloadSessionId &&
+      ((type === "session.status" && stringField(asRecord(properties.status), "type") === "idle") ||
+        type === "session.idle")
+    ) {
+      nativeOutputSink(outputWork, retireSessionMessages)(live, payloadSessionId);
+    } else if (
+      payloadSessionId &&
+      (type.startsWith("message.") || type === "permission.asked" || type === "question.asked")
+    ) {
+      live.idleSessions.delete(payloadSessionId);
+    }
+    if (payloadSessionId && payloadSessionId !== live.openCodeSessionId) {
+      if (
+        type === "message.updated" ||
+        type === "message.part.updated" ||
+        type === "message.part.delta"
+      ) {
+        let knownParent: string | undefined = payloadSessionId;
+        const visited = new Set<string>();
+        while (
+          knownParent &&
+          knownParent !== live.openCodeSessionId &&
+          !visited.has(knownParent) &&
+          live.sessionParentById.has(knownParent)
+        ) {
+          visited.add(knownParent);
+          knownParent = live.sessionParentById.get(knownParent);
+        }
+        if (
+          knownParent !== live.openCodeSessionId &&
+          !(await nativeOutputSink(outputWork, isDescendantSession)(live, payloadSessionId))
+        )
+          return;
+        if (live.muteUpdates || live.cancelled) return;
+        nativeOutputSink(outputWork, handleSubagentEvent)(live, payloadSessionId, type, properties);
+        return;
+      }
+      // Only blocking interactions are forwarded otherwise. In particular, a
+      // child's idle/error event must never finish the parent's active turn.
+      if (type !== "permission.asked" && type !== "question.asked") return;
+      const turn = live.turnDone;
+      if (!(await nativeOutputSink(outputWork, isDescendantSession)(live, payloadSessionId)))
+        return;
+      if (live.muteUpdates || live.turnDone !== turn) return;
+    } else if (live.client.generation === "v2") {
+      live.inbox.observe(type, properties);
+      // One transcript row follows a compaction: running, then settled or closed.
+      if (!live.muteUpdates && !live.cancelled) {
+        if (type === "session.compaction.started") {
+          emitNative({
+            type: "status",
+            key: COMPACTION_STATUS_KEY,
+            running: true,
+            text: COMPACTING_TEXT,
+          });
+        } else if (type === "session.compaction.ended") {
+          emitNative({
+            type: "status",
+            key: COMPACTION_STATUS_KEY,
+            running: false,
+            text: COMPACTED_TEXT,
+          });
+        } else if (type === "session.compaction.failed") {
+          emitNative({ type: "status", key: COMPACTION_STATUS_KEY, running: false, text: "" });
+          // A manual compaction reports its failure as the turn error instead.
+          if (live.awaitedInbox?.kind !== "compaction") {
+            emitNative({ type: "status", text: "Could not compact context" });
           }
         }
       }
-      for (const pending of live.approvals.values()) {
-        if (doomed.has(pending.sessionId)) {
-          pending.sessionDeleted = true;
-          pending.resolve("deny");
-        }
-      }
-      for (const pending of live.questions.values()) {
-        if (doomed.has(pending.sessionId)) {
-          pending.sessionDeleted = true;
-          pending.resolve({ kind: "skipped" });
-        }
-      }
-      for (const child of doomed) forgetSessionCache(live, child);
+      if (nativeOutputSink(outputWork, gateAwaitedInbox)(live, type, properties)) return;
     }
-    return;
-  }
-  if (type === "message.part.removed") {
-    const id = stringField(properties, "partID");
-    const part = id ? live.partById.get(id) : undefined;
-    if (
-      id &&
-      (!payloadSessionId ||
-        (part?.messageID && live.messageSessionById.get(part.messageID) === payloadSessionId))
-    ) {
-      live.partById.delete(id);
-      live.emittedTextByPartId.delete(id);
-    }
-    return;
-  }
-  if (
-    payloadSessionId &&
-    ((type === "session.status" && stringField(asRecord(properties.status), "type") === "idle") ||
-      type === "session.idle")
-  ) {
-    retireSessionMessages(live, payloadSessionId);
-  } else if (
-    payloadSessionId &&
-    (type.startsWith("message.") || type === "permission.asked" || type === "question.asked")
-  ) {
-    live.idleSessions.delete(payloadSessionId);
-  }
-  if (payloadSessionId && payloadSessionId !== live.openCodeSessionId) {
-    if (
-      type === "message.updated" ||
-      type === "message.part.updated" ||
-      type === "message.part.delta"
-    ) {
-      let knownParent: string | undefined = payloadSessionId;
-      const visited = new Set<string>();
-      while (
-        knownParent &&
-        knownParent !== live.openCodeSessionId &&
-        !visited.has(knownParent) &&
-        live.sessionParentById.has(knownParent)
-      ) {
-        visited.add(knownParent);
-        knownParent = live.sessionParentById.get(knownParent);
-      }
-      if (
-        knownParent !== live.openCodeSessionId &&
-        !(await isDescendantSession(live, payloadSessionId))
-      )
-        return;
-      if (live.muteUpdates || live.cancelled) return;
-      handleSubagentEvent(live, payloadSessionId, type, properties);
-      return;
-    }
-    // Only blocking interactions are forwarded otherwise. In particular, a
-    // child's idle/error event must never finish the parent's active turn.
-    if (type !== "permission.asked" && type !== "question.asked") return;
-    const turn = live.turnDone;
-    if (!(await isDescendantSession(live, payloadSessionId))) return;
-    if (live.muteUpdates || live.turnDone !== turn) return;
-  } else if (live.client.generation === "v2") {
-    live.inbox.observe(type, properties);
-    if (gateAwaitedInbox(live, type, properties)) return;
-  }
 
-  switch (type) {
-    case "message.updated": {
-      const info = asRecord(properties.info);
-      const id = stringField(info, "id");
-      const role = stringField(info, "role");
-      const agent = stringField(info, "agent");
-      const hidden = agent != null && KNOWN_HIDDEN_AGENTS.has(agent);
-      if (id && (role === "user" || role === "assistant")) {
-        live.messageRoleById.set(id, hidden ? "hidden" : role);
-        live.messageSessionById.set(id, live.openCodeSessionId);
+    switch (type) {
+      case "message.updated": {
+        const info = asRecord(properties.info);
+        const id = stringField(info, "id");
+        const role = stringField(info, "role");
+        const agent = stringField(info, "agent");
+        const hidden = agent != null && KNOWN_HIDDEN_AGENTS.has(agent);
+        if (id && (role === "user" || role === "assistant")) {
+          live.messageRoleById.set(id, hidden ? "hidden" : role);
+          live.messageSessionById.set(id, live.openCodeSessionId);
+        }
+        // A compaction assistant's usage describes the summarization call, not
+        // the rebuilt context. Keep the previous meter value until a real turn
+        // reports the post-compaction window level.
+        if (role === "assistant" && !hidden) nativeOutputSink(outputWork, emitContext)(live, info);
+        if (id && asRecord(info?.time)?.completed != null) {
+          live.completedMessages.add(id);
+          nativeOutputSink(outputWork, pruneStreamCaches)(live);
+        }
+        break;
       }
-      // A compaction assistant's usage describes the summarization call, not
-      // the rebuilt context. Keep the previous meter value until a real turn
-      // reports the post-compaction window level.
-      if (role === "assistant" && !hidden) emitContext(live, info);
-      if (id && asRecord(info?.time)?.completed != null) {
-        live.completedMessages.add(id);
-        pruneStreamCaches(live);
+      case "message.part.delta": {
+        const partID = stringField(properties, "partID");
+        const delta = streamTextDelta(properties.delta);
+        if (!partID || !delta) break;
+        const existing = live.partById.get(partID);
+        if (!existing || nativeOutputSink(outputWork, roleForPart)(live, existing) !== "assistant")
+          break;
+        const previous = live.emittedTextByPartId.get(partID) ?? existing.text ?? "";
+        const { nextText, deltaToEmit } = appendOpenCodeAssistantTextDelta(previous, delta);
+        live.emittedTextByPartId.set(partID, nextText);
+        if (existing.type === "text" || existing.type === "reasoning") {
+          live.partById.set(partID, { ...existing, text: nextText });
+        }
+        const mapped = textDeltaEvent(existing, deltaToEmit);
+        if (mapped) emitNative(mapped);
+        break;
       }
-      break;
-    }
-    case "message.part.delta": {
-      const partID = stringField(properties, "partID");
-      const delta = streamTextDelta(properties.delta);
-      if (!partID || !delta) break;
-      const existing = live.partById.get(partID);
-      if (!existing || roleForPart(live, existing) !== "assistant") break;
-      const previous = live.emittedTextByPartId.get(partID) ?? existing.text ?? "";
-      const { nextText, deltaToEmit } = appendOpenCodeAssistantTextDelta(previous, delta);
-      live.emittedTextByPartId.set(partID, nextText);
-      if (existing.type === "text" || existing.type === "reasoning") {
-        live.partById.set(partID, { ...existing, text: nextText });
+      case "message.part.updated": {
+        const part = parsePart(properties.part);
+        if (!part) break;
+        live.partById.set(part.id, part);
+        if (part.messageID)
+          live.messageSessionById.set(part.messageID, payloadSessionId ?? live.openCodeSessionId);
+        if (nativeOutputSink(outputWork, roleForPart)(live, part) === "assistant") {
+          nativeOutputSink(outputWork, emitAssistantText)(live, part);
+        }
+        if (part.type === "tool") nativeOutputSink(outputWork, emitTool)(live, part);
+        break;
       }
-      const mapped = textDeltaEvent(existing, deltaToEmit);
-      if (mapped) live.onEvent(mapped);
-      break;
-    }
-    case "message.part.updated": {
-      const part = parsePart(properties.part);
-      if (!part) break;
-      live.partById.set(part.id, part);
-      if (part.messageID)
-        live.messageSessionById.set(part.messageID, payloadSessionId ?? live.openCodeSessionId);
-      if (roleForPart(live, part) === "assistant") {
-        emitAssistantText(live, part);
-      }
-      if (part.type === "tool") emitTool(live, part);
-      break;
-    }
-    case "permission.asked": {
-      const id = stringField(properties, "id") ?? stringField(properties, "requestID");
-      if (!id) break;
-      if ([...live.approvals.values()].some((pending) => pending.id === id)) break;
-      const permission = stringField(properties, "permission") ?? "tool";
-      const patterns = Array.isArray(properties.patterns)
-        ? properties.patterns.filter((item): item is string => typeof item === "string")
-        : [];
-      const metadata = asRecord(properties.metadata) ?? {};
-      const callId =
-        stringField(asRecord(properties.tool), "callID") ??
-        stringField(properties, "callID") ??
-        stringField(properties, "toolCallId") ??
-        stringField(metadata, "callID") ??
-        stringField(metadata, "toolCallId");
-      const kind = toolKindFromName(permission);
-      const preview =
-        previewFromToolPart({
+      case "permission.asked": {
+        const id = stringField(properties, "id") ?? stringField(properties, "requestID");
+        if (!id) break;
+        if ([...live.approvals.values()].some((pending) => pending.id === id)) break;
+        const permission = stringField(properties, "permission") ?? "tool";
+        const patterns = Array.isArray(properties.patterns)
+          ? properties.patterns.filter((item): item is string => typeof item === "string")
+          : [];
+        const metadata = asRecord(properties.metadata) ?? {};
+        const callId =
+          stringField(asRecord(properties.tool), "callID") ??
+          stringField(properties, "callID") ??
+          stringField(properties, "toolCallId") ??
+          stringField(metadata, "callID") ??
+          stringField(metadata, "toolCallId");
+        const kind = toolKindFromName(permission);
+        const preview =
+          previewFromToolPart({
+            id,
+            type: "tool",
+            tool: permission,
+            state: {
+              ...metadata,
+              input: metadata.input ?? (patterns[0] ? { path: patterns[0] } : undefined),
+            },
+          }) ??
+          (patterns[0]
+            ? previewFromToolPart({
+                id,
+                type: "tool",
+                tool: permission,
+                state: { input: { path: patterns[0], pattern: patterns[0] } },
+              })
+            : undefined);
+        const title =
+          composeToolTitle({
+            kind,
+            title: permissionTitle(permission, patterns),
+            command:
+              extractShellCommand(metadata.input) ??
+              (permission === "bash" ? patterns[0] : undefined),
+            skill: extractSkillName(metadata.input),
+            path: preview?.path,
+            query: preview?.query,
+            previewKind: preview?.kind,
+          }) || permissionTitle(permission, patterns);
+        if (live.planning) {
+          const decision = kind === "read" || kind === "search" ? "allow" : "deny";
+          await nativeOutputSink(outputWork, () =>
+            live.client.replyPermission(id, toOpenCodePermissionReply(decision)),
+          )();
+          break;
+        }
+        if (live.runtimeMode === "full-access") {
+          await nativeOutputSink(outputWork, () => live.client.replyPermission(id, "once"))();
+          break;
+        }
+        const uiId = live.nextApprovalUiId++;
+        const occurrenceId = createApprovalOccurrenceId();
+        const pending = nativeOutputSink(outputWork, waitApproval)(
+          live,
+          uiId,
           id,
-          type: "tool",
-          tool: permission,
-          state: {
-            ...metadata,
-            input: metadata.input ?? (patterns[0] ? { path: patterns[0] } : undefined),
-          },
-        }) ??
-        (patterns[0]
-          ? previewFromToolPart({
-              id,
-              type: "tool",
-              tool: permission,
-              state: { input: { path: patterns[0], pattern: patterns[0] } },
-            })
-          : undefined);
-      const title =
-        composeToolTitle({
-          kind,
-          title: permissionTitle(permission, patterns),
-          command:
-            extractShellCommand(metadata.input) ??
-            (permission === "bash" ? patterns[0] : undefined),
-          skill: extractSkillName(metadata.input),
-          path: preview?.path,
-          query: preview?.query,
-          previewKind: preview?.kind,
-        }) || permissionTitle(permission, patterns);
-      if (live.planning) {
-        const decision = kind === "read" || kind === "search" ? "allow" : "deny";
-        await live.client.replyPermission(id, toOpenCodePermissionReply(decision));
-        break;
-      }
-      if (live.runtimeMode === "full-access") {
-        await live.client.replyPermission(id, "once");
-        break;
-      }
-      const uiId = live.nextApprovalUiId++;
-      const pending = waitApproval(live, uiId, id, payloadSessionId ?? live.openCodeSessionId);
-      if (callId) {
-        live.onEvent({
-          type: "tool.updated",
-          callId,
+          payloadSessionId ?? live.openCodeSessionId,
+          occurrenceId,
+        );
+        if (callId) {
+          emitNative({
+            type: "tool.updated",
+            callId,
+            title,
+            kind,
+            preview,
+          });
+        }
+        emitNative({
+          type: "approval.requested",
+          requestId: uiId,
+          occurrenceId,
           title,
           kind,
+          callId,
           preview,
         });
-      }
-      live.onEvent({
-        type: "approval.requested",
-        requestId: uiId,
-        title,
-        kind,
-        callId,
-        preview,
-      });
-      await pending;
-      break;
-    }
-    case "question.asked": {
-      const id = stringField(properties, "id") ?? stringField(properties, "requestID");
-      if (!id) break;
-      if ([...live.questions.values()].some((pending) => pending.id === id)) break;
-      const questions = questionsFromUnknown(properties);
-      const uiId = live.nextApprovalUiId++;
-      const pending = waitQuestion(
-        live,
-        uiId,
-        id,
-        questions,
-        payloadSessionId ?? live.openCodeSessionId,
-      );
-      showNextQuestion(live);
-      await pending;
-      break;
-    }
-    case "session.status": {
-      const status = asRecord(properties.status);
-      const statusType = stringField(status, "type");
-      if (statusType === "retry") {
-        const message = stringField(status, "message");
-        if (message) live.onEvent({ type: "status", text: message });
+        await pending;
         break;
       }
-      if (statusType === "idle" && live.activeTurn) {
-        finishActiveTurn(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
+      case "question.asked": {
+        const id = stringField(properties, "id") ?? stringField(properties, "requestID");
+        if (!id) break;
+        if ([...live.questions.values()].some((pending) => pending.id === id)) break;
+        const questions = questionsFromUnknown(properties);
+        const uiId = live.nextApprovalUiId++;
+        const pending = nativeOutputSink(outputWork, waitQuestion)(
+          live,
+          uiId,
+          id,
+          questions,
+          payloadSessionId ?? live.openCodeSessionId,
+        );
+        nativeOutputSink(outputWork, showNextQuestion)(live);
+        await pending;
+        break;
       }
-      break;
-    }
-    case "session.idle": {
-      // v1 also emits this deprecated event; its turns end on session.status.
-      if (live.client.generation === "v2" && live.activeTurn) {
-        finishActiveTurn(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
+      case "session.status": {
+        const status = asRecord(properties.status);
+        const statusType = stringField(status, "type");
+        if (statusType === "retry") {
+          const message = stringField(status, "message");
+          if (message) emitNative({ type: "status", text: message });
+          break;
+        }
+        if (statusType === "idle" && live.activeTurn) {
+          nativeOutputSink(outputWork, finishActiveTurn)(live, [
+            { type: "message.completed" },
+            { type: "reasoning.completed" },
+          ]);
+        }
+        break;
       }
-      break;
-    }
-    case "session.error": {
-      const message = sessionErrorMessage(properties.error);
-      live.onEvent({ type: "session.error", message });
-      // A stale v2 failure with nothing waiting must not be saved as the next
-      // turn's completion. v1 relies on that saved completion.
-      if (live.client.generation !== "v2" || live.turnDone) {
-        finishActiveTurn(live);
+      case "session.idle": {
+        // v1 also emits this deprecated event; its turns end on session.status.
+        if (live.client.generation === "v2" && live.activeTurn) {
+          nativeOutputSink(outputWork, finishActiveTurn)(live, [
+            { type: "message.completed" },
+            { type: "reasoning.completed" },
+          ]);
+        }
+        break;
       }
-      break;
+      case "session.error": {
+        const message = sessionErrorMessage(properties.error);
+        emitNative({ type: "session.error", message });
+        // A stale v2 failure with nothing waiting must not be saved as the next
+        // turn's completion. v1 relies on that saved completion.
+        if (live.client.generation !== "v2" || live.turnDone) {
+          nativeOutputSink(outputWork, finishActiveTurn)(live);
+        }
+        break;
+      }
+      default:
+        break;
     }
-    default:
-      break;
-  }
+  });
 }
 
 async function isDescendantSession(live: Live, sessionId: string): Promise<boolean> {
-  const visited = new Set<string>();
-  let current: string | undefined = sessionId;
-  while (current && !visited.has(current)) {
-    if (current === live.openCodeSessionId) return true;
-    visited.add(current);
-    if (!live.sessionParentById.has(current)) {
-      // Resumed children may predate the SSE subscription. Resolve their
-      // ancestry from the server instead of relying on session.created alone.
-      const session = await live.client.getSession(current);
-      live.sessionParentById.set(current, session.parentID);
-    }
-    current = live.sessionParentById.get(current);
-  }
-  return false;
+  return runNativeOutputWork(
+    async () => {
+      const visited = new Set<string>();
+      let current: string | undefined = sessionId;
+      while (current && !visited.has(current)) {
+        if (current === live.openCodeSessionId) return true;
+        visited.add(current);
+        if (!live.sessionParentById.has(current)) {
+          // Resumed children may predate the SSE subscription. Resolve their
+          // ancestry from the server instead of relying on session.created alone.
+          const session = await live.client.getSession(current);
+          live.sessionParentById.set(current, session.parentID);
+        }
+        current = live.sessionParentById.get(current);
+      }
+      return false;
+    },
+    { additionalInput: true },
+  );
 }
 
 export function openCodeAgentForTurn(input: {
@@ -1491,15 +1978,29 @@ async function waitApproval(
   uiId: number,
   id: string,
   sessionId: string,
+  occurrenceId: string,
 ): Promise<void> {
-  const decision = await new Promise<ApprovalDecision>((resolve) => {
-    live.approvals.set(uiId, { id, sessionId, resolve });
-  });
-  const sessionDeleted = live.approvals.get(uiId)?.sessionDeleted;
-  live.approvals.delete(uiId);
-  live.onEvent({ type: "approval.resolved", requestId: uiId, decision });
-  if (sessionDeleted) return;
-  await live.client.replyPermission(id, toOpenCodePermissionReply(decision));
+  return runNativeOutputWork(
+    async (outputWork) => {
+      const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+        live.onEvent(event),
+      );
+      let original!: PendingApproval;
+      const decision = await new Promise<ApprovalDecision>((resolve) => {
+        original = { id, sessionId, occurrenceId, resolve };
+        live.approvals.set(uiId, original);
+      });
+      const sessionDeleted = original.sessionDeleted;
+      if (live.approvals.get(uiId) === original) live.approvals.delete(uiId);
+      emitNative({ type: "approval.resolved", requestId: uiId, occurrenceId, decision });
+      if (sessionDeleted) return;
+      if (!Array.from(liveByThread.values()).includes(live)) return;
+      await nativeOutputSink(outputWork, () =>
+        live.client.replyPermission(id, toOpenCodePermissionReply(decision)),
+      )();
+    },
+    { additionalInput: true },
+  );
 }
 
 async function waitQuestion(
@@ -1509,25 +2010,60 @@ async function waitQuestion(
   questions: UserQuestion[],
   sessionId: string,
 ): Promise<void> {
-  const reply = await new Promise<UserQuestionReply>((resolve) => {
-    live.questions.set(uiId, { id, sessionId, questions, resolve });
-  });
-  const sessionDeleted = live.questions.get(uiId)?.sessionDeleted;
-  live.questions.delete(uiId);
-  live.onEvent({
-    type: "question.resolved",
-    requestId: uiId,
-    decision: reply.kind,
-    ...(reply.kind === "answered" ? { reply } : {}),
-  });
-  showNextQuestion(live);
-  if (sessionDeleted) return;
-  if (reply.kind !== "answered") {
-    await live.client.rejectQuestion(id);
-    return;
-  }
-  const answers = questions.map((question) => selectedAnswerLabels(question, reply));
-  await live.client.replyQuestion(id, answers);
+  return runNativeOutputWork(
+    async (outputWork) => {
+      const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+        live.onEvent(event),
+      );
+      const event: Extract<HarnessEvent, { type: "question.asked" }> = {
+        type: "question.asked",
+        requestId: uiId,
+        title: questionPromptTitle(questions) || "OpenCode question",
+        questions,
+        behavior: "blocking",
+        dismissAction: "decline",
+      };
+      captureNativeOutputCurrentEvent(event);
+      const reply = await new Promise<UserQuestionReply>((resolve) => {
+        live.questions.set(uiId, {
+          id,
+          sessionId,
+          questions,
+          event,
+          resolve,
+          deliver: async (reply) => {
+            try {
+              if (reply.kind === "answered")
+                await nativeOutputSink(outputWork, () =>
+                  live.client.replyQuestion(
+                    id,
+                    questions.map((question) => selectedAnswerLabels(question, reply)),
+                  ),
+                )();
+              else await nativeOutputSink(outputWork, () => live.client.rejectQuestion(id))();
+            } catch (error) {
+              if (error instanceof OpenCodeHttpError && [400, 422].includes(error.status)) {
+                throw new QuestionReplyValidationError(
+                  "The provider rejected this answer. You can edit it and try again.",
+                );
+              }
+              throw error;
+            }
+          },
+        });
+      });
+      const sessionDeleted = live.questions.get(uiId)?.sessionDeleted;
+      live.questions.delete(uiId);
+      emitNative({
+        type: "question.resolved",
+        requestId: uiId,
+        decision: sessionDeleted || live.cancelled || live.muteUpdates ? "cancelled" : reply.kind,
+        ...(reply.kind === "answered" ? { reply } : {}),
+      });
+      nativeOutputSink(outputWork, showNextQuestion)(live);
+    },
+    { additionalInput: true },
+  );
 }
 
 function showNextQuestion(live: Live): void {
@@ -1536,13 +2072,7 @@ function showNextQuestion(live: Live): void {
   const next = live.questions.entries().next().value;
   live.visibleQuestionId = next?.[0] ?? null;
   if (!next) return;
-  const [requestId, { questions }] = next;
-  live.onEvent({
-    type: "question.asked",
-    requestId,
-    title: questionPromptTitle(questions) || "OpenCode question",
-    questions,
-  });
+  if (next[1].event) live.onEvent(next[1].event);
 }
 
 function finishActiveTurn(live: Live, extraEvents: HarnessEvent[] = []): void {
@@ -1647,7 +2177,14 @@ function unsupportedFileMediaType(error: unknown): string | undefined {
 }
 
 async function assertOpenCodeVersion(path: string, cwd: string): Promise<OpenCodeApiGeneration> {
-  const output = await execChild(path, ["--version"], cwd, "opencode").catch(() => "");
+  const output = await execChild(
+    path,
+    ["--version"],
+    cwd,
+    "opencode",
+    undefined,
+    "management",
+  ).catch(() => "");
   const version = parseOpenCodeVersion(output);
   return assertSupportedOpenCodeVersion(version);
 }

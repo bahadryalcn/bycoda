@@ -25,11 +25,13 @@ import {
   reconnectRemoteMachine,
   startRemoteAutoRecovery,
   isReconnecting,
+  isReconnectRequested,
   cancelRemoteReconnect,
 } from "./remoteReconnect";
 import { invalidateConnection, readRemoteLifecycle } from "./remoteLifecycle";
 import {
   applyRemoteConnection,
+  forgetRemoteConnection,
   readRemoteConnection,
   recordRemoteConnection,
   resetRemoteHealth,
@@ -39,9 +41,14 @@ import {
 const down = "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
 const denied = "SSH connection failed: Permission denied (publickey).";
 let stop: () => void;
+let online = true;
 
 beforeEach(() => {
   localStorage.clear();
+  online = true;
+  Object.defineProperty(navigator, "onLine", { configurable: true, get: () => online });
+  // The longest jittered wait, so the ladder reads 2, 4, 8, 16 seconds.
+  vi.spyOn(Math, "random").mockReturnValue(1);
   vi.useFakeTimers();
   vi.setSystemTime(0);
   resetRemoteHealth();
@@ -52,6 +59,7 @@ beforeEach(() => {
 afterEach(() => {
   stop();
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("automatic recovery", () => {
@@ -67,21 +75,21 @@ describe("automatic recovery", () => {
     expect(requestReconnect).not.toHaveBeenCalled();
     expect(readRemoteConnection("env").status).toBe("identity-mismatch");
   });
-  it("retries a dropped machine after 2, 5 and 15 seconds, then reconnects it", async () => {
+  it("retries a dropped machine after 2, 4 and 8 seconds, then reconnects it", async () => {
     request.mockRejectedValue(down);
     recordRemoteConnection("env", down);
     await vi.advanceTimersByTimeAsync(1_999);
     expect(request).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(request).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(4_999);
+    await vi.advanceTimersByTimeAsync(3_999);
     expect(request).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(request).toHaveBeenCalledTimes(2);
     request.mockResolvedValue({ capabilities: [] });
     const recovered = vi.fn();
     const unsubscribe = subscribeRemoteRecovered(recovered);
-    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.advanceTimersByTimeAsync(8_000);
     expect(request).toHaveBeenCalledTimes(3);
     expect(readRemoteConnection("env").status).toBe("connected");
     expect(recovered).toHaveBeenCalledTimes(1);
@@ -90,6 +98,59 @@ describe("automatic recovery", () => {
     await vi.advanceTimersByTimeAsync(120_000);
     expect(request).toHaveBeenCalledTimes(3);
     unsubscribe();
+  });
+
+  it("gives a blocked machine three quiet fresh attempts, then waits for Reconnect", async () => {
+    const blocked = Object.assign(new Error("RPC_WS_BLOCKED: Host authentication was refused"), {
+      code: "RPC_WS_BLOCKED",
+    });
+    request.mockRejectedValue(blocked);
+    recordRemoteConnection("env", blocked);
+    expect(readRemoteConnection("env").status).toBe("connection-blocked");
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(request).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(request).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(request).toHaveBeenCalledTimes(3);
+    // Focus and the network return do not add attempts beyond the quiet limit.
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("online"));
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(request.mock.calls.every((call) => call[3] === true)).toBe(true);
+    expect(readRemoteConnection("env").status).toBe("connection-blocked");
+  });
+
+  it("starts the blocked attempts afresh once the machine has answered", async () => {
+    const blocked = Object.assign(new Error("RPC_WS_BLOCKED: Host authentication was refused"), {
+      code: "RPC_WS_BLOCKED",
+    });
+    request.mockRejectedValue(blocked);
+    recordRemoteConnection("env", blocked);
+    await vi.advanceTimersByTimeAsync(2_000 + 4_000 + 8_000);
+    expect(request).toHaveBeenCalledTimes(3);
+    // The user's own Reconnect answers; a later block gets its quiet attempts again.
+    request.mockResolvedValue({ capabilities: [] });
+    await expect(reconnectRemoteMachine("env")).resolves.toEqual({ ok: true });
+    expect(readRemoteConnection("env").status).toBe("connected");
+    request.mockRejectedValue(blocked);
+    recordRemoteConnection("env", blocked);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(request).toHaveBeenCalledTimes(5);
+  });
+
+  it("stops retrying a machine once it is disconnected or removed", async () => {
+    request.mockRejectedValue(down);
+    recordRemoteConnection("env", down);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(request).toHaveBeenCalledTimes(1);
+    // What disconnecting or removing the machine does.
+    invalidateConnection("env");
+    forgetRemoteConnection("env");
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(readRemoteConnection("env")).toEqual({ status: "connecting" });
   });
 
   it("does not retry, or prompt, when SSH needs a password", async () => {
@@ -119,6 +180,70 @@ describe("automatic recovery", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(readRemoteConnection("env").status).toBe("connected");
     expect(requestReconnect).not.toHaveBeenCalled();
+  });
+
+  it("does not dial a down machine again for focus events within 15 seconds", async () => {
+    request.mockRejectedValue(down);
+    recordRemoteConnection("env", down);
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(1_000);
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-checks a machine waiting for sign-in on focus at most once in five minutes", async () => {
+    recordRemoteConnection("env", denied);
+    request.mockRejectedValue(denied);
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(60_000);
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(request).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(4 * 60_000);
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(requestReconnect).not.toHaveBeenCalled();
+  });
+
+  it("keeps backing off a host that drops again at once, and starts over after a stable connection", async () => {
+    request.mockRejectedValueOnce(down).mockResolvedValue({ capabilities: [] });
+    recordRemoteConnection("env", down);
+    await vi.advanceTimersByTimeAsync(2_000 + 4_000);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(readRemoteConnection("env").status).toBe("connected");
+    // Dropped within 30 seconds: the next wait is the third rung, not the first.
+    await vi.advanceTimersByTimeAsync(10_000);
+    recordRemoteConnection("env", down);
+    await vi.advanceTimersByTimeAsync(7_999);
+    expect(request).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(request).toHaveBeenCalledTimes(3);
+    // Up for 30 seconds: the next drop retries after the shortest wait again.
+    await vi.advanceTimersByTimeAsync(30_000);
+    recordRemoteConnection("env", down);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(request).toHaveBeenCalledTimes(4);
+  });
+
+  it("dials nothing while offline, and starts over at once when the network returns", async () => {
+    request.mockRejectedValue(down);
+    recordRemoteConnection("env", down);
+    await vi.advanceTimersByTimeAsync(2_000 + 4_000 + 8_000);
+    expect(request).toHaveBeenCalledTimes(3);
+    online = false;
+    window.dispatchEvent(new Event("offline"));
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(request).toHaveBeenCalledTimes(3);
+    online = true;
+    window.dispatchEvent(new Event("online"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(request).toHaveBeenCalledTimes(4);
+    // The ladder restarted: the next wait is about four seconds, not sixteen.
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(request).toHaveBeenCalledTimes(5);
   });
 });
 
@@ -157,7 +282,7 @@ describe("with automatic reconnecting turned off", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(request).toHaveBeenCalledTimes(1);
     // ...and the schedule continues from there.
-    await vi.advanceTimersByTimeAsync(4_999);
+    await vi.advanceTimersByTimeAsync(3_999);
     expect(request).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(request).toHaveBeenCalledTimes(2);
@@ -195,6 +320,27 @@ describe("a dropped tunnel", () => {
 });
 
 describe("reconnectRemoteMachine", () => {
+  it("marks only the attempts the user asked for, so background retries stay quiet", async () => {
+    let finish!: (value: unknown) => void;
+    request.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    recordRemoteConnection("env", down);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(isReconnecting("env")).toBe(true);
+    expect(isReconnectRequested("env")).toBe(false);
+    // Asking while a background attempt runs joins it and shows progress.
+    const pending = reconnectRemoteMachine("env");
+    expect(isReconnectRequested("env")).toBe(true);
+    finish({});
+    expect(await pending).toEqual({ ok: true });
+    expect(isReconnecting("env")).toBe(false);
+    expect(isReconnectRequested("env")).toBe(false);
+  });
+
   it("ignores a late recovery after the route changes, without ending the replacement attempt", async () => {
     const finishes: ((value: unknown) => void)[] = [];
     request.mockImplementation(() => new Promise((resolve) => finishes.push(resolve)));

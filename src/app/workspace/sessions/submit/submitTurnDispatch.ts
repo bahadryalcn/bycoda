@@ -1,27 +1,80 @@
 import type { SubmitDeps, SubmitInput, SubmitPreflight, SubmitSetup } from "./submitTypes";
 import type { SubmitTurnEvents } from "./submitTurnEvents";
+import { requireRoomNativeOutput, startNativeOutputSession } from "./prepareNativeOutputSession";
+import { readableHarnessError } from "../../../../integrations/harness/core/readableError";
+import { TurnNotReadyError } from "../../../../integrations/harness/core/types";
+import { queueSubmittedFollowUp, requeueQueuedRowHead } from "./submitBusySteer";
 
 import { inboxAskPrompt } from "../../../../features/inbox/model/inboxAsk";
 import { announceSessionFinished } from "../../../../features/notifications/model/notifications";
 import { orchestrator, shellPath } from "../../../../features/orchestration/model/orchestration";
-import { completeOrRepairOrchestrationProposal, completeOrchestrationProposal, orchestrationPlanningPrompt, orchestrationRepairPrompt, withOrchestrationProposal } from "../../../../features/orchestration/model/orchestrationPlan";
+import {
+  completeOrRepairOrchestrationProposal,
+  completeOrchestrationProposal,
+  orchestrationPlanningPrompt,
+  orchestrationRepairPrompt,
+  recoverTaggedOrchestrationProposals,
+  withOrchestrationProposal,
+} from "../../../../features/orchestration/model/orchestrationPlan";
 import { prepareAttachments } from "../../../../features/sessions/model/attachments";
-import { beginSessionTurn, finishSessionTurn, flushSessionCheckpoint } from "../../../../features/sessions/model/checkpoint";
-import { completeHandoff, consumeHandoff, isPreparingHandoff, userMessagesAfterHandoff, wrapHandoffPrompt } from "../../../../features/sessions/model/handoff";
+import {
+  beginSessionTurn,
+  finishSessionTurn,
+  flushSessionCheckpoint,
+} from "../../../../features/sessions/model/checkpoint";
+import {
+  completeHandoff,
+  consumeHandoff,
+  isPreparingHandoff,
+  userMessagesAfterHandoff,
+  wrapHandoffPrompt,
+} from "../../../../features/sessions/model/handoff";
 import { CONTINUE_PROMPT } from "../../../../features/sessions/model/inFlight";
-import { buildPlanPrompt, isProviderFailureText, planTurnPrompt } from "../../../../features/sessions/model/plan";
+import {
+  failedTurnQueueNotice,
+  holdQueueAfterFailedTurn,
+} from "../../../../features/sessions/model/messageQueue";
+import {
+  buildPlanPrompt,
+  isProviderFailureText,
+  planTurnPrompt,
+} from "../../../../features/sessions/model/plan";
+import { markSharedProviderSend } from "../../../../features/connections/model/useSharedLocalQueues";
 import { preparePrompt } from "../../../../features/sessions/model/promptPreparation";
 import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
-import { canRewindHarnessLastTurn, forgetHarnessSession, promoteLastAssistantToPlan, rewindHarnessLastTurn, sendHarnessTurn, stopHarnessSession, stopStreaming } from "../../../../integrations/harness";
-import { recordPerformanceEvent, startPerformanceSpan } from "../../../../shared/lib/performanceTrace";
+import {
+  canRewindHarnessLastTurn,
+  forgetHarnessSession,
+  promoteLastAssistantToPlan,
+  rewindHarnessLastTurn,
+  sendHarnessTurn,
+  stopHarnessSession,
+  stopStreaming,
+} from "../../../../integrations/harness";
+import {
+  recordPerformanceEvent,
+  startPerformanceSpan,
+} from "../../../../shared/lib/performanceTrace";
 import { finalizeLocalTurn } from "../../../model/localTurnFinalization";
 import { prepareLocalTurn } from "../../../model/localTurnPreparation";
 import { prepareBudgetedHandoff } from "../../../model/prepareHandoff";
+import { handoffContextSession } from "../../../../features/sessions/model/handoffBudget";
 import { lastAssistantTextInTurn, withPlanStatus } from "../../helpers/sessionHelpers";
 import { notifyFinishedWorkspace } from "../../helpers/workspaceNotify";
 import { invoke } from "@tauri-apps/api/core";
-import { detachSessionWorktree, worktreeDeletedExternally } from "../../../../features/source-control/model/worktrees";
+import {
+  detachSessionWorktree,
+  worktreeDeletedExternally,
+} from "../../../../features/source-control/model/worktrees";
 import { isRemoteProjectPath } from "../../../../features/projects/model/recents";
+import { beginNativeManagedTurn } from "../../../../features/workspaces/model/nativeManagedTurn";
+import { t } from "../../../../shared/i18n";
+import { getExactGitRewindEnabled } from "../../../../features/settings/model/exactGitRewind";
+import { getSendWorkspaceCapabilities } from "../../../../features/workspaces/model/workspaceClient";
+import {
+  hostSessionBinding,
+  flushHostSessionBindings,
+} from "../../../../features/connections/model/sessionExecutionBinding";
 
 export async function runSubmitDispatch(
   ctx: SubmitDeps,
@@ -33,21 +86,83 @@ export async function runSubmitDispatch(
   events: SubmitTurnEvents,
 ): Promise<void> {
   const { sessionId, attachments, options } = input;
+  await flushHostSessionBindings(sessionId);
+  if (hostSessionBinding(pre.current))
+    throw new Error("Host-owned conversations cannot execute through Native.");
   const { enqueueHarnessEvent, flushHarnessEvents, deferWorkspaceWork } = ctx;
   const { retiringTurns, turnGen, activeSessionIdRef } = ctx.refs;
-  const { current, editedResend, editedProviderTurnId, intent, approvedPlan, providerAccountId, operatorCommand, operatorAccess, rawCommand, harnessText } = pre;
+  const {
+    current,
+    editedResend,
+    editedProviderTurnId,
+    intent,
+    approvedPlan,
+    providerAccountId,
+    operatorCommand,
+    operatorAccess,
+    rawCommand,
+    harnessText,
+  } = pre;
   const { traceId, gen, proposalId, queuedHandoff, turn } = setup;
-  const { revealHandoff, routeTurnEvent, acceptContextReplay, acceptEditedResend, recoverEditedResend, contextReplay, planEventKey } = events;
+  const {
+    revealHandoff,
+    routeTurnEvent,
+    acceptContextReplay,
+    acceptEditedResend,
+    recoverEditedResend,
+    contextReplay,
+    planEventKey,
+  } = events;
+  let finishManagedTurn: ((interrupted: boolean) => Promise<void>) | undefined;
+  let checkpointSettled: Promise<void> | undefined;
   try {
+    const latest = sessionsRef.current.find((session) => session.id === sessionId) ?? current;
+    // Both Host policy lookups are memoized briefly and independent: start them
+    // together so a send pays at most one round trip, and none when warm.
+    const exactRewind =
+      latest.workspaceId && !isRemoteProjectPath(latest.cwd)
+        ? getExactGitRewindEnabled()
+        : Promise.resolve(false);
+    const capabilities = latest.workspaceId
+      ? getSendWorkspaceCapabilities({ cwd: latest.cwd }).catch((): string[] => [])
+      : Promise.resolve<string[]>([]);
+    // Only exact Git rewind captures files an edited resend could desync.
+    if (latest.workspaceId && editedResend && (await exactRewind))
+      throw new Error(t("Rewind conversation and files before resending an edited turn."));
+    // The pre-provider save is the slowest local step; start it before checkpoint
+    // and registry preparation so they overlap it. sendTurn awaits it before the
+    // provider is entered.
+    let earlyNativeOutput = startNativeOutputSession(
+      sessionId,
+      () => turnGen.current.get(sessionId) === gen,
+    );
+    if (await exactRewind)
+      finishManagedTurn = await beginNativeManagedTurn(latest, checkpointTurnId);
+    const lightweightWorktree = Boolean(
+      latest.workspaceId &&
+      !finishManagedTurn &&
+      (await capabilities).includes("sessions.desktop-writer-retirement.v1"),
+    );
     const preparation = await prepareLocalTurn({
       traceId,
-      checkpoint: () =>
-        !current.inboxAsk && !orchestrator.forSession(sessionId)
-          ? (turn.checkpointStarted = true, beginSessionTurn(sessionId, workCwd, checkpointTurnId)).catch((error) => {
-              if (String(error).includes("checkpoint-coordination:")) throw error;
-              console.warn("App operation failed", error);
-            })
-          : Promise.resolve(),
+      checkpoint: async () => {
+        // Exact managed capture owns its own lifecycle; lightweight turns still
+        // retain bounded file history under the actual accepted message ID.
+        if (finishManagedTurn) return;
+        const user = [...latest.blocks]
+          .reverse()
+          .find((block) => block.role === "user" && !block.draft);
+        return !current.inboxAsk && !orchestrator.forSession(sessionId)
+          ? ((turn.checkpointStarted = true),
+            beginSessionTurn(sessionId, workCwd, checkpointTurnId, user?.id, false)).catch(
+              (error) => {
+                // A coordination failure (lease publish timing out or failing on disk)
+                // is not a competing writer: the turn runs without a checkpoint baseline.
+                console.warn("App operation failed", error);
+              },
+            )
+          : Promise.resolve();
+      },
       attachments: () => prepareAttachments(attachments),
       prompt: () =>
         intent === "build" && approvedPlan
@@ -82,6 +197,9 @@ export async function runSubmitDispatch(
           model: current.model,
           modelSettings: current.modelSettings,
           runtimeMode: current.runtimeMode,
+          providerAccountId,
+          controlsAgents: operatorAccess || orchestrator.run(sessionId)?.status === "active",
+          appAccess: operatorAccess,
           ...(editedProviderTurnId ? { providerTurnId: editedProviderTurnId } : {}),
           onEvent: (event) => {
             if (turnGen.current.get(sessionId) !== gen) return;
@@ -97,16 +215,15 @@ export async function runSubmitDispatch(
       flushHarnessEvents();
       if (turnGen.current.get(sessionId) !== gen) {
         const latest = sessionsRef.current.find((session) => session.id === sessionId);
-        if (
-          !latest ||
-          (!latest.busy && latest.providerSessionId === current.providerSessionId)
-        ) {
-          await forgetHarnessSession(current.harness, sessionId);
+        if (!latest || (!latest.busy && latest.providerSessionId === current.providerSessionId)) {
+          // Best effort: a failed cleanup must not skip the binding reset below.
+          await forgetHarnessSession(current.harness, sessionId).catch((error) => {
+            console.warn("App operation failed", error);
+          });
           if (latest) {
             setSessions((prev) =>
               prev.map((session) =>
-                session.id === sessionId &&
-                session.providerSessionId === current.providerSessionId
+                session.id === sessionId && session.providerSessionId === current.providerSessionId
                   ? { ...session, providerSessionId: undefined }
                   : session,
               ),
@@ -117,13 +234,31 @@ export async function runSubmitDispatch(
         return;
       }
     }
-    const sendTurn = (text: string, turnAttachments = prepared) => {
+    const sendTurn = async (
+      text: string,
+      turnAttachments = prepared,
+      prepareText?: (text: string, runtimeInstructions?: string) => Promise<string>,
+    ) => {
       if (turnGen.current.get(sessionId) !== gen) return Promise.resolve();
+      // The save overlaps registry preparation (retirement drain, control turn,
+      // skill policy) and is awaited, with the same generation check, right
+      // before the provider is entered.
+      const nativeOutput =
+        earlyNativeOutput ??
+        startNativeOutputSession(sessionId, () => turnGen.current.get(sessionId) === gen);
+      earlyNativeOutput = undefined;
+      const nativeOutputSessionId = nativeOutput?.sessionId;
+      if (options?.appRequestId)
+        await requireRoomNativeOutput(nativeOutput, () => turnGen.current.get(sessionId) === gen);
       recordPerformanceEvent("dispatch", {}, traceId);
       const finishDispatch = startPerformanceSpan("dispatch", {}, traceId);
+      // A queued send waits for the provider from here on, not from its claim.
+      markSharedProviderSend(sessionId);
       return sendHarnessTurn({
         harness: current.harness,
+        lightweightWorktree,
         sessionId,
+        nativeOutputSessionId,
         cwd: workCwd,
         model: current.model,
         modelSettings: current.modelSettings,
@@ -134,8 +269,27 @@ export async function runSubmitDispatch(
         // orchestration leads retain their separate control access.
         controlsAgents: operatorAccess || orchestrator.run(sessionId)?.status === "active",
         appAccess: operatorAccess,
-        text: !turn.contextReplayAccepted ? `${contextReplay}\n\nCurrent user request:\n${text}` : text,
+        // The budgeted handoff already carries the saved conversation. Prefixing
+        // an unbounded replay here would duplicate failed requests and consume
+        // the target model's entire handoff budget before preparation runs.
+        text:
+          !turn.contextReplayAccepted && !(turn.wrap && !rawCommand)
+            ? `${contextReplay}\n\nCurrent user request:\n${text}`
+            : text,
         attachments: turnAttachments,
+        prepareText: nativeOutput
+          ? async (text, runtimeInstructions) => {
+              const persisted = await nativeOutput.ready;
+              if (options?.appRequestId && !persisted)
+                throw new Error("Room submission could not be durably recorded before dispatch.");
+              if (turnGen.current.get(sessionId) !== gen)
+                throw new Error("Turn changed before it started");
+              return prepareText ? prepareText(text, runtimeInstructions) : text;
+            }
+          : prepareText,
+        onReplyEnded: (endedAt) => {
+          turn.replyEndedAt = endedAt;
+        },
         onAccepted: () => {
           acceptContextReplay();
           acceptEditedResend();
@@ -143,29 +297,12 @@ export async function runSubmitDispatch(
         onEvent: routeTurnEvent,
       }).finally(finishDispatch);
     };
-    if (turn.wrap && !rawCommand) {
-      const historySession =
-        sessionsRef.current.find((session) => session.id === sessionId) ?? current;
-      const budgeted = await prepareBudgetedHandoff(
-        { ...historySession, model: current.model, harness: current.harness },
-        turn.wrap.text,
-        [turnPrompt.trim() || CONTINUE_PROMPT, ...earlier].join("\n\n"),
-      );
-      if (turnGen.current.get(sessionId) !== gen) return;
-      turn.wrap = { ...turn.wrap, text: budgeted };
-    }
     let sendText = orchestrator.prompt(
       sessionId,
       inboxAskPrompt(
         rawCommand ? undefined : current.inboxAsk,
         turn.wrap && !rawCommand
-          ? wrapHandoffPrompt(
-              turn.wrap.text,
-              turn.wrap.from,
-              turnPrompt.trim() || CONTINUE_PROMPT,
-              earlier,
-              turn.wrap.to,
-            )
+          ? [turnPrompt.trim() || CONTINUE_PROMPT, ...earlier].join("\n\n")
           : turnPrompt,
       ),
     );
@@ -173,7 +310,47 @@ export async function runSubmitDispatch(
       const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
       sendText += `\n\n<bycoda_app>\nThe user's Operator command enables app access in this thread, including later turns without the command. You can start session tabs or split session panes right or down, list and create project worktrees, choose a new session's checkout, read and continue other project sessions, save unsent drafts, organize session folders, and read or write saved notes through its local CLI. Run \`${cli} --help\` for exact commands and JSON fields, then use it as needed for the user's request. After sessions.send, call sessions.wait with the returned requestId as sentRequestId to get that session's reply. When reading another session, start with its latest two or three user/assistant exchanges. Request older exchanges with nextBefore or a larger excerpt only if needed. The CLI uses a session credential already in your environment; never print it. New sessions inherit this session's permission mode unless runtimeMode is set explicitly. For a new session with a draft, call sessions.start with its prompt and draft:true; do not submit a seed prompt. The returned ID can be used as besideSessionId to split its pane again or moved into a folder immediately. A normal sessions.start submits its prompt but returns after acceptance, so do not wait for that agent to finish before organizing it.\n</bycoda_app>`;
     }
-    await sendTurn(sendText);
+    await sendTurn(
+      sendText,
+      prepared,
+      turn.wrap && !rawCommand
+        ? async (text, runtimeInstructions) => {
+            const wrap = turn.wrap!;
+            // `current` predates setup's newly appended user block: the request
+            // must not be replayed as both history and the current turn.
+            const budgeted = await prepareBudgetedHandoff(
+              handoffContextSession(current, input.text, input.attachments),
+              wrap.text,
+              [text, runtimeInstructions].filter(Boolean).join("\n\n"),
+            );
+            if (turnGen.current.get(sessionId) !== gen)
+              throw new Error("Turn changed before handoff preparation completed");
+            turn.wrap = { ...wrap, text: budgeted.text };
+            if (budgeted.notice)
+              setSessions((prev) =>
+                prev.map((session) =>
+                  session.id === sessionId
+                    ? {
+                        ...session,
+                        blocks: [
+                          ...session.blocks,
+                          {
+                            id: crypto.randomUUID(),
+                            role: "system",
+                            text: budgeted.notice!,
+                            notice: "info",
+                          },
+                        ],
+                      }
+                    : session,
+                ),
+              );
+            return budgeted.text
+              ? wrapHandoffPrompt(budgeted.text, wrap.from, text, [], wrap.to)
+              : text;
+          }
+        : undefined,
+    );
     if (!turn.providerFailureSeen) acceptContextReplay();
     acceptEditedResend();
     if (turn.proposalDraft && !turn.providerFailureSeen) {
@@ -185,9 +362,7 @@ export async function runSubmitDispatch(
           turn.nativeProposalText = "";
           await sendTurn(repairPrompt, []);
           if (turn.providerFailureSeen)
-            throw new Error(
-              turn.controlOutcome.error ?? "The lead could not repair the proposal.",
-            );
+            throw new Error(turn.controlOutcome.error ?? "The lead could not repair the proposal.");
           return turn.nativeProposalText || turn.proposalText;
         },
         () =>
@@ -208,15 +383,37 @@ export async function runSubmitDispatch(
       );
     }
     turn.buildSucceeded = true;
+    turn.replyCompleted = !turn.providerFailureSeen && !isProviderFailureText(turn.controlText);
   } catch (error: unknown) {
     recoverEditedResend();
     if (turnGen.current.get(sessionId) !== gen) return;
+    // The provider refused before any write (its fence is still settling a previous
+    // query): park the message in the queue, as the steer path does, instead of failing it.
+    if (error instanceof TurnNotReadyError && !turn.providerFailureSeen) {
+      const userBlockId = [...(sessionsRef.current.find((s) => s.id === sessionId)?.blocks ?? [])]
+        .reverse()
+        .find((block) => block.role === "user" && !block.draft)?.id;
+      if (userBlockId)
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === sessionId
+              ? { ...s, blocks: s.blocks.filter((block) => block.id !== userBlockId) }
+              : s,
+          ),
+        );
+      // A queue row goes back to the head with its id; a new message joins the tail.
+      if (options?.queuedMessageId) {
+        requeueQueuedRowHead(sessionId, input, pre);
+        return;
+      }
+      if (queueSubmittedFollowUp(ctx, input, pre)) return;
+    }
     if (turn.wrap) revealHandoff(turn.wrap.text);
-    const message =
-      error instanceof Error
-        ? error.message
-        : String(error) || `${current.harness} adapter failed`;
+    const message = readableHarnessError(
+      error instanceof Error ? error.message : String(error) || `${current.harness} adapter failed`,
+    );
     turn.controlOutcome.error = message;
+    turn.replyEndedAt ??= Date.now();
     retiringTurns.current.set(sessionId, gen);
     if (!turn.providerFailureSeen) {
       enqueueHarnessEvent(sessionId, {
@@ -235,30 +432,76 @@ export async function runSubmitDispatch(
       text: turn.controlText.trim(),
       ...(turn.providerFailureSeen ? { error: turn.controlOutcome.error } : {}),
     };
-    // A failed provider can leave its process alive with a dead event
-    // stream or poisoned turn state. Park it now; the next prompt will
-    // reconnect and resume through a fresh transport.
+    // Managed capture needs a settled writer even after a successful turn.
+    // Stop through the adapter first so intentional exit events are muted;
+    // native retirement then waits for process exit and Host acknowledgement.
+    let queueHeld = false;
     const finalizedCurrentTurn = await finalizeLocalTurn({
       isCurrent: () => turnGen.current.get(sessionId) === gen,
       retire: () =>
-        turn.providerFailureSeen || turnGen.current.get(sessionId) !== gen
-          ? stopHarnessSession(current.harness, sessionId).catch(() => { turn.checkpointRetirementUncertain = true; })
+        finishManagedTurn || turn.providerFailureSeen || turnGen.current.get(sessionId) !== gen
+          ? stopHarnessSession(current.harness, sessionId).catch(() => {
+              turn.checkpointRetirementUncertain = true;
+            })
           : Promise.resolve(),
-      settle: () => turn.checkpointStarted
-        ? finishSessionTurn(sessionId, workCwd, checkpointTurnId, turn.checkpointRetirementUncertain).catch((error) => console.warn("Workspace checkpoint failed", error))
-        : Promise.resolve(),
-      checkpoint: () => flushSessionCheckpoint(sessionId),
+      settle: async () => {
+        if (finishManagedTurn) {
+          try {
+            await finishManagedTurn(turn.checkpointRetirementUncertain);
+          } catch (error) {
+            if (turn.replyCompleted) {
+              // The reply finished; the native fence stays up, but the message is not failed.
+              console.warn("Managed turn cleanup failed", error);
+              enqueueHarnessEvent(sessionId, {
+                type: "status",
+                text: "The reply finished, but the workspace writer could not be confirmed stopped. Reconnect before continuing.",
+              });
+              flushHarnessEvents();
+              return;
+            }
+            turn.providerFailureSeen = true;
+            turn.controlOutcome = {
+              status: "failed",
+              text: turn.controlText,
+              error: String(error),
+            };
+            enqueueHarnessEvent(sessionId, { type: "session.error", message: String(error) });
+            flushHarnessEvents();
+          }
+          return;
+        }
+        // The checkpoint queue is ordered per session, so a following turn's
+        // begin always runs after this finish: the session may go idle first.
+        if (turn.checkpointStarted)
+          checkpointSettled = finishSessionTurn(
+            sessionId,
+            workCwd,
+            checkpointTurnId,
+            turn.checkpointRetirementUncertain,
+          ).catch((error) => console.warn("Workspace checkpoint failed", error));
+      },
+      // Durable checkpoint writes are awaited below, after the session is idle.
+      checkpoint: () => Promise.resolve(),
       commit: () =>
         setSessions((prev) =>
           prev.map((s) => {
             if (s.id !== sessionId || turnGen.current.get(sessionId) !== gen) return s;
-            const stopped = stopStreaming(s);
+            // The reply's own end time: cleanup and persistence are not part of the run.
+            const stopped = stopStreaming(
+              s,
+              turn.replyEndedAt ?? Date.now(),
+              turn.providerFailureSeen,
+            );
             const providerFailed =
               turn.providerFailureSeen || isProviderFailureText(lastAssistantTextInTurn(stopped));
+            // A failed turn holds the queue for the owner; the next row would
+            // only run into the same failure (host/queue-drainer does the same).
+            const held = providerFailed ? holdQueueAfterFailedTurn(stopped) : stopped;
+            if (held !== stopped) queueHeld = true;
             const finalized =
               turn.proposalDraft && proposalId
                 ? withOrchestrationProposal(
-                    stopped,
+                    held,
                     proposalId,
                     turn.completedProposal && !providerFailed && turn.buildSucceeded
                       ? turn.completedProposal
@@ -271,29 +514,56 @@ export async function runSubmitDispatch(
                         ),
                   )
                 : intent === "plan" && !turn.nativePlanSeen && !providerFailed
-                  ? promoteLastAssistantToPlan(stopped, planEventKey)
-                  : stopped;
+                  ? promoteLastAssistantToPlan(held, planEventKey)
+                  : held;
+            const recovered =
+              !providerFailed && turn.buildSucceeded
+                ? recoverTaggedOrchestrationProposals(finalized)
+                : finalized;
             return approvedPlan && intent === "build"
               ? withPlanStatus(
-                  finalized,
+                  recovered,
                   approvedPlan.id,
                   turn.buildSucceeded && !providerFailed ? "built" : "ready",
                 )
-              : finalized;
+              : recovered;
           }),
         ),
     });
+    if (queueHeld) {
+      enqueueHarnessEvent(sessionId, {
+        type: "status",
+        text: failedTurnQueueNotice(turn.controlOutcome.error),
+      });
+      flushHarnessEvents();
+    }
+    // Idle is already visible; keep the transcript/checkpoint ordering guarantees
+    // for everything that follows (notifications read the settled review state).
+    await checkpointSettled;
+    await flushSessionCheckpoint(sessionId).catch((error) =>
+      console.warn("Workspace checkpoint flush failed", error),
+    );
     if (finalizedCurrentTurn) {
       const worktreePath = current.worktreeCwd;
       if (turn.providerFailureSeen && worktreePath && !isRemoteProjectPath(current.cwd)) {
         void worktreeDeletedExternally(worktreePath)
           .then((deleted) => {
-            if (!deleted || ctx.refs.switchingWorktrees.current.has(sessionId) || turnGen.current.get(sessionId) !== gen) return;
-            setSessions((prev) => prev.map((session) =>
-              session.id === sessionId && !session.busy && !session.worktreeRemoved && session.worktreeCwd === worktreePath
-                ? detachSessionWorktree(session, session.cwd, worktreePath)
-                : session,
-            ));
+            if (
+              !deleted ||
+              ctx.refs.switchingWorktrees.current.has(sessionId) ||
+              turnGen.current.get(sessionId) !== gen
+            )
+              return;
+            setSessions((prev) =>
+              prev.map((session) =>
+                session.id === sessionId &&
+                !session.busy &&
+                !session.worktreeRemoved &&
+                session.worktreeCwd === worktreePath
+                  ? detachSessionWorktree(session, session.cwd, worktreePath)
+                  : session,
+              ),
+            );
           })
           // An inaccessible checkout must never be mistaken for a deleted one.
           .catch(() => {});
@@ -310,4 +580,3 @@ export async function runSubmitDispatch(
     }
   }
 }
-

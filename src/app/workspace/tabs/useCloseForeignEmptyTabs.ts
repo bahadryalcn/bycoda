@@ -1,14 +1,12 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { remoteCreateIntent } from "../../../features/connections/model/remoteCreateIntent";
 import { remoteShellState } from "../../../features/connections/model/remoteShellState";
 import { composerDraftsLoaded } from "../../../features/sessions/data/composerDraftStore";
 import { listSessionsByProject } from "../../../features/sessions/data/sessionStore";
 import { hasUnsentComposerDraft } from "../../../features/sessions/model/draftCache";
 import type { Session } from "../../../features/sessions/model/session";
 import { isRemoteProjectPath } from "../../../features/projects/model/recents";
-import {
-  emptyForeignTabIds,
-  unlistedTabIds,
-} from "../../../features/workspace/model/idleTabs";
+import { emptyForeignTabIds, unlistedTabIds } from "../../../features/workspace/model/idleTabs";
 import { isUnsentRemoteChat } from "../../../features/workspace/model/remoteEmptyChats";
 import type { WorkspaceTab } from "../../../features/workspace/model/layout";
 import { workspaceTabCwd } from "../../../features/workspace/model/workspaceTabGroups";
@@ -24,26 +22,38 @@ export type ForeignEmptyTabsInput = {
   movingTabIds: ReadonlySet<string>;
   /** False for transfer windows: their state and drafts arrive with the payload, so no launch pass. */
   restoredWorkspace: boolean;
-  onCloseTabs: (ids: string[], fallbackId: string) => void;
+  onCloseTabs: (
+    ids: string[],
+    fallbackId: string,
+    opts?: { stillClosable?: (tabId: string) => boolean | Promise<boolean> },
+  ) => void;
 };
 
 /**
  * A remote chat is unsent only when this app holds no host binding, no queued
  * command and no draft for it. Decided locally: the host keeps no record of a
- * chat that never got a turn, and a bound chat is never closed here.
+ * chat that never got a turn, and a bound chat is never closed here. A shell
+ * whose host session is being created is not yet bound but is no longer unsent.
  */
-function remoteSessionUnsent(session: Session): boolean {
+async function remoteSessionUnsent(session: Session): Promise<boolean> {
+  if (remoteCreateIntent(session.id)) return false;
   return isUnsentRemoteChat(
     session,
-    remoteShellState(session, { hasDraft: hasUnsentComposerDraft(session.id) }),
+    await remoteShellState(session, { hasDraft: hasUnsentComposerDraft(session.id) }),
   );
 }
 
-function candidatesOf(input: ForeignEmptyTabsInput): string[] {
+async function candidatesOf(input: ForeignEmptyTabsInput): Promise<string[]> {
+  const results = await Promise.all(
+    input.sessions.map(
+      async (session) => [session.id, await remoteSessionUnsent(session)] as const,
+    ),
+  );
+  const unsent = new Map(results);
   return emptyForeignTabIds(
     { ...input, hasComposerDraft: hasUnsentComposerDraft },
     input.projectCwd,
-    remoteSessionUnsent,
+    (session) => unsent.get(session.id) === true,
   );
 }
 
@@ -59,7 +69,7 @@ async function closeForeignEmptyTabs(read: () => ForeignEmptyTabsInput): Promise
   if (!composerDraftsLoaded() || first.movingTabIds.size > 0) return;
   const tabById = new Map(first.tabs.map((tab) => [tab.id, tab]));
   const cwdOf = (id: string) => workspaceTabCwd(tabById.get(id)!, first.sessions) ?? "";
-  const candidates = candidatesOf(first);
+  const candidates = await candidatesOf(first);
   if (candidates.length === 0) return;
 
   const localIds = candidates.filter((id) => !isRemoteProjectPath(cwdOf(id)));
@@ -84,9 +94,13 @@ async function closeForeignEmptyTabs(read: () => ForeignEmptyTabsInput): Promise
   // The awaits may have spanned an edit or a switch, so decide again on the current state.
   const now = read();
   if (now.movingTabIds.size > 0) return;
-  const still = new Set(candidatesOf(now));
+  const still = new Set(await candidatesOf(now));
   const ids = confirmed.filter((id) => still.has(id));
-  if (ids.length > 0) now.onCloseTabs(ids, now.activeTabId);
+  if (ids.length === 0) return;
+  // Closing waits on the close confirmation, so decide once more when it is executed.
+  now.onCloseTabs(ids, now.activeTabId, {
+    stillClosable: async (id) => (await candidatesOf(read())).includes(id),
+  });
 }
 
 /**

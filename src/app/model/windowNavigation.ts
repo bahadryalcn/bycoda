@@ -8,7 +8,14 @@ import { pathKey } from "../../shared/lib/paths";
 import { restoreWindowFocus } from "./windowFocus";
 
 export type WindowDestination =
-  | { kind: "session"; sessionId: string; cwd?: string; background?: BackgroundSessionTarget }
+  | {
+      kind: "session";
+      sessionId: string;
+      cwd?: string;
+      background?: BackgroundSessionTarget;
+      requireOwned?: boolean;
+      inspectSessionId?: string;
+    }
   | { kind: "tool"; tool: ToolId; cwd: string; grouped?: boolean };
 export type NavigationWindow = {
   label: string;
@@ -89,6 +96,54 @@ export function routeWindowDestination(
   return result;
 }
 
+export async function focusSessionWindow(
+  ownerLabel: string,
+  sessionId: string,
+  inspectSessionId?: string,
+): Promise<void> {
+  const target: WindowDestination = {
+    kind: "session",
+    sessionId,
+    requireOwned: true,
+    inspectSessionId,
+  };
+  await deliverWindowDestination(ownerLabel, target);
+}
+
+async function deliverWindowDestination(
+  ownerLabel: string,
+  target: WindowDestination,
+): Promise<void> {
+  const source = getCurrentWindow().label;
+  const destination = (await getAllWindows()).find((entry) => entry.label === ownerLabel);
+  if (!destination) throw new Error("The destination window has closed. Retry opening it.");
+  const id = crypto.randomUUID();
+  let complete!: (error?: string) => void;
+  const result = new Promise<void>((resolve, reject) => {
+    complete = (error) => (error ? reject(new Error(error)) : resolve());
+  });
+  const stop = await getCurrentWindow().listen<{ id: string; error?: string }>(
+    RESULT,
+    ({ payload }) => {
+      if (payload.id === id) complete(payload.error);
+    },
+  );
+  const timer = setTimeout(
+    () => complete("The destination window did not respond. Retry opening it."),
+    15000,
+  );
+  try {
+    void emitTo(ownerLabel, OPEN, { id, replyTo: source, target }).catch((cause) =>
+      complete(String(cause)),
+    );
+    await result;
+    await restoreWindowFocus(destination);
+  } finally {
+    clearTimeout(timer);
+    stop();
+  }
+}
+
 async function route(target: WindowDestination, requireSessionWindow: boolean): Promise<boolean> {
   const source = getCurrentWindow().label;
   let owner = chooseNavigationWindow(await discover(), target, source);
@@ -108,34 +163,8 @@ async function route(target: WindowDestination, requireSessionWindow: boolean): 
   }
   if (!owner) return false;
   if (owner.label === source) return target.kind === "tool" && target.grouped !== undefined;
-  const destination = (await getAllWindows()).find((entry) => entry.label === owner.label);
-  if (!destination) throw new Error("The destination window has closed. Retry opening it.");
-  const id = crypto.randomUUID();
-  let complete!: (error?: string) => void;
-  const result = new Promise<void>((resolve, reject) => {
-    complete = (error) => (error ? reject(new Error(error)) : resolve());
-  });
-  const stop = await getCurrentWindow().listen<{ id: string; error?: string }>(
-    RESULT,
-    ({ payload }) => {
-      if (payload.id === id) complete(payload.error);
-    },
-  );
-  const timer = setTimeout(
-    () => complete("The destination window did not respond. Retry opening it."),
-    15000,
-  );
-  try {
-    void emitTo(owner.label, OPEN, { id, replyTo: source, target }).catch((cause) =>
-      complete(String(cause)),
-    );
-    await result;
-    await restoreWindowFocus(destination);
-    return true;
-  } finally {
-    clearTimeout(timer);
-    stop();
-  }
+  await deliverWindowDestination(owner.label, target);
+  return true;
 }
 
 /** Query current state on demand, avoiding persisted or stale window ownership. */
@@ -165,6 +194,17 @@ export function useWindowNavigation(
             let error: string | undefined;
             try {
               const own = { ...current.current.state, label };
+              if (payload.target.kind === "session" && payload.target.requireOwned) {
+                if (
+                  !own.sessionIds.includes(payload.target.sessionId) ||
+                  !(await invoke<boolean>("verify_session_window_owner", {
+                    sessionId: payload.target.sessionId,
+                  }))
+                )
+                  throw new Error(
+                    "The conversation is no longer open in this window. Retry opening it.",
+                  );
+              }
               if (!chooseNavigationWindow([own], payload.target, label))
                 throw new Error("The destination changed. Retry opening it.");
               await current.current.open(payload.target);

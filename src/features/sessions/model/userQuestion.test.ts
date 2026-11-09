@@ -7,6 +7,7 @@ import {
   questionPromptTitle,
   questionsFromUnknown,
   selectedAnswerLabels,
+  assertQuestionNotesSupported,
 } from "./userQuestion";
 
 describe("questionsFromUnknown", () => {
@@ -128,6 +129,29 @@ describe("question answers", () => {
       }),
     ).toEqual(["c.ts"]);
   });
+
+  it("appends optional notes to final selected label without changing option cardinality", () => {
+    expect(
+      selectedAnswerLabels(question, {
+        kind: "answered",
+        answers: { [question.id]: ["a.ts", "b.ts"] },
+        notes: { [question.id]: "Keep imports sorted" },
+      }),
+    ).toEqual(["a.ts", "b.ts\nKeep imports sorted"]);
+  });
+
+  it("rejects notes for fixed-only questions", () => {
+    const fixed = questionsFromUnknown({
+      questions: [{ question: "Mode?", options: [{ label: "Fast" }], custom: false }],
+    });
+    expect(() =>
+      assertQuestionNotesSupported(fixed, {
+        kind: "answered",
+        answers: { [fixed[0]!.id]: ["Fast"] },
+        notes: { [fixed[0]!.id]: "More" },
+      }),
+    ).toThrow("Question notes are only supported");
+  });
 });
 
 describe("buildQuestionReply", () => {
@@ -161,6 +185,22 @@ describe("buildQuestionReply", () => {
     });
   });
 
+  it("includes notes only for answered ordinary free-text-capable selections", () => {
+    expect(
+      buildQuestionReply(
+        questions,
+        { [language.id]: ["TypeScript"] },
+        {},
+        {},
+        { [language.id]: "Use strict mode", [files.id]: "ignored" },
+      ),
+    ).toEqual({
+      kind: "answered",
+      answers: { [language.id]: ["TypeScript"] },
+      notes: { [language.id]: "Use strict mode" },
+    });
+  });
+
   it("includes every completed question", () => {
     expect(
       buildQuestionReply(
@@ -182,7 +222,7 @@ describe("buildQuestionReply", () => {
   });
 });
 
-it("literal Other seçeneği normalize ve JSON roundtrip sonrası gerçek değer kalır", () => {
+it("a literal Other option stays a real value after normalize and JSON roundtrip", () => {
   const [question] = questionsFromUnknown(
     JSON.parse(
       JSON.stringify({
@@ -217,7 +257,7 @@ it("literal Other seçeneği normalize ve JSON roundtrip sonrası gerçek değer
   expect(questionIsComplete(legacy, { legacy: ["other"] })).toBe(false);
 });
 
-it("typed form string boşluklarını normalize ve reply oluştururken korur", () => {
+it("preserves typed form string whitespace through normalize and reply creation", () => {
   const [question] = questionsFromUnknown({
     questions: [
       {

@@ -1,4 +1,4 @@
-import { themePalette } from "../../../shared/theme/palette";
+import { editorSurfaceActive, observeEditorSurface } from "./editorSurfaceVisibility";
 import {
   buildRulerSpans,
   scrollTopToCenter,
@@ -36,10 +36,10 @@ export type RulerOptions = {
 };
 
 export const RULER_COLORS = {
-  add: themePalette.hex34d399,
-  del: themePalette.dangerDark,
-  mod: themePalette.warningDark,
-  conflict: themePalette.hexa78bfa,
+  add: "--ui-diff-ruler-add",
+  del: "--ui-diff-ruler-del",
+  mod: "--ui-diff-ruler-mod",
+  conflict: "--ui-diff-ruler-conflict",
 } as const;
 
 /**
@@ -68,6 +68,7 @@ export class OverviewRuler {
   private spans: RulerSpan[] = [];
   private spansFor = { content: -1, track: -1 };
   private pointerId: number | null = null;
+  private stopObserving: (() => void) | null = null;
 
   constructor(
     private readonly host: RulerHost,
@@ -81,7 +82,7 @@ export class OverviewRuler {
     style.cursor = "default";
     style.userSelect = "none";
     style.visibility = "hidden";
-    style.pointerEvents = options.interactive ? "auto" : "none";
+    style.pointerEvents = "none";
     this.dom.setAttribute("aria-hidden", "true");
     this.canvas.style.display = "block";
     this.canvas.style.width = "100%";
@@ -120,15 +121,25 @@ export class OverviewRuler {
     if (this.frame) cancelAnimationFrame(this.frame);
     this.frame = 0;
     this.resizeObserver?.disconnect();
+    this.stopObserving?.();
+    this.releasePointer();
     this.dom.remove();
   }
 
   /** The small tick under a client y, for a press that should land on it. */
   tickAt(clientY: number): RulerSpan | null {
+    if (!editorSurfaceActive(this.dom)) return null;
     return spanAtY(this.spans, clientY - this.dom.getBoundingClientRect().top);
   }
 
   private draw() {
+    this.stopObserving ??= observeEditorSurface(this.dom, this.schedule);
+    if (!editorSurfaceActive(this.dom)) {
+      this.dom.style.visibility = "hidden";
+      this.dom.style.pointerEvents = "none";
+      this.releasePointer();
+      return;
+    }
     this.options.beforeDraw?.();
     if (this.dirty) {
       this.dirty = false;
@@ -138,7 +149,8 @@ export class OverviewRuler {
     }
     // Hidden by visibility, not display: a collapsed box could not be measured
     // again when marks come back.
-    this.dom.style.visibility = this.hasMarks ? "visible" : "hidden";
+    this.dom.style.visibility = this.hasMarks ? "inherit" : "hidden";
+    this.dom.style.pointerEvents = this.hasMarks && this.options.interactive ? "auto" : "none";
     const track = this.dom.clientHeight;
     const width = this.dom.clientWidth;
     const geometry = this.host.geometry();
@@ -166,16 +178,18 @@ export class OverviewRuler {
         track,
       );
       if (band) {
-        context.globalAlpha = 0.14;
-        context.fillStyle = "currentColor";
+        context.fillStyle = getComputedStyle(this.dom).getPropertyValue("--ui-surface-selected");
         context.fillRect(0, band.top, width, band.height);
-        context.globalAlpha = 1;
       }
     }
     const left = this.options.padLeft ?? 1;
     const inner = Math.max(1, width - left - (this.options.padRight ?? 1));
+    const style = getComputedStyle(this.dom);
+    const forcedColors = window.matchMedia("(forced-colors: active)").matches;
     for (const span of this.spans) {
-      context.fillStyle = RULER_COLORS[span.kind];
+      context.fillStyle = forcedColors
+        ? "CanvasText"
+        : style.getPropertyValue(RULER_COLORS[span.kind]);
       context.fillRect(left, span.top, inner, span.bottom - span.top);
     }
   }
@@ -191,7 +205,14 @@ export class OverviewRuler {
   }
 
   private readonly onPointerDown = (event: PointerEvent) => {
-    if (event.button !== 0 || this.pointerId !== null) return;
+    if (
+      !editorSurfaceActive(this.dom) ||
+      event.defaultPrevented ||
+      event.pointerType === "touch" ||
+      event.button !== 0 ||
+      this.pointerId !== null
+    )
+      return;
     event.preventDefault();
     event.stopPropagation();
     const tick = this.tickAt(event.clientY);
@@ -210,21 +231,38 @@ export class OverviewRuler {
 
   private readonly onPointerMove = (event: PointerEvent) => {
     if (event.pointerId !== this.pointerId) return;
+    if (!editorSurfaceActive(this.dom)) {
+      this.releasePointer();
+      return;
+    }
     event.preventDefault();
     this.scrollToPointer(event.clientY);
   };
 
   private readonly onPointerEnd = (event: PointerEvent) => {
     if (event.pointerId !== this.pointerId) return;
-    this.pointerId = null;
-    if (this.dom.hasPointerCapture?.(event.pointerId)) {
-      this.dom.releasePointerCapture(event.pointerId);
-    }
+    this.releasePointer();
   };
+
+  private releasePointer() {
+    const pointer = this.pointerId;
+    this.pointerId = null;
+    if (pointer !== null && this.dom.hasPointerCapture?.(pointer))
+      this.dom.releasePointerCapture(pointer);
+  }
 
   /** The strip sits beside the scroller, so the wheel has to be handed over. */
   private readonly onWheel = (event: WheelEvent) => {
-    if (event.deltaY === 0) return;
+    if (
+      !editorSurfaceActive(this.dom) ||
+      event.defaultPrevented ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      event.shiftKey ||
+      event.deltaY === 0
+    )
+      return;
     const geometry = this.host.geometry();
     if (geometry.contentHeight <= geometry.viewportHeight) return;
     const scale = event.deltaMode === 1 ? 20 : event.deltaMode === 2 ? geometry.viewportHeight : 1;

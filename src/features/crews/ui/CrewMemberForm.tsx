@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Select } from "../../../shared/ui/Select";
@@ -10,14 +11,19 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
 import { Toggle } from "../../settings/ui/settingsControls";
 import type { HostModelCatalog } from "../../connections/model/protocol";
-import type { CrewAgent, CrewCandidate, CrewRole } from "../model/crew";
+import type { CrewAgent, CrewCandidate, CrewPolicy, CrewRole } from "../model/crew";
 import {
   COST_LEVELS,
   QUALITY_LEVELS,
+  candidateDetailLabel,
   candidateLabel,
+  candidatePassesPolicy,
   catalogCandidate,
   catalogModels,
+  memberCandidatePool,
+  memberModelSummary,
 } from "../model/crewRoster";
+import { CrewRoleIcon } from "./CrewRoleIcon";
 import { MemberModelPicker } from "./MemberModelPicker";
 
 export function roleLabel(role: CrewRole) {
@@ -69,8 +75,9 @@ function levelOptions(levels: readonly number[], labels: string[], current?: num
 }
 
 /**
- * One member: a role name of the owner's choosing, its responsibility in the crew,
- * instructions and model. Ratings only appear where automatic selection uses them.
+ * One member: a name of the owner's choosing (a professional role works too), its
+ * responsibility in the crew, instructions and model. Ratings only appear where
+ * automatic selection uses them.
  */
 export function CrewMemberForm({
   cwd,
@@ -80,8 +87,11 @@ export function CrewMemberForm({
   groups,
   groupSuggestions = [],
   nameError,
+  modelError,
   advancedExtra,
   autoFocus,
+  policy,
+  compact = false,
 }: {
   cwd: string;
   catalog: HostModelCatalog;
@@ -91,8 +101,14 @@ export function CrewMemberForm({
   groups?: boolean;
   groupSuggestions?: string[];
   nameError?: string;
+  /** Shown under the model choice when no model is selected (save was attempted). */
+  modelError?: string;
   advancedExtra?: ReactNode;
   autoFocus?: boolean;
+  /** The crew's working limits, when the member belongs to a crew; used to say what applies. */
+  policy?: Pick<CrewPolicy, "allowUnknownCost" | "maxEstimatedCost" | "minimumQuality">;
+  /** Inside a roster row: the row already edits the role and the pinned model. */
+  compact?: boolean;
 }) {
   useLocale();
   const [advanced, setAdvanced] = useState(false);
@@ -105,6 +121,10 @@ export function CrewMemberForm({
     onChange({
       candidates: agent.candidates.map((item) => (item.id === id ? { ...item, ...patch } : item)),
     });
+  const pool = memberCandidatePool(agent);
+  const eligible = policy
+    ? pool.filter((candidate) => candidatePassesPolicy(candidate, policy)).length
+    : pool.length;
   const suggestions = agent.name.trim()
     ? []
     : roleSuggestions(agent.role).filter((name) => name !== agent.name);
@@ -112,7 +132,8 @@ export function CrewMemberForm({
     <div className="flex min-w-0 flex-col gap-4">
       <div className="flex min-w-0 flex-col gap-1.5">
         <TextField
-          label={t("Role")}
+          label={t("Member name")}
+          description={t("Any name or professional role.")}
           placeholder={t("e.g. Frontend developer")}
           value={agent.name}
           autoFocus={autoFocus}
@@ -136,19 +157,26 @@ export function CrewMemberForm({
           </div>
         ) : null}
       </div>
-      <div className="flex min-w-0 flex-col gap-1.5">
-        <span className="text-sm font-medium">{t("Responsibility in the crew")}</span>
-        <SegmentedControl
-          label={t("Responsibility in the crew")}
-          value={agent.role}
-          options={(["coordinator", "specialist", "reviewer", "advisor"] as const).map((role) => ({
-            value: role,
-            label: roleLabel(role),
-          }))}
-          onValueChange={(role) => onChange({ role: role as CrewRole })}
-        />
-        <p className="text-xs text-(--ui-text-secondary)">{responsibilityHint(agent.role)}</p>
-      </div>
+      {compact ? null : (
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <span className="text-ui-body font-medium">{t("Responsibility in the crew")}</span>
+          <SegmentedControl
+            label={t("Responsibility in the crew")}
+            value={agent.role}
+            options={(["coordinator", "specialist", "reviewer", "advisor"] as const).map(
+              (role) => ({
+                value: role,
+                label: roleLabel(role),
+              }),
+            )}
+            onValueChange={(role) => onChange({ role: role as CrewRole })}
+          />
+          <p className="flex min-w-0 items-start gap-1.5 text-ui-caption text-(--ui-text-secondary)">
+            <CrewRoleIcon role={agent.role} className="icon-xs mt-0.5 shrink-0" />
+            <span className="min-w-0">{responsibilityHint(agent.role)}</span>
+          </p>
+        </div>
+      )}
       <TextareaField
         label={t("Instructions")}
         placeholder={t("e.g. Build accessible screens and follow the design system.")}
@@ -175,7 +203,7 @@ export function CrewMemberForm({
       ) : null}
       <div className="flex min-w-0 flex-col gap-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm font-medium">{t("Model")}</span>
+          <span className="text-ui-body font-medium">{t("Model")}</span>
           <SegmentedControl
             label={t("Model choice")}
             value={agent.selection}
@@ -186,24 +214,45 @@ export function CrewMemberForm({
             onValueChange={(value) => onChange({ selection: value as CrewAgent["selection"] })}
           />
         </div>
+        <p className="text-ui-caption text-(--ui-text-secondary)">
+          {agent.selection === "fixed"
+            ? compact
+              ? t("Always works with the model chosen in its row.")
+              : t("Always works with the model chosen below.")
+            : t("For each assignment the crew picks one of the allowed models below.")}
+          {policy && pool.length
+            ? ` ${
+                eligible === pool.length
+                  ? pool.length === 1
+                    ? t("It passes the crew's limits.")
+                    : t("All {p0} pass the crew's limits.", { p0: pool.length })
+                  : eligible
+                    ? t("{p0} of {p1} pass the crew's limits.", { p0: eligible, p1: pool.length })
+                    : t("The crew's limits exclude every model here, so this member cannot work.")
+              }`
+            : ""}
+        </p>
         {agent.selection === "fixed" ? (
-          <MemberModelPicker
-            cwd={cwd}
-            value={agent.candidates[0]}
-            onChange={(next) =>
-              onChange({
-                candidates: [next, ...agent.candidates.slice(1).filter((c) => c.id !== next.id)],
-              })
-            }
-          />
+          compact ? null : (
+            <MemberModelPicker
+              cwd={cwd}
+              value={agent.candidates[0]}
+              onChange={(next) =>
+                onChange({
+                  candidates: [next, ...agent.candidates.slice(1).filter((c) => c.id !== next.id)],
+                })
+              }
+            />
+          )
         ) : (
           <>
-            <p className="text-xs text-(--ui-text-secondary)">
-              {t(
-                "For each assignment the crew picks one of these models, using your ratings and the crew's working style.",
-              )}
+            <p className="text-ui-caption text-(--ui-text-secondary)">
+              <span className="font-medium">{memberModelSummary(catalog, agent)}</span>
+              {" · "}
+              {t("Your ratings and the crew's priority decide which one is used.")}
             </p>
             <SearchableSelect
+              hideLabel
               label={t("Allowed models")}
               multiple
               options={options}
@@ -223,19 +272,28 @@ export function CrewMemberForm({
             {agent.candidates.length ? (
               <ul
                 aria-label={t("Model ratings")}
-                className="flex flex-col divide-y divide-(--ui-tone-neutral-border) rounded-lg border border-(--ui-tone-neutral-border)"
+                className="flex flex-col gap-1 rounded-(--ui-radius-card) border border-(--ui-pane-border) p-1"
               >
                 {agent.candidates.map((c) => {
                   const model = catalogModels(catalog).find(
                     (m) => m.harness === c.harness && m.id === c.model,
                   );
-                  const name = candidateLabel(catalog, c);
+                  // Provider-qualified, so equal model names from two providers stay distinct.
+                  const name = candidateDetailLabel(catalog, c);
                   return (
                     <li key={c.id} className="flex min-w-0 flex-col gap-2 px-3 py-2">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium">{name}</span>
-                        <span className="text-xs text-(--ui-text-secondary)">{t("Cost")}</span>
+                        <span className="min-w-0 flex-1 text-ui-body font-medium" title={name}>
+                          <span className="block truncate">{candidateLabel(catalog, c)}</span>
+                          <span className="block truncate text-ui-caption font-normal text-(--ui-text-secondary)">
+                            {c.harness}
+                          </span>
+                        </span>
+                        <span className="text-ui-caption text-(--ui-text-secondary)">
+                          {t("Cost")}
+                        </span>
                         <Select
+                          hideLabel
                           label={t("Cost of {p0}", { p0: name })}
                           value={c.cost === undefined ? "" : String(c.cost)}
                           options={levelOptions(
@@ -247,8 +305,11 @@ export function CrewMemberForm({
                             updateCandidate(c.id, { cost: value ? Number(value) : undefined })
                           }
                         />
-                        <span className="text-xs text-(--ui-text-secondary)">{t("Quality")}</span>
+                        <span className="text-ui-caption text-(--ui-text-secondary)">
+                          {t("Quality")}
+                        </span>
                         <Select
+                          hideLabel
                           label={t("Quality of {p0}", { p0: name })}
                           value={c.quality === undefined ? "" : String(c.quality)}
                           options={levelOptions(
@@ -266,6 +327,7 @@ export function CrewMemberForm({
                           {model.settings.map((setting) =>
                             setting.kind === "select" ? (
                               <SearchableSelect
+                                hideLabel
                                 key={setting.id}
                                 label={setting.label}
                                 value={c.modelSettings[setting.id] ?? setting.value}
@@ -280,7 +342,10 @@ export function CrewMemberForm({
                                 }
                               />
                             ) : (
-                              <label key={setting.id} className="flex items-center gap-2 text-xs">
+                              <div
+                                key={setting.id}
+                                className="flex items-center gap-2 text-ui-caption"
+                              >
                                 {setting.label}
                                 <Toggle
                                   label={setting.label}
@@ -294,7 +359,7 @@ export function CrewMemberForm({
                                     })
                                   }
                                 />
-                              </label>
+                              </div>
                             ),
                           )}
                         </div>
@@ -304,29 +369,24 @@ export function CrewMemberForm({
                 })}
               </ul>
             ) : null}
-            <p className="text-xs text-(--ui-text-secondary)">
+            <p className="text-ui-caption text-(--ui-text-secondary)">
               {t("Ratings are your own judgement; unrated models are treated as unknown.")}
             </p>
           </>
         )}
+        {modelError ? <InlineError>{modelError}</InlineError> : null}
       </div>
       {advancedExtra ? (
-        <div className="flex flex-col gap-2 border-t border-(--ui-tone-neutral-border) pt-2">
+        <div className="flex flex-col gap-2 pt-1">
           <Button
             variant="ghost"
             motion="none"
             aria-expanded={advanced}
-            startIcon={
-              advanced ? (
-                <ChevronDown className="size-3.5" aria-hidden />
-              ) : (
-                <ChevronRight className="size-3.5" aria-hidden />
-              )
-            }
+            startIcon={advanced ? <ChevronDown aria-hidden /> : <ChevronRight aria-hidden />}
             onClick={() => setAdvanced((value) => !value)}
             className="self-start"
           >
-            {t("Advanced")}
+            {t("More options")}
           </Button>
           {advanced ? advancedExtra : null}
         </div>

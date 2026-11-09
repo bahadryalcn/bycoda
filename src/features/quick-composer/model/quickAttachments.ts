@@ -3,18 +3,28 @@ import { MAX_ATTACHMENTS, persistableAttachment } from "../../sessions/model/att
 import type { Attachment } from "../../sessions/model/session";
 
 /** Paths survive the handoff to another webview; blob URLs do not. */
-export async function storeQuickAttachments(files: Attachment[]): Promise<Attachment[]> {
-  return Promise.all(
+export async function storeQuickAttachments(
+  files: Attachment[],
+  stage?: <T>(key: string, operation: () => Promise<T>) => Promise<T>,
+): Promise<Attachment[]> {
+  const results = await Promise.allSettled(
     files.map(async (file) => {
       if (file.path) return file;
       if (!file.data) throw new Error(`Could not attach ${file.name}.`);
-      const path = await invoke<string>("write_attachment", {
-        name: file.name,
-        data: file.data,
-      });
+      const write = () =>
+        invoke<string>("write_attachment", {
+          name: file.name,
+          data: file.data,
+        });
+      const path = await (stage ? stage(`spill:${file.id}`, write) : write());
       return { ...file, path };
     }),
   );
+  // A rejected sibling does not cancel an already admitted Native write.
+  // Own every spill until its actual result before returning the first error.
+  const failed = results.find((result) => result.status === "rejected");
+  if (failed?.status === "rejected") throw failed.reason;
+  return results.map((result) => (result as PromiseFulfilledResult<Attachment>).value);
 }
 
 export function quickLaunchAttachments(files: Attachment[]): Attachment[] {

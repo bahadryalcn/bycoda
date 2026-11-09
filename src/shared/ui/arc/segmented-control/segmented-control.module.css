@@ -1,8 +1,15 @@
+@layer properties, theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .root {
+    min-width: 0;
+    max-width: 100%;
+    flex-shrink: 1;
+  }
+}
 .root {
   display: inline-flex;
-  min-width: 0;
-  max-width: 100%;
-  flex-shrink: 1;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   background: var(--surface-muted);
@@ -71,6 +78,23 @@
 .button[data-selected="true"] {
   color: var(--foreground);
 }
+/* Unselected options answer hover and press on their own pill; the selected plate does not change. */
+@media (hover: hover) and (pointer: fine) {
+  .button:not([data-selected="true"], :disabled):hover {
+    background: var(--ui-surface-hover);
+  }
+}
+.button:not([data-selected="true"], :disabled):active {
+  background: var(--ui-surface-pressed);
+}
+/* The track scrolls and fades at its edges, so an outset ring would be clipped there. */
+.track .button:focus-visible {
+  outline-offset: -2px;
+}
+.button:disabled {
+  color: var(--ui-control-disabled-fg);
+  cursor: not-allowed;
+}
 .selection {
   position: absolute;
   z-index: -1;
@@ -87,6 +111,15 @@
   align-items: center;
   gap: 6px;
 }
+.icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+.icon > svg {
+  inline-size: var(--ui-icon-sm, 1rem);
+  block-size: var(--ui-icon-sm, 1rem);
+}
 .accessory {
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
@@ -99,5 +132,20 @@
 @media (prefers-reduced-motion: reduce) {
   .button {
     transition: none;
+  }
+}
+
+/* The selected plate is a background only; system colours keep it distinct in forced-colors mode. */
+@media (forced-colors: active) {
+  .selection {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+  .button[data-selected="true"] {
+    forced-color-adjust: none;
+    color: HighlightText;
+  }
+  .button:disabled {
+    color: GrayText;
   }
 }

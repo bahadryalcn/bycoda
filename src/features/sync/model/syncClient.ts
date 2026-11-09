@@ -1,3 +1,4 @@
+import { withRoomPrivacyMutation } from "../../group-lock/model/roomPrivacyProjection";
 import { applyRemoteAppearanceRecords, captureLocalAppearanceChanges } from "./syncAppearance";
 import { applyRemoteGroupRecords, captureLocalGroupChanges } from "./syncGroups";
 import { applyRemoteLockRecords, captureLocalLockChanges } from "./syncLock";
@@ -14,6 +15,7 @@ import {
 import { canonicalJson } from "./canonicalJson";
 import {
   applyPushResult,
+  batchLocalChanges,
   hasPulled,
   markPullCompleted,
   markPulled,
@@ -66,7 +68,7 @@ export function recordSyncStatus(
   patch: Partial<SyncStatus> & { state: SyncState },
 ): void {
   statuses.set(machineId, { ...getSyncStatus(machineId), ...patch });
-  for (const listener of [...statusListeners]) listener();
+  for (const listener of Array.from(statusListeners)) listener();
 }
 
 function pendingCount(machineId: string): number {
@@ -97,13 +99,24 @@ function duringSyncWrite<T>(run: () => T): T {
   }
 }
 
-function applyIncoming(machineId: string, records: readonly SyncRecord[]): void {
-  duringSyncWrite(() => {
-    applyRemoteProjectRecords(machineId, records);
-    applyRemoteGroupRecords(machineId, records);
-    applyRemoteAppearanceRecords(machineId, records);
-    applyRemoteLockRecords(machineId, records);
-  });
+function requireCurrent(current: () => boolean): void {
+  if (!current()) throw new Error("SYNC_STOPPED");
+}
+
+async function applyIncoming(
+  machineId: string,
+  records: readonly SyncRecord[],
+  current: () => boolean,
+): Promise<void> {
+  await withRoomPrivacyMutation(() =>
+    duringSyncWrite(() => {
+      requireCurrent(current);
+      applyRemoteProjectRecords(machineId, records);
+      applyRemoteGroupRecords(machineId, records);
+      applyRemoteAppearanceRecords(machineId, records);
+      applyRemoteLockRecords(machineId, records);
+    }),
+  );
 }
 
 function asObject(result: unknown, method: string): Record<string, unknown> {
@@ -150,13 +163,16 @@ export async function runSyncCycle(
   machineId: string,
   request: SyncRequest,
   environmentId?: string,
+  current: () => boolean = () => true,
 ): Promise<void> {
+  requireCurrent(current);
   recordSyncStatus(machineId, { state: "syncing" });
   try {
     if (environmentId && !adoptPeerEnvironment(machineId, environmentId))
       throw new Error("Library sync progress could not be saved. Free storage and retry.");
-    await runSyncCycleInner(machineId, request);
+    await runSyncCycleInner(machineId, request, current);
   } catch (error) {
+    if (!current()) throw error;
     console.warn("[sync]", machineId, error);
     recordSyncStatus(machineId, {
       state: "error",
@@ -170,11 +186,15 @@ export async function runSyncCycle(
   // One machine at a time: these add rail entries and open remote folders, so
   // two machines' cycles running them together would repeat each other's work.
   await exclusivePostSync(async () => {
-    const adopted = await adoptLocalProjects().catch(() => []);
-    const added = await autoAddRemoteProjects().catch(() => []);
+    requireCurrent(current);
+    const adopted = await adoptLocalProjects(undefined, current).catch(() => []);
+    requireCurrent(current);
+    const added = await autoAddRemoteProjects(undefined, current).catch(() => []);
+    requireCurrent(current);
     // After this cycle's apply step, so a label that came with it wins.
     duringSyncWrite(() => nameAutoAddedProjects(machineId, [...adopted, ...added]));
   });
+  requireCurrent(current);
   recordSyncStatus(machineId, {
     state: "ok",
     lastSyncAt: Date.now(),
@@ -183,7 +203,11 @@ export async function runSyncCycle(
   });
 }
 
-async function pullAndApply(machineId: string, request: SyncRequest): Promise<void> {
+async function pullAndApply(
+  machineId: string,
+  request: SyncRequest,
+  current: () => boolean,
+): Promise<void> {
   let untilRev: number | undefined;
   let initial = !hasPulled(machineId);
   let restarted = false;
@@ -197,6 +221,7 @@ async function pullAndApply(machineId: string, request: SyncRequest): Promise<vo
       }),
       "sync.pull",
     );
+    requireCurrent(current);
     if (!Number.isSafeInteger(pullRaw.rev))
       throw new Error("sync.pull returned an invalid revision");
     if (Number(pullRaw.rev) < sinceRev) {
@@ -225,11 +250,13 @@ async function pullAndApply(machineId: string, request: SyncRequest): Promise<vo
     });
     const pending = new Set(takeOutbox(machineId).map((op) => `${op.table}:${op.id}`));
     if (records.length > 0) {
-      applyIncoming(
+      await applyIncoming(
         machineId,
         records.filter((record) => !pending.has(`${record.table}:${record.id}`)),
+        current,
       );
     }
+    requireCurrent(current);
     if (
       !markPulled(machineId, records, {
         rev: Number(pullRaw.rev),
@@ -266,43 +293,55 @@ async function pullAndApply(machineId: string, request: SyncRequest): Promise<vo
         return [];
       }
     });
-    if (dependencies.length) applyIncoming(machineId, dependencies);
+    if (dependencies.length) await applyIncoming(machineId, dependencies, current);
   }
+  requireCurrent(current);
   markPullCompleted(machineId);
   if (!hasPulled(machineId))
     throw new Error("Library sync completion could not be saved. Free storage and retry.");
 }
 
-async function runSyncCycleInner(machineId: string, request: SyncRequest): Promise<void> {
-  if (!hasPulled(machineId)) await pullAndApply(machineId, request);
+async function runSyncCycleInner(
+  machineId: string,
+  request: SyncRequest,
+  current: () => boolean,
+): Promise<void> {
+  if (!hasPulled(machineId)) await pullAndApply(machineId, request, current);
 
-  duringSyncWrite(() => {
-    captureLocalProjectChanges(machineId);
-    const projectIds = localProjectIdsByPath();
-    captureLocalGroupChanges(machineId, projectIds);
-    captureLocalAppearanceChanges(machineId, projectIds);
-    captureLocalLockChanges(machineId);
-  });
+  await withRoomPrivacyMutation(() =>
+    duringSyncWrite(() =>
+      batchLocalChanges(machineId, () => {
+        requireCurrent(current);
+        captureLocalProjectChanges(machineId);
+        const projectIds = localProjectIdsByPath();
+        captureLocalGroupChanges(machineId, projectIds);
+        captureLocalAppearanceChanges(machineId, projectIds);
+        captureLocalLockChanges(machineId);
+      }),
+    ),
+  );
 
   const outbox = takeOutbox(machineId);
   const { batches, invalid } = syncPushBatches(outbox);
   let invalidOps = invalid.length;
   for (const batch of batches) {
     const pushResult = parsePushResult(await request("sync.push", { ops: batch }));
+    requireCurrent(current);
     const toAdopt = applyPushResult(machineId, pushResult, batch);
     if (toAdopt.length > 0) {
       const overwrote = toAdopt.some((record) => {
         const sent = batch.find((op) => op.table === record.table && op.id === record.id);
         return !!sent && canonicalJson(sent.value) !== canonicalJson(record.value);
       });
-      applyIncoming(machineId, toAdopt);
-      if (overwrote) for (const listener of [...mergedListeners]) listener();
+      await applyIncoming(machineId, toAdopt, current);
+      requireCurrent(current);
+      if (overwrote) for (const listener of Array.from(mergedListeners)) listener();
     }
     invalidOps += pushResult.invalid?.length ?? 0;
   }
   // Invalid outgoing values stay pending, but cannot starve unrelated incoming
   // edits or deletions. pullAndApply protects every pending local record.
-  await pullAndApply(machineId, request);
+  await pullAndApply(machineId, request, current);
   if (invalidOps)
     throw new Error(
       "Some library changes exceed the sync limit or are invalid. They remain pending on this computer.",
@@ -371,10 +410,17 @@ function makeJob(explicit: boolean): SyncJob {
  */
 export function startSyncLoop(
   listMachineIds: () => readonly string[],
-  requestFor: (machineId: string) => SyncRequest,
+  requestFor: (machineId: string, cycleId?: string) => SyncRequest,
   environmentFor?: (machineId: string) => string | undefined,
-): { stop: () => void; nudge: () => void; recover: (machineId: string) => void } {
+  shouldRunAutomatically: () => boolean = () => true,
+  beforeExplicitSync?: () => Promise<void>,
+  beginCycle?: (machineId: string, cycleId: string) => Promise<void>,
+  completeCycle?: (machineId: string, cycleId: string) => Promise<void>,
+): { stop: () => Promise<boolean>; nudge: () => void; recover: (machineId: string) => void } {
   let stopped = false;
+  let uncertain = false;
+  let stoppedResult: Promise<boolean> | undefined;
+  const running = new Set<Promise<void>>();
   let lastRoundAt = Number.NEGATIVE_INFINITY;
   let lastEndedAt = Number.NEGATIVE_INFINITY;
   let trailing: ReturnType<typeof setTimeout> | undefined;
@@ -407,20 +453,61 @@ export function startSyncLoop(
   const runSlot = async (slot: MachineSlot): Promise<void> => {
     const job = slot.job as SyncJob;
     slot.phase = "running";
+    running.add(job.promise);
     active += 1;
+    let cycleId: string | undefined;
+    let began = false;
+    let failed = false;
     try {
-      await runSyncCycle(slot.id, requestFor(slot.id), environmentFor?.(slot.id));
-      slot.failures = 0;
-      slot.nextAt = 0;
-    } catch {
+      cycleId = beginCycle ? crypto.randomUUID() : undefined;
+      if (cycleId) {
+        await beginCycle!(slot.id, cycleId);
+        began = true;
+      }
+      if (!stopped)
+        await runSyncCycle(
+          slot.id,
+          requestFor(slot.id, cycleId),
+          environmentFor?.(slot.id),
+          () => !stopped && shouldRunAutomatically(),
+        );
+    } catch (error) {
+      failed = true;
+      // Cancellation guards run only after awaited work settled. A stopped local
+      // continuation is not an unknown transport outcome and may release Web Lock.
+      if (!cycleId && !(error instanceof Error && error.message === "SYNC_STOPPED"))
+        uncertain = true;
+      if (!began)
+        recordSyncStatus(slot.id, {
+          state: "error",
+          lastError: `Sync ownership is unavailable: ${String(error)}`,
+        });
+    }
+    if (began && cycleId) {
+      try {
+        await completeCycle!(slot.id, cycleId);
+      } catch (error) {
+        uncertain = true;
+        failed = true;
+        recordSyncStatus(slot.id, {
+          state: "error",
+          lastError: `Sync completion is unconfirmed: ${String(error)}`,
+        });
+      }
+    }
+    if (failed) {
       slot.failures += 1;
       slot.nextAt = Date.now() + syncBackoffMs(slot.failures);
+    } else {
+      slot.failures = 0;
+      slot.nextAt = 0;
     }
     active -= 1;
     slot.endedAt = lastEndedAt = Date.now();
     slot.phase = "idle";
     slot.job = undefined;
     job.resolve();
+    running.delete(job.promise);
     const next = slot.next;
     slot.next = undefined;
     if (next) {
@@ -494,12 +581,22 @@ export function startSyncLoop(
     }, wait);
   };
   const requestRun = (): void => {
-    if (stopped) return;
+    if (stopped || !shouldRunAutomatically()) return;
     if (Date.now() - Math.max(lastRoundAt, lastEndedAt) < MIN_CYCLE_SPACING_MS) schedule();
     else round();
   };
-  const runNow = (only?: string): Promise<void> => {
-    if (stopped) return Promise.resolve();
+  const runNow = async (only?: string): Promise<void> => {
+    if (stopped) return;
+    if (!shouldRunAutomatically()) {
+      for (const id of only ? [only] : listMachineIds())
+        recordSyncStatus(id, {
+          state: "error",
+          lastError: "Sync ownership is unavailable in this window.",
+        });
+      return;
+    }
+    await beforeExplicitSync?.();
+    if (stopped || !shouldRunAutomatically()) return;
     if (!only && trailing !== undefined) {
       clearTimeout(trailing);
       trailing = undefined;
@@ -522,6 +619,7 @@ export function startSyncLoop(
   activeSyncNow = runNow;
   return {
     stop: () => {
+      if (stoppedResult) return stoppedResult;
       stopped = true;
       clearInterval(timer);
       if (trailing !== undefined) clearTimeout(trailing);
@@ -532,6 +630,17 @@ export function startSyncLoop(
         slot.job?.resolve();
         slot.job = undefined;
       }
+      for (const slot of slots.values()) {
+        slot.next?.resolve();
+        slot.next = undefined;
+        if (slot.phase === "queued") {
+          slot.job?.resolve();
+          slot.job = undefined;
+          slot.phase = "idle";
+        }
+      }
+      stoppedResult = Promise.all(running).then(() => !uncertain);
+      return stoppedResult;
     },
     nudge: requestRun,
     recover: (id) => {

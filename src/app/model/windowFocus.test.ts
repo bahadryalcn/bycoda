@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { restoreWindowFocus } from "./windowFocus";
-it("pencereyi önce geri getirir sonra odaklar", async () => {
+it("restores the window first, then focuses it", async () => {
   let restore!: () => void;
   const win = {
     unminimize: vi.fn(

@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTabGroupLogos } from "../hooks/useTabGroupLogos";
@@ -23,7 +23,7 @@ import {
   resolveTabGroupLogo,
   resolveTabGroupMascot,
 } from "../../workspace/model/tabGroups";
-import { Check, ChevronDown, Plus, Search } from "../../../shared/ui/icons";
+import { Check, ChevronDown, Plus } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import { ProjectLogoIcon } from "./ProjectLogoIcon";
 import { ProjectMascot } from "./ProjectMascot";
@@ -198,7 +198,7 @@ export function SearchableProjectPicker({
         motion="none"
         type="button"
         disabled={disabled}
-        title={inProject ? cwd : undefined}
+        tooltip={inProject ? cwd : undefined}
         aria-label={
           inProject
             ? t("{p0}, current project {p1}", { p0: action, p1: label })
@@ -240,7 +240,7 @@ export function SearchableProjectPicker({
               {label}
             </span>
             <ChevronDown
-              className={`size-3 shrink-0 text-[var(--ui-text-muted)] transition-transform ${
+              className={`icon-xs shrink-0 text-[var(--ui-text-muted)] transition-transform ${
                 open ? "rotate-180" : ""
               }`}
               strokeWidth={1.75}
@@ -262,20 +262,19 @@ export function SearchableProjectPicker({
           onKeyDown={onPickerKeyDown}
           className="flex flex-col overflow-hidden"
         >
-          <label className="flex h-11 shrink-0 items-center gap-2.5 border-b border-stroke px-3 text-[var(--ui-text-muted)] focus-within:text-[var(--ui-text-muted)]">
-            <Search className="size-4 shrink-0" strokeWidth={1.75} />
-            <span className="sr-only">{t("Search projects")}</span>
-            <SearchInput
-              ref={searchRef}
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setActive(0);
-              }}
-              placeholder={t("Search projects...")}
-              className="min-w-0 flex-1"
-            />
-          </label>
+          <PopoverSearchHeader
+            ref={searchRef}
+            size="md"
+            autoFocus={false}
+            label={t("Search projects")}
+            placeholder={t("Search projects...")}
+            value={query}
+            onValueChange={(next) => {
+              setQuery(next);
+              setActive(0);
+            }}
+            headerClassName="shrink-0"
+          />
           <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1.5">
             {filteredProjects.length > 0 ? (
               filteredProjects.map((item, index) => {
@@ -300,7 +299,7 @@ export function SearchableProjectPicker({
                     motion="none"
                     key={item.path}
                     type="button"
-                    title={item.path}
+                    tooltip={item.path}
                     selected={active === index}
                     onMouseEnter={() => setActive(index)}
                     onClick={() => pickProject(item.path)}
@@ -322,7 +321,7 @@ export function SearchableProjectPicker({
                   >
                     <span className="grid size-4 shrink-0 place-items-center">
                       {current ? (
-                        <Check className="size-3.5" strokeWidth={2} />
+                        <Check className="icon-sm" strokeWidth={2} />
                       ) : itemLogo ? (
                         <ProjectLogoIcon
                           path={itemLogo}
@@ -338,17 +337,17 @@ export function SearchableProjectPicker({
                         />
                       )}
                     </span>
-                    <span className="min-w-0 max-w-[calc(100%_-_36px)] shrink-0 truncate text-[13px] font-medium">
+                    <span className="min-w-0 max-w-[calc(100%_-_36px)] shrink-0 truncate text-ui-secondary font-medium">
                       {itemLabel}
                     </span>
-                    <span className="min-w-0 max-w-28 flex-1 truncate font-mono text-[11px] text-[var(--ui-text-muted)]">
+                    <span className="min-w-0 max-w-28 flex-1 truncate font-mono text-ui-micro text-[var(--ui-text-muted)]">
                       {prettyParent(item.path)}
                     </span>
                   </Button>
                 );
               })
             ) : (
-              <p className="px-2.5 py-5 text-center text-[12px] text-[var(--ui-text-muted)]">
+              <p className="px-2.5 py-5 text-center text-ui-caption text-[var(--ui-text-muted)]">
                 {t("No projects found")}
               </p>
             )}
@@ -365,7 +364,7 @@ export function SearchableProjectPicker({
                 }}
                 className="flex h-9 w-full items-center gap-2.5 text-left"
               >
-                <Plus className="size-4 shrink-0" strokeWidth={1.75} />
+                <Plus className="icon-md shrink-0" strokeWidth={1.75} />
                 <span>{t("New project")}</span>
               </Button>
             </div>

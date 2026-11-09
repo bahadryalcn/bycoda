@@ -1,0 +1,112 @@
+name: Preview
+
+# Every main push whose full CI passes becomes a signed preview release, and the preview
+# updater feed moves to it. Apps on the preview update channel (Settings > General >
+# Updates) read that feed next to the stable one; stable-channel apps never see it.
+# A newer preview run cancels an older one. Policy and recovery: docs/reference/releases.md.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-main
+  cancel-in-progress: true
+
+env:
+  # workflow_run reports the tip of main as github.sha; build the commit CI actually passed.
+  SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  source:
+    # Only a successful CI push on this repository's main qualifies; candidate-control
+    # re-verifies the aggregate Check at the exact SHA through the API either way.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ steps.candidate.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: "24"
+          install: "false"
+      - id: candidate
+        name: Bind this exact source and its passed CI into a preview receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SOURCE_SHA: ${{ env.SOURCE_SHA }}
+        run: node scripts/release/candidate-control.mjs preview
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-candidate-${{ env.SOURCE_SHA }}
+          path: temp/test-results/release-candidate/candidate.json
+          if-no-files-found: error
+          retention-days: 14
+
+  package:
+    needs: source
+    uses: ./.github/workflows/desktop-package.yml
+    with:
+      expected-sha: ${{ github.event.workflow_run.head_sha || github.sha }}
+      version: ${{ needs.source.outputs.version }}
+      channel: preview
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+      BYCODA_GOOGLE_CLIENT_ID: ${{ secrets.BYCODA_GOOGLE_CLIENT_ID }}
+      BYCODA_GOOGLE_CLIENT_SECRET: ${{ secrets.BYCODA_GOOGLE_CLIENT_SECRET }}
+      BYCODA_SLACK_CLIENT_ID: ${{ secrets.BYCODA_SLACK_CLIENT_ID }}
+      BYCODA_MICROSOFT_CLIENT_ID: ${{ secrets.BYCODA_MICROSOFT_CLIENT_ID }}
+
+  publish:
+    needs: [source, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: "24"
+          install: "false"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-${{ env.SOURCE_SHA }}
+          path: temp/candidate-review
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: desktop-package-*
+          path: temp/candidate-review
+      - name: Recheck bytes and signatures, publish the preview and move the preview feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN_ID: ${{ github.run_id }}
+        run: node scripts/release/publish-candidate.mjs temp/candidate-review

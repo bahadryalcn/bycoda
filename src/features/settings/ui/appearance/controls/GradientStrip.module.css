@@ -1,0 +1,128 @@
+.editor {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.gradient {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: 2rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--ui-pane-border);
+}
+.stop {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.stopDot {
+  display: block;
+  width: 0.8rem;
+  height: 0.8rem;
+  border: 2px solid var(--color-content);
+  border-radius: 50%;
+}
+.label {
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
+  white-space: nowrap;
+}
+.controlRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.typeGroup,
+.angleGroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+/* The Slider beside the dial already shows the degrees, so the dial's own readout is hidden. */
+.dialOnly > div > span:last-child {
+  display: none;
+}
+.dialWrap {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: none;
+  white-space: nowrap;
+  color: var(--ui-text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.dial {
+  width: 2rem;
+  height: 2rem;
+  position: relative;
+  border: 1px solid var(--ui-pane-border);
+  border-radius: 50%;
+  background: var(--ui-surface);
+  cursor: grab;
+  touch-action: none;
+}
+.dial:focus-visible {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: 2px;
+}
+.dial[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+}
+.needle {
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+}
+.needle::before {
+  content: "";
+  position: absolute;
+  width: 2px;
+  height: 40%;
+  left: calc(50% - 1px);
+  top: 0;
+  background: var(--color-content);
+  border-radius: var(--radius-pill);
+}
+.presetRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+.preset {
+  border-radius: var(--radius-pill);
+}
+.presetDot {
+  display: block;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 50%;
+  border: 1px solid var(--ui-pane-border);
+}
+.generator {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.generateRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.generatorPrompt {
+  flex: 1;
+  min-width: 0;
+}

@@ -1,7 +1,14 @@
+@layer properties, theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .root {
+    inline-size: 100%;
+    min-inline-size: var(--control-height-sm);
+  }
+}
 .root {
   position: relative;
-  inline-size: 100%;
-  min-inline-size: var(--control-height-sm);
   block-size: var(--control-height-sm);
   pointer-events: none;
 }
@@ -20,12 +27,41 @@
   color: var(--text-secondary);
   pointer-events: auto;
 }
+/* Ghost (default): while closed the shell is only the hit area of an ordinary 28px ghost
+   icon button; the Button trigger paints hover/pressed/focus. Opening reveals the field frame. */
+.root[data-variant="ghost"] .shell {
+  border-radius: var(--ui-control-radius);
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.root[data-variant="ghost"] .shell:not([data-expanded]) {
+  border-color: transparent;
+  background: transparent;
+}
+.root[data-variant="ghost"] .shell:not([data-expanded]):hover {
+  color: var(--ui-tone-neutral-fg);
+}
+.root[data-variant="ghost"] .icon {
+  inline-size: var(--ui-icon-sm);
+  block-size: var(--ui-icon-sm);
+  inset-inline-start: calc((var(--control-height-sm) - var(--ui-icon-sm)) / 2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .root[data-variant="ghost"] .shell {
+    transition: none;
+  }
+}
 .root[data-anchor="start"] .shell {
   inset-inline-end: auto;
   inset-inline-start: 0;
 }
 .shell[data-expanded] {
   border-color: var(--border-strong);
+}
+/* A detached ghost search opens over its neighbours instead of reserving a slot for the field. */
+.root[data-detached] .shell[data-expanded] {
+  z-index: 2;
 }
 .shell .trigger {
   position: absolute;
@@ -39,11 +75,25 @@
 .trigger[hidden] {
   display: none;
 }
+/* Above the full-size trigger so its hover/pressed fill never hides the glyph. */
 .icon {
   position: absolute;
+  z-index: 2;
   inset-block-start: 50%;
   inset-inline-start: calc(var(--control-height-sm) / 2 - 9px);
   translate: 0 -50%;
+  pointer-events: none;
+}
+/* Folded `inline` search with a query still applied: a dot on the icon says the list is filtered. */
+.activeMark {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 999px;
+  background: var(--ui-tone-accent-fg);
   pointer-events: none;
 }
 .input {

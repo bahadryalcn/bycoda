@@ -1,0 +1,82 @@
+name: Release candidate
+on:
+  workflow_dispatch:
+    inputs:
+      # Preview builds come from preview.yml on every main push; see docs/reference/releases.md.
+      channel:
+        type: choice
+        options: [nightly, stable]
+        default: nightly
+      source-sha:
+        description: Full source SHA with successful full CI; nightly may select the latest eligible main source.
+        type: string
+        default: ""
+      force-nightly:
+        description: Bypass the nightly time/change gap, never source checks.
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      channel:
+        type: string
+        default: nightly
+      source-sha:
+        type: string
+        default: ""
+      force-nightly:
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: candidate-${{ inputs.channel }}
+  cancel-in-progress: false
+jobs:
+  source:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.candidate.outputs.sha }}
+      version: ${{ steps.candidate.outputs.version }}
+      channel: ${{ steps.candidate.outputs.channel }}
+      build: ${{ steps.candidate.outputs.should_build }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: "24"
+          install: "false"
+      - id: candidate
+        name: Select immutable source, channel version and exact full CI receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SOURCE_SHA: ${{ inputs.source-sha }}
+          RELEASE_CHANNEL: ${{ inputs.channel }}
+          NIGHTLY_FORCE: ${{ inputs.force-nightly }}
+        run: node scripts/release/candidate-control.mjs create
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.candidate.outputs.should_build == 'true'
+        with:
+          name: release-candidate-${{ steps.candidate.outputs.sha }}
+          path: temp/test-results/release-candidate/candidate.json
+          if-no-files-found: error
+          retention-days: 14
+  package:
+    needs: source
+    if: needs.source.outputs.build == 'true' && needs.source.outputs.channel != 'stable'
+    uses: ./.github/workflows/desktop-package.yml
+    with:
+      expected-sha: ${{ needs.source.outputs.sha }}
+      version: ${{ needs.source.outputs.version }}
+      channel: ${{ needs.source.outputs.channel }}
+      tooling-sha: ${{ github.sha }}
+      candidate-artifact: release-candidate-${{ needs.source.outputs.sha }}
+    secrets:
+      BYCODA_GOOGLE_CLIENT_ID: ${{ secrets.BYCODA_GOOGLE_CLIENT_ID }}
+      BYCODA_GOOGLE_CLIENT_SECRET: ${{ secrets.BYCODA_GOOGLE_CLIENT_SECRET }}
+      BYCODA_SLACK_CLIENT_ID: ${{ secrets.BYCODA_SLACK_CLIENT_ID }}
+      BYCODA_MICROSOFT_CLIENT_ID: ${{ secrets.BYCODA_MICROSOFT_CLIENT_ID }}

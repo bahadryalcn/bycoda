@@ -1,3 +1,4 @@
+import { CheckoutCache } from "./checkoutCache";
 import {
   gitDiffFiles,
   gitDiffIndex,
@@ -6,6 +7,7 @@ import {
   type GitChangeScope,
   type GitDiffIndex,
 } from "../../../platform/tauri/fs";
+import { pathKey } from "../../../shared/lib/paths";
 
 /**
  * One in-flight `git status` and one fresh result per checkout, shared by the
@@ -23,14 +25,23 @@ type Flight = {
   gen: number;
   startedAt: number;
 };
-type Entry = { gen: number; request: number; result: Result | null; flight: Flight | null };
+type Entry = {
+  gen: number;
+  request: number;
+  result: Result | null;
+  flight: Flight | null;
+  pendingReads: number;
+};
 
-const entries = new Map<string, Entry>();
+const entries = new CheckoutCache<string, Entry>(
+  (entry) => entry.pendingReads > 0,
+  (entry) => entry.result,
+);
 
 function entryFor(cwd: string): Entry {
   let entry = entries.get(cwd);
   if (!entry) {
-    entry = { gen: 0, request: 0, result: null, flight: null };
+    entry = { gen: 0, request: 0, result: null, flight: null, pendingReads: 0 };
     entries.set(cwd, entry);
   }
   return entry;
@@ -75,6 +86,7 @@ export function fetchGitIndex(
   const gen = entry.gen;
   const request = ++entry.request;
   const startedAt = Date.now();
+  entry.pendingReads++;
   const started: Flight = {
     promise: (full ? gitDiffIndex(cwd) : gitDiffFiles(cwd))
       .then((value) => {
@@ -88,6 +100,9 @@ export function fetchGitIndex(
       })
       .finally(() => {
         if (entry.flight === started) entry.flight = null;
+        entry.pendingReads--;
+        entries.refresh(cwd);
+        entries.prune();
       }),
     full,
     gen,
@@ -97,9 +112,10 @@ export function fetchGitIndex(
   return started.promise;
 }
 
-/** Forget every result and stop new requests from joining a running one. */
-export function invalidateGitIndex() {
-  for (const entry of entries.values()) {
+/** Forget only the named checkout, or every result for an unscoped change. */
+export function invalidateGitIndex(cwd?: string) {
+  for (const [path, entry] of entries) {
+    if (cwd !== undefined && pathKey(path) !== pathKey(cwd)) continue;
     entry.gen += 1;
     entry.result = null;
     entry.flight = null;
@@ -145,8 +161,11 @@ export function currentGitChangeHint(): GitChangeHint | null {
 // a mutation drops the shared result before anyone asks for a fresh one.
 if (typeof window !== "undefined") {
   try {
-    subscribeGitChanged(() => {
-      if (!delivering?.observed) invalidateGitIndex();
+    subscribeGitChanged((change) => {
+      // Refs can be shared by other worktrees. Their existing broadcast contract
+      // stays global until notifications carry a common-repository identity.
+      if (!delivering?.observed)
+        invalidateGitIndex(change?.scope === "refs" ? undefined : change?.cwd);
     });
   } catch {
     // A partial fs mock in a test.

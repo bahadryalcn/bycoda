@@ -2,6 +2,7 @@ import { themePalette } from "../../../shared/theme/palette";
 import type { Tab } from "../../../app/shell/TitleBar";
 import { projectKey, projectName } from "../../../shared/lib/paths";
 import { knownProjectPaths, notifyProjectPathsChanged } from "../../projects/model/recents";
+import { detectedProjectLogo, notifyTabGroupLogosChanged } from "./projectLogoState";
 
 /** Chrome-like palette — saturated enough to read on dark glass. */
 export const TAB_GROUP_COLORS = [
@@ -72,13 +73,11 @@ export function railBackgroundColor(value?: RailBackground): string | undefined 
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
-export const TAB_GROUP_LOGOS_CHANGED = "bycoda:tab-group-logos-changed";
-
-let logoDisplayRevision = 0;
-
-export function tabGroupLogoDisplayRevision(): number {
-  return logoDisplayRevision;
-}
+export {
+  notifyTabGroupLogosChanged,
+  TAB_GROUP_LOGOS_CHANGED,
+  tabGroupLogoDisplayRevision,
+} from "./projectLogoState";
 
 function readRecord(key: string): Record<string, string> {
   migrateProjectAppearanceKeys();
@@ -360,6 +359,7 @@ export function saveTabGroupMascot(project: string, name: string | null): void {
   else next[project] = name;
   writeRecord(MASCOT_KEY, next);
   notifyProjectPathsChanged();
+  notifyTabGroupLogosChanged(); // A picked mascot hides the project's shipped logo.
 }
 
 /** Drops every saved appearance override for a project. */
@@ -404,16 +404,15 @@ export function resolveTabGroupMascot(
   return overrides?.[project] ?? null;
 }
 
+/** A chosen logo, else the one the project ships unless the user picked a mascot instead. */
 export function resolveTabGroupLogo(
   project: string,
   overrides?: Record<string, string>,
 ): string | null {
-  return overrides?.[project] ?? null;
-}
-
-export function notifyTabGroupLogosChanged(): void {
-  logoDisplayRevision += 1;
-  window.dispatchEvent(new CustomEvent(TAB_GROUP_LOGOS_CHANGED));
+  const chosen = overrides?.[project];
+  if (chosen) return chosen;
+  const shipped = detectedProjectLogo(project);
+  return shipped && !(project in loadTabGroupMascots()) ? shipped : null;
 }
 
 export function resolveTabGroupColor(

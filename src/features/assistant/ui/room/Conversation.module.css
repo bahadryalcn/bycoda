@@ -1,0 +1,292 @@
+/* Conversations tab: thread list, thread header, message list and composer. */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  flex: 1;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+.threadList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-inline-size: 0;
+  min-block-size: 0;
+  padding: 12px;
+  border-inline-end: 1px solid var(--ui-pane-border);
+}
+.listTools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: none;
+  min-inline-size: 0;
+}
+.listSearch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.listSearch > :first-child {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+.listTools > :first-child {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+.threadSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+}
+.threadSkeletonRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-block-size: 36px;
+}
+.threadSkeletonRow > :first-child {
+  flex: 1 1 auto;
+  max-inline-size: 70%;
+}
+.threadSkeletonRow > :last-child {
+  flex: none;
+  inline-size: 36px;
+}
+.messageSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.messageSkeleton > * {
+  inline-size: min(70%, 28rem);
+}
+.messageSkeleton > :nth-child(even) {
+  align-self: flex-end;
+}
+.threads {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.threadRow {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-inline-size: 0;
+  text-align: start;
+}
+.threadTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.threadName {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-body);
+  font-weight: 500;
+}
+.threadTime {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+.transcript {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+  background: var(--ui-workspace-canvas-chat);
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+  min-inline-size: 0;
+  min-block-size: 52px;
+  padding: 10px 20px;
+  border-block-end: 1px solid var(--ui-pane-border);
+}
+.identity {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.threadChip {
+  flex: none;
+}
+.identity > strong {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-title);
+  font-weight: 500;
+}
+.summaryStatus {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 2px;
+  min-inline-size: 0;
+  min-block-size: 28px;
+}
+.summaryText {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  white-space: nowrap;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  min-block-size: 120px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px 24px;
+}
+.dayDivider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-block: 4px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.dayDivider::before,
+.dayDivider::after {
+  content: "";
+  flex: 1;
+  border-block-start: 1px solid var(--ui-pane-border);
+}
+.message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  align-self: flex-start;
+  gap: 4px;
+  max-inline-size: min(78%, 44rem);
+  min-inline-size: 0;
+}
+.message[data-author="user"] {
+  align-items: flex-end;
+  align-self: flex-end;
+}
+.bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-inline-size: 0;
+  padding: 10px 14px;
+  border-radius: var(--ui-radius-card);
+  border-end-start-radius: var(--radius-control);
+  background: var(--ui-fill-subtle);
+  overflow-wrap: anywhere;
+}
+.message[data-author="user"] .bubble {
+  background: var(--ui-tone-accent-subtle);
+  border-end-start-radius: var(--ui-radius-card);
+  border-end-end-radius: var(--radius-control);
+}
+.bubbleText {
+  margin: 0;
+  font-size: var(--ui-font-body);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.note {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.detailsList {
+  margin: 4px 0 0;
+  padding-inline-start: 18px;
+}
+.links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 24px;
+  padding-inline: 4px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-micro);
+}
+.metaTime {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.feedback {
+  flex: none;
+  padding: 4px 20px 0;
+}
+.composer {
+  flex: none;
+  padding: 8px 24px 16px;
+}
+.composerNote {
+  margin: 0;
+  padding: 0 20px 12px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.draftError {
+  flex: none;
+  padding: 8px 20px;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+  .threadList {
+    padding: 10px;
+  }
+  .header,
+  .composer {
+    padding-inline: 12px;
+  }
+  .messages {
+    padding: 16px 12px;
+  }
+  .message {
+    max-inline-size: 90%;
+  }
+}

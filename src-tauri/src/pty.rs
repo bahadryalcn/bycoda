@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
-#[cfg(unix)]
-use std::os::unix::io::AsRawFd;
-use std::sync::{Arc, Mutex};
+#[cfg(windows)]
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -10,7 +11,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::dirs_home;
-use crate::fs::expand_home;
+use crate::session_folder::resolve_session_cwd;
 
 const DATA_EVENT: &str = "pty-data";
 const EXIT_EVENT: &str = "pty-exit";
@@ -23,14 +24,37 @@ const PTY_COALESCE: Duration = Duration::from_millis(8);
 const PTY_QUEUE_CHUNKS: usize = 64;
 /// Keystrokes or pastes queued for a terminal whose child is not reading.
 const WRITE_QUEUE_LEN: usize = 256;
+mod status;
 #[cfg(unix)]
-const KILL_ESCALATE: Duration = Duration::from_secs(1);
+mod unix_child;
+use status::PtyStatus;
+/// Output a hidden terminal may hold before it goes out as one batch anyway.
+const HIDDEN_FLUSH_BYTES: usize = 1024 * 1024;
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct PtyData {
     id: String,
     data: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    flow: Option<PtyFlow>,
+}
+
+#[derive(Serialize, Clone)]
+struct PtyFlow {
+    generation: u64,
+    sequence: u64,
+}
+static OUTPUT_GENERATION: AtomicU64 = AtomicU64::new(1);
+const OUTPUT_WINDOW_BYTES: usize = 1024 * 1024;
+
+#[derive(Default)]
+struct OutputFlow {
+    enabled: bool,
+    generation: u64,
+    sequence: u64,
+    pending: VecDeque<(u64, usize)>,
+    last_emit: Option<Instant>,
 }
 
 #[derive(Serialize, Clone)]
@@ -38,6 +62,125 @@ struct PtyData {
 struct PtyExit {
     id: String,
     code: Option<i32>,
+}
+
+/// Output of a terminal no view shows is held here instead of emitted every
+/// coalesce window, so a TUI repainting in a background tab costs one IPC per
+/// `HIDDEN_FLUSH_BYTES` instead of ~125 a second. Nothing is dropped: a full
+/// hold goes out as one batch, and showing the view releases the rest in order.
+#[derive(Default)]
+struct OutputGate {
+    hold: Mutex<OutputHold>,
+    flow: Mutex<OutputFlow>,
+    available: Condvar,
+}
+
+#[derive(Default)]
+struct OutputHold {
+    hidden: bool,
+    held: Vec<u8>,
+}
+
+impl OutputHold {
+    /// What to emit now for `bytes`; hidden output stays until the hold fills.
+    fn pass(&mut self, bytes: &[u8]) -> Option<Vec<u8>> {
+        if !self.hidden && self.held.is_empty() {
+            return Some(bytes.to_vec());
+        }
+        self.held.extend_from_slice(bytes);
+        (!self.hidden || self.held.len() >= HIDDEN_FLUSH_BYTES)
+            .then(|| std::mem::take(&mut self.held))
+    }
+
+    /// Records visibility; showing returns the held output to emit first.
+    fn set_visible(&mut self, visible: bool) -> Option<Vec<u8>> {
+        self.hidden = !visible;
+        (visible && !self.held.is_empty()).then(|| std::mem::take(&mut self.held))
+    }
+}
+
+impl OutputGate {
+    fn lock(&self) -> std::sync::MutexGuard<'_, OutputHold> {
+        self.hold.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn for_desktop(enabled: bool) -> Self {
+        let gate = Self::default();
+        gate.set_enabled(enabled);
+        gate
+    }
+
+    fn set_enabled(&self, enabled: bool) {
+        let mut flow = self.flow.lock().unwrap_or_else(|e| e.into_inner());
+        if flow.enabled == enabled {
+            return;
+        }
+        flow.enabled = enabled;
+        flow.generation = OUTPUT_GENERATION.fetch_add(1, Ordering::Relaxed);
+        flow.pending.clear();
+        flow.last_emit = None;
+        self.available.notify_all();
+    }
+
+    fn reset(&self) {
+        let mut flow = self.flow.lock().unwrap_or_else(|e| e.into_inner());
+        flow.generation = OUTPUT_GENERATION.fetch_add(1, Ordering::Relaxed);
+        flow.pending.clear();
+        flow.last_emit = None;
+        self.available.notify_all();
+    }
+
+    fn reserve(&self, bytes: usize) -> Option<PtyFlow> {
+        let mut flow = self.flow.lock().unwrap_or_else(|e| e.into_inner());
+        loop {
+            if !flow.enabled {
+                return None;
+            }
+            let full = !flow.pending.is_empty()
+                && flow.pending.iter().map(|(_, bytes)| bytes).sum::<usize>() + bytes
+                    > OUTPUT_WINDOW_BYTES;
+            let delay = flow
+                .last_emit
+                .map(|at| (at + PTY_COALESCE).saturating_duration_since(Instant::now()))
+                .unwrap_or_default();
+            if !full && delay.is_zero() {
+                break;
+            }
+            let wait = if full {
+                Duration::from_millis(100)
+            } else {
+                delay
+            };
+            flow = self
+                .available
+                .wait_timeout(flow, wait)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
+        flow.sequence += 1;
+        let sequence = flow.sequence;
+        flow.pending.push_back((sequence, bytes));
+        flow.last_emit = Some(Instant::now());
+        Some(PtyFlow {
+            generation: flow.generation,
+            sequence,
+        })
+    }
+
+    fn acknowledge(&self, generation: u64, sequence: u64) {
+        let mut flow = self.flow.lock().unwrap_or_else(|e| e.into_inner());
+        if generation != flow.generation {
+            return;
+        }
+        if let Some(index) = flow
+            .pending
+            .iter()
+            .position(|(pending, _)| *pending == sequence)
+        {
+            flow.pending.drain(..=index);
+            self.available.notify_all();
+        }
+    }
 }
 
 struct LivePty {
@@ -50,13 +193,16 @@ struct LivePty {
     completion_shell: Option<String>,
     writer: Mutex<Box<dyn Write + Send>>,
     #[cfg(unix)]
-    master_fd: i32,
+    master_fd: std::fs::File,
+    #[cfg(unix)]
+    child: Option<Arc<unix_child::UnixChild>>,
     #[cfg(windows)]
     master: Mutex<Box<dyn portable_pty::MasterPty + Send>>,
     pid: u32,
     /// Label of the window showing this terminal. A reload keeps the window,
     /// so the PTY outlives the page; destroying the window reaps it.
     owner: Arc<Mutex<String>>,
+    output: Arc<OutputGate>,
 }
 
 pub struct PtyHost {
@@ -138,6 +284,7 @@ impl PtyHost {
         let sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         let live = sessions.get(id)?;
         live.set_owner(owner);
+        live.output.reset();
         Some(reattach(live, cols, rows))
     }
 
@@ -160,7 +307,11 @@ impl PtyHost {
         if let Some(live) = sessions.get(id) {
             ensure_window(live, owner)?;
         }
-        Ok(sessions.remove(id))
+        let removed = sessions.remove(id);
+        if let Some(live) = &removed {
+            live.output.set_enabled(false);
+        }
+        Ok(removed)
     }
 
     fn kill_for_window(&self, owner: &str) {
@@ -191,9 +342,28 @@ impl PtyHost {
         Some(source.lock().unwrap_or_else(|e| e.into_inner()).clone())
     }
 
+    // The Windows exit path retires a terminal by pid; tests exercise it on every platform.
+    #[cfg(any(windows, test))]
     fn remove_if_pid(&self, id: &str, pid: u32) -> Option<Arc<LivePty>> {
         let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         if sessions.get(id).map(|live| live.pid) != Some(pid) {
+            return None;
+        }
+        sessions.remove(id)
+    }
+
+    #[cfg(unix)]
+    fn remove_if_child(
+        &self,
+        id: &str,
+        child: &Arc<unix_child::UnixChild>,
+    ) -> Option<Arc<LivePty>> {
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        if !sessions
+            .get(id)
+            .and_then(|live| live.child.as_ref())
+            .is_some_and(|live| Arc::ptr_eq(live, child))
+        {
             return None;
         }
         sessions.remove(id)
@@ -236,6 +406,22 @@ impl PtyHost {
 }
 
 impl LivePty {
+    /// Holds output while no view shows the terminal; showing it releases what
+    /// was held before any newer output.
+    fn set_output_visible(&self, app: &AppHandle, id: &str, visible: bool) {
+        let mut hold = self.output.lock();
+        if let Some(batch) = hold.set_visible(visible) {
+            send_pty_data(
+                app,
+                id,
+                self.owner_label(),
+                &batch,
+                self.ssh_identity.is_some(),
+                &self.output,
+            );
+        }
+    }
+
     fn owned_by(&self, label: &str) -> bool {
         *self.owner.lock().unwrap_or_else(|e| e.into_inner()) == label
     }
@@ -250,20 +436,19 @@ impl LivePty {
 }
 
 fn reap(kids: Vec<Arc<LivePty>>) {
-    let pids: Vec<u32> = kids.iter().map(|live| live.pid).collect();
-    for live in kids {
-        #[cfg(unix)]
-        {
-            hangup(live.pid);
-            close_fd(live.master_fd);
-        }
-        #[cfg(not(unix))]
-        drop(live);
+    if kids.is_empty() {
+        return;
     }
-    // Quit and `Drop` both exit the process, so the SIGKILL has to land
-    // before this returns. `terminate`'s detached escalate thread never gets
-    // to run, and every shell is its own `setsid` session that outlives us.
-    crate::harness::terminate_all(&pids);
+    #[cfg(unix)]
+    unix_child::reap(kids);
+    #[cfg(not(unix))]
+    {
+        let pids: Vec<u32> = kids.iter().map(|live| live.pid).collect();
+        for live in kids {
+            live.output.set_enabled(false);
+        }
+        crate::harness::terminate_all(&pids);
+    }
 }
 
 impl Drop for PtyHost {
@@ -316,6 +501,7 @@ pub fn pty_spawn(
         working_dir(&cwd)
     };
     let _reservation = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
+    crate::mobile_pty::reserve_native_spawn(&app, &id)?;
 
     let shell = shell_for(profile.as_deref());
 
@@ -543,6 +729,7 @@ fn spawn_private_program(
         .spawn_gate
         .lock()
         .unwrap_or_else(|e| e.into_inner());
+    crate::mobile_pty::desktop_control(&app, &id)?;
     let (cols, rows) = (cols.max(2), rows.max(2));
     ensure_identity(host.get(&id).as_deref(), Some(&identity))?;
     if let Some(live) = host.get(&id) {
@@ -601,9 +788,17 @@ fn spawn_private_program(
 fn reattach(live: &LivePty, cols: u16, rows: u16) -> Result<(), String> {
     #[cfg(unix)]
     {
-        resize_fd(live.master_fd, cols, rows)?;
+        resize_fd(std::os::fd::AsRawFd::as_raw_fd(&live.master_fd), cols, rows)?;
         let mut pgrp: libc::pid_t = 0;
-        if unsafe { libc::ioctl(live.master_fd, libc::TIOCGPGRP, &mut pgrp) } == 0 && pgrp > 1 {
+        if unsafe {
+            libc::ioctl(
+                std::os::fd::AsRawFd::as_raw_fd(&live.master_fd),
+                libc::TIOCGPGRP,
+                &mut pgrp,
+            )
+        } == 0
+            && pgrp > 1
+        {
             unsafe {
                 libc::kill(-pgrp, libc::SIGWINCH);
             }
@@ -722,7 +917,11 @@ pub async fn pty_resize(
 fn resize_live(live: &LivePty, cols: u16, rows: u16) -> Result<(), String> {
     #[cfg(unix)]
     {
-        resize_fd(live.master_fd, cols.max(2), rows.max(2))
+        resize_fd(
+            std::os::fd::AsRawFd::as_raw_fd(&live.master_fd),
+            cols.max(2),
+            rows.max(2),
+        )
     }
     #[cfg(windows)]
     {
@@ -743,14 +942,6 @@ fn resize_live(live: &LivePty, cols: u16, rows: u16) -> Result<(), String> {
     }
 }
 
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct PtyStatus {
-    foreground: Option<String>,
-    /// False where no foreground process can be named, so callers stop polling.
-    supported: bool,
-}
-
 /// Off the main thread: process lookup can fall back to `ps`. Visible terminals
 /// poll once a second; Linux normally reads argv directly from `/proc`.
 #[tauri::command(async)]
@@ -768,13 +959,18 @@ pub fn pty_status(
     }
     #[cfg(unix)]
     {
-        let foreground = foreground_label(live.master_fd, live.pid);
+        let foreground =
+            foreground_label(std::os::fd::AsRawFd::as_raw_fd(&live.master_fd), live.pid);
         Ok(PtyStatus {
             foreground,
             supported: true,
         })
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        Ok(status::windows_status(live.pid))
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = live;
         Ok(PtyStatus {
@@ -782,6 +978,58 @@ pub fn pty_status(
             supported: false,
         })
     }
+}
+
+/// A hidden terminal that exits still delivers what it held before the exit notice.
+#[cfg(windows)]
+fn release_held_output(host: &PtyHost, app: &AppHandle, id: &str, pid: u32) {
+    if let Some(live) = host.get(id).filter(|live| live.pid == pid) {
+        live.output.set_enabled(false);
+        live.set_output_visible(app, id, true);
+    }
+}
+
+/// The view reports whether the terminal is on screen. Hidden output is held
+/// (see `OutputGate`) and released in order once it is shown again.
+#[tauri::command]
+pub async fn pty_set_visible(
+    app: AppHandle,
+    window: tauri::Window,
+    host: State<'_, PtyHost>,
+    id: String,
+    visible: bool,
+) -> Result<(), String> {
+    let live = host.get_for_window(&id, window.label())?;
+    tauri::async_runtime::spawn_blocking(move || live.set_output_visible(&app, &id, visible))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn pty_output_ack(
+    window: tauri::Window,
+    host: State<'_, PtyHost>,
+    id: String,
+    generation: u64,
+    sequence: u64,
+) -> Result<(), String> {
+    host.get_for_window(&id, window.label())?
+        .output
+        .acknowledge(generation, sequence);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pty_output_flow(
+    window: tauri::Window,
+    host: State<'_, PtyHost>,
+    id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    host.get_for_window(&id, window.label())?
+        .output
+        .set_enabled(enabled);
+    Ok(())
 }
 
 /// The terminal leaves the map on the calling thread, so a respawn of the same
@@ -799,9 +1047,9 @@ pub fn pty_kill(window: tauri::Window, host: State<PtyHost>, id: String) -> Resu
         }
         #[cfg(not(windows))]
         {
-            terminate(live.pid);
-            #[cfg(unix)]
-            close_fd(live.master_fd);
+            if let Some(child) = &live.child {
+                child.terminate();
+            }
         }
     }
     Ok(())
@@ -833,12 +1081,19 @@ fn spawn_unix(
     http_proxy: Option<Arc<crate::ssh_http_proxy::HttpProxyLease>>,
 ) -> Result<(), String> {
     let private = ssh_identity.is_some();
+    let mut workspace_activity = if private {
+        None
+    } else {
+        crate::native_workspace::Activity::start(&app, &workdir, "terminal", None)?
+    };
     use std::fs::File;
-    use std::os::unix::io::FromRawFd;
+    use std::os::unix::io::{AsRawFd, FromRawFd};
     use std::os::unix::process::CommandExt;
     use std::process::Command;
 
-    let (master, slave) = open_pty(cols, rows)?;
+    let (master_fd, slave_fd) = open_pty(cols, rows)?;
+    let master = unsafe { File::from_raw_fd(master_fd) };
+    let slave = unsafe { File::from_raw_fd(slave_fd) };
 
     let mut cmd = Command::new(&shell);
     if let Some(proxy) = &http_proxy {
@@ -847,9 +1102,9 @@ fn spawn_unix(
     cmd.envs(env.iter().copied());
     cmd.args(&args)
         .current_dir(&workdir)
-        .stdin(dup_stdio(slave)?)
-        .stdout(dup_stdio(slave)?)
-        .stderr(dup_stdio(slave)?)
+        .stdin(dup_stdio(slave.as_raw_fd())?)
+        .stdout(dup_stdio(slave.as_raw_fd())?)
+        .stderr(dup_stdio(slave.as_raw_fd())?)
         .env("TERM", "xterm-256color")
         .env("COLORTERM", "truecolor")
         .env("COLORFGBG", "15;0")
@@ -863,7 +1118,7 @@ fn spawn_unix(
     // setsid() already creates a new session and process group. Calling
     // process_group(0) first makes the child a group leader, so setsid()
     // fails with EPERM ("Operation not permitted").
-    let slave_fd = slave;
+    let slave_fd = slave.as_raw_fd();
     unsafe {
         cmd.pre_exec(move || {
             if libc::setsid() < 0 {
@@ -878,30 +1133,31 @@ fn spawn_unix(
         });
     }
 
-    set_cloexec(master);
+    set_cloexec(master.as_raw_fd());
     let io = (|| -> Result<_, String> {
-        let reader = unsafe { File::from_raw_fd(dup_fd(master)?) };
-        let writer = unsafe { File::from_raw_fd(dup_fd(master)?) };
+        let reader = unsafe { File::from_raw_fd(dup_fd(master.as_raw_fd())?) };
+        let writer = unsafe { File::from_raw_fd(dup_fd(master.as_raw_fd())?) };
         Ok((reader, writer))
     })();
     let (reader, writer) = match io {
         Ok(io) => io,
         Err(error) => {
-            close_fd(slave);
-            close_fd(master);
             return Err(error);
         }
     };
     let spawned = cmd.spawn();
-    close_fd(slave);
-    let mut child = match spawned {
+    drop(slave);
+    let child = match spawned {
         Ok(child) => child,
         Err(error) => {
-            close_fd(master);
             return Err(format!("Failed to start {shell}: {error}"));
         }
     };
     let pid = child.id();
+    let child = Arc::new(unix_child::UnixChild::new(child));
+    if let Some(activity) = workspace_activity.as_mut() {
+        activity.started();
+    }
 
     let live = Arc::new(LivePty {
         _http_proxy: http_proxy,
@@ -912,32 +1168,62 @@ fn spawn_unix(
         completion_shell: (!private).then(|| shell.clone()),
         writer: Mutex::new(Box::new(QueuedWriter::spawn(Box::new(writer)))),
         master_fd: master,
+        child: Some(child.clone()),
         pid,
         owner: Arc::new(Mutex::new(owner.to_string())),
+        output: Arc::new(OutputGate::for_desktop(!crate::mobile_pty::registered(
+            &app, &id,
+        ))),
     });
     let data_owner = live.owner.clone();
+    let data_output = live.output.clone();
     host.insert(id.clone(), live);
 
-    let terminal_logs = ssh_identity
-        .is_none()
-        .then(|| crate::pty_runtime_logs::TerminalLogSender::new(&app, &workdir));
+    let (terminal_logs, log_exit) =
+        crate::pty_runtime_logs::start(ssh_identity.is_none(), &app, &workdir);
     let data_app = app.clone();
     let data_id = id.clone();
+    let mobile_generation = crate::mobile_pty::native_generation(&app, &id);
+    let data_generation = mobile_generation.clone();
+    let data_child = child.clone();
     thread::spawn(move || {
         let mut file = reader;
         let fd = file.as_raw_fd();
         let mut buf = vec![0_u8; READ_CHUNK];
         let mut acc = Vec::with_capacity(READ_CHUNK);
         let mut last_emit = Instant::now();
+        let mut complete = false;
+        let mut exit_deadline = None;
         loop {
+            let timeout = if acc.is_empty() {
+                Duration::from_millis(250)
+            } else {
+                PTY_COALESCE.saturating_sub(last_emit.elapsed())
+            };
+            if !unix_child::reader_ready(fd, &data_child, &mut exit_deadline, timeout) {
+                if exit_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                    break;
+                }
+                if acc.is_empty() {
+                    continue;
+                }
+            }
             if acc.is_empty() {
                 match file.read(&mut buf) {
-                    Ok(0) => break,
+                    Ok(0) => {
+                        complete = true;
+                        break;
+                    }
                     Ok(n) => {
                         acc.extend_from_slice(&buf[..n]);
+                        unix_child::output_read(&mut exit_deadline);
                         last_emit = Instant::now();
                     }
-                    Err(_) => break,
+                    Err(error) => {
+                        complete =
+                            cfg!(target_os = "linux") && error.raw_os_error() == Some(libc::EIO);
+                        break;
+                    }
                 }
             } else if pty_should_flush(acc.len(), last_emit.elapsed())
                 || !wait_readable(fd, PTY_COALESCE.saturating_sub(last_emit.elapsed()))
@@ -949,6 +1235,7 @@ fn spawn_unix(
                     &data_app,
                     &data_id,
                     &data_owner,
+                    &data_output,
                     &acc,
                     private,
                     &integration,
@@ -957,9 +1244,19 @@ fn spawn_unix(
                 last_emit = Instant::now();
             } else {
                 match file.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => acc.extend_from_slice(&buf[..n]),
-                    Err(_) => break,
+                    Ok(0) => {
+                        complete = true;
+                        break;
+                    }
+                    Ok(n) => {
+                        acc.extend_from_slice(&buf[..n]);
+                        unix_child::output_read(&mut exit_deadline);
+                    }
+                    Err(error) => {
+                        complete =
+                            cfg!(target_os = "linux") && error.raw_os_error() == Some(libc::EIO);
+                        break;
+                    }
                 }
             }
         }
@@ -970,34 +1267,48 @@ fn spawn_unix(
             &data_app,
             &data_id,
             &data_owner,
+            &data_output,
             &acc,
             private,
             &integration,
         );
         if !private {
-            crate::mobile_pty::drained(&data_app, &data_id);
+            if let Some(generation) = data_generation.as_deref() {
+                crate::mobile_pty::drained(&data_app, &data_id, generation, complete);
+            }
         }
     });
 
     let wait_app = app;
     let wait_id = id;
     thread::spawn(move || {
-        let code = child.wait().ok().and_then(|status| status.code());
+        let exit = child.wait();
+        let code = crate::pty_runtime_logs::report_exit(log_exit.as_ref(), exit.as_ref().ok());
+        if exit.is_ok() && !private {
+            if let Some(generation) = mobile_generation.as_deref() {
+                crate::mobile_pty::exited(&wait_app, &wait_id, generation, code);
+            }
+        }
+        if exit.is_ok() {
+            if let Some(activity) = workspace_activity {
+                let _ = activity.settled();
+            }
+        }
         // Only announce this child. A remount/respawn reuses the id, and the
         // previous wait thread must not paint "[process exited]" on the new PTY
         // or yank the replacement out of the host map.
-        let owner = if let Some(host) = wait_app.try_state::<PtyHost>() {
-            host.remove_if_pid(&wait_id, pid).map(|live| {
-                close_fd(live.master_fd);
-                live.owner_label()
+        let owner = if exit.is_ok() {
+            wait_app.try_state::<PtyHost>().and_then(|host| {
+                host.remove_if_child(&wait_id, &child).map(|live| {
+                    live.output.set_enabled(false);
+                    live.set_output_visible(&wait_app, &wait_id, true);
+                    live.owner_label()
+                })
             })
         } else {
             None
         };
         if let Some(owner) = owner {
-            if !private {
-                crate::mobile_pty::exited(&wait_app, &wait_id, code);
-            }
             emit_to_owner(
                 &wait_app,
                 Some(owner),
@@ -1029,6 +1340,11 @@ fn spawn_windows(
     http_proxy: Option<Arc<crate::ssh_http_proxy::HttpProxyLease>>,
 ) -> Result<(), String> {
     let private = ssh_identity.is_some();
+    let mut workspace_activity = if private {
+        None
+    } else {
+        crate::native_workspace::Activity::start(&app, &workdir, "terminal", None)?
+    };
     use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
     let pty_system = native_pty_system();
@@ -1077,6 +1393,9 @@ fn spawn_windows(
     let mut child = crate::windows::spawn_pty(pair.slave.as_ref(), cmd)
         .map_err(|err| format!("Failed to start {shell}: {err}"))?;
     let pid = child.process_id().unwrap_or(0);
+    if let Some(activity) = workspace_activity.as_mut() {
+        activity.started();
+    }
 
     let live = Arc::new(LivePty {
         _http_proxy: http_proxy,
@@ -1089,25 +1408,38 @@ fn spawn_windows(
         master: Mutex::new(pair.master),
         pid,
         owner: Arc::new(Mutex::new(owner.to_string())),
+        output: Arc::new(OutputGate::for_desktop(!crate::mobile_pty::registered(
+            &app, &id,
+        ))),
     });
     let data_owner = live.owner.clone();
+    let data_output = live.output.clone();
     host.insert(id.clone(), live);
 
-    let terminal_logs = ssh_identity
-        .is_none()
-        .then(|| crate::pty_runtime_logs::TerminalLogSender::new(&app, &workdir));
+    let (terminal_logs, log_exit) =
+        crate::pty_runtime_logs::start(ssh_identity.is_none(), &app, &workdir);
     let data_app = app.clone();
     let data_id = id.clone();
+    let mobile_generation = crate::mobile_pty::native_generation(&app, &id);
+    let data_generation = mobile_generation.clone();
     // A blocking read on the ConPTY pipe cannot be polled with a timeout, so
     // this thread only reads; the emitter below owns the timed drain. The
     // bounded queue makes a flooding child wait instead of piling up memory.
     // Either side ending closes the channel and stops the other.
     let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(PTY_QUEUE_CHUNKS);
+    let drain_complete = Arc::new(AtomicBool::new(false));
+    let reader_complete = drain_complete.clone();
     thread::spawn(move || {
         let mut buf = vec![0_u8; READ_CHUNK];
         loop {
+            // ConPTY returns filedescriptor::FileDescriptor (vendor/portable-pty
+            // win/conpty.rs); its Windows Read maps BrokenPipe to Ok(0).
             match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
+                Ok(0) => {
+                    reader_complete.store(true, Ordering::Release);
+                    break;
+                }
+                Err(_) => break,
                 Ok(n) => {
                     if tx.send(buf[..n].to_vec()).is_err() {
                         break;
@@ -1125,30 +1457,47 @@ fn spawn_windows(
                 &data_app,
                 &data_id,
                 &data_owner,
+                &data_output,
                 bytes,
                 private,
                 &integration,
             )
         });
         if !private {
-            crate::mobile_pty::drained(&data_app, &data_id);
+            if let Some(generation) = data_generation.as_deref() {
+                crate::mobile_pty::drained(
+                    &data_app,
+                    &data_id,
+                    generation,
+                    drain_complete.load(Ordering::Acquire),
+                );
+            }
         }
     });
 
     let wait_app = app;
     let wait_id = id;
     thread::spawn(move || {
-        let code = child.wait().ok().map(|status| status.exit_code() as i32);
+        let exit = child.wait();
+        let code = crate::pty_runtime_logs::report_exit(log_exit.as_ref(), exit.as_ref().ok());
+        if exit.is_ok() && !private {
+            if let Some(generation) = mobile_generation.as_deref() {
+                crate::mobile_pty::exited(&wait_app, &wait_id, generation, code);
+            }
+        }
+        if exit.is_ok() {
+            if let Some(activity) = workspace_activity {
+                let _ = activity.settled();
+            }
+        }
         let owner = if let Some(host) = wait_app.try_state::<PtyHost>() {
+            release_held_output(&host, &wait_app, &wait_id, pid);
             host.remove_if_pid(&wait_id, pid)
                 .map(|live| live.owner_label())
         } else {
             None
         };
         if let Some(owner) = owner {
-            if !private {
-                crate::mobile_pty::exited(&wait_app, &wait_id, code);
-            }
             emit_to_owner(
                 &wait_app,
                 Some(owner),
@@ -1163,7 +1512,7 @@ fn spawn_windows(
 }
 
 fn working_dir(cwd: &str) -> std::path::PathBuf {
-    let path = expand_home(cwd);
+    let path = resolve_session_cwd(cwd);
     if path.is_dir() {
         return path;
     }
@@ -1235,54 +1584,18 @@ fn login_args(shell: &str) -> &'static [&'static str] {
     }
 }
 
-/// The hangup a closing shell expects, without `terminate`'s escalation.
-#[cfg(unix)]
-fn hangup(pid: u32) {
-    if pid == 0 || pid == 1 {
-        return;
-    }
-    let ipid = pid as i32;
-    unsafe {
-        libc::kill(ipid, libc::SIGHUP);
-        libc::kill(-ipid, libc::SIGHUP);
-    }
-}
-
+#[cfg(windows)]
 fn terminate(pid: u32) {
     if pid == 0 || pid == 1 {
         return;
     }
-    #[cfg(unix)]
-    {
-        let ipid = pid as i32;
-        unsafe {
-            libc::kill(ipid, libc::SIGHUP);
-            libc::kill(-ipid, libc::SIGHUP);
-            libc::kill(ipid, libc::SIGTERM);
-            libc::kill(-ipid, libc::SIGTERM);
-        }
-        thread::spawn(move || {
-            thread::sleep(KILL_ESCALATE);
-            unsafe {
-                libc::kill(ipid, libc::SIGKILL);
-                libc::kill(-ipid, libc::SIGKILL);
-            }
-        });
-    }
-    #[cfg(windows)]
-    {
-        let mut cmd = std::process::Command::new("taskkill");
-        crate::hide_window_console(&mut cmd);
-        let _ = cmd
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = pid;
-    }
+    let mut cmd = std::process::Command::new("taskkill");
+    crate::hide_window_console(&mut cmd);
+    let _ = cmd
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
 }
 
 #[cfg(unix)]
@@ -1393,6 +1706,7 @@ fn emit_pty_data(
     app: &AppHandle,
     id: &str,
     source: &Arc<Mutex<String>>,
+    output: &OutputGate,
     bytes: &[u8],
     private: bool,
     integration: &Option<Arc<Mutex<crate::ssh_shell_integration::ShellIntegration>>>,
@@ -1425,10 +1739,26 @@ fn emit_pty_data(
     if bytes.is_empty() {
         return;
     }
-    let data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
     if !private {
         crate::mobile_pty::output(app, id, &owner, bytes);
     }
+    // Emitting under the gate keeps a release on show ahead of newer output.
+    let mut hold = output.lock();
+    if let Some(batch) = hold.pass(bytes) {
+        send_pty_data(app, id, owner, &batch, private, output);
+    }
+}
+
+fn send_pty_data(
+    app: &AppHandle,
+    id: &str,
+    owner: String,
+    bytes: &[u8],
+    private: bool,
+    output: &OutputGate,
+) {
+    let flow = output.reserve(bytes.len());
+    let data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
     emit_to_owner(
         app,
         Some(owner),
@@ -1436,6 +1766,7 @@ fn emit_pty_data(
         PtyData {
             id: id.to_string(),
             data,
+            flow,
         },
         private,
     );
@@ -1745,7 +2076,72 @@ fn process_label(pid: i32) -> Option<String> {
     if let Some(label) = proc_cmdline_label(pid) {
         return Some(label);
     }
+    #[cfg(target_os = "macos")]
+    if let Some(label) = sysctl_args_label(pid) {
+        return Some(label);
+    }
     ps_label(pid)
+}
+
+/// macOS argv without forking `ps` for every visible terminal's status poll.
+/// Read fresh on every lookup, like `/proc` on Linux.
+#[cfg(target_os = "macos")]
+fn sysctl_args_label(pid: i32) -> Option<String> {
+    let mut argmax: libc::c_int = 0;
+    let mut size = std::mem::size_of::<libc::c_int>();
+    let mut mib = [libc::CTL_KERN, libc::KERN_ARGMAX];
+    let sized = unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            mib.len() as libc::c_uint,
+            (&mut argmax as *mut libc::c_int).cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if sized != 0 || argmax <= 0 {
+        return None;
+    }
+    let mut buffer = vec![0_u8; argmax as usize];
+    let mut size = buffer.len();
+    let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid];
+    let read = unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            mib.len() as libc::c_uint,
+            buffer.as_mut_ptr().cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if read != 0 {
+        return None;
+    }
+    buffer.truncate(size);
+    let args = procargs2_argv(&buffer)?;
+    command_label(args.join(" ").trim())
+}
+
+/// `KERN_PROCARGS2` layout: argc, the executable path, NUL padding, then argv.
+#[cfg(any(target_os = "macos", test))]
+fn procargs2_argv(buffer: &[u8]) -> Option<Vec<String>> {
+    let argc = i32::from_ne_bytes(buffer.get(..4)?.try_into().ok()?);
+    if argc <= 0 {
+        return None;
+    }
+    let rest = &buffer[4..];
+    let mut cursor = &rest[rest.iter().position(|byte| *byte == 0)?..];
+    while let [0, tail @ ..] = cursor {
+        cursor = tail;
+    }
+    let args: Vec<String> = cursor
+        .split(|byte| *byte == 0)
+        .take(argc as usize)
+        .map(|arg| String::from_utf8_lossy(arg).into_owned())
+        .collect();
+    (!args.is_empty()).then_some(args)
 }
 
 /// Read fresh argv on every lookup: exec can change it without changing the PID,
@@ -1865,10 +2261,26 @@ mod tests {
             cwd: std::path::PathBuf::from("/test"),
             completion_shell: None,
             writer: Mutex::new(Box::new(std::io::sink())),
-            master_fd: -1,
+            master_fd: std::fs::File::open("/dev/null").unwrap(),
+            child: None,
             pid,
             owner: Arc::new(Mutex::new(owner.to_string())),
+            output: Arc::default(),
         })
+    }
+
+    #[test]
+    fn master_descriptor_stays_owned_until_last_operation_finishes() {
+        use std::os::fd::AsRawFd;
+        let host = PtyHost::new();
+        let live = fake_pty(42, "owner");
+        let operation = Arc::clone(&live);
+        let fd = live.master_fd.as_raw_fd();
+        host.insert("held".to_string(), live);
+        drop(host.remove_if_pid("held", 42).unwrap());
+        assert_ne!(unsafe { libc::fcntl(fd, libc::F_GETFD) }, -1);
+        assert_eq!(operation.master_fd.as_raw_fd(), fd);
+        drop(operation);
     }
 
     #[test]
@@ -1940,105 +2352,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod coalesce_tests {
-    use super::*;
-    use std::sync::mpsc::{channel, sync_channel};
-
-    fn run(rx: std::sync::mpsc::Receiver<Vec<u8>>, cap: usize) -> Vec<Vec<u8>> {
-        let mut emits = Vec::new();
-        coalesce_chunks(&rx, PTY_COALESCE, cap, |bytes| emits.push(bytes.to_vec()));
-        emits
-    }
-
-    #[test]
-    fn a_queued_burst_is_one_emit_in_order() {
-        let (tx, rx) = channel();
-        for i in 0..20_u8 {
-            tx.send(vec![i; 10]).unwrap();
-        }
-        drop(tx);
-        let emits = run(rx, READ_CHUNK);
-        assert_eq!(emits.len(), 1);
-        let expected: Vec<u8> = (0..20_u8).flat_map(|i| vec![i; 10]).collect();
-        assert_eq!(emits[0], expected);
-    }
-
-    #[test]
-    fn bytes_before_close_are_flushed() {
-        let (tx, rx) = channel();
-        tx.send(b"tail".to_vec()).unwrap();
-        drop(tx);
-        assert_eq!(run(rx, READ_CHUNK), vec![b"tail".to_vec()]);
-    }
-
-    #[test]
-    fn an_empty_closed_channel_emits_nothing() {
-        let (tx, rx) = channel::<Vec<u8>>();
-        drop(tx);
-        assert!(run(rx, READ_CHUNK).is_empty());
-    }
-
-    #[test]
-    fn a_lone_chunk_goes_out_while_the_channel_stays_open() {
-        let (tx, rx) = channel();
-        let (out_tx, out_rx) = channel();
-        let worker = thread::spawn(move || {
-            coalesce_chunks(&rx, PTY_COALESCE, READ_CHUNK, |bytes| {
-                out_tx.send((Instant::now(), bytes.to_vec())).unwrap();
-            });
-        });
-        let sent = Instant::now();
-        tx.send(b"x".to_vec()).unwrap();
-        let (at, bytes) = out_rx.recv_timeout(Duration::from_secs(2)).unwrap();
-        assert_eq!(bytes, b"x");
-        assert!(at.duration_since(sent) < PTY_COALESCE + Duration::from_millis(100));
-        drop(tx);
-        worker.join().unwrap();
-    }
-
-    #[test]
-    fn the_size_cap_splits_a_large_burst() {
-        let (tx, rx) = channel();
-        for i in 0..100_u8 {
-            tx.send(vec![i; 1000]).unwrap();
-        }
-        drop(tx);
-        let emits = run(rx, 10_000);
-        assert!(emits.len() >= 10);
-        assert!(emits.iter().all(|emit| emit.len() <= 10_000 + 1000));
-        let expected: Vec<u8> = (0..100_u8).flat_map(|i| vec![i; 1000]).collect();
-        assert_eq!(emits.concat(), expected);
-    }
-
-    #[test]
-    fn sustained_output_stays_under_the_emit_rate_bound() {
-        let (tx, rx) = sync_channel(64);
-        let feeder = thread::spawn(move || {
-            let start = Instant::now();
-            let mut sent = 0_u32;
-            while start.elapsed() < Duration::from_millis(200) {
-                tx.send(vec![1; 16]).unwrap();
-                sent += 1;
-                thread::sleep(Duration::from_millis(1));
-            }
-            sent
-        });
-        let started = Instant::now();
-        let emits = run(rx, READ_CHUNK);
-        let secs = started.elapsed().as_secs_f64();
-        let sent = feeder.join().unwrap();
-        assert_eq!(
-            emits.iter().map(Vec::len).sum::<usize>(),
-            sent as usize * 16
-        );
-        // One emit per window, plus the immediate first and the final flush.
-        assert!(
-            emits.len() as f64 <= secs * 125.0 + 3.0,
-            "{} emits",
-            emits.len()
-        );
-    }
-}
+mod coalesce_tests;
 
 #[cfg(test)]
 mod queued_writer_tests {
@@ -2086,11 +2400,14 @@ mod queued_writer_tests {
             completion_shell: None,
             writer: Mutex::new(Box::new(QueuedWriter::spawn(Box::new(Capture(tx))))),
             #[cfg(unix)]
-            master_fd: -1,
+            master_fd: std::fs::File::open("/dev/null").unwrap(),
+            #[cfg(unix)]
+            child: None,
             #[cfg(windows)]
             master: Mutex::new(pair.master),
             pid: 0,
             owner: Arc::new(Mutex::new("main".into())),
+            output: Arc::default(),
         });
         assert!(ensure_identity(Some(&live), None).is_err());
         assert!(ensure_identity(Some(&live), Some("another-server:user:endpoint")).is_err());
@@ -2163,11 +2480,14 @@ mod queued_writer_tests {
                 release: release_rx,
             })),
             #[cfg(unix)]
-            master_fd: -1,
+            master_fd: std::fs::File::open("/dev/null").unwrap(),
+            #[cfg(unix)]
+            child: None,
             #[cfg(windows)]
             master: Mutex::new(pair.master),
             pid: 0,
             owner: Arc::new(Mutex::new("main".into())),
+            output: Arc::default(),
         });
         let input = live.clone();
         let writing = thread::spawn(move || write_shell_input(&input, "fixture", "x", |_| {}));
@@ -2232,11 +2552,14 @@ mod queued_writer_tests {
                 completion_shell: None,
                 writer: Mutex::new(Box::new(Capture(tx))),
                 #[cfg(unix)]
-                master_fd: -1,
+                master_fd: std::fs::File::open("/dev/null").unwrap(),
+                #[cfg(unix)]
+                child: None,
                 #[cfg(windows)]
                 master: Mutex::new(pair.master),
                 pid: 0,
                 owner: Arc::new(Mutex::new("main".into())),
+                output: Arc::default(),
             }),
         );
         assert_eq!(

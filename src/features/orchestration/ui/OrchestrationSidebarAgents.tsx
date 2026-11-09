@@ -1,7 +1,8 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
-import { useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useContext, useRef, useState, useSyncExternalStore } from "react";
 import { findModel } from "../../sessions/model/models";
 import { orchestrator } from "../model/orchestration";
 import { orchestrationTaskLabel, type OrchestrationSummary } from "../model/orchestrationSummary";
@@ -9,7 +10,7 @@ import { HARNESS_TITLE } from "../../sessions/model/session";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { OrchestrationActions, OrchestrationWorkers } from "./OrchestrationActions";
 import { Check, ChevronDown, ChevronRight, CircleAlert } from "../../../shared/ui/icons";
-import { TerminalSpinner } from "../../sessions/ui/TerminalSpinner";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 
 export function OrchestrationSidebarAgents({
   leadId,
@@ -27,16 +28,20 @@ export function OrchestrationSidebarAgents({
     orchestrator.snapshot,
   );
   const [error, setError] = useState<string>();
-  const [pending, setPending] = useState(false);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const pending = pendingAction !== null;
   const inFlight = useRef(false);
   // Rows expand independently, so several agents can be watched side by side.
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   // Revealing a worker from its toast opens that row without closing others.
   const revealed = workers.selectedId;
-  useEffect(() => {
-    if (revealed)
-      setExpanded((current) => (current.has(revealed) ? current : new Set(current).add(revealed)));
-  }, [revealed]);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(
+    () => new Set(revealed ? [revealed] : []),
+  );
+  const [seenRevealed, setSeenRevealed] = useState(revealed);
+  if (revealed !== seenRevealed) {
+    setSeenRevealed(revealed);
+    if (revealed && !expanded.has(revealed)) setExpanded(new Set(expanded).add(revealed));
+  }
   const toggle = (sessionId: string, isOpen: boolean) => {
     setExpanded((current) => {
       const next = new Set(current);
@@ -53,10 +58,10 @@ export function OrchestrationSidebarAgents({
   );
   const resumeBlocker = run?.status === "paused" ? orchestrator.resumeBlocker(leadId) : undefined;
   const leadBusy = run?.status === "paused" && orchestrator.resumeLeadBusy(leadId);
-  const perform = async (operation: () => Promise<void>) => {
+  const perform = async (key: string, operation: () => Promise<void>) => {
     if (inFlight.current) return;
     inFlight.current = true;
-    setPending(true);
+    setPendingAction(key);
     setError(undefined);
     try {
       await operation();
@@ -64,7 +69,7 @@ export function OrchestrationSidebarAgents({
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       inFlight.current = false;
-      setPending(false);
+      setPendingAction(null);
     }
   };
   const done = summary.tasks.filter((task) => task.status === "completed").length;
@@ -72,7 +77,7 @@ export function OrchestrationSidebarAgents({
   // button rather than as another line of text.
   return (
     <div className="relative mt-1.5">
-      <div className="mb-0.5 px-0.5 flex items-center justify-between text-[11px] text-(--ui-text-secondary)">
+      <div className="mb-0.5 px-0.5 flex items-center justify-between text-ui-micro text-(--ui-text-secondary)">
         <span>
           {summary.tasks.length} {summary.tasks.length === 1 ? t("agent") : t("agents")}
         </span>
@@ -114,59 +119,49 @@ export function OrchestrationSidebarAgents({
               <Button
                 variant="item"
                 type="button"
-                title={`${task.title} · ${HARNESS_TITLE[task.harness]} · ${model} · ${label}`}
+                tooltip={`${task.title} · ${HARNESS_TITLE[task.harness]} · ${model} · ${label}`}
                 aria-label={t("Agent details: {p0}", { p0: task.title })}
                 fullWidth
-                className="group/agent min-w-0"
+                className="min-w-0"
                 selected={open}
                 aria-expanded={open}
                 onClick={() => toggle(task.sessionId, open)}
-                // Named, because the whole session card is already a `group`.
               >
-                {/* One slot: the chevron stands in for the harness mark
-                    whenever this row is open or under the pointer. */}
-                <span className="grid size-3.5 shrink-0 place-items-center text-(--ui-text-secondary)">
+                <span className="grid icon-sm shrink-0 place-items-center text-(--ui-text-secondary)">
                   {open ? (
-                    <ChevronDown className="size-3" strokeWidth={1.75} />
+                    <ChevronDown className="icon-xs" strokeWidth={1.75} />
                   ) : (
-                    <>
-                      <HarnessIcon
-                        harness={task.harness}
-                        className="size-3.5 opacity-75 group-focus-visible/agent:hidden group-hover/agent:hidden"
-                      />
-                      <ChevronRight
-                        className="hidden size-3 group-focus-visible/agent:block group-hover/agent:block"
-                        strokeWidth={1.75}
-                      />
-                    </>
+                    <ChevronRight className="icon-xs" strokeWidth={1.75} />
                   )}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[12px] leading-snug text-(--ui-text-secondary)">
+                <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
+                <span className="min-w-0 flex-1 truncate text-ui-caption leading-snug text-(--ui-text-secondary)">
                   {task.title}
                 </span>
                 <span
-                  className={`flex shrink-0 items-center gap-1 text-[11px] ${
-                    task.needsInput ||
-                    task.status === "failed" ||
-                    task.status === "blocked" ||
-                    task.status === "interrupted"
-                      ? "text-(--ui-tone-warning-fg)"
-                      : working
-                        ? "text-(--ui-tone-accent-fg)"
-                        : task.status === "completed"
-                          ? "text-(--ui-tone-success-fg)"
-                          : "text-(--ui-text-secondary)"
+                  className={`flex shrink-0 items-center gap-1 text-ui-micro ${
+                    task.status === "failed"
+                      ? "text-(--ui-tone-danger-fg)"
+                      : task.needsInput ||
+                          task.status === "blocked" ||
+                          task.status === "interrupted"
+                        ? "text-(--ui-tone-warning-fg)"
+                        : working
+                          ? "text-(--ui-tone-accent-fg)"
+                          : task.status === "completed"
+                            ? "text-(--ui-tone-success-fg)"
+                            : "text-(--ui-text-secondary)"
                   }`}
                 >
                   {task.needsInput ||
                   task.status === "failed" ||
                   task.status === "blocked" ||
                   task.status === "interrupted" ? (
-                    <CircleAlert className="size-3" strokeWidth={1.75} />
+                    <CircleAlert className="icon-xs" strokeWidth={1.75} />
                   ) : working ? (
-                    <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none text-(--ui-tone-accent-fg)" />
+                    <WorkingIndicator />
                   ) : task.status === "completed" ? (
-                    <Check className="size-3" strokeWidth={2.25} />
+                    <Check className="icon-xs" strokeWidth={2} />
                   ) : null}
                   <span>{label}</span>
                 </span>
@@ -175,21 +170,21 @@ export function OrchestrationSidebarAgents({
               {open && (
                 <div className="space-y-2 pb-3 pl-6.5 pr-2">
                   <p
-                    className="flex min-w-0 items-center gap-1.5 text-[11px] text-(--ui-text-secondary)"
+                    className="flex min-w-0 items-center gap-1.5 text-ui-micro text-(--ui-text-secondary)"
                     title={`${model} · ${HARNESS_TITLE[task.harness]}`}
                   >
-                    <HarnessIcon harness={task.harness} className="size-3.5 shrink-0" />
+                    <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
                     <span className="min-w-0 truncate">{model}</span>
                   </p>
                   {live?.error && (
-                    <p className="text-[11px] text-(--ui-tone-danger-fg)">{live.error}</p>
+                    <p className="text-ui-micro text-(--ui-tone-danger-fg)">{live.error}</p>
                   )}
                   <div className="flex flex-wrap items-center gap-1">
                     {workers.openDetails && (
                       <Button
                         variant="ghost"
                         type="button"
-                        title={t("Open this agent beside the orchestrator")}
+                        tooltip={t("Open this agent beside the orchestrator")}
 
                         onClick={() =>
                           workers.openDetails?.({
@@ -209,7 +204,12 @@ export function OrchestrationSidebarAgents({
                         type="button"
 
                         disabled={pending}
-                        onClick={() => void perform(() => orchestrator.cancelTask(leadId, live.id))}
+                        loading={pendingAction === `cancel:${live.id}`}
+                        onClick={() =>
+                          void perform(`cancel:${live.id}`, () =>
+                            orchestrator.cancelTask(leadId, live.id),
+                          )
+                        }
                       >
                         {t("Cancel task")}
                       </Button>
@@ -221,31 +221,38 @@ export function OrchestrationSidebarAgents({
           );
         })}
       </div>
-      {(error || run?.error) && (
-        <Alert tone="danger" role="alert">
-          {error ?? run?.error}
-        </Alert>
-      )}
+      {(error || run?.error) && <Alert tone="danger">{error ?? run?.error}</Alert>}
       {/* Stopping a run belongs to the composer, which stops the lead and its
           agents together. Resume has no other home, so it stays. */}
       {run?.status === "paused" && (
         <div className="mt-1.5 space-y-1.5 border-t border-(--ui-tone-neutral-border) pt-1.5">
-          <p className="px-0.5 text-[11px] leading-relaxed text-(--ui-text-secondary)">
-            {stopping
-              ? t("Stopping interrupted work before this run can resume.")
-              : leadBusy
-                ? t("Waiting for the lead's interrupted turn to finish before this run can resume.")
-                : t(
-                    "Resume continues interrupted workers from their retained checkouts and starts queued work. Policy-blocked tasks stay stopped for review.",
-                  )}
-          </p>
+          {stopping || leadBusy ? (
+            <p className="px-0.5 text-ui-micro leading-relaxed text-(--ui-text-secondary)">
+              {stopping
+                ? t("Stopping interrupted work before this run can resume.")
+                : leadBusy
+                  ? t(
+                      "Waiting for the lead's interrupted turn to finish before this run can resume.",
+                    )
+                  : t(
+                      "Resume continues interrupted workers from their retained checkouts and starts queued work. Policy-blocked tasks stay stopped for review.",
+                    )}
+            </p>
+          ) : null}
           {resumeBlocker && (
-            <p className="px-0.5 text-[11px] leading-relaxed text-(--ui-tone-warning-fg)">
+            <p className="px-0.5 text-ui-micro leading-relaxed text-(--ui-tone-warning-fg)">
               {resumeBlocker.title || t("Another conversation")}
               {t(" is still running in this project.")}
             </p>
           )}
           <div className="-mr-1.5 flex items-center justify-end gap-1">
+            {!stopping && !leadBusy ? (
+              <InfoPopover>
+                {t(
+                  "Resume continues interrupted workers from their retained checkouts and starts queued work. Policy-blocked tasks stay stopped for review.",
+                )}
+              </InfoPopover>
+            ) : null}
             {resumeBlocker && actions && (
               <Button
                 variant="ghost"
@@ -262,7 +269,8 @@ export function OrchestrationSidebarAgents({
               type="button"
 
               disabled={pending || stopping || leadBusy || !!resumeBlocker}
-              title={
+              loading={pendingAction === "resume"}
+              tooltip={
                 stopping
                   ? t("Wait for interrupted agents to stop")
                   : leadBusy
@@ -274,7 +282,9 @@ export function OrchestrationSidebarAgents({
                       : t("Continue interrupted and queued work")
               }
               onClick={() =>
-                void perform(() => orchestrator.start(leadId, run.allowedHarnesses, run.maxWorkers))
+                void perform("resume", () =>
+                  orchestrator.start(leadId, run.allowedHarnesses, run.maxWorkers),
+                )
               }
             >
               {t("Resume")}

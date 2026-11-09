@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { t, useLocale } from "../i18n";
+import { useId, useRef, useState } from "react";
+import { t, useLocale, useT } from "../i18n";
 import { Button } from "./Button";
 import { Popover } from "./Popover";
 import { TextField } from "./TextField";
@@ -10,21 +10,32 @@ import "./DateTimeRangePicker.css";
 
 /** Exact local start/end instants. End is exclusive; the calendar selects inclusive days. */
 export type DateTimeRange = { start: Date; end: Date };
+/**
+ * Trigger plus popover for a start/end range: an inclusive day calendar with start and end time fields, validated into exact local instants where the end is exclusive. Owns validation messaging and apply/cancel.
+ * @group fields
+ * @use Choosing a reporting or filter period with times (usage overview).
+ * @avoid A single date or time: DateTimeField. Whole-day presets only: a Select of presets.
+ */
 export function DateTimeRangePicker({
   value,
   onChange,
   label = t("Date and time range"),
   minDate,
   maxDate,
+  disabled = false,
 }: {
   value: DateTimeRange;
   onChange: (range: DateTimeRange) => void;
   label?: string;
   minDate?: Date;
   maxDate?: Date;
+  disabled?: boolean;
 }) {
+  const t = useT();
   const locale = useLocale();
   const anchor = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const alertId = useId();
   const [open, setOpen] = useState(false);
   const [start, setStart] = useState(() => toLocalDateTime(value.start));
   const [end, setEnd] = useState(() => toLocalDateTime(value.end));
@@ -52,21 +63,27 @@ export function DateTimeRangePicker({
         aria-label={label}
         aria-haspopup="dialog"
         aria-expanded={open}
+        disabled={disabled}
+        className="date-time-range-trigger"
+        title={`${format(value.start)} – ${format(value.end)}`}
+        tooltipWhen="overflow"
         onClick={() => {
           setStart(toLocalDateTime(value.start));
           setEnd(toLocalDateTime(value.end));
           setOpen(!open);
         }}
       >
-        <Clock className="size-3.5" />
-        <span>
+        <Clock className="size-(--ui-icon-sm) shrink-0" />
+        <span className="date-time-range-value">
           {format(value.start)} – {format(value.end)}
         </span>
       </Button>
       {open && (
         <Popover
+          ref={panel}
           anchor={anchor}
           align="end"
+          flow="scroll"
           onDismiss={() => setOpen(false)}
           className="date-time-range-panel"
           role="dialog"
@@ -87,10 +104,15 @@ export function DateTimeRangePicker({
               maxDate={maxDate ? new Date(maxDate.getTime() - 1) : undefined}
               value={
                 parsedStart && parsedEnd
-                  ? { start: parsedStart, end: new Date(parsedEnd.getTime() - 1) }
+                  ? {
+                      start: parsedStart,
+                      end: new Date(parsedEnd.getTime() - 1),
+                    }
                   : null
               }
               months={1}
+              boundary={() => panel.current}
+              expandInFlow
               onChange={(range) => {
                 setStart(toLocalDateTime(range.start));
                 const next = new Date(range.end);
@@ -106,6 +128,7 @@ export function DateTimeRangePicker({
               max={maxDate ? toLocalDateTime(maxDate) : undefined}
               step={900}
               required
+              aria-invalid={!valid && !parsedStart ? true : undefined}
               value={start}
               onChange={(event) => setStart(event.target.value)}
             />
@@ -116,11 +139,17 @@ export function DateTimeRangePicker({
               max={maxDate ? toLocalDateTime(maxDate) : undefined}
               step={900}
               required
+              aria-invalid={!valid ? true : undefined}
+              aria-describedby={!valid ? alertId : undefined}
               value={end}
               onChange={(event) => setEnd(event.target.value)}
             />
             <p>{t("End time is exclusive. Usage is recorded in 15-minute intervals.")}</p>
-            {!valid && <p role="alert">{t("End must be after start.")}</p>}
+            {!valid && (
+              <p id={alertId} role="alert">
+                {t("End must be after start.")}
+              </p>
+            )}
             <div className="date-time-range-actions">
               <Button variant="ghost" onClick={() => setOpen(false)}>
                 {t("Cancel")}

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { processConstructions } from "../processConstruction.testSupport";
 import { act, createElement, Fragment } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,7 +17,6 @@ import {
 } from "../../../../features/notifications/model/notifications";
 import { applyHarnessEvent } from "../../core/apply";
 import type { HarnessEvent } from "../../core/types";
-import type * as ChildModule from "../../core/child";
 
 const sent: Array<Record<string, unknown>> = [];
 let onLine: (line: string) => void;
@@ -29,9 +29,11 @@ vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
   invoke,
 }));
+
+beforeEach(() => processConstructions.reset());
 vi.mock("../../core/child", async (importOriginal) => {
-  const actual = await importOriginal<typeof ChildModule>();
-  return {
+  const actual = await importOriginal<typeof import("../../core/child")>();
+  return processConstructions.mock({
     ...actual,
     resolveCodexBinary: async () => ({ path: "/fake/codex" }),
     spawnChild: async () => undefined,
@@ -43,7 +45,7 @@ vi.mock("../../core/child", async (importOriginal) => {
     writeChild: async (_id: string, line: string) => {
       sent.push(JSON.parse(line));
     },
-  };
+  });
 });
 const { codexAdapter } = await import("./codexAdapter");
 const { __codexTestReset } = await import("./codex");
@@ -61,6 +63,14 @@ describe("Codex requests reach the chat and notifications", () => {
 
   function render(event?: HarnessEvent) {
     if (event) session = applyHarnessEvent(session, event);
+    const rendered = session;
+    const occurrences = new Map(
+      rendered.blocks.flatMap((block) =>
+        block.approval ? [[block.approval.requestId, block.approval.occurrenceId] as const] : [],
+      ),
+    );
+    const dispatch = (sessionId: string, id: number, decision: "allow" | "deny") =>
+      codexAdapter.respondApproval(sessionId, id, decision, occurrences.get(id));
     root.render(
       createElement(
         Fragment,
@@ -69,7 +79,8 @@ describe("Codex requests reach the chat and notifications", () => {
         createElement(AgentTranscript, {
           blocks: session.blocks,
           busy: true,
-          onApproval: (id, decision) => codexAdapter.respondApproval(session.id, id, decision),
+          approvalContext: { session: rendered, dispatch },
+          onApproval: (id, decision) => dispatch(rendered.id, id, decision),
         }),
         session.pendingQuestion
           ? createElement(QuestionForm, {
@@ -81,8 +92,7 @@ describe("Codex requests reach the chat and notifications", () => {
         createElement(ApprovalToasts, {
           notices: hiddenApprovalNotices([session], "other", [], false),
           onFocusSession: () => undefined,
-          onApproval: (sessionId, id, decision) =>
-            codexAdapter.respondApproval(sessionId, id, decision),
+          onApproval: dispatch,
         }),
       ),
     );
@@ -197,7 +207,7 @@ describe("Codex requests reach the chat and notifications", () => {
         Array.from(form()!.querySelectorAll("button")).find(
           (candidate) => candidate.textContent?.trim() === label,
         )!;
-      expect(button("Continue").disabled).toBe(true);
+      expect(button("Send answer").disabled).toBe(true);
       if (action === "skip") {
         await act(async () => button("Skip").click());
         expect(form()).toBeNull();
@@ -216,8 +226,8 @@ describe("Codex requests reach the chat and notifications", () => {
       );
       if (action === "custom") {
         await act(async () => {
-          const input = form()!.querySelector('input:not([type="radio"]):not([type="checkbox"])')!;
-          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          const input = form()!.querySelector("textarea")!;
+          Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
             input,
             answer,
           );
@@ -225,7 +235,7 @@ describe("Codex requests reach the chat and notifications", () => {
         });
       }
       expect(session.pendingQuestion?.autoResolveAt).toBeUndefined();
-      await act(async () => button("Continue").click());
+      await act(async () => button("Send answer").click());
       const steer = sent.find((message) => message.method === "turn/steer")!;
       expect(steer.params).toEqual({
         threadId: "thr_ui",
@@ -282,7 +292,7 @@ describe("Codex requests reach the chat and notifications", () => {
     );
     await act(async () =>
       buttons()
-        .find((b) => b.textContent?.trim() === "Continue")!
+        .find((b) => b.textContent?.trim() === "Send answer")!
         .click(),
     );
     expect(sent.find((m) => m.id === 91)?.result).toEqual({
@@ -427,7 +437,7 @@ describe("Codex requests reach the chat and notifications", () => {
       expect(sent.filter((message) => message.method === "turn/start")).toHaveLength(1);
       await act(async () => {
         Array.from(form()!.querySelectorAll("button"))
-          .find((button) => button.textContent?.trim() === "Continue")!
+          .find((button) => button.textContent?.trim() === "Send answer")!
           .click();
       });
       const continuation = sent.filter((message) => message.method === "turn/start")[1];
@@ -436,7 +446,8 @@ describe("Codex requests reach the chat and notifications", () => {
         input: [{ type: "text", text: "Choose a source\nRemote" }],
       });
       expect(sent.some((message) => message.method === "turn/steer")).toBe(false);
-      expect(form()).toBeNull();
+      expect(form()?.textContent).toContain("Answer saved · waiting to continue");
+      expect(session.blocks.some((block) => block.questionAnswers?.length)).toBe(false);
       await act(async () => {
         onLine(JSON.stringify({ id: continuation.id, result: { turn: { id: "turn_2" } } }));
         onLine(
@@ -447,6 +458,7 @@ describe("Codex requests reach the chat and notifications", () => {
         );
         await turn;
       });
+      expect(form()).toBeNull();
     },
   );
 
@@ -508,7 +520,7 @@ describe("Codex requests reach the chat and notifications", () => {
         if (action === "click") {
           await act(async () => {
             Array.from(container.querySelectorAll("button"))
-              .find((b) => b.textContent?.trim() === "Continue")!
+              .find((b) => b.textContent?.trim() === "Send answer")!
               .click();
           });
           expect(sent.find((m) => m.id === 91)?.result).toEqual({

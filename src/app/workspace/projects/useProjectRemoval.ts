@@ -1,3 +1,4 @@
+import { withRoomPrivacyMutation } from "../../../features/group-lock/model/roomPrivacyProjection";
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { flushSync } from "react-dom";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
@@ -117,7 +118,13 @@ export function useProjectRemoval({
               !confirmedDirtyIds.has(file.id),
           );
         if (unsaved.length > 0) {
-          if (!(await confirmDiscardUnsaved("Close these tabs with unsaved files?"))) {
+          if (
+            !(await confirmDiscardUnsaved({
+              title: t("Close tabs with unsaved files?"),
+              confirmLabel: t("Discard and close"),
+              files: unsaved,
+            }))
+          ) {
             // Bulk/group callers must stop, rather than marking this project
             // removed and proceeding with the rest of their selection.
             throw new Error(t("Cancelled"));
@@ -155,7 +162,9 @@ export function useProjectRemoval({
         confirmedDirtyIds.clear();
       }
       const wasCurrent = sameProjectPath(projectCwdRef.current, normalized);
-      const remaining = options.purgeData ? forgetProject(normalized) : archiveProject(normalized);
+      const remaining = await withRoomPrivacyMutation(() =>
+        options.purgeData ? forgetProject(normalized) : archiveProject(normalized),
+      );
       if (options.purgeData) {
         forgetProjectLocation(normalized);
         setSidebarTabSelection((current) =>
@@ -188,7 +197,9 @@ export function useProjectRemoval({
           if (session.busy) {
             turnGen.current.set(session.id, (turnGen.current.get(session.id) ?? 0) + 1);
             for (const id of sessionChildHarnesses(session)) {
-              void cancelHarnessTurn(id, session.id);
+              cancelHarnessTurn(id, session.id).catch((error) => {
+                console.warn("Could not stop the turn of a removed project", error);
+              });
             }
           }
           for (const id of sessionChildHarnesses(session)) {
@@ -267,8 +278,8 @@ export function useProjectRemoval({
   );
 
   const onRestoreProject = useCallback(
-    (path: string) => {
-      setRecents(rememberProject(path));
+    async (path: string) => {
+      setRecents(await rememberProject(path));
       onSelectProject(path);
     },
     [onSelectProject],

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   cachedRemoteCapabilities,
   loadRemoteCapabilities,
@@ -15,6 +15,7 @@ import {
   SYNC_UNSUPPORTED_MESSAGE,
 } from "./syncClient";
 import { setLocalHostEnvironmentId } from "./syncProjects";
+import { createSyncWindowOwner } from "./syncWindowOwner";
 import { setRemoteOpenTargets } from "./syncRemoteProjects";
 import {
   readRemoteConnection,
@@ -119,6 +120,20 @@ function applyMachineRoles(machines: readonly RemoteMachine[]): void {
   );
 }
 
+async function completeNativeSyncCycle(machineId: string, operationId: string): Promise<void> {
+  for (;;) {
+    try {
+      await invoke<void>("sync_cycle_complete", { machineId, operationId });
+      return;
+    } catch (error) {
+      const message = String(error);
+      if (!message.includes("SYNC_OWNER_HELD") && !message.includes("NATIVE_CONTROL_WINDOW_BUSY"))
+        throw error;
+      await new Promise<void>((resolve) => setTimeout(resolve, 250));
+    }
+  }
+}
+
 const lastCapabilityCheck = new Map<string, number>();
 
 async function syncCapableMachines(machines: readonly RemoteMachine[]): Promise<RemoteMachine[]> {
@@ -154,6 +169,8 @@ export function startAppSync(): () => void {
   let machines: readonly RemoteMachine[] = [];
   let stopped = false;
   let refreshing: Promise<void> | undefined;
+  let connecting: Promise<void> | undefined;
+  let auxiliaryUncertain = false;
   const refreshMachines = (): Promise<void> => {
     if (stopped) return Promise.resolve();
     if (refreshing) return refreshing;
@@ -167,41 +184,72 @@ export function startAppSync(): () => void {
       .then((value) => {
         if (!stopped) machines = value;
       })
-      .catch(() => undefined)
+      .catch(() => {
+        auxiliaryUncertain = true;
+      })
       .finally(() => {
         refreshing = undefined;
       });
     return refreshing;
   };
+  const ownership = createSyncWindowOwner(() => wake());
   const loop = startSyncLoop(
     () => collectSyncMachineIds(machines),
-    (machineId) => (method, params) => remoteRequest(machineId, method, params),
+    (machineId, cycleId) => (method, params) =>
+      remoteRequest(machineId, method, params, false, false, undefined, cycleId),
     (machineId) => machines.find((machine) => machine.id === machineId)?.environmentId,
+    ownership.isOwner,
+    refreshMachines,
+    isTauri()
+      ? (machineId, operationId) => invoke<void>("sync_cycle_begin", { machineId, operationId })
+      : undefined,
+    isTauri() ? completeNativeSyncCycle : undefined,
   );
   // A host that was not up yet at launch is linked on a later refresh.
   let localLinked = false;
-  const connectLocalHost = () =>
-    invoke<unknown>("local_host_connect")
+  const connectLocalHost = (): Promise<void> => {
+    if (stopped) return Promise.resolve();
+    if (connecting) return connecting;
+    connecting = invoke<unknown>("local_host_connect")
       .then((machine) => {
         if (machine) localLinked = true;
       })
-      .catch(() => undefined);
-  void connectLocalHost()
-    .then(refreshMachines)
-    .then(() => {
-      if (!stopped) loop.nudge();
-    });
+      .catch(() => {
+        auxiliaryUncertain = true;
+      })
+      .finally(() => {
+        connecting = undefined;
+      });
+    return connecting;
+  };
   const nudger = createDebouncer(() => loop.nudge(), NUDGE_DEBOUNCE_MS);
-  const onLocalChange = createLocalChangeHandler(nudger.trigger);
+  const channel = (() => {
+    try {
+      return typeof BroadcastChannel === "undefined"
+        ? undefined
+        : new BroadcastChannel("bycoda-library-sync");
+    } catch {
+      return undefined;
+    }
+  })();
+  const onLocalChange = createLocalChangeHandler(() => {
+    nudger.trigger();
+    channel?.postMessage("changed");
+  });
+  if (channel)
+    channel.onmessage = (event) => {
+      if (event.data === "changed" && ownership.isOwner()) nudger.trigger();
+    };
   const unsubscribePaths = subscribeProjectPathsChanged(onLocalChange);
   const unsubscribeLock = subscribeLockRecordChanges(onLocalChange);
   const wake = () => {
-    if (stopped) return;
+    if (stopped || !ownership.isOwner()) return;
     void (localLinked ? refreshMachines() : connectLocalHost().then(refreshMachines)).then(() => {
       if (!stopped) loop.nudge();
     });
   };
   const unsubscribeRecovered = subscribeRemoteRecovered(() => {
+    if (!ownership.isOwner()) return;
     void refreshMachines().then(() => {
       if (stopped) return;
       for (const machine of machines) {
@@ -217,13 +265,23 @@ export function startAppSync(): () => void {
   window.addEventListener("online", wake);
   document.addEventListener("visibilitychange", onVisibility);
   const interval = setInterval(() => {
+    if (!ownership.isOwner()) return;
     if (localLinked) void refreshMachines();
     else void connectLocalHost().then(refreshMachines);
   }, 30_000);
   return () => {
     started = false;
     stopped = true;
-    loop.stop();
+    const drain = Promise.all([
+      loop.stop(),
+      refreshing ?? Promise.resolve(),
+      connecting ?? Promise.resolve(),
+    ]).then(
+      ([settled]) => settled && !auxiliaryUncertain,
+      () => false,
+    );
+    ownership.stop(drain);
+    channel?.close();
     nudger.cancel();
     unsubscribePaths();
     unsubscribeLock();

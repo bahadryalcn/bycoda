@@ -6,7 +6,9 @@ export default defineConfig({
   build: {
     outDir: "temp/build/browser-sessions",
     emptyOutDir: false,
-    rolldownOptions: { input: ["tests/browser/transcript.html"] },
+    rolldownOptions: {
+      input: ["tests/browser/transcript.html", "tests/browser/workspace-rewind.html"],
+    },
   },
   preview: { host: "127.0.0.1", port: 1464, strictPort: true },
 });

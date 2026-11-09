@@ -5,8 +5,10 @@ import { workingProjectPaths } from "../../sessions/model/liveAgents";
 import type { HostSessionSummary } from "./protocol";
 import {
   nextRemoteUnseenFinished,
+  railSessions,
   remoteLiveAgents,
   remoteLiveSessionInfos,
+  remoteSessionWait,
   unopenedRemoteSessions,
   type RemoteRailSession,
 } from "./remoteRailSessions";
@@ -44,7 +46,13 @@ it("shows only running host sessions and ones waiting for input as working", () 
     listed({ id: "asking", status: "running", needsInput: true }),
   ]);
   expect(agents).toMatchObject([
-    { id: "running", cwd: project, title: "Roadmap", activity: "Working", needsApproval: false },
+    {
+      id: "running",
+      cwd: project,
+      title: "Roadmap",
+      activity: "Working",
+      needsApproval: false,
+    },
     { id: "asking", activity: "Needs input", needsApproval: true },
   ]);
 });
@@ -73,6 +81,28 @@ it("lists a host session that was never opened here in Last sessions", () => {
     { id: "running", status: "working", remote: true, updatedAt: 1_000 },
     { id: "idle", status: undefined, remote: true, updatedAt: 50 },
   ]);
+});
+
+it("shows interrupted Host sessions and uses their last activity rather than metadata writes", () => {
+  const live = remoteLiveSessionInfos([
+    listed({ id: "cut", status: "interrupted", updatedAt: 900, lastActivityAt: 50 }),
+    listed({ id: "running", status: "running", updatedAt: 100, lastActivityAt: 80 }),
+  ]);
+  expect(live).toMatchObject([
+    { id: "cut", status: "interrupted", activityAt: 50 },
+    { id: "running", status: "working", activityAt: 80 },
+  ]);
+  const rows = buildRecentSessions({
+    stored: [],
+    live,
+    projectKeys: new Set([pathKey(project)]),
+    limit: 10,
+    now: 1000,
+  });
+  expect(rows.find((row) => row.id === "cut")).toMatchObject({
+    status: "interrupted",
+    updatedAt: 50,
+  });
 });
 
 const fresh = (session: Partial<HostSessionSummary> & { id: string }) => ({
@@ -148,4 +178,81 @@ it("keeps unopened host retry and failure states distinct from working and done"
     ["retrying", "Retrying", false],
     ["failed", "Failed", true],
   ]);
+});
+
+it("hides the host session a tab is creating until it is bound", () => {
+  const sessions = [
+    listed({ id: "known" }),
+    listed({ id: "creating", status: "running" }),
+    {
+      ...listed({ id: "elsewhere", status: "running" }),
+      project: "remote://env/home/me/other",
+    },
+  ];
+  const intent = { project, knownSessionIds: new Set(["known"]) };
+  const ids = (creating: (typeof intent)[]) =>
+    unopenedRemoteSessions(sessions, new Set(), creating).map(({ session }) => session.id);
+  expect(ids([])).toEqual(["known", "creating", "elsewhere"]);
+  expect(ids([intent])).toEqual(["known", "elsewhere"]);
+  // The same list feeds the Working cards, so the own chat is not announced there.
+  expect(
+    remoteLiveAgents(unopenedRemoteSessions(sessions, new Set(), [intent])).map(({ id }) => id),
+  ).toEqual(["elsewhere"]);
+});
+
+it("keeps delegated advisors and subagents on their parent's panel, out of rail lists", () => {
+  const delegationParent = {
+    parentSessionId: "parent",
+    runId: "run",
+    kind: "advisor" as const,
+    model: "codex:gpt-6-astra",
+    startedAt: 1,
+  };
+  const cached = [
+    listed({ id: "parent", status: "running" }),
+    listed({ id: "advisor", delegationParent }),
+  ];
+  const sessions = railSessions(
+    new Map([[project, { list: cached.map(({ session }) => session), fresh: true }]]),
+  );
+  const unopened = unopenedRemoteSessions(sessions, new Set());
+  expect(unopened.map(({ session }) => session.id)).toEqual(["parent"]);
+  expect(remoteLiveAgents(unopened).map((agent) => agent.id)).toEqual(["parent"]);
+  expect(remoteLiveSessionInfos(unopened).map((info) => info.id)).toEqual(["parent"]);
+});
+
+it("waits a listed host session on Host background work, delegated children or a pull request watch", () => {
+  const watch = { kind: "pull-request" as const, label: "acme/app#3", since: 40 };
+  const agents = remoteLiveAgents(
+    [
+      listed({ id: "idle" }),
+      listed({ id: "watching", wakeSources: [watch] }),
+      listed({
+        id: "background",
+        status: "running",
+        waiting: { kind: "commands", count: 1, since: 30 },
+      }),
+      listed({ id: "busy", status: "running", wakeSources: [watch] }),
+    ],
+    new Set(),
+    100,
+  );
+  expect(agents.map((agent) => [agent.id, agent.waiting?.kind])).toEqual([
+    ["watching", "pull-request"],
+    ["background", "commands"],
+    ["busy", undefined],
+  ]);
+  expect(agents[0]).toMatchObject({ done: false, waiting: { label: "acme/app#3", since: 40 } });
+  expect(workingProjectPaths(agents)).toEqual([project]);
+});
+
+it("ranks issues, interruptions and needs-input above Waiting and ignores expired wake sources", () => {
+  const wakeSources = [{ kind: "pull-request" as const, label: "acme/app#3", until: 100 }];
+  const base = { status: "idle" as const, projectId: "p", revision: 1, updatedAt: 1 };
+  expect(remoteSessionWait({ ...base, wakeSources }, 99)?.kind).toBe("pull-request");
+  expect(remoteSessionWait({ ...base, wakeSources }, 100)).toBeNull();
+  expect(remoteSessionWait({ ...base, wakeSources, needsInput: true }, 0)).toBeNull();
+  expect(remoteSessionWait({ ...base, wakeSources, issue: "failed" }, 0)).toBeNull();
+  expect(remoteSessionWait({ ...base, wakeSources, status: "interrupted" }, 0)).toBeNull();
+  expect(remoteLiveAgents([listed({ id: "gone", wakeSources })], new Set(), 100)).toEqual([]);
 });

@@ -19,6 +19,7 @@ import {
 import { type Session } from "../../../features/sessions/model/session";
 import { confirmWorkspaceClose } from "../../model/closeConfirmation";
 import { confirmDiscardUnsaved } from "../helpers/appHelpers";
+import { t } from "../../../shared/i18n";
 import type { useTabActivation } from "./useTabActivation";
 
 export interface CloseTabActionDeps {
@@ -155,13 +156,18 @@ export function useCloseTabActions({
         let state;
         while ((state = readClose())) {
           if (state.unsaved.length) {
+            const unsavedFiles = state.unsaved;
             if (
               !(await confirmWorkspaceClose(() =>
-                confirmDiscardUnsaved("Close this tab with unsaved files?"),
+                confirmDiscardUnsaved({
+                  title: t("Close tab with unsaved files?"),
+                  confirmLabel: t("Discard and close"),
+                  files: unsavedFiles,
+                }),
               ))
             )
               return;
-            for (const file of state.unsaved) approvedDirty.add(file.id);
+            for (const file of unsavedFiles) approvedDirty.add(file.id);
             continue;
           }
           if (state.terminals.length) {
@@ -189,7 +195,18 @@ export function useCloseTabActions({
   );
 
   const onCloseTabs = useCallback(
-    (ids: string[], fallbackId: string, opts?: { confirmed?: boolean }) => {
+    (
+      ids: string[],
+      fallbackId: string,
+      opts?: {
+        confirmed?: boolean;
+        /**
+         * Automatic closes only: decided again right before the tabs are removed,
+         * after any confirmation await. A tab for which it returns false is kept.
+         */
+        stillClosable?: (tabId: string) => boolean | Promise<boolean>;
+      },
+    ) => {
       if (windowTransferPendingRef.current || ids.some((id) => movingTabIds.current.has(id)))
         return;
       const current = tabsRef.current;
@@ -207,9 +224,28 @@ export function useCloseTabActions({
       );
       const terminals = closingFiles.filter((file) => file.terminal);
 
-      const finishClose = () => {
+      const finishClose = async () => {
+        if (opts?.stillClosable) {
+          for (const id of ids) {
+            try {
+              if ((await opts.stillClosable(id)) === false) closingIds.delete(id);
+            } catch {
+              closingIds.delete(id);
+            }
+          }
+        }
+        const remainingIds = ids.filter((id) => closingIds.has(id));
+        if (remainingIds.length === 0) return;
         const latest = tabsRef.current;
-        const latestClosing = latest.filter((tab) => closingIds.has(tab.id));
+        const sameIdentity = (left: WorkspaceTab, right: WorkspaceTab) =>
+          left.id === right.id &&
+          JSON.stringify(leafIds(left.layout)) === JSON.stringify(leafIds(right.layout));
+        const latestClosing = latest.filter(
+          (tab) =>
+            closingIds.has(tab.id) && closing.some((original) => sameIdentity(original, tab)),
+        );
+        for (const id of closingIds)
+          if (!latestClosing.some((tab) => tab.id === id)) closingIds.delete(id);
         const latestFallback =
           latest.find((tab) => tab.id === fallbackId && !closingIds.has(tab.id)) ??
           latest.find((tab) => !closingIds.has(tab.id));
@@ -233,10 +269,18 @@ export function useCloseTabActions({
           )
         ) {
           // The caller's approval cannot cover files added while it waited.
-          onCloseTabs(ids, latestFallback.id);
+          onCloseTabs(remainingIds, latestFallback.id, opts);
           return;
         }
         commitClose((previous) => {
+          if (
+            previous.some(
+              (tab) =>
+                closingIds.has(tab.id) &&
+                !latestClosing.some((latestTab) => sameIdentity(latestTab, tab)),
+            )
+          )
+            return;
           const closing = previous.filter((tab) => closingIds.has(tab.id));
           const next = previous.filter((tab) => !closingIds.has(tab.id));
           if (
@@ -270,7 +314,7 @@ export function useCloseTabActions({
 
       // The caller already confirmed unsaved files and terminals.
       if (opts?.confirmed) {
-        finishClose();
+        void finishClose().catch(console.error);
         return;
       }
 
@@ -278,14 +322,19 @@ export function useCloseTabActions({
         if (
           !(await confirmWorkspaceClose(
             unsaved.length > 0
-              ? () => confirmDiscardUnsaved("Close these tabs with unsaved files?")
+              ? () =>
+                  confirmDiscardUnsaved({
+                    title: t("Close tabs with unsaved files?"),
+                    confirmLabel: t("Discard and close"),
+                    files: unsaved,
+                  })
               : undefined,
             terminals.length > 0 ? () => confirmCloseTerminals(terminals) : undefined,
           ))
         )
           return;
-        finishClose();
-      })();
+        await finishClose();
+      })().catch(console.error);
     },
     [commitClose],
   );

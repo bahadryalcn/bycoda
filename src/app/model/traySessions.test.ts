@@ -31,7 +31,18 @@ const options = {
   stored: [],
 };
 
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
 describe("session menu rows", () => {
+  it("keeps interrupted conversations compatible with native tray status and activity order", () => {
+    const rows = traySessions({
+      ...options,
+      stored: [stored("cut", { updatedAt: 100, lastActivityAt: 20 }), stored("newer")],
+      live: [live("cut", "interrupted")],
+    });
+    expect(rows.map((row) => row.id)).toEqual(["newer", "cut"]);
+    expect(rows[1]).toMatchObject({ status: "active", updatedAt: 20 });
+  });
   it("keeps project and provider readable when a title is long or multiline", () => {
     const [row] = traySessions({
       ...options,
@@ -40,6 +51,15 @@ describe("session menu rows", () => {
     expect(row.label).toBe(`Fix ${"ş".repeat(43)}… — visible · Codex`);
     expect(row.label).not.toContain("\n");
     expect(row.label).not.toMatch(/^(Working|Active|Done|Needs input)/);
+  });
+  it("cuts a title at a grapheme boundary instead of inside an emoji", () => {
+    const [row] = traySessions({
+      ...options,
+      stored: [stored("emoji", { title: `${"a".repeat(46)}🚀🚀b` })],
+    });
+    // 47 graphemes of title plus the ellipsis fill the 48-grapheme budget.
+    expect(row.label).toBe(`${"a".repeat(46)}🚀… — visible · Codex`);
+    expect(row.label).not.toMatch(LONE_SURROGATE);
   });
   it("uses the provider as a fallback title without repeating it", () => {
     const [row] = traySessions({
@@ -123,5 +143,24 @@ describe("session menu rows", () => {
       ],
     });
     expect(rows[0]).toMatchObject({ status: "input", owned: false });
+  });
+  it("shows a waiting agent as active, not working", () => {
+    const rows = traySessions({
+      ...options,
+      live: [live("w", "working")],
+      agents: [
+        {
+          id: "w",
+          cwd: "/visible",
+          title: "w",
+          harness: "codex",
+          activity: "",
+          needsApproval: false,
+          done: false,
+          waiting: { kind: "commands", count: 1 },
+        },
+      ],
+    });
+    expect(rows[0]).toMatchObject({ id: "w", status: "active" });
   });
 });

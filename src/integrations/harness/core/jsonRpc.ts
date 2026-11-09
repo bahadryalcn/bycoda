@@ -1,5 +1,17 @@
-import { writeChild } from "./child";
+import {
+  writeChild,
+  invalidateChildOutput,
+  assertChildTurnWriter,
+  type ChildProcessHandle,
+  type ChildTurnWriter,
+} from "./child";
 import { DeliveryUnknownError, type DeliverySettlement } from "../../../shared/lib/deliveryUnknown";
+import {
+  captureNativeOutputWork,
+  nativeOutputSink,
+  trackNativeOutputWork,
+  type NativeOutputWork,
+} from "./nativeOutputDelivery";
 
 type Pending = {
   resolve: (value: unknown) => void;
@@ -30,10 +42,28 @@ export class JsonRpcResponseError extends Error {
 // A child wedged hard enough to block stdin writes is unrecoverable; the
 // write deadline fails the request so the caller can recycle the generation.
 const WRITE_TIMEOUT_MS = 15_000;
+const WRITE_TIMEOUT_MAX_MS = 120_000;
+/** Control frames keep the short bound. A frame carrying attachments can fill the
+ * stdin pipe and legitimately wait for a slow-starting CLI to begin reading. */
+function writeTimeoutMs(bytes: number): number {
+  return Math.min(
+    WRITE_TIMEOUT_MAX_MS,
+    WRITE_TIMEOUT_MS + Math.max(0, Math.ceil(bytes / 65_536) - 1) * 1_000,
+  );
+}
 
 export type JsonRpcHandlers = {
-  onNotification?: (method: string, params: unknown) => void;
-  onRequest?: (id: JsonRpcId, method: string, params: unknown) => void | Promise<void>;
+  onNotification?: (
+    method: string,
+    params: unknown,
+    work?: NativeOutputWork,
+  ) => void | Promise<void>;
+  onRequest?: (
+    id: JsonRpcId,
+    method: string,
+    params: unknown,
+    work?: NativeOutputWork,
+  ) => void | Promise<void>;
 };
 
 export type JsonRpcClientOptions = {
@@ -42,6 +72,11 @@ export type JsonRpcClientOptions = {
   label?: string;
   defaultRequestTimeoutMs?: number;
 };
+
+export type JsonRpcWriterView = Pick<
+  JsonRpcClient,
+  "request" | "requestWithNativeOutput" | "notify" | "respond" | "respondError" | "isClosed"
+>;
 
 /**
  * Bidirectional JSON-RPC / JSONL client over a harness child process stdin/stdout.
@@ -55,12 +90,14 @@ export class JsonRpcClient {
   private readonly label: string;
   private readonly defaultRequestTimeoutMs: number;
   private readonly serverRequests = new Map<string, string>();
+  private readonly sessionId: string;
 
   constructor(
-    private readonly sessionId: string,
+    private readonly child: ChildProcessHandle,
     private readonly handlers: JsonRpcHandlers,
     options: JsonRpcClientOptions = {},
   ) {
+    this.sessionId = child.sessionId;
     this.includeJsonrpc = options.includeJsonrpc !== false;
     this.label = options.label ?? "rpc";
     this.defaultRequestTimeoutMs = options.defaultRequestTimeoutMs ?? 0;
@@ -96,13 +133,19 @@ export class JsonRpcClient {
   close(error?: Error) {
     if (this.closed) return;
     this.closed = true;
+    invalidateChildOutput(this.child, "rpc-client-closed");
     this.serverRequests.clear();
     const err = error ?? new Error("Harness process exited");
     this.rejectPending(err);
   }
 
   /** Drop in-flight client requests so a cancelled turn can unwind. */
-  rejectPending(error?: Error) {
+  rejectPending(error?: Error, options?: { keepNativeOutput?: boolean }) {
+    // A Stop cancels one prompt on a warm process. Keep the construction's stream
+    // usable: a late response that actually carries native output for the
+    // cancelled prompt still fails its own work as an unmatched response.
+    if (this.pending.size && !options?.keepNativeOutput)
+      invalidateChildOutput(this.child, "rpc-pending-rejected");
     const err = error ?? new Error("cancelled");
     for (const [, pending] of this.pending) pending.reject(err);
     this.pending.clear();
@@ -112,10 +155,53 @@ export class JsonRpcClient {
     return this.closed;
   }
 
-  async request<T>(
+  assertProcess(handle: ChildProcessHandle): void {
+    if (this.child !== handle)
+      throw new Error("RPC client belongs to a different process construction");
+  }
+
+  withWriter(writer: ChildTurnWriter): JsonRpcWriterView {
+    assertChildTurnWriter(this.child, writer);
+    const isClosed = () => this.isClosed;
+    return Object.freeze({
+      get isClosed() {
+        return isClosed();
+      },
+      request: <T>(
+        method: string,
+        params?: unknown,
+        timeoutMs = this.defaultRequestTimeoutMs,
+        consume?: (value: T, work: NativeOutputWork | null) => T | Promise<T>,
+      ) => this.requestOwned(writer, method, params, timeoutMs, consume),
+      requestWithNativeOutput: <T>(
+        method: string,
+        params: unknown,
+        consume: (value: T, work: NativeOutputWork | null) => T | Promise<T>,
+        timeoutMs = this.defaultRequestTimeoutMs,
+      ) => this.requestOwned(writer, method, params, timeoutMs, consume),
+      notify: (method: string, params?: unknown) => this.notifyOwned(writer, method, params),
+      respond: (id: JsonRpcId, result: unknown, onActualWrite?: (write: Promise<void>) => void) =>
+        this.respondOwned(writer, id, result, onActualWrite),
+      respondError: (id: JsonRpcId, error: { code: number; message: string; data?: unknown }) =>
+        this.respondErrorOwned(writer, id, error),
+    });
+  }
+
+  request<T>(
     method: string,
     params?: unknown,
     timeoutMs = this.defaultRequestTimeoutMs,
+    consume?: (value: T, work: NativeOutputWork | null) => T | Promise<T>,
+  ): Promise<T> {
+    return this.requestOwned(undefined, method, params, timeoutMs, consume);
+  }
+
+  private async requestOwned<T>(
+    writer: ChildTurnWriter | undefined,
+    method: string,
+    params?: unknown,
+    timeoutMs = this.defaultRequestTimeoutMs,
+    consume?: (value: T, work: NativeOutputWork | null) => T | Promise<T>,
   ): Promise<T> {
     if (this.closed) throw new Error("Harness process is not running");
     const id = this.nextId++;
@@ -160,7 +246,22 @@ export class JsonRpcClient {
             settleLate("accepted");
             return;
           }
-          resolve(value as T);
+          if (!consume) {
+            // A bare await has no automatic asynchronous renderer scope.
+            captureNativeOutputWork()?.fail("rpc-response-consumer-untracked");
+            resolve(value as T);
+            return;
+          }
+          const work = captureNativeOutputWork();
+          try {
+            const actual = Promise.resolve().then(
+              nativeOutputSink(work, () => consume(value as T, work)),
+            );
+            void trackNativeOutputWork(actual, work).then(resolve, reject);
+          } catch (error) {
+            work?.fail("rpc-response-consumer-failed");
+            reject(error);
+          }
         },
         reject: (error) => {
           if (timer) clearTimeout(timer);
@@ -194,6 +295,8 @@ export class JsonRpcClient {
         ...(params !== undefined ? { params } : {}),
       },
       method,
+      undefined,
+      writer,
     ).catch((error: unknown) => {
       const pending = this.pending.get(key);
       if (pending) {
@@ -218,7 +321,26 @@ export class JsonRpcClient {
     return response;
   }
 
-  async notify(method: string, params?: unknown): Promise<void> {
+  /** Invoke the real response consumer before leaving the original frame's
+   * synchronous scope. The work owns its actual promise, not just its waiter. */
+  requestWithNativeOutput<T>(
+    method: string,
+    params: unknown,
+    consume: (value: T, work: NativeOutputWork | null) => T | Promise<T>,
+    timeoutMs = this.defaultRequestTimeoutMs,
+  ): Promise<T> {
+    return this.request(method, params, timeoutMs, consume);
+  }
+
+  notify(method: string, params?: unknown): Promise<void> {
+    return this.notifyOwned(undefined, method, params);
+  }
+
+  private async notifyOwned(
+    writer: ChildTurnWriter | undefined,
+    method: string,
+    params?: unknown,
+  ): Promise<void> {
     if (this.closed) return;
     await this.send(
       {
@@ -227,10 +349,25 @@ export class JsonRpcClient {
         ...(params !== undefined ? { params } : {}),
       },
       method,
+      undefined,
+      writer,
     );
   }
 
-  async respond(id: JsonRpcId, result: unknown): Promise<void> {
+  respond(
+    id: JsonRpcId,
+    result: unknown,
+    onActualWrite?: (write: Promise<void>) => void,
+  ): Promise<void> {
+    return this.respondOwned(undefined, id, result, onActualWrite);
+  }
+
+  private async respondOwned(
+    writer: ChildTurnWriter | undefined,
+    id: JsonRpcId,
+    result: unknown,
+    onActualWrite?: (write: Promise<void>) => void,
+  ): Promise<void> {
     const method = this.serverRequests.get(String(id)) ?? `request ${id}`;
     this.serverRequests.delete(String(id));
     await this.send(
@@ -240,10 +377,20 @@ export class JsonRpcClient {
         result,
       },
       `reply to ${method}`,
+      onActualWrite,
+      writer,
     );
   }
 
-  async respondError(
+  respondError(
+    id: JsonRpcId,
+    error: { code: number; message: string; data?: unknown },
+  ): Promise<void> {
+    return this.respondErrorOwned(undefined, id, error);
+  }
+
+  private async respondErrorOwned(
+    writer: ChildTurnWriter | undefined,
     id: JsonRpcId,
     error: { code: number; message: string; data?: unknown },
   ): Promise<void> {
@@ -256,28 +403,50 @@ export class JsonRpcClient {
         error,
       },
       `reply to ${method}`,
+      undefined,
+      writer,
     );
   }
 
-  private async send(payload: object, operation: string): Promise<void> {
+  private async send(
+    payload: object,
+    operation: string,
+    onActualWrite?: (write: Promise<void>) => void,
+    writer?: ChildTurnWriter,
+  ): Promise<void> {
     if (this.closed) throw new Error("Harness process is not running");
-    // Bound the write: a child that stops draining stdin must not let a
-    // blocked harness_write outlive the request's own deadline (or wedge a
-    // cancellation waiting on the session/cancel notify).
+    // Bound this caller's wait. The accepted harness_write can outlive it while
+    // the backend still owns an actual stdin callback or process retirement.
+    // Cancellation waiting on session/cancel notify must still have a deadline.
     const line = JSON.stringify(payload);
+    // The caller's response/write waiter can time out first. The actual IPC
+    // promise remains charged until its own settlement.
+    const writeWork = captureNativeOutputWork();
+    let actualWrite: Promise<void>;
+    try {
+      actualWrite = trackNativeOutputWork(writeChild(writer ?? this.child, line), writeWork);
+    } catch (error) {
+      writeWork?.fail("rpc-write-rejected");
+      throw error;
+    }
+    // Source owners retain the actual write independently of this bounded waiter.
+    // Its settlement is not provider consumption or process-route attestation.
+    onActualWrite?.(actualWrite);
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const lineBytes = new TextEncoder().encode(line).length;
+    const writeTimeout = writeTimeoutMs(lineBytes);
     try {
       await Promise.race([
-        writeChild(this.sessionId, line),
+        actualWrite,
         new Promise<never>((_, reject) => {
           timer = setTimeout(
             () =>
               reject(
                 new Error(
-                  `${this.label} ${operation} write timed out after ${WRITE_TIMEOUT_MS} ms (session ${this.sessionId}, ${new TextEncoder().encode(line).length} bytes)`,
+                  `${this.label} ${operation} write timed out after ${writeTimeout} ms (session ${this.sessionId}, ${lineBytes} bytes)`,
                 ),
               ),
-            WRITE_TIMEOUT_MS,
+            writeTimeout,
           );
         }),
       ]);
@@ -299,6 +468,7 @@ export class JsonRpcClient {
       const key = String(msg.id);
       const pending = this.pending.get(key);
       if (!pending) {
+        captureNativeOutputWork()?.fail("rpc-response-unmatched");
         console.warn(`[bycoda] ${this.label} unmatched JSON-RPC response`, {
           id: msg.id,
         });
@@ -306,6 +476,7 @@ export class JsonRpcClient {
       }
       this.pending.delete(key);
       if (msg.error) {
+        captureNativeOutputWork()?.fail("rpc-response-error");
         pending.reject(
           new JsonRpcResponseError(
             msg.error.message || `${this.label} error ${msg.error.code ?? ""}`,
@@ -319,19 +490,51 @@ export class JsonRpcClient {
     }
 
     if (msg.method && msg.id != null) {
-      this.serverRequests.set(String(msg.id), msg.method);
+      const key = String(msg.id);
+      this.serverRequests.set(key, msg.method);
+      const work = captureNativeOutputWork();
+      // The entry only labels the reply. A handler that throws, rejects or
+      // settles without replying leaves nothing to label, so the entry goes
+      // with it instead of staying for the life of the client.
+      const forget = () => {
+        this.serverRequests.delete(key);
+      };
       try {
-        void Promise.resolve(this.handlers.onRequest?.(msg.id, msg.method, msg.params)).catch(() =>
-          console.warn(`[bycoda] ${this.label} server request handler failed`),
+        const actual = this.handlers.onRequest?.(
+          msg.id,
+          msg.method,
+          msg.params,
+          ...(work ? ([work] as const) : []),
         );
+        void trackNativeOutputWork(Promise.resolve(actual), work).then(forget, () => {
+          forget();
+          console.warn(`[bycoda] ${this.label} server request handler failed`);
+        });
       } catch {
+        forget();
+        work?.fail("rpc-request-handler-failed");
         console.warn(`[bycoda] ${this.label} server request handler failed`);
       }
       return;
     }
 
     if (msg.method) {
-      this.handlers.onNotification?.(msg.method, msg.params);
+      const work = captureNativeOutputWork();
+      try {
+        const actual = this.handlers.onNotification?.(
+          msg.method,
+          msg.params,
+          ...(work ? ([work] as const) : []),
+        );
+        if (actual)
+          void trackNativeOutputWork(Promise.resolve(actual), work).catch(() =>
+            console.warn(`[bycoda] ${this.label} notification handler failed`),
+          );
+        else work?.finish();
+      } catch (error) {
+        work?.fail("rpc-notification-handler-failed");
+        throw error;
+      }
     } else if (msg.id != null) {
       console.warn(`[bycoda] ${this.label} malformed JSON-RPC response`, {
         id: msg.id,

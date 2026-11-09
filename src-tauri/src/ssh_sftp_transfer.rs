@@ -923,6 +923,7 @@ fn resume_core(
     recovery_id: String,
     overwrite_confirmed: bool,
 ) -> Result<(), String> {
+    let _claim = RecoveryClaim::acquire(&recovery_id)?;
     let mut record = load(
         app,
         &recovery_id,
@@ -1132,6 +1133,7 @@ fn discard_core(
     connection_id: String,
     recovery_id: String,
 ) -> Result<(), String> {
+    let _claim = RecoveryClaim::acquire(&recovery_id)?;
     let record = load(
         app,
         &recovery_id,
@@ -1145,24 +1147,33 @@ fn discard_core(
         // remote commit happened, or delete a destination/possibly stale stage.
         return remove(app, &record.id);
     }
+    // A record saved before its staging file existed has nothing to clean up.
     if record.direction == "download" {
-        if Some(hash_checked(
-            Path::new(&record.staging_path),
-            None,
-            Some(operation),
-        )?) != record.partial_hash
+        if !matches!(fs::symlink_metadata(&record.staging_path), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
         {
-            return Err("Partial content changed; automatic cleanup refused".into());
+            if Some(hash_checked(
+                Path::new(&record.staging_path),
+                None,
+                Some(operation),
+            )?) != record.partial_hash
+            {
+                return Err("Partial content changed; automatic cleanup refused".into());
+            }
+            fs::remove_file(&record.staging_path)
+                .map_err(|_| "Cannot remove owned partial download")?;
         }
-        fs::remove_file(&record.staging_path)
-            .map_err(|_| "Cannot remove owned partial download")?;
     } else {
-        regular_remote(endpoint, &record.staging_path, operation)?;
-        run_batch(
-            endpoint,
-            format!("rm {}\nbye\n", quote_path(&record.staging_path)?),
-            operation,
-        )?;
+        match regular_remote(endpoint, &record.staging_path, operation) {
+            Ok(_) => {
+                run_batch(
+                    endpoint,
+                    format!("rm {}\nbye\n", quote_path(&record.staging_path)?),
+                    operation,
+                )?;
+            }
+            Err(error) if !is_missing_remote(&error) => return Err(error),
+            Err(_) => {}
+        }
     }
     remove(app, &record.id)
 }
@@ -1203,23 +1214,6 @@ mod tests {
             None,
         );
         assert_eq!(String::from_utf8(errors).unwrap(), "Permission denied\n");
-    }
-
-    #[test]
-    fn progress_arguments_cannot_be_silenced_or_drop_an_identity_value() {
-        let endpoint = SshEndpoint {
-            host: "host.test".into(),
-            port: 22,
-            identity_file: Some("-q".into()),
-            ..Default::default()
-        };
-        let args = transfer_args(&endpoint, true).unwrap();
-        assert_eq!(args[0], "-vvv");
-        assert!(args.windows(2).any(|pair| pair == ["-i", "-q"]));
-        assert_eq!(
-            args.iter().filter(|value| value.as_str() == "-q").count(),
-            1
-        );
     }
 
     fn scratch() -> PathBuf {

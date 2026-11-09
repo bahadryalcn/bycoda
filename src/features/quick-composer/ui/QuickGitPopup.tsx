@@ -1,8 +1,9 @@
 import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
 import { NativePopupHost } from "../../../shared/ui/NativePopupHost";
 import { BranchPicker } from "../../source-control/ui/BranchPicker";
 import {
@@ -17,7 +18,7 @@ export function QuickGitPopup({ onShown }: { onShown: () => void }) {
   useLocale();
   const [request, setRequest] = useState<QuickGitRequest | null>(null);
   const [host, setHost] = useState<HTMLDivElement | null>(null);
-  const errorRef = useRef<HTMLParagraphElement>(null);
+  const [error, setError] = useState("");
   useEffect(() => {
     let disposed = false;
     let received = false;
@@ -31,10 +32,10 @@ export function QuickGitPopup({ onShown }: { onShown: () => void }) {
           request.branches,
         );
       }
-      if (errorRef.current) errorRef.current.textContent = "";
+      setError("");
       setRequest(request);
     };
-    void listen<QuickGitRequest>(QUICK_GIT_REQUEST, ({ payload }) => {
+    void listenWindowAsync<QuickGitRequest>(QUICK_GIT_REQUEST, ({ payload }) => {
       received = true;
       accept(payload);
     })
@@ -85,18 +86,18 @@ export function QuickGitPopup({ onShown }: { onShown: () => void }) {
         choice: choice ?? null,
         restoreFocus: true,
       });
-    } catch (error) {
-      if (errorRef.current) errorRef.current.textContent = String(error);
-      throw error;
+    } catch (failure) {
+      setError(String(failure));
+      throw failure;
     }
   }, []);
 
   return (
     <div
       ref={setHost}
-      className="max-h-[520px] overflow-y-auto rounded-xl border border-content/10 bg-background-base/45 text-content"
+      className="max-h-[520px] overflow-y-auto rounded-(--ui-radius-popup) border border-stroke bg-[color-mix(in_oklab,var(--color-background-base)_45%,transparent)] text-content"
     >
-      <p ref={errorRef} role="alert" className="empty:hidden px-3 py-2 text-xs text-danger" />
+      {error ? <InlineError className="px-3 py-2">{error}</InlineError> : null}
       {host && request ? (
         <NativePopupHost value={host}>
           <QuickGitPopupPicker key={request.id} request={request} onFinish={finish} />
@@ -145,8 +146,8 @@ export function QuickGitPopupPicker({
   // Give the native window real content to measure while Git is loading.
   if (waiting)
     return (
-      <div className="flex items-center gap-3 px-3 py-3 text-xs">
-        <p role="status" className="flex-1 text-content/60">
+      <div className="flex items-center gap-3 px-3 py-3 text-ui-caption">
+        <p role="status" className="flex-1 text-(--ui-text-secondary)">
           {settled ? t("Couldn’t load branches for this project.") : t("Loading branches…")}
         </p>
         <Button variant="ghost" motion="none" type="button" className="" onClick={() => finish()}>
@@ -168,7 +169,7 @@ export function QuickGitPopupPicker({
   return (
     <WorkspacePicker
       cwd={cwd}
-      mode={choice.mode}
+      mode={choice.mode ?? choice.resolvedMode ?? "current"}
       base={choice.base}
       initialPicker={request.kind}
       onModeChange={(mode, base) =>
@@ -178,7 +179,7 @@ export function QuickGitPopupPicker({
           ...(mode === "worktree" ? { base } : {}),
         })
       }
-      onBaseChange={(base) => finish({ ...choice, base })}
+      onBaseChange={(base) => finish({ ...choice, mode: "worktree", base })}
       onSelectWorktree={async (tree) => finish({ cwd: choice.cwd, mode: "current", tree })}
       onClose={() => finish()}
     />

@@ -2,11 +2,10 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { formatProjectText } from "./format";
 
 const invoke = vi.hoisted(() => vi.fn());
-vi.mock("../../platform/tauri/fs", () => ({
-  invokeWorkspace: invoke,
-  basename: (path: string) => path.split(/[\\/]/).pop()!,
-}));
-beforeEach(() => { invoke.mockReset(); });
+vi.mock("../../platform/tauri/fs", () => ({ invokeWorkspace: invoke }));
+beforeEach(() => {
+  invoke.mockReset();
+});
 it("sends the unsaved buffer to the owning workspace and normalizes CRLF cursor positions", async () => {
   invoke.mockResolvedValue({ formatted: "a\r\nb\r\n", cursorOffset: 4 });
   expect(await formatProjectText("remote://machine/repo/Page.tsx", "original", 2)).toEqual({
@@ -19,11 +18,9 @@ it("sends the unsaved buffer to the owning workspace and normalizes CRLF cursor 
     cursorOffset: 2,
   });
 });
-it("uses bundled Prettier when the project has no installed formatter", async () => {
+it("returns null when the project has no installed formatter", async () => {
   invoke.mockResolvedValue(null);
-  expect((await formatProjectText("/repo/Page.tsx", "const Page=()=> <div/>;", 0))?.formatted).toBe(
-    "const Page = () => <div />;\n",
-  );
+  expect(await formatProjectText("/repo/Page.tsx", "const Page=()=> <div/>;", 0)).toBeNull();
 });
 it("preserves project formatter failures instead of replacing their configuration with defaults", async () => {
   invoke.mockRejectedValue(new Error("Invalid project config"));

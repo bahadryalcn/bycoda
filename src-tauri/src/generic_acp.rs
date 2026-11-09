@@ -171,8 +171,15 @@ fn exact_package(package: &str) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || b".-+".contains(&byte))
 }
-#[tauri::command(async)]
-pub fn generic_acp_registry(refresh: Option<bool>) -> Result<Vec<Value>, String> {
+#[tauri::command]
+pub async fn generic_acp_registry(refresh: Option<bool>) -> Result<Vec<Value>, String> {
+    crate::harness::run_blocking("generic_acp_registry", move || {
+        generic_acp_registry_blocking(refresh)
+    })
+    .await
+}
+
+fn generic_acp_registry_blocking(refresh: Option<bool>) -> Result<Vec<Value>, String> {
     let _ = refresh;
     let response = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(15))
@@ -229,7 +236,7 @@ pub async fn generic_acp_install(
 }
 
 fn generic_acp_install_sync(app: AppHandle, id: String, version: String) -> Result<(), String> {
-    let entries = generic_acp_registry(None)?;
+    let entries = generic_acp_registry_blocking(None)?;
     let entry = entries
         .into_iter()
         .find(|entry| entry["id"] == id && entry["version"] == version)

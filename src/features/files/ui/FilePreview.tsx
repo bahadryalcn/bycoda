@@ -1,10 +1,11 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { CircleDashed, X } from "../../../shared/ui/icons";
 import { MAX_PREVIEW_LINES } from "../../../integrations/harness/core/preview";
 import { formatInteger } from "../../../shared/lib/numbers";
 import { displayPath, resolveWorkspacePath } from "../../../shared/lib/paths";
-import type { ToolPreview, ToolPreviewLine } from "../../sessions/model/session";
+import type { ToolPreview, ToolPreviewLine } from "../../sessions";
 import { FileTypeIcon } from "./FileTypeIcon";
 
 type Status = "pending" | "accepted" | "rejected";
@@ -83,7 +84,7 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
     <div
       className={
         variant === "card"
-          ? "overflow-hidden rounded-[10px] border border-[var(--color-stroke)] bg-[var(--ui-surface)]"
+          ? "overflow-hidden rounded-(--ui-radius-card) border border-(--ui-pane-border)"
           : "min-w-0"
       }
     >
@@ -95,21 +96,21 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
             motion="none"
             type="button"
             className="min-w-0 flex-1 truncate text-left font-mono hover:underline"
-            title={path}
+            tooltip={path}
+            tooltipWhen={path === label ? "overflow" : "always"}
             onClick={() => onOpenFile(filePath)}
           >
             {label}
           </Button>
         ) : (
-          <span
-            className="min-w-0 flex-1 truncate font-mono text-[12px] font-medium text-[var(--color-content)]"
-            title={path}
-          >
-            {label}
-          </span>
+          <Tooltip label={path} when={path === label ? "overflow" : "always"}>
+            <span className="min-w-0 flex-1 truncate font-mono text-ui-caption font-medium text-[var(--color-content)]">
+              {label}
+            </span>
+          </Tooltip>
         )}
         {added > 0 || deleted > 0 ? (
-          <span className="shrink-0 font-sans text-[11px] font-semibold tabular-nums">
+          <span className="shrink-0 font-sans text-ui-micro font-medium tabular-nums">
             {added > 0 ? <span className="text-diff-add-fg">+{formatInteger(added)}</span> : null}
             {added > 0 && deleted > 0 ? " " : null}
             {deleted > 0 ? (
@@ -133,7 +134,7 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
             aria-label={variant === "popover" ? t("Preview lines") : undefined}
           >
             {preview.contentOnly && !lines.length ? (
-              <p className="px-3 py-2 font-mono text-xs text-[var(--ui-text-secondary)]">
+              <p className="px-3 py-2 font-mono text-ui-caption text-[var(--ui-text-secondary)]">
                 {t("Empty file")}
               </p>
             ) : null}
@@ -176,16 +177,18 @@ function PreviewLine({
   return (
     <div className={`relative flex items-baseline ${scrollable ? "w-max min-w-full" : ""} ${bg}`}>
       <span className={`absolute inset-y-0 left-0 w-0.5 ${bar}`} />
-      <span className="w-7 shrink-0 pr-1 text-right font-mono text-[10px] text-[var(--ui-text-muted)]">
+      <span className="w-7 shrink-0 pr-1 text-right font-mono text-ui-micro text-[var(--ui-text-muted)]">
         {line.number ?? " "}
       </span>
       {showGutter ? (
-        <span className={`w-3 shrink-0 text-center font-mono text-[10px] font-bold ${markColor}`}>
+        <span
+          className={`w-3 shrink-0 text-center font-mono text-ui-micro font-medium ${markColor}`}
+        >
           {mark}
         </span>
       ) : null}
       <span
-        className={`min-w-0 flex-1 pr-2 font-mono text-[11px] leading-4.5 ${scrollable ? "whitespace-pre" : "truncate"}`}
+        className={`min-w-0 flex-1 pr-2 font-mono text-ui-micro leading-4.5 ${scrollable ? "whitespace-pre" : "truncate"}`}
       >
         {highlight(line.text, line.kind === "context")}
       </span>
@@ -196,11 +199,11 @@ function PreviewLine({
 function StatusIcon({ status }: { status: Status }) {
   useLocale();
   if (status === "rejected") {
-    return <X className="size-3.5 shrink-0 text-danger" strokeWidth={2} />;
+    return <X className="icon-sm shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
   }
   if (status === "pending") {
     return (
-      <CircleDashed className="size-3.5 shrink-0 text-[var(--ui-text-muted)]" strokeWidth={1.75} />
+      <CircleDashed className="icon-sm shrink-0 text-[var(--ui-text-muted)]" strokeWidth={1.75} />
     );
   }
   return null;
@@ -222,7 +225,11 @@ function highlight(text: string, dimmed: boolean) {
       parts.push({ text: text.slice(last, match.index), color: "" });
     }
     const token = match[1];
-    const color = KEYWORDS.has(token) ? "text-success" : /^[A-Z]/.test(token) ? "text-warning" : "";
+    const color = KEYWORDS.has(token)
+      ? "text-(--ui-tone-success-fg)"
+      : /^[A-Z]/.test(token)
+        ? "text-(--ui-tone-warning-fg)"
+        : "";
     parts.push({ text: token, color });
     last = match.index + token.length;
   }

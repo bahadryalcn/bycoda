@@ -51,7 +51,7 @@ import {
   loadCrewTheme,
   saveCrewTheme,
 } from "./settings";
-import { ALT, IS_MAC, MOD, SHIFT } from "../../../platform/tauri/platform";
+import { ALT, IS_LINUX, IS_MAC, MOD, SHIFT } from "../../../platform/tauri/platform";
 import { NOTES_PANEL_COMMAND } from "../../notes/notesPanel";
 
 const MODEL_CONTROLS_KEY = "bycoda.modelControls";
@@ -378,6 +378,8 @@ describe("crew theme setting", () => {
     expect(loadCrewTheme()).toBe("star-wars");
     saveCrewTheme("lotr");
     expect(loadCrewTheme()).toBe("lotr");
+    saveCrewTheme("matrix");
+    expect(loadCrewTheme()).toBe("matrix");
     saveCrewTheme("classic");
     expect(loadCrewTheme()).toBe("classic");
     localStorage.setItem("bycoda.crewTheme", "invalid-theme");
@@ -563,9 +565,9 @@ describe("diff layout setting", () => {
     localStorage.removeItem(DIFF_LAYOUT_KEY);
   });
 
-  it("defaults to the inline layout", () => {
-    expect(DIFF_LAYOUT_DEFAULT).toBe("inline");
-    expect(loadDiffLayout()).toBe("inline");
+  it("defaults to the automatic layout", () => {
+    expect(DIFF_LAYOUT_DEFAULT).toBe("auto");
+    expect(loadDiffLayout()).toBe("auto");
   });
 
   it("persists the split layout", () => {
@@ -574,11 +576,13 @@ describe("diff layout setting", () => {
     expect(loadDiffLayout()).toBe("split");
     saveDiffLayout("inline");
     expect(loadDiffLayout()).toBe("inline");
+    saveDiffLayout("auto");
+    expect(loadDiffLayout()).toBe("auto");
   });
 
   it("ignores unknown stored values", () => {
     localStorage.setItem(DIFF_LAYOUT_KEY, "side-by-side");
-    expect(loadDiffLayout()).toBe("inline");
+    expect(loadDiffLayout()).toBe("auto");
   });
 });
 
@@ -649,15 +653,50 @@ describe("collapsed project rail setting", () => {
 describe("settings navigation", () => {
   it("lists every section under exactly one rail group", () => {
     const groups = settingsSectionsByGroup();
-    expect(groups.map((group) => group.label)).toEqual(["App", "Workspace", "Agents", "About"]);
-    expect(groups.at(-1)?.sections.map((section) => section.id)).toEqual(["policies"]);
+    expect(groups.map((group) => group.id)).toEqual([
+      "app",
+      "agents",
+      "code",
+      "connections",
+      "about",
+      "account",
+    ]);
+    expect(groups.at(-1)?.sections.map((section) => section.id)).toEqual(["account"]);
     const ids = groups.flatMap((group) => group.sections.map((section) => section.id));
-    expect(ids).toHaveLength(19);
-    expect(new Set(ids).size).toBe(19);
+    expect(ids).toHaveLength(22);
+    expect(new Set(ids).size).toBe(22);
     expect([...ids].sort()).toEqual(SETTINGS_SECTIONS.map((section) => section.id).sort());
     for (const group of groups) {
       expect(group.sections.every((section) => section.group === group.id)).toBe(true);
     }
+  });
+
+  it("maps the sections into IDE-style groups", () => {
+    const byGroup = Object.fromEntries(
+      settingsSectionsByGroup().map((group) => [group.id, group.sections.map((s) => s.id)]),
+    );
+    expect(byGroup.app).toEqual([
+      "general",
+      "appearance",
+      "chat",
+      "voice",
+      "notifications",
+      "keybindings",
+      "terminal",
+      "groupLock",
+    ]);
+    expect(byGroup.agents).toEqual([
+      "providers",
+      "crews",
+      "skills",
+      "mcp",
+      "usage",
+      "limits",
+      "secrets",
+    ]);
+    expect(byGroup.code).toEqual(["workspace", "worktrees"]);
+    expect(byGroup.connections).toEqual(["connections", "integrations"]);
+    expect(byGroup.about).toEqual(["archive", "policies"]);
   });
 
   it("points every indexed setting at a real section", () => {
@@ -678,6 +717,8 @@ describe("settings search", () => {
   it("ranks label matches over keyword matches, and pages last", () => {
     expect(searchSettings("glass").map((result) => result.label)).toEqual([
       "Main pane glass",
+      // Linux has no window glass setting.
+      ...(IS_LINUX ? [] : ["Window glass"]),
       "Blur radius",
       "Main pane opacity",
       "Sidebar opacity",
@@ -689,11 +730,11 @@ describe("settings search", () => {
     expect(searchSettings("steer")[0]).toMatchObject({
       section: "chat",
       sectionLabel: "Chat",
-      settingId: "follow-up",
-      label: "Sending while working",
+      settingId: "composer-spelling",
+      label: "Spelling and autocorrect",
     });
 
-    expect(searchSettings("prettier")[0]).toMatchObject({
+    expect(searchSettings("oxfmt")[0]).toMatchObject({
       section: "workspace",
       settingId: "format-on-save",
       label: "Format on save",

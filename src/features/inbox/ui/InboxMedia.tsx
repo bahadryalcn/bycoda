@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { t, useLocale } from "../../../shared/i18n";
+import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
+import { Button } from "../../../shared/ui/Button";
+import { Skeleton } from "../../../shared/ui/Skeleton";
 import { fetchInboxMedia, sniffInboxMedia, type InboxMediaType } from "../model/inboxMedia";
 
 type Props = {
@@ -13,6 +16,7 @@ type LoadState =
   | { status: "error" };
 
 export function InboxMedia({ src, alt }: Props) {
+  useLocale();
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
   useEffect(() => {
@@ -45,9 +49,11 @@ export function InboxMedia({ src, alt }: Props) {
   if (state.status === "loading") {
     return (
       <span
-        className="inbox-media my-2 inline-block h-32 w-full max-w-xl animate-pulse rounded-[10px] border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
+        className="inbox-media my-2 inline-flex h-32 w-full max-w-xl items-center justify-center rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-transparent"
         aria-hidden
-      />
+      >
+        <Skeleton inline aria-hidden width="40%" />
+      </span>
     );
   }
 
@@ -57,7 +63,7 @@ export function InboxMedia({ src, alt }: Props) {
 
   if (state.type.kind === "video") {
     return (
-      <span className="inbox-media my-2 inline-block w-full max-w-xl overflow-hidden rounded-[10px] border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)">
+      <span className="inbox-media my-2 inline-block w-full max-w-xl overflow-hidden rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-transparent">
         <video
           src={state.url}
           controls
@@ -71,18 +77,18 @@ export function InboxMedia({ src, alt }: Props) {
     );
   }
 
-  const label = alt?.trim() || "Image";
+  const label = alt?.trim() || t("Image");
   return (
     <img
       src={state.url}
       alt={alt ?? ""}
       title={label}
       draggable={false}
-      className="inbox-media my-2 inline-block max-h-[28rem] w-full max-w-xl cursor-zoom-in rounded-[10px] border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) object-contain"
+      className="inbox-media my-2 inline-block max-h-[28rem] w-full max-w-xl cursor-zoom-in rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-transparent object-contain"
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        void openUrl(src);
+        openUrlSafely(src);
       }}
     />
   );
@@ -91,15 +97,8 @@ export function InboxMedia({ src, alt }: Props) {
 function MediaFallback({ src, alt }: { src: string; alt?: string }) {
   const label = alt?.trim() || src;
   return (
-    <a
-      href={src}
-      className="text-(--ui-tone-info-fg) hover:text-(--ui-tone-info-fg) hover:underline"
-      onClick={(event) => {
-        event.preventDefault();
-        void openUrl(src);
-      }}
-    >
+    <Button variant="link" onClick={() => openUrlSafely(src)}>
       {label}
-    </a>
+    </Button>
   );
 }

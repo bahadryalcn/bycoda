@@ -18,7 +18,7 @@ for (const width of [390, 1000])
       "true",
     );
     await page.getByRole("button", { name: "Model for UI task", exact: true }).click();
-    const search = page.getByRole("textbox", { name: "Search assignment models", exact: true });
+    const search = page.getByRole("combobox", { name: "Search assignment models", exact: true });
     await expect(search).toBeFocused();
     await search.press("Enter");
     await page.getByRole("menuitemradio", { name: "Extra High", exact: true }).click();

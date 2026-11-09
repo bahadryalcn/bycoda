@@ -1,13 +1,15 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Alert } from "../../../shared/ui/Alert";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { t, useLocale } from "../../../shared/i18n";
-import { useContext, useEffect, useState } from "react";
-import { RevealedSetting } from "../../settings/ui/settingsControls";
+import { useEffect, useRef, useState } from "react";
 import "./UsagePage.css";
-import { RefreshCw } from "../../../shared/ui/icons";
+import { RefreshCw, MoreHorizontal } from "../../../shared/ui/icons";
 import { WORKSPACE_REFRESH_EVENT } from "../../../app/shell/WorkspaceControls";
 import {
   providerAccounts,
+  PROVIDER_ACCOUNT_COLORS,
+  setProviderAccountColor,
   providerAccountColorValue,
   type ProviderAccount,
   subscribeProviderAccounts,
@@ -21,7 +23,7 @@ import {
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { UsageOverview } from "./UsageOverview";
 import { UsageDisplaySettings } from "./UsageDisplaySettings";
-import { AccountColorPicker } from "../../providers/ui/AccountColorPicker";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { useShowRemainingUsage } from "../../settings/model/displayPrefs";
 import {
   identityKey,
@@ -29,12 +31,13 @@ import {
   type ProviderAccountIdentity,
 } from "../../providers/model/providerAccountIdentity";
 import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubtitle";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import { Timestamp } from "../../../shared/ui/Timestamp";
+import { Button } from "../../../shared/ui/Button";
 import { UsageBudgets } from "./UsageBudgets";
+import { UsageActiveTime } from "./UsageActiveTime";
 
 export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
   useLocale();
-  const revealed = useContext(RevealedSetting);
   const [version, setVersion] = useState(0);
   const [refresh, setRefresh] = useState(0);
   const accounts = (["codex", "claude"] as const).flatMap(providerAccounts);
@@ -52,6 +55,7 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
       data-accounts-version={version}
       className="usage-page"
     >
+      {limitsOnly ? null : <UsageActiveTime />}
       <UsageOverview
         limitsOnly={limitsOnly}
         refresh={refresh}
@@ -59,14 +63,17 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
           <div className="usage-limits-content">
             <div className="usage-toolbar">
               <h2>{t("Provider account limit")}</h2>
-              <SecondaryButton
-                aria-label={t("Refresh usage")}
-                title={t("Refresh usage")}
+              <UsageDisplaySettings />
+              <Button
+                className="shrink-0"
+                variant="ghost"
+                iconOnly
+                label={t("Refresh usage")}
+                tooltip={t("Refresh usage")}
                 onClick={() => setRefresh((v) => v + 1)}
               >
-                <RefreshCw className="size-3.5" />
-                {t("Refresh usage")}
-              </SecondaryButton>
+                <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
+              </Button>
             </div>
             <div className="usage-accounts">
               {accounts
@@ -86,19 +93,12 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
                   />
                 ))}
               {!accounts.length ? (
-                <p className="text-xs text-content/60">
+                <p className="text-ui-caption text-(--ui-text-secondary)">
                   {t("No accounts on this machine. Add an account in Providers settings.")}
                 </p>
               ) : null}
             </div>
             <UsageBudgets refresh={refresh} />
-            <details
-              className="usage-display-preferences"
-              open={revealed === "show-remaining-usage" || undefined}
-            >
-              <summary>{t("Display preferences")}</summary>
-              <UsageDisplaySettings />
-            </details>
           </div>
         )}
       />
@@ -117,7 +117,9 @@ function AccountLimits({
   refresh: number;
   identity?: ProviderAccountIdentity | null;
 }) {
-  useLocale();
+  const locale = useLocale();
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const { id: accountId, label } = account;
   const showRemaining = useShowRemainingUsage();
   const color = providerAccountColorValue(account);
@@ -141,12 +143,10 @@ function AccountLimits({
     >
       <div className="usage-account-heading">
         <div className="min-w-0">
-          <div className="usage-account-provider">
-            <HarnessIcon harness={provider} className="size-3.5" />
-            {provider === "codex" ? t("Codex") : t("Claude")}
-          </div>
           <h3>
-            {label}
+            <HarnessIcon harness={provider} className="icon-sm shrink-0" />
+            <span className="sr-only">{provider === "codex" ? t("Codex") : t("Claude")}</span>
+            <span className="min-w-0 truncate">{label}</span>
             {account.isDefault && label !== t("Default account") ? (
               <span className="usage-account-default">{t("Default account")}</span>
             ) : null}
@@ -158,10 +158,64 @@ function AccountLimits({
                 ? t("Loading account identity…")
                 : t("Account identity unavailable")
             }
-            className="text-xs text-content/60"
+            className="text-ui-caption text-(--ui-text-secondary)"
           />
         </div>
-        <AccountColorPicker account={account} />
+        {limits.updatedAt > 0 ? (
+          <span className="usage-account-observed">
+            <span className="sr-only">{t("Last observed")}: </span>
+            <Timestamp
+              value={limits.updatedAt}
+              format="relative"
+              relativeStyle="short"
+              title={`${t("Last observed")}: ${new Date(limits.updatedAt).toLocaleString(locale)}`}
+            />
+          </span>
+        ) : null}
+        <Button
+          ref={menuButton}
+          variant="ghost"
+          iconOnly
+          label={t("Account actions")}
+          tooltip={t("Account actions")}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen(!menuOpen)}
+        >
+          <MoreHorizontal aria-hidden className="icon-sm" />
+        </Button>
+        {menuOpen ? (
+          <DropdownMenu
+            anchor={menuButton}
+            label={t("Account color")}
+            items={[
+              {
+                kind: "group",
+                id: "color",
+                label: t("Color"),
+                items: PROVIDER_ACCOUNT_COLORS.map((option) => ({
+                  kind: "item" as const,
+                  id: option.id,
+                  label: t(option.label),
+                  checked: account.color === option.id,
+                  icon: (
+                    <span className="size-2.5 rounded-full" style={{ background: option.value }} />
+                  ),
+                })),
+              },
+              { kind: "item", id: "default", label: t("Default"), checked: !account.color },
+            ]}
+            onPick={(id) => {
+              setProviderAccountColor(
+                account.provider,
+                account.id,
+                PROVIDER_ACCOUNT_COLORS.find((option) => option.id === id)?.id,
+              );
+              setMenuOpen(false);
+            }}
+            onClose={() => setMenuOpen(false)}
+          />
+        ) : null}
       </div>
       <div className="usage-quota-list">
         {windows.map(({ kind, window }) => {
@@ -171,7 +225,7 @@ function AccountLimits({
           return (
             <div key={kind} className="usage-quota">
               <div className="usage-quota-heading">
-                <h4 className="text-xs font-medium">
+                <h4>
                   {t(
                     kind === "session" && window.windowMinutes === 300
                       ? "5 hours"
@@ -181,48 +235,55 @@ function AccountLimits({
                           ? "Weekly"
                           : "Monthly",
                   )}
+                  <span className="usage-quota-reset">
+                    {window.resetsAt == null
+                      ? t("Reset time unavailable")
+                      : formatResetCountdown(window.resetsAt - now)}
+                  </span>
                 </h4>
                 <p>
                   <strong>{Math.round(shown)}%</strong>
                   <span>{showRemaining ? t("left") : t("used")}</span>
                 </p>
               </div>
-              <div>
-                <UsageMeter
-                  label={`${label} ${kind} ${direction}`}
-                  segments={[{ id: "used", label: t("used"), value: used }]}
-                  limit={100}
-                  unit="%"
-                  decimals={0}
-                  compact
-                  showLegend={false}
-                  showRemaining={showRemaining}
-                  color={color}
-                />
-                <div className="usage-quota-reset">
-                  <span>
-                    {window.resetsAt == null
-                      ? t("Reset time unavailable")
-                      : formatResetCountdown(window.resetsAt - now)}
-                  </span>
-                </div>
-              </div>
+              <UsageMeter
+                label={`${label} ${kind} ${direction}`}
+                segments={[{ id: "used", label: t("used"), value: used }]}
+                limit={100}
+                unit="%"
+                decimals={0}
+                compact
+                showLegend={false}
+                showRemaining={showRemaining}
+                color={color}
+              />
             </div>
           );
         })}
       </div>
       {limits.error ? (
-        <Alert tone="danger" role="alert">
-          {label}: {limits.error}
-        </Alert>
+        <div className="usage-account-error">
+          <Alert inline tone="danger">
+            {limits.error}
+          </Alert>
+          <Button
+            size="sm"
+            variant="ghost"
+            label={`${t("Retry")}: ${label}`}
+            loading={limits.status === "fetching"}
+            onClick={() => void loadRateLimits(provider, accountId, true)}
+          >
+            {t("Retry")}
+          </Button>
+        </div>
       ) : null}
       {windows.length > 0 && (limits.status === "fetching" || limits.status === "idle") ? (
-        <Alert tone="info" role="status">
+        <LoadingText presentation="text" className="text-ui-caption text-(--ui-text-secondary)">
           {t("Refreshing account limits… Previous limits remain visible.")}
-        </Alert>
+        </LoadingText>
       ) : null}
       {!windows.length && !limits.error ? (
-        <p className="rounded-xl border border-stroke p-4 text-xs text-content/50">
+        <p className="text-ui-caption text-(--ui-text-muted)">
           {label}:{" "}
           {limits.status === "fetching" || limits.status === "idle"
             ? t("Loading account limits…")

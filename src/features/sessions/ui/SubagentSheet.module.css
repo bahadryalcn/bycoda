@@ -14,10 +14,25 @@
 }
 
 .composer .message {
-  min-block-size: 3lh;
+  min-block-size: 2lh;
   max-block-size: 8rem;
 }
 
 .composer > * {
   flex-shrink: 0;
+}
+
+/* Request forms and the message draft share one bounded scroll owner. */
+.requests {
+  min-block-size: 0;
+  max-block-size: 55%;
+  flex-shrink: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.requests .composer {
+  max-block-size: none;
+  overflow: visible;
 }

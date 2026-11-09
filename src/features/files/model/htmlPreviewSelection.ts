@@ -1,4 +1,4 @@
-import type { TranscriptSelection } from "../../sessions/model/transcriptSelection";
+import type { TranscriptSelection } from "../../sessions";
 
 /** Runs inside the opaque sandbox. Messages only offer text; a parent UI click adds it. */
 export function withHtmlSelectionBridge(source: string, channel: string): string {

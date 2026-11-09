@@ -52,6 +52,8 @@ test("pointer drag moves backlog issues to the active sprint and back", async ({
   await page.getByRole("button", { name: "Backlog & sprints", exact: true }).click();
   const backlog = page.getByRole("region", { name: "Backlog", exact: true });
   const active = page.getByRole("region", { name: "Sprint 21", exact: true });
+  // Only the first group opens by default; expand Backlog to load and show its issues.
+  await backlog.getByRole("button", { name: "Backlog", exact: true }).click();
   await expect(backlog.locator(".jira-board-card")).toHaveCount(2);
   await drag(
     page,
@@ -75,7 +77,10 @@ test("failed moves preserve the original card and remain visible", async ({ page
   );
   const source = page.locator(".jira-board-card").filter({ hasText: "ENG-1" });
   await source.getByRole("button", { name: "Move ENG-1" }).click();
-  await source.getByRole("button", { name: "In Progress", exact: true }).click();
+  await page
+    .getByRole("menu", { name: "Move ENG-1" })
+    .getByRole("menuitem", { name: "In Progress", exact: true })
+    .click();
   await expect(page.getByRole("alert")).toContainText("Jira permission denied");
   await expect(
     page
@@ -152,14 +157,15 @@ for (const variant of [
       document.documentElement.dataset.theme = theme;
       document.documentElement.classList.toggle("theme-light", theme === "light");
     }, variant.theme);
-    const input = page.getByRole("searchbox", { name: "Filter issues" });
+    const input = page.getByRole("searchbox", { name: "Filter loaded issues" });
     await input.focus();
     await input.pressSequentially("ENG-1");
     await expect(page.locator(".jira-board-card")).toHaveCount(1);
     const clear = page.getByRole("button", { name: "Clear search", exact: true });
     await input.press("Tab");
     await expect(clear).toBeFocused();
-    const field = await input.boundingBox(),
+    // The shared field frame owns the boundary; the clear action is its end adornment.
+    const field = await input.locator("xpath=ancestor::*[@data-field-control][1]").boundingBox(),
       button = await clear.boundingBox();
     expect(field).toBeTruthy();
     expect(field!.width).toBeGreaterThanOrEqual(140);
@@ -173,5 +179,95 @@ for (const variant of [
     await page.screenshot({
       path: `temp/verification/2026-10-16-ui-system/W8-SEARCH-CLEANUP-jira-${test.info().project.name}-${variant.theme}.png`,
     });
+  });
+}
+
+const shotDir = "temp/verification/vis-dnd-3";
+for (const light of [false, true]) {
+  const theme = light ? "light" : "dark";
+  test(`drag shows one badge with the issue, a column mark, a rank line, and cancels cleanly (${theme})`, async ({
+    page,
+  }) => {
+    test.skip(
+      test.info().project.name !== "chromium",
+      "Screenshots are Chromium fixture evidence.",
+    );
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      light,
+    );
+    const badge = page.locator(".pointer-drop-hint");
+    const marks = page.locator("[data-drop-indicator]");
+    const working = page.getByRole("region", { name: "In Progress", exact: true });
+    const source = page.locator(".jira-board-card").filter({ hasText: "ENG-1" });
+    const from = (await source.boundingBox())!;
+    const column = (await working.boundingBox())!;
+    await page.mouse.move(from.x + 30, from.y + 15);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 45, from.y + 25, { steps: 3 });
+    // Empty space in another column: the whole column receives the issue.
+    await page.mouse.move(column.x + column.width / 2, column.y + column.height - 40, {
+      steps: 12,
+    });
+    await expect(badge).toHaveCount(1);
+    await expect(badge).toContainText("ENG-1");
+    await expect(badge).toContainText("Move to In Progress");
+    await expect(working).toHaveAttribute("data-drop-indicator", "inside");
+    await expect(marks).toHaveCount(1);
+    await page.screenshot({ path: `${shotDir}/jira-drag-column-${theme}-1280x800.png` });
+    // Over a card of the same column: the rank line lands before that card.
+    const sibling = page.locator(".jira-board-card").filter({ hasText: "ENG-3" });
+    const siblingBox = (await sibling.boundingBox())!;
+    await page.mouse.move(siblingBox.x + 60, siblingBox.y + siblingBox.height / 2, { steps: 12 });
+    await expect(badge).toContainText("Reorder in To Do");
+    await expect(sibling).toHaveAttribute("data-drop-indicator", "before");
+    await expect(marks).toHaveCount(1);
+    await page.screenshot({ path: `${shotDir}/jira-drag-rank-${theme}-1280x800.png` });
+    await page.keyboard.press("Escape");
+    await expect(badge).toHaveCount(0);
+    await expect(marks).toHaveCount(0);
+    expect(
+      await page.evaluate(() => document.documentElement.classList.contains("is-grabbing")),
+    ).toBe(false);
+    await page.mouse.up();
+    const calls = await page.evaluate(() =>
+      (window as unknown as { jiraFixtureCalls: { command: string }[] }).jiraFixtureCalls.map(
+        (call) => call.command,
+      ),
+    );
+    expect(calls).not.toContain("jira_issue_transition");
+    expect(calls).not.toContain("jira_board_move");
+    await expect(page.locator(".jira-board-card")).toHaveCount(3);
+  });
+
+  test(`backlog and sprint drag marks the receiving group (${theme})`, async ({ page }) => {
+    test.skip(
+      test.info().project.name !== "chromium",
+      "Screenshots are Chromium fixture evidence.",
+    );
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      light,
+    );
+    await page.getByRole("button", { name: "Backlog & sprints", exact: true }).click();
+    const backlog = page.getByRole("region", { name: "Backlog", exact: true });
+    const active = page.getByRole("region", { name: "Sprint 21", exact: true });
+    await backlog.getByRole("button", { name: "Backlog", exact: true }).click();
+    await expect(backlog.locator(".jira-board-card")).toHaveCount(2);
+    const card = backlog.locator(".jira-board-card").filter({ hasText: "ENG-1" });
+    const from = (await card.boundingBox())!;
+    const to = (await active.locator("header").boundingBox())!;
+    await page.mouse.move(from.x + 30, from.y + 15);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 45, from.y + 25, { steps: 3 });
+    await page.mouse.move(to.x + 40, to.y + 10, { steps: 12 });
+    await expect(page.locator(".pointer-drop-hint")).toContainText("Move to Sprint 21");
+    await expect(active).toHaveAttribute("data-drop-indicator", "inside");
+    await page.screenshot({ path: `${shotDir}/jira-drag-sprint-${theme}-1280x800.png` });
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-drop-indicator]")).toHaveCount(0);
+    await page.mouse.up();
   });
 }

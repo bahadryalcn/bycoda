@@ -3,6 +3,8 @@ import type {
   BrowserAnnotation,
   BrowserAnnotationAttachment,
 } from "../../shared/lib/browserAnnotation";
+import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionList";
+import { Disclosure } from "../../shared/ui/Disclosure";
 import "./browser-annotation.css";
 
 export function BrowserAnnotationDetails({
@@ -20,43 +22,57 @@ export function BrowserAnnotationDetails({
         )}
       </p>
       {"comment" in annotation && annotation.comment ? <p>{annotation.comment}</p> : null}
-      <dl>
-        <dt>{t("Page URL")}</dt>
-        <dd>{annotation.pageUrl}</dd>
-        <dt>{t("Viewport")}</dt>
-        <dd>
+      <DescriptionList size="sm">
+        <DescriptionItem term={t("Page URL")}>{annotation.pageUrl}</DescriptionItem>
+        <DescriptionItem term={t("Viewport")}>
           {viewport.width} × {viewport.height} · {t("Scroll")}: {viewport.scrollX},{" "}
           {viewport.scrollY}
-        </dd>
-        <dt>{t("Selector")}</dt>
-        <dd>
+        </DescriptionItem>
+        <DescriptionItem term={t("Selector")}>
           <code>{element.selector}</code>
-        </dd>
-        <dt>{t("DOM ancestry")}</dt>
-        <dd>
+        </DescriptionItem>
+        {element.role ? <DescriptionItem term={t("Role")}>{element.role}</DescriptionItem> : null}
+        {element.layout ? (
+          <DescriptionItem term={t("Layout")}>
+            <code>{element.layout.display}</code>
+          </DescriptionItem>
+        ) : null}
+        {element.interaction ? (
+          <>
+            <DescriptionItem term={t("Disabled")}>
+              {t(element.interaction.disabled ? "Yes" : "No")}
+            </DescriptionItem>
+            <DescriptionItem term={t("Keyboard focusable")}>
+              {t(element.interaction.focusable ? "Yes" : "No")}
+            </DescriptionItem>
+          </>
+        ) : null}
+        <DescriptionItem term={t("DOM ancestry")}>
           <code>{element.path}</code>
-        </dd>
-        <dt>{t("Bounds")}</dt>
-        <dd>
+        </DescriptionItem>
+        <DescriptionItem term={t("Bounds")}>
           x: {element.bounds.x}, y: {element.bounds.y} · {element.bounds.width} ×{" "}
           {element.bounds.height}
-        </dd>
-        <dt>{t("Visible text")}</dt>
-        <dd>
+        </DescriptionItem>
+        <DescriptionItem term={t("Visible text")}>
           <pre>{element.text || t("No visible text")}</pre>
-        </dd>
-      </dl>
-      <details>
-        <summary>{t("Computed styles")}</summary>
-        <dl>
+        </DescriptionItem>
+      </DescriptionList>
+      {element.boxModelLimitation ? (
+        <p className="host-tool-muted">{t(element.boxModelLimitation)}</p>
+      ) : null}
+      {element.layout?.limitation ? (
+        <p className="host-tool-muted">{t(element.layout.limitation)}</p>
+      ) : null}
+      <Disclosure summary={t("Computed styles")} size="sm">
+        <DescriptionList size="sm">
           {Object.entries(element.computedStyle).map(([property, value]) => (
-            <div key={property}>
-              <dt>{property}</dt>
-              <dd>{value}</dd>
-            </div>
+            <DescriptionItem key={property} term={property}>
+              {value}
+            </DescriptionItem>
           ))}
-        </dl>
-      </details>
+        </DescriptionList>
+      </Disclosure>
       <p className="host-tool-muted">
         {t("Iframe and shadow DOM content cannot be inspected and is masked in the attachment.")}
       </p>

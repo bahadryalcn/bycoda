@@ -4,7 +4,6 @@ import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   AppWindow,
-  ChevronRight,
   ImagePlus,
   SquarePlus,
   Trash2,
@@ -12,28 +11,25 @@ import {
   X,
   type IconComponent,
 } from "../../../shared/ui/icons";
-import {
-  Fragment,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { normalizeHex } from "../../../shared/lib/colorUtils";
 import { projectKey } from "../../../shared/lib/paths";
 import { clearProjectLogo, pickAndSetProjectLogo } from "../../projects/model/projectLogos";
 import { TAB_GROUP_COLORS } from "../model/tabGroups";
 import { ColorPickerPopover, ColorSwatchRow } from "../../../shared/ui/ColorPickerPopover";
-import { Popover } from "../../../shared/ui/Popover";
-import { MenuRow as SharedMenuRow, menuRowClassName } from "../../../shared/ui/MenuRow";
+import {
+  DropdownMenu,
+  type DropdownMenuAction,
+  type DropdownMenuItem,
+} from "../../../shared/ui/DropdownMenu";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { MenuRow as SharedMenuRow } from "../../../shared/ui/MenuRow";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectIconPicker } from "../../projects/ui/ProjectIconPicker";
 import { RailBackgroundControls } from "../../projects/ui/RailBackgroundControls";
 import type { RailBackgrounds } from "../model/tabGroups";
 import { MOD } from "../../../platform/tauri/platform";
-import { ExplorerMenu, type ExplorerMenuItem } from "../../files/ui/ExplorerMenu";
+import type { ContextMenuItem } from "../../../shared/ui/ContextMenu";
 
 export type TabGroupMenuAction =
   | "new-tab"
@@ -50,7 +46,7 @@ export type TabGroupMenuExtraItem = {
   danger?: boolean;
   sepBefore?: boolean;
   disabled?: boolean;
-  submenu?: ExplorerMenuItem[];
+  submenu?: ContextMenuItem[];
 };
 
 type Props = {
@@ -95,6 +91,7 @@ type Props = {
 };
 
 const MENU_WIDTH = 260;
+const APPEARANCE_WIDTH = 296;
 
 type MenuItem = {
   id: string;
@@ -178,26 +175,6 @@ export function TabGroupMenu({
   appearanceItems,
 }: Props) {
   useLocale();
-  const menuId = useId();
-  const [submenu, setSubmenu] = useState<{
-    item: TabGroupMenuExtraItem;
-    anchor: HTMLButtonElement;
-  } | null>(null);
-  const submenuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelSubmenuClose = () => {
-    if (submenuCloseTimer.current != null) clearTimeout(submenuCloseTimer.current);
-    submenuCloseTimer.current = null;
-  };
-  const closeSubmenu = () => {
-    cancelSubmenuClose();
-    submenu?.anchor.focus();
-    setSubmenu(null);
-  };
-  const scheduleSubmenuClose = () => {
-    cancelSubmenuClose();
-    if (submenu) submenuCloseTimer.current = setTimeout(closeSubmenu, 180);
-  };
-  useEffect(() => cancelSubmenuClose, [submenu]);
   const pickExtra = (id: string) => {
     if (onExtraPick?.(id) !== false) onClose();
   };
@@ -207,11 +184,16 @@ export function TabGroupMenu({
   const [logoError, setLogoError] = useState<string | null>(null);
   const [logoBusy, setLogoBusy] = useState(false);
   const logoOperation = useRef(false);
-  const [appearanceAnchor, setAppearanceAnchor] = useState<HTMLButtonElement | null>(null);
 
   useEffect(() => {
-    input.current?.focus();
-    input.current?.select();
+    const focusName = () => {
+      input.current?.focus();
+      input.current?.select();
+    };
+    focusName();
+    // The menu moves focus to its first row once placed; the name field takes it back after that.
+    const frame = requestAnimationFrame(focusName);
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   const trimmedName = name.trim();
@@ -221,29 +203,6 @@ export function TabGroupMenu({
     if (nameError) return false;
     onRename(groupId, trimmedName);
     return true;
-  };
-
-  const onMenuKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Enter" && e.target === input.current) {
-      e.preventDefault();
-      if (commitName()) onClose();
-    }
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
-      const rows = [
-        ...e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'),
-      ];
-      if (!rows.length) return;
-      e.preventDefault();
-      const index = rows.indexOf(document.activeElement as HTMLButtonElement);
-      const next =
-        e.key === "Home"
-          ? 0
-          : e.key === "End"
-            ? rows.length - 1
-            : (index + (e.key === "ArrowUp" ? -1 : 1) + rows.length) % rows.length;
-      rows[next]?.focus();
-    }
   };
 
   const appearance = (
@@ -256,7 +215,6 @@ export function TabGroupMenu({
             variant="ghost"
             motion="none"
             type="button"
-            title={logoPath ? t("Change project logo") : t("Add project logo")}
             aria-label={logoPath ? t("Change project logo") : t("Add project logo")}
             loading={logoBusy}
             onMouseDown={(e) => e.preventDefault()}
@@ -268,7 +226,10 @@ export function TabGroupMenu({
               void (async () => {
                 try {
                   const path = await pickAndSetProjectLogo(logoProject);
-                  if (path) { onLogoChange(); onClose(); }
+                  if (path) {
+                    onLogoChange();
+                    onClose();
+                  }
                 } catch (error) {
                   setLogoError(error instanceof Error ? error.message : String(error));
                 } finally {
@@ -288,8 +249,8 @@ export function TabGroupMenu({
             />
           </Button>
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] text-content/50">{t("Project logo")}</p>
-            <p className="truncate text-[12px] text-content/70">
+            <p className="text-ui-caption text-(--ui-text-muted)">{t("Project logo")}</p>
+            <p className="truncate text-ui-secondary text-(--ui-text-secondary)">
               {logoPath ? t("Shown in tabs and composer") : t("Optional — replaces folder icon")}
             </p>
           </div>
@@ -300,7 +261,6 @@ export function TabGroupMenu({
               variant="ghost"
               motion="none"
               type="button"
-              title={t("Remove project logo")}
               aria-label={t("Remove project logo")}
               disabled={logoBusy}
               onMouseDown={(e) => e.preventDefault()}
@@ -309,20 +269,28 @@ export function TabGroupMenu({
                 logoOperation.current = true;
                 setLogoBusy(true);
                 setLogoError(null);
-                void clearProjectLogo(projectKey(logoProject)).then(onLogoChange, (error) => {
-                  setLogoError(error instanceof Error ? error.message : String(error));
-                }).finally(() => { logoOperation.current = false; setLogoBusy(false); });
+                void clearProjectLogo(projectKey(logoProject))
+                  .then(onLogoChange, (error) => {
+                    setLogoError(error instanceof Error ? error.message : String(error));
+                  })
+                  .finally(() => {
+                    logoOperation.current = false;
+                    setLogoBusy(false);
+                  });
               }}
               className="grid shrink-0 place-items-center"
             >
-              <Trash2 className="size-3.5" strokeWidth={1.75} />
+              <Trash2 className="icon-sm" strokeWidth={1.75} />
             </Button>
           ) : null}
         </div>
       ) : null}
-      {logoError ? <Alert tone="danger" role="alert">{logoError}</Alert> : null}
+      {logoError ? <Alert tone="danger">{logoError}</Alert> : null}
 
-      <div className="mb-2">
+      <SectionLabel as="div" className="mb-1.5">
+        {t("Color")}
+      </SectionLabel>
+      <div className="mb-3">
         <ColorSwatchRow
           colors={TAB_GROUP_COLORS}
           colorIndex={colorIndex}
@@ -337,10 +305,12 @@ export function TabGroupMenu({
       </div>
 
       {customPickerOpen ? (
-        <ColorPickerPopover
-          value={customColor ?? normalizeHex(currentColor)}
-          onChange={(color) => onCustomColorChange(groupId, color)}
-        />
+        <div className="mb-3">
+          <ColorPickerPopover
+            value={customColor ?? normalizeHex(currentColor)}
+            onChange={(color) => onCustomColorChange(groupId, color)}
+          />
+        </div>
       ) : null}
 
       <ProjectIconPicker
@@ -360,7 +330,7 @@ export function TabGroupMenu({
       ) : null}
       {appearanceItems?.length ? (
         <>
-          <div role="separator" className="my-1 h-px bg-content/10" />
+          <div role="separator" className="my-1 h-px bg-stroke" />
           {appearanceItems.map((item) => (
             <MenuRow key={item.id} item={item} onPick={() => pickExtra(item.id)} />
           ))}
@@ -369,242 +339,119 @@ export function TabGroupMenu({
     </>
   );
 
-  return (
-    <>
-      <Popover
-        anchor={{ x, y }}
-        side="right"
-        gap={0}
-        width={MENU_WIDTH}
-        constrainHeight
-        onDismiss={(reason) => {
-          if (reason === "escape" && appearanceAnchor) {
-            appearanceAnchor.focus();
-            setAppearanceAnchor(null);
-          } else if (reason === "escape" && submenu) closeSubmenu();
-          else onClose();
-        }}
-        ignore={`[data-menu-owner="${menuId}"]`}
-        data-menu-owner={menuId}
-        role="menu"
-        tabIndex={-1}
-        aria-label={ariaLabel}
-        onKeyDown={onMenuKey}
-        onContextMenu={(e) => e.preventDefault()}
-        onMouseEnter={cancelSubmenuClose}
-        onMouseLeave={scheduleSubmenuClose}
-        className="bycoda-arc overflow-y-auto overscroll-contain p-2"
-      >
-        {leadingAction ? (
-          <>
-            <MenuRow
-              item={leadingAction}
-              onHover={() => {
-                setSubmenu(null);
-                setAppearanceAnchor(null);
-              }}
-              onPick={() => pickExtra(leadingAction.id)}
-            />
-            <div role="separator" className="my-1 h-px bg-content/10" />
-          </>
-        ) : null}
-        <TextField
-          fieldClassName="min-w-0 flex-1"
-          hideLabel
-          label={t("Group name")}
-          ref={input}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={() => void commitName()}
-          aria-label={t("Group name")}
-          aria-invalid={nameError ? true : undefined}
-          className="mb-2 w-full"
-        />
-        {nameError ? (
-          <Alert tone="danger" role="alert">
-            {nameError}
-          </Alert>
-        ) : null}
-
-        {compactAppearance ? (
-          <MenuRow
-            item={{ id: "appearance", label: t("Appearance"), icon: ImagePlus, submenu: [] }}
-            expanded={appearanceAnchor != null}
-            onHover={(anchor) => {
-              setSubmenu(null);
-              setAppearanceAnchor(anchor);
+  const action = (
+    item: Pick<
+      TabGroupMenuExtraItem,
+      "id" | "label" | "icon" | "description" | "danger" | "disabled"
+    >,
+    extra: Partial<DropdownMenuAction> = {},
+  ): DropdownMenuAction => {
+    const Icon = item.icon;
+    return {
+      kind: "item",
+      id: item.id,
+      label: item.label,
+      description: item.description,
+      danger: item.danger,
+      disabled: item.disabled,
+      icon: <Icon className="icon-sm" strokeWidth={1.75} />,
+      ...extra,
+    };
+  };
+  const SEP: DropdownMenuItem = { kind: "sep" };
+  const items: DropdownMenuItem[] = [
+    ...(leadingAction ? [action(leadingAction), SEP] : []),
+    {
+      kind: "content",
+      id: "name",
+      node: (
+        <>
+          <TextField
+            fieldClassName="min-w-0 flex-1"
+            hideLabel
+            label={t("Group name")}
+            ref={input}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={() => void commitName()}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              if (commitName()) onClose();
             }}
-            onPick={(anchor) => {
-              setSubmenu(null);
-              setAppearanceAnchor(anchor);
-            }}
+            aria-label={t("Group name")}
+            aria-invalid={nameError ? true : undefined}
+            className="mb-2 w-full"
           />
-        ) : (
-          appearance
-        )}
-
-        {showActions ? (
-          <>
-            <div className="my-1 h-px bg-content/10" />
-
-            {ITEMS.slice(0, 2).map((item) => (
-              <MenuRow
-                key={item.id}
-                item={item}
-                onHover={() => setSubmenu(null)}
-                onPick={() => onPick(item.id as TabGroupMenuAction)}
-              />
-            ))}
-
-            <div className="my-1 h-px bg-content/10" />
-
-            {ITEMS.slice(2, 4).map((item) => (
-              <MenuRow
-                key={item.id}
-                item={item}
-                onHover={() => setSubmenu(null)}
-                onPick={() => onPick(item.id as TabGroupMenuAction)}
-              />
-            ))}
-
-            <div className="my-1 h-px bg-content/10" />
-
-            {ITEMS.slice(4).map((item) => (
-              <MenuRow
-                key={item.id}
-                item={item}
-                onHover={() => setSubmenu(null)}
-                onPick={() => onPick(item.id as TabGroupMenuAction)}
-              />
-            ))}
-          </>
-        ) : null}
-
-        {extraItems && extraItems.length > 0 ? (
-          <>
-            <div className="my-1 h-px bg-content/10" />
-            {extraItems.map((item) => (
-              <Fragment key={item.id}>
-                {item.sepBefore ? (
-                  <div role="separator" className="my-1 h-px bg-content/10" />
-                ) : null}
-                <MenuRow
-                  item={item}
-                  expanded={submenu?.item.id === item.id}
-                  onHover={(anchor) => {
-                    setAppearanceAnchor(null);
-                    setSubmenu(item.submenu && !item.disabled ? { item, anchor } : null);
-                  }}
-                  onPick={(anchor) => {
-                    setAppearanceAnchor(null);
-                    if (item.submenu) setSubmenu({ item, anchor });
-                    else pickExtra(item.id);
-                  }}
-                />
-              </Fragment>
-            ))}
-          </>
-        ) : null}
-        {footer}
-      </Popover>
-      {compactAppearance && appearanceAnchor ? (
-        <Popover
-          anchor={appearanceAnchor}
-          side="right"
-          align="start"
-          gap={4}
-          width={MENU_WIDTH}
-          constrainHeight
-          role="dialog"
-          tabIndex={-1}
-          autoFocus
-          aria-label={t("Appearance")}
-          data-menu-owner={menuId}
-          ignore={`[data-menu-owner="${menuId}"]`}
-          onDismiss={(reason) => {
-            if (reason === "outside") onClose();
-            else {
-              appearanceAnchor.focus();
-              setAppearanceAnchor(null);
-            }
-          }}
-          className="bycoda-arc overflow-y-auto overscroll-contain p-2"
-        >
-          {appearance}
-        </Popover>
-      ) : null}
-      {submenu?.item.submenu ? (
-        <ExplorerMenu
-          className="bycoda-arc"
-          rowClassName={menuRowClassName}
-          anchor={submenu.anchor}
-          ownerId={menuId}
-          ariaLabel={submenu.item.label}
-          items={submenu.item.submenu}
-          onPick={pickExtra}
-          onBack={closeSubmenu}
-          onClose={closeSubmenu}
-          onMouseEnter={cancelSubmenuClose}
-          onMouseLeave={scheduleSubmenuClose}
-        />
-      ) : null}
-    </>
+          {nameError ? <Alert tone="danger">{nameError}</Alert> : null}
+        </>
+      ),
+    },
+    compactAppearance
+      ? action(
+          { id: "appearance", label: t("Appearance"), icon: ImagePlus },
+          { panel: appearance, submenuWidth: APPEARANCE_WIDTH },
+        )
+      : { kind: "content", id: "appearance-form", node: appearance },
+    ...(showActions
+      ? [
+          SEP,
+          ...ITEMS.slice(0, 2).map((item) => action(item, { shortcut: item.shortcut })),
+          SEP,
+          ...ITEMS.slice(2, 4).map((item) => action(item, { shortcut: item.shortcut })),
+          SEP,
+          ...ITEMS.slice(4).map((item) => action(item, { shortcut: item.shortcut })),
+        ]
+      : []),
+    ...(extraItems?.length
+      ? [
+          SEP,
+          ...extraItems.flatMap((item): DropdownMenuItem[] => [
+            ...(item.sepBefore ? [SEP] : []),
+            action(item, item.submenu ? { submenu: item.submenu } : {}),
+          ]),
+        ]
+      : []),
+    ...(footer ? [{ kind: "content", id: "footer", node: footer } as const] : []),
+  ];
+  const standard = new Set(ITEMS.map((item) => item.id));
+  return (
+    <DropdownMenu
+      anchor={{ x, y }}
+      side="right"
+      align="start"
+      gap={0}
+      width={MENU_WIDTH}
+      label={ariaLabel}
+      items={items}
+      // Standard actions are closed by the caller; extras close unless onExtraPick vetoes.
+      closeOnSelect={false}
+      onPick={(id) => (standard.has(id) ? onPick(id as TabGroupMenuAction) : pickExtra(id))}
+      onClose={onClose}
+    />
   );
 }
 
 function MenuRow({
   item,
   onPick,
-  onHover,
-  expanded,
 }: {
-  item: MenuItem & Pick<TabGroupMenuExtraItem, "disabled" | "submenu" | "description">;
-  onPick: (anchor: HTMLButtonElement) => void;
-  onHover?: (anchor: HTMLButtonElement) => void;
-  expanded?: boolean;
+  item: Pick<TabGroupMenuExtraItem, "id" | "label" | "icon" | "disabled" | "danger">;
+  onPick: () => void;
 }) {
   useLocale();
   const Icon = item.icon;
   return (
     <SharedMenuRow
       destructive={item.danger}
-      branchWidth={item.id === "appearance" ? MENU_WIDTH : 228}
       type="button"
       role="menuitem"
       disabled={item.disabled}
-      aria-haspopup={item.submenu ? "menu" : undefined}
-      aria-expanded={item.submenu ? expanded : undefined}
-      aria-label={item.description ? item.label : undefined}
-      aria-description={item.description}
       onMouseDown={(e) => e.preventDefault()}
-      onMouseEnter={(e) => onHover?.(e.currentTarget)}
-      onClick={(e) => onPick(e.currentTarget)}
-      onKeyDown={(e) => {
-        if (item.submenu && e.key === "ArrowRight") {
-          e.preventDefault();
-          onPick(e.currentTarget);
-        }
-      }}
+      onClick={onPick}
     >
-      <Icon className="size-3.5 shrink-0 text-content/55" strokeWidth={1.75} />
-      <span className={`min-w-0 flex-1 leading-label ${item.description ? "py-2" : "truncate"}`}>
-        {item.label}
-        {item.description ? (
-          <span className="mt-1 block text-[11px] leading-snug text-content/60">
-            {item.description}
-          </span>
-        ) : null}
-      </span>
-      {item.submenu ? (
-        <ChevronRight
-          data-branch-indicator
-          className="size-3.5 shrink-0 text-content/50"
-          strokeWidth={1.75}
-        />
-      ) : null}
-      {item.shortcut ? (
-        <span className="shrink-0 text-[11px] text-content/40">{item.shortcut}</span>
-      ) : null}
+      <Icon className="icon-sm shrink-0" strokeWidth={1.75} />
+      <span className="min-w-0 flex-1 truncate leading-label">{item.label}</span>
     </SharedMenuRow>
   );
 }

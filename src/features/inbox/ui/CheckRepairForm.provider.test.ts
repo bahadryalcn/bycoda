@@ -10,7 +10,7 @@ vi.mock("../model/prChecks", () => ({ fetchCheckDetails }));
 vi.mock("../../../shared/ui/Popover", () => ({
   Popover: ({ children }: { children: ReactNode }) => children,
 }));
-it("Hesap değişirken bekleyen eski günlükten repair başlatmaz", async () => {
+it("does not start a repair from a stale pending log while the account changes", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   let resolve!: (value: unknown) => void;
   fetchCheckDetails.mockReturnValue(

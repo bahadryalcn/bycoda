@@ -142,7 +142,8 @@ function tab(id: string, sessionId: string): WorkspaceTab {
 describe("focusedWorkspaceTabCwd", () => {
   it("never treats a standalone document's parent as a project or worktree", () => {
     const document = newEditorWorkspaceTab({
-      ...newFileTab("/Downloads/report.pdf", "/Downloads"), external: true,
+      ...newFileTab("/Downloads/report.pdf", "/Downloads"),
+      external: true,
     });
     expect(workspaceTabCwd(document, [])).toBeNull();
     expect(focusedWorkspaceTabCwd(document, [])).toBeNull();

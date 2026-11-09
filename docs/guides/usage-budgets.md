@@ -1,6 +1,10 @@
 # Usage budgets
 
-Open **Settings → Usage → Usage budgets** to create, edit or remove a budget.
+Usage detail tables scroll through all loaded records without numbered pages.
+Sorting, drilldown and exact measurement availability remain available while the
+table recycles offscreen rows.
+
+Open **Settings → Provider usage → Usage budgets** to create, edit or remove a budget.
 Choose a project folder, a session or a workspace from the project rail. Multiple
 matching rules apply together; any blocking rule can prevent a new turn.
 

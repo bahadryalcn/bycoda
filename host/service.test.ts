@@ -314,6 +314,43 @@ it("reports failure when launchd retains the stopped legacy job", async () => {
   ).rejects.toThrow("still has the stopped host registered");
 });
 
+it.each(["stop", "uninstall"] as const)(
+  "waits for delayed launchd removal during %s before completing an upgrade step",
+  async (operation) => {
+    const home = mkdtempSync(join(tmpdir(), "bycoda-service-test-"));
+    const definition = join(home, "Library/LaunchAgents/com.bycoda.host.plist");
+    mkdirSync(dirname(definition), { recursive: true });
+    writeFileSync(definition, "old runtime definition");
+    let unloading = false;
+    let probes = 0;
+    const run = async (_command: string, args: string[]) => {
+      if (args[0] === "bootout") {
+        unloading = true;
+        // Some launchd versions return a failure even while removal proceeds.
+        throw new Error("bootout still in progress");
+      }
+      if (args[0] === "print" && unloading) {
+        expect(existsSync(definition)).toBe(true);
+        if (++probes >= 3)
+          throw new Error('Could not find service "com.bycoda.host" in domain for user gui: 501');
+      }
+      return { stdout: "pid = 123\n" };
+    };
+    try {
+      if (operation === "stop") {
+        await stopHostWithServicePolicy(123, async () => {}, { platform: "darwin", uid: 501, run });
+        expect(existsSync(definition)).toBe(true);
+      } else {
+        await uninstallService({ platform: "darwin", uid: 501, home, run });
+        expect(existsSync(definition)).toBe(false);
+      }
+      expect(probes).toBe(3);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  },
+);
+
 it("does not stop the host when launchd restart suppression fails", async () => {
   let stopped = false;
   await expect(

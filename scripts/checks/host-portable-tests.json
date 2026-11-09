@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-11-01",
+  "policy": "Only unchanged reviewed runtime graphs run once. Any source drift, missing input or unknown test falls back to all-OS integration coverage.",
+  "tests": [
+    {
+      "file": "host/browser/browser-annotation.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/browser/browser-annotation.test.ts": "812f628bec2769a1329c0b8cb3b30347d54487e5c9149f8b565b656ebc22e5cd",
+        "host/browser/browser-annotation.ts": "3b962c1659dc77b654a6b4e5b70ae7c66784db30209d21ef4fc9200324e5a340"
+      }
+    },
+    {
+      "file": "host/browser/browser-shadow-masks.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/browser/browser-shadow-masks.test.ts": "e29f199099d99adbfa0d196e2c772d6616360be751677606a4fcbb472033435b",
+        "host/browser/browser-shadow-masks.ts": "73f30995aeab0d30d9bab75ea5a60bf0f0022158deda1c7bd8b5a8c978bf23bf"
+      }
+    },
+    {
+      "file": "host/conversation/conversation-task-queue-tools.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/conversation/conversation-task-queue-tools.test.ts": "1869158e0b1bb47cf91dafb70435b4555f4cd3e2a5f1d438b87ea08b7f80ac37",
+        "host/conversation/conversation-task-queue-tools.ts": "72d3a72c0e9975adcc71d816a342a1843b616b451bbbcbb70aa0a810f25818f4"
+      }
+    },
+    {
+      "file": "host/domains/crews/image-capability.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/domains/crews/image-capability.test.ts": "ffa60585c55ebf768b566d3884243c7a7a45e60c9ccdcf6639e553460d2f6191",
+        "host/domains/crews/image-capability.ts": "78f5941fe7c6f294548e581ac0990205ccee02efa4d8da4630cc78d752e2f711"
+      }
+    },
+    {
+      "file": "host/domains/sessions/service.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/domains/context.ts": "4d5f78b5eefe0a552c94f314ad4a5328b5e00c57c841f7a7a0b467698f20f5ac",
+        "host/domains/sessions/service.test.ts": "b216d08f6fb63a92798bd688dc7e7d46bbe7d3409e2704b547b2bd90e405a90c",
+        "host/domains/sessions/service.ts": "8b393229177ddf89912862a35c37bca6866cd677df8d6f3de7139e547cf7487d"
+      }
+    },
+    {
+      "file": "host/sessions/inlineSessionSync.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/sessions/inlineSessionSync.test.ts": "9a649cbf9e47e1971d0e0cc405fe21ad4b3291e3b1802948383bbbee032b9cc1",
+        "host/sessions/inlineSessionSync.ts": "c76822dcfd94adb56c57aea450c2e9006f1de3926a3d8c964b4d6a8dfcf3ad5f"
+      }
+    },
+    {
+      "file": "host/providers/model-catalog-cache.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/providers/model-catalog-cache.test.ts": "8be43f5548f3fb440f67574a65aee0213b5d173172927082c06d318f7aaf51ab",
+        "host/providers/model-catalog-cache.ts": "3b3ad6fb7c16a271d33a9a95baaaa9c433c1afcedbfef49a5d8e5441de48bcd3"
+      }
+    },
+    {
+      "file": "host/providers/provider-lines.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/providers/provider-lines.test.ts": "8fb0fa7888994e19ffa875824b4d44cbf70d3778b95b0154515c03e7b8f8d6c6",
+        "host/providers/provider-lines.ts": "0e5ea2cb0aecd4101510e72de778c6e469f73ff694651682629f8fa4ea1cda51"
+      }
+    },
+    {
+      "file": "host/storage/revisionWait.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/changeSignal.ts": "469dc87aad8d42c65fe20941a8a9c0653052444fc3741eb92858c9510a4d79ad",
+        "host/storage/revisionWait.test.ts": "2de1edb584f57a2dc98c7e4e1de85b22be4fe38c367f36ea31b164e747cf4744",
+        "host/storage/revisionWait.ts": "076b2b9b17198166597dd344b5a02a641a31442c5f883db27773e82b2f9618ea"
+      }
+    },
+    {
+      "file": "host/execution/run-lease.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/execution/run-lease.test.ts": "f5adb636b8bdacd710a703fe16d5e35db4c8254383322db48b717aef80925d10",
+        "host/execution/run-lease.ts": "e285eeb8428a516b552fb82b5d832787693a9b3c48e34eed0113ce21e458bb5f",
+        "src/features/sync/model/runLease.ts": "d486318f59c7825b20c858250c51f4408a6cb512d29e504351c8b163e57b5f31"
+      }
+    },
+    {
+      "file": "host/sessions/session-layout.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/sessions/session-layout.test.ts": "40ff23878e84fc32abc74910c00a1b0a8d68f5faf6e309d80f84fee153ac6348",
+        "host/sessions/session-layout.ts": "d97ff9704c30a1dc253a2ab5d9bd3a344b60746b01e0ac2711546739111da7a9"
+      }
+    },
+    {
+      "file": "host/social/social-delivery.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/social/social-delivery.test.ts": "b1ccb04e209a2cd67e3702b82fcb1da7ab26591915d97f01affe961facfd3c67",
+        "host/social/social-delivery.ts": "33a1153f5bf17055c575bff91da7b150bbb68a90dcc1bd9a583734dc76bbd4f6"
+      }
+    },
+    {
+      "file": "host/tasks/task-handoff.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/tasks/task-handoff.test.ts": "99b3c130a0c129d5faa7878216b9afead0a6e06f0f19adf1b8a59bb7e1852042",
+        "host/tasks/task-handoff.ts": "a3349d69002ae8440f5715b5745a9cdfd4cbaa953603d7925ba7534a9d523269",
+        "src/features/tasks/model/taskInstructions.ts": "6bcf0061d82c6130875a893d0b3df4300c23333cbef43324aca9730332cd8341"
+      }
+    }
+  ]
+}

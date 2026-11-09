@@ -90,7 +90,7 @@ it("tells a raw IP from a name", () => {
   expect(isRawIpAddress("alias")).toBe(false);
 });
 
-it("Host portunu SSH portundan bağımsız doğrular ve değişince yeniden bağlanır", () => {
+it("validates the Host port independently of the SSH port and reconnects when it changes", () => {
   for (const remotePort of ["", "0", "65536", "22.5", "invalid"])
     expect(parseMachineDraft({ ...draftFromMachine(machine), remotePort }).ok).toBe(false);
   const parsed = parseMachineDraft({ ...draftFromMachine(machine), remotePort: " 3776 " });

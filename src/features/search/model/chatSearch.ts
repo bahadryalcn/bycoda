@@ -1,3 +1,4 @@
+export { formatChatDate } from "../../../shared/i18n/format";
 import { projectDisplayName } from "../../projects/model/projectNames";
 import { pathKey } from "../../../shared/lib/paths";
 import { projectGroupIdForPath, type ProjectGroup } from "../../projects/model/projectGroups";
@@ -212,14 +213,4 @@ export function hitsFromContentSessions(sessions: SessionContentSession[]): AppS
     }
   }
   return hits;
-}
-
-export function formatChatDate(timestamp: number, now = Date.now()): string {
-  const date = new Date(timestamp);
-  const sameYear = date.getFullYear() === new Date(now).getFullYear();
-  return date.toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    ...(sameYear ? {} : { year: "numeric" }),
-  });
 }

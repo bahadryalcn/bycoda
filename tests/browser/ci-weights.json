@@ -1,0 +1,477 @@
+{
+  "schemaVersion": 1,
+  "basis": "2026-11-01 expanded list-only discovery; cases are scheduling estimates, not measured durations or acceptance; durationMs: per-suite Playwright test time from CI run 41794059488 job logs (2026-11-04), scheduling advice only",
+  "cases": {
+    "composer-compact": {
+      "chromium": 30,
+      "webkit": 30
+    },
+    "session-references": {
+      "chromium": 4
+    },
+    "compact-navigation": {
+      "chromium": 4,
+      "webkit": 4
+    },
+    "composer-host-compatibility": {
+      "chromium": 10,
+      "webkit": 10
+    },
+    "edit-from-here": {
+      "chromium": 13,
+      "webkit": 13
+    },
+    "arc-controls": {
+      "chromium": 67,
+      "webkit": 67
+    },
+    "automations": {
+      "chromium": 4,
+      "webkit": 4
+    },
+    "browser-annotation": {
+      "chromium": 4
+    },
+    "chat-artifacts": {
+      "chromium": 18,
+      "webkit": 18
+    },
+    "composer": {
+      "chromium": 33,
+      "webkit": 33
+    },
+    "connections": {
+      "chromium": 8
+    },
+    "crew": {
+      "chromium": 8,
+      "webkit": 8
+    },
+    "crews": {
+      "chromium": 44,
+      "webkit": 44
+    },
+    "device-panel": {
+      "chromium": 4
+    },
+    "editor-navigation": {
+      "chromium": 1,
+      "webkit": 1
+    },
+    "editor-selection": {
+      "chromium": 64,
+      "webkit": 64
+    },
+    "external-mcp": {
+      "chromium": 10,
+      "webkit": 10
+    },
+    "git-checkouts": {
+      "chromium": 10
+    },
+    "group-menu": {
+      "chromium": 4,
+      "webkit": 4
+    },
+    "overlays": {
+      "chromium": 89,
+      "webkit": 89
+    },
+    "host-tools": {
+      "chromium": 40
+    },
+    "jira-board": {
+      "chromium": 11,
+      "webkit": 11
+    },
+    "merge-conflicts": {
+      "chromium": 6,
+      "webkit": 6
+    },
+    "notes": {
+      "chromium": 14,
+      "webkit": 14
+    },
+    "notifications": {
+      "chromium": 7
+    },
+    "onboarding": {
+      "chromium": 8,
+      "webkit": 8
+    },
+    "operational-tools": {
+      "chromium": 10,
+      "webkit": 10
+    },
+    "orchestration": {
+      "chromium": 2,
+      "webkit": 2
+    },
+    "question-flow": {
+      "chromium": 26,
+      "webkit": 26
+    },
+    "servers": {
+      "chromium": 100,
+      "webkit": 100
+    },
+    "session-usability": {
+      "chromium": 6,
+      "webkit": 6
+    },
+    "sessions": {
+      "chromium": 31,
+      "webkit": 31
+    },
+    "settings": {
+      "chromium": 61
+    },
+    "settings-navigation": {
+      "chromium": 36
+    },
+    "settings-workspace": {
+      "chromium": 25
+    },
+    "settings-library": {
+      "chromium": 28
+    },
+    "settings-subviews": {
+      "chromium": 48
+    },
+    "settings-backgrounds": {
+      "chromium": 36
+    },
+    "social": {
+      "chromium": 52
+    },
+    "sprints": {
+      "chromium": 7,
+      "webkit": 7
+    },
+    "subagent-relay": {
+      "chromium": 13
+    },
+    "tasks": {
+      "chromium": 68,
+      "webkit": 68
+    },
+    "terminal-tools": {
+      "chromium": 14
+    },
+    "termius": {
+      "chromium": 4,
+      "webkit": 4
+    },
+    "text-actions": {
+      "chromium": 4,
+      "webkit": 4
+    },
+    "tools-simplify": {
+      "chromium": 10
+    },
+    "usage-budgets": {
+      "chromium": 15,
+      "webkit": 15
+    },
+    "voice-visual-styles": {
+      "chromium": 65
+    },
+    "global-voice": {
+      "chromium": 4
+    },
+    "workspace-navigation": {
+      "chromium": 14
+    },
+    "worktrees": {
+      "chromium": 42,
+      "webkit": 12
+    },
+    "session-deletion": {
+      "chromium": 2,
+      "webkit": 2
+    },
+    "session-recovery": {
+      "chromium": 8,
+      "webkit": 8
+    },
+    "update-footer": {
+      "chromium": 4,
+      "webkit": 4
+    },
+    "chat-artifacts-rewind": {
+      "chromium": 26,
+      "webkit": 26
+    },
+    "tasks-rewind": {
+      "chromium": 26,
+      "webkit": 26
+    },
+    "transcript": {
+      "chromium": 48,
+      "webkit": 48
+    },
+    "merge-conflicts-workspace": {
+      "chromium": 1,
+      "webkit": 1
+    },
+    "field-message": {
+      "chromium": 4
+    },
+    "assistant-room-remote": {
+      "chromium": 24
+    },
+    "devices": {
+      "chromium": 7
+    },
+    "dictation-permissions": {
+      "chromium": 20
+    },
+    "inbox-seen-storage": {
+      "chromium": 10
+    },
+    "s31-outbox-storage": {
+      "chromium": 8
+    },
+    "session-tools": {
+      "chromium": 2
+    },
+    "skill-catalog": {
+      "chromium": 11
+    },
+    "title-settings": {
+      "chromium": 4
+    }
+  },
+  "durationMs": {
+    "arc-controls": {
+      "chromium": 270000,
+      "webkit": 552000
+    },
+    "assistant-room": {
+      "chromium": 342000
+    },
+    "assistant-settings": {
+      "chromium": 44400
+    },
+    "attachment-cards": {
+      "chromium": 42600
+    },
+    "automations": {
+      "webkit": 33800,
+      "chromium": 19600
+    },
+    "browser-annotation": {
+      "chromium": 17000
+    },
+    "chat-artifacts": {
+      "webkit": 120000,
+      "chromium": 57700
+    },
+    "chat-citations": {
+      "chromium": 15900
+    },
+    "compact-navigation": {
+      "chromium": 28400,
+      "webkit": 40400
+    },
+    "composer": {
+      "chromium": 66000,
+      "webkit": 102000
+    },
+    "composer-compact": {
+      "webkit": 126000,
+      "chromium": 138000
+    },
+    "composer-host-compatibility": {
+      "chromium": 17100,
+      "webkit": 20700
+    },
+    "connections": {
+      "chromium": 25400
+    },
+    "crew": {
+      "chromium": 15300,
+      "webkit": 25900
+    },
+    "crews": {
+      "webkit": 138000,
+      "chromium": 90000
+    },
+    "device-panel": {
+      "chromium": 14900
+    },
+    "edit-from-here": {
+      "chromium": 41900,
+      "webkit": 50700
+    },
+    "editor-navigation": {
+      "chromium": 2100,
+      "webkit": 2300
+    },
+    "editor-selection": {
+      "chromium": 108000,
+      "webkit": 204000
+    },
+    "external-mcp": {
+      "webkit": 38500,
+      "chromium": 25300
+    },
+    "field-message": {
+      "chromium": 9500
+    },
+    "generated-file-links": {
+      "chromium": 9200
+    },
+    "git-checkouts": {
+      "chromium": 31800
+    },
+    "global-voice": {
+      "chromium": 9300
+    },
+    "group-menu": {
+      "chromium": 9200,
+      "webkit": 12600
+    },
+    "host-tools": {
+      "chromium": 114000
+    },
+    "inline-visuals": {
+      "chromium": 10800
+    },
+    "jira-board": {
+      "webkit": 15800,
+      "chromium": 12000
+    },
+    "merge-conflicts": {
+      "webkit": 18600,
+      "chromium": 12800
+    },
+    "notes": {
+      "webkit": 96000,
+      "chromium": 42900
+    },
+    "notifications": {
+      "chromium": 9800
+    },
+    "onboarding": {
+      "chromium": 27200,
+      "webkit": 58900
+    },
+    "operational-tools": {
+      "chromium": 10300,
+      "webkit": 17700
+    },
+    "orchestration": {
+      "chromium": 3900,
+      "webkit": 6600
+    },
+    "overlays": {
+      "webkit": 240000,
+      "chromium": 186000
+    },
+    "question-flow": {
+      "chromium": 45200,
+      "webkit": 60000
+    },
+    "servers": {
+      "chromium": 216000,
+      "webkit": 372000
+    },
+    "session-deletion": {
+      "chromium": 3600,
+      "webkit": 5700
+    },
+    "session-recovery": {
+      "chromium": 18100,
+      "webkit": 24900
+    },
+    "session-references": {
+      "chromium": 29700
+    },
+    "session-row-layout": {
+      "chromium": 41900
+    },
+    "session-usability": {
+      "chromium": 19600,
+      "webkit": 24200
+    },
+    "sessions": {
+      "chromium": 52500,
+      "webkit": 72000
+    },
+    "settings": {
+      "chromium": 630000
+    },
+    "settings-backgrounds": {
+      "chromium": 84000
+    },
+    "settings-library": {
+      "chromium": 72000
+    },
+    "settings-navigation": {
+      "chromium": 78000
+    },
+    "settings-subviews": {
+      "chromium": 174000
+    },
+    "settings-workspace": {
+      "chromium": 66000
+    },
+    "social": {
+      "chromium": 222000
+    },
+    "sprints": {
+      "chromium": 23800,
+      "webkit": 46400
+    },
+    "subagent-relay": {
+      "chromium": 16300
+    },
+    "tasks": {
+      "chromium": 150000,
+      "webkit": 270000
+    },
+    "terminal-tools": {
+      "chromium": 35900
+    },
+    "termius": {
+      "chromium": 8100,
+      "webkit": 10500
+    },
+    "text-actions": {
+      "webkit": 10100,
+      "chromium": 7300
+    },
+    "tools-simplify": {
+      "chromium": 39000
+    },
+    "tooltip-policy": {
+      "chromium": 54800
+    },
+    "transcript": {
+      "chromium": 102000,
+      "webkit": 192000
+    },
+    "update-footer": {
+      "chromium": 6900,
+      "webkit": 8400
+    },
+    "usage-budgets": {
+      "chromium": 23800,
+      "webkit": 39200
+    },
+    "voice-visual-styles": {
+      "chromium": 156000
+    },
+    "working-project-summary": {
+      "chromium": 5200
+    },
+    "workspace-navigation": {
+      "chromium": 51200
+    },
+    "worktrees": {
+      "chromium": 72000,
+      "webkit": 26800
+    }
+  }
+}

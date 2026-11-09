@@ -1,14 +1,20 @@
+import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   APPEARANCE_PREFERENCES_EVENT,
   loadAppearancePreferences,
-} from "../../settings/model/appearancePreferences";
-import { File } from "../../../shared/ui/icons";
+} from "../../settings/public/appearancePreferences";
+import { StatusBadge } from "../../../shared/ui/Badge";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { t } from "../../../shared/i18n";
 import type { SshEndpoint } from "../model/serverInventory";
 import styles from "./ServerTerminalSession.module.css";
 
 /** Presentation only. The existing SSH PTY owns connection, input and approvals. */
 export function ServerTerminalSession({
+  name,
+  lifecycle,
   endpoint,
   target,
   port,
@@ -16,6 +22,8 @@ export function ServerTerminalSession({
   keyGenerationPath,
   children,
 }: {
+  name?: string;
+  lifecycle?: "opened-on-computer" | "exited" | "failed" | "closed";
   endpoint?: SshEndpoint;
   target?: string;
   port?: number | null;
@@ -47,17 +55,28 @@ export function ServerTerminalSession({
     <div className={styles.session} data-server-terminal-session>
       <div className={styles.toolbar}>
         <div className={styles.identity}>
-          <span className={styles.address} title={address}>
-            {address}
+          <OverflowTooltip label={name ?? address}>
+            <span className={styles.address}>{name ?? address}</span>
+          </OverflowTooltip>
+          <span className="shrink-0 text-ui-caption text-(--ui-text-muted)" role="status">
+            {lifecycle === "opened-on-computer" ? (
+              <StatusBadge status="running" />
+            ) : lifecycle === "failed" ? (
+              <StatusBadge status="failed" />
+            ) : (
+              t(!lifecycle ? "Opening…" : "Terminal closed")
+            )}
           </span>
-          {sshPort ? <span className={styles.port}>:{sshPort}</span> : null}
-          {key ? (
-            <span className={styles.key} title={key}>
-              <File aria-hidden className="size-3 shrink-0" />
-              <span className={styles.keyName}>{key.split(/[\\/]/).pop()}</span>
-            </span>
-          ) : null}
         </div>
+        <InfoPopover label={t("Connection details")}>
+          <DescriptionList>
+            <DescriptionItem term={t("Host")}>
+              {address}
+              {sshPort ? `:${sshPort}` : ""}
+            </DescriptionItem>
+            {key ? <DescriptionItem term={t("Identity file")}>{key}</DescriptionItem> : null}
+          </DescriptionList>
+        </InfoPopover>
       </div>
       {children(fontSize, setFontSize, preferences.terminalLineHeight)}
     </div>

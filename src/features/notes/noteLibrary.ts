@@ -7,6 +7,33 @@ export type NoteSort = "updated" | "created" | "title";
 export type NoteLibraryPreferences = { grouping: NoteGrouping; sort: NoteSort };
 const PREFERENCES_KEY = "bycoda.notes.library.v1";
 
+/** Use the same content timestamp for the row and its Updated ordering. The
+ * mutation token may change for metadata-only writes and is not content age. */
+export function noteLibraryDate(note: NoteMetadata, sort: NoteSort) {
+  return sort === "created"
+    ? { timestamp: note.createdAt, label: "Created" as const }
+    : { timestamp: note.contentUpdatedAt ?? note.updatedAt, label: "Updated" as const };
+}
+
+/** Summaries intentionally contain only a short preview. A native full-body
+ * search match can be real even when neither visible title nor preview matches.
+ * This reports where to explain/reveal the match without fetching each body. */
+export function noteLibraryMatchLocation(
+  note: NoteMetadata & { preview?: string; body?: string },
+  query: string,
+  bodyMatches?: ReadonlySet<string>,
+): "title" | "preview" | "content" | "metadata" | null {
+  const needle = query.trim().toLocaleLowerCase();
+  if (!needle) return null;
+  const matches = (text: string | undefined) => text?.toLocaleLowerCase().includes(needle);
+  if (matches(note.title)) return "title";
+  if (matches(note.preview)) return "preview";
+  if (matches(note.body)) return "content";
+  if ([note.slug, note.sourceCwd ?? "", ...note.tags.map((value) => `#${value}`)].some(matches))
+    return "metadata";
+  return bodyMatches?.has(note.id) ? "content" : null;
+}
+
 export function loadNoteLibraryPreferences(): NoteLibraryPreferences {
   try {
     const value = JSON.parse(localStorage.getItem(PREFERENCES_KEY) ?? "null");
@@ -89,9 +116,7 @@ export function filterNoteLibrary<NoteItem extends NoteMetadata>(
       const order =
         sort === "title"
           ? a.title.localeCompare(b.title)
-          : sort === "created"
-            ? b.createdAt - a.createdAt
-            : (b.contentUpdatedAt ?? b.updatedAt) - (a.contentUpdatedAt ?? a.updatedAt);
+          : noteLibraryDate(b, sort).timestamp - noteLibraryDate(a, sort).timestamp;
       return order || a.id.localeCompare(b.id);
     });
 }

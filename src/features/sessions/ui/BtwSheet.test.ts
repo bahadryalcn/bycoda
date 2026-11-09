@@ -123,7 +123,7 @@ describe("BTW conversation", () => {
 
   it("stays hidden until opened", async () => {
     await render();
-    expect(container.querySelector("[data-btw-overlay]")).toBeNull();
+    expect(container.querySelector("[data-sheet-overlay]")).toBeNull();
   });
 
   it("opens an empty tab for a bare /btw without sending", async () => {
@@ -180,7 +180,7 @@ describe("BTW conversation", () => {
       composer?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
     );
     expect(btw.open).toBe(false);
-    expect(container.querySelector("[data-btw-overlay]")).toBeNull();
+    expect(container.querySelector("[data-sheet-overlay]")).toBeNull();
   });
 
   it("closes on Escape when nothing is focused", async () => {
@@ -223,7 +223,7 @@ describe("BTW conversation", () => {
       opened = btw.openWith("hi");
     });
     expect(opened).toBe(false);
-    expect(container.querySelector("[data-btw-overlay]")).toBeNull();
+    expect(container.querySelector("[data-sheet-overlay]")).toBeNull();
   });
 
   it("stays closed when availability returns after forcing the sheet closed", async () => {
@@ -233,11 +233,11 @@ describe("BTW conversation", () => {
 
     await render({ available: false });
     expect(btw.open).toBe(false);
-    expect(container.querySelector("[data-btw-overlay]")).toBeNull();
+    expect(container.querySelector("[data-sheet-overlay]")).toBeNull();
 
     await render({ available: true });
     expect(btw.open).toBe(false);
-    expect(container.querySelector("[data-btw-overlay]")).toBeNull();
+    expect(container.querySelector("[data-sheet-overlay]")).toBeNull();
   });
 
   it("opens saved threads when there is no eligible turn for a new draft", async () => {
@@ -306,7 +306,7 @@ describe("BTW conversation", () => {
     expect(accepted).toBe(false);
     expect(btw.open).toBe(false);
     expect(btw.running).toBe(false);
-    expect(container.querySelector("[data-btw-overlay]")).toBeNull();
+    expect(container.querySelector("[data-sheet-overlay]")).toBeNull();
   });
 
   it("stops a streaming answer from the side composer", async () => {
@@ -350,19 +350,31 @@ describe("BTW conversation", () => {
   });
 
   it("moves and wraps keyboard tab focus while keeping only the active close action tabbable", async () => {
-    await render({ blocks: session([thread("t1", "First question", 1), thread("t2", "Second question", 2)]) });
+    await render({
+      blocks: session([thread("t1", "First question", 1), thread("t2", "Second question", 2)]),
+    });
     await act(async () => void btw.openWith(""));
     const key = async (value: string, expected: number) => {
       const active = tabs().find((tab) => tab.getAttribute("aria-selected") === "true")!;
       active.focus();
       const event = new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true });
-      await act(async () => { active.dispatchEvent(event); });
+      await act(async () => {
+        active.dispatchEvent(event);
+      });
       expect(event.defaultPrevented).toBe(true);
       expect(tabs()[expected].getAttribute("aria-selected")).toBe("true");
       expect(document.activeElement).toBe(tabs()[expected]);
-      expect(tabs().map((tab) => tab.tabIndex)).toEqual(tabs().map((_, index) => index === expected ? 0 : -1));
-      const closeButtons = [...container.querySelectorAll<HTMLButtonElement>('[role="tablist"] button:not([role="tab"])')];
-      expect(closeButtons.map((button) => button.tabIndex)).toEqual(closeButtons.map((_, index) => index === expected ? 0 : -1));
+      expect(tabs().map((tab) => tab.tabIndex)).toEqual(
+        tabs().map((_, index) => (index === expected ? 0 : -1)),
+      );
+      const closeButtons = [
+        ...container.querySelectorAll<HTMLButtonElement>(
+          '[role="tablist"] button:not([role="tab"])',
+        ),
+      ];
+      expect(closeButtons.map((button) => button.tabIndex)).toEqual(
+        closeButtons.map((_, index) => (index === expected ? 0 : -1)),
+      );
     };
     await key("ArrowRight", 0);
     await key("ArrowLeft", 2);
@@ -380,10 +392,12 @@ describe("BTW conversation", () => {
     await act(async () => void btw.openWith(""));
     // Drop the new empty tab first, then the saved thread.
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('button[title="Discard"]')?.click(),
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Discard new question"]')
+        ?.click(),
     );
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('button[title="Delete"]')?.click(),
+      container.querySelector<HTMLButtonElement>('button[aria-label^="Delete"]')?.click(),
     );
 
     expect(onDelete).toHaveBeenCalledWith(

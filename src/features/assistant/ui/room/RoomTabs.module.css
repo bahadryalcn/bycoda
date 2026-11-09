@@ -1,0 +1,46 @@
+.disclosureBody {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.disclosureBody > p {
+  margin: 0;
+}
+.disclosureRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.recoveryForm {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  inline-size: 100%;
+}
+.recoveryForm > :first-child {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+  max-inline-size: 20rem;
+}
+.recoveryRow {
+  display: grid;
+  grid-template-columns: minmax(0, 12rem) auto auto;
+  align-items: center;
+  justify-content: start;
+  gap: 8px;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+.recoveryId {
+  min-inline-size: 0;
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 540px) {
+  .recoveryRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}

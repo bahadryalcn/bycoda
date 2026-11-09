@@ -1,0 +1,724 @@
+import {
+  composeJsonWire,
+  extendJsonWire,
+  normalizeJsonWire,
+  readNormalizedJsonWire,
+  type NormalizedJsonWire,
+} from "../normalized-wire";
+import { createHash, randomUUID } from "node:crypto";
+import { z } from "zod";
+import {
+  JsonValueSchema,
+  SafeCounterSchema,
+  SubscriptionOpenParamsSchema,
+  WS_LIMITS,
+  type JsonValue,
+  type StreamCursor,
+  type SubscriptionEvent,
+} from "../../../src/shared/model/host-contracts";
+
+type Open = z.infer<typeof SubscriptionOpenParamsSchema>;
+export type HostStreamTarget = Open["target"];
+export type HostStreamSnapshot =
+  | {
+      kind?: "snapshot" | "delta";
+      revision?: number;
+      baseRevision?: number;
+      sourceEpoch?: string;
+      data: JsonValue;
+    }
+  | { kind: "unchanged"; revision: number; sourceEpoch?: string };
+export type HostStreamLoadContext = {
+  revision?: number;
+  sourceEpoch?: string;
+  forceSnapshot: boolean;
+  authorized: () => Promise<boolean>;
+};
+export type HostStreamConsumer = {
+  connectionId: string;
+  principalId: string;
+  authorized: () => Promise<boolean>;
+  executionAuthorized?: () => Promise<boolean>;
+  send: (event: SubscriptionEvent) => boolean;
+  sendNormalized?: (capture: NormalizedJsonWire) => boolean;
+};
+type Event = Omit<SubscriptionEvent["params"], "subscriptionId">;
+type Retained = { event: Event; bytes: number; at: number };
+// One physical load. `held` is its logical read slot. An abandoned load keeps
+// running, but it gives the slot back at abort and only counts toward the hard cap.
+type Read = { connectionId: string; held: boolean; abandoned: boolean; settled: boolean };
+// Physical loads may exceed the logical read cap by this much while abandoned loads drain.
+const abandonedReadAllowance = 4;
+type Consumer = {
+  owner: HostStreamConsumer;
+  id: string;
+  active: boolean;
+  needsSnapshot: boolean;
+  sent: number;
+  ack: number;
+  pending: Map<number, number>;
+  bytes: number;
+};
+type Stream = {
+  key: string;
+  id: string;
+  epoch: string;
+  principalId: string;
+  target: HostStreamTarget;
+  sequence: number;
+  generation: number;
+  fingerprint?: string;
+  revision?: number;
+  sourceEpoch?: string;
+  forceSnapshot: boolean;
+  events: Retained[];
+  bytes: number;
+  touched: number;
+  dirty: boolean;
+  deleted: boolean;
+  reading?: AbortController;
+  readingBaseline?: boolean;
+  refreshAt?: number;
+  consumers: Map<string, Consumer>;
+};
+
+export class HostStreamError extends Error {
+  constructor(
+    readonly code: "limit" | "identity" | "cursor",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/** Principal-scoped snapshot streams. Acknowledgement means application commit, not receipt. */
+export class HostSubscriptionHub {
+  private readonly streams = new Map<string, Stream>();
+  private readonly subscriptions = new Map<string, { stream: Stream; consumer: Consumer }>();
+  private readonly limits;
+  private readonly now: () => number;
+  private readonly eventCaptures = new WeakMap<Event, NormalizedJsonWire>();
+  private bytes = 0;
+  private reads = 0;
+  private abandoned = 0;
+  private readonly connectionReads = new Map<string, number>();
+  private lastScheduledKey?: string;
+  private queued = false;
+  private refreshTimer?: ReturnType<typeof setTimeout>;
+  private stopped = false;
+  private readonly pruning: ReturnType<typeof setInterval>;
+
+  constructor(
+    private readonly options: {
+      environmentId: string;
+      load: (
+        target: HostStreamTarget,
+        principalId: string,
+        signal: AbortSignal,
+        context: HostStreamLoadContext,
+      ) => Promise<HostStreamSnapshot | null>;
+      now?: () => number;
+      limits?: Partial<
+        Pick<
+          typeof WS_LIMITS,
+          | "maxSubscriptionsPerSocket"
+          | "maxSubscriptionsPerHost"
+          | "maxUnacknowledgedEvents"
+          | "maxSubscriptionWindowBytes"
+          | "maxReplayEvents"
+          | "maxReplayBytes"
+          | "maxReplayAgeMs"
+          | "maxHostReplayBytes"
+          | "streamChunkBytes"
+        >
+      >;
+      maxConcurrentReads?: number;
+      maxConcurrentReadsPerConnection?: number;
+    },
+  ) {
+    this.limits = { ...WS_LIMITS, ...options.limits };
+    this.now = options.now ?? Date.now;
+    for (const value of [
+      ...Object.values(this.limits),
+      options.maxConcurrentReads ?? 8,
+      options.maxConcurrentReadsPerConnection ?? 2,
+    ])
+      if (!Number.isSafeInteger(value) || value < 1)
+        throw new Error("Invalid stream resource limit.");
+    this.pruning = setInterval(() => this.prune(), Math.min(30_000, this.limits.maxReplayAgeMs));
+    this.pruning.unref();
+  }
+
+  open(owner: HostStreamConsumer, raw: Open) {
+    const input = SubscriptionOpenParamsSchema.parse(raw);
+    if (this.stopped || !owner.connectionId || !owner.principalId)
+      throw new HostStreamError("identity", "Stream connection is unavailable.");
+    const identity = JSON.stringify([owner.connectionId, input.subscriptionId]);
+    if (this.subscriptions.has(identity))
+      throw new HostStreamError("identity", "Subscription identity is already in use.");
+    this.prune();
+    let socketCount = 0;
+    for (const entry of this.subscriptions.values())
+      if (entry.consumer.owner.connectionId === owner.connectionId) socketCount++;
+    if (
+      socketCount >= this.limits.maxSubscriptionsPerSocket ||
+      this.subscriptions.size >= this.limits.maxSubscriptionsPerHost
+    )
+      throw new HostStreamError("limit", "Subscription capacity is busy.");
+    const key = JSON.stringify([this.options.environmentId, owner.principalId, input.target]);
+    let stream = this.streams.get(key);
+    if (!stream) {
+      // Retained disconnected streams also count against the host budget.
+      if (this.streams.size >= this.limits.maxSubscriptionsPerHost) {
+        const retired = [...this.streams.values()].find(
+          (value) => !value.consumers.size && !value.reading,
+        );
+        if (retired) this.drop(retired);
+      }
+      if (this.streams.size >= this.limits.maxSubscriptionsPerHost)
+        throw new HostStreamError("limit", "Stream capacity is busy.");
+      stream = {
+        key,
+        id: randomUUID(),
+        epoch: randomUUID(),
+        principalId: owner.principalId,
+        target: input.target,
+        sequence: 0,
+        generation: 0,
+        events: [],
+        bytes: 0,
+        touched: this.now(),
+        dirty: true,
+        deleted: false,
+        forceSnapshot: true,
+        consumers: new Map(),
+      };
+      this.streams.set(key, stream);
+    }
+    const consumer: Consumer = {
+      owner,
+      id: input.subscriptionId,
+      active: false,
+      needsSnapshot: true,
+      sent: 0,
+      ack: 0,
+      pending: new Map(),
+      bytes: 0,
+    };
+    stream.touched = this.now();
+    stream.consumers.set(identity, consumer);
+    this.subscriptions.set(identity, { stream, consumer });
+    const selected = stream;
+    return {
+      result: { subscriptionId: input.subscriptionId, streamId: stream.id },
+      // The transport sends the open response before activating event delivery.
+      activate: () => {
+        if (this.stopped || !this.subscriptions.has(identity) || consumer.active) return;
+        consumer.active = true;
+        void this.activate(selected, consumer, input.cursor).catch(() => this.remove(identity));
+      },
+    };
+  }
+
+  acknowledge(connectionId: string, subscriptionId: string, cursor: StreamCursor): boolean {
+    const entry = this.subscriptions.get(JSON.stringify([connectionId, subscriptionId]));
+    if (!entry) return false;
+    const { stream, consumer } = entry;
+    if (
+      cursor.epoch !== stream.epoch ||
+      !Number.isSafeInteger(cursor.sequence) ||
+      cursor.sequence < consumer.ack ||
+      cursor.sequence > consumer.sent
+    )
+      throw new HostStreamError("cursor", "Acknowledgement is outside the sent stream window.");
+    consumer.ack = cursor.sequence;
+    for (const [sequence, bytes] of consumer.pending)
+      if (sequence <= cursor.sequence) {
+        consumer.pending.delete(sequence);
+        consumer.bytes -= bytes;
+      }
+    stream.touched = this.now();
+    return true;
+  }
+
+  closeSubscription(connectionId: string, subscriptionId: string): boolean {
+    return this.remove(JSON.stringify([connectionId, subscriptionId]));
+  }
+
+  detach(connectionId: string): void {
+    for (const [key, entry] of this.subscriptions)
+      if (entry.consumer.owner.connectionId === connectionId) this.remove(key);
+  }
+
+  targets(): HostStreamTarget[] {
+    return [...this.streams.values()]
+      .filter((stream) => !stream.deleted)
+      .map((stream) => stream.target);
+  }
+
+  invalidate(target?: HostStreamTarget): void {
+    for (const stream of this.streams.values())
+      if (!target || JSON.stringify(stream.target) === JSON.stringify(target)) {
+        // Ordinary commits only wake a new read. Discarding every in-flight read
+        // under unrelated token traffic would starve otherwise healthy streams.
+        if (!stream.deleted) stream.dirty = true;
+      }
+    this.schedule();
+  }
+
+  /** Call only after a committed deletion/privacy invalidation; late loads cannot republish. */
+  forget(target: HostStreamTarget): void {
+    for (const stream of this.streams.values())
+      if (JSON.stringify(stream.target) === JSON.stringify(target)) this.tombstone(stream);
+  }
+
+  /** Privacy/deletion within a collection invalidates its replay without deleting the collection. */
+  resnapshot(target: HostStreamTarget): void {
+    for (const stream of this.streams.values()) {
+      if (stream.deleted || JSON.stringify(stream.target) !== JSON.stringify(target)) continue;
+      stream.generation++;
+      stream.reading?.abort();
+      this.bytes -= stream.bytes;
+      stream.bytes = 0;
+      stream.events = [];
+      stream.fingerprint = undefined;
+      stream.revision = undefined;
+      stream.sourceEpoch = undefined;
+      stream.epoch = randomUUID();
+      stream.sequence = 0;
+      stream.forceSnapshot = true;
+      stream.dirty = true;
+      stream.touched = this.now();
+      for (const consumer of stream.consumers.values()) {
+        this.deliver(stream, consumer, this.event(stream, "resync-required"));
+        consumer.active = false;
+        consumer.needsSnapshot = true;
+        consumer.pending.clear();
+        consumer.bytes = 0;
+      }
+    }
+    this.schedule();
+  }
+
+  close(): void {
+    if (this.stopped) return;
+    this.stopped = true;
+    clearInterval(this.pruning);
+    clearTimeout(this.refreshTimer);
+    for (const stream of this.streams.values()) stream.reading?.abort();
+    this.subscriptions.clear();
+    this.streams.clear();
+    this.bytes = 0;
+  }
+
+  private async activate(stream: Stream, consumer: Consumer, cursor?: StreamCursor): Promise<void> {
+    if (!(await consumer.owner.authorized()) || !consumer.active || this.stopped) {
+      this.detach(consumer.owner.connectionId);
+      return;
+    }
+    if (stream.deleted) {
+      this.deliver(stream, consumer, this.event(stream, "closed", { reason: "deleted" }));
+      this.remove(JSON.stringify([consumer.owner.connectionId, consumer.id]));
+      return;
+    }
+    const first = stream.events[0]?.event.cursor.sequence ?? stream.sequence + 1;
+    if (
+      cursor &&
+      cursor.epoch === stream.epoch &&
+      cursor.sequence >= first - 1 &&
+      cursor.sequence <= stream.sequence
+    ) {
+      consumer.ack = consumer.sent = cursor.sequence;
+      consumer.needsSnapshot = false;
+      for (const retained of stream.events)
+        if (retained.event.cursor.sequence > cursor.sequence)
+          this.deliver(stream, consumer, retained.event);
+    } else {
+      if (cursor) this.deliver(stream, consumer, this.event(stream, "resync-required"));
+      const last = stream.events.at(-1);
+      if (last?.event.kind === "snapshot" && !stream.dirty && !stream.reading)
+        this.deliver(stream, consumer, last.event);
+      else {
+        stream.forceSnapshot = true;
+        stream.dirty = true;
+      }
+    }
+    this.schedule();
+  }
+
+  private event(stream: Stream, kind: Event["kind"], data?: JsonValue, revision?: number): Event {
+    return {
+      streamId: stream.id,
+      cursor: { epoch: stream.epoch, sequence: stream.sequence },
+      kind,
+      ...(data === undefined ? {} : { data }),
+      ...(revision === undefined ? {} : { revision }),
+    };
+  }
+
+  private deliver(stream: Stream, consumer: Consumer, event: Event): void {
+    if (!consumer.active || this.stopped) return;
+    const message: SubscriptionEvent = {
+      jsonrpc: "2.0",
+      method: "subscription.event",
+      params: { ...event, subscriptionId: consumer.id },
+    };
+    let eventCapture = this.eventCaptures.get(event);
+    if (!eventCapture) {
+      eventCapture = normalizeJsonWire(event);
+      this.eventCaptures.set(event, eventCapture);
+    }
+    const normalized = composeJsonWire(
+      { jsonrpc: "2.0", method: "subscription.event" },
+      "params",
+      extendJsonWire(eventCapture, { subscriptionId: consumer.id }),
+    );
+    const bytes = readNormalizedJsonWire(normalized).byteLength;
+    if (event.kind === "snapshot" || event.kind === "delta") {
+      if (event.kind === "delta" && consumer.needsSnapshot) return;
+      if (event.cursor.sequence <= consumer.sent) return;
+      if (
+        consumer.pending.size >= this.limits.maxUnacknowledgedEvents ||
+        consumer.bytes + bytes > this.limits.maxSubscriptionWindowBytes
+      ) {
+        this.send(consumer, {
+          jsonrpc: "2.0",
+          method: "subscription.event",
+          params: {
+            subscriptionId: consumer.id,
+            streamId: stream.id,
+            cursor: { epoch: stream.epoch, sequence: consumer.sent },
+            kind: "resync-required",
+          },
+        });
+        consumer.active = false;
+        consumer.pending.clear();
+        consumer.bytes = 0;
+        return;
+      }
+      consumer.pending.set(event.cursor.sequence, bytes);
+      consumer.bytes += bytes;
+      consumer.sent = event.cursor.sequence;
+      if (event.kind === "snapshot") consumer.needsSnapshot = false;
+    }
+    if (!this.send(consumer, message, normalized)) consumer.active = false;
+  }
+
+  private send(
+    consumer: Consumer,
+    message: SubscriptionEvent,
+    normalized?: NormalizedJsonWire,
+  ): boolean {
+    try {
+      if (normalized && consumer.owner.sendNormalized)
+        return consumer.owner.sendNormalized(normalized);
+      // Compatibility consumers receive their own wire copy, so mutation cannot
+      // corrupt retained bytes or the next consumer's validation view.
+      return consumer.owner.send(
+        normalized
+          ? (JSON.parse(readNormalizedJsonWire(normalized).serialized) as SubscriptionEvent)
+          : message,
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private schedule(): void {
+    if (this.queued || this.stopped) return;
+    this.queued = true;
+    queueMicrotask(() => {
+      this.queued = false;
+      if (this.stopped) return;
+      const streams = [...this.streams.values()];
+      const previous = streams.findIndex((stream) => stream.key === this.lastScheduledKey);
+      if (previous >= 0) streams.push(...streams.splice(0, previous + 1));
+      for (const stream of streams) {
+        const maxReads = this.options.maxConcurrentReads ?? 8;
+        if (
+          this.reads >= maxReads ||
+          this.reads + this.abandoned >= maxReads + abandonedReadAllowance
+        )
+          break;
+        if (
+          !stream.dirty ||
+          stream.reading ||
+          stream.deleted ||
+          ![...stream.consumers.values()].some((consumer) => consumer.active)
+        )
+          continue;
+        const owner = [...stream.consumers.values()].find(
+          (consumer) =>
+            consumer.active &&
+            (this.connectionReads.get(consumer.owner.connectionId) ?? 0) <
+              (this.options.maxConcurrentReadsPerConnection ?? 2),
+        )?.owner;
+        if (!owner) continue;
+        const delay = (stream.refreshAt ?? 0) - Date.now();
+        if (delay > 0) {
+          if (!this.refreshTimer) {
+            this.refreshTimer = setTimeout(() => {
+              this.refreshTimer = undefined;
+              this.schedule();
+            }, delay);
+            this.refreshTimer.unref();
+          }
+          continue;
+        }
+        stream.refreshAt = Date.now() + 250;
+        this.reads++;
+        this.connectionReads.set(
+          owner.connectionId,
+          (this.connectionReads.get(owner.connectionId) ?? 0) + 1,
+        );
+        this.lastScheduledKey = stream.key;
+        stream.dirty = false;
+        const controller = new AbortController();
+        const read: Read = {
+          connectionId: owner.connectionId,
+          held: true,
+          abandoned: false,
+          settled: false,
+        };
+        stream.reading = controller;
+        controller.signal.addEventListener("abort", () => this.abandon(stream, controller, read), {
+          once: true,
+        });
+        const generation = stream.generation;
+        const deadline = setTimeout(() => {
+          controller.abort();
+          if (this.stopped || stream.deleted || generation !== stream.generation) return;
+          for (const consumer of stream.consumers.values()) {
+            this.deliver(stream, consumer, this.event(stream, "resync-required"));
+            consumer.active = false;
+          }
+        }, this.limits.defaultResponseTimeoutMs);
+        deadline.unref();
+        void this.refresh(stream, generation, controller, owner).finally(() => {
+          clearTimeout(deadline);
+          read.settled = true;
+          this.release(read);
+          if (read.abandoned) this.abandoned--;
+          if (stream.reading === controller) {
+            stream.reading = undefined;
+            stream.readingBaseline = undefined;
+          }
+          this.schedule();
+        });
+      }
+    });
+  }
+
+  // Abort revokes delivery at once. The load's own slot is released here, so
+  // another stream can read while the abandoned call is still in flight.
+  private abandon(stream: Stream, controller: AbortController, read: Read): void {
+    if (read.settled || read.abandoned) return;
+    read.abandoned = true;
+    this.abandoned++;
+    if (stream.reading === controller) {
+      stream.reading = undefined;
+      stream.readingBaseline = undefined;
+    }
+    this.release(read);
+    this.schedule();
+  }
+
+  private release(read: Read): void {
+    if (!read.held) return;
+    read.held = false;
+    this.reads--;
+    const remaining = (this.connectionReads.get(read.connectionId) ?? 1) - 1;
+    if (remaining) this.connectionReads.set(read.connectionId, remaining);
+    else this.connectionReads.delete(read.connectionId);
+  }
+
+  private async refresh(
+    stream: Stream,
+    generation: number,
+    controller: AbortController,
+    owner: HostStreamConsumer,
+  ): Promise<void> {
+    try {
+      const live = [...stream.consumers.values()].filter((consumer) => consumer.active);
+      if (!stream.consumers.size || this.stopped || controller.signal.aborted) return;
+      const forceSnapshot =
+        stream.forceSnapshot ||
+        stream.sequence === 0 ||
+        [...stream.consumers.values()].some(
+          (consumer) => consumer.active && consumer.needsSnapshot,
+        );
+      stream.forceSnapshot = false;
+      stream.readingBaseline = forceSnapshot;
+      const snapshot = await this.options.load(
+        stream.target,
+        stream.principalId,
+        controller.signal,
+        {
+          forceSnapshot,
+          revision: forceSnapshot ? undefined : stream.revision,
+          sourceEpoch: forceSnapshot ? undefined : stream.sourceEpoch,
+          authorized: owner.executionAuthorized ?? owner.authorized,
+        },
+      );
+      if (
+        this.stopped ||
+        stream.deleted ||
+        generation !== stream.generation ||
+        controller.signal.aborted
+      )
+        return;
+      // Check each consumer once, after the asynchronous load. This also checks
+      // unchanged refreshes and rejects revocation during a protected read.
+      const authorized = new Set<Consumer>();
+      for (const consumer of live) {
+        if (await consumer.owner.authorized()) authorized.add(consumer);
+        else this.detach(consumer.owner.connectionId);
+      }
+      if (
+        !stream.consumers.size ||
+        this.stopped ||
+        stream.deleted ||
+        generation !== stream.generation ||
+        controller.signal.aborted
+      )
+        return;
+      if (!snapshot) {
+        this.tombstone(stream);
+        return;
+      }
+      if (snapshot.kind === "unchanged") {
+        if (forceSnapshot || snapshot.revision !== stream.revision)
+          throw new Error("A fresh stream baseline is required.");
+        return;
+      }
+      if (snapshot.kind === "delta" && (forceSnapshot || snapshot.baseRevision !== stream.revision))
+        throw new Error("Stream delta does not follow its committed baseline.");
+      const dataCapture = normalizeJsonWire(JsonValueSchema.parse(snapshot.data));
+      const dataWire = readNormalizedJsonWire(dataCapture);
+      const text = dataWire.serialized;
+      if (dataWire.byteLength + 1024 > this.limits.streamChunkBytes)
+        throw new Error("Stream snapshot requires a bounded bulk descriptor.");
+      const fingerprint = createHash("sha256").update(text).digest("hex");
+      if (
+        !forceSnapshot &&
+        fingerprint === stream.fingerprint &&
+        snapshot.revision === stream.revision &&
+        stream.events.length
+      )
+        return;
+      stream.sequence++;
+      if (!Number.isSafeInteger(stream.sequence)) throw new Error("Stream cursor exhausted.");
+      const revision =
+        snapshot.revision === undefined ? undefined : SafeCounterSchema.parse(snapshot.revision);
+      const event = {
+        ...this.event(stream, snapshot.kind ?? "snapshot", dataWire.wire as JsonValue, revision),
+        ...(snapshot.baseRevision === undefined
+          ? {}
+          : { baseRevision: SafeCounterSchema.parse(snapshot.baseRevision) }),
+      };
+      const { data: _data, ...metadata } = event;
+      const eventCapture = composeJsonWire(metadata, "data", dataCapture);
+      this.eventCaptures.set(event, eventCapture);
+      const retained = {
+        event,
+        bytes: readNormalizedJsonWire(eventCapture).byteLength,
+        at: this.now(),
+      };
+      stream.events.push(retained);
+      stream.bytes += retained.bytes;
+      this.bytes += retained.bytes;
+      stream.fingerprint = fingerprint;
+      stream.revision = revision;
+      stream.sourceEpoch = snapshot.sourceEpoch;
+      stream.touched = this.now();
+      this.prune();
+      for (const consumer of stream.consumers.values()) {
+        if (!authorized.has(consumer)) continue;
+        if (this.stopped || stream.deleted || generation !== stream.generation) return;
+        this.deliver(stream, consumer, event);
+      }
+    } catch {
+      if (!this.stopped && !stream.deleted && generation === stream.generation) {
+        stream.forceSnapshot = true;
+        stream.dirty = true;
+        for (const consumer of stream.consumers.values()) {
+          this.deliver(stream, consumer, this.event(stream, "resync-required"));
+          consumer.active = false;
+        }
+      }
+    }
+  }
+
+  private tombstone(stream: Stream): void {
+    stream.generation++;
+    stream.deleted = true;
+    stream.dirty = false;
+    stream.reading?.abort();
+    this.bytes -= stream.bytes;
+    stream.bytes = 0;
+    stream.events = [];
+    stream.fingerprint = undefined;
+    stream.revision = undefined;
+    stream.epoch = randomUUID();
+    stream.sequence = 0;
+    stream.touched = this.now();
+    for (const [identity, consumer] of stream.consumers) {
+      this.deliver(stream, consumer, this.event(stream, "closed", { reason: "deleted" }));
+      consumer.active = false;
+      consumer.pending.clear();
+      consumer.bytes = 0;
+      this.remove(identity);
+    }
+  }
+
+  private remove(identity: string): boolean {
+    const entry = this.subscriptions.get(identity);
+    if (!entry) return false;
+    entry.consumer.active = false;
+    entry.stream.consumers.delete(identity);
+    if (!entry.stream.consumers.size) entry.stream.reading?.abort();
+    entry.stream.touched = this.now();
+    this.subscriptions.delete(identity);
+    return true;
+  }
+
+  private shift(stream: Stream): void {
+    const event = stream.events.shift();
+    if (event) {
+      stream.bytes -= event.bytes;
+      this.bytes -= event.bytes;
+    }
+  }
+
+  private drop(stream: Stream): void {
+    this.bytes -= stream.bytes;
+    this.streams.delete(stream.key);
+  }
+
+  private prune(): void {
+    const now = this.now();
+    for (const stream of this.streams.values()) {
+      while (
+        stream.events.length &&
+        (stream.events.length > this.limits.maxReplayEvents ||
+          stream.bytes > this.limits.maxReplayBytes ||
+          now - stream.events[0].at > this.limits.maxReplayAgeMs)
+      )
+        this.shift(stream);
+      if (
+        !stream.consumers.size &&
+        !stream.reading &&
+        now - stream.touched > this.limits.maxReplayAgeMs
+      )
+        this.drop(stream);
+    }
+    while (this.bytes > this.limits.maxHostReplayBytes) {
+      let oldest: Stream | undefined;
+      for (const stream of this.streams.values())
+        if (stream.events.length && (!oldest || stream.events[0].at < oldest.events[0].at))
+          oldest = stream;
+      if (!oldest) break;
+      this.shift(oldest);
+    }
+  }
+}

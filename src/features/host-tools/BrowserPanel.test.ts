@@ -32,6 +32,611 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("retains the last frame while an input's replacement frame is delayed", async () => {
+  let resolveFrame!: (value: unknown) => void;
+  let frames = 0;
+  const state = {
+    open: true,
+    url: "https://example.test",
+    controlling: true,
+    leaseId: "lease",
+    documentId: "doc",
+    navigationId: "nav",
+    viewport: { width: 800, height: 600 },
+  };
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => {
+    if (method === "browser.frame") {
+      frames++;
+      if (frames === 2)
+        return await new Promise((resolve) => {
+          resolveFrame = resolve;
+        });
+      return { ...state, data: "YWJj", mimeType: "image/jpeg", width: 800, height: 600 };
+    }
+    return state;
+  });
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "session" })),
+  );
+  const image = container.querySelector("img")!;
+  vi.spyOn(image, "getBoundingClientRect").mockReturnValue({
+    left: 0,
+    top: 0,
+    width: 800,
+    height: 600,
+  } as DOMRect);
+  await act(async () => image.click());
+  expect(container.querySelector("img")).toBe(image);
+  expect(container.textContent).not.toContain("Refresh the frame to view this page.");
+  await act(async () => vi.advanceTimersByTimeAsync(150));
+  await act(async () =>
+    resolveFrame({ ...state, data: "ZGVm", mimeType: "image/jpeg", width: 800, height: 600 }),
+  );
+  expect(container.querySelector("img")?.src).toContain("ZGVm");
+});
+
+it("keeps the displayed image until the replacement finishes decoding", async () => {
+  let finishDecode!: () => void;
+  let decoding = 0;
+  vi.spyOn(Image.prototype, "decode").mockImplementation(() =>
+    ++decoding === 1
+      ? Promise.resolve()
+      : new Promise<void>((resolve) => {
+          finishDecode = resolve;
+        }),
+  );
+  let frames = 0;
+  const state = {
+    open: true,
+    controlling: true,
+    leaseId: "lease",
+    documentId: "doc",
+    navigationId: "nav",
+  };
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => ({
+    ...state,
+    ...(method === "browser.frame"
+      ? { data: ++frames === 1 ? "YWJj" : "ZGVm", mimeType: "image/jpeg", width: 800, height: 600 }
+      : {}),
+  }));
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "session" })),
+  );
+  const image = container.querySelector("img")!;
+  expect(image.src).toContain("YWJj");
+  await act(async () => {
+    button("Refresh frame").click();
+  });
+  expect(image.src).toContain("YWJj");
+  await act(async () => finishDecode());
+  expect(image.src).toContain("ZGVm");
+  vi.restoreAllMocks();
+});
+
+it("suspends hidden panel polling and restores it without navigating", async () => {
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => ({
+    open: true,
+    url: "https://example.test",
+    controlling: false,
+    documentId: "doc",
+    navigationId: "nav",
+    ...(method === "browser.frame"
+      ? { data: "YWJj", mimeType: "image/jpeg", width: 800, height: 600 }
+      : {}),
+  }));
+  await act(async () =>
+    root.render(
+      createElement(BrowserPanel, { cwd: "/project", sessionId: "session", active: false }),
+    ),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
+  expect(hostFeatureRequest).not.toHaveBeenCalled();
+  await act(async () =>
+    root.render(
+      createElement(BrowserPanel, { cwd: "/project", sessionId: "session", active: true }),
+    ),
+  );
+  expect(container.querySelector("img")).not.toBeNull();
+  await act(async () =>
+    root.render(
+      createElement(BrowserPanel, { cwd: "/project", sessionId: "session", active: false }),
+    ),
+  );
+  const calls = vi.mocked(hostFeatureRequest).mock.calls.length;
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(calls);
+  await act(async () =>
+    root.render(
+      createElement(BrowserPanel, { cwd: "/project", sessionId: "session", active: true }),
+    ),
+  );
+  expect(vi.mocked(hostFeatureRequest).mock.calls.some((call) => call[2] === "browser.open")).toBe(
+    false,
+  );
+});
+
+it("sends pointer down and up in order without a duplicate click", async () => {
+  const state = {
+    open: true,
+    controlling: true,
+    leaseId: "lease",
+    documentId: "doc",
+    navigationId: "nav",
+  };
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => ({
+    ...state,
+    ...(method === "browser.frame"
+      ? { data: "YWJj", mimeType: "image/jpeg", width: 800, height: 600 }
+      : {}),
+  }));
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "session" })),
+  );
+  const image = container.querySelector("img")!;
+  vi.spyOn(image, "getBoundingClientRect").mockReturnValue({
+    left: 0,
+    top: 0,
+    width: 800,
+    height: 600,
+  } as DOMRect);
+  await act(async () => {
+    image.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, clientX: 20, clientY: 30, button: 0 }),
+    );
+    image.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, clientX: 20, clientY: 30, button: 0 }),
+    );
+    image.click();
+  });
+  const inputs = vi
+    .mocked(hostFeatureRequest)
+    .mock.calls.filter((call) => call[2] === "browser.input")
+    .map((call) => call[3]);
+  expect(inputs.map((input) => input?.action)).toEqual(["down", "up"]);
+  expect(inputs.every((input) => input?.documentId === "doc")).toBe(true);
+});
+
+it("forwards focused hover and cancels wheel locally before scrolling the browser", async () => {
+  const state = {
+    open: true,
+    controlling: true,
+    leaseId: "lease",
+    documentId: "doc",
+    navigationId: "nav",
+  };
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => ({
+    ...state,
+    ...(method === "browser.frame"
+      ? { data: "YWJj", mimeType: "image/jpeg", width: 800, height: 600 }
+      : {}),
+  }));
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "hover-test" })),
+  );
+  const image = container.querySelector("img")!;
+  vi.spyOn(image, "getBoundingClientRect").mockReturnValue({
+    left: 0,
+    top: 0,
+    width: 800,
+    height: 600,
+  } as DOMRect);
+  image.focus();
+  const wheel = new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaX: 3, deltaY: 40 });
+  await act(async () => {
+    image.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, clientX: 80, clientY: 90 }),
+    );
+    image.dispatchEvent(wheel);
+  });
+  expect(wheel.defaultPrevented).toBe(true);
+  const inputs = vi
+    .mocked(hostFeatureRequest)
+    .mock.calls.filter((call) => call[2] === "browser.input")
+    .map((call) => call[3]);
+  expect(inputs).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ kind: "pointer", action: "move", x: 80, y: 90 }),
+      expect.objectContaining({ kind: "scroll", x: 3, y: 40 }),
+    ]),
+  );
+});
+
+it("releases a pressed pointer on cancellation", async () => {
+  const state = {
+    open: true,
+    controlling: true,
+    leaseId: "lease",
+    documentId: "doc",
+    navigationId: "nav",
+  };
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => ({
+    ...state,
+    ...(method === "browser.frame"
+      ? { data: "YWJj", mimeType: "image/jpeg", width: 800, height: 600 }
+      : {}),
+  }));
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "cancel-test" })),
+  );
+  const image = container.querySelector("img")!;
+  vi.spyOn(image, "getBoundingClientRect").mockReturnValue({
+    left: 0,
+    top: 0,
+    width: 800,
+    height: 600,
+  } as DOMRect);
+  await act(async () => {
+    image.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, clientX: 12, clientY: 16, button: 0 }),
+    );
+    image.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
+  });
+  const inputs = vi
+    .mocked(hostFeatureRequest)
+    .mock.calls.filter((call) => call[2] === "browser.input")
+    .map((call) => call[3]);
+  expect(inputs.map((input) => input?.action)).toEqual(["down", "up"]);
+});
+
+it("does not replay queued input under a replacement lease for the same document", async () => {
+  let inputCount = 0;
+  const state = {
+    open: true,
+    controlling: true,
+    leaseId: "lease-a",
+    documentId: "same-doc",
+    navigationId: "nav",
+  };
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => ({
+    ...state,
+    ...(method === "browser.input" ? { leaseId: ++inputCount === 1 ? "lease-b" : "lease-b" } : {}),
+    ...(method === "browser.frame"
+      ? { data: "YWJj", mimeType: "image/jpeg", width: 800, height: 600 }
+      : {}),
+  }));
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "lease-test" })),
+  );
+  const image = container.querySelector("img")!;
+  vi.spyOn(image, "getBoundingClientRect").mockReturnValue({
+    left: 0,
+    top: 0,
+    width: 800,
+    height: 600,
+  } as DOMRect);
+  await act(async () => {
+    image.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    image.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: 0 }));
+  });
+  expect(
+    vi.mocked(hostFeatureRequest).mock.calls.filter((call) => call[2] === "browser.input"),
+  ).toHaveLength(1);
+  expect(container.textContent).toContain(
+    "Browser input was not sent because the page or control changed.",
+  );
+});
+
+it("rechecks the lease at actual dispatch after a queued frame read", async () => {
+  let finish!: (value: unknown) => void;
+  let frames = 0;
+  const state = {
+    open: true,
+    controlling: true,
+    leaseId: "lease-a",
+    documentId: "doc",
+    navigationId: "nav",
+  };
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => {
+    if (method === "browser.frame" && ++frames === 2)
+      return await new Promise((resolve) => {
+        finish = resolve;
+      });
+    return {
+      ...state,
+      ...(method === "browser.frame"
+        ? { data: "YWJj", mimeType: "image/jpeg", width: 800, height: 600 }
+        : {}),
+    };
+  });
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "serial-lease" })),
+  );
+  const image = container.querySelector("img")!;
+  vi.spyOn(image, "getBoundingClientRect").mockReturnValue({
+    left: 0,
+    top: 0,
+    width: 800,
+    height: 600,
+  } as DOMRect);
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  await act(async () => image.click());
+  await act(async () =>
+    finish({
+      ...state,
+      leaseId: "lease-b",
+      data: "YWJj",
+      mimeType: "image/jpeg",
+      width: 800,
+      height: 600,
+    }),
+  );
+  expect(
+    vi.mocked(hostFeatureRequest).mock.calls.filter((call) => call[2] === "browser.input"),
+  ).toHaveLength(0);
+});
+
+it("blocks further input after a failed frame until a successful explicit refresh", async () => {
+  let frames = 0;
+  const state = {
+    open: true,
+    controlling: true,
+    leaseId: "lease",
+    documentId: "doc",
+    navigationId: "nav",
+  };
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => {
+    if (method === "browser.frame" && ++frames === 2) throw new Error("capture failed");
+    return {
+      ...state,
+      ...(method === "browser.frame"
+        ? { data: "YWJj", mimeType: "image/jpeg", width: 800, height: 600 }
+        : {}),
+    };
+  });
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "failure-test" })),
+  );
+  const image = container.querySelector("img")!;
+  vi.spyOn(image, "getBoundingClientRect").mockReturnValue({
+    left: 0,
+    top: 0,
+    width: 800,
+    height: 600,
+  } as DOMRect);
+  await act(async () => image.click());
+  await act(async () => vi.advanceTimersByTimeAsync(50));
+  expect(container.querySelector("img")).toBe(image);
+  await act(async () => image.click());
+  expect(
+    vi.mocked(hostFeatureRequest).mock.calls.filter((call) => call[2] === "browser.input"),
+  ).toHaveLength(1);
+  await act(async () => button("Refresh frame").click());
+  await act(async () => image.click());
+  expect(
+    vi.mocked(hostFeatureRequest).mock.calls.filter((call) => call[2] === "browser.input"),
+  ).toHaveLength(2);
+});
+
+it("never resends uncertain input and requires explicit frame recovery", async () => {
+  let inputs = 0;
+  const state = {
+    open: true,
+    controlling: true,
+    leaseId: "lease",
+    documentId: "doc",
+    navigationId: "nav",
+  };
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => {
+    if (method === "browser.input" && ++inputs === 1) throw new Error("RPC_TIMEOUT");
+    return {
+      ...state,
+      ...(method === "browser.frame"
+        ? { data: "YWJj", mimeType: "image/jpeg", width: 800, height: 600 }
+        : {}),
+    };
+  });
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "timeout-test" })),
+  );
+  const image = container.querySelector("img")!;
+  vi.spyOn(image, "getBoundingClientRect").mockReturnValue({
+    left: 0,
+    top: 0,
+    width: 800,
+    height: 600,
+  } as DOMRect);
+  await act(async () => image.click());
+  await act(async () => image.click());
+  expect(inputs).toBe(1);
+  await act(async () => vi.advanceTimersByTimeAsync(2000));
+  expect(inputs).toBe(1);
+  await act(async () => button("Refresh frame").click());
+  await act(async () => image.click());
+  expect(inputs).toBe(2);
+});
+
+it("dispatches queued pointer input before requesting one replacement frame", async () => {
+  const state = {
+    open: true,
+    controlling: true,
+    leaseId: "lease",
+    documentId: "doc",
+    navigationId: "nav",
+  };
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => ({
+    ...state,
+    ...(method === "browser.frame"
+      ? { data: "YWJj", mimeType: "image/jpeg", width: 800, height: 600 }
+      : {}),
+  }));
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "session" })),
+  );
+  const image = container.querySelector("img")!;
+  vi.spyOn(image, "getBoundingClientRect").mockReturnValue({
+    left: 0,
+    top: 0,
+    width: 800,
+    height: 600,
+  } as DOMRect);
+  await act(async () => {
+    image.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    image.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: 0 }));
+  });
+  const beforeFrame = vi.mocked(hostFeatureRequest).mock.calls.map((call) => call[2]);
+  expect(beforeFrame.slice(-2)).toEqual(["browser.input", "browser.input"]);
+  await act(async () => vi.advanceTimersByTimeAsync(150));
+  expect(
+    vi.mocked(hostFeatureRequest).mock.calls.filter((call) => call[2] === "browser.frame"),
+  ).toHaveLength(2);
+});
+
+it("sends text through the focused browser input receiver", async () => {
+  const state = {
+    open: true,
+    controlling: true,
+    leaseId: "lease",
+    documentId: "doc",
+    navigationId: "nav",
+  };
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => ({
+    ...state,
+    ...(method === "browser.frame"
+      ? { data: "YWJj", mimeType: "image/jpeg", width: 800, height: 600 }
+      : {}),
+  }));
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "session" })),
+  );
+  const receiver = container.querySelector<HTMLTextAreaElement>(
+    'textarea[aria-label="Direct browser input"]',
+  )!;
+  receiver.focus();
+  await act(async () => {
+    receiver.value = "İstanbul";
+    receiver.dispatchEvent(new InputEvent("input", { bubbles: true, data: "İstanbul" }));
+  });
+  expect(hostFeatureRequest).toHaveBeenCalledWith(
+    "/project",
+    "browser.sessionScopes.v1",
+    "browser.input",
+    expect.objectContaining({ kind: "text", text: "İstanbul", documentId: "doc" }),
+  );
+});
+
+it("holds intermediate composition and sends final pasted text once", async () => {
+  const state = {
+    open: true,
+    controlling: true,
+    leaseId: "lease",
+    documentId: "doc",
+    navigationId: "nav",
+  };
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => ({
+    ...state,
+    ...(method === "browser.frame"
+      ? { data: "YWJj", mimeType: "image/jpeg", width: 800, height: 600 }
+      : {}),
+  }));
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "composition-test" })),
+  );
+  const receiver = container.querySelector<HTMLTextAreaElement>(
+    'textarea[aria-label="Direct browser input"]',
+  )!;
+  receiver.focus();
+  await act(async () => {
+    receiver.value = "İsta";
+    receiver.dispatchEvent(
+      new InputEvent("input", { bubbles: true, data: "İsta", isComposing: true }),
+    );
+  });
+  expect(vi.mocked(hostFeatureRequest).mock.calls.some((call) => call[2] === "browser.input")).toBe(
+    false,
+  );
+  await act(async () => {
+    receiver.value = "İstanbul";
+    receiver.dispatchEvent(
+      new InputEvent("input", { bubbles: true, data: "İstanbul", inputType: "insertFromPaste" }),
+    );
+  });
+  expect(
+    vi
+      .mocked(hostFeatureRequest)
+      .mock.calls.filter((call) => call[2] === "browser.input")
+      .map((call) => call[3]?.text),
+  ).toEqual(["İstanbul"]);
+});
+
+it("forwards focused selection shortcut with its modifier", async () => {
+  const state = {
+    open: true,
+    controlling: true,
+    leaseId: "lease",
+    documentId: "doc",
+    navigationId: "nav",
+  };
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => ({
+    ...state,
+    ...(method === "browser.frame"
+      ? { data: "YWJj", mimeType: "image/jpeg", width: 800, height: 600 }
+      : {}),
+  }));
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "key-test" })),
+  );
+  const receiver = container.querySelector<HTMLTextAreaElement>(
+    'textarea[aria-label="Direct browser input"]',
+  )!;
+  receiver.focus();
+  await act(async () =>
+    receiver.dispatchEvent(
+      new KeyboardEvent("keydown", { bubbles: true, key: "a", ctrlKey: true }),
+    ),
+  );
+  expect(hostFeatureRequest).toHaveBeenCalledWith(
+    "/project",
+    "browser.sessionScopes.v1",
+    "browser.input",
+    expect.objectContaining({ kind: "key", key: "A", modifiers: ["Control"] }),
+  );
+});
+
+it("renders a390px browser frame without stretching its coordinate system", async () => {
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => ({
+    open: true,
+    url: "http://localhost:3000/",
+    controlling: true,
+    leaseId: "lease",
+    leaseExpiresAt: Date.now() + 30_000,
+    viewport: { width: 390, height: 844 },
+    navigationId: "mobile",
+    ...(method === "browser.frame"
+      ? { width: 390, height: 844, mimeType: "image/jpeg", data: "mobile" }
+      : {}),
+  }));
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "session" })),
+  );
+  const image = container.querySelector<HTMLImageElement>(".host-browser-frame")!;
+  expect(image).not.toBeNull();
+  const preview = container.querySelector<HTMLElement>(".host-browser-preview")!;
+  expect(preview.style.getPropertyValue("--host-browser-width")).toBe("390px");
+  expect(Number(preview.style.getPropertyValue("--host-browser-aspect"))).toBeCloseTo(390 / 844);
+  vi.spyOn(image, "getBoundingClientRect").mockReturnValue({
+    left: 10,
+    top: 20,
+    width: 195,
+    height: 422,
+  } as DOMRect);
+  await act(async () =>
+    image.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 107.5, clientY: 231 })),
+  );
+  expect(hostFeatureRequest).toHaveBeenCalledWith(
+    "/project",
+    "browser.sessionScopes.v1",
+    "browser.input",
+    {
+      kind: "click",
+      x: 195,
+      y: 422,
+      leaseId: "lease",
+      sessionId: "session",
+      requestId: expect.any(String),
+    },
+  );
+});
+
 it("opens an explicitly selected preview URL on the owning host after obtaining a lease", async () => {
   vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => ({
     open: method === "browser.open" || method === "browser.frame",
@@ -135,7 +740,7 @@ it("recovers from another client's lease through an explicit control claim", asy
   await act(async () => root.render(createElement(BrowserPanel, { cwd: "/project" })));
   await act(async () => button("Open website").click());
   expect(container.querySelector('[role="alert"]')).not.toBeNull();
-  await act(async () => button("Claim control").click());
+  await act(async () => button("View only").click());
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(hostFeatureRequest).toHaveBeenLastCalledWith(
     "/project",
@@ -177,7 +782,7 @@ it("expires control at the host lease deadline while leaving viewing available",
   if (!button("Type text")) await act(async () => button("Browser controls and setup").click());
   expect(button("Type text").disabled).toBe(true);
   expect(button("Refresh frame").disabled).toBe(false);
-  expect(button("Claim control").disabled).toBe(false);
+  expect(button("View only").disabled).toBe(false);
 });
 
 it("loads an existing shared view on entry without taking control", async () => {
@@ -216,7 +821,7 @@ it("uses the current lease and host frame dimensions for input", async () => {
     };
   });
   await act(async () => root.render(createElement(BrowserPanel, { cwd: "/project" })));
-  await act(async () => button("Claim control").click());
+  await act(async () => button("View only").click());
   const img = container.querySelector("img")!;
   vi.spyOn(img, "getBoundingClientRect").mockReturnValue({
     left: 10,
@@ -232,6 +837,7 @@ it("uses the current lease and host frame dimensions for input", async () => {
     x: 320,
     y: 180,
     leaseId: "current-lease",
+    requestId: expect.any(String),
   });
 });
 
@@ -292,7 +898,14 @@ it("shows an unavailable state and recovers through retry when the initial host 
   await act(async () => root.render(createElement(BrowserPanel, { cwd: "/project" })));
   expect(container.textContent).toContain("Browser unavailable");
   expect(container.textContent).not.toContain("Checking browser…");
+  const status = container.querySelector(".host-browser-status-dot")!;
+  expect(status.getAttribute("data-tone")).toBe("danger");
+  // The status dot opens the controls, where the failed read can be retried.
+  await act(async () => button("Browser unavailable").click());
   await act(async () => button("Retry").click());
+  expect(container.querySelector(".host-browser-status-dot")!.getAttribute("data-tone")).toBe(
+    "warning",
+  );
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.textContent).toContain("Browser closed");
 });
@@ -319,27 +932,28 @@ it("sets up the browser only on an explicit request on the owning host", async (
     { leaseId: undefined },
   );
   await act(async () => button("Browser controls and setup").click());
-  expect(document.body.textContent).toContain("Browser runtime ready");
   expect(button("Set up host browser")).toBeUndefined();
 });
 
-it("refreshes live view only when enabled and pauses while hidden or unmounted", async () => {
+it("refreshes live view by default and pauses while disabled, hidden or unmounted", async () => {
   vi.mocked(hostFeatureRequest).mockResolvedValue({
     open: true,
     url: "https://example.test",
     controlling: false,
   });
   await act(async () => root.render(createElement(BrowserPanel, { cwd: "remote://mac/repo" })));
-  await act(async () => vi.advanceTimersByTime(3000));
-  expect(hostFeatureRequest).toHaveBeenCalledTimes(2);
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(3);
   const liveSwitch = container.querySelector<HTMLButtonElement>('[role="switch"]')!;
   await act(async () => liveSwitch.click());
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
   expect(hostFeatureRequest).toHaveBeenCalledTimes(3);
+  await act(async () => liveSwitch.click());
   const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
-  await act(async () => vi.advanceTimersByTime(3000));
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
   expect(hostFeatureRequest).toHaveBeenCalledTimes(3);
   hidden.mockReturnValue(false);
-  await act(async () => vi.advanceTimersByTime(1000));
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
   expect(hostFeatureRequest).toHaveBeenCalledTimes(4);
   await act(async () => root.render(null));
   await act(async () => vi.advanceTimersByTime(3000));
@@ -378,12 +992,16 @@ it("uses the explicitly selected local browser and blocks conversation annotatio
     "remote://macbook/repo",
     "browser.shared.setup",
     "browser.setup",
-    { leaseId: "selected-lease" },
+    {
+      leaseId: "selected-lease",
+      sessionId: "mac-session",
+      ownerPresentationScope: expect.any(String),
+    },
     { kind: "local" },
   );
   expect(hostFeatureRequest).not.toHaveBeenCalled();
   expect(
-    vi.mocked(hostToolRequest).mock.calls.every((call) => !("sessionId" in (call[3] ?? {}))),
+    vi.mocked(hostToolRequest).mock.calls.every((call) => call[3]?.sessionId === "mac-session"),
   ).toBe(true);
 });
 
@@ -455,7 +1073,7 @@ it("clears live frames and control on a target switch and ignores a late old-hos
       }),
     ),
   );
-  await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
   await act(async () =>
     root.render(createElement(BrowserPanel, { cwd: "/repo", hostTarget: { kind: "local" } })),
   );
@@ -471,7 +1089,7 @@ it("clears live frames and control on a target switch and ignores a late old-hos
   expect(container.querySelector("img")).toBeNull();
   expect(
     container.querySelector<HTMLButtonElement>('[role="switch"]')!.getAttribute("aria-checked"),
-  ).toBe("false");
+  ).toBe("true");
   expect(container.textContent).not.toContain("https://old.test");
   expect(button("Open website").disabled).toBe(false);
   if (!button("Type text")) await act(async () => button("Browser controls and setup").click());

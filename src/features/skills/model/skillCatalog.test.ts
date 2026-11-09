@@ -51,6 +51,7 @@ import {
 } from "./skills";
 import type { DiscoveredSkill } from "../../../platform/tauri/fs";
 import type { PiSkillCommand } from "../../../integrations/harness/providers/pi/piSkills";
+import { loadSkillRestrictions } from "./skillPreferences";
 
 function piSkill(name: string): PiSkillCommand {
   return {
@@ -96,6 +97,42 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("provider-aware skill catalog", () => {
+  it("filters targeted installs from native inventories and live updates after scope changes", async () => {
+    const context = {
+      harness: "omp" as const,
+      cwd: "/scoped-project",
+      sessionId: "scoped-session",
+    };
+    let installProvider = "codex";
+    mocks.listSkills.mockImplementation(async (_cwd, _disabled, provider?: string) =>
+      provider && installProvider !== "all" && installProvider !== provider
+        ? []
+        : [
+            {
+              name: "workflow",
+              path: "/skills/workflow/SKILL.md",
+              scope: "user",
+              source: "agents",
+              description: "",
+              installProvider,
+            },
+          ],
+    );
+    expect(await loadSkills(context)).toEqual([]);
+    installProvider = "all";
+    invalidateSkills();
+    expect(await loadSkills(context)).toMatchObject([{ kind: "native", name: "workflow" }]);
+    const updates = vi.fn();
+    const stop = subscribeSkills(context, updates);
+    installProvider = "codex";
+    mocks.subscribe.mock.calls[0]![1]([
+      { name: "workflow", invocation: "workflow", source: "omp", description: "" },
+    ]);
+    await vi.waitFor(() => expect(updates).toHaveBeenCalledWith([]));
+    expect(peekSkills(context)).toEqual([]);
+    stop();
+  });
+
   it("uses the current remote policy and ignores stale desktop restrictions after re-enable", async () => {
     const storage = new Map<string, string>();
     vi.stubGlobal("localStorage", {
@@ -121,14 +158,47 @@ describe("provider-aware skill catalog", () => {
     saveDisabledSkillPaths([]);
     expect((await loadSkills(context))[0].path).toBe(projectPath);
     saveDisabledSkillPaths([projectPath]);
-    mocks.getSkillPolicy.mockResolvedValue({ disabledNames: ["review"], disabledPaths: [projectPath] });
+    mocks.getSkillPolicy.mockResolvedValue({
+      disabledNames: ["review"],
+      disabledPaths: [projectPath],
+    });
     expect(await loadSkills(context)).toEqual([]);
-    expect(mocks.listSkills).toHaveBeenLastCalledWith(context.cwd, [projectPath]);
+    expect(mocks.listSkills).toHaveBeenLastCalledWith(context.cwd, [projectPath], context.harness);
     mocks.getSkillPolicy.mockResolvedValue({ disabledNames: [], disabledPaths: [] });
     expect((await loadSkills(context, { refresh: true }))[0].path).toBe(projectPath);
+    expect(mocks.getSkillPolicy).toHaveBeenCalledTimes(3);
+    expect(mocks.listSkills).toHaveBeenLastCalledWith(context.cwd, [], context.harness);
     expect(loadDisabledSkillPaths()).toEqual([projectPath]);
     saveDisabledSkillPaths([]);
     vi.unstubAllGlobals();
+  });
+  it("refreshes remote restrictions before returning cached enabled skills and fails closed offline", async () => {
+    const context = { harness: "claude" as const, cwd: "remote://policy-refresh/work/repo" };
+    const path = `${context.cwd}/.agents/skills/review/SKILL.md`;
+    mocks.listSkills.mockResolvedValue([
+      { name: "review", path, description: "Review", source: "agents", scope: "project" },
+    ]);
+    expect((await loadSkills(context)).map((skill) => skill.name)).toEqual(["review"]);
+    mocks.getSkillPolicy.mockResolvedValue({ disabledNames: ["review"], disabledPaths: [path] });
+    expect(await loadSkills(context, { refresh: true })).toEqual([]);
+    expect(mocks.listSkills).toHaveBeenLastCalledWith(context.cwd, [path], context.harness);
+    mocks.getSkillPolicy.mockRejectedValueOnce(new Error("remote unavailable"));
+    await expect(loadSkills(context, { refresh: true })).rejects.toThrow(
+      "Could not load skill restrictions",
+    );
+  });
+
+  it("does not let a late remote policy read replace an explicit refresh", async () => {
+    const cwd = "remote://policy-race/work/repo";
+    const previous = deferred<{ disabledNames: string[]; disabledPaths: string[] }>();
+    const current = { disabledNames: ["review"], disabledPaths: [] };
+    mocks.getSkillPolicy.mockReturnValueOnce(previous.promise).mockResolvedValue(current);
+    const oldRead = loadSkillRestrictions(cwd);
+    expect(await loadSkillRestrictions(cwd, { refresh: true })).toEqual(current);
+    previous.resolve({ disabledNames: [], disabledPaths: [] });
+    expect(await oldRead).toEqual(current);
+    expect(await loadSkillRestrictions(cwd)).toEqual(current);
+    expect(mocks.getSkillPolicy).toHaveBeenCalledTimes(2);
   });
   it("discovers remote skills on their machine even for native-command harnesses and shares in-flight loads", async () => {
     const pending = deferred<DiscoveredSkill[]>();
@@ -142,7 +212,7 @@ describe("provider-aware skill catalog", () => {
     const second = loadSkills({ ...context, sessionId: "two" });
     await vi.waitFor(() => expect(mocks.listSkills).toHaveBeenCalled());
     expect(mocks.discoverOmpCommands).not.toHaveBeenCalled();
-    expect(mocks.listSkills).toHaveBeenCalledExactlyOnceWith(context.cwd, []);
+    expect(mocks.listSkills).toHaveBeenCalledExactlyOnceWith(context.cwd, [], context.harness);
     pending.resolve([
       {
         name: "review",
@@ -237,7 +307,7 @@ describe("provider-aware skill catalog", () => {
       { kind: "native", source: "omp", name: "workflow" },
     ]);
     expect(mocks.discoverOmpCommands).toHaveBeenCalledWith(context);
-    expect(mocks.listSkills).not.toHaveBeenCalled();
+    expect(mocks.listSkills).toHaveBeenCalledWith(context.cwd, null, context.harness);
     await expect(applySkillsToTurn("/workflow foo /create-skill", context)).resolves.toBe(
       "/workflow foo /create-skill",
     );
@@ -272,6 +342,7 @@ describe("provider-aware skill catalog", () => {
         description: "",
       },
     ]);
+    await vi.waitFor(() => expect(onSkills).toHaveBeenCalled());
     probe.resolve([
       {
         name: "old-workflow",
@@ -296,13 +367,13 @@ describe("provider-aware skill catalog", () => {
     await expect(loadSkills(context)).resolves.toMatchObject([{ name: "workflow" }]);
     invalidateSkills();
     await expect(loadSkills(context)).resolves.toEqual([]);
-    expect(mocks.listSkills).not.toHaveBeenCalled();
+    expect(mocks.listSkills).toHaveBeenCalledWith(context.cwd, null, context.harness);
   });
 
   it("keeps filesystem discovery and the built-in row for non-Pi providers", async () => {
     const catalog = await loadSkills({ harness: "claude", cwd: "/repo" });
 
-    expect(mocks.listSkills).toHaveBeenCalledWith("/repo", []);
+    expect(mocks.listSkills).toHaveBeenCalledWith("/repo", [], "claude");
     expect(catalog).toContainEqual(BUILTIN_CREATE_SKILL);
     expect(mocks.discoverPiSkills).not.toHaveBeenCalled();
   });

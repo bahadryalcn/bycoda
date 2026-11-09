@@ -12,10 +12,10 @@ export function ZoomBadge({ zoom, onReset }: { zoom: number; onReset: () => void
       variant="ghost"
       motion="none"
       type="button"
-      title={t("Reset zoom")}
+      tooltip={t("Reset zoom")}
       aria-label={t("Zoom {p0}, reset to 100%", { p0: formatZoomPercent(zoom) })}
       onClick={onReset}
-      className="absolute bottom-3 right-4 z-30 tabular-nums"
+      className="absolute bottom-3 right-4 z-1 tabular-nums"
     >
       {formatZoomPercent(zoom)}
     </Button>

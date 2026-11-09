@@ -37,10 +37,10 @@ import {
   linkedSessionSeenAt,
   subscribeLinkedSessionSeen,
 } from "../model/linkedSessionSeen";
-import { loadHiddenLinearTeamIds } from "../model/linear";
+import { readHiddenLinearTeamIds } from "../model/linear";
 import {
   JIRA_CHANGE_EVENT,
-  loadHiddenJiraProjectIds,
+  readHiddenJiraProjectIds,
   jiraBackgroundSyncEnabled,
 } from "../model/jira";
 import type { RecentProject } from "../../projects/model/recents";
@@ -218,8 +218,9 @@ export function useInboxActivity(
         assignedToMe: filters.assignedToMe,
         state: inboxFetchState(filters),
         search: "",
-        linearHiddenTeamIds: loadHiddenLinearTeamIds(),
-        jiraHiddenProjectIds: loadHiddenJiraProjectIds(),
+        // Unreadable scope stays undefined so the fetch fails closed instead of widening.
+        linearHiddenTeamIds: readHiddenLinearTeamIds() ?? undefined,
+        jiraHiddenProjectIds: readHiddenJiraProjectIds() ?? undefined,
         jiraEnabled: jiraBackgroundSyncEnabled(),
       };
       try {
@@ -256,10 +257,10 @@ export function useInboxActivity(
         );
         // A partial first snapshot cannot define the existing-item baseline:
         // recovered older items must not become false new-activity badges.
-        if (failedProviders.length === 0) seedInboxSeenIfNeeded(entries);
+        if (failedProviders.length === 0) await seedInboxSeenIfNeeded(entries);
         const selfAuthoredEntries = entries.filter((entry) => selfAuthoredKeys.has(entry.key));
         if (selfAuthoredEntries.length > 0) {
-          markInboxItemsSeen(selfAuthoredEntries);
+          await markInboxItemsSeen(selfAuthoredEntries);
         }
         for (const item of selfAuthored) {
           if (item.provider !== "github" || (item.kind !== "issue" && item.kind !== "pr")) continue;

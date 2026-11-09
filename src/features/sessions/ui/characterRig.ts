@@ -29,6 +29,8 @@ export type RigPose = {
   offForearmAngle: number;
   propAngle: number;
   capeAngle: number;
+  /** Weapon layer visibility, 0-1; hidden weapons still exist at their joint angle. */
+  weaponAlpha: number;
   /** Overlay strengths, 0-1. */
   glow: number;
   blink: number;
@@ -51,6 +53,7 @@ export const restRigPose = (): RigPose => ({
   offForearmAngle: 0,
   propAngle: 0,
   capeAngle: 0,
+  weaponAlpha: 1,
   glow: 0,
   blink: 0,
   mouth: 0,
@@ -241,7 +244,9 @@ export function paintRig(
           ? pose.mouth
           : layer.part === "glow"
             ? pose.glow
-            : 1;
+            : layer.part === "weapon"
+              ? pose.weaponAlpha
+              : 1;
     if (alpha <= 0) continue;
     c.save();
     c.globalAlpha *= Math.min(1, alpha);

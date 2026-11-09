@@ -8,6 +8,7 @@ import { Sidebar } from "./Sidebar";
 import { loadSessionFolders } from "../../features/sessions/model/sessionFolders";
 import { useProjectDiffStats } from "../../features/source-control/hooks/useProjectDiffStats";
 import { copyText } from "../../platform/tauri/clipboard";
+import { registerAppConfirmHost, type AppConfirmRequest } from "../../shared/model/appConfirm";
 import {
   DEFAULT_SESSION_LIST_DISPLAY,
   saveSessionListDisplay,
@@ -17,6 +18,10 @@ import {
 // Keep native services out of these menu/input interaction tests.
 vi.mock("../../features/source-control/hooks/useProjectDiffStats", () => ({
   useProjectDiffStats: vi.fn(() => null),
+  useProjectsDiffStats: vi.fn(() => []),
+}));
+vi.mock("../../features/source-control/hooks/useProjectWorktrees", () => ({
+  useProjectWorktrees: () => ({ data: undefined, refresh: async () => false }),
 }));
 vi.mock("../../features/source-control/hooks/useGitFileStatuses", () => ({
   useGitFileStatuses: () => ({ files: new Map(), dirs: new Map() }),
@@ -40,6 +45,40 @@ function render() {
 
 function card(): HTMLElement {
   return container.querySelector('[data-session-card="session-1"]')!;
+}
+
+function listRow(id: string) {
+  return container.querySelector<HTMLElement>(`[data-session-card="${id}"]`)?.closest("li");
+}
+
+/** A group header by its name; the name rides in the shared tooltip, not a native title. */
+function folderButton(name: string, scope: ParentNode = container): HTMLButtonElement {
+  return [...scope.querySelectorAll<HTMLButtonElement>("[data-folder-row]")].find(
+    (button) => button.querySelector(".truncate")?.textContent === name,
+  )!;
+}
+
+/** A project picker row by its path (shown as name then parent folder); the full path rides
+ *  in the shared tooltip, not a native title. */
+function pickerRow(path: string, name?: string): HTMLButtonElement {
+  const cut = path.lastIndexOf("/");
+  const shown = `${name ?? path.slice(cut + 1)}${path.slice(0, cut)}`;
+  return [
+    ...document.querySelectorAll<HTMLButtonElement>('[aria-label="Project picker"] button'),
+  ].find((button) => button.textContent?.trim().endsWith(shown))!;
+}
+
+/** Hovers a control until the shared tooltip opens and returns its text. */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
 }
 
 it("updates the session badge when a question replaces an action approval", async () => {
@@ -69,6 +108,22 @@ function renameInput(): HTMLInputElement {
 
 function projectSearchInput(): HTMLInputElement | null {
   return document.querySelector('input[placeholder="Search projects..."]');
+}
+
+async function openProjectsFlyout() {
+  const projects = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Projects and groups"]',
+  )!;
+  await act(async () => projects.click());
+}
+
+async function openProjectPicker() {
+  const projects = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Projects and groups"]',
+  );
+  if (projects) await act(async () => projects.click());
+  const picker = document.querySelector<HTMLButtonElement>('button[aria-label^="Switch project"]')!;
+  await act(async () => picker.click());
 }
 
 function pressKey(target: HTMLElement, key: string) {
@@ -102,7 +157,58 @@ function startRename() {
   return renameInput();
 }
 
+it("keeps dozens of folder targets inside Add to and adds the session to the chosen folder", () => {
+  props.sessions = [
+    ...props.sessions,
+    ...Array.from({ length: 50 }, (_, index) => ({
+      ...props.sessions[0],
+      id: `existing-${index}`,
+    })),
+  ];
+  localStorage.setItem(
+    "bycoda.sessionFolders",
+    JSON.stringify({
+      "/workspace/project": Array.from({ length: 50 }, (_, index) => ({
+        id: `group-${index}`,
+        name: `Group ${index}`,
+        sessionIds: [`existing-${index}`],
+        collapsed: true,
+      })),
+    }),
+  );
+  act(render);
+  act(() =>
+    card().dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+  );
+  const menu = document.querySelector<HTMLElement>('[role="menu"]')!;
+  expect(menu.textContent).not.toContain("Group 49");
+  const add = Array.from(menu.querySelectorAll<HTMLButtonElement>("button")).find(
+    (button) => button.textContent === "Add to",
+  )!;
+  expect(add.getAttribute("aria-haspopup")).toBe("menu");
+  act(() => add.click());
+  const submenu = document.querySelector<HTMLElement>('[role="menu"][aria-label="Add to"]')!;
+  expect(submenu.querySelectorAll('[role="menuitemcheckbox"]')).toHaveLength(50);
+  const target = Array.from(submenu.querySelectorAll<HTMLButtonElement>("button")).find(
+    (button) => button.textContent === "Group 49",
+  )!;
+  act(() => target.click());
+  expect(
+    loadSessionFolders("/workspace/project").find((folder) => folder.id === "group-49")?.sessionIds,
+  ).toEqual(["existing-49", "session-1"]);
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+});
+
+// Deletion confirms through the in-app host; these tests drive it with a stubbed `confirm`.
+let unregisterConfirmHost: (() => void) | undefined;
+const registerConfirmStub = () => {
+  unregisterConfirmHost = registerAppConfirmHost(async (request) =>
+    Boolean(globalThis.confirm?.(request.fallbackText ?? request.message)),
+  );
+};
+
 beforeEach(() => {
+  registerConfirmStub();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.mocked(copyText).mockReset().mockResolvedValue(undefined);
   vi.mocked(useProjectDiffStats).mockReturnValue(null);
@@ -157,6 +263,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  unregisterConfirmHost?.();
   act(() => root.unmount());
   container.remove();
   localStorage.clear();
@@ -280,29 +387,16 @@ describe("sidebar session multiselection", () => {
     },
   );
 
-  it("starts a range at the active session when pagination hides the anchor", () => {
+  it("keeps active range anchor reachable when virtualization hides its row", () => {
     props.sessions = Array.from({ length: 80 }, (_, index) => ({
       ...props.sessions[0],
       id: `session-${index + 1}`,
       updatedAt: 100 - index,
     }));
-    props.activeSessionId = "session-80";
+    props.activeSessionId = "session-40";
     act(() => render());
-    act(() => container.querySelector<HTMLElement>('[data-session-card="session-40"]')!.click());
-
-    // Switching panes does not discard the last plain-click anchor.
-    props.activeSessionId = "session-1";
-    act(() => render());
-    const search = container.querySelector<HTMLInputElement>(
-      'input[placeholder="Search conversations..."]',
-    )!;
-    // All sessions still match, but the list returns to its first page.
-    typeTitle(search, "Original conversation");
-    expect(container.querySelector('[data-session-card="session-40"]')).toBeNull();
-    expect(container.querySelectorAll("[data-session-card]")).toHaveLength(32);
-
     act(() =>
-      container.querySelector('[data-session-card="session-3"]')!.dispatchEvent(
+      container.querySelector('[data-session-card="session-1"]')!.dispatchEvent(
         new MouseEvent("click", {
           bubbles: true,
           shiftKey: true,
@@ -310,12 +404,16 @@ describe("sidebar session multiselection", () => {
       ),
     );
     expect(
-      Array.from(container.querySelectorAll('[data-session-selected="true"]'), (el) =>
-        el.getAttribute("data-session-card"),
-      ),
-    ).toEqual(["session-1", "session-2", "session-3"]);
-    expect(props.onSelectSession).toHaveBeenCalledTimes(1);
-    expect(props.onSelectSession).toHaveBeenCalledWith("session-40", { keepOpen: false });
+      container.querySelector('[data-session-card="session-1"][data-session-selected="true"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-session-card="session-40"][data-session-selected="true"]'),
+    ).not.toBeNull();
+    expect(container.querySelector("[data-session-bulk-bar]")?.textContent).toContain(
+      "40 selected",
+    );
+    expect(container.querySelectorAll("[data-session-card]").length).toBeLessThan(32);
+    expect(props.onSelectSession).not.toHaveBeenCalled();
   });
 
   it.each(["ctrlKey", "metaKey"] as const)(
@@ -628,15 +726,9 @@ describe("sidebar session bulk actions", () => {
       finish(true);
     });
     expect(container.textContent).not.toContain("Deleting conversations…");
-    expect(container.querySelector("[data-session-delete-status]")?.textContent).toContain(
-      "3 conversations deleted.",
-    );
+    expect(container.querySelector("[data-session-delete-status]")).toBeNull();
     expect(container.textContent).toContain("Sessions you start will show up here");
     expect(selectedIds()).toEqual([]);
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Dismiss deletion result"]')!.click(),
-    );
-    expect(container.querySelector("[data-session-delete-status]")).toBeNull();
   });
 
   it("shows local loading and load failure before empty state", async () => {
@@ -669,6 +761,34 @@ describe("sidebar session bulk actions", () => {
     expect(props.onDeleteSessionNow).not.toHaveBeenCalled();
     expect(selectedIds()).toEqual(["session-2", "session-3"]);
   });
+
+  it("asks once in the shared dialog with the count, the skipped running session and a danger action", async () => {
+    const request = vi.fn<(request: AppConfirmRequest) => Promise<boolean>>(async () => false);
+    const unregister = registerAppConfirmHost(request);
+    try {
+      props.onDeleteSession = vi.fn();
+      props.onDeleteSessionNow = vi.fn(async () => true);
+      act(() => render());
+      clickCard("session-1", { ctrlKey: true });
+      clickCard("session-3", { shiftKey: true });
+      await act(async () => barButton("Delete selected").click());
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(request.mock.calls[0]![0]).toMatchObject({
+        title: "Delete 2 conversations?",
+        confirmLabel: "Delete 2 conversations",
+        tone: "danger",
+      });
+      expect(request.mock.calls[0]![0].message).toContain("permanently deleted");
+      expect(request.mock.calls[0]![0].message).toContain(
+        "1 running conversation will be skipped.",
+      );
+      // Declining deletes nothing and keeps the selection.
+      expect(props.onDeleteSessionNow).not.toHaveBeenCalled();
+      expect(selectedIds()).toEqual(["session-1", "session-2", "session-3"]);
+    } finally {
+      unregister();
+    }
+  });
 });
 
 describe("sidebar session IDs", () => {
@@ -680,29 +800,36 @@ describe("sidebar session IDs", () => {
     });
     const trigger = Array.from(
       document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
-    ).find((item) => item.textContent === "Copy session ID")!;
+    ).find((item) => item.textContent === "Copy")!;
     expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
     act(() => trigger.click());
-    return document.querySelector<HTMLElement>('[role="menu"][aria-label="Copy session ID"]')!;
+    return document.querySelector<HTMLElement>('[role="menu"][aria-label="Copy"]')!;
   }
 
-  it.each(["Harness session ID", "bycoda session ID"])("shows selectable ID and retries after %s clipboard failure", async (label) => {
-    props.sessions = [{ ...props.sessions[0], providerSessionId: "provider-identity" }];
-    vi.mocked(copyText).mockRejectedValueOnce(new Error("Clipboard unavailable"));
-    act(() => render());
-    const menu = openCopyIdMenu("session-1");
-    const item = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) => button.textContent === label)!;
-    await act(async () => item.click());
-    const dialog = document.querySelector('[role="dialog"]')!;
-    expect(dialog.textContent).toContain("Could not copy the session ID");
-    const field = dialog.querySelector<HTMLInputElement>('input[aria-label="Session ID"]')!;
-    expect(field.value).toBe(label === "Harness session ID" ? "provider-identity" : "session-1");
-    expect(field.readOnly).toBe(true);
-    const retry = [...dialog.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Retry")!;
-    await act(async () => retry.click());
-    expect(copyText).toHaveBeenLastCalledWith(field.value);
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-  });
+  it.each(["Harness session ID", "bycoda session ID"])(
+    "shows selectable ID and retries after %s clipboard failure",
+    async (label) => {
+      props.sessions = [{ ...props.sessions[0], providerSessionId: "provider-identity" }];
+      vi.mocked(copyText).mockRejectedValueOnce(new Error("Clipboard unavailable"));
+      act(() => render());
+      const menu = openCopyIdMenu("session-1");
+      const item = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+        (button) => button.textContent === label,
+      )!;
+      await act(async () => item.click());
+      const dialog = document.querySelector('[role="dialog"]')!;
+      expect(dialog.textContent).toContain("Could not copy the session ID");
+      const field = dialog.querySelector<HTMLInputElement>('input[aria-label="Session ID"]')!;
+      expect(field.value).toBe(label === "Harness session ID" ? "provider-identity" : "session-1");
+      expect(field.readOnly).toBe(true);
+      const retry = [...dialog.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent === "Retry",
+      )!;
+      await act(async () => retry.click());
+      expect(copyText).toHaveBeenLastCalledWith(field.value);
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+    },
+  );
 
   it("copies either ID from the right-clicked session", async () => {
     props.sessions = [
@@ -749,6 +876,69 @@ describe("sidebar session IDs", () => {
 });
 
 describe("sidebar session rename", () => {
+  it("edits the title inside its existing project and status row", () => {
+    act(render);
+    const row = card();
+    const project = row.querySelector("[data-session-row-project]")?.textContent;
+    const input = startRename();
+    expect(card()).toBe(row);
+    expect(row.querySelector("[data-session-row-project]")?.textContent).toBe(project);
+    expect(row.querySelector("[data-session-rename]")?.contains(input)).toBe(true);
+    act(() => input.click());
+    expect(props.onSelectSession).not.toHaveBeenCalled();
+    expect(renameInput()).toBe(input);
+    typeTitle(input, "日本語の題名");
+    act(() =>
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }),
+      ),
+    );
+    expect(props.onRenameSession).not.toHaveBeenCalled();
+    pressKey(input, "Escape");
+  });
+
+  it("regenerates below Rename, prevents duplicate requests and keeps a retry on its row", async () => {
+    let reject!: (reason: Error) => void;
+    const regenerate = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, fail) => {
+            reject = fail;
+          }),
+      )
+      .mockResolvedValueOnce(undefined);
+    props.onRegenerateSessionTitle = regenerate;
+    act(render);
+    const openMenu = () => {
+      act(() =>
+        card().dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+      );
+      return [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+    };
+    let items = openMenu();
+    const index = items.findIndex((item) => item.textContent?.startsWith("Rename"));
+    expect(items[index + 1].textContent).toBe("Regenerate title");
+    await act(async () => items[index + 1].click());
+    expect(regenerate).toHaveBeenCalledExactlyOnceWith("session-1", "/workspace/project");
+    expect(card().textContent).toContain("Regenerating title…");
+    expect(card().textContent).toContain("Original conversation");
+    items = openMenu();
+    expect(items.find((item) => item.textContent === "Regenerate title")?.disabled).toBe(true);
+    await act(async () => reject(new Error("Provider unavailable")));
+    expect(card().querySelector('[role="alert"]')?.textContent).toContain("Provider unavailable");
+    act(() =>
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    const retry = [...card().querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Retry",
+    )!;
+    await act(async () => retry.click());
+    expect(regenerate).toHaveBeenCalledTimes(2);
+    expect(card().querySelector('[role="alert"]')).toBeNull();
+    expect(props.onSelectSession).not.toHaveBeenCalled();
+  });
+
   it("keeps a rejected async rename draft visible and allows retry", async () => {
     const commit = props.onRenameSession!;
     const rename = vi
@@ -957,72 +1147,25 @@ describe("sidebar reorder affordances", () => {
       expect(tab.parentElement?.className).not.toContain("cursor-grab");
     }
     for (const name of ["Folder one", "Folder two"]) {
-      expect(
-        container.querySelector<HTMLButtonElement>(`button[title="${name}"]`)!.className,
-      ).not.toContain("cursor-grab");
+      expect(folderButton(name).className).not.toContain("cursor-grab");
     }
   });
 });
 
 describe("sidebar new session rows", () => {
-  it("moves rows as their status changes and reports the same keyboard order", () => {
-    const base = props.sessions[0];
-    props.sessions = [
-      { ...base, id: "history", updatedAt: 100 },
-      { ...base, id: "done", updatedAt: 110 },
-      { ...base, id: "working", updatedAt: 80 },
-      { ...base, id: "failed", issue: "failed", updatedAt: 70 },
-      { ...base, id: "input", updatedAt: 60 },
-    ];
-    props.busySessionIds = new Set(["working"]);
-    props.approvalSessionIds = new Set(["input"]);
-    props.unseenFinishedIds = new Set(["done"]);
-    props.onSessionNavigationOrder = vi.fn();
-    const order = () =>
-      [...container.querySelectorAll<HTMLElement>("[data-session-card]")].map(
-        (element) => element.dataset.sessionCard,
-      );
-    act(() => render());
-    expect(order()).toEqual(["input", "failed", "working", "done", "history"]);
-    expect(props.onSessionNavigationOrder).toHaveBeenLastCalledWith(order());
-    props.approvalSessionIds = new Set(["history"]);
-    props.unseenFinishedIds = new Set(["done", "input"]);
-    act(() => render());
-    expect(order()).toEqual(["history", "failed", "working", "done", "input"]);
-    expect(props.onSessionNavigationOrder).toHaveBeenLastCalledWith(order());
-  });
-
-  it("keeps a recently completed row in place when opening clears its Done badge", () => {
-    const base = props.sessions[0];
-    props.sessions = [
-      { ...base, id: "history", updatedAt: 100 },
-      { ...base, id: "done", updatedAt: 200 },
-      { ...base, id: "older-done", updatedAt: 50 },
-    ];
-    props.unseenFinishedIds = new Set(["done", "older-done"]);
-    props.onSessionNavigationOrder = vi.fn();
-    const order = () =>
-      [...container.querySelectorAll<HTMLElement>("[data-session-card]")].map(
-        (element) => element.dataset.sessionCard,
-      );
-    act(() => render());
-    expect(order()).toEqual(["done", "history", "older-done"]);
-    act(() => container.querySelector<HTMLElement>('[data-session-card="done"]')!.click());
-    props = { ...props, activeSessionId: "done", unseenFinishedIds: new Set(["older-done"]) };
-    act(() => render());
-    expect(order()).toEqual(["done", "history", "older-done"]);
-    expect(props.onSessionNavigationOrder).toHaveBeenLastCalledWith(order());
-  });
-
   it("grows in only for a session that arrives after the list has rendered", () => {
     // Both rows are working so recency still puts the new row first.
     props.busySessionIds = new Set(["session-1", "session-2"]);
-    const animate = vi
-      .spyOn(HTMLElement.prototype, "animate")
-      .mockImplementation(() => ({ cancel: vi.fn() }) as unknown as Animation);
+    const animate = vi.spyOn(HTMLElement.prototype, "animate").mockImplementation(
+      () =>
+        ({
+          cancel: vi.fn(),
+          finished: Promise.resolve(),
+        }) as unknown as Animation,
+    );
     const animated = (property: string) =>
       animate.mock.calls.flatMap(([keyframes], index) =>
-        property in (keyframes as Keyframe[])[0]
+        Array.isArray(keyframes) && keyframes[0] && property in keyframes[0]
           ? [animate.mock.contexts[index] as HTMLElement]
           : [],
       );
@@ -1045,7 +1188,6 @@ describe("sidebar new session rows", () => {
       ],
     };
     act(() => render());
-    // The new card fades in where it lands; the row below slides down.
     expect(animated("opacity")).toHaveLength(1);
     expect(
       animated("opacity")[0].closest("li")?.querySelector('[data-session-card="session-2"]'),
@@ -1063,7 +1205,6 @@ describe("sidebar new session rows", () => {
     act(() => render());
     expect(animate).toHaveBeenCalledTimes(calls);
 
-    // Reordering existing rows must not replay their entrance.
     props = { ...props, sessions: [...props.sessions].reverse() };
     act(() => render());
     expect(animate).toHaveBeenCalledTimes(calls);
@@ -1088,8 +1229,7 @@ describe("sidebar pinned sessions", () => {
       }),
     );
     act(() => render());
-    const header = (name: string) =>
-      container.querySelector<HTMLButtonElement>(`[data-folder-row][title="${name}"]`)!;
+    const header = (name: string) => folderButton(name);
     const working = (name: string) =>
       header(name).querySelector('[role="img"][aria-label="Working"]');
     for (const name of ["Pinned", "Parent", "Child"]) {
@@ -1118,14 +1258,14 @@ describe("sidebar pinned sessions", () => {
     act(() => render());
 
     const group = container.querySelector<HTMLElement>("[data-pinned-sessions]")!;
-    const toggle = group.querySelector<HTMLButtonElement>('button[title="Pinned"]')!;
+    const toggle = folderButton("Pinned", group);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(group.querySelector('[data-session-card="session-1"]')).not.toBeNull();
-    expect(container.querySelector("li[aria-hidden]")).toBeNull();
+    expect(group.parentElement).toBe(container.querySelector("ul[data-session-list]"));
+    expect(listRow("session-1")?.getAttribute("data-session-section")).toBe("pinned");
 
     act(() => toggle.click());
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(group.querySelector('[data-session-card="session-1"]')).toBeNull();
+    expect(container.querySelector('[data-session-card="session-1"]')).toBeNull();
     expect(JSON.parse(localStorage.getItem("bycoda.pinnedSessionsCollapsed") ?? "{}")).toEqual({
       "/workspace/project": true,
     });
@@ -1133,7 +1273,7 @@ describe("sidebar pinned sessions", () => {
 });
 
 describe("sidebar orchestration card", () => {
-  it.each([false, true])("keeps agents inside a distinct lead card (pinned=%s)", (pinned) => {
+  it.each([false, true])("keeps agents inside a distinct lead card (pinned=%s)", async (pinned) => {
     props.onArchiveSession = vi.fn();
     props.linkedSessionUpdateIds = new Set(["session-1"]);
     const lead = {
@@ -1187,8 +1327,8 @@ describe("sidebar orchestration card", () => {
     act(() => render());
     expect(container.querySelectorAll("[data-session-card]")).toHaveLength(2);
     expect(card().dataset.orchestrationCard).toBe("true");
-    // The lead card carries the sidebar's ordinary active treatment.
-    expect(card().className).toContain("bg-selection");
+    // The lead card carries the sidebar's ordinary active treatment (the shared ActionHost selected fill).
+    expect(card().hasAttribute("data-selected")).toBe(true);
     // The lead names its own model, like every agent row beneath it.
     expect(card().textContent).toContain("GPT-5.6-Sol");
     expect(card().textContent).not.toContain("Orchestrator");
@@ -1196,8 +1336,9 @@ describe("sidebar orchestration card", () => {
     expect(orchestrationIcon).not.toBeNull();
     expect(orchestrationIcon?.tagName).toBe("BUTTON");
     expect(orchestrationIcon?.classList.contains("opacity-0")).toBe(false);
-    expect(orchestrationIcon?.querySelector("svg")?.classList.contains("size-3")).toBe(true);
-    expect(orchestrationIcon?.getAttribute("title")).toBe("");
+    expect(orchestrationIcon?.querySelector("svg")?.classList.contains("icon-xs")).toBe(true);
+    // An outer shared tooltip names it; the Button adds no native title of its own.
+    expect(orchestrationIcon?.hasAttribute("title")).toBe(false);
     expect(card().querySelector("[data-session-select] [data-orchestration-icon]")).toBeNull();
     expect(card().textContent).toContain("3 agents");
     expect(card().textContent).toContain("1/3 done");
@@ -1208,16 +1349,19 @@ describe("sidebar orchestration card", () => {
     const pullRequest = card().querySelector('[aria-label="Open PR #42"]');
     expect(card().querySelectorAll('[aria-label^="Archive "]')).toHaveLength(1);
     const rowActions = card().querySelector("[data-session-row-actions]");
-    expect(rowActions?.contains(orchestrationIcon)).toBe(true);
-    expect(rowActions?.contains(pullRequest)).toBe(true);
-    expect(archive.nextElementSibling).toBe(pullRequest);
+    expect(rowActions?.contains(orchestrationIcon)).toBe(false);
+    expect(rowActions?.contains(pullRequest)).toBe(false);
+    // Commands stay in the header; linked work and orchestration retain footer ownership.
+    expect(card().querySelector("[data-session-row-project]")?.contains(archive)).toBe(true);
     expect(orchestrationIcon?.parentElement?.lastElementChild).toBe(orchestrationIcon);
     act(() => archive.click());
     expect(props.onArchiveSession).toHaveBeenCalledExactlyOnceWith(lead.id, true);
     expect(props.onSelectSession).not.toHaveBeenCalled();
     // A collapsed row stays one line; the model rides along in the tooltip.
     expect(
-      card().querySelector('[data-orchestration-agent="worker-a"] button')?.getAttribute("title"),
+      await tooltipText(
+        card().querySelector<HTMLElement>('[data-orchestration-agent="worker-a"] button')!,
+      ),
     ).toContain("codex:worker-a");
     expect(card().querySelectorAll("[data-orchestration-agent]")).toHaveLength(3);
     const normal = container.querySelector<HTMLElement>('[data-session-card="unrelated"]')!;
@@ -1379,7 +1523,7 @@ describe("sidebar automation card", () => {
 });
 
 describe("sidebar linked work item updates", () => {
-  it("opens a linked item beside the session that owns it", () => {
+  it("opens a linked item beside the session that owns it", async () => {
     props.busySessionIds = new Set();
     props.onOpenInboxItem = vi.fn();
     const linkedWorkItem = {
@@ -1392,7 +1536,8 @@ describe("sidebar linked work item updates", () => {
     act(() => render());
 
     const pullRequest = card().querySelector<HTMLButtonElement>('[aria-label="Open PR #42"]')!;
-    expect(pullRequest.title).toContain("beside this session");
+    expect(pullRequest.title).toBe("");
+    expect(await tooltipText(pullRequest)).toContain("beside this session");
     act(() => pullRequest.click());
     expect(props.onOpenInboxItem).toHaveBeenCalledExactlyOnceWith(linkedWorkItem, "session-1");
     expect(props.onSelectSession).not.toHaveBeenCalled();
@@ -1421,8 +1566,8 @@ describe("sidebar linked work item updates", () => {
     const pullRequest = card().querySelector('[aria-label="Open PR #42"]');
     expect(card().querySelectorAll('img[alt=""]')).toHaveLength(1);
     expect(rows.item(rows.length - 1)?.contains(pullRequest)).toBe(true);
-    expect(archive?.parentElement).toBe(pullRequest?.parentElement);
-    expect(archive?.nextElementSibling).toBe(pullRequest);
+    expect(card().querySelector("[data-session-row-project]")?.contains(archive)).toBe(true);
+    expect(archive?.parentElement).not.toBe(pullRequest?.parentElement);
   });
 
   it("renders an unread dot without changing session order", () => {
@@ -1591,12 +1736,11 @@ describe("sidebar session reminders", () => {
     act(() => render());
     const group = container.querySelector<HTMLElement>("[data-reminder-sessions]")!;
     expect(group.parentElement!.firstElementChild).toBe(group);
-    expect(group.querySelector('[data-session-card="session-1"]')).toBe(card());
+    expect(group.parentElement).toBe(card().closest("li")?.parentElement);
+    expect(listRow("session-1")?.getAttribute("data-session-section")).toBe("reminders");
     expect(container.querySelectorAll('[data-session-card="session-1"]')).toHaveLength(1);
     expect(group.hasAttribute("data-session-folder")).toBe(false);
-    expect(group.querySelector('button[title="Reminders"]')!.className).not.toContain(
-      "cursor-grab",
-    );
+    expect(folderButton("Reminders", group).className).not.toContain("cursor-grab");
     expect(card().querySelector('[aria-label^="Reminder:"]')).toBeNull();
     act(() =>
       card().dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
@@ -1613,13 +1757,116 @@ describe("sidebar session reminders", () => {
     props.reminders = [];
     act(() => render());
     expect(container.querySelector("[data-reminder-sessions]")).toBeNull();
-    expect(container.querySelector('[data-pinned-sessions] [data-session-card="session-1"]')).toBe(
-      card(),
-    );
+    expect(card().closest("li")?.getAttribute("data-session-section")).toBe("pinned");
   });
 });
 
 describe("collapsed rail Inbox actions", () => {
+  it("returns from a global view through Workspace without changing the chosen tab", async () => {
+    props.projectRailOpen = false;
+    props.onSelectProject = vi.fn();
+    props.onOpenProject = vi.fn();
+    props.inboxActive = true;
+    props.tab = "files";
+    props.onGoBack = vi.fn();
+    props.onTabChange = vi.fn();
+    await act(async () => render());
+    const workspace = container.querySelector<HTMLButtonElement>(
+      '[data-compact-project-rail] button[aria-label="Workspace"]',
+    )!;
+    act(() => workspace.click());
+    expect(props.onGoBack).toHaveBeenCalledOnce();
+    expect(props.onTabChange).not.toHaveBeenCalled();
+  });
+
+  it("opens crew management from the grouped tools menu", async () => {
+    props.projectRailOpen = false;
+    props.onSelectProject = vi.fn();
+    props.onOpenProject = vi.fn();
+    props.onOpenSettings = vi.fn();
+    props.onSelectSettingsSection = vi.fn();
+    await act(async () => render());
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Tools"]')!.click());
+    act(() =>
+      document
+        .querySelector<HTMLButtonElement>('[data-compact-tools-flyout] button[aria-label="Crews"]')!
+        .click(),
+    );
+    expect(props.onOpenSettings).toHaveBeenCalledOnce();
+    expect(props.onSelectSettingsSection).toHaveBeenCalledWith("crews");
+    expect(document.querySelector("[data-compact-tools-flyout]")).toBeNull();
+  });
+
+  it("filters the session list inline and hands the query to shared search on demand", async () => {
+    props.projectRailOpen = false;
+    props.onSelectProject = vi.fn();
+    props.onOpenProject = vi.fn();
+    props.onSearch = vi.fn();
+    props.onSearchConversations = vi.fn();
+    await act(async () => render());
+    const search = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Search conversations"]',
+    )!;
+    expect(search.type).toBe("button");
+    act(() => search.click());
+    // The control is a list filter now: it opens a field instead of the shared dialog.
+    expect(props.onSearchConversations).not.toHaveBeenCalled();
+    const field = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Search conversations"]',
+    )!;
+    expect(field).not.toBeNull();
+    typeTitle(field, "zzz-no-such-conversation");
+    expect(container.textContent).toContain("No matching sessions");
+    const searchAll = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent?.startsWith("Search all conversations"),
+    )!;
+    act(() => searchAll.click());
+    expect(props.onSearchConversations).toHaveBeenLastCalledWith("zzz-no-such-conversation");
+    // The top-left Search remains the one shared search entry; the header no longer repeats it.
+    expect(
+      container.querySelector('[data-compact-project-rail] button[aria-label="Search"]'),
+    ).not.toBeNull();
+  });
+
+  it("opens project and group management without pinning the rail and closes with Escape", async () => {
+    props.projectRailOpen = false;
+    props.onSelectProject = vi.fn();
+    props.onOpenProject = vi.fn();
+    props.onToggleProjectRail = vi.fn();
+    await act(async () => render());
+    const trigger = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Projects and groups"]',
+    )!;
+    trigger.focus();
+    await act(async () => trigger.click());
+    const flyout = document.querySelector("[data-project-navigation-flyout]")!;
+    expect(flyout).not.toBeNull();
+    expect(flyout.querySelector('[aria-label="Resize project sidebar"]')).toBeNull();
+    expect(props.onToggleProjectRail).not.toHaveBeenCalled();
+    pressKey(document.body, "Escape");
+    expect(document.querySelector("[data-project-navigation-flyout]")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("keeps new Inbox items visible while Tools is closed", async () => {
+    props.projectRailOpen = false;
+    props.onSelectProject = vi.fn();
+    props.onOpenProject = vi.fn();
+    props.inboxUnseen = true;
+    await act(async () => render());
+    const inbox = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Inbox, new items"]',
+    )!;
+    // The collapsed rail is icon-only: the name is the accessible name and tooltip.
+    expect(inbox.textContent).toBe("");
+    expect(inbox.title).toBe("");
+    expect(inbox.getAttribute("aria-label")).toBe("Inbox, new items");
+    expect(
+      inbox.querySelector('[role="img"][aria-label="Inbox, new items"]')?.getAttribute("data-tone"),
+    ).toBe("accent");
+    expect(document.querySelector("[data-compact-tools-flyout]")).toBeNull();
+  });
+
   it("restores the hidden rail layout when compact mode is disabled", async () => {
     props.projectRailOpen = false;
     props.compactProjectRail = false;
@@ -1656,7 +1903,7 @@ describe("collapsed rail Inbox actions", () => {
     expect(container.querySelector('button[aria-label^="Back"]')).toBeNull();
   });
 
-  it("keeps project shortcuts in a compact vertical rail", async () => {
+  it("keeps global actions in the rail and workspace tabs in their horizontal row", async () => {
     props.projectRailOpen = false;
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();
@@ -1671,87 +1918,72 @@ describe("collapsed rail Inbox actions", () => {
 
     const rail = container.querySelector<HTMLElement>("[data-compact-project-rail]")!;
     expect(rail).not.toBeNull();
-    expect(rail.className).toContain("w-12");
-    expect(rail.className).not.toContain("border-r");
-    expect(rail.querySelector("[data-compact-rail-divider]")?.className).toContain("top-10");
-    expect(rail.querySelectorAll('[class*="border-b"], [class*="border-t"]')).toHaveLength(1);
-    expect(rail.firstElementChild?.className).toContain("border-b");
-    expect(rail.querySelector("[data-compact-rail-actions]")?.className).toContain("gap-1.5");
+    expect(rail.className).toContain("w-14");
+    expect(rail.querySelector('[role="tablist"]')).toBeNull();
+    expect(rail.querySelector('[role="tab"]')).toBeNull();
     expect(
       Array.from(rail.querySelectorAll("button"), (button) =>
         button.getAttribute("aria-label")?.replace(/ \(.+\)$/, ""),
       ),
     ).toEqual([
       "Expand projects",
-      "Switch project, current project project",
-      "Sessions",
-      "Explorer",
-      "Changes",
       "Search",
       "Inbox",
-      "Notes",
-      "Automations",
-      "Social Media",
-      "Tasks",
+      "Tools",
+      "Projects and groups",
+      "Account: Guest. Unknown",
       "Settings",
     ]);
-    const workspaceTabs = rail.querySelector<HTMLElement>(
-      '[role="tablist"][aria-label="Workspace"]',
+    expect(rail.querySelectorAll('button[aria-label="Projects and groups"]')).toHaveLength(1);
+    expect(rail.querySelector('button[aria-label^="Switch project"]')).toBeNull();
+
+    const workspaceTabs = container.querySelector<HTMLElement>(
+      'aside [role="tablist"][aria-label="Workspace"]',
     )!;
     expect(workspaceTabs).not.toBeNull();
+    expect(workspaceTabs.getAttribute("aria-orientation")).not.toBe("vertical");
+    expect(container.querySelectorAll('[role="tablist"][aria-label="Workspace"]')).toHaveLength(1);
     expect(
       Array.from(workspaceTabs.querySelectorAll('[role="tab"]'), (button) =>
         button.getAttribute("aria-label"),
       ),
-    ).toEqual(["Sessions", "Explorer", "Changes"]);
-    const sessionsTab = workspaceTabs.querySelector<HTMLButtonElement>('[aria-label="Sessions"]')!;
+    ).toEqual(["Sessions, 1 working session", "Explorer", "Changes"]);
+    const sessionsTab = workspaceTabs.querySelector<HTMLButtonElement>('[aria-label^="Sessions"]')!;
     expect(sessionsTab.getAttribute("aria-selected")).toBe("true");
+    expect(sessionsTab.textContent).toContain("Sessions");
     expect(sessionsTab.querySelector("[data-workspace-working-count]")?.textContent).toBe("1");
-    // The rail has one vertical set; the workspace pane beside it keeps its own tabs.
-    expect(rail.querySelectorAll('[role="tablist"][aria-label="Workspace"]')).toHaveLength(1);
     act(() => workspaceTabs.querySelector<HTMLButtonElement>('[aria-label="Explorer"]')!.click());
     expect(props.onTabChange).toHaveBeenCalledWith("files");
-    expect(container.querySelector('button[aria-label="Inbox"]')?.closest("nav")).toBe(rail);
-    const projectPicker = rail.querySelector<HTMLButtonElement>(
-      'button[aria-label^="Switch project"]',
-    )!;
-    expect(projectPicker.dataset.buttonSize).toBe("sm");
-    const socialShortcut = rail.querySelector<HTMLButtonElement>(
-      'button[aria-label="Social Media"]',
-    )!;
-    // Shared icon actions use the adapter's size token instead of rail utilities.
-    expect(socialShortcut.dataset.buttonSize).toBe("sm");
-    expect(socialShortcut.textContent).toBe("");
-    expect(
-      Array.from(rail.querySelectorAll("button"))
-        .filter((button) => button !== socialShortcut)
-        .every((button) => button.classList.contains("bycoda-arc")),
-    ).toBe(true);
-    expect(
-      Array.from(rail.querySelectorAll("button")).every(
-        (button) => !button.className.includes("transition"),
-      ),
-    ).toBe(true);
-    expect(projectPicker.querySelector("svg, img")).not.toBeNull();
-    expect(projectPicker.querySelector("span")).toBeNull();
-    expect(container.querySelectorAll('button[aria-label^="Switch project"]')).toHaveLength(1);
 
-    act(() => projectPicker.click());
+    act(() => rail.querySelector<HTMLButtonElement>('button[aria-label="Tools"]')!.click());
+    const tools = document.querySelector("[data-compact-tools-flyout]")!;
+    expect(tools.textContent).toContain("Notes");
+    expect(tools.querySelector('button[aria-label="Inbox"]')).toBeNull();
+    expect(
+      tools.querySelector<HTMLButtonElement>('button[aria-label="Social Media"]')?.textContent,
+    ).toContain("Social Media");
+    pressKey(document.body, "Escape");
+    // The Projects flyout searches its own list; it never opens a second project picker.
+    await openProjectsFlyout();
     expect(projectSearchInput()).not.toBeNull();
-
+    expect(document.querySelectorAll('button[aria-label^="Switch project"]')).toHaveLength(0);
+    expect(
+      rail.querySelector<HTMLElement>('button[aria-label="Projects and groups"]')!.textContent,
+    ).toBe("");
+    pressKey(document.body, "Escape");
     act(() =>
       rail.querySelector<HTMLButtonElement>('button[aria-label="Expand projects"]')!.click(),
     );
     expect(props.onToggleProjectRail).toHaveBeenCalledOnce();
   });
 
-  it("slides the collapsed sidebar open until dismissed from the compact tabs", async () => {
-    // happy-dom animations never finish, so drive them by hand.
+  it("opens the temporary workspace panel while keeping tabs horizontal and preserving dismissal", async () => {
     const animations: { keyframes: Keyframe[]; animation: Animation }[] = [];
     vi.spyOn(HTMLElement.prototype, "animate").mockImplementation((keyframes) => {
       const animation = {
         cancel: vi.fn(),
         onfinish: null,
+        finished: Promise.resolve(),
       } as unknown as Animation;
       animations.push({ keyframes: keyframes as Keyframe[], animation });
       return animation;
@@ -1772,11 +2004,12 @@ describe("collapsed rail Inbox actions", () => {
     await act(async () => render());
 
     const drawer = () => container.querySelector<HTMLElement>("[data-sidebar-drawer]");
-    const compactTab = (label: string) =>
+    const workspace = () =>
       container.querySelector<HTMLButtonElement>(
-        `[data-compact-project-rail] [role="tab"][aria-label="${label}"]`,
+        '[data-compact-project-rail] button[aria-label="Workspace"]',
       )!;
-    // A dismissed drawer slides shut before it unmounts.
+    const drawerTab = (label: string) =>
+      drawer()!.querySelector<HTMLButtonElement>(`[role="tab"][aria-label^="${label}"]`)!;
     const expectDrawerDismissed = () => {
       expect(drawer()?.dataset.sidebarDrawer).toBe("closing");
       expect(drawer()?.inert).toBe(true);
@@ -1785,71 +2018,97 @@ describe("collapsed rail Inbox actions", () => {
       expect(drawer()).toBeNull();
     };
     expect(drawer()).toBeNull();
-    expect(compactTab("Sessions").getAttribute("aria-selected")).toBe("false");
-
-    act(() => compactTab("Explorer").click());
-    expect(props.onTabChange).toHaveBeenLastCalledWith("files");
+    expect(workspace()).not.toBeNull();
+    act(() => workspace().click());
     expect(drawer()?.dataset.sidebarDrawer).toBe("open");
-    // It pushes the workspace like the pinned sidebar, growing from nothing.
     expect(drawer()?.className).not.toContain("absolute");
     expect(drawer()?.querySelector("aside")?.className).toContain("body-glass");
+    expect(container.querySelector('[data-compact-project-rail] [role="tablist"]')).toBeNull();
     expect(animations).toHaveLength(1);
     expect(animations[0].keyframes[0]).toEqual({ width: "0px" });
-    expect(compactTab("Explorer").getAttribute("aria-selected")).toBe("true");
-
-    act(() => compactTab("Sessions").click());
+    act(() => drawerTab("Explorer").click());
+    expect(props.onTabChange).toHaveBeenLastCalledWith("files");
+    expect(drawerTab("Explorer").getAttribute("aria-selected")).toBe("true");
+    act(() => drawerTab("Sessions").click());
     expect(drawer()?.contains(card())).toBe(true);
-    // Switching tabs keeps the drawer open without replaying the slide.
     expect(animations).toHaveLength(1);
-
-    act(() => compactTab("Sessions").click());
+    // Tab selection keeps the workspace panel open; the Workspace action closes it.
+    act(() => drawerTab("Sessions").click());
+    expect(drawer()?.dataset.sidebarDrawer).toBe("open");
+    act(() => workspace().click());
     expectDrawerDismissed();
 
     // Reopening mid-slide reverses the running animation.
-    act(() => compactTab("Sessions").click());
-    act(() => compactTab("Sessions").click());
+    act(() => workspace().click());
+    act(() => workspace().click());
     const closing = animations.at(-1)!.animation;
-    act(() => compactTab("Sessions").click());
+    act(() => workspace().click());
     expect(closing.cancel).toHaveBeenCalled();
     expect(drawer()?.dataset.sidebarDrawer).toBe("open");
-
     pressKey(document.body, "Escape");
     expectDrawerDismissed();
 
-    act(() => compactTab("Sessions").click());
+    act(() => workspace().click());
     act(() => {
       document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
     });
     expectDrawerDismissed();
-
-    act(() => compactTab("Sessions").click());
+    act(() => workspace().click());
     act(() => card().click());
     expect(props.onSelectSession).toHaveBeenCalledWith("session-1", { keepOpen: false });
     expectDrawerDismissed();
-
-    // Pinning the sidebar open replaces the drawer at once.
-    act(() => compactTab("Sessions").click());
+    act(() => workspace().click());
     props.open = true;
     act(() => render());
     expect(drawer()).toBeNull();
   });
 
-  it.each([
-    ["compact rail", true],
-    ["sidebar header", false],
-  ])("deletes a project from the %s picker while the rail is hidden", async (_, compact) => {
+  it("deletes a project from the compact Projects list while the rail is hidden", async () => {
     props.projectRailOpen = false;
-    props.compactProjectRail = compact;
+    props.compactProjectRail = true;
     props.recents = [{ path: "/workspace/other", openedAt: 1 }];
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();
     props.onRemoveProject = vi.fn();
     await act(async () => render());
 
-    act(() =>
-      container.querySelector<HTMLButtonElement>('button[aria-label^="Switch project"]')!.click(),
-    );
-    const row = document.querySelector<HTMLButtonElement>('button[title="/workspace/other"]')!;
+    await openProjectsFlyout();
+    const row = document.querySelector<HTMLElement>(
+      '[data-project-navigation-flyout] [data-project-path="/workspace/other"] button',
+    )!;
+    await act(async () => {
+      row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    });
+    const remove = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+    ).find((item) => item.textContent?.startsWith("Delete"))!;
+    await act(async () => {
+      remove.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      remove.click();
+    });
+    const dialog = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).find(
+      (node) => node.textContent?.includes("Delete other"),
+    )!;
+    const confirm = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent === "Delete",
+    )!;
+    await act(async () => confirm.click());
+    expect(props.onRemoveProject).toHaveBeenCalledWith("/workspace/other", {
+      purgeData: true,
+    });
+  });
+
+  it("deletes a project from the sidebar header picker while the rail is hidden", async () => {
+    props.projectRailOpen = false;
+    props.compactProjectRail = false;
+    props.recents = [{ path: "/workspace/other", openedAt: 1 }];
+    props.onSelectProject = vi.fn();
+    props.onOpenProject = vi.fn();
+    props.onRemoveProject = vi.fn();
+    await act(async () => render());
+
+    await openProjectPicker();
+    const row = pickerRow("/workspace/other");
     await act(async () => {
       row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     });
@@ -1862,7 +2121,9 @@ describe("collapsed rail Inbox actions", () => {
       remove.click();
     });
     expect(projectSearchInput()).not.toBeNull();
-    const dialog = document.querySelector('[aria-label="Delete other"]')!;
+    const dialog = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).find(
+      (node) => node.textContent?.includes("Delete other"),
+    )!;
     const confirm = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")).find(
       (button) => button.textContent === "Delete",
     )!;
@@ -1876,15 +2137,14 @@ describe("collapsed rail Inbox actions", () => {
 
   it("opens the active picker project's menu from the keyboard", async () => {
     props.projectRailOpen = false;
+    props.compactProjectRail = false;
     props.recents = [{ path: "/workspace/other", openedAt: 1 }];
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();
     props.onRemoveProject = vi.fn();
     await act(async () => render());
 
-    act(() =>
-      container.querySelector<HTMLButtonElement>('button[aria-label^="Switch project"]')!.click(),
-    );
+    await openProjectPicker();
     pressKey(projectSearchInput()!, "ArrowDown");
     await act(async () => {
       projectSearchInput()!.dispatchEvent(
@@ -1902,15 +2162,14 @@ describe("collapsed rail Inbox actions", () => {
 
   it("opens a Tab-focused picker row's menu rather than the highlighted one", async () => {
     props.projectRailOpen = false;
+    props.compactProjectRail = false;
     props.recents = [{ path: "/workspace/other", openedAt: 1 }];
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();
     await act(async () => render());
 
-    act(() =>
-      container.querySelector<HTMLButtonElement>('button[aria-label^="Switch project"]')!.click(),
-    );
-    const row = document.querySelector<HTMLButtonElement>('button[title="/workspace/other"]')!;
+    await openProjectPicker();
+    const row = pickerRow("/workspace/other");
     row.focus();
     await act(async () => {
       row.dispatchEvent(
@@ -1929,16 +2188,14 @@ describe("collapsed rail Inbox actions", () => {
 
   it("shows a rename from the picker menu in the open picker", async () => {
     props.projectRailOpen = false;
+    props.compactProjectRail = false;
     props.recents = [{ path: "/workspace/other", openedAt: 1 }];
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();
     await act(async () => render());
 
-    act(() =>
-      container.querySelector<HTMLButtonElement>('button[aria-label^="Switch project"]')!.click(),
-    );
-    const row = () =>
-      document.querySelector<HTMLButtonElement>('button[title="/workspace/other"]')!;
+    await openProjectPicker();
+    const row = () => pickerRow("/workspace/other");
     await act(async () => {
       row().dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     });
@@ -1947,10 +2204,10 @@ describe("collapsed rail Inbox actions", () => {
     pressKey(name, "Enter");
 
     expect(document.querySelector('input[aria-label="Group name"]')).toBeNull();
-    expect(row().textContent).toContain("Client site");
+    expect(pickerRow("/workspace/other", "Client site").textContent).toContain("Client site");
   });
 
-  it("marks the compact Changes shortcut when the working tree has changes", async () => {
+  it("keeps Changes labeled in the horizontal row with full working-tree totals", async () => {
     vi.mocked(useProjectDiffStats).mockReturnValue({
       files: 1,
       additions: 3,
@@ -1961,9 +2218,21 @@ describe("collapsed rail Inbox actions", () => {
     props.onOpenProject = vi.fn();
     await act(async () => render());
 
-    const changes = container.querySelector<HTMLButtonElement>('button[aria-label="Changes +3"]')!;
+    // The tab name states the changed-file count and the line churn separately.
+    const changesLabel = "Changes, 1 changed file, 3 lines added";
+    const changes = container.querySelector<HTMLButtonElement>(
+      `button[aria-label="${changesLabel}"]`,
+    )!;
     expect(changes).not.toBeNull();
-    expect(changes.querySelector("span.bg-accent")).not.toBeNull();
+    expect(changes.closest('[role="tablist"]')?.closest("aside")).not.toBeNull();
+    expect(changes.textContent).toContain("Changes");
+    // The scope and totals ride in the shared tooltip, not a native title.
+    expect(changes.title).toBe("");
+    expect(changes.getAttribute("role")).toBe("tab");
+    expect(changes.querySelector('[role="img"][aria-label="1 changed file"]')).not.toBeNull();
+    expect(
+      container.querySelector(`[data-compact-project-rail] button[aria-label="${changesLabel}"]`),
+    ).toBeNull();
   });
 
   it("uses an active compact shortcut to return to the workspace", async () => {
@@ -1975,7 +2244,9 @@ describe("collapsed rail Inbox actions", () => {
     props.inboxActive = true;
     await act(async () => render());
 
-    const inbox = container.querySelector<HTMLButtonElement>('button[aria-label="Inbox"]')!;
+    const inbox = container.querySelector<HTMLButtonElement>(
+      '[data-compact-project-rail] button[aria-label="Inbox"]',
+    )!;
     expect(inbox.getAttribute("aria-pressed")).toBe("true");
     act(() => inbox.click());
     expect(props.onGoBack).toHaveBeenCalledOnce();
@@ -1983,7 +2254,11 @@ describe("collapsed rail Inbox actions", () => {
 
     props.inboxActive = false;
     act(() => render());
-    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Inbox"]')!.click());
+    act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[data-compact-project-rail] button[aria-label="Inbox"]')!
+        .click(),
+    );
     expect(props.onOpenInbox).toHaveBeenCalledOnce();
   });
 
@@ -1997,7 +2272,9 @@ describe("collapsed rail Inbox actions", () => {
       props.onOpenNotificationSettings = vi.fn();
       props.recents = [{ path: "/workspace/other", openedAt: 1 }];
       await act(async () => render());
-      const inbox = container.querySelector<HTMLButtonElement>('button[aria-label="Inbox"]')!;
+      const inbox = container.querySelector<HTMLButtonElement>(
+        '[data-compact-project-rail] button[aria-label="Inbox"]',
+      )!;
       expect(inbox).not.toBeNull();
       await act(async () => {
         inbox.dispatchEvent(
@@ -2136,6 +2413,50 @@ it.each<SessionListDensity>(["compact", "standard", "detailed"])(
   },
 );
 
+it("lets compact row actions overlay the idle time instead of reserving a gutter", () => {
+  saveSessionListDisplay({ ...DEFAULT_SESSION_LIST_DISPLAY, density: "compact" });
+  try {
+    props.onArchiveSession = vi.fn();
+    props.onDeleteSession = vi.fn();
+    props.onPinSession = vi.fn();
+    props.busySessionIds = new Set();
+    props.sessions = [{ ...props.sessions[0], pinned: true }];
+    act(render);
+    const slot = card().querySelector<HTMLElement>("[data-session-row-actions]")!;
+    expect(slot.dataset.actionSlot).toBe("collapse");
+    // Pin, archive and delete reveal together; none is pinned open at rest.
+    const pin = slot.querySelector<HTMLButtonElement>('[aria-pressed="true"]')!;
+    expect(pin).not.toBeNull();
+    expect(slot.querySelector('[aria-label^="Archive "]')).not.toBeNull();
+    expect(slot.querySelector('[aria-label^="Delete "]')).not.toBeNull();
+    expect(card().querySelectorAll("[aria-pressed='true'][data-action-inline]")).toHaveLength(1);
+    // The idle time is as wide as the three actions so they never cover the status.
+    const time = card().querySelector<HTMLElement>("[data-action-yield]")!;
+    expect(time.className).toContain("pointer-fine:w-15");
+    act(() => pin.click());
+    expect(props.onPinSession).toHaveBeenCalledWith(props.sessions[0].id, false);
+  } finally {
+    saveSessionListDisplay(DEFAULT_SESSION_LIST_DISPLAY);
+  }
+});
+
+it("drops a repository prefix that repeats the project in detailed rows", () => {
+  saveSessionListDisplay({ ...DEFAULT_SESSION_LIST_DISPLAY, density: "detailed" });
+  try {
+    const branchRow = () => card().querySelector("[data-session-row-branch]")?.textContent;
+    props.sessions = [{ ...props.sessions[0], repo: "project", branch: "fix/audit" }];
+    act(render);
+    expect(branchRow()).toContain("fix/audit");
+    expect(branchRow()).not.toContain("project/fix/audit");
+    expect(card().querySelector("[data-session-row-project] svg")).not.toBeNull();
+    props.sessions = [{ ...props.sessions[0], repo: "acme/widgets", branch: "fix/audit" }];
+    act(render);
+    expect(branchRow()).toContain("acme/widgets/fix/audit");
+  } finally {
+    saveSessionListDisplay(DEFAULT_SESSION_LIST_DISPLAY);
+  }
+});
+
 describe("long-press selection", () => {
   function press(clientX = 100) {
     const handle = card();
@@ -2214,8 +2535,8 @@ describe("long-press selection", () => {
 });
 
 describe("dragging sessions within the list", () => {
-  function setup() {
-    const base = props.sessions[0];
+  function setup({ pinned = false } = {}) {
+    const base = { ...props.sessions[0], pinned };
     props.busySessionIds = new Set();
     props.activeSessionId = "other";
     props.sessions = [
@@ -2232,8 +2553,9 @@ describe("dragging sessions within the list", () => {
     from.setPointerCapture = vi.fn();
     from.releasePointerCapture = vi.fn();
     const over = cardOf(overId);
-    over.getBoundingClientRect = () => ({ top: 100, height: 40, bottom: 140 }) as DOMRect;
-    vi.spyOn(document, "elementFromPoint").mockReturnValue(over);
+    over.getBoundingClientRect = () => new DOMRect(0, 100, 200, 40);
+    const scroller = container.querySelector<HTMLElement>(".sidebar-session-scroll")!;
+    scroller.getBoundingClientRect = () => new DOMRect(0, 0, 300, 600);
     const emit = (target: EventTarget, type: string, y: number) =>
       act(() => {
         target.dispatchEvent(
@@ -2259,15 +2581,15 @@ describe("dragging sessions within the list", () => {
 
   beforeEach(() => vi.useFakeTimers());
 
-  it("moves a session released over another card without grouping them", () => {
-    setup();
+  it("moves a pinned session released over another pinned card without grouping them", () => {
+    setup({ pinned: true });
     drag("third", "first", { holdMs: 300 });
     expect(order()).toEqual(["first", "third", "second"]);
     expect(loadSessionFolders("/workspace/project")).toEqual([]);
   });
 
-  it("places a session above a card dropped on its top edge", () => {
-    setup();
+  it("places a pinned session above a pinned card dropped on its top edge", () => {
+    setup({ pinned: true });
     drag("third", "first", { clientY: 104 });
     expect(order()).toEqual(["third", "first", "second"]);
   });
@@ -2287,10 +2609,7 @@ describe("dragging sessions within the list", () => {
     const sub = folders.find((folder) => folder.parentId === "work");
     expect(sub?.sessionIds).toEqual(["first", "third"]);
     expect(folders.find((folder) => folder.id === "work")?.sessionIds).toEqual(["second"]);
-    const work = container.querySelector('[data-session-folder="work"]')!;
-    expect(
-      work.querySelector(`[data-session-folder="${sub!.id}"] [data-session-card="third"]`),
-    ).not.toBeNull();
+    expect(listRow("third")?.getAttribute("data-session-folder-owner")).toBe(sub!.id);
   });
 
   it("drags a folder into another folder, then back to the top level", () => {
@@ -2333,8 +2652,8 @@ describe("dragging sessions within the list", () => {
     expect(loadSessionFolders("/workspace/project").find((f) => f.id === "later")?.parentId).toBe(
       "work",
     );
-    expect(document.body.textContent).toContain("Moved to Work");
-    // A folder cannot go inside itself.
+    // The list itself shows the move; no confirmation notice is added.
+    expect(document.body.textContent).not.toContain("Moved to Work");
     dragFolder("work", cardOf("second"));
     expect(loadSessionFolders("/workspace/project").find((f) => f.id === "work")?.parentId).toBe(
       undefined,
@@ -2351,27 +2670,41 @@ describe("dragging sessions within the list", () => {
     const folders = loadSessionFolders("/workspace/project");
     expect(folders).toHaveLength(1);
     expect(folders[0].sessionIds).toEqual(["first", "third"]);
-    expect(document.body.textContent).toContain("Group created");
-    act(() =>
-      [...document.querySelectorAll<HTMLButtonElement>("button")]
-        .find((button) => button.textContent === "Undo")!
-        .click(),
-    );
-    expect(loadSessionFolders("/workspace/project")).toEqual([]);
+    expect(document.body.textContent).not.toContain("Group created");
+    expect(
+      [...document.querySelectorAll("button")].some((button) => button.textContent === "Undo"),
+    ).toBe(false);
   });
 });
 
-it("deletes only its own card from the hover action", () => {
+it("keeps delete beside archive and routes its click through the existing delete handler", () => {
+  props.onArchiveSession = vi.fn();
+  props.onDeleteSession = vi.fn();
+  act(render);
+  const actions = card().querySelector("[data-session-row-actions]")!;
+  const archive = actions.querySelector('[aria-label^="Archive "]')!;
+  const deleteButton = actions.querySelector<HTMLButtonElement>('[aria-label^="Delete "]')!;
+  expect(archive.nextElementSibling).toBe(deleteButton);
+  act(() => deleteButton.click());
+  expect(props.onDeleteSession).toHaveBeenCalledExactlyOnceWith("session-1");
+  expect(props.onArchiveSession).not.toHaveBeenCalled();
+  expect(props.onSelectSession).not.toHaveBeenCalled();
+});
+
+it("deletes only its own card by key", () => {
   props.onDeleteSession = vi.fn();
   props.sessions = [props.sessions[0], { ...props.sessions[0], id: "other" }];
   act(render);
-  // Another card is selected; this card is not part of that selection.
   act(() =>
     container
       .querySelector<HTMLElement>('[data-session-card="other"]')!
       .dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true })),
   );
-  act(() => card().querySelector<HTMLButtonElement>('[aria-label^="Delete "]')!.click());
+  act(() =>
+    card()
+      .querySelector<HTMLElement>("[data-session-select]")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true })),
+  );
   expect(props.onDeleteSession).toHaveBeenCalledExactlyOnceWith("session-1");
 });
 
@@ -2390,11 +2723,9 @@ it("labels preserved sessions as having no branch selected", () => {
   props.sessions = [{ ...props.sessions[0], branch: "main", worktreeRemoved: undefined }];
   act(render);
   expect(card().textContent).not.toContain("No branch selected");
-  // Standard rows name the branch; the repo-qualified label stays in the tooltip.
+  // Standard rows name the branch; the repo-qualified label stays in the row's detail tooltip.
   expect(card().textContent).toContain("main");
-  expect(card().querySelector("[data-session-row-branch]")?.getAttribute("title")).toBe(
-    "project/main",
-  );
+  expect(card().querySelector("[data-session-row-branch]")?.hasAttribute("title")).toBe(false);
 });
 
 describe("sessions hidden by a filter", () => {
@@ -2440,7 +2771,7 @@ describe("opening a session", () => {
   });
 });
 
-it("reports keyboard navigation IDs only for the mounted session page", () => {
+it("keeps full keyboard navigation order while mounting a bounded row window", () => {
   props.sessions = Array.from({ length: 100 }, (_, index) => ({
     ...props.sessions[0],
     id: `paged-${index}`,
@@ -2453,6 +2784,38 @@ it("reports keyboard navigation IDs only for the mounted session page", () => {
     container.querySelectorAll<HTMLElement>("[data-session-card]"),
     (row) => row.dataset.sessionCard,
   );
-  expect(mounted).toHaveLength(32);
-  expect(props.onSessionNavigationOrder).toHaveBeenLastCalledWith(mounted);
+  expect(mounted.length).toBeLessThan(32);
+  expect(props.onSessionNavigationOrder).toHaveBeenLastCalledWith(
+    Array.from({ length: 100 }, (_, index) => `paged-${index}`),
+  );
+  props.activeSessionId = "paged-99";
+  act(render);
+  expect(container.querySelector('[data-session-card="paged-99"]')).not.toBeNull();
+});
+
+it("opens a project selector for an explicit global New request without creating a session", async () => {
+  props.lastSessionsOpen = true;
+  props.onNewListedSession = vi.fn();
+  props.onNew = vi.fn();
+  props.recents = [{ path: "/workspace/project", openedAt: Date.now() }];
+  props.newListedSessionRequest = 0;
+  await act(async () => render());
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  props.newListedSessionRequest = 1;
+  await act(async () => render());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+    "Choose a project for the new session",
+  );
+  expect(props.onNew).not.toHaveBeenCalled();
+  expect(props.onNewListedSession).not.toHaveBeenCalled();
+  await act(async () =>
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await act(async () => render());
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () => render());
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
 });

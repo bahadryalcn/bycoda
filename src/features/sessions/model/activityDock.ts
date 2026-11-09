@@ -1,5 +1,6 @@
 import { t } from "../../../shared/i18n";
-import { hasPendingApproval, type Block } from "./session";
+import { hasPendingApproval, type Block, type HarnessId } from "./session";
+import { executionUserIndex } from "./executionTurn";
 import {
   lastTurn,
   isHiddenTool,
@@ -11,6 +12,8 @@ import {
   subagentModelName,
   subagentName,
   subagentStatusLine,
+  subagentStatusParts,
+  type SubagentStatusPart,
   toolCallLabel,
   toolCallState,
 } from "./transcriptActivity";
@@ -40,8 +43,26 @@ export function isBackgroundOnly(
   return busy && (backgroundTasks?.length ?? 0) > 0 && backgroundAgents === 0;
 }
 
-/** `stopped` is the user's doing, so it counts as neither done nor failed. */
-export type DockAgentStatus = "running" | "done" | "failed" | "stopped";
+/**
+ * `stopped` is the user's doing, so it counts as neither done nor failed.
+ * `interrupted` is a call still marked in flight after the session went idle:
+ * its real outcome was never reported, so it is neither done nor running.
+ */
+export type DockAgentStatus = "running" | "done" | "failed" | "stopped" | "interrupted";
+
+/**
+ * The one lifecycle rule for a delegated run or command, shared by the dock and
+ * the details sheet so they cannot disagree. Provider/session state only; it is
+ * not an OS process liveness check.
+ */
+export function blockLifecycle(block: Block, busy: boolean): DockAgentStatus {
+  if (isStoppedBlock(block)) return "stopped";
+  if (block.tool?.status?.toLowerCase() === "interrupted") return "interrupted";
+  const state = toolCallState(block);
+  if (state === "rejected") return "failed";
+  if (state === "pending") return busy ? "running" : "interrupted";
+  return "done";
+}
 
 /** One delegated run or background command in the latest turn. */
 export type DockAgent = {
@@ -52,10 +73,18 @@ export type DockAgent = {
   name: string;
   /** Subagents open onto their own trail; commands only have a row. */
   kind: "agent" | "command";
+  /** A delegated child session (cross-provider subagent); its own session id. */
+  sessionId?: string;
+  /** Actual child provider; native runs inherit their owning session's provider. */
+  harness?: HarnessId;
+  providerAccountId?: string;
+  /** A delegated child waits for approval or an answer in its own session. */
+  needsInput?: boolean;
   status: DockAgentStatus;
   model?: string;
   /** "46 steps, 1 failed", worded exactly as on the transcript row. */
   detail: string;
+  detailParts?: SubagentStatusPart[];
   /** Epoch ms the run began and ended; absent on older sessions. */
   startedAt?: number;
   endedAt?: number;
@@ -74,6 +103,7 @@ export type ActivityDock = {
   finished: number;
   failed: number;
   stopped: number;
+  interrupted: number;
 };
 
 export type ActivityDockInput = {
@@ -84,6 +114,8 @@ export type ActivityDockInput = {
   backgroundAgents?: number;
   /** Work finished since the user last looked; see `nextUnseenDone`. */
   unseenDone: boolean;
+  /** Delegated child sessions of this session, already mapped to dock rows. */
+  delegatedAgents?: DockAgent[];
 };
 
 /**
@@ -97,25 +129,46 @@ export function deriveActivityDock({
   backgroundTasks,
   backgroundAgents,
   unseenDone,
+  delegatedAgents = [],
 }: ActivityDockInput): ActivityDock {
-  const turn = lastTurn(blocks);
-  const agents = turn.flatMap((block) => dockAgent(block, busy));
+  // A steer is another user message in the same execution. Keep the original
+  // run's rows and clock visible until a genuinely new execution starts.
+  const visibleBlocks = blocks.filter((block) => !block.internal);
+  const ownerIndex = executionUserIndex(visibleBlocks);
+  const execution = ownerIndex < 0 ? lastTurn(visibleBlocks) : visibleBlocks.slice(ownerIndex);
+  // Provider handoffs still fence activity, including imported/recovered data.
+  let handoff = execution.length - 1;
+  while (handoff >= 0 && execution[handoff].role !== "handoff") handoff--;
+  const turn =
+    handoff < 0
+      ? execution
+      : execution.slice(handoff === execution.length - 1 ? handoff : handoff + 1);
+  const agents = [...turn.flatMap((block) => dockAgent(block, busy)), ...delegatedAgents];
   const running = agents.filter((agent) => agent.status === "running").length;
   const failed = agents.filter((agent) => agent.status === "failed").length;
   const stopped = agents.filter((agent) => agent.status === "stopped").length;
-  const backgroundCount = busy ? (backgroundTasks?.length ?? 0) : 0;
+  const interrupted = agents.filter((agent) => agent.status === "interrupted").length;
+  // Delegated children run in their own sessions. Once the parent turn has
+  // ended, the ones still running are what keeps the dock open.
+  const delegatedRunning = delegatedAgents.filter((agent) => agent.status === "running").length;
+  const backgroundCount = busy ? (backgroundTasks?.length ?? 0) : delegatedRunning;
   const startedAt = turn.find((block) => block.role === "user")?.startedAt;
 
   let state: DockState = "idle";
+  const childNeedsInput = delegatedAgents.some(
+    (agent) => agent.needsInput && agent.status === "running",
+  );
   if (busy) {
     state =
-      pendingQuestion || hasPendingApproval(blocks)
+      pendingQuestion || hasPendingApproval(blocks) || childNeedsInput
         ? "needs-input"
         : isBackgroundOnly(busy, backgroundTasks, backgroundAgents)
           ? "background"
           : backgroundCount > 0
             ? "waiting"
             : "working";
+  } else if (delegatedRunning > 0) {
+    state = childNeedsInput ? "needs-input" : "background";
   } else if (unseenDone && !turn.some(isNoticeBlock)) {
     // A turn cut short or ended on an error has not "finished" anything.
     state = "done";
@@ -125,12 +178,14 @@ export function deriveActivityDock({
     state,
     startedAt,
     backgroundCount,
-    backgroundAgents: backgroundCount > 0 ? backgroundAgents : undefined,
+    backgroundAgents:
+      backgroundCount > 0 ? (busy ? backgroundAgents : delegatedRunning) : undefined,
     agents,
     running,
-    finished: agents.length - running - failed - stopped,
+    finished: agents.length - running - failed - stopped - interrupted,
     failed,
     stopped,
+    interrupted,
   };
 }
 
@@ -138,16 +193,9 @@ function dockAgent(block: Block, busy: boolean): DockAgent[] {
   const agent = isSubagentBlock(block);
   if (!agent && !(isToolBlock(block) && block.tool?.background)) return [];
   if (isHiddenTool(block)) return [];
-  const state = toolCallState(block);
   // A call still marked in flight once the session is idle is a leftover of an
-  // interrupted turn, not something running.
-  const status: DockAgentStatus = isStoppedBlock(block)
-    ? "stopped"
-    : state === "rejected"
-      ? "failed"
-      : state === "pending" && busy
-        ? "running"
-        : "done";
+  // interrupted turn: not running, and not known to have finished either.
+  const status = blockLifecycle(block, busy);
   return [
     {
       blockId: block.id,
@@ -156,11 +204,17 @@ function dockAgent(block: Block, busy: boolean): DockAgent[] {
       kind: agent ? "agent" : "command",
       status,
       model: agent ? subagentModelName(block) : undefined,
-      detail: agent
-        ? subagentStatusLine(block, block.agentRun?.steps ?? [])
-        : isStoppedBlock(block)
-          ? STOPPED_BY_YOU
-          : "",
+      ...(agent && status !== "interrupted"
+        ? { detailParts: subagentStatusParts(block, block.agentRun?.steps ?? []) }
+        : {}),
+      detail:
+        status === "interrupted"
+          ? t("Interrupted")
+          : agent
+            ? subagentStatusLine(block, block.agentRun?.steps ?? [])
+            : status === "stopped"
+              ? STOPPED_BY_YOU
+              : "",
       ...(agent && block.agentRun?.startedAt !== undefined
         ? { startedAt: block.agentRun.startedAt }
         : {}),
@@ -183,14 +237,29 @@ export function nextUnseenDone(unseen: boolean, wasBusy: boolean, busy: boolean)
 
 /** "2 running · 1 done · 1 failed", leaving out what is zero. */
 export function dockCountLabel(dock: ActivityDock): string {
-  return [
-    dock.running ? t("{p0} running", { p0: dock.running }) : "",
-    dock.finished ? t("{p0} done", { p0: dock.finished }) : "",
-    dock.failed ? t("{p0} failed", { p0: dock.failed }) : "",
-    dock.stopped ? t("{p0} stopped", { p0: dock.stopped }) : "",
-  ]
-    .filter(Boolean)
+  return dockCountParts(dock)
+    .map((part) => part.text)
     .join(" · ");
+}
+
+export function dockCountParts(dock: ActivityDock): SubagentStatusPart[] {
+  return [
+    ...(dock.running
+      ? [{ text: t("{p0} running", { p0: dock.running }), tone: "accent" as const }]
+      : []),
+    ...(dock.finished
+      ? [{ text: t("{p0} done", { p0: dock.finished }), tone: "success" as const }]
+      : []),
+    ...(dock.failed
+      ? [{ text: t("{p0} failed", { p0: dock.failed }), tone: "danger" as const }]
+      : []),
+    ...(dock.stopped
+      ? [{ text: t("{p0} stopped", { p0: dock.stopped }), tone: "warning" as const }]
+      : []),
+    ...(dock.interrupted
+      ? [{ text: t("{p0} interrupted", { p0: dock.interrupted }), tone: "warning" as const }]
+      : []),
+  ];
 }
 
 /** The state line's words, without the clock. */
@@ -212,7 +281,10 @@ export function dockStateLabel(dock: ActivityDock): string {
     }
     case "background":
       return t("Finished · {p0} running", {
-        p0: plural(dock.backgroundCount, "background command"),
+        p0:
+          dock.backgroundAgents === dock.backgroundCount
+            ? plural(dock.backgroundCount, "background agent")
+            : plural(dock.backgroundCount, "background command"),
       });
     case "needs-input":
       return t("Needs your input");

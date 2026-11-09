@@ -23,6 +23,10 @@ import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 const DEFAULT_THEMES: [ThemeInput, ThemeInput] = ["github-light", "github-dark"];
 const MAX_ENTRIES = 100;
 const MAX_CACHED_CHARS = 500_000;
+/** Source characters one cached token stands for in that budget. */
+const TOKEN_WEIGHT_CHARS = 8;
+/** Streams resumed independently: replies, panes and subagents can stream fences at once. */
+const MAX_CHECKPOINTS = 8;
 
 type Highlighter = Awaited<ReturnType<typeof createHighlighter>>;
 type HighlightCallback = (result: HighlightResult) => void;
@@ -64,17 +68,27 @@ export function createBoundedCodePlugin(
   const highlighters = new Map<string, Promise<Highlighter>>();
   const results = new Map<string, HighlightResult>();
   const pending = new Map<string, Set<HighlightCallback>>();
+  // What each cached result costs against `maxChars`: its source plus the
+  // dual-theme token objects built from it, which outweigh the text.
+  const weights = new Map<string, number>();
   let cachedChars = 0;
-  // One bounded streaming prefix, independent of the exact-result LRU. Only
-  // newline-terminated lines are reusable; the unfinished tail can change syntax.
-  let checkpoint:
-    | {
-        config: string;
-        source: string;
-        tokens: HighlightResult["tokens"];
-        state: GrammarState | undefined;
-      }
-    | undefined;
+  const forget = (key: string) => {
+    cachedChars -= weights.get(key) ?? 0;
+    weights.delete(key);
+    results.delete(key);
+  };
+  // Bounded streaming prefixes, one per growing block and independent of the
+  // exact-result LRU. Only newline-terminated lines are reusable; the unfinished
+  // tail can change syntax. `key` is the latest partial result of that stream.
+  type Checkpoint = {
+    config: string;
+    source: string;
+    tokens: HighlightResult["tokens"];
+    state: GrammarState | undefined;
+    key: string;
+  };
+  let checkpoints: Checkpoint[] = [];
+  const checkpointChars = () => checkpoints.reduce((sum, item) => sum + item.source.length, 0);
 
   const highlighterFor = (pair: [ThemeInput, ThemeInput]) => {
     const key = `${themeKey(pair[0])}\u0000${themeKey(pair[1])}`;
@@ -88,17 +102,20 @@ export function createBoundedCodePlugin(
   };
 
   const remember = (key: string, result: HighlightResult) => {
-    if (results.delete(key)) cachedChars -= key.length;
+    forget(key);
+    let tokens = 0;
+    for (const line of result.tokens) tokens += line.length;
+    const weight = key.length + tokens * TOKEN_WEIGHT_CHARS;
     // A block larger than the whole budget is delivered but never cached.
-    if (key.length <= maxChars) {
+    if (weight <= maxChars) {
       results.set(key, result);
-      cachedChars += key.length;
+      weights.set(key, weight);
+      cachedChars += weight;
     }
-    while (results.size > maxEntries || cachedChars + (checkpoint?.source.length ?? 0) > maxChars) {
+    while (results.size > maxEntries || cachedChars + checkpointChars() > maxChars) {
       const oldest = results.keys().next().value;
       if (oldest === undefined) break;
-      results.delete(oldest);
-      cachedChars -= oldest.length;
+      forget(oldest);
     }
   };
 
@@ -137,10 +154,14 @@ export function createBoundedCodePlugin(
             lang: usable as BundledLanguage,
             themes: { light: names[0], dark: names[1] },
           };
-          const previous =
-            checkpoint?.config === config && code.startsWith(checkpoint.source)
-              ? checkpoint
-              : undefined;
+          let previous: Checkpoint | undefined;
+          for (const item of checkpoints)
+            if (
+              item.config === config &&
+              code.startsWith(item.source) &&
+              item.source.length > (previous?.source.length ?? -1)
+            )
+              previous = item;
           const offset = previous?.source.length ?? 0;
           const boundary = code.lastIndexOf("\n") + 1;
           let prefix = previous?.tokens ?? [];
@@ -161,10 +182,27 @@ export function createBoundedCodePlugin(
             grammarState: state,
           });
           const result = { ...tail, tokens: [...prefix, ...shifted(tail.tokens, boundary)] };
-          checkpoint =
-            boundary > 0 && boundary <= maxChars
-              ? { config, source: code.slice(0, boundary), tokens: prefix, state }
-              : undefined;
+          // A newer version of the same stream supersedes its last partial result,
+          // so streaming one fence no longer pushes finished blocks out of the LRU.
+          if (
+            previous &&
+            previous.key !== key &&
+            key.startsWith(previous.key) &&
+            results.has(previous.key)
+          )
+            forget(previous.key);
+          checkpoints = checkpoints.filter((item) => item !== previous);
+          if (boundary > 0 && boundary <= maxChars) {
+            checkpoints.push({
+              config,
+              source: code.slice(0, boundary),
+              tokens: prefix,
+              state,
+              key,
+            });
+            while (checkpoints.length > MAX_CHECKPOINTS || checkpointChars() > maxChars)
+              checkpoints.shift();
+          }
           remember(key, result);
           const callbacks = pending.get(key);
           pending.delete(key);

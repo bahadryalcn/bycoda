@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -17,16 +18,26 @@ const mocks = vi.hoisted(() => ({
   writeChild: vi.fn(),
 }));
 
-vi.mock("../../core/child", () => ({
-  acquireHarnessBridge: mocks.acquireHarnessBridge,
-  killChild: mocks.killChild,
-  resolveOmpBinary: mocks.resolveOmpBinary,
-  resolvePiBinary: mocks.resolveBinary,
-  spawnChild: mocks.spawnChild,
-  unwatchChild: mocks.unwatchChild,
-  watchChild: mocks.watchChild,
-  writeChild: mocks.writeChild,
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () => {
+  const child = processConstructions.mock({
+    acquireHarnessBridge: mocks.acquireHarnessBridge,
+    killChild: mocks.killChild,
+    resolveOmpBinary: mocks.resolveOmpBinary,
+    resolvePiBinary: mocks.resolveBinary,
+    spawnChild: mocks.spawnChild,
+    unwatchChild: mocks.unwatchChild,
+    watchChild: mocks.watchChild,
+    writeChild: mocks.writeChild,
+  });
+  return {
+    ...child,
+    killChild: (original: import("../../core/child").ChildProcessHandle) => {
+      Reflect.apply(child.unwatchChild, undefined, [original]);
+      return Reflect.apply(child.killChild, undefined, [original]) as Promise<void>;
+    },
+  };
+});
 
 vi.mock("./piClient", () => ({
   PiRpc: class {
@@ -34,7 +45,11 @@ vi.mock("./piClient", () => ({
     request = mocks.request;
     close = mocks.close;
 
-    constructor(_sessionId: string, onFrame: (record: Record<string, unknown>) => void) {
+    constructor(
+      handle: import("../../core/child").ChildProcessHandle,
+      onFrame: (record: Record<string, unknown>) => void,
+    ) {
+      processConstructions.client(handle);
       mocks.frames.push(onFrame);
     }
   },
@@ -46,7 +61,9 @@ import {
   ompCommandsFromRpcData,
   piSkillsFromRpcData,
   allowedPiSkillPathsFromData,
+  allowedPiSkillPaths,
 } from "./piSkills";
+import { PI_FLAVOR } from "./piFlavor";
 
 it("keeps enabled native/package skills and refuses an incomplete restricted catalog", () => {
   const policy = { disabledNames: ["good-css"], disabledPaths: [] };
@@ -298,6 +315,76 @@ describe("piSkillsFromRpcData", () => {
 });
 
 describe("discoverPiSkills", () => {
+  it("cancels a held restricted catalog RPC and cleans up its isolated child", async () => {
+    const response = deferred<Record<string, unknown>>();
+    const controller = new AbortController();
+    mocks.request.mockReturnValue(response.promise);
+    const discovery = allowedPiSkillPaths(
+      PI_FLAVOR,
+      "/repo",
+      { disabledNames: ["fixture-disabled"], disabledPaths: [] },
+      controller.signal,
+    );
+    const rejected = expect(discovery).rejects.toThrow("fixture probe cancelled");
+    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(1));
+    const childId = mocks.spawnChild.mock.calls[0][0];
+    controller.abort(new Error("fixture probe cancelled"));
+    await rejected;
+    expect(mocks.close).toHaveBeenCalledOnce();
+    expect(mocks.killChild).toHaveBeenCalledWith(childId);
+    expect(mocks.releaseBridge).toHaveBeenCalledOnce();
+    const original = processConstructions.created.find((handle) => handle.sessionId === childId)!;
+    expect(original).toBeDefined();
+    for (const kind of ["client", "watch", "spawn", "unwatch", "kill"] as const) {
+      expect(
+        processConstructions.operations
+          .filter((operation) => operation.kind === kind && operation.handle.sessionId === childId)
+          .map((operation) => operation.handle),
+      ).toEqual([original]);
+    }
+    response.resolve({ data: { commands: [] } });
+  });
+
+  it("releases a bridge acquired after restricted discovery has been cancelled", async () => {
+    const bridge = deferred<() => void>();
+    const controller = new AbortController();
+    mocks.acquireHarnessBridge.mockReturnValue(bridge.promise);
+    const discovery = allowedPiSkillPaths(
+      PI_FLAVOR,
+      "/repo",
+      { disabledNames: ["fixture-disabled"], disabledPaths: [] },
+      controller.signal,
+    );
+    const rejected = expect(discovery).rejects.toThrow("fixture bridge cancelled");
+    await vi.waitFor(() => expect(mocks.acquireHarnessBridge).toHaveBeenCalledOnce());
+    controller.abort(new Error("fixture bridge cancelled"));
+    await rejected;
+    expect(mocks.spawnChild).not.toHaveBeenCalled();
+    bridge.resolve(mocks.releaseBridge);
+    await vi.waitFor(() => expect(mocks.releaseBridge).toHaveBeenCalledOnce());
+  });
+
+  it("does not issue a catalog request after a cancelled spawn finishes late", async () => {
+    const launch = deferred<void>();
+    const controller = new AbortController();
+    mocks.spawnChild.mockReturnValue(launch.promise);
+    const discovery = allowedPiSkillPaths(
+      PI_FLAVOR,
+      "/repo",
+      { disabledNames: ["fixture-disabled"], disabledPaths: [] },
+      controller.signal,
+    );
+    const rejected = expect(discovery).rejects.toThrow("fixture spawn cancelled");
+    await vi.waitFor(() => expect(mocks.spawnChild).toHaveBeenCalledOnce());
+    controller.abort(new Error("fixture spawn cancelled"));
+    await rejected;
+    launch.resolve();
+    await Promise.resolve();
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(mocks.killChild).toHaveBeenCalledWith(mocks.spawnChild.mock.calls[0][0]);
+    expect(mocks.releaseBridge).toHaveBeenCalledOnce();
+  });
+
   it("loads skills through an isolated sessionless Pi probe", async () => {
     mocks.request.mockResolvedValue({
       data: {
@@ -347,6 +434,20 @@ describe("discoverPiSkills", () => {
       title: "Continue?",
     });
     await vi.waitFor(() => expect(mocks.writeChild).toHaveBeenCalledOnce());
+    const original = processConstructions.created.find((handle) => handle.sessionId === childId)!;
+    expect(original).toBeDefined();
+    expect(
+      processConstructions.operations
+        .filter(
+          (operation) => operation.kind === "client" && operation.handle.sessionId === childId,
+        )
+        .map((operation) => operation.handle),
+    ).toEqual([original]);
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "write" && operation.handle.sessionId === childId)
+        .map((operation) => operation.handle),
+    ).toEqual([original]);
     expect(mocks.writeChild).toHaveBeenCalledWith(
       childId,
       JSON.stringify({

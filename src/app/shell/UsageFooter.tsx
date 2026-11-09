@@ -6,11 +6,14 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { bridgeQueryEvents } from "../../shared/lib/queryClient";
 import { useDismissPopover } from "../../shared/hooks/useDismissPopover";
-import { t, useLocale } from "../../shared/i18n";
+import { useLocale, useT } from "../../shared/i18n";
 import { RefreshCw, Terminal } from "../../shared/ui/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import { Popover } from "../../shared/ui/Popover";
+import { DropdownMenu } from "../../shared/ui/DropdownMenu";
+import { Spinner } from "../../shared/ui/Spinner";
+import { Tooltip } from "../../shared/ui/Tooltip";
 import { consumeCodexRateLimitResetCredit } from "../../features/providers/model/rateLimitsFetch";
 import {
   errorRateLimits,
@@ -32,10 +35,8 @@ import {
   type RunningTerminal,
 } from "../../features/terminal/model/terminalTab";
 import { MOD } from "../../platform/tauri/platform";
-import {
-  ConversationToolsButton,
-  type ConversationTools,
-} from "../../features/host-tools/SessionHostTools";
+import { ConversationToolsButton } from "../../features/host-tools/ConversationToolsButton";
+import type { ConversationTools } from "../../features/host-tools/SessionHostTools";
 import { UsageProviderChip } from "./UsageProviderChip";
 import {
   saveUsageDisplayAccount,
@@ -43,6 +44,7 @@ import {
 } from "../../features/providers/model/usageDisplayAccount";
 import { WORKSPACE_REFRESH_EVENT } from "./WorkspaceControls";
 import { PiUsage } from "./PiUsage";
+import { useMinuteNow } from "../../shared/hooks/useMinuteNow";
 import {
   ProviderSignInPanel,
   type ProviderSignInState,
@@ -57,8 +59,6 @@ import {
   subscribeProviderAccounts,
   type ProviderAccountProvider,
 } from "../../features/providers/model/providerAccounts";
-
-const CLOCK_MS = 30_000;
 
 export type UsageFooterSession = {
   id?: string;
@@ -102,14 +102,17 @@ export function UsageFooter({
   onSelectAccount?: (provider: ProviderAccountProvider, accountId: string) => void;
   onManageAccounts?: (provider: ProviderAccountProvider) => void;
 }) {
-  useLocale();
+  const t = useT();
   const wantClaude = providers.includes("claude");
   const wantCodex = providers.includes("codex");
   const wantOpencode = providers.includes("opencode");
-  const [now, setNow] = useState(() => Date.now());
+  // One shared minute clock (paused while hidden); countdowns show whole minutes.
+  const now = useMinuteNow();
   const [refreshing, setRefreshing] = useState(false);
   const [, setAccountsVersion] = useState(0);
   const inflight = useRef<Promise<void> | null>(null);
+  // Set only by refresh; null for consume/reconnect operations, which refresh joins as before.
+  const inflightKey = useRef<string | null>(null);
   // A legacy thread without a pin runs on "default", not the current default.
   const preferredClaudeAccountId = useUsageDisplayAccount("claude");
   const preferredCodexAccountId = useUsageDisplayAccount("codex");
@@ -148,21 +151,28 @@ export function UsageFooter({
   useEffect(() => subscribeProviderAccounts(() => setAccountsVersion((value) => value + 1)), []);
 
   const refresh = useCallback(() => {
-    if (inflight.current) return inflight.current;
+    const targets: [RateLimitProvider, string][] = [];
+    if (wantClaude && claudeAccountAvailable) targets.push(["claude", claudeAccountId]);
+    if (wantCodex && codexAccountAvailable) targets.push(["codex", codexAccountId]);
+    if (wantOpencode) targets.push(["opencode", "default"]);
+    // A refresh for another account or provider set must not join this one.
+    const key = JSON.stringify(targets);
+    if (inflight.current && (inflightKey.current === null || inflightKey.current === key))
+      return inflight.current;
     setRefreshing(true);
-    const jobs: Promise<unknown>[] = [];
-    if (wantClaude && claudeAccountAvailable)
-      jobs.push(loadRateLimits("claude", claudeAccountId, true));
-    if (wantCodex && codexAccountAvailable)
-      jobs.push(loadRateLimits("codex", codexAccountId, true));
-    if (wantOpencode) jobs.push(loadRateLimits("opencode", "default", true));
-    const run = Promise.allSettled(jobs)
+    const run = Promise.allSettled(
+      targets.map(([provider, accountId]) => loadRateLimits(provider, accountId, true)),
+    )
       .then(() => undefined)
       .finally(() => {
-        inflight.current = null;
+        if (inflight.current === run) {
+          inflight.current = null;
+          inflightKey.current = null;
+        }
         setRefreshing(false);
       });
     inflight.current = run;
+    inflightKey.current = key;
     return run;
   }, [
     claudeAccountAvailable,
@@ -173,11 +183,6 @@ export function UsageFooter({
     wantCodex,
     wantOpencode,
   ]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), CLOCK_MS);
-    return () => window.clearInterval(timer);
-  }, []);
 
   const queryClient = useQueryClient();
   useEffect(
@@ -307,11 +312,11 @@ export function UsageFooter({
   return (
     <footer
       aria-label={ariaLabel}
-      className={`@container/usage flex h-7 min-w-0 items-center gap-1.5 px-1.5 text-[11px] text-(--ui-text-secondary) ${embedded ? "flex-1" : "shrink-0 border-t border-stroke"}`}
+      className={`@container/usage flex h-(--ui-control-height-compact) min-w-0 items-center gap-1 px-1.5 text-ui-micro text-(--ui-text-secondary) ${embedded ? "flex-1" : "shrink-0 border-t border-stroke"}`}
     >
       <div
         data-provider-usage
-        className="scrollbar-none flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto overscroll-x-contain"
+        className="scrollbar-none flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overscroll-x-contain"
       >
         {session?.harness === "pi" ? (
           <PiUsage key={`${session.id}:${session.model}`} model={session.model} now={now} />
@@ -356,17 +361,12 @@ export function UsageFooter({
               variant="ghost"
               motion="none"
               type="button"
-              className="size-7 shrink-0"
-              aria-label={t("Refresh usage")}
-              title={t("Refresh usage")}
+              size="sm"
+              className="shrink-0"
               disabled={refreshing}
               onClick={() => void refresh()}
             >
-              <RefreshCw
-                className={`size-3.5 ${refreshing ? "motion-safe:animate-spin" : ""}`}
-                strokeWidth={1.75}
-                aria-hidden
-              />
+              {refreshing ? <Spinner /> : <RefreshCw className="icon-sm" aria-hidden />}
             </Button>
           </>
         ) : session ? (
@@ -390,15 +390,13 @@ export function UsageFooter({
               motion="none"
               type="button"
               size="sm"
-              className="size-7"
-              aria-label={terminalLabel}
               aria-pressed={projectTerminalVisible}
-              title={terminalUnavailableReason ?? terminalLabel}
+              data-usage-guide="terminal-toggle"
               disabled={!!terminalUnavailableReason}
-              aria-description={terminalUnavailableReason}
+              disabledReason={terminalUnavailableReason ?? undefined}
               onClick={onTerminalClick}
             >
-              <Terminal className="size-3.5" strokeWidth={1.75} aria-hidden />
+              <Terminal className="icon-sm" aria-hidden />
             </Button>
           ) : null}
         </div>
@@ -419,7 +417,7 @@ function TerminalLiveMark() {
 }
 
 function SessionChip({ session }: { session: UsageFooterSession }) {
-  useLocale();
+  const t = useT();
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [loginState, setLoginState] = useState<ProviderSignInState>("idle");
@@ -427,11 +425,9 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
   const authRequired = Boolean(session.authRequired && loginState !== "complete");
   const canLogin = authRequired && supportsHarnessLogin(session.harness);
 
-  useEffect(() => {
-    if (!session.authRequired && loginState === "complete") {
-      setLoginState("idle");
-    }
-  }, [loginState, session.authRequired]);
+  // A finished sign-in is forgotten once the session no longer needs auth, so a
+  // later auth failure shows the sign-in prompt again.
+  if (!session.authRequired && loginState === "complete") setLoginState("idle");
 
   const dismiss = useDismissPopover(setOpen, trigger);
 
@@ -450,13 +446,12 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
 
   if (!canLogin) {
     return (
-      <span
-        className="inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap"
-        title={HARNESS_TITLE[session.harness]}
-      >
-        <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
-        <span>{HARNESS_LABEL[session.harness]}</span>
-      </span>
+      <Tooltip label={HARNESS_TITLE[session.harness]}>
+        <span className="inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap">
+          <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
+          <span>{HARNESS_LABEL[session.harness]}</span>
+        </span>
+      </Tooltip>
     );
   }
 
@@ -472,14 +467,12 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
         aria-label={t("{p0} sign-in required", { p0: HARNESS_TITLE[session.harness] })}
         aria-expanded={open}
         aria-haspopup="dialog"
-        title={t("{p0} sign-in required", { p0: HARNESS_TITLE[session.harness] })}
+        tooltip={t("{p0} sign-in required", { p0: HARNESS_TITLE[session.harness] })}
         onClick={() => setOpen((value) => !value)}
       >
-        <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
+        <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
         <span>{HARNESS_LABEL[session.harness]}</span>
-        {authRequired ? (
-          <span className="text-(length:--ui-font-caption) text-warning dark:text-warning">{t("sign in")}</span>
-        ) : null}
+        {authRequired ? <span className="text-ui-caption text-warning">{t("sign in")}</span> : null}
       </Button>
       {open ? (
         <Popover
@@ -516,14 +509,12 @@ function RunningTerminalChip({
   open: boolean;
   onToggle?: (fileId: string) => void;
 }) {
-  useLocale();
+  const t = useT();
   const root = useRef<HTMLButtonElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const label = runningTerminalChipLabel(terminals);
   const many = terminals.length > 1;
-  const title = terminals
-    .map((terminal) => `"${terminal.process}" in ${terminal.label}`)
-    .join("\n");
+  const details = terminals.map((terminal) => `"${terminal.process}" in ${terminal.label}`);
   const ariaLabel =
     terminals.length === 1
       ? panelOpen
@@ -548,12 +539,10 @@ function RunningTerminalChip({
         ref={root}
         type="button"
         size="sm"
-        className="size-7"
-        aria-label={ariaLabel}
         aria-pressed={panelOpen}
         aria-expanded={many && !panelOpen ? menuOpen : undefined}
         aria-haspopup={many && !panelOpen ? "menu" : undefined}
-        title={title}
+        tooltipDetails={details}
         onClick={() => {
           if (panelOpen || !many) {
             const target = terminals[0];
@@ -567,34 +556,21 @@ function RunningTerminalChip({
         <span className="sr-only">{label}</span>
       </Button>
       {menuOpen && many && !panelOpen ? (
-        <Popover
+        <DropdownMenu
           anchor={root}
+          label={t("Running terminals")}
           side="top"
           align="end"
-          autoFocus
-          onDismiss={() => setMenuOpen(false)}
-          role="menu"
-          aria-label={t("Running terminals")}
-          className="min-w-[12rem] p-1"
-        >
-          {terminals.map((terminal) => (
-            <Button
-              variant="item"
-              motion="none"
-              key={terminal.id}
-              type="button"
-              role="menuitem"
-              className="flex w-full items-center gap-2 leading-none"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => toggle(terminal.id)}
-            >
-              <span className="min-w-0 flex-1 truncate">{terminal.process}</span>
-              <span className="max-w-[7rem] shrink-0 truncate text-[11px] text-content/40">
-                {terminal.label}
-              </span>
-            </Button>
-          ))}
-        </Popover>
+          width={192}
+          items={terminals.map((terminal) => ({
+            kind: "item" as const,
+            id: terminal.id,
+            label: terminal.process,
+            description: terminal.label,
+          }))}
+          onPick={toggle}
+          onClose={() => setMenuOpen(false)}
+        />
       ) : null}
     </>
   );

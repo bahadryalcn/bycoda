@@ -73,7 +73,7 @@ export function GraphAvatar({
     <span
       aria-hidden
       title={name || t("Unknown author")}
-      className={`grid shrink-0 place-items-center rounded-full font-semibold leading-none select-none ${className}`}
+      className={`grid shrink-0 place-items-center rounded-full font-medium leading-none select-none ${className}`}
       style={{
         width: size,
         height: size,
@@ -93,7 +93,7 @@ function TagGlyph() {
     <svg
       aria-hidden
       viewBox="0 0 16 16"
-      className="size-2.5 shrink-0"
+      className="icon-xs shrink-0"
       fill="none"
       stroke="currentColor"
       strokeWidth={1.75}
@@ -110,10 +110,10 @@ export function RefPill({ refInfo }: { refInfo: GraphRefChip }) {
   return (
     <span
       title={refTitle(refInfo)}
-      className={`flex h-4 min-w-0 shrink items-center gap-0.5 px-1.5 text-(length:--ui-font-caption) leading-none ${
-        refInfo.kind === "tag" ? "rounded-[4px]" : "rounded-full"
-      } ${refInfo.color ? "" : "bg-[var(--ui-surface-muted)] text-[var(--ui-text-secondary)]"} ${
-        refInfo.current ? "font-semibold ring-1 ring-[var(--color-stroke)]" : ""
+      className={`flex h-4 min-w-0 shrink items-center gap-0.5 px-1.5 text-ui-caption leading-none ${
+        refInfo.kind === "tag" ? "rounded-(--ui-radius-control)" : "rounded-full"
+      } ${refInfo.color ? "" : "bg-(--ui-surface-muted) text-(--ui-text-secondary)"} ${
+        refInfo.current ? "font-medium ring-1 ring-(color:--ui-pane-border)" : ""
       }`}
       style={{
         maxWidth: PILL_MAX_PX,
@@ -128,9 +128,9 @@ export function RefPill({ refInfo }: { refInfo: GraphRefChip }) {
       {refInfo.kind === "tag" ? (
         <TagGlyph />
       ) : refInfo.kind === "remote" ? (
-        <Globe className="size-2.5 shrink-0" strokeWidth={2} />
+        <Globe className="icon-xs shrink-0" strokeWidth={2} />
       ) : (
-        <GitBranch className="size-2.5 shrink-0" strokeWidth={2} />
+        <GitBranch className="icon-xs shrink-0" strokeWidth={2} />
       )}
       <span className="min-w-0 truncate">{refInfo.name}</span>
     </span>
@@ -169,7 +169,7 @@ export function RefPills({
       {hidden.length > 0 ? (
         <span
           title={hidden.map(refTitle).join("\n")}
-          className="flex h-4 shrink-0 items-center rounded-full bg-(--ui-surface-muted) px-1.5 text-(length:--ui-font-caption) leading-none text-(--ui-text-secondary)"
+          className="flex h-4 shrink-0 items-center rounded-full bg-(--ui-surface-muted) px-1.5 text-ui-caption leading-none text-(--ui-text-secondary)"
         >
           +{hidden.length}
         </span>

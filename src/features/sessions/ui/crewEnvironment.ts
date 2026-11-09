@@ -195,7 +195,8 @@ export function drawCrewEnvironment(ctx: CanvasRenderingContext2D): void {
   // The doorway looks into a courtyard: cobbles, a tree and distant masonry.
   rect(ctx, 449, 73, 100, 121, themePalette.hex242d28);
   rect(ctx, 450, 136, 99, 57, themePalette.hex35362d);
-  for (let k = 0; k < 7; k++) rect(ctx, 452 + k * 14, 148 + (k % 3) * 11, 11, 3, themePalette.hex45463a);
+  for (let k = 0; k < 7; k++)
+    rect(ctx, 452 + k * 14, 148 + (k % 3) * 11, 11, 3, themePalette.hex45463a);
   rect(ctx, 523, 81, 5, 55, C.wood);
   foliage(ctx, 475, 76, 4);
   rect(ctx, 432, 208, 134, 5, C.woodLight);

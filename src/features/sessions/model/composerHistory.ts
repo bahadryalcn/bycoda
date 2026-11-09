@@ -1,5 +1,6 @@
 import { stripAttachmentTokens } from "./attachmentTokens";
 import { isOperatorUserTurn, operatorUserPrompt } from "./operatorCommand";
+import { resumePromptKind } from "./resumePrompt";
 import type { Session } from "./session";
 
 /** The note the composer prepends when MCP servers are tagged (see `mcpContextText`). */
@@ -35,7 +36,8 @@ export function userPromptHistory(session: Pick<Session, "blocks" | "queuedMessa
       block.internal ||
       (block.draft && !block.followUpDelivery) ||
       block.secondOpinion ||
-      block.ciContext
+      block.ciContext ||
+      resumePromptKind(block.text)
     ) {
       continue;
     }

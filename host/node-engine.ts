@@ -24,7 +24,8 @@ export async function preparePosixNode(executable: string, directory: string): P
   const staged = join(engine, `node-${randomUUID()}.tmp`);
   try {
     await copyFile(executable, staged);
-    if ((await digest(staged)) !== expected) throw new Error("The staged host engine checksum changed");
+    if ((await digest(staged)) !== expected)
+      throw new Error("The staged host engine checksum changed");
     await chmod(staged, 0o700);
     await rename(staged, node);
   } finally {

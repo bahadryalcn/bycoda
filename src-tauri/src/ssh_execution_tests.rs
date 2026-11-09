@@ -1,4 +1,6 @@
 use super::*;
+#[path = "ssh_execution/admission_tests.rs"]
+mod admission_tests;
 #[path = "ssh_execution_native_tests.rs"]
 mod native_tests;
 #[derive(Default)]
@@ -398,9 +400,29 @@ fn interpreter_and_script_use_stdin_and_never_log_or_enable_agent_forwarding() {
         .collect();
     assert!(args.iter().any(|arg| arg == "BatchMode=yes"));
     assert!(args.iter().any(|arg| arg == "ForwardAgent=no"));
-    assert!(args.iter().any(|arg| arg == "sh -s"));
+    assert!(args.iter().any(|arg| arg == POSIX_REMOTE_SHELL));
     assert!(!args.iter().any(|arg| arg.contains("printf reviewed")));
     assert_eq!(input, b"printf reviewed\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn posix_remote_shell_reads_whole_script_before_running_and_detaches_stdin() {
+    use std::io::Write;
+    let mut child = Command::new("sh")
+        .args(["-c", POSIX_REMOTE_SHELL])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"read x\necho after:$x\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "after:\n");
 }
 
 #[test]

@@ -2,7 +2,6 @@
 use serde_json::{json, Value};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, WebviewWindow};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 fn now_ms() -> Result<u64, String> {
     std::time::SystemTime::now()
@@ -115,8 +114,7 @@ pub async fn desktop_inbox_review(
         if !root.is_dir() { return Err("Invalid review project directory".into()); }
         let alive = || app.get_webview_window(window.label()).is_some() && window.is_visible().is_ok();
         approved_review_with(&operation, deadline, now_ms, alive,
-            |message| app.dialog().message(message).title("bycoda — Inbox operation approval")
-                .parent(&window).buttons(MessageDialogButtons::OkCancelCustom("Approve this operation".into(), "Cancel".into())).blocking_show(),
+            |message| crate::control::owner_approval::ask_window_checked(&app, &window, crate::control::owner_approval::Prompt { title: "bycoda — Inbox operation approval", message, confirm: "Approve this operation", cancel: "Cancel" }, || { valid_deadline(deadline, now_ms()?)?; if !alive() { return Err("Review window closed".into()); } Ok(()) }),
             || crate::github_review::execute_review_guarded(&cwd, &repo, number, &review, || {
                 valid_deadline(deadline, now_ms()?)?;
                 if !alive() || crate::fs::expand_home(&cwd).canonicalize().ok().as_ref() != Some(&root) {

@@ -4,6 +4,19 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FloatingButtonGroup } from "./FloatingButtonGroup";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
@@ -39,7 +52,11 @@ it("roves vertically across enabled commands and keeps one tab stop", () => {
   const key = (value: string) =>
     act(() =>
       document.activeElement!.dispatchEvent(
-        new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true }),
+        new KeyboardEvent("keydown", {
+          key: value,
+          bubbles: true,
+          cancelable: true,
+        }),
       ),
     );
   key("ArrowDown");
@@ -58,7 +75,7 @@ it("roves vertically across enabled commands and keeps one tab stop", () => {
   expect(onSelect).not.toHaveBeenCalled();
 });
 
-it("preserves pointer selections and exposes icon commands without hover", () => {
+it("preserves pointer selections and exposes icon commands without hover", async () => {
   const onSelect = vi.fn();
   act(() =>
     root.render(
@@ -85,8 +102,152 @@ it("preserves pointer selections and exposes icon commands without hover", () =>
   });
   expect(down.defaultPrevented).toBe(true);
   expect(button.getAttribute("aria-label")).toBe("Copy selection");
-  expect(button.title).toBe("Copy selection (Ctrl+C)");
+  // The hint (name plus key caps) rides in the shared tooltip, not a native title.
+  expect(button.title).toBe("");
+  expect(await tooltipText(button)).toBe("Copy selectionCtrlC");
   act(() => button.click());
   expect(onSelect).toHaveBeenCalledOnce();
   expect(container.querySelectorAll('[role="toolbar"]')).toHaveLength(1);
+});
+
+it("hands a popup trigger to its owner while keeping roving focus and the group's tooltip", async () => {
+  const owner = vi.fn();
+  const onSelect = vi.fn();
+  const received: string[] = [];
+  act(() =>
+    root.render(
+      createElement(FloatingButtonGroup, {
+        label: "Message actions",
+        iconOnly: true,
+        items: [
+          {
+            id: "copy",
+            label: "Copy",
+            icon: createElement("span", null, "C"),
+            onSelect,
+          },
+          {
+            id: "menu",
+            label: "Handoff",
+            tooltip: "Hand this session over",
+            icon: createElement("span", null, "H"),
+            render: (renderTrigger) =>
+              renderTrigger({
+                ref: (node) => {
+                  received.push(node ? "attached" : "detached");
+                },
+                ariaLabel: "Handoff: 2 agents",
+                "aria-haspopup": "menu",
+                "aria-expanded": true,
+                onSelect: owner,
+              }),
+          },
+          {
+            id: "last",
+            label: "Last",
+            icon: createElement("span", null, "L"),
+            onSelect,
+          },
+        ],
+      }),
+    ),
+  );
+  const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>("[data-fbg-item]"));
+  expect(buttons).toHaveLength(3);
+  const trigger = buttons[1]!;
+  expect(received).toEqual(["attached"]);
+  expect(trigger.getAttribute("aria-label")).toBe("Handoff: 2 agents");
+  expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(await tooltipText(trigger)).toBe("Hand this session over");
+  act(() => trigger.click());
+  expect(owner).toHaveBeenCalledOnce();
+  // The popup item stays in the arrow-key order of the one toolbar.
+  act(() => buttons[0]!.focus());
+  act(() => {
+    buttons[0]!.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "ArrowRight",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  expect(document.activeElement).toBe(trigger);
+  expect(buttons.filter((button) => button.tabIndex === 0)).toHaveLength(1);
+});
+
+it("lets a disabled popup trigger refuse activation", () => {
+  const owner = vi.fn();
+  act(() =>
+    root.render(
+      createElement(FloatingButtonGroup, {
+        label: "Actions",
+        items: [
+          {
+            id: "menu",
+            label: "Handoff",
+            render: (renderTrigger) => renderTrigger({ disabled: true, onSelect: owner }),
+          },
+        ],
+      }),
+    ),
+  );
+  const trigger = container.querySelector<HTMLButtonElement>("[data-fbg-item]")!;
+  act(() => trigger.click());
+  expect(owner).not.toHaveBeenCalled();
+  expect(trigger.getAttribute("aria-disabled")).toBe("true");
+});
+
+it("shows pending and result tones on the same icon-only item", () => {
+  const onSelect = vi.fn();
+  const render = (props: { label: string; tone?: "success" | "danger"; loading?: boolean }) =>
+    act(() =>
+      root.render(
+        createElement(FloatingButtonGroup, {
+          label: "Message actions",
+          iconOnly: true,
+          items: [
+            {
+              id: "copy",
+              icon: createElement("span", null, "C"),
+              onSelect,
+              ...props,
+            },
+          ],
+        }),
+      ),
+    );
+  render({ label: "Copy response" });
+  const button = container.querySelector<HTMLButtonElement>("[data-fbg-item]")!;
+  expect(button.getAttribute("data-button-tone")).toBe("neutral");
+  render({ label: "Copy response", loading: true });
+  expect(button.getAttribute("aria-busy")).toBe("true");
+  act(() => button.click());
+  expect(onSelect).not.toHaveBeenCalled();
+  render({ label: "Copied", tone: "success" });
+  expect(button.getAttribute("data-button-tone")).toBe("success");
+  expect(button.getAttribute("aria-label")).toBe("Copied");
+  expect(button.hasAttribute("data-icon-only")).toBe(true);
+  render({ label: "Retry copy", tone: "danger" });
+  expect(button.getAttribute("data-button-tone")).toBe("danger");
+  act(() => button.click());
+  expect(onSelect).toHaveBeenCalledOnce();
+});
+
+it("drops the tray inset with padding none", () => {
+  const render = (padding?: "none") =>
+    act(() =>
+      root.render(
+        createElement(FloatingButtonGroup, {
+          label: "Bare actions",
+          padding,
+          items: [{ id: "one", label: "One" }],
+        }),
+      ),
+    );
+  render();
+  expect(container.querySelector("[role=toolbar]")?.getAttribute("data-padding")).toBeNull();
+  render("none");
+  expect(container.querySelector("[role=toolbar]")?.getAttribute("data-padding")).toBe("none");
 });

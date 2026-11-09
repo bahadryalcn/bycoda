@@ -1,9 +1,11 @@
+import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { lazySurface } from "../../../shared/ui/lazySurface";
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { memo, useSyncExternalStore } from "react";
-import { MarkdownViewShell, useMarkdownMode } from "../../sessions/ui/MarkdownModeToggle";
+import { MarkdownViewShell, useMarkdownMode } from "../../sessions/public/MarkdownModeToggle";
 import { SurfaceTabs } from "../../workspace/ui/SurfaceTabs";
 import type { WindowMovePosition } from "../../../app/model/windowTransferPopout";
 import {
@@ -26,44 +28,60 @@ import { mediaKind } from "../model/mediaPreview";
 import type { TerminalMetaPatch } from "../../terminal/model/terminalTab";
 import type { EditorNavigationTarget, OpenFileFn } from "../../search/model/search";
 import { editorPathsEqual } from "../../search/model/search";
-import type { PlanBuildTarget, Session } from "../../sessions/model/session";
+import type { PlanBuildTarget, Session } from "../../sessions";
 import { Play } from "../../../shared/ui/icons";
-import { BuildTargetButton } from "../../sessions/ui/SecondOpinionButton";
-import { loadDiffViewer, subscribeDiffViewer } from "../../settings/model/settings";
-import { AgentTabView } from "../../sessions/ui/AgentTabView";
-import { useSession } from "../../sessions/model/sessionsStore";
-import { MarkdownPreview } from "../../sessions/ui/AgentMarkdown";
+import { BuildTargetButton } from "../../sessions/public/SecondOpinionButton";
+import { loadDiffViewer, subscribeDiffViewer } from "../../settings/public/settings";
+import { AgentTabView } from "../../sessions/public/AgentTabView";
+import { usePaneSession } from "../../sessions/public/sessionsStore";
+import { MarkdownPreview } from "../../sessions/public/AgentMarkdown";
 import { BinaryFileView } from "./BinaryFileView";
 import { DocumentView } from "./DocumentView";
 import { ReleaseNotesSurface } from "../../../app/ui/ReleaseNotesSurface";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 import { PlanSelection } from "./PlanSelection";
-import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
+import { SurfaceSelection } from "../../sessions/public/SurfaceSelection";
 
-const CommitDiff = lazySurface(async () => {
-  const module = await import("../../source-control/ui/CommitDiff");
-  return { default: module.CommitDiff };
-});
-const FileEditor = lazySurface(async () => {
-  const module = await import("./FileEditor");
-  return { default: module.FileEditor };
-});
-const MediaView = lazySurface(async () => ({ default: (await import("./MediaView")).MediaView }));
-const DelimitedFileView = lazySurface(async () => ({
-  default: (await import("./DelimitedFileView")).DelimitedFileView,
-}));
-const SessionChangesDiff = lazySurface(async () => {
-  const module = await import("../../source-control/ui/SessionChangesDiff");
-  return { default: module.SessionChangesDiff };
-});
-const TerminalView = lazySurface(async () => {
-  const module = await import("../../terminal/ui/TerminalView");
-  return { default: module.TerminalView };
-});
-const WorkingTreeDiff = lazySurface(async () => {
-  const module = await import("../../source-control/ui/WorkingTreeDiff");
-  return { default: module.WorkingTreeDiff };
-});
+/** A pane that is still loading keeps its place with an indeterminate placeholder, not a blank area. */
+const paneLoading = { fallback: <SurfaceLoading /> };
+
+const CommitDiff = lazySurface(
+  async () => ({
+    default: (await import("../../source-control").then((entry) => entry.loadCommitDiff()))
+      .CommitDiff,
+  }),
+  paneLoading,
+);
+const FileEditor = lazySurface(
+  async () => ({ default: (await import("./FileEditor")).FileEditor }),
+  paneLoading,
+);
+const MediaView = lazySurface(
+  async () => ({ default: (await import("./MediaView")).MediaView }),
+  paneLoading,
+);
+const DelimitedFileView = lazySurface(
+  async () => ({ default: (await import("./DelimitedFileView")).DelimitedFileView }),
+  paneLoading,
+);
+const SessionChangesDiff = lazySurface(
+  async () => ({
+    default: (await import("../../source-control").then((entry) => entry.loadSessionChangesDiff()))
+      .SessionChangesDiff,
+  }),
+  paneLoading,
+);
+const TerminalView = lazySurface(
+  async () => ({ default: (await import("../../terminal/ui/TerminalView")).TerminalView }),
+  paneLoading,
+);
+const WorkingTreeDiff = lazySurface(
+  async () => ({
+    default: (await import("../../source-control").then((entry) => entry.loadWorkingTreeDiff()))
+      .WorkingTreeDiff,
+  }),
+  paneLoading,
+);
 
 type Props = {
   pane: EditorPane;
@@ -204,7 +222,7 @@ function FilePaneComponent({
                 <AgentTabView
                   title={file.path}
                   session={sessions.find((entry) => entry.id === file.agent.sessionId)}
-                  visible={file.id === pane.activeFileId}
+                  visible={visible && file.id === pane.activeFileId}
                   focused={focused && file.id === pane.activeFileId}
                   onOpenFile={onOpenFile}
                 />
@@ -212,6 +230,7 @@ function FilePaneComponent({
                 <PlanSurface
                   file={file}
                   active={visible && focused && file.id === pane.activeFileId}
+                  visible={visible && file.id === pane.activeFileId}
                   sessions={sessions}
                   onOpenFile={onOpenFile}
                   onUpdatePlan={onUpdatePlan}
@@ -227,24 +246,26 @@ function FilePaneComponent({
                   active={focused && file.id === pane.activeFileId}
                   onMetaChange={(patch) => onTerminalMetaChange?.(file.id, patch)}
                 />
-              ) : isImagePath(file.path) ? (
+              ) : isImagePath(file.path) && !file.recoveredEditorDraft ? (
                 <BinaryFileView path={file.path} cwd={file.cwd} />
-              ) : mediaKind(file.path) ? (
+              ) : mediaKind(file.path) && !file.recoveredEditorDraft ? (
                 <MediaView
                   path={file.path}
                   active={file.id === pane.activeFileId}
                   visible={visible && file.id === pane.activeFileId}
                 />
-              ) : kind && !delimited ? (
+              ) : kind && !delimited && !file.recoveredEditorDraft ? (
                 <DocumentView path={file.path} cwd={file.cwd} />
               ) : (
                 <Editor
                   documentId={file.id}
+                  recoveredEditorDraft={file.recoveredEditorDraft}
                   path={file.path}
                   cwd={file.cwd}
                   showDiff={!!file.review}
                   changeKind={file.changeKind}
                   active={visible && focused && file.id === pane.activeFileId}
+                  shown={visible && file.id === pane.activeFileId}
                   navigation={
                     editorNavigation && editorPathsEqual(file.path, editorNavigation.path)
                       ? editorNavigation
@@ -305,6 +326,7 @@ export const FilePane = memo(FilePaneComponent, (previous, next) => {
 function PlanSurface({
   file,
   active,
+  visible,
   sessions,
   onOpenFile,
   onUpdatePlan,
@@ -312,6 +334,7 @@ function PlanSurface({
 }: {
   file: FilePaneTab;
   active: boolean;
+  visible: boolean;
   sessions: Session[];
   onOpenFile: OpenFileFn;
   onUpdatePlan: (sessionId: string, blockId: string, text: string) => void;
@@ -321,7 +344,8 @@ function PlanSurface({
   const plan = file.plan;
   const [mode, setMode] = useMarkdownMode(file.path);
   // A streaming plan's text lives only in the store; the `sessions` prop lags.
-  const liveSession = useSession(plan?.sessionId);
+  // A hidden plan tab follows the shell instead and catches up when shown.
+  const liveSession = usePaneSession(plan?.sessionId, visible);
   const session =
     liveSession ?? (plan ? sessions.find((entry) => entry.id === plan.sessionId) : undefined);
   const block = plan ? session?.blocks.find((entry) => entry.id === plan.blockId) : undefined;
@@ -330,7 +354,7 @@ function PlanSurface({
   if (!block || !plan) {
     return (
       <div className="grid h-full place-items-center p-6 text-center">
-        <p className="text-[13px] text-[var(--ui-text-secondary)]">
+        <p role="status" className="text-ui-secondary text-(--ui-text-secondary)">
           {t("This plan is no longer in the session.")}
         </p>
       </div>
@@ -379,12 +403,10 @@ function PlanSurface({
               motion="none"
               type="button"
               disabled={buildDisabled}
+              loading={block.plan?.status === "building"}
               onClick={() => onBuildPlan(plan.sessionId, block.id)}
-              className={`  flex  items-center gap-1.5 disabled:cursor-not-allowed  ${
-                session ? "" : ""
-              }   `}
             >
-              <Play className="size-3" />
+              <Play className="icon-sm" />
               {buildLabel}
             </Button>
             {session && !remote ? (
@@ -406,8 +428,13 @@ function PlanSurface({
             sessionId={plan.sessionId}
             cwd={session?.cwd ?? file.cwd}
           >
-            <textarea
-              aria-label={t("Plan markdown")}
+            <TextareaField
+              label={t("Plan markdown")}
+              hideLabel
+              appearance="quiet"
+              monospace
+              fieldClassName="h-full w-full"
+              data-file-editor-source-active={active && mode === "source" ? "true" : "false"}
               spellCheck={false}
               value={block.text}
               disabled={
@@ -419,7 +446,7 @@ function PlanSurface({
               onChange={(event) =>
                 onUpdatePlan(plan.sessionId, block.id, event.currentTarget.value)
               }
-              className="h-full w-full resize-none overflow-auto font-mono leading-6"
+              className="h-full w-full resize-none overflow-auto px-4 py-3 leading-6"
             />
           </SurfaceSelection>
         }

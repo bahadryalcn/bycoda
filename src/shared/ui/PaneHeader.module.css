@@ -1,0 +1,108 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+/* Root placement stays caller-adjustable (F3 style-ownership contract). */
+@layer components {
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex: none;
+    min-inline-size: 0;
+  }
+  .chromeInset {
+    display: block;
+    flex: none;
+    align-self: stretch;
+    inline-size: var(--ui-window-chrome-inset, 78px);
+  }
+  .chromeInset[data-window-chrome-inset="compact"] {
+    inline-size: 1rem;
+  }
+}
+
+/* One compact pane/tool header: the title-bar height (compact control + 8px) so pane
+   headers line up with the window title bar at every density. */
+.header {
+  --pane-header-height: var(
+    --ui-pane-header-height,
+    calc(var(--ui-control-height-compact) + 0.5rem)
+  );
+  box-sizing: border-box;
+  block-size: var(--pane-header-height);
+  min-block-size: var(--pane-header-height);
+  padding-inline: 0.5rem 0.25rem;
+  color: var(--color-content);
+}
+.header[data-bordered] {
+  border-block-end: 1px solid var(--ui-pane-border);
+}
+.header[data-drag-region] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* The traffic-light inset already provides the start gutter. */
+.header[data-chrome-inset] {
+  padding-inline-start: 0;
+}
+.leading,
+.actions,
+.trailing {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.125rem;
+}
+.trailing {
+  align-self: stretch;
+}
+.actions {
+  margin-inline-start: auto;
+}
+.icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--ui-text-secondary);
+}
+.icon > svg {
+  inline-size: var(--ui-icon-sm);
+  block-size: var(--ui-icon-sm);
+}
+.heading {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-inline-size: 0;
+  padding-inline: 0.25rem;
+}
+.title {
+  min-inline-size: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-secondary);
+  line-height: var(--ui-leading-secondary);
+  font-weight: 500;
+  color: var(--color-content);
+}
+.meta {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text-secondary);
+}
+.body {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.25rem;
+  min-inline-size: 0;
+}

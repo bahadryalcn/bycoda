@@ -1,0 +1,38 @@
+name: Validate unsigned PR preview
+on:
+  workflow_run:
+    workflows: [Unsigned PR web preview]
+    types: [completed]
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+concurrency:
+  group: preview-validation-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: vars.BYCODA_UNSIGNED_PR_PREVIEWS == 'true' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      # workflow_run loads this workflow/tooling from trusted default branch.
+      # Downloaded PR files are never executed or extracted to source paths.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: "24"
+          install: "false"
+      - name: Recheck PR head and parse bounded artifact bytes with trusted code
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: node scripts/release/preview-control.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: validated-unsigned-pr-preview-${{ github.event.workflow_run.id }}
+          path: temp/pr-preview-validated/
+          if-no-files-found: error
+          retention-days: 3

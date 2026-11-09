@@ -1,14 +1,13 @@
 import {
   useCallback,
-  useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
   type KeyboardEvent,
+  type ReactNode,
   type Ref,
 } from "react";
-import { resizeComposer } from "../../sessions/model/composerResize";
 import type { HarnessId } from "../../sessions/model/session";
 import {
   hasNativeCommands,
@@ -20,8 +19,10 @@ import {
   type SlashToken,
 } from "../model/skills";
 import { isImeComposition } from "../../../shared/lib/keyboard";
+import { useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import { SkillPicker } from "./SkillPicker";
 import { Popover } from "../../../shared/ui/Popover";
+import { PromptField } from "../../../shared/ui/PromptField";
 import { useComposerSkills } from "../../sessions/ui/useComposerSkills";
 
 type Props = {
@@ -32,8 +33,18 @@ type Props = {
   /** Accessible name; defaults to "Instructions". */
   label?: string;
   placeholder?: string;
-  /** Use "group" when a bordered ancestor with `data-ui-focus-group` owns the focus ring. */
-  focusOwner?: "input" | "group";
+  /** Smallest height in lines (default 4). */
+  minRows?: number;
+  maxRows?: number;
+  /** Tallest height in pixels before the editor scrolls. */
+  maxHeight?: number;
+  surface?: "default" | "raised";
+  /** Pickers and toggles inside the frame, below the editor. */
+  toolbarLeading?: ReactNode;
+  toolbarTrailing?: ReactNode;
+  frameProps?: ComponentProps<typeof PromptField>["frameProps"];
+  /** `false` when a bordered ancestor with `data-ui-focus-group` already is the frame. */
+  framed?: boolean;
 };
 
 /** Automation instructions field with the composer's slash-skill behavior. */
@@ -44,13 +55,19 @@ export function SkillPromptField({
   onChange,
   label = "Instructions",
   placeholder = "Tell the agent what to do when this automation runs…",
-  focusOwner = "input",
+  minRows = 4,
+  maxRows,
+  maxHeight,
+  surface,
+  toolbarLeading,
+  toolbarTrailing,
+  frameProps,
+  framed,
 }: Props) {
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const slashAnchorRef = useRef<HTMLSpanElement>(null);
   const slashRef = useRef<SlashToken | null>(null);
   const [slash, setSlash] = useState<SlashToken | null>(null);
-  const [active, setActive] = useState(0);
   slashRef.current = slash;
 
   const skillCatalog = useComposerSkills({
@@ -70,21 +87,10 @@ export function SkillPromptField({
   );
   const skillNames = useMemo(() => new Set(skills.map((skill) => skill.invocation)), [skills]);
 
-  useEffect(() => {
-    setActive(0);
-  }, [cwd, harness, slash?.query]);
-
-  useEffect(() => {
-    setActive((index) =>
-      rankedSkills.length === 0 ? 0 : Math.min(index, rankedSkills.length - 1),
-    );
-  }, [rankedSkills.length]);
-
-  useLayoutEffect(() => {
-    if (fieldRef.current) {
-      resizeComposer(fieldRef.current, Number.POSITIVE_INFINITY);
-    }
-  }, [value]);
+  const [active, setActive] = useKeyedActiveIndex(
+    `${harness}\u0000${cwd}\u0000${slash?.query ?? ""}`,
+    rankedSkills.length,
+  );
 
   const syncSlashToken = useCallback(
     (field: HTMLTextAreaElement) => {
@@ -105,7 +111,6 @@ export function SkillPromptField({
 
       const next = replaceSlashToken(field.value, token, skill.invocation);
       field.value = next;
-      resizeComposer(field, Number.POSITIVE_INFINITY);
       let cursor = token.start + skill.invocation.length + 1;
       if (next[cursor] === " ") cursor += 1;
       field.setSelectionRange(cursor, cursor);
@@ -147,7 +152,43 @@ export function SkillPromptField({
   };
 
   return (
-    <div className="relative">
+    <PromptField
+      ref={fieldRef}
+      label={label}
+      minRows={minRows}
+      maxRows={maxRows}
+      maxHeight={maxHeight}
+      surface={surface}
+      framed={framed}
+      frameProps={frameProps}
+      toolbarLeading={toolbarLeading}
+      toolbarTrailing={toolbarTrailing}
+      overlay={
+        <SkillPromptHighlight
+          text={value}
+          names={skillNames}
+          slash={slash}
+          anchorRef={slashAnchorRef}
+        />
+      }
+      spellCheck={false}
+      aria-haspopup="listbox"
+      aria-expanded={slash !== null}
+      value={value}
+      onBlur={() => setSlash(null)}
+      onChange={(event) => {
+        const field = event.currentTarget;
+        onChange(field.value);
+        syncSlashToken(field);
+      }}
+      onClick={(event) => syncSlashToken(event.currentTarget)}
+      onKeyDown={onKeyDown}
+      onKeyUp={(event) => {
+        if (event.key !== "Escape") syncSlashToken(event.currentTarget);
+      }}
+      onSelect={(event) => syncSlashToken(event.currentTarget)}
+      placeholder={placeholder}
+    >
       {slash ? (
         <Popover
           key={slash.start}
@@ -177,43 +218,7 @@ export function SkillPromptField({
           />
         </Popover>
       ) : null}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 min-h-28 overflow-hidden whitespace-pre-wrap break-words px-3 py-3 font-sans text-sm leading-5.5 text-content"
-      >
-        <SkillPromptHighlight
-          text={value}
-          names={skillNames}
-          slash={slash}
-          anchorRef={slashAnchorRef}
-        />
-      </div>
-      <textarea
-        data-ui-focus={focusOwner}
-        ref={fieldRef}
-        rows={1}
-        spellCheck={false}
-        aria-label={label}
-        aria-haspopup="listbox"
-        aria-expanded={slash !== null}
-        value={value}
-        onBlur={() => setSlash(null)}
-        onChange={(event) => {
-          const field = event.currentTarget;
-          resizeComposer(field, Number.POSITIVE_INFINITY);
-          onChange(field.value);
-          syncSlashToken(field);
-        }}
-        onClick={(event) => syncSlashToken(event.currentTarget)}
-        onKeyDown={onKeyDown}
-        onKeyUp={(event) => {
-          if (event.key !== "Escape") syncSlashToken(event.currentTarget);
-        }}
-        onSelect={(event) => syncSlashToken(event.currentTarget)}
-        placeholder={placeholder}
-        className="composer-field relative min-h-28 w-full resize-none overflow-hidden whitespace-pre-wrap break-words bg-transparent px-3 py-3 font-sans text-sm leading-5.5 outline-none placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap"
-      />
-    </div>
+    </PromptField>
   );
 }
 

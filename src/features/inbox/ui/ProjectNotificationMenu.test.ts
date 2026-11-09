@@ -82,7 +82,7 @@ it("opens a project in a detected editor from the project context menu", async (
   );
 
   const openInEditor = button("Open in editor");
-  act(() => openInEditor.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+  act(() => openInEditor.dispatchEvent(new MouseEvent("pointermove", { bubbles: true })));
   expect(document.querySelector('[role="menu"][aria-label="Open in editor"]')).not.toBeNull();
   await act(async () => button("Zed").click());
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("open_in_external_editor", {
@@ -143,7 +143,8 @@ it("shows persisted mute status on the project and in its reopened menu", async 
   );
   const indicator = container.querySelector('[role="img"][aria-label="Muted until resumed"]');
   expect(indicator).not.toBeNull();
-  expect(indicator?.getAttribute("title")).toBe("Muted until resumed");
+  // The shared tooltip and the row's accessible name carry the status; no native title bubble.
+  expect(indicator?.hasAttribute("title")).toBe(false);
   const project = container.querySelector('button[aria-current="true"]')!;
   expect(project.getAttribute("aria-label")).toContain("Muted until resumed");
   await act(async () =>
@@ -178,7 +179,7 @@ it("shows persisted mute status on the project and in its reopened menu", async 
     }),
   );
   const timedIndicator = container.querySelector('[role="img"][aria-label^="Muted until "]');
-  expect(timedIndicator?.getAttribute("title")).toBe(
+  expect(timedIndicator?.getAttribute("aria-label")).toBe(
     `Muted until ${new Date(2030, 0, 15, 16, 30).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`,
   );
   await act(async () =>
@@ -190,16 +191,16 @@ it("shows persisted mute status on the project and in its reopened menu", async 
     ),
   );
   expect(button("Resume notifications").textContent).toContain(
-    timedIndicator!.getAttribute("title"),
+    timedIndicator!.getAttribute("aria-label"),
   );
   await act(async () => vi.advanceTimersByTimeAsync(1000));
   expect(container.querySelector('[role="img"][aria-label^="Muted until "]')).toBeNull();
   expect(button("Mute notifications").textContent).not.toContain("Muted until");
   expect(document.querySelector('[aria-label="Resume notifications"]')).toBeNull();
   expect(
-    document.querySelector('[role="menu"]')?.firstElementChild?.querySelector(
-      '[aria-label="Group name"]',
-    ),
+    document
+      .querySelector('[role="menu"]')
+      ?.firstElementChild?.querySelector('[aria-label="Group name"]'),
   ).not.toBeNull();
 });
 
@@ -229,7 +230,7 @@ it("mutes a repository from its project context menu", async () => {
   );
   const mute = button("Mute notifications");
   expect(mute.getAttribute("aria-haspopup")).toBe("menu");
-  act(() => mute.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+  act(() => mute.dispatchEvent(new MouseEvent("pointermove", { bubbles: true })));
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   const write = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
     throw new Error("Storage full");

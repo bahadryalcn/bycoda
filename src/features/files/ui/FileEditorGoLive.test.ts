@@ -114,6 +114,7 @@ describe("HTML Go Live", () => {
     expect(iframe()?.getAttribute("sandbox")).toBe("allow-scripts allow-forms");
     expect(iframe()?.closest("[data-markdown-view-active]")).not.toBeNull();
     expect(bridge.invoke).toHaveBeenCalledWith("create_html_preview", {
+      token: expect.any(String),
       path: "/repo/store/live-preview.html",
       content: expect.stringContaining("<h1>Hello</h1>\n"),
     });
@@ -129,6 +130,7 @@ describe("HTML Go Live", () => {
     await select("Preview");
     // A file-watch check may read the unchanged file in between.
     expect(bridge.invoke).toHaveBeenCalledWith("create_html_preview", {
+      token: expect.any(String),
       path: "/repo/store/live-preview.html",
       content: expect.stringContaining("<h1>Updated</h1>\n"),
     });
@@ -154,6 +156,7 @@ describe("HTML Go Live", () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
     });
     expect(bridge.invoke).toHaveBeenCalledWith("create_html_preview", {
+      token: expect.any(String),
       path,
       content: expect.stringContaining(disk),
     });

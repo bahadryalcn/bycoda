@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { clearUsageLoadCache } from "../model/usageLoadCache";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -73,6 +74,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date(2026, 9, 19, 10, 1));
   vi.clearAllMocks();
+  clearUsageLoadCache();
   invoke.mockResolvedValue({ turns: [], truncated: false });
   fetchUsage.mockImplementation(async () => ({
     rows: [
@@ -130,9 +132,7 @@ it("advances workspace refresh across a bucket and midnight, keeping charts and 
   await act(async () =>
     [...host.querySelectorAll("button")].find((b) => b.textContent === "Projects")!.click(),
   );
-  const exportButton = [...host.querySelectorAll("button")].find((b) =>
-    b.textContent?.includes("Export CSV"),
-  )!;
+  const exportButton = host.querySelector<HTMLButtonElement>('button[aria-label="Export CSV"]')!;
   expect(exportButton).toBeTruthy();
   await act(async () => exportButton.click());
   expect(JSON.stringify(exportCsv.mock.lastCall)).toContain('"input":10');
@@ -161,9 +161,20 @@ it("preserves explicit custom intervals during workspace refresh", async () => {
 it("keeps loading distinct from trustworthy zero usage", async () => {
   fetchUsage.mockReturnValue(new Promise(() => {}));
   await render(0);
-  expect(host.textContent).toContain("Loading usage…");
+  expect(host.querySelector('[role="status"][aria-label="Loading usage…"]')).not.toBeNull();
   expect(host.querySelector(".usage-metrics")).toBeNull();
   expect(chart).not.toHaveBeenCalled();
+});
+
+it("shows the previous read at once when the page opens again while it refreshes", async () => {
+  await render(0);
+  expect(host.querySelector(".usage-metrics")).toBeTruthy();
+  await act(async () => root.unmount());
+  fetchUsage.mockReturnValue(new Promise(() => {}));
+  root = createRoot(host);
+  await render(0);
+  expect(host.querySelector('[role="status"][aria-label="Loading usage…"]')).toBeNull();
+  expect(host.querySelector(".usage-metrics")).toBeTruthy();
 });
 
 it("shows an actionable failure without zero metrics or empty charts", async () => {

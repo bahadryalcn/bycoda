@@ -4,7 +4,7 @@ import {
   type ExpandingButtonGroupItem,
 } from "../../../shared/ui/ExpandingButtonGroup";
 import { t, useLocale } from "../../../shared/i18n";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   listExternalEditors,
@@ -14,21 +14,23 @@ import {
 } from "../../../platform/tauri/fs";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { isLocalProject } from "../model/recents";
-import { ExplorerMenu, type ExplorerMenuItem } from "../../files/ui/ExplorerMenu";
+import { ExplorerMenu, type ExplorerMenuItem } from "../../files/public/ExplorerMenu";
+
 import { Modal } from "../../../shared/ui/Modal";
 import { ExternalEditorIcon } from "./ExternalEditorIcon";
 import { ProjectActionDialog } from "./ProjectActionDialog";
-import { DevServersPanel } from "../../host-tools/DevServersPanel";
+import { lazySurface } from "../../../shared/ui/lazySurface";
 import type { DevServerStart, DevServerStartResult } from "../../host-tools/devServerTypes";
-import { hostFeatureRequest } from "../../connections/model/hostFeatureClient";
-import { parseRemotePath } from "../../connections/model/remoteProjects";
+import { hostFeatureRequest } from "../../connections/public/hostFeatureClient";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
-import { shortcutMatches } from "../../settings/model/settings";
+import { shortcutMatches } from "../../settings/public/settings";
 import { quickComposerShortcutLabel } from "../../quick-composer/model/quickComposerShortcut";
 import {
   CodeBlock,
   FolderOpen,
   Globe,
+  CheckList,
   Play,
   Plus,
   Terminal,
@@ -41,6 +43,10 @@ import {
   PROJECT_ACTIONS_CHANGED,
   type ProjectAction,
 } from "../model/projectActions";
+
+const DevServersPanel = lazySurface(async () => ({
+  default: (await import("../../host-tools/DevServersPanel")).DevServersPanel,
+}));
 
 const ICONS = {
   play: Play,
@@ -56,19 +62,30 @@ const emptyAction = (): ProjectAction => ({
   command: "",
   url: "",
 });
-export function ProjectQuickActions({
-  cwd,
-  actionsCwd = cwd,
-  onRun,
-  shortcutsEnabled = true,
-  additionalItems = [],
-}: {
+type ProjectQuickActionsProps = {
   cwd: string;
   actionsCwd?: string;
   onRun?: (action: ProjectAction) => void;
   shortcutsEnabled?: boolean;
   additionalItems?: readonly ExpandingButtonGroupItem[];
-}) {
+  /** Structural control kept outside the action group, after a gap. */
+  trailing?: ReactNode;
+};
+
+export function ProjectQuickActions(props: ProjectQuickActionsProps) {
+  const { cwd, actionsCwd = cwd } = props;
+  // Another project starts with closed menus, no draft or error, and no launch.
+  return <ProjectQuickActionsFor key={JSON.stringify([cwd, actionsCwd])} {...props} />;
+}
+
+function ProjectQuickActionsFor({
+  cwd,
+  actionsCwd = cwd,
+  onRun,
+  shortcutsEnabled = true,
+  additionalItems = [],
+  trailing,
+}: ProjectQuickActionsProps) {
   useLocale();
   const [menu, setMenu] = useState<{
     kind: "open" | "actions";
@@ -94,12 +111,6 @@ export function ProjectQuickActions({
   useEffect(() => {
     const reload = () => setActions(loadProjectActions(actionsCwd));
     reload();
-    setMenu(null);
-    setDraft(null);
-    setError("");
-    setLaunch(undefined);
-    pendingLaunch.current = false;
-    launchGeneration.current++;
     window.addEventListener(PROJECT_ACTIONS_CHANGED, reload);
     window.addEventListener("storage", reload);
     return () => {
@@ -131,6 +142,12 @@ export function ProjectQuickActions({
     };
   }, [menu?.kind]);
 
+  // The parent passes a new `onRun` as its own state changes (every streamed frame
+  // for a session pane); reading it through a ref keeps `run` and the keyboard
+  // listener below from being rebuilt for it.
+  const onRunRef = useRef(onRun);
+  onRunRef.current = onRun;
+  const canRun = !!onRun;
   const run = useCallback(
     (action: ProjectAction) => {
       setMenu(null);
@@ -170,11 +187,11 @@ export function ProjectQuickActions({
           });
         return;
       }
-      if (action.command.trim()) onRun?.(action);
+      if (action.command.trim()) onRunRef.current?.(action);
       if (action.url.trim() && action.openUrlOnRun !== false)
         void openUrl(action.url.trim()).catch((reason: unknown) => setError(String(reason)));
     },
-    [cwd, onRun],
+    [cwd],
   );
 
   useEffect(() => {
@@ -187,14 +204,14 @@ export function ProjectQuickActions({
           shortcutMatches(value.shortcut, event) &&
           !projectActionShortcutError(value.shortcut, actions, value.id),
       );
-      if (!action || (action.command.trim() && !action.devServer && !onRun)) return;
+      if (!action || (action.command.trim() && !action.devServer && !canRun)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       run(action);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [actions, onRun, run, shortcutsEnabled]);
+  }, [actions, canRun, run, shortcutsEnabled]);
 
   const persist = (values: ProjectAction[]) => {
     try {
@@ -230,7 +247,7 @@ export function ProjectQuickActions({
       kind: "item",
       id: "folder",
       label: IS_MAC ? "Finder" : "File Explorer",
-      icon: <FolderOpen className="size-4 text-warning" />,
+      icon: <FolderOpen className="icon-md text-(--ui-tone-warning-fg)" />,
     },
   ];
   const actionItems: ExplorerMenuItem[] = [
@@ -269,7 +286,7 @@ export function ProjectQuickActions({
       get label() {
         return t("Add action…");
       },
-      icon: <Plus className="size-4" />,
+      icon: <Plus className="icon-md" />,
     },
   ];
   const selected = actions[0];
@@ -285,6 +302,7 @@ export function ProjectQuickActions({
       <ExpandingButtonGroup
         label={t("Project actions")}
         size="sm"
+        chrome="bare"
         fit
         defaultExpanded={null}
         items={[
@@ -307,7 +325,7 @@ export function ProjectQuickActions({
             id: "project-actions",
             label: t("Project actions"),
             tooltip: `${t("Project actions")}\n${cwd}`,
-            icon: <Play className="size-3.5" />,
+            icon: <CheckList className="icon-sm" />,
             render: (renderTrigger) =>
               renderTrigger({
                 ref: actionsTrigger,
@@ -330,7 +348,7 @@ export function ProjectQuickActions({
                   id: "open-project",
                   label: t("Open project in"),
                   tooltip: `${t("Open project in")}\n${cwd}`,
-                  icon: <FolderOpen className="size-3.5" />,
+                  icon: <FolderOpen className="icon-sm" />,
                   render: (
                     renderTrigger: Parameters<NonNullable<ExpandingButtonGroupItem["render"]>>[0],
                   ) =>
@@ -354,6 +372,7 @@ export function ProjectQuickActions({
           ...additionalItems,
         ]}
       />
+      {trailing ? <div className="ms-1 flex items-center">{trailing}</div> : null}
       {menu ? (
         <ExplorerMenu
           anchor={menu.anchor}
@@ -389,6 +408,7 @@ export function ProjectQuickActions({
       ) : null}
       {launch ? (
         <Modal
+          padding="none"
           title={t("Development servers")}
           size="lg"
           onClose={() => {

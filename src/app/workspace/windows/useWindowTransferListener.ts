@@ -1,3 +1,8 @@
+import { remoteSessionFor } from "../../../features/connections/model/connections";
+import { parseRemotePath } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionOwnershipKey } from "../../model/sessionWindowOwnership";
+import { syncSessionWindowOwnership } from "../../model/sessionWindowOwnership";
+import { openSessionIds } from "../helpers/sessionHelpers";
 import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -19,6 +24,10 @@ import {
   removeWindowTransfer,
   restoreTransferredDrafts,
 } from "../../model/windowTransfer";
+import {
+  publishWindowTransferNotice,
+  rejectedTransferMessage,
+} from "../../model/windowTransferNotice";
 import { windowDropPointToClient } from "../../model/windowTransferPopout";
 import type { TabActivation } from "../tabs/useTabActivation";
 
@@ -77,6 +86,15 @@ export function useWindowTransferListener(deps: WindowTransferListenerDeps): voi
       "window_transfer_available",
       async ({ payload: transferId }) => {
         if (disposed || receiving.has(transferId)) return;
+        if (transferId.startsWith("probe:")) {
+          if (
+            receiving.size === 0 &&
+            movingTabIds.current.size === 0 &&
+            movingSessionIds.current.size === 0
+          )
+            await invoke("window_transfer_probe_reply", { probeId: transferId }).catch(() => {});
+          return;
+        }
         receiving.add(transferId);
         let rollback: (() => void) | undefined;
         let incomingTabIds: string[] = [];
@@ -210,9 +228,42 @@ export function useWindowTransferListener(deps: WindowTransferListenerDeps): voi
             setProjectCwd(incoming.projectCwd);
             activateTab(merged.activeTabId);
           });
-          await invoke("window_transfer_ready", { transferId });
+          try {
+            await invoke("window_transfer_ready", { transferId });
+          } catch {
+            try {
+              // Native retains the exact receipt, so retry cannot transfer twice.
+              await invoke("window_transfer_ready", { transferId });
+            } catch (error) {
+              if (String(error).includes("This transfer has expired")) throw error;
+              // The acknowledgement may have committed despite a lost response.
+              // Keep both copies and let native ownership prevent execution until recovery.
+              rollback = undefined;
+              publishWindowTransferNotice(
+                "danger",
+                "The transfer result is unknown. Check both windows before retrying.",
+              );
+              return;
+            }
+          }
+          // ACK has committed the native move. A refresh failure cannot roll it back.
+          const known = new Set(merged.sessions.map((session) => session.id));
+          void syncSessionWindowOwnership(
+            [...openSessionIds(merged.tabs)].flatMap((id) => {
+              if (!known.has(id)) return [];
+              const session = merged.sessions.find((entry) => entry.id === id);
+              const remoteId = remoteSessionFor(id);
+              return session && remoteId && parseRemotePath(session.cwd)
+                ? [id, remoteSessionOwnershipKey(session.cwd, remoteId)]
+                : [id];
+            }),
+          ).catch((error) => {
+            console.error("Conversation ownership synchronization failed", error);
+          });
         } catch (error) {
           rollback?.();
+          // The user hears about the refusal even if the native reject call is slow.
+          publishWindowTransferNotice("danger", rejectedTransferMessage(error));
           await invoke("reject_window_transfer", {
             transferId,
             reason: String(error),

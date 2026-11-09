@@ -2,7 +2,7 @@ import {
   loadPromptTemplates,
   savePromptTemplates,
   subscribePromptTemplates,
-} from "../../sessions/model/promptTemplates";
+} from "../../sessions/public/promptTemplates";
 import { isSingleLineCommand } from "../../terminal/model/terminalSuggestions";
 
 const KEY = "bycoda.sshSnippetReferences.v1";
@@ -63,7 +63,9 @@ function manifest(): Manifest {
 export function loadSshSnippets(serverId: string): SshSnippet[] {
   const references = manifest().references;
   return loadPromptTemplates().flatMap((template) => {
-    const ref = Object.prototype.hasOwnProperty.call(references, template.id) ? references[template.id] : undefined;
+    const ref = Object.prototype.hasOwnProperty.call(references, template.id)
+      ? references[template.id]
+      : undefined;
     return ref?.serverId === serverId
       ? [
           {
@@ -93,7 +95,9 @@ export function saveSshSnippet(input: {
   const data = manifest();
   const templates = loadPromptTemplates();
   const id = input.id ?? `ssh-command-${crypto.randomUUID()}`;
-  const previous = Object.prototype.hasOwnProperty.call(data.references, id) ? data.references[id] : undefined;
+  const previous = Object.prototype.hasOwnProperty.call(data.references, id)
+    ? data.references[id]
+    : undefined;
   if (
     input.id &&
     (!previous ||
@@ -126,7 +130,9 @@ export function saveSshSnippet(input: {
 }
 export function removeSshSnippet(id: string, serverId: string, expectedVersion: number) {
   const data = manifest();
-  const previous = Object.prototype.hasOwnProperty.call(data.references, id) ? data.references[id] : undefined;
+  const previous = Object.prototype.hasOwnProperty.call(data.references, id)
+    ? data.references[id]
+    : undefined;
   if (!previous || previous.serverId !== serverId || previous.version !== expectedVersion)
     throw new Error("This command changed. Reload it before deleting");
   // Remove the shared template explicitly; unrelated prompt templates are retained.

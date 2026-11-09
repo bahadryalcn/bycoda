@@ -1,0 +1,16 @@
+Here is the classification you asked for.
+
+```json
+{
+  "answers": {
+    "state": {
+      "probabilities": { "consent": 0.02, "login": 0.95, "other": 0.03 }
+    },
+    "hasButton": {
+      "probabilities": { "true": 0.97, "false": 0.03 }
+    }
+  }
+}
+```
+
+Provenance: contract assumption for the llm-structured adapter (no verified provider output). The JSON above is a sample of the format the adapter asks for, not a recorded model answer.

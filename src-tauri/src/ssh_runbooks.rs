@@ -11,7 +11,7 @@ use crate::{
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -290,7 +290,11 @@ fn read_run(conn: &Connection, id: &str) -> Result<Option<RunStatus>, String> {
         )
         .optional()
         .map_err(|e| e.to_string())?;
-    raw.map(|raw| decode_run(&raw)).transpose()
+    let found = raw.map(|raw| decode_run(&raw)).transpose()?;
+    if found.as_ref().is_some_and(|status| status.run_id != id) {
+        return Err("Execution belongs to another native window or run".into());
+    }
+    Ok(found)
 }
 fn summary(status: &RunStatus) -> &'static str {
     if !status.finished() {
@@ -326,7 +330,7 @@ fn claim(conn: &Connection, status: &RunStatus) -> Result<ClaimResult, String> {
     {
         return Err("Runbook changed; request a fresh review".into());
     }
-    let now = now_millis();
+    let now = claim_stamp();
     let ledger = format!("ssh-run:{}", status.run_id);
     let claimed=conn.execute("INSERT OR IGNORE INTO automation_event_claims(automation_id,event_key,created_at) VALUES(?1,?2,?3)",params![status.automation_id,ledger,now]).map_err(|e|e.to_string())?;
     if claimed != 1 {
@@ -439,6 +443,23 @@ fn update(conn: &Connection, status: &RunStatus) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+static PROCESS_EPOCH: OnceLock<i64> = OnceLock::new();
+/// Claims stamped no earlier than this process's epoch, so a live run never looks pre-restart.
+fn claim_stamp() -> i64 {
+    now_millis().max(*PROCESS_EPOCH.get_or_init(now_millis))
+}
+/// Only a run claimed by an earlier process can be dead; this process's own runs stay live.
+fn claimed_before_process(conn: &Connection, id: &str) -> Result<bool, String> {
+    let created: Option<i64> = conn
+        .query_row(
+            "SELECT created_at FROM automation_runs WHERE id=?1",
+            params![id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(created.is_some_and(|created| created < *PROCESS_EPOCH.get_or_init(now_millis)))
 }
 pub(crate) fn recover_run(conn: &Connection, id: &str) -> Result<(), String> {
     if let Some(mut status) = read_run(conn, id)? {
@@ -616,18 +637,20 @@ impl RunPersistence for DesktopPersistence {
         Ok(())
     }
     fn load(&self, owner: &str, id: &str) -> Result<Option<RunStatus>, String> {
-        let state = self.app.state::<SessionStore>();
-        let conn = state.lock_conn()?;
-        let found = read_run(&conn, id)?;
-        if found.as_ref().is_some_and(|s| s.owner != owner) {
-            return Err("Execution belongs to another native window".into());
-        }
-        if found.as_ref().is_some_and(|s| !s.finished()) {
-            recover_run(&conn, id)?;
-            return read_run(&conn, id);
-        }
-        Ok(found)
+        load_run_with(&self.app.state::<SessionStore>(), owner, id)
     }
+}
+fn load_run_with(store: &SessionStore, owner: &str, id: &str) -> Result<Option<RunStatus>, String> {
+    let conn = store.lock_conn()?;
+    let found = read_run(&conn, id)?;
+    if found.as_ref().is_some_and(|s| s.owner != owner) {
+        return Err("Execution belongs to another native window".into());
+    }
+    if found.as_ref().is_some_and(|s| !s.finished()) && claimed_before_process(&conn, id)? {
+        recover_run(&conn, id)?;
+        return read_run(&conn, id);
+    }
+    Ok(found)
 }
 fn persistence(app: &AppHandle) -> Arc<dyn RunPersistence> {
     Arc::new(DesktopPersistence {
@@ -700,22 +723,50 @@ pub(crate) fn ssh_runbooks_list(store: State<'_, SessionStore>) -> Result<Vec<Pr
 #[tauri::command(async)]
 pub(crate) fn ssh_runbook_save(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     profile: Profile,
     expected_revision: Option<u64>,
 ) -> Result<Profile, String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        ssh_runbook_save_with(&store, profile, expected_revision, || {
+            let _ = app.emit(crate::automations::CHANGED, ());
+        })
+    })
+}
+
+fn ssh_runbook_save_with(
+    store: &SessionStore,
+    profile: Profile,
+    expected_revision: Option<u64>,
+    notify: impl FnOnce(),
+) -> Result<Profile, String> {
     let conn = store.lock_conn()?;
     let saved = save(&conn, &profile, expected_revision)?;
     drop(conn);
-    let _ = app.emit(crate::automations::CHANGED, ());
+    notify();
     Ok(saved)
 }
 #[tauri::command(async)]
 pub(crate) fn ssh_runbook_remove(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     id: String,
     expected_revision: u64,
+) -> Result<(), String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        ssh_runbook_remove_with(&store, id, expected_revision, || {
+            let _ = app.emit(crate::automations::CHANGED, ());
+        })
+    })
+}
+
+fn ssh_runbook_remove_with(
+    store: &SessionStore,
+    id: String,
+    expected_revision: u64,
+    notify: impl FnOnce(),
 ) -> Result<(), String> {
     let mut conn = store.lock_conn()?;
     let tx = conn
@@ -724,7 +775,7 @@ pub(crate) fn ssh_runbook_remove(
     remove(&tx, &id, expected_revision)?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(conn);
-    let _ = app.emit(crate::automations::CHANGED, ());
+    notify();
     Ok(())
 }
 #[tauri::command(async)]
@@ -778,62 +829,79 @@ pub(crate) fn ssh_runbook_start(
     intent_id: Option<String>,
     proxy_approvals: Option<Vec<ProxyApproval>>,
 ) -> Result<RunStatus, String> {
-    let owner_lease = crate::ssh_window_lifecycle::capture(window.label())?;
-    validate_id(&run_id, "run")?;
-    let (profile, mut targets) = resolve(&app, &automation_id, expected_revision)?;
-    // Duplicate durable requests return metadata without consuming credentials again.
-    let review_digest = ssh_execution::digest(&profile.snapshot(), &targets, profile.limits)?;
-    if let Ok(status) = executions.status(window.label(), &run_id, persistence(&app).as_ref()) {
-        if status.automation_id != automation_id
-            || status.revision != expected_revision
-            || status.digest != review_digest
-        {
-            return Err("Run identifier belongs to another execution".into());
-        }
-        return Ok(status);
-    }
-    let mut seen = std::collections::HashSet::new();
-    for approval in proxy_approvals.unwrap_or_default() {
-        if !seen.insert(approval.server_id.clone()) {
-            return Err("Duplicate target proxy approval".into());
-        }
-        let target = targets
-            .iter_mut()
-            .find(|t| t.server_id == approval.server_id)
-            .ok_or("Unknown proxy approval target")?;
-        let operation = crate::ssh_http_proxy_credentials::ProxyOperation::Runbook {
-            run_id: run_id.clone(),
-            automation_id: automation_id.clone(),
-            revision: expected_revision,
-            review_digest: review_digest.clone(),
-            server_id: target.server_id.clone(),
-        };
-        target.proxy_grant = Some(Arc::new(credentials.consume(
+    let mut admission = Some(crate::native_window_lifecycle::admit_window_persistence(
+        &window,
+    )?);
+    let result = (|| {
+        let owner_lease = crate::ssh_window_lifecycle::capture(window.label())?;
+        validate_id(&run_id, "run")?;
+        let (profile, mut targets) = resolve(&app, &automation_id, expected_revision)?;
+        // Duplicate durable requests return metadata without consuming credentials again.
+        let review_digest = ssh_execution::digest(&profile.snapshot(), &targets, profile.limits)?;
+        if let Some(status) = existing_run(
+            executions.inner().as_ref(),
             window.label(),
-            &approval.ticket_id,
-            Some(&target.server_id),
-            &target.endpoint,
-            &operation,
-        )?));
+            &run_id,
+            persistence(&app).as_ref(),
+        )? {
+            if status.automation_id != automation_id
+                || status.revision != expected_revision
+                || status.digest != review_digest
+            {
+                return Err("Run identifier belongs to another execution".into());
+            }
+            return Ok(status);
+        }
+        let mut seen = std::collections::HashSet::new();
+        for approval in proxy_approvals.unwrap_or_default() {
+            if !seen.insert(approval.server_id.clone()) {
+                return Err("Duplicate target proxy approval".into());
+            }
+            let target = targets
+                .iter_mut()
+                .find(|t| t.server_id == approval.server_id)
+                .ok_or("Unknown proxy approval target")?;
+            let operation = crate::ssh_http_proxy_credentials::ProxyOperation::Runbook {
+                run_id: run_id.clone(),
+                automation_id: automation_id.clone(),
+                revision: expected_revision,
+                review_digest: review_digest.clone(),
+                server_id: target.server_id.clone(),
+            };
+            target.proxy_grant = Some(Arc::new(credentials.consume(
+                window.label(),
+                &approval.ticket_id,
+                Some(&target.server_id),
+                &target.endpoint,
+                &operation,
+            )?));
+        }
+        if let Some(id) = intent_id.as_deref() {
+            validate_intent(&*app.state::<SessionStore>().lock_conn()?, id, &profile)?;
+        }
+        owner_lease.with_live(|| {
+            executions.inner().start(
+                &reviews,
+                window.label(),
+                &review_id,
+                run_id,
+                profile.snapshot(),
+                targets,
+                profile.limits,
+                Arc::new(DesktopPersistence {
+                    app: app.clone(),
+                    intent_id,
+                }),
+                admission
+                    .take()
+                    .ok_or("SSH persistence admission already transferred")?,
+            )
+        })
+    })();
+    match admission {
+        Some(admission) => admission.finish(result),
+        None => result, // The accepted engine owns the original admission through its workers.
     }
-    if let Some(id) = intent_id.as_deref() {
-        validate_intent(&*app.state::<SessionStore>().lock_conn()?, id, &profile)?;
-    }
-    owner_lease.with_live(|| {
-        executions.inner().start(
-            &reviews,
-            window.label(),
-            &review_id,
-            run_id,
-            profile.snapshot(),
-            targets,
-            profile.limits,
-            Arc::new(DesktopPersistence {
-                app: app.clone(),
-                intent_id,
-            }),
-        )
-    })
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -845,25 +913,50 @@ pub(crate) struct ProxyApproval {
 #[tauri::command(async)]
 pub(crate) fn ssh_runbook_pending_intents(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
+) -> Result<Vec<Intent>, String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        let _ = app;
+        ssh_runbook_pending_intents_with(&store, now_millis)
+    })
+}
+
+fn ssh_runbook_pending_intents_with(
+    store: &SessionStore,
+    now: impl FnOnce() -> i64,
 ) -> Result<Vec<Intent>, String> {
     let mut conn = store.lock_conn()?;
     let tx = conn
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|e| e.to_string())?;
-    let result = pending_intents(&tx, now_millis())?;
+    let result = pending_intents(&tx, now())?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(conn);
-    let _ = app;
     Ok(result)
 }
 #[tauri::command(async)]
 pub(crate) fn ssh_runbook_trigger_intent(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     automation_id: String,
     expected_revision: u64,
     server_id: String,
+) -> Result<Intent, String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        ssh_runbook_trigger_intent_with(&store, automation_id, expected_revision, server_id, || {
+            let _ = app.emit(crate::automations::CHANGED, ());
+        })
+    })
+}
+
+fn ssh_runbook_trigger_intent_with(
+    store: &SessionStore,
+    automation_id: String,
+    expected_revision: u64,
+    server_id: String,
+    notify: impl FnOnce(),
 ) -> Result<Intent, String> {
     let mut conn = store.lock_conn()?;
     let tx = conn
@@ -881,14 +974,27 @@ pub(crate) fn ssh_runbook_trigger_intent(
     let intent = create_intent(&tx, &profile, "startup", Some(server_id), now_millis())?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(conn);
-    let _ = app.emit(crate::automations::CHANGED, ());
+    notify();
     Ok(intent)
 }
 #[tauri::command(async)]
 pub(crate) fn ssh_runbook_dismiss_intent(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     intent_id: String,
+) -> Result<(), String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        ssh_runbook_dismiss_intent_with(&store, intent_id, || {
+            let _ = app.emit(crate::automations::CHANGED, ());
+        })
+    })
+}
+
+fn ssh_runbook_dismiss_intent_with(
+    store: &SessionStore,
+    intent_id: String,
+    notify: impl FnOnce(),
 ) -> Result<(), String> {
     let mut conn = store.lock_conn()?;
     let tx = conn
@@ -902,9 +1008,56 @@ pub(crate) fn ssh_runbook_dismiss_intent(
     write_intent(&tx, &intent, false)?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(conn);
-    let _ = app.emit(crate::automations::CHANGED, ());
+    notify();
     Ok(())
 }
+// Only a successful missing durable lookup can continue a fresh start. Errors
+// preserve the original unknown/foreign-owner result before credentials are consumed.
+fn existing_run(
+    executions: &ssh_execution::SshExecutions,
+    owner: &str,
+    run_id: &str,
+    persistence: &dyn RunPersistence,
+) -> Result<Option<RunStatus>, String> {
+    match executions.cached_status(owner, run_id)? {
+        Some(status) => Ok(Some(status)),
+        None => load_existing_run(persistence, owner, run_id),
+    }
+}
+
+fn load_existing_run(
+    persistence: &dyn RunPersistence,
+    owner: &str,
+    run_id: &str,
+) -> Result<Option<RunStatus>, String> {
+    let found = persistence.load(owner, run_id)?;
+    if found
+        .as_ref()
+        .is_some_and(|status| status.owner != owner || status.run_id != run_id)
+    {
+        return Err("Execution belongs to another native window or run".into());
+    }
+    Ok(found)
+}
+
+fn status_with(
+    executions: &ssh_execution::SshExecutions,
+    owner: &str,
+    run_id: &str,
+    persistence: &dyn RunPersistence,
+    admit: impl FnOnce() -> Result<crate::native_window_lifecycle::NativeWriteAdmission, String>,
+) -> Result<RunStatus, String> {
+    validate_id(run_id, "run")?;
+    if let Some(status) = executions.cached_status(owner, run_id)? {
+        return Ok(status); // Pure original-run control remains usable while admission is closed.
+    }
+    let admission = admit()?;
+    admission.finish(
+        load_existing_run(persistence, owner, run_id)
+            .and_then(|found| found.ok_or_else(|| "Execution not found".into())),
+    )
+}
+
 #[tauri::command(async)]
 pub(crate) fn ssh_runbook_status(
     app: AppHandle,
@@ -912,8 +1065,13 @@ pub(crate) fn ssh_runbook_status(
     executions: State<'_, Arc<ssh_execution::SshExecutions>>,
     run_id: String,
 ) -> Result<RunStatus, String> {
-    validate_id(&run_id, "run")?;
-    executions.status(window.label(), &run_id, persistence(&app).as_ref())
+    status_with(
+        executions.inner().as_ref(),
+        window.label(),
+        &run_id,
+        persistence(&app).as_ref(),
+        || crate::native_window_lifecycle::admit_window_persistence(&window),
+    )
 }
 #[tauri::command(async)]
 pub(crate) fn ssh_runbook_cancel(
@@ -935,377 +1093,64 @@ pub(crate) fn ssh_runbook_abandon_missing(
     automation_id: String,
     revision: u64,
 ) -> Result<(), String> {
-    let lease = crate::ssh_window_lifecycle::capture(window.label())?;
-    lease.with_live(|| {
-        let mut conn = store.lock_conn()?;
-        let tx = conn
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .map_err(|e| e.to_string())?;
-        abandon_missing(&tx, window.label(), &run_id, &automation_id, revision)?;
-        tx.commit().map_err(|e| e.to_string())?;
-        drop(conn);
-        let _ = app.emit(crate::automations::CHANGED, ());
-        Ok(())
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        let lease = crate::ssh_window_lifecycle::capture(window.label())?;
+        lease.with_live(|| {
+            ssh_runbook_abandon_missing_with(
+                &store,
+                window.label(),
+                &run_id,
+                &automation_id,
+                revision,
+                || {
+                    let _ = app.emit(crate::automations::CHANGED, ());
+                },
+            )
+        })
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    fn database() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
-        crate::automations::ensure_tables(&conn).unwrap();
-        conn
-    }
-    fn draft() -> Profile {
-        Profile {
-            triggers: None,
-            id: "book-one".into(),
-            name: "Owned runbook".into(),
-            revision: 0,
-            script: "printf 'RUNBOOK_BODY_NEVER_IN_RUN_METADATA'\n".into(),
-            shell: RemoteShellKind::Posix,
-            target_ids: vec!["server-one".into(), "server-two".into()],
-            limits: ExecutionLimits {
-                concurrency: 2,
-                timeout_seconds: 10,
-            },
-        }
-    }
-    fn status(book: &Profile, id: &str) -> RunStatus {
-        RunStatus {
-            run_id: id.into(),
-            automation_id: book.id.clone(),
-            revision: book.revision,
-            owner: "main".into(),
-            digest: "a".repeat(64),
-            targets: book
-                .target_ids
-                .iter()
-                .map(|id| ssh_execution::TargetOutcome {
-                    server_id: id.clone(),
-                    state: TargetState::Queued,
-                    exit_code: None,
-                    reason: None,
-                })
-                .collect(),
-        }
-    }
-    fn claim_transaction(conn: &mut Connection, status: &RunStatus) -> Result<ClaimResult, String> {
-        let tx = conn
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .unwrap();
-        let result = claim(&tx, status)?;
-        tx.commit().unwrap();
-        Ok(result)
-    }
-    #[test]
-    fn existing_table_cas_preserves_unknown_metadata_and_manual_only_policy() {
-        let conn = database();
-        let first = save(&conn, &draft(), None).unwrap();
-        assert_eq!(first.revision, 1);
-        let mut value = definition(&conn, &first.id).unwrap().unwrap();
-        value["future"] = json!({"otherSession":"preserved"});
-        conn.execute(
-            "UPDATE automations SET definition_json=?2 WHERE id=?1",
-            params![first.id, serde_json::to_string(&value).unwrap()],
-        )
-        .unwrap();
-        let mut edit = first.clone();
-        edit.name = "Changed".into();
-        let second = save(&conn, &edit, Some(1)).unwrap();
-        assert_eq!(second.revision, 2);
-        assert!(save(&conn, &edit, Some(1)).is_err());
-        let value = definition(&conn, &first.id).unwrap().unwrap();
-        assert_eq!(value["future"]["otherSession"], "preserved");
-        assert_eq!(value["enabled"], false);
-        assert_eq!(value["nextRunAt"], 0);
-        assert_eq!(value["triggers"], json!([]));
-        assert!(serde_json::from_value::<crate::automations::Automation>(value).is_ok());
-        assert_eq!(get(&conn, &first.id).unwrap(), second);
-        conn.execute("INSERT INTO automations VALUES('agent-id','{\"id\":\"agent-id\",\"name\":\"Existing agent\"}',0,0,0)",[]).unwrap();
-        let mut agent_collision = draft();
-        agent_collision.id = "agent-id".into();
-        assert!(save(&conn, &agent_collision, None).is_err());
-        assert_eq!(
-            definition(&conn, "agent-id").unwrap().unwrap()["name"],
-            "Existing agent"
-        );
-    }
-    #[test]
-    fn claims_are_atomic_metadata_only_and_duplicate_status_never_replays() {
-        let mut conn = database();
-        let book = save(&conn, &draft(), None).unwrap();
-        let initial = status(&book, "run-one");
-        assert!(matches!(
-            claim_transaction(&mut conn, &initial).unwrap(),
-            ClaimResult::Claimed
-        ));
-        assert!(
-            matches!(claim_transaction(&mut conn,&initial).unwrap(),ClaimResult::Existing(found) if found==initial)
-        );
-        let raw: String = conn
-            .query_row("SELECT run_json FROM automation_runs", [], |r| r.get(0))
-            .unwrap();
-        assert!(!raw.contains("RUNBOOK_BODY_NEVER_IN_RUN_METADATA"));
-        assert!(!raw.contains("prompt"));
-        assert!(!raw.contains("stdout"));
-        assert!(serde_json::from_str::<crate::automations::AutomationRun>(&raw).is_ok());
-        assert!(ensure_not_active(&conn, &book.id).is_err());
-        let mut wrong = initial.clone();
-        wrong.owner = "another-window".into();
-        assert!(update(&conn, &wrong).is_err());
-        let mut complete = initial;
-        for target in &mut complete.targets {
-            target.state = TargetState::Exited;
-            target.exit_code = Some(0);
-        }
-        update(&conn, &complete).unwrap();
-        ensure_not_active(&conn, &book.id).unwrap();
-        assert_eq!(read_run(&conn, "run-one").unwrap().unwrap(), complete);
-    }
-    #[test]
-    fn stale_revision_or_failed_insert_rolls_back_claim_without_execution_authority() {
-        let mut conn = database();
-        let book = save(&conn, &draft(), None).unwrap();
-        let mut stale = status(&book, "stale-run");
-        stale.revision += 1;
-        assert!(claim_transaction(&mut conn, &stale).is_err());
-        conn.execute_batch("CREATE TRIGGER deny_run BEFORE INSERT ON automation_runs BEGIN SELECT RAISE(ABORT,'fixture refusal'); END;").unwrap();
-        assert!(claim_transaction(&mut conn, &status(&book, "failed-run")).is_err());
-        let count: i64 = conn
-            .query_row("SELECT count(*) FROM automation_event_claims", [], |r| {
-                r.get(0)
-            })
-            .unwrap();
-        assert_eq!(count, 0);
-    }
-    #[test]
-    fn recovery_settles_unknown_and_deletion_keeps_non_replay_identity_without_script() {
-        let mut conn = database();
-        let book = save(&conn, &draft(), None).unwrap();
-        let initial = status(&book, "owned-run");
-        claim_transaction(&mut conn, &initial).unwrap();
-        assert!(remove(&conn, &book.id, book.revision).is_err());
-        recover_run(&conn, "owned-run").unwrap();
-        let recovered = read_run(&conn, "owned-run").unwrap().unwrap();
-        assert!(recovered.finished());
-        assert!(recovered
-            .targets
-            .iter()
-            .all(|t| t.state == TargetState::Unknown
-                && t.reason.as_deref() == Some("interrupted_after_restart")));
-        assert!(
-            matches!(claim_transaction(&mut conn,&initial).unwrap(),ClaimResult::Existing(found) if found==recovered)
-        );
-        conn.execute("DELETE FROM automation_runs WHERE id='owned-run'", [])
-            .unwrap();
-        assert!(claim_transaction(&mut conn, &initial).is_err());
-        remove(&conn, &book.id, book.revision).unwrap();
-        assert!(get(&conn, &book.id).is_err());
-        assert!(save(&conn, &draft(), None).is_err());
-        let value = definition(&conn, &book.id).unwrap().unwrap();
-        assert_eq!(value["sshRunbookDeleted"], true);
-        assert!(value.get("sshRunbook").is_none());
-        assert!(!serde_json::to_string(&value)
-            .unwrap()
-            .contains("RUNBOOK_BODY_NEVER_IN_RUN_METADATA"));
-        let count: i64 = conn
-            .query_row(
-                "SELECT count(*) FROM automation_event_claims WHERE event_key='ssh-run:owned-run'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(count, 1);
-    }
-    #[test]
-    fn global_run_claim_survives_trim_and_blocks_reuse_by_another_runbook() {
-        let mut conn = database();
-        let one = save(&conn, &draft(), None).unwrap();
-        claim_transaction(&mut conn, &status(&one, "global-run")).unwrap();
-        recover_run(&conn, "global-run").unwrap();
-        conn.execute("DELETE FROM automation_runs WHERE id='global-run'", [])
-            .unwrap();
-        let mut second = draft();
-        second.id = "book-two".into();
-        let second = save(&conn, &second, None).unwrap();
-        assert!(claim_transaction(&mut conn, &status(&second, "global-run")).is_err());
-    }
-    #[test]
-    fn bounded_targets_scripts_and_collection_prevent_ambiguous_or_unbounded_saves() {
-        let conn = database();
-        let mut invalid = draft();
-        invalid.target_ids.push(invalid.target_ids[0].clone());
-        assert!(save(&conn, &invalid, None).is_err());
-        invalid = draft();
-        invalid.script = "-----BEGIN OPENSSH PRIVATE KEY-----".into();
-        assert!(save(&conn, &invalid, None).is_err());
-        invalid = draft();
-        invalid.script = "x".repeat(65537);
-        assert!(save(&conn, &invalid, None).is_err());
-        invalid = draft();
-        invalid.limits.concurrency = 5;
-        assert!(save(&conn, &invalid, None).is_err());
-        for index in 0..256 {
-            let mut book = draft();
-            book.id = format!("book-{index}");
-            save(&conn, &book, None).unwrap();
-        }
-        assert!(save(&conn, &draft(), None).is_err());
-    }
-    #[test]
-    fn schedules_materialize_one_metadata_only_review_and_never_claim_execution() {
-        let conn = database();
-        let mut draft = draft();
-        draft.triggers = Some(Triggers {
-            startup_server_ids: vec!["server-one".into()],
-            interval_minutes: Some(5),
-            next_run_at: Some(1),
-        });
-        let book = save(&conn, &draft, None).unwrap();
-        let due = book.triggers.as_ref().unwrap().next_run_at.unwrap();
-        assert!(due > 1);
-        assert!(pending_intents(&conn, due - 1).unwrap().is_empty());
-        let first = pending_intents(&conn, due).unwrap();
-        assert_eq!(first.len(), 1);
-        assert_eq!(first[0].status, "pendingReview");
-        assert_eq!(
-            pending_intents(&conn, due + 600_000).unwrap()[0].id,
-            first[0].id
-        );
-        let claims: i64 = conn
-            .query_row("SELECT count(*) FROM automation_event_claims", [], |r| {
-                r.get(0)
-            })
-            .unwrap();
-        assert_eq!(claims, 0);
-        let raw: String = conn
-            .query_row("SELECT run_json FROM automation_runs", [], |r| r.get(0))
-            .unwrap();
-        assert!(!raw.contains("RUNBOOK_BODY"));
-        assert!(!raw.contains("sshExecution"));
-        let mut edited = get(&conn, &book.id).unwrap();
-        edited.name = "Renamed".into();
-        let saved = save(&conn, &edited, Some(book.revision)).unwrap();
-        assert_eq!(
-            saved.triggers.as_ref().unwrap().next_run_at,
-            edited.triggers.as_ref().unwrap().next_run_at
-        );
-        assert!(validate_intent(&conn, &first[0].id, &saved).is_err());
-    }
-    #[test]
-    fn review_intent_and_durable_run_claim_commit_together_and_cannot_replay() {
-        let mut conn = database();
-        let book = save(&conn, &draft(), None).unwrap();
-        let intent =
-            create_intent(&conn, &book, "startup", Some("server-one".into()), 100).unwrap();
-        assert_eq!(
-            create_intent(&conn, &book, "startup", Some("server-one".into()), 101)
-                .unwrap()
-                .id,
-            intent.id
-        );
-        let initial = status(&book, "intent-run");
-        {
-            let tx = conn.transaction().unwrap();
-            assert!(matches!(
-                claim_with_intent(&tx, &initial, Some(&intent.id)).unwrap(),
-                ClaimResult::Claimed
-            ));
-            // Dropping the transaction must restore pending review and remove the run claim.
-        }
-        assert_eq!(
-            read_intent(&conn, &intent.id).unwrap().status,
-            "pendingReview"
-        );
-        assert!(read_run(&conn, "intent-run").unwrap().is_none());
-        let tx = conn.transaction().unwrap();
-        claim_with_intent(&tx, &initial, Some(&intent.id)).unwrap();
-        tx.commit().unwrap();
-        assert_eq!(read_intent(&conn, &intent.id).unwrap().status, "consumed");
-        assert!(claim_with_intent(&conn, &status(&book, "second-run"), Some(&intent.id)).is_err());
-        assert!(read_run(&conn, "second-run").unwrap().is_none());
-    }
-    #[test]
-    fn trigger_associations_are_explicit_unique_and_cannot_target_other_servers() {
-        let conn = database();
-        let mut draft = draft();
-        draft.triggers = Some(Triggers {
-            startup_server_ids: vec!["unrelated".into()],
-            ..Default::default()
-        });
-        assert!(save(&conn, &draft, None).is_err());
-        draft.triggers.as_mut().unwrap().startup_server_ids =
-            vec!["server-one".into(), "server-one".into()];
-        assert!(save(&conn, &draft, None).is_err());
-        draft.triggers.as_mut().unwrap().startup_server_ids.clear();
-        draft.triggers.as_mut().unwrap().interval_minutes = Some(0);
-        assert!(save(&conn, &draft, None).is_err());
-    }
-    #[test]
-    fn explicit_abandon_after_preclaim_rejection_blocks_late_start_and_allows_fresh_review_identity(
-    ) {
-        let mut conn = database();
-        let book = save(&conn, &draft(), None).unwrap();
-        let old = status(&book, "rejected-start");
-        let mut edited = book.clone();
-        edited.name = "Changed concurrently".into();
-        let current = save(&conn, &edited, Some(book.revision)).unwrap();
-        assert!(claim_transaction(&mut conn, &old).is_err());
-        {
-            let tx = conn.transaction().unwrap();
-            abandon_missing(&tx, "main", &old.run_id, &book.id, book.revision).unwrap();
-            tx.commit().unwrap();
-        }
-        assert!(read_run(&conn, &old.run_id).unwrap().is_none());
-        // The late native command cannot acquire the original run ID, even if it
-        // has already resolved a now-current profile and a fresh review ticket.
-        let late = status(&current, &old.run_id);
-        assert!(claim_transaction(&mut conn, &late).is_err());
-        assert!(matches!(
-            claim_transaction(&mut conn, &status(&current, "explicit-fresh-start")).unwrap(),
-            ClaimResult::Claimed
-        ));
-    }
-    #[test]
-    fn abandonment_is_owner_and_origin_bound_and_rejects_claimed_or_trimmed_runs() {
-        let mut conn = database();
-        let book = save(&conn, &draft(), None).unwrap();
-        {
-            let tx = conn.transaction().unwrap();
-            abandon_missing(&tx, "main", "missing-one", &book.id, book.revision).unwrap();
-            tx.commit().unwrap();
-        }
-        assert!(abandon_missing(&conn, "main", "missing-one", &book.id, book.revision).is_ok());
-        assert!(abandon_missing(&conn, "foreign", "missing-one", &book.id, book.revision).is_err());
-        assert!(
-            abandon_missing(&conn, "main", "missing-one", &book.id, book.revision + 1).is_err()
-        );
-        let mut other = draft();
-        other.id = "other-book".into();
-        let other = save(&conn, &other, None).unwrap();
-        assert!(abandon_missing(&conn, "main", "missing-one", &other.id, other.revision).is_err());
-        let run = status(&book, "claimed-one");
-        claim_transaction(&mut conn, &run).unwrap();
-        assert!(abandon_missing(&conn, "main", &run.run_id, &book.id, book.revision).is_err());
-        recover_run(&conn, &run.run_id).unwrap();
-        conn.execute("DELETE FROM automation_runs WHERE id=?1", [&run.run_id])
-            .unwrap();
-        assert!(abandon_missing(&conn, "main", &run.run_id, &book.id, book.revision).is_err());
-    }
-    #[test]
-    fn abandonment_marker_and_no_replay_claim_roll_back_together() {
-        let mut conn = database();
-        let book = save(&conn, &draft(), None).unwrap();
-        {
-            let tx = conn.transaction().unwrap();
-            abandon_missing(&tx, "main", "rolled-back", &book.id, book.revision).unwrap();
-        }
-        assert!(matches!(
-            claim_transaction(&mut conn, &status(&book, "rolled-back")).unwrap(),
-            ClaimResult::Claimed
-        ));
-    }
+fn ssh_runbook_abandon_missing_with(
+    store: &SessionStore,
+    owner: &str,
+    run_id: &str,
+    automation_id: &str,
+    revision: u64,
+    notify: impl FnOnce(),
+) -> Result<(), String> {
+    let mut conn = store.lock_conn()?;
+    let tx = conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    abandon_missing(&tx, owner, run_id, automation_id, revision)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    drop(conn);
+    notify();
+    Ok(())
 }
+
+#[cfg(test)]
+mod admission_tests;
+
+#[cfg(test)]
+pub(crate) fn test_claim_run(conn: &Connection, status: &RunStatus) -> Result<ClaimResult, String> {
+    claim(conn, status)
+}
+
+#[cfg(test)]
+pub(crate) fn test_save_runbook(conn: &Connection, profile: &Profile) -> Result<Profile, String> {
+    save(conn, profile, None)
+}
+
+#[cfg(test)]
+pub(crate) fn test_update_run(conn: &Connection, status: &RunStatus) -> Result<(), String> {
+    update(conn, status)
+}
+
+#[cfg(test)]
+pub(crate) fn test_read_run(conn: &Connection, id: &str) -> Result<Option<RunStatus>, String> {
+    read_run(conn, id)
+}
+
+#[cfg(test)]
+mod tests;

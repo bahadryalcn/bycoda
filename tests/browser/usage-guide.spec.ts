@@ -22,7 +22,8 @@ test("walks through the character guide, restores previous steps and finishes", 
   await page.screenshot({ path: `${captures}/chat-dark.png`, animations: "disabled" });
   await guide.getByRole("button", { name: "Continue →" }).click();
   await expect(guide.getByText("Leia Organa")).toBeVisible();
-  await expect(guide.locator('[aria-current="step"]')).toContainText("Queue message");
+  await expect(guide.locator('[aria-current="step"]')).toContainText("Step 2 of 5");
+  await expect(guide.getByRole("term").filter({ hasText: "Queue message" })).toBeVisible();
   await guide.getByRole("button", { name: "← Back" }).click();
   await expect(guide.getByText("Obi-Wan Kenobi")).toBeVisible();
   for (let i = 0; i < 4; i++) {

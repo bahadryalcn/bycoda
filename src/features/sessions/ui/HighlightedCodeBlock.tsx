@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useState, type CSSProperties, type ReactEleme
 import type { HighlightResult } from "@streamdown/code";
 import type { BundledLanguage } from "shiki";
 import { CodeBlockContainer, CodeBlockHeader } from "streamdown";
-import { useCodeHighlightPlugin } from "../../files/editor/useCodeHighlightPlugin";
+import { useCodeHighlightPlugin } from "../../files/public/useCodeHighlightPlugin";
 
 type Line = HighlightResult["tokens"][number];
 
@@ -88,7 +88,7 @@ export function HighlightedCodeBlock({
 }) {
   // Match Streamdown's removal of the closing-fence newline without dropping
   // meaningful empty lines in the source.
-  const source = code.replace(/\n$/, "");
+  const source = code.endsWith("\n") ? code.slice(0, -1) : code;
   const boundedCode = useCodeHighlightPlugin();
   const [highlighted, setHighlighted] = useState<{
     source: string;
@@ -113,7 +113,8 @@ export function HighlightedCodeBlock({
     highlighted?.language === language && source.startsWith(highlighted.source)
       ? highlighted.result
       : undefined;
-  const fallbackLines = useMemo(() => source.split("\n"), [source]);
+  // Plain text is only drawn until the first tokens arrive.
+  const fallbackLines = useMemo(() => (result ? [] : source.split("\n")), [result, source]);
   return (
     <CodeBlockContainer className={className} language={language} isIncomplete={isIncomplete}>
       <CodeBlockHeader language={language} />

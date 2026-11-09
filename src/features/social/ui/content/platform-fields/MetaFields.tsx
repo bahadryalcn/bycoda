@@ -1,0 +1,35 @@
+import { t } from "../../../../../shared/i18n";
+import { NativeSelect } from "../../../../../shared/ui/Select";
+import { SOCIAL_PLATFORM_NAMES } from "../../../model/social";
+import type { PlatformFieldProps } from "./PlatformFields";
+
+/** Instagram and Facebook: feed or Reel for Facebook; carousel rules come from the attachment. */
+export function MetaFields({ account, value, disabled, onChange }: PlatformFieldProps) {
+  const name = SOCIAL_PLATFORM_NAMES[account.platform];
+  if (account.platform !== "facebook")
+    return (
+      <p className="content-platform-note">{t("Attach either one video or up to four images.")}</p>
+    );
+  const target = value.facebook?.target ?? "feed";
+  return (
+    <fieldset className="content-platform" disabled={disabled}>
+      <legend>{t("{p0} destination", { p0: name })}</legend>
+      <NativeSelect
+        aria-label={t("{p0} destination", { p0: name })}
+        value={target}
+        onChange={(event) =>
+          onChange({
+            ...value,
+            facebook: {
+              target: event.target.value === "reel" ? "reel" : "feed",
+              frameRate: value.facebook?.frameRate,
+            },
+          })
+        }
+      >
+        <option value="feed">{t("Page post")}</option>
+        <option value="reel">{t("Reel")}</option>
+      </NativeSelect>
+    </fieldset>
+  );
+}

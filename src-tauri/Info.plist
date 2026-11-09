@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSMicrophoneUsageDescription</key>
+        <string>bycoda uses the microphone when you start dictation, a microphone test, or a voice conversation.</string>
 	<key>CFBundleIconFile</key>
 	<string>icon.icns</string>
 	<key>NSDesktopFolderUsageDescription</key>
@@ -10,5 +12,15 @@
 	<string>bycoda opens project folders you choose, including Documents.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>bycoda opens project folders you choose, including Downloads.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>bycoda opens project folders you choose, including folders on removable drives.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>bycoda opens project folders you choose, including folders on network volumes.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>bycoda connects to devices and development servers on your local network.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Commands that you or an agent run in a bycoda terminal may ask to control other apps, for example through AppleScript.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Tools that you or an agent run in a bycoda terminal may ask to use the camera.</string>
 </dict>
 </plist>

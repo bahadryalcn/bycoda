@@ -1,8 +1,10 @@
-import type { CrewTheme } from "../../settings/model/settings";
+import type { CrewTheme } from "../../settings";
 import type { CodeArtPainter } from "./crewCodeArt";
 import type { CrewRole } from "./crewMotion";
 import { createLotrPainter, loadLotrCrew } from "./lotr/lotrPainter";
 import { lotrCharacter } from "./lotr/lotrCrew";
+import { matrixCharacter } from "./matrix/matrixCrew";
+import { createMatrixPainter, loadMatrixCrew } from "./matrix/matrixPainter";
 import { starWarsCharacter } from "./starWarsCrew";
 import { createStarWarsPainter, loadStarWarsCrew } from "./starWarsPainter";
 
@@ -35,6 +37,12 @@ const RIGGED: Partial<Record<CrewTheme, RiggedCrewTheme>> = {
     load: loadLotrCrew,
     createPainter: createLotrPainter,
     character: lotrCharacter,
+  },
+  matrix: {
+    title: "THE MATRIX",
+    load: loadMatrixCrew,
+    createPainter: createMatrixPainter,
+    character: matrixCharacter,
   },
 };
 

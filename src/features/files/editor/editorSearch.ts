@@ -22,7 +22,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import { MOD, ALT, SHIFT, IS_MAC } from "../../../platform/tauri/platform";
-import { keybindingPressed } from "../../settings/model/settings";
+import { keybindingPressed } from "../../settings/public/settings";
 import { handleFilePreviewFindKey, openFindInActiveFilePreview } from "../ui/FilePreviewSearch";
 import { t } from "../../../shared/i18n";
 import { nativeButtonPresentation } from "../../../shared/ui/Button";
@@ -682,7 +682,7 @@ const findTheme = EditorView.theme(
       maxWidth: "none",
       flexShrink: "0",
       zIndex: "40",
-      backgroundColor: "var(--ui-surface)",
+      backgroundColor: "var(--color-background-base)",
       border: "0",
       borderBottom: "1px solid var(--color-stroke)",
       pointerEvents: "auto",
@@ -825,13 +825,13 @@ const findTheme = EditorView.theme(
       fontSize: "11px",
     },
     ".cm-searchMatch": {
-      backgroundColor: "color-mix(in srgb, var(--color-search) 46%, transparent)",
+      backgroundColor: "var(--ui-editor-search-match)",
     },
     ".cm-searchMatch-selected": {
-      backgroundColor: "color-mix(in srgb, var(--color-accent) 52%, transparent)",
+      backgroundColor: "var(--ui-editor-search-match-current)",
     },
     ".cm-selectionMatch": {
-      backgroundColor: "color-mix(in srgb, var(--color-content) 14%, transparent)",
+      backgroundColor: "var(--ui-selection-inactive)",
     },
   },
   { dark: true },

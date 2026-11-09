@@ -1,6 +1,8 @@
-import { Badge } from "../../../shared/ui/Badge";
-import { t, useLocale } from "../../../shared/i18n";
-import { Check, ListEnd, Loader, Minus } from "../../../shared/ui/icons";
+import { StatusDot } from "../../../shared/ui/StatusDot";
+import { Surface } from "../../../shared/ui/Surface";
+import { Badge, StatusBadge } from "../../../shared/ui/Badge";
+import { useT } from "../../../shared/i18n";
+import { ListEnd, Minus } from "../../../shared/ui/icons";
 import type { TaskListItem, TaskListItemStatus } from "../model/session";
 import { taskListProgressLabel } from "../model/taskList";
 
@@ -10,25 +12,31 @@ type Props = {
 };
 
 export function TaskListPreview({ items, explanation }: Props) {
-  useLocale();
+  const t = useT();
   return (
-    <section
+    <Surface
+      as="section"
+      variant="quiet"
+      padding="none"
       aria-label={t("Task progress")}
-      className="mb-2 overflow-hidden rounded-[10px] border border-(--ui-tone-neutral-border) bg-(--ui-tone-neutral-solid)/[0.035]"
+      className="mb-2 overflow-hidden"
     >
       <div className="flex items-start gap-2 border-b border-(--ui-tone-neutral-border) px-2.5 py-2">
-        <ListEnd className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+        <ListEnd
+          className="mt-0.5 icon-md shrink-0 text-(--ui-text-secondary)"
+          strokeWidth={1.75}
+        />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="font-mono text-[12px] font-medium text-(--ui-text-secondary)">
+            <h3 className="font-mono text-ui-caption font-medium text-(--ui-text-secondary)">
               {t("Tasks")}
             </h3>
-            <Badge tone="neutral" className="shrink-0">
+            <Badge variant="count" size="xs" className="shrink-0">
               {taskListProgressLabel(items)}
             </Badge>
           </div>
           {explanation ? (
-            <p className="mt-0.5 line-clamp-2 font-sans text-[11.5px] leading-4 text-(--ui-text-secondary)">
+            <p className="mt-0.5 line-clamp-2 font-sans text-ui-micro leading-4 text-(--ui-text-secondary)">
               {explanation}
             </p>
           ) : null}
@@ -42,7 +50,7 @@ export function TaskListPreview({ items, explanation }: Props) {
           >
             <TaskState status={item.status} />
             <span
-              className={`min-w-0 flex-1 font-sans text-[12.5px] leading-4.5 ${
+              className={`min-w-0 flex-1 font-sans text-ui-secondary leading-4.5 ${
                 item.status === "completed"
                   ? "text-(--ui-text-secondary) line-through decoration-content/25"
                   : item.status === "cancelled"
@@ -57,46 +65,33 @@ export function TaskListPreview({ items, explanation }: Props) {
           </li>
         ))}
       </ol>
-    </section>
+    </Surface>
   );
 }
 
 function TaskState({ status }: { status: TaskListItemStatus }) {
-  useLocale();
-  if (status === "completed") {
+  const t = useT();
+  if (status === "completed" || status === "in_progress") {
     return (
-      <span
-        aria-label={t("Completed")}
-        className="mt-px grid size-4 shrink-0 place-items-center rounded-full bg-(--ui-tone-success-subtle) text-on-solid"
-      >
-        <Check className="size-2.5" strokeWidth={3} />
-      </span>
-    );
-  }
-  if (status === "in_progress") {
-    return (
-      <span
-        aria-label={t("In progress")}
-        className="mt-px grid size-4 shrink-0 place-items-center text-(--ui-tone-info-fg)"
-      >
-        <Loader className="size-4 motion-safe:animate-spin" strokeWidth={2} />
-      </span>
+      <StatusBadge
+        status={status === "completed" ? "done" : "running"}
+        iconOnly
+        size="xs"
+        className="mt-px"
+      />
     );
   }
   if (status === "cancelled") {
     return (
-      <span
-        aria-label={t("Cancelled")}
-        className="mt-px grid size-4 shrink-0 place-items-center rounded-full bg-(--ui-surface-raised) text-(--ui-text-secondary)"
-      >
-        <Minus className="size-2.5" strokeWidth={2} />
-      </span>
+      <Badge
+        tone="neutral"
+        size="xs"
+        label={t("Cancelled")}
+        role="img"
+        icon={<Minus />}
+        className="mt-px"
+      />
     );
   }
-  return (
-    <span
-      aria-label={t("Pending")}
-      className="mt-px size-4 shrink-0 rounded-full border border-(--ui-tone-neutral-border) bg-(--ui-tone-neutral-solid)/[0.02]"
-    />
-  );
+  return <StatusDot tone="neutral" label={t("Pending")} className="mt-1" />;
 }

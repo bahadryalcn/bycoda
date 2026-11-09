@@ -1,5 +1,5 @@
 import { removeAttachmentFromText } from "./attachmentTokens";
-import { REMOTE_PROVIDERS as HARNESSES } from "../../connections/model/protocol";
+import { REMOTE_PROVIDERS as HARNESSES } from "../../connections/public/protocol";
 import type { Attachment, AttachmentKind, ModelTarget, QueuedMessage, TurnIntent } from "./session";
 import { parseBrowserAnnotation } from "../../../shared/lib/browserAnnotation";
 
@@ -41,9 +41,20 @@ function persistableAttachment(file: Attachment): Attachment {
 /** The queue as written to the store, or null when there is nothing to keep. */
 export function persistableQueue(queue: QueuedMessage[] | undefined): QueuedMessage[] | null {
   if (!queue?.length) return null;
+  for (const row of queue)
+    if (
+      row.authorityGeneration !== undefined &&
+      (!Number.isSafeInteger(row.authorityGeneration) || row.authorityGeneration < 1)
+    )
+      throw new Error(
+        "Invalid queued intent authority generation; saved messages were kept for recovery.",
+      );
   return queue.map((message) => ({
     id: message.id,
     text: message.text,
+    ...(message.authorityGeneration !== undefined
+      ? { authorityGeneration: message.authorityGeneration }
+      : {}),
     ...(message.deliveryUnknown ? { deliveryUnknown: true as const } : {}),
     attachments: message.attachments.map(persistableAttachment),
     ...(message.noteCard ? { noteCard: message.noteCard } : {}),
@@ -104,6 +115,13 @@ export function restoreQueuedMessages(raw: unknown): QueuedMessage[] {
     if (!entry || typeof entry !== "object") continue;
     const value = entry as Partial<QueuedMessage>;
     if (typeof value.id !== "string" || typeof value.text !== "string") continue;
+    if (
+      value.authorityGeneration !== undefined &&
+      (!Number.isSafeInteger(value.authorityGeneration) || value.authorityGeneration < 1)
+    )
+      throw new Error(
+        "Invalid queued intent authority generation; saved messages were kept for recovery.",
+      );
     const target = value.modelTarget as Partial<ModelTarget> | undefined;
     if (
       target !== undefined &&
@@ -111,6 +129,7 @@ export function restoreQueuedMessages(raw: unknown): QueuedMessage[] {
         !HARNESSES.includes(target.harness!) ||
         typeof target.model !== "string" ||
         !target.model ||
+        (target.providerAccountId !== undefined && typeof target.providerAccountId !== "string") ||
         !target.modelSettings ||
         typeof target.modelSettings !== "object" ||
         Array.isArray(target.modelSettings) ||
@@ -126,6 +145,9 @@ export function restoreQueuedMessages(raw: unknown): QueuedMessage[] {
     restored.push({
       id: value.id,
       text: value.text,
+      ...(value.authorityGeneration !== undefined
+        ? { authorityGeneration: value.authorityGeneration }
+        : {}),
       ...(value.deliveryUnknown === true ? { deliveryUnknown: true as const } : {}),
       attachments,
       ...(target
@@ -134,6 +156,9 @@ export function restoreQueuedMessages(raw: unknown): QueuedMessage[] {
               harness: target.harness!,
               model: target.model!,
               modelSettings: { ...target.modelSettings! },
+              ...(target.providerAccountId !== undefined
+                ? { providerAccountId: target.providerAccountId }
+                : {}),
             },
           }
         : {}),

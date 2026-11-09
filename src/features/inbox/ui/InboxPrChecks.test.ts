@@ -1,9 +1,15 @@
 // @vitest-environment happy-dom
+import { LOADING_DELAY_MS } from "../../../shared/hooks/useDelayedVisible";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InboxPrChecks, PrChecksTab } from "./InboxPrChecks";
-import { InboxDetail, LinkedWorkItemPanel } from "./InboxView";
+import { Tabs } from "../../../shared/ui/Tabs";
+import { withQueryClient } from "../../../../tests/browser/queryTest";
+import {
+  InboxDetail as RawInboxDetail,
+  LinkedWorkItemPanel as RawLinkedWorkItemPanel,
+} from "./InboxView";
 import type { GithubPrChecksView } from "../hooks/useGithubPrChecks";
 import type {
   GithubCheckDetails,
@@ -16,7 +22,7 @@ const { openUrl, invoke } = vi.hoisted(() => ({
   invoke: vi.fn(),
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke, isTauri: () => false }));
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     isMaximized: async () => false,
@@ -26,6 +32,9 @@ vi.mock("@tauri-apps/api/window", () => ({
     setTitle: async () => {},
   }),
 }));
+
+const InboxDetail = withQueryClient(RawInboxDetail);
+const LinkedWorkItemPanel = withQueryClient(RawLinkedWorkItemPanel);
 
 function view(overrides: Partial<GithubPrChecksView> = {}): GithubPrChecksView {
   return {
@@ -71,6 +80,19 @@ const render = (element: React.ReactElement) => {
   act(() => root.render(element));
   return container;
 };
+
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
 
 const buttonByLabel = (label: string) =>
   container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
@@ -120,14 +142,14 @@ it("filters attention checks without hiding cancelled or unknown outcomes", () =
       onRefresh: () => {},
     }),
   );
-  const attention = buttonByLabel("Needs attention: 4");
+  const attention = container.querySelector<HTMLButtonElement>('button[data-value="attention"]');
   expect(attention?.getAttribute("aria-pressed")).toBe("true");
   const visibleNames = () =>
     Array.from(container.querySelectorAll("li:not([hidden]) [data-check-name]"))
       .filter((el) => !el.closest("[hidden]"))
       .map((el) => el.textContent);
   expect(visibleNames()).toEqual(["Tests", "Build", "Deploy", "External scan"]);
-  act(() => buttonByLabel("All checks: 6")?.click());
+  act(() => container.querySelector<HTMLButtonElement>('button[data-value="all"]')?.click());
   expect(visibleNames()).toEqual(["Tests", "Build", "Deploy", "External scan", "Lint", "Publish"]);
   act(() => attention?.click());
   expect(visibleNames()).toEqual(["Tests", "Build", "Deploy", "External scan"]);
@@ -479,14 +501,17 @@ it("keeps rows without a valid HTTP(S) URL unlinked", async () => {
   expect(openUrl).not.toHaveBeenCalled();
 });
 
-it("separates the initial loading state from the no-checks state", () => {
+it("separates the initial loading state from the no-checks state", async () => {
   const loading = render(
     createElement(InboxPrChecks, {
       view: view({ loading: true }),
       onRefresh: () => {},
     }),
   );
-  expect(loading.querySelector(".animate-spin")).not.toBeNull();
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, LOADING_DELAY_MS + 50));
+  });
+  expect(loading.querySelector('[role="status"]')?.textContent).toContain("Loading checks");
   expect(loading.textContent).not.toContain("No checks reported");
 
   const empty = render(
@@ -495,7 +520,7 @@ it("separates the initial loading state from the no-checks state", () => {
       onRefresh: () => {},
     }),
   );
-  expect(empty.querySelector(".animate-spin")).toBeNull();
+  expect(empty.querySelector('[role="status"]')).toBeNull();
   expect(empty.textContent).toContain("No checks reported");
 });
 
@@ -514,6 +539,18 @@ it("offers a retry after a load error and refreshes on demand", async () => {
     retry?.click();
   });
   expect(onRefresh).toHaveBeenCalledTimes(1);
+  retry!.focus();
+  render(
+    createElement(InboxPrChecks, {
+      view: view({ loading: true, error: "rate limited" }),
+      onRefresh,
+    }),
+  );
+  expect(retry!.isConnected).toBe(true);
+  expect(document.activeElement).toBe(retry);
+  expect(retry!.getAttribute("aria-busy")).toBe("true");
+  await act(async () => retry!.click());
+  expect(onRefresh).toHaveBeenCalledTimes(1);
 });
 
 it("marks kept results as out of date after a failed refresh", () => {
@@ -528,47 +565,41 @@ it("marks kept results as out of date after a failed refresh", () => {
       onRefresh: () => {},
     }),
   );
-  expect(kept.querySelector('[role="status"]')?.textContent).toContain("out of date");
+  expect(kept.querySelector('[role="alert"]')?.textContent).toContain("rate limited");
+  expect(kept.querySelector('[role="alert"]')?.textContent).toContain("out of date");
   expect(kept.textContent).toContain("ci/build");
 });
 
-it("names the per-state counts on the tab for color-blind-safe reading", () => {
+it("names the per-state counts on the tab for color-blind-safe reading", async () => {
   const fail: GithubPrChecksOverall = {
     kind: "fail",
     failed: 2,
     description: "2 failed, 1 passed",
   };
-  const tab = render(
-    createElement(PrChecksTab, {
-      overall: fail,
-      selected: false,
-      onSelect: () => {},
-    }),
-  );
-  const button = tab.querySelector('button[role="tab"]');
+  // The Checks tab belongs to the PR detail's Tabs; Checks is selected when `selected`.
+  const renderTab = (overall: GithubPrChecksOverall, selected: boolean) =>
+    render(
+      createElement(
+        Tabs,
+        { value: selected ? "checks" : "summary", onValueChange: () => {}, panels: "none" },
+        createElement(PrChecksTab, { overall }),
+      ),
+    );
+  const tab = renderTab(fail, false);
+  const button = tab.querySelector<HTMLButtonElement>('button[role="tab"]');
   expect(button?.getAttribute("aria-label")).toBe("Checks: 2 failed, 1 passed");
-  expect(button?.getAttribute("title")).toBe("Checks: 2 failed, 1 passed");
+  expect(button?.getAttribute("title")).toBeNull();
+  expect(await tooltipText(button!)).toBe("Checks: 2 failed, 1 passed");
   expect(button?.textContent).toContain("Checks");
   expect(button?.textContent).toContain("2");
 
-  const neutral = render(
-    createElement(PrChecksTab, {
-      overall: { kind: "neutral", description: "3 skipped" },
-      selected: true,
-      onSelect: () => {},
-    }),
-  );
+  const neutral = renderTab({ kind: "neutral", description: "3 skipped" }, true);
   expect(neutral.querySelector('button[role="tab"]')?.getAttribute("aria-label")).toBe(
     "Checks: 3 skipped",
   );
+  expect(neutral.querySelector('button[role="tab"]')?.getAttribute("aria-selected")).toBe("true");
 
-  const loading = render(
-    createElement(PrChecksTab, {
-      overall: { kind: "loading", description: "Loading checks" },
-      selected: false,
-      onSelect: () => {},
-    }),
-  );
+  const loading = renderTab({ kind: "loading", description: "Loading checks" }, false);
   expect(loading.querySelector('button[role="tab"]')?.getAttribute("aria-label")).toBe(
     "Checks: Loading checks",
   );
@@ -742,7 +773,7 @@ describe("Checks tab user behavior", () => {
   });
 });
 
-it("İzin verilen hata başarısız kalır ve sentetik pipeline SHA ayrı görünür", () => {
+it("an allowed failure stays failed and the synthetic pipeline SHA shows separately", () => {
   const markup = render(
     createElement(InboxPrChecks, {
       cwd: "/repo",

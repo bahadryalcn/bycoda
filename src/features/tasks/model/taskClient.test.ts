@@ -103,12 +103,61 @@ describe("task board", () => {
     expect(hostTaskFromDraft(draft, "main", "project-1")).toEqual(parseHostTask(stored));
   });
 
+  it("retains budget, workflow, preparation and independent reviewer settings when editing", () => {
+    const task: HostTask = {
+      ...stored,
+      budget: { maxAgentMinutes: 8, maxAttempts: 6, warningPercent: 80 },
+      workflowId: "workflow",
+      workflowVersion: 3,
+      preflightRequirements: [{ kind: "source", id: "sources/report.md", required: true }],
+      reviewerConfig: {
+        harness: "codex",
+        model: "review",
+        modelSettings: { effort: "high" },
+        instructions: "Check sources",
+      },
+    };
+    const draft = draftFromTask(boardTaskFromHost(local, "G:/app", task));
+    expect(hostTaskFromDraft(draft, task.id, task.projectId)).toMatchObject({
+      budget: task.budget,
+      workflowId: "workflow",
+      workflowVersion: 3,
+      preflightRequirements: task.preflightRequirements,
+      reviewerConfig: task.reviewerConfig,
+    });
+  });
+
+  it("serializes an existing reviewer toggle-off as an explicit wire clear", () => {
+    const task: HostTask = {
+      ...stored,
+      reviewerConfig: {
+        harness: "codex",
+        model: "review",
+        modelSettings: { effort: "high" },
+        instructions: "Check sources",
+      },
+    };
+    const draft = draftFromTask(boardTaskFromHost(local, "G:/app", task));
+    const cleared = hostTaskFromDraft(
+      { ...draft, reviewerConfig: undefined },
+      task.id,
+      task.projectId,
+    );
+    expect(JSON.parse(JSON.stringify(cleared))).toHaveProperty("reviewerConfig", null);
+    expect(
+      hostTaskFromDraft(
+        { ...newTaskDraft("G:/app", "codex", "codex:test"), reviewerConfig: undefined },
+        "new",
+        task.projectId,
+      ),
+    ).not.toHaveProperty("reviewerConfig");
+  });
+
   it("starts a draft with no time limit and refuses agents a host cannot run", () => {
     const draft = newTaskDraft("G:/app", "claude", "claude:test");
     expect(draft).toMatchObject({
       runtimeMode: "auto",
       maxRunMinutes: 0,
-      isolate: false,
       verifyCommand: "",
       review: false,
       continueUntilDone: true,
@@ -156,9 +205,9 @@ describe("task board", () => {
       { ...stored, id: "a", status: "todo" as const, createdAt: 1 },
     ].map((task) => boardTaskFromHost(mac, "remote://env-mac/app", task));
     expect(tasksInColumn(board, "todo").map((task) => task.id)).toEqual(["a", "b"]);
-    expect(taskTimeLabel({ status: "todo", createdAt: 0, updatedAt: 0 }, 5 * 60_000)).toBe(
-      "Added 5m ago",
-    );
+    expect(
+      taskTimeLabel({ status: "todo", createdAt: 60_000, updatedAt: 60_000 }, 6 * 60_000),
+    ).toBe("Added 5m ago");
   });
 
   it("orders waiting columns oldest first and finished ones newest first", () => {
@@ -192,18 +241,42 @@ describe("task board", () => {
     expect(formatTaskSpan(120 * minute)).toBe("2h");
     expect(formatTaskSpan(185 * minute)).toBe("3h 5m");
     expect(formatTaskSpan(52 * 60 * minute)).toBe("2d 4h");
-    const base = { createdAt: 0, updatedAt: 0 };
-    const now = 30 * minute;
+    const base = { createdAt: minute, updatedAt: minute };
+    const now = 31 * minute;
     expect(taskTimeLabel({ ...base, status: "queued" }, now)).toBe("Waiting 30m");
-    expect(taskTimeLabel({ ...base, status: "running", startedAt: 18 * minute }, now)).toBe(
+    expect(taskTimeLabel({ ...base, status: "running", startedAt: 19 * minute }, now)).toBe(
       "Running 12m",
     );
-    expect(taskTimeLabel({ ...base, status: "review", completedAt: 25 * minute }, now)).toBe(
+    expect(taskTimeLabel({ ...base, status: "review", completedAt: 26 * minute }, now)).toBe(
       "Finished 5m ago",
     );
-    expect(taskTimeLabel({ ...base, status: "blocked", completedAt: 29 * minute }, now)).toBe(
+    expect(taskTimeLabel({ ...base, status: "blocked", completedAt: 30 * minute }, now)).toBe(
       "Stopped 1m ago",
     );
+  });
+
+  it("shows no time for a missing, zero or invalid timestamp", () => {
+    const now = 1_700_000_000_000;
+    const none = { createdAt: 0, updatedAt: 0 };
+    for (const status of [
+      "todo",
+      "queued",
+      "running",
+      "verifying",
+      "review",
+      "done",
+      "blocked",
+    ] as const) {
+      expect(taskTimeLabel({ ...none, status }, now)).toBe("");
+      expect(taskTimeLabel({ ...none, status, completedAt: Number.NaN }, now)).toBe("");
+    }
+    // A zero start time falls back to the last update.
+    expect(
+      taskTimeLabel(
+        { createdAt: 0, updatedAt: now - 120_000, status: "running", startedAt: 0 },
+        now,
+      ),
+    ).toBe("Running 2m");
   });
 });
 
@@ -241,8 +314,7 @@ describe("host task rules", () => {
     expect(parseHostTask({ ...input, title: "  Ship  " })).toEqual({
       ...input,
       title: "Ship",
-      // A task runs on its own branch and is reviewed unless it says otherwise.
-      isolate: true,
+      // An omitted checkout choice inherits project policy; review remains enabled.
       review: true,
     });
     expect(
@@ -348,3 +420,17 @@ describe("merging automatically in the task draft", () => {
     expect(draftFromTask({ ...task, autoMerge: undefined }).autoMerge).toBe(false);
   });
 });
+
+it.each([undefined, true, false])(
+  "preserves task policy inheritance and explicit choices (%s)",
+  (isolate) => {
+    const draft = {
+      ...newTaskDraft("G:/app", "claude", "claude:test"),
+      title: "Task",
+      prompt: "Do the work",
+      isolate,
+    };
+    const parsed = parseHostTask(hostTaskFromDraft(draft, "id", "project-1"));
+    expect(parsed.isolate).toBe(isolate);
+  },
+);

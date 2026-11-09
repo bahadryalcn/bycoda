@@ -2,7 +2,11 @@ import { useMemo, useRef } from "react";
 import { worktreeTabStatsEqual } from "../../model/sidebarEquality";
 import { type Session } from "../../../features/sessions/model/session";
 import { leafIds, type WorkspaceTab } from "../../../features/workspace/model/layout";
-import { filterTabsForProject, isExternalFileWorkspaceTab, workspaceTabCwd } from "../../../features/workspace/model/workspaceTabGroups";
+import {
+  filterTabsForProject,
+  isExternalFileWorkspaceTab,
+  workspaceTabCwd,
+} from "../../../features/workspace/model/workspaceTabGroups";
 import { isRemoteProjectPath, sameProjectPath } from "../../../features/projects/model/recents";
 import { pathKey } from "../../../shared/lib/paths";
 import type { useWorkspaceNavigation } from "../../hooks/useWorkspaceNavigation";
@@ -63,11 +67,13 @@ export function useWorktreeDeckTabs({
     // Each worktree keeps its own tabs; the others stay open, just hidden.
     const worktree = projectWorktree?.path ?? projectCwd;
     const projectTabs = new Set(filterTabsForProject(tabs, sessions, projectCwd));
-    return tabs.filter((tab) => isExternalFileWorkspaceTab(tab) || projectTabs.has(tab)).filter((tab) => {
-      if (tab.id === activeTabId) return true;
-      const workspace = tabWorkspace(tab, sessions);
-      return !workspace || sameProjectPath(workspace, worktree);
-    });
+    return tabs
+      .filter((tab) => isExternalFileWorkspaceTab(tab) || projectTabs.has(tab))
+      .filter((tab) => {
+        if (tab.id === activeTabId) return true;
+        const workspace = tabWorkspace(tab, sessions);
+        return !workspace || sameProjectPath(workspace, worktree);
+      });
   }, [
     activeTabId,
     tabs,

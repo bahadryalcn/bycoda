@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { loadTabAnimationsEnabled } from "../../settings/model/settings";
+import { prefersReducedMotion as reducedMotion } from "../../settings/public/decorativeMotion";
 
 export type TabMotionEntry<T extends { id: string }> = {
   id: string;
@@ -8,10 +9,6 @@ export type TabMotionEntry<T extends { id: string }> = {
   opening: boolean;
   width: number;
 };
-
-function reducedMotion() {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
 
 function orderWithClosingTabs(
   oldOrder: readonly string[],
@@ -39,8 +36,15 @@ function idleEntry<T extends { id: string }>(item: T): TabMotionEntry<T> {
   return { id: item.id, item, closing: false, opening: false, width: 0 };
 }
 
-export function useTabCloseMotion<T extends { id: string }>(items: readonly T[]) {
+export function useTabCloseMotion<T extends { id: string }>(
+  items: readonly T[],
+  onNode?: (id: string, node: HTMLElement | null) => void,
+) {
   const measureRef = useRef(new Map<string, number>());
+  const nodesRef = useRef(new Map<string, HTMLElement>());
+  const callbacksRef = useRef(new Map<string, (node: HTMLElement | null) => void>());
+  const onNodeRef = useRef(onNode);
+  onNodeRef.current = onNode;
   const observersRef = useRef(new Map<string, ResizeObserver>());
   const idsKey = items.map((item) => item.id).join("\0");
   const [trackedKey, setTrackedKey] = useState(idsKey);
@@ -104,10 +108,15 @@ export function useTabCloseMotion<T extends { id: string }>(items: readonly T[])
   }
 
   const setTabNode = useCallback((id: string, node: HTMLElement | null) => {
+    if ((nodesRef.current.get(id) ?? null) === node) return;
     observersRef.current.get(id)?.disconnect();
     observersRef.current.delete(id);
+    if (node) nodesRef.current.set(id, node);
+    else nodesRef.current.delete(id);
+    onNodeRef.current?.(id, node);
     if (!node) return;
     const record = () => {
+      if (nodesRef.current.get(id) !== node) return;
       const width = node.getBoundingClientRect().width;
       if (width > 1) measureRef.current.set(id, width);
     };
@@ -117,6 +126,28 @@ export function useTabCloseMotion<T extends { id: string }>(items: readonly T[])
     observer.observe(node);
     observersRef.current.set(id, observer);
   }, []);
+
+  const tabRef = useCallback(
+    (id: string) => {
+      let callback = callbacksRef.current.get(id);
+      if (!callback) {
+        callback = (node: HTMLElement | null) => setTabNode(id, node);
+        callbacksRef.current.set(id, callback);
+      }
+      return callback;
+    },
+    [setTabNode],
+  );
+  const tabNode = useCallback((id: string) => nodesRef.current.get(id) ?? null, []);
+
+  useLayoutEffect(() => {
+    const retained = new Set(rendered.map((entry) => entry.id));
+    for (const id of callbacksRef.current.keys()) {
+      if (retained.has(id)) continue;
+      callbacksRef.current.delete(id);
+      measureRef.current.delete(id);
+    }
+  });
 
   useLayoutEffect(
     () => () => {
@@ -146,7 +177,8 @@ export function useTabCloseMotion<T extends { id: string }>(items: readonly T[])
 
   return {
     displayed,
-    setTabNode,
+    tabRef,
+    tabNode,
     finishMotion,
   };
 }

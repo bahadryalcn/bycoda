@@ -7,7 +7,7 @@
   block-size: 100%;
   gap: 8px;
   padding-inline: 8px;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .tool-picker {
   display: none;
@@ -30,7 +30,6 @@
   block-size: 100%;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
-  scrollbar-width: thin;
 }
 .tool-tabs button {
   display: inline-flex;
@@ -44,21 +43,6 @@
   display: flex;
   align-items: center;
   gap: 4px;
-}
-.tool-window-error {
-  position: fixed;
-  inset-block-start: 44px;
-  inset-inline-end: 12px;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-inline-size: min(600px, calc(100vi - 24px));
-  padding: 12px;
-  background: var(--color-background-base);
-  border: 1px solid var(--color-stroke);
-  border-radius: 8px;
-  overflow-wrap: anywhere;
 }
 @media (hover: hover) and (pointer: fine) {
 }

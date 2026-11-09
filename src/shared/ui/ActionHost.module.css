@@ -1,0 +1,148 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+/* Placement and box layout are caller-adjustable (width, gap, padding, radius for a
+   tab strip versus a list row); the highlight states below are owned here. */
+@layer components {
+  .host {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-inline-size: 0;
+    border-radius: var(--ui-control-radius);
+  }
+}
+
+.host {
+  --action-host-hover: linear-gradient(var(--ui-surface-hover), var(--ui-surface-hover));
+  --action-host-pressed: linear-gradient(var(--ui-surface-pressed), var(--ui-surface-pressed));
+  --action-host-selected: linear-gradient(var(--ui-surface-selected), var(--ui-surface-selected));
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+/* A saved custom colour is the resting ground. States are solid layers painted above
+   it as background images, so neither an inline colour nor the ground can mask them. */
+.host[data-ground] {
+  background-color: var(--action-host-ground);
+}
+/* One highlight for the whole item: it stays while the pointer is over an inline
+   action, and keyboard focus anywhere inside reads the same as hover. */
+@media (hover: hover) and (pointer: fine) {
+  .host:hover {
+    background-image: var(--action-host-hover);
+  }
+}
+.host:has(:focus-visible) {
+  background-image: var(--action-host-hover);
+}
+.host[data-selected] {
+  background-image: var(--action-host-selected);
+}
+/* The host owns the press of the main row, selected or not. A press that lands on an
+   inline action, or on a control that opts out of the row (data-no-drag), belongs to
+   that control and leaves the row as it was. Touch and keyboard activation set :active
+   on the pressed control, so they follow the same rule. */
+.host:active:not(:has([data-action-inline]:active, [data-no-drag]:active)) {
+  background-image: var(--action-host-pressed);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .host {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .host[data-selected] {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+}
+
+/* An optional trailing slot that reserves no width at rest: row actions appear on
+   hover, keyboard focus, selection or while one of their popups is open, so a
+   narrow row keeps its title readable. Touch devices always show them. A host marked
+   `data-hover-reveal` ignores selection and pointer focus: only hover, keyboard focus
+   and an open menu reveal its actions. */
+:global([data-action-host]) :global([data-action-slot="collapse"]) {
+  max-inline-size: 0;
+  overflow: hidden;
+}
+:global([data-action-host]):is(
+    :hover,
+    :focus-within:not([data-hover-reveal]),
+    :has(:focus-visible),
+    [data-selected]:not([data-hover-reveal]),
+    :has([data-action-slot="collapse"] [aria-expanded="true"])
+  )
+  :global([data-action-slot="collapse"]) {
+  max-inline-size: none;
+  overflow: visible;
+}
+@media (hover: none), (pointer: coarse) {
+  :global([data-action-host]) :global([data-action-slot="collapse"]) {
+    max-inline-size: none;
+    overflow: visible;
+  }
+}
+
+/* Overlay form of the collapse slot (fine pointers only). A row that marks trailing
+   secondary metadata (a time, a count, an empty gutter) with `data-action-yield` keeps
+   that metadata where it is and takes no width for the actions at rest. While the row is
+   hovered, keyboard focused, selected or has one of the actions' menus open, the actions
+   sit over the end of the row and the yielding element turns transparent. It keeps its
+   layout box and its text for assistive technology, so no other content moves, and the
+   row's own highlight shows behind the actions. Status (dots, badges, Git, connection)
+   must never be marked as yielding. The yielding element is as wide as the slot, so the
+   actions never land on anything else. Rows with no yielding element keep the
+   expanding form above, and touch keeps the actions always visible beside the text.
+   `data-action-anchor="end"` aligns the actions to the row's last line. */
+@media (hover: hover) and (pointer: fine) {
+  :global([data-action-host]):has(:global([data-action-slot="collapse"])):has(
+      :global([data-action-yield])
+    )
+    :global([data-action-slot="collapse"]) {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    align-items: center;
+    max-inline-size: none;
+    margin: 0;
+    overflow: visible;
+    pointer-events: none;
+  }
+  :global([data-action-host]):has(:global([data-action-slot="collapse"])):has(
+      :global([data-action-yield])
+    )
+    :global([data-action-slot="collapse"][data-action-anchor="end"]) {
+    align-items: flex-end;
+  }
+  :global([data-action-host]):has(:global([data-action-slot="collapse"]))
+    :global([data-action-yield]) {
+    min-inline-size: 1.5rem;
+    text-align: end;
+    transition: opacity var(--duration-fast) var(--ease-standard);
+  }
+  :global([data-action-host]):has(:global([data-action-slot="collapse"])):is(
+      :hover,
+      :has(:focus-visible),
+      [data-selected]:not([data-hover-reveal]),
+      :has(:global([data-action-slot="collapse"]) [aria-expanded="true"])
+    )
+    :global([data-action-yield]) {
+    opacity: 0;
+  }
+  :global([data-action-host]):has(:global([data-action-yield])):is(
+      :hover,
+      :has(:focus-visible),
+      [data-selected]:not([data-hover-reveal]),
+      :has(:global([data-action-slot="collapse"]) [aria-expanded="true"])
+    )
+    :global([data-action-slot="collapse"]) {
+    pointer-events: auto;
+  }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: reduce) {
+  :global([data-action-host]) :global([data-action-yield]) {
+    transition: none;
+  }
+}

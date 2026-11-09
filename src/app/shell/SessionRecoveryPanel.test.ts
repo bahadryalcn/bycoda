@@ -11,6 +11,7 @@ import type { RemoteRailSession } from "../../features/connections/model/remoteR
 import type { SessionRecovery } from "../../features/workspace/model/sessionRecovery";
 import { markTurnInterrupted } from "../../features/sessions/model/inFlight";
 import { getSession } from "../../features/sessions/data/sessionStore";
+import { rememberRemoteSession } from "../../features/connections/model/connections";
 import type { Session } from "../../features/sessions/model/session";
 
 vi.mock("../../features/sessions/data/sessionStore", async (original) => ({
@@ -58,6 +59,33 @@ const recovery = captureSessionRecovery(
   ),
   100,
 )!;
+/** More rows than a short list, so the search field is offered. */
+const crowdedSessions = Array.from({ length: 10 }, (_, index) => ({
+  ...newSession("codex", `/crowd-${index}`),
+  id: `crowd-${index}`,
+  title: `crowd-${index}`,
+  busy: true,
+}));
+const crowdedRecovery = captureSessionRecovery(
+  null,
+  collectWorkspaceSnapshot(
+    crowdedSessions.map((s) => newTab(s.id)),
+    crowdedSessions,
+    "tab",
+    "/crowd-0",
+    new Map(),
+  ),
+  100,
+)!;
+function searchFor(value: string) {
+  const input = container.querySelector<HTMLInputElement>(
+    'input[aria-label="Search recovered sessions"]',
+  )!;
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
 const onOpen = vi.fn<(_ids: string[], _layout: boolean) => Promise<void>>();
 const onClose = vi.fn();
 const onRemove = vi.fn<(_ids: string[]) => Promise<void>>();
@@ -87,25 +115,84 @@ async function click(label: string) {
     button.click();
   });
 }
+
+async function maintain(label: string) {
+  await act(async () => {
+    container
+      .querySelector<HTMLButtonElement>('button[aria-label="Recovery list maintenance"]')!
+      .click();
+  });
+  const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((row) =>
+    row.getAttribute("aria-label")?.startsWith(label),
+  )!;
+  await act(async () => {
+    item.click();
+  });
+}
+
 describe("session recovery navigation", () => {
+  it("keeps failed verification distinct from missing records and retries that read", async () => {
+    vi.mocked(getSession)
+      .mockRejectedValueOnce(new Error("history temporarily offline"))
+      .mockResolvedValueOnce(null);
+    render([], recovery, []);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain("Could not verify this session.");
+    expect(container.textContent).toContain("history temporarily offline");
+    vi.mocked(getSession).mockResolvedValue(sessions[0]);
+    await click("Retry verification");
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(vi.mocked(getSession).mock.calls.filter(([id]) => id === "alpha")).toHaveLength(2);
+    expect(vi.mocked(getSession).mock.calls.filter(([id]) => id === "beta")).toHaveLength(1);
+  });
+  it("keeps progress on the chosen recovery action and prevents duplicate requests", async () => {
+    let finish!: () => void;
+    onOpen.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    render();
+    const button = [...container.querySelectorAll("button")].find((item) =>
+      item.textContent?.startsWith("Open all"),
+    )!;
+    button.focus();
+    act(() => {
+      button.click();
+      button.click();
+    });
+    expect(onOpen).toHaveBeenCalledOnce();
+    expect(container.querySelectorAll('button[aria-busy="true"]')).toHaveLength(1);
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(button);
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => finish());
+    expect(onClose).toHaveBeenCalledOnce();
+  });
   it("removes selected entries without opening or deleting conversations", async () => {
     act(() => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
-    await click("Remove selected");
+    await maintain("Remove 1 selected from list");
     expect(onRemove).toHaveBeenCalledExactlyOnceWith(["alpha"]);
     expect(onOpen).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
   });
   it("clears completed entries while preserving working entries", async () => {
     render([], recovery, [sessions[0], { ...sessions[1], busy: false, blocks: [] }]);
-    await click("Clear completed");
+    await maintain("Remove 1 completed from list");
     expect(onRemove).toHaveBeenCalledExactlyOnceWith(["beta"]);
   });
   it("reports cleanup errors and leaves entries available to retry", async () => {
     onRemove.mockRejectedValueOnce(new Error("disk"));
-    await click("Clear list");
+    await maintain("Clear recovery list (2)");
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Try again");
     expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
-    await click("Clear list");
+    await maintain("Clear recovery list (2)");
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
   beforeEach(() => {
@@ -127,7 +214,7 @@ describe("session recovery navigation", () => {
   it("opens every project without a list count limit and restores layout separately", async () => {
     await click("Open all");
     expect(onOpen).toHaveBeenLastCalledWith(["alpha", "beta"], false);
-    await click("Restore previous layout");
+    await click("Restore chat layout");
     expect(onOpen).toHaveBeenLastCalledWith(["alpha", "beta"], true);
   });
   it("opens only selected conversations", async () => {
@@ -138,7 +225,9 @@ describe("session recovery navigation", () => {
   it("preserves the list and enables retry after an open failure", async () => {
     onOpen.mockRejectedValueOnce(new Error("missing"));
     await click("Open all");
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("preserved");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Check the open tabs before retrying",
+    );
     expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
     await click("Open all");
     expect(container.querySelector('[role="alert"]')).toBeNull();
@@ -186,19 +275,17 @@ describe("session recovery navigation", () => {
       ],
     };
     render([], recovery, [failed, sessions[1]]);
-    expect(container.querySelector('[role="status"]')?.textContent).toContain("1 Failed");
-    const input = container.querySelector<HTMLInputElement>(
-      'input[aria-label="Search recovered sessions"]',
-    )!;
-    act(() => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        input,
-        "alpha",
-      );
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    await click("Restore previous layout");
-    expect(onOpen).toHaveBeenLastCalledWith(["alpha", "beta"], true);
+    expect(container.textContent).toContain("Failed");
+    // A short list is scanned by eye: no search field until it grows.
+    expect(container.querySelector('input[aria-label="Search recovered sessions"]')).toBeNull();
+    render([], crowdedRecovery, [{ ...failed, id: "crowd-0" }, ...crowdedSessions.slice(1)]);
+    searchFor("crowd-0");
+    expect(container.querySelectorAll("ul > li")).toHaveLength(1);
+    await click("Restore chat layout");
+    expect(onOpen).toHaveBeenLastCalledWith(
+      crowdedSessions.map((item) => item.id),
+      true,
+    );
   });
   it("reads closed local conversations without reopening them to hide completed entries", async () => {
     vi.mocked(getSession).mockResolvedValue({
@@ -249,5 +336,104 @@ describe("session recovery navigation", () => {
     expect(container.textContent).toContain("Working");
     await click("Open all");
     expect(onOpen).toHaveBeenCalledWith(["alpha"], false);
+  });
+  it("hides remote entries whose host session is already open and keeps the rest", () => {
+    const stub = recovery.workspace.sessions[0];
+    const stubs = [
+      {
+        ...stub,
+        id: "r-open",
+        cwd: "remote://machine-a/repo",
+        remoteSessionId: "host-open",
+      },
+      {
+        ...stub,
+        id: "r-new",
+        cwd: "remote://machine-a/repo",
+        remoteSessionId: "host-new",
+      },
+    ];
+    const remoteRecovery = {
+      ...recovery,
+      workspace: { ...recovery.workspace, sessions: stubs },
+    };
+    const shown = {
+      ...newSession("codex", "remote://machine-a/repo"),
+      id: "live-shell",
+    };
+    localStorage.clear();
+    rememberRemoteSession(shown.id, "host-open");
+    render([], remoteRecovery, [shown]);
+    expect(container.querySelectorAll("ul > li")).toHaveLength(1);
+    render([], remoteRecovery, []);
+    expect(container.querySelectorAll("ul > li")).toHaveLength(2);
+    localStorage.clear();
+  });
+  it("names list maintenance truthfully with target counts and keeps it out of the main actions", async () => {
+    const direct = [...container.querySelectorAll("button")].map((button) => button.textContent);
+    expect(direct.some((text) => text?.startsWith("Clear"))).toBe(false);
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Recovery list maintenance"]')!
+        .click();
+    });
+    const rows = [...document.querySelectorAll('[role="menuitem"]')];
+    // Nothing selected and nothing completed: only the applicable action is offered.
+    expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual(["Clear recovery list (2)"]);
+    expect(rows[0].getAttribute("aria-description")).toContain("history is kept");
+  });
+  it("states the Open all scope in the info popover, including entries hidden by the filter", async () => {
+    const info = async () => {
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click();
+      });
+      return document.body.textContent ?? "";
+    };
+    expect(container.textContent).not.toContain("Open all opens all");
+    expect(await info()).toContain("Open all opens all 2 recovered sessions.");
+    expect(await info()).not.toContain("Open all opens all");
+    const finished = [{ id: "done", role: "user" as const, text: "Task", durationMs: 10 }];
+    render([], recovery, [{ ...sessions[0], busy: false, blocks: finished }, sessions[1]]);
+    expect(await info()).toContain(
+      "Open all opens all 2 recovered sessions, including 1 not shown here.",
+    );
+  });
+  it("hides the filter when it would not separate anything and defaults to every entry", async () => {
+    const finished = {
+      ...sessions[1],
+      busy: false,
+      blocks: [{ id: "done", role: "user" as const, text: "Task", durationMs: 10 }],
+    };
+    render([], recovery, [{ ...sessions[0], busy: false, blocks: finished.blocks }, finished]);
+    expect(container.textContent).not.toContain("No sessions need attention");
+    expect(container.textContent).not.toContain("Needs attention");
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
+    render([], recovery, sessions);
+    expect(container.textContent).not.toContain("Needs attention");
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
+  });
+  it("separates a search miss from an empty list and offers a way out", async () => {
+    const finished = [{ id: "done", role: "user" as const, text: "Task", durationMs: 10 }];
+    render(
+      [],
+      crowdedRecovery,
+      crowdedSessions.map((item) => ({ ...item, busy: false, blocks: finished })),
+    );
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(10);
+    searchFor("zzz");
+    expect(container.textContent).toContain("No matching sessions");
+    await click("Clear search");
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(10);
+  });
+  it("shows open failures next to the open actions and list failures with the list", async () => {
+    onOpen.mockRejectedValueOnce(new Error("missing"));
+    await click("Open all");
+    expect(container.querySelector(".recovery-footer [role='alert']")).not.toBeNull();
+    onRemove.mockRejectedValueOnce(new Error("disk"));
+    await maintain("Clear recovery list (2)");
+    expect(container.querySelector(".recovery-footer [role='alert']")).toBeNull();
+    expect(container.querySelector(".recovery-pane > [role='alert']")?.textContent).toContain(
+      "Try again",
+    );
   });
 });

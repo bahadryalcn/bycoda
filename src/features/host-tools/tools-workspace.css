@@ -28,7 +28,7 @@
   flex: none;
   min-inline-size: 0;
   min-block-size: 0;
-  background: var(--color-background-base);
+  background: var(--ui-workspace-canvas);
   color: var(--color-content);
   overflow: clip;
 }
@@ -36,62 +36,38 @@
   inline-size: 100%;
   max-inline-size: none;
 }
-.tools-workspace-resizer {
-  flex: 0 0 6px;
-  cursor: col-resize;
-  touch-action: none;
-  background: var(--color-stroke);
-}
-.tools-workspace:is([data-placement="top"], [data-placement="bottom"]) .tools-workspace-resizer {
-  cursor: row-resize;
-}
-.tools-workspace-resizer:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: -2px;
-}
-.tools-workspace-resizer:is(:active, [data-dragging="true"]) {
-  background: var(--color-accent);
-}
-@media (hover: hover) and (pointer: fine) {
-  .tools-workspace-resizer:hover {
-    background: var(--color-accent);
-  }
-}
+/* Same pane role as the host tools row it sits on (canvas in pure mode), so the
+   dock actions never read as a separate, hovered-looking strip. */
 .tools-workspace-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 8px;
-  min-block-size: 42px;
-  flex: none;
-  border-block-end: 1px solid var(--color-stroke);
-  font-size: 12px;
-  background: var(--ui-surface-raised);
+  background: var(--ui-workspace-panel);
 }
-.tools-workspace-title {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  flex: 1;
-  min-inline-size: 0;
-  overflow: clip;
+/* Keep dock controls in the shared context row, without a second title bar. */
+.tools-workspace-pane:has(.host-tools) {
+  position: relative;
 }
-.tools-workspace-title strong {
-  flex: none;
-  font-weight: 600;
-  white-space: nowrap;
+.tools-workspace-pane:has(.host-tools) > .tools-workspace-toolbar {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  z-index: 1;
+  block-size: auto;
+  min-block-size: var(--ui-control-height-compact);
+  padding: 2px 4px;
+  border: 0;
+  background: var(--ui-workspace-panel);
+  gap: 0;
 }
-.tools-workspace-title span {
-  overflow: clip;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ui-text-secondary);
-  font-size: 11px;
+/* The shared context row already names the tool: hide the PaneHeader heading (icon, title, meta). */
+.tools-workspace-pane:has(.host-tools) > .tools-workspace-toolbar > :first-child {
+  display: none;
 }
-.tools-workspace-kind {
-  flex: none;
-  margin-inline-end: 4px;
-  color: var(--ui-text-secondary);
+.tools-workspace-pane:has(.host-tools) .host-tools-topbar {
+  padding-inline-end: calc(3 * var(--ui-control-height-compact) + 12px);
+}
+.tools-workspace-panes:has(> .tools-workspace-pane + .tools-workspace-pane)
+  > .tools-workspace-pane:has(.host-tools)
+  .host-tools-topbar {
+  padding-inline-end: calc(4 * var(--ui-control-height-compact) + 12px);
 }
 .tools-workspace-toolbar .tools-workspace-icon {
   flex: none;
@@ -119,7 +95,7 @@
   min-block-size: 0;
   min-inline-size: 0;
   font-family: var(--font-sans, system-ui, sans-serif);
-  background: var(--color-background-base);
+  background: var(--ui-workspace-canvas);
   color: var(--color-content);
 }
 .host-tools-placement-trigger {
@@ -132,25 +108,25 @@
 .runtime-logs-monitor-setup summary {
   cursor: pointer;
   padding-block: 6px;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .runtime-logs-monitor-setup summary:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
 }
 .runtime-logs-monitor-setup form {
   margin-block-start: 8px;
 }
-.host-tools-content:has(> .runtime-logs-panel) > .host-tools-machine {
+.host-tools-content-logs > .host-tools-machine {
   padding-block: 8px;
 }
-.host-tools-content:has(> .runtime-logs-panel) .host-tools-machine .host-tool-field {
+.host-tools-content-logs .host-tools-machine .host-tool-field {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
-.host-tools-content:has(> .runtime-logs-panel) .host-tools-machine select {
+.host-tools-content-logs .host-tools-machine select {
   flex: 1;
   min-inline-size: 160px;
 }
@@ -165,7 +141,7 @@
   display: grid;
   gap: 5px;
   flex: 1 1 220px;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .runtime-logs-monitor span {
   flex: 1 1 180px;
@@ -177,5 +153,66 @@
   }
   .host-tools-placement-trigger {
     margin-inline-start: auto;
+  }
+}
+
+.tools-hub {
+  flex-direction: column;
+  background: var(--ui-workspace-canvas-surface);
+}
+.tools-hub-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  min-inline-size: 0;
+  border-block-end: 1px solid var(--color-stroke);
+}
+.tools-hub-title {
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+  white-space: nowrap;
+}
+.tools-hub-identity {
+  inline-size: min(460px, 60%);
+  min-inline-size: 0;
+  max-inline-size: min(460px, 60%);
+  margin-inline-start: auto;
+}
+.tools-hub-body,
+.tools-hub-pane {
+  display: flex;
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: hidden;
+}
+.tools-hub-pane[hidden] {
+  display: none;
+}
+.tools-hub-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.tools-hub-empty strong {
+  color: var(--color-content);
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+  font-weight: 500;
+}
+@media (width < 540px) {
+  .tools-hub-title {
+    display: none;
+  }
+  .tools-hub-identity {
+    max-inline-size: none;
+    flex: 1;
   }
 }

@@ -55,6 +55,14 @@ async function input(label: string, value: string) {
   });
 }
 
+async function pickOption(name: string) {
+  const checkbox = Array.from(container.querySelectorAll<HTMLLabelElement>("label.inbox-scope-row"))
+    .find((row) => row.textContent?.includes(name))!
+    .querySelector<HTMLInputElement>("input[type=checkbox]")!;
+  await act(async () => checkbox.click());
+  return checkbox;
+}
+
 async function submit() {
   await act(async () => {
     container
@@ -62,6 +70,38 @@ async function submit() {
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
 }
+
+it("shows progress on the active Jira operation without labelling a successful connection as disconnecting", async () => {
+  let finishProjects!: () => void;
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "jira_status") return { connected: false, site: "", email: "" };
+    if (command === "jira_set_config") return { connected: true, ...(args as object) };
+    if (command === "jira_list_projects")
+      return new Promise((resolve) => {
+        finishProjects = () => resolve([{ id: "1", key: "ENG", name: "Engineering" }]);
+      });
+    if (command === "jira_list_boards") return [];
+    throw new Error(`Unexpected command: ${command}`);
+  });
+  await act(async () => root.render(createElement(JiraSettings)));
+  await input("Jira site", "example.atlassian.net");
+  await input("Atlassian email", "test@example.com");
+  await input("Jira API token", "test-key");
+  await submit();
+  const disconnect = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.getAttribute("aria-label") === "Account actions",
+  )!;
+  expect(disconnect).toBeDefined();
+  expect(disconnect.getAttribute("aria-busy")).not.toBe("true");
+  expect(container.textContent).not.toContain("Disconnecting");
+  expect(
+    Array.from(container.querySelectorAll<HTMLButtonElement>('button[aria-busy="true"]')).some(
+      (button) => button.textContent?.includes("Loading"),
+    ),
+  ).toBe(true);
+  await act(async () => finishProjects());
+  expect(disconnect.disabled).toBe(false);
+});
 
 it("connects Jira, synchronizes project filters, and disconnects", async () => {
   await act(async () => root.render(createElement(JiraSettings)));
@@ -82,27 +122,29 @@ it("connects Jira, synchronizes project filters, and disconnects", async () => {
   await act(async () => email.click());
   expect(email.getAttribute("aria-label")).toBe("Reveal email");
   expect(container.querySelector('input[type="password"]')).toBeNull();
-  const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
-  expect(checkboxes[1].checked).toBe(false);
-  expect(checkboxes[2].checked).toBe(false);
   expect(jiraBackgroundSyncEnabled()).toBe(false);
-  await act(async () => checkboxes[1].click());
+  await pickOption("Engineering board");
   expect(loadAllowedJiraBoardIds()).toEqual([7]);
   await act(async () =>
-    container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[2].click(),
+    container
+      .querySelector<HTMLButtonElement>(
+        '[aria-label="Automatically refresh Jira in the background"]',
+      )!
+      .click(),
   );
   expect(jiraBackgroundSyncEnabled()).toBe(true);
-  const project = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-  expect(project.checked).toBe(true);
-  await act(async () => project.click());
-  expect(loadHiddenJiraProjectIds()).toEqual(["10000"]);
+  const project = await pickOption("Engineering");
   expect(project.checked).toBe(false);
-  const disconnect = [...container.querySelectorAll("button")].find((button) =>
-    [...button.querySelectorAll("span")].some(
-      (span) => !span.closest('[aria-hidden="true"]') && span.textContent === "Disconnect",
-    ),
-  )!;
-  await act(async () => disconnect.click());
+  expect(loadHiddenJiraProjectIds()).toEqual(["10000"]);
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Account actions"]')!.click(),
+  );
+  await act(async () => document.querySelector<HTMLElement>('[role="menuitem"]')!.click());
+  await act(async () =>
+    [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+      .find((button) => button.textContent?.includes("Disconnect"))!
+      .click(),
+  );
   expect(invoke).toHaveBeenCalledWith("jira_set_config", {
     site: "",
     email: "",
@@ -154,17 +196,28 @@ it("filters projects by name or key without changing saved scope", async () => {
   await input("Atlassian email", "ada@example.com");
   await input("Jira API token", "secret");
   await submit();
-  await input("Search projects", "unmatched");
+  expect(container.textContent).toContain("1 of 1 projects selected");
+  await act(async () => {
+    const search = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Search projects"], input[placeholder="Search projects"]',
+    )!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      search,
+      "unmatched",
+    );
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
   expect(container.textContent).toContain("No matching projects");
   expect(loadHiddenJiraProjectIds()).toEqual([]);
-  await input("Search projects", "eng");
-  const project = container.querySelector<HTMLInputElement>(
-    '.inbox-scope-list input[type="checkbox"]',
-  )!;
-  expect(project.checked).toBe(true);
-  await act(async () => project.click());
-  expect(container.textContent).toContain("0 of 1 projects selected");
-  await input("Search projects", "");
+  await act(async () => {
+    const search = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Search projects"], input[placeholder="Search projects"]',
+    )!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "eng");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const project = await pickOption("Engineering");
   expect(project.checked).toBe(false);
+  expect(container.textContent).toContain("0 of 1 projects selected");
   expect(loadHiddenJiraProjectIds()).toEqual(["10000"]);
 });

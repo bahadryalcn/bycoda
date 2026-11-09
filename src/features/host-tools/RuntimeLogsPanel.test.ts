@@ -36,6 +36,34 @@ vi.mock("../../shared/i18n/technical", () => ({
 
 let root: Root;
 let container: HTMLDivElement;
+const dataReads = () =>
+  vi
+    .mocked(hostToolRequest)
+    .mock.calls.filter(
+      (call) =>
+        call[2] === "runtimeLogs.read" &&
+        (call[3]?.terminalMonitor as { active?: boolean } | undefined)?.active !== false,
+    );
+
+it("pauses hidden conversation reads and retains the cursor on return", async () => {
+  const props = { cwd: "/repo", sessionId: "session" };
+  await act(async () => root.render(createElement(RuntimeLogsPanel, { ...props, active: true })));
+  const reads = () =>
+    vi
+      .mocked(hostToolRequest)
+      .mock.calls.filter(
+        (call) =>
+          call[2] === "runtimeLogs.read" &&
+          (call[3]?.terminalMonitor as { active?: boolean } | undefined)?.active !== false,
+      );
+  const count = reads().length;
+  await act(async () => root.render(createElement(RuntimeLogsPanel, { ...props, active: false })));
+  await act(async () => vi.advanceTimersByTimeAsync(10_000));
+  expect(reads()).toHaveLength(count);
+  await act(async () => root.render(createElement(RuntimeLogsPanel, { ...props, active: true })));
+  expect(reads().length).toBeGreaterThan(count);
+  expect(reads().at(-1)?.[3]).toMatchObject({ after: 4 });
+});
 const base: RuntimeLogEntry = {
   id: "1",
   cursor: 1,
@@ -88,9 +116,20 @@ const result = (events = entries, cursor = 4): RuntimeLogSnapshot => ({
   sources: [browser, server, external],
 });
 const button = (label: string) =>
-  [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+  // Filters and website capture controls are rendered through shared Popover portals.
+  [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (node) => node.textContent === label || node.getAttribute("aria-label") === label,
   )!;
+const openMonitors = async () => {
+  if (!document.querySelector('[role="dialog"][aria-label="Website monitors"]'))
+    await act(async () => button("Website monitors").click());
+};
+const menuAction = async (label: string) => {
+  await act(async () => button("More actions").click());
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>(`[role="menuitem"][aria-label="${label}"]`)!.click(),
+  );
+};
 const rows = () => [...container.querySelectorAll<HTMLElement>(".runtime-log-row")];
 // Groups are ordered by their latest occurrence, so find rows by content.
 const rowIndex = (text: string) => rows().findIndex((row) => row.textContent?.includes(text));
@@ -111,7 +150,7 @@ const mount = async (
   if (start && button("Read logs")) await act(async () => button("Read logs").click());
 };
 const edit = (label: string, value: string) => {
-  const input = container.querySelector<HTMLInputElement>('input[aria-label="' + label + '"]')!;
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="' + label + '"]')!;
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
   input.dispatchEvent(new Event("input", { bubbles: true }));
 };
@@ -174,19 +213,22 @@ it("pauses hidden-page reads and catches up from the retained cursor without cha
   hidden.mockReturnValue(true);
   await act(async () => document.dispatchEvent(new Event("visibilitychange")));
   await act(async () => vi.advanceTimersByTimeAsync(60_000));
-  expect(hostToolRequest).toHaveBeenCalledOnce();
+  expect(dataReads()).toHaveLength(1);
   expect(rows()).toHaveLength(3);
   expect(button("Pause")).toBeDefined();
   hidden.mockReturnValue(false);
   await act(async () => document.dispatchEvent(new Event("visibilitychange")));
-  expect(hostToolRequest).toHaveBeenCalledTimes(2);
-  expect(vi.mocked(hostToolRequest).mock.calls.at(-1)?.[3]).toEqual({ after: 4, limit: 1_000 });
+  expect(dataReads()).toHaveLength(2);
+  expect(vi.mocked(hostToolRequest).mock.calls.at(-1)?.[3]).toMatchObject({
+    after: 4,
+    limit: 1_000,
+  });
   await act(async () => button("Pause").click());
   hidden.mockReturnValue(true);
   await act(async () => document.dispatchEvent(new Event("visibilitychange")));
   hidden.mockReturnValue(false);
   await act(async () => document.dispatchEvent(new Event("visibilitychange")));
-  expect(hostToolRequest).toHaveBeenCalledTimes(2);
+  expect(dataReads()).toHaveLength(2);
   expect(button("Resume")).toBeDefined();
 });
 
@@ -233,7 +275,7 @@ it("sends the retained stream generation and replaces equal-cursor history after
     streamId: "new",
   });
   await act(async () => button("Refresh").click());
-  expect(vi.mocked(hostToolRequest).mock.calls.at(-1)?.[3]).toEqual({
+  expect(vi.mocked(hostToolRequest).mock.calls.at(-1)?.[3]).toMatchObject({
     after: 4,
     streamId: "old",
     limit: 1_000,
@@ -242,23 +284,30 @@ it("sends the retained stream generation and replaces equal-cursor history after
   expect(container.textContent).not.toContain("Failed to fetch account");
 });
 
-it("starts live reads on mount and exposes capture and compact filters without opening a browser", async () => {
+it("starts live reads with a source chooser and keeps monitor setup and filters behind compact controls", async () => {
   await mount({}, false);
   expect(hostToolRequest).toHaveBeenCalledWith(
     "/repo",
     "runtime.logs",
     "runtimeLogs.read",
-    { limit: 1_000 },
+    expect.objectContaining({
+      limit: 1_000,
+      terminalMonitor: expect.objectContaining({ active: true }),
+    }),
     { kind: "project" },
   );
   expect(container.textContent).toContain("Live");
-  expect(container.querySelector(".runtime-logs-monitor-setup")!.tagName).toBe("SECTION");
+  expect(container.querySelector(".runtime-logs-heading")).toBeNull();
+  expect(document.querySelector(".runtime-logs-monitor-setup")).toBeNull();
+  expect(container.querySelector('button[aria-label^="Log source:"]')).not.toBeNull();
   expect(container.querySelector('[role="dialog"]')).toBeNull();
   expect(container.querySelector(".runtime-logs-options")).toBeNull();
   await act(async () => button("Filters").click());
   expect(document.querySelector('[role="dialog"][aria-label="Log filters"]')).not.toBeNull();
   expect(document.querySelector('button[aria-label="Log level: All levels"]')).not.toBeNull();
-  await act(async () => button("Filters").click());
+  await openMonitors();
+  expect(document.querySelector(".runtime-logs-monitor-setup")!.tagName).toBe("SECTION");
+  expect(document.querySelector('[role="dialog"][aria-label="Log filters"]')).toBeNull();
   expect(hostFeatureRequest).toHaveBeenCalledWith(
     "/repo",
     "runtime.logs.monitors",
@@ -277,24 +326,25 @@ it("stops automatic retries after a missing session or disconnected host error",
   vi.mocked(hostToolRequest).mockRejectedValueOnce(new Error("Session not found on this machine"));
   await mount();
   await act(async () => vi.advanceTimersByTimeAsync(15_000));
-  expect(hostToolRequest).toHaveBeenCalledOnce();
+  expect(dataReads()).toHaveLength(1);
   expect(container.textContent).toContain("Disconnected");
   await act(async () => button("Resume").click());
-  expect(hostToolRequest).toHaveBeenCalledTimes(2);
+  expect(dataReads()).toHaveLength(2);
 });
 
 it("explains an unavailable website while retaining technical details and the entered URL", async () => {
   await mount({}, false);
+  await openMonitors();
   vi.mocked(hostFeatureRequest).mockRejectedValueOnce(
     new Error("page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:3000/"),
   );
-  const input = container.querySelector<HTMLInputElement>(".runtime-logs-monitor-setup input")!;
+  const input = document.querySelector<HTMLInputElement>(".runtime-logs-monitor-setup input")!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "3000");
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () =>
-    container
+    document
       .querySelector("form")!
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
@@ -311,18 +361,19 @@ it("explains an unavailable website while retaining technical details and the en
 
 it("starts independent URL monitors explicitly and displays their target and stop action", async () => {
   await mount({}, false);
+  await openMonitors();
   vi.mocked(hostFeatureRequest)
     .mockResolvedValueOnce({ id: "watch", url: "http://localhost:5173/" })
     .mockResolvedValueOnce([
       { id: "watch", url: "http://localhost:5173/", sourceId: "browser-one" },
     ]);
-  const input = container.querySelector<HTMLInputElement>(".runtime-logs-monitor-setup input")!;
+  const input = document.querySelector<HTMLInputElement>(".runtime-logs-monitor-setup input")!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "5173");
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () =>
-    container
+    document
       .querySelector("form")!
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
@@ -332,18 +383,19 @@ it("starts independent URL monitors explicitly and displays their target and sto
     "runtimeLogs.monitors.start",
     { url: "5173" },
   );
-  expect(container.textContent).toContain("http://localhost:5173/");
+  expect(document.body.textContent).toContain("http://localhost:5173/");
   expect(
     container.querySelector('button[aria-label="Filters"]')?.getAttribute("data-selected"),
   ).not.toBe("true");
   expect(rows().some((row) => row.textContent?.includes("Cache miss"))).toBe(true);
   await act(async () =>
-    container.querySelector<HTMLButtonElement>(".runtime-logs-monitor-name")!.click(),
+    document.querySelector<HTMLButtonElement>(".runtime-logs-monitor-name")!.click(),
   );
   await act(async () => button("Filters").click());
   expect(
     document.querySelector('button[aria-label^="Log source:"]')?.getAttribute("aria-label"),
   ).toBe("Log source: Preview");
+  await openMonitors();
   vi.mocked(hostFeatureRequest).mockResolvedValueOnce({ stopped: true }).mockResolvedValueOnce([]);
   await act(async () => button("Stop monitor").click());
   expect(hostFeatureRequest).toHaveBeenCalledWith(
@@ -388,7 +440,7 @@ it("filters the unified retained timeline without sending view filters to cursor
   expect(rows()[0].textContent).toContain("Account response");
   expect(hostToolRequest).toHaveBeenCalledOnce();
   await act(async () => vi.advanceTimersByTimeAsync(1_500));
-  expect(vi.mocked(hostToolRequest).mock.calls.at(-1)).toEqual([
+  expect(vi.mocked(hostToolRequest).mock.calls.at(-1)).toMatchObject([
     "/repo",
     "runtime.logs",
     "runtimeLogs.read",
@@ -411,7 +463,10 @@ it("adds selected grouped errors as an untrusted draft only after an explicit cl
         .click(),
     );
     expect(container.textContent).toContain("2 selected logs");
-    await act(async () => button("Add to conversation").click());
+    await act(async () => {
+      button("Add to conversation").click();
+      button("Add to conversation").click();
+    });
     expect(receive).toHaveBeenCalledOnce();
     const draft = receive.mock.calls[0][0];
     const payload = JSON.parse(draft.slice(draft.indexOf("{")));
@@ -431,7 +486,7 @@ it("adds selected grouped errors as an untrusted draft only after an explicit cl
 
 it("retains the clear watermark through replayed host history and shows only new events", async () => {
   await mount();
-  await act(async () => button("Clear view").click());
+  await menuAction("Clear view");
   expect(rows()).toHaveLength(0);
   vi.mocked(hostToolRequest).mockResolvedValueOnce(
     result([...entries, { ...base, id: "5", cursor: 5, message: "New event after clear" }], 5),
@@ -451,8 +506,13 @@ it("serializes polling and discards a late response from a previously selected c
   );
   await mount();
   await act(async () => vi.advanceTimersByTimeAsync(9_000));
-  expect(hostToolRequest).toHaveBeenCalledOnce();
-  expect(button("Refresh").disabled).toBe(true);
+  expect(dataReads()).toHaveLength(1);
+  expect(button("Refresh").getAttribute("aria-disabled")).toBe("true");
+  expect(button("Refresh").getAttribute("aria-busy")).toBe("true");
+  await act(async () => button("Refresh").click());
+  expect(dataReads()).toHaveLength(1);
+  // The old panel releases its monitor before the new panel reads.
+  vi.mocked(hostToolRequest).mockResolvedValueOnce(result([], 0));
   vi.mocked(hostToolRequest).mockResolvedValueOnce(
     result([{ ...base, message: "New computer event" }], 1),
   );
@@ -460,13 +520,13 @@ it("serializes polling and discards a late response from a previously selected c
   await act(async () => release(result([{ ...base, message: "Late old computer event" }])));
   expect(container.textContent).toContain("New computer event");
   expect(container.textContent).not.toContain("Late old computer event");
-  expect(vi.mocked(hostToolRequest).mock.calls[1][4]).toEqual({
+  expect(dataReads()[1][4]).toEqual({
     kind: "machine",
     machineId: "macbook",
   });
   await act(async () => root.unmount());
   await act(async () => vi.advanceTimersByTimeAsync(9_000));
-  expect(hostToolRequest).toHaveBeenCalledTimes(2);
+  expect(dataReads()).toHaveLength(2);
 });
 
 it("keeps pause stable during an in-flight read and resumes from the last accepted cursor", async () => {
@@ -483,11 +543,11 @@ it("keeps pause stable during an in-flight read and resumes from the last accept
   await act(async () => release(result([fresh], 5)));
   expect(container.textContent).not.toContain("Paused in-flight event");
   await act(async () => vi.advanceTimersByTimeAsync(6_000));
-  expect(hostToolRequest).toHaveBeenCalledTimes(2);
+  expect(dataReads()).toHaveLength(2);
   vi.mocked(hostToolRequest).mockResolvedValueOnce(result([fresh], 5));
   await act(async () => button("Resume").click());
   expect(container.textContent).toContain("Paused in-flight event");
-  expect(vi.mocked(hostToolRequest).mock.calls[2][3]).toMatchObject({ after: 4 });
+  expect(dataReads()[2][3]).toMatchObject({ after: 4 });
 });
 
 it("keeps retained logs readable when the host disconnects and recovers with Refresh", async () => {
@@ -538,7 +598,7 @@ it("expands structured objects and stack traces without treating values as marku
 
 it("exports the selected events through a save dialog and does not write when canceled", async () => {
   await mount();
-  await act(async () => button("Export logs").click());
+  await menuAction("Export logs");
   expect(save).toHaveBeenCalledOnce();
   expect(writeTextFile).not.toHaveBeenCalled();
   await act(async () =>
@@ -547,7 +607,7 @@ it("exports the selected events through a save dialog and does not write when ca
       .click(),
   );
   vi.mocked(save).mockResolvedValueOnce("/logs/runtime.jsonl");
-  await act(async () => button("Export logs").click());
+  await menuAction("Export logs");
   const [path, content] = vi.mocked(writeTextFile).mock.calls[0];
   expect(path).toBe("/logs/runtime.jsonl");
   const records = content
@@ -565,10 +625,19 @@ it("appends live events from the cursor and stops reading while paused", async (
   vi.mocked(hostToolRequest).mockResolvedValueOnce(result([fresh], 5));
   await act(async () => vi.advanceTimersByTimeAsync(1_500));
   expect(container.textContent).toContain("Live event");
-  expect(vi.mocked(hostToolRequest).mock.calls.at(-1)?.[3]).toEqual({ after: 4, limit: 1_000 });
+  expect(vi.mocked(hostToolRequest).mock.calls.at(-1)?.[3]).toMatchObject({
+    after: 4,
+    limit: 1_000,
+  });
   await act(async () => button("Pause").click());
   await act(async () => vi.advanceTimersByTimeAsync(6_000));
-  expect(hostToolRequest).toHaveBeenCalledTimes(2);
+  expect(
+    vi
+      .mocked(hostToolRequest)
+      .mock.calls.filter(
+        (call) => (call[3]?.terminalMonitor as { active?: boolean } | undefined)?.active !== false,
+      ),
+  ).toHaveLength(2);
 });
 
 it("loads existing monitors and ignores a late inventory after a new capture starts", async () => {
@@ -579,16 +648,60 @@ it("loads existing monitors and ignores a late inventory after a new capture sta
     }),
   );
   await mount();
+  await openMonitors();
   vi.mocked(hostFeatureRequest)
     .mockResolvedValueOnce({ id: "new" })
     .mockResolvedValueOnce([{ id: "new", url: "http://localhost:3000/", sourceId: "browser-one" }]);
   await act(async () => edit("Website port or URL", "3000"));
   await act(async () =>
-    container
+    document
       .querySelector("form")!
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
   await act(async () => release([]));
-  expect(container.textContent).toContain("http://localhost:3000/");
+  expect(document.body.textContent).toContain("http://localhost:3000/");
   expect(button("Stop monitor")).toBeDefined();
+});
+
+it("keeps an unfinished monitor URL while its popover is closed and limits capture controls to the project host", async () => {
+  await mount();
+  await openMonitors();
+  await act(async () => edit("Website port or URL", "http://localhost:3000/unfinished"));
+  await act(async () => button("Website monitors").click());
+  expect(document.querySelector('[role="dialog"][aria-label="Website monitors"]')).toBeNull();
+  await openMonitors();
+  expect(
+    document.querySelector<HTMLInputElement>('input[aria-label="Website port or URL"]')!.value,
+  ).toBe("http://localhost:3000/unfinished");
+  expect(
+    vi
+      .mocked(hostFeatureRequest)
+      .mock.calls.every((call) => call[2] === "runtimeLogs.monitors.list"),
+  ).toBe(true);
+  await mount({ target: { kind: "machine", machineId: "remote" } });
+  expect(button("Website monitors")).toBeUndefined();
+  expect(document.querySelector(".runtime-logs-monitor-setup")).toBeNull();
+});
+
+it("renews an owner-scoped terminal monitor and releases it when hidden", async () => {
+  const props = { cwd: "/repo", sessionId: "session" };
+  await act(async () => root.render(createElement(RuntimeLogsPanel, { ...props, active: true })));
+  const monitor = vi
+    .mocked(hostToolRequest)
+    .mock.calls.map(
+      (call) =>
+        call[3]?.terminalMonitor as { id: string; active: boolean; sequence: number } | undefined,
+    )
+    .find((value) => value?.active);
+  expect(monitor).toBeDefined();
+  await act(async () => root.render(createElement(RuntimeLogsPanel, { ...props, active: false })));
+  const release = vi
+    .mocked(hostToolRequest)
+    .mock.calls.map(
+      (call) =>
+        call[3]?.terminalMonitor as { id: string; active: boolean; sequence: number } | undefined,
+    )
+    .find((value) => value && !value.active);
+  expect(release?.id).toBe(monitor?.id);
+  expect(release!.sequence).toBeGreaterThan(monitor!.sequence);
 });

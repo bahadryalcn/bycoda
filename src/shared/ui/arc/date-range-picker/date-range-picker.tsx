@@ -1,6 +1,7 @@
 "use client";
+import { OverflowTooltip } from "../../Tooltip";
 
-import { t } from "../../../i18n";
+import { useT } from "../../../i18n";
 
 import {
   useCallback,
@@ -28,10 +29,12 @@ import {
   useTransform,
 } from "motion/react";
 import type { Transition, Variants } from "motion/react";
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from "../../icons";
 import { motionTokens } from "../lib/motion-tokens";
 import { useToday } from "../lib/use-today";
+import { Button } from "../../Button";
 import { useOverlay } from "../../overlay";
+import { cumulativeCssZoom } from "../../../lib/cssZoom";
 import styles from "./date-range-picker.module.css";
 
 /** An inclusive range of whole days. */
@@ -73,6 +76,14 @@ export interface DateRangePickerProps {
   months?: "auto" | 1 | 2;
   /** The element the panel should stay inside. Defaults to the viewport. */
   boundary?: () => HTMLElement | null;
+  /** Reserve the expanded panel's height inside a scrolling form or popover. */
+  expandInFlow?: boolean;
+  /** The trigger dims and cannot open. */
+  disabled?: boolean;
+  /** The trigger shows its value on a quiet frame and cannot open, but is still focusable. */
+  readOnly?: boolean;
+  /** The trigger takes the danger frame. The field owner supplies the message. */
+  invalid?: boolean;
   className?: string;
 }
 
@@ -124,12 +135,24 @@ export const defaultDateRangePresets: DateRangePreset[] = [
     label: "Yesterday",
     range: (today) => ({ start: addDays(today, -1), end: addDays(today, -1) }),
   },
-  { label: "Last 7 days", range: (today) => ({ start: addDays(today, -6), end: today }) },
-  { label: "Last 30 days", range: (today) => ({ start: addDays(today, -29), end: today }) },
-  { label: "This month", range: (today) => ({ start: monthStart(today), end: today }) },
+  {
+    label: "Last 7 days",
+    range: (today) => ({ start: addDays(today, -6), end: today }),
+  },
+  {
+    label: "Last 30 days",
+    range: (today) => ({ start: addDays(today, -29), end: today }),
+  },
+  {
+    label: "This month",
+    range: (today) => ({ start: monthStart(today), end: today }),
+  },
   {
     label: "Last month",
-    range: (today) => ({ start: addMonths(today, -1), end: monthEnd(addMonths(today, -1)) }),
+    range: (today) => ({
+      start: addMonths(today, -1),
+      end: monthEnd(addMonths(today, -1)),
+    }),
   },
   {
     label: "This quarter",
@@ -140,7 +163,10 @@ export const defaultDateRangePresets: DateRangePreset[] = [
   },
   {
     label: "Year to date",
-    range: (today) => ({ start: new Date(today.getFullYear(), 0, 1), end: today }),
+    range: (today) => ({
+      start: new Date(today.getFullYear(), 0, 1),
+      end: today,
+    }),
   },
 ];
 
@@ -162,7 +188,12 @@ const standardEase = [...motionTokens.ease.standard] as Bezier;
 /** Duration springs restated as stiffness and damping, so every retarget keeps the velocity already in flight. */
 const physical = (visualDuration: number, bounce: number): Transition => {
   const root = (2 * Math.PI) / (visualDuration * 1.2);
-  return { type: "spring", stiffness: root * root, damping: 2 * (1 - bounce) * root, mass: 1 };
+  return {
+    type: "spring",
+    stiffness: root * root,
+    damping: 2 * (1 - bounce) * root,
+    mass: 1,
+  };
 };
 const GROW = physical(0.48, 0.12),
   SHRINK = physical(0.38, 0),
@@ -314,7 +345,12 @@ function Bar({ row, segment, reduced }: { row: number; segment: Segment; reduced
   return (
     <motion.span
       className={styles.bar}
-      style={{ left: leftPct, width: widthPct, opacity, top: `calc(${row} * var(--cell) + 3px)` }}
+      style={{
+        left: leftPct,
+        width: widthPct,
+        opacity,
+        top: `calc(${row} * var(--cell) + 3px)`,
+      }}
     />
   );
 }
@@ -555,8 +591,13 @@ export function DateRangePicker({
   locale = "en-US",
   months = "auto",
   boundary,
+  expandInFlow = false,
+  disabled = false,
+  readOnly = false,
+  invalid = false,
   className,
 }: DateRangePickerProps) {
+  const t = useT();
   const reduced = useReducedFlag();
   const today = useToday();
   const uid = useId();
@@ -575,8 +616,15 @@ export function DateRangePicker({
 
   const formatters = useMemo(
     () => ({
-      label: new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", year: "numeric" }),
-      title: new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }),
+      label: new Intl.DateTimeFormat(locale, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+      title: new Intl.DateTimeFormat(locale, {
+        month: "long",
+        year: "numeric",
+      }),
       day: new Intl.DateTimeFormat(locale, {
         weekday: "long",
         month: "long",
@@ -646,12 +694,16 @@ export function DateRangePicker({
 
   const bounds = useCallback(() => {
     const element = boundaryRef.current?.();
-    const viewport = { left: 0, right: document.documentElement.clientWidth };
+    const zoom = cumulativeCssZoom(rootRef.current);
+    const viewport = {
+      left: 0,
+      right: document.documentElement.clientWidth / zoom,
+    };
     if (!element) return viewport;
     const rect = element.getBoundingClientRect();
     return {
-      left: Math.max(viewport.left, rect.left),
-      right: Math.min(viewport.right, rect.right),
+      left: Math.max(viewport.left, rect.left / zoom),
+      right: Math.min(viewport.right, rect.right / zoom),
     };
   }, []);
 
@@ -666,8 +718,9 @@ export function DateRangePicker({
     if (openPanel && rootRef.current) {
       const rect = rootRef.current.getBoundingClientRect(),
         box = bounds();
-      offset = Math.min(0, box.right - EDGE - (rect.left + openPanel.w));
-      offset = Math.max(offset, box.left + EDGE - rect.left);
+      const left = rect.left / cumulativeCssZoom(rootRef.current);
+      offset = Math.min(0, box.right - EDGE - (left + openPanel.w));
+      offset = Math.max(offset, box.left + EDGE - left);
     }
     const r = openPanel ? PANEL_RADIUS : TRIGGER_RADIUS;
     if (!state.ready || state.reduced) {
@@ -732,7 +785,7 @@ export function DateRangePicker({
   // Once it has its size, scroll just enough to bring its bottom into view, never past its top. After closing, the
   // trigger comes back into view if that scroll left it off screen.
   useEffect(() => {
-    if (!open) return;
+    if (!open || expandInFlow) return;
     const frame = requestAnimationFrame(() => {
       const node = panelRef.current;
       if (!node) return;
@@ -745,14 +798,21 @@ export function DateRangePicker({
       });
     });
     return () => cancelAnimationFrame(frame);
-  }, [open, reduced]);
+  }, [expandInFlow, open, reduced]);
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (open) return;
+    // Only bring the trigger back after the panel closes; mounting a closed picker off-screen must not scroll the page.
+    const closed = wasOpen.current && !open;
+    wasOpen.current = open;
+    if (!closed) return;
     const trigger = triggerRef.current;
     if (!trigger) return;
     const rect = trigger.getBoundingClientRect();
     if (rect.bottom < 0 || rect.top > window.innerHeight)
-      trigger.scrollIntoView({ block: "center", behavior: reduced ? "instant" : "smooth" });
+      trigger.scrollIntoView({
+        block: "center",
+        behavior: reduced ? "instant" : "smooth",
+      });
   }, [open, reduced]);
 
   /* ---------- Layout: two months when there is room, one compact month otherwise ---------- */
@@ -781,7 +841,7 @@ export function DateRangePicker({
   };
 
   const openPanel = () => {
-    if (!today) return;
+    if (!today || disabled || readOnly) return;
     const layout = measureLayout();
     setCompact(layout.single);
     setPanelWidth(layout.width);
@@ -970,7 +1030,10 @@ export function DateRangePicker({
       (node.offsetLeft < rail.scrollLeft ||
         node.offsetLeft + node.offsetWidth > rail.scrollLeft + rail.clientWidth)
     ) {
-      rail.scrollTo({ left: node.offsetLeft - 12, behavior: reduced ? "auto" : "smooth" });
+      rail.scrollTo({
+        left: node.offsetLeft - 12,
+        behavior: reduced ? "auto" : "smooth",
+      });
     }
   }, [activePreset, compact, go, gh, gw, gx, gy, open, reduced]);
 
@@ -981,7 +1044,9 @@ export function DateRangePicker({
   const status = !open
     ? ""
     : anchor
-      ? t("Start: {p0}. Choose an end date.", { p0: formatters.label.format(anchor) })
+      ? t("Start: {p0}. Choose an end date.", {
+          p0: formatters.label.format(anchor),
+        })
       : shown
         ? `${shownText}, ${countText}`
         : "";
@@ -1001,64 +1066,70 @@ export function DateRangePicker({
     <motion.div
       ref={rootRef}
       className={[styles.root, className].filter(Boolean).join(" ")}
-      style={{ width: rootWidth }}
+      style={{ width: rootWidth, height: expandInFlow ? height : undefined }}
       data-open={open || undefined}
+      data-disabled={disabled || undefined}
+      data-readonly={(readOnly && !disabled) || undefined}
+      data-invalid={invalid || undefined}
       onKeyDown={onRootKey}
       onBlur={onRootBlur}
     >
       {/* The trigger stays in place under the panel. Its icons fade, while the value itself flies to the panel footer and back. */}
-      <button
-        ref={triggerRef}
-        type="button"
-        className={styles.trigger}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls={open ? `${uid}-panel` : undefined}
-        aria-label={`${label}: ${committedText}`}
-        disabled={!today}
-        inert={open || undefined}
-        onClick={openPanel}
-      >
-        <motion.span
-          className={styles.triggerIcon}
-          initial={false}
-          animate={quiet}
-          transition={quietTransition}
+      <OverflowTooltip label={committedText}>
+        <button
+          ref={triggerRef}
+          type="button"
+          className={styles.trigger}
+          aria-haspopup={readOnly ? undefined : "dialog"}
+          aria-expanded={readOnly ? undefined : open}
+          aria-controls={open ? `${uid}-panel` : undefined}
+          aria-label={`${label}: ${committedText}`}
+
+          disabled={!today || disabled}
+          inert={open || undefined}
+          onClick={openPanel}
         >
-          <CalendarDays size={16} strokeWidth={1.75} aria-hidden="true" />
-        </motion.span>
-        {open || !layoutId ? (
           <motion.span
-            key="resting"
-            className={styles.value}
-            data-empty={!committed || undefined}
+            className={styles.triggerIcon}
             initial={false}
-            animate={open ? { opacity: 0 } : { opacity: 1 }}
+            animate={quiet}
             transition={quietTransition}
           >
-            <Rolling text={committedText} direction={committedDirection} reduced={reduced} />
+            <CalendarDays size={16} strokeWidth={1.75} aria-hidden="true" />
           </motion.span>
-        ) : (
+          {open || !layoutId ? (
+            <motion.span
+              key="resting"
+              className={styles.value}
+              data-empty={!committed || undefined}
+              initial={false}
+              animate={open ? { opacity: 0 } : { opacity: 1 }}
+              transition={quietTransition}
+            >
+              <Rolling text={committedText} direction={committedDirection} reduced={reduced} />
+            </motion.span>
+          ) : (
+            <motion.span
+              key="shared"
+              layoutId={layoutId}
+              layout="position"
+              className={styles.value}
+              data-empty={!committed || undefined}
+              transition={SHRINK}
+            >
+              <Rolling text={committedText} direction={committedDirection} reduced={reduced} />
+            </motion.span>
+          )}
           <motion.span
-            key="shared"
-            layoutId={layoutId}
-            layout="position"
-            className={styles.value}
-            data-empty={!committed || undefined}
-            transition={SHRINK}
+            className={styles.chevron}
+            initial={false}
+            animate={quiet}
+            transition={quietTransition}
           >
-            <Rolling text={committedText} direction={committedDirection} reduced={reduced} />
+            <ChevronDown size={16} strokeWidth={1.75} aria-hidden="true" />
           </motion.span>
-        )}
-        <motion.span
-          className={styles.chevron}
-          initial={false}
-          animate={quiet}
-          transition={quietTransition}
-        >
-          <ChevronDown size={16} strokeWidth={1.75} aria-hidden="true" />
-        </motion.span>
-      </button>
+        </button>
+      </OverflowTooltip>
 
       <motion.div className={styles.surface} style={{ width, height, borderRadius: radius, x }}>
         <AnimatePresence>
@@ -1212,17 +1283,12 @@ export function DateRangePicker({
                   animate="shown"
                   exit="gone"
                 >
-                  <button type="button" className={styles.ghost} onClick={() => close(true)}>
+                  <Button variant="ghost" onClick={() => close(true)}>
                     {t("Cancel")}
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.primary}
-                    onClick={apply}
-                    disabled={!allowedRange(applicable)}
-                  >
+                  </Button>
+                  <Button variant="primary" onClick={apply} disabled={!allowedRange(applicable)}>
                     {t("Apply")}
-                  </button>
+                  </Button>
                 </motion.div>
               </div>
               <p className={styles.srOnly} aria-live="polite">

@@ -1,14 +1,21 @@
+import { killChild } from "../../core/child";
+import {
+  assertOptionalProviderProbeError,
+  createProviderRetirementLedger,
+  withProviderRetirement,
+} from "../../core/providerRetirement";
 import { homeDir } from "../../../../platform/tauri/fs";
 import { setHarnessModels, type AgentModel } from "../../../../features/sessions/model/models";
 import { AcpClient } from "../../core/acp";
 import {
-  killChild,
+  createChildProcessHandle,
   resolveHermesBinary,
   spawnChild,
-  unwatchChild,
   watchChild,
 } from "../../core/child";
 import { modelsFromHermesSession } from "./hermesProtocol";
+
+const retirements = createProviderRetirementLedger("hermes.catalog", killChild);
 
 const PROBE_ID = "bycoda-hermes-probe";
 const DISCOVERY_TIMEOUT_MS = 30_000;
@@ -23,6 +30,7 @@ export function refreshHermesCatalog(): Promise<void> {
       if (models.length > 0) setHarnessModels("hermes", models);
     })
     .catch((error: unknown) => {
+      assertOptionalProviderProbeError(error);
       console.debug("[bycoda] hermes catalog", error);
     })
     .finally(() => {
@@ -35,7 +43,11 @@ export async function discoverHermesModels(workingDirectory?: string): Promise<A
   const { path } = await resolveHermesBinary();
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${PROBE_ID}-${crypto.randomUUID()}`;
-  const acp = new AcpClient(probeId, {
+  const probeProcess = retirements.admit(
+    createChildProcessHandle(probeId, undefined, "management"),
+    "hermes.catalog",
+  );
+  const acp = new AcpClient(probeProcess, {
     onRequest: (id, method) => {
       void acp
         .respondError(id, {
@@ -46,49 +58,51 @@ export async function discoverHermesModels(workingDirectory?: string): Promise<A
     },
   });
 
-  const stop = async () => {
+  const stop = () => {
     acp.close();
-    unwatchChild(probeId);
-    await killChild(probeId).catch(() => undefined);
+    return retirements.retire([probeProcess]);
   };
 
   watchChild(
-    probeId,
+    probeProcess,
     (line) => acp.pushLine(line),
     () => acp.close(new Error("Hermes catalog probe exited")),
   );
 
-  try {
-    await spawnChild(probeId, path, ["acp"], cwd, undefined, "hermes");
-    return await withTimeout(
-      DISCOVERY_TIMEOUT_MS,
-      async () => {
-        await acp.request(
-          "initialize",
-          {
-            protocolVersion: 1,
-            clientCapabilities: {
-              fs: { readTextFile: false, writeTextFile: false },
-              terminal: false,
+  return withProviderRetirement(
+    async () => {
+      await spawnChild(probeProcess, path, ["acp"], cwd, undefined, "hermes");
+      return await withTimeout(
+        DISCOVERY_TIMEOUT_MS,
+        async () => {
+          await acp.request(
+            "initialize",
+            {
+              protocolVersion: 1,
+              clientCapabilities: {
+                fs: { readTextFile: false, writeTextFile: false },
+                terminal: false,
+              },
+              clientInfo: { name: "bycoda", version: "0.1.0" },
             },
-            clientInfo: { name: "bycoda", version: "0.1.0" },
-          },
-          REQUEST_TIMEOUT_MS,
-        );
-        const created = await acp.request<unknown>(
-          "session/new",
-          { cwd, mcpServers: [] },
-          REQUEST_TIMEOUT_MS,
-        );
-        return modelsFromHermesSession(created);
-      },
-      () => {
-        void stop();
-      },
-    );
-  } finally {
-    await stop();
-  }
+            REQUEST_TIMEOUT_MS,
+          );
+          const created = await acp.request<unknown>(
+            "session/new",
+            { cwd, mcpServers: [] },
+            REQUEST_TIMEOUT_MS,
+          );
+          return modelsFromHermesSession(created);
+        },
+        () => {
+          void stop();
+        },
+      );
+    },
+    async () => {
+      await stop();
+    },
+  );
 }
 
 function withTimeout<T>(ms: number, run: () => Promise<T>, onTimeout: () => void): Promise<T> {

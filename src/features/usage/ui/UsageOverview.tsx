@@ -1,5 +1,7 @@
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import {
   useContext,
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -10,14 +12,14 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Select } from "../../../shared/ui/Select";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { SlotText } from "../../../shared/ui/SlotText";
-import { useDecorativeMotionPreference } from "../../settings/model/decorativeMotion";
 import { DateTimeRangePicker } from "../../../shared/ui/DateTimeRangePicker";
 import { ArrowDownCircle, ListFilter, RefreshCw } from "../../../shared/ui/icons";
 import {
@@ -35,7 +37,10 @@ import {
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { RevealedSetting } from "../../settings/ui/settingsControls";
+import { SettingsPageLoading } from "../../settings/public/settingsControls";
+import { recallUsageLoad, rememberUsageLoad } from "../model/usageLoadCache";
 import { railGroupLookup } from "../model/railGroups";
+import { searchRows, usageSampleStats } from "./usageOverviewStats";
 import { subscribeProjectPathsChanged } from "../../projects/model/recents";
 import {
   durationSamples,
@@ -56,10 +61,18 @@ import {
   type UsageTurnReport,
   type UsageWindow,
 } from "../model/usageAnalytics";
-import { formatMetric, formatUsagePercent, metricNames, PagedUsageTable } from "./UsageCharts";
+import {
+  ContinuousUsageTable,
+  formatMetric,
+  formatUsagePercent,
+  metricNames,
+  UsageDataNotes,
+} from "./UsageCharts";
 import { Contribution, TimeDistribution, UsageShare, UsageTrend } from "./UsageVisualizations";
 import { usageColorMap } from "../model/usageColors";
 import { QuotaHistory } from "./UsageQuotaHistory";
+import { UsageRecordedSessions } from "./UsageRecordedSessions";
+import { useRateLimitHistory } from "../../providers/model/rateLimitHistory";
 import "./UsageAnalytics.css";
 
 type Preset = "today" | "yesterday" | "7d" | "30d" | "90d" | "all" | "custom";
@@ -115,13 +128,11 @@ export function UsageOverview({
   limitsOnly?: boolean;
 }) {
   const locale = useLocale();
-  const decorativeMotion = useDecorativeMotionPreference();
   const revealed = useContext(RevealedSetting);
   const [selection, setSelection] = useState({ view: "overview", revealed });
   const view = limitsOnly ? "limits" : selection.view;
   const setView = (next: string) => {
     setSelection({ view: next, revealed });
-    if (next === "projects") setDimension("project");
   };
   if (selection.revealed !== revealed) {
     setSelection({
@@ -149,19 +160,24 @@ export function UsageOverview({
   }
   const [filters, setFilters] = useState<UsageFilters>(emptyUsageFilters);
   const [metric, setMetric] = useState<UsageMetric>("cost");
-  const [dimension, setDimension] = useState<UsageDimension>("provider");
+  const [overviewDimension, setOverviewDimension] = useState<UsageDimension>("provider");
+  const [projectDimension, setProjectDimension] = useState<UsageDimension>("project");
+  const dimension = view === "projects" ? projectDimension : overviewDimension;
+  const setDimension = view === "projects" ? setProjectDimension : setOverviewDimension;
   const [resolution, setResolution] = useState<UsageResolution>("day");
   const [openFilters, setOpenFilters] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [reload, setReload] = useState(0);
   const [version, setVersion] = useState(0);
-  const [load, setLoad] = useState<Load>(initialLoad);
+  const [load, setLoad] = useState<Load>(() => recallUsageLoad(interval, initialLoad));
+  useEffect(() => rememberUsageLoad(load), [load]);
   const [prices, setPrices] = useState<ModelPrices | null | undefined>();
   const [search, setSearch] = useState("");
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const filterAnchor = useRef<HTMLButtonElement>(null);
   useEffect(() => subscribeProviderAccounts(() => setVersion((v) => v + 1)), []);
   const accounts = useMemo(() => PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts), [version]);
+  const quotaHistory = useRateLimitHistory();
   const pricing = useMemo(() => createUsagePricing(prices?.models), [prices]);
   const since = preset === "all" ? 0 : Math.max(0, previousUsageWindow(interval).start);
   const queryKey = `${since}:${interval.end}:${reload}:${refresh}:${version}`;
@@ -255,14 +271,23 @@ export function UsageOverview({
     () =>
       preset === "all"
         ? {
-            start: samples.reduce(
-              (n, s) => Math.min(n, s.at),
-              turns.reduce((n, turn) => Math.min(n, turn.startedAt), interval.end - 86_400_000),
-            ),
+            start:
+              view === "limits"
+                ? quotaHistory.reduce(
+                    (first, sample) => Math.min(first, sample.at),
+                    interval.end - 86_400_000,
+                  )
+                : samples.reduce(
+                    (n, s) => Math.min(n, s.at),
+                    turns.reduce(
+                      (n, turn) => Math.min(n, turn.startedAt),
+                      interval.end - 86_400_000,
+                    ),
+                  ),
             end: interval.end,
           }
         : interval,
-    [interval, preset, samples, turns],
+    [interval, preset, samples, turns, quotaHistory, view],
   );
   const filtered = useMemo(() => filterUsage(samples, filters, window), [samples, filters, window]);
   const previous = useMemo(
@@ -270,8 +295,14 @@ export function UsageOverview({
     [samples, filters, window],
   );
   const runtime = useMemo(
-    () => durationSamples(turns, window, filters, groupFor),
-    [turns, window, filters, groupFor],
+    () =>
+      durationSamples(turns, window, filters, groupFor).map((sample) => ({
+        ...sample,
+        accountLabel:
+          accounts.find((account) => `${account.provider}:${account.id}` === sample.account)
+            ?.label ?? sample.accountLabel,
+      })),
+    [turns, window, filters, groupFor, accounts],
   );
   const sessions = useMemo(
     () => sessionUsage(turns, window, filters, pricing, groupFor),
@@ -334,11 +365,46 @@ export function UsageOverview({
       result.project.set(s.project, s.projectLabel);
       result.group.set(s.group, s.groupLabel);
     }
+    if (view === "limits") {
+      result.provider.clear();
+      result.account.clear();
+    }
+    for (const account of accounts) {
+      if (view === "limits" && account.provider !== "codex" && account.provider !== "claude")
+        continue;
+      result.provider.set(account.provider, account.provider);
+      result.account.set(
+        `${account.provider}:${account.id}`,
+        `${account.provider} · ${account.label}`,
+      );
+    }
     return result;
-  }, [samples, runtime]);
-  const activeFilters = Object.entries(filters).flatMap(([key, values]) =>
-    values.map((value: string) => ({ key: key as keyof UsageFilters, value })),
-  );
+  }, [samples, runtime, accounts, view]);
+  const quotaFilters = {
+    ...emptyUsageFilters(),
+    provider: filters.provider.filter((provider) =>
+      accounts.some(
+        (account) =>
+          account.provider === provider && (provider === "codex" || provider === "claude"),
+      ),
+    ),
+    account: filters.account.filter((key) =>
+      accounts.some(
+        (account) =>
+          `${account.provider}:${account.id}` === key &&
+          (account.provider === "codex" || account.provider === "claude"),
+      ),
+    ),
+  };
+  const effectiveFilters = view === "limits" ? quotaFilters : filters;
+  const filterKeys: (keyof UsageFilters)[] =
+    view === "limits" ? ["provider", "account"] : (Object.keys(filters) as (keyof UsageFilters)[]);
+  const activeFilterCount = filterKeys.filter((key) => effectiveFilters[key].length > 0).length;
+  const activeFilters = Object.entries(effectiveFilters)
+    .filter(([key]) => filterKeys.includes(key as keyof UsageFilters))
+    .flatMap(([key, values]) =>
+      values.map((value: string) => ({ key: key as keyof UsageFilters, value })),
+    );
   const names: Record<keyof UsageFilters, string> = {
     provider: "Provider",
     account: "Account",
@@ -355,25 +421,23 @@ export function UsageOverview({
     setInterval({ start: Math.max(next.start, window.start), end: Math.min(next.end, window.end) });
     setSelectedSession(null);
   };
-  const unpriced = [...new Set(filtered.filter((s) => !s.priced).map((s) => s.model))];
-  const pricedTokens = filtered.filter((s) => s.priced).reduce((n, s) => n + s.tokens, 0);
-  const activeDays = new Set(
-    filtered.filter((s) => s.tokens > 0).map((s) => new Date(s.at).toDateString()),
-  ).size;
-  const inputTotal = totals.input + totals.cacheRead + totals.cacheWrite;
-  const cacheSavings = filtered.reduce((sum, sample) => {
-    const rate = pricing(sample.model);
-    return sum + (rate ? (sample.cacheRead * (rate.input - rate.cacheRead)) / 1_000_000 : 0);
-  }, 0);
-  const matchedRows = breakdown.filter((row) =>
-    row.label.toLocaleLowerCase(locale).includes(search.toLocaleLowerCase(locale)),
+  const { unpriced, pricedTokens, activeDays, cacheSavings } = useMemo(
+    () => usageSampleStats(filtered, pricing),
+    [filtered, pricing],
   );
-  const sessionRows = sessions.filter(
-    (row) =>
-      `${row.title} ${row.project}`
-        .toLocaleLowerCase(locale)
-        .includes(search.toLocaleLowerCase(locale)) &&
-      (!selectedSession || row.key === selectedSession),
+  const inputTotal = totals.input + totals.cacheRead + totals.cacheWrite;
+  // The search box stays responsive; the rows filter in a later render.
+  const deferredSearch = useDeferredValue(search);
+  const matchedRows = useMemo(
+    () => searchRows(breakdown, (row) => row.label, deferredSearch, locale),
+    [breakdown, deferredSearch, locale],
+  );
+  const sessionRows = useMemo(
+    () =>
+      searchRows(sessions, (row) => `${row.title} ${row.project}`, deferredSearch, locale).filter(
+        (row) => !selectedSession || row.key === selectedSession,
+      ),
+    [sessions, deferredSearch, locale, selectedSession],
   );
   const turnRows = useMemo(
     () =>
@@ -408,11 +472,12 @@ export function UsageOverview({
     !firstLoad &&
     ((!!load.error && !hasCachedUsage) || (!accounts.length && load.turnsFailed && !load.turns));
   const stale = load.stale;
-  const partial = !unavailable && (load.failed > 0 || load.turnsFailed);
+  const partial = !unavailable && (load.failed > 0 || load.turnsFailed || !!load.turns?.truncated);
   const hasFilteredData = filtered.length > 0 || runtime.length > 0;
   const showAnalytics = !firstLoad && !unavailable;
   const metricUnavailable = metric === "duration" && load.turns === null;
   const refreshData = () => {
+    if (refreshing) return;
     if (preset !== "custom") setInterval(presetWindow(preset, Date.now()));
     setReload((v) => v + 1);
   };
@@ -441,19 +506,41 @@ export function UsageOverview({
       {view === "projects" && (!showAnalytics || metricUnavailable) && (
         <div id="setting-provider-usage" data-setting-id="provider-usage" />
       )}
-      <div className="usage-analytics-header">
-        <div>
+      <div className="usage-band">
+        {!limitsOnly && (
+          <SegmentedControl
+            label={t("Usage views")}
+            value={view}
+            onValueChange={setView}
+            options={[
+              { value: "overview", label: t("Overview") },
+              { value: "projects", label: t("Projects") },
+              { value: "time", label: t("Time analysis") },
+              ...(limits ? [{ value: "limits", label: t("Limits") }] : []),
+            ]}
+          />
+        )}
+        <div className="usage-band-scope">
           <p>
             {t(limitsOnly ? "This machine" : "This machine · Local session logs")} ·{" "}
             {Intl.DateTimeFormat().resolvedOptions().timeZone}
-            {load.refreshedAt > 0 &&
+            {view !== "limits" &&
+              load.refreshedAt > 0 &&
               !partial &&
               !unavailable &&
               ` · ${t("Updated")} ${new Date(load.refreshedAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", hour12: false })}`}
           </p>
+          {view === "limits" ? (
+            <InfoPopover label={t("About limit filters")}>
+              {t(
+                "Provider and account filters apply to account limits and history. Local budget rules keep their own scope.",
+              )}
+            </InfoPopover>
+          ) : null}
         </div>
         <div className="usage-analytics-actions">
           <Select
+            hideLabel
             label={t("Date range")}
             value={preset}
             options={Object.entries(presetLabels)
@@ -469,15 +556,15 @@ export function UsageOverview({
             ref={filterAnchor}
             variant="ghost"
             iconOnly
-            label={`${t("Filters")}${activeFilters.length ? ` (${activeFilters.length})` : ""}`}
+            label={`${t("Filters")}${activeFilterCount ? ` (${activeFilterCount})` : ""}`}
             selected={!!activeFilters.length}
             aria-haspopup="dialog"
             aria-expanded={openFilters}
             onClick={() => setOpenFilters(!openFilters)}
           >
-            <ListFilter className="size-3.5" />
+            <ListFilter aria-hidden className="icon-sm" strokeWidth={1.75} />
           </Button>
-          {!limitsOnly && (
+          {!limitsOnly && view !== "limits" && !unavailable && !partial && (
             <Button
               variant="ghost"
               iconOnly
@@ -485,7 +572,7 @@ export function UsageOverview({
               loading={refreshing}
               onClick={refreshData}
             >
-              <RefreshCw className="size-3.5" />
+              <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
             </Button>
           )}
         </div>
@@ -501,7 +588,7 @@ export function UsageOverview({
           autoFocus
         >
           <div className="usage-filter-panel">
-            <h3>{t("Filters")}</h3>
+            <SectionLabel>{t("Filters")}</SectionLabel>
             <DateTimeRangePicker
               minDate={new Date(0)}
               maxDate={new Date(new Date().setHours(24, 0, 0, 0))}
@@ -514,9 +601,10 @@ export function UsageOverview({
             />
             {!limitsOnly && view !== "limits" && (
               <>
-                <h3>{t("Chart options")}</h3>
+                <SectionLabel>{t("Chart options")}</SectionLabel>
                 <div className="usage-controls">
                   <Select
+                    hideLabel
                     label={t("Chart metric")}
                     value={metric}
                     onValueChange={(v) => setMetric(v as UsageMetric)}
@@ -527,6 +615,7 @@ export function UsageOverview({
                   />
                   {view !== "time" && (
                     <Select
+                      hideLabel
                       label={t("Group by")}
                       value={dimension}
                       onValueChange={(v) => setDimension(v as UsageDimension)}
@@ -541,6 +630,7 @@ export function UsageOverview({
                   {view === "overview" && (
                     <>
                       <Select
+                        hideLabel
                         label={t("Resolution")}
                         value={resolution}
                         onValueChange={(v) => setResolution(v as UsageResolution)}
@@ -556,13 +646,13 @@ export function UsageOverview({
                 </div>
               </>
             )}
-            {(Object.keys(filters) as (keyof UsageFilters)[]).map((key) => (
+            {filterKeys.map((key) => (
               <SearchableSelect
                 key={key}
                 multiple
                 label={t(names[key])}
                 placeholder={t("All")}
-                value={filters[key]}
+                value={effectiveFilters[key]}
                 options={[...options[key]].map(([value, label]) => ({ value, label: t(label) }))}
                 onChange={(values) => {
                   setFilters((f) => ({ ...f, [key]: values }));
@@ -573,7 +663,11 @@ export function UsageOverview({
             <Button
               variant="ghost"
               onClick={() => {
-                setFilters(emptyUsageFilters());
+                setFilters((current) =>
+                  view === "limits"
+                    ? { ...current, provider: [], account: [] }
+                    : emptyUsageFilters(),
+                );
                 setSelectedSession(null);
               }}
             >
@@ -582,27 +676,9 @@ export function UsageOverview({
           </div>
         </Popover>
       )}
-
-      {!limitsOnly && (
-        <SegmentedControl
-          label={t("Usage views")}
-          value={view}
-          onValueChange={setView}
-          options={[
-            { value: "overview", label: t("Overview") },
-            { value: "projects", label: t("Projects") },
-            { value: "time", label: t("Time analysis") },
-            ...(limits ? [{ value: "limits", label: t("Limits") }] : []),
-          ]}
-        />
-      )}
-      {view !== "limits" && firstLoad && (
-        <p role="status" className="usage-empty">
-          {t("Loading usage…")}
-        </p>
-      )}
+      {view !== "limits" && firstLoad && <SettingsPageLoading label={t("Loading usage…")} />}
       {view !== "limits" && unavailable && (
-        <Alert tone="danger" role="alert">
+        <Alert tone="danger">
           <p>
             {t(
               load.error ??
@@ -629,6 +705,11 @@ export function UsageOverview({
               )}
             </p>
           )}
+          {load.turns?.truncated ? (
+            <p>
+              {t("Session data is limited to the latest 50,000 turns. Select a shorter interval.")}
+            </p>
+          ) : null}
           <Button variant="ghost" loading={refreshing} onClick={refreshData}>
             {t("Refresh usage")}
           </Button>
@@ -637,9 +718,9 @@ export function UsageOverview({
       {view !== "limits" && showAnalytics && (
         <>
           {refreshing && load.refreshedAt > 0 && (
-            <p role="status" className="usage-muted">
+            <LoadingText presentation="text" className="usage-muted">
               {t("Refreshing usage… Previous results remain visible.")}
-            </p>
+            </LoadingText>
           )}
           {view === "overview" && (
             <>
@@ -671,19 +752,27 @@ export function UsageOverview({
                         {t(metricNames[key])}
                       </Button>
                       <strong>
-                        <SlotText
-                          motion={decorativeMotion ? "auto" : "none"}
-                          value={
-                            !load.refreshedAt ||
-                            (key !== "duration" && !!load.error && !filtered.length) ||
-                            (key === "duration" && load.turns === null) ||
-                            (key === "cost" && unpriced.length > 0 && pricedTokens === 0)
-                              ? "—"
-                              : `${key === "cost" && unpriced.length ? "≥ " : ""}${formatMetric(totals[key], key)}`
-                          }
-                        />
+                        {!load.refreshedAt ||
+                        (key !== "duration" && !!load.error && !filtered.length) ||
+                        (key === "duration" && load.turns === null) ||
+                        (key === "cost" && unpriced.length > 0 && pricedTokens === 0)
+                          ? "—"
+                          : `${key === "cost" && unpriced.length ? "≥ " : ""}${formatMetric(totals[key], key)}`}
                       </strong>
-                      <small>
+                      {key === "cost" ? (
+                        <small>
+                          {t("API-equivalent, not billed")}
+                          {/* Full coverage is stated in the data notes; only a gap needs the tile. */}
+                          {!totals.tokens || pricedTokens < totals.tokens
+                            ? ` · ${t("Priced token coverage")}: ${
+                                totals.tokens
+                                  ? formatUsagePercent((pricedTokens / totals.tokens) * 100)
+                                  : "—"
+                              }`
+                            : null}
+                        </small>
+                      ) : null}
+                      <small hidden={key === "cost" && change == null}>
                         {change == null
                           ? t(
                               key === "cost"
@@ -699,6 +788,8 @@ export function UsageOverview({
                 })}
               </div>
               <Button
+                className="usage-details-toggle"
+                size="sm"
                 variant="ghost"
                 aria-expanded={showDetails}
                 onClick={() => setShowDetails(!showDetails)}
@@ -809,131 +900,58 @@ export function UsageOverview({
                 data-setting-id="provider-usage"
               >
                 <h3>{t("Usage breakdown")}</h3>
-                <SearchInput
-                  aria-label={t("Search usage")}
-                  placeholder={t("Search usage")}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-                <Button variant="secondary" onClick={exportCsv}>
-                  <ArrowDownCircle className="size-3.5" />
-                  {t("Export CSV")}
-                </Button>
+                <div className="usage-controls usage-search-actions">
+                  <SearchInput
+                    appearance="field"
+                    aria-label={t("Search usage")}
+                    placeholder={t("Search usage")}
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                  <Button
+                    variant="ghost"
+                    iconOnly
+                    label={t("Export CSV")}
+                    tooltip={t("Export CSV")}
+                    onClick={exportCsv}
+                  >
+                    <ArrowDownCircle aria-hidden className="icon-sm" strokeWidth={1.75} />
+                  </Button>
+                </div>
               </div>
-              <PagedUsageTable
-                key={dimension}
+              <ContinuousUsageTable
+                stateKey={JSON.stringify(["usage-breakdown", dimension, filters, search, preset])}
                 caption={t("Usage breakdown")}
                 rows={matchedRows}
                 metric={metric}
                 onSelect={(value) => chooseFilter(dimension, value)}
               />
-              {load.turns !== null ? (
-                <section className="usage-panel">
-                  <div className="usage-section-heading">
-                    <h3>{t("Recorded sessions")}</h3>
-                    {selectedSession && (
-                      <Button variant="ghost" onClick={() => setSelectedSession(null)}>
-                        {t("All sessions")}
-                      </Button>
-                    )}
-                  </div>
-                  <p className="usage-muted">
-                    {t(
-                      "Session tokens come from recorded turn metrics. Only whole turns inside the interval are included; these values are not added to provider-log totals.",
-                    )}
-                  </p>
-                  <PagedUsageTable
-                    key={`sessions:${selectedSession ?? "all"}`}
-                    caption={t("Recorded sessions")}
-                    metric="duration"
-                    rows={sessionRows.map((row) => ({
-                      ...row,
-                      label: row.title || row.key,
-                      duration: row.timedTurns ? row.duration : null,
-                      cost: row.meteredTurns > row.unpricedTurns ? row.cost : null,
-                      tokens: row.meteredTurns ? row.tokens : null,
-                      input: row.meteredTurns ? row.input : null,
-                      output: row.meteredTurns ? row.output : null,
-                      cacheRead: row.meteredTurns ? row.cacheRead : null,
-                      cacheWrite: row.meteredTurns ? row.cacheWrite : null,
-                    }))}
-                    onSelect={setSelectedSession}
-                  />
-                  {selectedSession &&
-                    sessionRows.map((row) => (
-                      <p className="usage-muted" key={row.key}>
-                        {row.title} · {row.provider} · {row.timedTurns}/{row.turns}{" "}
-                        {t("turns with duration")} · {row.meteredTurns}/{row.turns}{" "}
-                        {t("turns with tokens")} · {row.unpricedTurns} {t("unpriced turns")}
-                      </p>
-                    ))}
-                  {selectedSession && (
-                    <PagedUsageTable
-                      caption={t("Recorded turns")}
-                      rows={turnRows}
-                      metric="duration"
-                    />
-                  )}
-                </section>
-              ) : (
-                <Alert tone="info">
-                  {t(
-                    "Session duration data is unavailable on this app version or could not be read.",
-                  )}
-                </Alert>
-              )}
+              <UsageRecordedSessions
+                unavailable={load.turns === null}
+                stateKey={JSON.stringify(["usage-sessions", selectedSession, filters, preset])}
+                sessionRows={sessionRows}
+                turnRows={turnRows}
+                selectedSession={selectedSession}
+                onSelectSession={setSelectedSession}
+              />
             </>
           )}
-          <details className="usage-data-notes">
-            <summary>
-              {t("Data sources and coverage")}
-              {unpriced.length ? ` · ${unpriced.length} ${t("Models without prices")}` : ""}
-            </summary>
-            <p>
-              {t(
-                "API-equivalent estimates from local session logs, not what a subscription plan bills.",
-              )}{" "}
-              {t("Priced token coverage")}:{" "}
-              {totals.tokens ? formatUsagePercent((pricedTokens / totals.tokens) * 100) : "—"}.
-            </p>
-            {unpriced.length > 0 && (
-              <p>
-                {t("Models without prices")}: {unpriced.join(", ")}.{" "}
-                {t("Their tokens are included; their cost is unavailable.")}
-              </p>
-            )}
-            {prices === null && (
-              <p>{t("OpenRouter prices could not be loaded, so built-in prices are used.")}</p>
-            )}
-            {load.turns === null ? (
-              <p>
-                {t(
-                  "Session duration data is unavailable on this app version or could not be read.",
-                )}
-              </p>
-            ) : (
-              <p>
-                {t(
-                  "Agent time sums recorded completed turn intervals and may include waiting. Parallel sessions can exceed wall-clock time.",
-                )}{" "}
-                {sessions.reduce((n, s) => n + s.timedTurns, 0)}/
-                {sessions.reduce((n, s) => n + s.turns, 0)} {t("turns with duration")}.
-              </p>
-            )}
-            {load.turns?.truncated && (
-              <p>
-                {t(
-                  "Session data is limited to the latest 50,000 turns. Select a shorter interval.",
-                )}
-              </p>
-            )}
-            <p>{t("Token timestamps have 15-minute precision. End time is exclusive.")}</p>
-          </details>
+          <UsageDataNotes
+            unpriced={unpriced}
+            pricedCoverage={
+              totals.tokens ? formatUsagePercent((pricedTokens / totals.tokens) * 100) : "—"
+            }
+            pricesUnavailable={prices === null}
+            sessionDurationUnavailable={load.turns === null}
+            timedTurns={sessions.reduce((n, s) => n + s.timedTurns, 0)}
+            turns={sessions.reduce((n, s) => n + s.turns, 0)}
+            truncated={Boolean(load.turns?.truncated)}
+          />
         </>
       )}
-      <div hidden={view !== "limits"}>
-        {limits?.(filters)}
-        {limits && <QuotaHistory window={window} filters={filters} accounts={accounts} />}
+      <div hidden={view !== "limits"} className="usage-limits-view">
+        {limits?.(quotaFilters)}
+        {limits && <QuotaHistory window={window} filters={quotaFilters} accounts={accounts} />}
       </div>
     </section>
   );

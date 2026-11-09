@@ -37,7 +37,7 @@ export function SkillTokenText({ text }: { text: string }) {
   const names = useContext(TranscriptSkillNames);
   return skillTextParts(text, names).map((part, index) =>
     part.skill ? (
-      <span key={index} className="text-skill font-semibold" data-skill-token="true">
+      <span key={index} className="text-skill font-medium" data-skill-token="true">
         {part.text}
       </span>
     ) : (

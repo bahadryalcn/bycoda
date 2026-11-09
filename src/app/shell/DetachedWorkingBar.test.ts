@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement, type ComponentProps } from "react";
+import { act, createElement, type ComponentProps, type KeyboardEvent } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LiveAgent } from "../../features/sessions/model/liveAgents";
@@ -24,11 +24,24 @@ vi.mock("../../shared/ui/Popover", () => ({
     align: _align,
     width: _width,
     maxHeight: _maxHeight,
-    onDismiss: _dismiss,
+    onDismiss,
+    side: _side,
     ...props
-  }: ComponentProps<"div"> & Record<string, unknown>) => createElement("div", props, children),
+  }: ComponentProps<"div"> & Record<string, unknown>) =>
+    createElement(
+      "div",
+      {
+        ...props,
+        // The real Popover owns Escape dismissal; keep it observable here.
+        onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+          (props.onKeyDown as ((e: KeyboardEvent<HTMLDivElement>) => void) | undefined)?.(event);
+          if (event.key === "Escape") (onDismiss as (reason: string) => void)("escape");
+        },
+      },
+      children,
+    ),
 }));
-import { DetachedWorkingBar } from "./DetachedWorkingBar";
+import { DetachedWorkingBar, detachedAgentStatus } from "./DetachedWorkingBar";
 
 const agent = (id: string, overrides: Partial<LiveAgent> = {}): LiveAgent => ({
   id,
@@ -138,9 +151,7 @@ describe("detached working header", () => {
     const menu = container.querySelector<HTMLElement>("[role=menu]")!;
     const item = menu.querySelector<HTMLButtonElement>("[role=menuitem]")!;
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(trigger.getAttribute("aria-controls")).toBe(menu.id);
-    expect(menu.style.maxWidth).toBe("calc(100vw - 16px)");
-    expect(item.querySelector(".truncate")!.textContent!.length).toBeLessThanOrEqual(72);
+    expect(item.dataset.menuLabel!.length).toBeLessThanOrEqual(72);
     expect(item.textContent).toContain("Needs input · Other window");
     expect(container.textContent).not.toContain("VERY_LONG_SECRET_COMMAND");
     expect(container.querySelector("select")).toBeNull();
@@ -193,5 +204,16 @@ describe("detached working header", () => {
     pointer(window, "pointermove", 30, 10);
     expect(native.startDragging).not.toHaveBeenCalled();
     expect(container.querySelector("[role=menu]")).toBeNull();
+  });
+});
+
+describe("detachedAgentStatus", () => {
+  it("ranks issue, done, needs input, waiting, then working", () => {
+    const waiting = { kind: "tasks", count: 1 } as const;
+    expect(detachedAgentStatus(agent("a", { waiting }))).toBe("Waiting");
+    expect(detachedAgentStatus(agent("a"))).toBe("Working");
+    expect(detachedAgentStatus(agent("a", { waiting, needsApproval: true }))).toBe("Needs input");
+    expect(detachedAgentStatus(agent("a", { waiting, done: true }))).toBe("Done");
+    expect(detachedAgentStatus(agent("a", { waiting, issue: "failed" }))).toBe("Failed");
   });
 });

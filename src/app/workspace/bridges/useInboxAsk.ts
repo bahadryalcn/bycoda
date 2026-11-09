@@ -13,12 +13,19 @@ import type { InboxSessionPortal } from "../../../features/inbox/ui/InboxDiscuss
 import { inboxAskKey } from "../../../features/inbox/model/inboxAsk";
 import { type InboxItem } from "../../../features/inbox/model/githubTasks";
 import { inboxTrackerDescription } from "../../../features/inbox/model/inboxContext";
-import { gitlabWorkItemDetails, peekGitlabWorkItemDetails } from "../../../features/inbox/model/gitlab";
+import {
+  gitlabWorkItemDetails,
+  peekGitlabWorkItemDetails,
+} from "../../../features/inbox/model/gitlab";
 import {
   azureDevOpsWorkItemDetails,
   peekAzureDevOpsWorkItemDetails,
 } from "../../../features/inbox/model/azureDevOps";
-import { newDefaultSession, newSession, type Session } from "../../../features/sessions/model/session";
+import {
+  newDefaultSession,
+  newSession,
+  type Session,
+} from "../../../features/sessions/model/session";
 import { deleteSession, type SessionSummary } from "../../../features/sessions/data/sessionStore";
 import { setSessions } from "../../../features/sessions/model/sessionsStore";
 import { sessionChildHarnesses } from "../../../features/sessions/model/handoff";
@@ -132,11 +139,22 @@ export function useInboxAskRestart(deps: InboxAskRestartDeps) {
       const current = sessionsRef.current.find((session) => session.id === id)!;
       removingSessionIds.current.add(id);
       try {
-        await stopSessionForRemoval(id);
+        // The old ask may still be running: never delete it and start a second one over it.
+        try {
+          await stopSessionForRemoval(id);
+        } catch (error) {
+          console.warn("App operation failed", error);
+          throw new Error(
+            t("The running conversation could not be stopped, so it was not restarted. Try again."),
+          );
+        }
         const stopped = sessionsRef.current.find((session) => session.id === id) ?? current;
-        await Promise.all(
+        // A child that cannot be confirmed stopped must not block recreating the ask.
+        const released = await Promise.allSettled(
           sessionChildHarnesses(stopped).map((harness) => forgetHarnessSession(harness, id)),
         );
+        for (const result of released)
+          if (result.status === "rejected") console.warn("App operation failed", result.reason);
         const imagePaths = stopped.blocks.flatMap((block) =>
           block.role === "image" && block.image ? [block.image.path] : [],
         );
@@ -198,7 +216,11 @@ export function useOpenInboxSession(deps: OpenInboxSessionDeps) {
       const cwd =
         sessionsRef.current.find((session) => session.id === sessionId)?.cwd ??
         history.find((session) => session.id === sessionId)?.cwd;
-      if (routed !== true && await routeWindowDestination({ kind: "session", sessionId, cwd }, !!toolWindow)) return;
+      if (
+        routed !== true &&
+        (await routeWindowDestination({ kind: "session", sessionId, cwd }, !!toolWindow))
+      )
+        return;
       setInboxViewOpen(false);
       setSidebarTab("sessions", cwd);
       await onSelectHistorySession(sessionId);

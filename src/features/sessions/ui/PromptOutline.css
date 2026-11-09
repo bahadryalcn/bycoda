@@ -1,0 +1,15 @@
+/* A ruler hit area, not a square icon action: it overrides the shared icon target size so dense histories fit the budget. */
+.prompt-outline-bar.prompt-outline-bar {
+  block-size: var(--bar-pitch);
+  min-block-size: 0;
+  padding: 0;
+  aspect-ratio: auto;
+}
+
+.prompt-outline-mark {
+  block-size: var(--bar-height);
+  inline-size: var(--bar-width);
+  opacity: var(--bar-opacity);
+  /* The wave reaches the outer bars a beat after the hovered one. */
+  transition-delay: var(--bar-delay);
+}

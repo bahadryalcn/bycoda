@@ -48,3 +48,47 @@ for (const theme of ["dark", "light"]) {
     });
   }
 }
+
+for (const theme of ["dark", "light"]) {
+  for (const width of [800, 1280]) {
+    test(`skills library across machines ${theme} ${width}`, async ({ page }) => {
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.setViewportSize({ width, height: 860 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings.html?section=skills&skills=1&machines=1&theme=${theme}`,
+      );
+      const dir = "temp/verification/skills-redesign";
+      mkdirSync(dir, { recursive: true });
+      await expect(page.getByRole("button", { name: "remote-notes", exact: true })).toBeVisible();
+      await expect(page.getByRole("img", { name: "On tailm", exact: true }).first()).toBeVisible();
+      await expect(page.getByText("Permission", { exact: true })).toHaveCount(0);
+      await page.screenshot({ path: `${dir}/list-${theme}-${width}.png` });
+
+      await expect(
+        page.getByRole("button", { name: "Copy skill-2 to tailm", exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Copy arc to tailm", exact: true }),
+      ).toHaveCount(0);
+      await page.getByRole("button", { name: "skill-2", exact: true }).click();
+      await page.getByRole("tab", { name: "Machines", exact: true }).click();
+      const machines = page.getByRole("list", { name: "Machines", exact: true });
+      await expect(machines).toContainText("Not installed");
+      await page.screenshot({ path: `${dir}/machines-${theme}-${width}.png` });
+      await page.getByRole("button", { name: "Close skill preview" }).click();
+
+      await page.getByRole("button", { name: "Discover skills", exact: true }).click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await page.screenshot({ path: `${dir}/discover-${theme}-${width}.png` });
+      await page.keyboard.press("Escape");
+
+      await page.getByRole("button", { name: "New skill", exact: true }).click();
+      await expect(page.getByRole("textbox", { name: "Skill name" })).toHaveValue("");
+      await page.screenshot({ path: `${dir}/new-skill-${theme}-${width}.png` });
+      await page.keyboard.press("Escape");
+      expect(errors).toEqual([]);
+    });
+  }
+}

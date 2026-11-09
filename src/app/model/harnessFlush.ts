@@ -1,4 +1,8 @@
 import type { HarnessEvent } from "../../integrations/harness/core/types";
+import {
+  captureNativeOutputEvent,
+  failNativeOutputEvents,
+} from "../../integrations/harness/core/nativeOutputDelivery";
 
 export type ScheduledFlush = { kind: "raf" | "timeout"; id: number };
 
@@ -16,11 +20,19 @@ export function scheduleHarnessFlush(run: () => void, foreground: boolean): Sche
   return { kind: "raf", id: requestAnimationFrame(run) };
 }
 
+/**
+ * Visible output is applied at most this often. Events are only coalesced into
+ * the next flush, never dropped, so a 120/240 Hz display does not re-run the
+ * transcript at display rate while deltas arrive. About 30 Hz.
+ */
+export const FOREGROUND_FLUSH_MS = 30;
+
 /** Keep hidden streams on their own cadence even while a visible chat streams. */
 export class HarnessEventQueue {
   private queued = new Map<string, HarnessEvent[]>();
   private foregroundFlush: ScheduledFlush | null = null;
   private backgroundFlush: ScheduledFlush | null = null;
+  private lastForegroundRun = -Infinity;
 
   constructor(
     private readonly isForeground: (sessionId: string) => boolean,
@@ -28,6 +40,7 @@ export class HarnessEventQueue {
   ) {}
 
   enqueue = (sessionId: string, event: HarnessEvent) => {
+    captureNativeOutputEvent(sessionId, event);
     const events = this.queued.get(sessionId);
     if (events) events.push(event);
     else this.queued.set(sessionId, [event]);
@@ -35,6 +48,7 @@ export class HarnessEventQueue {
       event.type === "approval.requested" ||
       event.type === "approval.resolved" ||
       event.type === "question.asked" ||
+      event.type === "question.updated" ||
       event.type === "question.resolved"
     ) {
       // Deliver the preceding output too, preserving this session's ordering.
@@ -69,7 +83,15 @@ export class HarnessEventQueue {
       this.queued.delete(id);
     }
     this.schedulePending();
-    if (batches.size > 0) this.apply(batches);
+    if (batches.size > 0) {
+      try {
+        this.apply(batches);
+      } catch (error) {
+        for (const events of batches.values())
+          failNativeOutputEvents(events, "session-application-failed");
+        throw error;
+      }
+    }
   }
 
   private schedulePending() {
@@ -93,10 +115,26 @@ export class HarnessEventQueue {
   private schedule(foreground: boolean) {
     if (foreground) {
       if (this.foregroundFlush) return;
-      this.foregroundFlush = scheduleHarnessFlush(() => {
+      const run = () => {
         this.foregroundFlush = null;
         this.flushForeground();
-      }, true);
+      };
+      if (document.hidden) {
+        this.foregroundFlush = scheduleHarnessFlush(run, true);
+        return;
+      }
+      const handle: ScheduledFlush = { kind: "raf", id: 0 };
+      const frame = (now: number) => {
+        const since = now - this.lastForegroundRun;
+        if (since >= 0 && since < FOREGROUND_FLUSH_MS) {
+          handle.id = requestAnimationFrame(frame);
+          return;
+        }
+        this.lastForegroundRun = now;
+        run();
+      };
+      handle.id = requestAnimationFrame(frame);
+      this.foregroundFlush = handle;
     } else if (!this.backgroundFlush) {
       this.backgroundFlush = scheduleHarnessFlush(() => {
         this.backgroundFlush = null;

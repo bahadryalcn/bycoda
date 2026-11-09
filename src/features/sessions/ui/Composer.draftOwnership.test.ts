@@ -3,11 +3,16 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Composer } from "./Composer";
-import { clearComposerDraft, getComposerDraft, setComposerDraft } from "../model/draftCache";
+import {
+  clearComposerDraft,
+  getComposerDraft,
+  getComposerAttachments,
+  setComposerDraft,
+} from "../model/draftCache";
 import type { Attachment } from "../model/session";
 
 const picker = vi.hoisted(() => ({ read: vi.fn() }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []) }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []), isTauri: () => false }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ onDragDropEvent: async () => () => undefined }),
 }));
@@ -60,8 +65,12 @@ async function click(label: string) {
     container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click(),
   );
 }
-async function choose(description: string) {
-  await click("Add files or choose a mode");
+async function choose(description: string, menu: "attachments" | "mode" = "attachments") {
+  if (menu === "mode") {
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("button[data-composer-mode-trigger]")!.click(),
+    );
+  } else await click("Add files or skills");
   const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
     button.textContent?.includes(description),
   );
@@ -84,6 +93,22 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("publishes each typed draft once while preserving immediate owner updates", async () => {
+  const onDraftChange = vi.fn();
+  await draw({ onDraftChange });
+  onDraftChange.mockClear();
+  const textarea = container.querySelector("textarea")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      textarea,
+      "one edit",
+    );
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(onDraftChange).toHaveBeenCalledWith("one edit");
+  });
+  expect(onDraftChange).toHaveBeenCalledTimes(1);
+});
+
 it("waits for a pending picker and includes its file in the original Send", async () => {
   let finish!: (files: Attachment[]) => void;
   picker.read.mockReturnValue(
@@ -92,7 +117,7 @@ it("waits for a pending picker and includes its file in the original Send", asyn
     }),
   );
   await draw();
-  await choose("Attach files or images");
+  await choose("Upload file");
   await click("Send");
   expect(submit).not.toHaveBeenCalled();
   await act(async () => finish([file]));
@@ -110,7 +135,7 @@ it("retires picker results and a waiting Send when the draft is reset", async ()
     }),
   );
   await draw();
-  await choose("Attach files or images");
+  await choose("Upload file");
   await click("Send");
   await draw({ initialDraft: "", draftResetToken: 1 });
   await act(async () => finish([file]));
@@ -127,7 +152,7 @@ it("retains text and cancels a waiting Send when file inspection fails", async (
     }),
   );
   await draw();
-  await choose("Attach files or images");
+  await choose("Upload file");
   await click("Send");
   await act(async () => fail(new Error("Selected file cannot be read")));
   expect(submit).not.toHaveBeenCalled();
@@ -137,7 +162,7 @@ it("retains text and cancels a waiting Send when file inspection fails", async (
 
 it("restores the Save draft intent through the real cache after remount", async () => {
   await draw();
-  await choose("Save this message without starting the agent");
+  await choose("Save this message without starting the agent", "mode");
   const text = getComposerDraft(id);
   act(() => root.unmount());
   root = createRoot(container);
@@ -149,7 +174,7 @@ it("restores the Save draft intent through the real cache after remount", async 
 
 it("does not convert a restored Save draft intent into Send when saving is unavailable", async () => {
   await draw();
-  await choose("Save this message without starting the agent");
+  await choose("Save this message without starting the agent", "mode");
   act(() => root.unmount());
   root = createRoot(container);
   await draw({ initialDraft: getComposerDraft(id), canSaveDraft: false, onSaveDraft: undefined });
@@ -157,4 +182,42 @@ it("does not convert a restored Save draft intent into Send when saving is unava
   expect(save).not.toHaveBeenCalled();
   expect(submit).not.toHaveBeenCalled();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("unavailable");
+});
+
+it("recalls an edited message with its attachments as an unsent persisted draft and puts the cursor at the end", async () => {
+  const applied = vi.fn();
+  const recall = {
+    id: "edit-user-message",
+    value: { text: "Revise this prompt ✨", attachments: [file] },
+  };
+  await draw();
+  const textarea = container.querySelector("textarea")!;
+  textarea.setSelectionRange(0, 3);
+  await draw({ recalledMessage: recall, onRecalledMessageApplied: applied });
+  expect(textarea.value).toBe(recall.value.text);
+  expect(textarea.selectionStart).toBe(recall.value.text.length);
+  expect(textarea.selectionEnd).toBe(recall.value.text.length);
+  expect(document.activeElement).toBe(textarea);
+  expect(container.querySelector('[aria-label="Remove selected.txt"]')).not.toBeNull();
+  expect(getComposerDraft(id)).toBe(recall.value.text);
+  expect(getComposerAttachments(id)).toEqual([file]);
+  expect(applied).toHaveBeenCalledExactlyOnceWith(recall.id);
+  expect(submit).not.toHaveBeenCalled();
+  // Rerendering the same recall cannot overwrite the owner's subsequent typing.
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      textarea,
+      "My revision",
+    );
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await draw({ recalledMessage: recall, onRecalledMessageApplied: applied });
+  expect(textarea.value).toBe("My revision");
+  expect(applied).toHaveBeenCalledTimes(1);
+  act(() => root.unmount());
+  root = createRoot(container);
+  await draw({ initialDraft: getComposerDraft(id) });
+  expect(container.querySelector("textarea")!.value).toBe("My revision");
+  expect(container.querySelector('[aria-label="Remove selected.txt"]')).not.toBeNull();
+  expect(submit).not.toHaveBeenCalled();
 });

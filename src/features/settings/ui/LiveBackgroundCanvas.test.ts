@@ -7,6 +7,7 @@ import { LiveBackgroundCanvas } from "./LiveBackgroundCanvas";
 const state = vi.hoisted(() => ({
   enabled: true,
   focused: true,
+  awake: false,
   listeners: new Set<() => void>(),
   draw: vi.fn(),
   dispose: vi.fn(),
@@ -21,8 +22,8 @@ vi.mock("../model/decorativeMotion", () => ({
   },
 }));
 vi.mock("./live-background", () => ({
-  CLOSED_SIGNAL: {},
-  createLiveSignalDriver: () => ({ update: () => ({}) }),
+  CLOSED_SIGNAL: { presence: 0 },
+  createLiveSignalDriver: () => ({ update: () => ({}), awake: () => state.awake }),
   createLiveBackgroundScene: (...args: unknown[]) => {
     state.create(...args);
     return { resize: vi.fn(), draw: state.draw, dispose: state.dispose };
@@ -32,6 +33,7 @@ let root: Root, container: HTMLDivElement;
 let intersection: (entries: Array<{ isIntersecting: boolean }>) => void;
 let raf: ReturnType<typeof vi.fn>, cancel: ReturnType<typeof vi.fn>;
 beforeEach(() => {
+  vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.enabled = true;
   state.focused = true;
@@ -76,14 +78,38 @@ afterEach(() => {
   container.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 const render = (active = true) =>
   act(() =>
     root.render(
-      createElement(LiveBackgroundCanvas, { effect: "gradient-ascii", intensity: 0.4, active }),
+      createElement(LiveBackgroundCanvas, { effect: "latent-face", intensity: 0.4, active }),
     ),
   );
 const intersect = (value: boolean) => act(() => intersection([{ isIntersecting: value }]));
+
+it.each([false, true])(
+  "paints a frozen %s demo without starting a loop or changing rest",
+  (demoSpeech) => {
+    act(() =>
+      root.render(
+        createElement(LiveBackgroundCanvas, {
+          effect: "ascii-mask",
+          intensity: 0.4,
+          still: true,
+          demoSpeech,
+        }),
+      ),
+    );
+    expect(state.draw).toHaveBeenCalledOnce();
+    expect(state.draw.mock.calls[0][3]).toEqual({ presence: demoSpeech ? 1 : 0 });
+    expect(state.dispose).toHaveBeenCalledOnce();
+    expect(raf).not.toHaveBeenCalled();
+    expect(
+      container.querySelector<HTMLElement>("[data-live-background-scene]")?.style.opacity,
+    ).toBe("0.4");
+  },
+);
 
 it("runs only the visible active panel and retains its last frame and scene across pauses", () => {
   render();
@@ -119,14 +145,17 @@ it("stops immediately through the central gate without repainting, and cleans su
 });
 
 it("caps painting at 30 fps even on a faster display", () => {
+  vi.spyOn(performance, "now").mockReturnValue(100);
   render();
   intersect(true);
   state.draw.mockClear();
   raf.mock.calls[0][0](100);
-  raf.mock.calls[1][0](116);
-  raf.mock.calls[2][0](132);
+  vi.advanceTimersByTime(32);
+  expect(raf).toHaveBeenCalledOnce();
   expect(state.draw).toHaveBeenCalledOnce();
-  raf.mock.calls[3][0](134);
+  vi.advanceTimersByTime(2);
+  expect(raf).toHaveBeenCalledTimes(2);
+  raf.mock.calls[1][0](134);
   expect(state.draw).toHaveBeenCalledTimes(2);
 });
 
@@ -144,4 +173,32 @@ it("pauses while another application has focus and resumes with it, keeping the 
   act(() => state.listeners.forEach((fn) => fn()));
   expect(raf).toHaveBeenCalledTimes(2);
   expect(state.create).toHaveBeenCalledOnce();
+});
+
+it("does not start a loop in a window that is already behind another application", () => {
+  state.focused = false;
+  render();
+  intersect(true);
+  expect(raf).not.toHaveBeenCalled();
+  expect(state.draw).toHaveBeenCalled();
+});
+
+it.each([false, true])("bounds full-pane drawing buffers on an 8K display (still=%s)", (still) => {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    width: 7680,
+    height: 4320,
+  } as DOMRect);
+  act(() =>
+    root.render(
+      createElement(LiveBackgroundCanvas, {
+        effect: "latent-face",
+        intensity: 0.4,
+        still,
+      }),
+    ),
+  );
+  const canvas = container.querySelector("canvas")!;
+  expect(canvas.width * canvas.height).toBeLessThan(2_505_000);
+  expect(canvas.width / canvas.height).toBeCloseTo(7680 / 4320, 2);
+  expect(state.draw).toHaveBeenCalled();
 });

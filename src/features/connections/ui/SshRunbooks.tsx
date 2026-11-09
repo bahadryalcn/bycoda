@@ -1,9 +1,14 @@
+import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { t } from "../../../shared/i18n";
+import { formatDate, t } from "../../../shared/i18n";
 import { revokeSshHttpProxyApproval } from "../model/sshHttpProxyApproval";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
-import { Modal } from "../../../shared/ui/Modal";
+import { StatusBadge, type BadgeStatus } from "../../../shared/ui/Badge";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Button } from "../../../shared/ui/Button";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Alert } from "../../../shared/ui/Alert";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -33,8 +38,16 @@ import {
   type SshRunbook,
   type SshRunbookDraft,
   type SshRunbookReview,
+  type SshRunState,
   type SshRunStatus,
 } from "../model/sshRunbooks";
+const DATE_TIME = { dateStyle: "medium", timeStyle: "short" } as const;
+
+const RUN_STATE_BADGE: Partial<Record<SshRunState, BadgeStatus>> = {
+  queued: "queued",
+  running: "running",
+  failed: "failed",
+};
 
 /** Explicit saved-script execution; reopening recovers status, never a start ticket. */
 export function SshRunbooks({
@@ -224,20 +237,108 @@ export function SshRunbooks({
   }, [review]);
   return (
     <>
-      <Modal title={t("SSH runbooks")} onClose={onClose} size="lg">
-        <div className="flex min-w-0 flex-col gap-3 p-4">
-          <p className="text-xs text-(--ui-text-muted)">
+      <Modal
+        title={t("SSH runbooks")}
+        onClose={onClose}
+        size="lg"
+        footer={
+          <ModalActions
+            start={
+              saved ? (
+                <ConfirmMorph
+                  label={t("Delete runbook")}
+                  tone="danger"
+                  disabled={busy || frozen}
+                  onConfirm={() =>
+                    operation(async () => {
+                      await removeSshRunbook(saved.id, saved.revision);
+                      if (!mounted.current) return;
+                      setProfiles((items) => items.filter((item) => item.id !== saved.id));
+                      setDraft(sshRunbookDraft(undefined, server.id));
+                      setReview(undefined);
+                    })
+                  }
+                />
+              ) : undefined
+            }
+          >
+            <Button
+              disabled={busy || frozen || !profile}
+              onClick={() =>
+                void operation(async () => {
+                  if (!profile) return;
+                  const value = await saveSshRunbook(profile, saved?.revision ?? null);
+                  if (!mounted.current) return;
+                  setProfiles((items) => [...items.filter((item) => item.id !== value.id), value]);
+                  setDraft(sshRunbookDraft(value));
+                  setReview(undefined);
+                })
+              }
+            >
+              {t("Save runbook")}
+            </Button>
+            <Button
+              disabled={busy || frozen || !clean}
+              onClick={() =>
+                void operation(async () => {
+                  if (!saved) return;
+                  const requestedScope = scope;
+                  if (
+                    selectedIntent &&
+                    !intents.some(
+                      (item) =>
+                        item.id === selectedIntent &&
+                        item.automationId === saved.id &&
+                        item.revision === saved.revision &&
+                        item.status === "pendingReview",
+                    )
+                  )
+                    throw new Error(t("Runbook changed. Refresh and review again."));
+                  const value = selectedIntent
+                    ? await reviewSshRunbook(saved.id, saved.revision, selectedIntent)
+                    : await reviewSshRunbook(saved.id, saved.revision);
+                  if (!mounted.current || scopeRef.current !== requestedScope) return;
+                  if (
+                    !sameSshRunbook(value.profile, saved) ||
+                    !value.review.reviewId ||
+                    !/^[a-f0-9]{64}$/.test(value.review.digest) ||
+                    !Number.isFinite(value.review.expiresInSeconds) ||
+                    value.review.expiresInSeconds <= 0 ||
+                    value.review.expiresInSeconds > 120 ||
+                    value.targets.length !== saved.targetIds.length ||
+                    value.targets.some(
+                      (target, index) =>
+                        target.serverId !== saved.targetIds[index] ||
+                        !validSshEndpointPreview(target.endpoint) ||
+                        (target.configuration != null &&
+                          !validSshRuntimeConfiguration(target.configuration)),
+                    )
+                  )
+                    throw new Error(t("Runbook changed. Refresh and review again."));
+                  const now = Date.now();
+                  setClock(now);
+                  setReview({
+                    value,
+                    scope: requestedScope,
+                    expiresAt: now + value.review.expiresInSeconds * 1000,
+                  });
+                })
+              }
+            >
+              {t("Review execution")}
+            </Button>
+          </ModalActions>
+        }
+      >
+        <div className="flex min-w-0 flex-col gap-3">
+          <p className="text-ui-caption text-(--ui-text-muted)">
             {t("Target")}: {server.name}
           </p>
-          {error ? (
-            <Alert tone="danger" role="alert">
-              {error}
-            </Alert>
-          ) : null}
+          {error ? <Alert tone="danger">{error}</Alert> : null}
           {intents.length ? (
             <section
               aria-label={t("Pending execution reviews")}
-              className="flex min-w-0 flex-col gap-2 text-xs"
+              className="flex min-w-0 flex-col gap-2 text-ui-caption"
             >
               {intents.map((intent) => (
                 <div key={intent.id} className="flex min-w-0 flex-wrap items-center gap-2">
@@ -285,7 +386,7 @@ export function SshRunbooks({
           {runId ? (
             <section
               aria-label={t("SSH execution status")}
-              className="flex min-w-0 flex-col gap-2 border-t border-stroke pbs-3 text-xs"
+              className="flex min-w-0 flex-col gap-2 border-t border-stroke pbs-3 text-ui-caption"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="min-w-0 break-all">
@@ -329,25 +430,25 @@ export function SshRunbooks({
                 >
                   <p className="min-w-0 break-all">
                     {choices.find((item) => item.id === target.serverId)?.name ?? target.serverId}:{" "}
-                    {t(
-                      {
-                        queued: "Queued",
-                        running: "Running",
-                        exited: "Exited",
-                        failed: "Failed",
-                        cancelled: "Cancelled",
-                        unknown: "Unknown",
-                      }[target.state],
+                    {RUN_STATE_BADGE[target.state] ? (
+                      <StatusBadge status={RUN_STATE_BADGE[target.state]!} />
+                    ) : (
+                      t(
+                        {
+                          exited: "Exited",
+                          cancelled: "Cancelled",
+                          unknown: "Unknown",
+                        }[target.state as "exited" | "cancelled" | "unknown"],
+                      )
                     )}
                     {target.exitCode != null ? ` · ${target.exitCode}` : ""}
                   </p>
                   {target.reason ? (
                     <div className="w-full min-w-0 text-(--ui-text-muted)">
                       <p>{t(sshRunReasonMessage(target.reason))}</p>
-                      <details>
-                        <summary className="cursor-pointer">{t("Status details")}</summary>
+                      <Disclosure size="sm" summary={t("Status details")}>
                         <code className="break-all">{target.reason}</code>
-                      </details>
+                      </Disclosure>
                     </div>
                   ) : null}
                   {target.state === "queued" || target.state === "running" ? (
@@ -480,9 +581,8 @@ export function SshRunbooks({
                 onChange={(event) => change({ timeoutSeconds: event.target.value })}
               />
             </div>
-            <details className="text-xs">
-              <summary className="cursor-pointer">{t("Runbook triggers")}</summary>
-              <div className="mbs-2 flex min-w-0 flex-col gap-3">
+            <Disclosure size="sm" className="text-ui-caption" summary={t("Runbook triggers")}>
+              <div className="flex min-w-0 flex-col gap-3">
                 <TextField
                   label={t("Schedule interval (minutes)")}
                   inputMode="numeric"
@@ -512,112 +612,32 @@ export function SshRunbooks({
                 </p>
                 {saved?.triggers?.nextRunAt ? (
                   <p>
-                    {t("Next review")}: {new Date(saved.triggers.nextRunAt).toLocaleString()}
+                    {t("Next review")}: {formatDate(new Date(saved.triggers.nextRunAt), DATE_TIME)}
                   </p>
                 ) : null}
               </div>
-            </details>
+            </Disclosure>
           </fieldset>
-          <details className="text-xs text-(--ui-text-muted)">
-            <summary className="cursor-pointer">{t("Execution details")}</summary>
-            <p className="mbs-2">
+          <Disclosure
+            size="sm"
+            className="text-ui-caption text-(--ui-text-muted)"
+            summary={t("Execution details")}
+          >
+            <p>
               {t(
                 "Choose up to 16 saved SSH targets, 1–4 concurrent processes and a 1–86400 second timeout. Scripts are saved definitions; keep secrets in the remote environment or a credential provider. Output is not captured. Saving never runs a script.",
               )}
             </p>
-          </details>
+          </Disclosure>
           {!profile ? (
-            <p role="status" className="text-xs text-(--ui-tone-danger-fg)">
+            <InlineError live="polite">
               {t("Enter a name, script, valid targets and execution limits.")}
-            </p>
+            </InlineError>
           ) : null}
-          <div className="flex flex-wrap justify-end gap-2">
-            {saved ? (
-              <Button
-                disabled={busy || frozen}
-                onClick={() =>
-                  void operation(async () => {
-                    await removeSshRunbook(saved.id, saved.revision);
-                    if (!mounted.current) return;
-                    setProfiles((items) => items.filter((item) => item.id !== saved.id));
-                    setDraft(sshRunbookDraft(undefined, server.id));
-                    setReview(undefined);
-                  })
-                }
-              >
-                {t("Delete runbook")}
-              </Button>
-            ) : null}
-            <Button
-              disabled={busy || frozen || !profile}
-              onClick={() =>
-                void operation(async () => {
-                  if (!profile) return;
-                  const value = await saveSshRunbook(profile, saved?.revision ?? null);
-                  if (!mounted.current) return;
-                  setProfiles((items) => [...items.filter((item) => item.id !== value.id), value]);
-                  setDraft(sshRunbookDraft(value));
-                  setReview(undefined);
-                })
-              }
-            >
-              {t("Save runbook")}
-            </Button>
-            <Button
-              disabled={busy || frozen || !clean}
-              onClick={() =>
-                void operation(async () => {
-                  if (!saved) return;
-                  const requestedScope = scope;
-                  if (
-                    selectedIntent &&
-                    !intents.some(
-                      (item) =>
-                        item.id === selectedIntent &&
-                        item.automationId === saved.id &&
-                        item.revision === saved.revision &&
-                        item.status === "pendingReview",
-                    )
-                  )
-                    throw new Error(t("Runbook changed. Refresh and review again."));
-                  const value = selectedIntent
-                    ? await reviewSshRunbook(saved.id, saved.revision, selectedIntent)
-                    : await reviewSshRunbook(saved.id, saved.revision);
-                  if (!mounted.current || scopeRef.current !== requestedScope) return;
-                  if (
-                    !sameSshRunbook(value.profile, saved) ||
-                    !value.review.reviewId ||
-                    !/^[a-f0-9]{64}$/.test(value.review.digest) ||
-                    !Number.isFinite(value.review.expiresInSeconds) ||
-                    value.review.expiresInSeconds <= 0 ||
-                    value.review.expiresInSeconds > 120 ||
-                    value.targets.length !== saved.targetIds.length ||
-                    value.targets.some(
-                      (target, index) =>
-                        target.serverId !== saved.targetIds[index] ||
-                        !validSshEndpointPreview(target.endpoint) ||
-                        (target.configuration != null &&
-                          !validSshRuntimeConfiguration(target.configuration)),
-                    )
-                  )
-                    throw new Error(t("Runbook changed. Refresh and review again."));
-                  const now = Date.now();
-                  setClock(now);
-                  setReview({
-                    value,
-                    scope: requestedScope,
-                    expiresAt: now + value.review.expiresInSeconds * 1000,
-                  });
-                })
-              }
-            >
-              {t("Review execution")}
-            </Button>
-          </div>
           {activeReview ? (
             <section
               aria-label={t("SSH execution review")}
-              className="flex min-w-0 flex-col gap-2 border-t border-stroke pbs-3 text-xs"
+              className="flex min-w-0 flex-col gap-2 border-t border-stroke pbs-3 text-ui-caption"
             >
               <p>{t(selectedIntent ? "Pending review" : "Manual execution")}</p>
               <p className="font-medium">
@@ -645,76 +665,67 @@ export function SshRunbooks({
                       : {sshEndpointPreview(target.endpoint.httpProxy)}
                     </p>
                   ) : null}
-                  <details>
-                    <summary className="cursor-pointer">{t("Connection details")}</summary>
-                    <dl className="mbs-2 flex min-w-0 flex-col gap-1">
+                  <Disclosure size="sm" summary={t("Connection details")}>
+                    <DescriptionList size="sm">
                       {(
                         [
                           [t("Identity file"), target.endpoint.identityFile],
                           [t("Public SSH certificate file"), target.endpoint.certificateFile],
                         ] as const
                       ).map(([label, value]) => (
-                        <div key={label}>
-                          <dt>{label}</dt>
-                          <dd className="break-all text-(--ui-text-muted)">
-                            {value ?? t("Default")}
-                          </dd>
-                        </div>
+                        <DescriptionItem key={label} term={label}>
+                          {value ?? t("Default")}
+                        </DescriptionItem>
                       ))}
                       {target.endpoint.jumpPolicies?.map((hop, index) => (
-                        <div key={index}>
-                          <dt>
-                            {t("Jump host")} {index + 1}: {sshEndpointPreview(hop)}
-                          </dt>
-                          <dd className="break-all text-(--ui-text-muted)">
-                            {t("Identity file")}: {hop.identityFile ?? t("Default")} ·{" "}
-                            {t("Public SSH certificate file")}:{" "}
-                            {hop.certificateFile ?? t("Default")} · {t("Known hosts file")}:{" "}
-                            {hop.knownHostsFile ?? t("Default")}
-                          </dd>
-                        </div>
+                        <DescriptionItem
+                          key={index}
+                          term={
+                            <>
+                              {t("Jump host")} {index + 1}: {sshEndpointPreview(hop)}
+                            </>
+                          }
+                        >
+                          {t("Identity file")}: {hop.identityFile ?? t("Default")} ·{" "}
+                          {t("Public SSH certificate file")}: {hop.certificateFile ?? t("Default")}{" "}
+                          · {t("Known hosts file")}: {hop.knownHostsFile ?? t("Default")}
+                        </DescriptionItem>
                       ))}
                       {target.endpoint.jumpHosts?.length || target.endpoint.jumpHost ? (
-                        <div>
-                          <dt>{t("Jump host")}</dt>
-                          <dd className="break-all text-(--ui-text-muted)">
-                            {(target.endpoint.jumpHosts ?? [target.endpoint.jumpHost!]).join(" → ")}
-                          </dd>
-                        </div>
+                        <DescriptionItem term={t("Jump host")}>
+                          {(target.endpoint.jumpHosts ?? [target.endpoint.jumpHost!]).join(" → ")}
+                        </DescriptionItem>
                       ) : null}
                       {Object.entries(target.configuration?.provenance ?? {}).map(
                         ([field, source]) => (
-                          <div key={field}>
-                            <dt>
-                              {t(
-                                (
-                                  {
-                                    user: "SSH user",
-                                    port: "SSH port",
-                                    identityFile: "Identity file",
-                                    certificateFile: "Public SSH certificate file",
-                                  } as Record<string, string>
-                                )[field] ?? field,
-                              )}
-                            </dt>
-                            <dd className="break-all text-(--ui-text-muted)">
-                              {t(
-                                source.source === "group"
-                                  ? "Group"
-                                  : source.source === "connection"
-                                    ? "Connection"
-                                    : "Default",
-                              )}
-                              {source.groupId ? ` · ${source.groupId} · r${source.revision}` : ""}
-                            </dd>
-                          </div>
+                          <DescriptionItem
+                            key={field}
+                            term={t(
+                              (
+                                {
+                                  user: "SSH user",
+                                  port: "SSH port",
+                                  identityFile: "Identity file",
+                                  certificateFile: "Public SSH certificate file",
+                                } as Record<string, string>
+                              )[field] ?? field,
+                            )}
+                          >
+                            {t(
+                              source.source === "group"
+                                ? "Group"
+                                : source.source === "connection"
+                                  ? "Connection"
+                                  : "Default",
+                            )}
+                            {source.groupId ? ` · ${source.groupId} · r${source.revision}` : ""}
+                          </DescriptionItem>
                         ),
                       )}
-                    </dl>
-                  </details>
+                    </DescriptionList>
+                  </Disclosure>
                   {target.configuration?.environment.length ? (
-                    <details>
-                      <summary className="cursor-pointer">{t("Remote environment")}</summary>
+                    <Disclosure size="sm" summary={t("Remote environment")}>
                       {target.configuration.environment.map((entry) => (
                         <p className="break-all" key={entry.name}>
                           <code>
@@ -722,7 +733,7 @@ export function SshRunbooks({
                           </code>
                         </p>
                       ))}
-                    </details>
+                    </Disclosure>
                   ) : null}
                 </div>
               ))}
@@ -742,7 +753,10 @@ export function SshRunbooks({
                     }
                     const value = activeReview.value,
                       id = crypto.randomUUID();
-                    const proxyApprovals: { serverId: string; ticketId: string }[] = [];
+                    const proxyApprovals: {
+                      serverId: string;
+                      ticketId: string;
+                    }[] = [];
                     let dispatched = false;
                     try {
                       for (const target of value.targets) {
@@ -805,9 +819,9 @@ export function SshRunbooks({
               </Button>
             </section>
           ) : review && !activeReview ? (
-            <p role="status" className="text-xs text-(--ui-text-muted)">
+            <InlineMessage tone="warning">
               {t("Execution review expired or changed. Review again.")}
-            </p>
+            </InlineMessage>
           ) : null}
         </div>
       </Modal>

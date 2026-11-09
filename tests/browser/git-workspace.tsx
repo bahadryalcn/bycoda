@@ -3,6 +3,8 @@ import { GitHistoryGraph } from "../../src/features/source-control/ui/GitHistory
 import { GitGraphWorkspace } from "../../src/features/source-control/ui/GitGraphWorkspace";
 import { WorkspaceSourceControl } from "../../src/features/source-control/ui/WorkspaceSourceControl";
 import { SourceControl } from "../../src/features/source-control/ui/SourceControl";
+import { GitChangesPanel } from "../../src/features/source-control/ui/GitChangesPanel";
+import { AppConfirmHost } from "../../src/app/shell/AppConfirmHost";
 import type { Worktree } from "../../src/features/source-control/model/worktrees";
 import "../../src/styles/index.css";
 // Eagerly include the workspace in fixture discovery so Vite optimizes its
@@ -13,7 +15,11 @@ void GitGraphWorkspace;
 // No user repository or remote is changed by these scenarios.
 const sha = (n: number) => n.toString(16).padStart(40, "0");
 const large = new URLSearchParams(location.search).has("large");
+const checkouts = new URLSearchParams(location.search).has("checkouts");
+const allRepositories = checkouts && new URLSearchParams(location.search).has("all-repositories");
 const diffUsability = new URLSearchParams(location.search).has("diff-usability");
+const actionFeedback = new URLSearchParams(location.search).has("action-feedback");
+const pendingActions = new Map<string, () => void>();
 const diffRepository = "/fixture/engineering/long-repository-name-for-working-tree-review";
 const diffRelative =
   "src/features/a-very-long-feature-directory/another-long-nested-directory/selected-hunk-review.ts";
@@ -68,7 +74,18 @@ const filesFor = (cwd: string) => {
   if (!repositoryFiles.has(cwd))
     repositoryFiles.set(
       cwd,
-      files.map((f) => ({ ...f, path: `${cwd}/${f.relative}` })),
+      (allRepositories
+        ? cwd === "/fixture/mobile"
+          ? [file("app/index.tsx"), file("app/theme.ts"), file("app.json", true)]
+          : cwd === "/trees/cross-provider"
+            ? [
+                file("src/providers/parity.ts"),
+                file("src/providers/accounts.ts"),
+                file("README.md", true),
+              ]
+            : [file("src/workspace.tsx"), file("src/theme.css"), file("README.md", true)]
+        : files
+      ).map((f) => ({ ...f, path: `${cwd}/${f.relative}` })),
     );
   return repositoryFiles.get(cwd)!;
 };
@@ -87,6 +104,10 @@ let disk =
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 Object.assign(window, {
   gitFixtureCalls: calls,
+  gitFixtureFinishAction: (command: string) => {
+    pendingActions.get(command)?.();
+    pendingActions.delete(command);
+  },
   __TAURI_INTERNALS__: {
     metadata: {
       currentWindow: { label: "main" },
@@ -95,6 +116,8 @@ Object.assign(window, {
     transformCallback: () => 1,
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
       calls.push({ command, args });
+      if (actionFeedback && ["git_sync", "git_stash", "git_stash_action"].includes(command))
+        await new Promise<void>((resolve) => pendingActions.set(command, resolve));
       if (diffUsability && command === "git_stage_contents") {
         if (failHunk) {
           failHunk = false;
@@ -105,21 +128,36 @@ Object.assign(window, {
       if (command === "git_submodules") {
         if (new URLSearchParams(location.search).has("slow-discovery"))
           await new Promise((resolve) => setTimeout(resolve, 500));
+        if (allRepositories && args.cwd === "/fixture")
+          return args.includeRepositories === true ? ["mobile"] : [];
         return submodules && args.cwd === "/fixture" ? ["core-pack", "core-pack/nested"] : [];
       }
       if (command === "git_worktrees")
         return { worktrees: [checkoutTrees["/fixture"]], defaultRoot: "/trees" };
-      if (submodules && ["git_stage_all", "git_unstage_all", "git_commit"].includes(command)) {
+      if (
+        (submodules || checkouts) &&
+        [
+          "git_stage_all",
+          "git_unstage_all",
+          "git_stage_file",
+          "git_unstage_file",
+          "git_commit",
+        ].includes(command)
+      ) {
         const cwd = String(args.cwd);
         repositoryFiles.set(
           cwd,
           command === "git_commit"
             ? filesFor(cwd).filter((f) => !f.staged)
-            : filesFor(cwd).map((f) => ({
-                ...f,
-                staged: command === "git_stage_all",
-                unstaged: command !== "git_stage_all",
-              })),
+            : filesFor(cwd).map((f) =>
+                command.endsWith("_file") && f.relative !== args.relative
+                  ? f
+                  : {
+                      ...f,
+                      staged: command === "git_stage_all" || command === "git_stage_file",
+                      unstaged: command !== "git_stage_all" && command !== "git_stage_file",
+                    },
+              ),
         );
         return;
       }
@@ -134,13 +172,17 @@ Object.assign(window, {
       if (command === "git_diff_index" || command === "git_diff_files")
         return {
           repository: true,
-          branch: new URLSearchParams(location.search).has("checkouts")
-            ? checkoutTrees[String(args.cwd)]?.branch
+          branch: checkouts
+            ? args.cwd === "/fixture/mobile"
+              ? "mobile/main"
+              : checkoutTrees[String(args.cwd)]?.branch
             : branches.find((b) => b.current)?.name,
-          head: new URLSearchParams(location.search).has("checkouts")
-            ? checkoutTrees[String(args.cwd)]?.head
+          head: checkouts
+            ? args.cwd === "/fixture/mobile"
+              ? sha(12)
+              : checkoutTrees[String(args.cwd)]?.head
             : commits[0].sha,
-          files: submodules ? filesFor(String(args.cwd)) : files,
+          files: submodules || checkouts ? filesFor(String(args.cwd)) : files,
           conflicts,
           operation,
           additions: 12,
@@ -274,87 +316,106 @@ Object.assign(window, {
 document.body.style.cssText =
   "height:100vh;margin:0;background:var(--color-background-base);color:var(--color-content)";
 const checkoutTrees: Record<string, Worktree> = Object.fromEntries(
-  ["/fixture", "/trees/audit/very-long-worktree-folder-name", "/trees/detached"].map(
-    (path, index) => [
+  (allRepositories
+    ? ["/fixture", "/trees/cross-provider"]
+    : ["/fixture", "/trees/audit/very-long-worktree-folder-name", "/trees/detached"]
+  ).map((path, index) => [
+    path,
+    {
       path,
-      {
-        path,
-        branch:
-          index === 0
-            ? "main"
-            : index === 1
-              ? "audit/2026-10-14-long-branch-name-for-responsive-review"
-              : null,
-        head: "fd3caac123456",
-        isMain: index === 0,
-        locked: false,
-        prunable: false,
-        missing: false,
-        dirty: true,
-        unpushed: 1,
-        sessionIds: [],
-      },
-    ],
-  ),
+      branch:
+        index === 0
+          ? "main"
+          : index === 1
+            ? allRepositories
+              ? "bycoda/s/cross-provider-settings-parity"
+              : "audit/2026-10-14-long-branch-name-for-responsive-review"
+            : null,
+      head: "fd3caac123456",
+      isMain: index === 0,
+      locked: false,
+      prunable: false,
+      missing: false,
+      dirty: true,
+      unpushed: 1,
+      sessionIds: [],
+    },
+  ]),
 );
 const root = createRoot(document.getElementById("root")!);
 const renderFixture = () =>
   root.render(
-    <div
-      // Browser fixtures are excluded from Tailwind scanning; constrain the viewport explicitly.
-      style={{ height: "100vh" }}
-      className={
-        new URLSearchParams(location.search).has("checkouts")
-          ? "w-full max-w-[520px] border-r border-stroke"
-          : "w-80 border-r border-stroke"
-      }
-    >
-      {diffUsability ? (
-        <GitGraphWorkspace
-          cwd={diffRepository}
-          commit={null}
-          onCommit={() => {}}
-          onDirty={() => {}}
-          onBranch={() => {}}
-          graph={null}
-        />
-      ) : submodules ? (
-        <SourceControl
-          cwd="/fixture"
-          enabled
-          onOpenRepository={(request) => calls.push({ command: "fixture.open", args: request })}
-          onOpenFile={() => {}}
-          onOpenAllChanges={() => {}}
-          onOpenCommit={() => {}}
-        />
-      ) : new URLSearchParams(location.search).has("checkouts") ||
-        new URLSearchParams(location.search).has("repositories") ? (
-        <WorkspaceSourceControl
-          cwd="/fixture"
-          paths={Object.keys(checkoutTrees)}
-          worktrees={checkoutTrees}
-          labels={Object.fromEntries(
-            Object.values(checkoutTrees).map((tree) => [
-              tree.path,
-              `${tree.branch ?? "Detached"} · ${tree.path}`,
-            ]),
-          )}
-          checkouts={new URLSearchParams(location.search).has("checkouts")}
-          enabled
-          onOpen={() => {}}
-        />
-      ) : (
-        <GitHistoryGraph
-          cwd="/fixture"
-          enabled
-          expanded
-          onToggleExpanded={() => {}}
-          onOpenCommit={() => {
-            throw new Error("Workspace selections must stay in the graph");
-          }}
-        />
-      )}
-    </div>,
+    <>
+      {/* Git confirmations render in the shared in-app dialog; the platform fallback is not available here. */}
+      <AppConfirmHost />
+      <div
+        // Browser fixtures are excluded from Tailwind scanning; constrain the viewport explicitly.
+        style={{ height: "100vh", ...(allRepositories ? { width: 570, maxWidth: "100vw" } : {}) }}
+        className={
+          new URLSearchParams(location.search).has("checkouts")
+            ? "w-full max-w-[520px] border-r border-stroke"
+            : "w-80 border-r border-stroke"
+        }
+      >
+        {actionFeedback ? (
+          <GitChangesPanel
+            cwd="/fixture"
+            enabled
+            onOpenFile={() => {}}
+            onOpenAllChanges={() => {}}
+            onOpenCommit={() => {}}
+          />
+        ) : diffUsability ? (
+          <GitGraphWorkspace
+            cwd={diffRepository}
+            commit={null}
+            onCommit={() => {}}
+            onDirty={() => {}}
+            onBranch={() => {}}
+            graph={null}
+          />
+        ) : submodules ? (
+          <SourceControl
+            cwd="/fixture"
+            enabled
+            onOpenRepository={(request) => calls.push({ command: "fixture.open", args: request })}
+            onOpenFile={() => {}}
+            onOpenAllChanges={() => {}}
+            onOpenCommit={() => {}}
+          />
+        ) : new URLSearchParams(location.search).has("checkouts") ||
+          new URLSearchParams(location.search).has("repositories") ? (
+          <WorkspaceSourceControl
+            cwd="/fixture"
+            paths={Object.keys(checkoutTrees)}
+            worktrees={checkoutTrees}
+            labels={
+              allRepositories
+                ? { "/fixture": "fixture", "/trees/cross-provider": "cross-provider" }
+                : Object.fromEntries(
+                    Object.values(checkoutTrees).map((tree) => [
+                      tree.path,
+                      `${tree.branch ?? "Detached"} · ${tree.path}`,
+                    ]),
+                  )
+            }
+            checkouts={new URLSearchParams(location.search).has("checkouts")}
+            enabled
+            onOpen={() => {}}
+          />
+        ) : (
+          <GitHistoryGraph
+            cwd="/fixture"
+            enabled
+            expanded
+            onToggleExpanded={() => {}}
+            onOpenCommit={() => {
+              throw new Error("Workspace selections must stay in the graph");
+            }}
+          />
+        )}
+      </div>
+    </>,
   );
 Object.assign(window, {
   // Model leaving and returning to the sidebar without navigating the document.

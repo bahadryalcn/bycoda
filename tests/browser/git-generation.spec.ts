@@ -18,24 +18,62 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
     .boundingBox())!;
   expect(Math.abs(extrasBounds.y - generateBounds.y)).toBeLessThan(2);
   expect(Math.abs(extrasBounds.x - (generateBounds.x + generateBounds.width))).toBeLessThan(2);
+  // Without a saved choice the trigger hint reports the automatic selection.
+  await page.getByRole("button", { name: "AI generation settings" }).hover();
+  await expect(page.getByRole("tooltip")).toContainText("Automatic");
   await page.getByRole("button", { name: "AI generation settings" }).click();
-  await expect(page.getByText("Automatic", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("dialog", { name: "Commit and pull request generation", exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("Main model", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Extras", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: /Claude Haiku 4.5/ }).click();
-  await page.getByRole("button", { name: /^Extras/ }).click();
-  const advisor = page.getByRole("combobox", { name: "Advisor", exact: true });
-  await expect(advisor).toBeVisible();
-  await expect(advisor).toHaveCSS("color-scheme", "dark");
-  await advisor.selectOption("opus");
-  await page.getByRole("combobox", { name: "Subagent model", exact: true }).selectOption("haiku");
-  await page
-    .getByRole("combobox", { name: "Subagent model policy", exact: true })
-    .selectOption("force");
-  await expect(page.getByTestId("choice")).toHaveText(/"advisor":"opus"/);
-  await expect(page.getByTestId("choice")).toHaveText(/"subagentModel":"haiku"/);
-  await expect(page.getByTestId("choice")).toHaveText(/"subagentPolicy":"force"/);
-  await expect(page.getByTestId("choice")).toHaveText(/"model":"claude:haiku-4.5"/);
+  // Advisor and subagent settings live in the one model panel (no separate Extras entry).
+  const modelButton = page.getByRole("button", { name: /Claude Haiku 4.5/ });
+  const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
+  const setting = (name: string) =>
+    panel
+      .locator("[data-model-settings]")
+      .locator(`[role="radiogroup"][aria-label="${name}"], [role="group"][aria-label="${name}"]`);
+  const choose = async (name: string, option: string | RegExp) => {
+    if (!(await panel.isVisible())) await modelButton.click();
+    // Delegation settings sit on the Agents tab when the model also has its own settings.
+    const agents = panel.getByRole("tab", { name: /^Agents/ });
+    if ((await agents.count()) > 0 && (await agents.getAttribute("aria-selected")) !== "true")
+      await agents.click();
+    const choice = setting(name)
+      .getByRole("radio", { name: option, exact: true })
+      .or(setting(name).getByRole("checkbox", { name: option, exact: true }));
+    await choice.click();
+    await expect(choice).toHaveAttribute("aria-checked", "true");
+  };
+  // Delegation values are encoded refs inside the saved model settings.
+  const saved = async () => {
+    const choice = JSON.parse((await page.getByTestId("choice").textContent()) || "{}");
+    const settings: Record<string, string> = choice.modelSettings ?? {};
+    const decode = (value?: string) => (value ? JSON.parse(value) : null);
+    return {
+      model: choice.model,
+      advisor: decode(settings.crossAdvisor)?.model ?? null,
+      subagents: ([] as { model: string }[])
+        .concat(decode(settings.crossSubagents) ?? [])
+        .map((ref) => ref.model),
+      subagentPolicy: settings.subagentPolicy,
+    };
+  };
+  await modelButton.click();
+  await expect(panel).toBeVisible();
+  await expect(panel).toHaveAttribute("data-model-panel");
+  await choose("Advisor", /^Claude Code · Claude Opus 5\.5\b/);
+  await expect(setting("Advisor")).toBeVisible();
+  await expect(setting("Advisor")).toHaveCSS("color-scheme", "dark");
+  await choose("Subagents", /^Claude Code · Claude Haiku 4\.5\b/);
+  await choose("Subagent model policy", "Apply to all subagents");
+  await expect.poll(saved).toEqual({
+    model: "claude:haiku-4.5",
+    advisor: "claude:opus-5-5",
+    subagents: ["claude:haiku-4.5"],
+    subagentPolicy: "force",
+  });
   await expect(page.getByRole("textbox", { name: "Commit message" })).toHaveValue(
     "Keep this commit draft",
   );
@@ -51,6 +89,7 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
   await page.reload();
   await expect(page.getByRole("button", { name: "AI generation settings" })).toHaveText("");
   await page.getByRole("button", { name: "AI generation settings" }).click();
-  await page.getByRole("button", { name: "Use default selection" }).click();
+  // A saved project choice offers one way back to the global selection.
+  await page.getByRole("button", { name: "Use global" }).click();
   await expect(page.getByTestId("choice")).toHaveText("");
 });

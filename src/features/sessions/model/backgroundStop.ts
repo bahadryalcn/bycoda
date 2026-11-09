@@ -14,9 +14,14 @@ export type BackgroundStopKind = "task" | "turn";
 /** How long a row says "Stopping…" before it gives the button back. */
 export const STOPPING_TIMEOUT_MS = 10_000;
 
-/** A running subagent or command that has a stop request to send. */
+/**
+ * A running subagent or command that has a stop request to send. A delegated
+ * child is its own session, so it can always be stopped.
+ */
 export function canStopAgent(agent: DockAgent, perItem: boolean): boolean {
-  return perItem && agent.status === "running" && !!agent.callId;
+  if (agent.status !== "running") return false;
+  if (agent.sessionId) return true;
+  return perItem && !!agent.callId;
 }
 
 export type StopAllControl = {
@@ -32,7 +37,14 @@ export type StopAllControl = {
 export function stopAllControl(dock: ActivityDock, perItem: boolean): StopAllControl | null {
   if (dock.state === "idle" || dock.state === "done") return null;
   if (dock.running === 0 && dock.backgroundCount === 0) return null;
-  return perItem
+  // After the turn, only delegated children may still run; each is its own session,
+  // so stopping them never needs the whole-turn fallback.
+  const running = dock.agents.filter((agent) => agent.status === "running");
+  const delegatedOnly =
+    dock.state === "background" &&
+    running.length > 0 &&
+    running.every((agent) => agent.sessionId !== undefined);
+  return perItem || delegatedOnly
     ? {
         kind: "task",
         get label() {

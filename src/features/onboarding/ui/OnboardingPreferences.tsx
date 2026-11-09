@@ -1,10 +1,16 @@
-import { RadioGroup } from "../../../shared/ui/RadioGroup";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { lazy, Suspense, useState, useSyncExternalStore } from "react";
+import { Switch } from "../../../shared/ui/Switch";
+import { lazy, Suspense, useState, useSyncExternalStore, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Check, CodeBlock } from "../../../shared/ui/icons";
+import { Check, CircleDashed, CodeBlock } from "../../../shared/ui/icons";
+import { ModePreview, type Tint } from "../../settings/ui/AppearancePreviews";
+import { RadioTiles } from "../../settings/ui/RadioTiles";
+import { CANVAS_BACKGROUND_DEFAULT } from "../../settings/model/appearancePreferences";
 import {
+  ACCENT_COLOR_DEFAULT,
+  THEME_DARK_LIGHTNESS_DEFAULT,
+  THEME_HUE_DEFAULT,
+  THEME_SATURATION_DEFAULT,
   applyThemePreference,
   loadThemePreference,
   saveThemePreference,
@@ -31,9 +37,46 @@ import {
   workspaceFeatureSettings,
 } from "../../settings/model/workspaceFeatures";
 import { WORKSPACE_FEATURE_CHOICES } from "../../settings/ui/WorkspaceFeatureSettings";
+/** The default palette, shown in the mode tiles before the user changes it in Settings. */
+const DEFAULT_TINT: Tint = {
+  hue: THEME_HUE_DEFAULT,
+  saturation: THEME_SATURATION_DEFAULT,
+  lightness: THEME_DARK_LIGHTNESS_DEFAULT,
+  accent: ACCENT_COLOR_DEFAULT,
+};
 const OnboardingCrewPreview = lazy(() =>
   import("./OnboardingCrewPreview").then((module) => ({ default: module.OnboardingCrewPreview })),
 );
+
+/** One labelled setting with its control on the right edge. The whole row toggles the switch. */
+function SwitchRow({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <Switch
+      className="onboarding-row"
+      label={label}
+      labelPosition="start"
+      checked={checked}
+      onCheckedChange={onChange}
+    />
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="onboarding-section">
+      <div className="onboarding-section-title">{title}</div>
+      {children}
+    </section>
+  );
+}
 
 export function OnboardingWorkspace() {
   useLocale();
@@ -49,39 +92,45 @@ export function OnboardingWorkspace() {
         <h3>{t("A workspace that fits you")}</h3>
         <p>{t("Choose the tools you want close by. You can change these in Settings anytime.")}</p>
       </div>
-      <div className="onboarding-included">
-        <CodeBlock aria-hidden className="size-5" />
-        <div>
-          <strong>{t("Coding essentials")}</strong>
-          <small>{t("AI chat, files, terminal and Git")}</small>
-        </div>
-        <span>
-          <Check aria-hidden className="size-3.5" />
-          {t("Included")}
-        </span>
-      </div>
-      <div className="onboarding-feature-grid">
-        {WORKSPACE_FEATURE_CHOICES.map(({ id, label, description, icon: Icon }) => (
-          <label className="onboarding-feature" key={id}>
-            <Icon aria-hidden className="size-5" />
+      <div className="onboarding-scroll">
+        <div className="onboarding-feature-grid">
+          <div className="onboarding-feature" data-fixed="">
+            <CodeBlock aria-hidden className="icon-lg" />
             <div>
-              <strong>{t(label)}</strong>
-              <small>{t(description)}</small>
+              <strong>{t("Coding essentials")}</strong>
+              <small>{t("AI chat, files, terminal and Git")}</small>
             </div>
+            <span className="onboarding-included">
+              <Check aria-hidden className="icon-sm" />
+              {t("Included")}
+            </span>
+          </div>
+          {WORKSPACE_FEATURE_CHOICES.map(({ id, label, description, icon: Icon }) => (
             <Checkbox
+              key={id}
+              className="onboarding-feature"
               checked={features[id]}
               onChange={(event) => workspaceFeatureSettings[id].save(event.target.checked)}
+              label={
+                <>
+                  <Icon aria-hidden className="icon-lg" />
+                  <div>
+                    <strong>{t(label)}</strong>
+                    <small>{t(description)}</small>
+                  </div>
+                </>
+              }
             />
-          </label>
-        ))}
+          ))}
+        </div>
+        <Section title={t("Behavior")}>
+          <SwitchRow
+            label={t("Prevent sleep while agents work")}
+            checked={keepAwake}
+            onChange={saveKeepAwakeEnabled}
+          />
+        </Section>
       </div>
-      <label className="onboarding-check-row">
-        <Checkbox
-          checked={keepAwake}
-          onChange={(event) => saveKeepAwakeEnabled(event.target.checked)}
-        />
-        <span>{t("Prevent sleep while agents work")}</span>
-      </label>
     </>
   );
 }
@@ -101,91 +150,127 @@ export function OnboardingAppearance() {
     applyThemePreference(next, { animate: true });
     setTheme(next);
   };
+  const crew = crewEnabled ? crewTheme : "none";
+  const modes: { value: ThemePreference; label: string }[] = [
+    { value: "light", label: t("Light") },
+    { value: "dark", label: t("Dark") },
+    { value: "system", label: t("System") },
+  ];
+  const crewChoices: {
+    value: CrewTheme | "none";
+    title: string;
+    caption: string;
+    detail?: string;
+  }[] = [
+    {
+      value: "classic",
+      title: t("Uncles"),
+      caption: t("Code art"),
+      detail: t("The original tea crew, drawn in monochrome code art."),
+    },
+    {
+      value: "star-wars",
+      title: t("Star Wars"),
+      caption: t("Galaxy crew"),
+      detail: t(
+        "Obi-Wan leads, Yoda advises; Darth Vader, Luke, Leia and Chewbacca join as subagents. R2-D2 joins when the crew grows beyond six.",
+      ),
+    },
+    {
+      value: "lotr",
+      title: t("The Lord of the Rings"),
+      caption: t("Fellowship crew"),
+      detail: t(
+        "Gandalf leads, Sauron advises; a Nazgûl, an Elf, a Dwarf and a Hobbit join as subagents. Orcs arrive when more than six subagents work.",
+      ),
+    },
+    {
+      value: "matrix",
+      title: t("The Matrix"),
+      caption: t("Zion crew"),
+      detail: t("Neo leads, Morpheus advises, and every subagent is another Agent Smith."),
+    },
+    { value: "none", title: t("No crew"), caption: t("Keep the workspace quiet") },
+  ];
   return (
     <>
       <div className="onboarding-heading">
         <h3>{t("Make yourself at home")}</h3>
         <p>{t("Choose your appearance and the crew that keeps you company.")}</p>
       </div>
-      <SegmentedControl
-        label={t("Appearance")}
-        optionIdPrefix="onboarding-appearance"
-        className="mbs-3 mbe-3"
-        value={theme}
-        options={[
-          { value: "light", label: t("Light") },
-          { value: "dark", label: t("Dark") },
-          { value: "system", label: t("System") },
-        ]}
-        onValueChange={(value) => changeTheme(value as ThemePreference)}
-      />
-      <div className="grid grid-cols-3 gap-2">
-        <Suspense fallback={<span className="onboarding-crew-preview" />}>
-          <OnboardingCrewPreview theme="classic" />
-        </Suspense>
-        <Suspense fallback={<span className="onboarding-crew-preview" />}>
-          <OnboardingCrewPreview theme="star-wars" />
-        </Suspense>
-        <Suspense fallback={<span className="onboarding-crew-preview" />}>
-          <OnboardingCrewPreview theme="lotr" />
-        </Suspense>
-      </div>
-      <RadioGroup
-        compact
-        label={t("Agent crew")}
-        name="onboarding-crew"
-        value={crewEnabled ? crewTheme : "none"}
-        onValueChange={(value) => {
-          if (value === "none") saveCrewSceneEnabled(false);
-          else {
-            saveCrewTheme(value as CrewTheme);
-            saveCrewSceneEnabled(true);
-          }
-        }}
-        options={[
-          {
-            value: "classic",
-            label: (
-              <span title={t("The original tea crew, drawn in monochrome code art.")}>
-                {t("Uncles")} · {t("Code art")}
-              </span>
-            ),
-          },
-          {
-            value: "star-wars",
-            label: (
-              <span
-                title={t(
-                  "Obi-Wan leads, Yoda advises; Darth Vader, Luke, Leia and Chewbacca join as subagents. R2-D2 joins when the crew grows beyond six.",
-                )}
-              >
-                {t("Star Wars")} · {t("Galaxy crew")}
-              </span>
-            ),
-          },
-          {
-            value: "lotr",
-            label: (
-              <span
-                title={t(
-                  "Gandalf leads, Sauron advises; a Nazgûl, an Orc, a Dwarf and a Hobbit join as subagents.",
-                )}
-              >
-                {t("The Lord of the Rings")} · {t("Fellowship crew")}
-              </span>
-            ),
-          },
-          { value: "none", label: t("No crew · keep the workspace quiet") },
-        ]}
-      />
-      <div className="onboarding-appearance-toggles">
-        <label className="onboarding-check-row">
-          <Checkbox
-            checked={motion}
-            onChange={(event) => saveDecorativeMotionEnabled(event.target.checked)}
+      <div className="onboarding-scroll">
+        <Section title={t("Appearance")}>
+          <RadioTiles
+            label={t("Appearance")}
+            className="onboarding-mode-grid"
+            tileClassName="onboarding-choice onboarding-mode"
+            value={theme}
+            onChange={changeTheme}
+            options={modes.map(({ value, label }) => ({
+              value,
+              id: `onboarding-appearance-${value}`,
+              children: (
+                <>
+                  <ModePreview
+                    mode={value}
+                    tint={DEFAULT_TINT}
+                    pure={CANVAS_BACKGROUND_DEFAULT === "pure"}
+                  />
+                  <span className="onboarding-choice-text">
+                    <strong>{label}</strong>
+                  </span>
+                </>
+              ),
+            }))}
           />
-          <span>{t("Decorative animations")}</span>
-        </label>
+        </Section>
+        <Section title={t("Agent crew")}>
+          <RadioTiles
+            label={t("Agent crew")}
+            className="onboarding-crew-grid"
+            tileClassName="onboarding-choice onboarding-crew-card"
+            value={crew}
+            onChange={(value) => {
+              if (value === "none") saveCrewSceneEnabled(false);
+              else {
+                saveCrewTheme(value);
+                saveCrewSceneEnabled(true);
+              }
+            }}
+            options={crewChoices.map(({ value, title, caption, detail }) => ({
+              value,
+              id: `onboarding-crew-${value}`,
+              tooltip: detail,
+              children: (
+                <>
+                  {value === "none" ? (
+                    <span
+                      className="onboarding-crew-preview onboarding-crew-none"
+                      aria-hidden="true"
+                    >
+                      <CircleDashed className="icon-lg" />
+                    </span>
+                  ) : (
+                    <Suspense fallback={<span className="onboarding-crew-preview" />}>
+                      <OnboardingCrewPreview theme={value} />
+                    </Suspense>
+                  )}
+                  <span className="onboarding-choice-text">
+                    <strong>{title}</strong>
+                    <small>{caption}</small>
+                  </span>
+                </>
+              ),
+            }))}
+          />
+        </Section>
+        <Section title={t("Behavior")}>
+          <SwitchRow
+            label={t("Decorative animations")}
+            checked={motion}
+            onChange={saveDecorativeMotionEnabled}
+          />
+        </Section>
       </div>
     </>
   );

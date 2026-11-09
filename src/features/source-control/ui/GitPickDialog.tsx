@@ -1,7 +1,7 @@
-import { Button } from "../../../shared/ui/Button";
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
+import { PickerList, filterPickerOptions, usePickerList } from "../../../shared/ui/picker";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useMemo, useState } from "react";
 import { Modal } from "../../../shared/ui/Modal";
 
 export type PickItem = {
@@ -33,34 +33,21 @@ export function GitPickDialog({
 }: Props) {
   useLocale();
   const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
-  const list = useRef<HTMLUListElement>(null);
-  const shown = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return items;
-    return items.filter((item) =>
-      `${item.label} ${item.detail ?? ""}`.toLowerCase().includes(needle),
-    );
-  }, [items, query]);
-
-  useEffect(() => {
-    list.current
-      ?.querySelector<HTMLElement>(`[data-pick-index="${active}"]`)
-      ?.scrollIntoView?.({ block: "nearest" });
-  }, [active]);
-
-  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      if (shown.length === 0) return;
-      const step = event.key === "ArrowDown" ? 1 : -1;
-      setActive((current) => (current + step + shown.length) % shown.length);
-    } else if (event.key === "Enter") {
-      event.preventDefault();
-      const item = shown[active];
-      if (item) onPick(item.id);
-    }
-  };
+  const options = useMemo(
+    () =>
+      filterPickerOptions(
+        items.map((item) => ({ value: item.id, title: item.label, meta: item.detail })),
+        query,
+      ),
+    [items, query],
+  );
+  const picker = usePickerList({
+    options,
+    value: null,
+    onChange: onPick,
+    loop: true,
+    resetKey: query,
+  });
 
   return (
     <Modal
@@ -70,58 +57,22 @@ export function GitPickDialog({
       size="sm"
       onClose={onCancel}
     >
-      <div className="flex min-h-0 flex-col gap-2 p-3">
-        <SearchInput
-          appearance="field"
-          standalone
-          type="text"
+      <div className="flex min-h-0 flex-col gap-1">
+        <PopoverSearchHeader
+          label={placeholder}
           value={query}
-          autoFocus
-          placeholder={placeholder}
-          aria-label={placeholder}
-          spellCheck={false}
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setActive(0);
-          }}
-          onKeyDown={onKeyDown}
+          onValueChange={setQuery}
+          divider={false}
+          {...picker.searchProps}
         />
-        {shown.length === 0 ? (
-          <p className="px-1 py-2 text-[12px] text-[var(--ui-text-muted)]">
-            {items.length === 0 ? emptyText : t("Nothing matches")}
-          </p>
-        ) : (
-          <ul ref={list} role="listbox" className="max-h-72 overflow-y-auto">
-            {shown.map((item, index) => (
-              <li key={item.id} role="option" aria-selected={index === active}>
-                <Button
-                  selected={index === active}
-                  variant="item"
-                  motion="none"
-                  type="button"
-                  tabIndex={-1}
-                  data-pick-index={index}
-                  title={item.detail ? `${item.label} · ${item.detail}` : item.label}
-                  onMouseEnter={() => setActive(index)}
-                  onClick={() => onPick(item.id)}
-                  className={`  flex h-8 w-full items-center gap-2 text-left  ${
-                    index === active ? "" : ""
-                  }   `}
-                >
-                  <span className="min-w-0 truncate">{item.label}</span>
-                  {item.detail ? (
-                    <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--ui-text-muted)]">
-                      {item.detail}
-                    </span>
-                  ) : null}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <div className="flex max-h-72 min-h-0 flex-col">
+          <PickerList
+            label={title}
+            controller={picker}
+            query={query}
+            emptyLabel={items.length === 0 ? emptyText : t("Nothing matches")}
+          />
+        </div>
       </div>
     </Modal>
   );

@@ -76,12 +76,12 @@ export function assertSkillInvocationsEnabled(text: string, policy: SkillPolicy)
 /** Repeat each turn: an old transcript/catalog must never override a new owner preference. */
 export function skillPolicyInstructions(policy: SkillPolicy): string {
   if (!policy.disabledNames.length && !policy.disabledPaths.length)
-    return "bycoda skill restrictions (current owner settings): no bycoda-disabled skills on this machine. This replaces older bycoda skill restrictions in the conversation; provider restrictions still apply. Installed or active does not establish provider enablement.";
+    return "bycoda skill restrictions (current owner settings): none disabled on this machine; this replaces older bycoda restrictions in the conversation. Provider restrictions still apply.";
   return [
-    "bycoda skill restrictions for this machine (current owner settings):",
+    "bycoda skill restrictions for this machine (current owner settings; replaces older ones in the conversation):",
     `Disabled skill names: ${JSON.stringify(policy.disabledNames)}.`,
     `Disabled skill paths: ${JSON.stringify(policy.disabledPaths)}.`,
-    "Do not discover, read, invoke, delegate to, or apply these skills, including same-name copies from other sources and instructions already present in conversation history. Continue the task using enabled capabilities. Installed, active, or previously loaded does not mean enabled. Never enable a skill or change these settings yourself. Provider restrictions still apply to all other skills.",
+    "Do not read, invoke, delegate to or apply these skills or same-name copies from other sources, even if already loaded; never enable one yourself. Provider restrictions still apply to other skills.",
   ].join("\n");
 }
 

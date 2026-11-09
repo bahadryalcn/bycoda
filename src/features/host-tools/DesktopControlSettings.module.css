@@ -1,0 +1,58 @@
+.settings {
+  display: grid;
+  gap: 16px;
+  min-inline-size: 0;
+}
+
+/* Setting rows of this section share one list: hairlines between rows, none above the first. */
+.rows {
+  display: grid;
+  min-inline-size: 0;
+}
+.rows > :global(.settings-row) + :global(.settings-row) {
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.applicationEntry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+}
+
+.applicationEntry > * {
+  flex: 1 1 160px;
+  min-inline-size: 0;
+}
+
+.applicationEntry > .addButton {
+  flex: 0 0 auto;
+}
+
+.note,
+.saveArea > p {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+}
+
+.saveArea {
+  display: grid;
+  gap: 12px;
+  min-inline-size: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}

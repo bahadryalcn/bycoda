@@ -30,6 +30,26 @@ type PeerState = {
 const keyFor = (machineId: string) => `bycoda.sync.peer.v2:${machineId}`;
 const recordKey = (table: SyncTable, id: string) => `${table}:${id}`;
 
+type Capture = { state: PeerState; changed: boolean };
+const captures = new Map<string, Capture>();
+
+/** One synchronous capture uses one fresh storage snapshot and one durable write.
+ * No state survives the callback, so another window's edits are read next time. */
+export function batchLocalChanges(machineId: string, capture: () => void): void {
+  if (captures.has(machineId)) {
+    capture();
+    return;
+  }
+  const batch: Capture = { state: load(machineId), changed: false };
+  captures.set(machineId, batch);
+  try {
+    capture();
+  } finally {
+    captures.delete(machineId);
+    if (batch.changed) save(machineId, batch.state);
+  }
+}
+
 function emptyState(): PeerState {
   return {
     rev: 0,
@@ -41,6 +61,8 @@ function emptyState(): PeerState {
 }
 
 function load(machineId: string): PeerState {
+  const capture = captures.get(machineId);
+  if (capture) return capture.state;
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(keyFor(machineId)) ?? "null");
     if (!parsed || typeof parsed !== "object") return emptyState();
@@ -163,7 +185,9 @@ export function queueLocalChange(
     if (canonicalJson(state.outbox[index].value) === json) return;
     state.outbox = state.outbox.map((entry, i) => (i === index ? { ...entry, value } : entry));
   }
-  save(machineId, state);
+  const capture = captures.get(machineId);
+  if (capture) capture.changed = true;
+  else save(machineId, state);
 }
 
 export function hasPendingOp(machineId: string, table: SyncTable, id: string): boolean {

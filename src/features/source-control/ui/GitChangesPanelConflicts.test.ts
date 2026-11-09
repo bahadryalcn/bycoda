@@ -5,6 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invalidateGitIndex, resetGitIndexStore } from "../model/gitIndexStore";
 
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => {}) }));
+vi.mock("../../../shared/model/appConfirm", async () => {
+  const { ask } = await import("@tauri-apps/plugin-dialog");
+  return {
+    confirmInApp: (request: { title: string; message: string; confirmLabel: string }) =>
+      ask(request.message, { title: request.title, okLabel: request.confirmLabel }),
+  };
+});
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   ask: vi.fn(async () => true),
   message: vi.fn(async () => {}),
@@ -177,7 +184,7 @@ const menuAction = async (relative: string, label: string) => {
 };
 const FILE_SECTIONS = ["Merge Conflicts", "Staged Changes", "Changes"];
 const sectionTitles = () =>
-  [...container.querySelectorAll("span.uppercase")]
+  [...container.querySelectorAll("[data-file-section-title]")]
     .map((node) => node.textContent)
     .filter((title) => FILE_SECTIONS.includes(title ?? ""));
 
@@ -199,8 +206,8 @@ describe("Merge Conflicts section", () => {
     expect(row("a.ts").querySelector('[title^="Both modified"]')).not.toBeNull();
     expect(row("sub/gone.ts").querySelector('[title^="Deleted by us"]')).not.toBeNull();
     // Conflicted files are not also ordinary rows.
-    expect(container.querySelectorAll('[title="a.ts"]')).toHaveLength(0);
-    expect(container.querySelectorAll('[title="ok.ts"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-git-file][aria-label="a.ts"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-git-file][aria-label="ok.ts"]')).toHaveLength(1);
   });
 
   it("offers the choices that fit each kind", async () => {
@@ -309,7 +316,8 @@ describe("operation banner", () => {
     );
     await renderPanel();
     expect(container.textContent).toContain("Rebase in progress · 1 conflict");
-    expect(button("Continue")!.disabled).toBe(true);
+    // Continue explains itself (disabledReason), so it stays focusable with aria-disabled.
+    expect(button("Continue")!.getAttribute("aria-disabled")).toBe("true");
     expect(button("Abort")!.disabled).toBe(false);
 
     act(() => root.unmount());
@@ -320,7 +328,7 @@ describe("operation banner", () => {
     invalidateGitIndex();
     await renderPanel();
     expect(container.textContent).toContain("Rebase in progress · no conflicts left");
-    expect(button("Continue")!.disabled).toBe(false);
+    expect(button("Continue")!.getAttribute("aria-disabled")).toBeNull();
     await click(button("Continue"));
     expect(gitOperationContinue).toHaveBeenCalledWith("/repo");
   });
@@ -333,7 +341,7 @@ describe("operation banner", () => {
 });
 
 describe("committing with conflicts", () => {
-  it("is blocked with compact feedback and file details in the tooltip", async () => {
+  it("is blocked without repeating the banner; the reason stays on the Commit button", async () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(
       index({
         files: [file("staged.ts", { staged: true, unstaged: false })],
@@ -348,13 +356,8 @@ describe("committing with conflicts", () => {
       setter.call(textarea, "message");
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
-      "Resolve 2 conflicts before committing",
-    );
-    expect(container.querySelector('[role="alert"]')?.getAttribute("title")).toContain(
-      "a.ts, b.ts",
-    );
-    expect(button("Commit")!.disabled).toBe(true);
+    expect(container.textContent).not.toContain("conflicts before committing");
+    expect(button("Commit")!.getAttribute("aria-disabled")).toBe("true");
   });
 });
 
@@ -374,7 +377,7 @@ describe("a host that predates conflict info", () => {
     expect(sectionTitles()).toEqual(["Merge Conflicts", "Changes"]);
     expect(row("a.ts").textContent).toContain("U");
     expect(container.textContent).toContain("Merge in progress · 1 conflict");
-    expect(container.querySelectorAll('[title="a.ts"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-git-file][aria-label="a.ts"]')).toHaveLength(0);
     // The kind is unknown, so only choices that work for any kind are offered.
     await openMenu("a.ts");
     expect([...document.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent)).toEqual([

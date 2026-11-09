@@ -1,0 +1,78 @@
+.trigger {
+  flex-shrink: 0;
+  gap: 6px;
+  color: var(--ui-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.count {
+  min-inline-size: 18px;
+  padding-inline: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--ui-tone-neutral-hover);
+  color: var(--ui-tone-neutral-fg);
+  font-size: var(--ui-font-micro);
+  line-height: 18px;
+  text-align: center;
+}
+.popover {
+  padding: 8px 10px;
+  min-inline-size: 0;
+}
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+}
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 8px;
+  padding-block: 2px;
+  min-inline-size: 0;
+}
+.name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status {
+  color: var(--ui-text-secondary);
+}
+.time {
+  color: var(--ui-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.row[data-state="failed"] .status {
+  color: var(--ui-tone-danger-fg);
+}
+.row[data-state="uncertain"] {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.row[data-state="uncertain"] .status {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  color: var(--ui-tone-warning-fg);
+}
+.row > :global(button) {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+/* The single live signal while voice actions run: the label breathes. */
+.trigger :global(.shimmer-text) {
+  animation: voice-action-working 1.6s var(--motion-ease-standard) infinite;
+}
+@keyframes voice-action-working {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .trigger :global(.shimmer-text) {
+    animation: none;
+  }
+}

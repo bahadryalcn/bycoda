@@ -2,14 +2,31 @@
 
 import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ComponentProps, CSSProperties, FocusEvent, KeyboardEvent, ReactNode } from "react";
+import type { ComponentProps, FocusEvent, KeyboardEvent, ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Check, Copy, MoreHorizontal, Trash2 } from "lucide-react";
+import { Check, Copy, Trash2 } from "../../icons";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./context-menu.module.css";
 
 /** Arc presentation for menus positioned by the application's overlay stack. */
 export const contextMenuRowClassName = styles.item;
+/** Destructive tone for a row that uses `contextMenuRowClassName` directly. */
+export const contextMenuDestructiveClassName = styles.destructive;
+/**
+ * Slot classes shared by every menu path (DropdownMenu, point/anchor ContextMenu, MenuRow
+ * consumers, standalone Arc ContextMenu): leading icon, copy column with an optional
+ * description line, and the trailing shortcut / check / submenu chevron.
+ */
+export const contextMenuSlotClassName = {
+  icon: styles.icon,
+  copy: styles.copy,
+  label: styles.label,
+  description: styles.description,
+  trailing: styles.trailing,
+  shortcut: styles.shortcut,
+  separator: styles.separator,
+  heading: styles.heading,
+} as const;
 export function ContextMenuRow({
   destructive,
   className,
@@ -72,8 +89,10 @@ export interface ContextMenuProps {
 type Highlight = { index: number; top: number; height: number; danger: boolean; glide: boolean };
 
 const MENU_WIDTH = 208;
+// Compact row height (32px) plus the 4px menu padding and 1px border on each side.
+const ROW_ESTIMATE = 32;
 
-// Keeps the menu 8px inside the viewport. Rows are 34px with 5px padding and a 1px border; the real size is measured before paint.
+// Keeps the menu 8px inside the viewport. The real size is measured before paint.
 function clampTo(x: number, y: number, width: number, height: number) {
   const left = Math.max(8, Math.min(x, window.innerWidth - width - 8));
   const top = Math.max(8, Math.min(y, window.innerHeight - height - 8));
@@ -105,6 +124,8 @@ export function ContextMenu({ children, items, label = "Context menu" }: Context
   const live = useRef(false);
 
   const anchor = useRef({ x: 0, y: 0 });
+  // One leading icon slot for the whole menu, so rows without an icon keep the label column.
+  const hasIcons = items.some((item) => item.icon != null);
 
   useEffect(() => {
     live.current = open;
@@ -127,7 +148,7 @@ export function ContextMenu({ children, items, label = "Context menu" }: Context
   useEffect(() => {
     if (!open) return;
     menuRef.current
-      ?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')
+      ?.querySelector<HTMLElement>('[role^="menuitem"]:not(:disabled)')
       ?.focus({ preventScroll: true });
     const closeOnPointerDown = (event: PointerEvent) => {
       if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
@@ -148,7 +169,7 @@ export function ContextMenu({ children, items, label = "Context menu" }: Context
 
   function showMenu(x: number, y: number) {
     anchor.current = { x, y };
-    const estimate = clampTo(x, y, MENU_WIDTH, Math.min(300, items.length * 34 + 12));
+    const estimate = clampTo(x, y, MENU_WIDTH, Math.min(300, items.length * ROW_ESTIMATE + 10));
     setPoint((current) => ({ ...estimate, key: current.key + 1 }));
     window.clearTimeout(clearTimer.current);
     pointer.current = false;
@@ -217,7 +238,7 @@ export function ContextMenu({ children, items, label = "Context menu" }: Context
   function onMenuFocus(event: FocusEvent<HTMLDivElement>) {
     const item =
       event.target instanceof HTMLElement
-        ? event.target.closest<HTMLElement>('[role="menuitem"]')
+        ? event.target.closest<HTMLElement>('[role^="menuitem"]')
         : null;
     if (item) {
       // A pointer-opened menu focuses its first row without showing a highlight, like a native menu.
@@ -325,11 +346,11 @@ export function ContextMenu({ children, items, label = "Context menu" }: Context
                     <button
                       key={item.id}
                       type="button"
-                      role="menuitem"
+                      role={item.checked == null ? "menuitem" : "menuitemcheckbox"}
+                      aria-checked={item.checked}
                       tabIndex={-1}
                       data-index={index}
                       data-tone={item.destructive ? "danger" : undefined}
-                      style={{ "--i": index } as CSSProperties}
                       disabled={item.disabled}
                       className={[styles.item, item.destructive ? styles.destructive : ""]
                         .filter(Boolean)
@@ -352,11 +373,17 @@ export function ContextMenu({ children, items, label = "Context menu" }: Context
                         targetRef.current?.focus();
                       }}
                     >
-                      <span className={styles.icon} aria-hidden="true">
-                        {item.icon ??
-                          (item.checked ? <Check size={15} /> : <MoreHorizontal size={15} />)}
-                      </span>
-                      <span>{item.label}</span>
+                      {hasIcons ? (
+                        <span className={styles.icon} aria-hidden="true">
+                          {item.icon}
+                        </span>
+                      ) : null}
+                      <span className={styles.copy}>{item.label}</span>
+                      {item.checked != null ? (
+                        <span className={styles.trailing} aria-hidden="true">
+                          {item.checked ? <Check /> : null}
+                        </span>
+                      ) : null}
                     </button>
                   ))}
                 </motion.div>

@@ -1,0 +1,30 @@
+.token {
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-tone-accent-subtle);
+  box-shadow: inset 0 0 0 1px var(--ui-tone-accent-border);
+  color: var(--ui-tone-accent-fg);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.bracket {
+  position: relative;
+  color: transparent;
+}
+
+.icon {
+  /* The bracket under it is transparent; the icon needs the token's own color. */
+  color: var(--ui-tone-accent-fg);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  transform: translate(-50%, -50%);
+  text-indent: 0;
+}
+
+/* Same size as the attachment token icon (AttachmentIdentity `size="token"`). */
+.quoteIcon {
+  width: 9px;
+  height: 9px;
+}

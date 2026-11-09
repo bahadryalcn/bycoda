@@ -1,0 +1,14 @@
+.overview {
+  padding-block: 4px 8px;
+}
+
+.overview > div + div {
+  margin-block-start: 8px;
+  padding-block-start: 4px;
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+
+.nested {
+  margin-inline-start: 12px;
+  min-inline-size: 0;
+}

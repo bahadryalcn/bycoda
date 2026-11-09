@@ -100,7 +100,7 @@ export function reportRemoteLoad(cwd: string, source: string, error?: unknown): 
       count: (unreachable.get(environmentId)?.count ?? 0) + 1,
       at: Date.now(),
     });
-  } else if (unreachable.delete(environmentId)) {
+  } else if (answered(failure) && unreachable.delete(environmentId)) {
     return recover(environmentId); // the machine answered, with an error of its own
   }
   if (changed) emit();
@@ -122,6 +122,13 @@ export function reportRemoteConnection(cwd: string, source: string, error?: unkn
  * the machine's environment when it is known. */
 export function notifyRemoteRecovered(environmentId?: string): void {
   if (environmentId) applyRemoteConnection(environmentId, { type: "recovered", at: Date.now() });
+  announceRemoteRecovery(environmentId);
+}
+
+/** Lets every view reload for a machine that answered again, and stops slowing
+ * its polls, without changing its connection state. A status poll that succeeds
+ * records only an `ok` event, so a blocked or outdated machine stays flagged. */
+export function announceRemoteRecovery(environmentId?: string): void {
   if (environmentId) unreachable.delete(environmentId);
   else unreachable.clear();
   for (const [key, failure] of [...failures])
@@ -145,6 +152,11 @@ export function resetRemoteConnection(environmentId: string): void {
   applyRemoteConnection(environmentId, { type: "reset" });
   emit();
 }
+
+/** Errors the host itself returned: the machine answered, so it is reachable. A
+ * `temporary` error (busy, timed out) proves nothing about the way in. */
+const answered = (failure: RemoteFailure) =>
+  failure.kind === "other" || failure.kind === "outdated" || failure.kind === "unsupported";
 
 function recover(environmentId: string): void {
   for (const [key, failure] of [...failures])
@@ -178,6 +190,17 @@ export function useRemoteLoadFailure(cwd: string, source: string): RemoteFailure
   const environmentId = environmentOf(cwd);
   const read = () => (environmentId ? failures.get(keyFor(environmentId, source)) : undefined);
   return useSyncExternalStore(subscribeChanges, read, read);
+}
+
+/** A machine was disconnected or removed: cancel its attempts and forget what was
+ * learned about it, so no retry keeps asking for it and no view keeps its failure. */
+export function forgetRemoteConnection(environmentId: string): void {
+  invalidateConnection(environmentId);
+  connections.delete(environmentId);
+  unreachable.delete(environmentId);
+  for (const key of [...failures.keys()])
+    if (key.startsWith(`${environmentId}\n`)) failures.delete(key);
+  emit();
 }
 
 /** For tests: forget everything. */

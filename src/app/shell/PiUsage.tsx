@@ -1,7 +1,8 @@
 import { Button } from "../../shared/ui/Button";
-import { t, useLocale } from "../../shared/i18n";
+import { useT } from "../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "../../shared/ui/icons";
+import { Spinner } from "../../shared/ui/Spinner";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import {
   fetchPiUsage,
@@ -17,7 +18,7 @@ import {
 import { UsageProviderChip } from "./UsageProviderChip";
 
 export function PiUsage({ model, now }: { model?: string; now: number }) {
-  useLocale();
+  const t = useT();
   const provider = piUsageProvider(model);
   if (!provider) {
     return (
@@ -29,7 +30,7 @@ export function PiUsage({ model, now }: { model?: string; now: number }) {
             : t("Subscription usage is not supported for this Pi provider.")
         }
       >
-        <HarnessIcon harness="pi" className="size-3 shrink-0" />
+        <HarnessIcon harness="pi" className="icon-sm shrink-0" />
         <span>{t("pi · Usage unavailable")}</span>
       </span>
     );
@@ -38,7 +39,7 @@ export function PiUsage({ model, now }: { model?: string; now: number }) {
 }
 
 function PiProviderUsage({ provider, now }: { provider: PiUsageProvider; now: number }) {
-  useLocale();
+  const t = useT();
   const [limits, setLimits] = useState(() => idleRateLimits(piBillingProvider(provider)));
   const refreshRef = useRef<(force?: boolean) => void>(() => undefined);
   useEffect(() => {
@@ -98,17 +99,12 @@ function PiProviderUsage({ provider, now }: { provider: PiUsageProvider; now: nu
         variant="ghost"
         motion="none"
         type="button"
-        aria-label={t("Refresh Pi usage")}
-        title={t("Refresh Pi usage")}
+        size="sm"
         disabled={fetching}
         onClick={() => refreshRef.current(true)}
-        className="grid shrink-0 place-items-center"
+        className="shrink-0"
       >
-        <RefreshCw
-          className={`size-2.5 ${fetching ? "motion-safe:animate-spin" : ""}`}
-          strokeWidth={1.75}
-          aria-hidden
-        />
+        {fetching ? <Spinner /> : <RefreshCw className="icon-sm" aria-hidden />}
       </Button>
     </>
   );

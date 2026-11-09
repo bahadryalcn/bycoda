@@ -1,3 +1,15 @@
+import { processConstructions } from "../processConstruction.testSupport";
+import { requestedApproval } from "../approvalOccurrence.testSupport";
+import {
+  exerciseOverlappingApproval,
+  exerciseApprovalActualWriteLifetime,
+} from "../approvalOverlap.testSupport";
+import { captureNativeOutputWork, trackNativeOutputWork } from "../../core/nativeOutputDelivery";
+import {
+  nativeOutputFrame,
+  captureNativeOutputEvent,
+  getNativeOutputEventOrigin,
+} from "../../core/nativeOutputDelivery.testSupport";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AcpHandlers } from "../../core/acp";
 import type { HarnessEvent, SendTurnInput } from "../../core/types";
@@ -5,32 +17,67 @@ import type { HarnessEvent, SendTurnInput } from "../../core/types";
 const mock = vi.hoisted(() => ({
   handlers: {} as AcpHandlers,
   request: vi.fn(),
-  respond: vi.fn(async () => undefined),
+  respond: vi.fn(
+    (_id: number, _result: unknown, onActualWrite?: (actual: Promise<void>) => void) => {
+      const actual = Promise.resolve();
+      onActualWrite?.(actual);
+      return actual;
+    },
+  ),
   failMode: false,
   nativeModes: true,
+  onExit: undefined as ((code: number | null) => void) | undefined,
+  notify: vi.fn(async () => undefined),
 }));
 vi.mock("../../core/acp", () => ({
   AcpClient: class {
-    constructor(_id: string, handlers: AcpHandlers) {
+    constructor(
+      private readonly handle: import("../../core/child").ChildProcessHandle,
+      handlers: AcpHandlers,
+    ) {
+      processConstructions.client(handle);
       mock.handlers = handlers;
+    }
+    assertProcess(handle: import("../../core/child").ChildProcessHandle): void {
+      if (handle !== this.handle)
+        throw new Error("ACP fixture client requires its original process");
+    }
+    withWriter(writer: import("../../core/child").ChildTurnWriter) {
+      return processConstructions.view(this.handle, writer, {
+        request: this.request.bind(this),
+        notify: this.notify.bind(this),
+        respond: this.respond.bind(this),
+        respondError: this.respondError.bind(this),
+      });
     }
     request = mock.request;
     respond = mock.respond;
     respondError = vi.fn();
     close = vi.fn();
-    notify = vi.fn();
+    notify = mock.notify;
   },
 }));
-vi.mock("../../core/child", () => ({
-  spawnChild: vi.fn(),
-  watchChild: vi.fn(),
-  killChild: vi.fn(),
-  invokeProviderCommand: async () => [],
-}));
+
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    spawnChild: vi.fn(),
+    watchChild: (
+      _id: string,
+      _line: (line: string) => void,
+      exit: (code: number | null) => void,
+    ) => {
+      mock.onExit = exit;
+    },
+    killChild: vi.fn(async () => undefined),
+    invokeProviderCommand: async () => [],
+  }),
+);
 import {
   sendGenericAcpTurn,
   forgetGenericAcpSession,
   bindGenericAcpSession,
+  cancelGenericAcpTurn,
 } from "./genericAcpAdapter";
 import { applyHarnessEvent } from "../../core/apply";
 import { newSession } from "../../../../features/sessions/model/session";
@@ -52,6 +99,12 @@ beforeEach(() => {
   events.length = 0;
   mock.failMode = false;
   mock.nativeModes = true;
+  mock.onExit = undefined;
+  mock.respond.mockReset().mockImplementation((_id, _result, onActualWrite) => {
+    const actual = Promise.resolve();
+    onActualWrite?.(actual);
+    return actual;
+  });
   mock.request.mockImplementation(async (method: string) => {
     if (method === "session/set_mode" && mock.failMode) throw new Error("mode rejected");
     if (method === "session/new")
@@ -73,6 +126,59 @@ afterEach(async () => {
   await forgetGenericAcpSession("generic-plan");
 });
 
+it("keeps deferred cancel cleanup on A's original constructor handle after B starts", async () => {
+  // Protocol fake: this proves provider ownership, not a Native process fence.
+  await sendGenericAcpTurn(input("build"));
+  const original = processConstructions.created[0];
+  expect(original).toBeDefined();
+  for (const kind of ["client", "watch", "spawn"] as const) {
+    const boundary = processConstructions.operations.filter((operation) => operation.kind === kind);
+    expect(boundary).toHaveLength(1);
+    expect(boundary[0].handle).toBe(original);
+  }
+  let release!: () => void;
+  let entered = false;
+  mock.notify.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        entered = true;
+        release = resolve;
+      }),
+  );
+  const cancelling = cancelGenericAcpTurn("generic-plan");
+  try {
+    await vi.waitFor(() => expect(entered).toBe(true));
+    await forgetGenericAcpSession("generic-plan");
+    await sendGenericAcpTurn(input("build"));
+    const replacement = processConstructions.created[1];
+    expect(replacement).toBeDefined();
+    expect(replacement).not.toBe(original);
+    const cleanupAt = processConstructions.operations.length;
+    release();
+    await cancelling;
+    const cleanup = processConstructions.operations
+      .slice(cleanupAt)
+      .filter((operation) => operation.kind === "kill");
+    // Forget already completed A's original ledger attempt. Late cancel shares
+    // that cached result; it must not perform another effect or discover B.
+    expect(cleanup).toEqual([]);
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "kill")
+        .map((operation) => operation.handle),
+    ).toEqual([original]);
+    await sendGenericAcpTurn(input("build"));
+    expect(processConstructions.created).toHaveLength(2);
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "client").at(-1)
+        ?.handle,
+    ).toBe(replacement);
+  } finally {
+    release?.();
+    await cancelling;
+  }
+});
+
 it("switches to advertised plan mode and restores the prior mode for Build", async () => {
   await sendGenericAcpTurn(input("plan"));
   expect(mock.request).toHaveBeenCalledWith(
@@ -81,7 +187,12 @@ it("switches to advertised plan mode and restores the prior mode for Build", asy
     30_000,
   );
   await sendGenericAcpTurn(input("build"));
-  expect(mock.request).toHaveBeenLastCalledWith("session/prompt", expect.anything());
+  expect(mock.request).toHaveBeenLastCalledWith(
+    "session/prompt",
+    expect.anything(),
+    0,
+    expect.any(Function),
+  );
   expect(mock.request).toHaveBeenCalledWith(
     "session/set_mode",
     { sessionId: "native-session", modeId: "default" },
@@ -212,4 +323,199 @@ it("does not prompt or create a replacement session when load fails; retry keeps
   });
   await sendGenericAcpTurn(input("build"));
   expect(events).toContainEqual({ type: "message.delta", text: "Retry answer" });
+});
+
+it("retains a permission's real write after its UI callback returns", async () => {
+  const { genericAcpAdapter } = await import("./genericAcpAdapter");
+  await sendGenericAcpTurn({
+    ...input(undefined),
+    runtimeMode: "supervised",
+    onEvent: (event) => {
+      captureNativeOutputEvent("generic-plan", event);
+      events.push(event);
+    },
+  });
+  const inspect = nativeOutputFrame("generic-plan", "permission", () => {
+    void mock.handlers.onRequest!(777, "session/request_permission", {
+      toolCall: { title: "causal permission" },
+      options: [{ optionId: "yes", kind: "allow_once" }],
+    });
+  });
+  const asked = events.find((e) => e.type === "approval.requested")!;
+  const origin = getNativeOutputEventOrigin(asked);
+  expect(origin).not.toBeNull();
+  let release!: () => void;
+  mock.respond.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  genericAcpAdapter.respondApproval!(
+    "generic-plan",
+    777,
+    "allow",
+    requestedApproval(events, 777).occurrenceId,
+  );
+  expect(inspect().pendingCausalWork).toBe(1);
+  expect(events.some((e) => e.type === "approval.resolved")).toBe(false);
+  await vi.waitFor(() => expect(typeof release).toBe("function"));
+  release();
+  await vi.waitFor(() => expect(events.some((e) => e.type === "approval.resolved")).toBe(true));
+  expect(getNativeOutputEventOrigin(events.find((e) => e.type === "approval.resolved")!)).toBe(
+    origin,
+  );
+  expect(inspect().pendingCausalWork).toBe(0);
+});
+
+const permissionFixture = (id: number) =>
+  nativeOutputFrame("generic-plan", `permission-${id}`, () => {
+    void mock.handlers.onRequest!(id, "session/request_permission", {
+      toolCall: { title: "Retained permission" },
+      options: [{ optionId: "yes", kind: "allow_once" }],
+    });
+  });
+
+it("retires waiting approval ownership on natural child exit", async () => {
+  await sendGenericAcpTurn({ ...input(undefined), runtimeMode: "supervised" });
+  const inspect = permissionFixture(301);
+  expect(inspect().pendingCausalWork).toBe(1);
+  mock.onExit!(0);
+  await vi.waitFor(() => expect(inspect().pendingCausalWork).toBe(0));
+  expect(mock.respond).not.toHaveBeenCalled();
+});
+
+it("retires an early waiting approval when startup rejects before Live registration", async () => {
+  let inspect!: ReturnType<typeof nativeOutputFrame>;
+  mock.request.mockImplementation(async (method: string) => {
+    if (method === "initialize") {
+      inspect = permissionFixture(302);
+      expect(inspect().pendingCausalWork).toBe(1);
+      throw new Error("fixture initialize rejected");
+    }
+    return {};
+  });
+  await expect(
+    sendGenericAcpTurn({ ...input(undefined), runtimeMode: "supervised" }),
+  ).rejects.toThrow("fixture initialize rejected");
+  expect(inspect().pendingCausalWork).toBe(0);
+  expect(mock.respond).not.toHaveBeenCalled();
+});
+
+it.each([false, true])(
+  "fails closed on overlapping generic ACP permissions (allow already queued: %s)",
+  async (allowBeforeDuplicate) => {
+    const { genericAcpAdapter } = await import("./genericAcpAdapter");
+    await sendGenericAcpTurn({ ...input(undefined), runtimeMode: "supervised" });
+    await exerciseOverlappingApproval({
+      events,
+      requestId: 306,
+      allowBeforeDuplicate,
+      ask: () =>
+        nativeOutputFrame("generic-plan", "generic-overlap", () => {
+          void mock.handlers.onRequest!(306, "session/request_permission", {
+            toolCall: { title: "Retained permission" },
+            options: [
+              { optionId: "yes", kind: "allow_once" },
+              { optionId: "no", kind: "reject_once" },
+            ],
+          });
+        }),
+      approve: (nonce, decision) =>
+        genericAcpAdapter.respondApproval!("generic-plan", 306, decision, nonce),
+      replies: () =>
+        mock.respond.mock.calls.filter(([id]) => id === 306).map(([, result]) => result),
+      deniedResult: { outcome: { outcome: "selected", optionId: "no" } },
+    });
+  },
+);
+
+it.each([false, true])(
+  "retains generic ACP source ownership across a mocked-client waiter timeout (cancel first: %s)",
+  async (cancelBeforeTimeout) => {
+    const { genericAcpAdapter } = await import("./genericAcpAdapter");
+    await sendGenericAcpTurn({ ...input(undefined), runtimeMode: "supervised" });
+    let gate: (() => Promise<void>) | null = null;
+    mock.respond.mockImplementation((_id, _result, onActualWrite) => {
+      const held = gate !== null;
+      const actual = trackNativeOutputWork(
+        gate ? gate() : Promise.resolve(),
+        captureNativeOutputWork(),
+      );
+      onActualWrite?.(actual);
+      if (!held) return actual;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      return Promise.race([
+        actual,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("mock ACP write timed out")), 15_000);
+        }),
+      ]).finally(() => {
+        if (timer !== undefined) clearTimeout(timer);
+      });
+    });
+    await exerciseApprovalActualWriteLifetime({
+      events,
+      requestId: 993,
+      cancelBeforeTimeout,
+      ask: () =>
+        nativeOutputFrame("generic-plan", "generic-actual-write", () => {
+          void mock.handlers.onRequest!(993, "session/request_permission", {
+            toolCall: { title: "Retained permission" },
+            options: [{ optionId: "yes", kind: "allow_once" }],
+          });
+        }),
+      approve: (nonce) => genericAcpAdapter.respondApproval!("generic-plan", 993, "allow", nonce),
+      cancel: () => genericAcpAdapter.cancelTurn!("generic-plan"),
+      holdWrites: (next) => {
+        gate = next;
+      },
+      replies: () =>
+        mock.respond.mock.calls.filter(([id]) => id === 993).map(([, result]) => result),
+    });
+  },
+);
+
+it("natural exit keeps a removed responding approval owned until its actual write settles", async () => {
+  const { genericAcpAdapter } = await import("./genericAcpAdapter");
+  await sendGenericAcpTurn({ ...input(undefined), runtimeMode: "supervised" });
+  const inspect = permissionFixture(304);
+  let release!: () => void;
+  mock.respond.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  genericAcpAdapter.respondApproval!(
+    "generic-plan",
+    304,
+    "allow",
+    requestedApproval(events, 304).occurrenceId,
+  );
+  await vi.waitFor(() => expect(typeof release).toBe("function"));
+  mock.onExit!(0);
+  expect(inspect().pendingCausalWork).toBe(1);
+  release();
+  await vi.waitFor(() => expect(inspect().pendingCausalWork).toBe(0));
+});
+
+it("natural exit keeps an in-flight cancel reply owned until its actual write settles", async () => {
+  const { genericAcpAdapter } = await import("./genericAcpAdapter");
+  await sendGenericAcpTurn({ ...input(undefined), runtimeMode: "supervised" });
+  const inspect = permissionFixture(305);
+  let release!: () => void;
+  mock.respond.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  const cancelling = genericAcpAdapter.cancelTurn!("generic-plan");
+  await vi.waitFor(() => expect(typeof release).toBe("function"));
+  mock.onExit!(0);
+  expect(inspect().pendingCausalWork).toBe(1);
+  release();
+  await cancelling;
+  await vi.waitFor(() => expect(inspect().pendingCausalWork).toBe(0));
 });

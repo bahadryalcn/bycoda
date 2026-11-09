@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import type { AcpHandlers } from "./acp";
+import { processConstructions } from "../providers/processConstruction.testSupport";
 import type { HarnessEvent, SendTurnInput } from "./types";
 import { applyHarnessEvent } from "./apply";
 import { newSession } from "../../../features/sessions/model/session";
@@ -8,50 +8,60 @@ const wire = vi.hoisted(() => ({
   stopReason: "end_turn" as string | undefined,
   prompts: 0,
   sessions: 0,
+  listeners: new Map<string, (line: string) => void>(),
 }));
-vi.mock("./acp", () => ({
-  AcpClient: class {
-    constructor(
-      _id: string,
-      private handlers: AcpHandlers,
-    ) {}
-    async request(method: string) {
-      if (method === "initialize") return { protocolVersion: 1 };
-      if (method === "session/new") {
+// Actual protocol parsing, multiplexing and writer views; only the provider
+// process transport below is a protocol fixture, not physical Native proof.
+vi.mock("./child", () =>
+  processConstructions.mock({
+    resolveCursorBinary: async () => ({ path: "/fake/cursor" }),
+    resolveGrokBinary: async () => ({ path: "/fake/grok" }),
+    resolveFxBinary: async () => ({ path: "/fake/fx" }),
+    resolveHermesBinary: async () => ({ path: "/fake/hermes" }),
+    spawnChild: async () => {},
+    killChild: async (sessionId: string) => {
+      wire.listeners.delete(sessionId);
+    },
+    watchChild: (sessionId: string, onLine: (line: string) => void) => {
+      wire.listeners.set(sessionId, onLine);
+    },
+    unwatchChild: (sessionId: string) => {
+      wire.listeners.delete(sessionId);
+    },
+    writeChild: async (sessionId: string, line: string) => {
+      const request = JSON.parse(line) as { id?: number; method?: string };
+      if (request.id === undefined || !request.method) return;
+      const receive = wire.listeners.get(sessionId);
+      if (!receive) throw new Error("Missing original fixture transport listener");
+      let result: unknown = {};
+      if (request.method === "initialize") result = { protocolVersion: 1 };
+      if (request.method === "session/new") {
         wire.sessions++;
-        return { sessionId: "provider-thread" };
+        result = { sessionId: "provider-thread" };
       }
-      if (method === "session/prompt") {
+      if (request.method === "session/prompt") {
         wire.prompts++;
-        this.handlers.onNotification?.("session/update", {
-          sessionId: "provider-thread",
-          update: {
-            sessionUpdate: "agent_message_chunk",
-            content: { type: "text", text: "Partial answer" },
-          },
-        });
-        return { stopReason: wire.stopReason };
+        receive(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            method: "session/update",
+            params: {
+              sessionId: "provider-thread",
+              update: {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: "Partial answer" },
+              },
+            },
+          }),
+        );
+        result = { stopReason: wire.stopReason };
       }
-      return {};
-    }
-    async notify() {}
-    async respond() {}
-    async respondError() {}
-    close() {}
-  },
-}));
-vi.mock("./child", () => ({
-  resolveCursorBinary: async () => ({ path: "/fake/cursor" }),
-  resolveGrokBinary: async () => ({ path: "/fake/grok" }),
-  resolveFxBinary: async () => ({ path: "/fake/fx" }),
-  resolveHermesBinary: async () => ({ path: "/fake/hermes" }),
-  spawnChild: async () => {},
-  killChild: async () => {},
-  watchChild: () => {},
-  unwatchChild: () => {},
-  readHarnessTextFile: async () => "",
-  invokeProviderCommand: async () => [],
-}));
+      receive(JSON.stringify({ jsonrpc: "2.0", id: request.id, result }));
+    },
+    readHarnessTextFile: async () => "",
+    invokeProviderCommand: async () => [],
+  }),
+);
 vi.mock("../providers/cursor/cursorStore", () => ({
   readStoredCursorToolCalls: async () => [],
   readStoredCursorSubagentRuns: async () => [],
@@ -70,8 +80,10 @@ const providers = [
   { name: "acp", send: generic.sendGenericAcpTurn, stop: generic.forgetGenericAcpSession },
 ];
 beforeEach(() => {
+  processConstructions.reset();
   wire.prompts = 0;
   wire.sessions = 0;
+  wire.listeners.clear();
 });
 
 for (const reason of [
@@ -99,6 +111,11 @@ for (const reason of [
       };
       try {
         await expect(provider.send(input)).resolves.toBeUndefined();
+        expect(
+          processConstructions.operations.some(
+            (op) => op.kind === "write" && op.writer && op.handle.sessionId === sessionId,
+          ),
+        ).toBe(true);
         expect(wire.prompts).toBe(1);
         expect(events.filter((event) => event.type === "message.completed")).toHaveLength(1);
         const session = events.reduce(applyHarnessEvent, newSession("codex", "/repo"));

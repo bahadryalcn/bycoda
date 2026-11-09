@@ -1,22 +1,117 @@
 import { expect, test } from "@playwright/test";
 import { mkdirSync } from "node:fs";
+import { WEBGL_IDLE_DROP_MS } from "../../src/features/terminal/runtime/terminalWebgl";
+import { terminalScrollbarWidth } from "../../src/features/terminal/model/terminalLayout";
 
 for (const theme of ["light", "dark"]) {
-  test(`terminal returns from a hidden panel: ${theme}`, async ({ page }) => {
+  test(`terminal returns from a hidden panel: ${theme}`, async ({ page }, info) => {
+    test.setTimeout(WEBGL_IDLE_DROP_MS + 20_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.setViewportSize({ width: 1000, height: 800 });
     await page.goto(`/tests/browser/terminal-tools.html?theme=${theme}`);
     const panel = page.locator(".project-terminal-dock");
     const canvas = page.locator(".xterm-screen canvas");
+    const root = page.locator("html");
+    const calls = () =>
+      page.evaluate(
+        () =>
+          JSON.parse(document.documentElement.dataset.terminalPtyCalls ?? "[]") as {
+            op: string;
+            id: string;
+            cols?: number;
+            rows?: number;
+          }[],
+      );
+    const grid = async () => {
+      const last = (await calls())
+        .reverse()
+        .find((call) => call.cols !== undefined && call.rows !== undefined);
+      return { cols: last?.cols ?? 0, rows: last?.rows ?? 0 };
+    };
+    const geometry = async () => {
+      const reported = await grid();
+      return page.locator(".bycoda-terminal-host").evaluate(
+        (host, data) => {
+          const screen = host.querySelector(".xterm-screen")!.getBoundingClientRect();
+          const cellWidth = screen.width / data.reported.cols;
+          const rowHeight = screen.height / data.reported.rows;
+          return {
+            ...data.reported,
+            cellWidth,
+            rowHeight,
+            availableWidth: host.clientWidth - data.gutter,
+            availableHeight: host.clientHeight,
+            screenWidth: screen.width,
+            screenHeight: screen.height,
+          };
+        },
+        { reported, gutter: terminalScrollbarWidth() },
+      );
+    };
+    const fits = async () => {
+      const actual = await geometry();
+      const gapX = actual.availableWidth - actual.screenWidth;
+      const gapY = actual.availableHeight - actual.screenHeight;
+      return (
+        actual.cols > 0 &&
+        actual.rows > 0 &&
+        Number.isFinite(actual.cellWidth) &&
+        actual.cellWidth > 0 &&
+        Number.isFinite(actual.rowHeight) &&
+        actual.rowHeight > 0 &&
+        gapX >= -1 &&
+        gapX < actual.cellWidth + 1 &&
+        gapY >= -1 &&
+        gapY < actual.rowHeight + 1
+      );
+    };
     await expect(page.locator("html")).toHaveAttribute("data-terminal-prompt", /^ready>\s*$/);
     await expect(canvas.first()).toBeVisible();
-    for (const width of [1000, 390, 1000]) {
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+    });
+    await expect.poll(async () => (await grid()).cols).toBeGreaterThan(0);
+    let wideGrid = await grid();
+    let wideSpace = { width: 0, height: 0 };
+    let narrowCols = 0;
+    for (const [index, width] of [1000, 390, 1000].entries()) {
+      if (index === 2 && theme === "dark") {
+        const before = await geometry();
+        const fontSize = await root
+          .getAttribute("data-terminal-typography")
+          .then((value) => JSON.parse(value!).fontSize as number);
+        await page.locator(".xterm-screen").hover();
+        await page.keyboard.down("Control");
+        await page.mouse.wheel(0, -100);
+        await page.keyboard.up("Control");
+        await expect
+          .poll(() =>
+            root
+              .getAttribute("data-terminal-typography")
+              .then((value) => JSON.parse(value!).fontSize),
+          )
+          .toBe(fontSize + 1);
+        await expect
+          .poll(async () => (await geometry()).cellWidth)
+          .toBeGreaterThan(before.cellWidth);
+        expect(await page.evaluate(() => window.visualViewport?.scale)).toBe(1);
+      }
+      const retained = await canvas.elementHandles();
+      const previousPrompt = await root.getAttribute("data-terminal-prompt");
       await panel.evaluate((element) => {
         element.style.display = "none";
       });
-      // Disposing WebGL is evidence that the visibility observer saw the hidden panel.
-      await expect(canvas).toHaveCount(0);
+      // Observe actual PTY visibility delivery, independently of the renderer's
+      // grace period. Quick dock toggles keep these same render resources.
+      await expect(root).toHaveAttribute(
+        "data-terminal-pty-visibility",
+        JSON.stringify({ id: "fixture", visible: false }),
+      );
+      await expect(canvas.first()).toBeHidden();
+      await expect(canvas).toHaveCount(retained.length);
+      for (const node of retained)
+        expect(await node.evaluate((element) => element.isConnected)).toBe(true);
       await page.evaluate(() =>
         document.dispatchEvent(
           new CustomEvent("test-pty-output", {
@@ -24,15 +119,70 @@ for (const theme of ["light", "dark"]) {
           }),
         ),
       );
+      if (index === 2) {
+        // One genuinely idle hide must reclaim the renderer after its canonical
+        // grace period, without retiring the PTY or parsing its held output.
+        await expect(canvas).toHaveCount(0, { timeout: WEBGL_IDLE_DROP_MS + 3_000 });
+        for (const node of retained)
+          expect(await node.evaluate((element) => element.isConnected)).toBe(false);
+        await expect(root).toHaveAttribute("data-terminal-prompt", previousPrompt!);
+      }
       await page.setViewportSize({ width, height: 800 });
       await panel.evaluate((element) => {
         element.style.display = "";
       });
+      await expect(root).toHaveAttribute(
+        "data-terminal-pty-visibility",
+        JSON.stringify({ id: "fixture", visible: true }),
+      );
       await expect(canvas.first()).toBeVisible();
+      if (index < 2) {
+        await expect(canvas).toHaveCount(retained.length);
+        for (const node of retained)
+          expect(await node.evaluate((element) => element.isConnected)).toBe(true);
+      }
+      try {
+        await expect.poll(fits).toBe(true);
+      } finally {
+        await info.attach(`return-grid-${index}`, {
+          body: JSON.stringify(await geometry()),
+          contentType: "application/json",
+        });
+      }
+      // Restoring the viewport restores physical space, not a cached column
+      // count: current font metrics can legitimately change between returns.
+      if (index === 0) {
+        wideGrid = await grid();
+        const actual = await geometry();
+        wideSpace = { width: actual.availableWidth, height: actual.availableHeight };
+      } else if (width === 390) {
+        await expect.poll(async () => (await grid()).cols).toBeLessThan(wideGrid.cols);
+        expect((await geometry()).availableWidth).toBeLessThan(wideSpace.width);
+        narrowCols = (await grid()).cols;
+      } else {
+        await expect.poll(async () => (await grid()).cols).toBeGreaterThan(narrowCols);
+        const actual = await geometry();
+        expect({ width: actual.availableWidth, height: actual.availableHeight }).toEqual(wideSpace);
+      }
       await expect(page.locator("html")).toHaveAttribute("data-terminal-prompt", /^returned>\s*$/);
       await page.locator(".xterm-helper-textarea").pressSequentially("ok");
       await expect(page.locator("html")).toHaveAttribute("data-terminal-prompt", /^returned> ok$/);
+      await page.screenshot({
+        animations: "disabled",
+        path: info.outputPath(`returned-${index}-${width}.png`),
+      });
+      for (const node of retained) await node.dispose();
     }
+    await page.setViewportSize({ width: 800, height: 800 });
+    await expect.poll(fits).toBe(true);
+    await page.screenshot({
+      animations: "disabled",
+      path: info.outputPath("returned-800.png"),
+    });
+    const traffic = await calls();
+    expect(traffic.filter((call) => call.op === "spawn")).toHaveLength(1);
+    expect(traffic.filter((call) => call.op === "kill")).toHaveLength(0);
+    expect(traffic.every((call) => call.id === "fixture")).toBe(true);
     expect(errors).toEqual([]);
   });
 }

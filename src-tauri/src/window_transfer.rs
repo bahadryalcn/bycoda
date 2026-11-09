@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::sync::{mpsc, Mutex};
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
 
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
@@ -10,6 +11,8 @@ pub struct WindowTransferState {
     payloads: Mutex<HashMap<String, String>>,
     ready: Mutex<HashMap<String, PendingTransfer>>,
     drag_previews: Mutex<HashMap<String, DragPreviewState>>,
+    completed: Mutex<HashMap<String, CompletedTransfer>>,
+    probes: Mutex<HashMap<String, (String, mpsc::Sender<()>)>>,
 }
 
 struct DragPreviewState {
@@ -63,9 +66,66 @@ struct WindowTabDragHover {
     scale_factor: Option<f64>,
 }
 
+struct CompletedTransfer {
+    issuer: Arc<crate::control::receipts::WindowIssuer>,
+    id: Option<String>,
+}
+struct TransferOwnership {
+    source: Arc<crate::control::receipts::WindowIssuer>,
+    source_label: String,
+    tokens: HashMap<String, String>,
+}
 struct PendingTransfer {
+    gate: Arc<AtomicU8>,
     id: Option<String>,
     sender: Option<mpsc::Sender<Result<(), String>>>,
+    ownership: Option<TransferOwnership>,
+}
+fn transfer_ownership(
+    source: Arc<crate::control::receipts::WindowIssuer>,
+    source_label: String,
+    payload: &str,
+) -> Result<TransferOwnership, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(payload).map_err(|_| "Invalid window transfer payload")?;
+    let sessions = value
+        .get("sessions")
+        .and_then(|v| v.as_array())
+        .ok_or("Invalid transferred sessions")?;
+    let ids = sessions
+        .iter()
+        .map(|session| {
+            session
+                .get("id")
+                .and_then(|id| id.as_str())
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned)
+                .ok_or("Invalid transferred session".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut ids = ids;
+    if let Some(extra) = value.get("ownershipIds") {
+        let extra = extra.as_array().ok_or("Invalid transferred ownership")?;
+        for id in extra {
+            ids.push(
+                id.as_str()
+                    .filter(|id| !id.is_empty())
+                    .ok_or("Invalid transferred ownership")?
+                    .to_owned(),
+            );
+        }
+    }
+    let tokens = crate::session_window_ownership::prepare_transfer(&source, &ids)?;
+    let source_label = if source_label.is_empty() {
+        crate::session_window_ownership::transfer_source_label(&source, &tokens)?
+    } else {
+        source_label
+    };
+    Ok(TransferOwnership {
+        source,
+        source_label,
+        tokens,
+    })
 }
 
 impl WindowTransferState {
@@ -74,6 +134,8 @@ impl WindowTransferState {
             payloads: Mutex::new(HashMap::new()),
             ready: Mutex::new(HashMap::new()),
             drag_previews: Mutex::new(HashMap::new()),
+            completed: Mutex::new(HashMap::new()),
+            probes: Mutex::new(HashMap::new()),
         }
     }
 
@@ -131,16 +193,111 @@ impl WindowTransferState {
         self.take(label)
     }
 
+    #[cfg(test)]
     pub fn watch_ready(&self, label: &str) -> Result<WindowReady, String> {
         let (sender, receiver) = mpsc::channel();
         self.ready.lock().map_err(|err| err.to_string())?.insert(
             label.to_string(),
             PendingTransfer {
+                gate: Arc::new(AtomicU8::new(0)),
                 id: None,
                 sender: Some(sender),
+                ownership: None,
             },
         );
         Ok(receiver)
+    }
+
+    pub(crate) fn watch_ready_owned(
+        &self,
+        label: &str,
+        source: Arc<crate::control::receipts::WindowIssuer>,
+        payload: &str,
+    ) -> Result<WindowReady, String> {
+        let ownership = transfer_ownership(source, String::new(), payload)?;
+        let (sender, receiver) = mpsc::channel();
+        let mut ready = self.ready.lock().map_err(|err| err.to_string())?;
+        if ready.contains_key(label) {
+            return Err("This window is already receiving a tab. Try again.".into());
+        }
+        ready.insert(
+            label.to_owned(),
+            PendingTransfer {
+                gate: Arc::new(AtomicU8::new(0)),
+                id: None,
+                sender: Some(sender),
+                ownership: Some(ownership),
+            },
+        );
+        Ok(receiver)
+    }
+
+    fn accept_owned(&self, window: &WebviewWindow, id: Option<&str>) -> Result<(), String> {
+        let destination = crate::control::receipts::capture(window)?;
+        destination.with_live(|| {
+            if self
+                .completed
+                .lock()
+                .map_err(|err| err.to_string())?
+                .get(window.label())
+                .is_some_and(|completed| {
+                    Arc::ptr_eq(&completed.issuer, &destination) && completed.id.as_deref() == id
+                })
+            {
+                return Ok(());
+            }
+            let mut ready = self.ready.lock().map_err(|err| err.to_string())?;
+            let pending = ready
+                .get_mut(window.label())
+                .ok_or("This transfer is no longer pending.")?;
+            if pending.id.as_deref() != id {
+                return Err("This transfer is no longer pending.".into());
+            }
+            let sender = pending
+                .sender
+                .as_ref()
+                .ok_or("This transfer is no longer pending.")?;
+            let ownership = pending
+                .ownership
+                .as_ref()
+                .ok_or("Transfer ownership is unavailable")?;
+            let ids = ownership.tokens.keys().cloned().collect::<Vec<_>>();
+            crate::harness::with_quiescent_sessions(window.app_handle(), &ids, || {
+                pending
+                    .gate
+                    .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+                    .map_err(|_| "This transfer has expired.")?;
+                let moved = crate::session_window_ownership::transfer_claims(
+                    &ownership.source,
+                    &destination,
+                    window.label(),
+                    &ownership.tokens,
+                )?;
+                if sender.send(Ok(())).is_err() {
+                    let _ = crate::session_window_ownership::rollback_transfer(
+                        &destination,
+                        &ownership.source,
+                        &ownership.source_label,
+                        &moved,
+                        &ownership.tokens,
+                    );
+                    return Err("The source did not receive the transfer result.".into());
+                }
+                Ok(())
+            })?;
+            pending.sender.take();
+            self.completed
+                .lock()
+                .map_err(|err| err.to_string())?
+                .insert(
+                    window.label().to_string(),
+                    CompletedTransfer {
+                        issuer: destination.clone(),
+                        id: id.map(str::to_owned),
+                    },
+                );
+            Ok(())
+        })
     }
 
     #[cfg(test)]
@@ -366,11 +523,25 @@ fn finish_drag_preview(window: &WebviewWindow, state: &WindowTransferState) {
     }
 }
 
+/// Retire only the previous page's visual drag hint. Transfer reservations and
+/// ownership have independent lifetimes and must not be discarded on reload.
+pub(crate) fn page_reloaded(app: &AppHandle, label: &str) {
+    if let (Some(window), Some(state)) = (
+        app.get_webview_window(label),
+        app.try_state::<WindowTransferState>(),
+    ) {
+        finish_drag_preview(&window, &state);
+    }
+}
+
 /// Destroying a destination releases its source immediately. Destroying a drag
 /// source also clears its last hover in every still-live destination.
 pub fn window_closed(app: &AppHandle, label: &str) {
     let state = app.state::<WindowTransferState>();
     state.reject_closed_destination(label);
+    if let Ok(mut completed) = state.completed.lock() {
+        completed.remove(label);
+    }
     if let Ok(mut previews) = state.drag_previews.lock() {
         if let Some(previous) = previews.remove(label) {
             if let Some(target) = previous.target {
@@ -606,21 +777,42 @@ pub async fn move_window_tabs(
                 } else { transfer }
             } else { transfer };
             let state = app.state::<WindowTransferState>();
+            let probe_id = format!("probe:{}", uuid::Uuid::new_v4());
+            let (probe_sender, probe_receiver) = mpsc::channel();
+            state.probes.lock().map_err(|e| e.to_string())?.insert(probe_id.clone(), (target.label().to_string(), probe_sender));
+            let sent = app.emit_to(tauri::EventTarget::webview_window(target.label()), "window_transfer_available", &probe_id);
+            let ready = sent.is_ok() && probe_receiver.recv_timeout(std::time::Duration::from_millis(900)).is_ok();
+            state.probes.lock().map_err(|e| e.to_string())?.remove(&probe_id);
+            if !ready { return Err("The destination window is busy or not responding. Your tab remains in the original window; try again.".into()); }
+            let source = crate::control::receipts::capture(&window)?;
+            let ownership = transfer_ownership(source, window.label().to_string(), &transfer)?;
             // Hold the readiness lock while staging so concurrent sources cannot
             // replace a transfer already consumed by its receiver.
             let (sender, receiver) = mpsc::channel();
             let transfer_id = uuid::Uuid::new_v4().to_string();
+            let gate = Arc::new(AtomicU8::new(0));
             {
                 let mut ready = state.ready.lock().map_err(|e| e.to_string())?;
                 if ready.contains_key(target.label()) { return Err("This window is already receiving a tab. Try again.".into()); }
                 state.stage(target.label(), transfer)?;
-                ready.insert(target.label().to_string(), PendingTransfer { id: Some(transfer_id.clone()), sender: Some(sender) });
+                ready.insert(target.label().to_string(), PendingTransfer { gate: gate.clone(), id: Some(transfer_id.clone()), sender: Some(sender), ownership: Some(ownership) });
             }
-            let result = app.emit_to(tauri::EventTarget::webview_window(target.label()), "window_transfer_available", &transfer_id)
-                .map_err(|e| e.to_string())
-                .and_then(|_| receiver.recv_timeout(std::time::Duration::from_secs(30))
-                    .map_err(|_| "The destination did not accept the tab. It remains in the original window.".to_string())?) ;
-            state.discard(target.label());
+            let result = match app.emit_to(tauri::EventTarget::webview_window(target.label()), "window_transfer_available", &transfer_id) {
+                Err(error) => {
+                    if gate.compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire).is_ok() { Err(error.to_string()) }
+                    else { Err("The transfer result is unknown. Check both windows before retrying.".into()) }
+                }
+                Ok(()) => match receiver.recv_timeout(std::time::Duration::from_secs(3)) {
+                    Ok(result) => result,
+                    Err(_) => {
+                        let cancelled = gate.compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire).is_ok();
+                        Err(if cancelled { "The destination did not accept the tab. It remains in the original window." } else { "The transfer result is unknown. Check both windows before retrying." }.to_string())
+                    }
+                },
+            };
+            let cleanup_app = app.clone();
+            let cleanup_label = target.label().to_owned();
+            std::thread::spawn(move || cleanup_app.state::<WindowTransferState>().discard(&cleanup_label));
             result?;
             if app.get_webview_window(target.label()).is_none() {
                 return Err("The destination window closed. Your conversation remains in the original window.".into());
@@ -638,10 +830,10 @@ pub async fn move_window_tabs(
         }
         if let Some((px, py)) = point {
             let scale = pointer_pixel_ratio(window.scale_factor().map_err(|e| e.to_string())?, pixel_ratio);
-            crate::window::open_transfer_window_at_point(app, transfer,
+            crate::window::open_transfer_window_at_point(app, crate::control::receipts::capture(&window)?, transfer,
                 tauri::PhysicalPosition::new((px - 120.0 * scale) as i32, (py - 16.0 * scale) as i32))?;
         } else {
-            crate::window::open_transfer_window(app, transfer, x.zip(y))?;
+            crate::window::open_transfer_window(app, crate::control::receipts::capture(&window)?, transfer, x.zip(y))?;
         }
         Ok("transferred".into())
     }).await.map_err(|e| e.to_string())?
@@ -667,6 +859,24 @@ fn with_drop_point(
 }
 
 #[tauri::command]
+pub fn window_transfer_probe_reply(
+    window: WebviewWindow,
+    state: State<'_, WindowTransferState>,
+    probe_id: String,
+) -> Result<(), String> {
+    let mut probes = state.probes.lock().map_err(|e| e.to_string())?;
+    if probes
+        .get(&probe_id)
+        .is_some_and(|(label, _)| label == window.label())
+    {
+        if let Some((_, sender)) = probes.remove(&probe_id) {
+            let _ = sender.send(());
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn take_window_transfer(
     window: WebviewWindow,
     state: State<'_, WindowTransferState>,
@@ -681,12 +891,30 @@ pub fn window_transfer_ready(
     state: State<'_, WindowTransferState>,
     transfer_id: Option<String>,
 ) -> Result<(), String> {
-    state.finish_checked(window.label(), transfer_id.as_deref(), Ok(()))
+    state.accept_owned(&window, transfer_id.as_deref())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timed_out_transfer_cannot_enter_commit_and_committing_is_unknown() {
+        let gate = AtomicU8::new(0);
+        assert!(gate
+            .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok());
+        assert!(gate
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+            .is_err());
+        let committing = AtomicU8::new(0);
+        assert!(committing
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok());
+        assert!(committing
+            .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire)
+            .is_err());
+    }
 
     #[test]
     fn css_pointer_conversion_uses_webview_zoom_in_addition_to_os_scale() {
@@ -884,8 +1112,10 @@ mod tests {
         state.ready.lock().unwrap().insert(
             "target".into(),
             PendingTransfer {
+                gate: Arc::new(AtomicU8::new(0)),
                 id: Some("new".into()),
                 sender: Some(sender),
+                ownership: None,
             },
         );
         state.stage("target", "new payload".into()).unwrap();

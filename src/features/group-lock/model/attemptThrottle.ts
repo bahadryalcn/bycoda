@@ -55,9 +55,4 @@ export function parseAttemptState(value: unknown): AttemptState {
   return { failures, blockedUntil };
 }
 
-export function formatCooldown(ms: number): string {
-  const seconds = Math.ceil(ms / 1000);
-  if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
-  const minutes = Math.ceil(seconds / 60);
-  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
-}
+export { formatCooldown } from "../../../shared/i18n/format";

@@ -6,6 +6,7 @@ import {
   filterHitsByProject,
   flattenGrouped,
   groupHits,
+  groupHitsWithCounts,
   hitsFromContentMatches,
   hitsFromSessionSearch,
   mergeHits,
@@ -41,6 +42,34 @@ describe("snippetAround", () => {
     const snippet = snippetAround(text, "sidebar");
     expect(snippet.startsWith("…")).toBe(true);
     expect(snippet).toContain("sidebar chips");
+  });
+});
+
+describe("loaded result limits", () => {
+  const content: AppSearchHit[] = Array.from({ length: 49 }, (_, index) => ({
+    id: `content:/repo/file:${index + 1}`,
+    kind: "content",
+    path: "/repo/file",
+    relative: "file",
+    name: "file",
+    line: index + 1,
+    column: 1,
+    preview: "needle",
+  }));
+
+  it("reports local omissions below a backend cap without changing exact locations", () => {
+    const result = groupHitsWithCounts(content, "files");
+    expect(result.counts.content).toEqual({ available: 49, shown: 48, omitted: 1 });
+    expect(result.omitted).toBe(1);
+    expect(result.grouped.content[47]).toMatchObject({ path: "/repo/file", line: 48, column: 1 });
+    expect(groupHits(content, "files")).toEqual(result.grouped);
+  });
+
+  it("does not describe intentionally excluded categories as omitted results", () => {
+    const result = groupHitsWithCounts(content, "projects");
+    expect(result.counts.content).toEqual({ available: 0, shown: 0, omitted: 0 });
+    expect(result.omitted).toBe(0);
+    expect(flattenGrouped(result.grouped)).toEqual([]);
   });
 });
 

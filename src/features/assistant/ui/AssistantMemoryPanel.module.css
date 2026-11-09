@@ -1,0 +1,133 @@
+.panel {
+  inline-size: 100%;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.title {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.title h2 {
+  margin: 0;
+  font-size: var(--ui-font-heading);
+  font-weight: 500;
+}
+.search {
+  flex: 0 1 280px;
+  min-inline-size: 0;
+}
+.add {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+}
+.group {
+  display: grid;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.list {
+  display: grid;
+  min-inline-size: 0;
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--ui-radius-card);
+  overflow: hidden;
+}
+.list > * + * {
+  border-block-start: 1px solid var(--ui-pane-border);
+}
+.entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 16px;
+  padding: 10px 12px;
+}
+.text {
+  display: grid;
+  gap: 4px;
+  min-inline-size: 0;
+}
+.body {
+  margin: 0;
+  font-size: var(--ui-font-body);
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  overflow-wrap: anywhere;
+}
+.time {
+  white-space: nowrap;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.quote {
+  margin: 0;
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid var(--ui-pane-border);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.feedback {
+  grid-column: 1 / -1;
+}
+.feedback:empty {
+  display: none;
+}
+.editor {
+  display: grid;
+  gap: 20px;
+  min-inline-size: 0;
+}
+.editorOptions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+@media (max-width: 540px) {
+  .header {
+    align-items: stretch;
+  }
+  .title,
+  .add {
+    flex: 1 1 100%;
+    margin-inline-start: 0;
+  }
+  .add {
+    justify-self: stretch;
+  }
+  .entry {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .actions {
+    justify-content: flex-end;
+  }
+  .editorOptions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

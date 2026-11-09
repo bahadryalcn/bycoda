@@ -1,9 +1,7 @@
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useState, type RefObject } from "react";
-import { ask } from "@tauri-apps/plugin-dialog";
 import {
-  Loader,
   MoreHorizontal,
   ArrowDownCircle,
   CloudUpload,
@@ -11,8 +9,9 @@ import {
   Plus,
   Check,
 } from "../../../shared/ui/icons";
-import { ExplorerMenu } from "../../files/ui/ExplorerMenu";
+import { ExplorerMenu } from "../../files/public/ExplorerMenu";
 import { Button } from "../../../shared/ui/Button";
+import { Spinner } from "../../../shared/ui/Spinner";
 import {
   gitBranches,
   gitCreateBranch,
@@ -47,7 +46,7 @@ import {
   GIT_ACTIONS,
   HOST_UPDATE_NOTICE,
   useRemoteSupports,
-} from "../../connections/model/remoteCapabilities";
+} from "../../connections/public/remoteCapabilities";
 import { useProjectBranchesState } from "../hooks/useProjectBranches";
 import { deleteLocalBranch } from "../model/deleteBranch";
 import { operationLabel } from "../model/commitActions";
@@ -60,8 +59,13 @@ import { BranchManagerDialog } from "./BranchManagerDialog";
 import { GitPickDialog, type PickItem } from "./GitPickDialog";
 import { stashCommit } from "./GitStashSection";
 import { RefNameDialog } from "./RefNameDialog";
-import { gitPanelRuntime, setGitFeedback, withGitOperation } from "../model/gitPanelState";
-import { appName } from "../../../shared/lib/appName";
+import {
+  gitPanelRuntime,
+  setGitFeedback,
+  withGitOperation,
+  useGitPanelState,
+} from "../model/gitPanelState";
+import { confirmGitAction } from "../model/gitConfirmation";
 
 /** The `busy` key the menu's own actions hold while they run. */
 export const GIT_MENU_BUSY = "git-menu";
@@ -138,10 +142,6 @@ async function orElse<T>(work: () => Promise<T>, fallback: T): Promise<T> {
   }
 }
 
-function confirm(text: string, okLabel: string): Promise<boolean> {
-  return ask(text, { title: appName(), kind: "warning", okLabel });
-}
-
 /** The header "…" button and the source-control menu it opens. */
 export function GitActionsMenu({
   toolbar = false,
@@ -160,6 +160,7 @@ export function GitActionsMenu({
 }: Props) {
   useLocale();
   // Everything beyond Pull needs this computer or a host with `git.actions`.
+  const [generating] = useGitPanelState(cwd, "generating");
   const supported = useRemoteSupports(cwd, GIT_ACTIONS);
   const actions = supported === true;
   const { branches } = useProjectBranchesState(cwd, actions);
@@ -199,6 +200,7 @@ export function GitActionsMenu({
       actions,
       updateNotice: supported === false ? HOST_UPDATE_NOTICE : null,
       busy: busy !== null,
+      generating,
       branch,
       hasCommits: Boolean(index?.head),
       hasRemote: Boolean(index?.remote),
@@ -212,7 +214,7 @@ export function GitActionsMenu({
       autoFetch,
       ...data,
     });
-  }, [actions, autoFetch, branch, branches, busy, data, index, supported]);
+  }, [actions, autoFetch, branch, branches, busy, data, generating, index, supported]);
 
   const run = async (work: () => Promise<unknown>, status?: string, pending?: string) => {
     if (gitPanelRuntime(cwd).state.busy) return;
@@ -337,10 +339,13 @@ export function GitActionsMenu({
   const undoLastCommit = async () => {
     if (
       index?.headPushed &&
-      !(await confirm(
-        "The last commit is already pushed. Undo it here anyway? Pushing the result later needs a force push from the terminal.",
-        "Undo Commit",
-      ))
+      !(await confirmGitAction({
+        title: t("Undo pushed commit?"),
+        message: t(
+          "The last commit is already pushed. Pushing the result later needs a force push from the terminal.",
+        ),
+        confirmLabel: t("Undo commit"),
+      }))
     ) {
       return;
     }
@@ -351,10 +356,11 @@ export function GitActionsMenu({
     if (!data.operation) return;
     const label = operationLabel(data.operation).toLowerCase();
     if (
-      !(await confirm(
-        `Abort the ${label}? Changes made while resolving it are discarded.`,
-        "Abort",
-      ))
+      !(await confirmGitAction({
+        title: t("Abort the {p0}?", { p0: label }),
+        message: t("Changes made while resolving it are discarded."),
+        confirmLabel: t("Abort {p0}", { p0: label }),
+      }))
     ) {
       return;
     }
@@ -561,10 +567,14 @@ export function GitActionsMenu({
             onPick: (name) => {
               setDialog(null);
               void (async () => {
-                const confirmed = await confirm(
-                  `Remove remote ${name}? Its remote-tracking branches are deleted from this repository. Nothing changes on the server.`,
-                  "Remove",
-                );
+                const confirmed = await confirmGitAction({
+                  title: t("Remove remote?"),
+                  message: t(
+                    "The remote “{p0}” and its remote-tracking branches are removed from this repository. Nothing changes on the server.",
+                    { p0: name },
+                  ),
+                  confirmLabel: t("Remove remote"),
+                });
                 if (confirmed) await run(() => gitRemoteRemove(cwd, name));
               })();
             },
@@ -603,19 +613,23 @@ export function GitActionsMenu({
           "Drop Stash",
           (entry) =>
             void (async () => {
-              const confirmed = await confirm(
-                `Drop "${entry.message}"? The stashed changes are lost.`,
-                "Drop",
-              );
+              const confirmed = await confirmGitAction({
+                title: t("Drop stash?"),
+                message: t("“{p0}” and the changes stashed in it are lost.", {
+                  p0: entry.message,
+                }),
+                confirmLabel: t("Drop stash"),
+              });
               if (confirmed) await run(() => gitStashAction(cwd, "drop", entry.index, entry.sha));
             })(),
         );
       case "stash-drop-all": {
         const count = data.stashCount;
-        const confirmed = await confirm(
-          `Drop all ${count} stash${count === 1 ? "" : "es"}? The stashed changes are lost.`,
-          "Drop All",
-        );
+        const confirmed = await confirmGitAction({
+          title: count === 1 ? t("Drop stash?") : t("Drop all {p0} stashes?", { p0: count }),
+          message: t("The stashed changes are lost."),
+          confirmLabel: count === 1 ? t("Drop stash") : t("Drop all stashes"),
+        });
         if (confirmed) await run(() => gitStashClear(cwd));
         return;
       }
@@ -661,10 +675,16 @@ export function GitActionsMenu({
             onPick: (name) => {
               setDialog(null);
               void (async () => {
-                const confirmed = await confirm(
-                  `Delete tag ${name}? A copy already pushed to a remote stays there.`,
-                  "Delete",
-                );
+                const confirmed = await confirmGitAction({
+                  title: t("Delete tag?"),
+                  message: t(
+                    "The tag “{p0}” is deleted here. A copy already pushed to a remote stays there.",
+                    {
+                      p0: name,
+                    },
+                  ),
+                  confirmLabel: t("Delete tag"),
+                });
                 if (confirmed) await run(() => gitDeleteTag(cwd, name));
               })();
             },
@@ -693,12 +713,10 @@ export function GitActionsMenu({
                 size="sm"
                 iconOnly
                 label={label}
-                title={label}
-                aria-label={label}
                 disabled={!item || item.kind !== "item" || !!item.disabled || !!busy}
                 onClick={() => void handle(id)}
               >
-                <Icon className="size-3.5" />
+                <Icon className="icon-sm" />
               </Button>
             );
           })
@@ -718,9 +736,9 @@ export function GitActionsMenu({
         }}
       >
         {busy === GIT_MENU_BUSY ? (
-          <Loader className="size-3.5 animate-spin" strokeWidth={1.75} />
+          <Spinner />
         ) : (
-          <MoreHorizontal className="size-4" strokeWidth={2} />
+          <MoreHorizontal className="icon-md" strokeWidth={2} />
         )}
       </Button>
       {anchor ? (

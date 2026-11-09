@@ -1,7 +1,9 @@
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useSyncExternalStore } from "react";
 import { t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { RefreshCw, X } from "../../../shared/ui/icons";
 import { useRemoteMachineOnline } from "../model/connections";
 import type { RemoteMachine } from "../model/protocol";
@@ -20,11 +22,13 @@ import { RemoteConnectionDetails } from "./RemoteConnectionDetails";
 export function MachineStatus({
   machine,
   details = false,
-  compact = false,
+  showDiagnostics = true,
 }: {
   machine: RemoteMachine;
   details?: boolean;
   compact?: boolean;
+  /** A detail surface can place the secondary host diagnostics in its own disclosure. */
+  showDiagnostics?: boolean;
 }) {
   useRemoteMachineOnline(machine.id);
   const state = useSyncExternalStore(
@@ -53,47 +57,33 @@ export function MachineStatus({
             : indicator.tone === "connecting"
               ? t("Connecting")
               : t(degraded ? "Refresh pending" : "Connected");
+  const tone =
+    needsSignIn(state.status) || state.status === "unreachable"
+      ? "warning"
+      : indicator.tone === "connected" && !degraded
+        ? "success"
+        : "neutral";
+  // Health is always readable; SSH capability is a separate type label.
   const badge = (
-    <Badge
-      size="sm"
-      title={label}
-      tone={
-        needsSignIn(state.status)
-          ? "warning"
-          : indicator.tone === "connected" && !degraded
-            ? "success"
-            : "neutral"
-      }
-    >
-      {compact &&
-      !details &&
-      !state.error &&
-      !degraded &&
-      !needsSignIn(state.status) &&
-      (indicator.tone === "connected" || state.status === "unreachable") ? (
-        <>
-          <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
-          <span className="sr-only">{label}</span>
-        </>
-      ) : (
-        label
-      )}
+    <Badge variant="dot" size="sm" tone={tone}>
+      <LiveText text={label} />
     </Badge>
   );
   if (!details) return badge;
   return (
-    <div className="flex flex-col items-start gap-2" aria-live="polite">
+    <div className="flex flex-col items-start gap-2">
       {badge}
       {state.error ? (
-        <details
-          className="w-full text-xs text-(--ui-text-muted)"
-          open={needsSignIn(state.status) || undefined}
+        <Disclosure
+          size="sm"
+          className="w-full text-ui-caption text-(--ui-text-muted)"
+          defaultOpen={needsSignIn(state.status)}
+          summary={t("Connection details")}
         >
-          <summary className="cursor-pointer py-1">{t("Connection details")}</summary>
-          <p className="mbs-1 break-words leading-relaxed">{state.error}</p>
-        </details>
+          <p className="break-words leading-relaxed">{state.error}</p>
+        </Disclosure>
       ) : null}
-      <RemoteConnectionDetails environmentId={machine.environmentId} />
+      {showDiagnostics ? <RemoteConnectionDetails environmentId={machine.environmentId} /> : null}
     </div>
   );
 }
@@ -119,7 +109,7 @@ export function ReconnectAction({ machine }: { machine: RemoteMachine }) {
         disabled={state.status === "identity-mismatch"}
         onClick={() => void reconnectRemoteMachine(machine.environmentId, { signIn: true })}
       >
-        <RefreshCw aria-hidden className="size-3.5" />
+        <RefreshCw aria-hidden className="icon-sm" />
       </Button>
       {reconnecting ? (
         <Button
@@ -128,7 +118,7 @@ export function ReconnectAction({ machine }: { machine: RemoteMachine }) {
           label={t("Cancel reconnect")}
           onClick={() => cancelRemoteReconnect(machine.environmentId)}
         >
-          <X aria-hidden className="size-3.5" />
+          <X aria-hidden className="icon-sm" />
         </Button>
       ) : null}
     </>

@@ -1,3 +1,5 @@
+import type { HarnessOperationContext } from "./types";
+import { captureTextInput } from "./textSource";
 import type { HarnessId } from "../../../features/sessions/model/session";
 import {
   nativeModelId,
@@ -32,10 +34,12 @@ async function selectedGitPrompt(
   choice: GitGenerationChoice,
   prompt: string,
   signal?: AbortSignal,
+  operationContext?: HarnessOperationContext,
 ) {
   const model = resolveModel(choice.harness, choice.model);
   return runHarnessTextPrompt({
     cwd,
+    operationContext,
     harness: choice.harness,
     model: nativeModelId(model),
     modelSettings: mergeModelSettings(model, choice.modelSettings),
@@ -59,16 +63,21 @@ export function generateCommitMessage(
   preferred?: HarnessId,
   signal?: AbortSignal,
   choice?: GitGenerationChoice,
+  operationContext?: HarnessOperationContext,
 ): Promise<string> {
+  const captured = captureTextInput({ operationContext }).operationContext;
   const selected = choice ?? automaticGitChoice(preferred);
-  if (selected) return generateSelectedCommit(cwd, selected, signal);
-  return generateHarnessCommitMessage(pickTextHarness(preferred), cwd, signal);
+  if (selected) return generateSelectedCommit(cwd, selected, signal, captured);
+  return captured
+    ? generateHarnessCommitMessage(pickTextHarness(preferred), cwd, signal, captured)
+    : generateHarnessCommitMessage(pickTextHarness(preferred), cwd, signal);
 }
 
 async function generateSelectedCommit(
   cwd: string,
   choice: GitGenerationChoice,
   signal?: AbortSignal,
+  operationContext?: HarnessOperationContext,
 ): Promise<string> {
   signal?.throwIfAborted();
   const context = await gitStagedContext(cwd);
@@ -82,6 +91,7 @@ async function generateSelectedCommit(
       stagedPatch: context.patch,
     }),
     signal,
+    operationContext,
   );
   const parsed = parseCommitMessage(output);
   if (!parsed)
@@ -95,13 +105,21 @@ export function generatePrContent(
   cwd: string,
   preferred?: HarnessId,
   choice?: GitGenerationChoice,
+  operationContext?: HarnessOperationContext,
 ): Promise<(PrContent & { base: string; head: string }) | null> {
+  const captured = captureTextInput({ operationContext }).operationContext;
   const selected = choice ?? automaticGitChoice(preferred);
-  if (selected) return generateSelectedPr(cwd, selected);
-  return generateHarnessPrContent(pickTextHarness(preferred), cwd);
+  if (selected) return generateSelectedPr(cwd, selected, captured);
+  return captured
+    ? generateHarnessPrContent(pickTextHarness(preferred), cwd, captured)
+    : generateHarnessPrContent(pickTextHarness(preferred), cwd);
 }
 
-async function generateSelectedPr(cwd: string, choice: GitGenerationChoice) {
+async function generateSelectedPr(
+  cwd: string,
+  choice: GitGenerationChoice,
+  operationContext?: HarnessOperationContext,
+) {
   const range = await gitRangeContext(cwd);
   const output = await selectedGitPrompt(
     cwd,
@@ -113,6 +131,8 @@ async function generateSelectedPr(cwd: string, choice: GitGenerationChoice) {
       diffSummary: range.diffSummary,
       diffPatch: range.diffPatch,
     }),
+    undefined,
+    operationContext,
   );
   const parsed = parsePrContent(output);
   if (!parsed)

@@ -1,0 +1,192 @@
+// @vitest-environment happy-dom
+import { act, createElement, useState, type ComponentProps } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+const host = vi.hoisted(() => ({
+  status: null as unknown,
+  defaultMode: "worktree" as WorkspaceMode,
+  error:
+    "Update bycoda Host on this project's machine to use managed workspaces. Your project checkout will not be used as a fallback.",
+}));
+vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => false,
+  invoke: vi.fn(async (command: string) =>
+    command === "local_host_bundle_status" ? host.status : [],
+  ),
+}));
+vi.mock("@tauri-apps/api/webview", () => ({
+  getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }),
+}));
+vi.mock("../../source-control/hooks/useProjectBranches", () => ({
+  useProjectBranchesState: () => ({
+    branches: { current: "main", detached: false, branches: [] },
+    settled: true,
+  }),
+}));
+vi.mock("../../workspaces/model/workspaceCreation", () => ({
+  shortWorkspaceRef: (ref: string) => ref,
+  useWorkspaceCreation: (_cwd: string, _active: boolean, choice?: string) => ({
+    mode: choice ?? host.defaultMode,
+    error: (choice ?? host.defaultMode) === "current" ? undefined : host.error,
+    updateRequired: (choice ?? host.defaultMode) !== "current",
+    pending: false,
+    refresh: vi.fn(),
+  }),
+}));
+
+import { Composer } from "./Composer";
+import type { WorkspaceMode } from "../model/session";
+import { setLanguagePreference } from "../../../shared/i18n";
+
+let container: HTMLDivElement;
+let root: Root;
+let submit: ReturnType<typeof vi.fn>;
+beforeEach(async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.clear();
+  await setLanguagePreference("en");
+  host.status = null;
+  host.defaultMode = "worktree";
+  submit = vi.fn();
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+});
+afterEach(async () => {
+  act(() => root.unmount());
+  container.remove();
+  await setLanguagePreference("en");
+  vi.unstubAllGlobals();
+});
+
+async function draw(props: Partial<ComponentProps<typeof Composer>> = {}) {
+  function Draft() {
+    const [mode, setMode] = useState<WorkspaceMode | undefined>(props.workspaceMode);
+    return createElement(Composer, {
+      focused: false,
+      harness: "codex",
+      model: "gpt-5.4",
+      runtimeMode: "supervised",
+      cwd: "/repo",
+      executionCwd: "/repo",
+      initialDraft: "Preserve this draft",
+      draftWorkspace: true,
+      branch: "main",
+      onFocus: vi.fn(),
+      onCwdChange: vi.fn(),
+      onModelChange: vi.fn(),
+      onRuntimeModeChange: vi.fn(),
+      onSubmit: submit,
+      onWorktreeBaseChange: vi.fn(),
+      ...props,
+      workspaceMode: mode,
+      onWorkspaceModeChange: setMode,
+    });
+  }
+  await act(async () => root.render(createElement(Draft)));
+}
+const button = (label: string) =>
+  [...container.querySelectorAll<HTMLButtonElement>("button")].find((entry) => {
+    const name = entry.getAttribute("aria-label");
+    const description = entry.getAttribute("aria-description");
+    return (
+      entry.textContent === label ||
+      name === label ||
+      (!!description && name === `${label}. ${description}`)
+    );
+  });
+
+it("lets an explicit current choice send on an older remote Host", async () => {
+  await draw({
+    cwd: "remote://older/repo",
+    executionCwd: "remote://older/repo",
+    workspaceMode: "current",
+  });
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(button("Send")?.disabled).toBe(false);
+  await act(async () => button("Send")!.click());
+  expect(submit).toHaveBeenCalledWith("Preserve this draft", [], expect.anything());
+});
+
+it.each([false, true])(
+  "explains an idle-gated update and makes the draft's explicit current choice actionable (compact %s)",
+  async (hideTopBar) => {
+    host.status = {
+      state: "deferred",
+      message: "The host update waits until running sessions finish.",
+    };
+    await draw({ hideTopBar, workspaceMode: "worktree" });
+    expect(container.textContent).toContain(
+      "The Host update on this computer is waiting for active sessions to finish and will install automatically.",
+    );
+    expect(button("Send")?.disabled).toBe(true);
+    expect(button("Send")?.getAttribute("aria-description")).toBe(
+      "The Host update on this computer is waiting for active sessions to finish and will install automatically.",
+    );
+    await act(async () => button("Use current checkout")!.click());
+    expect(container.querySelector("textarea")?.value).toBe("Preserve this draft");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(button("Send")?.disabled).toBe(false);
+  },
+);
+
+it.each([
+  null,
+  { state: "failed", message: "Installation failed" },
+  { state: "deferred", message: "Could not check whether the host is busy." },
+  { state: "deferred", message: "The failed host installation will retry in 30 seconds." },
+])("retains the update requirement without claiming active sessions for %j", async (status) => {
+  host.status = status;
+  await draw({ workspaceMode: "worktree" });
+  expect(container.textContent).toContain(host.error);
+  expect(container.textContent).not.toContain("will install automatically");
+  expect(button("Use current checkout")).toBeDefined();
+  expect(button("Send")?.disabled).toBe(true);
+});
+
+it("does not describe a local pending update as the remote machine's update", async () => {
+  host.status = {
+    state: "deferred",
+    message: "The host update waits until running sessions finish.",
+  };
+  await draw({
+    cwd: "remote://older/repo",
+    executionCwd: "remote://older/repo",
+    workspaceMode: "worktree",
+  });
+  expect(container.textContent).not.toContain("will install automatically");
+  expect(button("Send")?.disabled).toBe(true);
+});
+
+it("does not hold Send for an unreadable policy default, only for an explicit worktree choice", async () => {
+  await draw();
+  expect(button("Send")?.disabled).toBe(false);
+  await act(async () => button("Send")!.click());
+  expect(submit).toHaveBeenCalledWith("Preserve this draft", [], expect.anything());
+});
+
+it("keeps update recovery available when the owner changes language while the error is visible", async () => {
+  host.status = {
+    state: "deferred",
+    message: "The host update waits until running sessions finish.",
+  };
+  await draw();
+  await act(async () => setLanguagePreference("tr"));
+  expect(container.textContent).toContain("etkin oturumların bitmesini bekliyor");
+  const useCurrent = button("Geçerli çalışma dizinini kullan");
+  expect(useCurrent).toBeDefined();
+  await act(async () => useCurrent!.click());
+  expect(container.querySelector("textarea")?.value).toBe("Preserve this draft");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("shows the resolved current default and sends without managed admission", async () => {
+  host.defaultMode = "current";
+  await draw();
+  expect(button("Workspace Current checkout")).toBeDefined();
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(button("Send")?.disabled).toBe(false);
+  await act(async () => button("Send")!.click());
+  expect(submit).toHaveBeenCalledWith("Preserve this draft", [], expect.anything());
+});

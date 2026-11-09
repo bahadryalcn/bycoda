@@ -1,10 +1,11 @@
+import { createStore } from "../../../shared/lib/store";
 import {
   isHarnessAvailable,
   probeHarnessAvailability,
 } from "../../../integrations/harness/core/availability";
 import { inspectHarnessBinary, updateHarnessCli } from "../../../integrations/harness/core/child";
-import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
 import { HARNESSES, type HarnessId } from "../../sessions/model/session";
+import { refreshProviderCatalog } from "./catalogReceipts";
 import {
   announceHarnessUpdated,
   checkHarnessVersions,
@@ -16,10 +17,17 @@ import {
   type HarnessVersionCheck,
 } from "./harnessUpdates";
 
+/**
+ * Outcome of the model-list refresh that follows a verified CLI update:
+ * `fresh` a new list landed, `unchanged` the previous list is still shown
+ * (not proof of availability), `failed` the refresh itself errored.
+ */
+export type HarnessCatalogRefresh = "fresh" | "unchanged" | "failed";
+
 export type HarnessUpdateRun =
   | { status: "idle" }
   | { status: "updating" }
-  | { status: "updated"; version: string }
+  | { status: "updated"; version: string; catalogRefresh?: HarnessCatalogRefresh }
   | { status: "failed"; error: string };
 
 export type HarnessUpdateSnapshot = {
@@ -39,11 +47,11 @@ let snapshot: HarnessUpdateSnapshot = {
   checking: false,
   runs: {},
 };
-const listeners = new Set<() => void>();
+const listeners = createStore();
 
 function setSnapshot(next: Partial<HarnessUpdateSnapshot>) {
   snapshot = { ...snapshot, ...next };
-  listeners.forEach((listener) => listener());
+  listeners.notify();
 }
 
 export function getHarnessUpdateSnapshot(): HarnessUpdateSnapshot {
@@ -51,10 +59,7 @@ export function getHarnessUpdateSnapshot(): HarnessUpdateSnapshot {
 }
 
 export function subscribeHarnessUpdates(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+  return listeners.subscribe(listener);
 }
 
 async function installedVersion(harness: HarnessId): Promise<string> {
@@ -141,27 +146,44 @@ function markCurrent(update: HarnessUpdate, version: string) {
 
 /**
  * Some updaters exit cleanly without installing anything, so success is the
- * version the CLI reports afterwards, not the exit code. Its models are
- * reloaded before the result says so, so the picker is current by then.
+ * version the CLI reports afterwards, not the exit code. Catalog refresh is a
+ * separate attempt: adapters may retain old data or report no fresh catalog.
  */
 async function performUpdate(update: HarnessUpdate): Promise<HarnessUpdateRun> {
+  let stage = "updater";
   try {
-    await updateHarnessCli(update.harness);
+    await updateHarnessCli(update.harness, update.latest);
+    stage = "version check";
     const after = await inspectHarnessBinary(update.harness);
     const version = parseHarnessVersion(update.harness, after.version ?? "");
-    if (version && !isHarnessVersionBehind(update.harness, version, update.latest)) {
-      await refreshHarnessCatalogs([update.harness], { force: true });
-      void announceHarnessUpdated(update.harness).catch(() => undefined);
-      return { status: "updated", version };
+    if (!version) {
+      throw new Error(after.error ?? `No valid version reported by ${after.path}.`);
     }
-    return {
-      status: "failed",
-      error: `Still on ${version ?? update.installed} after updating.`,
-    };
+    if (version && !isHarnessVersionBehind(update.harness, version, update.latest)) {
+      stage = "model refresh";
+      let catalogRefresh: HarnessCatalogRefresh;
+      try {
+        const receipt = await refreshProviderCatalog(update.harness, { force: true });
+        catalogRefresh =
+          receipt.status === "fresh"
+            ? "fresh"
+            : receipt.status === "error"
+              ? "failed"
+              : "unchanged";
+      } catch {
+        catalogRefresh = "failed";
+      }
+      void announceHarnessUpdated(update.harness).catch(() => undefined);
+      return { status: "updated", version, catalogRefresh };
+    }
+    throw new Error(`Still on ${version} after updating.`);
   } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const message = `${update.harness} ${stage}: ${detail}`;
+    console.warn(`[bycoda] Harness update failed: ${message}`);
     return {
       status: "failed",
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
     };
   }
 }

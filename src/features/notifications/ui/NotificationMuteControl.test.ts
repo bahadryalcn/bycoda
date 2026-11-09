@@ -82,9 +82,7 @@ describe("NotificationMuteControl", () => {
     expect(
       document.querySelector('button[type="submit"]')?.getAttribute("data-button-hierarchy"),
     ).toBe("primary");
-    act(() =>
-      document.querySelector<HTMLButtonElement>('button[aria-label="2030-01-15"]')!.click(),
-    );
+    act(() => document.querySelector<HTMLButtonElement>('button[data-date="2030-01-15"]')!.click());
     const input = document.querySelector<HTMLInputElement>('input[placeholder="HH:mm"]');
     expect(input).not.toBeNull();
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
@@ -97,9 +95,7 @@ describe("NotificationMuteControl", () => {
     click("Mute until then");
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("future");
     expect(loadNotificationPreferences().private).toBeUndefined();
-    act(() =>
-      document.querySelector<HTMLButtonElement>('button[aria-label="2030-01-16"]')!.click(),
-    );
+    act(() => document.querySelector<HTMLButtonElement>('button[data-date="2030-01-16"]')!.click());
     type("17:00");
     const write = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
       throw new Error("Storage full");

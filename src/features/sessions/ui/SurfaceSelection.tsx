@@ -7,7 +7,7 @@ import {
   type ComponentPropsWithoutRef,
 } from "react";
 import { createNote, noteTitle } from "../../notes";
-import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/model/settings";
+import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/public/settings";
 import { useTranscriptSelection } from "../hooks/useTranscriptSelection";
 import { textareaSelectionRect } from "../model/textareaSelectionRect";
 import type { TranscriptSelection } from "../model/transcriptSelection";

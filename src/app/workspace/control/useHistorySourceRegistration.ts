@@ -1,9 +1,16 @@
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getGroupLockView, subscribeGroupLock } from "../../../features/group-lock/model/groupLock";
 import { isProjectLockedIn } from "../../../features/group-lock/model/lockState";
 import { sessionWorkCwd, type Session } from "../../../features/sessions/model/session";
-import { useSessionsSelector } from "../../../features/sessions/model/sessionsStore";
+import { useShellSessionsSelector } from "../../../features/sessions/model/sessionsStore";
 
 export function historySourceProjection(sessions: Session[], locked: (cwd: string) => boolean) {
   return sessions
@@ -23,28 +30,35 @@ export function historySourceProjection(sessions: Session[], locked: (cwd: strin
 export function useHistorySourceRegistration() {
   const queued = useRef(Promise.resolve());
   const lock = useSyncExternalStore(subscribeGroupLock, getGroupLockView).lock;
-  const projection = useSessionsSelector((sessions) =>
+  // Reads no blocks: streamed text frames cannot change it.
+  const projection = useShellSessionsSelector((sessions) =>
     JSON.stringify(historySourceProjection(sessions, (cwd) => isProjectLockedIn(lock, cwd))),
   );
-  useEffect(() => {
-    let disposed = false;
-    const publish = (sources: unknown[]) => {
-      queued.current = queued.current
-        .catch(() => undefined)
-        .then(async () => {
-          await invoke("control_history_sources", { sources });
-        });
-      void queued.current.catch(() => undefined);
-    };
-    const sources = JSON.parse(projection) as { sessionId: string; cwd: string }[];
+  // Parsed once per change; the 15 s heartbeat reuses it instead of re-parsing.
+  const sources = useMemo(
+    () => JSON.parse(projection) as { sessionId: string; cwd: string }[],
+    [projection],
+  );
+  const publish = useCallback((sources: unknown[]) => {
+    queued.current = queued.current
+      .catch(() => undefined)
+      .then(async () => {
+        await invoke("control_history_sources", { sources });
+      });
+    void queued.current.catch(() => undefined);
+  }, []);
+  // The periodic send is the Host lease heartbeat (entries expire after 45 s without it), so it stays.
+  const refresh = useEffectEvent(() => {
     publish(sources);
-    const timer = window.setInterval(() => {
-      if (!disposed) publish(sources);
-    }, 15000);
+  });
+  useEffect(() => {
+    publish(sources);
+  }, [sources, publish]);
+  useEffect(() => {
+    const timer = window.setInterval(() => refresh(), 15000);
     return () => {
-      disposed = true;
       window.clearInterval(timer);
       publish([]);
     };
-  }, [projection]);
+  }, [publish]);
 }

@@ -1,5 +1,8 @@
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { t } from "../../../shared/i18n";
+import { useRef } from "react";
 import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { TextField } from "../../../shared/ui/TextField";
 import { SshIdentityField } from "./SshIdentityField";
 import { ArrowDown, ArrowUp, Plus, X } from "../../../shared/ui/icons";
@@ -20,21 +23,26 @@ export function SshJumpPolicyEditor({
   onChange: (value: SshJumpPolicyDraft[]) => void;
   disabled?: boolean;
 }) {
+  const ids = useRef<number[]>([]).current;
+  const nextId = useRef(0);
+  while (ids.length < value.length) ids.push(nextId.current++);
+  if (ids.length > value.length) ids.length = value.length;
   const update = (index: number, field: keyof SshJumpPolicyDraft, text: string) =>
     onChange(value.map((entry, i) => (i === index ? { ...entry, [field]: text } : entry)));
   const move = (index: number, offset: number) => {
     const next = [...value];
     [next[index], next[index + offset]] = [next[index + offset], next[index]];
+    [ids[index], ids[index + offset]] = [ids[index + offset], ids[index]];
     onChange(next);
   };
   return (
     <section aria-label={t("Per-hop SSH policy")} className="flex min-w-0 flex-col gap-2">
-      <p className="text-xs text-(--ui-text-muted)">
+      <p className="text-ui-caption text-(--ui-text-muted)">
         {t("Strict host-key verification is always enabled for every hop.")}
       </p>
       {value.map((hop, index) => (
-        <fieldset key={index} disabled={disabled} className="min-w-0 border-0 p-0">
-          <legend className="text-xs text-(--ui-text-muted)">
+        <fieldset key={ids[index]} disabled={disabled} className="min-w-0 border-0 p-0">
+          <legend className="text-ui-caption text-(--ui-text-muted)">
             {t("Jump host")} {index + 1}
           </legend>
           <div className="flex min-w-0 items-end gap-1">
@@ -53,7 +61,7 @@ export function SshJumpPolicyEditor({
               disabled={disabled || index === 0}
               onClick={() => move(index, -1)}
             >
-              <ArrowUp className="size-3" />
+              <ArrowUp className="icon-xs" />
             </Button>
             <Button
               variant="ghost"
@@ -62,16 +70,19 @@ export function SshJumpPolicyEditor({
               disabled={disabled || index === value.length - 1}
               onClick={() => move(index, 1)}
             >
-              <ArrowDown className="size-3" />
+              <ArrowDown className="icon-xs" />
             </Button>
             <Button
               variant="ghost"
               iconOnly
               label={`${t("Remove jump host")}: ${index + 1}`}
               disabled={disabled}
-              onClick={() => onChange(value.filter((_, i) => i !== index))}
+              onClick={() => {
+                ids.splice(index, 1);
+                onChange(value.filter((_, i) => i !== index));
+              }}
             >
-              <X className="size-3" />
+              <X className="icon-xs" />
             </Button>
           </div>
           <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,6rem)] gap-2">
@@ -91,10 +102,11 @@ export function SshJumpPolicyEditor({
               onChange={(event) => update(index, "port", event.target.value)}
             />
           </div>
-          <details className="text-xs text-(--ui-text-muted)">
-            <summary className="cursor-pointer py-1">
-              {t("Hop identity and trust references")}
-            </summary>
+          <Disclosure
+            size="sm"
+            className="text-ui-caption text-(--ui-text-muted)"
+            summary={t("Hop identity and trust references")}
+          >
             <div className="flex min-w-0 flex-col gap-2">
               <SshIdentityField
                 label={`${t("Jump host")} ${index + 1}: ${t("Choose SSH key")}`}
@@ -129,7 +141,7 @@ export function SshJumpPolicyEditor({
                 )}
               </p>
             </div>
-          </details>
+          </Disclosure>
         </fieldset>
       ))}
       <Button
@@ -137,13 +149,13 @@ export function SshJumpPolicyEditor({
         disabled={disabled || value.length >= MAX_SSH_JUMP_HOSTS}
         onClick={() => onChange([...value, emptySshJumpPolicyDraft()])}
       >
-        <Plus className="size-3" />
+        <Plus className="icon-xs" />
         {t("Add jump host")}
       </Button>
       {sshJumpPoliciesFromDrafts(value) === undefined ? (
-        <p role="status" className="text-xs text-(--ui-tone-danger-fg)">
+        <InlineError live="polite">
           {t("Complete each hop with a valid host, port and file references.")}
-        </p>
+        </InlineError>
       ) : null}
     </section>
   );

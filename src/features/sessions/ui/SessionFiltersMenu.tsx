@@ -1,8 +1,9 @@
-import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
-import { Check } from "../../../shared/ui/icons";
-import { type ReactNode } from "react";
-import { Popover } from "../../../shared/ui/Popover";
+import { t, useT } from "../../../shared/i18n";
+import {
+  DropdownMenu,
+  type DropdownMenuAction,
+  type DropdownMenuItem,
+} from "../../../shared/ui/DropdownMenu";
 import {
   DEFAULT_SESSION_SIDEBAR_FILTERS,
   hasActiveSessionFilters,
@@ -11,6 +12,7 @@ import {
 } from "../model/sessionFilters";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
+import { useAssistantIdentity } from "../../assistant/model/assistantClient";
 import {
   type SessionListDensity,
   updateSessionListDisplay,
@@ -26,6 +28,9 @@ type Props = {
   filters: SessionSidebarFilters;
   onChange: (filters: SessionSidebarFilters) => void;
   onClose: () => void;
+  local?: boolean;
+  allowedTimeFilters?: readonly SessionTimeFilter[];
+  defaultFilters?: SessionSidebarFilters;
 };
 
 const DENSITY_OPTIONS: { id: SessionListDensity; label: string }[] = [
@@ -76,8 +81,18 @@ const TIME_OPTIONS: { id: SessionTimeFilter; label: string }[] = [
   },
 ];
 
-export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose }: Props) {
-  useLocale();
+export function SessionFiltersMenu({
+  x,
+  y,
+  harnesses,
+  filters,
+  onChange,
+  onClose,
+  local = true,
+  allowedTimeFilters,
+  defaultFilters = DEFAULT_SESSION_SIDEBAR_FILTERS,
+}: Props) {
+  const t = useT();
   const hiddenHarnesses = new Set(filters.hiddenHarnesses);
   // View options are not filters: they never mark the trigger active or clear.
   const display = useSessionListDisplay();
@@ -105,140 +120,113 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
     onClose();
   };
 
+  const managedName = useManagedFilterLabel(local);
+  const check = (
+    id: string,
+    label: string,
+    checked: boolean,
+    extra?: Partial<DropdownMenuAction>,
+  ) => ({ kind: "item", id, label, checked, ...extra }) satisfies DropdownMenuAction;
+  const radio = (id: string, label: string, checked: boolean) =>
+    check(id, label, checked, { selectionRole: "radio" });
+  const actions: Record<string, () => void> = {};
+  const toggle = (item: DropdownMenuAction, run: () => void): DropdownMenuAction => {
+    actions[item.id] = run;
+    return item;
+  };
+  const timeOptions = TIME_OPTIONS.filter(
+    (option) => !allowedTimeFilters || allowedTimeFilters.includes(option.id),
+  );
+  const items: DropdownMenuItem[] = [
+    toggle(
+      check("archived", t("Archived"), filters.showArchived, { closeOnSelect: true }),
+      toggleArchived,
+    ),
+    toggle(check("managed", managedName, filters.assistantManaged), () =>
+      onChange({ ...filters, assistantManaged: !filters.assistantManaged }),
+    ),
+    {
+      kind: "group",
+      id: "status",
+      label: t("Status"),
+      items: [
+        toggle(check("working", t("Working"), filters.status.working), () =>
+          toggleStatus("working"),
+        ),
+        toggle(check("needsApproval", t("Needs approval"), filters.status.needsApproval), () =>
+          toggleStatus("needsApproval"),
+        ),
+        toggle(check("done", t("Done"), filters.status.done), () => toggleStatus("done")),
+      ],
+    },
+    {
+      kind: "group",
+      id: "time",
+      label: t("Time"),
+      items: timeOptions.map((option) =>
+        toggle(radio(`time:${option.id}`, option.label, filters.time === option.id), () =>
+          setTime(option.id),
+        ),
+      ),
+    },
+    {
+      kind: "group",
+      id: "provider",
+      label: t("Provider"),
+      items: harnesses.map((harness) =>
+        toggle(
+          check(`harness:${harness}`, HARNESS_TITLE[harness], !hiddenHarnesses.has(harness), {
+            icon: <HarnessIcon harness={harness} className="size-3.5 shrink-0" />,
+          }),
+          () => toggleHarness(harness),
+        ),
+      ),
+    },
+    {
+      kind: "group",
+      id: "view",
+      label: t("View"),
+      items: [
+        ...DENSITY_OPTIONS.map((option) =>
+          toggle(radio(`density:${option.id}`, option.label, display.density === option.id), () =>
+            updateSessionListDisplay({ density: option.id }),
+          ),
+        ),
+        toggle(check("showModel", t("Show model"), display.showModel), () =>
+          updateSessionListDisplay({ showModel: !display.showModel }),
+        ),
+        toggle(check("showBranch", t("Show branch"), display.showBranch), () =>
+          updateSessionListDisplay({ showBranch: !display.showBranch }),
+        ),
+      ],
+    },
+  ];
+  if (hasActiveSessionFilters(filters, defaultFilters.time)) {
+    items.push(
+      { kind: "sep" },
+      toggle({ kind: "item", id: "clear", label: t("Clear filters") }, () =>
+        onChange(defaultFilters),
+      ),
+    );
+  }
+
   return (
-    <Popover
+    <DropdownMenu
       anchor={{ x, y }}
-      gap={0}
+      label={t("Filter sessions")}
+      items={items}
       width={MENU_WIDTH}
+      gap={0}
       maxHeight={600}
-      onDismiss={onClose}
-      role="menu"
-      aria-label={t("Filter sessions")}
-      onContextMenu={(event) => event.preventDefault()}
-      className="overflow-y-auto overscroll-none p-1"
-    >
-      <FilterItem label={t("Archived")} checked={filters.showArchived} onClick={toggleArchived} />
-
-      <SectionLabel>{t("Status")}</SectionLabel>
-      <FilterItem
-        label={t("Working")}
-        checked={filters.status.working}
-        onClick={() => toggleStatus("working")}
-      />
-      <FilterItem
-        label={t("Needs approval")}
-        checked={filters.status.needsApproval}
-        onClick={() => toggleStatus("needsApproval")}
-      />
-      <FilterItem
-        label={t("Done")}
-        checked={filters.status.done}
-        onClick={() => toggleStatus("done")}
-      />
-
-      <SectionLabel>{t("Time")}</SectionLabel>
-      {TIME_OPTIONS.map((option) => (
-        <FilterItem
-          key={option.id}
-          label={option.label}
-          checked={filters.time === option.id}
-          onClick={() => setTime(option.id)}
-        />
-      ))}
-
-      {harnesses.length > 0 ? (
-        <>
-          <SectionLabel>{t("Provider")}</SectionLabel>
-          {harnesses.map((harness) => (
-            <FilterItem
-              key={harness}
-              label={HARNESS_TITLE[harness]}
-              checked={!hiddenHarnesses.has(harness)}
-              icon={<HarnessIcon harness={harness} className="size-3.5 shrink-0" />}
-              onClick={() => toggleHarness(harness)}
-            />
-          ))}
-        </>
-      ) : null}
-
-      <SectionLabel>{t("View")}</SectionLabel>
-      {DENSITY_OPTIONS.map((option) => (
-        <FilterItem
-          key={option.id}
-          role="menuitemradio"
-          label={option.label}
-          checked={display.density === option.id}
-          onClick={() => updateSessionListDisplay({ density: option.id })}
-        />
-      ))}
-      <FilterItem
-        label={t("Show model")}
-        checked={display.showModel}
-        onClick={() => updateSessionListDisplay({ showModel: !display.showModel })}
-      />
-      <FilterItem
-        label={t("Show branch")}
-        checked={display.showBranch}
-        onClick={() => updateSessionListDisplay({ showBranch: !display.showBranch })}
-      />
-
-      {hasActiveSessionFilters(filters) ? (
-        <>
-          <div role="separator" className="my-1 h-px bg-(--ui-surface-raised)" />
-          <Button
-            fullWidth
-            variant="item"
-            type="button"
-            role="menuitem"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => onChange(DEFAULT_SESSION_SIDEBAR_FILTERS)}
-            className="w-full text-left"
-          >
-            {t("Clear filters")}
-          </Button>
-        </>
-      ) : null}
-    </Popover>
+      closeOnSelect={false}
+      onPick={(id) => actions[id]?.()}
+      onClose={onClose}
+    />
   );
 }
 
-function SectionLabel({ children }: { children: string }) {
-  useLocale();
-  return (
-    <div className="px-2 pb-0.5 pt-2 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
-      {children}
-    </div>
-  );
-}
-
-function FilterItem({
-  label,
-  checked,
-  icon,
-  role = "menuitemcheckbox",
-  onClick,
-}: {
-  label: string;
-  checked: boolean;
-  icon?: ReactNode;
-  role?: "menuitemcheckbox" | "menuitemradio";
-  onClick: () => void;
-}) {
-  useLocale();
-  return (
-    <Button
-      fullWidth
-      variant="item"
-      type="button"
-      role={role}
-      aria-checked={checked}
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onClick}
-      className="w-full text-left"
-    >
-      {icon}
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {checked ? <Check className="size-3.5 shrink-0" strokeWidth={2.25} /> : null}
-    </Button>
-  );
+/** The managed-sessions row names the assistant when it is local and has a name. */
+function useManagedFilterLabel(local: boolean) {
+  const { name } = useAssistantIdentity();
+  return local && name ? t("Managed by {p0}", { p0: name }) : t("Managed sessions");
 }

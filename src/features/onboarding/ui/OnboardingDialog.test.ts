@@ -22,6 +22,13 @@ const mock = vi.hoisted(() => ({
   available: vi.fn(),
   auth: vi.fn(),
 }));
+vi.mock("../../account", () => ({
+  useAccountState: () => ({ phase: "unavailable" }),
+  useAccount: () => ({}),
+  getStatsChoice: () => "off",
+  setStatsChoice: () => undefined,
+  subscribeAnonymousStats: () => () => undefined,
+}));
 vi.mock("../../../shared/ui/Modal", () => ({
   Modal: ({ children }: { children: unknown }) => children,
 }));
@@ -131,6 +138,11 @@ function button(text: string) {
 async function click(text: string) {
   await act(async () => button(text).click());
 }
+async function toggleAllProjects() {
+  await act(async () =>
+    container.querySelector<HTMLInputElement>('input[aria-label="Select all"]')!.click(),
+  );
+}
 async function render() {
   await act(async () =>
     root.render(
@@ -189,7 +201,8 @@ describe("onboarding workflow", () => {
   });
   it("imports only interactive, usable, unimported sessions in selected folders", async () => {
     await projects();
-    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(1);
+    // The list header's select-all plus one folder row.
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
     await click("Import 1 projects");
     expect(
       mock.run.mock.calls[0][0].candidates.map((item: ImportCandidate) => item.providerSessionId),
@@ -201,7 +214,7 @@ describe("onboarding workflow", () => {
   });
   it("allows starting without importing any project", async () => {
     await projects();
-    await click("Select none");
+    await toggleAllProjects();
     await click("Finish setup");
     expect(mock.run).not.toHaveBeenCalled();
     expect(onFinish).toHaveBeenCalledOnce();
@@ -216,6 +229,9 @@ describe("onboarding workflow", () => {
     );
     await projects();
     await click("Import 1 projects");
+    expect(button("Import 1 projects").getAttribute("aria-busy")).toBe("true");
+    await click("Import 1 projects");
+    expect(mock.run).toHaveBeenCalledOnce();
     expect(button("Back").disabled).toBe(true);
     expect(button("Skip import").disabled).toBe(true);
     const signal = mock.run.mock.calls[0][0].signal as AbortSignal;
@@ -281,27 +297,19 @@ describe("onboarding workflow", () => {
         expect(document.documentElement.classList.contains("theme-light")).toBe(mode === "light");
     }
     await act(async () =>
-      container
-        .querySelector<HTMLInputElement>('input[name="onboarding-crew"][value="star-wars"]')!
-        .click(),
+      container.querySelector<HTMLButtonElement>("#onboarding-crew-star-wars")!.click(),
     );
     expect(loadCrewTheme()).toBe("star-wars");
     expect(loadCrewSceneEnabled()).toBe(true);
     await act(async () =>
-      container
-        .querySelector<HTMLInputElement>('input[name="onboarding-crew"][value="lotr"]')!
-        .click(),
+      container.querySelector<HTMLButtonElement>("#onboarding-crew-lotr")!.click(),
     );
     expect(loadCrewTheme()).toBe("lotr");
     await act(async () =>
-      container
-        .querySelector<HTMLInputElement>('input[name="onboarding-crew"][value="star-wars"]')!
-        .click(),
+      container.querySelector<HTMLButtonElement>("#onboarding-crew-star-wars")!.click(),
     );
     await act(async () =>
-      container
-        .querySelector<HTMLInputElement>('input[name="onboarding-crew"][value="none"]')!
-        .click(),
+      container.querySelector<HTMLButtonElement>("#onboarding-crew-none")!.click(),
     );
     expect(loadCrewSceneEnabled()).toBe(false);
     expect(loadCrewTheme()).toBe("star-wars");
@@ -312,7 +320,7 @@ describe("onboarding workflow", () => {
     await click("Agents");
     expect(container.textContent).not.toContain("Signed in");
     await act(async () =>
-      container.querySelector<HTMLInputElement>('input[aria-label="Use Codex"]')!.click(),
+      container.querySelector<HTMLButtonElement>('button[aria-label="Use Codex"]')!.click(),
     );
     expect(isPickerProviderVisible("codex")).toBe(false);
     expect(container.querySelectorAll(".onboarding-agent")).toHaveLength(1);
@@ -342,7 +350,7 @@ describe("onboarding workflow", () => {
     const claude = rows.find((row) => row.textContent?.includes("Claude"))!;
     expect(codex.textContent).toContain("Signed in");
     expect(codex.textContent).not.toContain("Sign in");
-    expect(claude.textContent).toContain("not signed in");
+    expect(claude.textContent).toContain("Not signed in");
     expect(
       [...claude.querySelectorAll("button")].some((node) => node.textContent === "Sign in"),
     ).toBe(true);
@@ -374,8 +382,8 @@ describe("onboarding workflow", () => {
     mock.available.mockImplementation((id: string) => id === "codex");
     await render();
     await click("Agents");
-    expect(container.textContent).toContain("sign-in status unavailable");
-    expect(container.textContent).not.toContain("not signed in");
+    expect(container.textContent).toContain("Sign-in not checked");
+    expect(container.textContent).not.toContain("Not signed in");
     mock.auth.mockResolvedValue("signedIn");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Refresh agent status"]')!.click(),
@@ -415,7 +423,7 @@ describe("onboarding workflow", () => {
   });
   it("retains project selections and added folders when navigating back", async () => {
     await projects();
-    await click("Select none");
+    await toggleAllProjects();
     await click("Choose project folders");
     await click("Back");
     await click("Projects");

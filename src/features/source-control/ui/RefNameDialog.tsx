@@ -1,9 +1,8 @@
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Loader } from "../../../shared/ui/icons";
-import { Modal } from "../../../shared/ui/Modal";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 
 type Props = {
   title: string;
@@ -39,6 +38,7 @@ export function RefNameDialog({
   const [name, setName] = useState(initialValue);
   const [extraValue, setExtraValue] = useState("");
   const input = useRef<HTMLInputElement>(null);
+  const formId = useId();
   const trimmed = name.trim();
   const trimmedExtra = extraValue.trim();
   const complete = trimmed !== "" && (!extra || trimmedExtra !== "");
@@ -70,55 +70,8 @@ export function RefNameDialog({
       onClose={() => {
         if (!busy) onCancel();
       }}
-    >
-      <form className="flex flex-col gap-4 p-4" onSubmit={submit}>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[12px] font-medium text-[var(--ui-text-secondary)]">{label}</span>
-          <TextField
-            hideLabel
-            label=""
-            ref={input}
-            type="text"
-            value={name}
-            placeholder={placeholder}
-            aria-label={label}
-            spellCheck={false}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            disabled={busy}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
-        {extra ? (
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[12px] font-medium text-[var(--ui-text-secondary)]">
-              {extra.label}
-            </span>
-            <TextField
-              hideLabel
-              label=""
-              type="text"
-              value={extraValue}
-              placeholder={extra.placeholder}
-              aria-label={extra.label}
-              spellCheck={false}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              disabled={busy}
-              onChange={(event) => setExtraValue(event.target.value)}
-            />
-          </label>
-        ) : null}
-
-        {error ? (
-          <p role="alert" className="text-[11px] leading-4 text-danger">
-            {error}
-          </p>
-        ) : null}
-
-        <div className="flex justify-end gap-2">
+      footer={
+        <ModalActions>
           <Button
             size="sm"
             variant="ghost"
@@ -134,13 +87,45 @@ export function RefNameDialog({
             variant="primary"
             motion="none"
             type="submit"
+            form={formId}
+            loading={busy}
             disabled={!complete || busy}
-            className="inline-flex items-center gap-1.5"
           >
-            {busy ? <Loader className="size-3.5 animate-spin" strokeWidth={1.75} /> : null}
             {submitLabel}
           </Button>
-        </div>
+        </ModalActions>
+      }
+    >
+      <form id={formId} className="flex flex-col gap-4" onSubmit={submit}>
+        {/* The failure message belongs to the name field, which takes focus when it appears. */}
+        <TextField
+          label={label}
+          ref={input}
+          type="text"
+          value={name}
+          placeholder={placeholder}
+          error={error || undefined}
+          spellCheck={false}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          disabled={busy}
+          onChange={(event) => setName(event.target.value)}
+        />
+        {extra ? (
+          <TextField
+            label={extra.label}
+            type="text"
+            value={extraValue}
+            placeholder={extra.placeholder}
+            spellCheck={false}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            disabled={busy}
+            onChange={(event) => setExtraValue(event.target.value)}
+          />
+        ) : null}
       </form>
     </Modal>
   );

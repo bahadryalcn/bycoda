@@ -53,7 +53,9 @@ function render() {
 }
 
 function openSecondMenu() {
-  const tab = container.querySelector<HTMLButtonElement>('[role="tab"][title="/repo/src/app.ts"]')!;
+  const tab = container.querySelector<HTMLButtonElement>(
+    '[role="tab"][data-file-tab-id="second"]',
+  )!;
   act(() => {
     tab.parentElement!.dispatchEvent(
       new MouseEvent("contextmenu", {
@@ -162,26 +164,36 @@ describe("file tab context menu", () => {
     );
   });
 
-  it.each(["left", "right"] as const)("closes tabs to the %s of the clicked tab", async (direction) => {
-    props = { ...props, files: [...files, { id: "third", path: "/repo/third.ts", cwd: "/repo" }] };
-    render();
-    await pick(direction === "left" ? "Close Tabs to the Left" : "Close Tabs to the Right");
-    expect(props.onCloseOtherFiles).toHaveBeenCalledWith("second", direction);
-    expect(props.onCloseFile).not.toHaveBeenCalled();
-  });
+  it.each(["left", "right"] as const)(
+    "closes tabs to the %s of the clicked tab",
+    async (direction) => {
+      props = {
+        ...props,
+        files: [...files, { id: "third", path: "/repo/third.ts", cwd: "/repo" }],
+      };
+      render();
+      await pick(direction === "left" ? "Close Tabs to the Left" : "Close Tabs to the Right");
+      expect(props.onCloseOtherFiles).toHaveBeenCalledWith("second", direction);
+      expect(props.onCloseFile).not.toHaveBeenCalled();
+    },
+  );
 
   it("disables only the side without neighboring tabs", () => {
     const menu = openSecondMenu();
     const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
-    expect(items.find((item) => item.textContent === "Close Tabs to the Right")?.disabled).toBe(true);
-    expect(items.find((item) => item.textContent === "Close Tabs to the Left")?.disabled).toBe(false);
+    expect(items.find((item) => item.textContent === "Close Tabs to the Right")?.disabled).toBe(
+      true,
+    );
+    expect(items.find((item) => item.textContent === "Close Tabs to the Left")?.disabled).toBe(
+      false,
+    );
   });
 
   it("disables Close Others when the selected tab is the only tab", () => {
     props = { ...props, files: [files[0]], activeFileId: "first" };
     render();
     const tab = container.querySelector<HTMLButtonElement>(
-      '[role="tab"][title="/repo/README.md"]',
+      '[role="tab"][data-file-tab-id="first"]',
     )!;
     act(() => {
       tab.parentElement!.dispatchEvent(
@@ -192,8 +204,9 @@ describe("file tab context menu", () => {
       (button) => button.textContent === "Close Others",
     );
     expect(item?.disabled).toBe(true);
-    const sides = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
-      .filter((button) => button.textContent?.startsWith("Close Tabs to the"));
+    const sides = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+    ).filter((button) => button.textContent?.startsWith("Close Tabs to the"));
     expect(sides).toHaveLength(2);
     expect(sides.every((button) => button.disabled)).toBe(true);
   });

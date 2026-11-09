@@ -1,10 +1,10 @@
-import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
 import { Button } from "../../../shared/ui/Button";
 
 import { NativeSelect } from "../../../shared/ui/Select";
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useLocale, useT } from "../../../shared/i18n";
 import { ChevronDown, CircleHelp, SlidersHorizontal } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import {
@@ -13,15 +13,27 @@ import {
   mergeModelSettings,
   subscribeModels,
 } from "../model/models";
-import { offeredDelegationSetting } from "../model/claudeAdvisor";
-import { pickerSettings } from "../model/modelPickerData";
+import {
+  groupSettings,
+  menuSettings,
+  SETTING_GROUP_TITLE,
+  settingLabel,
+  settingValueLabel,
+  settingValue,
+  type SettingGroupId,
+} from "../model/modelPickerData";
+import { isDelegationSetting, isMultiSetting } from "../model/crossDelegation";
+import {
+  decodeSubagents,
+  isReservedDelegationKey,
+} from "../../../shared/model/host-contracts/delegation";
 import type { ModelSetting } from "../model/models";
-import type { HarnessId } from "../model/session";
-import { HARNESS_TITLE } from "../model/session";
+import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../model/session";
 import { useModelSource } from "./modelSource";
+import { DelegationOptionIcon, DelegationSubagentsControl } from "./DelegationSettings";
+import { getAllRateLimits, subscribeRateLimits } from "../../providers/public/rateLimitsCache";
+import { signedOutAccountKeys } from "../model/accountModelChoices";
 
-const DELEGATION = new Set(["advisor", "subagentModel", "subagentPolicy"]);
-const COMPACTION = new Set(["autoCompact", "autoCompactWindow"]);
 /** Rows indented under the setting they depend on. */
 const DEPENDENT = new Set(["subagentPolicy", "autoCompactWindow"]);
 
@@ -29,32 +41,41 @@ const DEPENDENT = new Set(["subagentPolicy", "autoCompactWindow"]);
 function useModelExtras(harness: HarnessId, model: string, values: Record<string, string>) {
   useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
   const source = useModelSource();
+  const usage = useSyncExternalStore(subscribeRateLimits, getAllRateLimits, getAllRateLimits);
+  const t = useT();
   const current = source.resolve(harness, model);
   const merged = mergeModelSettings(current, values);
-  const offered = source.modelsFor(harness);
-  const settings = pickerSettings(current).map((setting) =>
-    offeredDelegationSetting(setting, offered, merged[setting.id] ?? setting.value),
-  );
+  const settings = menuSettings({
+    current,
+    harnesses: HARNESSES.filter((id) => source.available(id)),
+    source,
+    accountChoices: true,
+    signedOutAccounts: source.accounts === undefined ? signedOutAccountKeys(usage) : undefined,
+    signedOutLabel: t("Not signed in"),
+    values: merged,
+    unavailable: (name) => t("Unavailable: {p0}", { p0: name }),
+  });
   const effective = Object.fromEntries(
-    (current.settings ?? []).map((setting) => [setting.id, merged[setting.id] ?? setting.value]),
+    [...(current.settings ?? []), ...settings.filter(isDelegationSetting)].map((setting) => [
+      setting.id,
+      merged[setting.id] ?? setting.value,
+    ]),
   );
   const isInactive = (id: string) =>
     id === "subagentPolicy"
-      ? !effective.subagentModel || effective.subagentModel === "default"
+      ? (!effective.subagentModel || effective.subagentModel === "default") &&
+        decodeSubagents(effective.crossSubagents).length === 0
       : id === "autoCompactWindow" && effective.autoCompact === "off";
-  const active = settings.filter((s) => effective[s.id] !== s.value && !isInactive(s.id));
+  const active = settings.filter(
+    (s) => effective[s.id] !== (isDelegationSetting(s) ? "" : s.value) && !isInactive(s.id),
+  );
   const changed = active.length;
-  const delegated = settings.filter((s) => DELEGATION.has(s.id));
-  const compaction = settings.filter((s) => COMPACTION.has(s.id));
-  const own = settings.filter((s) => !DELEGATION.has(s.id) && !COMPACTION.has(s.id));
-  const groups: Array<{ title?: string; settings: ModelSetting[] }> =
-    own.length < settings.length
-      ? [
-          { title: "Model", settings: own },
-          { title: "Context", settings: compaction },
-          { title: "Advisor and subagents", settings: delegated },
-        ].filter((group) => group.settings.length > 0)
-      : [{ settings }];
+  // Same groups and order as the picker menu: delegation, then Context, then Fast and Reasoning.
+  const grouped = groupSettings(settings);
+  const groups: Array<{ id: SettingGroupId; title?: string; settings: ModelSetting[] }> =
+    grouped.length > 1 || (grouped[0] && grouped[0].id !== "model")
+      ? grouped.map((group) => ({ ...group, title: SETTING_GROUP_TITLE[group.id] }))
+      : [{ id: "model", settings }];
   return { current, settings, effective, isInactive, active, changed, groups };
 }
 
@@ -70,6 +91,7 @@ export function ModelExtrasPanel({
   disabled = false,
   title,
   leading,
+  compact = false,
 }: {
   harness: HarnessId;
   model: string;
@@ -80,8 +102,10 @@ export function ModelExtrasPanel({
   title?: string;
   /** Rendered before the heading, e.g. a back button. */
   leading?: ReactNode;
+  /** Inline pickers already provide their own title and saved-default reset. */
+  compact?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const { current, effective, isInactive, changed, groups } = useModelExtras(
     harness,
     model,
@@ -93,26 +117,39 @@ export function ModelExtrasPanel({
     const value = effective[setting.id] ?? setting.value;
     const dependent = DEPENDENT.has(setting.id);
     const inactive = isInactive(setting.id);
-    const modified = value !== setting.value && !inactive;
+    const modified = value !== (isDelegationSetting(setting) ? "" : setting.value) && !inactive;
     const descriptionId = `${id}-${setting.id}-help`;
     const showHelp = explained === setting.id;
-    const label = t(setting.label);
+    const label = t(settingLabel(setting));
     const update = (next: string) => {
-      if (!disabled) onSettingsChange({ ...effective, [setting.id]: next });
+      if (disabled) return;
+      // Off is an absent delegation key, never a stored empty value.
+      const settings = {
+        ...effective,
+        [setting.id]:
+          next ||
+          (setting.id === "crossSubagents" ? "[]" : setting.id === "crossAdvisor" ? "null" : next),
+      };
+      if (setting.id === "crossSubagents") delete settings.subagentModel;
+      if (setting.id === "crossAdvisor")
+        next ? delete settings.advisor : (settings.advisor = "off");
+      for (const [key, entry] of Object.entries(settings))
+        if (!entry && isReservedDelegationKey(key)) delete settings[key];
+      onSettingsChange(settings);
     };
     return (
       <div
         key={setting.id}
         className={dependent ? "ml-2 border-l border-(--ui-tone-neutral-border) pl-2.5" : undefined}
       >
-        <div className="flex min-h-8 items-center gap-2 text-[12px]">
+        <div className="flex min-h-8 items-center gap-2 text-ui-caption">
           <span
             className={`flex min-w-0 flex-1 items-center gap-1 ${inactive ? "text-(--ui-text-secondary)" : ""}`}
           >
             <span className="min-w-0 leading-4 break-words">{label}</span>
             {modified && (
               <span
-                className="size-1.5 shrink-0 rounded-full bg-(--ui-surface-raised)"
+                className="size-1.5 shrink-0 rounded-full bg-(--color-accent)"
                 title={t("Changed from default")}
               />
             )}
@@ -128,7 +165,7 @@ export function ModelExtrasPanel({
                 aria-controls={descriptionId}
                 onClick={() => setExplained(showHelp ? null : setting.id)}
               >
-                <CircleHelp className="size-3" />
+                <CircleHelp className="icon-xs" />
               </Button>
             )}
           </span>
@@ -140,17 +177,31 @@ export function ModelExtrasPanel({
               disabled={disabled || inactive}
               onCheckedChange={(next) => update(String(next))}
             />
-          ) : ["advisor", "subagentModel"].includes(setting.id) ? (
-            <NativeSearchableSelect
+          ) : isMultiSetting(setting) ? (
+            <DelegationSubagentsControl
               label={label}
-              aria-label={label}
-              aria-describedby={setting.description ? descriptionId : undefined}
+              setting={setting}
+              values={effective}
+              disabled={disabled || inactive}
+              onChange={update}
+            />
+          ) : ["advisor", "subagentModel", "crossAdvisor"].includes(setting.id) ? (
+            <SearchableSelect
+              hideLabel
+              label={label}
+              triggerProps={{
+                "aria-label": label,
+                "aria-describedby": setting.description ? descriptionId : undefined,
+              }}
               value={value}
               disabled={disabled || inactive}
-              onChange={(e) => update(e.target.value)}
+              onChange={update}
               options={setting.options.map((option) => ({
                 value: option.value,
                 label: t(option.label),
+                icon: isDelegationSetting(setting) ? (
+                  <DelegationOptionIcon setting={setting} value={option.value} />
+                ) : undefined,
               }))}
             />
           ) : (
@@ -174,7 +225,7 @@ export function ModelExtrasPanel({
           <p
             id={descriptionId}
             hidden={!showHelp}
-            className="mb-1 rounded-md bg-(--ui-surface-raised) px-2 py-1.5 text-(length:--ui-font-caption) leading-4 text-(--ui-text-secondary)"
+            className="mb-1 rounded-md border border-(--ui-pane-border) px-2 py-1.5 text-ui-caption leading-4 text-(--ui-text-secondary)"
           >
             {t(setting.description)}
           </p>
@@ -184,33 +235,36 @@ export function ModelExtrasPanel({
   };
   return (
     <>
-      <div className="sticky top-0 z-10 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 backdrop-blur-xl pt-2.5 pb-2">
-        <div className="flex items-center justify-between gap-2">
-          {leading}
-          <span className="min-w-0 flex-1 truncate text-[12px] font-medium">
-            {title ?? `${HARNESS_TITLE[harness]} · ${t("Extras")}`}
-          </span>
-          <Button
-            variant="ghost"
-            type="button"
-            disabled={disabled || changed === 0}
-            onClick={() => {
-              if (!disabled) onSettingsChange(defaultModelSettings(current));
-            }}
-            className="shrink-0"
-          >
-            {t("Reset extras")}
-          </Button>
+      {/* z-10: in-popover sticky header over the scrolling list; no in-pane layer scale exists, so the literal stays. */}
+      {!compact && (
+        <div className="sticky top-0 z-(--layer-pane-sheet) border-b border-(--ui-tone-neutral-border) bg-(--ui-surface-floating) px-3 pt-2.5 pb-2">
+          <div className="flex items-center justify-between gap-2">
+            {leading}
+            <span className="min-w-0 flex-1 truncate text-ui-caption font-medium">
+              {title ?? `${HARNESS_TITLE[harness]} · ${t("Extras")}`}
+            </span>
+            <Button
+              variant="ghost"
+              type="button"
+              disabled={disabled || changed === 0}
+              onClick={() => {
+                if (!disabled) onSettingsChange(defaultModelSettings(current));
+              }}
+              className="shrink-0"
+            >
+              {t("Reset extras")}
+            </Button>
+          </div>
+          <p className="mt-0.5 text-ui-caption leading-4 text-(--ui-text-secondary)">
+            {t("Extras apply to this model selection. They do not change the main model.")}
+          </p>
         </div>
-        <p className="mt-0.5 text-(length:--ui-font-caption) leading-4 text-(--ui-text-secondary)">
-          {t("Extras apply to this model selection. They do not change the main model.")}
-        </p>
-      </div>
+      )}
       <div className="space-y-3 px-3 pt-2 pb-3">
         {groups.map((group) => (
-          <section key={group.title ?? "all"}>
+          <section key={group.id}>
             {group.title && (
-              <h3 className="mb-1 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
+              <h3 className="mb-1 text-ui-caption font-medium text-(--ui-text-secondary)">
                 {t(group.title)}
               </h3>
             )}
@@ -251,13 +305,18 @@ export function ModelExtras({
   onClose?: () => void;
   showSummary?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const { settings, effective, active, changed } = useModelExtras(harness, model, values);
-  const [open, setOpen] = useState(false);
+  // The popover belongs to the model and enabled state it was opened for.
+  const ownerKey = `${harness}\u0000${model}\u0000${disabled}`;
+  const [openFor, setOpenFor] = useState<string | null>(null);
+  const open = openFor === ownerKey;
+  const setOpen = (next: boolean | ((current: boolean) => boolean)) =>
+    setOpenFor((previous) => {
+      const was = previous === ownerKey;
+      return (typeof next === "function" ? next(was) : next) ? ownerKey : null;
+    });
   const anchor = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    setOpen(false);
-  }, [harness, model, disabled]);
   if (!settings.length) return null;
   const dismiss = () => {
     setOpen(false);
@@ -279,23 +338,19 @@ export function ModelExtras({
         data-extras-trigger
         className="shrink-0"
       >
-        <SlidersHorizontal className="size-3 shrink-0" strokeWidth={1.75} />
+        <SlidersHorizontal className="icon-xs shrink-0" strokeWidth={1.75} />
         <span data-extras-label>{t("Extras")}</span>
         {changed > 0 && (
-          <span className="rounded bg-selection px-1 text-(length:--ui-font-caption) text-(--ui-tone-neutral-fg)">
+          <span className="rounded bg-selection px-1 text-ui-caption text-(--ui-tone-neutral-fg)">
             {changed}
           </span>
         )}
         {showSummary && changed > 0 && (
           <span data-extras-summary className="max-w-40 truncate text-(--ui-text-secondary)">
-            {active
-              .map((s) =>
-                t(s.options.find((o) => o.value === effective[s.id])?.label ?? effective[s.id]),
-              )
-              .join(" · ")}
+            {active.map((s) => t(settingValueLabel(s, effective))).join(" · ")}
           </span>
         )}
-        <ChevronDown className="size-3" />
+        <ChevronDown className="icon-xs" />
       </Button>
       {open && (
         <Popover
@@ -321,5 +376,35 @@ export function ModelExtras({
         </Popover>
       )}
     </>
+  );
+}
+
+export function TogglePill({
+  setting,
+  values,
+  onSettingsChange,
+}: {
+  setting: ModelSetting;
+  values: Record<string, string>;
+  onSettingsChange: (settings: Record<string, string>) => void;
+}) {
+  useLocale();
+  const on = settingValue(setting, values) === "true";
+  return (
+    <Button
+      variant="ghost"
+      type="button"
+      tooltip={`${setting.label}: ${on ? "On" : "Off"}`}
+      aria-label={`${setting.label}: ${on ? "On" : "Off"}`}
+      aria-pressed={on}
+      data-model-control
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={() => onSettingsChange({ ...values, [setting.id]: on ? "false" : "true" })}
+      className="max-w-28"
+    >
+      <span className={`min-w-0 truncate text-ui-micro ${on ? "" : "text-(--ui-text-secondary)"}`}>
+        {setting.label}
+      </span>
+    </Button>
   );
 }

@@ -1,6 +1,6 @@
 /* Pin Tailwind's layer order even when this module loads before the global stylesheet;
    otherwise `components` would precede `base` and Preflight's button reset would win. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 .control {
   box-sizing: border-box;
 }
@@ -73,10 +73,37 @@
   }
   .control.item {
     inline-size: 100%;
+  }
+  /* Structural defaults describe an unaligned control. An explicit `align`, or the
+     migrated `text-left`, is stronger than an item's start or a tab's center. */
+  .control.item:not([data-button-align]) {
     justify-content: flex-start;
   }
-  .control.tab {
+  .control.tab:not([data-button-align], :global(.text-left), :global(.text-start)) {
     justify-content: center;
+  }
+  /* Explicit alignment follows the structural defaults at equal specificity;
+     consumer `justify-*` utilities still win in this layer. */
+  .control[data-button-align="center"] {
+    justify-content: center;
+    text-align: center;
+  }
+  .control[data-button-align="start"] {
+    justify-content: flex-start;
+    text-align: start;
+  }
+  .control[data-button-align="end"] {
+    justify-content: flex-end;
+    text-align: end;
+  }
+  .control[data-button-align="center"] > .nativeContent {
+    justify-content: center;
+  }
+  .control[data-button-align="start"] > .nativeContent {
+    justify-content: flex-start;
+  }
+  .control[data-button-align="end"] > .nativeContent {
+    justify-content: flex-end;
   }
   .control[data-button-structural][data-button-layout="stacked"] {
     display: flex;
@@ -188,12 +215,70 @@
   justify-content: center;
   flex-shrink: 0;
 }
+/* One optical icon scale per size, from the shared icon tokens. Start/end icons are
+   always drawn at that size; an icon-only stroke icon (24-unit lucide grid) defaults to it in the components
+   layer, so a deliberate consumer size utility on the glyph still wins. */
+.control {
+  --button-icon-size: var(--ui-icon-sm);
+}
+.control[data-button-size="lg"] {
+  --button-icon-size: var(--ui-icon-md);
+}
 .icon > svg {
-  inline-size: 1em;
-  block-size: 1em;
+  inline-size: var(--button-icon-size);
+  block-size: var(--button-icon-size);
+}
+@layer components {
+  .control.iconOnly :where(svg[viewBox="0 0 24 24"][fill="none"][stroke="currentColor"]) {
+    flex: none;
+    inline-size: var(--button-icon-size);
+    block-size: var(--button-icon-size);
+  }
 }
 .nativeContent {
   gap: var(--space-2);
+}
+/* A text label never paints outside its control: in a bounded container the control
+   stops at the container edge and the label ends in an ellipsis. The accessible name
+   keeps the full text. Consumer utilities can still size the control. */
+@layer components {
+  .control:not(.iconOnly) {
+    max-inline-size: 100%;
+  }
+  .control > span {
+    min-inline-size: 0;
+  }
+}
+.label {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: inherit;
+}
+.control.link[data-button-layout="text"] .label {
+  display: inline;
+  overflow: visible;
+}
+.progressIcon {
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--button-icon-size);
+  block-size: var(--button-icon-size);
+  flex: none;
+}
+.progressIcon > * {
+  grid-area: 1 / 1;
+}
+.progressIcon[data-pending] > .icon {
+  visibility: hidden;
+}
+.progressSpinner {
+  inline-size: 100%;
+  block-size: 100%;
+}
+.progressSpinner[hidden] {
+  display: none;
+  animation: none;
 }
 
 /* Let full-width native actions distribute and truncate their own content. */
@@ -266,6 +351,14 @@
   background: var(--accent-subtle);
   color: var(--foreground);
 }
+/* The neutral selected fill is only a step above hover, so a toggle carries a second cue: a quiet hairline.
+   Rows, items and tabs keep the fill alone. */
+.control[data-button-selected][data-button-tone="neutral"]:is(
+    [data-button-hierarchy="ghost"],
+    [data-button-hierarchy="secondary"]
+  ) {
+  border-color: var(--ui-pane-border);
+}
 .control[data-button-selected]:not([data-button-tone="neutral"]) {
   background: var(--button-subtle);
   color: var(--button-fg);
@@ -295,13 +388,37 @@
     color: var(--foreground);
   }
 }
-.control[data-button-hierarchy]:active:not([aria-disabled="true"]) {
+/* A selected tab stays distinct from hover, including neutral light themes. */
+.control.tab {
+  position: relative;
+}
+/* Selected tabs use the shared calm fill and full-strength text; no underline
+   or edge stripe. */
+.control.tab[data-button-hierarchy="tab"][data-button-selected][data-button-tone="neutral"] {
+  background: var(--ui-surface-selected);
+  color: var(--foreground);
+  border-color: transparent;
+  font-weight: 500;
+}
+
+/* Press is one layer. Scaling controls (Arc renderer) answer with the scale alone;
+   native-rendered controls and popup anchors never scale, so they step their tone. */
+.control[data-button-hierarchy]:is(
+    [data-button-press],
+    [aria-haspopup]:not([aria-haspopup="false"]),
+    [data-state],
+    [role="combobox"]
+  ):active:not([aria-disabled="true"]) {
   background: var(--button-pressed);
   color: var(--button-fg);
   border-color: var(--button-border);
-  opacity: 1;
 }
-.control[data-button-hierarchy="primary"]:active:not([aria-disabled="true"]) {
+.control[data-button-hierarchy="primary"]:is(
+    [data-button-press],
+    [aria-haspopup]:not([aria-haspopup="false"]),
+    [data-state],
+    [role="combobox"]
+  ):active:not([aria-disabled="true"]) {
   background: var(--button-solid-pressed);
   color: var(--button-on-solid);
   border-color: var(--button-solid-pressed);
@@ -323,6 +440,17 @@
   color: var(--button-on-solid);
   background: var(--button-solid);
   border-color: var(--button-solid);
+}
+.control[data-button-hierarchy][aria-busy="true"]:not([data-button-selected]):is(
+    [data-button-hierarchy="ghost"],
+    [data-button-hierarchy="link"],
+    [data-button-hierarchy="item"],
+    [data-button-hierarchy="tab"]
+  ) {
+  /* Progress belongs to the action; it must not promote every toolbar icon or
+     row into a new outlined control while work is running. */
+  background: transparent;
+  border-color: transparent;
 }
 .control[data-button-selected][aria-busy="true"] {
   background: var(--button-subtle);
@@ -361,4 +489,208 @@
     [data-button-hierarchy="tab"]
   ):is(:hover, :active, [data-button-selected]) {
   border-color: transparent;
+}
+
+/* Inline actions (`inset`, see ActionHost/InlineAction): compact icon actions such as
+   close, remove or more inside a row, tab or card. The host owns the highlight; the
+   action only adds a transparent overlay step, so on a hovered or selected host it
+   never punches an opaque square into the fill. Secondary ink at rest, foreground
+   on hover. Extra attributes outrank the quiet-hierarchy rules above. */
+@layer components {
+  .control.inset {
+    flex: none;
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    min-block-size: 1.25rem;
+    padding: 0;
+    aspect-ratio: 1;
+  }
+}
+.control.inset {
+  --button-icon-size: var(--ui-icon-sm);
+  border-radius: calc(var(--ui-control-radius) - 2px);
+}
+/* Text inset action ("Undo", "Retry", "Show") inside a row or card: same 20px height and
+   overlay states as the icon form, content-sized, caption type, never a bordered button. */
+@layer components {
+  .control.inset.insetText {
+    inline-size: auto;
+    padding-inline: var(--space-2);
+    aspect-ratio: auto;
+    font-size: var(--ui-font-caption);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+}
+.control.inset[data-button-hierarchy][data-button-tone] {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ui-text-secondary);
+}
+@media (hover: hover) and (pointer: fine) {
+  .control.inset[data-button-hierarchy][data-button-tone]:hover:not([aria-disabled="true"]) {
+    border-color: transparent;
+    background: var(--color-selection);
+    color: var(--button-fg);
+  }
+}
+.control.inset[data-button-hierarchy][data-button-tone]:active:not([aria-disabled="true"]),
+.control.inset[data-button-hierarchy][data-button-tone][aria-expanded="true"] {
+  border-color: transparent;
+  background: var(--color-selection-strong);
+  color: var(--button-fg);
+}
+.control.inset[data-button-hierarchy][data-button-tone][aria-disabled="true"] {
+  color: var(--ui-text-disabled);
+}
+/* Revealed with its host: hover, focus inside it or selection. Keyboard focus and an
+   open menu always show it, and touch input shows it permanently, so hover is never
+   the only way to find the action. */
+.control.inset[data-action-reveal] {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+:global([data-action-host]):is(
+    :hover,
+    :focus-within:not([data-hover-reveal]),
+    :has(:focus-visible),
+    [data-selected]:not([data-hover-reveal])
+  )
+  .control.inset[data-action-reveal],
+.control.inset[data-action-reveal]:is(:focus-visible, [aria-expanded="true"], [aria-busy="true"]) {
+  opacity: 1;
+}
+@media (hover: none), (pointer: coarse) {
+  .control.inset[data-action-reveal] {
+    opacity: 1;
+  }
+  /* Same visual size; a larger invisible target for touch. */
+  .control.inset::before {
+    content: "";
+    position: absolute;
+    inset: -0.375rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .control.inset[data-action-reveal] {
+    transition: none;
+  }
+}
+/* Inside an action host the host paints hover, keyboard focus and selection. The
+   primary control drops its own fills (so moving onto an inline action never moves
+   the highlight) but keeps its text, focus ring and selected-tab indicator. */
+:global([data-action-host]) > .control:not(.inset)[data-button-tone],
+.control[data-action-primary][data-button-tone] {
+  --button-hover: transparent;
+  --button-pressed: transparent;
+  --button-subtle: transparent;
+  --accent-subtle: transparent;
+  --ui-surface-selected: transparent;
+}
+
+/* Arc controls answer a press with a 2% scale, which reduced motion removes.
+   Those users still get the tone step that native controls already use. */
+@media (prefers-reduced-motion: reduce) {
+  .control[data-button-hierarchy]:active:not([aria-disabled="true"]) {
+    background: var(--button-pressed);
+    color: var(--button-fg);
+    border-color: var(--button-border);
+  }
+  .control[data-button-hierarchy="primary"]:active:not([aria-disabled="true"]) {
+    background: var(--button-solid-pressed);
+    color: var(--button-on-solid);
+    border-color: var(--button-solid-pressed);
+  }
+  .control[data-button-tone][data-button-hierarchy]:is(
+      [data-button-hierarchy="ghost"],
+      [data-button-hierarchy="link"],
+      [data-button-hierarchy="item"],
+      [data-button-hierarchy="tab"]
+    ):active {
+    border-color: transparent;
+  }
+}
+
+/* aria-disabled controls (including loading ones that keep focus) are not covered by
+   the user agent's disabled palette in high contrast. */
+@media (forced-colors: active) {
+  .control[aria-disabled="true"]:not([aria-busy="true"]) {
+    color: GrayText;
+    border-color: GrayText;
+  }
+}
+
+/* ButtonGroup owns the outer boundary and the radius of its two ends; each segment
+   keeps its own typography, hover/pressed/selected/disabled/loading presentation and
+   keyboard focus. A divider replaces the per-segment border, so the group is exactly
+   one control tall and every state stays readable on its own segment. */
+:global([data-button-group="joined"]) > .control[data-button-tone][data-button-hierarchy] {
+  align-self: stretch;
+  border-width: 0;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
+}
+:global([data-button-group="joined"]) > .control + .control::before {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: 1px;
+  background: var(--ui-tone-neutral-border);
+}
+:global([data-button-group="joined"]) > .control:first-of-type {
+  border-start-start-radius: var(--ui-control-radius);
+  border-end-start-radius: var(--ui-control-radius);
+}
+:global([data-button-group="joined"]) > .control:last-of-type {
+  border-start-end-radius: var(--ui-control-radius);
+  border-end-end-radius: var(--ui-control-radius);
+}
+/* The ring is inset and raised, so neighbours and the outer boundary never clip it. */
+:global([data-button-group="joined"]) > .control:focus-visible {
+  z-index: 1;
+  outline-offset: -2px;
+}
+
+:global([data-field-slot]) .control.iconOnly {
+  inline-size: calc(var(--field-slot-height, var(--ui-field-height-md)) - 8px);
+  block-size: calc(var(--field-slot-height, var(--ui-field-height-md)) - 8px);
+  min-block-size: calc(var(--field-slot-height, var(--ui-field-height-md)) - 8px);
+  padding: 0;
+  border-radius: calc(var(--ui-field-radius) - 3px);
+}
+.stableLabel {
+  display: inline-block;
+  max-inline-size: 100%;
+}
+.label[data-label-reserved] {
+  text-align: center;
+}
+.control[data-button-align="start"] .label[data-label-reserved] {
+  text-align: start;
+}
+.control[data-button-align="end"] .label[data-label-reserved] {
+  text-align: end;
+}
+/* Reserved labels: empty ghosts share the label's grid cell and paint their text through
+   a pseudo-element, so they size the control without entering textContent or the
+   accessibility tree. */
+.label[data-label-ghosts] {
+  display: grid;
+}
+.label[data-label-ghosts] > * {
+  grid-area: 1 / 1;
+}
+.labelGhost {
+  visibility: hidden;
+  block-size: 0;
+  overflow: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.labelGhost::after {
+  content: attr(data-reserve);
 }

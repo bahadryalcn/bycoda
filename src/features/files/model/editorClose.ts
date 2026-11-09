@@ -19,21 +19,27 @@ export function registerClosingEditor(editor: ClosingEditor): () => void {
   };
 }
 
-export async function prepareEditorsToClose(): Promise<boolean> {
+export type CloseDialog = <T>(show: () => Promise<T>) => Promise<T>;
+
+export async function prepareEditorsToClose(
+  dialog: CloseDialog = (show) => show(),
+): Promise<boolean> {
   await Promise.all([...editors].map((editor) => editor.settle()));
   const dirty = [...editors].filter((editor) => editor.dirty());
   if (dirty.length === 0) return true;
   const saveLabel = t("Save");
   const discardLabel = t("Discard");
-  const choice = await message(
-    t("Save changes before closing?\n\n{p0}", {
-      p0: dirty.map((editor) => editor.path).join("\n"),
-    }),
-    {
-      title: appName(),
-      kind: "warning",
-      buttons: { yes: saveLabel, no: discardLabel, cancel: t("Cancel") },
-    },
+  const choice = await dialog(() =>
+    message(
+      t("Save changes before closing?\n\n{p0}", {
+        p0: dirty.map((editor) => editor.path).join("\n"),
+      }),
+      {
+        title: appName(),
+        kind: "warning",
+        buttons: { yes: saveLabel, no: discardLabel, cancel: t("Cancel") },
+      },
+    ),
   );
   if (choice === discardLabel) return true;
   if (choice !== saveLabel) return false;

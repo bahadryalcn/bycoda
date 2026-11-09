@@ -1,7 +1,17 @@
+@layer properties, theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .field {
+    min-width: 0;
+  }
+  .trigger {
+    width: 100%;
+  }
+}
 .field {
   display: grid;
   gap: var(--space-2);
-  min-width: 0;
 }
 .field label {
   font-size: var(--text-sm);
@@ -15,7 +25,6 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  width: 100%;
   min-height: var(--control-height-md);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
@@ -32,22 +41,49 @@
     box-shadow var(--duration-fast) var(--ease-standard);
 }
 @media (hover: hover) and (pointer: fine) {
+  /* Hover answers with the frame only: the field fill stays the same at rest, hover, press and open. */
   .trigger:hover:not([data-disabled]) {
-    border-color: var(--border-strong);
-    background: var(--surface-muted);
+    border-color: var(--ui-field-border-hover);
   }
 }
+/* Pressing or opening keeps the field fill: only the frame answers, so the control never changes colour. */
 .trigger:active:not([data-disabled]),
 .trigger[data-state="open"] {
-  border-color: var(--border-strong);
-  background: var(--surface-muted);
+  border-color: var(--ui-field-border-hover);
 }
 .trigger:focus-visible {
-  border-color: var(--border-strong);
+  border-color: var(--ui-field-border-focus);
 }
 .trigger[data-disabled] {
-  opacity: 0.5;
+  opacity: var(--ui-disabled-opacity, 0.5);
   cursor: not-allowed;
+}
+
+/* bycoda field frame for choice triggers. The shared owner's `.bycoda-arc.bycoda-arc-select` frame (0,2,0) sets the border
+   shorthand, so these states are written one class stronger. Focus matches the text fields: the border and a contained
+   outline on the same role, danger when invalid. Disabled dims through its semantic pair, never opacity twice. */
+.trigger:global(.bycoda-arc.bycoda-arc-select):focus-visible {
+  border-color: var(--ui-field-border-focus);
+  outline: none;
+  box-shadow: var(--ui-focus-ring);
+}
+.trigger:global(.bycoda-arc-select)[aria-invalid="true"],
+.trigger:global(.bycoda-arc-select)[aria-invalid="true"]:hover:not([data-disabled]) {
+  border-color: var(--danger);
+}
+.trigger:global(.bycoda-arc.bycoda-arc-select)[aria-invalid="true"]:focus-visible {
+  outline-color: var(--danger);
+}
+.trigger:global(.bycoda-arc-select)[data-disabled] {
+  opacity: 1;
+  border-color: var(--ui-control-disabled-border);
+}
+/* A placeholder is a muted role, a committed value keeps the trigger's ink. */
+.trigger [data-placeholder] {
+  color: var(--ui-text-muted);
+}
+.trigger[data-disabled] [data-placeholder] {
+  color: inherit;
 }
 .valueText {
   position: relative;
@@ -106,11 +142,11 @@
   max-height: min(320px, var(--radix-select-content-available-height));
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: calc(var(--radius-control) + 2px);
+  border-radius: var(--ui-radius-popup);
   padding: 6px;
   background: var(--surface-raised);
   color: var(--foreground);
-  box-shadow: var(--shadow-floating);
+  box-shadow: var(--ui-elevation-floating);
   transform-origin: var(--radix-select-content-transform-origin);
   animation: select-in var(--duration-standard) var(--ease-enter) both;
 }
@@ -135,9 +171,9 @@
   position: relative;
   display: flex;
   align-items: center;
-  min-height: 36px;
-  border-radius: calc(var(--radius-control) - 4px);
-  padding: 0 34px 0 11px;
+  min-height: var(--ui-field-height-md);
+  border-radius: calc(var(--ui-field-radius) - 2px);
+  padding: 0 11px;
   color: var(--foreground);
   font-size: var(--text-sm);
   cursor: default;
@@ -151,7 +187,7 @@
   background: var(--surface-muted);
 }
 .item[data-disabled] {
-  opacity: 0.45;
+  opacity: var(--ui-disabled-opacity, 0.5);
 }
 .indicator {
   position: absolute;
@@ -217,4 +253,24 @@
   to {
     opacity: 0;
   }
+}
+
+/* The highlighted item is a surface fill only; forced-colors mode shows it with an outline. */
+@media (forced-colors: active) {
+  .item[data-highlighted] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .item[data-disabled] {
+    color: GrayText;
+    opacity: 1;
+  }
+}
+
+.indicator {
+  display: none;
+}
+.item:is([data-highlighted], [data-state="checked"], [aria-selected="true"]) {
+  background: var(--ui-surface-selected);
+  box-shadow: inset 0 0 0 1px var(--ui-field-border);
 }

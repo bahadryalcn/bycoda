@@ -1,3 +1,4 @@
+export { formatUsageTokens } from "../../../shared/i18n/format";
 import { invoke } from "@tauri-apps/api/core";
 import type { ProviderAccount, ProviderAccountProvider } from "./providerAccounts";
 
@@ -400,13 +401,6 @@ export function usageBreakdown(
           : 0
       : 0,
   }));
-}
-
-export function formatUsageTokens(value: number): string {
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
-  return String(Math.round(value));
 }
 
 export function formatUsageCost(value: number): string {

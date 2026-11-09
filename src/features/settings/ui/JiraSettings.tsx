@@ -1,11 +1,16 @@
-import { SettingsFeedback } from "./settingsControls";
-import { Checkbox } from "../../../shared/ui/Checkbox";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { SettingsFeedback, Toggle } from "./settingsControls";
+import { InboxScopeCollection } from "./InboxScopeCollection";
 import { t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { Row } from "./settingsControls";
-import { InboxConnectionStatus, InboxConnectionError } from "./InboxConnectionStatus";
+import {
+  InboxAccountActions,
+  InboxConnectionStatus,
+  InboxConnectionError,
+  useConnectionVerification,
+} from "./InboxConnectionStatus";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { PrivateEmail } from "../../../shared/ui/PrivateEmail";
@@ -16,10 +21,8 @@ import {
   jiraConnected,
   jiraBackgroundSyncEnabled,
   saveJiraBackgroundSync,
-  loadAllowedJiraBoardIds,
   saveAllowedJiraBoardIds,
   listJiraProjects,
-  loadHiddenJiraProjectIds,
   notifyJiraChange,
   saveHiddenJiraProjectIds,
   saveJiraConfig,
@@ -27,37 +30,74 @@ import {
   type JiraStatus,
 } from "../../inbox/model/jira";
 import { listJiraBoards, type JiraBoard } from "../../inbox/model/jiraBoard";
+import {
+  isInboxScopeNumber,
+  isInboxScopeString,
+  useInboxScopePreference,
+} from "./useInboxScopePreference";
 
-export function JiraSettings() {
+function readBackgroundSync() {
+  try {
+    return { value: jiraBackgroundSyncEnabled(), available: true };
+  } catch {
+    return { value: false, available: false };
+  }
+}
+
+export function JiraSettings({ active = true }: { active?: boolean } = {}) {
   useLocale();
+  const verification = useConnectionVerification();
   const [status, setStatus] = useState<JiraStatus | null>(null);
   const [site, setSite] = useState("");
   const [email, setEmail] = useState("");
   const [token, setToken] = useState("");
   const [checking, setChecking] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState<"save" | "disconnect" | null>(null);
+  const busy = operation !== null;
   const [error, setError] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const mutation = useRef(false);
   const request = useRef(0);
+  const projectRequest = useRef(0);
   const [projectsError, setProjectsError] = useState<string | null>(null);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [boardsLoading, setBoardsLoading] = useState(false);
   const [boardsRevision, setBoardsRevision] = useState(0);
   const [projects, setProjects] = useState<JiraProject[]>([]);
-  const [hiddenIds, setHiddenIds] = useState(loadHiddenJiraProjectIds);
-  const [allowedBoardIds, setAllowedBoardIds] = useState(loadAllowedJiraBoardIds);
-  const [backgroundSync, setBackgroundSync] = useState(jiraBackgroundSyncEnabled);
+  const scopeOwner = `${status?.site ?? ""}\0${status?.email ?? ""}`;
+  const projectScope = useInboxScopePreference(
+    "bycoda.jiraHiddenProjects",
+    JIRA_CHANGE_EVENT,
+    isInboxScopeString,
+    saveHiddenJiraProjectIds,
+    scopeOwner,
+  );
+  const boardScope = useInboxScopePreference(
+    "bycoda.jiraAllowedBoards",
+    JIRA_CHANGE_EVENT,
+    isInboxScopeNumber,
+    saveAllowedJiraBoardIds,
+    scopeOwner,
+  );
+  const hiddenIds = projectScope.value;
+  const allowedBoardIds = boardScope.value;
+  const [backgroundState, setBackgroundState] = useState(readBackgroundSync);
+  const projectOwner = useRef("");
   const [boards, setBoards] = useState<JiraBoard[]>([]);
-  const [projectSearch, setProjectSearch] = useState("");
   const [boardsError, setBoardsError] = useState<string | null>(null);
+  const boardsOwner = useRef(scopeOwner);
 
   useEffect(() => {
+    if (busy || !active) return;
     if (!status?.connected) {
       setBoards([]);
       setBoardsLoading(false);
       return;
     }
     let cancelled = false;
-    setBoards([]);
+    if (boardsOwner.current !== scopeOwner) setBoards([]);
+    boardsOwner.current = scopeOwner;
     setBoardsError(null);
     setBoardsLoading(true);
     void listJiraBoards({ includeUnselected: true })
@@ -73,32 +113,40 @@ export function JiraSettings() {
     return () => {
       cancelled = true;
     };
-  }, [status?.connected, hiddenIds, projects, boardsRevision]);
+  }, [status?.connected, scopeOwner, busy, active, hiddenIds, projects, boardsRevision]);
 
   const loadProjects = useCallback(async () => {
+    const generation = ++projectRequest.current;
+    const account = request.current;
     setProjectsError(null);
     setProjectsLoading(true);
     try {
-      setProjects(await listJiraProjects());
+      const next = await listJiraProjects();
+      if (generation === projectRequest.current && account === request.current) setProjects(next);
     } catch (err) {
-      setProjectsError(String(err instanceof Error ? err.message : err));
+      if (generation === projectRequest.current && account === request.current)
+        setProjectsError(String(err instanceof Error ? err.message : err));
     } finally {
-      setProjectsLoading(false);
+      if (generation === projectRequest.current && account === request.current)
+        setProjectsLoading(false);
     }
   }, []);
 
   const checkStatus = useCallback(async () => {
     const generation = ++request.current;
     setChecking(true);
-    setError(null);
+    setStatusError(null);
     try {
       const next = await jiraConnected();
       if (generation !== request.current) return;
+      const owner = `${next.site}\0${next.email}`;
+      if (projectOwner.current !== owner) setProjects([]);
+      projectOwner.current = owner;
       setStatus(next);
       if (next.connected) await loadProjects();
     } catch (err: unknown) {
       if (generation === request.current)
-        setError(String(err instanceof Error ? err.message : err));
+        setStatusError(String(err instanceof Error ? err.message : err));
     } finally {
       if (generation === request.current) setChecking(false);
     }
@@ -107,26 +155,42 @@ export function JiraSettings() {
   useEffect(() => {
     void checkStatus();
     const onChange = () => {
-      setHiddenIds(loadHiddenJiraProjectIds());
-      setAllowedBoardIds(loadAllowedJiraBoardIds());
-      setBackgroundSync(jiraBackgroundSyncEnabled());
+      setBackgroundState(readBackgroundSync());
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === null || event.key === "bycoda.jiraBackgroundSync") onChange();
     };
     window.addEventListener(JIRA_CHANGE_EVENT, onChange);
+    window.addEventListener("storage", onStorage);
     return () => {
       request.current += 1;
+      projectRequest.current += 1;
       window.removeEventListener(JIRA_CHANGE_EVENT, onChange);
+      window.removeEventListener("storage", onStorage);
     };
   }, [checkStatus]);
 
   const connect = async () => {
-    if (busy || checking || !site.trim() || !email.trim() || !token.trim()) return;
-    setBusy(true);
+    if (busy || checking || mutation.current || !site.trim() || !email.trim() || !token.trim())
+      return;
+    mutation.current = true;
+    request.current += 1;
+    projectRequest.current += 1;
+    setProjectsLoading(false);
+    setBoardsLoading(false);
+    setOperation("save");
     setError(null);
     try {
       const next = await saveJiraConfig({ site, email, token });
       if (!next.connected)
         throw new Error(t("Connection test failed. Check your credentials and retry."));
+      const owner = `${next.site}\0${next.email}`;
+      if (projectOwner.current !== owner) setProjects([]);
+      projectOwner.current = owner;
       setStatus(next);
+      setEditing(false);
+      setStatusError(null);
+      verification.markVerified();
       setToken("");
       clearInboxCache();
       // Reconnecting must preserve the owner's existing scope choices.
@@ -135,16 +199,23 @@ export function JiraSettings() {
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
-      setBusy(false);
+      mutation.current = false;
+      setOperation(null);
     }
   };
 
   const disconnect = async () => {
-    if (busy) return;
-    setBusy(true);
+    if (busy || checking || mutation.current) return;
+    mutation.current = true;
+    request.current += 1;
+    projectRequest.current += 1;
+    setProjectsLoading(false);
+    setBoardsLoading(false);
+    setOperation("disconnect");
     setError(null);
     try {
       setStatus(await disconnectJira());
+      verification.clearVerified();
       setProjects([]);
       setToken("");
       clearInboxCache();
@@ -152,14 +223,26 @@ export function JiraSettings() {
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
-      setBusy(false);
+      mutation.current = false;
+      setOperation(null);
     }
   };
 
-  const query = projectSearch.trim().toLocaleLowerCase();
-  const filteredProjects = projects.filter((project) =>
-    `${project.name} ${project.key}`.toLocaleLowerCase().includes(query),
-  );
+  const setVisibleProjects = (visible: string[]) => {
+    const known = new Set(projects.map((project) => project.id));
+    clearInboxCache();
+    projectScope.update((current) => [
+      ...current.filter((id) => !known.has(id)),
+      ...projects.filter((project) => !visible.includes(project.id)).map((project) => project.id),
+    ]);
+  };
+  const setAllowedBoards = (selected: string[]) => {
+    const known = new Set(boards.map((board) => board.id));
+    boardScope.update((current) => [
+      ...current.filter((id) => !known.has(id)),
+      ...boards.filter((board) => selected.includes(String(board.id))).map((board) => board.id),
+    ]);
+  };
 
   return (
     <>
@@ -167,30 +250,51 @@ export function JiraSettings() {
         checking={checking}
         busy={busy || Boolean(token)}
         configured={Boolean(status?.connected)}
-        error={error}
+        verifiedAt={verification.verifiedAt}
+        error={statusError}
         onCheck={() => void checkStatus()}
       />
       <Row
-        label={t("Account configuration")}
-        description={t(
+        label={t("Account")}
+        stacked={!checking && !(status?.connected && !editing)}
+        info={t(
           "Connect your Jira Cloud site using your Atlassian email and an API token without scopes. Disconnect deletes the saved credentials.",
         )}
-        persistence={{ mode: "explicit", state: busy ? "saving" : token ? "dirty" : "idle" }}
+        persistence={{
+          mode: "explicit",
+          state: operation === "save" ? "saving" : token ? "dirty" : "idle",
+        }}
       >
-        <div className="w-full min-w-0">
+        <div
+          className="inbox-credential w-full min-w-0"
+          data-state={checking || (status?.connected && !editing) ? "summary" : "form"}
+        >
           {checking ? (
-            <p className="text-[12px] text-content/45">{t("Checking Jira connection…")}</p>
-          ) : status?.connected ? (
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="min-w-0 text-[12px] text-content/65">
+            <LoadingText>{t("Checking Jira connection…")}</LoadingText>
+          ) : status?.connected && !editing ? (
+            <div className="inbox-account-summary">
+              <div className="min-w-0 text-ui-caption text-(--ui-text-secondary)">
                 <p className="break-all">{status.site}</p>
                 <p className="flex min-w-0">
                   <PrivateEmail key={status.email} email={status.email} />
                 </p>
               </div>
-              <SecondaryButton onClick={() => void disconnect()} disabled={busy}>
-                {busy ? t("Disconnecting") : t("Disconnect")}
-              </SecondaryButton>
+              <Button
+                stableWidth
+                disabled={busy}
+                onClick={() => {
+                  setSite(status.site);
+                  setEmail(status.email);
+                  setEditing(true);
+                }}
+              >
+                {t("Edit")}
+              </Button>
+              <InboxAccountActions
+                onDisconnect={() => void disconnect()}
+                loading={operation === "disconnect"}
+                disabled={busy}
+              />
             </div>
           ) : (
             <form
@@ -252,17 +356,35 @@ export function JiraSettings() {
                 />
               ))}
               <div className="flex items-center gap-3">
-                <SecondaryButton
+                {status?.connected ? (
+                  <Button
+                    stableWidth
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setEditing(false);
+                      setToken("");
+                    }}
+                  >
+                    {t("Cancel")}
+                  </Button>
+                ) : null}
+                <Button
+                  stableWidth
+                  className="shrink-0"
                   type="submit"
+                  loading={operation === "save"}
                   disabled={busy || !site.trim() || !email.trim() || !token.trim()}
+                  reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
                 >
                   {busy
                     ? t("Saving and testing…")
                     : error
                       ? t("Retry save and test")
                       : t("Save and test connection")}
-                </SecondaryButton>
+                </Button>
                 <Button
+                  stableWidth
                   variant="link"
                   type="button"
                   onClick={() =>
@@ -280,117 +402,162 @@ export function JiraSettings() {
       </Row>
       <InboxConnectionError error={error} />
       {status?.connected ? (
-        <Row label={t("Inbox scope")} persistence={{ mode: "automatic" }}>
-          <div className="inbox-scope">
-            <section aria-label={t("Projects")}>
-              <div className="inbox-scope-heading">
-                <span className="text-[13px] font-medium text-content">{t("Projects")}</span>
-                <SecondaryButton
-                  disabled={busy || checking || projectsLoading}
-                  onClick={() => void loadProjects()}
-                >
-                  {projectsLoading ? t("Loading…") : t("Refresh projects")}
-                </SecondaryButton>
-              </div>
-              <p className="text-[12px] text-content/45">
-                {t("Unchecked projects stay out of the inbox.")}
-              </p>
+        <>
+          <Row
+            stacked
+            label={t("Projects")}
+            info={t("Unchecked projects stay out of the inbox.")}
+            persistence={{ mode: "automatic" }}
+          >
+            <div className="inbox-scope">
               <InboxConnectionError error={projectsError} />
-              <TextField
-                type="search"
-                label={t("Search projects")}
-                hideLabel
-                aria-label={t("Search projects")}
-                placeholder={t("Search projects")}
-                value={projectSearch}
-                onChange={(event) => setProjectSearch(event.target.value)}
-              />
-              <div className="inbox-scope-help" role="status" aria-live="polite">
-                {t("{p0} of {p1} projects selected", {
-                  p0: projects.filter((project) => !hiddenIds.includes(project.id)).length,
-                  p1: projects.length,
-                })}
-              </div>
-              <div className="inbox-scope-list">
-                {filteredProjects.map((project) => (
-                  <label key={project.id} className="inbox-scope-option">
-                    <Checkbox
-                      checked={!hiddenIds.includes(project.id)}
-                      disabled={busy}
-                      onChange={() => {
-                        const next = hiddenIds.includes(project.id)
-                          ? hiddenIds.filter((id) => id !== project.id)
-                          : [...hiddenIds, project.id];
-                        clearInboxCache();
-                        saveHiddenJiraProjectIds(next);
-                      }}
-                    />
-                    {project.name} <span className="inbox-scope-key">{project.key}</span>
-                  </label>
-                ))}
-              </div>
-              {filteredProjects.length === 0 && !projectsError && !projectsLoading ? (
-                <p className="inbox-scope-help">
-                  {query
-                    ? t("No matching projects")
-                    : t("No projects available. Refresh projects to try again.")}
-                </p>
-              ) : null}
-            </section>
-            <section aria-label={t("Boards")}>
-              <div className="inbox-scope-heading">
-                <span>{t("Boards")}</span>
-                <SecondaryButton
-                  disabled={busy || checking || boardsLoading}
-                  onClick={() => setBoardsRevision((value) => value + 1)}
+              {projectScope.error ? (
+                <SettingsFeedback
+                  state="error"
+                  action={
+                    <Button stableWidth onClick={projectScope.retry}>
+                      {t("Retry")}
+                    </Button>
+                  }
                 >
-                  {boardsLoading ? t("Loading…") : boardsError ? t("Retry") : t("Refresh boards")}
-                </SecondaryButton>
-              </div>
-              <p className="text-[12px] text-content/45">
-                {t("Only checked boards from selected projects appear in the inbox.")}
-              </p>
+                  {t("Saved Inbox scope is unavailable. Retry before changing it.")}
+                </SettingsFeedback>
+              ) : null}
+              {projectScope.available ? (
+                <InboxScopeCollection
+                  label={t("Projects")}
+                  searchLabel={t("Search projects")}
+                  items={projects.map((project) => ({
+                    id: project.id,
+                    title: project.name,
+                    meta: project.key,
+                  }))}
+                  selectedIds={projects
+                    .filter((project) => !hiddenIds.includes(project.id))
+                    .map((project) => project.id)}
+                  onChange={setVisibleProjects}
+                  disabled={busy || checking || projectsLoading || Boolean(projectsError)}
+                  loading={projectsLoading}
+                  summary={(count, total) =>
+                    t("{p0} of {p1} projects selected", { p0: count, p1: total })
+                  }
+                  emptyLabel={t("No projects available. Refresh projects to try again.")}
+                  noMatchLabel={t("No matching projects")}
+                  actions={
+                    <Button
+                      stableWidth
+                      className="shrink-0"
+                      size="sm"
+                      loading={projectsLoading}
+                      disabled={busy || checking || projectsLoading}
+                      onClick={() => void loadProjects()}
+                    >
+                      {projectsLoading ? t("Loading…") : t("Refresh projects")}
+                    </Button>
+                  }
+                />
+              ) : null}
+            </div>
+          </Row>
+          <Row
+            stacked
+            label={t("Boards")}
+            info={t("Only checked boards from selected projects appear in the inbox.")}
+            persistence={{ mode: "automatic" }}
+          >
+            <div className="inbox-scope">
               {boardsError ? (
                 <SettingsFeedback state="error">{boardsError}</SettingsFeedback>
               ) : null}
-              {boards.map((board) => (
-                <label key={board.id} className="inbox-scope-option">
-                  <Checkbox
-                    checked={allowedBoardIds.includes(board.id)}
-                    disabled={busy}
-                    onChange={() =>
-                      saveAllowedJiraBoardIds(
-                        allowedBoardIds.includes(board.id)
-                          ? allowedBoardIds.filter((id) => id !== board.id)
-                          : [...allowedBoardIds, board.id],
-                      )
-                    }
-                  />
-                  {board.name} · {board.kind}
-                </label>
-              ))}
-              {boards.length === 0 && !boardsError && !boardsLoading ? (
-                <p className="inbox-scope-help">
-                  {t("No boards available. Select projects and refresh boards.")}
-                </p>
+              {boardScope.error ? (
+                <SettingsFeedback
+                  state="error"
+                  action={
+                    <Button stableWidth onClick={boardScope.retry}>
+                      {t("Retry")}
+                    </Button>
+                  }
+                >
+                  {t("Saved Inbox scope is unavailable. Retry before changing it.")}
+                </SettingsFeedback>
               ) : null}
-            </section>
-            <section>
-              <label className="inbox-scope-option">
-                <Checkbox
-                  checked={backgroundSync}
-                  disabled={busy}
-                  onChange={(event) => saveJiraBackgroundSync(event.target.checked)}
+              {boardScope.available ? (
+                <InboxScopeCollection
+                  label={t("Boards")}
+                  searchLabel={t("Search boards")}
+                  items={boards.map((board) => ({
+                    id: String(board.id),
+                    title: board.name,
+                    meta: board.kind,
+                  }))}
+                  selectedIds={boards
+                    .filter((board) => allowedBoardIds.includes(board.id))
+                    .map((board) => String(board.id))}
+                  onChange={setAllowedBoards}
+                  disabled={busy || checking || boardsLoading || Boolean(boardsError)}
+                  loading={boardsLoading}
+                  summary={(count, total) =>
+                    t("{p0} of {p1} boards selected", { p0: count, p1: total })
+                  }
+                  emptyLabel={t("No boards available. Select projects and refresh boards.")}
+                  noMatchLabel={t("No matching boards")}
+                  actions={
+                    <Button
+                      stableWidth
+                      className="shrink-0"
+                      size="sm"
+                      loading={boardsLoading}
+                      disabled={busy || checking || boardsLoading}
+                      onClick={() => setBoardsRevision((value) => value + 1)}
+                    >
+                      {boardsLoading
+                        ? t("Loading…")
+                        : boardsError
+                          ? t("Retry")
+                          : t("Refresh boards")}
+                    </Button>
+                  }
                 />
-                {t("Automatically refresh Jira in the background")}
-              </label>
-              <p className="text-[12px] text-content/45">
-                {t(
-                  "Off by default. Jira loads when opened or refreshed manually. Background notifications and Jira triggers require this option.",
-                )}
-              </p>
-            </section>
-          </div>
+              ) : null}
+            </div>
+          </Row>
+        </>
+      ) : null}
+      {status?.connected ? (
+        <Row
+          label={t("Automatically refresh Jira in the background")}
+          info={t(
+            "Off by default. Jira loads when opened or refreshed manually. Background notifications and Jira triggers require this option.",
+          )}
+          persistence={{ mode: "automatic" }}
+          feedback={
+            !backgroundState.available ? (
+              <SettingsFeedback
+                state="error"
+                action={
+                  <Button stableWidth onClick={() => setBackgroundState(readBackgroundSync())}>
+                    {t("Retry")}
+                  </Button>
+                }
+              >
+                {t("Saved Inbox scope is unavailable. Retry before changing it.")}
+              </SettingsFeedback>
+            ) : undefined
+          }
+        >
+          <Toggle
+            label={t("Automatically refresh Jira in the background")}
+            on={backgroundState.value}
+            disabled={busy || !backgroundState.available}
+            onChange={(next) => {
+              try {
+                saveJiraBackgroundSync(next);
+                setBackgroundState(readBackgroundSync());
+              } catch {
+                setBackgroundState((previous) => ({ ...previous, available: false }));
+              }
+            }}
+          />
         </Row>
       ) : null}
     </>

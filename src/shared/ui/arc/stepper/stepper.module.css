@@ -1,7 +1,14 @@
+@layer properties, theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .root {
+    min-inline-size: 0;
+  }
+}
 .root {
   --marker: 1.75rem;
   --halo: 4px;
-  min-inline-size: 0;
   color: var(--color-content);
   font-family: var(--font-body);
   letter-spacing: var(--tracking-body);
@@ -264,6 +271,40 @@
   }
 }
 
+/* More steps need more room for their labels: fold into markers earlier so the row never
+   overflows or crushes labels to a few characters. */
+@container stepper (max-width: 44rem) {
+  .horizontal .list[data-step-density="many"] .text,
+  .horizontal .list[data-step-density="dense"] .text {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .horizontal:has(.list[data-step-density="many"], .list[data-step-density="dense"]) .caption {
+    display: grid;
+  }
+}
+@container stepper (44rem < width <= 60rem) {
+  .horizontal .list[data-step-density="dense"] .text {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .horizontal:has(.list[data-step-density="dense"]) .caption {
+    display: grid;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .disc,
   .ring,
@@ -272,5 +313,23 @@
   }
   .head[data-clickable]:active .disc {
     transform: none;
+  }
+}
+
+/* Marker states are drawn with inset shadows, which forced-colors mode removes; borders and system colours replace them. */
+@media (forced-colors: active) {
+  .item[data-status="current"] .disc {
+    border: 2px solid Highlight;
+    color: CanvasText;
+  }
+  .item[data-status="complete"] .disc {
+    forced-color-adjust: none;
+    background: Highlight;
+    border: 1px solid Highlight;
+    color: HighlightText;
+  }
+  .item[data-status="error"] .disc {
+    border: 2px dashed CanvasText;
+    color: CanvasText;
   }
 }

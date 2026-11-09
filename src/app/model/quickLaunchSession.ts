@@ -76,7 +76,7 @@ export async function acceptQuickLaunch(
     if (launch.reveal) {
       // The title bar filters tabs by this project. Select it before the tab.
       workspace.setProjectCwd(launch.cwd);
-      workspace.setRecents(rememberProject(launch.cwd));
+      workspace.setRecents(await rememberProject(launch.cwd));
       workspace.revealTab(tabId, launch.cwd);
     }
   }

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
+  forgetRemoteConnection,
   notifyRemoteRecovered,
   readRemoteConnection,
   remotePollDue,
@@ -18,6 +19,10 @@ import {
   reportRemoteConnection,
 } from "./remoteHealth";
 import { blocksSending, connectionIndicator, shouldAutoRetry } from "./remoteConnection";
+import { adoptRemoteMachineInventory, reportRemoteMachineStatus } from "./connections";
+import type { RemoteMachine } from "./protocol";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 const project = remotePath("env", "/Users/me/repo");
 const down = "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
@@ -154,4 +159,46 @@ it("keeps a refused host identity actionable and blocks sends until verified rec
   expect(readRemoteConnection("env")).toBe(state);
   notifyRemoteRecovered("env");
   expect(readRemoteConnection("env").status).toBe("connected");
+});
+
+it("does not treat a busy or timed-out host as reachable", () => {
+  const recovered = vi.fn();
+  const unsubscribe = subscribeRemoteRecovered(recovered);
+  const busy = Object.assign(new Error("RPC_WS_DEADLINE: The machine did not answer in time"), {
+    code: "RPC_WS_DEADLINE",
+  });
+  reportRemoteLoad(project, "changes", down);
+  reportRemoteLoad(project, "graph", busy);
+  expect(remotePollDue(project)).toBe(false);
+  expect(recovered).not.toHaveBeenCalled();
+  reportRemoteLoad(project, "files", "Host rejected request: Not a working copy");
+  expect(remotePollDue(project)).toBe(true);
+  expect(recovered).toHaveBeenCalledTimes(1);
+  unsubscribe();
+});
+
+it("keeps a blocked machine blocked when a status poll finds it answering", () => {
+  const recovered = vi.fn();
+  const unsubscribe = subscribeRemoteRecovered(recovered);
+  adoptRemoteMachineInventory([{ id: "m1", environmentId: "env" } as RemoteMachine]);
+  const blocked = Object.assign(new Error("RPC_WS_BLOCKED: Host authentication was refused"), {
+    code: "RPC_WS_BLOCKED",
+  });
+  recordRemoteConnection("env", blocked);
+  expect(readRemoteConnection("env").status).toBe("connection-blocked");
+  reportRemoteMachineStatus("m1", false, down);
+  expect(readRemoteConnection("env").status).toBe("connection-blocked");
+  reportRemoteMachineStatus("m1", true);
+  expect(readRemoteConnection("env").status).toBe("connection-blocked");
+  // Views still reload, so they can show what the machine now answers.
+  expect(recovered).toHaveBeenCalledWith("env");
+  unsubscribe();
+});
+
+it("forgets a removed machine's connection, failure and backoff", () => {
+  reportRemoteLoad(project, "changes", down);
+  expect(readRemoteConnection("env").status).toBe("unreachable");
+  forgetRemoteConnection("env");
+  expect(readRemoteConnection("env")).toEqual({ status: "connecting" });
+  expect(remotePollDue(project)).toBe(true);
 });

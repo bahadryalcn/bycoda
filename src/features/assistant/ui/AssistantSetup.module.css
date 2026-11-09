@@ -1,0 +1,63 @@
+.setup {
+  display: grid;
+  gap: 18px;
+  min-inline-size: 0;
+  line-height: 1.5;
+  container-type: inline-size;
+}
+
+/* Fields in one column; two columns once the dialog has room for a pair. */
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px 20px;
+  align-items: start;
+  min-inline-size: 0;
+}
+@container (min-width: 480px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 16px;
+}
+
+.content,
+.review {
+  display: grid;
+  gap: 16px;
+  min-inline-size: 0;
+}
+
+.feedback {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--ui-tone-danger-fg);
+}
+
+.muted {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+}
+
+.rules {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+/* The step's purpose, under the progress bar and above its fields. */
+.intro {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+  line-height: 1.5;
+}

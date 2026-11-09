@@ -1,18 +1,33 @@
 import { sameBlocksIgnoringStreamingText } from "./stableBlocks";
 import type { Block } from "./session";
+import { isHandoffCoveredBySwitch } from "./modelSwitchHistory";
 import { groupTurnItems, groupTurnsStable, type TurnItem } from "./transcriptActivity";
 
 /** Reuse unchanged history while immutable updates replace the live blocks. */
 export class TranscriptTurnCache {
   private blocks: Block[] | undefined;
   private managed = false;
+  private grouped: Block[][] = [];
   private turns: Block[][] = [];
   private items = new WeakMap<Block[], Map<boolean, TurnItem[]>>();
 
   group(blocks: Block[], managed = false): Block[][] {
     if (this.blocks === blocks && this.managed === managed) return this.turns;
     // Text-only streaming frames reuse every turn array but the live one.
-    this.turns = groupTurnsStable(blocks, managed, this.turns);
+    const grouped = groupTurnsStable(blocks, managed, this.grouped);
+    if (grouped !== this.grouped) {
+      this.grouped = grouped;
+      // A finished handoff the switch row above already names gets no divider of its own.
+      const shown = grouped.filter(
+        (turn) =>
+          !(
+            turn.length === 1 &&
+            turn[0].role === "handoff" &&
+            isHandoffCoveredBySwitch(blocks, blocks.indexOf(turn[0]))
+          ),
+      );
+      this.turns = shown.length === grouped.length ? grouped : shown;
+    }
     this.blocks = blocks;
     this.managed = managed;
     return this.turns;

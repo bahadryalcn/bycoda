@@ -4,6 +4,47 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initAppearance, saveSidebarOpacity } from "../model/appearance";
 import { applyUiScale, loadUiScale, saveUiScale, zoomInUiScale } from "../model/uiScale";
+import {
+  CREW_GROWTH_ENABLED_DEFAULT,
+  CREW_SCENE_ENABLED_DEFAULT,
+  TAB_ANIMATIONS_ENABLED_DEFAULT,
+  loadCrewGrowthEnabled,
+  loadCrewSceneEnabled,
+  loadCrewTheme,
+  loadTabAnimationsEnabled,
+  saveCrewGrowthEnabled,
+  saveCrewSceneEnabled,
+  saveCrewTheme,
+  saveTabAnimationsEnabled,
+} from "../model/settings";
+import {
+  DECORATIVE_MOTION_DEFAULT,
+  FOLLOW_SYSTEM_MOTION_DEFAULT,
+  loadDecorativeMotionEnabled,
+  loadFollowSystemMotionEnabled,
+  saveDecorativeMotionEnabled,
+  saveFollowSystemMotionEnabled,
+} from "../model/decorativeMotion";
+import {
+  DEFAULT_SESSION_LIST_DISPLAY,
+  loadSessionListDisplay,
+  saveSessionListDisplay,
+} from "../../sessions/model/sessionListDisplay";
+import {
+  INTERACTION_TINT_DEFAULT,
+  loadInteractionTint,
+  saveInteractionTint,
+} from "../model/interactionTint";
+import {
+  SCROLLBAR_STYLE_DEFAULT,
+  loadScrollbarStyle,
+  saveScrollbarStyle,
+} from "../model/scrollbarStyle";
+import {
+  WORKING_INDICATOR_DEFAULT,
+  loadWorkingIndicator,
+  saveWorkingIndicator,
+} from "../model/workingIndicator";
 import { useAppearanceSettings, type AppearanceSettings } from "./useAppearanceSettings";
 
 const mocks = vi.hoisted(() => ({
@@ -16,6 +57,11 @@ vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ setZoom:
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: mocks.invoke,
   convertFileSrc: (path: string) => `asset:${path}`,
+}));
+// Native window blur is a macOS-only effect, so the native assertions need the macOS flag on any host OS.
+vi.mock("../../../platform/tauri/platform", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../platform/tauri/platform")>()),
+  IS_MAC: true,
 }));
 vi.mock("../model/newThreadBackgroundEffects", () => ({
   applyPreparedNewThreadBackground: mocks.background,
@@ -169,5 +215,40 @@ describe("mounted shared appearance preferences", () => {
       newThreadBackgroundEffect: "none",
     });
     expect(document.documentElement.classList.contains("diff-palette-colorblind")).toBe(false);
+  });
+
+  it("page-level restore resets every Appearance store that has its own row reset", async () => {
+    await act(async () => {
+      saveCrewSceneEnabled(!CREW_SCENE_ENABLED_DEFAULT);
+      saveCrewGrowthEnabled(!CREW_GROWTH_ENABLED_DEFAULT);
+      saveCrewTheme("matrix");
+      saveTabAnimationsEnabled(!TAB_ANIMATIONS_ENABLED_DEFAULT);
+      saveDecorativeMotionEnabled(!DECORATIVE_MOTION_DEFAULT);
+      saveFollowSystemMotionEnabled(!FOLLOW_SYSTEM_MOTION_DEFAULT);
+      saveSessionListDisplay({
+        density: "detailed",
+        showModel: false,
+        showBranch: false,
+        groupDelayMs: 1200,
+      });
+      saveInteractionTint({ ...INTERACTION_TINT_DEFAULT, strength: 150 });
+      saveScrollbarStyle({ ...SCROLLBAR_STYLE_DEFAULT, size: "wide" });
+      saveWorkingIndicator({ ...WORKING_INDICATOR_DEFAULT, style: "off" });
+      states[0].onPreferences({ ...states[0].preferences, wheelZoom: false, codeSize: 18 });
+      states[0].onUiScale(150);
+    });
+    await act(async () => states[0].restoreDefaults());
+    expect(loadCrewSceneEnabled()).toBe(CREW_SCENE_ENABLED_DEFAULT);
+    expect(loadCrewGrowthEnabled()).toBe(CREW_GROWTH_ENABLED_DEFAULT);
+    expect(loadCrewTheme()).toBe("classic");
+    expect(loadTabAnimationsEnabled()).toBe(TAB_ANIMATIONS_ENABLED_DEFAULT);
+    expect(loadDecorativeMotionEnabled()).toBe(DECORATIVE_MOTION_DEFAULT);
+    expect(loadFollowSystemMotionEnabled()).toBe(FOLLOW_SYSTEM_MOTION_DEFAULT);
+    expect(loadSessionListDisplay()).toEqual(DEFAULT_SESSION_LIST_DISPLAY);
+    expect(loadInteractionTint()).toEqual(INTERACTION_TINT_DEFAULT);
+    expect(loadScrollbarStyle()).toEqual(SCROLLBAR_STYLE_DEFAULT);
+    expect(loadWorkingIndicator()).toEqual(WORKING_INDICATOR_DEFAULT);
+    expect(states[0].preferences).toMatchObject({ wheelZoom: true, codeSize: 13 });
+    expect(states[0].uiScale).toBe(1);
   });
 });

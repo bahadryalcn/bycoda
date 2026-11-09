@@ -7,7 +7,8 @@ const LAST_SENT_KEY = "bycoda.notifications.dailySummary.lastSent";
 export const DAILY_SUMMARY_ENABLED_DEFAULT = true;
 export const DAILY_SUMMARY_TIME_DEFAULT = "09:00";
 export const DAILY_SUMMARY_CHANGE_EVENT = "bycoda:daily-summary-change";
-export const subscribeDailySummary = (onChange: () => void) => subscribePreferenceChanges([ENABLED_KEY, TIME_KEY], DAILY_SUMMARY_CHANGE_EVENT, onChange);
+export const subscribeDailySummary = (onChange: () => void) =>
+  subscribePreferenceChanges([ENABLED_KEY, TIME_KEY], DAILY_SUMMARY_CHANGE_EVENT, onChange);
 
 /** Whole hours, 06:00 to 22:00. */
 export const DAILY_SUMMARY_TIMES = Array.from(
@@ -42,23 +43,25 @@ function changed() {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(DAILY_SUMMARY_CHANGE_EVENT));
 }
 
-export function saveDailySummaryEnabled(value: boolean) {
+export function saveDailySummaryEnabled(value: boolean): boolean {
   try {
     localStorage.setItem(ENABLED_KEY, value ? "1" : "0");
   } catch {
-    // private mode / quota
+    return false;
   }
   changed();
+  return true;
 }
 
-export function saveDailySummaryTime(value: string) {
-  if (!isSummaryTime(value)) return;
+export function saveDailySummaryTime(value: string): boolean {
+  if (!isSummaryTime(value)) return false;
   try {
     localStorage.setItem(TIME_KEY, value);
   } catch {
-    // private mode / quota
+    return false;
   }
   changed();
+  return true;
 }
 
 /** When the daily summary last went out, or null. */
@@ -71,11 +74,13 @@ export function loadDailySummarySentAt(): number | null {
   }
 }
 
-export function saveDailySummarySentAt(at: number) {
+/** False when the delivery time could not be stored, so a restart could send again. */
+export function saveDailySummarySentAt(at: number): boolean {
   try {
     localStorage.setItem(LAST_SENT_KEY, String(at));
+    return true;
   } catch {
-    // private mode / quota
+    return false;
   }
 }
 

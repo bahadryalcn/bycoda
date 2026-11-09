@@ -1,4 +1,7 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { TextareaField } from "../../../shared/ui/TextareaField";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   gitConflictStages,
@@ -12,15 +15,14 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { hasConflictMarkers, resolveConflictMarkers } from "../model/conflictMarkers";
 import { buildUnifiedFile } from "../model/unifiedDiff";
 import { UnifiedDiffView } from "./UnifiedDiffView";
-import { GitFeedback, GitLoading } from "./GitFeedback";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { GitFeedback } from "./GitFeedback";
 import type { GraphRun } from "./GitGraphBranches";
 import { ConflictLayout, conflictSourcesFromMarkers } from "./ConflictLayout";
 import { MergeConflictEditor } from "./MergeConflictEditor";
-import {
-  detectLineEnding,
-  normalizeLineBreaks,
-  restoreLineEnding,
-} from "../../files/editor/editorDoc";
+import { restoreMixedLineEndings } from "../../files/public/editorDoc";
 
 export function GitGraphConflictEditor({
   cwd,
@@ -49,6 +51,8 @@ export function GitGraphConflictEditor({
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+  const [operation, setOperation] = useState<"ours" | "theirs" | "save" | null>(null);
+  const pending = useRef(false);
   const expectedDisk = useRef<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -108,11 +112,26 @@ export function GitGraphConflictEditor({
       },
     ];
   }, [loaded, path, relative]);
+  const runConflict = async (
+    name: "ours" | "theirs" | "save",
+    label: string,
+    action: () => Promise<unknown>,
+  ) => {
+    if (disabled || pending.current) return false;
+    pending.current = true;
+    setOperation(name);
+    try {
+      return await run(label, action);
+    } finally {
+      pending.current = false;
+      setOperation(null);
+    }
+  };
   const take = (side: "ours" | "theirs") => {
-    if (!loaded) return;
+    if (!loaded || disabled || pending.current) return;
     const value = loaded.stages[side];
     if (loaded.disk === null || value === null) {
-      void run("Resolving conflict…", async () => {
+      void runConflict(side, "Resolving conflict…", async () => {
         await gitResolveConflict(cwd, relative, side);
         onResolved();
       });
@@ -120,13 +139,10 @@ export function GitGraphConflictEditor({
   };
   const save = async () => {
     if (!loaded || loaded.disk === null || hasConflictMarkers(draft)) return;
-    const success = await run("Saving conflict resolution…", async () => {
+    const success = await runConflict("save", "Saving conflict resolution…", async () => {
       if ((await readTextFile(path)) !== loaded.disk)
         throw new Error(t("The file changed on disk. Reopen it before saving your resolution."));
-      const serialized = restoreLineEnding(
-        normalizeLineBreaks(draft),
-        detectLineEnding(loaded.disk),
-      );
+      const serialized = restoreMixedLineEndings(draft, loaded.disk);
       await writeTextFile(path, serialized);
       // Keep the editor aligned with disk even if staging subsequently fails.
       setLoaded({ ...loaded, disk: serialized });
@@ -146,7 +162,8 @@ export function GitGraphConflictEditor({
         onRetry={() => setRetry((value) => value + 1)}
       />
     );
-  if (!loaded) return <GitLoading text="Loading conflict versions" />;
+  if (!loaded)
+    return <LoadingText className="px-3 py-2">{t("Loading conflict versions")}</LoadingText>;
   if (loaded.disk !== null && hasConflictMarkers(loaded.disk))
     return (
       <MergeConflictEditor
@@ -165,10 +182,7 @@ export function GitGraphConflictEditor({
             throw new Error(
               t("The file changed on disk. Reopen it before saving your resolution."),
             );
-          const serialized = restoreLineEnding(
-            normalizeLineBreaks(text),
-            detectLineEnding(loaded.disk!),
-          );
+          const serialized = restoreMixedLineEndings(text, expectedDisk.current ?? loaded.disk!);
           await writeTextFile(path, serialized);
           expectedDisk.current = serialized;
         }}
@@ -177,43 +191,54 @@ export function GitGraphConflictEditor({
   const editable = loaded.disk !== null;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-3 py-2">
-        <span
-          title={relative}
-          className="min-w-0 flex-1 truncate text-[12px] font-medium text-warning"
-        >
-          {relative}
-        </span>
-        <Button
-          variant="ghost"
-          motion="none"
-          type="button"
-          disabled={disabled}
-          onClick={() => take("ours")}
-        >
-          {t("Use current")}
-        </Button>
-        <Button
-          variant="ghost"
-          motion="none"
-          type="button"
-          disabled={disabled}
-          onClick={() => take("theirs")}
-        >
-          {t("Use incoming")}
-        </Button>
-        {editable && hasConflictMarkers(draft) ? (
-          <Button
-            variant="ghost"
-            motion="none"
-            type="button"
-            disabled={disabled}
-            onClick={() => setDraft(resolveConflictMarkers(draft, "both"))}
-          >
-            {t("Use both")}
-          </Button>
-        ) : null}
-      </header>
+      <PaneHeader
+        as="header"
+        titleAs="div"
+        className="conflict-file-header"
+        title={
+          <OverflowTooltip label={relative}>
+            <span className="text-(--ui-tone-warning-fg)">{relative}</span>
+          </OverflowTooltip>
+        }
+        actions={
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              motion="none"
+              type="button"
+              loading={operation === "ours"}
+              disabled={operation !== "ours" && (disabled || operation !== null)}
+              onClick={() => take("ours")}
+            >
+              {t("Use current")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              motion="none"
+              type="button"
+              loading={operation === "theirs"}
+              disabled={operation !== "theirs" && (disabled || operation !== null)}
+              onClick={() => take("theirs")}
+            >
+              {t("Use incoming")}
+            </Button>
+            {editable && hasConflictMarkers(draft) ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                motion="none"
+                type="button"
+                disabled={disabled || operation !== null}
+                onClick={() => setDraft(resolveConflictMarkers(draft, "both"))}
+              >
+                {t("Use both")}
+              </Button>
+            ) : null}
+          </>
+        }
+      />
       {editable ? (
         <ConflictLayout
           cwd={cwd}
@@ -221,10 +246,15 @@ export function GitGraphConflictEditor({
           dirty={dirty}
           resultActions={
             <Button
-              variant="ghost"
+              variant="primary"
+              size="sm"
               motion="none"
               type="button"
-              disabled={disabled || hasConflictMarkers(draft)}
+              loading={operation === "save"}
+              disabled={
+                (operation !== "save" && (disabled || operation !== null)) ||
+                hasConflictMarkers(draft)
+              }
               onClick={() => void save()}
               className="shrink-0"
             >
@@ -244,18 +274,22 @@ export function GitGraphConflictEditor({
         >
           <div className="flex min-h-0 flex-1 flex-col">
             {hasConflictMarkers(draft) ? (
-              <p className="px-3 pb-1 text-[11px] text-warning">
+              <InlineMessage tone="warning" live="off" className="px-3 pb-1">
                 {t("Resolve every conflict marker before staging")}
-              </p>
+              </InlineMessage>
             ) : null}
-            <textarea
+            <TextareaField
               id="graph-conflict-output"
-              aria-label={t("Resolved output")}
+              label={t("Resolved output")}
+              hideLabel
+              appearance="bare"
+              fill
+              monospace
               value={draft}
-              disabled={disabled}
+              disabled={disabled || operation !== null}
               spellCheck={false}
               onChange={(e) => setDraft(e.target.value)}
-              className="min-h-0 flex-1 resize-none font-mono leading-5"
+              className="conflict-result-textarea"
             />
           </div>
         </ConflictLayout>
@@ -264,9 +298,11 @@ export function GitGraphConflictEditor({
           <div className="flex min-h-0 flex-1 flex-col">
             <UnifiedDiffView files={models} />
           </div>
-          <p className="px-3 py-2 text-[12px] text-[var(--ui-text-secondary)]">
-            {t("Choose a whole-file version to resolve this conflict")}
-          </p>
+          <EmptyState
+            size="inline"
+            className="px-3"
+            description={t("Choose a whole-file version to resolve this conflict")}
+          />
         </>
       )}
     </div>

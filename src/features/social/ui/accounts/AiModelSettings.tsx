@@ -1,0 +1,96 @@
+import { useState } from "react";
+import { t } from "../../../../shared/i18n";
+import {
+  SOCIAL_PLATFORMS,
+  SOCIAL_PLATFORM_NAMES,
+  type SocialAgent,
+  type SocialPolicies,
+} from "../../model/social";
+import type { SocialClient } from "../../model/socialClient";
+import { isRemoteProvider, REMOTE_PROVIDERS } from "../../../connections/public/protocol";
+import { ModelPicker } from "../../../sessions/public/ModelPicker";
+import { Group, Row } from "../../../settings/public/settingsControls";
+import { Select } from "../../../../shared/ui/Select";
+import { InlineMessage } from "../../../../shared/ui/InlineError";
+import { effectiveForScope, readScope, withAgent, type PolicyScope } from "./policyScope";
+import { savePolicyScope } from "./savePolicy";
+import { useAccountWrite } from "./useAccountWrite";
+import "./accounts.css";
+
+export type AiModelSettingsProps = {
+  client: SocialClient;
+  policies: SocialPolicies;
+  onChanged(): void;
+};
+
+/**
+ * The text model that writes replies, plans and reports. Nothing runs until one is chosen: the
+ * all-accounts choice says so, and a platform can follow it or name its own model.
+ */
+export function AiModelSettings({ client, policies, onChanged }: AiModelSettingsProps) {
+  const [scope, setScope] = useState<PolicyScope>("global");
+  const { error, is, write } = useAccountWrite(t("The AI model could not be saved. Try again."));
+  const own = readScope(policies, scope).agent;
+  const effective = effectiveForScope(policies, scope).agent;
+  const save = (agent: SocialAgent | undefined) =>
+    void write("ai.model", () =>
+      savePolicyScope(client, policies, scope, withAgent(readScope(policies, scope), agent)),
+    )
+      .then((result) => result !== undefined && onChanged())
+      .catch(() => undefined);
+
+  return (
+    <Group
+      title={t("AI model")}
+      action={
+        <Select
+          hideLabel
+          label={t("Apply to")}
+          value={scope}
+          options={[
+            { value: "global", label: t("All accounts") },
+            ...SOCIAL_PLATFORMS.map((platform) => ({
+              value: platform,
+              label: SOCIAL_PLATFORM_NAMES[platform],
+            })),
+          ]}
+          onValueChange={(value) => setScope(value as PolicyScope)}
+        />
+      }
+      feedback={
+        error ? (
+          <InlineMessage tone="danger">{error}</InlineMessage>
+        ) : is("ai.model") ? (
+          <span className="social-muted">{t("Saving…")}</span>
+        ) : null
+      }
+    >
+      <Row
+        label={t("Model")}
+        stacked
+        description={
+          effective
+            ? t("AI uses this model to write replies, plans and reports.")
+            : t("Choose a model first. AI cannot write replies or plans until you do.")
+        }
+      >
+        <ModelPicker
+          harness={own && isRemoteProvider(own.provider) ? own.provider : "claude"}
+          model={own?.model ?? ""}
+          values={{}}
+          allowedHarnesses={REMOTE_PROVIDERS}
+          presentation="field"
+          inheritChoice={{
+            label: scope === "global" ? t("Choose a model") : t("Use the all-accounts model"),
+            selected: !own,
+            onSelect: () => save(undefined),
+          }}
+          onChange={(harness, model) => {
+            if (isRemoteProvider(harness)) save({ provider: harness, ...(model ? { model } : {}) });
+          }}
+          onSettingsChange={() => undefined}
+        />
+      </Row>
+    </Group>
+  );
+}

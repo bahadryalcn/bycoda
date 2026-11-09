@@ -6,12 +6,24 @@ import { createBudgetReader, assertUsageBudgets } from "./usageBudgetReadings";
 import { saveUsageBudget } from "./usageBudgetStore";
 import type { UsageBudget } from "./usageBudgets";
 
-const mocks = vi.hoisted(() => ({ report: vi.fn(), limits: vi.fn(), history: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  report: vi.fn(),
+  limits: vi.fn(),
+  history: vi.fn(),
+  locked: false,
+  accountCount: 1,
+}));
+vi.mock("../../group-lock/model/groupLock", () => ({ isProjectLocked: () => mocks.locked }));
+vi.mock("../../sessions/model/sessionsStore", () => ({ getSessions: () => [] }));
 vi.mock("../../providers/model/providerUsage", () => ({ fetchProviderUsage: mocks.report }));
 vi.mock("../../providers/model/rateLimitsCache", () => ({ loadFreshRateLimits: mocks.limits }));
 vi.mock("../../sessions/data/sessionStore", () => ({ getSession: mocks.history }));
 vi.mock("../../providers/model/providerAccounts", () => ({
-  providerAccounts: (provider: string) => [{ provider, id: "default" }],
+  providerAccounts: (provider: string) =>
+    Array.from({ length: mocks.accountCount }, (_, index) => ({
+      provider,
+      id: index === 0 ? "default" : `linked-${index}`,
+    })),
   sessionProviderAccountId: (_: string, s: Session) => s.providerAccountId ?? "default",
 }));
 vi.mock("../../projects/model/projectGroups", () => ({
@@ -38,6 +50,8 @@ afterEach(() => vi.useRealTimers());
 beforeEach(() => {
   localStorage.clear();
   vi.resetAllMocks();
+  mocks.locked = false;
+  mocks.accountCount = 1;
   mocks.report.mockResolvedValue({ rows: [], found: false });
 });
 it("shares native scans, filters projects and sums cache tokens across accounts", async () => {
@@ -150,4 +164,81 @@ it("returns unknown after a bounded wait when a native report never responds", a
   const result = createBudgetReader([])(rule);
   await vi.advanceTimersByTimeAsync(20_000);
   expect((await result).state).toBe("unknown");
+});
+
+it("measures the common local rule once per account independently from overlapping project rules", async () => {
+  const now = Date.now();
+  mocks.report.mockResolvedValue({
+    found: true,
+    rows: [
+      {
+        slot: Math.floor(now / 1000) - 1,
+        project: "C:/app",
+        input: 10,
+        output: 5,
+        cacheRead: 0,
+        cacheWrite5m: 0,
+        cacheWrite1h: 0,
+      },
+      {
+        slot: Math.floor(now / 1000) - 1,
+        project: "C:/other",
+        input: 7,
+        output: 3,
+        cacheRead: 0,
+        cacheWrite5m: 0,
+        cacheWrite1h: 0,
+      },
+    ],
+  });
+  const reader = createBudgetReader([session], now);
+  expect((await reader({ ...rule, scope: "machine", target: "local" })).used).toBe(50);
+  expect((await reader(rule)).used).toBe(30);
+  expect(mocks.report).toHaveBeenCalledTimes(2);
+});
+
+it("keeps common readings unknown for missing, unsupported and private contributions", async () => {
+  const common = { ...rule, scope: "machine" as const, target: "local" };
+  expect((await createBudgetReader([session])(common)).state).toBe("unknown");
+  mocks.report.mockResolvedValue({ found: true, rows: [] });
+  expect((await createBudgetReader([{ ...session, harness: "cursor" }])(common)).state).toBe(
+    "unknown",
+  );
+  mocks.locked = true;
+  mocks.report.mockResolvedValue({
+    found: true,
+    rows: [
+      {
+        slot: Math.floor(Date.now() / 1000),
+        project: "C:/private",
+        input: 1,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite5m: 0,
+        cacheWrite1h: 0,
+      },
+    ],
+  });
+  expect((await createBudgetReader([session])(common)).state).toBe("unknown");
+});
+
+it("fails the existing dispatch assertion closed for an unverifiable common blocking rule", async () => {
+  saveUsageBudget({ ...rule, scope: "machine", target: "local", action: "block" });
+  await expect(assertUsageBudgets({ ...session, harness: "cursor" })).rejects.toThrow(
+    "Usage could not be verified",
+  );
+  saveUsageBudget({ ...rule, scope: "machine", target: "local", action: "monitor" });
+  await expect(assertUsageBudgets({ ...session, harness: "cursor" })).resolves.toBeUndefined();
+});
+
+it("does not sum potentially overlapping profile homes without canonical native source identity", async () => {
+  mocks.accountCount = 2;
+  mocks.report.mockResolvedValue({ found: true, rows: [] });
+  const reading = await createBudgetReader([session])({
+    ...rule,
+    scope: "machine",
+    target: "local",
+  });
+  expect(reading.state).toBe("unknown");
+  expect(mocks.report).not.toHaveBeenCalled();
 });

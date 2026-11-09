@@ -20,8 +20,8 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
-import type { UnifiedLine } from "../../source-control/model/unifiedDiff";
-import { applyStageReplacements } from "../../source-control/model/selectiveStage";
+import type { UnifiedLine } from "../../source-control";
+import { applyStageReplacements } from "../../source-control/public/selectiveStage";
 
 /** Shared with the split layout so both draw the same hunks. */
 export const DIFF_CONFIG = { scanLimit: 5_000, timeout: 100 };
@@ -337,7 +337,9 @@ export function stageChunkText(
   const doc = textFromString(current);
   const changes = stageChunkChanges(orig, doc, pos, selection, "\n", diffConfig);
   if (!changes) return null;
-  return applyStageReplacements(orig.toString(), [{ from: changes.from, to: changes.to, insert: changes.insert.toString() }]);
+  return applyStageReplacements(orig.toString(), [
+    { from: changes.from, to: changes.to, insert: changes.insert.toString() },
+  ]);
 }
 
 export async function stageChunkAt(view: EditorView, pos: number): Promise<boolean> {
@@ -991,9 +993,8 @@ const gitTheme = EditorView.theme({
     userSelect: "none",
     borderRadius: "4px",
     color: "var(--color-content)",
-    background: "color-mix(in srgb, var(--color-background-base) 92%, transparent)",
-    boxShadow:
-      "0 0 0 1px color-mix(in srgb, var(--color-content) 14%, transparent), 0 6px 16px color-mix(in srgb, var(--palette-hex000) 22%, transparent)",
+    background: "var(--ui-surface-floating)",
+    boxShadow: "0 0 0 1px var(--ui-pane-border), var(--ui-elevation-floating)",
   },
   ".cm-gitHunkBtn": {
     display: "grid",
@@ -1007,7 +1008,7 @@ const gitTheme = EditorView.theme({
     cursor: "pointer",
   },
   ".cm-gitHunkBtn:hover": {
-    backgroundColor: "color-mix(in srgb, var(--color-content) 12%, transparent)",
+    backgroundColor: "var(--ui-surface-hover)",
   },
   ".cm-gitHunkBtn:focus-visible": {
     outline: "1px solid var(--color-accent)",

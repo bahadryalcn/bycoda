@@ -119,3 +119,29 @@ it("keeps the existing no-search default and blocks a disabled picker", () => {
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
   expect(container.querySelector("input")).toBeNull();
 });
+
+it("does not open a read-only select, keeps it focusable and forwards validation state to the trigger", () => {
+  const change = vi.fn();
+  act(() =>
+    root.render(
+      createElement(MorphSelect, {
+        label: "Mode",
+        value: "a",
+        options,
+        onChange: change,
+        readOnly: true,
+        triggerProps: { "aria-invalid": true, "aria-describedby": "mode-error" },
+      }),
+    ),
+  );
+  const trigger = container.querySelector<HTMLButtonElement>('button[role="combobox"]')!;
+  expect(trigger.disabled).toBe(false);
+  expect(trigger.getAttribute("aria-readonly")).toBe("true");
+  expect(trigger.getAttribute("aria-invalid")).toBe("true");
+  expect(trigger.getAttribute("aria-describedby")).toBe("mode-error");
+  act(() => trigger.click());
+  key(trigger, "ArrowDown");
+  key(trigger, "Enter");
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(change).not.toHaveBeenCalled();
+});

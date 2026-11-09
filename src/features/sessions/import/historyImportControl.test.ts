@@ -86,14 +86,44 @@ describe("canonical history import bridge", () => {
     const persist = vi.fn(async (session: { id: string }) => ({ id: session.id }) as never);
     const control = createHistoryImportControl({
       discover: async () => ({ candidates: [row], filesScanned: 1, filesSkipped: 0, elapsedMs: 0 }),
-      storedKeys: async () => [], uuid: () => "opaque", hash: async () => "a".repeat(64), persist,
-      readCodex: async () => ({ entries: [{ kind: "user", at: 1, text: "Synthetic user" }, { kind: "assistant", at: 2, text: "Synthetic reply" }], truncated: false, dropped: 0, oversizeSkipped: 0 }),
+      storedKeys: async () => [],
+      uuid: () => "opaque",
+      hash: async () => "a".repeat(64),
+      persist,
+      readCodex: async () => ({
+        entries: [
+          { kind: "user", at: 1, text: "Synthetic user" },
+          { kind: "assistant", at: 2, text: "Synthetic reply" },
+        ],
+        truncated: false,
+        dropped: 0,
+        oversizeSkipped: 0,
+      }),
     });
-    const context = { environmentId: "env", sourceSessionId: "source", projectCwd: row.cwd, valid: () => true };
-    const preview = await control(context, "historyImport.discover", {}) as HistoryImportPreview;
-    await control(context, "historyImport.commit", { reviewId: preview.reviewId, digest: preview.digest, candidateIds: [preview.candidates[0].id], operationId: "operation" });
-    await vi.waitFor(async () => expect(await control(context, "historyImport.status", { operationId: "operation" })).toMatchObject({ state: "complete", result: { imported: 1, failed: 0 } }));
-    expect(persist).toHaveBeenCalledTimes(1); expect(persist.mock.calls[0][0]).toMatchObject({ id: "imp-codex-provider-source", cwd: "/project", providerSessionId: "provider-source" });
+    const context = {
+      environmentId: "env",
+      sourceSessionId: "source",
+      projectCwd: row.cwd,
+      valid: () => true,
+    };
+    const preview = (await control(context, "historyImport.discover", {})) as HistoryImportPreview;
+    await control(context, "historyImport.commit", {
+      reviewId: preview.reviewId,
+      digest: preview.digest,
+      candidateIds: [preview.candidates[0].id],
+      operationId: "operation",
+    });
+    await vi.waitFor(async () =>
+      expect(
+        await control(context, "historyImport.status", { operationId: "operation" }),
+      ).toMatchObject({ state: "complete", result: { imported: 1, failed: 0 } }),
+    );
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(persist.mock.calls[0][0]).toMatchObject({
+      id: "imp-codex-provider-source",
+      cwd: "/project",
+      providerSessionId: "provider-source",
+    });
   });
   it("projects only bounded safe metadata and opaque handles for its own local project", async () => {
     const f = fixture();
@@ -112,10 +142,12 @@ describe("canonical history import bridge", () => {
       state: "running",
     });
     await vi.waitFor(() => expect(f.run).toHaveBeenCalledTimes(1));
-    await vi.waitFor(async () => expect(await f.control(f.context, "historyImport.commit", input)).toMatchObject({
-      state: "complete",
-      result: { imported: 1 },
-    }));
+    await vi.waitFor(async () =>
+      expect(await f.control(f.context, "historyImport.commit", input)).toMatchObject({
+        state: "complete",
+        result: { imported: 1 },
+      }),
+    );
     expect(f.run).toHaveBeenCalledTimes(1);
     await expect(
       f.control(f.context, "historyImport.commit", { ...input, digest: "b".repeat(64) }),

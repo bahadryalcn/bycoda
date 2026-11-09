@@ -18,6 +18,8 @@
   --palette-search: #93c5fd;
   --palette-accent: #a3acb8;
   --palette-active: #38bdf8;
+  --palette-canvasPureDark: #000000;
+  --palette-canvasPureLight: #ffffff;
   --palette-hexf59e0b: #f59e0b;
   --palette-oklch_100pct_0_none: oklch(100% 0 none);
   --palette-hex14b8a6: #14b8a6;
@@ -618,6 +620,10 @@
   --palette-hex8b949e: #8b949e;
   --palette-hexff79c6: #ff79c6;
   --palette-hex50fa7b: #50fa7b;
+  --palette-hex00ff41: #00ff41;
+  --palette-hexe2ffe8: #e2ffe8;
+  --palette-hex7dffa0: #7dffa0;
+  --palette-hex9fffb8: #9fffb8;
   --palette-hexf1fa8c: #f1fa8c;
   --palette-hex8be9fd: #8be9fd;
   --palette-hexbd93f9: #bd93f9;

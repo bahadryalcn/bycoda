@@ -1,0 +1,76 @@
+/* Social shell layout. Colors come from semantic tokens only; sizes follow the control density. */
+.social-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 0.75rem 1rem;
+}
+
+.social-shell-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.social-shell-workspace {
+  min-width: 12rem;
+  max-width: 28rem;
+  flex: 1 1 14rem;
+}
+
+.social-shell-nav {
+  flex: none;
+  min-width: 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--ui-pane-border);
+}
+
+.social-shell-ai {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.social-shell-ai-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+  white-space: nowrap;
+}
+
+.social-shell-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.social-shell-host,
+.social-shell-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.social-shell-host[hidden],
+.social-shell-panel[hidden] {
+  display: none;
+}
+
+@media (max-width: 40rem) {
+  .social-shell {
+    padding: 0.5rem 1rem;
+  }
+}

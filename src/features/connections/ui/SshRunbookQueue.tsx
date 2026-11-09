@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Modal } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
 import { refreshSshRunbookQueue, useSshRunbookQueue } from "../model/sshRunbookQueue";
@@ -55,7 +56,7 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
   return (
     <>
       {queue.intents.length || queue.error || review?.runId ? (
-        <div className="flex shrink-0 items-center justify-end gap-2 border-b border-stroke px-3 py-1 text-xs">
+        <div className="flex shrink-0 items-center justify-end gap-2 border-b border-stroke px-3 py-1 text-ui-caption">
           <Button variant="ghost" onClick={() => setOpen(true)}>
             {t("SSH reviews")} · {queue.intents.length}
           </Button>
@@ -63,12 +64,8 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
       ) : null}
       {open && !reviewOpen ? (
         <Modal title={t("SSH reviews")} onClose={() => setOpen(false)} size="md">
-          <div className="flex min-w-0 flex-col gap-2 p-4">
-            {error || queue.error ? (
-              <Alert tone="danger" role="alert">
-                {error || queue.error}
-              </Alert>
-            ) : null}
+          <div className="flex min-w-0 flex-col gap-2">
+            {error || queue.error ? <Alert tone="danger">{error || queue.error}</Alert> : null}
             <div className="flex justify-end gap-2">
               {review?.runId ? (
                 <Button disabled={busy} onClick={() => setReviewOpen(true)}>
@@ -82,7 +79,7 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
             {queue.intents.map((intent) => (
               <div
                 key={intent.id}
-                className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-stroke py-2 text-xs"
+                className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-stroke py-2 text-ui-caption"
               >
                 <span className="min-w-0 break-all">
                   {t(intent.trigger === "startup" ? "Startup" : "Scheduled")} ·{" "}
@@ -129,7 +126,7 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
               </div>
             ))}
             {!queue.intents.length ? (
-              <p className="text-xs text-(--ui-text-muted)">{t("No pending SSH reviews.")}</p>
+              <EmptyState size="inline" description={t("No pending SSH reviews.")} />
             ) : null}
           </div>
         </Modal>

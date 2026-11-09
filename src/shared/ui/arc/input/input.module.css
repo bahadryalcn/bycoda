@@ -1,25 +1,19 @@
+@layer properties, theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .field {
+    min-width: 0;
+  }
+  .input {
+    width: 100%;
+  }
+}
 .field {
   display: grid;
-  min-width: 0;
-}
-.control {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  min-inline-size: 0;
-}
-.control > .input {
-  grid-area: 1 / 1 / 2 / 3;
-  min-inline-size: 0;
-}
-.input.withEndAdornment {
-  padding-inline-end: calc(var(--control-height-sm) + var(--space-3));
-}
-.endAdornment {
-  grid-area: 1 / 2;
-  display: flex;
-  align-items: center;
-  margin-inline-end: var(--space-1);
+  /* Label, control and message keep their own heights when a grid or flex parent
+     stretches the field to a taller neighbour (e.g. one with helper text). */
+  align-content: start;
 }
 .label {
   margin-bottom: var(--space-2);
@@ -28,9 +22,8 @@
   font-weight: 500;
   line-height: var(--leading-body);
 }
-/* Focus answers with the border colour alone (no rings or halos); the field itself never changes size. */
+/* Frame geometry stays stable through focus. */
 .input {
-  width: 100%;
   min-height: var(--control-height-md);
   padding: 0 var(--space-3);
   border: 1px solid var(--border-strong);
@@ -50,20 +43,27 @@
   color: var(--text-muted);
 }
 @media (hover: hover) and (pointer: fine) {
-  .input:hover:not(:disabled, [aria-invalid="true"]) {
-    border-color: var(--foreground);
+  .input:hover:not(:disabled, :focus-visible, [aria-invalid="true"]) {
+    border-color: var(--ui-field-border-hover, var(--foreground));
   }
 }
 .input:focus-visible {
-  border-color: var(--foreground);
+  border-color: var(--ui-field-border-focus, var(--foreground));
 }
 .input[aria-invalid="true"] {
   border-color: var(--danger);
 }
 .input:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: var(--ui-disabled-opacity, 0.5);
   background: var(--surface-muted);
+}
+/* Read-only keeps normal ink and stays selectable, on a quiet transparent frame that keeps its resting
+   boundary (readable in both themes) and has no hover cue. Resolving the frame roles on the
+   input itself wins over the field owner's hover and resting rules without a specificity contest; focus is unchanged. */
+.input[readonly]:not(:disabled) {
+  --surface: transparent;
+  --ui-field-border-hover: var(--ui-control-border);
 }
 /* The row's space is padding inside the clipped slot, so the height animates from a true zero. */
 .messageSlot {
@@ -78,7 +78,7 @@
   line-height: var(--leading-body);
 }
 .description {
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 .error {
   color: var(--danger);
@@ -119,4 +119,31 @@
 .messageClip {
   min-height: 0;
   overflow: hidden;
+}
+
+/* Compact variant: toolbar and inline-filter fields share the 28px control height and caption label. */
+.field[data-variant="compact"] .label {
+  margin-bottom: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+.field[data-variant="compact"] .input {
+  min-height: var(--ui-field-height-sm);
+}
+.field[data-variant="compact"] :is(.description, .error) {
+  padding-top: var(--space-1);
+}
+
+.field[data-field-size="sm"] .input {
+  min-height: var(--ui-field-height-sm);
+}
+.field[data-field-size="md"] .input {
+  min-height: var(--ui-field-height-md);
+}
+.field[data-field-appearance="quiet"] .input:not(:focus-visible, [aria-invalid="true"]) {
+  border-color: transparent;
+  background: transparent;
+}
+.field[data-field-appearance="quiet"] .input:hover:not(:focus-visible, :disabled) {
+  background: var(--ui-surface-hover);
 }

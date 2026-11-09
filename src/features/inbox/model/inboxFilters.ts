@@ -5,7 +5,8 @@ import {
   type InboxKind,
   type InboxProvider,
 } from "./githubTasks";
-import { normalizeProjectPath } from "../../projects/model/recents";
+import { pathKey } from "../../../shared/lib/paths";
+import { githubRepositoryFilterKey, hiddenGithubRepositories } from "./inboxRepositoryFilters";
 import { timeFilterStart, type SessionTimeFilter } from "../../sessions/model/sessionFilters";
 
 export type InboxTimeFilter = SessionTimeFilter;
@@ -214,9 +215,9 @@ export function pruneInboxFilters(
   filters: InboxFilters,
   projectPaths: Iterable<string>,
 ): InboxFilters {
-  const known = new Set([...projectPaths].map((path) => normalizeProjectPath(path)));
-  const hiddenProjects = filters.hiddenProjects.filter((path) =>
-    known.has(normalizeProjectPath(path)),
+  const known = new Set([...projectPaths].map(pathKey));
+  const hiddenProjects = filters.hiddenProjects.filter(
+    (path) => path.startsWith("github:") || known.has(pathKey(path)),
   );
   if (hiddenProjects.length === filters.hiddenProjects.length) return filters;
   return { ...filters, hiddenProjects };
@@ -239,7 +240,10 @@ export function hasActiveInboxFilters(
     (source === "jira" && hiddenJiraProjectIds.length > 0) ||
     (source === "linear"
       ? filters.hiddenLinearProjects.length > 0
-      : source !== "jira" && filters.hiddenProjects.length > 0) ||
+      : source !== "jira" &&
+        filters.hiddenProjects.some(
+          (path) => !source || source === "github" || !path.startsWith("github:"),
+        )) ||
     (isTrackerSource(source) ? false : filters.hiddenKinds.length > 0) ||
     filters.time !== "all" ||
     statusActive
@@ -257,10 +261,14 @@ export function filterInboxByProject(
   items: readonly InboxItem[],
   hiddenProjects: Iterable<string>,
 ): InboxItem[] {
-  const hidden = new Set([...hiddenProjects].map((path) => normalizeProjectPath(path)));
+  const paths = [...hiddenProjects];
+  const hidden = new Set(paths.map(pathKey));
+  const repositories = hiddenGithubRepositories(paths);
   if (hidden.size === 0) return [...items];
   return items.filter((item) => {
-    const path = normalizeProjectPath(item.projectPath);
+    if (item.provider === "github" && repositories.has(githubRepositoryFilterKey(item.repo)))
+      return false;
+    const path = item.projectPath ? pathKey(item.projectPath) : "";
     if (!path) return true;
     return !hidden.has(path);
   });

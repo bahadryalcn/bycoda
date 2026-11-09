@@ -1,39 +1,36 @@
+/* Rows, slots, separators, group labels and their states come from the shared menu row in
+   arc/context-menu/context-menu.module.css; this file only shapes the menu surface. */
 .menu {
-  padding: var(--space-1);
+  padding: 0.25rem;
   overflow-y: auto;
   overscroll-behavior: contain;
-  color: var(--foreground);
+  color: var(--color-content);
 }
-.separator {
-  block-size: 1px;
-  margin-block: var(--space-1);
-  background: var(--border);
+.group + .group {
+  border-block-start: 1px solid var(--color-stroke);
+  margin-block-start: 0.25rem;
+  padding-block-start: 0.25rem;
 }
-.icon {
-  display: inline-flex;
-  inline-size: 1rem;
-  block-size: 1rem;
-  flex: none;
-  align-items: center;
-  justify-content: center;
+.content {
+  padding: 0.125rem 0.25rem;
 }
-.icon svg {
-  inline-size: 100%;
-  block-size: 100%;
+/* A search field pins above a rail that scrolls on its own. */
+.searchable {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
 }
-.copy {
-  flex: 1;
-  min-inline-size: 0;
-  overflow-wrap: anywhere;
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.25rem;
 }
-.copy > span {
-  display: block;
-}
-.description,
-.shortcut {
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-}
-.shortcut {
-  flex: none;
+.panel {
+  padding: 0.75rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  color: var(--color-content);
 }

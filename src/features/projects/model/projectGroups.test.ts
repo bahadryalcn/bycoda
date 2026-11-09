@@ -12,10 +12,13 @@ import {
   projectGroupWorkspaceRoot,
   projectGroupParentId,
   nextProjectGroupName,
+  orderProjectGroupMembers,
+  saveProjectGroupMemberOrder,
   reorderProjectGroups,
   saveProjectGroupAssignments,
   saveProjectGroups,
   setProjectGroupAssignment,
+  toggleProjectGroupPin,
   unlinkProjectGroup,
 } from "./projectGroups";
 
@@ -144,6 +147,26 @@ describe("project groups", () => {
     expect(assignProjectsToNamedGroup("Acme", [])).toBeNull();
     expect(loadProjectGroups()).toEqual([]);
   });
+
+  it("lists pinned groups first and toggles the pin", async () => {
+    saveProjectGroups([
+      { id: "a", name: "A", collapsed: false },
+      { id: "b", name: "B", collapsed: false, pinned: true },
+      { id: "c", name: "C", collapsed: false, pinned: "yes" as unknown as boolean },
+    ]);
+    expect(loadProjectGroups().map((group) => [group.id, group.pinned])).toEqual([
+      ["b", true],
+      ["a", undefined],
+      ["c", undefined],
+    ]);
+
+    await expect(toggleProjectGroupPin("c")).resolves.toBe(true);
+    expect(loadProjectGroups().map((group) => group.id)).toEqual(["b", "c", "a"]);
+    await expect(toggleProjectGroupPin("b")).resolves.toBe(true);
+    expect(loadProjectGroups().map((group) => group.id)).toEqual(["c", "b", "a"]);
+    expect(loadProjectGroups().find((group) => group.id === "b")?.pinned).toBeUndefined();
+    await expect(toggleProjectGroupPin("missing")).resolves.toBe(false);
+  });
 });
 
 describe("linked workspace groups", () => {
@@ -266,5 +289,42 @@ describe("group order", () => {
     expect(moveProjectGroup("c", "down")).toBe(false);
     expect(moveProjectGroup("zzz", "top")).toBe(false);
     expect(ids()).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("orderProjectGroupMembers", () => {
+  it("lists projects before nested workspaces until an order is saved", () => {
+    expect(orderProjectGroupMembers(["C:/a", "C:/b"], ["ws"])).toEqual([
+      { kind: "project", id: "C:/a" },
+      { kind: "project", id: "C:/b" },
+      { kind: "group", id: "ws" },
+    ]);
+  });
+
+  it("keeps a saved workspace slot while projects follow their own order", () => {
+    const order = ["group:ws", pathKey("C:/a"), pathKey("C:/b")];
+    // The rail order swapped the projects since the workspace was moved to the top.
+    expect(orderProjectGroupMembers(["C:/b", "C:/a", "C:/c"], ["ws", "new"], order)).toEqual([
+      { kind: "group", id: "ws" },
+      { kind: "project", id: "C:/b" },
+      { kind: "project", id: "C:/a" },
+      { kind: "project", id: "C:/c" },
+      { kind: "group", id: "new" },
+    ]);
+  });
+
+  it("saves and reloads the interleaved order on the group", async () => {
+    saveProjectGroups([{ id: "parent", name: "Parent", collapsed: false }]);
+    await saveProjectGroupMemberOrder("parent", [
+      { kind: "project", id: "C:/a" },
+      { kind: "group", id: "ws" },
+    ]);
+    const group = loadProjectGroups()[0];
+    expect(group.memberOrder).toEqual([pathKey("C:/a"), "group:ws"]);
+    expect(orderProjectGroupMembers(["C:/a", "C:/b"], ["ws"], group.memberOrder)).toEqual([
+      { kind: "project", id: "C:/a" },
+      { kind: "group", id: "ws" },
+      { kind: "project", id: "C:/b" },
+    ]);
   });
 });

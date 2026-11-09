@@ -1,9 +1,5 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { recordGuideActivity } from "../../../features/onboarding/model/guideActivity";
 import { loadDiffViewer } from "../../../features/settings/model/settings";
 import { rememberOpenedFile, resolveOpenablePath } from "../../../features/files/model/fileIndex";
 import {
@@ -65,6 +61,7 @@ export function useSourceControlSurfaces(deps: SourceControlSurfacesDeps): Sourc
       exact = false,
       checkout?: { cwd: string; projectCwd: string },
     ) => {
+      recordGuideActivity("change-reviewed");
       const diffCwd = checkout?.cwd ?? session?.cwd ?? gitCwdRef.current;
       const diffProjectCwd = session
         ? sessionsRef.current.find((entry) => entry.id === session.sessionId)?.cwd
@@ -119,6 +116,7 @@ export function useSourceControlSurfaces(deps: SourceControlSurfacesDeps): Sourc
   /** Stack one section's working-tree changes in one review, whatever the diff-view setting. */
   const onOpenAllChanges = useCallback(
     (kind: GitFileDiffKind, repositoryCwd?: string) => {
+      recordGuideActivity("change-reviewed");
       setTabs((prev) =>
         prev.map((tab) =>
           tab.id === activeTabId
@@ -139,6 +137,7 @@ export function useSourceControlSurfaces(deps: SourceControlSurfacesDeps): Sourc
 
   const onOpenCommit = useCallback(
     (commit: GitHistoryCommit, pin?: boolean, repositoryCwd?: string) => {
+      recordGuideActivity("change-reviewed");
       setTabs((prev) =>
         prev.map((tab) =>
           tab.id === activeTabId

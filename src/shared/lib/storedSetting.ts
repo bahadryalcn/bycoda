@@ -8,7 +8,11 @@ type StoredSettingOptions<T> = {
 };
 
 /** Writer events plus sibling-window changes, scoped to this persisted preference. */
-export function subscribePreferenceChanges(keys: readonly string[], event: string, onChange: () => void) {
+export function subscribePreferenceChanges(
+  keys: readonly string[],
+  event: string,
+  onChange: () => void,
+) {
   if (typeof window === "undefined") return () => {};
   const storage = (change: StorageEvent) => {
     if (change.storageArea && change.storageArea !== localStorage) return;
@@ -16,7 +20,10 @@ export function subscribePreferenceChanges(keys: readonly string[], event: strin
   };
   window.addEventListener(event, onChange);
   window.addEventListener("storage", storage);
-  return () => { window.removeEventListener(event, onChange); window.removeEventListener("storage", storage); };
+  return () => {
+    window.removeEventListener(event, onChange);
+    window.removeEventListener("storage", storage);
+  };
 }
 
 /** Storage failures retain the existing fallback contract; subscriptions are opt-in. */

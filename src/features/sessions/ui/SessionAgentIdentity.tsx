@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { StatusDot } from "../../../shared/ui/StatusDot";
+import { useT } from "../../../shared/i18n";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
 import { accountChoicesSnapshot, modelAccountLabel } from "../model/accountModelChoices";
 import { subscribeProviderAccounts } from "../../providers/model/providerAccounts";
@@ -18,7 +19,7 @@ export function SessionAgentIdentity({
   running: boolean;
   showAccount: boolean;
 }) {
-  useLocale();
+  const t = useT();
   useSyncExternalStore(subscribeProviderAccounts, accountChoicesSnapshot, accountChoicesSnapshot);
   const source = useModelSource();
   const resolved = source.resolve(harness, model);
@@ -30,9 +31,7 @@ export function SessionAgentIdentity({
       className="session-agent-identity flex min-w-0 items-center gap-1.5"
       title={`${t(running ? "Running agent" : "Session agent")}: ${label}`}
     >
-      {running ? (
-        <span className="size-1.5 shrink-0 rounded-full bg-(--ui-tone-success-fg)" aria-hidden />
-      ) : null}
+      {running ? <StatusDot label={t("Running agent")} aria-hidden /> : null}
       <span className="truncate">{label}</span>
     </span>
   );

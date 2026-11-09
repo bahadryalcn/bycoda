@@ -6,7 +6,7 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from "react";
-import type { InstalledUpdate } from "../../model/updateNotice";
+import { dismissInstalledUpdate, type InstalledUpdate } from "../../model/updateNotice";
 
 export interface UpdateNoticesDeps {
   installedUpdate: InstalledUpdate | null;
@@ -29,7 +29,10 @@ export function useUpdateNotices({ installedUpdate }: UpdateNoticesDeps): Update
   const whatsNewVersionRef = useRef(whatsNewVersion);
   whatsNewVersionRef.current = whatsNewVersion;
 
-  const onDismissUpdate = useCallback(() => setUpdateNotice(null), []);
+  const onDismissUpdate = useCallback(() => {
+    if (updateNotice) dismissInstalledUpdate(updateNotice.version);
+    setUpdateNotice(null);
+  }, [updateNotice]);
   const onOpenWhatsNew = useCallback((version: string) => {
     setWhatsNewVersion(version.trim());
   }, []);

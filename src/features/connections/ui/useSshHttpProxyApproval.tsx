@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -61,9 +61,60 @@ function ProxyApprovalDialog({
     onResult(value);
   };
   return (
-    <Modal title={t("HTTP proxy authentication")} onClose={() => finish(null)} size="sm">
-      <div className="flex min-w-0 flex-col gap-3 p-4">
-        <div className="text-xs">
+    <Modal
+      title={t("HTTP proxy authentication")}
+      onClose={() => finish(null)}
+      size="sm"
+      footer={
+        <ModalActions>
+          <Button disabled={busy} onClick={() => finish(null)}>
+            {t("Cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            label={
+              mode === "basic" ? t("Approve this operation") : t("Continue without authentication")
+            }
+            disabled={busy || (mode === "basic" && (!consent || !valid))}
+            onClick={() => {
+              if (locked.current) return;
+              if (mode === "anonymous") {
+                finish(undefined);
+                return;
+              }
+              if (!consent || !valid || !username.current || !password.current) return;
+              locked.current = true;
+              setBusy(true);
+              setError("");
+              void approveSshHttpProxy(
+                request,
+                username.current.value,
+                password.current.value,
+                !secure,
+              )
+                .then((approval) => {
+                  if (mounted.current && !settled.current) finish(approval.ticketId);
+                  else void revokeSshHttpProxyApproval(approval.ticketId).catch(() => {});
+                })
+                .catch((reason) => {
+                  if (mounted.current) setError(String(reason));
+                })
+                .finally(() => {
+                  locked.current = false;
+                  if (mounted.current) {
+                    clear();
+                    setBusy(false);
+                  }
+                });
+            }}
+          >
+            {mode === "basic" ? t("Approve this operation") : t("Continue without authentication")}
+          </Button>
+        </ModalActions>
+      }
+    >
+      <div className="flex min-w-0 flex-col gap-3">
+        <div className="text-ui-caption">
           <p className="break-all font-medium">
             {secure ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
             {sshEndpointPreview(request.endpoint.httpProxy!)}
@@ -123,11 +174,7 @@ function ProxyApprovalDialog({
             { value: "basic", label: "Basic" },
           ]}
         />
-        {error ? (
-          <Alert role="alert" tone="danger">
-            {error}
-          </Alert>
-        ) : null}
+        {error ? <Alert tone="danger">{error}</Alert> : null}
         {mode === "basic" ? (
           <>
             <TextField
@@ -147,83 +194,40 @@ function ProxyApprovalDialog({
               disabled={busy}
               onChange={change}
             />
-            <label className="flex items-start gap-2 text-xs">
-              <Checkbox
-                checked={consent}
-                disabled={busy}
-                onChange={(event) => setConsent(event.target.checked)}
-              />
-              {t(
+            <Checkbox
+              checked={consent}
+              disabled={busy}
+              onChange={(event) => setConsent(event.target.checked)}
+              label={t(
                 secure
                   ? "I approve these Basic credentials for this TLS-verified HTTPS proxy and this operation."
                   : "I allow sending these Basic credentials to this HTTP proxy without TLS for this operation.",
               )}
-            </label>
-            <p className="text-xs text-(--ui-text-muted)">
+              className="flex items-start gap-2 text-ui-caption"
+            />
+            <p className="text-ui-caption text-(--ui-text-muted)">
               {t(
                 "SSH traffic remains encrypted after CONNECT. Proxy credentials are temporary and never saved; another operation needs a new approval.",
               )}
             </p>
           </>
         ) : (
-          <p className="text-xs text-(--ui-text-muted)">
+          <p className="text-ui-caption text-(--ui-text-muted)">
             {t(
               "Continue without credentials. A proxy authentication error will not retry automatically.",
             )}
           </p>
         )}
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button disabled={busy} onClick={() => finish(null)}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            variant="primary"
-            label={
-              mode === "basic" ? t("Approve this operation") : t("Continue without authentication")
-            }
-            disabled={busy || (mode === "basic" && (!consent || !valid))}
-            onClick={() => {
-              if (locked.current) return;
-              if (mode === "anonymous") {
-                finish(undefined);
-                return;
-              }
-              if (!consent || !valid || !username.current || !password.current) return;
-              locked.current = true;
-              setBusy(true);
-              setError("");
-              void approveSshHttpProxy(
-                request,
-                username.current.value,
-                password.current.value,
-                !secure,
-              )
-                .then((approval) => {
-                  if (mounted.current && !settled.current) finish(approval.ticketId);
-                  else void revokeSshHttpProxyApproval(approval.ticketId).catch(() => {});
-                })
-                .catch((reason) => {
-                  if (mounted.current) setError(String(reason));
-                })
-                .finally(() => {
-                  locked.current = false;
-                  if (mounted.current) {
-                    clear();
-                    setBusy(false);
-                  }
-                });
-            }}
-          >
-            {mode === "basic" ? t("Approve this operation") : t("Continue without authentication")}
-          </Button>
-        </div>
       </div>
     </Modal>
   );
 }
 /** Session-only prompt. `undefined` means anonymous; `null` cancels the operation. */
 export function useSshHttpProxyApproval() {
-  const [pending, setPending] = useState<{ id: number; request: SshHttpProxyRequest }>();
+  const [pending, setPending] = useState<{
+    id: number;
+    request: SshHttpProxyRequest;
+  }>();
   const sequence = useRef(0),
     resolver = useRef<
       { id: number; resolve: (value: string | undefined | null) => void } | undefined

@@ -90,7 +90,7 @@ it("keeps connection explicit and retains organization drafts when changing tool
     [...container.querySelectorAll("button")].find((button) => button.textContent === label)!;
   expect(find("Connect via SSH").closest("[hidden]")).toBeNull();
   expect(find("SSH runbooks").closest("[hidden]")).toBeTruthy();
-  await act(async () => find("Settings").click());
+  await act(async () => find("Organization").click());
   const label = [...container.querySelectorAll("label")].find(
     (item) => item.textContent === "Group",
   )!;
@@ -104,7 +104,7 @@ it("keeps connection explicit and retains organization drafts when changing tool
   });
   await act(async () => find("Automation").click());
   expect(find("SSH runbooks").closest("[hidden]")).toBeNull();
-  await act(async () => find("Settings").click());
+  await act(async () => find("Organization").click());
   expect(group.value).toBe("Unfinished group");
   expect(bridge.invoke).not.toHaveBeenCalled();
   expect(terminalHooks.open).not.toHaveBeenCalled();
@@ -129,7 +129,7 @@ it("persists the key assignment once and reuses the saved server on later connec
   await act(async () => root.render(createElement(ServersConnectionTools, { server: existing })));
   const find = (label: string) =>
     [...container.querySelectorAll("button")].find((button) => button.textContent === label)!;
-  await act(async () => find("Settings").click());
+  await act(async () => find("Organization").click());
   await act(async () => find("SSH settings").click());
   const choose = document.querySelector<HTMLButtonElement>(
     'button[aria-label="Assign key: C:/keys/work (Saved identity)"]',
@@ -155,7 +155,7 @@ it("persists the key assignment once and reuses the saved server on later connec
   expect(terminalHooks.open).toHaveBeenNthCalledWith(2, saved);
   await act(async () => root.render(null));
   await act(async () => root.render(createElement(ServersConnectionTools, { server: saved })));
-  await act(async () => find("Settings").click());
+  await act(async () => find("Organization").click());
   await act(async () => find("SSH settings").click());
   expect(
     document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')?.disabled,
@@ -213,7 +213,7 @@ it.each(["host", "inherited"])("assigns a persistent key to a %s connection", as
   await act(async () => root.render(createElement(ServersConnectionTools, { server: base })));
   const find = (label: string) =>
     [...container.querySelectorAll("button")].find((button) => button.textContent === label)!;
-  await act(async () => find("Settings").click());
+  await act(async () => find("Organization").click());
   await act(async () => find("SSH settings").click());
   const choose = document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')!;
   expect(choose.disabled).toBe(false);
@@ -242,7 +242,7 @@ it("does not replace a saved key when assigning another key fails", async () => 
   await act(async () => root.render(createElement(ServersConnectionTools, { server: saved })));
   const find = (label: string) =>
     [...container.querySelectorAll("button")].find((button) => button.textContent === label)!;
-  await act(async () => find("Settings").click());
+  await act(async () => find("Organization").click());
   await act(async () => find("SSH settings").click());
   const choose = document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')!;
   await act(async () => choose.click());

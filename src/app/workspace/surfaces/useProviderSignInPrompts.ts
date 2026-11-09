@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MutableRefObject,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import type { HarnessId, Session } from "../../../features/sessions/model/session";
 import {
   providerAccountExists,
@@ -39,9 +32,16 @@ export interface ProviderSignInPromptsDeps {
 
 // Sign-in and account-recovery prompts for the active session. Called where the
 // active-session sign-in memo used to sit (after `active` is derived).
-export function useProviderSignInPrompts({ active, sessions, sessionsRef }: ProviderSignInPromptsDeps) {
-  const [providerAccountRecovery, setProviderAccountRecovery] = useState<ProviderAccountRecovery | null>(null);
-  const [providerSignInRequest, setProviderSignInRequest] = useState<ProviderSignInRequest | null>(null);
+export function useProviderSignInPrompts({
+  active,
+  sessions,
+  sessionsRef,
+}: ProviderSignInPromptsDeps) {
+  const [providerAccountRecovery, setProviderAccountRecovery] =
+    useState<ProviderAccountRecovery | null>(null);
+  const [providerSignInRequest, setProviderSignInRequest] = useState<ProviderSignInRequest | null>(
+    null,
+  );
   const seenProviderSignInRequestsRef = useRef<Set<string> | null>(null);
   const seenProviderSignInRequests =
     seenProviderSignInRequestsRef.current ??
@@ -88,11 +88,11 @@ export function useProviderSignInPrompts({ active, sessions, sessionsRef }: Prov
     seenProviderSignInRequests.add(activeProviderSignInRequest.key);
     setProviderSignInRequest(activeProviderSignInRequest);
   }, [activeProviderSignInRequest, seenProviderSignInRequests]);
-  useEffect(() => {
-    if (providerSignInRequest && active?.id !== providerSignInRequest.sessionId) {
-      setProviderSignInRequest(null);
-    }
-  }, [active?.id, providerSignInRequest]);
+  // A request belongs to the session it was raised for. Drop it while rendering
+  // once another session is active, so returning later does not resurrect it.
+  const visibleProviderSignInRequest =
+    providerSignInRequest?.sessionId === active?.id ? providerSignInRequest : null;
+  if (visibleProviderSignInRequest !== providerSignInRequest) setProviderSignInRequest(null);
 
   // Choosing a signed-out or expired account opens its sign-in instead of
   // letting the next turn fail. Re-checked after the read: the user may have
@@ -123,7 +123,7 @@ export function useProviderSignInPrompts({ active, sessions, sessionsRef }: Prov
   return {
     providerAccountRecovery,
     setProviderAccountRecovery,
-    providerSignInRequest,
+    providerSignInRequest: visibleProviderSignInRequest,
     setProviderSignInRequest,
     promptProviderAccountSignIn,
   };

@@ -10,12 +10,20 @@ import {
 } from "react";
 import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
+import { Tooltip } from "../../Tooltip";
 import styles from "./segmented-control.module.css";
 
 export interface Segment {
   value: string;
   label: string;
+  /** Optional leading icon before the label. Decorative: the label stays the accessible name.
+   *  With `iconOnly`, only the icon shows and the label becomes the accessible name. */
+  icon?: ReactNode;
+  /** Hide the visible label (needs `icon`); the label remains the accessible name and tooltip. */
+  iconOnly?: boolean;
   /** Optional content after the label, such as a badge. */ accessory?: ReactNode;
+  /** Unavailable option: stays visible, is skipped by arrow keys and cannot be chosen. */
+  disabled?: boolean;
 }
 export interface SegmentedControlProps {
   options: Segment[];
@@ -72,9 +80,12 @@ export default function SegmentedControl({
       first.current = false;
       return;
     }
+    // Measure from the track itself: offsetLeft would be relative to an outer positioned ancestor.
+    const offset =
+      button.getBoundingClientRect().left - node.getBoundingClientRect().left + node.scrollLeft;
     const room = 20,
-      start = button.offsetLeft - room,
-      end = button.offsetLeft + button.offsetWidth + room - node.clientWidth;
+      start = offset - room,
+      end = offset + button.offsetWidth + room - node.clientWidth;
     const left = node.scrollLeft > start ? start : node.scrollLeft < end ? end : node.scrollLeft;
     if (left !== node.scrollLeft)
       node.scrollTo({
@@ -85,29 +96,36 @@ export default function SegmentedControl({
   }, [value, reduced]);
 
   // Arrow keys, Home and End move the selection like a tab list; only the selected option is a tab stop.
+  // Disabled options stay in place but are skipped.
   const selectedIndex = Math.max(
     0,
     options.findIndex((option) => option.value === value),
   );
+  const enabled = options.flatMap((option, index) => (option.disabled ? [] : [index]));
+  // A disabled selection cannot take focus, so the first enabled option remains reachable.
+  const tabStop = options[selectedIndex]?.disabled ? (enabled[0] ?? selectedIndex) : selectedIndex;
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     const currentIndex = options.findIndex(
       (option) => option.value === event.currentTarget.dataset.value,
     );
     const from = currentIndex < 0 ? selectedIndex : currentIndex;
-    const last = options.length - 1;
+    const step = (delta: 1 | -1) => {
+      for (let offset = 1; offset <= options.length; offset++) {
+        const index =
+          (((from + delta * offset) % options.length) + options.length) % options.length;
+        if (!options[index]?.disabled) return index;
+      }
+      return -1;
+    };
     const target =
       event.key === "ArrowRight" || event.key === "ArrowDown"
-        ? from === last
-          ? 0
-          : from + 1
+        ? step(1)
         : event.key === "ArrowLeft" || event.key === "ArrowUp"
-          ? from === 0
-            ? last
-            : from - 1
+          ? step(-1)
           : event.key === "Home"
-            ? 0
+            ? (enabled[0] ?? -1)
             : event.key === "End"
-              ? last
+              ? (enabled[enabled.length - 1] ?? -1)
               : -1;
     if (target < 0 || !options[target]) return;
     event.preventDefault();
@@ -126,44 +144,65 @@ export default function SegmentedControl({
     >
       <LayoutGroup id={id}>
         <motion.div ref={track} layoutScroll className={styles.track}>
-          {options.map((option, index) => (
-            <button
-              key={option.value}
-              id={
-                optionIdPrefix
-                  ? `${optionIdPrefix}-${option.value.toLowerCase()}`
-                  : `${id}-${option.value}`
-              }
-              className={styles.button}
-              type="button"
-              data-value={option.value}
-              data-selected={value === option.value}
-              role={selectionRole === "radio" ? "radio" : undefined}
-              aria-checked={selectionRole === "radio" ? value === option.value : undefined}
-              aria-pressed={selectionRole === "pressed" ? value === option.value : undefined}
-              tabIndex={index === selectedIndex ? 0 : -1}
-              onClick={() => onValueChange(option.value)}
-              onKeyDown={onKeyDown}
-              onPointerEnter={onOptionIntent ? () => onOptionIntent(option.value) : undefined}
-              onFocus={onOptionIntent ? () => onOptionIntent(option.value) : undefined}
-            >
-              {value === option.value && (
-                <motion.span
-                  className={styles.selection}
-                  layoutId="selection"
-                  layoutDependency={value}
-                  transition={reduced ? { duration: 0 } : motionTokens.spring.morph}
-                  aria-hidden="true"
-                />
-              )}
-              <span className={styles.label}>
-                {option.label}
-                {option.accessory != null ? (
-                  <span className={styles.accessory}>{option.accessory}</span>
-                ) : null}
-              </span>
-            </button>
-          ))}
+          {options.map((option, index) => {
+            const iconOnly = !!option.iconOnly && option.icon != null;
+            const button = (
+              <button
+                key={iconOnly ? undefined : option.value}
+                id={
+                  optionIdPrefix
+                    ? `${optionIdPrefix}-${option.value.toLowerCase()}`
+                    : `${id}-${option.value}`
+                }
+                className={styles.button}
+                type="button"
+                data-value={option.value}
+                data-selected={value === option.value}
+                role={selectionRole === "radio" ? "radio" : undefined}
+                aria-checked={selectionRole === "radio" ? value === option.value : undefined}
+                aria-pressed={selectionRole === "pressed" ? value === option.value : undefined}
+                tabIndex={index === tabStop ? 0 : -1}
+                disabled={option.disabled}
+                aria-label={option.iconOnly && option.icon != null ? option.label : undefined}
+                onClick={() => onValueChange(option.value)}
+                onKeyDown={onKeyDown}
+                onPointerEnter={onOptionIntent ? () => onOptionIntent(option.value) : undefined}
+                onFocus={onOptionIntent ? () => onOptionIntent(option.value) : undefined}
+              >
+                {value === option.value && (
+                  <motion.span
+                    className={styles.selection}
+                    layoutId="selection"
+                    layoutDependency={value}
+                    transition={reduced ? { duration: 0 } : motionTokens.spring.morph}
+                    aria-hidden="true"
+                  />
+                )}
+                <span className={styles.label}>
+                  {option.icon != null ? (
+                    <span className={styles.icon} aria-hidden="true">
+                      {option.icon}
+                    </span>
+                  ) : null}
+                  {option.iconOnly && option.icon != null ? (
+                    <span className="sr-only">{option.label}</span>
+                  ) : (
+                    option.label
+                  )}
+                  {option.accessory != null ? (
+                    <span className={styles.accessory}>{option.accessory}</span>
+                  ) : null}
+                </span>
+              </button>
+            );
+            return iconOnly ? (
+              <Tooltip key={option.value} label={option.label}>
+                {button}
+              </Tooltip>
+            ) : (
+              button
+            );
+          })}
         </motion.div>
       </LayoutGroup>
     </div>

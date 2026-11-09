@@ -1,7 +1,8 @@
 import { leafIds, type WorkspaceTab } from "../../workspace/model/layout";
-import type { Session } from "../../sessions/model/session";
+import type { Session } from "../../sessions";
 import { pathKey } from "../../../shared/lib/paths";
-import { sameProjectPath } from "./recents";
+import { sameProjectPath } from "../../../shared/lib/paths";
+import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 
 export type ProjectReturnMemory = ReadonlyMap<string, string>;
 
@@ -165,7 +166,7 @@ export function planProjectReturn({
   }
 
   const current = active?.focusedId && sessions.find((session) => session.id === active.focusedId);
-  return current && isBlankSession(current)
+  return current && !hostSessionBinding(current) && isBlankSession(current)
     ? { action: "reuse-blank", sessionId: current.id }
     : { action: "create" };
 }

@@ -17,6 +17,19 @@ import {
   setCachedRateLimits,
 } from "../../features/providers/model/rateLimitsCache";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
   invoke: vi.fn(async () => null),
@@ -110,7 +123,7 @@ describe("UsageProviderChip", () => {
     const trigger = button("Claude Code usage details");
     expect(trigger.querySelector('[role="progressbar"]')).toBeNull();
     expect(trigger.textContent).not.toContain("0%");
-    expect(trigger.title).toBe(limits.error);
+    expect(await tooltipText(trigger)).toBe(limits.error);
     await act(async () => trigger.click());
     const dialog = document.querySelector('[role="dialog"]');
     expect(dialog?.textContent).toContain(limits.error);
@@ -330,12 +343,12 @@ describe("UsageProviderChip", () => {
     });
     const trigger = button("Codex usage details");
     expect(trigger.textContent).toContain("81%");
-    expect(trigger.title).toContain("81% used");
+    expect(await tooltipText(trigger)).toContain("81% used");
     await act(async () => trigger.click());
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("81% used");
     act(() => saveShowRemainingUsage(true));
     expect(trigger.textContent).toContain("19%");
-    expect(trigger.title).toContain("19% remaining");
+    expect(await tooltipText(trigger)).toContain("19% remaining");
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("19% remaining");
   });
 
@@ -585,7 +598,12 @@ describe("UsageProviderChip", () => {
     );
 
     await act(async () => button("Codex usage details").click());
-    expect(document.body.textContent).toContain("2 resets available");
+    // The available count appears once, as the section badge.
+    expect(document.querySelector('[aria-label="2 available"]')?.textContent).toBe("2");
+    expect(document.body.textContent).not.toContain("resets available");
+    // Provider descriptions are not part of the normal view.
+    expect(document.body.textContent).not.toContain("One Codex rate-limit reset");
+    expect(document.body.textContent).not.toContain("A second Codex rate-limit reset");
     expect(document.querySelector('[data-reset-mascot-mood="happy"]')).not.toBeNull();
     expect(document.body.textContent).toContain("Referral reward");
     expect(document.body.textContent).toContain("Backup reset");
@@ -603,6 +621,57 @@ describe("UsageProviderChip", () => {
 
     expect(onConsumeReset).toHaveBeenCalledWith("reset-2");
     expect(document.body.textContent).toContain("Codex usage was reset.");
+  });
+
+  it("keeps each credit's own expiry beside its Use reset action and hides a repeated title", async () => {
+    const limits = codexLimits();
+    limits.resetCredits!.credits = limits.resetCredits!.credits!.map((credit) => ({
+      ...credit,
+      title: "Full reset",
+    }));
+    act(() =>
+      root.render(createElement(UsageProviderChip, { limits, now, onConsumeReset: vi.fn() })),
+    );
+
+    await act(async () => button("Codex usage details").click());
+    expect(document.body.textContent).not.toContain("Full reset");
+    const items = [...document.querySelectorAll('[aria-label="Available banked resets"] article')];
+    expect(items).toHaveLength(2);
+    expect(items[0]?.textContent).toMatch(/Expires in 12dUse reset/);
+    expect(items[1]?.textContent).toMatch(/Expires in 18dUse reset/);
+  });
+
+  it("labels a passed expiry as expired and lets a failed attempt be retried after confirmation", async () => {
+    const limits = codexLimits();
+    limits.resetCredits!.credits![0] = {
+      ...limits.resetCredits!.credits![0]!,
+      expiresAt: now - 1000,
+    };
+    const onConsumeReset = vi
+      .fn<(id?: string) => Promise<"reset">>()
+      .mockRejectedValueOnce(new Error("Host offline"))
+      .mockResolvedValueOnce("reset");
+    act(() => root.render(createElement(UsageProviderChip, { limits, now, onConsumeReset })));
+
+    await act(async () => button("Codex usage details").click());
+    expect(document.body.textContent).toContain("Expired");
+    const useButtons = () =>
+      [...document.querySelectorAll<HTMLButtonElement>("button")].filter(
+        (item) => item.textContent === "Use reset" || item.textContent === "Try again",
+      );
+    act(() => useButtons()[0]?.click());
+    expect(onConsumeReset).not.toHaveBeenCalled();
+    await act(async () => button("Confirm").click());
+    expect(document.body.textContent).toContain("Host offline");
+    expect(onConsumeReset).toHaveBeenCalledTimes(1);
+    act(() =>
+      useButtons()
+        .find((item) => item.textContent === "Try again")
+        ?.click(),
+    );
+    expect(onConsumeReset).toHaveBeenCalledTimes(1);
+    await act(async () => button("Confirm").click());
+    expect(onConsumeReset).toHaveBeenCalledTimes(2);
   });
 
   it("uses the project's picked mascot when banked resets are available", async () => {
@@ -653,7 +722,8 @@ describe("UsageProviderChip", () => {
 
     await act(async () => button("Codex usage details").click());
     expect(document.body.textContent).toContain("Referral reward");
-    expect(document.body.textContent).toContain("Banked reset 2");
+    // An unlisted reset has no title or date to invent.
+    expect(document.body.textContent).toContain("Expiry not provided");
     const useButtons = [...document.querySelectorAll<HTMLButtonElement>("button")].filter(
       (item) => item.textContent === "Use reset",
     );

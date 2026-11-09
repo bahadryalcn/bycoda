@@ -64,7 +64,6 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
     tabsRef,
     sessionsRef,
     setTabs,
-    setActiveTabId,
     setProjectTerminalFocused,
     setComposerFocused,
     setEditorNavigation,
@@ -131,7 +130,7 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
         };
         const pin = !!options?.pin;
         const foreground = request === openRequest.current;
-        if (checkout || loadFileTabMode() === "workspace") {
+        if (checkout || (options?.placement !== "pane" && loadFileTabMode() === "workspace")) {
           // Built once: the updater may run twice in StrictMode.
           const created = newEditorWorkspaceTab(pin ? file : { ...file, preview: true });
           let target: { tabId: string; paneId?: string } | undefined;
@@ -153,7 +152,8 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
           });
           if (!foreground) return;
           if (target?.paneId) activateTab(target.tabId, target.paneId);
-          else if (target) setActiveTabId(target.tabId);
+          // activateTab follows the file's project, like every other tab switch.
+          else if (target) activateTab(target.tabId);
           if (target) {
             const tabId = target.tabId;
             lastOpenedLocation.current = {

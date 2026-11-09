@@ -12,6 +12,7 @@ import {
   type SavedCrewAgent,
 } from "../../src/features/crews/model/crew";
 import { setLanguagePreference } from "../../src/shared/i18n";
+import { createDefaultCrew } from "../../src/features/crews/model/crewDefaults";
 import { applyThemePreference } from "../../src/features/settings/model/appearance";
 import { Button } from "../../src/shared/ui/Button";
 import "../../src/styles/index.css";
@@ -61,6 +62,35 @@ const definition: CrewDefinition = {
     },
   ],
 };
+if (params.has("longRoster")) {
+  // A long, varied roster for scan/scroll evidence. Fixture data only.
+  const longNames = [
+    "Accessibility and keyboard navigation specialist for the settings surfaces",
+    "Database migration engineer",
+    "Mobile release lead",
+    "Localization reviewer (eleven languages)",
+    "Performance profiling engineer",
+    "Documentation writer",
+    "Security reviewer",
+    "Design systems engineer",
+    "API contract specialist",
+    "QA automation engineer",
+    "Release notes editor",
+    "Telemetry analyst",
+  ];
+  definition.agents.push(
+    ...longNames.map((name, index) => ({
+      id: `long-${index}`,
+      name,
+      role: (index === 3 ? "advisor" : "specialist") as "advisor" | "specialist",
+      selection: (index % 3 === 0 ? "automatic" : "fixed") as "automatic" | "fixed",
+      instructions:
+        "Own the assigned area end to end and report blockers early.\nKeep a written trail of decisions.",
+      candidates: [candidate],
+      groups: index % 2 ? ["Quality"] : undefined,
+    })),
+  );
+}
 let definitions = [definition];
 let agents: SavedCrewAgent[] =
   params.get("library") === "empty"
@@ -88,13 +118,39 @@ let agents: SavedCrewAgent[] =
           updatedAt: 1,
         },
       ];
+if (params.has("defaults")) {
+  const defaults = createDefaultCrew(
+    {
+      models: {
+        codex: [
+          { id: candidate.model, harness: candidate.harness, name: "Codex fixture", settings: [] },
+        ],
+      },
+      errors: {},
+    },
+    1,
+  )!;
+  definitions = [defaults.definition];
+  agents = defaults.agents;
+}
+// Realistic recent times for the work list (fixture data; ordering is unchanged).
+const baseTime = Date.now() - 3 * 60 * 60_000;
+const at = (minutes: number) => baseTime + minutes * 60_000;
 let starts = 0;
+let groupFailure = false;
+let copyFailure = false;
+const agentSaveCounts: Record<string, number> = {};
+if (params.has("groupRetry")) agents = agents.map((agent) => ({ ...agent, groups: ["UI"] }));
+let opens = 0;
+const startReceipts = new Map<string, { id: string; coordinatorSessionId: string }>();
+const startRequestIds: string[] = [];
 let runs = [
   {
     id: "run",
     projectId: "project",
     definition,
     coordinatorSessionId: "lead-session",
+    coordinatorStatus: "idle" as "idle" | "running" | "interrupted",
     status: "active",
     launch: {
       candidate,
@@ -118,19 +174,26 @@ let runs = [
         text: params.has("blocked")
           ? "Choose a fallback image provider before continuing. The current account has no remaining image generation capacity, so the owner needs to confirm the next provider and budget."
           : "Need image generation for the hero",
-        createdAt: 1,
+        createdAt: at(1),
       },
     ],
     notifications: {},
-    createdAt: 1,
-    updatedAt: 2,
+    createdAt: at(1),
+    updatedAt: at(2),
     tasks: [
       {
         id: "task",
         title: "Build settings",
         harness: "codex",
         model: "codex:fixture",
-        status: params.has("blocked") ? "blocked" : "review",
+        status: params.has("reviewingAgain")
+          ? "verifying"
+          : params.has("blocked")
+            ? "blocked"
+            : "review",
+        reviewer: params.has("reviewingAgain")
+          ? { sessionId: "current-review-session" }
+          : undefined,
         error: params.has("blocked")
           ? "The design asset is unavailable. Keep the existing layout draft and select a replacement before retrying this task."
           : undefined,
@@ -155,12 +218,76 @@ let runs = [
     assignments: [],
     messages: [],
     notifications: {},
-    createdAt: 0,
-    updatedAt: 1,
+    createdAt: at(0),
+    updatedAt: at(1),
     tasks: [],
   },
 ];
-mockIPC((command, args) => {
+if (params.has("multiple")) {
+  runs.push({
+    ...structuredClone(runs[0]),
+    id: "second-run",
+    coordinatorSessionId: "second-lead",
+    launch: { candidate, runtimeMode: "supervised", prompt: "Improve mobile navigation" },
+    assignments: [],
+    tasks: [],
+    messages: [],
+    createdAt: at(2),
+    updatedAt: at(3),
+  });
+}
+if (params.has("manyRuns")) {
+  // Many runs with long titles and mixed states for the work list.
+  const states = ["active", "paused", "active", "finished", "finished", "paused", "active"];
+  for (let index = 0; index < states.length; index += 1) {
+    runs.push({
+      ...structuredClone(runs[0]),
+      id: `many-${index}`,
+      coordinatorSessionId: `many-lead-${index}`,
+      status: states[index]!,
+      launch: {
+        candidate,
+        runtimeMode: "supervised",
+        prompt: `Work item ${index + 1}: reconcile the mobile session list with the desktop sidebar ordering and keep every draft`,
+      },
+      assignments: [],
+      tasks: [],
+      messages: [],
+      createdAt: at(10 + index),
+      updatedAt: at(10 + index),
+    });
+  }
+}
+if (params.has("pausedPlanning")) {
+  runs[0] = {
+    ...runs[0],
+    status: "paused",
+    coordinatorStatus: params.has("running") ? "running" : "idle",
+    launch: {
+      ...runs[0].launch,
+      prompt:
+        "Review mobile session choices against the desktop application and preserve the full request text\nKeep current drafts and provider selections.",
+    },
+    assignments: [],
+    tasks: [],
+    messages: [],
+  };
+}
+if (params.has("singleRun")) runs = runs.filter((run) => run.id === "run");
+if (params.has("unknownActivity")) {
+  delete (runs[0] as { coordinatorStatus?: string }).coordinatorStatus;
+}
+if (params.has("deletedDefinition")) definitions = [];
+const operationCalls: string[] = [];
+let releaseOperation: () => void = () => {};
+const operationGate = new Promise<void>((resolve) => {
+  releaseOperation = resolve;
+});
+Object.assign(window, {
+  crewFixtureOperations: operationCalls,
+  crewFixtureReleaseOperation: () => releaseOperation(),
+});
+mockIPC(async (command, args) => {
   if (command === "remote_machines")
     return [
       {
@@ -173,6 +300,10 @@ mockIPC((command, args) => {
     ];
   if (command === "remote_request") {
     const p = args?.params as Record<string, unknown>;
+    operationCalls.push(String(args?.method));
+    if (args?.method === params.get("slowOperation")) await operationGate;
+    if (args?.method === params.get("failOperation"))
+      throw new Error("The Host could not complete this action. Try again in a moment.");
     switch (args?.method) {
       case "environment.describe":
         return {
@@ -180,13 +311,16 @@ mockIPC((command, args) => {
             "crews.v1",
             "crews.tasks.v1",
             "crews.delete.v1",
-            ...(params.get("legacy") ? [] : ["crews.agent-groups.v1"]),
+            ...(params.has("noAccess") ? [] : ["crews.access.v1"]),
+            ...(params.get("legacy") ? [] : ["crews.agent-groups.v1", "crews.run-delete.v1"]),
           ],
           environmentId: "fixture",
         };
       case "projects.list":
         return [{ id: "project", cwd, name: "Fixture" }];
       case "models.list":
+        if (params.has("catalogUnavailable"))
+          throw new Error("Model catalog temporarily unavailable");
         return {
           models: {
             codex: [
@@ -204,7 +338,12 @@ mockIPC((command, args) => {
         return { definitions, runs, agents };
       case "crews.save": {
         const input = p.definition as CrewDefinition;
+        if (params.has("saveError"))
+          throw new Error("The Host rejected this crew: storage is read-only right now.");
         const previous = definitions.find((d) => d.id === input.id);
+        // Like the Host: an editor holding a deleted crew must not recreate it.
+        if (!previous && p.expectedUpdatedAt !== undefined)
+          throw new Error("This crew was deleted");
         if (previous && p.expectedUpdatedAt !== previous.updatedAt)
           throw new Error("Crew changed. Reload before saving");
         const d = {
@@ -216,11 +355,20 @@ mockIPC((command, args) => {
       }
       case "crews.agent.save": {
         const input = p.agent as SavedCrewAgent;
+        agentSaveCounts[input.id] = (agentSaveCounts[input.id] ?? 0) + 1;
+        if (params.has("groupRetry") && input.id === "lib-api" && !groupFailure) {
+          groupFailure = true;
+          throw new Error("Second profile unavailable. Retry group update.");
+        }
         const previous = agents.find((a) => a.id === input.id);
         if (previous && previous.updatedAt !== p.expectedUpdatedAt)
           throw new Error("Agent changed. Reload before saving");
         const saved = { ...input, updatedAt: (previous?.updatedAt ?? 0) + 1 };
         agents = [...agents.filter((a) => a.id !== saved.id), saved];
+        if (params.has("copyUnknown") && !previous && !copyFailure) {
+          copyFailure = true;
+          throw new Error("Profile save response unavailable");
+        }
         return saved;
       }
       case "crews.agent.delete":
@@ -229,29 +377,74 @@ mockIPC((command, args) => {
       case "crews.delete":
         definitions = definitions.filter((d) => d.id !== p.definitionId);
         return { deleted: true };
-      case "crews.start":
+      case "crews.start": {
+        const requestId = String(p.requestId);
+        startRequestIds.push(requestId);
+        const existing = startReceipts.get(requestId);
+        if (existing) return existing;
         starts += 1;
         document.querySelector("[aria-label='Started work']")!.textContent = String(starts);
-        return {
+        const receipt = {
           id: `run-${starts}`,
           coordinatorSessionId: `started-${starts}`,
         };
+        startReceipts.set(requestId, receipt);
+        if (params.has("startUnknownOnce") && starts === 1)
+          throw new Error("Start response unavailable. Delivery unknown.");
+        return receipt;
+      }
       case "crews.pause":
-        runs = runs.map((r) => (r.id === p.runId ? { ...r, status: "paused" } : r));
-        return runs[0];
-      case "crews.resume":
-        runs = runs.map((r) => (r.id === p.runId ? { ...r, status: "active" } : r));
-        return runs[0];
+        runs = runs.map((r) =>
+          r.id === p.runId ? { ...r, status: "paused", updatedAt: r.updatedAt + 1 } : r,
+        );
+        return runs.find((run) => run.id === p.runId);
       case "crews.stop":
-        runs = runs.map((r) => (r.id === p.runId ? { ...r, status: "finished" } : r));
-        return runs[0];
+        runs = runs.map((r) =>
+          r.id === p.runId
+            ? { ...r, status: "paused", coordinatorStatus: "idle", updatedAt: r.updatedAt + 1 }
+            : r,
+        );
+        return runs.find((run) => run.id === p.runId);
+      case "crews.resume":
+        runs = runs.map((r) =>
+          r.id === p.runId ? { ...r, status: "active", updatedAt: r.updatedAt + 1 } : r,
+        );
+        return runs.find((run) => run.id === p.runId);
+      case "crews.deleteRun": {
+        const run = runs.find((run) => run.id === p.runId);
+        if (!run || run.updatedAt !== p.expectedUpdatedAt)
+          throw new Error("Crew work changed. Reload before deleting");
+        if (run.status === "active") throw new Error("Stop work before deleting it");
+        runs = runs.filter((r) => r.id !== p.runId);
+        return { deleted: true };
+      }
     }
   }
   if (command.startsWith("plugin:")) return null;
   throw new Error(`Unsupported fixture operation ${command}`);
 });
+if (params.has("defaults")) runs = [];
 // Another session saving the same crew while it is open here.
 Object.assign(window, {
+  crewFixtureStartRequestIds: startRequestIds,
+  simulateRunFinish: (id: string) => {
+    runs = runs.map((run) =>
+      run.id === id ? { ...run, status: "finished", updatedAt: run.updatedAt + 1 } : run,
+    );
+  },
+  simulateCrewDelete: () => {
+    definitions = [];
+  },
+  crewFixtureSnapshot: () => ({
+    definitions: definitions.map((crew) => crew.id),
+    runs: runs.map((run) => ({ id: run.id, status: run.status })),
+    agents: agents.map((agent) => ({ id: agent.id, groups: agent.groups })),
+    agentSaveCounts,
+  }),
+  simulateRunUpdate: (id: string) => {
+    const next = Math.max(...runs.map((run) => run.updatedAt)) + 1;
+    runs = runs.map((run) => (run.id === id ? { ...run, updatedAt: next } : run));
+  },
   simulateCrewUpdate: () => {
     definitions = definitions.map((d) =>
       d.id === "crew"
@@ -282,6 +475,11 @@ function Fixture() {
   const [opened, setOpened] = useState("");
   const [crew, setCrew] = useState<string | undefined>();
   const [valid, setValid] = useState(true);
+  const openSession = (target: { sessionId: string }) => {
+    if (params.has("openFailsOnce") && opens++ === 0)
+      throw new Error("Conversation temporarily unavailable");
+    setOpened(target.sessionId);
+  };
   return (
     <QueryProvider>
       <main className="bycoda-arc flex min-h-screen flex-wrap bg-(--ui-surface) text-(--color-content)">
@@ -289,18 +487,10 @@ function Fixture() {
           className="@container/rail flex shrink-0 flex-col border-e border-(--ui-tone-neutral-border) pt-2"
           style={{ width: 256 }}
         >
-          <CrewRailSection
-            cwd={cwd}
-            drag={drag}
-            onOpenSession={(target) => setOpened(target.sessionId)}
-          />
+          <CrewRailSection cwd={cwd} drag={drag} onOpenSession={openSession} />
         </aside>
         <aside className="w-80 max-w-full shrink-0 border-e border-(--ui-tone-neutral-border)">
-          <CrewSidebar
-            cwd={cwd}
-            onOpen={(target) => setOpened(target.sessionId)}
-            onManagedChange={() => {}}
-          />
+          <CrewSidebar cwd={cwd} onOpen={openSession} onManagedChange={() => {}} />
         </aside>
         <div className="min-w-0 flex-1 p-4" style={{ flexBasis: "24rem" }}>
           <Button variant="ghost" onClick={() => setView("settings")}>
@@ -326,7 +516,7 @@ function Fixture() {
             </div>
           ) : view === "settings" ? (
             <div className="bycoda-settings-content bycoda-settings-form">
-              <CrewsSettings cwd={cwd} />
+              <CrewsSettings cwd={cwd} onOpen={openSession} />
             </div>
           ) : null}
         </div>

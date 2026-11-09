@@ -26,7 +26,16 @@ import { Folder } from "../../icons";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./empty-state.module.css";
 
+/**
+ * Where the state sits. `page` fills an area and centres generously (default);
+ * `panel` is a compact centred block inside a side panel or card; `list` is a
+ * start-aligned row for a list that has no entries. The primitive only changes
+ * density: whether the copy means no data, no match or unavailable is the caller's.
+ */
+export type EmptyStateContext = "page" | "panel" | "list";
+
 export interface EmptyStateProps extends Omit<HTMLAttributes<HTMLElement>, "title"> {
+  context?: EmptyStateContext;
   title?: string;
   description: ReactNode;
   action?: ReactNode;
@@ -145,6 +154,7 @@ export function EmptyState({
   icon,
   className,
   label,
+  context = "page",
   ...props
 }: EmptyStateProps) {
   const reduce = useReducedMotion();
@@ -164,6 +174,7 @@ export function EmptyState({
     <section
       {...props}
       className={[styles.root, className].filter(Boolean).join(" ")}
+      data-context={context}
       aria-label={label ?? props["aria-label"]}
     >
       {glyph ? (

@@ -12,6 +12,12 @@ import { saveInboxConnections, saveInboxSource } from "../model/inboxFilters";
 import { updateNotificationPreferences } from "../../notifications/model/notificationPreferences";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 
+/** An Inbox list row by its item title; the title is in the row's accessible name and shared
+ *  tooltip now, not a native title attribute. */
+function inboxRow(scope: ParentNode, title: string): HTMLButtonElement | null {
+  return scope.querySelector<HTMLButtonElement>(`button[aria-label*=": ${title}, "]`);
+}
+
 const { listInboxItems } = vi.hoisted(() => ({ listInboxItems: vi.fn() }));
 vi.mock("../model/githubTasks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../model/githubTasks")>()),
@@ -99,17 +105,19 @@ it("filters the cached Inbox locally and reuses fresh data when reopened", async
       ),
     );
   await render();
-  expect(container.querySelector('button[title="Beta issue"]')).not.toBeNull();
+  expect(inboxRow(container, "Beta issue")).not.toBeNull();
   const reads = listInboxItems.mock.calls.length;
   const nativeReads = providerReads().length;
   expect(nativeReads).toBeGreaterThan(0);
-  const input = container.querySelector<HTMLInputElement>('input[aria-label="Filter inbox"]')!;
+  const input = container.querySelector<HTMLInputElement>(
+    'input[aria-label="Filter loaded items"]',
+  )!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Alpha");
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  expect(container.querySelector('button[title="Alpha issue"]')).not.toBeNull();
-  expect(container.querySelector('button[title="Beta issue"]')).toBeNull();
+  expect(inboxRow(container, "Alpha issue")).not.toBeNull();
+  expect(inboxRow(container, "Beta issue")).toBeNull();
   expect(listInboxItems.mock.calls).toHaveLength(reads);
   expect(providerReads()).toHaveLength(nativeReads);
   await act(async () => root.unmount());
@@ -118,11 +126,11 @@ it("filters the cached Inbox locally and reuses fresh data when reopened", async
   // Mount rechecks the shared cache's real age; its fresh result avoids native
   // provider work even though the query facade is called again.
   expect(providerReads()).toHaveLength(nativeReads);
-  expect(container.querySelector<HTMLInputElement>('input[aria-label="Filter inbox"]')?.value).toBe(
-    "Alpha",
-  );
-  expect(container.querySelector('button[title="Alpha issue"]')).not.toBeNull();
-  expect(container.querySelector('button[title="Beta issue"]')).toBeNull();
+  expect(
+    container.querySelector<HTMLInputElement>('input[aria-label="Filter loaded items"]')?.value,
+  ).toBe("Alpha");
+  expect(inboxRow(container, "Alpha issue")).not.toBeNull();
+  expect(inboxRow(container, "Beta issue")).toBeNull();
 });
 
 it("keeps cached rows visible with a provider failure and clears the warning after retry", async () => {
@@ -173,7 +181,13 @@ it("keeps cached rows visible with a provider failure and clears the warning aft
   failed = true;
   await act(async () => refresh().click());
   expect(container.textContent).toContain("Retained issue");
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("GitHub unavailable");
+  const alert = container.querySelector('[role="alert"]')!;
+  expect(alert.textContent).toContain("Could not load.");
+  expect(alert.textContent).not.toContain("GitHub unavailable");
+  await act(async () =>
+    alert.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!.click(),
+  );
+  expect(alert.textContent).toContain("GitHub unavailable");
   failed = false;
   await act(async () => refresh().click());
   expect(
@@ -224,15 +238,15 @@ it.each(["single", "all"])(
       ),
     );
     const markAll = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Mark all as read"]',
+      'button[aria-label="Mark loaded GitHub items as read"]',
     )!;
     const write = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
       throw new Error("Storage full");
     });
-    const unread = container.querySelector<HTMLButtonElement>('button[title="Unread issue"]')!;
+    const unread = inboxRow(container, "Unread issue")!;
     act(() => (mode === "all" ? markAll : unread).click());
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Could not save read status",
+      mode === "all" ? "Some read status updates may have saved" : "Could not save read status",
     );
     expect(isInboxEntryUnseen(entry)).toBe(true);
     expect(markAll.disabled).toBe(false);
@@ -323,9 +337,7 @@ it.each([
         ),
       );
     await mount();
-    let card = container.querySelector<HTMLButtonElement>(
-      'button[title="Notification indicator regression"]',
-    )!;
+    let card = inboxRow(container, "Notification indicator regression")!;
     expect(card).not.toBeNull();
     expect(card.getAttribute("aria-label")).toContain(", new");
 
@@ -342,9 +354,7 @@ it.each([
     // Closing and reopening Inbox while muted must not hide or consume unread state.
     act(() => root.render(null));
     await mount();
-    card = container.querySelector<HTMLButtonElement>(
-      'button[title="Notification indicator regression"]',
-    )!;
+    card = inboxRow(container, "Notification indicator regression")!;
     expect(card.getAttribute("aria-label")).toContain(", new");
     expect(isInboxEntryUnseen(entry)).toBe(true);
     act(() => card.click());

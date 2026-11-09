@@ -6,7 +6,7 @@ import { Composer } from "./Composer";
 import { attachLogsToComposer } from "../../host-tools/logsComposer";
 import { clearComposerDraft } from "../model/draftCache";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []) }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []), isTauri: () => false }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }),
 }));

@@ -72,12 +72,22 @@ export interface MorphSelectProps {
   /** Adds a hidden input for native form submission. */
   name?: string;
   disabled?: boolean;
+  /** The value stays readable and focusable but the list does not open, as with a read-only field. */
+  readOnly?: boolean;
   className?: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   triggerProps?: Pick<
     ComponentPropsWithRef<"button">,
-    "ref" | "onMouseDown" | "title" | "aria-label" | "onFocus" | "onBlur"
+    | "ref"
+    | "onMouseDown"
+    | "title"
+    | "aria-label"
+    | "aria-invalid"
+    | "aria-describedby"
+    | "aria-required"
+    | "onFocus"
+    | "onBlur"
   >;
   onClose?: (restoreFocus: boolean) => void;
   clearSearchLabel?: string;
@@ -189,6 +199,7 @@ export function MorphSelect({
   align = "start",
   name,
   disabled = false,
+  readOnly = false,
   className,
   open: controlledOpen,
   onOpenChange,
@@ -279,7 +290,7 @@ export function MorphSelect({
       const isOpen = live.current.open;
       const next = isOpen
         ? { w: Math.max(trigger, listW), h: lid + listH, r: OPEN_RADIUS }
-        : { w: trigger, h: lid, r: lid / 2 };
+        : { w: trigger, h: lid, r: 8 };
       if (!animated || live.current.reduced || !live.current.measured) {
         anchorW.jump(trigger);
         shapeW.jump(next.w);
@@ -386,7 +397,13 @@ export function MorphSelect({
     const target = pendingFocus.current;
     pendingFocus.current = null;
     if (target === "input") inputRef.current?.focus({ preventScroll: true });
-    if (target === "trigger") triggerRef.current?.focus({ preventScroll: true });
+    if (target === "trigger") {
+      // An owner's onClose may already have moved focus on purpose (a composer pill returns it to
+      // the draft); only restore the trigger while focus is still in this select or was dropped.
+      const active = document.activeElement;
+      if (!active || active === document.body || rootRef.current?.contains(active))
+        triggerRef.current?.focus({ preventScroll: true });
+    }
   }, [open]);
 
   const typeahead = useRef({ buffer: "", at: 0 });
@@ -395,7 +412,7 @@ export function MorphSelect({
   const [announcement, setAnnouncement] = useState("");
 
   const openList = (focus?: string | null, seed = "") => {
-    if (disabled || open) return;
+    if (disabled || readOnly || open) return;
     setQuery(seed);
     setActive(focus !== undefined ? focus : selected);
     scrollIntent.current = true;
@@ -607,6 +624,7 @@ export function MorphSelect({
       data-open={open || undefined}
       data-align={align}
       data-disabled={disabled || undefined}
+      data-readonly={readOnly || undefined}
       onBlur={onBlur}
     >
       <span id={labelId} className={hideLabel ? styles.srOnly : styles.label}>
@@ -634,6 +652,7 @@ export function MorphSelect({
               aria-labelledby={triggerProps?.["aria-label"] ? undefined : labelId}
               aria-haspopup="listbox"
               aria-expanded={open}
+              aria-readonly={readOnly || undefined}
               aria-controls={listId}
               aria-activedescendant={
                 open && !canSearch && current !== null
@@ -740,7 +759,7 @@ export function MorphSelect({
                       exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.1 } }}
                       transition={reduced ? { duration: 0 } : GLIDE}
                     >
-                      <X size={14} strokeWidth={1.75} aria-hidden="true" />
+                      <X aria-hidden="true" />
                     </motion.button>
                   )}
                 </AnimatePresence>
@@ -760,7 +779,7 @@ export function MorphSelect({
               animate={{ rotate: open ? 180 : 0 }}
               transition={reduced ? { duration: 0 } : GLIDE}
             >
-              <ChevronDown size={16} strokeWidth={1.75} />
+              <ChevronDown />
             </motion.span>
           </div>
 
@@ -837,7 +856,7 @@ export function MorphSelect({
                           data-on={isSelected || undefined}
                           aria-hidden="true"
                         >
-                          <Check size={16} strokeWidth={1.75} />
+                          <Check />
                         </span>
                       </div>
                     );

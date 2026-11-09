@@ -56,6 +56,8 @@ export interface ActivityHeatmapProps {
   formatValue?: (value: number) => string;
   lessLabel?: string;
   moreLabel?: string;
+  /** Levels two to four also carry a growing centre dot, so intensity never depends on colour alone. On by default. */
+  markers?: boolean;
 }
 
 type Model = {
@@ -325,6 +327,7 @@ export function ActivityHeatmap({
   formatValue,
   lessLabel = "Less",
   moreLabel = "More",
+  markers = true,
 }: ActivityHeatmapProps) {
   const reduced = useReducedMotionSafe();
   const id = useId();
@@ -658,7 +661,11 @@ export function ActivityHeatmap({
   const summary = `${formatValue ? formatValue(model.total) : formats.number.format(model.total)} ${noun(model.total, unit)} · ${period}`;
 
   return (
-    <div ref={rootRef} className={[styles.root, className].filter(Boolean).join(" ")}>
+    <div
+      ref={rootRef}
+      className={[styles.root, className].filter(Boolean).join(" ")}
+      data-markers={markers || undefined}
+    >
       <div className={styles.header}>
         <p className={styles.summary}>
           <span className={styles.total}>

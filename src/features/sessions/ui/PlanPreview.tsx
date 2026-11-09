@@ -1,5 +1,7 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { Surface } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { AiIdea, CircleDashed, PanelRight, Play } from "../../../shared/ui/icons";
 import { planSummary, planTitle } from "../model/plan";
 import type { HarnessId, PlanBlockMeta, PlanBuildTarget } from "../model/session";
@@ -28,7 +30,7 @@ export function PlanPreview({
   onOpen,
   onBuild,
 }: Props) {
-  useLocale();
+  const t = useT();
   const title = planTitle(text);
   const summary = planSummary(text);
   const buildDisabled =
@@ -39,19 +41,23 @@ export function PlanPreview({
     plan?.status === "building" ||
     plan?.status === "built";
   const buildLabel =
-    plan?.status === "building" ? "Building…" : plan?.status === "built" ? "Built" : "Build";
+    plan?.status === "building"
+      ? t("Building…")
+      : plan?.status === "built"
+        ? t("Built")
+        : t("Build");
 
   return (
-    <div className="mb-2 overflow-hidden rounded-[12px] border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)">
+    <Surface variant="quiet" padding="none" className="mb-2 overflow-hidden">
       <div className="flex items-start gap-2.5 px-3 py-2.5">
         {streaming ? (
           <CircleDashed
-            className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)"
+            className="mt-0.5 icon-md shrink-0 text-(--ui-text-secondary)"
             strokeWidth={1.75}
           />
         ) : (
           <AiIdea
-            className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)"
+            className="mt-0.5 icon-md shrink-0 text-(--ui-text-secondary)"
             strokeWidth={1.75}
           />
         )}
@@ -62,21 +68,21 @@ export function PlanPreview({
               variant="item"
               type="button"
               className="block w-full truncate text-left"
-              title={title}
+              tooltip={title}
+              tooltipWhen="overflow"
               onClick={onOpen}
             >
               {title}
             </Button>
           ) : (
-            <span
-              className="block truncate font-sans text-[13px] font-medium text-(--ui-text-secondary)"
-              title={title}
-            >
-              {title}
-            </span>
+            <OverflowTooltip label={title}>
+              <span className="block truncate font-sans text-ui-secondary font-medium text-(--ui-text-secondary)">
+                {title}
+              </span>
+            </OverflowTooltip>
           )}
           {summary ? (
-            <p className="mt-0.5 line-clamp-3 font-sans text-[12px] leading-4.5 text-(--ui-text-secondary)">
+            <p className="mt-0.5 line-clamp-3 font-sans text-ui-caption leading-4.5 text-(--ui-text-secondary)">
               {summary}
             </p>
           ) : null}
@@ -86,27 +92,25 @@ export function PlanPreview({
                 <Button
                   variant="ghost"
                   type="button"
-                  title={t("Open in pane")}
+                  tooltip={t("Open in pane")}
                   aria-label={t("Open plan in pane")}
                   className="shrink-0"
                   onClick={onOpen}
                 >
-                  <PanelRight className="size-3" strokeWidth={1.75} />
+                  <PanelRight className="icon-xs" strokeWidth={1.75} />
                   {t("Open")}
                 </Button>
               ) : null}
               {onBuild ? (
-                <div className="flex items-center font-sans">
+                <div className="flex items-center gap-0.5 font-sans">
                   <Button
                     className="shrink-0"
-                    variant="ghost"
+                    variant="secondary"
                     type="button"
-                    title={t("Build this plan")}
                     disabled={buildDisabled}
-
                     onClick={() => onBuild()}
                   >
-                    <Play className="size-3" strokeWidth={1.75} />
+                    <Play className="icon-xs" strokeWidth={1.75} />
                     {buildLabel}
                   </Button>
                   {harness ? (
@@ -124,6 +128,6 @@ export function PlanPreview({
           ) : null}
         </div>
       </div>
-    </div>
+    </Surface>
   );
 }

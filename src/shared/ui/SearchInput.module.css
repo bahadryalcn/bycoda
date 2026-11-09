@@ -1,38 +1,95 @@
+@layer properties, theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .input:is([data-search-appearance="field"], [data-search-appearance="quiet"]),
+  .group:is([data-search-appearance="field"], [data-search-appearance="quiet"]) {
+    min-inline-size: 0;
+    inline-size: 100%;
+  }
+  .standalone:has(.input:is([data-search-appearance="field"], [data-search-appearance="quiet"])) {
+    inline-size: 100%;
+  }
+}
 .input::-webkit-search-cancel-button {
   display: none;
 }
-/* Search controls render outside `.bycoda-arc` roots, so Arc spacing tokens carry fallbacks. */
-.input[data-search-appearance="field"],
-.group[data-search-appearance="field"] {
+/* Search controls render outside `.bycoda-arc` roots, so Arc spacing tokens carry fallbacks.
+   The field frame uses the same roles as TextField and Select (resting boundary, hover, focus, invalid, read-only and
+   disabled); only the compact toolbar height is its own deliberate variant. */
+.input:is([data-search-appearance="field"], [data-search-appearance="quiet"]),
+.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]) {
   box-sizing: border-box;
-  min-block-size: var(--ui-control-height-compact);
-  min-inline-size: 0;
-  inline-size: 100%;
-  block-size: var(--ui-control-height-compact);
+  min-block-size: var(--ui-field-height-sm);
+  block-size: var(--ui-field-height-sm);
   padding-block: 0;
   padding-inline: var(--space-3, 0.625rem);
-  border: 1px solid var(--ui-tone-neutral-border);
-  border-radius: var(--ui-control-radius);
-  background: var(--ui-surface);
+  border: 1px solid var(--ui-field-border);
+  border-radius: var(--ui-field-radius);
+  background: var(--ui-surface-muted);
   color: var(--ui-tone-neutral-fg);
   font-size: var(--ui-font-secondary);
+  transition: border-color var(--motion-feedback-duration, 120ms) var(--motion-ease-out, ease-out);
 }
-.input[data-search-appearance="field"]::placeholder {
-  color: var(--ui-text-secondary);
+.input:is([data-search-appearance="field"], [data-search-appearance="quiet"])::placeholder {
+  color: var(--ui-text-muted);
 }
-.input[data-search-appearance="field"][aria-invalid="true"],
-.group[data-search-appearance="field"]:has(.input[aria-invalid="true"]) {
-  border-color: var(--ui-tone-danger-border);
+@media (hover: hover) and (pointer: fine) {
+  .input:is([data-search-appearance="field"], [data-search-appearance="quiet"]):hover:not(
+      :disabled,
+      :focus-visible,
+      [readonly],
+      [aria-invalid="true"]
+    ),
+  .group:is([data-search-appearance="field"], [data-search-appearance="quiet"]):hover:not(
+      :has(.input:disabled, .input:focus-visible, .input[readonly], .input[aria-invalid="true"])
+    ) {
+    border-color: var(--ui-field-border-hover);
+  }
 }
-.standalone:has(.input[data-search-appearance="field"]) {
-  inline-size: 100%;
+.input:is([data-search-appearance="field"], [data-search-appearance="quiet"]):focus-visible:not(
+    [aria-invalid="true"]
+  ),
+.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]):has(
+    .input:focus-visible
+  ):not(:has(.input[aria-invalid="true"])) {
+  border-color: var(--ui-field-border-focus);
 }
-.group[data-search-appearance="field"] {
+.input:is([data-search-appearance="field"], [data-search-appearance="quiet"])[aria-invalid="true"],
+.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]):has(
+    .input[aria-invalid="true"]
+  ) {
+  border-color: var(--ui-tone-danger-fg);
+}
+/* Read-only keeps normal ink and its resting boundary on a transparent frame (compare disabled, which dims). */
+.input:is([data-search-appearance="field"], [data-search-appearance="quiet"])[readonly]:not(
+    :disabled,
+    [aria-invalid="true"],
+    :focus-visible
+  ),
+.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]):has(
+    .input[readonly]
+  ):not(:has(.input:disabled, .input[aria-invalid="true"], .input:focus-visible)) {
+  background: transparent;
+}
+/* Form-size search aligns with md form controls and Buttons; compact stays the default. */
+.input:is(
+    [data-search-appearance="field"],
+    [data-search-appearance="quiet"]
+  )[data-search-size="md"],
+.group:is(
+    [data-search-appearance="field"],
+    [data-search-appearance="quiet"]
+  )[data-search-size="md"] {
+  min-block-size: var(--ui-field-height-md);
+  block-size: var(--ui-field-height-md);
+}
+.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]) {
   display: flex;
   align-items: center;
   gap: var(--space-2, 0.375rem);
 }
-.group[data-search-appearance="field"] .input {
+.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]) .input {
   min-inline-size: 0;
   flex: 1;
   inline-size: 100%;
@@ -44,13 +101,15 @@
   font-size: inherit;
   outline: none;
 }
-.group[data-search-appearance="field"] .input::placeholder {
-  color: var(--ui-text-secondary);
+.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]) .input::placeholder {
+  color: var(--ui-text-muted);
 }
-.input[data-search-appearance="field"]:disabled,
-.group[data-search-appearance="field"]:has(.input:disabled) {
+.input:is([data-search-appearance="field"], [data-search-appearance="quiet"]):disabled,
+.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]):has(.input:disabled) {
   color: var(--ui-control-disabled-fg);
+  border-color: var(--ui-control-disabled-border);
   background: var(--ui-control-disabled-surface);
+  cursor: not-allowed;
 }
 
 .standalone {
@@ -65,39 +124,57 @@
   min-inline-size: 0;
 }
 
-.standalone .input[data-search-filled] {
-  padding-inline-end: calc(var(--ui-control-clear-size, 24px) + 8px) !important;
+/* Keep compact controls independent of page-wide button defaults. */
+/* The clear action is a shared InlineAction (presentation owned by Button); this
+   module only places it inside the field. */
+.clear[data-search-clear] {
+  flex: none;
 }
 
-/* Keep compact controls independent of page-wide button defaults. */
-button.clear[data-search-clear] {
-  display: grid;
-  flex: none;
-  place-items: center;
-  inline-size: var(--ui-control-clear-size, 24px);
-  block-size: var(--ui-control-clear-size, 24px);
-  min-block-size: var(--ui-control-clear-size, 24px);
+/* Touch density keeps the clear action a full-size target. */
+html[data-control-density="touch"] .clear[data-search-clear] {
+  inline-size: var(--ui-control-clear-size);
+  block-size: var(--ui-control-clear-size);
+  min-block-size: var(--ui-control-clear-size);
+}
+
+:is(.input, .group)[data-search-appearance="quiet"]:not(:focus-within):not(
+    [aria-invalid="true"]
+  ):not(:has([aria-invalid="true"])) {
+  border-color: transparent;
+  background: transparent;
+}
+:is(.input, .group)[data-search-appearance="quiet"]:hover:not(:focus-within, :disabled) {
+  background: var(--ui-surface-hover);
+}
+
+/* A button that looks like the search text but opens a search surface elsewhere.
+   It paints nothing of its own: the group frame is the only surface (hover border,
+   focus ring), so no second box appears inside the field. */
+.trigger {
+  display: flex;
+  min-inline-size: 0;
+  flex: 1;
+  align-items: center;
+  block-size: 100%;
   padding: 0;
   border: 0;
-  border-radius: var(--ui-control-radius);
+  border-radius: 0;
   background: transparent;
-  color: var(--ui-text-secondary);
-  cursor: pointer;
+  color: var(--ui-text-muted);
+  font: inherit;
+  text-align: start;
+  cursor: text;
+  outline: none;
 }
-
-.standalone .clear {
-  position: absolute;
-  inset-inline-end: 4px;
+.trigger > span {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-
-@media (hover: hover) and (pointer: fine) {
-  button.clear[data-search-clear]:hover {
-    background: var(--ui-surface-hover);
-    color: var(--color-content);
-  }
-}
-
-button.clear[data-search-clear]:active {
-  background: var(--color-selection);
-  color: var(--color-content);
+.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]):has(
+    .trigger:focus-visible
+  ) {
+  border-color: var(--ui-field-border-focus);
 }

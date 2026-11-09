@@ -1,5 +1,6 @@
 import {
   questionsFromUnknown,
+  assertQuestionNotesSupported,
   selectedAnswerLabels,
   type UserQuestion,
   type UserQuestionReply,
@@ -103,6 +104,7 @@ export function codexQuestionResponse(
   reply: UserQuestionReply,
 ): { answers: Record<string, { answers: string[] }> } {
   if (reply.kind === "skipped") return { answers: {} };
+  assertQuestionNotesSupported(questions, reply);
   return {
     answers: Object.fromEntries(
       questions.flatMap((question) => {

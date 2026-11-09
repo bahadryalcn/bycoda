@@ -1,9 +1,14 @@
-import { useCallback, type MutableRefObject } from "react";
+import { useCallback, useRef, type MutableRefObject } from "react";
+import { CROSS_DELEGATION_KEYS } from "../../../shared/model/host-contracts/delegation";
 import {
   bindHarnessSession,
   forgetHarnessSession,
   type HarnessEvent,
 } from "../../../integrations/harness";
+import { t } from "../../../shared/i18n";
+import { deferPickUntilHandoffEnds } from "../../../features/sessions/model/deferredPicks";
+import { showSubmitNotice } from "./submit/submitNotice";
+import { repairStaleHandoff } from "../../../features/sessions/model/activeSubmits";
 import { switchSessionAccount } from "../../../features/sessions/model/accountSwitch";
 import {
   isPreparingHandoff,
@@ -17,9 +22,8 @@ import {
   saveLastModelSettings,
   saveRecentModelChoice,
 } from "../../../features/sessions/model/models";
-import { queuedModelTarget } from "../../../features/sessions/model/messageQueue";
+import { queuedModelTarget, runningTargetOf } from "../../../features/sessions/model/messageQueue";
 import {
-  providerAccountLabel,
   sessionProviderAccountId,
   supportsProviderAccounts,
   type ProviderAccountProvider,
@@ -31,6 +35,7 @@ import {
 } from "../../../features/sessions/model/session";
 import { sessionsRef, setSessions } from "../../../features/sessions/model/sessionsStore";
 import { transferProviderSession } from "../../../platform/tauri/providerSessionTransfer";
+import { recordModelSwitch } from "./recordModelSwitch";
 
 export interface SessionModelActionDeps {
   isMovingPane: (paneId: string) => boolean;
@@ -44,6 +49,8 @@ export interface SessionModelActionDeps {
   ) => void;
 }
 
+const MOVING_PANE_NOTICE = "The conversation is being moved. Try the change again in a moment.";
+
 export function useSessionModelActions({
   isMovingPane,
   removingSessionIds,
@@ -51,45 +58,97 @@ export function useSessionModelActions({
   flushHarnessEvents,
   promptProviderAccountSignIn,
 }: SessionModelActionDeps) {
+  // Newest model pick per session; an older idle account switch must not apply late.
+  const pickRequests = useRef(new Map<string, object>());
+  // A pick that waited for a handoff runs the newest handler, not the one that deferred it.
+  const latestModelChange = useRef<
+    (sessionId: string, harness: HarnessId, model: string, accountId?: string) => Promise<void>
+  >(async () => undefined);
   const onModelChange = useCallback(
     async (sessionId: string, harness: HarnessId, model: string, accountId?: string) => {
-      if (isMovingPane(sessionId)) return;
+      const say = (text: string) => {
+        enqueueHarnessEvent(sessionId, { type: "status", text });
+        flushHarnessEvents();
+      };
+      if (isMovingPane(sessionId)) {
+        say(MOVING_PANE_NOTICE);
+        return;
+      }
+      // A handoff block with no running submit behind it would block every pick.
+      repairStaleHandoff(sessionId);
       const current = sessionsRef.current.find((s) => s.id === sessionId);
       if (!current) return;
-      if (isPreparingHandoff(current)) return;
+      if (isPreparingHandoff(current)) {
+        // The handoff owns the provider and account until it ends: keep the pick
+        // and apply it afterwards, with a notice that stays in the transcript.
+        deferPickUntilHandoffEnds(sessionId, "model", () => {
+          void latestModelChange.current(sessionId, harness, model, accountId);
+        });
+        showSubmitNotice(
+          sessionId,
+          t(
+            "The provider handoff is still being prepared. Your pick applies as soon as it finishes.",
+          ),
+        );
+        return;
+      }
+      const request = {};
+      pickRequests.current.set(sessionId, request);
       let accountUpdate: ((session: Session) => Session) | undefined;
-      if (accountId && supportsProviderAccounts(harness)) {
-        if (
-          current.busy &&
-          (current.harness !== harness || sessionProviderAccountId(harness, current) !== accountId)
-        ) {
-          enqueueHarnessEvent(sessionId, {
-            type: "status",
-            text: "Wait for the current turn to finish before switching accounts.",
-          });
-          flushHarnessEvents();
-          return;
-        }
-        if (current.harness === harness) {
-          const result = await switchSessionAccount(sessionId, harness, accountId, {
+      // Recorded after the update below: the switch row replaces `blocks`, and the
+      // account update only applies to the snapshot it was computed from.
+      let switchNote: "summary" | undefined;
+      const wantsAccount = !!accountId && supportsProviderAccounts(harness);
+      // While a turn runs it keeps its own provider and account; a pick for
+      // the same provider with another account waits for the next idle send.
+      const running = current.busy ? runningTargetOf(current) : undefined;
+      const runningAccount = running
+        ? (running.providerAccountId ??
+          (supportsProviderAccounts(running.harness) && running.harness === current.harness
+            ? sessionProviderAccountId(running.harness, current)
+            : undefined))
+        : undefined;
+      const deferAccount = !!(
+        wantsAccount &&
+        running &&
+        harness === running.harness &&
+        accountId !== runningAccount
+      );
+      // Account that takes effect now; a deferred or provider-less pick has none.
+      const nowAccount = wantsAccount && !deferAccount ? accountId : undefined;
+      // Idle only: a running turn is never moved, and an armed provider has no process yet.
+      if (
+        !running &&
+        nowAccount &&
+        supportsProviderAccounts(harness) &&
+        current.harness === harness
+      ) {
+        let result: Awaited<ReturnType<typeof switchSessionAccount>>;
+        try {
+          result = await switchSessionAccount(sessionId, harness, nowAccount, {
             transfer: transferProviderSession,
             forget: forgetHarnessSession,
             bind: bindHarnessSession,
             latest: (id) => sessionsRef.current.find((s) => s.id === id),
-            label: providerAccountLabel,
             removing: (id) => removingSessionIds.current.has(id),
+            ownsRequest: () => pickRequests.current.get(sessionId) === request,
           });
-          if (result.kind === "stale" || result.kind === "refused") return;
-          if (result.kind === "switched") {
-            accountUpdate = result.update;
-            if (result.status) {
-              enqueueHarnessEvent(sessionId, {
-                type: "status",
-                text: result.status,
-              });
-              flushHarnessEvents();
-            }
-          }
+        } catch (error) {
+          console.warn("App operation failed", error);
+          say("Could not switch accounts. Try again.");
+          return;
+        }
+        if (result.kind === "stale") {
+          say("The conversation changed while switching accounts. Pick the account again.");
+          return;
+        }
+        if (result.kind === "refused") {
+          say(result.status);
+          return;
+        }
+        if (result.kind === "switched") {
+          accountUpdate = result.update;
+          if (result.mode === "handoff") switchNote = "summary";
         }
       }
       const resolved = resolveModel(harness, model);
@@ -99,16 +158,18 @@ export function useSessionModelActions({
       }
       const modelSettings = preferredModelSettings(resolved, current.modelSettings);
       const plan = planComposerSwitch(current, harness);
-      if (
+      const handoffAccount =
+        !running &&
         plan.kind === "revert" &&
-        accountId &&
-        accountId !== (plan.restoreProviderAccountId ?? "default")
-      ) {
-        await forgetHarnessSession(harness, sessionId);
+        nowAccount &&
+        nowAccount !== (plan.restoreProviderAccountId ?? "default");
+      if (handoffAccount) {
+        await forgetQuietly(harness, sessionId);
       }
       if (plan.kind === "empty") {
-        void forgetHarnessSession(plan.forget, sessionId);
+        void forgetQuietly(plan.forget, sessionId);
       }
+      const before = sessionsRef.current.find((s) => s.id === sessionId);
       setSessions((prev) =>
         prev.map((s) => {
           if (s.id !== sessionId) return s;
@@ -118,7 +179,12 @@ export function useSessionModelActions({
             resolved.id,
             modelSettings,
           );
-          if (accountId && supportsProviderAccounts(harness)) next.providerAccountId = accountId;
+          if (nowAccount) next.providerAccountId = nowAccount;
+          // A pick for another account of the running provider waits; any
+          // other pick for it (or another provider) replaces a waiting one.
+          if (deferAccount) next.nextProviderAccountId = accountId;
+          else if (wantsAccount || next.harness !== s.harness)
+            next.nextProviderAccountId = undefined;
           if (s.busy && !s.runningModelTarget)
             next.runningModelTarget = {
               ...queuedModelTarget(s),
@@ -130,8 +196,8 @@ export function useSessionModelActions({
             return { ...next, pendingSwitch: plan.pending };
           }
           if (plan.kind === "revert") {
-            if (accountId && accountId !== (plan.restoreProviderAccountId ?? "default")) {
-              return withAccountHandoff({ ...next, pendingSwitch: undefined }, accountId);
+            if (handoffAccount) {
+              return withAccountHandoff({ ...next, pendingSwitch: undefined }, nowAccount);
             }
             return {
               ...next,
@@ -141,9 +207,9 @@ export function useSessionModelActions({
                 : { providerSessionId: undefined }),
               ...(plan.restoreProviderAccountId
                 ? {
-                    providerAccountId: accountId ?? plan.restoreProviderAccountId,
+                    providerAccountId: nowAccount ?? plan.restoreProviderAccountId,
                   }
-                : { providerAccountId: accountId }),
+                : { providerAccountId: nowAccount }),
             };
           }
           if (plan.kind === "empty") {
@@ -152,17 +218,35 @@ export function useSessionModelActions({
           return next;
         }),
       );
-      if (accountId && supportsProviderAccounts(harness)) {
+      const deferred = deferAccount && !!accountId && supportsProviderAccounts(harness);
+      recordModelSwitch(
+        sessionId,
+        before,
+        deferred ? { note: "deferred", accountId } : { note: switchNote },
+      );
+      if (nowAccount && supportsProviderAccounts(harness)) {
+        promptProviderAccountSignIn(sessionId, harness, nowAccount);
+      } else if (deferAccount && accountId && supportsProviderAccounts(harness)) {
         promptProviderAccountSignIn(sessionId, harness, accountId);
       }
     },
     [enqueueHarnessEvent, flushHarnessEvents, promptProviderAccountSignIn],
   );
 
+  latestModelChange.current = onModelChange;
+
   const onModelSettingsChange = useCallback(
     (sessionId: string, modelSettings: Record<string, string>) => {
-      if (isMovingPane(sessionId)) return;
-      saveLastModelSettings(modelSettings);
+      if (isMovingPane(sessionId)) {
+        enqueueHarnessEvent(sessionId, { type: "status", text: MOVING_PANE_NOTICE });
+        flushHarnessEvents();
+        return;
+      }
+      const current = sessionsRef.current.find((session) => session.id === sessionId);
+      const changed = [...CROSS_DELEGATION_KEYS, "advisor", "subagentModel"].filter(
+        (key) => modelSettings[key] !== current?.modelSettings[key],
+      );
+      saveLastModelSettings(modelSettings, "overwrite", changed);
       setSessions((prev) =>
         prev.map((s) =>
           s.id === sessionId
@@ -182,13 +266,29 @@ export function useSessionModelActions({
         ),
       );
     },
-    [],
+    [enqueueHarnessEvent, flushHarnessEvents],
   );
 
-  const onRuntimeModeChange = useCallback((sessionId: string, runtimeMode: RuntimeMode) => {
-    if (isMovingPane(sessionId)) return;
-    setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, runtimeMode } : s)));
-  }, []);
+  const onRuntimeModeChange = useCallback(
+    (sessionId: string, runtimeMode: RuntimeMode) => {
+      if (isMovingPane(sessionId)) {
+        enqueueHarnessEvent(sessionId, { type: "status", text: MOVING_PANE_NOTICE });
+        flushHarnessEvents();
+        return;
+      }
+      setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, runtimeMode } : s)));
+    },
+    [enqueueHarnessEvent, flushHarnessEvents],
+  );
 
   return { onModelChange, onModelSettingsChange, onRuntimeModeChange };
+}
+
+/** Cleanup trouble must not lose a pick: the next send spawns a fresh child anyway. */
+async function forgetQuietly(harness: HarnessId, sessionId: string): Promise<void> {
+  try {
+    await forgetHarnessSession(harness, sessionId);
+  } catch (error) {
+    console.warn("App operation failed", error);
+  }
 }

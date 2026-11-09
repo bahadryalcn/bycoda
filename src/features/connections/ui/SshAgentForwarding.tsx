@@ -1,8 +1,12 @@
+import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { Modal } from "../../../shared/ui/Modal";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { t } from "../../../shared/i18n";
 import {
   validSshRuntimeConfiguration,
@@ -178,56 +182,65 @@ export function SshAgentForwarding({
     }
   };
   return (
-    <Modal title={t("Forward SSH agent")} onClose={onClose} size="sm">
-      <div className="flex min-w-0 flex-col gap-3 p-4">
-        <p className="text-sm">
+    <Modal
+      title={t("Forward SSH agent")}
+      onClose={onClose}
+      size="sm"
+      footer={
+        <ModalActions>
+          <Button variant="ghost" onClick={onClose}>
+            {t("Cancel")}
+          </Button>
+          <Button disabled={active?.loading} onClick={() => void request()}>
+            {t("Request new review")}
+          </Button>
+          <Button variant="primary" disabled={!valid} onClick={approve}>
+            {t("Approve and connect")}
+          </Button>
+        </ModalActions>
+      }
+    >
+      <div className="flex min-w-0 flex-col gap-3">
+        <Alert tone="warning">
           {t(
             "The remote target can use identities from your SSH agent while this terminal is connected. Approve only a trusted target.",
           )}
-        </p>
-        {active?.loading ? (
-          <p role="status" className="text-xs text-(--ui-text-muted)">
-            {t("Loading…")}
-          </p>
-        ) : null}
-        {active?.error ? (
-          <Alert tone="danger" role="alert">
-            {active.error}
-          </Alert>
-        ) : null}
+        </Alert>
+        {active?.loading ? <LoadingText /> : null}
+        {active?.error ? <Alert tone="danger">{active.error}</Alert> : null}
         {review ? (
           <>
-            <p className="break-all text-sm font-medium">
+            <p className="break-all text-ui-body font-medium">
               {sshEndpointPreview({ ...review.summary, user: review.summary.user ?? undefined })}
             </p>
             {server.sshEndpoint?.httpProxy ? (
-              <p className="break-all text-xs text-(--ui-text-muted)">
+              <p className="break-all text-ui-caption text-(--ui-text-muted)">
                 {server.sshEndpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}
                 : {sshEndpointPreview(server.sshEndpoint.httpProxy)}
               </p>
             ) : null}
             {review.summary.configuration ? (
-              <details className="text-xs text-(--ui-text-muted)">
-                <summary className="cursor-pointer">{t("Effective SSH configuration")}</summary>
-                <dl className="mbs-2 grid grid-cols-2 gap-1">
+              <Disclosure
+                size="sm"
+                className="text-ui-caption text-(--ui-text-muted)"
+                summary={t("Effective SSH configuration")}
+              >
+                <DescriptionList size="sm">
                   {Object.entries(review.summary.configuration.provenance).map(
                     ([field, source]) => (
-                      <div key={field} className="contents">
-                        <dt>{field}</dt>
-                        <dd>
-                          {t(
-                            source.source === "group"
-                              ? "Group"
-                              : source.source === "connection"
-                                ? "Connection"
-                                : "Default",
-                          )}
-                          {source.groupId ? ` · ${source.groupId} · r${source.revision}` : ""}
-                        </dd>
-                      </div>
+                      <DescriptionItem key={field} term={field}>
+                        {t(
+                          source.source === "group"
+                            ? "Group"
+                            : source.source === "connection"
+                              ? "Connection"
+                              : "Default",
+                        )}
+                        {source.groupId ? ` · ${source.groupId} · r${source.revision}` : ""}
+                      </DescriptionItem>
                     ),
                   )}
-                </dl>
+                </DescriptionList>
                 {review.summary.configuration.environment.length ? (
                   <p>
                     {t("Environment shell")}:{" "}
@@ -243,35 +256,24 @@ export function SshAgentForwarding({
                     </code>
                   </p>
                 ))}
-              </details>
+              </Disclosure>
             ) : null}
-            <p className="text-xs text-(--ui-text-muted)">
+            <p className="text-ui-caption text-(--ui-text-muted)">
               {t("One terminal only. Approval is not saved.")} ·{" "}
               {Math.max(0, Math.ceil((review.expiresAt - clock) / 1000))} s
             </p>
             {!valid ? (
-              <p role="status" className="text-xs text-(--ui-text-muted)">
+              <InlineMessage tone="warning">
                 {t("This review expired or is unavailable. Request a new review.")}
-              </p>
+              </InlineMessage>
             ) : null}
           </>
         ) : null}
         {!active || active.changed ? (
-          <p role="status" className="text-xs text-(--ui-text-muted)">
+          <InlineMessage tone="warning">
             {t("Agent forwarding target changed. Request a new review.")}
-          </p>
+          </InlineMessage>
         ) : null}
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          <Button disabled={active?.loading} onClick={() => void request()}>
-            {t("Request new review")}
-          </Button>
-          <Button variant="primary" disabled={!valid} onClick={approve}>
-            {t("Approve and connect")}
-          </Button>
-        </div>
       </div>
     </Modal>
   );

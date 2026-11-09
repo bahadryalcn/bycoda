@@ -30,17 +30,24 @@ const REVEAL_CATCHUP_S = 0.22;
 const REVEAL_HOLD_MS = 150;
 export const REVEAL_MAX_BACKLOG = 4096;
 export const REVEAL_MAX_LAG_MS = 500;
+export const MAX_PACED_TEXT_CHARS = 32 * 1024;
 
 // All visible replies advance in one browser callback, so React can batch their
 // updates. Keep no idle frame alive once every reply has caught up or unmounted.
 const revealFrames = new Set<(now: number) => boolean>();
 let revealFrame = 0;
 /**
- * The reveal advances at most at 60 Hz. On a 240 Hz display every frame would
- * otherwise re-render the reply and re-parse its markdown four times as often
- * for no visible gain; the rate math already scales with elapsed time.
+ * The reveal re-renders at most about 24 Hz. Each step re-runs the markdown
+ * pipeline on the open block, which is the main cost of a streaming reply. The
+ * speed is time-based (characters per elapsed second, see `tick`), so a lower
+ * frame rate reveals the same text per second, just in slightly larger steps.
  */
-const REVEAL_FRAME_MS = 1000 / 60 - 1;
+const REVEAL_FRAME_MS = 41;
+/**
+ * At most this many of the newest words animate; older fresh words show as
+ * plain text. Bounds the animated elements, and so compositor layers, per frame.
+ */
+export const MAX_FADING_WORDS = 6;
 let lastRevealRun = -Infinity;
 function runRevealFrame(now: number) {
   revealFrame = 0;
@@ -112,11 +119,17 @@ export function usePacedText(
   const backlogSince = useRef<number | null>(null);
   const [direct, setDirect] = useState(false);
   useEffect(() => {
+    if (!streaming && !revealOnMount) return;
     const preference = window.matchMedia?.("(prefers-reduced-motion: reduce)");
-    const update = () =>
-      setDirect(
-        !!preference?.matches || window.localStorage.getItem("bycoda-low-latency-text") === "true",
-      );
+    const update = () => {
+      let lowLatency = false;
+      try {
+        lowLatency = window.localStorage.getItem("bycoda-low-latency-text") === "true";
+      } catch {
+        // Storage can be unavailable in restricted webviews.
+      }
+      setDirect(!!preference?.matches || lowLatency);
+    };
     update();
     preference?.addEventListener?.("change", update);
     window.addEventListener("storage", update);
@@ -124,7 +137,7 @@ export function usePacedText(
       preference?.removeEventListener?.("change", update);
       window.removeEventListener("storage", update);
     };
-  }, []);
+  }, [streaming, revealOnMount]);
   const [, rerender] = useReducer((n: number) => n + 1, 0);
 
   if (streaming) pacing.current = true;
@@ -133,6 +146,7 @@ export function usePacedText(
   if (
     !visible ||
     !enabled ||
+    text.length > MAX_PACED_TEXT_CHARS ||
     direct ||
     (!streaming && !mountReveal.current) ||
     text.length - shown.current > REVEAL_MAX_BACKLOG
@@ -163,7 +177,7 @@ export function usePacedText(
         rerender();
         return false;
       }
-      const dt = Math.min(0.05, (now - last) / 1000);
+      const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
       const backlog = text.length - position;
       const speed = Math.max(REVEAL_MIN_CPS, backlog / REVEAL_CATCHUP_S);
@@ -391,7 +405,9 @@ function countWords(parent: Root | Element): number {
 export function rehypeWordFade(options?: WordFadeOptions) {
   return (tree: Root) => {
     const total = countWords(tree);
-    const firstFresh = options?.freshWords ? total - options.freshWords() : -1;
+    const firstFresh = options?.freshWords
+      ? total - Math.min(options.freshWords(), MAX_FADING_WORDS)
+      : -1;
     let seen = 0;
 
     const wrap = (value: string): ElementContent[] => {

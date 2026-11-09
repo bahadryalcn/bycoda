@@ -7,7 +7,7 @@ use crate::fs::expand_home;
 const MAX_BACKGROUND_BYTES: u64 = 25 * 1024 * 1024;
 const ALLOWED_EXT: [&str; 5] = ["png", "jpg", "jpeg", "gif", "webp"];
 
-fn backgrounds_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn backgrounds_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
         .app_data_dir()
@@ -66,7 +66,7 @@ fn remove_project_background(dir: &Path, project: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn background_extension(source: &Path) -> Result<String, String> {
+pub(crate) fn background_extension(source: &Path) -> Result<String, String> {
     let ext = source
         .extension()
         .and_then(|value| value.to_str())
@@ -79,9 +79,9 @@ fn background_extension(source: &Path) -> Result<String, String> {
     }
 }
 
-fn save_chat_background_sync(app: &AppHandle, source_path: &str) -> Result<String, String> {
-    let source = expand_home(source_path);
-    let meta = std::fs::metadata(&source).map_err(|e| format!("{}: {e}", source.display()))?;
+/// Checks that `source` is a regular, small-enough image file and returns its lowercase extension.
+pub(crate) fn validate_background_file(source: &Path) -> Result<String, String> {
+    let meta = std::fs::metadata(source).map_err(|e| format!("{}: {e}", source.display()))?;
     if !meta.is_file() {
         return Err("Not a file".into());
     }
@@ -91,7 +91,12 @@ fn save_chat_background_sync(app: &AppHandle, source_path: &str) -> Result<Strin
             MAX_BACKGROUND_BYTES / 1024 / 1024
         ));
     }
-    let ext = background_extension(&source)?;
+    background_extension(source)
+}
+
+fn save_chat_background_sync(app: &AppHandle, source_path: &str) -> Result<String, String> {
+    let source = expand_home(source_path);
+    let ext = validate_background_file(&source)?;
     let dir = backgrounds_dir(app)?;
     let dest = dir.join(format!("chat-background.{ext}"));
     let temp = dir.join(".chat-background-upload");
@@ -112,17 +117,7 @@ fn save_project_chat_background_sync(
         return Err("Project is required".into());
     }
     let source = expand_home(source_path);
-    let meta = std::fs::metadata(&source).map_err(|e| format!("{}: {e}", source.display()))?;
-    if !meta.is_file() {
-        return Err("Not a file".into());
-    }
-    if meta.len() > MAX_BACKGROUND_BYTES {
-        return Err(format!(
-            "Background is too large (maximum {} MB).",
-            MAX_BACKGROUND_BYTES / 1024 / 1024
-        ));
-    }
-    let ext = background_extension(&source)?;
+    let ext = validate_background_file(&source)?;
     let dir = backgrounds_dir(app)?;
     let stem = project_background_stem(project);
     let dest = dir.join(format!("{stem}.{ext}"));

@@ -19,6 +19,20 @@ const user = (id: string, extra: Partial<Block> = {}): Block => ({
 });
 const ran = (id: string, output: string, exitCode = 0): Block =>
   finishShellBlock(shellBlock(id, id), { output, exitCode, timedOut: false });
+it("finishes the display while preserving unverified physical retirement as a failure", () => {
+  const finished = finishShellBlock(shellBlock("original", "long command"), {
+    output: "termination failed",
+    exitCode: 0,
+    timedOut: true,
+    terminationFailed: "tree unknown",
+  });
+  expect(finished.shell).toMatchObject({
+    command: "long command",
+    exitCode: null,
+    terminationFailed: "tree unknown",
+  });
+  expect(finished.shell?.running).not.toBe(true);
+});
 
 describe("parseShellCommand", () => {
   it("reads the command after a leading !", () => {

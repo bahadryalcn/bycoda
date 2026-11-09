@@ -1,4 +1,6 @@
+import type { BadgeTone } from "../../../shared/ui/Badge";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import type { BadgeListItem } from "../../../shared/ui/BadgeList";
 import { labelColor } from "../../../shared/lib/colorUtils";
 import { t, useLocale } from "../../../shared/i18n";
 import type { CiRepairRequest } from "../model/ciRepair";
@@ -12,7 +14,7 @@ import {
   GitPullRequestDraft,
   type IconComponent,
 } from "../../../shared/ui/icons";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
@@ -72,8 +74,8 @@ export function InboxProjectMark({
     return (
       <ProjectLogoIcon
         path={project.logoPath}
-        className="size-3.5 shrink-0 rounded-sm"
-        imageClassName="size-3.5"
+        className="icon-sm shrink-0 rounded-sm"
+        imageClassName="icon-sm"
       />
     );
   }
@@ -82,7 +84,7 @@ export function InboxProjectMark({
       project={project.name}
       color={project.mascotColor}
       name={project.mascotName}
-      className="size-3 shrink-0"
+      className="icon-xs shrink-0"
     />
   );
 }
@@ -94,7 +96,7 @@ export type CiRepairProps = {
 
 export type InboxStatusMark = {
   Icon: IconComponent;
-  className: string;
+  tone: BadgeTone;
   label: string;
 };
 
@@ -105,12 +107,12 @@ export function inboxStatusMark(item: InboxItem): InboxStatusMark {
   if (label === "Draft") {
     return {
       Icon: GitPullRequestDraft,
-      className: "text-(--ui-text-secondary)",
+      tone: "neutral",
       label,
     };
   }
   if (label === "Merged") {
-    return { Icon: GitMerge, className: "text-(--color-feature)", label };
+    return { Icon: GitMerge, tone: "accent", label };
   }
   if (label === "Closed") {
     if (
@@ -118,67 +120,84 @@ export function inboxStatusMark(item: InboxItem): InboxStatusMark {
       item.kind === "issue" &&
       item.stateReason?.trim().toLowerCase() === "completed"
     ) {
-      return { Icon: CheckCircle, className: "text-(--color-feature)", label };
+      return { Icon: CheckCircle, tone: "success", label: "Completed" };
+    }
+    if (
+      item.provider === "github" &&
+      item.kind === "issue" &&
+      item.stateReason?.trim().toLowerCase() === "not_planned"
+    ) {
+      return { Icon: CircleX, tone: "neutral", label: "Not planned" };
     }
     return {
       Icon: pr ? GitPullRequestClosed : CircleX,
-      className: "text-(--ui-tone-danger-fg)",
+      tone: "danger",
       label,
     };
   }
   return {
     Icon: pr ? GitPullRequest : CircleDot,
-    className: "text-(--ui-tone-success-fg)",
+    tone: "success",
     label,
   };
+}
+
+export function InboxAvatar({
+  name,
+  avatarUrl,
+  size = 20,
+}: {
+  name: string;
+  avatarUrl?: string;
+  size?: number;
+}) {
+  useLocale();
+  const [failedUrl, setFailedUrl] = useState<string | undefined>();
+  const initial = name.trim().charAt(0).toUpperCase() || "?";
+
+  return avatarUrl && failedUrl !== avatarUrl ? (
+    <img
+      src={avatarUrl}
+      alt=""
+      width={size}
+      height={size}
+      referrerPolicy="no-referrer"
+      draggable={false}
+      onError={() => setFailedUrl(avatarUrl)}
+      className="shrink-0 rounded-full bg-(--ui-surface-raised) object-cover"
+      style={{ width: size, height: size }}
+    />
+  ) : (
+    <span
+      aria-hidden
+      className="grid shrink-0 place-items-center rounded-full bg-(--ui-surface-raised) font-medium text-(--ui-text-secondary)"
+      style={{
+        width: size,
+        height: size,
+        fontSize: Math.max(9, Math.round(size * 0.45)),
+      }}
+    >
+      {initial}
+    </span>
+  );
 }
 
 export function InboxPerson({
   name,
   avatarUrl,
-  size = 20,
+  size = "md",
   className = "",
 }: {
   name: string;
   avatarUrl?: string;
-  size?: number;
+  /** `sm` is the 16px avatar of metadata rows; `md` (default) the 20px list avatar. */
+  size?: "sm" | "md";
   className?: string;
 }) {
   useLocale();
-  const [failed, setFailed] = useState(!avatarUrl);
-  const initial = name.trim().charAt(0).toUpperCase() || "?";
-
-  useEffect(() => {
-    setFailed(!avatarUrl);
-  }, [avatarUrl]);
-
   return (
     <span className={`inline-flex min-w-0 items-center gap-1.5 ${className}`}>
-      {avatarUrl && !failed ? (
-        <img
-          src={avatarUrl}
-          alt=""
-          width={size}
-          height={size}
-          referrerPolicy="no-referrer"
-          draggable={false}
-          onError={() => setFailed(true)}
-          className="shrink-0 rounded-full bg-(--ui-surface-raised) object-cover"
-          style={{ width: size, height: size }}
-        />
-      ) : (
-        <span
-          aria-hidden
-          className="grid shrink-0 place-items-center rounded-full bg-(--ui-surface-raised) font-medium text-(--ui-text-secondary)"
-          style={{
-            width: size,
-            height: size,
-            fontSize: Math.max(9, Math.round(size * 0.45)),
-          }}
-        >
-          {initial}
-        </span>
-      )}
+      <InboxAvatar name={name} avatarUrl={avatarUrl} size={size === "sm" ? 16 : 20} />
       <span className="min-w-0 truncate">{name}</span>
     </span>
   );
@@ -200,6 +219,7 @@ export function InboxProjectPicker({
     <div className="flex min-w-0 items-center gap-1">
       {selected ? <InboxProjectMark project={selected} /> : null}
       <SearchableSelect
+        hideLabel
         label={t("Choose project")}
         disabled={!projects.length}
         value={selected?.path ?? ""}
@@ -214,25 +234,22 @@ export function InboxProjectPicker({
   );
 }
 
-export function InboxLabel({ label, compact = false }: { label: GithubLabel; compact?: boolean }) {
-  useLocale();
-  const color = labelColor(label.color);
-  return (
-    <span
-      className={`inline-flex min-w-0 items-center gap-1 rounded px-1.5 py-px text-(length:--ui-font-caption) text-(--ui-text-secondary) bg-(--ui-surface-raised) ${
-        compact ? "max-w-20" : ""
-      }`}
-    >
-      {color ? (
+/** Service labels as BadgeList items; the label's own colour stays as the leading dot. */
+export function inboxLabelItems(labels: readonly GithubLabel[]): BadgeListItem[] {
+  return labels.map((label) => {
+    const color = labelColor(label.color);
+    return {
+      id: label.name,
+      label: label.name,
+      icon: color ? (
         <span
           aria-hidden
           className="size-1.5 shrink-0 rounded-full"
           style={{ backgroundColor: color }}
         />
-      ) : null}
-      <span className="min-w-0 truncate">{label.name}</span>
-    </span>
-  );
+      ) : undefined,
+    };
+  });
 }
 
 export { labelColor } from "../../../shared/lib/colorUtils";

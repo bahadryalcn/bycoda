@@ -113,8 +113,12 @@ it("keeps the panel open as steps arrive and opens read/write files from their r
   };
   act(() => root.render(createElement(Harness, { block: updated, busy: true })));
   const panel = container.querySelector('[role="dialog"]')!;
-  const read = panel.querySelector<HTMLButtonElement>('button[title="src/read.ts"]');
-  const write = panel.querySelector<HTMLButtonElement>('button[title="src/write.ts"]');
+  const fileButton = (label: string) =>
+    [...panel.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === label,
+    ) ?? null;
+  const read = fileButton("src/read.ts");
+  const write = fileButton("src/write.ts");
   expect(read).not.toBeNull();
   expect(write).not.toBeNull();
   act(() => read!.click());

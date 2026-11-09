@@ -158,3 +158,21 @@ it.each(["escape", "outside"])(
     expect(confirm).not.toHaveBeenCalled();
   },
 );
+
+it("puts the danger tone only on the confirming action and never runs without it", async () => {
+  const confirm = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(ConfirmMorph, { label: "Delete note", onConfirm: confirm, confirmTimeout: 0 }),
+    ),
+  );
+  await click("Delete note");
+  expect(confirm).not.toHaveBeenCalled();
+  const ok = button("Confirm delete");
+  const cancel = button("Cancel");
+  expect(ok.getAttribute("data-button-tone")).toBe("danger");
+  expect(cancel.getAttribute("data-button-tone")).toBe("neutral");
+  expect(cancel.getAttribute("data-button-hierarchy")).toBe("ghost");
+  await click("Cancel");
+  expect(confirm).not.toHaveBeenCalled();
+});

@@ -1,17 +1,20 @@
-import { ProjectMascot } from "../../projects/ui/ProjectMascot";
+import { ProjectMascot } from "../../projects/public/ProjectMascot";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 
-/** A quiet shared-work illustration for an empty workspace. */
+/** A quiet empty state for a workspace with no discussion yet. */
 export function DiscussionEmpty({ message }: { message: string }) {
   return (
-    <div className="flex min-h-full flex-col items-center justify-center gap-5 px-6 py-10 text-center">
-      <div className="grid size-20 place-items-center rounded-2xl border border-(--ui-tone-accent-border) bg-(--ui-tone-accent-subtle)">
+    <EmptyState
+      context="panel"
+      kind="empty"
+      icon={
         <ProjectMascot
           project="workspace"
           name="union"
-          className="size-10 text-(--ui-tone-accent-fg)"
+          className="size-8 text-(--ui-text-secondary)"
         />
-      </div>
-      <p className="max-w-sm text-[13px] leading-relaxed text-(--ui-text-secondary)">{message}</p>
-    </div>
+      }
+      description={message}
+    />
   );
 }

@@ -51,6 +51,17 @@ let finishTransfer: (() => void) | undefined;
 let recoveryMode: "offline" | "pending" | "ready" = "offline";
 let finishRecovery: ((value: unknown) => void) | undefined;
 const forwardStatuses = new Map<string, Record<string, unknown>>();
+if (params.get("forwardState") === "stopping" || params.get("forwardState") === "unknown") {
+  const state = params.get("forwardState");
+  forwardStatuses.set("ssh-duplicate:proxy-route", {
+    id: "ssh-duplicate:proxy-route",
+    connectionId: "ssh-duplicate",
+    state,
+    ...(state === "unknown"
+      ? { error: "Forward stop could not be confirmed. Retry stop before starting again." }
+      : {}),
+  });
+}
 let workspaceSnapshot: unknown = params.has("serverRestoreFixture")
   ? {
       tabs: [],
@@ -489,6 +500,16 @@ Object.assign(window, {
           typeof input.identityFile === "string" ? input.identityFile : undefined;
         return structuredClone(record);
       }
+      if (command === "server_ssh_remove") {
+        const index = sshRecords.findIndex((record) => record.id === input.id);
+        if (index >= 0) sshRecords.splice(index, 1);
+        return;
+      }
+      if (command === "remote_disconnect") {
+        const index = machines.findIndex((machine) => machine.id === input.machineId);
+        if (index >= 0) machines.splice(index, 1);
+        return;
+      }
       if (command === "server_ssh_save") {
         const existing = sshRecords.findIndex((record) => record.id === input.id);
         const record: ServerRecord = {
@@ -611,6 +632,8 @@ Object.assign(window, {
       }
       if (command === "remote_request")
         throw new Error("Machine is unreachable: connection refused");
+      // Closing a terminal asks the PTY for its foreground process; an idle shell closes without a prompt.
+      if (command === "pty_status") return { foreground: null, supported: true };
       if (command.includes("is_maximized") || command.includes("is_fullscreen")) return false;
       return null;
     },
@@ -654,7 +677,7 @@ function Fixture() {
     ) : null;
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", gap: 8, padding: 4 }}>
+      <div style={{ display: "flex", gap: 8, padding: "4px 16px" }}>
         <Button onClick={() => setVisible(!visible)}>Toggle servers</Button>
       </div>
       <div style={{ display: "flex", minHeight: 0, flex: 1 }}>

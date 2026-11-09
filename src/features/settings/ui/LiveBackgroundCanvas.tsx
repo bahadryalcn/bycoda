@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import "./LiveBackgroundCanvas.css";
 import {
   decorativeMotionEnabled,
   subscribeDecorativeMotion,
@@ -11,19 +12,37 @@ import {
 } from "../model/liveBackground";
 import {
   CLOSED_SIGNAL,
-  createLiveBackgroundScene,
   createLiveSignalDriver,
   type LiveBackgroundPalette,
-  type LiveBackgroundScene,
   type LiveSignal,
 } from "./live-background";
+import {
+  createBackgroundRenderer,
+  isAmbientBackground,
+  type BackgroundRenderer,
+} from "./live-background/renderer";
 
 const FRAME_INTERVAL = 1000 / 30;
 const MAX_PIXEL_RATIO = 1.5;
+// Full-pane scenes must not allocate a native-resolution 4K/8K drawing buffer.
+const MAX_BACKING_PIXELS = 2_500_000;
+function pixelRatio(width: number, height: number): number {
+  return Math.min(
+    window.devicePixelRatio || 1,
+    MAX_PIXEL_RATIO,
+    Math.sqrt(MAX_BACKING_PIXELS / Math.max(1, width * height)),
+  );
+}
 /** A still frame for reduced motion still shows a populated scene. */
 const STILL_TIME = 12;
-/** Presence, open mouth and energy for a still thumbnail: the face and reaction both show. */
-const STILL_SIGNAL: LiveSignal = { presence: 1, open: 0.5, energy: 0.6 };
+/** Frames continue this long after the scene is hidden and no new work arrives. */
+const SETTLE_SECONDS = 2;
+/** A provider may remain busy while waiting for a tool or approval. */
+const ACTIVITY_GRACE_SECONDS = 1.5;
+/** Ordinary still frames retain the resting composition of a quiet conversation. */
+const STILL_SIGNAL: LiveSignal = CLOSED_SIGNAL;
+/** Picker demos show their identifying artwork without animating or changing chat rest. */
+const STILL_DEMO_SIGNAL: LiveSignal = { presence: 1 };
 
 /** Reads a token through a probe so color-mix() and var() arrive resolved. */
 function resolveColor(probe: HTMLElement, token: string): string {
@@ -31,32 +50,16 @@ function resolveColor(probe: HTMLElement, token: string): string {
   return getComputedStyle(probe).color;
 }
 
-function channels(color: string): readonly [number, number, number] {
-  const canvas = document.createElement("canvas");
-  canvas.width = 1;
-  canvas.height = 1;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return [0, 0, 0];
-  ctx.fillStyle = color;
-  ctx.fillRect(0, 0, 1, 1);
-  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-  return [r, g, b];
-}
-
-/** Reuses the previous channels when the resolved tokens did not change. */
+/** Reuses the previous palette when the resolved tokens did not change. */
 function readPalette(probe: HTMLElement, previous?: LiveBackgroundPalette): LiveBackgroundPalette {
   const content = resolveColor(probe, "--color-content");
   const accent = resolveColor(probe, "--color-accent");
-  const signal = resolveColor(probe, "--live-background-signal");
-  const spectrum = resolveColor(probe, "--live-background-spectrum");
   probe.style.fontFamily = "var(--font-mono)";
   const monoFont = getComputedStyle(probe).fontFamily || "monospace";
   if (
     previous &&
     previous.content === content &&
     previous.accent === accent &&
-    previous.signal === signal &&
-    previous.spectrum === spectrum &&
     previous.monoFont === monoFont
   ) {
     return previous;
@@ -64,11 +67,6 @@ function readPalette(probe: HTMLElement, previous?: LiveBackgroundPalette): Live
   return {
     content,
     accent,
-    contentRgb: channels(content),
-    accentRgb: channels(accent),
-    signal,
-    spectrum,
-    spectrumRgb: channels(spectrum),
     monoFont,
   };
 }
@@ -76,9 +74,7 @@ function readPalette(probe: HTMLElement, previous?: LiveBackgroundPalette): Live
 /** Settings preview: talk for a few seconds, then pause, like a reply arriving. */
 function demoSpeechLength(time: number): number {
   const cycle = time % 6;
-  return cycle < 3.5
-    ? Math.floor((time - cycle) * 40 + cycle * 40 * (0.5 + 0.5 * Math.sin(cycle * 9)))
-    : -1;
+  return cycle < 3.5 ? Math.floor(time * 40) : -1;
 }
 
 /**
@@ -86,14 +82,18 @@ function demoSpeechLength(time: number): number {
  * when motion is off or the system asks for reduced motion it paints one
  * still frame instead of running a loop.
  *
- * `speech` is the length of the reply being streamed (-1 when idle); each new
- * burst of text moves the lips drawn into the scene.
+ * `speech` is the length of the reply being streamed (-1 when idle). `activity` is everything
+ * the running turn has streamed, including reasoning and tools (-1 when idle). New output brings
+ * the scene in and adds bounded, eased motion energy; the signal driver then holds it on screen
+ * for a while, so the loop keeps painting until it has faded even when output pauses. An
+ * unchanged busy turn settles once the scene is hidden.
  */
 export function LiveBackgroundCanvas({
   effect,
   intensity,
   active = true,
   speech = -1,
+  activity = speech,
   demoSpeech = false,
   still = false,
   className = "",
@@ -102,6 +102,7 @@ export function LiveBackgroundCanvas({
   intensity: number;
   active?: boolean;
   speech?: number;
+  activity?: number;
   demoSpeech?: boolean;
   /** Paints one frame and never starts the loop; used for picker thumbnails. */
   still?: boolean;
@@ -112,45 +113,41 @@ export function LiveBackgroundCanvas({
   // Streamed text changes every frame; the loop reads it without restarting.
   const speechRef = useRef(speech);
   speechRef.current = speech;
+  const activityRef = useRef(activity);
+  activityRef.current = activity;
   const activeRef = useRef(active);
   activeRef.current = active;
   const updateLoopRef = useRef<(() => void) | null>(null);
+  // Every new chunk can wake a settled scene without rebuilding its renderer.
   useEffect(() => {
     updateLoopRef.current?.();
-  }, [active]);
+  }, [active, speech, activity]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const probe = probeRef.current;
     if (!still || effect === "none" || !canvas || !probe) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
     let palette = readPalette(probe);
     let width = 0;
     let height = 0;
 
-    // Scenes may hold GL resources, so each still frame builds, paints and releases its scene.
+    // Each still frame builds, paints and releases its scene.
     const paintStill = () => {
       if (width === 0 || height === 0) return;
-      const ratio = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
-      const scene = createLiveBackgroundScene(effect, palette);
-      scene.resize(width, height);
-      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      scene.draw(ctx, STILL_TIME, 0, STILL_SIGNAL);
-      scene.dispose?.();
+      const ratio = pixelRatio(width, height);
+      const renderer = createBackgroundRenderer(effect, canvas, palette);
+      renderer?.resize(width, height, ratio);
+      renderer?.draw(STILL_TIME, 0, demoSpeech ? STILL_DEMO_SIGNAL : STILL_SIGNAL);
+      renderer?.dispose();
     };
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
-      const ratio = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
       const nextWidth = Math.round(rect.width);
       const nextHeight = Math.round(rect.height);
       if (nextWidth === width && nextHeight === height) return;
       width = nextWidth;
       height = nextHeight;
-      canvas.width = Math.max(1, Math.round(width * ratio));
-      canvas.height = Math.max(1, Math.round(height * ratio));
       paintStill();
     };
 
@@ -175,79 +172,132 @@ export function LiveBackgroundCanvas({
       observer.disconnect();
       themeObserver.disconnect();
     };
-  }, [still, effect]);
+  }, [still, effect, demoSpeech]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const probe = probeRef.current;
     if (still || effect === "none" || !canvas || !probe) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
     let palette = readPalette(probe);
-    let scene: LiveBackgroundScene = createLiveBackgroundScene(effect, palette);
+    let renderer: BackgroundRenderer | null = createBackgroundRenderer(effect, canvas, palette);
+    const ambient = () =>
+      isAmbientBackground(effect) && canvas.dataset.backgroundRenderer === "webgl";
+    let contextLost = false;
     let width = 0;
     let height = 0;
     let frame = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     let last = 0;
+    let nextDraw = 0;
     let time = STILL_TIME;
     let intersects = typeof IntersectionObserver === "undefined";
+    let idleFor = 0;
+    let quietFor = 0;
+    let previousSpeech = speechRef.current;
+    let previousActivity = activityRef.current;
+    const busy = () =>
+      demoSpeech ||
+      (quietFor < ACTIVITY_GRACE_SECONDS && (speechRef.current >= 0 || activityRef.current >= 0));
+    const refreshActivity = () => {
+      if (previousSpeech === speechRef.current && previousActivity === activityRef.current) return;
+      previousSpeech = speechRef.current;
+      previousActivity = activityRef.current;
+      quietFor = 0;
+      idleFor = 0;
+    };
     // Refresh on gate notifications, not every frame (the snapshot reads storage).
     let animate = decorativeMotionEnabled();
-    // Repainting every cell 30 times a second is the app's largest idle cost
-    // on a background window; keep the last frame until the window is used.
+    // Repainting every cell each frame is the largest idle cost of a window behind another
+    // app: keep the last painted frame until the window has focus again.
     let focused = windowHasFocus();
     const signal = createLiveSignalDriver();
+    // A scene on screen holds through output pauses and after the turn ends.
+    const awake = () => busy() || (animate && signal.awake());
 
     const paint = (delta: number) => {
       if (width === 0 || height === 0) return;
-      const ratio = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
-      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      // The driver sees the turn as it is; it tells new output from a waiting turn itself.
       const length = demoSpeech ? demoSpeechLength(time) : speechRef.current;
-      scene.draw(ctx, time, delta, animate ? signal.update(time, delta, length) : CLOSED_SIGNAL);
+      const work = demoSpeech ? length : activityRef.current;
+      renderer?.draw(
+        time,
+        delta,
+        animate
+          ? signal.update(time, delta, length, work, performance.now() / 1000)
+          : CLOSED_SIGNAL,
+      );
     };
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
-      const ratio = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
+      const ratio = pixelRatio(rect.width, rect.height);
       const nextWidth = Math.round(rect.width);
       const nextHeight = Math.round(rect.height);
       if (nextWidth === width && nextHeight === height) return;
       width = nextWidth;
       height = nextHeight;
-      canvas.width = Math.max(1, Math.round(width * ratio));
-      canvas.height = Math.max(1, Math.round(height * ratio));
-      scene.resize(width, height);
+      renderer?.resize(width, height, ratio);
       // Advance once so a still frame shows trails and ripples, not an empty grid.
       paint(animate ? 0 : STILL_TIME);
     };
 
+    const settled = () => !ambient() && !awake() && idleFor >= SETTLE_SECONDS;
     const running = () =>
-      animate && focused && activeRef.current && intersects && width > 0 && height > 0;
+      animate &&
+      !contextLost &&
+      focused &&
+      activeRef.current &&
+      intersects &&
+      width > 0 &&
+      height > 0 &&
+      !settled();
 
     const tick = (now: number) => {
       frame = 0;
       if (!running()) return;
-      frame = requestAnimationFrame(tick);
-      if (last !== 0 && now - last < FRAME_INTERVAL) return;
       // Long pauses (hidden tabs, sleep) resume smoothly instead of jumping.
       const delta = last === 0 ? 0 : Math.min((now - last) / 1000, 0.1);
       last = now;
       time += delta;
+      quietFor += delta;
+      idleFor = awake() ? 0 : idleFor + delta;
       paint(delta);
+      // The last frame stays on screen; no frame is requested until work resumes.
+      if (settled()) {
+        last = 0;
+        nextDraw = 0;
+        return;
+      }
+      const interval = ambient() && !busy() ? 1000 / 12 : FRAME_INTERVAL;
+      // Keep a deadline instead of adding a whole interval after each vsync.
+      // A timer sleeps between draws; only the due draw requests a browser frame.
+      nextDraw = Math.max((nextDraw || now) + interval, now);
+      timer = setTimeout(
+        () => {
+          timer = undefined;
+          if (running()) frame = requestAnimationFrame(tick);
+        },
+        Math.max(0, nextDraw - performance.now()),
+      );
     };
 
     const start = () => {
-      if (frame !== 0 || !running()) return;
+      if (busy()) idleFor = 0;
+      if (frame !== 0 || timer !== undefined || !running()) return;
       last = 0;
+      nextDraw = 0;
       frame = requestAnimationFrame(tick);
     };
     // Pausing cancels work without rebuilding the scene or replacing its last frame.
     const updateLoop = () => {
+      refreshActivity();
       if (!running()) {
         if (frame !== 0) cancelAnimationFrame(frame);
+        if (timer !== undefined) clearTimeout(timer);
         frame = 0;
+        timer = undefined;
         last = 0;
+        nextDraw = 0;
       } else start();
     };
     updateLoopRef.current = updateLoop;
@@ -271,8 +321,8 @@ export function LiveBackgroundCanvas({
       const next = readPalette(probe, palette);
       if (next === palette) return;
       palette = next;
-      scene.dispose?.();
-      scene = createLiveBackgroundScene(effect, palette);
+      renderer?.dispose();
+      renderer = createBackgroundRenderer(effect, canvas, palette);
       width = 0;
       height = 0;
       resize();
@@ -293,9 +343,29 @@ export function LiveBackgroundCanvas({
       attributeFilter: ["class", "style"],
     });
 
+    const loseContext = (event: Event) => {
+      event.preventDefault();
+      contextLost = true;
+      updateLoop();
+    };
+    const restoreContext = () => {
+      renderer?.dispose();
+      renderer = createBackgroundRenderer(effect, canvas, palette);
+      contextLost = false;
+      width = 0;
+      height = 0;
+      resize();
+      updateLoop();
+    };
+    canvas.addEventListener("webglcontextlost", loseContext);
+    canvas.addEventListener("webglcontextrestored", restoreContext);
+
     return () => {
       if (frame !== 0) cancelAnimationFrame(frame);
-      scene.dispose?.();
+      if (timer !== undefined) clearTimeout(timer);
+      renderer?.dispose();
+      canvas.removeEventListener("webglcontextlost", loseContext);
+      canvas.removeEventListener("webglcontextrestored", restoreContext);
       observer.disconnect();
       themeObserver.disconnect();
       intersection?.disconnect();
@@ -308,10 +378,28 @@ export function LiveBackgroundCanvas({
   return (
     <div
       aria-hidden
+      data-live-background-scene={effect}
       className={`pointer-events-none overflow-hidden ${className}`}
       style={{ opacity: intensity }}
     >
-      <canvas ref={canvasRef} className="block size-full" />
+      <canvas key={effect} ref={canvasRef} className="block size-full" />
+      {isAmbientBackground(effect) ? (
+        <svg
+          viewBox="0 0 1000 700"
+          preserveAspectRatio="none"
+          className="live-background-fallback"
+          aria-hidden
+        >
+          <g fill="none" stroke="var(--ui-text-secondary)" strokeWidth="1" opacity="0.18">
+            {[0, 1, 2, 3, 4, 5].map((line) => (
+              <path
+                key={line}
+                d={`M -100 ${200 + line * 28} C 250 ${-100 + line * 32}, 600 ${800 - line * 25}, 1100 ${250 + line * 26}`}
+              />
+            ))}
+          </g>
+        </svg>
+      ) : null}
       <span ref={probeRef} className="hidden" />
     </div>
   );
@@ -322,22 +410,27 @@ export function LiveBackgroundLayer({
   active,
   visible = true,
   speech,
+  activity,
 }: {
   active: boolean;
   visible?: boolean;
   speech: number;
+  activity: number;
 }) {
   const effect = useLiveBackground();
   const intensity = useLiveBackgroundIntensity();
   // Only mounted split panes retain a still; hidden sessions release scene resources.
   if (!visible) return null;
   return (
-    <LiveBackgroundCanvas
-      effect={effect}
-      intensity={intensity}
-      active={active}
-      speech={speech}
-      className="absolute inset-0 -z-1"
-    />
+    <div data-live-background-rail className="live-background-rail" aria-hidden>
+      <LiveBackgroundCanvas
+        effect={effect}
+        intensity={intensity}
+        active={active}
+        speech={speech}
+        activity={activity}
+        className="live-background-figure"
+      />
+    </div>
   );
 }

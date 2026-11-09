@@ -9,6 +9,7 @@ import type { SessionImportContext } from "../import/importModel";
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => false,
   invoke,
   convertFileSrc: (path: string) => path,
 }));
@@ -66,6 +67,10 @@ async function render(initialContext?: SessionImportContext) {
 }
 
 const text = () => document.body.textContent ?? "";
+const buttonWith = (label: string) =>
+  [...document.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes(label),
+  ) as HTMLButtonElement;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -144,40 +149,47 @@ describe("SessionImportDialog", () => {
     expect(text()).not.toContain("Fix the login bug");
     expect(text()).not.toContain("Explain the schema");
     expect(text()).toContain("1 conversation in 1 folder will be imported");
-    const provider = [...document.querySelectorAll("button")].find(
-      (button) => button.textContent === "Codex",
-    );
-    expect(provider?.getAttribute("aria-pressed")).toBe("true");
+    expect(buttonWith("Codex").getAttribute("aria-pressed")).toBe("true");
+    expect(buttonWith("Claude Code").getAttribute("aria-pressed")).toBe("false");
   });
   it("lists conversations by folder, hiding automation runs by default", async () => {
     await render();
     expect(text()).toContain("Fix the login bug");
-    expect(text()).toContain("Explain the schema");
-    expect(text()).toContain("missing folder");
+    // The folder that no longer exists sits in a closed group and starts unselected.
+    expect(text()).toContain("Missing folders (1)");
+    expect(text()).not.toContain("Explain the schema");
     expect(text()).not.toContain("Run the nightly job");
-    expect(text()).toContain("2 conversations in 2 folders");
-    expect(text()).toContain("2 conversations in 2 folders will be imported");
+    expect(text()).toContain("2 folders · 2 conversations");
+    expect(text()).toContain("1 conversation in 1 folder will be imported");
 
-    const toggle = [...document.querySelectorAll("label")]
-      .find((label) => label.textContent?.includes("Show automation runs"))
-      ?.querySelector("input") as HTMLInputElement;
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>('button[aria-label="Conversation filters"]')!
+        .click(),
+    );
+    const toggle = document.querySelector<HTMLButtonElement>(
+      '[role="switch"][aria-label="Show automation runs"]',
+    )!;
     await act(async () => toggle.click());
     expect(text()).toContain("Run the nightly job");
     expect(text()).toContain("automation");
     // Automation runs are shown but not selected for import.
-    expect(text()).toContain("2 conversations in 2 folders will be imported");
+    expect(text()).toContain("1 conversation in 1 folder will be imported");
   });
 
-  it("filters by provider and offers the busiest drive as a root filter", async () => {
+  it("filters by provider and by root folder", async () => {
     await render();
-    const button = (label: string) =>
-      [...document.querySelectorAll("button")].find((b) =>
-        b.textContent?.includes(label),
-      ) as HTMLButtonElement;
-    await act(async () => button("Only under G:\\").click());
+    await act(async () => buttonWith("Missing folders (1)").click());
+    expect(text()).toContain("Explain the schema");
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label="Root folder: All folders"]')!.click(),
+    );
+    await act(async () =>
+      document.querySelectorAll<HTMLButtonElement>('[role="listbox"] [role="option"]')[1].click(),
+    );
     expect(text()).toContain("Fix the login bug");
     expect(text()).not.toContain("Explain the schema");
-    await act(async () => button("Claude Code").click());
+    await act(async () => buttonWith("Claude Code").click());
     expect(text()).toContain("Nothing matches these filters.");
   });
 
@@ -197,10 +209,16 @@ describe("SessionImportDialog", () => {
     expect(field.value).toBe("");
     expect(document.activeElement).toBe(field);
     expect(text()).toContain("Fix the login bug");
-    expect(text()).toContain("Explain the schema");
+    expect(text()).toContain("Missing folders (1)");
   });
   it("imports the selection and reports what happened", async () => {
     await render();
+    // Missing folders start unselected; choose that group explicitly.
+    await act(async () =>
+      document
+        .querySelector<HTMLInputElement>('input[aria-label="Select all missing folders"]')!
+        .click(),
+    );
     const importButton = [...document.querySelectorAll("button")].find((b) =>
       b.textContent?.startsWith("Import 2"),
     ) as HTMLButtonElement;

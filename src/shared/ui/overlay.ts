@@ -1,4 +1,4 @@
-import { createContext, useContext, useLayoutEffect, useRef } from "react";
+import { createContext, useContext, useLayoutEffect, useRef, useState } from "react";
 import { isImeComposition } from "../lib/keyboard";
 
 export const OverlayParent = createContext<symbol | null>(null);
@@ -11,10 +11,135 @@ type Entry = {
   modal: boolean;
   escape?: () => void;
   previous: HTMLElement | null;
+  /** Where to return when `previous` is gone: the openers of the popovers it sat inside. */
+  fallbacks: HTMLElement[];
+  /** Surviving ancestors of the outermost opener, nearest first, for a removed opener. */
+  scope: HTMLElement[];
   initialFocusSelector?: string;
   passive: boolean;
+  /** Leaves this Escape to the focused element (a search field clearing itself) instead of closing. */
+  keepEscape?: (event: KeyboardEvent) => boolean;
 };
 const entries: Entry[] = [];
+/* WebKit does not focus a button on click, so `document.activeElement` is the body when a
+   pointer opens an overlay. The last pointer-activated control is the focus-return fallback. */
+const TRIGGER_SELECTOR =
+  "button, [role='button'], [role='combobox'], [role='menuitem'], [role='tab'], a[href], summary, [tabindex]";
+let pointerTrigger: HTMLElement | null = null;
+let pointerTriggerAt = 0;
+/** An overlay opened by a click appears within moments; an older press is not its trigger. */
+const TRIGGER_WINDOW_MS = 1500;
+if (typeof document !== "undefined") {
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      pointerTriggerAt = performance.now();
+      pointerTrigger =
+        event.target instanceof Element
+          ? event.target.closest<HTMLElement>(TRIGGER_SELECTOR)
+          : null;
+    },
+    true,
+  );
+}
+function returnTarget(): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  const active = document.activeElement;
+  if (
+    active instanceof HTMLElement &&
+    active !== document.body &&
+    active !== document.documentElement
+  )
+    return active;
+  return pointerTrigger?.isConnected && performance.now() - pointerTriggerAt < TRIGGER_WINDOW_MS
+    ? pointerTrigger
+    : null;
+}
+/** How far above a removed opener a safe target is searched; farther is another context. */
+const SCOPE_DEPTH = 3;
+function scopeOf(opener: HTMLElement | null): HTMLElement[] {
+  const scope: HTMLElement[] = [];
+  for (
+    let parent = opener?.parentElement;
+    // A direct child of the body is an app or portal root, not a context: never a fallback.
+    parent &&
+    parent !== document.body &&
+    parent.parentElement !== document.body &&
+    scope.length < SCOPE_DEPTH;
+    parent = parent.parentElement
+  ) {
+    scope.push(parent);
+    if (parent.matches("dialog, [role='dialog'], [aria-modal='true']")) break;
+  }
+  return scope;
+}
+/**
+ * Read while rendering, before descendant layout effects move focus into their portals. An
+ * opener inside another open popover (a menu row that opens a dialog, a submenu) disappears
+ * with that popover, so the capture also keeps what that popover will return to itself.
+ */
+function captureReturn() {
+  const previous = returnTarget();
+  const fallbacks: HTMLElement[] = [];
+  const owner = previous
+    ? entries.find((entry) => !entry.modal && entry.root.contains(previous))
+    : null;
+  if (owner) {
+    if (owner.previous) fallbacks.push(owner.previous);
+    fallbacks.push(...owner.fallbacks);
+  }
+  return { previous, fallbacks, scope: scopeOf(fallbacks[fallbacks.length - 1] ?? previous) };
+}
+function editable(el: HTMLElement) {
+  return (
+    el.isContentEditable ||
+    el instanceof HTMLTextAreaElement ||
+    (el instanceof HTMLInputElement &&
+      !/^(button|checkbox|radio|submit|reset|range|color|file|image)$/.test(el.type))
+  );
+}
+function focusIsLost() {
+  const active = document.activeElement;
+  return !active || active === document.body || active === document.documentElement;
+}
+const reachable = (el: HTMLElement | null, entry: Entry): el is HTMLElement =>
+  !!el && el.isConnected && !entry.root.contains(el) && !el.closest("[inert]");
+/** The first control in the nearest surviving container around a removed opener. */
+function focusInScope(entry: Entry) {
+  for (const scope of entry.scope) {
+    if (!reachable(scope, entry)) continue;
+    const target = focusable(scope).find((el) => el !== scope && !entry.root.contains(el));
+    if (!target) continue;
+    target.focus({ preventScroll: true });
+    return;
+  }
+}
+/**
+ * Returns focus to the opener when it is still here, else to the opener of the popover it came
+ * from, else to the first control in the nearest surviving container around the opener. Never
+ * scrolls, and never pulls the caret out of a field the user has already moved to.
+ */
+function restoreFocusFor(entry: Entry) {
+  const active = document.activeElement;
+  if (
+    active instanceof HTMLElement &&
+    !focusIsLost() &&
+    !entry.root.contains(active) &&
+    editable(active)
+  )
+    return;
+  for (const candidate of [entry.previous, ...entry.fallbacks]) {
+    if (!reachable(candidate, entry)) continue;
+    candidate.focus({ preventScroll: true });
+    if (document.activeElement !== candidate) continue;
+    // The same commit may remove the opener right after (the menu item deleted its own row).
+    queueMicrotask(() => {
+      if (!candidate.isConnected && focusIsLost()) focusInScope(entry);
+    });
+    return;
+  }
+  focusInScope(entry);
+}
 /** Outer window listeners must leave Escape to the active overlay stack. */
 export function hasActiveOverlay() {
   return entries.some((entry) => !entry.passive);
@@ -95,26 +220,54 @@ function modalRoots() {
     : [];
 }
 function syncInert() {
-  for (const [el, original] of inert) el.inert = original;
-  inert.clear();
   const roots = modalRoots();
-  if (!roots.length) return;
+  const next = new Set<HTMLElement>();
   const visit = (el: HTMLElement) => {
     if (roots.some((root) => root === el)) return;
     if (roots.some((root) => el.contains(root))) {
       for (const child of el.children) if (child instanceof HTMLElement) visit(child);
     } else {
-      inert.set(el, el.inert);
-      el.inert = true;
+      next.add(el);
     }
   };
-  for (const child of document.body.children) if (child instanceof HTMLElement) visit(child);
+  if (roots.length)
+    for (const child of document.body.children) if (child instanceof HTMLElement) visit(child);
+  for (const [el, original] of inert) {
+    if (next.has(el)) continue;
+    el.inert = original;
+    inert.delete(el);
+  }
+  for (const el of next) {
+    if (inert.has(el)) continue;
+    inert.set(el, el.inert);
+    el.inert = true;
+  }
+}
+function onMutation(records: MutationRecord[]) {
+  const roots = modalRoots();
+  if (!roots.length) return;
+  // Text/children streamed inside an already isolated subtree cannot change the
+  // modal boundary. Still reconcile when a portal root is inserted or moved.
+  if (
+    records.some((record) => {
+      const movedRoot = [...record.addedNodes, ...record.removedNodes].some((node) =>
+        roots.some((root) => node === root || node.contains(root)),
+      );
+      if (movedRoot) return true;
+      return (
+        !roots.some((root) => root.contains(record.target)) &&
+        ![...inert.keys()].some((el) => el.contains(record.target))
+      );
+    })
+  )
+    syncInert();
 }
 function onKey(event: KeyboardEvent) {
   if (event.defaultPrevented || isImeComposition(event)) return;
   if (event.key === "Escape") {
     const top = [...entries].reverse().find((entry) => !entry.passive);
     if (!top?.escape) return;
+    if (top.keepEscape?.(event)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     top.escape();
@@ -147,17 +300,16 @@ export function useOverlay(
   initialFocusSelector?: string,
   restoreFocus = true,
   passive = false,
+  keepEscape?: (event: KeyboardEvent) => boolean,
 ) {
   const id = useRef(Symbol("overlay")).current;
   // Capture before descendant layout effects can move focus into their portals.
-  const previous = useRef(
-    typeof document !== "undefined" && document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null,
-  );
+  const [captured] = useState(captureReturn);
   const parent = useContext(OverlayParent);
   const close = useRef(escape);
   close.current = escape;
+  const keep = useRef(keepEscape);
+  keep.current = keepEscape;
   useLayoutEffect(() => {
     if (!enabled || !root.current) return;
     const entry: Entry = {
@@ -166,9 +318,12 @@ export function useOverlay(
       root: root.current,
       modal,
       escape: escape ? () => close.current?.() : undefined,
-      previous: previous.current,
+      previous: captured.previous,
+      fallbacks: captured.fallbacks,
+      scope: captured.scope,
       initialFocusSelector,
       passive,
+      keepEscape: keepEscape ? (event) => keep.current?.(event) ?? false : undefined,
     };
     // Child layout effects run first: insert ancestors before their descendants.
     const child = entries.findIndex((item) => descendant(item, id));
@@ -176,7 +331,7 @@ export function useOverlay(
     if (entries.length === 1) {
       window.addEventListener("keydown", onKey, true);
       document.addEventListener("focusin", onFocus);
-      observer = new MutationObserver(syncInert);
+      observer = new MutationObserver(onMutation);
       observer.observe(document.body, { childList: true, subtree: true });
     }
     syncInert();
@@ -196,17 +351,12 @@ export function useOverlay(
         document.removeEventListener("focusin", onFocus);
         observer?.disconnect();
       }
-      if (
-        restoreFocus &&
-        (wasTop || entry.modal) &&
-        entry.previous?.isConnected &&
-        !entry.previous.closest("[inert]")
-      )
-        entry.previous.focus({ preventScroll: true });
+      if (restoreFocus && (wasTop || entry.modal)) restoreFocusFor(entry);
     };
   }, [
     id,
     parent,
+    captured,
     root,
     modal,
     Boolean(escape),
@@ -214,6 +364,7 @@ export function useOverlay(
     initialFocusSelector,
     restoreFocus,
     passive,
+    Boolean(keepEscape),
   ]);
   return id;
 }

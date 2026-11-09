@@ -1,0 +1,180 @@
+.stack {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.layer {
+  position: relative;
+  border: 1px solid var(--ui-settings-group-border);
+  border-radius: 0.75rem;
+  background: var(--ui-surface);
+  overflow: hidden;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem 0.5rem 0.5rem;
+}
+
+.disclosure {
+  min-width: 0;
+}
+
+.disclosureContent {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr) auto 1rem;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.thumbnail {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: none;
+  overflow: hidden;
+  border: 1px solid var(--ui-settings-group-border);
+  border-radius: 0.5rem;
+  background: var(--ui-surface-selected);
+}
+
+.thumbnail > * {
+  width: 100%;
+  height: 100%;
+}
+
+.thumbnail img {
+  object-fit: cover;
+}
+
+.text {
+  display: grid;
+  min-width: 0;
+  text-align: left;
+}
+
+.name {
+  color: var(--color-content);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.description {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strength {
+  color: var(--ui-text-secondary);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 11rem;
+}
+
+.toggle {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.layer[data-disabled] .thumbnail {
+  opacity: 0.45;
+}
+
+.layer[data-disabled] .name {
+  color: var(--ui-text-secondary);
+  opacity: 0.6;
+}
+
+.chevron {
+  width: 1rem;
+  height: 1rem;
+  color: var(--ui-text-secondary);
+  transition: transform 0.15s ease;
+}
+
+.chevron[data-open] {
+  transform: rotate(90deg);
+}
+
+.content {
+  padding: 0.75rem 0.875rem 0.875rem;
+  border-top: 1px solid var(--ui-settings-group-border);
+  min-width: 0;
+}
+
+.content[hidden] {
+  display: none;
+}
+
+/* The group inside a panel keeps the shared heading (title, reset) and rows, at panel density:
+   a secondary subheading instead of a section title, no second frame, no row inset or hover. */
+.content :global(.settings-group) {
+  display: block;
+  padding: 0;
+}
+
+.content :global(.settings-group > .settings-group-heading) {
+  padding-block-end: 4px;
+}
+
+.content
+  :global(
+    .settings-group[data-settings-variant] > .settings-group-heading .settings-section-title
+  ) {
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+  color: var(--ui-text-secondary);
+}
+
+.content :global(.settings-group-heading .settings-description) {
+  display: none;
+}
+
+.content
+  :global(.settings-group[data-settings-variant][data-settings-layout] > .settings-group-content) {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  min-width: 0;
+}
+
+.content :global(.settings-row) {
+  padding: 8px 0;
+  border: 0;
+}
+
+.content :global(.settings-row:hover) {
+  background: transparent;
+}
+
+.content :global(.settings-group-content > .settings-feedback) {
+  padding-inline: 0;
+}
+
+/* Thumbnail for Glass: the strip shows how much of the window reads through. */
+.glassSwatch {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--ui-surface) calc(var(--glass-opacity, 0.7) * 100%), transparent) 40%,
+    var(--ui-surface-selected) 40%
+  );
+}

@@ -1,17 +1,7 @@
-import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n/git";
-import {
-  useEffect,
-  useId,
-  useRef,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
-} from "react";
-import { createPortal } from "react-dom";
-import { GlassBackdrop } from "../../../app/shell/GlassBackdrop";
-import { LAYER } from "../../../shared/lib/layers";
-import { Maximize2, X } from "../../../shared/ui/icons";
-import { useState } from "react";
+import type { ReactNode } from "react";
+import { useLocale } from "../../../shared/i18n/git";
+import { Modal } from "../../../shared/ui/Modal";
+import styles from "./GitGraphLayout.module.css";
 
 type Props = {
   title: string;
@@ -22,129 +12,29 @@ type Props = {
   expandable?: boolean;
 };
 
-const FOCUSABLE =
-  'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
 /**
- * A wide dialog for the full graph. `Modal` is capped at 560px, so this keeps
- * its look (glass panel, backdrop, Escape, focus return) at graph width.
- *
- * It sits just under the popover layer: the commit context menu and the hover
- * card are popovers and have to open above it, while the name dialogs
- * (`LAYER.dialog`) still open above both.
+ * The full commit graph as a shared `Modal`: `full` width when it can expand, `xl` otherwise.
+ * The toolbar sits beside the title, Escape inside the search field clears the field first
+ * (`fieldEscape`), and the graph panes own their own scrolling (`scroll="none"`). Menus and the
+ * commit hover card open above it through the dialog's popover layer.
  */
 export function GitGraphDialog({ title, toolbar, onClose, children, expandable = false }: Props) {
   useLocale();
-  const [maximized, setMaximized] = useState(false);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const closeRef = useRef<HTMLButtonElement>(null);
-  const titleId = useId();
-
-  useEffect(() => {
-    const opener = document.activeElement;
-    closeRef.current?.focus();
-    return () => {
-      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
-    };
-  }, []);
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      // Focus inside a menu or another dialog opened from here: that one closes, not this.
-      const target = event.target;
-      // The search field uses Escape to close itself first.
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
-      if (
-        target instanceof Element &&
-        target !== document.body &&
-        target !== document.documentElement &&
-        !panelRef.current?.contains(target)
-      )
-        return;
-      event.preventDefault();
-      event.stopPropagation();
-      onClose();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
-
-  const trapTab = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "Tab") return;
-    const focusable = panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE);
-    const first = focusable?.[0];
-    const last = focusable?.[focusable.length - 1];
-    if (!first || !last) return;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
-
-  return createPortal(
-    <div className="fixed inset-0" style={{ zIndex: LAYER.popover - 1 }}>
-      <div className="modal-backdrop absolute inset-0 bg-scrim/40" onMouseDown={onClose} />
-      <div
-        className={
-          maximized
-            ? "absolute inset-0"
-            : `absolute inset-0 m-auto ${expandable ? "h-[calc(100dvh-48px)] w-[calc(100vw-48px)]" : "h-[min(760px,calc(100dvh-48px))] w-[min(1100px,calc(100vw-48px))]"}`
-        }
-      >
-        <div
-          ref={panelRef}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={titleId}
-          onMouseDown={(event) => event.stopPropagation()}
-          onKeyDown={trapTab}
-          className={`relative isolate flex h-full flex-col overflow-hidden border border-[var(--color-stroke)] shadow-2xl ${maximized ? "" : "rounded-2xl"}`}
-        >
-          <GlassBackdrop className="bg-[var(--ui-surface)]/55" />
-          <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
-            <header className="flex shrink-0 items-center gap-2 px-4 py-2.5">
-              <h2 id={titleId} className="text-[15px] leading-tight font-medium text-content">
-                {title}
-              </h2>
-              <div className="ml-2 flex min-w-0 flex-1 items-center gap-1">{toolbar}</div>
-              {expandable ? (
-                <Button
-                  iconOnly
-                  label={t(maximized ? "Restore window" : "Full screen")}
-                  variant="ghost"
-                  motion="none"
-                  type="button"
-                  aria-label={t(maximized ? "Restore window" : "Full screen")}
-                  title={t(maximized ? "Restore window" : "Full screen")}
-                  aria-pressed={maximized}
-                  onClick={() => setMaximized(!maximized)}
-                >
-                  <Maximize2 className="size-3.5" />
-                </Button>
-              ) : null}
-              <Button
-                iconOnly
-                label={t("Close")}
-                variant="ghost"
-                motion="none"
-                ref={closeRef}
-                type="button"
-                aria-label={t("Close")}
-                title={t("Close")}
-                onClick={onClose}
-              >
-                <X className="size-3.5" strokeWidth={1.75} />
-              </Button>
-            </header>
-            <div className="flex min-h-0 flex-1 flex-col border-t border-stroke">{children}</div>
-          </div>
-        </div>
+  return (
+    <Modal
+      padding="none"
+      title={title}
+      onClose={onClose}
+      size={expandable ? "full" : "xl"}
+      expandable={expandable}
+      fieldEscape="field"
+      scroll="none"
+      className={expandable ? "h-[calc(100dvh-48px)]" : "h-[min(760px,calc(100dvh-48px))]"}
+      toolbar={<div className={styles.toolbar}>{toolbar}</div>}
+    >
+      <div className="flex min-h-0 flex-1 flex-col border-t border-(--ui-pane-border)">
+        {children}
       </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }

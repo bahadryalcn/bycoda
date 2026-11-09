@@ -6,6 +6,7 @@ import {
   codexCommandText,
   codexSkillMentions,
   codexSkillsFromList,
+  codexSubagentStates,
   isRecoverableThreadResumeError,
   mapApprovalRequest,
   mapCodexNotification,
@@ -31,7 +32,9 @@ it.each([undefined, "", "   "])(
 
 describe("Codex skill mentions", () => {
   it("does not silently start a plan without a resolved model", () => {
-    expect(() => buildTurnStartParams({ threadId: "t", runtimeMode: "full-access", intent: "plan" })).toThrow("active model");
+    expect(() =>
+      buildTurnStartParams({ threadId: "t", runtimeMode: "full-access", intent: "plan" }),
+    ).toThrow("active model");
   });
   const skills = new Map([["imagegen", "/home/u/.codex/skills/.system/imagegen/SKILL.md"]]);
 
@@ -614,6 +617,66 @@ describe("mapCodexNotification", () => {
     });
   });
 
+  it("retains full provider evidence for DeleteFile then AddFile notifications", () => {
+    const events = [
+      { id: "delete-counter", kind: { type: "delete" }, diff: "0\n" },
+      { id: "add-counter", kind: { type: "add" }, diff: "1\n" },
+    ].flatMap(
+      ({ id, kind, diff }) =>
+        mapCodexNotification("item/completed", {
+          item: {
+            id,
+            type: "fileChange",
+            status: "completed",
+            changes: [{ path: "counter.txt", kind, diff }],
+          },
+        }).events,
+    );
+    expect(events).toMatchObject([
+      {
+        type: "tool.updated",
+        callId: "delete-counter",
+        status: "completed",
+        fileChanges: [{ path: "counter.txt", kind: "delete", contents: "0\n" }],
+      },
+      {
+        type: "tool.updated",
+        callId: "add-counter",
+        status: "completed",
+        fileChanges: [{ path: "counter.txt", kind: "add", contents: "1\n" }],
+      },
+    ]);
+  });
+
+  it("preserves empty file contents and unified patches while marking incomplete post-write evidence", () => {
+    const changes = [
+      { path: "empty.txt", kind: { type: "add" }, diff: "" },
+      { path: "spaces.txt", kind: "delete", diff: " \t\n" },
+      { path: "updated.txt", kind: { type: "update" }, diff: "@@ -1 +1 @@\n-old\n+new\n" },
+      { path: "unavailable.txt", kind: { type: "update" } },
+    ];
+    expect(
+      mapCodexNotification("item/started", { item: { id: "proof", type: "fileChange", changes } })
+        .events[0],
+    ).toMatchObject({
+      fileChanges: [
+        { path: "empty.txt", kind: "add", contents: "" },
+        { path: "spaces.txt", kind: "delete", contents: " \t\n" },
+        { path: "updated.txt", kind: "update", contents: changes[2].diff },
+      ],
+    });
+    expect(
+      mapCodexNotification("item/started", { item: { id: "pending", type: "fileChange" } })
+        .events[0],
+    ).toHaveProperty("fileChanges", []);
+    expect(
+      mapCodexNotification("item/fileChange/patchUpdated", {
+        itemId: "pending",
+        diff: "patch without typed changes",
+      }).events[0],
+    ).toHaveProperty("fileChanges", []);
+  });
+
   it("retains MCP text results for successful tool inspection", () => {
     const mapped = mapCodexNotification("item/completed", {
       item: {
@@ -743,6 +806,56 @@ describe("mapCodexNotification", () => {
       status: "failed",
       detail: "Subagent interrupted.",
     });
+  });
+
+  it("does not open a subagent row for the root agent itself", () => {
+    // A child messaging `/root` reports activity on the root; no run ever ends it.
+    const mapped = mapCodexNotification("item/completed", {
+      item: { id: "sa_root", type: "subAgentActivity", kind: "interacted", agentPath: "/root" },
+    });
+    expect(mapped.events).toEqual([]);
+  });
+
+  it("maps an explicit subagent completion independently of the parent turn", () => {
+    const mapped = mapCodexNotification("item/completed", {
+      threadId: "parent",
+      item: {
+        id: "child-result",
+        type: "subAgentActivity",
+        kind: "completed",
+        agentPath: "/root/research",
+        agentThreadId: "child",
+      },
+    });
+    expect(mapped.events).toEqual([
+      {
+        type: "tool.updated",
+        callId: "child-result",
+        title: "Research subagent",
+        kind: "agent",
+        status: "completed",
+      },
+    ]);
+    expect(mapped.turnCompleted).toBeUndefined();
+  });
+
+  it("keeps running and unknown child states open and distinguishes shutdown from success", () => {
+    expect(
+      codexSubagentStates({
+        agentsStates: {
+          running: { status: "running" },
+          pending: { status: "pendingInit" },
+          unknown: { status: "futureState" },
+          done: { status: "completed", message: "Result" },
+          failed: { status: "errored", message: "Disconnected" },
+          stopped: { status: "shutdown" },
+        },
+      }),
+    ).toEqual([
+      { threadId: "done", status: "completed", message: "Result" },
+      { threadId: "failed", status: "failed", message: "Disconnected" },
+      { threadId: "stopped", status: "interrupted" },
+    ]);
   });
 
   it("retains the explicitly selected spawn model", () => {
@@ -1041,6 +1154,21 @@ describe("approvals", () => {
 });
 
 describe("parseCodexModelList", () => {
+  it("preserves discovered context capacity and ignores invalid metadata", () => {
+    const models = parseCodexModelList([
+      { model: "large", contextWindow: 272_000 },
+      { model: "small", context_window: 32_000 },
+      { model: "fallback", contextWindow: -1, context_window: 128_000 },
+      { model: "unknown", contextWindow: Infinity, context_window: "200000" },
+    ]);
+    expect(models.map((model) => model.contextWindow)).toEqual([
+      272_000,
+      32_000,
+      128_000,
+      undefined,
+    ]);
+  });
+
   it("builds models with reasoning and service tier settings", () => {
     const models = parseCodexModelList([
       {

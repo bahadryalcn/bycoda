@@ -3,7 +3,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { initAppearancePreferences } from "../../src/features/settings/model/appearancePreferences";
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
+import { activityFixture } from "./settings-activity-fixture";
 import { SettingsView } from "../../src/features/settings/ui/SettingsView";
+import { FeedbackDialog } from "../../src/features/account";
+import { WorkspaceSettingsSurface } from "../../src/app/workspace/layout/WorkspaceSettingsSurface";
 import {
   SETTINGS_SECTIONS,
   type SettingsSectionId,
@@ -24,14 +27,160 @@ import "../../src/styles/index.css";
 // Memory-only desktop transport. Unknown commands fail closed; no owner host,
 // accounts, filesystem, credential store or native deletion can be reached.
 mockWindows("main");
+// Synthetic canonical authority for this UI fixture only. No Native durability or
+// cross-process retirement is claimed. Keep CAS, receipts and page identity real.
+type FixtureEntry = { key: string; version: number; value: unknown };
+const canonicalPage = crypto.randomUUID();
+const canonicalScopes = new Map<string, { revision: number; entries: Map<string, FixtureEntry> }>();
+const canonicalReceipts = new Map<string, { request: string; result: unknown }>();
+function canonicalFixture(command: string, args: Record<string, unknown>): unknown {
+  if (command === "canonical_store_page_token") return canonicalPage;
+  if (command === "canonical_store_session_guard_ready") return true;
+  const scope = String(args.scope);
+  const store = canonicalScopes.get(scope) ?? {
+    revision: 0,
+    entries: new Map<string, FixtureEntry>(),
+  };
+  canonicalScopes.set(scope, store);
+  const entry = (key: string) => store.entries.get(key) ?? null;
+  if (command === "canonical_store_get") return structuredClone(entry(String(args.key)));
+  if (command === "canonical_store_read")
+    return structuredClone({
+      revision: store.revision,
+      entries: (args.keys as string[]).flatMap((key) => (entry(key) ? [entry(key)] : [])),
+    });
+  if (command === "canonical_store_list") {
+    if (args.expectedRevision != null && args.expectedRevision !== store.revision)
+      throw new Error("Fixture canonical snapshot changed");
+    return structuredClone({
+      revision: store.revision,
+      entries: [...store.entries.values()]
+        .filter((value) => args.after == null || value.key > String(args.after))
+        .sort((a, b) => a.key.localeCompare(b.key))
+        .slice(0, Number(args.limit ?? 128)),
+    });
+  }
+  const receiptKey = JSON.stringify([scope, args.operationId]);
+  if (command === "canonical_store_receipt")
+    return structuredClone(canonicalReceipts.get(receiptKey)?.result ?? null);
+  if (command === "canonical_store_transaction") {
+    if (args.pageToken !== canonicalPage) throw new Error("Fixture canonical page changed");
+    if (args.claim != null) throw new Error("Claimed effects unavailable in Settings fixture");
+    const request = JSON.stringify(args);
+    const previous = canonicalReceipts.get(receiptKey);
+    if (previous) {
+      if (previous.request !== request) throw new Error("Fixture canonical operation reused");
+      return structuredClone(previous.result);
+    }
+    const checks = (args.checks ?? []) as Array<{ key: string; version: number | null }>;
+    const writes = (args.writes ?? []) as Array<{ key: string; value: unknown }>;
+    const applied =
+      (args.expectedRevision == null || args.expectedRevision === store.revision) &&
+      checks.every((check) => (entry(check.key)?.version ?? null) === check.version);
+    if (applied && writes.length) {
+      store.revision++;
+      for (const write of writes)
+        store.entries.set(write.key, {
+          key: write.key,
+          version: (entry(write.key)?.version ?? 0) + 1,
+          value: structuredClone(write.value),
+        });
+    }
+    const result = {
+      applied,
+      revision: store.revision,
+      compacted: false,
+      entries: writes.flatMap((write) => (entry(write.key) ? [entry(write.key)] : [])),
+    };
+    canonicalReceipts.set(receiptKey, { request, result: structuredClone(result) });
+    return structuredClone(result);
+  }
+  throw new Error(`Unsupported canonical Settings fixture command: ${command}`);
+}
 const skillDocuments = new Map(
   Array.from({ length: 35 }, (_, index) => [
     `/fixture/settings-project/.agents/skills/${index === 0 ? "arc" : `skill-${index}`}/SKILL.md`,
     `---\nname: ${index === 0 ? "arc" : `skill-${index}`}\ndescription: Build and review interfaces using the shared component library.\n---\n\n# Instructions\n\nUse the existing components and preserve project conventions.\n\n${"## Workflow\n\n1. Inspect the page.\n2. Make the change.\n3. Verify the result.\n\n".repeat(12)}`,
   ]),
 );
+const mcpConnections = Array.from({ length: 25 }, (_, index) => ({
+  name: index === 0 ? "arc" : `server-${String(index).padStart(2, "0")}`,
+  provider: index % 2 === 0 ? "claude" : "codex",
+  scope: "user",
+  transport: "http",
+  configPath: `/fixture/${"long-project-directory/".repeat(8)}config-${index}.json`,
+  enabled: index !== 1,
+}));
 mockIPC(
   (command, args) => {
+    if (command.startsWith("canonical_store_")) return canonicalFixture(command, args);
+    const activity = activityFixture(command, args);
+    if (activity !== undefined) return activity;
+    // Voice setup is entirely synthetic. It never reaches the owner's host or installs files.
+    const voiceFixture = new URLSearchParams(location.search).get("voice");
+    if (voiceFixture) {
+      const machine = {
+        id: "fixture-voice-local",
+        name: "This computer",
+        localHost: true,
+        endpoint: "http://127.0.0.1:9999",
+        environmentId: "fixture-voice-local",
+      };
+      if (command === "local_host_connect") return voiceFixture === "error" ? null : machine;
+      if (command === "remote_machines") return [machine];
+      if (command === "plugin:dialog|open") return "/fixture/voice/existing-model";
+      if (command === "remote_request") {
+        const config = (args.params as { config?: Record<string, unknown> })?.config ?? {};
+        const installed =
+          voiceFixture === "ready" ||
+          voiceFixture === "cpu-only" ||
+          sessionStorage.getItem("fixture-voice-installed") === "1";
+        const installedConfig = {
+          natural: config.natural !== false,
+          python: "/fixture/voice/bin/python",
+          whisperPath: "/fixture/voice/models/whisper",
+          ttsPath: "/fixture/voice/models/natural",
+        };
+        if (args.method === "environment.describe")
+          return {
+            environmentId: machine.environmentId,
+            capabilities: ["voice.local.v1", "voice.local.setup.v1"],
+          };
+        if (args.method === "voice.local.inspect" && voiceFixture === "stalled")
+          return new Promise(() => {});
+        if (args.method === "voice.local.inspect")
+          return installed
+            ? {
+                ready: true,
+                missing: [],
+                ...installedConfig,
+                ...(voiceFixture === "cpu-only"
+                  ? { gpu: "NVIDIA GeForce RTX 4070", accelerated: false }
+                  : {}),
+              }
+            : {
+                ready: false,
+                missing: ["faster-whisper", "Whisper model", "voxcpm", "VoxCPM2 model"],
+                python: "/fixture/python3",
+              };
+        if (args.method === "voice.local.setup") {
+          sessionStorage.setItem("fixture-voice-install-request", JSON.stringify(config));
+          sessionStorage.setItem("fixture-voice-install-polls", "0");
+          return { state: "installing", stage: "environment", requestedConfig: config };
+        }
+        if (args.method === "voice.local.setupStatus") {
+          const requested = sessionStorage.getItem("fixture-voice-install-request");
+          if (!requested && voiceFixture !== "installing") return { state: "idle" };
+          const requestedConfig = requested ? JSON.parse(requested) : { natural: true };
+          const polls = Number(sessionStorage.getItem("fixture-voice-install-polls") ?? "0") + 1;
+          sessionStorage.setItem("fixture-voice-install-polls", String(polls));
+          if (voiceFixture === "installing" || polls < 2)
+            return { state: "installing", stage: "models", requestedConfig };
+          sessionStorage.setItem("fixture-voice-installed", "1");
+          return { state: "ready", config: installedConfig, requestedConfig };
+        }
+      }
+    }
     // Synthetic terminal preferences, isolated from the owner's hosts.
     const shellFixture = new URLSearchParams(location.search).get("terminal");
     if (shellFixture) {
@@ -102,6 +251,52 @@ mockIPC(
         return { profiles, defaultId: "pwsh", chosenId: sessionStorage.getItem(key) };
       }
     }
+    // Synthetic saved-secret metadata for Settings > Secrets (`?secrets=1`; `empty` lists none).
+    const secretsFixture = new URLSearchParams(location.search).get("secrets");
+    if (secretsFixture) {
+      if (command === "remote_machines")
+        return [
+          {
+            id: "fixture-local",
+            name: "This computer (local sync)",
+            localHost: true,
+            endpoint: "http://127.0.0.1:9999",
+            environmentId: "fixture-local",
+          },
+        ];
+      if (command === "remote_request" && args.method === "projects.list")
+        return [
+          { id: "fixture-project-a", cwd: "/fixture/project-a", name: "Fixture project A" },
+          { id: "fixture-project-b", cwd: "/fixture/project-b", name: "Fixture project B" },
+        ];
+      if (command === "remote_request" && args.method === "secrets.owner.list") {
+        const day = 86_400_000;
+        const secret = (n: number, projectId: string, name: string, expiresAt: number | null) => ({
+          secretRef: `fixture-secret-${n}`,
+          projectId,
+          name,
+          purpose: `Synthetic fixture purpose ${n}`,
+          createdAt: Date.now() - n * day,
+          expiresAt,
+          materialized: false,
+        });
+        return {
+          secrets:
+            secretsFixture === "empty"
+              ? []
+              : [
+                  secret(1, "fixture-project-a", "Cloudflare API token (fixture)", null),
+                  secret(2, "fixture-project-a", "OpenAI API key (fixture)", null),
+                  secret(
+                    3,
+                    "fixture-project-b",
+                    "Staging DB password (fixture)",
+                    Date.now() + 2 * day,
+                  ),
+                ],
+        };
+      }
+    }
     if (new URLSearchParams(location.search).get("connections") === "1") {
       const machines = [
         {
@@ -167,16 +362,67 @@ mockIPC(
           };
       }
     }
-    if (new URLSearchParams(location.search).get("mcp") === "1" && command === "mcp_discover") {
-      return Array.from({ length: 25 }, (_, index) => ({
-        name: index === 0 ? "arc" : `server-${String(index).padStart(2, "0")}`,
-        provider: index % 2 === 0 ? "claude" : "codex",
-        scope: "user",
-        transport: "http",
-        configPath: `/fixture/${"long-project-directory/".repeat(8)}config-${index}.json`,
-      }));
+    if (
+      new URLSearchParams(location.search).get("mcpError") === "1" &&
+      command === "mcp_provider_login"
+    ) {
+      throw new Error(
+        `Fixture login failed for ${String(args.name)}: ${"unreachable-server-".repeat(12)}`,
+      );
+    }
+    if (new URLSearchParams(location.search).get("mcp") === "1") {
+      if (command === "mcp_discover") return structuredClone(mcpConnections);
+      if (command === "mcp_set_enabled") {
+        const server = mcpConnections.find(
+          (entry) =>
+            entry.provider === args.provider &&
+            entry.scope === args.scope &&
+            entry.name === args.name &&
+            entry.configPath === args.configPath,
+        );
+        if (!server || server.enabled !== args.expectedEnabled)
+          throw new Error("Fixture MCP configuration changed");
+        if (new URLSearchParams(location.search).get("mcpToggleError") === "1")
+          throw new Error("Fixture MCP write rejected");
+        server.enabled = Boolean(args.enabled);
+        sessionStorage.setItem("fixture-mcp-toggle", JSON.stringify(args));
+        return;
+      }
     }
     if (new URLSearchParams(location.search).get("skills") === "1") {
+      // `machines=1` adds one connected machine that shares only some skills.
+      if (new URLSearchParams(location.search).get("machines") === "1") {
+        if (command === "remote_machines")
+          return [
+            {
+              id: "machine-tailm",
+              name: "tailm",
+              endpoint: "http://tailm.example",
+              environmentId: "env-tailm",
+            },
+          ];
+        if (command === "remote_request") {
+          const request = (args.params ?? {}) as { command?: string; args?: { path?: string } };
+          if (request.command === "skill_policy_get")
+            return { disabledNames: [], disabledPaths: [] };
+          if (request.command === "list_skills")
+            return ["arc", "skill-1", "skill-3", "remote-notes"].map((name) => ({
+              name,
+              path: `/home/fixture/.agents/skills/${name}/SKILL.md`,
+              scope: "user",
+              source: "agents",
+              description: "Skill on the connected machine.",
+            }));
+          if (request.command === "skill_export")
+            return {
+              name: "remote-notes",
+              files: [
+                { path: "SKILL.md", data: btoa("---\nname: remote-notes\n---\n\n# Notes\n") },
+              ],
+            };
+        }
+      }
+      if (command === "skill_policy_get") return { disabledNames: ["skill-2"], disabledPaths: [] };
       if (command === "list_skills")
         return [...skillDocuments.keys()].map((path, index) => ({
           name: index === 0 ? "arc" : `skill-${index}`,
@@ -258,6 +504,7 @@ function Fixture() {
         cancel: t("Cancel"),
         delete: t("Delete"),
         theme: t(theme === "light" ? "Light" : "Dark"),
+        surfaceColors: t("Custom surface colors"),
       })}
     >
       {open ? (
@@ -281,6 +528,65 @@ function Fixture() {
     </main>
   );
 }
+// `?dialog=1` mounts Settings the way App does: a dialog over a workspace that stays mounted.
+function DialogFixture() {
+  const [section, setSection] = useState<SettingsSectionId>(
+    SETTINGS_SECTIONS.find((entry) => entry.id === initial)?.id ?? "general",
+  );
+  const [open, setOpen] = useState(false);
+  const [retries, setRetries] = useState(0);
+  const [draft, setDraft] = useState("");
+  const history = params.get("history");
+  return (
+    <main
+      className="flex h-screen min-w-0 bg-background-base text-content"
+      data-fixture-retries={retries}
+    >
+      <nav aria-label="Project rail" className="w-56 shrink-0 border-e border-stroke p-3">
+        <button type="button" data-testid="open-settings" onClick={() => setOpen(true)}>
+          Settings
+        </button>
+      </nav>
+      <section data-workspace-chrome aria-label="Workspace" className="min-w-0 flex-1 p-4">
+        <label>
+          Workspace draft
+          <input value={draft} onChange={(event) => setDraft(event.target.value)} />
+        </label>
+      </section>
+      <WorkspaceSettingsSurface
+        presentation="dialog"
+        worktreeManagementRequest={null}
+        worktreeManagementRevision={0}
+        setWorktreeManagementRequest={() => {}}
+        onRemoveWorktree={async () => {}}
+        settingsOpen={open}
+        settingsSection={section}
+        settingsAnchor={null}
+        notificationProjectPath={null}
+        notificationSettingsRequest={0}
+        visibleRecents={[{ path: "/fixture/settings-project", openedAt: 1 }]}
+        sidebarCwd="/fixture/settings-project"
+        sidebarHistory={[]}
+        historyFailed={history === "failed"}
+        historyPending={history === "pending"}
+        onRetryHistory={() => setRetries((count) => count + 1)}
+        sessions={[]}
+        onCheckWorktreeRemoval={async () => ({ safe: true }) as never}
+        onDeleteWorktreeSessions={async () => {}}
+        onCloseSettings={() => setOpen(false)}
+        onSelectSettingsSection={setSection}
+        onOpenArchivedSession={() => {}}
+        onArchiveHistorySession={() => {}}
+        onDeleteHistorySession={() => {}}
+        onRestoreProject={() => {}}
+        onRemoveProject={async () => {}}
+        onOpenWhatsNew={() => {}}
+        collapsedProjectRailMode="compact"
+        setCollapsedProjectRailMode={() => {}}
+      />
+    </main>
+  );
+}
 void Promise.all([
   setLanguagePreference(isLocale(language) ? language : "en"),
   setDomainLanguagePreference("git", "app"),
@@ -290,7 +596,9 @@ void Promise.all([
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <Fixture />
+      {params.get("dialog") === "1" ? <DialogFixture /> : <Fixture />}
+      {/* The app mounts this globally (WorkspaceNotices); Settings rows open it. */}
+      <FeedbackDialog />
     </QueryClientProvider>,
   ),
 );

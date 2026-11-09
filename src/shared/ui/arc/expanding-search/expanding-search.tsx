@@ -1,7 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent, ReactNode, RefObject } from "react";
+import {
+  useCallback,
+  useId,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { KeyboardEvent, ReactNode, Ref, RefObject } from "react";
 import { flushSync } from "react-dom";
 import {
   AnimatePresence,
@@ -11,7 +19,7 @@ import {
   useMotionValueEvent,
   useReducedMotion,
 } from "motion/react";
-import { Search, X } from "lucide-react";
+import { Search, X } from "../../icons";
 import { Button } from "../../Button";
 import { Popover } from "../../Popover";
 import { motionTokens } from "../lib/motion-tokens";
@@ -51,14 +59,34 @@ export interface ExpandingSearchProps {
   placeholder?: string;
   onSelect?: (item: ExpandingSearchItem) => void;
   onExpandedChange?: (expanded: boolean) => void;
-  /** The widest the field grows. It never grows past its container. */
+  /** The widest the field grows. It never grows past its container, except for a `ghost` search whose
+   *  slot is only the closed icon: that one opens as an overlay up to this width (viewport permitting). */
   expandedWidth?: number;
+  /** Keep the open field inside its slot, including compact ghost searches. */
+  constrainToSlot?: boolean;
   maxResults?: number;
   /** The edge the button sits on; the field grows away from it. */
   anchor?: "start" | "end";
   /** A short tip under the empty state. */
   emptyHint?: string;
+  /** Closed-state frame. `ghost` (default) renders the waiting state exactly like a neighbouring
+   *  ghost icon button (28px, 6px radius, 14px icon, no field shell); the open field always shows
+   *  its frame. `field` keeps a framed circular shell while closed. */
+  variant?: "ghost" | "field";
+  /** Filter mode: the host filters a list it already shows, so no result panel opens.
+   *  Escape clears the query and folds the field; leaving the field folds it too, and a query that
+   *  is still applied keeps a marker on the icon. */
+  inline?: boolean;
+  /** Names the folded icon while an `inline` query is applied, such as "Search conversations, filtering by “x”". */
+  activeLabel?: string;
+  /** Lets a host open the field from a shortcut. */
+  ref?: Ref<ExpandingSearchHandle>;
   className?: string;
+}
+
+export interface ExpandingSearchHandle {
+  /** Opens the field and moves focus into it. */
+  expand: () => void;
 }
 
 type Group = { name: string; items: ExpandingSearchItem[] };
@@ -67,6 +95,7 @@ type Mode = "suggestions" | "results" | "empty";
 const enter = [...motionTokens.ease.enter] as [number, number, number, number];
 const standard = [...motionTokens.ease.standard] as [number, number, number, number];
 const FALLBACK_SIZE = 44;
+const EDGE_MARGIN = 8;
 
 /** Title starts beat word starts, which beat matches inside a word, which beat keyword and meta matches. Ties keep the original order. */
 function rank(items: ExpandingSearchItem[], query: string, limit: number) {
@@ -286,9 +315,14 @@ export function ExpandingSearch({
   onSelect,
   onExpandedChange,
   expandedWidth = 360,
+  constrainToSlot = false,
   maxResults = 6,
   anchor = "end",
   emptyHint = "Try a shorter word or check the spelling.",
+  variant = "ghost",
+  inline = false,
+  activeLabel,
+  ref,
   className,
 }: ExpandingSearchProps) {
   const id = useId();
@@ -312,7 +346,12 @@ export function ExpandingSearch({
   const width = useMotionValue(FALLBACK_SIZE);
   /** True while the last highlight move came from the keyboard, so only keyboard moves scroll the list. */
   const keyboard = useRef(false);
-  useEffect(() => setActive(0), [query, externalResults]);
+  // New query text or a new result set starts again at the first row (adjusted during render).
+  const [resetBasis, setResetBasis] = useState({ query, externalResults });
+  if (resetBasis.query !== query || resetBasis.externalResults !== externalResults) {
+    setResetBasis({ query, externalResults });
+    setActive(0);
+  }
 
   // The corner radius follows the width: a circle while collapsed, the control radius once open. It rides the same spring, so the two never drift apart.
   const syncShape = useCallback((value: number) => {
@@ -331,20 +370,38 @@ export function ExpandingSearch({
     if (!root || !shell) return;
     const measure = () => {
       const collapsed = shell.offsetHeight || FALLBACK_SIZE;
-      const full = Math.max(collapsed, Math.min(expandedWidth, root.clientWidth));
+      const rootWidth = root.clientWidth;
+      // A ghost search whose slot is only the closed icon owns no room: the open field is an overlay
+      // sized by `expandedWidth` and the viewport, so neighbours never need a reserved slot.
+      const detached = !constrainToSlot && variant === "ghost" && rootWidth < collapsed * 1.5;
+      let limit = rootWidth;
+      if (detached && typeof window !== "undefined") {
+        const rect = root.getBoundingClientRect();
+        const room = anchor === "end" ? rect.right : window.innerWidth - rect.left;
+        limit = Math.max(collapsed, room - EDGE_MARGIN);
+      }
+      const full = Math.max(collapsed, Math.min(expandedWidth, limit));
       size.current = { collapsed, expanded: full };
       root.style.setProperty("--es-width", `${full}px`);
+      if (detached) root.dataset.detached = "";
+      else delete root.dataset.detached;
       const goal = open.current ? full : collapsed;
       if (width.isAnimating()) animate(width, goal, motionTokens.spring.morph);
       else width.jump(goal);
       syncShape(width.get());
     };
     measure();
-    if (typeof ResizeObserver === "undefined") return;
+    window.addEventListener("resize", measure);
+    if (typeof ResizeObserver === "undefined") {
+      return () => window.removeEventListener("resize", measure);
+    }
     const observer = new ResizeObserver(measure);
     observer.observe(root);
-    return () => observer.disconnect();
-  }, [expandedWidth, width, syncShape]);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [expandedWidth, constrainToSlot, width, syncShape, variant, anchor]);
 
   // Opening grows on the morph spring with a hint of overshoot; folding back settles without one, so the circle never dips below its own size.
   const morphTo = (goal: number) => {
@@ -384,18 +441,22 @@ export function ExpandingSearch({
     onExpandedChange?.(false);
   }
 
+  useImperativeHandle(ref, () => ({ expand }));
+
   const trimmed = query.trim();
   const results = useMemo(
-    () => (trimmed ? (externalResults ?? rank(items, trimmed, maxResults)) : []),
-    [externalResults, items, trimmed, maxResults],
+    () => (trimmed && !inline ? (externalResults ?? rank(items, trimmed, maxResults)) : []),
+    [externalResults, items, trimmed, maxResults, inline],
   );
-  const mode: Mode | null = !trimmed
-    ? suggestions.length
-      ? "suggestions"
-      : null
-    : results.length
-      ? "results"
-      : "empty";
+  const mode: Mode | null = inline
+    ? null
+    : !trimmed
+      ? suggestions.length
+        ? "suggestions"
+        : null
+      : results.length
+        ? "results"
+        : "empty";
   const groups = useMemo<Group[]>(
     () =>
       mode === "suggestions"
@@ -430,7 +491,7 @@ export function ExpandingSearch({
     if (event.key === "Escape" && !panelOpen) {
       event.preventDefault();
       event.stopPropagation();
-      collapse(true);
+      collapse(true, inline);
       return;
     }
     if (!panelOpen || !flat.length) return;
@@ -454,6 +515,7 @@ export function ExpandingSearch({
       ref={rootRef}
       className={[styles.root, className].filter(Boolean).join(" ")}
       data-anchor={anchor}
+      data-variant={variant}
     >
       <motion.div
         ref={shellRef}
@@ -466,16 +528,19 @@ export function ExpandingSearch({
           variant="ghost"
           motion="none"
           iconOnly
-          label={label}
+          label={inline && trimmed ? (activeLabel ?? label) : label}
           ref={buttonRef}
           className={styles.trigger}
           hidden={expanded}
           onClick={expand}
         />
+        {inline && !expanded && trimmed ? (
+          <span className={styles.activeMark} data-search-active="" aria-hidden="true" />
+        ) : null}
         <Search
           className={styles.icon}
-          width={18}
-          height={18}
+          width={variant === "ghost" ? 14 : 18}
+          height={variant === "ghost" ? 14 : 18}
           strokeWidth={1.75}
           aria-hidden="true"
         />
@@ -518,7 +583,7 @@ export function ExpandingSearch({
             // Switching windows keeps the search as it was; the field refocuses on return.
             if (typeof document !== "undefined" && !document.hasFocus()) return;
             setFocused(false);
-            if (open.current && !inputRef.current?.value.trim()) collapse(false);
+            if (open.current && (inline || !inputRef.current?.value.trim())) collapse(false);
           }}
           onKeyDown={handleKeyDown}
         />

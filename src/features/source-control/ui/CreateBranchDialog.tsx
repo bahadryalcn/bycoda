@@ -2,7 +2,8 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
-import { Modal } from "../../../shared/ui/Modal";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import type { GitBranchInfo } from "../../../platform/tauri/fs";
 
 type Props = {
@@ -34,6 +35,7 @@ export function CreateBranchDialog({
   );
   const input = useRef<HTMLInputElement>(null);
   const referencesId = useId();
+  const formId = useId();
   const trimmed = name.trim();
   const trimmedReference = reference.trim();
 
@@ -61,8 +63,24 @@ export function CreateBranchDialog({
       onClose={() => {
         if (!busy) onCancel();
       }}
+      footer={
+        <ModalActions>
+          <Button type="button" disabled={busy} onClick={onCancel} variant="ghost">
+            {t("Cancel")}
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            variant="primary"
+            disabled={!trimmed || busy || Boolean(branches && !trimmedReference)}
+            loading={busy}
+          >
+            {t("Create branch")}
+          </Button>
+        </ModalActions>
+      }
     >
-      <form className="flex flex-col gap-4 p-4" onSubmit={submit}>
+      <form id={formId} className="flex flex-col gap-4" onSubmit={submit}>
         {branches ? (
           <>
             <TextField
@@ -99,25 +117,7 @@ export function CreateBranchDialog({
           onChange={(event) => setName(event.target.value)}
         />
 
-        {error ? (
-          <p role="alert" className="text-[11px] leading-4 text-danger">
-            {error}
-          </p>
-        ) : null}
-
-        <div className="flex justify-end gap-2">
-          <Button type="button" disabled={busy} onClick={onCancel} variant="ghost">
-            {t("Cancel")}
-          </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={!trimmed || busy || Boolean(branches && !trimmedReference)}
-            loading={busy}
-          >
-            {t("Create branch")}
-          </Button>
-        </div>
+        {error ? <InlineError>{error}</InlineError> : null}
       </form>
     </Modal>
   );

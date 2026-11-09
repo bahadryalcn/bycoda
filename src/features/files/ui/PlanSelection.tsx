@@ -1,9 +1,9 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createNote, noteTitle } from "../../notes";
-import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/model/settings";
-import { useTranscriptSelection } from "../../sessions/hooks/useTranscriptSelection";
-import { requestAddToChat } from "../../sessions/model/quoteDraft";
-import { TranscriptSelectionMenu } from "../../sessions/ui/TranscriptSelectionMenu";
+import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/public/settings";
+import { useTranscriptSelection } from "../../sessions/public/useTranscriptSelection";
+import { requestAddToChat } from "../../sessions/public/quoteDraft";
+import { TranscriptSelectionMenu } from "../../sessions/public/TranscriptSelectionMenu";
 
 export function PlanSelection({
   children,

@@ -4,11 +4,26 @@ import { agentToolTitle, isAgentTool, isAgentToolName, mergeToolPreview } from "
 
 type Step = Extract<HarnessEvent, { type: "agent.step" }>;
 
+/** Backlog for a parent that never starts or never settles is bounded; a
+ * settled parent is retired in retireParent, so these limits only bind when
+ * the parent stays unknown or open for a long time. */
+const MAX_PENDING_PARENTS = 32;
+const MAX_BACKLOG_STEPS = 64;
+const MAX_OWNERS = 512;
+
+function setBounded<K, V>(map: Map<K, V>, key: K, value: V, max: number): void {
+  map.delete(key);
+  if (map.size >= max) map.delete(map.keys().next().value!);
+  map.set(key, value);
+}
+
 /** Route explicitly attributed ACP child activity without mixing parent text. */
 export class AcpSubagents {
   private tools = new Set<string>();
   private owners = new Map<string, string>();
   private pending = new Map<string, Step[]>();
+  private completedParents = new Set<string>();
+  private liveChildren = new Set<string>();
   private prose = new Map<string, { id: number; kind: "message" | "reasoning"; text: string }>();
   private sequence = 0;
 
@@ -21,16 +36,25 @@ export class AcpSubagents {
     if (!parent) {
       return events.flatMap<HarnessEvent>((event) => {
         if (event.type !== "tool.started" && event.type !== "tool.updated") return [event];
+        const owner = this.owners.get(event.callId);
+        if (owner) return this.route({ parentToolCallId: owner }, [event]);
         this.tools.add(event.callId);
         const backlog = this.pending.get(event.callId) ?? [];
         this.pending.delete(event.callId);
+        if (event.type === "tool.updated" && terminal(event.status)) {
+          this.completedParents.add(event.callId);
+          this.retireParent(event.callId);
+        }
         return [event, ...backlog];
       });
     }
     const output: Step[] = [];
     for (const event of events) {
       if (event.type === "tool.started" || event.type === "tool.updated") {
-        this.owners.set(event.callId, parent);
+        setBounded(this.owners, event.callId, parent, MAX_OWNERS);
+        if (event.type === "tool.updated" && terminal(event.status))
+          this.liveChildren.delete(event.callId);
+        else this.liveChildren.add(event.callId);
         this.prose.delete(parent);
         output.push({
           type: "agent.step",
@@ -56,7 +80,7 @@ export class AcpSubagents {
         const type = update?.sessionUpdate ?? update?.session_update ?? update?.type;
         const snapshot = type === "agent_message" || type === "agent_thought";
         prose.text = (snapshot ? event.text : prose.text + event.text).slice(0, 2_000);
-        this.prose.set(parent, prose);
+        setBounded(this.prose, parent, prose, MAX_PENDING_PARENTS);
         output.push({
           type: "agent.step",
           callId: parent,
@@ -68,12 +92,17 @@ export class AcpSubagents {
       // Child plans, context meters and lifecycle notifications belong to the
       // child too; they must never replace or finish the parent's own work.
     }
-    if (this.tools.has(parent)) return output;
+    if (this.tools.has(parent)) {
+      this.retireParent(parent);
+      return output;
+    }
     const backlog = this.pending.get(parent) ?? [];
     for (const step of output) {
       const index = backlog.findIndex((entry) => entry.stepId === step.stepId);
-      if (index < 0) backlog.push(step);
-      else
+      if (index < 0) {
+        if (backlog.length >= MAX_BACKLOG_STEPS) backlog.shift();
+        backlog.push(step);
+      } else
         backlog[index] = {
           ...backlog[index],
           ...step,
@@ -83,9 +112,22 @@ export class AcpSubagents {
           preview: mergeToolPreview(step.preview, backlog[index].preview),
         };
     }
-    this.pending.set(parent, backlog.slice(-64));
-    if (this.pending.size > 32) this.pending.delete(this.pending.keys().next().value!);
+    setBounded(this.pending, parent, backlog, MAX_PENDING_PARENTS);
     return [];
+  }
+
+  private retireParent(parent: string): void {
+    if (!this.completedParents.has(parent)) return;
+    for (const [child, owner] of this.owners) {
+      if (owner === parent && this.liveChildren.has(child)) return;
+    }
+    for (const [child, owner] of this.owners) {
+      if (owner === parent) this.owners.delete(child);
+    }
+    this.completedParents.delete(parent);
+    this.tools.delete(parent);
+    this.pending.delete(parent);
+    this.prose.delete(parent);
   }
 
   private parent(params: unknown): string | undefined {
@@ -121,6 +163,13 @@ export class AcpSubagents {
     }
     return seen.has(parent) ? undefined : parent;
   }
+}
+
+function terminal(status: string | undefined): boolean {
+  return (
+    !!status &&
+    ["completed", "failed", "error", "cancelled", "canceled"].includes(status.toLowerCase())
+  );
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {

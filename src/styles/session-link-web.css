@@ -1,0 +1,25 @@
+/* Standalone session handoff page; aliases use the shared product palette. */
+:root {
+  color-scheme: light;
+  --ui-canvas: var(--palette-canvasPureLight);
+  --ui-text: var(--palette-scrim);
+  --ui-text-secondary: var(--palette-hex565656);
+  --ui-border: var(--palette-hexd0d0d0);
+  --ui-surface: var(--palette-hexf7f7f7);
+  --ui-hover: var(--palette-hexeeeeee);
+  --ui-selection: var(--palette-hexd0d0d0);
+  --ui-action-hover: var(--palette-hex252525);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --ui-canvas: var(--palette-hex171717);
+    --ui-text: var(--palette-hexfafafa);
+    --ui-text-secondary: var(--palette-hexa8a8a8);
+    --ui-border: var(--palette-hex2e2e2e);
+    --ui-surface: var(--palette-hex252525);
+    --ui-hover: var(--palette-hex2e2e2e);
+    --ui-selection: var(--palette-hex565656);
+    --ui-action-hover: var(--palette-hexd0d0d0);
+  }
+}

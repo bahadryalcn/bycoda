@@ -1,8 +1,21 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type Session, sessionNeedsInput } from "../../../features/sessions/model/session";
 import { useUnseenFinishedSessions } from "../../../features/sessions/hooks/useUnseenFinishedSessions";
+import {
+  delegationParentOf,
+  isDelegatedChildOf,
+} from "../../../features/sessions/model/delegatedAgents";
+import {
+  sessionWait,
+  sessionWaitsEqual,
+  type SessionWait,
+} from "../../../features/sessions/model/sessionWait";
 import { liveAgentsFromSessions } from "../../../features/sessions/model/liveAgents";
-import { remoteLiveAgents } from "../../../features/connections/model/remoteRailSessions";
+import {
+  remoteLiveAgents,
+  remoteSessionWait,
+  type RemoteRailSession,
+} from "../../../features/connections/model/remoteRailSessions";
 import { remoteSessionFor } from "../../../features/connections/model/connections";
 import { isProjectLockedIn } from "../../../features/group-lock/model/lockState";
 import type { useLockSnapshot } from "../../../features/group-lock/hooks/useGroupLock";
@@ -27,6 +40,84 @@ export function useBusySessionIds(sessions: Session[]): Set<string> {
     busySessionIdsRef.current = nextBusySessionIds;
   }
   return busySessionIdsRef.current;
+}
+
+/**
+ * Waiting status per session id: busy with background work, idle with delegated
+ * children running, or idle with a pending Host wake source. Listed host sessions
+ * are keyed by their host id too, so remote project rows read the same map; a
+ * local tab bound to a host session takes that row's Host wait and wake sources.
+ */
+export function computeSessionWaits(
+  sessions: readonly Session[],
+  listedRemote: readonly RemoteRailSession[] = [],
+  now = Date.now(),
+): Map<string, SessionWait> {
+  const listedById = new Map(listedRemote.map(({ session }) => [session.id, session]));
+  const childrenByParent = new Map<string, Session[]>();
+  for (const session of sessions) {
+    const parentId = delegationParentOf(session)?.parentSessionId;
+    if (!parentId) continue;
+    const list = childrenByParent.get(parentId);
+    if (list) list.push(session);
+    else childrenByParent.set(parentId, [session]);
+  }
+  const waits = new Map<string, SessionWait>();
+  for (const session of sessions) {
+    const children = (childrenByParent.get(session.id) ?? []).filter((child) =>
+      isDelegatedChildOf(child, session),
+    );
+    const hostId = remoteSessionFor(session.id);
+    const wait = sessionWait(session, children, hostId ? listedById.get(hostId) : undefined, now);
+    if (wait) waits.set(session.id, wait);
+  }
+  for (const [id, row] of listedById) {
+    const wait = remoteSessionWait(row, now);
+    if (wait) waits.set(id, wait);
+  }
+  return waits;
+}
+
+/** The next time a listed wake source expires, after `now`. */
+function nextWakeExpiry(listedRemote: readonly RemoteRailSession[], now: number) {
+  let next: number | undefined;
+  for (const { session } of listedRemote)
+    for (const source of session.wakeSources ?? [])
+      if (
+        source.until !== undefined &&
+        source.until > now &&
+        (next === undefined || source.until < next)
+      )
+        next = source.until;
+  return next;
+}
+
+function waitMapsEqual(a: ReadonlyMap<string, SessionWait>, b: ReadonlyMap<string, SessionWait>) {
+  if (a.size !== b.size) return false;
+  for (const [id, wait] of a) if (!sessionWaitsEqual(wait, b.get(id) ?? null)) return false;
+  return true;
+}
+
+/** Ref-stable map of sessions in the "Waiting" state; unchanged while no wait changes.
+ * Re-reads itself when a wake source's `until` passes, so no stale Waiting stays up. */
+export function useSessionWaits(
+  sessions: Session[],
+  listedRemote: readonly RemoteRailSession[] = [],
+): ReadonlyMap<string, SessionWait> {
+  const [now, setNow] = useState(() => Date.now());
+  const next = useMemo(
+    () => computeSessionWaits(sessions, listedRemote, now),
+    [sessions, listedRemote, now],
+  );
+  const expiry = nextWakeExpiry(listedRemote, now);
+  useEffect(() => {
+    if (expiry === undefined) return;
+    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, expiry - Date.now()) + 1);
+    return () => clearTimeout(timer);
+  }, [expiry]);
+  const ref = useRef(next);
+  if (!waitMapsEqual(ref.current, next)) ref.current = next;
+  return ref.current;
 }
 
 /** Session ids waiting on the user (approval or question), plus their orchestration leads. */
@@ -59,6 +150,8 @@ export function useUnseenFinishedIds(
 
 export interface LiveAgentStatusDeps {
   sessions: Session[];
+  /** Every listed host session of the rail's remote projects, opened here or not. */
+  listedRemoteSessions: readonly RemoteRailSession[];
   unseenFinishedIds: Set<string>;
   unopenedRemote: Parameters<typeof remoteLiveAgents>[0];
   remoteUnseenFinishedIds: Parameters<typeof remoteLiveAgents>[1];
@@ -66,21 +159,24 @@ export interface LiveAgentStatusDeps {
   liveAgentsEnabled: boolean;
 }
 
-/** Live agents rail list: local sessions plus unopened remote sessions, filtered by group lock and window ownership. */
+/** Live agents rail list: local sessions plus unopened remote sessions, filtered by group lock and window ownership.
+ * Also returns the waiting map that session rows read, so both agree. */
 export function useLiveAgentStatus({
   sessions,
+  listedRemoteSessions,
   unseenFinishedIds,
   unopenedRemote,
   remoteUnseenFinishedIds,
   lockSnapshot,
   liveAgentsEnabled,
 }: LiveAgentStatusDeps) {
+  const sessionWaits = useSessionWaits(sessions, listedRemoteSessions);
   const nextLiveAgents = useMemo(
     () => [
-      ...liveAgentsFromSessions(sessions, unseenFinishedIds),
+      ...liveAgentsFromSessions(sessions, unseenFinishedIds, sessionWaits),
       ...remoteLiveAgents(unopenedRemote, remoteUnseenFinishedIds),
     ],
-    [sessions, unseenFinishedIds, unopenedRemote, remoteUnseenFinishedIds],
+    [sessions, unseenFinishedIds, sessionWaits, unopenedRemote, remoteUnseenFinishedIds],
   );
   const liveAgentsRef = useRef(nextLiveAgents);
   if (!liveAgentsEqual(liveAgentsRef.current, nextLiveAgents)) {
@@ -101,5 +197,5 @@ export function useLiveAgentStatus({
         : [],
     [windowLiveAgents, lockSnapshot, liveAgentsEnabled],
   );
-  return { nextLiveAgents, liveAgents, ownedLiveSessionKeys };
+  return { nextLiveAgents, liveAgents, ownedLiveSessionKeys, sessionWaits };
 }

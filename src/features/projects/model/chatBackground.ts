@@ -14,6 +14,11 @@ export async function pickAndSaveChatBackground(): Promise<string | null> {
     ],
   });
   if (typeof sourcePath !== "string" || !sourcePath) return null;
+  return saveChatBackgroundFrom(sourcePath);
+}
+
+/** Copies an image the user dropped or picked into the app store; the Host validates the file. */
+export function saveChatBackgroundFrom(sourcePath: string): Promise<string> {
   return invoke<string>("save_chat_background", { sourcePath });
 }
 

@@ -1,16 +1,20 @@
 import { useRef, useState } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
+import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { lastTurnRecall, lastUserTurnStartIndex } from "../model/editLastTurn";
+import { lastHandoffBlock } from "../model/handoff";
 import { isSessionErrorBlock } from "../model/sessionIssue";
 import type { Attachment, ComposerTurnOptions, Session } from "../model/session";
 
 /** Retry only the latest submitted user turn with a provider error. */
 export function failedTurnRetry(session: Session) {
+  const handoff = lastHandoffBlock(session.blocks)?.handoff;
+  const retryingSwitch = handoff?.status === "failed" || handoff?.status === "cancelled";
   if (
     session.busy ||
     session.pendingQuestion ||
-    session.pendingSwitch ||
+    (session.pendingSwitch && !retryingSwitch) ||
     session.historyLoading ||
     session.historyLoadError ||
     session.adoptedSyncConflict ||
@@ -61,7 +65,7 @@ export function RetryFailedTurn({
     options?: ComposerTurnOptions,
   ) => boolean | void;
 }) {
-  useLocale();
+  const t = useT();
   const [submitted, setSubmitted] = useState<string | null>(null);
   const submitting = useRef<string | null>(null);
   const retry = failedTurnRetry(session);
@@ -73,33 +77,40 @@ export function RetryFailedTurn({
     return false;
   };
   return (
-    <div className="[padding-inline:1rem] [padding-block:0.5rem]" data-retry-failed-turn>
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        motion="none"
-        disabled={submitted === key}
-        onClick={() => {
-          if (submitting.current === key) return;
-          submitting.current = key;
-          setSubmitted(key);
-          try {
-            if (
-              onSubmit(retry.text, retry.attachments, {
-                ...(retry.intent ? { intent: retry.intent } : {}),
-                onSendRejected: release,
-              }) === false
-            )
-              release();
-          } catch (error) {
-            release();
-            throw error;
-          }
-        }}
-      >
-        {t("Retry")}
-      </Button>
+    <div className="px-4 py-1" data-retry-failed-turn>
+      <Alert
+        inline
+        tone="danger"
+        title={t("The last turn failed")}
+        action={
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            motion="none"
+            loading={submitted === key}
+            onClick={() => {
+              if (submitting.current === key) return;
+              submitting.current = key;
+              setSubmitted(key);
+              try {
+                if (
+                  onSubmit(retry.text, retry.attachments, {
+                    ...(retry.intent ? { intent: retry.intent } : {}),
+                    onSendRejected: release,
+                  }) === false
+                )
+                  release();
+              } catch (error) {
+                release();
+                throw error;
+              }
+            }}
+          >
+            {t("Retry")}
+          </Button>
+        }
+      />
     </div>
   );
 }

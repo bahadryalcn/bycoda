@@ -1,14 +1,16 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
-import "./UnifiedDiffView.css";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { t, useLocale } from "../../../shared/i18n/git";
 import {
-  Check,
   ChevronDown,
   ChevronRight,
   ChevronUp,
   FoldVertical,
   MessageSquarePlus,
+  Plus,
   Undo2,
   UnfoldVertical,
 } from "../../../shared/ui/icons";
@@ -20,33 +22,28 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type CSSProperties,
 } from "react";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { formatInteger } from "../../../shared/lib/numbers";
-import type { ColorScheme } from "../../settings/model/appearance";
+import type { ColorScheme, DiffLayout } from "../../settings";
 import { basename } from "../../../platform/tauri/fs";
-import { highlightDiffFile, type SyntaxToken } from "../../files/editor/syntaxTokens";
-import {
-  codeZoomOffset,
-  codeZoomScale,
-  subscribeCodeZoom,
-  zoomCodeByWheel,
-} from "../../files/editor/editorZoom";
-import { anchoredScroll } from "../../files/ui/documentZoom";
+import { highlightDiffFile, type SyntaxToken } from "../../files/public/syntaxTokens";
+
+import { useDiffZoom } from "../hooks/useDiffZoom";
+import { useFocusFollow } from "../hooks/useFocusFollow";
 import { DiffCommentComposer } from "./DiffCommentComposer";
-import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
+import "./UnifiedDiffView.css";
+import { SurfaceSelection } from "../../sessions/public/SurfaceSelection";
 import {
   DiffOverviewContext,
   DiffOverviewRegistry,
   DiffOverviewRuler,
   useDiffOverviewSource,
 } from "./DiffOverviewRuler";
-import { DiffLayoutToggle, useDiffLayout } from "./DiffLayoutToggle";
-import type { DiffLayout } from "../../settings/model/settings";
+import { DiffLayoutToggle, useResponsiveDiffLayout } from "./DiffLayoutToggle";
 import { splitRowMarks, unifiedRowMarks } from "../model/diffOverview";
 import { buildSplitRows, type SplitRow } from "../model/splitRows";
 import {
@@ -56,7 +53,6 @@ import {
   type UnifiedLine,
 } from "../model/unifiedDiff";
 import {
-  diffRowMetrics,
   flattenVisibleRows,
   layoutRows,
   UNIFIED_OVERSCAN_PX,
@@ -131,7 +127,6 @@ export function UnifiedDiffView({
   useLocale();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const colorScheme = useColorScheme();
-  const diffLayout = useDiffLayout();
   const [open, setOpen] = useState<Set<string>>(() => initiallyOpenFiles(files, initialExpansion));
   const [reveals, setReveals] = useState<Record<string, Record<string, FoldReveal>>>({});
   const fileRefs = useRef(new Map<string, HTMLElement>());
@@ -142,131 +137,44 @@ export function UnifiedDiffView({
     () => focusId ?? files.find((file) => file.path === focusPath || file.id === focusPath)?.id,
     [fileKey, files, focusId, focusPath],
   );
-  const previousFileSet = useRef({ ids: new Set(files.map((file) => file.id)), initialExpansion });
-
-  // Ctrl+wheel shares the file editors' code size, so both zoom together.
-  const zoom = codeZoomScale(useSyncExternalStore(subscribeCodeZoom, codeZoomOffset));
-  const rowMetrics = useMemo(() => diffRowMetrics(zoom), [zoom]);
-  const zoomStyle = useMemo(
-    () =>
-      ({
-        "--diff-zoom": zoom,
-        "--diff-line-h": `${rowMetrics.line}px`,
-        "--diff-fold-h": `${rowMetrics.fold}px`,
-        "--diff-hunk-h": `${rowMetrics.hunk}px`,
-        "--diff-code-font": `${12 * zoom}px`,
-        "--diff-meta-font": `${11 * zoom}px`,
-        "--diff-gutter-w": `${Math.round(48 * zoom)}px`,
-      }) as CSSProperties,
-    [rowMetrics, zoom],
-  );
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const zoomAnchor = useRef<{ y: number; zoom: number } | null>(null);
-  const hasFiles = files.length > 0;
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const onWheel = (event: WheelEvent) => {
-      const from = codeZoomScale();
-      if (!zoomCodeByWheel(event)) return;
-      event.preventDefault();
-      const scroller = scrollerRef.current;
-      if (scroller && !zoomAnchor.current) {
-        zoomAnchor.current = {
-          y: event.clientY - scroller.getBoundingClientRect().top,
-          zoom: from,
-        };
-      }
-    };
-    root.addEventListener("wheel", onWheel, { passive: false });
-    return () => root.removeEventListener("wheel", onWheel);
-  }, [hasFiles]);
-  // Keep the line under the pointer in place while the rows grow or shrink.
-  useLayoutEffect(() => {
-    const anchor = zoomAnchor.current;
-    zoomAnchor.current = null;
-    const scroller = scrollerRef.current;
-    if (!anchor || !scroller || anchor.zoom === zoom) return;
-    const top = anchoredScroll(scroller.scrollTop, anchor.y, zoom / anchor.zoom);
-    if (Number.isFinite(top)) scroller.scrollTop = Math.max(0, top);
-  }, [zoom]);
-
-  useEffect(() => {
-    const previous = previousFileSet.current;
+  // Expansion and fold reveals belong to the current file set. When it changes, rebuild
+  // them during render instead of in an effect so no frame shows stale state.
+  const [synced, setSynced] = useState(() => ({
+    fileKey,
+    ids: new Set(files.map((file) => file.id)),
+    initialExpansion,
+  }));
+  if (synced.fileKey !== fileKey || synced.initialExpansion !== initialExpansion) {
     const ids = new Set(files.map((file) => file.id));
     const defaults = initiallyOpenFiles(files, initialExpansion);
-    previousFileSet.current = { ids, initialExpansion };
-    setOpen((current) => {
-      if (previous.initialExpansion !== initialExpansion) return defaults;
+    setSynced({ fileKey, ids, initialExpansion });
+    if (synced.initialExpansion !== initialExpansion) {
+      setOpen(defaults);
+    } else {
       // Keep the reader's choices for surviving files; only new files use defaults.
       const next = new Set(
-        [...ids].filter((id) => (previous.ids.has(id) ? current.has(id) : defaults.has(id))),
+        [...ids].filter((id) => (synced.ids.has(id) ? open.has(id) : defaults.has(id))),
       );
-      return next.size === current.size && [...next].every((id) => current.has(id))
-        ? current
-        : next;
-    });
-    setReveals({});
-  }, [fileKey, initialExpansion]);
-
-  // The focused file stays pinned to the top while diffs above it load and
-  // grow, until the reader scrolls or clicks in the view themselves.
-  const followFocusRef = useRef<string | null>(null);
-  const scrollToFocus = useCallback(() => {
-    const id = followFocusRef.current;
-    const node = id ? fileRefs.current.get(id) : undefined;
-    const scroller = scrollerRef.current;
-    if (!node) return;
-    if (!scroller) {
-      node.scrollIntoView({ block: "start" });
-      return;
+      if (next.size !== open.size || ![...next].every((id) => open.has(id))) setOpen(next);
     }
-    // Measure against the scroller itself: it isn't the section's offsetParent,
-    // so offsetTop would also count the toolbar above it.
-    const offset =
-      node.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
-    const top = Math.max(0, offset - (fileLayout === "cards" ? 8 : 0));
-    if (Math.abs(scroller.scrollTop - top) > 1) scroller.scrollTo({ top });
-  }, [fileLayout]);
-  const releaseFocus = useCallback(() => {
-    followFocusRef.current = null;
-  }, []);
-  const openFocusedFile = useCallback(() => {
-    const id = followFocusRef.current;
-    if (!id || !fileRefs.current.has(id)) return;
-    setOpen((current) => (current.has(id) ? current : new Set(current).add(id)));
-    scrollToFocus();
-  }, [scrollToFocus]);
+    setReveals({});
+  }
 
-  // Only a new selection starts following.
-  useEffect(() => {
-    followFocusRef.current = resolvedFocusId ?? null;
-    openFocusedFile();
-  }, [resolvedFocusId, focusRequest, openFocusedFile]);
-
-  // A refreshed file list re-anchors a file still being followed, but never
-  // resumes one the reader already scrolled away from.
-  useEffect(() => {
-    openFocusedFile();
-  }, [fileKey, initialExpansion, openFocusedFile]);
-
-  // Expansion can change the scroll limit. Re-anchor after it reaches the DOM.
-  useLayoutEffect(() => {
-    scrollToFocus();
-  }, [open, scrollToFocus]);
-
-  const contentObserverRef = useRef<ResizeObserver | null>(null);
-  const bindContent = useCallback(
-    (el: HTMLDivElement | null) => {
-      contentObserverRef.current?.disconnect();
-      contentObserverRef.current = null;
-      if (!el || typeof ResizeObserver === "undefined") return;
-      const observer = new ResizeObserver(scrollToFocus);
-      observer.observe(el);
-      contentObserverRef.current = observer;
-    },
-    [scrollToFocus],
-  );
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const diffLayout = useResponsiveDiffLayout(rootRef, files.length > 0);
+  const hasFiles = files.length > 0;
+  const { rowMetrics, zoomStyle } = useDiffZoom(rootRef, scrollerRef, hasFiles);
+  const { releaseFocus, bindContent } = useFocusFollow({
+    fileRefs,
+    scrollerRef,
+    fileLayout,
+    resolvedFocusId,
+    focusRequest,
+    fileKey,
+    initialExpansion,
+    open,
+    setOpen,
+  });
 
   const bindScroller = useCallback(
     (el: HTMLDivElement | null) => {
@@ -307,53 +215,66 @@ export function UnifiedDiffView({
 
   if (files.length === 0) {
     return (
-      <p className="px-4 py-6 text-[13px] text-[var(--ui-text-muted)]">{t("No file changes")}</p>
+      <p className="px-4 py-6 text-ui-secondary text-[var(--ui-text-muted)]">
+        {t("No file changes")}
+      </p>
     );
   }
 
   const count = fileCount ?? files.length;
-  const fileLabel = count === 1 ? "1 file" : `${count} files`;
+  const fileLabel = count === 1 ? t("1 file") : t("{p0} files", { p0: count });
   const additions = totals?.additions ?? files.reduce((sum, file) => sum + file.additions, 0);
   const deletions = totals?.deletions ?? files.reduce((sum, file) => sum + file.deletions, 0);
 
   return (
     <div
       ref={rootRef}
+      data-diff-layout={diffLayout}
       className={
-        fill ? "relative flex h-full min-h-0 flex-1 flex-col overflow-hidden" : "flex flex-col"
+        fill
+          ? "relative isolate flex h-full min-h-0 flex-1 flex-col overflow-hidden"
+          : "isolate flex flex-col"
       }
     >
       <div
-        className={`flex h-8 shrink-0 items-center gap-3 border-b border-stroke px-3 text-[12px]`}
+        data-diff-toolbar=""
+        className="flex min-h-9 min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-stroke px-3 py-1 text-ui-caption"
       >
-        <span className="text-[var(--ui-text-secondary)]">{fileLabel}</span>
-        <DiffCounts additions={additions} deletions={deletions} />
-        <span className="ml-auto flex items-center gap-0.5">
+        {/* Count and churn truncate first; the view and expand controls never wrap away. */}
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          <OverflowTooltip label={fileLabel}>
+            <span className="min-w-0 truncate text-(--ui-text-secondary)">{fileLabel}</span>
+          </OverflowTooltip>
+          <DiffCounts additions={additions} deletions={deletions} />
+        </span>
+        <span
+          role="group"
+          aria-label={t("Diff view")}
+          className="ml-auto flex shrink-0 items-center gap-0.5"
+        >
           <DiffLayoutToggle className="mr-0.5" />
           <Button
+            size="sm"
             iconOnly
             label={t("Expand all files")}
             variant="ghost"
             motion="none"
             type="button"
-            title={t("Expand all files")}
-            aria-label={t("Expand all files")}
             onClick={() => setOpen(new Set(files.map((file) => file.id)))}
           >
-            <UnfoldVertical className="size-3.5" strokeWidth={1.75} />
+            <UnfoldVertical className="icon-sm" strokeWidth={1.75} />
           </Button>
           <Button
+            size="sm"
             iconOnly
             label={t("Collapse all files")}
             variant="ghost"
             motion="none"
             type="button"
-            title={t("Collapse all files")}
-            aria-label={t("Collapse all files")}
             disabled={open.size === 0}
             onClick={() => setOpen(new Set())}
           >
-            <FoldVertical className="size-3.5" strokeWidth={1.75} />
+            <FoldVertical className="icon-sm" strokeWidth={1.75} />
           </Button>
         </span>
       </div>
@@ -369,7 +290,7 @@ export function UnifiedDiffView({
         style={zoomStyle}
       >
         {truncated ? (
-          <p className="px-3 py-3 text-[12px] text-[var(--ui-text-muted)]">
+          <p className="px-3 py-3 text-ui-caption text-[var(--ui-text-muted)]">
             {t("Diff is too large to display in full. File list is shown without patches.")}
           </p>
         ) : null}
@@ -457,10 +378,9 @@ const FileSection = memo(function FileSection({
   const name = basename(file.path);
   const sectionRef = useRef<HTMLElement | null>(null);
   const [near, setNear] = useState(false);
+  // Latched: once the section has been expanded near the viewport it keeps highlighting.
   const [highlightReady, setHighlightReady] = useState(false);
-  useEffect(() => {
-    if (expanded && near) setHighlightReady(true);
-  }, [expanded, near]);
+  if (!highlightReady && expanded && near) setHighlightReady(true);
   const [tokens, setTokens] = useState<Map<UnifiedLine, SyntaxToken[]> | null>(null);
 
   useEffect(() => {
@@ -519,11 +439,14 @@ const FileSection = memo(function FileSection({
         fileLayout === "cards"
           ? "overflow-hidden rounded-md border border-[var(--color-stroke)]"
           : ""
-      } ${focused ? "bg-content/[0.03]" : ""}`}
+      } ${focused ? "bg-[var(--ui-surface-hover)]" : ""}`}
     >
-      <header
+      <ActionHost
+        role="group"
+        aria-label={file.label}
+        selected={focused}
         className={`${
-          fileLayout === "stacked" ? "sticky top-0 z-30 " : ""
+          fileLayout === "stacked" ? "sticky top-0 z-3 " : ""
         } flex items-center gap-2 bg-[var(--ui-surface)] px-3 py-1.5 ${
           fileLayout === "stacked" || expanded ? "border-b border-stroke" : ""
         }`}
@@ -536,41 +459,41 @@ const FileSection = memo(function FileSection({
           onClick={() => onToggle(file.id)}
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
-          <Chevron className="size-3.5 shrink-0 text-[var(--ui-text-muted)]" strokeWidth={1.75} />
-          <FileTypeIcon name={name} isDir={false} size={16} />
-          <span
-            className="min-w-0 flex-1 truncate font-mono text-[12px] text-[var(--color-content)]"
-            title={file.label}
+          <Chevron className="icon-sm shrink-0 text-[var(--ui-text-muted)]" strokeWidth={1.75} />
+          <FileTypeIcon name={name} isDir={false} />
+          <MiddleTruncate
+            mode="path"
+            className="min-w-0 flex-1 font-mono text-ui-caption font-medium text-(--color-content)"
           >
             {file.label}
-          </span>
+          </MiddleTruncate>
           <DiffCounts additions={file.additions} deletions={file.deletions} />
         </Button>
         {file.canDiscard && onDiscardFile ? (
-          <IconButton
-            title={t("Discard file")}
+          <InlineAction
+            reveal="always"
+            label={t("Discard file")}
+            motion="none"
+            type="button"
             disabled={busy}
             onClick={() => onDiscardFile(file.id)}
           >
-            <Undo2 className="size-3.5" strokeWidth={1.75} />
-          </IconButton>
+            <Undo2 className="icon-sm" strokeWidth={1.75} />
+          </InlineAction>
         ) : null}
         {file.canStage && onStageFile ? (
-          <Button
-            iconOnly
+          <InlineAction
+            reveal="always"
             label={t("Stage file")}
-            variant="ghost"
             motion="none"
             type="button"
-            title={t("Stage file")}
-            aria-label={t("Stage file")}
             disabled={busy}
             onClick={() => onStageFile(file.id)}
           >
-            <Check className="size-2.5" strokeWidth={2.5} />
-          </Button>
+            <Plus className="icon-sm" strokeWidth={1.75} />
+          </InlineAction>
         ) : null}
-      </header>
+      </ActionHost>
       {expanded ? (
         <SurfaceSelection context={`@${file.path}`} contentVersion={file.blocks}>
           <FileBody
@@ -718,6 +641,9 @@ function VirtualRows({
   const codeRightRef = useRef<HTMLDivElement | null>(null);
   const mouseRef = useRef<{ x: number; y: number } | null>(null);
   const hover = useRef<DiffHover | null>(null);
+  const hoverNodes = useRef(new Map<string, HTMLElement[]>());
+  const hoverActions = useRef(new Map<HTMLElement, HTMLElement[]>());
+  const markedHoverNodes = useRef<HTMLElement[]>([]);
   const [commentTarget, setCommentTarget] = useState<DiffCommentDraft | null>(null);
   const rows = useMemo(
     () =>
@@ -799,19 +725,36 @@ function VirtualRows({
     (point: { x: number; y: number } | null) => {
       const body = bodyRef.current;
       const mark = (next: DiffHover | null) => {
-        if (hover.current?.key === next?.key && hover.current?.side === next?.side) return;
+        const syncActions = (node: HTMLElement) => {
+          for (const action of hoverActions.current.get(node) ?? []) {
+            const pointerSelected =
+              node.dataset.pointerRow === "true" &&
+              (action.dataset.gutterAction === "stage" || node.dataset.pointerHover === "true");
+            action.toggleAttribute(
+              "data-selected",
+              action.dataset.retainedAction === "true" || pointerSelected,
+            );
+          }
+        };
+        if (hover.current?.key === next?.key && hover.current?.side === next?.side) {
+          // A comment draft may have closed since the last pointer movement.
+          for (const node of markedHoverNodes.current) syncActions(node);
+          return;
+        }
         hover.current = next;
-        for (const node of body?.querySelectorAll<HTMLElement>('[data-pointer-row="true"]') ?? []) {
+        for (const node of markedHoverNodes.current) {
           node.dataset.pointerRow = "false";
           node.dataset.pointerHover = "false";
+          syncActions(node);
         }
+        markedHoverNodes.current = [];
         if (!next || !body) return;
-        for (const node of body.querySelectorAll<HTMLElement>(
-          `[data-diff-hover-key="${CSS.escape(next.key)}"]`,
-        )) {
+        markedHoverNodes.current = hoverNodes.current.get(next.key) ?? [];
+        for (const node of markedHoverNodes.current) {
           node.dataset.pointerRow = "true";
           node.dataset.pointerHover =
             !splitRows || node.dataset.diffSide === next.side ? "true" : "false";
+          syncActions(node);
         }
       };
       const clear = () => mark(null);
@@ -838,6 +781,27 @@ function VirtualRows({
     },
     [range.end, range.padTop, range.start, rows, sizedRows, splitRows],
   );
+
+  // DOM membership changes on commit, not on every pointer movement. Keep only
+  // currently mounted rows/actions so virtual windows and comment drafts refresh it.
+  useLayoutEffect(() => {
+    const nodes = new Map<string, HTMLElement[]>();
+    const actions = new Map<HTMLElement, HTMLElement[]>();
+    const marked: HTMLElement[] = [];
+    for (const node of bodyRef.current?.querySelectorAll<HTMLElement>("[data-diff-hover-key]") ??
+      []) {
+      const key = node.dataset.diffHoverKey!;
+      const group = nodes.get(key) ?? [];
+      group.push(node);
+      nodes.set(key, group);
+      actions.set(node, [...node.querySelectorAll<HTMLElement>("[data-gutter-action]")]);
+      if (node.dataset.pointerRow === "true") marked.push(node);
+    }
+    hoverNodes.current = nodes;
+    hoverActions.current = actions;
+    markedHoverNodes.current = marked;
+    if (!marked.length) hover.current = null;
+  });
 
   useLayoutEffect(() => {
     if (!near) return;
@@ -1008,8 +972,18 @@ function VirtualRows({
 
   return (
     <>
+      {splitRows ? (
+        <div
+          aria-hidden="true"
+          className="flex border-b border-stroke text-ui-micro text-[var(--ui-text-muted)]"
+        >
+          <span className="min-w-0 flex-1 px-3 py-0.5">{t("Before")}</span>
+          <span className="min-w-0 flex-1 border-l border-stroke px-3 py-0.5">{t("After")}</span>
+        </div>
+      ) : null}
       <div
         ref={bodyRef}
+        data-diff-body
         className="flex"
         onMouseMove={(event) => {
           mouseRef.current = { x: event.clientX, y: event.clientY };
@@ -1026,7 +1000,7 @@ function VirtualRows({
                 does; the before gutter sits above the after one so a fold
                 bar spanning both stays clickable. */}
             <div className="flex min-w-0 flex-1">
-              <div className="relative z-20 w-[var(--diff-gutter-w,3rem)] shrink-0" style={lanePad}>
+              <div className="relative z-2 w-[var(--diff-gutter-w,3rem)] shrink-0" style={lanePad}>
                 {renderSplitLane("before", "gutter")}
               </div>
               <div ref={codeRef} className="min-w-0 flex-1 overflow-x-auto overscroll-x-none">
@@ -1041,7 +1015,7 @@ function VirtualRows({
               </div>
             </div>
             <div className="flex min-w-0 flex-1 border-l border-stroke">
-              <div className="relative z-10 w-[var(--diff-gutter-w,3rem)] shrink-0" style={lanePad}>
+              <div className="relative z-1 w-[var(--diff-gutter-w,3rem)] shrink-0" style={lanePad}>
                 {renderSplitLane("after", "gutter")}
               </div>
               <div ref={codeRightRef} className="min-w-0 flex-1 overflow-x-auto overscroll-x-none">
@@ -1058,7 +1032,7 @@ function VirtualRows({
           </>
         ) : (
           <>
-            <div className="relative z-10 w-[var(--diff-gutter-w,3rem)] shrink-0" style={lanePad}>
+            <div className="relative z-1 w-[var(--diff-gutter-w,3rem)] shrink-0" style={lanePad}>
               {renderLane("gutter")}
             </div>
             <div ref={codeRef} className="min-w-0 flex-1 overflow-x-auto overscroll-x-none">
@@ -1149,7 +1123,7 @@ const SplitLane = memo(function SplitLane({
     // The bar is drawn once, from the before gutter, across both columns.
     if (side === "before" && lane === "gutter") {
       return (
-        <div className="relative z-20" style={FOLD_HEIGHT}>
+        <div className="relative z-2" style={FOLD_HEIGHT}>
           <div
             className="absolute inset-y-0 left-0"
             style={{ width: "var(--unified-body-width, 100%)" }}
@@ -1165,12 +1139,12 @@ const SplitLane = memo(function SplitLane({
     return side === "before" ? (
       <DiffLineRow line={row.line} lane={lane} hovered={false} commenting={false} />
     ) : (
-      <div className="bg-[var(--ui-surface)]" style={HUNK_HEIGHT} />
+      <div className="bg-[var(--ui-workspace-canvas-surface)]" style={HUNK_HEIGHT} />
     );
   }
   const line = side === "before" ? row.left : row.right;
   if (!line) {
-    return <div className="bg-[var(--ui-surface)]" style={LINE_HEIGHT} />;
+    return <div className="bg-[var(--ui-workspace-canvas-surface)]" style={LINE_HEIGHT} />;
   }
   return (
     <DiffLineRow
@@ -1219,7 +1193,7 @@ const DiffLane = memo(function DiffLane({
   if (row.type === "fold") {
     if (lane === "gutter") {
       return (
-        <div className="relative z-20" style={FOLD_HEIGHT}>
+        <div className="relative z-2" style={FOLD_HEIGHT}>
           <div
             className="absolute inset-y-0 left-0"
             style={{ width: "var(--unified-body-width, 100%)" }}
@@ -1258,32 +1232,37 @@ function FoldBar({
 }) {
   useLocale();
   return (
-    <div className="flex items-center gap-1 bg-[var(--ui-surface-muted)] px-2" style={FOLD_HEIGHT}>
+    <div
+      className="flex items-center gap-1 bg-[var(--ui-workspace-reading-muted)] px-2"
+      style={FOLD_HEIGHT}
+    >
       <Button
+        size="sm"
+        inset
         iconOnly
         label={t("Expand unmodified lines upward")}
         variant="ghost"
         motion="none"
         type="button"
-        title={t("Expand upward")}
-        aria-label={t("Expand unmodified lines upward")}
         onClick={() => onReveal(foldId, "up")}
       >
-        <ChevronUp className="size-3" strokeWidth={2} />
+        <ChevronUp className="icon-xs" strokeWidth={2} />
       </Button>
       <Button
+        size="sm"
+        inset
         iconOnly
         label={t("Expand unmodified lines downward")}
         variant="ghost"
         motion="none"
         type="button"
-        title={t("Expand downward")}
-        aria-label={t("Expand unmodified lines downward")}
         onClick={() => onReveal(foldId, "down")}
       >
-        <ChevronDown className="size-3" strokeWidth={2} />
+        <ChevronDown className="icon-xs" strokeWidth={2} />
       </Button>
       <Button
+        size="sm"
+        inset
         variant="ghost"
         motion="none"
         type="button"
@@ -1332,9 +1311,12 @@ const DiffLineRow = memo(function DiffLineRow({
   useLocale();
   if (line.kind === "hunk") {
     return (
-      <div className="flex items-center bg-[var(--ui-surface)]" style={HUNK_HEIGHT}>
+      <div
+        className="flex items-center bg-[var(--ui-workspace-canvas-surface)]"
+        style={HUNK_HEIGHT}
+      >
         {lane === "code" ? (
-          <span className="px-3 font-mono text-[length:var(--diff-meta-font,11px)] leading-none text-[var(--ui-text-muted)]">
+          <span className="px-3 font-mono diff-meta-text leading-none text-[var(--ui-text-muted)]">
             {line.text}
           </span>
         ) : null}
@@ -1367,49 +1349,51 @@ const DiffLineRow = memo(function DiffLineRow({
           <span className={`pointer-events-none absolute inset-0 ${gutterTint}`} />
         ) : null}
         <span
-          className={`relative block w-full pr-2 text-right font-mono text-[length:var(--diff-meta-font,11px)] leading-none tabular-nums ${gutterText}`}
+          className={`relative block w-full pr-2 text-right font-mono diff-meta-text leading-none tabular-nums ${gutterText}`}
         >
           {number ?? ""}
         </span>
         {onComment ? (
-          <Button
-            iconOnly
-            label={`Comment on line ${number ?? ""}`.trim()}
-            variant="ghost"
-            motion="none"
-            type="button"
-            title={`Comment on line ${number ?? ""}`.trim()}
-            aria-label={`Comment on line ${number ?? ""}`.trim()}
-            onClick={(event) =>
-              onComment(
-                side ? `${hoverKey}:${side}` : (hoverKey ?? ""),
-                line,
-                event.currentTarget.getBoundingClientRect(),
-              )
-            }
-            className={`diff-hover-comment absolute top-0.5 left-0.5 z-10 grid size-4 place-items-center transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 ${
-              hovered || commenting ? "opacity-100" : "pointer-events-none opacity-0"
-            }`}
+          <ActionHost
+            selected={hovered || commenting}
+            data-gutter-action="comment"
+            data-retained-action={hovered || commenting ? "true" : "false"}
+            className="absolute top-0.5 left-0.5 z-1"
           >
-            <MessageSquarePlus className="size-2.5" strokeWidth={2} />
-          </Button>
+            <InlineAction
+              label={`Comment on line ${number ?? ""}`.trim()}
+              motion="none"
+              type="button"
+              onClick={(event) =>
+                onComment(
+                  side ? `${hoverKey}:${side}` : (hoverKey ?? ""),
+                  line,
+                  event.currentTarget.getBoundingClientRect(),
+                )
+              }
+            >
+              <MessageSquarePlus className="icon-xs" strokeWidth={1.75} />
+            </InlineAction>
+          </ActionHost>
         ) : null}
         {onStage ? (
-          <Button
-            variant="ghost"
-            motion="none"
-            type="button"
-            title={t("Stage hunk")}
-            aria-label={t("Stage hunk")}
-            onClick={() => {
-              if (fileId !== undefined && stagePos !== undefined) onStage(fileId, stagePos);
-            }}
-            className={`diff-hover-stage absolute top-0.5 left-full z-10 ml-0.5 grid size-4 place-items-center focus-visible:pointer-events-auto focus-visible:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 ${
-              stageVisible ? "opacity-100" : "pointer-events-none opacity-0"
-            }`}
+          <ActionHost
+            selected={stageVisible}
+            data-gutter-action="stage"
+            data-retained-action={stageVisible ? "true" : "false"}
+            className="absolute top-0.5 left-full z-1 ml-0.5"
           >
-            +
-          </Button>
+            <InlineAction
+              label={t("Stage hunk")}
+              motion="none"
+              type="button"
+              onClick={() => {
+                if (fileId !== undefined && stagePos !== undefined) onStage(fileId, stagePos);
+              }}
+            >
+              <Plus className="icon-xs" strokeWidth={1.75} />
+            </InlineAction>
+          </ActionHost>
         ) : null}
       </div>
     );
@@ -1420,7 +1404,7 @@ const DiffLineRow = memo(function DiffLineRow({
       {/* Width is counted in minWidthCh. select-none keeps the glyph and the
           screen-reader cue out of copied code. */}
       <span
-        className={`w-7 shrink-0 select-none pl-3 font-mono text-[length:var(--diff-code-font,12px)] leading-none font-semibold ${gutterText}`}
+        className={`w-7 shrink-0 select-none pl-3 font-mono diff-code-text leading-none font-medium ${gutterText}`}
       >
         <span aria-hidden="true">{added ? "+" : deleted ? "−" : ""}</span>
         {added || deleted ? (
@@ -1428,8 +1412,8 @@ const DiffLineRow = memo(function DiffLineRow({
         ) : null}
       </span>
       <span
-        className={`whitespace-pre pr-3 font-mono text-[length:var(--diff-code-font,12px)] leading-none text-[var(--color-content)] ${
-          line.kind === "context" ? "opacity-70" : ""
+        className={`whitespace-pre pr-3 font-mono diff-code-text leading-none ${line.kind === "context" ? "" : "text-[var(--color-content)]"} ${
+          line.kind === "context" ? "text-[var(--ui-text-secondary)]" : ""
         }`}
       >
         {renderLineText(line, tokens)}
@@ -1456,45 +1440,20 @@ function renderLineText(line: UnifiedLine, tokens?: SyntaxToken[]) {
 
 function EmptyBody({ children }: { children: string }) {
   useLocale();
-  return <p className="px-3 py-3 text-[12px] text-[var(--ui-text-muted)]">{children}</p>;
+  return <p className="px-3 py-3 text-ui-caption text-[var(--ui-text-muted)]">{children}</p>;
 }
 
 function DiffCounts({ additions, deletions }: { additions: number; deletions: number }) {
   useLocale();
   if (additions <= 0 && deletions <= 0) return null;
   return (
-    <span className="flex shrink-0 items-center gap-1.5 font-sans text-[11px] font-semibold tabular-nums">
+    <span
+      className="flex shrink-0 items-center gap-1.5 font-sans text-ui-micro font-medium tabular-nums"
+      title={t("{p0} lines added, {p1} lines removed", { p0: additions, p1: deletions })}
+    >
       {additions > 0 ? <span className="text-diff-add-fg">+{formatInteger(additions)}</span> : null}
       {deletions > 0 ? <span className="text-diff-del-fg">-{formatInteger(deletions)}</span> : null}
     </span>
-  );
-}
-
-function IconButton({
-  title,
-  disabled,
-  onClick,
-  children,
-}: {
-  title: string;
-  disabled?: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  useLocale();
-  return (
-    <Button
-      variant="ghost"
-      motion="none"
-      type="button"
-      title={title}
-      aria-label={title}
-      disabled={disabled}
-      onClick={onClick}
-      className="grid size-6 place-items-center"
-    >
-      {children}
-    </Button>
   );
 }
 

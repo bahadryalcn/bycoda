@@ -1,0 +1,31 @@
+/* One joined surface. The boundary is an overlay rather than a border, so the group is
+   exactly as tall as one Button and never shifts a toolbar row. Segment states, dividers
+   and end radii are owned by Button.module.css under [data-button-group="joined"]. */
+@layer properties, theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .group {
+    min-inline-size: 0;
+  }
+}
+.group {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface);
+}
+
+.group[data-surface="navigation"] {
+  background: var(--ui-navigation-control);
+}
+
+.group::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--ui-tone-neutral-border);
+  border-radius: inherit;
+  pointer-events: none;
+}

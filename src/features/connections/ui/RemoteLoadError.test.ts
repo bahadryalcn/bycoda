@@ -1,43 +1,111 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
-import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { RemoteConnectionStatus } from "../model/remoteConnection";
+import { SUPERSEDED_CONNECTION } from "../model/remoteLifecycle";
 import { RemoteLoadError } from "./RemoteLoadError";
 
+const state = vi.hoisted(() => ({
+  status: "unreachable" as RemoteConnectionStatus,
+  auto: true,
+  requested: false,
+  shared: true,
+  reconnect: vi.fn(),
+}));
 vi.mock("../model/useRemoteConnection", () => ({
-  useRemoteConnection: () => ({ status: "identity-mismatch", reconnecting: false }),
+  useRemoteConnection: () => ({
+    status: state.status,
+    reconnecting: state.requested,
+    reconnect: state.reconnect,
+    machine: { id: "env", name: "Server", ssh: true },
+  }),
 }));
-vi.mock("../model/connections", () => ({
-  OPEN_CONNECTIONS_EVENT: "test-open-connections",
-  requestMachineEdit: vi.fn(),
+vi.mock("./RemoteConnectionFeedback", () => ({ useRemoteConnectionFeedback: () => state.shared }));
+vi.mock("../../settings/model/settings", () => ({
+  loadRemoteAutoReconnect: () => state.auto,
+  subscribeRemoteAutoReconnect: () => () => {},
 }));
-vi.mock("../../../shared/i18n", () => ({ t: (value: string) => value, useLocale: () => "en" }));
+let root: Root;
+let container: HTMLDivElement;
+beforeEach(() => {
+  state.status = "unreachable";
+  state.auto = true;
+  state.requested = false;
+  state.shared = true;
+  state.reconnect.mockReset();
+  state.reconnect.mockResolvedValue({ ok: true });
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+});
+afterEach(async () => {
+  await act(async () => root.unmount());
+  container.remove();
+});
+async function render(message = "Machine is unreachable", stale = false) {
+  await act(async () =>
+    root.render(
+      createElement(RemoteLoadError, {
+        cwd: "remote://env/repo",
+        failure: { kind: "unreachable", message },
+        stale,
+      }),
+    ),
+  );
+}
+it("suppresses duplicate status while the shared owner is mounted", async () => {
+  await render();
+  expect(container.textContent).toBe("");
+  state.auto = false;
+  await render();
+  expect(container.textContent).toBe("");
+});
+it("retains loaded content without adding a duplicate status row", async () => {
+  await render("Machine is unreachable", true);
+  expect(container.textContent).toBe("");
+});
 
-it("offers connection settings with the refused identity's re-pair instructions", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const element = document.createElement("div");
-  const root = createRoot(element);
-  const open = vi.fn();
-  window.addEventListener("test-open-connections", open);
-  const message = "Host identity changed. Add this machine again before continuing.";
-  try {
-    await act(async () =>
-      root.render(
-        createElement(RemoteLoadError, {
-          cwd: "remote://env/repo",
-          failure: { kind: "identity", message },
-        }),
-      ),
-    );
-    expect(element.textContent).toContain(message);
-    const buttons = [...element.querySelectorAll("button")];
-    expect(buttons).toHaveLength(1);
-    expect(buttons[0].textContent).toBe("Connection settings");
-    await act(async () => buttons[0].click());
-    expect(open).toHaveBeenCalledTimes(1);
-  } finally {
-    await act(async () => root.unmount());
-    window.removeEventListener("test-open-connections", open);
-    vi.unstubAllGlobals();
-  }
+it("keeps the compact title, reconnect and disclosure in one row", async () => {
+  state.shared = false;
+  await act(async () =>
+    root.render(
+      createElement(RemoteLoadError, {
+        cwd: "env",
+        failure: { kind: "unreachable", message: "SSH timed out" },
+        compact: true,
+      }),
+    ),
+  );
+  const row = container.querySelector("[data-remote-feedback-row]");
+  expect(row?.textContent).toContain("Server");
+  expect(row?.querySelector("button")?.textContent).toContain("Reconnect");
+  const details = row?.querySelector("details");
+  expect(details?.open).toBe(false);
+  expect(details?.querySelector("summary")?.textContent).toContain("Details");
+  expect(details?.textContent).toContain("SSH timed out");
+  expect(details?.textContent).toContain("Connection settings");
+});
+
+it("ignores a reconnect superseded by Cancel or an address edit", async () => {
+  state.shared = false;
+  state.reconnect.mockResolvedValue({ ok: false, error: SUPERSEDED_CONNECTION });
+  await render();
+  const button = [...container.querySelectorAll("button")].find((entry) =>
+    entry.textContent?.includes("Reconnect"),
+  );
+  await act(async () => button?.click());
+  expect(state.reconnect).toHaveBeenCalledTimes(1);
+  expect(container.textContent).not.toContain("Reconnecting failed");
+});
+
+it("shows why a reconnect that really failed did not work", async () => {
+  state.shared = false;
+  state.reconnect.mockResolvedValue({ ok: false, error: "SSH timed out" });
+  await render();
+  const button = [...container.querySelectorAll("button")].find((entry) =>
+    entry.textContent?.includes("Reconnect"),
+  );
+  await act(async () => button?.click());
+  expect(container.textContent).toContain("Reconnecting failed: SSH timed out");
 });

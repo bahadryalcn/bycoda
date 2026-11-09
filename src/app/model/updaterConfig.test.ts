@@ -17,7 +17,7 @@ const identity = vi.hoisted(() => ({
 vi.mock("../../shared/lib/productIdentity", () => ({ PRODUCT_IDENTITY: identity }));
 
 vi.mock("@tauri-apps/api/app", () => ({ getIdentifier, getVersion }));
-vi.mock("@tauri-apps/plugin-updater", () => ({ check }));
+vi.mock("../../features/settings/model/updateChannel", () => ({ checkForAppUpdate: check }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ ask, message }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch }));
 vi.mock("../../features/settings/model/sounds", () => ({

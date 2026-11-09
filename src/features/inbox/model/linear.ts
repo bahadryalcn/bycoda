@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { boundedSet } from "../../../shared/lib/store";
 import { recordInboxSelfActivity } from "./inboxSelfActivity";
 
 export type LinearTeam = {
@@ -121,11 +122,6 @@ function boundedGet<T>(cache: Map<string, T>, key: string): T | null {
   cache.set(key, value);
   return value;
 }
-function boundedSet<T>(cache: Map<string, T>, key: string, value: T) {
-  cache.delete(key);
-  cache.set(key, value);
-  while (cache.size > DETAILS_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
-}
 
 export function peekLinearIssueDetails(id: string): LinearIssueDetails | null {
   return boundedGet(detailsById, id);
@@ -135,7 +131,7 @@ export async function linearIssueDetails(id: string): Promise<LinearIssueDetails
   const details = await invoke<LinearIssueDetails>("linear_issue_details", {
     id,
   });
-  boundedSet(detailsById, id, details);
+  boundedSet(detailsById, id, details, DETAILS_CACHE_LIMIT);
   return details;
 }
 
@@ -181,25 +177,60 @@ export async function linearIssueComment(
   return url;
 }
 
-export function loadHiddenLinearTeamIds(): string[] {
+/** Distinguishes an empty saved scope from one that cannot be read: `null` means
+ * unreadable or corrupt, and callers must not treat it as "hide nothing". */
+export function readHiddenLinearTeamIds(): string[] | null {
   try {
     const raw = localStorage.getItem(TEAM_IDS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
+    if (!Array.isArray(parsed)) return null;
     return parsed.filter((id): id is string => typeof id === "string" && id.length > 0);
   } catch {
-    return [];
+    return null;
   }
 }
 
-export function saveHiddenLinearTeamIds(ids: string[]) {
+/** Display fallback only; fetch paths use `requireHiddenLinearTeamIds`. */
+export function loadHiddenLinearTeamIds(): string[] {
+  return readHiddenLinearTeamIds() ?? [];
+}
+
+/** Fails closed so an unreadable saved scope never widens what Linear fetches. */
+export function requireHiddenLinearTeamIds(): string[] {
+  const ids = readHiddenLinearTeamIds();
+  if (!ids)
+    throw new Error("Saved Linear team scope is unavailable, so Linear results are paused.");
+  return ids;
+}
+
+/** Returns whether the new scope was read back from storage. */
+export function saveHiddenLinearTeamIds(ids: string[]): boolean {
+  let persisted = false;
   try {
     localStorage.setItem(TEAM_IDS_KEY, JSON.stringify(ids));
+    const stored = readHiddenLinearTeamIds();
+    persisted = !!stored && stored.length === ids.length && ids.every((id) => stored.includes(id));
   } catch {
     // private mode / quota
   }
   notifyLinearChange();
+  return persisted;
+}
+
+/** Same-window changes and sibling-window storage changes to Linear scope. */
+export function subscribeLinearScope(onChange: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const onStorage = (event: StorageEvent) => {
+    if (event.storageArea && event.storageArea !== localStorage) return;
+    if (event.key === null || event.key === TEAM_IDS_KEY) onChange();
+  };
+  window.addEventListener(LINEAR_CHANGE_EVENT, onChange);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(LINEAR_CHANGE_EVENT, onChange);
+    window.removeEventListener("storage", onStorage);
+  };
 }
 
 export function notifyLinearChange() {

@@ -1,16 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, FocusEvent, KeyboardEvent, PointerEvent, ReactNode, Ref } from "react";
-import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "motion/react";
-import type { TargetAndTransition, Transition, Variants } from "motion/react";
-import { motionTokens } from "../lib/motion-tokens";
 import { Button, type ButtonTone } from "../../Button";
 import styles from "./expanding-button-group.module.css";
 
 export type ExpandingButtonGroupSize = "sm" | "md";
 export type ExpandingButtonGroupTone = ButtonTone;
-const MotionButton = motion.create(Button);
 
 /** A composite can own its menu while the group owns its action presentation. */
 export interface ExpandingButtonGroupTriggerProps {
@@ -64,6 +60,8 @@ export interface ExpandingButtonGroupProps {
   onAction?: (id: string) => void;
   /** How long the confirmation stays, in milliseconds. */
   confirmDuration?: number;
+  /** `tray` draws the grouped surface; `bare` keeps flat icon buttons for headers and window chrome. */
+  chrome?: "tray" | "bare";
   className?: string;
   style?: CSSProperties;
 }
@@ -76,79 +74,12 @@ const metrics = {
 
 /** Pixels the pointer must travel into a neighbouring action before the expansion moves to it. */
 const hysteresis = 4;
-// Let people aim before moving the targets, and tolerate brief trips outside the row.
-const hoverDelay = 180;
-const leaveDelay = 280;
-
-const enter = [...motionTokens.ease.enter] as [number, number, number, number];
-const standard = [...motionTokens.ease.standard] as [number, number, number, number];
-
-/** The label slides out from behind the icon as the width opens, and tucks back a little faster than it came. */
-const labelVariants: Variants = {
-  shown: {
-    opacity: 1,
-    x: 0,
-    filter: "blur(0px)",
-    transition: { duration: motionTokens.duration.standard, ease: enter, delay: 0.04 },
-  },
-  hidden: {
-    opacity: 0,
-    x: -6,
-    filter: `blur(${motionTokens.blur.subtle}px)`,
-    transition: { duration: motionTokens.duration.instant, ease: standard },
-  },
-};
-const reducedLabelVariants: Variants = {
-  shown: {
-    opacity: 1,
-    x: 0,
-    filter: "blur(0px)",
-    transition: { duration: motionTokens.duration.instant },
-  },
-  hidden: {
-    opacity: 0,
-    x: 0,
-    filter: "blur(0px)",
-    transition: { duration: motionTokens.duration.instant },
-  },
-};
-const rest: TargetAndTransition = { opacity: 1, y: 0, scale: 1, filter: "blur(0px)" };
-const textIn: TargetAndTransition = {
-  opacity: 0,
-  y: "0.5em",
-  filter: `blur(${motionTokens.blur.soft}px)`,
-};
-const textOut: TargetAndTransition = {
-  opacity: 0,
-  y: "-0.4em",
-  filter: `blur(${motionTokens.blur.subtle}px)`,
-  transition: { duration: motionTokens.duration.fast, ease: standard },
-};
-const iconIn: TargetAndTransition = {
-  opacity: 0,
-  scale: 0.55,
-  filter: `blur(${motionTokens.blur.subtle}px)`,
-};
-const iconOut: TargetAndTransition = {
-  ...iconIn,
-  transition: { duration: motionTokens.duration.fast, ease: standard },
-};
-const fadeIn: TargetAndTransition = { ...rest, opacity: 0 };
-const fadeOut: TargetAndTransition = {
-  opacity: 0,
-  transition: { duration: motionTokens.duration.instant },
-};
-const textEnter: Transition = { duration: motionTokens.duration.standard, ease: enter };
-/** Scale rides the spring; opacity and blur tween so blur never overshoots below zero. */
-const iconEnter: Transition = {
-  ...motionTokens.spring.snappy,
-  opacity: { duration: motionTokens.duration.fast, ease: enter },
-  filter: { duration: motionTokens.duration.fast, ease: enter },
-};
-const instant: Transition = { duration: motionTokens.duration.instant };
+// Filter a pointer passing over the row, and tolerate brief trips outside it, without making intended hover feel late.
+const hoverDelay = 120;
+const leaveDelay = 200;
 
 /** The confirmation tick draws itself from its short stroke. */
-function DrawnCheck({ reduced }: { reduced: boolean }) {
+function DrawnCheck() {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -158,15 +89,7 @@ function DrawnCheck({ reduced }: { reduced: boolean }) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <motion.path
-        d="M4 12.5l5 5L20 6.5"
-        initial={reduced ? false : { pathLength: 0, opacity: 0 }}
-        animate={{ pathLength: 1, opacity: 1 }}
-        transition={{
-          pathLength: { duration: motionTokens.duration.standard, ease: enter, delay: 0.06 },
-          opacity: { duration: 0.05, delay: 0.06 },
-        }}
-      />
+      <path className={styles.check} d="M4 12.5l5 5L20 6.5" pathLength={1} />
     </svg>
   );
 }
@@ -178,7 +101,6 @@ interface ItemProps {
   done: boolean;
   busy: boolean;
   tabStop: boolean;
-  reduced: boolean;
   onPointerDown: (item: ExpandingButtonGroupItem, event: PointerEvent<HTMLButtonElement>) => void;
   onClick: (item: ExpandingButtonGroupItem) => void;
   onFocus: (item: ExpandingButtonGroupItem, event: FocusEvent<HTMLButtonElement>) => void;
@@ -189,7 +111,11 @@ function Item(props: ItemProps) {
     return props.item.render((trigger) => (
       <ItemButton
         {...props}
-        item={{ ...props.item, ...trigger, disabled: props.item.disabled || trigger.disabled }}
+        item={{
+          ...props.item,
+          ...trigger,
+          disabled: props.item.disabled || trigger.disabled,
+        }}
         trigger={trigger}
       />
     ));
@@ -204,77 +130,42 @@ function ItemButton({
   done,
   busy,
   tabStop,
-  reduced,
   onPointerDown,
   onClick,
   onFocus,
   trigger,
 }: ItemProps & { trigger?: ExpandingButtonGroupTriggerProps }) {
-  const m = metrics[size];
-  const labelRef = useRef<HTMLSpanElement>(null);
-  const doneRef = useRef<HTMLSpanElement>(null);
-  const [text, setText] = useState(0);
-
-  // Hidden copies of both words share the label's grid cell, so the slot is always as wide as the longer one. The confirmation
-  // swap then never changes the width, and the server render already has the right width before anything is measured.
-  // Changes under half a pixel are ignored, so a re-measure never makes the row wobble.
-  useLayoutEffect(() => {
-    const measure = () => {
-      const next = Math.max(
-        labelRef.current?.getBoundingClientRect().width ?? 0,
-        doneRef.current?.getBoundingClientRect().width ?? 0,
-      );
-      setText((current) => (Math.abs(current - next) < 0.5 ? current : next));
-    };
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    if (labelRef.current) observer.observe(labelRef.current);
-    if (doneRef.current) observer.observe(doneRef.current);
-    return () => observer.disconnect();
-  }, [item.label, item.doneLabel, size]);
-
   const showDone = done && !!item.doneLabel;
-  const measured = text > 0;
-  const target = expanded && measured ? m.start + m.icon + m.gap + text + m.end : m.height;
-  const width = useMotionValue<number>(target);
-  const settled = useRef(false);
-
-  // Width rides the morph spring, so neighbours slide and the group's own width follows without a jump. The first measured
-  // width (and every width under reduced motion) is placed at once.
-  useLayoutEffect(() => {
-    if (!settled.current || reduced) {
-      width.jump(target);
-      if (measured) settled.current = true;
-      return;
-    }
-    const animation = animate(width, target, motionTokens.spring.smooth);
-    return () => animation.stop();
-  }, [target, measured, reduced, width]);
-
+  // The resting word and icon appear without motion; only a confirmation, and the return from it, animate in.
+  const confirmed = useRef(false);
+  useEffect(() => {
+    if (showDone) confirmed.current = true;
+  }, [showDone]);
+  const swap = showDone || confirmed.current ? "" : undefined;
   const word = showDone ? item.doneLabel! : item.label;
+
+  // The reveal is pure layout: the label's grid track grows from 0fr to 1fr in CSS. Nothing is measured, observed or animated
+  // from script, so a transcript with many action rows stays cheap to mount and to hover.
   return (
-    <MotionButton
+    <Button
       ref={trigger?.ref}
       aria-haspopup={trigger?.["aria-haspopup"]}
       aria-expanded={trigger?.["aria-expanded"]}
       variant="ghost"
       motion="none"
-      shape="pill"
       size={size}
       selected={item.active ?? expanded}
       tone={showDone ? "success" : (item.tone ?? "neutral")}
       type="button"
       className={styles.item}
-      style={{ width }}
       data-ebg-item=""
       data-id={item.id}
       data-tone={item.tone ?? "neutral"}
       data-state={showDone ? "done" : "idle"}
       data-expanded={expanded || undefined}
-      data-unmeasured={measured ? undefined : ""}
       aria-label={item.ariaLabel ?? item.label}
       title={item.tooltip ?? item.ariaLabel ?? item.label}
+      tooltipWhen="overflow"
       shortcut={item.shortcut}
       aria-current={item.active ? "page" : undefined}
       onContextMenu={
@@ -305,53 +196,28 @@ function ItemButton({
       onFocus={(event) => onFocus(item, event)}
     >
       <span className={styles.icon} aria-hidden="true">
-        <AnimatePresence initial={false}>
-          <motion.span
-            key={showDone ? "done" : "icon"}
-            className={styles.glyph}
-            initial={reduced ? fadeIn : iconIn}
-            animate={rest}
-            exit={reduced ? fadeOut : iconOut}
-            transition={reduced ? instant : iconEnter}
-          >
-            {showDone ? <DrawnCheck reduced={reduced} /> : item.icon}
-          </motion.span>
-        </AnimatePresence>
-      </span>
-      <motion.span
-        className={styles.label}
-        aria-hidden="true"
-        variants={reduced ? reducedLabelVariants : labelVariants}
-        initial={false}
-        animate={expanded ? "shown" : "hidden"}
-      >
-        <AnimatePresence initial={false}>
-          <motion.span
-            key={word}
-            className={styles.word}
-            initial={reduced ? fadeIn : textIn}
-            animate={rest}
-            exit={reduced ? fadeOut : textOut}
-            transition={reduced ? instant : textEnter}
-          >
-            {word}
-          </motion.span>
-        </AnimatePresence>
-        <span ref={labelRef} className={styles.sizer}>
-          {item.label}
+        <span key={showDone ? "done" : "icon"} className={styles.glyph} data-swap={swap}>
+          {showDone ? <DrawnCheck /> : item.icon}
         </span>
-        {item.doneLabel ? (
-          <span ref={doneRef} className={styles.sizer}>
-            {item.doneLabel}
+      </span>
+      <span className={styles.label} aria-hidden="true">
+        <span className={styles.clip}>
+          {/* Hidden copies of both words share one cell, so the confirmation swap never changes the width. */}
+          <span className={styles.text}>
+            <span key={word} className={styles.word} data-swap={swap}>
+              {word}
+            </span>
+            <span className={styles.sizer}>{item.label}</span>
+            {item.doneLabel ? <span className={styles.sizer}>{item.doneLabel}</span> : null}
           </span>
-        ) : null}
-      </motion.span>
-    </MotionButton>
+        </span>
+      </span>
+    </Button>
   );
 }
 
 /**
- * A compact pill of icon buttons for actions. One action always shows its label; the one you point at or focus takes over the
+ * A compact tray of icon buttons for actions. One action always shows its label; the one you point at or focus takes over the
  * label while its neighbours slide aside, and an action can confirm in place: the icon draws a check and the label becomes a past tense word.
  * On touch, the first tap reveals the label and a second tap runs the action.
  */
@@ -364,10 +230,10 @@ export function ExpandingButtonGroup({
   defaultExpanded,
   onAction,
   confirmDuration = 1400,
+  chrome = "tray",
   className,
   style,
 }: ExpandingButtonGroupProps) {
-  const reduced = useReducedMotion() ?? false;
   const root = useRef<HTMLDivElement>(null);
   const [intent, setIntent] = useState<string | null>(null);
   const [done, setDone] = useState<{ id: string; seq: number } | null>(null);
@@ -387,7 +253,11 @@ export function ExpandingButtonGroup({
   };
   const keyFocus = useRef<string | null>(null);
   const touchOpen = useRef<string | null>(null);
-  const press = useRef<{ id: string; kind: string; wasExpanded: boolean } | null>(null);
+  const press = useRef<{
+    id: string;
+    kind: string;
+    wasExpanded: boolean;
+  } | null>(null);
   const doneRef = useRef<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
@@ -477,7 +347,11 @@ export function ExpandingButtonGroup({
     event: PointerEvent<HTMLButtonElement>,
   ) => {
     cancelHover();
-    press.current = { id: item.id, kind: event.pointerType, wasExpanded: expandedId === item.id };
+    press.current = {
+      id: item.id,
+      kind: event.pointerType,
+      wasExpanded: expandedId === item.id,
+    };
   };
 
   const onItemClick = (item: ExpandingButtonGroupItem) => {
@@ -608,6 +482,7 @@ export function ExpandingButtonGroup({
       data-full-width={fullWidth || undefined}
       aria-label={label}
       aria-orientation="horizontal"
+      data-chrome={chrome}
       className={[styles.group, styles[size], className].filter(Boolean).join(" ")}
       style={vars}
       onKeyDown={onKeyDown}
@@ -630,7 +505,6 @@ export function ExpandingButtonGroup({
           done={done?.id === item.id}
           busy={busy === item.id}
           tabStop={tabStop === item.id}
-          reduced={reduced}
           onPointerDown={onItemPointerDown}
           onClick={onItemClick}
           onFocus={onItemFocus}

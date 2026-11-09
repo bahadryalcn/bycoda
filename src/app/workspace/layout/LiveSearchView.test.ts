@@ -9,6 +9,7 @@ import { NOTHING_LOCKED } from "../../../features/group-lock/model/lockState";
 
 const rendered = vi.hoisted(() => vi.fn());
 vi.mock("../surfaces/lazySurfaces", () => ({
+  preloadToolSurface: vi.fn(),
   SearchView: (props: { sessions: Session[] }) => {
     rendered(props.sessions);
     return null;
@@ -46,6 +47,42 @@ it("keeps search stable during streamed prose and adopts its text when the turn 
     );
     expect(rendered).toHaveBeenCalledOnce();
     expect(rendered.mock.lastCall![0][0].blocks[0].text).toBe("ab");
+  } finally {
+    await act(async () => root.unmount());
+    resetSessionsStore([]);
+    vi.unstubAllGlobals();
+  }
+});
+
+it("hides delegated advisors and subagents from live search", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const parent = (kind: string) =>
+    JSON.stringify({ parentSessionId: "p", runId: kind, kind, model: "m", startedAt: 1 });
+  resetSessionsStore([
+    { id: "p", cwd: "/p", blocks: [], modelSettings: {} } as Session,
+    {
+      id: "a",
+      cwd: "/p",
+      blocks: [],
+      modelSettings: { delegationParent: parent("advisor") },
+    } as Session,
+    {
+      id: "s",
+      cwd: "/p",
+      blocks: [],
+      modelSettings: { delegationParent: parent("subagent") },
+    } as Session,
+  ]);
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () =>
+      root.render(
+        createElement(LiveSearchView, { lockSnapshot: NOTHING_LOCKED } as ComponentProps<
+          typeof LiveSearchView
+        >),
+      ),
+    );
+    expect(rendered.mock.lastCall![0].map((session: Session) => session.id)).toEqual(["p"]);
   } finally {
     await act(async () => root.unmount());
     resetSessionsStore([]);

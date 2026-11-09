@@ -1,11 +1,11 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Modal } from "../../../shared/ui/Modal";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { formatCooldown, WRONG_PASSWORD_DELAY_MS } from "../model/attemptThrottle";
 import { changeLockPassword, lockCooldownMs, setLockPassword } from "../model/groupLock";
 import { PASSWORD_MIN_LENGTH, passwordProblem } from "../model/passwordRecord";
-import { PasswordField } from "./PasswordField";
+import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { pause, useCooldown, verifyFailureMessage } from "./PasswordPromptDialog";
@@ -25,6 +25,7 @@ type Props = {
  */
 export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
   useLocale();
+  const formId = useId();
   const current = useRef<HTMLInputElement>(null);
   const next = useRef<HTMLInputElement>(null);
   const confirm = useRef<HTMLInputElement>(null);
@@ -53,19 +54,19 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
     const password = next.current?.value ?? "";
     const problem = passwordProblem(password);
     if (mode === "change" && !currentPassword) {
-      setError("Enter the current password.");
+      setError(t("Enter the current password."));
       return;
     }
     if (problem === "short") {
-      setError(`Use at least ${PASSWORD_MIN_LENGTH} characters.`);
+      setError(t("Use at least {p0} characters.", { p0: PASSWORD_MIN_LENGTH }));
       return;
     }
     if (problem === "long") {
-      setError("That password is too long.");
+      setError(t("That password is too long."));
       return;
     }
     if (password !== (confirm.current?.value ?? "")) {
-      setError("The two passwords do not match.");
+      setError(t("The two passwords do not match."));
       return;
     }
     setBusy(true);
@@ -101,7 +102,9 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
 
   const message =
     cooldown.remainingMs > 0
-      ? `Too many wrong passwords. Try again in ${formatCooldown(cooldown.remainingMs)}.`
+      ? t("Too many wrong passwords. Try again in {p0}.", {
+          p0: formatCooldown(cooldown.remainingMs),
+        })
       : error;
 
   return (
@@ -110,30 +113,63 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
       description={t("One password locks any number of groups.")}
       size="sm"
       fitViewport
-      onClose={onClose}
+      // The running change cannot be cancelled, so the dialog stays until it finishes.
+      onClose={busy ? () => {} : onClose}
+      footer={
+        <ModalActions>
+          <Button type="button" onClick={onClose} variant="ghost" disabled={busy}>
+            {t("Cancel")}
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            disabled={busy || cooldown.remainingMs > 0}
+            variant="primary"
+            loading={busy}
+          >
+            {mode === "set" ? t("Set password") : t("Change password")}
+          </Button>
+        </ModalActions>
+      }
     >
-      <form onSubmit={submit} className="flex flex-col gap-3 p-4">
+      <form id={formId} onSubmit={submit} className="flex flex-col gap-3">
         {mode === "change" ? (
           <PasswordField
             label={t("Current password")}
             ref={current}
             autoFocus
-            invalid={message != null}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            aria-invalid={message != null || undefined}
           />
         ) : null}
-        <PasswordField label={t("New password")} ref={next} autoFocus={mode === "set"} />
+        <PasswordField
+          label={t("New password")}
+          ref={next}
+          autoFocus={mode === "set"}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+        />
         <PasswordField
           label={t("Confirm new password")}
           ref={confirm}
-          describedBy={message ? "set-lock-password-error" : undefined}
-          invalid={message != null && mode === "set"}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          aria-describedby={message ? "set-lock-password-error" : undefined}
+          aria-invalid={(message != null && mode === "set") || undefined}
         />
         {message ? (
           <Alert id="set-lock-password-error" tone="danger">
             {message}
           </Alert>
         ) : null}
-        <ul className="flex list-disc flex-col gap-1 pl-4 text-[11px] leading-snug text-content/50">
+        <ul className="flex list-disc flex-col gap-1 pl-4 text-ui-micro leading-snug text-(--ui-text-muted)">
           <li>
             {t("This hides locked groups inside ")}
             {PRODUCT_IDENTITY.displayName}
@@ -147,19 +183,6 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
             )}
           </li>
         </ul>
-        <div className="flex justify-end gap-2">
-          <Button type="button" onClick={onClose} variant="ghost">
-            {t("Cancel")}
-          </Button>
-          <Button
-            type="submit"
-            disabled={busy || cooldown.remainingMs > 0}
-            variant="primary"
-            loading={busy}
-          >
-            {mode === "set" ? t("Set password") : t("Change password")}
-          </Button>
-        </div>
       </form>
     </Modal>
   );

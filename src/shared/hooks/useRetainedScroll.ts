@@ -7,8 +7,9 @@ export function useRetainedScroll<T extends HTMLElement>(
   key: string,
   { ready = true }: { ready?: boolean } = {},
 ) {
-  // Mutating this snapshot avoids a component render for every scroll event.
-  const [position] = useRetainedState(`${key}:scroll`, () => ({ top: 0, left: 0 }));
+  // Mutating this snapshot avoids a component render for every scroll event. It is a
+  // view-mode entry, so it is cheap to lose and evictable once its list unmounts.
+  const [position] = useRetainedState(`${key}:scroll`, () => ({ top: 0, left: 0 }), "view");
   const [element, setElement] = useState<T | null>(null);
   const ref = useCallback((node: T | null) => setElement(node), []);
   useLayoutEffect(() => {

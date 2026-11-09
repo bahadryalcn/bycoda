@@ -50,7 +50,7 @@ it("follows Turkish locale while retaining the original MIT license", async () =
   await openPolicy();
   expect(document.querySelector("article")?.lang).toBe("tr");
   expect(document.querySelector("article")?.textContent).toContain(
-    "Geliştirici veri toplamıyor veya kullanıcıları takip etmiyor",
+    "Hesapla da hesapsız da asla toplanmayanlar",
   );
   await openPolicy("software-license");
   expect(document.querySelector("article")?.lang).toBe("en");
@@ -59,7 +59,7 @@ it("follows Turkish locale while retaining the original MIT license", async () =
   await act(async () => root.render(createElement(PoliciesSettings)));
   await openPolicy();
   expect(document.querySelector("article")?.textContent).toContain(
-    "No developer collection or tracking",
+    "What bycoda collects, and what it does not",
   );
 });
 

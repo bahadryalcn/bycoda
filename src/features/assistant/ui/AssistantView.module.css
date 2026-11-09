@@ -1,0 +1,198 @@
+.toolbar,
+.collectionTools,
+.feedback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-inline-size: 0;
+}
+.content {
+  flex: 1;
+  overflow-y: auto;
+  min-block-size: 0;
+  padding: 16px;
+  overscroll-behavior: contain;
+}
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-inline-size: 0;
+}
+.section + .section {
+  margin-block-start: 20px;
+}
+.section h2 {
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+  margin: 0;
+}
+.section h3 {
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+  color: var(--ui-text-secondary);
+  margin: 0;
+}
+.muted {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-micro);
+  overflow-wrap: anywhere;
+}
+.empty {
+  margin: 0;
+  padding-block: 16px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.error {
+  color: var(--ui-tone-danger-fg);
+  font-size: var(--ui-font-caption);
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+.feedback {
+  padding: 10px 16px;
+  border-block-end: 1px solid var(--ui-pane-border);
+  color: var(--ui-tone-danger-fg);
+  font-size: var(--ui-font-caption);
+}
+.collectionTools {
+  margin-block-end: 12px;
+  gap: 8px;
+}
+.collectionTools > :first-child {
+  flex: 0 1 320px;
+  min-inline-size: min(200px, 100%);
+}
+.fieldRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: 10px;
+  min-inline-size: 0;
+}
+.fieldRow > :global(.max-w-52) {
+  max-inline-size: none;
+}
+/* One compact block: kind, "Every day at" + time, then the Host timezone notes as a caption line.
+   The shared sentence renders loose inline nodes, so it dissolves into this row. */
+.scheduleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px 8px;
+  min-inline-size: 0;
+}
+.scheduleKind {
+  flex: 0 0 11rem;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+.scheduleSentence {
+  display: contents;
+  font-size: var(--ui-font-secondary);
+  color: var(--ui-tone-neutral-fg);
+}
+.scheduleSentence > * {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--ui-control-height-md);
+}
+.scheduleSentence::after {
+  content: "";
+  order: 1;
+  flex-basis: 100%;
+  block-size: 0;
+}
+.scheduleSentence > :nth-last-child(-n + 2) {
+  order: 2;
+  min-block-size: 0;
+  font-size: var(--ui-font-caption);
+}
+.quickNoteFields {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+  min-inline-size: 0;
+}
+.modelField,
+.scheduleField {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+}
+/* Same label role as the shared Field label, so the fieldset legend reads like its neighbours. */
+.modelField legend,
+.scheduleField legend {
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+  line-height: 1.4;
+  color: inherit;
+  padding-block-end: 6px;
+}
+/* The field presentation is sized for body copy; here it sits beside Select and TextField. */
+.modelField button:global(.model-picker-field-trigger)[data-model-picker-presentation="field"] {
+  font-size: var(--ui-font-caption);
+  font-weight: 400;
+}
+.content[data-view="Conversations"] {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.content[data-view="Conversations"] > .collectionTools {
+  padding: 12px 16px 0;
+}
+/* Today and Jobs: every direct child of the content shares the same
+   width and the same vertical gap, so the briefing, notes, header, composer and rows align. */
+.content[data-view="Today"],
+.content[data-view="Jobs"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.content[data-view="Today"] > *,
+.content[data-view="Jobs"] > * {
+  margin-block: 0;
+}
+/* One content column for every tab except Conversations. */
+.content:not([data-view="Conversations"]) > * {
+  inline-size: 100%;
+  max-inline-size: 72rem;
+  min-inline-size: 0;
+  margin-inline: auto;
+}
+.jobsTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--ui-font-title);
+  font-weight: 500;
+}
+.content[data-view="Jobs"] .collectionTools > .jobsTitle {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+.jobsTitle span {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.content[data-view="Jobs"] .collectionTools > :nth-child(2) {
+  flex: 0 1 240px;
+  min-inline-size: 0;
+}
+@media (max-width: 600px) {
+  .content[data-view="Jobs"] {
+    padding: 16px;
+  }
+}
+@media (max-width: 720px) {
+  .content {
+    padding: 12px;
+  }
+}

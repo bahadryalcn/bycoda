@@ -3,7 +3,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::HashSet, fs, path::PathBuf};
+use std::{collections::HashSet, fs, path::PathBuf, sync::Mutex};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -42,6 +42,36 @@ fn safe_atom(value: &str) -> bool {
         && value
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || ".-_:@[]".contains(c))
+}
+
+/// Up to five sanitized stderr lines as a message suffix; empty when nothing is safe to show.
+/// Same rules as `remote_ssh::stderr_tail`, which is private to that module.
+pub(crate) fn stderr_detail(sink: &Mutex<String>) -> String {
+    let text = sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let lines: Vec<String> = text
+        .lines()
+        .map(|line| {
+            line.chars()
+                .filter(|c| !c.is_control())
+                .take(200)
+                .collect::<String>()
+                .trim()
+                .to_string()
+        })
+        .filter(|line| {
+            let lower = line.to_ascii_lowercase();
+            !line.is_empty()
+                && !["bearer ", "token=", "password=", "passphrase="]
+                    .iter()
+                    .any(|secret| lower.contains(secret))
+        })
+        .collect();
+    let tail = &lines[lines.len().saturating_sub(5)..];
+    if tail.is_empty() {
+        String::new()
+    } else {
+        format!("\n{}", tail.join("\n"))
+    }
 }
 
 pub(crate) fn validate_endpoint(endpoint: &SshEndpoint) -> Result<(), String> {
@@ -726,9 +756,7 @@ pub fn ssh_agent_identities() -> SshAgentInventory {
     if !status.success() {
         return unavailable();
     }
-    let Ok(output) = String::from_utf8(bytes) else {
-        return unavailable();
-    };
+    let output = String::from_utf8_lossy(&bytes);
     let identities = parse_agent_identities(&output);
     SshAgentInventory {
         status: if identities.is_empty() {

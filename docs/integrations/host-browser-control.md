@@ -49,15 +49,17 @@ its project/session IDs to the selected host. Paired-host authentication still
 applies; newer setup/device machine selection requires the
 `host.tools.machine-targets` capability.
 
-Playwright is optional. In **Host browser → Setup and access**, choose **Set up
-host browser** to install pinned `playwright@1.64.0` and Chromium on the project's
-own host. Setup uses the host's Node runtime and an existing npm CLI, with hidden,
-bounded child processes. Status and opening never download dependencies implicitly.
-An interrupted setup can be retried; partial directories are retained.
+The host browser installs itself. The first time the Browser panel, a visual
+preview or a log monitor needs it, the Host starts a one-time background setup of
+pinned `playwright@1.64.0`, the Chromium headless shell and ffmpeg, and asks the
+caller to retry shortly. **Host browser → Setup and access → Set up host browser**
+starts the same setup by hand. Setup uses the Node runtime and npm that ship inside
+the Host package, with hidden, bounded child processes. Status reads never download.
+An interrupted setup is retried on the next use; partial directories are retained.
 
 The installation lives in `~/.bycoda-host/tools/playwright-1.64.0`, outside the
 immutable application/runtime packages, and survives host upgrades. Status checks
-both the completed package and Chromium binary. The `browser.shared.setup`
+the completed package and the headless shell that setup verified by launching it. The `browser.shared.setup`
 capability identifies hosts offering this setup action; older hosts need the normal
 local update first. Do not manually modify a frozen host package.
 

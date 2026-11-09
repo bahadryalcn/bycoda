@@ -1,5 +1,10 @@
 import { Button } from "../../../shared/ui/Button";
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useRef, useState } from "react";
 import { useProjectWorktrees } from "../hooks/useProjectWorktrees";
@@ -7,15 +12,8 @@ import { useWorktreeFocus, type WorktreeFocus } from "../model/worktreeFocus";
 import { createWorktree } from "../model/worktrees";
 import { pathKey, prettyCwd } from "../../../shared/lib/paths";
 import { Popover } from "../../../shared/ui/Popover";
-import {
-  Check,
-  ChevronsUpDown,
-  FolderTree,
-  GitBranch,
-  Loader,
-  Plus,
-  Search,
-} from "../../../shared/ui/icons";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
+import { Check, ChevronsUpDown, FolderTree, GitBranch, Plus } from "../../../shared/ui/icons";
 
 /** The sidebar title. Picking a worktree narrows the sidebar, and the
  * sessions opened from it, to that working copy and names it here. */
@@ -37,6 +35,7 @@ export function SidebarWorktreeSwitcher({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  const [reportedSwitchError, setReportedSwitchError] = useState<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   const [creationError, setCreationError] = useState<string>();
   const creatingRef = useRef(false);
@@ -53,7 +52,7 @@ export function SidebarWorktreeSwitcher({
   const search = useRef<HTMLInputElement>(null);
   const activeOption = useRef<HTMLButtonElement>(null);
   const focus = useWorktreeFocus(cwd);
-  const { data, error, refresh } = useProjectWorktrees(cwd);
+  const { data, error, loading, refresh } = useProjectWorktrees(cwd);
   // The project folder is the default, unfocused entry; missing worktrees
   // cannot be opened, so they are left out.
   const main = data?.worktrees.find((tree) => tree.isMain);
@@ -149,9 +148,12 @@ export function SidebarWorktreeSwitcher({
       onSelect?.(undefined);
   }, [cwd, data, focus, onSelect, pending, switchError]);
 
-  useEffect(() => {
+  // A newly reported switch error opens the picker so it is seen; closing it
+  // afterwards stays possible while the same error is still shown.
+  if (reportedSwitchError !== switchError) {
+    setReportedSwitchError(switchError);
     if (switchError) setOpen(true);
-  }, [switchError]);
+  }
 
   const focused = focus && worktrees.find((tree) => pathKey(tree.path) === pathKey(focus.path));
   const title = focus ? (focused?.branch ?? focus.branch ?? "Detached worktree") : "Workspace";
@@ -168,10 +170,10 @@ export function SidebarWorktreeSwitcher({
         aria-expanded={open}
         aria-busy={pending || creating}
         disabled={creating}
-        title={
-          focus
-            ? `${focus.branch ?? "detached"}\n${prettyCwd(focus.path)}`
-            : (main?.branch ?? t("Project folder"))
+        tooltip={focus ? (focus.branch ?? "detached") : (main?.branch ?? t("Project folder"))}
+        tooltipDetails={focus ? [prettyCwd(focus.path)] : undefined}
+        tooltipWhen={
+          !focus && (main?.branch ?? t("Project folder")) === title ? "overflow" : "always"
         }
         onClick={() => {
           if (open) closePicker();
@@ -182,16 +184,17 @@ export function SidebarWorktreeSwitcher({
           event.preventDefault();
           openPicker();
         }}
-        className="-ml-1.5 flex h-6.5 min-w-0 max-w-full items-center gap-2 leading-tight"
+        // The header row's gap-1 (4px) is cancelled exactly, so the hit area abuts the Forward button without covering it.
+        className="-ml-1 flex h-6.5 w-fit min-w-0 max-w-full items-center gap-2 leading-tight"
       >
-        <span className="min-w-0 truncate">{title}</span>
+        <MiddleTruncate mode="text">{title}</MiddleTruncate>
         {pending || creating ? (
-          <Loader
-            aria-label={creating ? t("Creating worktree") : t("Switching working copy")}
-            className="size-3.5 shrink-0 animate-spin text-[var(--ui-text-muted)]"
+          <Spinner
+            label={creating ? t("Creating worktree") : t("Switching working copy")}
+            className="shrink-0 text-(--ui-text-muted)"
           />
         ) : (
-          <ChevronsUpDown className="size-3.5 shrink-0 text-[var(--ui-text-muted)]" />
+          <ChevronsUpDown className="icon-sm shrink-0 text-(--ui-text-muted)" />
         )}
       </Button>
       {open ? (
@@ -208,51 +211,37 @@ export function SidebarWorktreeSwitcher({
           aria-label={t("Working copies")}
           className="flex flex-col overflow-hidden"
         >
-          <label className="flex h-11 shrink-0 items-center gap-2.5 border-b border-stroke px-3 text-[var(--ui-text-muted)] focus-within:text-[var(--ui-text-secondary)]">
-            <Search className="size-4 shrink-0" strokeWidth={1.75} />
-            <span className="sr-only">{t("Search working copies")}</span>
-            <SearchInput
-              ref={search}
-              value={query}
-              disabled={creating}
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={t("Search or create a worktree...")}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setActive(0);
-                setCreationError(undefined);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                  event.preventDefault();
-                  setActive(
-                    Math.max(
-                      0,
-                      Math.min(rows.length - 1, activeIndex + (event.key === "ArrowDown" ? 1 : -1)),
-                    ),
-                  );
-                }
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  const tree = rows[activeIndex];
-                  if (tree) pick(tree);
-                  else if (canCreate) void create();
-                }
-              }}
-              className="min-w-0 flex-1"
-            />
-          </label>
+          <PopoverSearchHeader
+            ref={search}
+            size="md"
+            label={t("Search working copies")}
+            placeholder={t("Search or create a worktree...")}
+            value={query}
+            disabled={creating}
+            onValueChange={(value) => {
+              setQuery(value);
+              setActive(0);
+              setCreationError(undefined);
+            }}
+            onMove={(move) => {
+              if (move !== "next" && move !== "previous") return;
+              setActive(
+                Math.max(0, Math.min(rows.length - 1, activeIndex + (move === "next" ? 1 : -1))),
+              );
+            }}
+            onSubmit={() => {
+              const tree = rows[activeIndex];
+              if (tree) pick(tree);
+              else if (canCreate) void create();
+            }}
+          />
           <div
             role="listbox"
             aria-label={t("Working copies")}
             className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1.5"
           >
             {!data && !error ? (
-              <div className="flex items-center gap-2 p-2 text-[12px] text-[var(--ui-text-secondary)]">
-                <Loader className="size-3.5 animate-spin" />
-                {t("Loading working copies…")}
-              </div>
+              <LoadingText className="p-2">{t("Loading working copies…")}</LoadingText>
             ) : null}
             {rows.map((tree, index) => {
               const selected = tree.isMain
@@ -268,7 +257,7 @@ export function SidebarWorktreeSwitcher({
                   type="button"
                   role="option"
                   aria-selected={selected}
-                  title={tree.path}
+                  tooltip={tree.path}
                   disabled={creating}
                   onMouseEnter={() => setActive(index)}
                   onClick={() => pick(tree)}
@@ -277,31 +266,50 @@ export function SidebarWorktreeSwitcher({
                   }   `}
                 >
                   {tree.isMain ? (
-                    <GitBranch className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]" />
+                    <GitBranch className="icon-sm shrink-0 text-(--ui-text-secondary)" />
                   ) : (
-                    <FolderTree className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]" />
+                    <FolderTree className="icon-sm shrink-0 text-(--ui-text-secondary)" />
                   )}
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[12px]">{tree.label}</span>
-                    <span className="block truncate text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+                    <MiddleTruncate mode="text" className="text-ui-body">
+                      {tree.label}
+                    </MiddleTruncate>
+                    <MiddleTruncate
+                      mode="path"
+                      className="text-ui-caption text-(--ui-text-secondary)"
+                    >
                       {tree.detail}
-                    </span>
+                    </MiddleTruncate>
                   </span>
                   <OpenTabs stats={tabStats?.get(pathKey(tree.path))} />
-                  {selected ? <Check className="size-3.5 shrink-0" /> : null}
+                  {selected ? <Check className="icon-sm shrink-0" /> : null}
                 </Button>
               );
             })}
             {data && rows.length === 0 ? (
-              <p className="px-2.5 py-5 text-center text-[12px] text-(--ui-text-secondary)">
-                {t("No matching working copies")}
-              </p>
+              <EmptyState
+                size="inline"
+                kind="filtered"
+                className="px-2.5 py-3"
+                description={t("No matching working copies")}
+              />
             ) : null}
           </div>
           {creationError || switchError || error ? (
-            <p role="alert" className="px-2 py-2 text-[11px] text-danger">
+            <InlineError
+              className="shrink-0 px-2 py-2"
+              retry={
+                error
+                  ? {
+                      onRetry: () => void refresh(),
+                      pending: loading,
+                      disabled: creating || pending,
+                    }
+                  : undefined
+              }
+            >
               {creationError || switchError || error}
-            </p>
+            </InlineError>
           ) : null}
           {canCreate ? (
             <div className="shrink-0 border-t border-stroke p-1.5">
@@ -309,16 +317,15 @@ export function SidebarWorktreeSwitcher({
                 variant="item"
                 motion="none"
                 type="button"
+                fullWidth
+                align="start"
+                loading={creating}
+                startIcon={<Plus className="icon-md" strokeWidth={1.75} />}
                 disabled={creating}
                 onClick={() => void create()}
-                title={t("Create worktree {p0}", { p0: createName })}
-                className="flex h-9 w-full items-center gap-2.5 text-left"
+                tooltip={t("Create worktree {p0}", { p0: createName })}
+                tooltipWhen="overflow"
               >
-                {creating ? (
-                  <Loader className="size-4 shrink-0 animate-spin" />
-                ) : (
-                  <Plus className="size-4 shrink-0" strokeWidth={1.75} />
-                )}
                 <span className="min-w-0 truncate">
                   {t("Create worktree ")}
                   {createName}
@@ -338,13 +345,14 @@ function OpenTabs({ stats }: { stats?: { tabs: number; busy: boolean } }) {
   if (!stats?.tabs) return null;
   const label = `${stats.tabs} open tab${stats.tabs === 1 ? "" : "s"}${stats.busy ? ", working" : ""}`;
   return (
-    <span
-      title={label}
-      aria-label={label}
-      className="flex shrink-0 items-center gap-1 text-(length:--ui-font-caption) tabular-nums text-(--ui-text-secondary)"
-    >
-      {stats.busy ? <span className="size-1.5 animate-pulse rounded-full bg-accent" /> : null}
-      {stats.tabs}
-    </span>
+    <Tooltip label={label}>
+      <span
+        aria-label={label}
+        className="flex shrink-0 items-center gap-1 text-ui-caption tabular-nums text-(--ui-text-secondary)"
+      >
+        {stats.busy ? <Spinner size="xs" /> : null}
+        {stats.tabs}
+      </span>
+    </Tooltip>
   );
 }

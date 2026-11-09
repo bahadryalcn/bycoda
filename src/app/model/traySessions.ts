@@ -1,5 +1,6 @@
 import { projectDisplayName } from "../../features/projects/model/projectNames";
 import { pathKey } from "../../shared/lib/paths";
+import { truncateGraphemes } from "../../shared/lib/text/truncate";
 import { HARNESS_TITLE } from "../../features/sessions/model/session";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import type { LiveSessionInfo } from "../../features/sessions/model/recentSessions";
@@ -16,8 +17,7 @@ export type TraySession = {
 
 // Bound each part separately so a long title never hides the project or agent.
 function menuText(value: string, limit: number): string {
-  const chars = [...value.replace(/\s+/g, " ").trim()];
-  return chars.length > limit ? `${chars.slice(0, limit - 1).join("")}…` : chars.join("");
+  return truncateGraphemes(value.replace(/\s+/g, " ").trim(), limit);
 }
 
 /** Idle history is Active, not Done: a saved transcript does not prove success. */
@@ -55,9 +55,11 @@ export function traySessions({
   };
   for (const row of stored) {
     if (row.archived || row.draft || row.orchestrationLeadId) continue;
-    add(row, "active", row.updatedAt);
+    add(row, "active", row.lastActivityAt ?? row.updatedAt);
   }
-  for (const row of live) add(row, row.status ?? "active", row.activityAt);
+  // The native tray has no interrupted group; retain it as an active conversation.
+  for (const row of live)
+    add(row, row.status === "interrupted" ? "active" : (row.status ?? "active"), row.activityAt);
   const liveById = new Map(live.map((row) => [row.id, row]));
   for (const agent of agents) {
     // Cached remote history deliberately clears its live status. Do not let
@@ -69,9 +71,17 @@ export function traySessions({
       !liveById.get(agent.id)?.status
     )
       continue;
+    // The native tray has no waiting group: a waiting agent yielded, so it is not Working.
     add(
       agent,
-      agent.issue ?? (agent.needsApproval ? "input" : agent.done ? "done" : "working"),
+      agent.issue ??
+        (agent.needsApproval
+          ? "input"
+          : agent.done
+            ? "done"
+            : agent.waiting
+              ? "active"
+              : "working"),
       agent.startedAt ?? 0,
     );
   }

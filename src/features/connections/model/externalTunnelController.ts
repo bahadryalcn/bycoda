@@ -6,6 +6,7 @@ import {
   tunnelPublicUrl,
   type TunnelIssue,
   type TunnelOverview,
+  type TunnelRepair,
   type ExternalTunnel,
   type TunnelStart,
 } from "../../../integrations/external-tunnels";
@@ -121,7 +122,31 @@ export function readTunnelOverview(value: unknown, environmentId: string): Tunne
       ...(item.issue ? { issue: item.issue as TunnelIssue } : {}),
     };
   });
-  return { environmentId, hostLocalUrl, providers, tunnels, publicReachability: "unverified" };
+  const repair = readTunnelRepair(overview.repair);
+  return {
+    environmentId,
+    hostLocalUrl,
+    providers,
+    tunnels,
+    publicReachability: "unverified",
+    ...(repair ? { repair } : {}),
+  };
+}
+
+/**
+ * The repair notice is informational: a malformed one is dropped rather than failing the
+ * whole overview, so an older or newer Host never blocks the tunnel list.
+ */
+export function readTunnelRepair(value: unknown): TunnelRepair | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const repair = value as Record<string, unknown>;
+  if (
+    repair.repaired !== true ||
+    !Number.isSafeInteger(repair.dropped) ||
+    Number(repair.dropped) < 0
+  )
+    return;
+  return { repaired: true, dropped: Number(repair.dropped) };
 }
 
 export function tunnelUiIssue(error: unknown): TunnelUiIssue {

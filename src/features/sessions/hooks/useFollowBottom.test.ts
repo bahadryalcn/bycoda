@@ -6,7 +6,7 @@ import { useFollowBottom } from "./useFollowBottom";
 vi.mock("../model/transcriptActivity", () => ({ nestedScrollAbsorbsWheel: () => true }));
 afterEach(() => vi.unstubAllGlobals());
 
-it("okuyucu yukarı gidince takibi durdurur, büyümede konumunu korur ve dinleyiciyi temizler", () => {
+it("stops following when the reader scrolls up, keeps position on growth and cleans up the listener", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   let resize!: () => void;
   const disconnect = vi.fn();
@@ -60,7 +60,7 @@ it("okuyucu yukarı gidince takibi durdurur, büyümede konumunu korur ve dinley
   expect(following.current).toBe(true);
 });
 
-it("32 piksel mesafe politikası hareket yönünden bağımsız devam eder", () => {
+it("the 32 px distance policy applies regardless of scroll direction", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "ResizeObserver",

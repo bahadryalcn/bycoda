@@ -62,8 +62,11 @@ describe("UsageFooter terminal control", () => {
       createElement(UsageFooter, { providers: [], terminalUnavailableReason: reason }),
     );
     expect(markup.match(/<button/g)).toHaveLength(1);
-    expect(markup).toContain('disabled=""');
-    expect(markup).toContain(`title="${reason}"`);
+    // `disabledReason` keeps the control focusable (aria-disabled) so keyboard users reach the reason.
+    expect(markup).toContain('aria-disabled="true"');
+    expect(markup).toContain(`aria-description="${reason}"`);
+    // The reason rides in the shared tooltip on hover, never a native title bubble.
+    expect(markup).not.toContain("title=");
     expect(markup).toContain('aria-label="Terminal"');
   });
 

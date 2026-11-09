@@ -13,7 +13,14 @@ fn state() -> &'static Mutex<NativeLanguage> {
     static STATE: OnceLock<Mutex<NativeLanguage>> = OnceLock::new();
     STATE.get_or_init(|| Mutex::new(NativeLanguage::default()))
 }
-#[cfg(any(target_os = "macos", target_os = "windows", test))]
+
+pub(crate) fn translated(source: &str) -> String {
+    state()
+        .lock()
+        .ok()
+        .and_then(|state| state.labels.get(source).cloned())
+        .unwrap_or_else(|| source.to_owned())
+}
 fn label(labels: &HashMap<String, String>, source: &str, name: &str) -> String {
     for prefix in ["Quit", "Show", "Hide", "About"] {
         if source == format!("{prefix} {name}") {
@@ -25,6 +32,15 @@ fn label(labels: &HashMap<String, String>, source: &str, name: &str) -> String {
         .get(source)
         .cloned()
         .unwrap_or_else(|| source.to_owned())
+}
+
+/// Translated "Show/Quit/... {name}" text for items outside the application menu.
+pub(crate) fn menu_text(prefix: &str, name: &str) -> String {
+    let source = format!("{prefix} {name}");
+    match state().lock() {
+        Ok(state) => label(&state.labels, &source, name),
+        Err(_) => source,
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -79,29 +95,12 @@ pub fn refresh(app: &AppHandle) -> Result<(), String> {
 pub fn native_language_set(app: AppHandle, labels: HashMap<String, String>) -> Result<(), String> {
     {
         let mut state = state().lock().map_err(|error| error.to_string())?;
-        state.labels = labels.clone();
+        state.labels = labels;
     }
     #[cfg(target_os = "macos")]
     refresh(&app)?;
-    #[cfg(target_os = "windows")]
-    if let Some(tray) = app.tray_by_id("main") {
-        use tauri::menu::{MenuBuilder, MenuItemBuilder};
-        let name = &app.package_info().name;
-        let show =
-            MenuItemBuilder::with_id("tray_show", label(&labels, &format!("Show {name}"), name))
-                .build(&app)
-                .map_err(|error| error.to_string())?;
-        let quit =
-            MenuItemBuilder::with_id("tray_quit", label(&labels, &format!("Quit {name}"), name))
-                .build(&app)
-                .map_err(|error| error.to_string())?;
-        let menu = MenuBuilder::new(&app)
-            .items(&[&show, &quit])
-            .build()
-            .map_err(|error| error.to_string())?;
-        tray.set_menu(Some(menu))
-            .map_err(|error| error.to_string())?;
-    }
+    // The tray menu is rebuilt from the session snapshot, not replaced by a bare one.
+    crate::tray::refresh_language(&app).map_err(|error| error.to_string())?;
     let _ = app;
     Ok(())
 }

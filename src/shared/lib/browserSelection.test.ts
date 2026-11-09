@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { expect, it, vi } from "vitest";
 
-it("seçim bildirimlerini erteler ve açık olay gönderimini eşzamanlı tutar", async () => {
+it("defers selection notifications and keeps explicit event dispatch synchronous", async () => {
   vi.useFakeTimers();
   const listener = vi.fn();
   const node = document.createTextNode("seçim");

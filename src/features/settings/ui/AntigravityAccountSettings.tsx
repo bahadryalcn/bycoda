@@ -10,10 +10,9 @@ import {
   subscribeHarnessAvailability,
 } from "../../../integrations/harness/core/availability";
 import { discoverAntigravityModels } from "../../../integrations/harness/providers/antigravity/antigravityCatalog";
-import { setHarnessModels } from "../../sessions/model/models";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import { setHarnessModels } from "../../sessions/public/models";
 import { Group } from "./settingsControls";
-import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 
 export function AntigravityAccountSettings({ embedded = false }: { embedded?: boolean }) {
   useLocale();
@@ -53,7 +52,7 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
   }
 
   const instructions = (
-    <div className="space-y-3 px-4 py-4 text-[12px] text-content/60">
+    <div className="space-y-3 px-4 py-4 text-ui-caption text-(--ui-text-secondary)">
       <p>
         {available
           ? t("Antigravity is installed.")
@@ -62,11 +61,11 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
       {!available && (
         <>
           <p>{t("Windows (PowerShell)")}</p>
-          <code className="block select-text rounded-md bg-content/5 px-3 py-2 text-content">
+          <code className="block select-text rounded-md bg-(--ui-surface-muted) px-3 py-2 text-content">
             {"irm https://antigravity.google/cli/install.ps1 | iex"}
           </code>
           <p>{t("macOS / Linux")}</p>
-          <code className="block select-text rounded-md bg-content/5 px-3 py-2 text-content">
+          <code className="block select-text rounded-md bg-(--ui-surface-muted) px-3 py-2 text-content">
             {"curl -fsSL https://antigravity.google/cli/install.sh | bash"}
           </code>
         </>
@@ -101,12 +100,10 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
           "Gemini CLI remains available for enterprise Gemini Code Assist licenses and supported API keys. Existing Gemini sessions and CLI paths are preserved.",
         )}
       </p>
-      <SecondaryButton disabled={checking} onClick={() => void checkInstallation()}>
+      <Button className="shrink-0" loading={checking} onClick={() => void checkInstallation()}>
         {checking ? t("Checking…") : t("Check installation and models")}
-      </SecondaryButton>
-      {checking ? (
-        <SettingsFeedback state="loading">{t("Checking…")}</SettingsFeedback>
-      ) : status ? (
+      </Button>
+      {!checking && status ? (
         <SettingsFeedback state={available ? "success" : "warning"}>{t(status)}</SettingsFeedback>
       ) : null}
       {error && <SettingsFeedback state="error">{t(error)}</SettingsFeedback>}
@@ -117,16 +114,18 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
       <div
         id="setting-antigravity-account"
         data-setting-id="antigravity-account"
-        className="border-t border-content/5"
+        className="provider-antigravity-box"
       >
         <div className="flex flex-wrap items-center gap-4 px-4 py-3.5">
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
-            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-content/[0.05] ring-1 ring-inset ring-content/[0.06]">
-              <HarnessIcon harness="antigravity" className="size-4" />
+            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-(--ui-surface-muted) ring-1 ring-inset ring-stroke">
+              <HarnessIcon harness="antigravity" className="icon-md" />
             </span>
             <div className="min-w-0">
-              <p className="text-[12px] font-medium text-content">{t("Antigravity CLI account")}</p>
-              <p className="text-[11px] text-content/50">
+              <p className="text-ui-caption font-medium text-content">
+                {t("Antigravity CLI account")}
+              </p>
+              <p className="text-ui-micro text-(--ui-text-muted)">
                 {t("This machine · shared CLI account · separate profiles unavailable")}
               </p>
             </div>
@@ -145,7 +144,7 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
         <div
           id="antigravity-account-setup"
           hidden={!expanded}
-          className="border-t border-content/5 bg-content/[0.015]"
+          className="border-t border-(--ui-settings-hairline)"
         >
           {instructions}
         </div>

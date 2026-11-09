@@ -14,7 +14,7 @@ afterEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
 });
-it("cross-tab sahibi aynı key ve clear olaylarını alır, sessionStorage olayını almaz", () => {
+it("the cross-tab owner receives same-key and clear events but not sessionStorage events", () => {
   const callback = vi.fn();
   const unsubscribe = subscribeKeepAwakeEnabled(callback);
   try {
@@ -42,7 +42,7 @@ it("cross-tab sahibi aynı key ve clear olaylarını alır, sessionStorage olay�
   window.dispatchEvent(new StorageEvent("storage", { key: null, storageArea: localStorage }));
   expect(callback).toHaveBeenCalledTimes(3);
 });
-it("enum normalizasyonunu ve başarısız save sonrası olay detail/load ayrımını korur", () => {
+it("keeps enum normalization and the event detail/load split after a failed save", () => {
   saveDiffLayout("split");
   const callback = vi.fn();
   const unsubscribe = subscribeDiffLayout(callback);
@@ -54,7 +54,7 @@ it("enum normalizasyonunu ve başarısız save sonrası olay detail/load ayrım�
       throw new Error("quota");
     });
     saveDiffLayout("invalid" as "inline");
-    expect(details).toEqual(["inline"]);
+    expect(details).toEqual(["auto"]);
     expect(callback).toHaveBeenCalledTimes(1);
     expect(loadDiffLayout()).toBe("split");
   } finally {

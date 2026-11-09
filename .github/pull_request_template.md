@@ -1,10 +1,10 @@
-## Summary
+## Problem and result
 
-<!-- Describe the change and why it is useful. Link related issues when relevant; an issue is not required. -->
+<!-- Describe the concrete trigger, previous behavior and resulting behavior. Include compatibility or recovery implications when relevant. Link related issues when helpful; an issue is not required. -->
 
 ## Validation
 
-<!-- List the test commands and results, plus relevant manual checks. Explain any checks you could not run; required checks must pass before merging. -->
+<!-- List meaningful test commands and results for the latest revision. Distinguish source/fixture checks, package builds and installed/live acceptance. Name checks you could not run and their concrete blocker; required checks must pass before merging. -->
 
 ## Merge checklist
 

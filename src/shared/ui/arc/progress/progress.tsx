@@ -19,6 +19,7 @@ import { motionTokens } from "../lib/motion-tokens";
 import styles from "./progress.module.css";
 
 export interface ProgressProps extends Omit<React.HTMLAttributes<HTMLDivElement>, "children"> {
+  /** A number is determinate (0 is not started, `max` is done). Leave it out when the amount is unknown: the bar then moves without implying a position. */
   value?: number;
   max?: number;
   label?: string;
@@ -78,8 +79,14 @@ export function Progress({
   const safeMax = Number.isFinite(max) && max > 0 ? max : 100;
   const determinate = value !== undefined && Number.isFinite(value);
   const safeValue = determinate ? Math.min(Math.max(value, 0), safeMax) : undefined;
-  const percentage = safeValue === undefined ? 0 : Math.round((safeValue / safeMax) * 100);
-  const complete = percentage >= 100;
+  const complete = safeValue !== undefined && safeValue >= safeMax;
+  // Rounding never reports done early: 99.6 of 100 reads 99%, and any progress reads at least 1%.
+  const percentage =
+    safeValue === undefined
+      ? 0
+      : complete
+        ? 100
+        : Math.min(99, Math.max(safeValue > 0 ? 1 : 0, Math.round((safeValue / safeMax) * 100)));
   // One spring drives both the fill and the counted label, so the number always matches the bar.
   const progress = useMotionValue(percentage);
   // The fill slides in from the left instead of scaling, so its rounded end keeps its shape at every value.
@@ -113,6 +120,7 @@ export function Progress({
       data-tone={tone}
       data-compact={compact || undefined}
       data-indeterminate={!determinate || undefined}
+      aria-busy={!determinate || undefined}
       data-value-inside={inside || undefined}
       role="progressbar"
       aria-label={props["aria-label"] ?? label ?? "Progress"}
@@ -166,7 +174,11 @@ export function Progress({
         </div>
       ) : null}
       <div className={styles.track}>
-        <motion.span className={styles.fill} style={{ x }} />
+        {determinate ? (
+          <motion.span className={styles.fill} style={{ x }} />
+        ) : (
+          <span className={styles.unknown} />
+        )}
         {inside ? (
           <>
             <span className={styles.insideValue} aria-hidden="true">

@@ -1,0 +1,36 @@
+/* Effect cards sit in one even grid: seven columns, four when the panel is narrow. */
+.wrap {
+  container-type: inline-size;
+  width: 100%;
+  min-width: 0;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.5rem;
+  width: 100%;
+}
+@container (max-width: 30rem) {
+  .grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+/* Selection is a fill plus an accent ring; no side stripe. */
+.tile {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.tile[data-button-selected] {
+  box-shadow: 0 0 0 2px var(--ui-interaction-accent);
+}
+.thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 0.375rem;
+  background: var(--ui-surface-selected);
+}

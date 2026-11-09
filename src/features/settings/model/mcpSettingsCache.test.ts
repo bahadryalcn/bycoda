@@ -27,6 +27,21 @@ beforeEach(() => {
 });
 afterEach(clearMcpSettingsCache);
 
+it("clears verified connection and sign-in after failed discovery without losing configuration", async () => {
+  invoke.mockImplementation(async (command: string) =>
+    command === "mcp_discover" ? configured : "docs: local - Connected",
+  );
+  await loadMcpSettings("/repo");
+  await vi.waitFor(() =>
+    expect(getCachedMcpSettings("/repo")?.servers[0].status).toBe("Connected"),
+  );
+  invoke.mockRejectedValue(new Error("Discovery unavailable"));
+  const snapshot = await loadMcpSettings("/repo", true);
+  expect(snapshot.servers).toEqual([{ ...configured[0], status: "Configured" }]);
+  expect(snapshot.error).toContain("Discovery unavailable");
+  expect(snapshot.claudeChecking).toBeUndefined();
+});
+
 it("never sends remote project paths to desktop discovery or health commands", async () => {
   const snapshot = await loadMcpSettings("remote://fixture-host/work/project", true);
   expect(snapshot).toEqual({ servers: [], error: MCP_LOCAL_ONLY_ERROR, claudeError: "" });
@@ -109,4 +124,31 @@ it("keeps configured rows when health fails and preserves disabled status", asyn
   );
   expect(getCachedMcpSettings("/repo")?.servers[0].status).toBe("Disabled");
   expect(getCachedMcpSettings("/repo")?.error).toBe("");
+});
+
+it("reads Codex sign-in state when the list opens without Claude health", async () => {
+  const codex: McpConnection[] = ["cloudflare", "mem0"].map((name) => ({
+    provider: "codex",
+    name,
+    scope: "user",
+    configPath: "",
+    transport: "http",
+  }));
+  invoke.mockImplementation(async (command: string) => {
+    if (command === "mcp_discover") return codex;
+    if (command === "codex_mcp_list")
+      return [
+        { name: "cloudflare", authStatus: "o_auth" },
+        { name: "mem0", authStatus: "unsupported" },
+      ];
+    throw new Error(`unexpected ${command}`);
+  });
+  await loadMcpSettings("/repo", false, { claudeHealth: false });
+  await vi.waitFor(() =>
+    expect(getCachedMcpSettings("/repo")?.servers.map((server) => server.auth)).toEqual([
+      "signed_in",
+      "none",
+    ]),
+  );
+  expect(invoke).not.toHaveBeenCalledWith("claude_mcp_list", expect.anything());
 });

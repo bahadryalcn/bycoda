@@ -1,9 +1,39 @@
-import type { Block, Session, RuntimeMode, SecondOpinionMeta } from "../../sessions/model/session";
-import type { UserQuestionReply } from "../../sessions/model/userQuestion";
-import type { AgentModel } from "../../sessions/model/models";
-import type { LinkedWorkItem } from "../../sessions/model/session";
+import type {
+  Block,
+  Session,
+  RuntimeMode,
+  SecondOpinionMeta,
+  UserQuestionReply,
+  AgentModel,
+  LinkedWorkItem,
+} from "../../sessions";
+import type { BuildIdentity, WorkspaceCapability } from "../../workspaces/model/contracts";
+export type {
+  ManagedWorkspace,
+  WorkspacePolicy,
+  WorkspaceRpcMethod,
+  WorkspaceRpcRequest,
+  WorkspaceRpcResponse,
+} from "../../workspaces/model/contracts";
 
+/**
+ * Bump only for a change an existing client cannot survive: a removed or
+ * reshaped method, payload or field. Additive changes (new providers,
+ * capabilities, methods, optional fields) never bump it; clients ignore what
+ * they do not know so phones and other desktops keep talking to a newer Host.
+ */
 export const HOST_PROTOCOL_VERSION = 1;
+
+/**
+ * Tells the reader which side to update. `host` is the protocol the Host serves,
+ * `client` the one this app speaks. Returns null when they match.
+ */
+export function protocolMismatchMessage(host: unknown, client: number): string | null {
+  if (host === client) return null;
+  if (typeof host === "number" && Number.isInteger(host) && host > client)
+    return "This Host speaks a newer protocol. Update this app to connect.";
+  return "This Host speaks an older protocol. Update the bycoda Host to connect.";
+}
 
 export type ContextualSessionInput = {
   sessionId: string;
@@ -48,7 +78,24 @@ export type HostDescriptor = {
   providers: RemoteProvider[];
   capabilities: string[];
   platform?: "win32" | "darwin" | "linux";
+  /** Public paired-CA bootstrap; absent while the owner-controlled LAN listener is disabled. */
+  mobileTls?: import("../../../shared/model/host-contracts").MobileTlsBootstrap;
+  persistence?: import("../../../shared/model/host-contracts").HostPersistenceStatus;
+  /** Absent on older hosts; semver alone does not identify the serving source. */
+  buildIdentity?: BuildIdentity;
+  /** The Host's home-network and Tailscale IPv4 addresses; desktops learn them as SSH routes. */
+  addresses?: string[];
+  /** The phone routes the Host serves now; paired phones add them as routes. */
+  mobileRoutes?: { endpoint: string; lanKey?: string }[];
 };
+/** A missing capability requires an update; callers must never fall back to the project checkout. */
+export function requireWorkspaceCapability(
+  host: Pick<HostDescriptor, "capabilities"> | undefined,
+  capability: WorkspaceCapability = "workspaces.managed.v1",
+): void {
+  if (!host?.capabilities.includes(capability))
+    throw new Error("Update the execution Host to use managed workspaces. No work was started.");
+}
 export type HostProject = {
   id: string;
   cwd: string;
@@ -115,6 +162,7 @@ export type HostDirectory = {
   entries: { name: string; path: string }[];
 };
 export type HostModelCatalog = {
+  accounts?: Partial<Record<"codex" | "claude", { id: string; label: string }[]>>;
   models: Partial<Record<RemoteProvider, AgentModel[]>>;
   errors: Partial<Record<RemoteProvider, string>>;
   /** Providers still being discovered; available models remain usable. */
@@ -128,6 +176,13 @@ export type HostWorktree = {
   missing: boolean;
 };
 export type HostSession = {
+  sourceEpoch?: string;
+  /** Host observed provider work for this exact run; metadata saves do not refresh it. */
+  runActivity?: { runId: string; lastActivityAt: number };
+  /** Host-stamped projection for summary rows; client commands cannot set this. */
+  managedBy?: import("../../sessions").AssistantSessionManagement;
+  /** Durable execution/history floor for migrated sessions, independent of stream revision. */
+  authorityGeneration?: number;
   /** Client view is incomplete; never save this as an authoritative transcript. */
   history?: { before?: number; revision: number; totalBlocks: number };
   /** Client-only: tail is visible while bounded history pages hydrate. */
@@ -137,22 +192,38 @@ export type HostSession = {
   revision: number;
   runId?: string;
   status: "idle" | "running" | "interrupted";
+  /** Current turn executor, projected by the home host; unrelated to desktop sync provenance. */
+  executionOwner?: "host" | "desktop";
   /** Missing from snapshots written before creation time was stored. */
   createdAt?: number;
   updatedAt: number;
+  lastActivityAt?: number;
   archived?: boolean;
   pinned?: boolean;
   /** Temporary branch created by the composer for automatic first-turn naming. */
   autoWorktreeBranch?: string;
+  /** Sent when a request asks for digests (`sessions.digests`): the head of the
+   * whole transcript, over the digests of the full blocks. */
+  head?: import("../../sync/model/conversationHead").ConversationHead;
   /** Host-only: the revision at which each block last changed. */
   blockRevisions?: Record<string, number>;
   /** Shared with this machine's desktop app, whichever side started it: the
    * desktop copy's last `updated_at` the host has caught up with (0 before
    * the desktop has a copy). `revision` is this session's revision when it
    * last matched the desktop copy; absent while the host has its own turns. */
-  desktop?: { updatedAt: number; revision?: number };
+  desktop?: {
+    updatedAt: number;
+    revision?: number;
+    /** The transcript both last agreed on; which side changed since is judged against it. */
+    base?: import("../../sync/model/conversationHead").ConversationHead;
+  };
 };
 export type HostSessionSummary = Omit<HostSession, "session" | "blockRevisions" | "desktop"> & {
+  providerHistory?: import("../../sessions").SessionProviderHistory;
+  /** Validated parent link; null marks an ordinary conversation. */
+  delegationParent?:
+    | import("../../../shared/model/host-contracts/delegation").DelegationParent
+    | null;
   issue?: "retrying" | "failed";
   issueTurnId?: string;
   issueMessage?: string;
@@ -166,7 +237,14 @@ export type HostSessionSummary = Omit<HostSession, "session" | "blockRevisions" 
   createdAt?: number;
   linkedWorkItem?: LinkedWorkItem;
   needsInput?: boolean;
+  /** Host-run turn held open by background work, or delegated children still running. */
+  waiting?: import("../../sessions").SessionWait;
+  /** Pending Host wake sources (pull request watches); each leaves when its watch ends. */
+  wakeSources?: import("../../sessions").SessionWakeSource[];
   branch?: string;
+  /** Authoritative workspace identity; older snapshots retain their recorded checkout fields. */
+  workspaceId?: string;
+  workspaceRevision?: number;
   worktreeCwd?: string;
   repo?: string;
   draft?: boolean;
@@ -186,7 +264,7 @@ export type RemoteAttachment = {
 /** `sessions.sync` sends only the blocks that changed after the client's
  * revision, so a long transcript is not re-downloaded on every poll. */
 export type SessionSync =
-  | { kind: "unchanged"; revision: number }
+  | { kind: "unchanged"; revision: number; sourceEpoch?: string }
   | { kind: "snapshot"; value: HostSession }
   | {
       kind: "delta";
@@ -204,6 +282,7 @@ export type SessionSync =
  * pieces with `sessions.syncChunk`, so every piece describes one revision. */
 export type SessionSyncTransfer = {
   kind: "chunked";
+  sourceEpoch?: string;
   transfer: string;
   /** UTF-16 length of the serialized `SessionSync`. */
   length: number;
@@ -214,6 +293,8 @@ export type SessionSyncResponse = SessionSync | SessionSyncTransfer;
 /** Throws when the delta does not apply to `known`; request a snapshot then. */
 export function applySessionSync(known: HostSession | undefined, sync: SessionSync): HostSession {
   if (sync.kind === "snapshot") return sync.value;
+  const sourceEpoch = sync.kind === "delta" ? sync.value.sourceEpoch : sync.sourceEpoch;
+  if (known?.sourceEpoch !== sourceEpoch) throw new Error("Session sync source changed");
   if (!known || known.revision !== (sync.kind === "delta" ? sync.base : sync.revision))
     throw new Error("Session sync base does not match");
   if (sync.kind === "unchanged") return known;
@@ -252,11 +333,13 @@ export type MachineChangesRequest = {
   activeProjects?: { projectId: string; lastActiveAt: number }[];
   activeSessions?: { sessionId: string; lastActiveAt: number }[];
   inlineSync?: boolean;
+  /** Optional per-session transcript opt-in; omitted by legacy clients. */
+  inlineSessionIds?: string[];
   /** Native per-window registration token, not a host identity. */
   subscriptionId?: string;
   tasksKnown?: string;
   instanceId?: string;
-  sessions: { sessionId: string; revision: number }[];
+  sessions: { sessionId: string; revision: number; sourceEpoch?: string }[];
   projects: { projectId: string; known?: string }[];
   /** Checkouts (host paths) whose `.git` the host watches; hosts with `git.watch`. */
   git?: { cwd: string; known?: string }[];
@@ -269,7 +352,13 @@ export type MachineChanges = {
   tasks?: { etag: string };
   instanceId: string;
   reset: boolean;
-  sessions: { sessionId: string; revision: number; deleted?: boolean; sync?: SessionSync }[];
+  sessions: {
+    sessionId: string;
+    revision: number;
+    sourceEpoch?: string;
+    deleted?: boolean;
+    sync?: SessionSync;
+  }[];
   projects: {
     projectId: string;
     etag: string;
@@ -294,10 +383,22 @@ export function sessionReferenceKey(reference: SessionReference): string {
   return JSON.stringify([reference.environmentId, reference.sessionId]);
 }
 export type HostCommand = HostCommandBody & {
+  /** Required by the Host for a session with a committed authority floor. */
+  authorityGeneration?: number;
   /** Atomic queue validation/consumption on hosts advertising sessions.queue. */
   queued?: { id: string; clientId: string; revision: number; selected?: boolean };
 };
 type HostCommandBody =
+  | {
+      type: "regenerateTitle";
+      commandId: string;
+      sessionId: string;
+      expectedTitle: string;
+      harness: RemoteProvider;
+      model: string;
+      modelSettings?: Record<string, string>;
+      providerAccountId?: string;
+    }
   | {
       type: "steer";
       commandId: string;
@@ -310,17 +411,29 @@ type HostCommandBody =
       type: "create";
       commandId: string;
       projectId: string;
+      /** Reserved creation identity, validated by sessions.managedCreation.v1 Hosts. */
+      sessionId?: string;
+      /** S2 validates ownership and derives execution cwd from the Host registry. */
+      workspaceId?: string;
+      /** Explicit owner choice; omission on managed Hosts prepares an owned worktree. */
+      workspaceMode?: "current" | "worktree";
       worktreeCwd?: string;
       autoWorktreeBranch?: string;
       harness: RemoteProvider;
+      providerAccountId?: string;
       model: string;
       modelSettings?: Record<string, string>;
       runtimeMode: RuntimeMode;
-      /** Atomic creation plus durable first turn on capable hosts. */
-      firstTurn?: Extract<HostCommand, { type: "send" | "draft" }>;
+      /** Atomic first turn targets the created session. Legacy nested IDs are ignored. */
+      firstTurn?: (
+        | Omit<Extract<HostCommand, { type: "send" }>, "sessionId">
+        | Omit<Extract<HostCommand, { type: "draft" }>, "sessionId">
+      ) & { sessionId?: string };
     }
   | {
       type: "configure";
+      expectedRevision?: number;
+      providerAccountId?: string | null;
       commandId: string;
       sessionId: string;
       /** Supported by hosts advertising sessions.harnessSwitch. */
@@ -355,6 +468,7 @@ type HostCommandBody =
     }
   | {
       type: "draft";
+      expectedRevision?: number;
       commandId: string;
       sessionId: string;
       text: string;
@@ -382,13 +496,22 @@ type HostCommandBody =
       action: "arm" | "disarm" | "dismiss";
     }
   | { type: "cancel"; commandId: string; sessionId: string; runId: string }
-  | { type: "stopItem"; commandId: string; sessionId: string; runId: string; blockId: string; callId: string }
+  | {
+      type: "stopItem";
+      commandId: string;
+      sessionId: string;
+      runId: string;
+      blockId: string;
+      callId: string;
+    }
   | {
       type: "approve";
       commandId: string;
       sessionId: string;
       runId: string;
       requestId: number;
+      /** Original source-issued request occurrence; never reconstructed by a client. */
+      approvalOccurrenceId?: string;
       decision: "allow" | "deny";
     }
   | {
@@ -403,6 +526,7 @@ export type CommandReceipt = {
   commandId: string;
   sessionId: string;
   revision: number;
+  authorityGeneration?: number;
   /** The exact run accepted for this command, retained across receipt replay. */
   runId?: string;
 };
@@ -439,15 +563,22 @@ export function isRemoteProvider(value: unknown): value is RemoteProvider {
   return typeof value === "string" && REMOTE_PROVIDERS.some((provider) => provider === value);
 }
 
+/**
+ * Keeps the providers this build knows and drops the rest. A Host that gained a
+ * provider this app has never heard of is still reachable; the unknown provider
+ * is simply not offered. Returns undefined when the value is not a list.
+ */
+export function knownRemoteProviders(value: unknown): RemoteProvider[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter(isRemoteProvider);
+}
+
 export function requireHostDescriptor(value: HostDescriptor): HostDescriptor {
-  if (
-    value?.protocolVersion !== HOST_PROTOCOL_VERSION ||
-    typeof value.environmentId !== "string" ||
-    !value.environmentId ||
-    !Array.isArray(value.providers) ||
-    !value.providers.every(isRemoteProvider)
-  ) {
+  const mismatch = protocolMismatchMessage(value?.protocolVersion, HOST_PROTOCOL_VERSION);
+  if (mismatch) throw new Error(mismatch);
+  const providers = knownRemoteProviders(value.providers);
+  if (typeof value.environmentId !== "string" || !value.environmentId || !providers) {
     throw new Error("This machine is running an incompatible bycoda Host");
   }
-  return value;
+  return providers.length === value.providers.length ? value : { ...value, providers };
 }

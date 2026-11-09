@@ -1,99 +1,116 @@
-.automation-workspace {
-  container-type: inline-size;
-}
+/* Page frame: one compact header row, then list and workspace side by side. */
 .automation-compact-navigation {
   display: none;
 }
+.automation-body {
+  flex-direction: row;
+}
+.automation-list {
+  inline-size: 17rem;
+  border-inline-end: 1px solid var(--ui-tone-neutral-border);
+}
+.automation-workspace {
+  container-type: inline-size;
+}
 @container automations (max-width: 639px) {
-  .automation-layout {
+  /* One pane at a time: the header button switches between the list and the editor. */
+  .automation-body {
     flex-direction: column;
   }
   .automation-compact-navigation {
     display: flex;
-    flex: none;
-    padding: 0.375rem 0.75rem;
-    border-block-end: 1px solid var(--ui-tone-neutral-border);
   }
-  .automation-layout:not([data-list-open]) > aside,
-  .automation-layout[data-list-open] > main,
+  .automation-count,
+  .automation-wide-only,
   .automation-focus-action {
     display: none;
   }
-  .automation-layout[data-list-open] > aside {
+  .automation-layout:not([data-list-open]) .automation-list,
+  .automation-layout[data-list-open] .automation-workspace {
+    display: none;
+  }
+  .automation-layout[data-list-open] .automation-list {
     flex: 1;
     inline-size: 100%;
     min-block-size: 0;
-    max-block-size: none;
+    border-inline-end: 0;
   }
 }
+
+/* Shared content padding for the picker, editor and run history. */
 .automation-content {
   min-inline-size: 0;
   inline-size: 100%;
-  padding: 24px;
-}
-.automation-editor-grid {
-  display: grid;
-  gap: 24px;
-  align-items: start;
-}
-.automation-editor-grid > * {
-  min-inline-size: 0;
-}
-.automation-editor-grid > section:nth-child(2) {
-  grid-row: 1;
-}
-.automation-gallery {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-  gap: 12px;
-}
-.automation-template {
-  white-space: normal;
-  text-align: start;
-}
-.automation-assistant {
-  display: grid;
-  gap: 12px;
-  padding: 16px;
-  background: var(--ui-surface);
-  border: 1px solid var(--ui-tone-neutral-border);
-  border-radius: var(--ui-radius-panel, 8px);
-}
-.automation-assistant-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.automation-assistant-controls > :last-child {
-  margin-inline-start: auto;
-}
-@container (min-width: 1000px) {
-  .automation-editor-grid {
-    grid-template-columns: minmax(0, 1.4fr) minmax(320px, 1fr);
-  }
-  .automation-editor-grid > section:nth-child(2) {
-    grid-column: 1;
-    grid-row: 1 / span 3;
-  }
-  .automation-editor-grid > section:nth-child(2) textarea {
-    min-block-size: clamp(240px, 38vh, 480px);
-  }
-  .automation-editor-grid > section:first-child {
-    grid-column: 2;
-    grid-row: 1;
-  }
-  .automation-editor-grid > section:nth-child(3) {
-    grid-column: 2;
-    grid-row: 2;
-  }
-  .automation-editor-grid > details {
-    grid-column: 2;
-    grid-row: 3;
-  }
+  padding: 16px 24px 24px;
 }
 @container (max-width: 540px) {
   .automation-content {
-    padding: 16px 12px;
+    padding: 12px 12px 20px;
+  }
+}
+
+/* Start options and template collection. */
+.automation-picker {
+  max-inline-size: 64rem;
+  margin-inline: auto;
+}
+.automation-start {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 12px;
+}
+.automation-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+  gap: 8px;
+}
+.automation-start-option,
+.automation-template {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-inline-size: 0;
+  block-size: 100%;
+  white-space: normal;
+  text-align: start;
+}
+.automation-start > .automation-start-option.automation-start-option[data-button-hierarchy] {
+  padding: 12px;
+  background: transparent;
+  border: 1px solid var(--ui-tone-neutral-border);
+  border-radius: var(--ui-radius-card);
+}
+.automation-start > .automation-start-option.automation-start-option[data-button-hierarchy]:hover {
+  background: var(--ui-surface-hover);
+}
+.automation-template-search {
+  inline-size: min(100%, 16rem);
+}
+
+/* Editor: instructions lead; triggers, run context and advanced limits sit beside them when wide. */
+.automation-scroll {
+  container: automation-editor / size;
+}
+.automation-editor-header {
+  border-block-end: 1px solid var(--ui-tone-neutral-border);
+}
+.automation-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.automation-editor-grid > *,
+.automation-editor-side > * {
+  min-inline-size: 0;
+}
+.automation-editor-side {
+  display: grid;
+  gap: 20px;
+}
+@container automation-editor (min-width: 52rem) {
+  .automation-editor-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
+    gap: 32px;
   }
 }

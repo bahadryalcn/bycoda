@@ -1,3 +1,8 @@
+import { processConstructions } from "../processConstruction.testSupport";
+import {
+  createProviderRetirementLedger,
+  providerRetirementObservation,
+} from "../../core/providerRetirement";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HarnessEvent, SendTurnInput } from "../../core/types";
 
@@ -10,7 +15,13 @@ type Handlers = {
 // a scripted turn. `hang` leaves a turn open so it can be cancelled.
 const host = vi.hoisted(() => ({
   handlers: new Map<string, Handlers>(),
-  spawns: [] as { key: string; command: string; args: string[]; cwd: string }[],
+  spawns: [] as {
+    key: string;
+    command: string;
+    args: string[];
+    cwd: string;
+    logicalSessionId?: string;
+  }[],
   writes: [] as { key: string; text: string }[],
   killed: [] as string[],
   hang: false,
@@ -20,74 +31,93 @@ const host = vi.hoisted(() => ({
   conv: new Map<string, string>(),
 }));
 
-vi.mock("../../core/child", () => ({
-  spawnChild: vi.fn(async (key: string, command: string, args: string[], cwd: string) => {
-    host.spawns.push({ key, command, args, cwd });
-    // agy opens a new conversation unless the resume id is one it knows.
-    const at = args.indexOf("--conversation");
-    const resumed = at >= 0 && args[at + 1] !== "lost" ? args[at + 1] : undefined;
-    host.conv.set(key, resumed ?? `conv-${++host.seq}`);
-    setTimeout(() => {
-      const line = host.handlers.get(key)?.line;
-      if (!line) return;
-      if (host.failStart) {
-        line(
-          JSON.stringify({
-            event: "result",
-            result: { conversation_id: "", status: "ERROR", error: host.failStart },
-          }),
-        );
-        return;
-      }
-      line(
-        JSON.stringify({
-          event: "init",
-          conversation_id: host.conv.get(key),
-          init: { cwd, tools: [], permission_mode: "request-review" },
-        }),
-      );
-    }, 0);
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    spawnChild: vi.fn(
+      async (
+        key: string,
+        command: string,
+        args: string[],
+        cwd: string,
+        _account?: unknown,
+        _provider?: unknown,
+        _generic?: unknown,
+        _authority?: unknown,
+        _guard?: unknown,
+        logicalSessionId?: string,
+      ) => {
+        host.spawns.push({ key, command, args, cwd, logicalSessionId });
+        // agy opens a new conversation unless the resume id is one it knows.
+        const at = args.indexOf("--conversation");
+        const resumed = at >= 0 && args[at + 1] !== "lost" ? args[at + 1] : undefined;
+        host.conv.set(key, resumed ?? `conv-${++host.seq}`);
+        setTimeout(() => {
+          const line = host.handlers.get(key)?.line;
+          if (!line) return;
+          if (host.failStart) {
+            line(
+              JSON.stringify({
+                event: "result",
+                result: { conversation_id: "", status: "ERROR", error: host.failStart },
+              }),
+            );
+            return;
+          }
+          line(
+            JSON.stringify({
+              event: "init",
+              conversation_id: host.conv.get(key),
+              init: { cwd, tools: [], permission_mode: "request-review" },
+            }),
+          );
+        }, 0);
+      },
+    ),
+    watchChild: vi.fn((key: string, line: Handlers["line"], exit: Handlers["exit"]) => {
+      host.handlers.set(key, { line, exit });
+    }),
+    unwatchChild: vi.fn((key: string) => {
+      host.handlers.delete(key);
+    }),
+    killChild: vi.fn(async (key: string) => {
+      host.killed.push(key);
+    }),
+    writeChild: vi.fn(async (key: string, text: string) => {
+      host.writes.push({ key, text });
+      if (host.hang) return;
+      const content = JSON.parse(text).message.content as string;
+      const conversation = host.conv.get(key)!;
+      const emit = (value: unknown) => host.handlers.get(key)?.line(JSON.stringify(value));
+      const step = (n: number, state: string, type: string, extra: object = {}) =>
+        emit({
+          event: "step_update",
+          step_update: {
+            conversation_id: conversation,
+            step_index: n,
+            state,
+            step_type: type,
+            ...extra,
+          },
+        });
+      setTimeout(() => {
+        step(0, "DONE", "user_input");
+        step(1, "ACTIVE", "agent_response", { text_delta: `echo:${content}` });
+        step(1, "DONE", "agent_response", {
+          text_delta: "\n",
+          usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },
+        });
+        emit({
+          event: "result",
+          result: {
+            conversation_id: conversation,
+            status: "SUCCESS",
+            response: `echo:${content}\n`,
+          },
+        });
+      }, 0);
+    }),
   }),
-  watchChild: vi.fn((key: string, line: Handlers["line"], exit: Handlers["exit"]) => {
-    host.handlers.set(key, { line, exit });
-  }),
-  unwatchChild: vi.fn((key: string) => {
-    host.handlers.delete(key);
-  }),
-  killChild: vi.fn(async (key: string) => {
-    host.killed.push(key);
-  }),
-  writeChild: vi.fn(async (key: string, text: string) => {
-    host.writes.push({ key, text });
-    if (host.hang) return;
-    const content = JSON.parse(text).message.content as string;
-    const conversation = host.conv.get(key)!;
-    const emit = (value: unknown) => host.handlers.get(key)?.line(JSON.stringify(value));
-    const step = (n: number, state: string, type: string, extra: object = {}) =>
-      emit({
-        event: "step_update",
-        step_update: {
-          conversation_id: conversation,
-          step_index: n,
-          state,
-          step_type: type,
-          ...extra,
-        },
-      });
-    setTimeout(() => {
-      step(0, "DONE", "user_input");
-      step(1, "ACTIVE", "agent_response", { text_delta: `echo:${content}` });
-      step(1, "DONE", "agent_response", {
-        text_delta: "\n",
-        usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },
-      });
-      emit({
-        event: "result",
-        result: { conversation_id: conversation, status: "SUCCESS", response: `echo:${content}\n` },
-      });
-    }, 0);
-  }),
-}));
+);
 
 const { setAdditionalDirsResolver } = await import("../../core/additionalDirs");
 const stream = await import("./antigravityStream");
@@ -121,6 +151,7 @@ const send = (input: SendTurnInput) => stream.sendAntigravityStreamTurn(input, B
 
 beforeEach(async () => {
   await stream.forgetAntigravityStreamSession("s1");
+  processConstructions.reset();
   host.handlers.clear();
   host.spawns.length = 0;
   host.writes.length = 0;
@@ -133,6 +164,76 @@ beforeEach(async () => {
 });
 
 describe("antigravity stream-json transport", () => {
+  it("preserves A and its saved conversation when B is refused at actual owner capacity", async () => {
+    // Protocol fake over the actual default retirement ledger. No Native/OS
+    // completion or qualification is inferred from this capacity observation.
+    await send(turn("establish original conversation").input);
+    const first = host.spawns[0];
+    const conversation = host.conv.get(first.key)!;
+    const { killChild } = await import("../../core/child");
+    const fillers = createProviderRetirementLedger(
+      "fixture.antigravity-stream-capacity",
+      killChild,
+    );
+    const originals: ReturnType<typeof processConstructions.create>[] = [];
+    let full = false;
+    try {
+      for (let index = 0; index < 4096; index++) {
+        const original = processConstructions.create(`antigravity-capacity-fixture-${index}`);
+        try {
+          fillers.admit(original);
+          originals.push(original);
+        } catch (error) {
+          expect(error).toMatchObject({
+            name: "ProviderRetirementError",
+            message: expect.stringContaining("capacity exhausted"),
+          });
+          full = true;
+          break;
+        }
+      }
+      expect(full).toBe(true);
+      expect(
+        providerRetirementObservation().reduce(
+          (sum, family) => sum + family.active + family.pending + family.failed,
+          0,
+        ),
+      ).toBe(4096);
+      const beforeSpawns = [...host.spawns];
+      const beforeKills = [...host.killed];
+      await expect(
+        send(turn("refused replacement", { cwd: "C:\\other-project" }).input),
+      ).rejects.toThrow("capacity exhausted");
+      expect(host.spawns).toEqual(beforeSpawns);
+      expect(host.killed).toEqual(beforeKills);
+
+      await fillers.retire(originals);
+      // Do not send another A message: that could recreate an erroneously lost
+      // resume record and hide the refusal's mutation. Retire A safely first.
+      await stream.stopAntigravityStreamSession("s1");
+      await send(turn("resume original after safe retirement").input);
+      expect(host.spawns).toHaveLength(2);
+      const resumed = host.spawns[1];
+      expect(resumed.cwd).toBe(first.cwd);
+      const at = resumed.args.indexOf("--conversation");
+      expect(at).toBeGreaterThanOrEqual(0);
+      expect(resumed.args[at + 1]).toBe(conversation);
+      expect(host.conv.get(resumed.key)).toBe(conversation);
+    } finally {
+      const outcomes = await Promise.allSettled([
+        fillers.retire(originals),
+        stream.stopAntigravityStreamSession("s1"),
+      ]);
+      const failures = outcomes.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
+      );
+      expect(failures, "Original capacity fixture cleanup failed").toEqual([]);
+    }
+  });
+  it("passes only an explicitly prepared logical hint to the generated route", async () => {
+    await send(turn("hint", { nativeOutputSessionId: "s1" }).input);
+    expect(host.spawns[0].logicalSessionId).toBe("s1");
+  });
   it("spawns agy in the project folder and streams one turn", async () => {
     const { input, events } = turn("hello");
     await send(input);

@@ -49,9 +49,13 @@
     opacity: 0.52;
   }
 }
+/* The shapes stay visible and still under reduced motion or with decorative motion off. */
 @media (prefers-reduced-motion: no-preference) {
   .avatar,
   .line {
     animation: skeleton-pulse 1.8s var(--ease-in-out) calc(var(--index, 0) * 90ms) 11 both;
+  }
+  :global(html[data-decorative-motion="off"]) :is(.avatar, .line) {
+    animation: none;
   }
 }

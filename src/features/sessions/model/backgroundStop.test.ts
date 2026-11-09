@@ -121,3 +121,50 @@ describe("sessionHasBackgroundWork", () => {
     ).toBe(false);
   });
 });
+
+describe("delegated child sessions", () => {
+  const childRow = (patch: Partial<DockAgent> = {}): DockAgent =>
+    row({
+      blockId: "delegated:c1",
+      callId: undefined,
+      sessionId: "c1",
+      detail: "",
+      ...patch,
+    });
+
+  it("can always be stopped while running, even without a per-item harness", () => {
+    expect(canStopAgent(childRow(), false)).toBe(true);
+    expect(canStopAgent(childRow({ status: "done" }), false)).toBe(false);
+  });
+
+  it("makes stop-all a task stop when only children run after the turn", () => {
+    const dock = deriveActivityDock({
+      blocks: [user],
+      busy: false,
+      pendingQuestion: false,
+      unseenDone: false,
+      delegatedAgents: [childRow()],
+    });
+    expect(stopAllControl(dock, false)).toMatchObject({
+      kind: "task",
+      label: "Stop all background work",
+    });
+  });
+
+  it("keeps the whole-turn stop for a native background command in a non-per-item harness", () => {
+    const dock = dockFor([user], { backgroundTasks: ["npm run dev"], agents: 0 });
+    expect(dock.state).toBe("background");
+    expect(stopAllControl(dock, false)).toMatchObject({ kind: "turn", label: "Stop all" });
+  });
+
+  it("does not let children change the whole-turn stop while the parent turn runs natively", () => {
+    const dock = deriveActivityDock({
+      blocks: [user, agentBlock("a", "in_progress")],
+      busy: true,
+      pendingQuestion: false,
+      unseenDone: false,
+      delegatedAgents: [childRow()],
+    });
+    expect(stopAllControl(dock, false)).toMatchObject({ kind: "turn" });
+  });
+});

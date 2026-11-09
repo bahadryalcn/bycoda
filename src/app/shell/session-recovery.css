@@ -2,17 +2,75 @@
   display: flex;
   overflow-y: auto;
 }
-.session-recovery {
+.session-recovery,
+.recovery-pane {
   inline-size: 100%;
   max-block-size: min(640px, calc(100dvh - 110px));
 }
-.session-recovery > :not(.recovery-list) {
+/* One recovery layout for conversations, file drafts and earlier reports: the toolbar, the
+   counts and the footer keep their place; only the list scrolls. */
+.recovery-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-block-size: 0;
+  padding: 0.75rem;
+}
+.recovery-pane > :not(.recovery-body, .recovery-list) {
   flex-shrink: 0;
+}
+.recovery-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem 0;
+  flex-shrink: 0;
+}
+.recovery-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.recovery-toolbar-search {
+  flex: 1 1 10rem;
+  min-inline-size: 0;
+}
+.recovery-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 0.75rem;
+  row-gap: 0.125rem;
+}
+.recovery-body {
+  flex: 0 1 auto;
+  min-block-size: min(9.5rem, 30dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+/* A short window keeps the footer actions on screen even while a result alert is shown: the list
+   gives up its reserved height first. */
+@media (max-height: 560px) {
+  .recovery-body {
+    min-block-size: 4rem;
+  }
+}
+.recovery-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-block-start: 0.5rem;
 }
 .recovery-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.5rem;
+}
+.recovery-actions-end {
+  margin-inline-start: auto;
 }
 
 .recovery-list {
@@ -39,8 +97,27 @@
   position: relative;
   flex-shrink: 0;
 }
+/* Label-less rails (compact rail, narrow container) show the corner badge; every other rail
+   shows the plain section count. */
 .recovery-rail-count {
+  display: none;
   flex-shrink: 0;
+  /* The absolute corner badge shrinks to the narrow rail control; "99+" must stay on one line. */
+  white-space: nowrap;
+}
+.recovery-rail-number {
+  flex-shrink: 0;
+}
+/* Recovery and Working share the status inset and header padding. Keep the optional
+   clear action beside the count without reserving a second trailing column. */
+@container rail (inline-size > 140px) {
+  .bycoda-rail-status .recovery-rail-clear {
+    position: absolute;
+    inset-inline-end: calc(2rem + var(--recovery-count-width));
+  }
+  .bycoda-rail-status .recovery-rail-row:has(.recovery-rail-clear) .recovery-rail-label {
+    padding-inline-end: 1.5rem;
+  }
 }
 
 [data-compact-project-rail] .recovery-rail-control {
@@ -56,7 +133,11 @@
   display: none;
 }
 
+[data-compact-project-rail] .recovery-rail-number {
+  display: none;
+}
 [data-compact-project-rail] .recovery-rail-count {
+  display: inline-flex;
   position: absolute;
   inset-block-start: -2px;
   inset-inline-end: -3px;
@@ -76,7 +157,11 @@
     flex: none;
     justify-content: center;
   }
+  .recovery-rail-number {
+    display: none;
+  }
   .recovery-rail-count {
+    display: inline-flex;
     position: absolute;
     inset-block-start: -2px;
     inset-inline-end: -3px;

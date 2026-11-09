@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 // Soak / stress integration test: drives the real `agy_acp_server.par` at LOW
 // effort (gemini-3.8-flash-low) through a fleet of concurrent threads, rapid
 // queued sends, cancel/stop/forget cycles, process kills, and cwd drift —
@@ -6,7 +7,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HarnessEvent, SendTurnInput } from "../../core/types";
 
 const BIN = process.env.AGY_BIN ?? join(homedir(), ".local/bin/agy_acp_server.par");
@@ -23,10 +24,11 @@ const live = vi.hoisted(() => ({
   spawnCount: 0,
 }));
 
+beforeEach(() => processConstructions.reset());
 vi.mock("../../core/child", async () => {
   const { spawn } = await import("node:child_process");
   const readline = await import("node:readline");
-  return {
+  return processConstructions.mock({
     resolveAntigravityBinary: async () => ({ path: BIN, args: ARGS }),
     spawnChild: async (id: string, command: string, args: string[], cwd: string) => {
       const child = spawn(command, args, { cwd });
@@ -62,7 +64,7 @@ vi.mock("../../core/child", async () => {
       live.listeners.delete(id);
       live.exits.delete(id);
     },
-  };
+  });
 });
 vi.mock("../../../../platform/tauri/fs", () => ({ homeDir: async () => homedir() }));
 
@@ -104,7 +106,7 @@ describe.skipIf(!REAL)("antigravity soak — low-effort fleet", () => {
         // Unless a test deliberately parks on a permission request (to
         // prove a turn is in flight), auto-approve so nothing can wedge.
         if (!parkApprovals && event.type === "approval.requested") {
-          agy.respondAntigravityApproval(thread, event.requestId, "allow");
+          agy.respondAntigravityApproval(thread, event.requestId, "allow", event.occurrenceId);
         }
       },
     };

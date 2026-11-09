@@ -10,8 +10,9 @@ import {
   replaceEditedResend,
   truncateBeforeLastEditableTurn,
   truncateBeforeLastUserTurn,
+  userBlockRecall,
 } from "./editLastTurn";
-import { newSession, type Block } from "./session";
+import { newSession, type Attachment, type Block } from "./session";
 
 function chat(blocks: Block[]) {
   return { ...newSession("pi", "/tmp"), blocks };
@@ -120,6 +121,20 @@ describe("editLastTurn", () => {
     expect(lastTurnRecall(session)?.text).toBe("/operator list notes");
   });
 
+  it("takes a saved draft back as composer input with its files", () => {
+    const image = { id: "img", name: "image.png", mime: "image/png", size: 92_000 } as Attachment;
+    expect(
+      userBlockRecall({
+        id: "d",
+        role: "user",
+        text: "[image1]",
+        attachments: [image],
+        draft: true,
+      }),
+    ).toEqual({ text: "[image1]", attachments: [image] });
+    expect(userBlockRecall({ id: "e", role: "user", text: "  ", draft: true })).toBeNull();
+  });
+
   it("allows edit on idle pi sessions without queued follow-ups", () => {
     const session = chat([
       { id: "u1", role: "user", text: "hello" },
@@ -209,13 +224,16 @@ describe("editLastTurn", () => {
   it("coordinates only one rewind per session", () => {
     const coordinator = createEditedResendCoordinator();
 
-    expect(coordinator.start("one")).toBe(true);
+    const token = coordinator.start("one")!;
+    expect(token).toBeTypeOf("symbol");
     expect(coordinator.isActive("one")).toBe(true);
-    expect(coordinator.start("one")).toBe(false);
-    expect(coordinator.start("two")).toBe(true);
-    coordinator.finish("one");
+    expect(coordinator.start("one")).toBeUndefined();
+    expect(coordinator.start("two")).toBeTypeOf("symbol");
+    coordinator.finish("one", Symbol("other"));
+    expect(coordinator.isActive("one")).toBe(true);
+    coordinator.finish("one", token);
     expect(coordinator.isActive("one")).toBe(false);
-    expect(coordinator.start("one")).toBe(true);
+    expect(coordinator.start("one")).toBeTypeOf("symbol");
   });
 
   it("allows edit on idle OpenCode sessions", () => {

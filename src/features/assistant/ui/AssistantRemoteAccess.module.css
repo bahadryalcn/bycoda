@@ -1,0 +1,68 @@
+/* Remote Room access dialog: a quiet status line, two aligned field pairs, then notices. */
+.body {
+  display: grid;
+  gap: 16px;
+  min-inline-size: 0;
+}
+.status,
+.note {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 16px;
+  align-items: start;
+  min-inline-size: 0;
+}
+.grid > * {
+  min-inline-size: 0;
+}
+/* The original request that still needs inspecting is a thin frame, not a card. */
+.request {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  padding: 12px;
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--ui-radius-card);
+  min-inline-size: 0;
+}
+.request p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+}
+.result {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--ui-font-secondary);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.identity {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--ui-radius-card);
+  font-size: var(--ui-font-caption);
+  min-inline-size: 0;
+}
+.identity p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.identity pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

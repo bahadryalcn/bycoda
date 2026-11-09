@@ -1,24 +1,17 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { t, useLocale } from "../../../shared/i18n";
+import { ActionHost, InlineAction, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
+import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import { InlineError } from "../../../shared/ui/InlineError";
 import type { PopoverAnchor } from "../../../shared/ui/Popover";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
+import { Bot, Copy, Globe, Pencil, Play, Plus, Trash2 } from "../../../shared/ui/icons";
 import {
-  Bot,
-  Copy,
-  Globe,
-  MoreHorizontal,
-  Pause,
-  Pencil,
-  Play,
-  Plus,
-  Square,
-  Trash2,
-} from "../../../shared/ui/icons";
-import {
-  RAIL_DRAG_HANDLE,
-  RAIL_SECTION_HEADER,
-  SectionMenuButton,
+  RAIL_SECTION_BLOCK,
+  RailSectionHeader,
   type RailSectionDrag,
 } from "../../../app/shell/useRailSections";
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
@@ -27,44 +20,58 @@ import { useProjectCrews, type CrewRunView } from "../model/crewClient";
 import { useCrewsOnRail } from "../model/crewAppearance";
 import { activeCrewRuns, crewRunTitle } from "../model/crewRoster";
 import { CrewAvatar } from "./CrewAvatar";
-import { CrewDeleteDialog, CrewEditDialog, StartCrewDialog } from "./CrewDialogs";
+import { CrewManagementDialog } from "./CrewSessions";
+import {
+  crewAttentionLabel,
+  crewHasRunningWork,
+  crewRunAttention,
+  crewWorkStatusLabel,
+  type CrewAttention,
+  type CrewWorkStatus,
+} from "../model/crewPresentation";
+export { crewWorkStatus, crewWorkStatusLabel } from "../model/crewPresentation";
+import { lazySurface } from "../../../shared/ui/lazySurface";
 import type { CrewEditorPage } from "./CrewEditor";
 
-export type CrewWorkStatus = "input" | "blocked" | "working" | "paused" | "active";
+const CrewDeleteDialog = lazySurface(async () => ({
+  default: (await import("./CrewDialogs")).CrewDeleteDialog,
+}));
+const CrewEditDialog = lazySurface(async () => ({
+  default: (await import("./CrewDialogs")).CrewEditDialog,
+}));
+const StartCrewDialog = lazySurface(async () => ({
+  default: (await import("./CrewDialogs")).StartCrewDialog,
+}));
 
-const STATUS_DOT: Record<CrewWorkStatus, string> = {
-  input: "bg-warning",
-  blocked: "bg-danger",
-  working: "bg-accent animate-pulse motion-reduce:animate-none",
-  paused: "bg-(--ui-text-secondary)",
-  active: "bg-success",
+/** Execution state only; what needs the owner is `CrewAttention` and takes the dot. */
+type RailExecution = Extract<CrewWorkStatus, "working" | "paused" | "active">;
+
+const ATTENTION_DOT: Record<CrewAttention, BadgeTone> = {
+  decision: "warning",
+  review: "warning",
+  blocked: "danger",
+};
+const EXECUTION_DOT: Record<Exclude<RailExecution, "working">, BadgeTone> = {
+  paused: "neutral",
+  active: "neutral",
 };
 
-const STATUS_RANK: CrewWorkStatus[] = ["input", "blocked", "working", "paused", "active"];
+// Most urgent first: the rail shows the strongest signal across a crew's ongoing work.
+const ATTENTION_RANK: CrewAttention[] = ["decision", "review", "blocked"];
+const EXECUTION_RANK: RailExecution[] = ["working", "paused", "active"];
 
-export function crewWorkStatusLabel(status: CrewWorkStatus) {
-  return status === "input"
-    ? t("Needs decision")
-    : status === "blocked"
-      ? t("Blocked")
-      : status === "working"
-        ? t("Working")
-        : status === "paused"
-          ? t("Paused")
-          : t("Active");
-}
-
-export function crewWorkStatus(run: CrewRunView): CrewWorkStatus {
-  if (run.status === "paused") return "paused";
-  if (run.messages.some((m) => !m.resolvedAt) || run.tasks.some((task) => task.status === "review"))
-    return "input";
-  if (run.tasks.some((task) => task.status === "blocked")) return "blocked";
-  if (
-    run.coordinatorStatus === "running" ||
-    run.tasks.some((task) => task.status === "running" || task.status === "verifying")
-  )
-    return "working";
-  return "active";
+/** A crew's rail signal: attention (decision, review, blocker) is independent of paused or working. */
+function railSignal(runs: readonly CrewRunView[]) {
+  const attention = runs
+    .map(crewRunAttention)
+    .filter((value): value is CrewAttention => value !== null)
+    .sort((a, b) => ATTENTION_RANK.indexOf(a) - ATTENTION_RANK.indexOf(b))[0];
+  const execution = runs
+    .map((run): RailExecution =>
+      run.status === "paused" ? "paused" : crewHasRunningWork(run) ? "working" : "active",
+    )
+    .sort((a, b) => EXECUTION_RANK.indexOf(a) - EXECUTION_RANK.indexOf(b))[0];
+  return { attention, execution };
 }
 
 type Dialog =
@@ -78,7 +85,8 @@ type Dialog =
       returnToStart?: string;
     }
   | { kind: "start"; definitionId?: string }
-  | { kind: "delete"; crewId: string };
+  | { kind: "delete"; crewId: string }
+  | { kind: "work"; crewId: string };
 
 type Menu = { kind: "crew" | "work"; crewId: string; anchor: PopoverAnchor };
 
@@ -86,23 +94,29 @@ type Menu = { kind: "crew" | "work"; crewId: string; anchor: PopoverAnchor };
 export function CrewRailSection({
   cwd,
   drag,
+  collapsed = false,
+  onToggleCollapsed,
   onShownChange,
   onOpenSession,
 }: {
   cwd: string;
   drag: RailSectionDrag;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
   onShownChange?: (shown: boolean) => void;
   onOpenSession?: (target: BackgroundSessionTarget) => void | Promise<void>;
 }) {
   useLocale();
-  const state = useProjectCrews(cwd);
+  const onRail = useCrewsOnRail();
+  // Hidden from the rail: no host polling for a section that is not shown.
+  const state = useProjectCrews(cwd, onRail);
   const data = state.data;
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
-  const [pending, setPending] = useState(false);
+  const [pendingCrew, setPendingCrew] = useState<string | null>(null);
+  const pending = pendingCrew !== null;
   const [error, setError] = useState("");
   const pendingGate = useRef(false);
-  const onRail = useCrewsOnRail();
   const shown = !!data && onRail;
   useEffect(() => {
     onShownChange?.(shown);
@@ -110,10 +124,10 @@ export function CrewRailSection({
   }, [shown, onShownChange]);
   if (!data || !onRail) return null;
 
-  const act = async (operation: () => Promise<unknown>) => {
+  const act = async (crewId: string, operation: () => Promise<unknown>) => {
     if (pendingGate.current) return;
     pendingGate.current = true;
-    setPending(true);
+    setPendingCrew(crewId);
     setError("");
     try {
       await operation();
@@ -121,13 +135,13 @@ export function CrewRailSection({
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       pendingGate.current = false;
-      setPending(false);
+      setPendingCrew(null);
     }
   };
   const openCoordinator = (run: CrewRunView) => {
     const sessionId = run.coordinatorSessionId;
     if (!sessionId || !onOpenSession) return;
-    void act(async () =>
+    void act(run.definition.id, async () =>
       onOpenSession({
         cwd,
         machineId: data.machine.id,
@@ -136,13 +150,8 @@ export function CrewRailSection({
       }),
     );
   };
-  // One ongoing work opens directly; several ask which one; none starts new work.
-  const openCrew = (crew: CrewDefinition, anchor: PopoverAnchor) => {
-    const runs = activeCrewRuns(data.runs, crew.id);
-    if (runs.length === 1 && runs[0].coordinatorSessionId && onOpenSession)
-      openCoordinator(runs[0]);
-    else if (runs.length > 1) setMenu({ kind: "work", crewId: crew.id, anchor });
-    else setDialog({ kind: "start", definitionId: crew.id });
+  const openCrew = (crew: CrewDefinition) => {
+    setDialog({ kind: "work", crewId: crew.id });
   };
   const menuCrew = menu ? data.definitions.find((d) => d.id === menu.crewId) : undefined;
   const menuRuns = menuCrew ? activeCrewRuns(data.runs, menuCrew.id) : [];
@@ -156,74 +165,46 @@ export function CrewRailSection({
                 id: "open",
                 label: t("Open coordinator"),
                 description: crewRunTitle(single),
-                icon: <Bot className="size-3.5" />,
-              },
-            ]
-          : []),
-        ...(menuRuns.length > 1
-          ? [
-              {
-                kind: "item" as const,
-                id: "work",
-                label: t("Ongoing work ({p0})", { p0: menuRuns.length }),
-                icon: <Bot className="size-3.5" />,
+                icon: <Bot className="icon-sm" />,
               },
             ]
           : []),
         {
           kind: "item",
+          id: "work",
+          label: t("Crew work"),
+          icon: <Bot className="icon-sm" />,
+        },
+        {
+          kind: "item",
           id: "start",
-          label: t("Start work"),
-          icon: <Play className="size-3.5" />,
+          label: t("New work"),
+          icon: <Play className="icon-sm" />,
         },
         {
           kind: "item",
           id: "edit",
           label: t("Edit crew"),
-          icon: <Pencil className="size-3.5" />,
+          icon: <Pencil className="icon-sm" />,
         },
         {
           kind: "item",
           id: "members",
           label: t("Add members"),
-          icon: <Plus className="size-3.5" />,
+          icon: <Plus className="icon-sm" />,
         },
         {
           kind: "item",
           id: "duplicate",
           label: t("Duplicate"),
-          icon: <Copy className="size-3.5" />,
+          icon: <Copy className="icon-sm" />,
         },
         {
           kind: "item",
           id: "scope",
           label: menuCrew.projectId ? t("Copy to all projects") : t("Copy to this project"),
-          icon: <Globe className="size-3.5" />,
+          icon: <Globe className="icon-sm" />,
         },
-        ...(single
-          ? [
-              { kind: "sep" as const },
-              {
-                kind: "item" as const,
-                id: "pause",
-                label: single.status === "paused" ? t("Resume work") : t("Pause new assignments"),
-                description: crewRunTitle(single),
-                icon:
-                  single.status === "paused" ? (
-                    <Play className="size-3.5" />
-                  ) : (
-                    <Pause className="size-3.5" />
-                  ),
-              },
-              {
-                kind: "item" as const,
-                id: "stop",
-                label: t("Stop work"),
-                description: t("Cancels running assignments"),
-                icon: <Square className="size-3.5" />,
-              },
-            ]
-          : []),
         ...(data.deleteSupported
           ? [
               { kind: "sep" as const },
@@ -232,7 +213,7 @@ export function CrewRailSection({
                 id: "delete",
                 label: t("Delete crew"),
                 danger: true,
-                icon: <Trash2 className="size-3.5" />,
+                icon: <Trash2 className="icon-sm" />,
               },
             ]
           : []),
@@ -243,7 +224,7 @@ export function CrewRailSection({
     const crewId = menuCrew.id;
     const scope = menuCrew.projectId ? "global" : "project";
     if (id === "open" && single) openCoordinator(single);
-    else if (id === "work" && menu) setMenu({ ...menu, kind: "work" });
+    else if (id === "work") setDialog({ kind: "work", crewId });
     else if (id === "start") setDialog({ kind: "start", definitionId: crewId });
     else if (id === "edit") setDialog({ kind: "edit", crewId });
     else if (id === "members") setDialog({ kind: "edit", crewId, initialPage: "add" });
@@ -253,14 +234,6 @@ export function CrewRailSection({
         copyOf: { crewId, scope: menuCrew.projectId ? "project" : "global" },
       });
     else if (id === "scope") setDialog({ kind: "edit", copyOf: { crewId, scope } });
-    else if (id === "pause" && single)
-      void act(() =>
-        state.call(single.status === "paused" ? "crews.resume" : "crews.pause", {
-          runId: single.id,
-        }),
-      );
-    else if (id === "stop" && single)
-      void act(() => state.call("crews.stop", { runId: single.id }));
     else if (id === "delete") setDialog({ kind: "delete", crewId });
   };
   const label = t("Crews");
@@ -268,45 +241,42 @@ export function CrewRailSection({
     dialog?.kind === "delete" ? data.definitions.find((d) => d.id === dialog.crewId) : undefined;
 
   return (
-    <div ref={drag.setRef} className="reorder-item rail-reorder-block mb-2 shrink-0">
-      <div
-        {...drag.headerProps}
-        tabIndex={0}
-        aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-        title={t("Drag to reorder")}
-        className={`${RAIL_SECTION_HEADER} ${RAIL_DRAG_HANDLE} rounded-md outline-none @max-[140px]/rail:justify-center @max-[140px]/rail:px-0`}
-      >
-        <span className="min-w-0 flex-1 truncate px-1 text-xs font-medium text-content/70 @max-[140px]/rail:hidden">
-          {label}
-        </span>
-        <Button
-          iconOnly
-          label={t("New crew")}
-          variant="ghost"
-          motion="none"
-          type="button"
-          data-no-drag
-          aria-haspopup="dialog"
-          onClick={() => setDialog({ kind: "edit", createScope: "project" })}
-          className="grid size-5 shrink-0 place-items-center"
-        >
-          <Plus className="size-3.5" strokeWidth={1.75} />
-        </Button>
-        <span className="contents @max-[140px]/rail:hidden">
-          <SectionMenuButton label={label} onOpen={drag.openMenu} />
-        </span>
-      </div>
+    <div
+      ref={(element) => drag.setRef(element)}
+      className={RAIL_SECTION_BLOCK}
+      data-collapsed={collapsed || undefined}
+    >
+      <RailSectionHeader
+        label={label}
+        drag={drag}
+        collapsed={collapsed}
+        onToggleCollapsed={onToggleCollapsed}
+        actions={
+          <InlineAction
+            reveal="always"
+            label={t("New crew")}
+            motion="none"
+            type="button"
+            data-no-drag
+            aria-haspopup="dialog"
+            onClick={() => setDialog({ kind: "edit", createScope: "project" })}
+          >
+            <Plus className="icon-sm" strokeWidth={1.75} />
+          </InlineAction>
+        }
+      />
       <div
         role="list"
         aria-label={label}
-        className={`flex-col gap-px px-2 ${drag.folded ? "hidden" : "flex"}`}
+        hidden={drag.folded || collapsed}
+        className={`flex-col gap-px px-2 ${drag.folded || collapsed ? "hidden" : "flex"}`}
       >
         {data.definitions.length === 0 ? (
           <span className="@max-[140px]/rail:hidden">
             <Button
               variant="ghost"
               motion="none"
-              startIcon={<Plus className="size-3.5" />}
+              startIcon={<Plus className="icon-sm" />}
               onClick={() => setDialog({ kind: "edit", createScope: "project" })}
             >
               {t("Create your first crew")}
@@ -315,15 +285,18 @@ export function CrewRailSection({
         ) : null}
         {data.definitions.map((crew) => {
           const runs = activeCrewRuns(data.runs, crew.id);
-          const status = runs
-            .map(crewWorkStatus)
-            .sort((a, b) => STATUS_RANK.indexOf(a) - STATUS_RANK.indexOf(b))[0];
+          const { attention, execution } = railSignal(runs);
+          const working = execution === "working";
           const scope = crew.projectId ? t("This project") : t("All projects on this host");
-          const statusText = status
-            ? runs.length > 1
-              ? `${crewWorkStatusLabel(status)} · ${t("{p0} ongoing", { p0: runs.length })}`
-              : crewWorkStatusLabel(status)
-            : "";
+          // Attention is named first so a paused run with an open decision still reads
+          // "Needs decision"; execution state and the run count follow.
+          const statusText = [
+            attention ? crewAttentionLabel(attention) : "",
+            execution ? crewWorkStatusLabel(execution) : "",
+            runs.length > 1 ? t("{p0} ongoing", { p0: runs.length }) : "",
+          ]
+            .filter(Boolean)
+            .join(" · ");
           const openMenuAt = (event: MouseEvent<HTMLElement>) => {
             event.preventDefault();
             event.stopPropagation();
@@ -334,10 +307,11 @@ export function CrewRailSection({
             });
           };
           return (
-            <div
+            <ActionHost
               key={crew.id}
               role="listitem"
-              className="group relative flex h-8 items-stretch"
+              selected={menu?.crewId === crew.id}
+              className="group relative flex min-h-(--ui-control-height-compact) items-stretch"
               onContextMenu={openMenuAt}
             >
               <Button
@@ -345,10 +319,11 @@ export function CrewRailSection({
                 selected={menu?.crewId === crew.id}
                 motion="none"
                 type="button"
-                title={[crew.name, scope, statusText].filter(Boolean).join("\n")}
+                tooltip={[crew.name, scope, statusText].filter(Boolean).join("\n")}
                 aria-label={[crew.name, statusText].filter(Boolean).join(", ")}
                 disabled={pending}
-                onClick={(event) => openCrew(crew, event.currentTarget)}
+                loading={pendingCrew === crew.id}
+                onClick={() => openCrew(crew)}
                 onKeyDown={(event) => {
                   if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10"))
                     return;
@@ -361,70 +336,67 @@ export function CrewRailSection({
                 }}
                 className="flex min-w-0 flex-1 items-center gap-2 @max-[140px]/rail:justify-center"
               >
-                <span className="relative grid size-4 shrink-0 place-items-center">
-                  <CrewAvatar crew={crew} active={status === "working"} />
-                  {status ? (
-                    <span
-                      aria-hidden
-                      className={`absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full ${STATUS_DOT[status]}`}
+                <span className="relative grid icon-sm shrink-0 place-items-center">
+                  <CrewAvatar crew={crew} active={working} />
+                  {attention || (execution && !working) ? (
+                    <StatusDot
+                      label={statusText}
+                      className="absolute -right-0.5 -bottom-0.5"
+                      tone={
+                        attention
+                          ? ATTENTION_DOT[attention]
+                          : EXECUTION_DOT[execution as keyof typeof EXECUTION_DOT]
+                      }
                     />
                   ) : null}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium leading-tight @max-[140px]/rail:hidden">
+                <span className="min-w-0 flex-1 truncate text-ui-secondary font-medium @max-[140px]/rail:hidden">
                   {crew.name}
                 </span>
+                {working ? (
+                  <span className="shrink-0 @max-[140px]/rail:hidden">
+                    <WorkingIndicator size="xs" />
+                  </span>
+                ) : null}
+                {runs.length > 1 ? (
+                  <Badge
+                    variant="count"
+                    size="xs"
+                    aria-hidden
+                    className="shrink-0 @max-[140px]/rail:hidden"
+                  >
+                    {runs.length}
+                  </Badge>
+                ) : null}
               </Button>
-              <span className="hidden shrink-0 items-center gap-px group-hover:flex group-has-[button:focus-visible]:flex pointer-coarse:flex @max-[140px]/rail:hidden!">
-                <Button
-                  iconOnly
-                  label={t("Start work with {p0}", { p0: crew.name })}
-                  tooltip={t("Start work")}
-                  size="sm"
-                  variant="ghost"
+              <span className="flex shrink-0 items-center gap-px @max-[140px]/rail:hidden!">
+                {/* Start is the rail's frequent action, visible at rest as before; More reveals. */}
+                <InlineAction
+                  reveal="always"
+                  label={t("New work with {p0}", { p0: crew.name })}
+                  tooltip={t("New work")}
                   motion="none"
                   type="button"
                   data-no-drag
                   disabled={pending}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setDialog({ kind: "start", definitionId: crew.id });
-                  }}
-                  className="grid size-6 place-items-center"
+                  onClick={() => setDialog({ kind: "start", definitionId: crew.id })}
                 >
-                  <Play className="size-3.5" strokeWidth={1.75} />
-                </Button>
-                <Button
-                  iconOnly
+                  <Play className="icon-sm" strokeWidth={1.75} />
+                </InlineAction>
+                <InlineMoreAction
                   label={t("{p0} options", { p0: crew.name })}
                   tooltip={t("More actions")}
-                  size="sm"
-                  variant="ghost"
                   motion="none"
                   type="button"
                   data-no-drag
-                  aria-haspopup="menu"
-                  aria-expanded={menu?.kind === "crew" && menu.crewId === crew.id}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setMenu({
-                      kind: "crew",
-                      crewId: crew.id,
-                      anchor: event.currentTarget,
-                    });
-                  }}
-                  className="grid size-6 place-items-center"
-                >
-                  <MoreHorizontal className="size-4" strokeWidth={1.75} />
-                </Button>
+                  expanded={menu?.kind === "crew" && menu.crewId === crew.id}
+                  onOpen={(anchor) => setMenu({ kind: "crew", crewId: crew.id, anchor })}
+                />
               </span>
-            </div>
+            </ActionHost>
           );
         })}
-        {error ? (
-          <p role="alert" className="px-2 text-[11px] leading-tight text-danger">
-            {error}
-          </p>
-        ) : null}
+        {error ? <InlineError className="px-2">{error}</InlineError> : null}
       </div>
       {menu?.kind === "crew" && menuCrew ? (
         <DropdownMenu
@@ -438,25 +410,13 @@ export function CrewRailSection({
           onClose={() => setMenu((current) => (current?.kind === "crew" ? null : current))}
         />
       ) : null}
-      {menu?.kind === "work" && menuCrew ? (
-        <DropdownMenu
-          anchor={menu.anchor}
-          label={t("Ongoing work")}
-          side="right"
-          align="start"
-          width={260}
-          items={menuRuns.map((run) => ({
-            kind: "item" as const,
-            id: run.id,
-            label: crewRunTitle(run),
-            description: crewWorkStatusLabel(crewWorkStatus(run)),
-            disabled: !run.coordinatorSessionId || !onOpenSession,
-          }))}
-          onPick={(id) => {
-            const run = menuRuns.find((item) => item.id === id);
-            if (run) openCoordinator(run);
-          }}
-          onClose={() => setMenu((current) => (current?.kind === "work" ? null : current))}
+      {dialog?.kind === "work" ? (
+        <CrewManagementDialog
+          cwd={cwd}
+          state={state}
+          definitionId={dialog.crewId}
+          onOpen={onOpenSession}
+          onClose={() => setDialog(null)}
         />
       ) : null}
       {dialog?.kind === "edit" ? (

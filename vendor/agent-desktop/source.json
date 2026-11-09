@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/vercel-labs/agent-desktop.git",
+  "sourceRef": "9eb9b296192fcb70bda25e918cd6dd66abfa3d0d",
+  "version": "1.0.2",
+  "protocol": "2.5",
+  "rustToolchain": "1.89.0",
+  "cargoLockSha256": "3be8a5fdfc899e326249e61c96ca9756bc3d4078540e316f0e011aba6d9c40d7",
+  "licenseSha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+  "license": "Apache-2.0"
+}

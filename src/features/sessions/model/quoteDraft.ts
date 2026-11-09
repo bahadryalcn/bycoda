@@ -1,3 +1,6 @@
+import { chatCitationToken, extractChatCitations, withChatCitations } from "./chatCitation";
+import { insertAtSelection, type TextSelection } from "./attachmentTokens";
+
 export const ADD_TO_CHAT_EVENT = "bycoda:add-to-chat";
 
 export type AddToChatMode = "quote" | "plain";
@@ -13,9 +16,22 @@ export type QuoteRequest = {
   mode?: AddToChatMode;
 };
 
+/**
+ * Normalizes line endings and drops only leading/trailing blank lines. Leading
+ * indentation of the first content line is meaningful for code, terminal output
+ * and YAML, so the text is never `trim()`med; `trim()` only decides emptiness.
+ */
+export function normalizeSelectedText(text: string): string {
+  if (!text.trim()) return "";
+  return text
+    .replace(/\r\n?/g, "\n")
+    .replace(/^(?:[ \t]*\n)+/, "")
+    .replace(/(?:\n[ \t]*)+$/, "");
+}
+
 export function requestAddToChat(text: string, mode: AddToChatMode = "quote") {
   if (typeof window === "undefined") return;
-  const value = text.replace(/\r\n?/g, "\n").trim();
+  const value = normalizeSelectedText(text);
   if (!value) return;
   window.dispatchEvent(
     new CustomEvent<AddToChatRequest>(ADD_TO_CHAT_EVENT, {
@@ -33,6 +49,8 @@ export type QuoteConsumption = {
   draft: string;
   consumedId: number | null;
   changed: boolean;
+  /** Caret in the draft's editable text after inserting citation tokens. */
+  caret?: number;
 };
 
 export function isMarkdownBlockquotePosition(text: string, position: number): boolean {
@@ -42,7 +60,7 @@ export function isMarkdownBlockquotePosition(text: string, position: number): bo
 }
 
 export function appendSelectionQuote(draft: string, text: string): string {
-  const selected = text.replace(/\r\n?/g, "\n").trim();
+  const selected = normalizeSelectedText(text);
   if (!selected) return draft;
 
   const quote = selected
@@ -53,20 +71,45 @@ export function appendSelectionQuote(draft: string, text: string): string {
 }
 
 export function appendComposerInsert(draft: string, text: string): string {
-  const selected = text.replace(/\r\n?/g, "\n").trim();
+  const selected = normalizeSelectedText(text);
   if (!selected) return draft;
   return joinComposerInsert(draft, selected);
 }
 
+/**
+ * Citations arrive as `[quoteN]` tokens at `selection` (or the end), so they
+ * can sit inside a sentence the way `[image1]` tokens do.
+ */
 export function consumeQuoteRequest(
   draft: string,
   consumedId: number | null,
   request: QuoteRequest | undefined,
+  selection: TextSelection | null = null,
 ): QuoteConsumption {
   if (!request || request.id === consumedId) {
     return { draft, consumedId, changed: false };
   }
 
+  const incoming = extractChatCitations(request.text);
+  if (incoming.citations.length) {
+    const existing = extractChatCitations(draft);
+    const prose = incoming.text
+      ? appendComposerInsert(existing.text, incoming.text)
+      : existing.text;
+    const tokens = incoming.citations
+      .map((_, index) => chatCitationToken(existing.citations.length + index))
+      .join(" ");
+    const edit = insertAtSelection(prose, incoming.text ? null : selection, tokens);
+    // A token at the end gets a space so the next typed word stays separate.
+    const text = edit.caret === edit.text.length ? `${edit.text} ` : edit.text;
+    const next = withChatCitations(text, [...existing.citations, ...incoming.citations]);
+    return {
+      draft: next,
+      consumedId: request.id,
+      changed: next !== draft,
+      caret: edit.caret === edit.text.length ? text.length : edit.caret,
+    };
+  }
   const next =
     request.mode === "plain"
       ? appendComposerInsert(draft, request.text)

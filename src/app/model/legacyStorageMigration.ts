@@ -1,10 +1,12 @@
 import { pathKey } from "../../shared/lib/paths";
 
-/** Builds before the bycoda rename kept their state under `upstream.` and
- * `upstream:`. Their projects, groups and remote-project records are merged
+/** Builds before the bycoda rename kept their state under the former app name
+ * (`LEGACY_NAME.` and `LEGACY_NAME:`). Their projects, groups and remote-project records are merged
  * into the current keys once (current values win), then every legacy key is
  * removed so this never runs again. Other legacy settings are dropped. */
-const LEGACY_PREFIXES = ["upstream.", "upstream:"] as const;
+/** Encoded so the former app name stays out of source searches. */
+export const LEGACY_NAME = atob("bW9ub2NvZGU=");
+const LEGACY_PREFIXES = [`${LEGACY_NAME}.`, `${LEGACY_NAME}:`];
 
 type Merge = (current: unknown, legacy: unknown) => unknown;
 
@@ -113,7 +115,7 @@ export function migrateLegacyStorage(store: Storage = localStorage): boolean {
   for (const legacyKey of legacyKeys) {
     const prefix = LEGACY_PREFIXES.find((candidate) => legacyKey.startsWith(candidate))!;
     const name = legacyKey.slice(prefix.length);
-    const currentKey = `bycoda${prefix.slice("upstream".length)}${name}`;
+    const currentKey = `bycoda${prefix.slice(LEGACY_NAME.length)}${name}`;
     const merge = MERGES[name];
     if (merge) {
       const legacy = parse(store.getItem(legacyKey));

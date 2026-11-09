@@ -3,7 +3,12 @@ import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   testDir: ".",
-  testMatch: ["editor-selection.spec.ts", "file-save.spec.ts", "file-tree.spec.ts"],
+  testMatch: [
+    "editor-selection.spec.ts",
+    "file-save.spec.ts",
+    "file-tree.spec.ts",
+    "editor-recovery.spec.ts",
+  ],
   outputDir: "../../temp/test-results/editor-selection",
   workers: 1,
   timeout: 30_000,

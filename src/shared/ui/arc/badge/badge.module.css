@@ -1,11 +1,19 @@
 /* Adapted official free Arc source; bycoda semantic theme owns presentation. */
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+/* Box display shares the components layer, so consumer Tailwind utilities such as
+   `hidden` or `@max-[140px]/rail:hidden` can hide or reveal a badge. */
+@layer components {
+  .badge {
+    display: inline-flex;
+  }
+}
 .badge {
-  display: inline-flex;
   align-items: center;
   max-inline-size: 100%;
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--badge-border);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-control);
   color: var(--badge-foreground);
   background: var(--badge-background);
   font-size: var(--text-xs);
@@ -17,6 +25,14 @@
   display: block;
   min-inline-size: 0;
   max-inline-size: 100%;
+}
+.body[data-morphing] {
+  overflow: clip;
+}
+.body[data-morphing] > .content {
+  inline-size: max-content;
+  max-inline-size: none;
+  white-space: nowrap;
 }
 .content {
   position: relative;
@@ -62,6 +78,11 @@
   --badge-background: var(--ui-tone-success-subtle);
   --badge-border: var(--ui-tone-success-border);
 }
+.accent {
+  --badge-foreground: var(--ui-tone-accent-fg);
+  --badge-background: var(--ui-tone-accent-subtle);
+  --badge-border: var(--ui-tone-accent-border);
+}
 .info {
   --badge-foreground: var(--ui-tone-info-fg);
   --badge-background: var(--ui-tone-info-subtle);
@@ -76,4 +97,38 @@
   --badge-foreground: var(--ui-tone-danger-fg);
   --badge-background: var(--ui-tone-danger-subtle);
   --badge-border: var(--ui-tone-danger-border);
+}
+.subtle {
+  border-color: transparent;
+}
+.dot {
+  padding-inline: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+}
+.dotMark {
+  flex: 0 0 auto;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--badge-foreground);
+}
+/* Counts follow caption height; their shared tone stays quiet and borderless. */
+.count {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  justify-content: center;
+  flex-shrink: 0;
+  min-inline-size: 1ch;
+  min-block-size: 0;
+  padding: 0;
+  line-height: inherit;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.count.sm {
+  min-inline-size: 1ch;
+  min-block-size: 0;
 }

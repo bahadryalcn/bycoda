@@ -1,16 +1,45 @@
 export type ToolsTab = "devices" | "browser" | "servers" | "logs" | "resources";
 export type ToolsPlacement = "left" | "right" | "top" | "bottom";
-export type ToolsUiContext = { cwd: string; sessionId: string; title: string };
+export type SessionToolsUiContext = {
+  kind?: "session";
+  cwd: string;
+  sessionId: string;
+  title: string;
+};
+export type RoomToolsUiContext = {
+  kind: "room";
+  cwd: string;
+  threadId: string;
+  projectId: string;
+  environmentId: string;
+  title: string;
+  valid: () => boolean;
+};
+export type ToolsUiContext = SessionToolsUiContext | RoomToolsUiContext;
 export type ToolsUiAction =
   | "ui.tools.status"
   | "ui.tools.open"
   | "ui.tools.place"
   | "ui.tools.close";
-export type ToolsUiInput = { tab?: ToolsTab; placement?: ToolsPlacement; machineId?: string };
+export type ToolsUiInput = {
+  tab?: ToolsTab;
+  placement?: ToolsPlacement;
+  machineId?: string;
+  projectHost?: boolean;
+};
 export type ToolsUiState = {
   open: boolean;
   placement: ToolsPlacement;
-  panels: { id: string; tab: ToolsTab; machine: string; mounted: boolean }[];
+  visible?: boolean;
+  presentation?: "docked" | "detached";
+  panels: {
+    id: string;
+    tab: ToolsTab;
+    machine: string;
+    mounted?: boolean;
+    presentationKnown?: boolean;
+    visible?: boolean;
+  }[];
 };
 type Handler = (
   context: ToolsUiContext,
@@ -34,13 +63,22 @@ export async function requestToolsUi(
 ): Promise<ToolsUiState> {
   if (
     !context.cwd ||
-    !context.sessionId ||
+    (context.kind === "room"
+      ? !context.threadId || !context.projectId || !context.environmentId || !context.valid()
+      : !context.sessionId) ||
     !["ui.tools.status", "ui.tools.open", "ui.tools.place", "ui.tools.close"].includes(action)
   )
     throw new Error("Unsupported tools UI request.");
+  if (
+    context.kind === "room" &&
+    (!["ui.tools.open", "ui.tools.status"].includes(action) ||
+      (action === "ui.tools.open" &&
+        (input.tab !== "browser" || input.projectHost !== true || input.machineId !== undefined)))
+  )
+    throw new Error("Room tools support only the project Host browser.");
   const allowed =
     action === "ui.tools.open"
-      ? ["tab", "placement", "machineId"]
+      ? ["tab", "placement", "machineId", "projectHost"]
       : action === "ui.tools.place"
         ? ["placement"]
         : [];
@@ -61,6 +99,10 @@ export async function requestToolsUi(
     (typeof input.machineId !== "string" || !input.machineId.trim() || input.machineId.length > 300)
   )
     throw new Error("Invalid tools machine.");
+  if (input.projectHost !== undefined && typeof input.projectHost !== "boolean")
+    throw new Error("Invalid project Host selection.");
+  if (input.projectHost === true && input.machineId !== undefined)
+    throw new Error("Choose either the project Host or an explicit machine.");
   if (!handler) throw new Error("Conversation Tools workspace is not mounted in this window.");
   return handler(context, action as ToolsUiAction, input as ToolsUiInput);
 }

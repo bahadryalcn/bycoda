@@ -21,10 +21,61 @@ import {
   hostToolRequest,
   invalidateFeatureHosts,
   listHostToolMachines,
+  captureVoiceToolHost,
 } from "./hostFeatureClient";
 import type { RemoteMachine } from "./protocol";
 
 describe("hostFeatureRequest", () => {
+  it("pins global voice management to the actual Host without resolving any project", async () => {
+    const machine = {
+      id: "local",
+      environmentId: "room-host",
+      endpoint: "http://127.0.0.1:3774",
+      name: "Local",
+    };
+    invoke.mockResolvedValue(machine);
+    machineCapabilities.mockResolvedValue(["voice.tools.v1"]);
+    const host = await captureVoiceToolHost("room-host");
+    await host.request("voice.tools.list", { threadId: "room" });
+    expect(hostProjectFor).not.toHaveBeenCalled();
+    expect(remoteRequest).toHaveBeenCalledWith(
+      "local",
+      "voice.tools.list",
+      { threadId: "room" },
+      false,
+      false,
+      "room-host",
+    );
+    invoke.mockResolvedValue({ ...machine, environmentId: "replacement" });
+    await expect(host.request("voice.tools.call", { threadId: "room" })).rejects.toThrow(
+      "captured Host",
+    );
+    expect(remoteRequest).toHaveBeenCalledTimes(1);
+  });
+  it("evicts a hung discovery without dispatching a mutation or retaining its late result", async () => {
+    vi.useFakeTimers();
+    try {
+      let late!: (value: unknown) => void;
+      invoke.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            late = resolve;
+          }),
+      );
+      const pending = hostFeatureRequest("/hung", "dev.servers", "devServers.list");
+      const rejected = expect(pending).rejects.toThrow("Host discovery timed out");
+      await vi.advanceTimersByTimeAsync(20_001);
+      await rejected;
+      expect(remoteRequest).not.toHaveBeenCalled();
+      await hostFeatureRequest("/hung", "dev.servers", "devServers.list");
+      late({ id: "obsolete", endpoint: "http://old", name: "old" });
+      await Promise.resolve();
+      await hostFeatureRequest("/hung", "dev.servers", "devServers.list");
+      expect(remoteRequest.mock.calls.every(([id]) => id === "local")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   beforeEach(() => {
     invalidateFeatureHosts();
     invoke.mockReset();
@@ -55,9 +106,9 @@ describe("hostFeatureRequest", () => {
 
   it("resolves again after a failed request", async () => {
     remoteRequest.mockRejectedValueOnce(new Error("gone"));
-    await expect(
-      hostFeatureRequest("/repo", "dev.servers", "devServers.list"),
-    ).rejects.toThrow("gone");
+    await expect(hostFeatureRequest("/repo", "dev.servers", "devServers.list")).rejects.toThrow(
+      "gone",
+    );
     await hostFeatureRequest("/repo", "dev.servers", "devServers.list");
     expect(invoke.mock.calls.filter(([command]) => command === "local_host_connect")).toHaveLength(
       2,
@@ -130,6 +181,120 @@ describe("explicit host tool targets", () => {
     });
     expect(invoke).not.toHaveBeenCalledWith("local_host_connect");
   });
+  it("routes only the exact assistant and desktop owner methods with their advertised capability", async () => {
+    machineCapabilities.mockResolvedValue(["assistant.v1", "desktop.control.v1"]);
+    for (const [capability, method, params] of [
+      ["assistant.v1", "assistant.request", { op: "threads.open", projectId: "canonical-remote" }],
+      ["desktop.control.v1", "desktop.request", { op: "status" }],
+      ["desktop.control.v1", "desktop.helper.request", { op: "status" }],
+    ] as const) {
+      await hostToolRequest("", capability, method, params, { kind: "local" });
+      expect(remoteRequest).toHaveBeenLastCalledWith(
+        "local",
+        method,
+        params,
+        false,
+        false,
+        "local-env",
+      );
+    }
+    expect(hostProjectFor).not.toHaveBeenCalled();
+    await expect(
+      hostToolRequest(
+        "",
+        "browser.shared",
+        "assistant.request",
+        { op: "snapshot" },
+        { kind: "local" },
+      ),
+    ).rejects.toThrow("explicit computer and capability");
+    await expect(
+      hostToolRequest("", "assistant.v1", "assistant.request", {}, { kind: "project" }),
+    ).rejects.toThrow("explicit computer and capability");
+    await expect(
+      hostToolRequest("", "assistant.v1", "assistant.request.unsafe", {}, { kind: "local" }),
+    ).rejects.toThrow("cannot use another computer");
+  });
+  it("pins remote assistant IDs to the captured environment and refuses changed routes before disclosure", async () => {
+    machineCapabilities.mockResolvedValue(["assistant.v1"]);
+    const request = {
+      op: "threads.append",
+      threadId: "remote-thread",
+      sessionId: "actual-remote",
+      idempotencyKey: "original-id",
+      text: "accepted speech",
+    };
+    await hostToolRequest(
+      "",
+      "assistant.v1",
+      "assistant.request",
+      request,
+      { kind: "machine", machineId: "mac" },
+      "mac-env",
+    );
+    expect(remoteRequest).toHaveBeenCalledWith(
+      "mac",
+      "assistant.request",
+      request,
+      false,
+      false,
+      "mac-env",
+    );
+    await expect(
+      hostToolRequest(
+        "",
+        "assistant.v1",
+        "assistant.request",
+        request,
+        { kind: "machine", machineId: "mac" },
+        "other-env",
+      ),
+    ).rejects.toThrow("captured Host");
+    remoteRequest.mockImplementationOnce(async () => {
+      invoke.mockResolvedValue([local, { ...mac, environmentId: "replaced" }]);
+      return { ok: true };
+    });
+    await expect(
+      hostToolRequest(
+        "",
+        "assistant.v1",
+        "assistant.request",
+        request,
+        { kind: "machine", machineId: "mac" },
+        "mac-env",
+      ),
+    ).rejects.toThrow("captured Host");
+    expect(hostProjectFor).not.toHaveBeenCalled();
+  });
+  it("checks owner capability and captured machine again before any delayed dispatch", async () => {
+    let release!: (value: string[]) => void;
+    machineCapabilities.mockImplementationOnce(() => new Promise((done) => (release = done)));
+    const pending = hostToolRequest(
+      "",
+      "assistant.v1",
+      "assistant.request",
+      { op: "threads.open", projectId: "original" },
+      { kind: "machine", machineId: "mac" },
+      "mac-env",
+    );
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    invoke.mockResolvedValue([local, { ...mac, environmentId: "new-environment" }]);
+    release(["assistant.v1"]);
+    await expect(pending).rejects.toThrow("captured Host");
+    expect(remoteRequest).not.toHaveBeenCalled();
+    invalidateFeatureHosts();
+    invoke.mockResolvedValue([local, mac]);
+    machineCapabilities.mockResolvedValue([]);
+    for (const [capability, method] of [
+      ["assistant.v1", "assistant.request"],
+      ["desktop.control.v1", "desktop.request"],
+      ["desktop.control.v1", "desktop.helper.request"],
+    ])
+      await expect(
+        hostToolRequest("", capability, method, {}, { kind: "machine", machineId: "mac" }),
+      ).rejects.toThrow("Update");
+    expect(remoteRequest).not.toHaveBeenCalled();
+  });
 
   it("uses this computer for a remote conversation without registering its directory", async () => {
     await Promise.all([
@@ -155,6 +320,22 @@ describe("explicit host tool targets", () => {
     expect(hostProjectFor).not.toHaveBeenCalled();
     expect(remoteRequest).toHaveBeenCalledWith("local", "devices.status", {});
     expect(remoteRequest).toHaveBeenCalledWith("local", "resources.read", {});
+  });
+
+  it("runs realtime and cloud voice requests on this computer", async () => {
+    machineCapabilities.mockResolvedValue(["voice.realtime.v2", "voice.cloud.v1"]);
+    await hostToolRequest(
+      "G:/repo",
+      "voice.realtime.v2",
+      "voice.realtime.secret",
+      { provider: "openai" },
+      { kind: "local" },
+    );
+    await hostToolRequest("G:/repo", "voice.cloud.v1", "voice.cloud.status", {}, { kind: "local" });
+    expect(remoteRequest).toHaveBeenCalledWith("local", "voice.realtime.secret", {
+      provider: "openai",
+    });
+    expect(remoteRequest).toHaveBeenCalledWith("local", "voice.cloud.status", {});
   });
 
   it("uses the selected MacBook for a local conversation and omits foreign project/session IDs", async () => {
@@ -264,11 +445,7 @@ describe("explicit host tool targets", () => {
   });
 
   it("does not retarget project tools or authorize unknown host methods", async () => {
-    for (const method of [
-      "devServers.list",
-      "browser.execute",
-      "devices.exec",
-    ]) {
+    for (const method of ["devServers.list", "browser.execute", "devices.exec"]) {
       await expect(
         hostToolRequest(
           "G:/repo",

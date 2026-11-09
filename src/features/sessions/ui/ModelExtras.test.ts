@@ -11,12 +11,13 @@ import {
   setHarnessModels,
 } from "../model/models";
 vi.mock("./modelSource", () => ({
-  useModelSource: () => ({ resolve: resolveModel, modelsFor }),
+  useModelSource: () => ({ resolve: resolveModel, modelsFor, available: () => true }),
 }));
 vi.mock("../../../shared/ui/Popover", () => ({
   Popover: ({ children }: { children: ReactNode }) =>
     createElement("div", { role: "dialog" }, children),
 }));
+import { encodeAdvisor, encodeSubagents } from "../../../shared/model/host-contracts/delegation";
 import { ModelExtras } from "./ModelExtras";
 let root: Root;
 let container: HTMLDivElement;
@@ -51,12 +52,6 @@ it("keeps subagent force inactive until a model is selected and resets extras on
   expect(
     container.querySelector<HTMLSelectElement>('[aria-label="Subagent model policy"]')!.disabled,
   ).toBe(true);
-  const select = container.querySelector<HTMLSelectElement>('[aria-label="Subagent model"]')!;
-  act(() => {
-    select.value = "haiku";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ subagentModel: "haiku" }));
   act(() =>
     root.render(
       createElement(ModelExtras, {
@@ -144,7 +139,7 @@ it("offers only the provider catalog options and removes unsupported settings fr
     ),
   );
   act(() => container.querySelector<HTMLButtonElement>('[aria-label="Extras"]')!.click());
-  expect(container.querySelector('[aria-label="Advisor"]')).toBeNull();
+  expect(container.querySelector('[aria-label="Advisor"]')).not.toBeNull();
   const select = container.querySelector<HTMLSelectElement>('[aria-label="Reasoning"]')!;
   act(() => {
     select.value = "high";
@@ -161,35 +156,99 @@ it("offers only the provider catalog options and removes unsupported settings fr
       }),
     ),
   );
-  expect(container.querySelector("button")).toBeNull();
+  // A provider without catalog settings still offers the any-provider delegation rows.
+  expect(container.querySelector('[aria-label="Extras"]')).not.toBeNull();
 });
 
-it("shows versioned Claude models and forwards their full IDs without changing the main model", () => {
+it("offers enabled Claude models in unified advisor choices", () => {
   setHarnessModels("claude", [
-    {
-      id: "claude:sonnet-5",
-      harness: "claude",
-      name: "Sonnet 5",
-      nativeId: "claude-sonnet-5",
-    },
-    {
-      id: "claude:opus-5-5",
-      harness: "claude",
-      name: "Opus 5.5",
-      nativeId: "claude-opus-5-5",
-    },
-    {
-      id: "claude:opus-4.5",
-      harness: "claude",
-      name: "Opus 4.5",
-      nativeId: "claude-opus-4-5",
-    },
-    {
-      id: "claude:haiku-4.5",
-      harness: "claude",
-      name: "Haiku 4.5",
-      nativeId: "claude-haiku-4-5",
-    },
+    { id: "claude:sonnet-5", harness: "claude", name: "Sonnet 5", nativeId: "sonnet-5" },
+    { id: "claude:opus-5", harness: "claude", name: "Opus 5", nativeId: "opus-5" },
+    { id: "claude:haiku", harness: "claude", name: "Haiku", nativeId: "haiku" },
+  ]);
+  saveModelEnabled("claude:haiku", false);
+  act(() =>
+    root.render(
+      createElement(ModelExtras, {
+        harness: "claude",
+        model: "claude:sonnet-5",
+        values: {},
+        onSettingsChange: vi.fn(),
+      }),
+    ),
+  );
+  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Extras"]')!.click());
+  const advisor = container.querySelector<HTMLButtonElement>('[aria-label="Advisor"]')!;
+  act(() => advisor.click());
+  const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+  expect(options.some((o) => o.textContent?.includes("Opus 5"))).toBe(true);
+  expect(options.some((o) => o.textContent?.includes("Haiku"))).toBe(false);
+  expect(container.querySelector('[aria-label="Subagent model"]')).toBeNull();
+});
+
+it("retains the saved accountless advisor value in the native select", () => {
+  const model = { id: "codex:gpt-6-astra", harness: "codex" as const, name: "GPT-6-Astra" };
+  setHarnessModels("codex", [model]);
+  const crossAdvisor = encodeAdvisor({ harness: "codex", model: model.id })!;
+  const onChange = vi.fn();
+  act(() =>
+    root.render(
+      createElement(ModelExtras, {
+        harness: "codex",
+        model: model.id,
+        values: { crossAdvisor },
+        onSettingsChange: onChange,
+      }),
+    ),
+  );
+  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Extras"]')!.click());
+  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Advisor"]')!;
+  expect(trigger.textContent).toContain("GPT-6-Astra");
+  act(() => trigger.click());
+  const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+  const selected = options.find((option) => option.getAttribute("aria-selected") === "true");
+  expect(selected?.textContent).toContain("GPT-6-Astra");
+  expect(selected?.textContent).toContain("Default");
+  expect(options.some((option) => option.textContent?.includes("Unavailable"))).toBe(false);
+  expect(onChange).not.toHaveBeenCalled();
+});
+
+it("offers the any-provider subagents row for any harness and writes the picked models as one list", () => {
+  setHarnessModels("codex", [
+    { id: "codex:gpt-6.1-sol", harness: "codex", name: "GPT 6.1 Sol", nativeId: "gpt-6.1-sol" },
+  ]);
+  setHarnessModels("cursor", [
+    { id: "cursor:composer-2", harness: "cursor", name: "Composer 2", nativeId: "composer-2" },
+  ]);
+  const onChange = vi.fn();
+  act(() =>
+    root.render(
+      createElement(ModelExtras, {
+        harness: "codex",
+        model: "codex:gpt-6.1-sol",
+        values: {},
+        onSettingsChange: onChange,
+      }),
+    ),
+  );
+  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Extras"]')!.click());
+  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Subagents"]')!;
+  expect(trigger.textContent).toContain("Off");
+  act(() => trigger.click());
+  const composer = [
+    ...document.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]'),
+  ].find((item) => item.textContent?.includes("Composer 2"))!;
+  act(() => composer.click());
+  expect(onChange).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      crossSubagents: encodeSubagents([{ harness: "cursor", model: "cursor:composer-2" }]),
+    }),
+  );
+});
+
+it("clears a legacy advisor and records explicit Off", async () => {
+  setHarnessModels("claude", [
+    { id: "claude:sonnet-5", harness: "claude", name: "Sonnet 5", nativeId: "sonnet-5" },
   ]);
   const onChange = vi.fn();
   act(() =>
@@ -197,79 +256,20 @@ it("shows versioned Claude models and forwards their full IDs without changing t
       createElement(ModelExtras, {
         harness: "claude",
         model: "claude:sonnet-5",
-        values: {},
+        values: { advisor: "opus" },
         onSettingsChange: onChange,
       }),
     ),
   );
   act(() => container.querySelector<HTMLButtonElement>('[aria-label="Extras"]')!.click());
-  const advisor = container.querySelector<HTMLSelectElement>('[aria-label="Advisor"]')!;
-  expect([...advisor.options].map((o) => o.text)).toContain("Opus 5.5");
-  expect([...advisor.options].map((o) => o.value)).not.toContain("claude-opus-4-5");
-  expect([...advisor.options].find((o) => o.value === "opus")!.text).toBe("Opus");
-  expect([...advisor.options].find((o) => o.value === "default")!.text).toBe("Claude default");
-  act(() => {
-    advisor.value = "claude-opus-5-5";
-    advisor.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Advisor"]')!.click());
+  const off = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (option) =>
+      option.getAttribute("aria-selected") !== "true" &&
+      /^\s*(Off|Default|None)/.test(option.textContent ?? ""),
+  )!;
+  act(() => off.click());
   expect(onChange).toHaveBeenLastCalledWith(
-    expect.objectContaining({ advisor: "claude-opus-5-5" }),
+    expect.objectContaining({ crossAdvisor: "null", advisor: "off" }),
   );
-  const subagent = container.querySelector<HTMLSelectElement>('[aria-label="Subagent model"]')!;
-  expect([...subagent.options].map((o) => o.text)).toContain("Haiku 4.5");
-  act(() => {
-    subagent.value = "claude-haiku-4-5";
-    subagent.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  expect(onChange).toHaveBeenLastCalledWith(
-    expect.objectContaining({ subagentModel: "claude-haiku-4-5" }),
-  );
-  expect(resolveModel("claude", "claude:sonnet-5").nativeId).toBe("claude-sonnet-5");
-});
-
-it("hides turned-off Claude models and labels aliases with their live version", () => {
-  setHarnessModels("claude", [
-    { id: "claude:opus", harness: "claude", name: "Opus 5.5", nativeId: "opus" },
-    {
-      id: "claude:sonnet",
-      harness: "claude",
-      name: "Sonnet 5.5 (1M context)",
-      nativeId: "sonnet",
-    },
-    { id: "claude:fable", harness: "claude", name: "Fable 5.1", nativeId: "fable" },
-    { id: "claude:haiku", harness: "claude", name: "Haiku 4.5", nativeId: "haiku" },
-    {
-      id: "claude:opus-4-8",
-      harness: "claude",
-      name: "Opus 4.8",
-      nativeId: "claude-opus-4-8",
-    },
-  ]);
-  saveModelEnabled("claude:haiku", false);
-  saveModelEnabled("claude:opus-4-8", false);
-  act(() =>
-    root.render(
-      createElement(ModelExtras, {
-        harness: "claude",
-        model: "claude:opus",
-        values: {},
-        onSettingsChange: vi.fn(),
-      }),
-    ),
-  );
-  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Extras"]')!.click());
-  const subagent = container.querySelector<HTMLSelectElement>('[aria-label="Subagent model"]')!;
-  expect([...subagent.options].map((o) => o.text)).toEqual([
-    "Claude default",
-    "Sonnet 5.5",
-    "Opus 5.5",
-    "Fable 5.1",
-  ]);
-  const advisor = container.querySelector<HTMLSelectElement>('[aria-label="Advisor"]')!;
-  expect([...advisor.options].map((o) => o.text)).toEqual([
-    "Claude default",
-    "Off",
-    "Opus 5.5",
-    "Fable 5.1",
-  ]);
 });

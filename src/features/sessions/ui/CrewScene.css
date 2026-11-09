@@ -1,3 +1,5 @@
+/* Decorative scene: label and title sizes below scale with the scene's container width (cqi) and
+   stay far smaller than any text role, so the clamp() font sizes are kept on purpose. */
 .crew-scene {
   container-type: inline-size;
   inline-size: 100%;
@@ -32,7 +34,7 @@
   overflow: clip;
   text-overflow: ellipsis;
   text-align: center;
-  font-size: clamp(8px, 1.4cqi, 11px);
+  font-size: var(--ui-font-scene-label);
   line-height: 1.2;
   letter-spacing: 0.02em;
   color: currentColor;
@@ -45,10 +47,10 @@
 }
 .crew-scene__label[data-working="true"] {
   opacity: 1;
-  font-weight: 600;
+  font-weight: 500;
 }
 .crew-scene--background .crew-scene__label {
-  font-size: clamp(7px, 1.2cqi, 9px);
+  font-size: var(--ui-font-scene-label-small);
   opacity: 0.5;
 }
 .crew-scene--background .crew-scene__label[data-working="true"] {
@@ -73,7 +75,7 @@
   display: block;
   overflow: clip;
   text-overflow: ellipsis;
-  font-weight: 600;
+  font-weight: 500;
 }
 .crew-scene__detail {
   display: block;
@@ -89,7 +91,7 @@
   inline-size: 60%;
   margin-inline: auto;
   margin-block: 4px 3px;
-  border-radius: 2px;
+  border-radius: var(--ui-radius-control);
   background: var(--ui-surface-pressed);
   overflow: clip;
 }
@@ -103,7 +105,7 @@
   inset-inline: 0;
   inset-block-start: 35%;
   text-align: center;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   opacity: 0.75;
 }
 .crew-scene__theme-title {
@@ -114,14 +116,14 @@
 }
 .crew-scene__theme-title > span {
   display: block;
-  font-size: clamp(10px, 2.4cqi, 21px);
-  font-weight: 800;
+  font-size: var(--ui-font-scene-title);
+  font-weight: 500;
   letter-spacing: 0.25em;
 }
 .crew-scene__theme-title > small {
   display: block;
   margin-block-start: 3px;
-  font-size: clamp(7px, 1.1cqi, 10px);
+  font-size: var(--ui-font-scene-subtitle);
   letter-spacing: 0.12em;
 }
 .crew-scene__status button {

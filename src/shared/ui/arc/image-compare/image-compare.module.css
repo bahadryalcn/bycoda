@@ -1,10 +1,22 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet.
+   Box layout shares the `components` layer so consumer utilities can size the frame;
+   color, border and state presentation stay unlayered. */
+@layer properties, theme, base, components, utilities;
+@layer components {
+  .root {
+    position: relative;
+    display: block;
+    width: 100%;
+    overflow: clip;
+    container-type: size;
+    isolation: isolate;
+  }
+  .layer {
+    position: absolute;
+    inset: 0;
+  }
+}
 .root {
-  position: relative;
-  display: block;
-  width: 100%;
-  overflow: clip;
-  container-type: size;
-  isolation: isolate;
   border-radius: var(--radius-panel);
   background: var(--surface-muted);
   cursor: ew-resize;
@@ -24,12 +36,8 @@
   z-index: 3;
   inset: 0;
   border-radius: inherit;
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--foreground) 8%, transparent);
+  box-shadow: inset 0 0 0 1px var(--border);
   pointer-events: none;
-}
-.layer {
-  position: absolute;
-  inset: 0;
 }
 .layer :where(img, picture, video) {
   display: block;
@@ -39,7 +47,38 @@
   pointer-events: none;
   -webkit-user-drag: none;
 }
-/* Captions sit on a frosted chip so they read over any photo, below the divider. */
+/* A side whose media failed to load: a readable message on the muted surface, never blank.
+   Each layer spans the whole frame and is clipped at the divider, so the message is anchored
+   under its caption chip, in the part of the frame that side owns, not at the frame center. */
+.fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  padding: calc(var(--space-3) + 2.25rem) var(--space-3) var(--space-3);
+  background: var(--surface-muted);
+  color: var(--foreground);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+.fallback[data-side="after"] {
+  justify-content: flex-end;
+  text-align: end;
+}
+.root[data-orientation="vertical"] .fallback[data-side="after"] {
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: var(--space-3) var(--space-3) calc(var(--space-3) + 2.25rem);
+  text-align: start;
+}
+.fallback > svg {
+  flex-shrink: 0;
+  margin-block-start: 0.15em;
+}
+/* Captions sit on the shared media scrim with on-solid ink: both are theme-neutral, so a
+   caption reads over bright and dark photography in every theme. */
 .chip {
   position: absolute;
   z-index: 1;
@@ -47,8 +86,8 @@
   left: var(--space-3);
   padding: 3px 10px;
   border-radius: var(--radius-pill);
-  background: color-mix(in oklab, var(--background) 74%, transparent);
-  color: var(--foreground);
+  background: var(--ui-overlay-backdrop);
+  color: var(--color-on-solid);
   font-size: var(--text-xs);
   font-weight: 500;
   line-height: var(--leading-body);
@@ -79,18 +118,20 @@
   width: 0;
   height: 0;
 }
+/* The line and handle sit on photography, not on the theme. They use the theme-neutral
+   thumb roles (on-solid ink, scrim glow) so they stay visible over bright and dark
+   images in light, dark and custom themes. The app never sets `data-theme`, so no
+   theme selector is needed. */
 .line {
   position: absolute;
   top: calc((100cqw + 100cqh) * -1);
   left: -1px;
   width: 2px;
   height: calc((100cqw + 100cqh) * 2);
-  background: var(--surface-raised);
-  box-shadow: 0 0 0 0.5px var(--palette-oklch_0pct_0_0_14);
-}
-/* The line sits on photography, not on the theme, so it stays light in dark mode too. */
-:global(:root[data-theme="dark"]) .line {
-  background: var(--foreground);
+  background: var(--color-on-solid);
+  box-shadow:
+    0 0 0 0.5px var(--palette-oklch_0pct_0_0_14),
+    0 0 4px var(--ui-overlay-backdrop);
 }
 .handleSlot {
   position: absolute;
@@ -108,13 +149,17 @@
   height: 40px;
   place-items: center;
   translate: -50% -50%;
-  border: 1px solid var(--border);
+  border: 1px solid var(--ui-control-thumb-border);
   border-radius: var(--radius-pill);
-  background: var(--surface-raised);
-  box-shadow: var(--shadow-raised);
-  color: var(--foreground);
+  background: var(--ui-control-thumb);
+  box-shadow: var(--ui-control-thumb-shadow);
+  color: var(--color-scrim);
   pointer-events: auto;
-  transition: border-color var(--duration-fast) var(--ease-standard);
+  transition: box-shadow var(--duration-fast) var(--ease-standard);
+}
+/* Focus that follows a pointer stays quiet; a key press brings the ring back. */
+.handle[data-quiet]:focus-visible {
+  outline: none;
 }
 .handle::after {
   content: "";
@@ -124,7 +169,9 @@
 }
 @media (hover: hover) and (pointer: fine) {
   .root:hover .handle {
-    border-color: var(--border-strong);
+    box-shadow:
+      var(--ui-control-thumb-shadow),
+      0 0 0 1px var(--palette-oklch_0pct_0_0_14);
   }
 }
 .chevrons {

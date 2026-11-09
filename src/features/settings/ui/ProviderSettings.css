@@ -1,102 +1,243 @@
-/* Keep the CLI overview together instead of splitting labels from controls. */
-.bycoda-settings-workbench .bycoda-settings-form > #setting-agent-clis {
-  display: block;
-}
-.bycoda-settings-workbench .bycoda-settings-form > #setting-agent-clis > .settings-group-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 16px;
-  padding-block-end: 12px;
-}
-#setting-agent-clis > .settings-group-content {
-  container-type: inline-size;
-  overflow: visible;
-}
-.provider-cli-scope {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+/* Providers page: a sticky provider list beside a detail column of framed groups.
+   Colors come from shared semantic tokens only; rows and frames come from settingsControls. */
+.provider-cli-container {
+  /* Named so the one-column switch follows the page width, not a nested settings frame. */
+  container: provider-page / inline-size;
+  min-inline-size: 0;
 }
 .provider-cli-workspace {
   display: grid;
-  grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
+  grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr);
   align-items: start;
   gap: 24px;
 }
+
+/* Provider list: open rows on the page ground, selection is the shared fill. It stays in view
+   while the detail column scrolls, and scrolls on its own only when taller than the window. */
 .provider-cli-selector {
+  position: sticky;
+  /* Below the sticky page bar (its padding plus a compact-height title line), so rows never
+     slide under it. */
+  inset-block-start: calc(var(--ui-control-height-compact) + 32px);
   display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+  max-block-size: calc(100vh - var(--ui-control-height-compact) - 6rem);
+  overflow-y: auto;
+  align-content: start;
+}
+.provider-cli-select {
+  display: none;
+  min-inline-size: 0;
+}
+.provider-cli-item {
+  display: flex;
+  align-items: center;
   gap: 4px;
   min-inline-size: 0;
-  padding: 4px;
-  border: 1px solid var(--color-stroke);
-  border-radius: 10px;
-  background: var(--ui-surface);
+}
+.provider-cli-item[data-muted] .provider-cli-option {
+  opacity: 0.72;
 }
 .provider-cli-option {
+  flex: 1 1 0;
   justify-content: flex-start;
   min-inline-size: 0;
-  min-block-size: 34px;
   gap: 8px;
-  padding-inline: 9px;
   text-align: start;
 }
-.provider-cli-detail {
+.provider-cli-option-copy {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 1px;
   min-inline-size: 0;
-  container-type: inline-size;
 }
-.provider-cli-panel > #setting-enabled-models {
-  margin-block-start: 20px;
-  border-block-start: 1px solid var(--color-stroke);
-}
-.provider-cli-panel > #setting-enabled-models > h3 {
-  padding-block: 12px;
-  font-size: 12px;
-}
-.provider-cli-model-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
-  column-gap: 24px;
-  max-block-size: 18rem;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-}
-.bycoda-settings-workbench .bycoda-settings-form .provider-cli-model-list .settings-row {
+.provider-cli-option-name {
+  display: flex;
   align-items: center;
-  gap: 12px;
-  padding-block: 8px;
-  min-block-size: 40px;
+  gap: 6px;
+  min-inline-size: 0;
+  font-size: var(--ui-font-secondary);
+  line-height: 1.35;
 }
+.provider-cli-option-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-caption);
+  line-height: 1.35;
+  color: var(--ui-text-secondary);
+}
+.provider-cli-option-meta[data-tone="signedOut"],
+.provider-cli-option-meta[data-tone="low"] {
+  color: var(--ui-tone-warning-fg);
+}
+.provider-cli-option-meta[data-tone="exhausted"] {
+  color: var(--ui-tone-danger-fg);
+}
+.provider-cli-item-action {
+  flex-shrink: 0;
+}
+.provider-cli-more {
+  margin-block-start: 8px;
+  color: var(--ui-text-secondary);
+}
+.provider-cli-more svg {
+  flex-shrink: 0;
+  transition: transform var(--motion-feedback-duration) var(--motion-ease-out);
+}
+.provider-cli-more svg[data-open] {
+  transform: rotate(90deg);
+}
+.provider-cli-more-count {
+  margin-inline-start: auto;
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text-muted);
+}
+.provider-cli-missing {
+  display: grid;
+  gap: 2px;
+}
+.provider-cli-missing[hidden] {
+  display: none;
+}
+.provider-cli-add {
+  margin-block-start: 8px;
+  padding-block-start: 8px;
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+@media (prefers-reduced-motion: reduce) {
+  .provider-cli-more svg {
+    transition: none;
+  }
+}
+
+/* Detail column: header, Status, Accounts, then the selected provider's panel. The column gap is
+   the only space between groups; a group's own leading padding would double it. */
+.provider-cli-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-inline-size: 0;
+}
+.provider-cli-panel,
+.provider-cli-card {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-inline-size: 0;
+}
+:is(.provider-cli-detail, .provider-cli-panel, .provider-cli-card) > .settings-group {
+  padding-block-start: 0;
+}
+.provider-cli-panel[hidden],
+.provider-cli-card[hidden] {
+  display: none;
+}
+/* The icon, name and meta share one row and one baseline. */
+.provider-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-inline-size: 0;
+}
+.provider-detail-title {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--ui-font-title);
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--color-content);
+}
+.provider-detail-meta {
+  min-inline-size: 0;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+.provider-status-actions,
+.provider-updates-actions,
+.provider-accounts-actions,
+.provider-models-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.provider-status-checked {
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-muted);
+  white-space: nowrap;
+}
+
+/* Models: one page-scroll list. The search stays under the group heading while rows scroll. */
 .provider-cli-model-heading {
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
-.provider-accounts-heading {
-  display: flex;
-  flex-wrap: wrap;
+.provider-models-search {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  padding: 8px 16px;
+  background: var(--color-background-base);
+  border-block-end: 1px solid var(--ui-settings-hairline);
+}
+.provider-models-search + .settings-row {
+  border-block-start: 0;
+}
+.provider-model-name {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding-block-end: 8px;
+  min-inline-size: 0;
 }
-.provider-accounts-title {
-  flex: 1;
-  min-inline-size: 5rem;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ui-text-secondary);
+.provider-models-source {
+  padding: 10px 16px;
+  border-block-start: 1px solid var(--ui-settings-hairline);
 }
-.provider-account-row {
+.provider-models-source:empty {
+  display: none;
+}
+
+/* Accounts: rows share the settings row padding and hairlines. */
+#setting-provider-accounts > .settings-group-content {
+  overflow: clip;
+}
+.provider-accounts-body[hidden] {
+  display: none;
+}
+.provider-account-row,
+.provider-account-editor,
+.provider-account-empty {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  padding-block: 12px;
-  border-block-end: 1px solid var(--color-stroke);
+  min-inline-size: 0;
+  padding: 10px 16px;
 }
-.provider-account-row:last-child {
-  border-block-end: 0;
+.provider-account-row
+  ~ :is(.provider-account-row, .provider-account-editor, .provider-account-empty),
+.provider-account-editor ~ :is(.provider-account-row, .provider-account-editor),
+.provider-accounts-body:not([hidden]) ~ .settings-row {
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+.provider-account-empty {
+  margin: 0;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+.provider-account-main {
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+@media (hover: hover) and (pointer: fine) {
+  .provider-account-row:hover {
+    background: var(--ui-settings-row-hover);
+  }
 }
 .provider-account-identity {
   display: flex;
@@ -107,7 +248,7 @@
 }
 .provider-account-name {
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: var(--ui-font-secondary);
   font-weight: 500;
   color: var(--color-content);
 }
@@ -117,8 +258,8 @@
   align-items: center;
   gap: 8px;
   min-inline-size: 0;
-  margin-block-start: 6px;
-  font-size: 12px;
+  margin-block-start: 4px;
+  font-size: var(--ui-font-caption);
 }
 .provider-account-subtitle {
   overflow: hidden;
@@ -129,212 +270,61 @@
 .provider-account-meta > * {
   max-inline-size: 100%;
 }
-.provider-account-meta > :first-child {
-  white-space: normal;
+.provider-account-note {
+  margin: 4px 0 0;
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+  color: var(--ui-text-secondary);
   overflow-wrap: anywhere;
 }
-.provider-cli-panel > #setting-claude-hooks {
-  padding-inline: 12px;
-  padding-block: 10px;
-}
-.bycoda-settings-workbench .bycoda-settings-form .provider-cli-detail #setting-provider-accounts {
-  padding-block: 0 16px;
-  margin-block-end: 16px;
-  border-block-end: 1px solid var(--color-stroke);
-}
-.bycoda-settings-workbench
-  .bycoda-settings-form
-  .provider-cli-detail
-  #setting-provider-accounts
-  > .settings-group-heading {
-  padding-block: 0 8px;
-}
-.provider-cli-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
-  gap: 12px;
-}
-.provider-cli-card {
+.provider-account-actions {
   display: flex;
-  min-inline-size: 0;
-  flex-direction: column;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-.provider-cli-panel[hidden],
-.provider-cli-card[hidden] {
-  display: none;
-}
-.provider-cli-card[data-default] {
-  border-color: var(--ui-border-accent);
-}
-
-.provider-cli-header {
-  display: flex;
+  flex-shrink: 0;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding-block-end: 16px;
-}
-.provider-cli-header-main {
-  display: flex;
-  min-inline-size: 0;
-  align-items: center;
-  gap: 8px;
-}
-.provider-cli-header-copy,
-.provider-cli-title-line {
-  min-inline-size: 0;
-}
-.provider-cli-title-line h3 {
-  overflow-wrap: anywhere;
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--color-content);
-}
-.provider-cli-title-line {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
   gap: 4px;
 }
-.provider-cli-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 5px;
-  margin-block-start: 0;
-  font-size: 11px;
-  line-height: 1.35;
-  color: var(--ui-text-secondary);
+.provider-account-editor > [data-provider-account-editor-field] {
+  min-inline-size: 0;
+  flex: 1 1 0;
 }
-.provider-cli-machine {
-  color: var(--ui-text-secondary);
-}
-.provider-cli-header > .settings-advanced {
-  flex: 0 0 auto;
-  margin: 0;
-}
-.provider-cli-header > .settings-advanced > h3 {
-  padding-block: 5px;
-  font-size: 11px;
-  white-space: nowrap;
-}
-.provider-cli-header > .settings-advanced {
-  flex-basis: 100%;
-}
-.provider-cli-card > .settings-advanced {
-  margin-block-start: 12px;
-}
-.provider-cli-fields {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
-  align-items: start;
-  gap: 12px;
-  margin-block-start: 10px;
-  margin-block-end: 8px;
-}
-.provider-cli-field {
-  min-width: 0;
-}
-.provider-cli-field > span {
-  display: block;
-  margin-block-end: 6px;
-  font-size: 11px;
-  color: var(--ui-text-secondary);
-}
-.provider-cli-field > div {
-  max-width: none;
-}
-.provider-cli-field > div > button {
-  width: 100%;
-  justify-content: space-between;
-}
-.provider-cli-defaults {
-  margin-block-start: 6px;
-}
-.provider-cli-defaults-heading {
-  margin-block-end: 12px;
-}
-.provider-cli-defaults > .provider-cli-fields {
-  margin-block: 0 4px;
-}
-.provider-cli-defaults-heading h4 {
-  width: fit-content;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ui-text-secondary);
-}
-.provider-cli-footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-block-start: 12px;
-  padding-block-start: 4px;
+.provider-antigravity-box {
+  background: var(--ui-settings-group-surface);
+  border: 1px solid var(--ui-settings-group-border);
+  border-radius: var(--ui-radius-card);
+  overflow: hidden;
 }
 
-.provider-cli-install {
-  margin-block-start: 12px;
-  font-size: 11px;
-  color: var(--ui-text-secondary);
+/* "Show in picker" lives on each list row; only the one-column layout, which has no list, repeats it. */
+.provider-picker-narrow {
+  display: none;
 }
-.provider-cli-install > h3 {
-  width: fit-content;
+.provider-picker-narrow + .settings-row {
+  border-block-start: 1px solid var(--ui-settings-hairline);
 }
 
-.provider-cli-install > p {
-  margin-block-start: 8px;
-  line-height: 1.7;
-  overflow-wrap: anywhere;
-}
-@container (max-width: 560px) {
+@container provider-page (max-width: 640px) {
   .provider-cli-workspace {
     grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
+    gap: 12px;
   }
   .provider-cli-selector {
-    display: flex;
-    gap: 4px;
-    overflow-x: auto;
-    padding: 3px;
+    display: none;
   }
-  .provider-cli-option {
-    flex: 0 0 auto;
-    inline-size: auto;
-    min-block-size: 32px;
+  .provider-cli-select {
+    display: block;
   }
-  .provider-cli-header {
-    align-items: flex-start;
-  }
-  .provider-cli-header > .settings-advanced > h3 {
-    font-size: var(--ui-font-caption);
+  .provider-picker-narrow {
+    display: block;
   }
 }
 @container (max-width: 430px) {
-  .provider-account-row > :first-child {
-    flex-basis: 100%;
+  .provider-account-row {
+    flex-wrap: wrap;
   }
-  .provider-account-row > :last-child {
+  .provider-account-main {
+    flex-basis: calc(100% - 3rem);
+  }
+  .provider-account-actions {
     margin-inline-start: auto;
   }
-}
-
-/* Update status stays beside the CLI instead of spanning the entire page. */
-.provider-cli-updates {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
-  column-gap: 24px;
-}
-.bycoda-settings-workbench .bycoda-settings-form .provider-cli-updates .settings-row {
-  align-items: center;
-  min-block-size: 64px;
-  gap: 12px;
-  padding-block: 12px;
-}
-.provider-cli-updates .settings-row-label > div:first-child > span {
-  flex-wrap: wrap;
 }

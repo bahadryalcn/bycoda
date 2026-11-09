@@ -26,6 +26,7 @@ for (const theme of ["light", "dark"]) {
       });
       await expect(row).toContainText("Refresh pending");
       await expect(details).toContainText("Unavailable");
+      await details.getByText("Diagnostics", { exact: true }).click();
       await details.getByText("Connection history", { exact: false }).click();
       await expect(details).toContainText("Host verified");
       await page.evaluate(() => (window as any).serversFixtureFilesReady(true));

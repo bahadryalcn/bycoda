@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { machineProjects } from "../../automations/model/machineSnapshot";
 import { pathKey } from "../../../shared/lib/paths";
@@ -12,13 +12,12 @@ import type {
 } from "../model/protocol";
 import { requireHostDescriptor } from "../model/protocol";
 import { remoteModelControls } from "../model/remoteModels";
-import type { HarnessId } from "../../sessions/model/session";
-import type { AgentModel } from "../../sessions/model/models";
+import type { HarnessId, AgentModel } from "../../sessions";
 import {
   LOCAL_MODEL_SOURCE,
   ModelSourceContext,
   type ModelSource,
-} from "../../sessions/ui/modelSource";
+} from "../../sessions/public/modelSource";
 
 export function hostModelSource(
   id: string,
@@ -60,6 +59,13 @@ export function hostModelSource(
   };
 }
 
+/** Poll interval while a provider is still pending: 1 s for ~10 polls, 5 s for 4 more, then 15 s. */
+export function pendingCatalogRefetchMs(polls: number) {
+  if (polls < 10) return 1_000;
+  if (polls < 14) return 5_000;
+  return 15_000;
+}
+
 /** Catalog ownership follows the execution target, never the desktop context.
  * Reading a catalog does not register a project or alter the host's defaults. */
 export function HostModelSource({
@@ -77,6 +83,7 @@ export function HostModelSource({
   local?: boolean;
   children: ReactNode;
 }) {
+  const pendingPolls = useRef(0);
   const query = useQuery({
     queryKey: ["models", "host-form", machine?.id, machine?.endpoint, machine?.environmentId, cwd],
     enabled: !local && !!machine,
@@ -96,7 +103,13 @@ export function HostModelSource({
     },
     staleTime: 30_000,
     retry: false,
-    refetchInterval: (state) => (state.state.data?.catalog.pending?.length ? 1000 : false),
+    refetchInterval: (state) => {
+      if (!state.state.data?.catalog.pending?.length) {
+        pendingPolls.current = 0;
+        return false;
+      }
+      return pendingCatalogRefetchMs(pendingPolls.current++);
+    },
   });
   const source = useMemo(
     () =>

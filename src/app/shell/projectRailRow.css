@@ -1,0 +1,159 @@
+/*
+ * Project rows adapt to their own width, not the window's. Each row is a container (`project-row`), so a
+ * dragged rail, the Projects flyout and an indented group row all decide for themselves.
+ *
+ * The Git change mark holds two forms: the compact Changes icon with its file count, and the wide "+a -d"
+ * line detail. Compact is the default; the wide detail replaces it once the row reaches the width bucket the
+ * row asked for (`data-git-bucket`, from `projectGitDetailBucket`, which reserves the project name's room).
+ * Container queries measure the content box, so the row's own padding is already outside the bucket sizes.
+ * A change without line counts (binary, untracked-only) or too wide for any bucket stays compact. Keep the
+ * bucket list in step with PROJECT_GIT_DETAIL_BUCKETS; projectGitChange.test.ts checks it.
+ */
+[data-project-row] {
+  container: project-row / inline-size;
+}
+
+.project-card-stats [data-git-detail] {
+  display: none;
+}
+
+.project-card-stats [data-git-compact] {
+  display: inline-flex;
+}
+
+@container project-row (width < 160px) {
+  .project-card-stats [data-git-count] {
+    display: none;
+  }
+}
+
+/* The name has priority. Below this width a context label (machine or folder) would be a clipped letter or
+   two; it stays in the row's tooltip and accessible name. */
+@container project-row (width < 150px) {
+  .project-card-context {
+    display: none;
+  }
+}
+
+@container project-row (width >= 140px) {
+  .project-card-stats[data-git-bucket="140"] [data-git-detail] {
+    display: inline-flex;
+  }
+
+  .project-card-stats[data-git-bucket="140"] [data-git-compact] {
+    display: none;
+  }
+}
+
+@container project-row (width >= 160px) {
+  .project-card-stats[data-git-bucket="160"] [data-git-detail] {
+    display: inline-flex;
+  }
+
+  .project-card-stats[data-git-bucket="160"] [data-git-compact] {
+    display: none;
+  }
+}
+
+@container project-row (width >= 180px) {
+  .project-card-stats[data-git-bucket="180"] [data-git-detail] {
+    display: inline-flex;
+  }
+
+  .project-card-stats[data-git-bucket="180"] [data-git-compact] {
+    display: none;
+  }
+}
+
+@container project-row (width >= 200px) {
+  .project-card-stats[data-git-bucket="200"] [data-git-detail] {
+    display: inline-flex;
+  }
+
+  .project-card-stats[data-git-bucket="200"] [data-git-compact] {
+    display: none;
+  }
+}
+
+@container project-row (width >= 220px) {
+  .project-card-stats[data-git-bucket="220"] [data-git-detail] {
+    display: inline-flex;
+  }
+
+  .project-card-stats[data-git-bucket="220"] [data-git-compact] {
+    display: none;
+  }
+}
+
+@container project-row (width >= 240px) {
+  .project-card-stats[data-git-bucket="240"] [data-git-detail] {
+    display: inline-flex;
+  }
+
+  .project-card-stats[data-git-bucket="240"] [data-git-compact] {
+    display: none;
+  }
+}
+
+@container project-row (width >= 260px) {
+  .project-card-stats[data-git-bucket="260"] [data-git-detail] {
+    display: inline-flex;
+  }
+
+  .project-card-stats[data-git-bucket="260"] [data-git-compact] {
+    display: none;
+  }
+}
+
+@container project-row (width >= 280px) {
+  .project-card-stats[data-git-bucket="280"] [data-git-detail] {
+    display: inline-flex;
+  }
+
+  .project-card-stats[data-git-bucket="280"] [data-git-compact] {
+    display: none;
+  }
+}
+
+@container project-row (width >= 300px) {
+  .project-card-stats[data-git-bucket="300"] [data-git-detail] {
+    display: inline-flex;
+  }
+
+  .project-card-stats[data-git-bucket="300"] [data-git-compact] {
+    display: none;
+  }
+}
+
+@container project-row (width >= 320px) {
+  .project-card-stats[data-git-bucket="320"] [data-git-detail] {
+    display: inline-flex;
+  }
+
+  .project-card-stats[data-git-bucket="320"] [data-git-compact] {
+    display: none;
+  }
+}
+
+@container project-row (width >= 340px) {
+  .project-card-stats[data-git-bucket="340"] [data-git-detail] {
+    display: inline-flex;
+  }
+
+  .project-card-stats[data-git-bucket="340"] [data-git-compact] {
+    display: none;
+  }
+}
+
+@container project-row (width >= 360px) {
+  .project-card-stats[data-git-bucket="360"] [data-git-detail] {
+    display: inline-flex;
+  }
+
+  .project-card-stats[data-git-bucket="360"] [data-git-compact] {
+    display: none;
+  }
+}
+
+/* The working-agent decoration of a project row lives in src/styles/working-row.css, shared with the
+   Appearance preview. */

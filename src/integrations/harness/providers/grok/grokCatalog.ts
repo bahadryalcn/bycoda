@@ -1,12 +1,17 @@
+import { killChild } from "../../core/child";
+import {
+  assertOptionalProviderProbeError,
+  createProviderRetirementLedger,
+  withProviderRetirement,
+} from "../../core/providerRetirement";
 import { homeDir } from "../../../../platform/tauri/fs";
 import { setHarnessModels } from "../../../../features/sessions/model/models";
 import { AcpClient } from "../../core/acp";
 import {
+  createChildProcessHandle,
   execChild,
-  killChild,
   resolveGrokBinary,
   spawnChild,
-  unwatchChild,
   watchChild,
 } from "../../core/child";
 import {
@@ -17,6 +22,8 @@ import {
   modelsFromInitialize,
   modelsFromSessionNew,
 } from "./grokProtocol";
+
+const retirements = createProviderRetirementLedger("grok.catalog", killChild);
 
 const PROBE_ID = "bycoda-grok-probe";
 const DISCOVERY_TIMEOUT_MS = 15_000;
@@ -36,6 +43,7 @@ export function refreshGrokCatalog(): Promise<void> {
       if (models.length > 0) setHarnessModels("grok", models);
     })
     .catch((error: unknown) => {
+      assertOptionalProviderProbeError(error);
       console.debug("[bycoda] grok catalog", error);
     })
     .finally(() => {
@@ -46,11 +54,13 @@ export function refreshGrokCatalog(): Promise<void> {
 
 export async function discoverGrokModels(workingDirectory?: string) {
   const fromAcp = await discoverViaAcp(workingDirectory).catch((error: unknown) => {
+    assertOptionalProviderProbeError(error);
     console.debug("[bycoda] grok ACP catalog failed", error);
     return [];
   });
   if (fromAcp.length > 0) return fromAcp;
   const fromCli = await discoverViaCli(workingDirectory).catch((error: unknown) => {
+    assertOptionalProviderProbeError(error);
     console.debug("[bycoda] grok CLI catalog failed", error);
     return [];
   });
@@ -62,67 +72,73 @@ async function discoverViaAcp(workingDirectory?: string) {
   const { path } = await resolveGrokBinary();
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${PROBE_ID}-${crypto.randomUUID()}`;
-  const acp = new AcpClient(probeId, {
+  const probeProcess = retirements.admit(
+    createChildProcessHandle(probeId, undefined, "management"),
+    "grok.catalog",
+  );
+  const acp = new AcpClient(probeProcess, {
     onRequest: (id) => {
       void acp.respond(id, {}).catch(() => undefined);
     },
   });
 
-  const stop = async () => {
+  const stop = () => {
     acp.close();
-    unwatchChild(probeId);
-    await killChild(probeId).catch(() => undefined);
+    return retirements.retire([probeProcess]);
   };
 
   watchChild(
-    probeId,
+    probeProcess,
     (line) => acp.pushLine(line),
     () => acp.close(new Error("Grok Build probe exited")),
   );
 
-  try {
-    await spawnChild(probeId, path, grokSpawnArgs({ model: "" }), cwd, undefined, "grok");
-    return await withTimeout(
-      DISCOVERY_TIMEOUT_MS,
-      async () => {
-        const init = await acp.request(
-          "initialize",
-          {
-            protocolVersion: 1,
-            clientCapabilities: CLIENT_CAPABILITIES,
-            clientInfo: { name: "bycoda", version: "0.1.0" },
-          },
-          REQUEST_TIMEOUT_MS,
-        );
-        const fromInit = modelsFromInitialize(init);
-        if (fromInit.length > 0) return fromInit;
+  return withProviderRetirement(
+    async () => {
+      await spawnChild(probeProcess, path, grokSpawnArgs({ model: "" }), cwd, undefined, "grok");
+      return await withTimeout(
+        DISCOVERY_TIMEOUT_MS,
+        async () => {
+          const init = await acp.request(
+            "initialize",
+            {
+              protocolVersion: 1,
+              clientCapabilities: CLIENT_CAPABILITIES,
+              clientInfo: { name: "bycoda", version: "0.1.0" },
+            },
+            REQUEST_TIMEOUT_MS,
+          );
+          const fromInit = modelsFromInitialize(init);
+          if (fromInit.length > 0) return fromInit;
 
-        const methodId = grokAuthMethodId(init);
-        if (methodId) {
-          await acp
-            .request("authenticate", { methodId, _meta: { headless: true } }, REQUEST_TIMEOUT_MS)
-            .catch(() => undefined);
-        }
-        const created = await acp.request(
-          "session/new",
-          { cwd, mcpServers: [] },
-          REQUEST_TIMEOUT_MS,
-        );
-        return modelsFromSessionNew(created);
-      },
-      () => {
-        void stop();
-      },
-    );
-  } finally {
-    await stop();
-  }
+          const methodId = grokAuthMethodId(init);
+          if (methodId) {
+            await acp
+              .request("authenticate", { methodId, _meta: { headless: true } }, REQUEST_TIMEOUT_MS)
+              .catch(() => undefined);
+          }
+          const created = await acp.request(
+            "session/new",
+            { cwd, mcpServers: [] },
+            REQUEST_TIMEOUT_MS,
+          );
+          return modelsFromSessionNew(created);
+        },
+        () => {
+          void stop();
+        },
+      );
+    },
+    async () => {
+      await stop();
+    },
+  );
 }
 
 async function discoverViaCli(workingDirectory?: string) {
   const { path } = await resolveGrokBinary();
   const cwd = workingDirectory ?? (await homeDir());
-  const stdout = await execChild(path, ["models"], cwd, "grok");
+  const stdout = await execChild(path, ["models"], cwd, "grok", undefined, "management");
   return modelsFromGrokModelsOutput(stdout);
 }
 

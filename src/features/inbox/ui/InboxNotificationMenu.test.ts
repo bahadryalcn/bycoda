@@ -165,7 +165,7 @@ it("keeps unread items and the menu open when marking read fails, then allows re
   });
   act(() => button("Mark all as read").click());
   expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-    "Could not save read status",
+    "Some read status updates may have saved",
   );
   expect(isInboxEntryUnseen(entry)).toBe(true);
   expect(button("Mark all as read").disabled).toBe(false);
@@ -337,7 +337,9 @@ it("opens custom timing from the duration submenu for all projects", async () =>
   expect(
     [...document.querySelectorAll("button")].some((item) => item.textContent === "1 hour"),
   ).toBe(false);
-  act(() => document.querySelector<HTMLButtonElement>('button[aria-label="2030-01-16"]')!.click());
+  const day = document.querySelector<HTMLButtonElement>('button[data-date="2030-01-16"]');
+  expect(day).not.toBeNull();
+  act(() => day!.click());
   const input = document.querySelector<HTMLInputElement>('input[placeholder="HH:mm"]');
   expect(input).not.toBeNull();
   act(() => {

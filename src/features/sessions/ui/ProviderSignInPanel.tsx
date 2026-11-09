@@ -1,9 +1,9 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import type { HarnessId } from "../model/session";
 import { HARNESS_TITLE } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
-import { Check, RefreshCw } from "../../../shared/ui/icons";
+import { Check } from "../../../shared/ui/icons";
 
 export type ProviderSignInState = "idle" | "running" | "complete" | "error";
 
@@ -15,8 +15,8 @@ export function ProviderSignInPanel({
   onComplete,
   completeActionLabel,
   autoFocus = false,
-  idleTitle = "Authentication required",
-  completeDescription = "You can retry your last message now.",
+  idleTitle,
+  completeDescription,
 }: {
   harness: HarnessId;
   state: ProviderSignInState;
@@ -28,37 +28,36 @@ export function ProviderSignInPanel({
   idleTitle?: string;
   completeDescription?: string;
 }) {
-  useLocale();
+  const t = useT();
   const title = HARNESS_TITLE[harness];
   const complete = state === "complete";
 
   return (
-    <div
-      className="flex min-h-68 flex-col items-center justify-center px-5 py-6"
-      aria-live="polite"
-    >
+    <div className="flex min-h-68 flex-col items-center justify-center px-5 py-6" role="status">
       <span className="grid size-16 place-items-center rounded-2xl bg-(--ui-surface-raised) text-(--ui-tone-neutral-fg) ring-1 ring-inset ring-(--color-stroke) shadow-sm">
         <HarnessIcon harness={harness} className="size-9" />
       </span>
-      <h2 className="mt-3.5 text-[15px] font-medium leading-5 text-(--ui-tone-neutral-fg)">
-        {complete ? t("Signed in to {p0}", { p0: title }) : idleTitle}
+      <h2 className="mt-3.5 text-ui-title font-medium leading-5 text-(--ui-tone-neutral-fg)">
+        {complete
+          ? t("Signed in to {p0}", { p0: title })
+          : (idleTitle ?? t("Authentication required"))}
       </h2>
-      <p className="mt-1 max-w-56 text-[11px] leading-4 text-(--ui-text-secondary)">
-        {complete ? completeDescription : t("Sign in to continue using {p0}.", { p0: title })}
+      <p className="mt-1 max-w-56 text-ui-micro leading-4 text-(--ui-text-secondary)">
+        {complete
+          ? (completeDescription ?? t("You can retry your last message now."))
+          : t("Sign in to continue using {p0}.", { p0: title })}
       </p>
       <Button
-        variant="ghost"
+        reserveLabels={[t("Waiting for browser…")]}
+        variant="primary"
         type="button"
         autoFocus={autoFocus}
         className="mt-4"
         disabled={state === "running" || (complete && !onComplete)}
+        loading={state === "running"}
+        startIcon={complete ? <Check className="icon-sm" aria-hidden /> : undefined}
         onClick={complete && onComplete ? onComplete : onSignIn}
       >
-        {state === "running" ? (
-          <RefreshCw className="size-3.5 animate-spin" aria-hidden />
-        ) : complete ? (
-          <Check className="size-3.5" aria-hidden />
-        ) : null}
         {state === "running"
           ? t("Waiting for browser…")
           : complete
@@ -67,7 +66,7 @@ export function ProviderSignInPanel({
       </Button>
       {state === "error" && error ? (
         <p
-          className="mt-2.5 max-w-60 text-(length:--ui-font-caption) leading-4 text-(--ui-tone-danger-fg)"
+          className="mt-2.5 max-w-60 text-ui-caption leading-4 text-(--ui-tone-danger-fg)"
           role="status"
         >
           {error}

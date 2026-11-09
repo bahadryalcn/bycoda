@@ -8,6 +8,19 @@ import { invoke } from "@tauri-apps/api/core";
 import { UsageFooter as QueryComponent } from "./UsageFooter";
 import { saveShowRemainingUsage } from "../../features/settings/model/displayPrefs";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 let container: HTMLDivElement;
 let root: Root;
@@ -76,9 +89,11 @@ it("updates Pi quota chips when remaining usage is selected", async () => {
   expect(container.textContent).toContain("24%");
   act(() => saveShowRemainingUsage(true));
   expect(container.textContent).toContain("76%");
+  // The summary rides in the shared tooltip, not a native title.
   expect(
-    container.querySelector<HTMLButtonElement>('[aria-label="Pi · Anthropic usage details"]')
-      ?.title,
+    await tooltipText(
+      container.querySelector<HTMLButtonElement>('[aria-label="Pi · Anthropic usage details"]')!,
+    ),
   ).toContain("76% remaining");
 });
 

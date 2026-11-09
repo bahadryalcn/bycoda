@@ -1,6 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
-import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { fetchCheckDetails } from "../model/prChecks";
 import type { CodeHostProvider } from "../model/githubPrChecks";
 import { t, useLocale } from "../../../shared/i18n";
@@ -9,18 +10,17 @@ import {
   type CiRepairEvidence,
   type CiRepairRequest,
 } from "../model/ciRepair";
-import { Popover, type PopoverAnchor } from "../../../shared/ui/Popover";
+import type { PopoverAnchor } from "../../../shared/ui/Popover";
 import {
-  Check,
-  ChevronRight,
-  LoaderCircle,
-  MessageSquare,
-  Plus,
-  Search,
-  Sparkles,
-  X,
-} from "../../../shared/ui/icons";
-import { useEffect, useId, useRef, useState } from "react";
+  PickerFooter,
+  PickerList,
+  PickerPopover,
+  PopoverSearchHeader,
+  usePickerList,
+  type PickerOption,
+} from "../../../shared/ui/picker";
+import { MessageSquare, Plus, Sparkles, X } from "../../../shared/ui/icons";
+import { useEffect, useRef, useState } from "react";
 import { type GithubPrCheck } from "../model/githubPrChecks";
 
 export type CheckRepair = {
@@ -55,43 +55,44 @@ export function CheckRepairForm({
   useLocale();
   const [sessionId, setSessionId] = useState("");
   const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-  const listId = useId();
-  const choices = [
+  const [busy, setBusy] = useState(false);
+  const choices: PickerOption[] = [
     {
-      id: "",
-      get title() {
-        return t("New project chat");
-      },
+      value: "",
+      title: t("New project chat"),
+      icon: <Plus className="icon-sm" strokeWidth={1.75} />,
     },
-    ...repair.sessions.filter((session) =>
-      (session.title || "Untitled chat")
-        .toLocaleLowerCase()
-        .includes(query.trim().toLocaleLowerCase()),
-    ),
+    ...repair.sessions
+      .filter((session) =>
+        (session.title || "Untitled chat")
+          .toLocaleLowerCase()
+          .includes(query.trim().toLocaleLowerCase()),
+      )
+      .map((session) => ({
+        value: session.id,
+        title: session.title || t("Untitled chat"),
+        icon: <MessageSquare className="icon-sm" strokeWidth={1.75} />,
+      })),
   ];
+  // Selecting a chat never closes the popover: the form's Start fix action is the commit.
+  const picker = usePickerList({
+    options: choices,
+    value: sessionId,
+    onChange: (value) => setSessionId(value),
+    loop: true,
+    resetKey: query,
+  });
   const selectedTitle = sessionId
     ? repair.sessions.find((session) => session.id === sessionId)?.title || "Untitled chat"
     : "New project chat";
   useEffect(() => {
     searchRef.current?.focus();
   }, []);
-  useEffect(() => {
-    setActive(0);
-  }, [query]);
-  useEffect(() => {
-    setActive((index) => Math.min(index, choices.length - 1));
-  }, [choices.length]);
-  useEffect(() => {
-    listRef.current?.querySelector(`[data-active="true"]`)?.scrollIntoView?.({ block: "nearest" });
-  }, [active]);
-  function dismiss(restoreFocus = true) {
+  function dismiss(restoreFocus = false) {
     onClose();
     if (restoreFocus && anchor instanceof HTMLElement && anchor.isConnected) anchor.focus();
   }
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const starting = useRef(false);
   const mounted = useRef(true);
@@ -166,150 +167,94 @@ export function CheckRepairForm({
     }
   }
   return (
-    <Popover
+    <PickerPopover
+      open
       anchor={anchor}
       side="bottom"
       align="end"
       gap={6}
       width={320}
       maxHeight={460}
-      role="dialog"
-      aria-label={t("Fix checks with AI")}
-      onDismiss={(reason) => dismiss(reason === "escape")}
-      className="flex min-h-0 flex-col overflow-hidden"
-    >
-      <div className="flex shrink-0 items-start gap-2.5 px-3.5 pb-3 pt-3.5">
-        <Sparkles
-          className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)"
-          strokeWidth={1.75}
-        />
-        <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium leading-5 text-(--ui-tone-neutral-fg)">
-            {t("Fix with AI")}
-          </p>
-          <p
-            title={checks.map((check) => check.name).join(", ")}
-            className="mt-0.5 truncate text-[11px] leading-4 text-(--ui-text-secondary)"
-          >
-            {checks.length === 1 ? checks[0].name : t("{p0} failed checks", { p0: checks.length })}{" "}
-            {t("· PR #")}
-            {repair.number}
-          </p>
-        </div>
-        <Button
-          iconOnly
-          label={t("Close fix picker")}
-          variant="ghost"
-          type="button"
-          aria-label={t("Close fix picker")}
-          onClick={() => dismiss()}
-          className="shrink-0"
-        >
-          <X className="size-3.5" strokeWidth={1.75} />
-        </Button>
-      </div>
-      <SearchInputGroup appearance="field" className="mx-1.5 shrink-0">
-        <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
-        <SearchInput
-          focusOwner="group"
-          ref={searchRef}
-          value={query}
-          disabled={busy}
-          role="combobox"
-          aria-label={t("Search project chats")}
-          aria-expanded={true}
-          aria-controls={listId}
-          aria-autocomplete="list"
-          aria-activedescendant={`${listId}-${active}`}
-          placeholder={t("Search chats...")}
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-              event.preventDefault();
-              setActive(
-                (index) =>
-                  (index + (event.key === "ArrowDown" ? 1 : -1) + choices.length) % choices.length,
-              );
-            } else if (event.key === "Enter") {
-              event.preventDefault();
-              setSessionId(choices[active]?.id ?? "");
-            }
-          }}
-        />
-      </SearchInputGroup>
-      <div
-        ref={listRef}
-        id={listId}
-        role="listbox"
-        aria-label={t("Project chats")}
-        className="my-1.5 min-h-0 max-h-56 overflow-y-auto overscroll-none px-1.5"
-      >
-        {choices.map((session, index) => {
-          const selected = sessionId === session.id;
-          const Icon = session.id ? MessageSquare : Plus;
-          return (
+      label={t("Fix checks with AI")}
+      onDismiss={() => dismiss()}
+      header={
+        <>
+          <div className="flex shrink-0 items-start gap-2.5 px-3.5 pb-3 pt-3.5">
+            <Sparkles
+              className="mt-0.5 icon-md shrink-0 text-(--ui-text-secondary)"
+              strokeWidth={1.75}
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-ui-secondary font-medium leading-5 text-(--ui-tone-neutral-fg)">
+                {t("Fix with AI")}
+              </p>
+              <p
+                title={checks.length > 1 ? checks.map((check) => check.name).join(", ") : undefined}
+                className="mt-0.5 break-words text-ui-caption text-(--ui-text-secondary)"
+              >
+                {checks.length === 1
+                  ? checks[0].name
+                  : t("{p0} failed checks", { p0: checks.length })}{" "}
+                {t("· PR #")}
+                {repair.number}
+              </p>
+            </div>
             <Button
-              variant="item"
-              key={session.id}
-              id={`${listId}-${index}`}
+              iconOnly
+              label={t("Close fix picker")}
+              variant="ghost"
               type="button"
-              role="option"
-              aria-label={session.title || t("Untitled chat")}
-              aria-selected={selected}
-              disabled={busy}
-              data-active={index === active}
-              onMouseEnter={() => setActive(index)}
-              onFocus={() => setActive(index)}
-              onClick={() => setSessionId(session.id)}
+              aria-label={t("Close fix picker")}
+              onClick={() => dismiss(true)}
+              className="shrink-0"
             >
-              <Icon className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
-              <span className="min-w-0 flex-1 truncate" title={session.title || t("Untitled chat")}>
-                {session.title || t("Untitled chat")}
-              </span>
-              {selected ? (
-                <Check
-                  className="size-3.5 shrink-0 text-(--ui-text-secondary)"
-                  strokeWidth={1.75}
-                />
-              ) : null}
+              <X className="icon-sm" strokeWidth={1.75} />
             </Button>
-          );
-        })}
-        {choices.length === 1 && query.trim() ? (
-          <p className="px-2.5 py-3 text-[12px] text-(--ui-text-secondary)">
-            {t("No matching chats")}
-          </p>
-        ) : null}
-      </div>
-      {error ? (
-        <Alert tone="danger" role="alert">
-          {error}
-        </Alert>
+          </div>
+          <PopoverSearchHeader
+            ref={searchRef}
+            autoFocus={false}
+            label={t("Search project chats")}
+            placeholder={t("Search chats...")}
+            value={query}
+            disabled={busy}
+            onValueChange={setQuery}
+            {...picker.searchProps}
+          />
+        </>
+      }
+      footer={
+        <>
+          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {/* Always mounted so the message is announced when the fix becomes blocked. */}
+          <LiveText
+            className="block px-3.5 pb-3 text-ui-caption leading-4 text-(--ui-text-secondary) empty:hidden"
+            text={blocked && !busy ? t("Wait for the latest checks before starting a fix.") : ""}
+          />
+          <PickerFooter align="between" className="gap-3 px-3 py-2.5">
+            <div className="min-w-0 text-ui-micro leading-4">
+              <p className="break-words text-(--ui-text-secondary)">{selectedTitle}</p>
+              <p className="text-(--ui-text-secondary)">{t("CI details included")}</p>
+            </div>
+            <Button
+              variant="ghost"
+              type="button"
+              disabled={blocked}
+              loading={busy}
+              loadingLabel={t("Preparing...")}
+              onClick={() => void start()}
+              className="shrink-0"
+            >
+              {t("Start fix")}
+            </Button>
+          </PickerFooter>
+        </>
+      }
+    >
+      <PickerList label={t("Project chats")} controller={picker} query={query} disabled={busy} />
+      {choices.length === 1 && query.trim() ? (
+        <EmptyState size="inline" kind="filtered" description={t("No matching chats")} />
       ) : null}
-      {blocked && !busy ? (
-        <p role="status" className="px-3.5 pb-3 text-[12px] leading-4 text-(--ui-text-secondary)">
-          {t("Wait for the latest checks before starting a fix.")}
-        </p>
-      ) : null}
-      <div className="flex shrink-0 items-center gap-3 border-t border-(--ui-tone-neutral-border) px-3 py-2.5">
-        <div className="min-w-0 flex-1 text-[11px] leading-4">
-          <p className="truncate text-(--ui-text-secondary)" title={selectedTitle}>
-            {selectedTitle}
-          </p>
-          <p className="text-(--ui-text-secondary)">{t("CI details included")}</p>
-        </div>
-        <Button
-          variant="ghost"
-          type="button"
-          disabled={busy || blocked}
-          onClick={() => void start()}
-          className="shrink-0"
-        >
-          {busy ? <LoaderCircle className="size-3.5 animate-spin" strokeWidth={1.75} /> : null}
-          {busy ? t("Preparing...") : t("Start fix")}
-          {!busy ? <ChevronRight className="size-3" strokeWidth={1.75} /> : null}
-        </Button>
-      </div>
-    </Popover>
+    </PickerPopover>
   );
 }

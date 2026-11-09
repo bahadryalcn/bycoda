@@ -1,6 +1,13 @@
+import {
+  acceptAppearanceStorageChange,
+  readAppearanceValue,
+  writeAppearanceValue,
+} from "./appearancePersistence";
 import { useSyncExternalStore } from "react";
+import { createWindowStore } from "../../../shared/lib/store";
 import { clamp } from "../../../shared/lib/numbers";
 import { t } from "../../../shared/i18n";
+import { APPEARANCE_CHOICES, APPEARANCE_RANGES } from "./themeRanges";
 
 export const LIVE_BACKGROUND_KEY = "bycoda.liveBackground.v1";
 export const LIVE_BACKGROUND_INTENSITY_KEY = "bycoda.liveBackgroundIntensity.v1";
@@ -8,122 +15,109 @@ export const LIVE_BACKGROUND_CHANGE_EVENT = "bycoda:livebackgroundchange";
 
 export type LiveBackground =
   | "none"
-  | "gradient-ascii"
-  | "code-rain"
-  | "micro-slats"
-  | "web-threads"
-  | "scanner"
-  | "lightfall"
-  | "prism"
-  | "side-rays"
-  | "light-rays"
-  | "pixel-blast"
+  | "threads"
+  | "silk"
+  | "dark-veil"
+  | "soft-aurora"
+  | "floating-lines"
+  | "neural-tree"
+  | "latent-face"
+  | "code-visage"
+  | "serene-face"
+  | "thought-weaver"
+  | "ascii-mask"
   | "dot-grid"
-  | "hyperspeed"
-  | "orb"
-  | "world-tree"
-  | "letter-glitch";
+  | "code-rain";
 
-export const LIVE_BACKGROUNDS: readonly LiveBackground[] = [
-  "none",
-  "gradient-ascii",
-  "code-rain",
-  "micro-slats",
-  "web-threads",
-  "scanner",
-  "lightfall",
-  "prism",
-  "side-rays",
-  "light-rays",
-  "pixel-blast",
-  "dot-grid",
-  "hyperspeed",
-  "letter-glitch",
-  "orb",
-  "world-tree",
-];
+export const LIVE_BACKGROUNDS: readonly LiveBackground[] = APPEARANCE_CHOICES.liveScene;
 
-export const LIVE_BACKGROUND_DEFAULT: LiveBackground = "gradient-ascii";
+/** New installations stay still until the owner chooses a scene. */
+export const LIVE_BACKGROUND_DEFAULT: LiveBackground = "none";
+// Keep the old stored ID reversible; reads resolve it into the new collection.
+const LEGACY_LIVE_BACKGROUND_DEFAULT = "gradient-ascii";
+const LEGACY_SCENES: Readonly<Record<string, LiveBackground>> = {
+  "world-tree": "neural-tree",
+  "gradient-ascii": "latent-face",
+  orb: "latent-face",
+  "micro-slats": "thought-weaver",
+  "web-threads": "thought-weaver",
+  scanner: "thought-weaver",
+  lightfall: "thought-weaver",
+  prism: "thought-weaver",
+  "side-rays": "thought-weaver",
+  "light-rays": "thought-weaver",
+  "pixel-blast": "thought-weaver",
+  hyperspeed: "thought-weaver",
+  "letter-glitch": "thought-weaver",
+};
 
-export const LIVE_BACKGROUND_INTENSITY_MIN = 0.05;
-export const LIVE_BACKGROUND_INTENSITY_MAX = 0.8;
+export const LIVE_BACKGROUND_INTENSITY_MIN = APPEARANCE_RANGES.liveIntensity.min;
+export const LIVE_BACKGROUND_INTENSITY_MAX = APPEARANCE_RANGES.liveIntensity.max;
 export const LIVE_BACKGROUND_INTENSITY_DEFAULT = 0.35;
 
 export function liveBackgroundLabel(value: LiveBackground): string {
   switch (value) {
-    case "orb":
-      return t("Orb");
-    case "world-tree":
-      return t("World tree");
     case "none":
       return t("None");
-    case "code-rain":
-      return t("Code rain");
-    case "gradient-ascii":
-      return t("Gradient ASCII");
-    case "micro-slats":
-      return t("Micro slats");
-    case "web-threads":
-      return t("Web threads");
-    case "scanner":
-      return t("Scanner");
-    case "lightfall":
-      return t("Lightfall");
-    case "prism":
-      return t("Prism");
-    case "side-rays":
-      return t("Side rays");
-    case "light-rays":
-      return t("Light rays");
-    case "pixel-blast":
-      return t("Pixel blast");
+    case "threads":
+      return "Threads";
+    case "silk":
+      return "Silk";
+    case "dark-veil":
+      return "Dark Veil";
+    case "soft-aurora":
+      return "Soft Aurora";
+    case "floating-lines":
+      return "Floating Lines";
+    case "neural-tree":
+      return t("Neural tree");
+    case "latent-face":
+      return t("Latent face");
+    case "code-visage":
+      return t("Code visage");
+    case "serene-face":
+      return t("Serene face");
+    case "thought-weaver":
+      return t("Thought weaver");
+    case "ascii-mask":
+      return t("ASCII mask");
     case "dot-grid":
       return t("Dot grid");
-    case "hyperspeed":
-      return t("Hyperspeed");
-    case "letter-glitch":
-      return t("Letter glitch");
+    case "code-rain":
+      return t("Code rain");
   }
 }
 
 export function liveBackgroundDescription(value: LiveBackground): string {
   switch (value) {
-    case "orb":
-      return t("A flowing ring of light that breathes and brightens while the AI replies.");
-    case "world-tree":
-      return t(
-        "A world tree woven from code. Light travels from its roots to its branches while the AI replies.",
-      );
     case "none":
       return t("No animated layer behind chat panes.");
-    case "gradient-ascii":
-      return t(
-        "A talking AI face formed in ASCII characters; its lips move while a reply streams.",
-      );
-    case "code-rain":
-      return t("Flickering characters drift down behind the conversation.");
-    case "micro-slats":
-      return t("Fine slats that tilt and shimmer while the AI replies.");
-    case "web-threads":
-      return t("A web of threads that tightens and pulses while the AI replies.");
-    case "scanner":
-      return t("A scan line sweeps the pane, quickening while the AI replies.");
-    case "lightfall":
-      return t("Streaks of light fall through the pane, brighter while the AI replies.");
-    case "prism":
-      return t("Refracted light bands that drift while the AI replies.");
-    case "side-rays":
-      return t("Rays fanning in from the side, pulsing while the AI replies.");
-    case "light-rays":
-      return t("Soft light rays radiating outward, strengthening while the AI replies.");
-    case "pixel-blast":
-      return t("Pixel bursts that bloom and scatter while the AI replies.");
+    case "threads":
+      return t("Fine flowing lines that gently wake while the AI replies.");
+    case "silk":
+      return t("Soft satin folds that flow quietly behind the conversation.");
+    case "dark-veil":
+      return t("A quiet veil of light that responds to AI activity.");
+    case "soft-aurora":
+      return t("Soft aurora light that flows with the conversation.");
+    case "floating-lines":
+      return t("Fine floating ribbons that follow the AI’s activity.");
+    case "neural-tree":
+      return t("A quiet neural tree. Light follows its branches while the AI replies.");
+    case "latent-face":
+      return t("A silhouette of falling code that appears only while the AI replies.");
+    case "code-visage":
+      return t("A dark figure in front of falling code that appears only while the AI replies.");
+    case "serene-face":
+      return t("A calm, softly lit face that surfaces from the dark while the AI replies.");
+    case "thought-weaver":
+      return t("A small digital loom weaves delicate threads while the AI replies.");
+    case "ascii-mask":
+      return t("A faint mask surfaces from an ASCII gradient while the AI replies.");
     case "dot-grid":
       return t("A grid of dots that ripples outward while the AI replies.");
-    case "hyperspeed":
-      return t("Streaking stars rush past, faster while the AI replies.");
-    case "letter-glitch":
-      return t("Letters flicker and glitch in place, intensifying while the AI replies.");
+    case "code-rain":
+      return t("Flickering characters drift down behind the conversation.");
   }
 }
 
@@ -131,10 +125,29 @@ function isLiveBackground(value: unknown): value is LiveBackground {
   return typeof value === "string" && (LIVE_BACKGROUNDS as readonly string[]).includes(value);
 }
 
+/** Installs from before the still default keep the scene they have been seeing:
+ * an earlier onboarding or project history marks one, and the old default is saved once. */
+function keepLegacyDefault() {
+  try {
+    if (localStorage.getItem(LIVE_BACKGROUND_KEY) !== null) return;
+    const earlier =
+      localStorage.getItem("bycoda.onboarding.v1") !== null ||
+      localStorage.getItem("bycoda.recentProjects") !== null;
+    if (earlier) localStorage.setItem(LIVE_BACKGROUND_KEY, LEGACY_LIVE_BACKGROUND_DEFAULT);
+  } catch {
+    // Storage unavailable: the still default applies for this run.
+  }
+}
+keepLegacyDefault();
+
 export function loadLiveBackground(): LiveBackground {
   try {
-    const raw = localStorage.getItem(LIVE_BACKGROUND_KEY);
-    return isLiveBackground(raw) ? raw : LIVE_BACKGROUND_DEFAULT;
+    const raw = readAppearanceValue(LIVE_BACKGROUND_KEY);
+    return isLiveBackground(raw)
+      ? raw
+      : raw !== null && Object.prototype.hasOwnProperty.call(LEGACY_SCENES, raw)
+        ? LEGACY_SCENES[raw]
+        : LIVE_BACKGROUND_DEFAULT;
   } catch {
     return LIVE_BACKGROUND_DEFAULT;
   }
@@ -142,7 +155,7 @@ export function loadLiveBackground(): LiveBackground {
 
 export function loadLiveBackgroundIntensity(): number {
   try {
-    const raw = localStorage.getItem(LIVE_BACKGROUND_INTENSITY_KEY);
+    const raw = readAppearanceValue(LIVE_BACKGROUND_INTENSITY_KEY);
     const parsed = raw == null ? NaN : Number(raw);
     return Number.isFinite(parsed)
       ? clamp(parsed, LIVE_BACKGROUND_INTENSITY_MIN, LIVE_BACKGROUND_INTENSITY_MAX)
@@ -153,12 +166,10 @@ export function loadLiveBackgroundIntensity(): number {
 }
 
 function write(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // private mode / quota
-  }
-  if (typeof window !== "undefined") window.dispatchEvent(new Event(LIVE_BACKGROUND_CHANGE_EVENT));
+  return writeAppearanceValue(key, value, "live-background", () => {
+    if (typeof window !== "undefined")
+      window.dispatchEvent(new Event(LIVE_BACKGROUND_CHANGE_EVENT));
+  });
 }
 
 export function saveLiveBackground(value: LiveBackground) {
@@ -173,24 +184,12 @@ export function saveLiveBackgroundIntensity(value: number) {
 }
 
 /** Other windows follow through storage events. */
-function subscribe(listener: () => void): () => void {
-  if (typeof window === "undefined") return () => {};
-  const onStorage = (event: StorageEvent) => {
-    if (
-      event.key === null ||
-      event.key === LIVE_BACKGROUND_KEY ||
-      event.key === LIVE_BACKGROUND_INTENSITY_KEY
-    ) {
-      listener();
-    }
-  };
-  window.addEventListener(LIVE_BACKGROUND_CHANGE_EVENT, listener);
-  window.addEventListener("storage", onStorage);
-  return () => {
-    window.removeEventListener(LIVE_BACKGROUND_CHANGE_EVENT, listener);
-    window.removeEventListener("storage", onStorage);
-  };
-}
+const subscribe = createWindowStore({
+  event: LIVE_BACKGROUND_CHANGE_EVENT,
+  storageKeys: [LIVE_BACKGROUND_KEY, LIVE_BACKGROUND_INTENSITY_KEY],
+  onStorage: (event) => acceptAppearanceStorageChange(event.key),
+  guardWindow: true,
+}).subscribe;
 
 export function useLiveBackground(): LiveBackground {
   return useSyncExternalStore(subscribe, loadLiveBackground, () => LIVE_BACKGROUND_DEFAULT);

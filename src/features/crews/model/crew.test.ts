@@ -140,3 +140,32 @@ describe("crew allocation", () => {
     ).toThrow();
   });
 });
+
+describe("crew access policy", () => {
+  const base = { ...defaultCrewPolicy };
+  const parse = (runtimeMode?: unknown) =>
+    parseCrewDefinition({
+      id: "c",
+      name: "C",
+      agents: (["coordinator", "specialist", "reviewer"] as const).map((role) => ({
+        id: role,
+        name: role,
+        role,
+        instructions: "",
+        selection: "fixed",
+        candidates: [
+          { id: "x", harness: "codex", model: "m", modelSettings: {}, capabilities: {}, cost: 1 },
+        ],
+      })),
+      policy: { ...base, ...(runtimeMode === undefined ? {} : { runtimeMode }) },
+    });
+  it("keeps a valid access mode", () => {
+    expect(parse("full-access").policy.runtimeMode).toBe("full-access");
+  });
+  it("omits an absent access mode", () => {
+    expect(parse().policy).not.toHaveProperty("runtimeMode");
+  });
+  it("rejects an unknown access mode", () => {
+    expect(() => parse("root")).toThrow("Invalid crew access");
+  });
+});

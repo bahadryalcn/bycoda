@@ -17,8 +17,15 @@ import {
 import { isLocalProject } from "../../projects/model/recents";
 import { isValidSkillName, slugSkillName, type Skill } from "../model/skills";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
+import {
+  retainParentInput,
+  useParentInputClosure,
+  useParentInputsClosed,
+  mutateParentInput,
+} from "../../sessions/data/parentInputClosure";
 
 type Props = {
+  parentSessionId?: string;
   skills: Skill[];
   /** What a row starts with: `/` for commands, `$` for Codex skills. */
   prefix?: "/" | "$";
@@ -38,6 +45,7 @@ type Props = {
 };
 
 export function SkillPicker({
+  parentSessionId,
   skills,
   prefix = "/",
   query,
@@ -59,13 +67,12 @@ export function SkillPicker({
     <div
       data-skill-picker
       className={
-        compact
-          ? "overflow-hidden"
-          : "overflow-hidden rounded-lg border border-(--color-stroke) bg-(--ui-surface)"
+        compact ? "overflow-hidden" : "overflow-hidden rounded-lg border border-(--color-stroke)"
       }
     >
       {creating ? (
         <CreateSkillForm
+          parentSessionId={parentSessionId}
           query={query}
           cwd={cwd}
           error={error}
@@ -93,7 +100,7 @@ export function SkillPicker({
               onClick={onStartCreate}
               className="flex w-full items-center gap-2"
             >
-              <Plus className="size-3.5 shrink-0" strokeWidth={1.75} />
+              <Plus className="icon-sm shrink-0" strokeWidth={1.75} />
               {t("New skill")}
             </Button>
           ) : null}
@@ -154,7 +161,7 @@ function SkillList({
 
   if (skills.length === 0) {
     return (
-      <p className="px-3 py-2.5 text-[12px] text-(--ui-text-secondary)">
+      <p className="px-3 py-2.5 text-ui-caption text-(--ui-text-secondary)">
         {query.trim() ? t("No matching commands or skills") : t("No commands yet")}
       </p>
     );
@@ -173,7 +180,7 @@ function SkillList({
         return (
           <Fragment key={`${skill.kind}:${skill.source}:${skill.invocation}`}>
             {skill.kind === "template" && skills[index - 1]?.kind !== "template" ? (
-              <p className="px-2 pb-0.5 pt-1.5 text-[length:var(--ui-font-caption)] font-medium text-(--ui-text-secondary)">
+              <p className="px-2 pb-0.5 pt-1.5 text-ui-caption font-medium text-(--ui-text-secondary)">
                 {t("Templates")}
               </p>
             ) : null}
@@ -191,11 +198,11 @@ function SkillList({
               onClick={() => onPick(skill)}
             >
               <span className="flex min-w-0 w-full items-baseline gap-2">
-                <span className="truncate text-[13px]">
+                <span className="truncate text-ui-secondary">
                   {prefix}
                   {skill.invocation}
                 </span>
-                <span className="shrink-0 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
+                <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
                   {scopeLabel(skill)}
                 </span>
               </span>
@@ -220,19 +227,23 @@ function SkillList({
 
 /** Shared starter-skill form for the composer picker and Settings. */
 export function CreateSkillForm({
+  parentSessionId,
   query,
   cwd,
   monospace = true,
   showScopeHelp = false,
+  className = "px-2.5 py-2",
   error,
   busy,
   onCancel,
   onCreate,
 }: {
+  parentSessionId?: string;
   query: string;
   cwd: string;
   monospace?: boolean;
   showScopeHelp?: boolean;
+  className?: string;
   error?: string | null;
   busy?: boolean;
   onCancel: () => void;
@@ -243,6 +254,26 @@ export function CreateSkillForm({
   const project = isLocalProject(cwd);
   const [name, setName] = useState(() => slugSkillName(query));
   const [scope, setScope] = useState<"project" | "user">(project ? "project" : "user");
+  const form = useRef<HTMLFormElement>(null);
+  const parentClosed = useParentInputsClosed(parentSessionId);
+  const parentInput = useParentInputClosure(
+    {
+      kind: "composer-parent",
+      sessionId: parentSessionId,
+      snapshot: () => ({
+        source: "create-skill-form",
+        rawName: input.current?.value ?? name,
+        name,
+        scope,
+        query,
+        cwd,
+        project,
+        busy,
+        error,
+      }),
+    },
+    form,
+  );
 
   useEffect(() => {
     input.current?.focus();
@@ -254,26 +285,43 @@ export function CreateSkillForm({
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!valid || busy) return;
-    onCreate(slug, project ? scope : "user");
+    if (!valid || busy || !parentInput.canMutate()) return;
+    mutateParentInput(parentInput, () => {
+      const data = {
+        source: "create-skill-intent",
+        rawName: input.current?.value ?? name,
+        name,
+        slug,
+        scope: project ? scope : "user",
+        cwd,
+      };
+      const retained = retainParentInput({
+        kind: "composer-parent",
+        sessionId: parentSessionId,
+        snapshot: () => data,
+      });
+      onCreate(slug, project ? scope : "user");
+      retained.update({ ...data, disposition: "accepted-unknown" });
+    });
   };
 
   return (
     <form
+      ref={form}
       onSubmit={submit}
       onKeyDown={(e) => {
         if (e.key !== "Escape") return;
         e.preventDefault();
+        parentInput();
         onCancel();
       }}
-      className="px-2.5 py-2"
+      className={className}
     >
-      <p className="mb-2 text-[11px] text-(--ui-text-secondary)">
+      <p className="mb-2 text-ui-micro text-(--ui-text-secondary)">
         {t("Writes a starter SKILL.md you can edit.")}
       </p>
       <TextField
-        className={monospace ? "font-mono" : "font-sans"}
-        hideLabel
+        monospace={monospace}
         label={t("Skill name")}
         ref={input}
         value={name}
@@ -281,14 +329,24 @@ export function CreateSkillForm({
         placeholder={t("skill-name")}
         aria-label={t("Skill name")}
         disabled={busy}
-        onChange={(e) => setName(e.target.value)}
+        readOnly={parentClosed}
+        onChange={(e) => {
+          if (parentInput.canMutate()) setName(e.target.value);
+        }}
       />
+      {parentClosed ? (
+        <p role="status" className="mb-2 text-ui-micro text-(--ui-text-secondary)">
+          {t("Preparing session checkpoint. Your draft is kept.")}
+        </p>
+      ) : null}
       <RadioGroup
         compact
         label={t("Scope")}
         value={scope}
-        disabled={busy}
-        onValueChange={(value) => setScope(value as "project" | "user")}
+        disabled={busy || parentClosed}
+        onValueChange={(value) => {
+          if (parentInput.canMutate()) setScope(value as "project" | "user");
+        }}
         options={[
           {
             value: "project",
@@ -300,7 +358,7 @@ export function CreateSkillForm({
         ]}
       />
       {showScopeHelp ? (
-        <p className="[margin-block-end:0.5rem] break-all text-[12px] text-(--ui-text-secondary)">
+        <p className="[margin-block-end:0.5rem] break-all text-ui-caption text-(--ui-text-secondary)">
           {project && scope === "project"
             ? t("Creates a starter in {p0}.agents/skills. Edit SKILL.md after creation.", {
                 p0: `${cwd.replace(/[\\/]+$/, "")}/`,
@@ -310,19 +368,26 @@ export function CreateSkillForm({
         </p>
       ) : null}
       {error ? (
-        <Alert tone="danger" role="alert">
-          {error}
-        </Alert>
+        <Alert tone="danger">{error}</Alert>
       ) : !name.trim() || valid ? null : (
-        <p className="mb-2 text-[12px] text-(--ui-text-secondary)">
+        <p className="mb-2 text-ui-caption text-(--ui-text-secondary)">
           {t("Use lowercase letters, numbers, and hyphens.")}
         </p>
       )}
       <div className="flex items-center justify-end gap-1">
-        <Button variant="ghost" size="sm" type="button" disabled={busy} onClick={onCancel}>
+        <Button
+          variant="ghost"
+          size="sm"
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            parentInput();
+            onCancel();
+          }}
+        >
           {t("Cancel")}
         </Button>
-        <Button variant="ghost" size="sm" type="submit" disabled={!valid || busy}>
+        <Button variant="ghost" size="sm" type="submit" disabled={!valid || busy || parentClosed}>
           {busy ? t("Creating…") : t("Create")}
         </Button>
       </div>

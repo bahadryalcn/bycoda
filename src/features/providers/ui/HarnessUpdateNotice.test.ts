@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getHarnessUpdateSnapshot } from "../model/harnessUpdateActions";
 import { HarnessUpdateNotice } from "./HarnessUpdateNotice";
+import { updateHarnessCli } from "../../../integrations/harness/core/child";
 
 let claimed = false;
 vi.mock("@tauri-apps/api/core", () => ({
@@ -34,8 +35,11 @@ vi.mock("../../../integrations/harness/core/child", () => ({
     else installed = "2.1.285 (Claude Code)";
   }),
 }));
+const catalogModels: unknown[] = [];
 vi.mock("../../sessions/model/models", () => ({
   isPickerProviderVisible: (id: string) => id !== "codex",
+  catalogModelsFor: () => catalogModels,
+  hasLiveCatalog: () => false,
 }));
 const refreshHarnessCatalogs = vi.fn(async () => undefined);
 vi.mock("../../../integrations/harness/core/registry", () => ({
@@ -58,7 +62,10 @@ vi.mock("../../sessions/ui/HarnessIcon", () => ({ HarnessIcon: () => null }));
 
 describe("HarnessUpdateNotice", () => {
   beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
 
   it("survives a StrictMode remount and updates from the card", async () => {
     const container = document.createElement("div");
@@ -104,7 +111,15 @@ describe("HarnessUpdateNotice", () => {
       harness: "claude",
       source: expect.any(String),
     });
-    expect(notice?.textContent).toContain("Model picker refreshed");
+    expect(notice?.textContent).toContain(
+      "CLI version verified. Model discovery can be retried in Providers.",
+    );
+    vi.useFakeTimers();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(document.body.contains(notice)).toBe(true);
+    vi.useRealTimers();
     await act(async () => {
       await emit("harness-updated", {
         harness: "claude",
@@ -118,9 +133,20 @@ describe("HarnessUpdateNotice", () => {
     const openCodeRow = Array.from(notice!.querySelectorAll("article")).find((row) =>
       row.textContent?.includes("OpenCode"),
     )!;
+    vi.mocked(updateHarnessCli).mockRejectedValueOnce(new Error("Upgrade failed for bun"));
     await act(async () => {
       openCodeRow.querySelector("button")!.click();
       await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(openCodeRow.textContent).toContain("Upgrade failed for bun");
+    vi.useFakeTimers();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(document.body.contains(notice)).toBe(true);
+    await act(async () => {
+      openCodeRow.querySelector("button")!.click();
+      await vi.advanceTimersByTimeAsync(0);
     });
     expect(openCodeRow.textContent).toContain("Updated to 2.0.26");
     expect(
@@ -131,6 +157,67 @@ describe("HarnessUpdateNotice", () => {
       latest: "2.0.26",
     });
     expect(refreshHarnessCatalogs).toHaveBeenLastCalledWith(["opencode"], { force: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4999);
+    });
+    expect(document.body.contains(notice)).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(document.body.contains(notice)).toBe(false);
     act(() => root.unmount());
+  });
+
+  it("dismisses while OpenCode is updating and keeps the shared update running", async () => {
+    vi.resetModules();
+    claimed = false;
+    installed = "2.1.284 (Claude Code)";
+    openCodeInstalled = "opencode v2.0.18";
+    const { HarnessUpdateNotice: Notice } = await import("./HarnessUpdateNotice");
+    const { getHarnessUpdateSnapshot: snapshot } = await import("../model/harnessUpdateActions");
+    const { updateHarnessCli: updateCli } =
+      await import("../../../integrations/harness/core/child");
+    let finishUpdate!: () => void;
+    vi.mocked(updateCli).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishUpdate = () => {
+            openCodeInstalled = "opencode v2.0.26";
+            resolve();
+          };
+        }),
+    );
+    const root = createRoot(document.createElement("div"));
+    try {
+      await act(async () => root.render(createElement(Notice)));
+      const notice = document.body.querySelector('[aria-label="Harness updates"]')!;
+      const row = Array.from(notice.querySelectorAll("article")).find((item) =>
+        item.textContent?.includes("OpenCode"),
+      )!;
+      await act(async () => row.querySelector("button")!.click());
+      expect(snapshot().runs.opencode?.status).toBe("updating");
+      expect(row.querySelector("button")!.disabled).toBe(true);
+
+      const dismiss = notice.querySelector<HTMLButtonElement>('[aria-label="Dismiss notice"]')!;
+      expect(dismiss.disabled).toBe(false);
+      await act(async () => dismiss.click());
+      expect(document.body.contains(notice)).toBe(false);
+      expect(snapshot().runs.opencode?.status).toBe("updating");
+
+      await act(async () => finishUpdate());
+      expect(snapshot().runs.opencode).toEqual({
+        status: "updated",
+        version: "2.0.26",
+        catalogRefresh: "unchanged",
+      });
+      expect(document.body.querySelector('[aria-label="Harness updates"]')).toBeNull();
+      await act(async () => {
+        root.render(null);
+      });
+      await act(async () => root.render(createElement(Notice)));
+      expect(document.body.querySelector('[aria-label="Harness updates"]')).toBeNull();
+    } finally {
+      act(() => root.unmount());
+    }
   });
 });

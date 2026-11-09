@@ -1,29 +1,37 @@
 import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
+import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Modal } from "../../../shared/ui/Modal";
-import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TextField } from "../../../shared/ui/TextField";
 import { MoreHorizontal, Plus, Trash2 } from "../../../shared/ui/icons";
 import { Group, Row } from "../../settings/ui/settingsControls";
-import type { CrewAgent, SavedCrewAgent } from "../model/crew";
+import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
+import { parseCrewAgent, type CrewAgent, type SavedCrewAgent } from "../model/crew";
 import type { ProjectCrews, useProjectCrews } from "../model/crewClient";
-import {
-  candidateLabel,
-  catalogCandidate,
-  catalogModels,
-  libraryGroups,
-  newCrewMember,
-} from "../model/crewRoster";
-import { CrewMemberForm, roleLabel } from "./CrewMemberForm";
+import { catalogCandidate, catalogModels, libraryGroups, newCrewMember } from "../model/crewRoster";
+import { CrewMemberMeta, visibleLibraryMembers } from "./CrewLibraryMemberMeta";
+import { CrewLibraryBulkBar } from "./CrewLibraryBulk";
+import { CrewMemberForm } from "./CrewMemberForm";
 
 type CrewState = ReturnType<typeof useProjectCrews>;
+
+function savedProfileMatches(saved: SavedCrewAgent, profile: CrewAgent & { projectId?: string }) {
+  if (saved.projectId !== profile.projectId) return false;
+  // The host validates profiles and deliberately clears inferred capabilities.
+  const expected = parseCrewAgent(profile);
+  for (const candidate of expected.candidates) candidate.capabilities = {};
+  return JSON.stringify(parseCrewAgent(saved)) === JSON.stringify(expected);
+}
 
 /** Reusable member profiles: this project's, plus those shared with every project on this host. */
 export function CrewLibrary({
@@ -41,20 +49,12 @@ export function CrewLibrary({
   const [editing, setEditing] = useState<SavedCrewAgent | "new" | null>(null);
   const [groupDialog, setGroupDialog] = useState<"rename" | "delete" | null>(null);
   const [groupMenu, setGroupMenu] = useState(false);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const groupTrigger = useRef<HTMLButtonElement>(null);
   const groups = libraryGroups(data.agents);
   const activeGroup = groups.includes(group) ? group : "";
-  const q = query.trim().toLocaleLowerCase();
-  const agents = data.agents
-    .filter((agent) => !activeGroup || agent.groups?.includes(activeGroup))
-    .filter(
-      (agent) =>
-        !q ||
-        `${agent.name} ${agent.instructions} ${(agent.groups ?? []).join(" ")}`
-          .toLocaleLowerCase()
-          .includes(q),
-    )
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // Search matches what each row shows plus its instructions (CR-E06).
+  const agents = visibleLibraryMembers(data.agents, data.catalog, query, activeGroup);
   return (
     <>
       <Group
@@ -65,83 +65,126 @@ export function CrewLibrary({
         action={
           <Button
             variant="ghost"
-            startIcon={<Plus className="size-3.5" />}
+            startIcon={<Plus className="icon-sm" />}
             onClick={() => setEditing("new")}
           >
             {t("New member")}
           </Button>
         }
       >
-        {data.agents.length ? (
-          <div className="flex min-w-0 flex-wrap items-center gap-2 px-3 py-2">
-            <SearchInput
-              appearance="field"
-              containerClassName="min-w-40 flex-1"
-              aria-label={t("Search members")}
-              placeholder={t("Search members")}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-            {groups.length ? (
-              <SearchableSelect
-                label={t("Member group")}
-                value={activeGroup}
-                options={[
-                  { value: "", label: t("All groups") },
-                  ...groups.map((name) => ({ value: name, label: name })),
-                ]}
-                onChange={setGroup}
-              />
-            ) : null}
-            {activeGroup && data.groupsSupported ? (
-              <Button
-                ref={groupTrigger}
-                variant="ghost"
-                iconOnly
-                label={t("Group options")}
-                aria-haspopup="menu"
-                aria-expanded={groupMenu}
-                onClick={() => setGroupMenu(true)}
-              >
-                <MoreHorizontal className="size-4" />
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
         {!data.agents.length ? (
           <Row
             label={t("No library members yet")}
             description={t("Create one here, or save a crew member to the library from its crew.")}
+            descriptionVisible
           />
-        ) : !agents.length ? (
-          <Row label={t("No matching members.")} />
         ) : (
-          agents.map((agent) => (
-            <Row
-              key={agent.id}
-              label={
-                <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                  <span className="truncate">{agent.name}</span>
-                  {agent.groups?.map((name) => (
-                    <Badge key={name} size="sm">
-                      {name}
-                    </Badge>
-                  ))}
-                </span>
-              }
-              description={[
-                roleLabel(agent.role),
-                candidateLabel(data.catalog, agent.candidates[0]),
-                agent.projectId ? t("This project") : t("All projects on this host"),
-              ]
-                .filter(Boolean)
-                .join(" · ")}
+          <div className="settings-collection">
+            <CollectionToolbar
+              label={t("Search name, role, model or group")}
+              query={query}
+              onQueryChange={setQuery}
+              count={t("Showing {p0} of {p1} members", {
+                p0: agents.length,
+                p1: data.agents.length,
+              })}
             >
-              <Button variant="ghost" onClick={() => setEditing(agent)}>
-                {t("Edit")}
-              </Button>
-            </Row>
-          ))
+              {groups.length ? (
+                <SearchableSelect
+                  hideLabel
+                  label={t("Member group")}
+                  value={activeGroup}
+                  options={[
+                    { value: "", label: t("All groups") },
+                    ...groups.map((name) => ({ value: name, label: name })),
+                  ]}
+                  onChange={setGroup}
+                />
+              ) : null}
+              {activeGroup && data.groupsSupported ? (
+                <Button
+                  ref={groupTrigger}
+                  variant="ghost"
+                  iconOnly
+                  label={t("Group options")}
+                  aria-haspopup="menu"
+                  aria-expanded={groupMenu}
+                  onClick={() => setGroupMenu(true)}
+                >
+                  <MoreHorizontal className="icon-sm" />
+                </Button>
+              ) : null}
+            </CollectionToolbar>
+            {agents.length ? (
+              <CrewLibraryBulkBar
+                cwd={cwd}
+                state={state}
+                data={data}
+                visible={agents}
+                selected={selected}
+                onSelectedChange={setSelected}
+              />
+            ) : null}
+            <div
+              className="settings-collection-list"
+              role="region"
+              aria-label={t("Member library")}
+              tabIndex={0}
+            >
+              {!agents.length ? (
+                <EmptyState
+                  size="inline"
+                  kind="filtered"
+                  description={t("No matching members.")}
+                  resetLabel={t("Clear filters")}
+                  onReset={() => {
+                    setQuery("");
+                    setGroup("");
+                  }}
+                />
+              ) : null}
+              {agents.map((agent) => (
+                <div key={agent.id} className="settings-collection-row">
+                  <Checkbox
+                    aria-label={t("Select {p0}", { p0: agent.name })}
+                    checked={selected.has(agent.id)}
+                    onChange={(event) =>
+                      setSelected((current) => {
+                        const next = new Set(current);
+                        if (event.target.checked) next.add(agent.id);
+                        else next.delete(agent.id);
+                        return next;
+                      })
+                    }
+                  />
+                  <div className="settings-collection-main">
+                    {/* Identity is data, not help text: it stays visible in the row. */}
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="settings-collection-title min-w-0">{agent.name}</span>
+                      {agent.groups?.length ? (
+                        <div className="max-w-[60%] min-w-0 shrink-0">
+                          <BadgeList
+                            label={t("Groups")}
+                            items={agent.groups.map((name) => ({ id: name, label: name }))}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                    <CrewMemberMeta agent={agent} catalog={data.catalog} />
+                  </div>
+                  <div className="settings-collection-actions shrink-0">
+                    <Button
+                      variant="ghost"
+                      aria-label={t("Edit {p0}", { p0: agent.name })}
+                      onClick={() => setEditing(agent)}
+                    >
+                      {t("Edit")}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </Group>
       {groupMenu ? (
@@ -219,14 +262,17 @@ function LibraryMemberDialog({
   const [scope, setScope] = useState<"project" | "global">(
     saved ? (saved.projectId ? "project" : "global") : "project",
   );
-  const [pending, setPending] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"save" | "copy" | "delete" | null>(null);
+  const pending = pendingAction !== null;
   const [error, setError] = useState("");
   const [showIssues, setShowIssues] = useState(false);
   const gate = useRef(false);
-  const run = async (operation: () => Promise<unknown>) => {
+  const copyId = useRef<string | null>(null);
+  const attemptedIds = useRef(new Set<string>());
+  const run = async (action: "save" | "copy", operation: () => Promise<unknown>) => {
     if (gate.current) return;
     gate.current = true;
-    setPending(true);
+    setPendingAction(action);
     setError("");
     try {
       await operation();
@@ -235,44 +281,70 @@ function LibraryMemberDialog({
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       gate.current = false;
-      setPending(false);
+      setPendingAction(null);
     }
   };
   const valid = !!agent.name.trim() && !!agent.candidates.length;
+  // An edit in progress is not dropped by a stray Escape or backdrop click (CWS-05).
+  const [initial] = useState(() => JSON.stringify([agent, scope]));
+  const dirty = JSON.stringify([agent, scope]) !== initial;
+  const { confirm, dialog: confirmDialog } = useConfirm();
+  const requestClose = () => {
+    if (pending) return;
+    if (!dirty) return onClose();
+    void confirm({
+      title: t("Discard changes?"),
+      message: t("Your edits to this member have not been saved."),
+      confirmLabel: t("Discard changes"),
+    }).then((ok) => {
+      if (ok) onClose();
+    });
+  };
   const save = (copy: boolean) => {
     if (!valid) {
       setShowIssues(true);
       return;
     }
     const projectId = (copy ? "global" : scope) === "project" ? data.project.id : undefined;
-    void run(() =>
-      state.call("crews.agent.save", {
-        agent: {
-          ...agent,
-          name: agent.name.trim(),
-          id: saved && !copy ? saved.id : crypto.randomUUID(),
-          projectId,
-        },
+    if (copy && !copyId.current) copyId.current = crypto.randomUUID();
+    const profile = {
+      ...agent,
+      name: agent.name.trim(),
+      id: copy ? copyId.current! : (saved?.id ?? agent.id),
+      projectId,
+    };
+    void run(copy ? "copy" : "save", async () => {
+      if (attemptedIds.current.has(profile.id)) {
+        const refreshed = await state.refetch();
+        if (refreshed.error) throw refreshed.error;
+        const receipt = refreshed.data?.agents.find((item) => item.id === profile.id);
+        if (receipt && savedProfileMatches(receipt, profile)) return receipt;
+      }
+      attemptedIds.current.add(profile.id);
+      return await state.call("crews.agent.save", {
+        agent: profile,
         expectedUpdatedAt: saved && !copy ? saved.updatedAt : undefined,
-      }),
-    );
+      });
+    });
   };
   return (
     <Modal
       title={saved ? saved.name : t("New library member")}
       size="md"
-      onClose={() => {
-        if (!pending) onClose();
-      }}
+      onClose={requestClose}
       footer={
         <>
           {saved && data.deleteSupported ? (
             <ConfirmMorph
               label={t("Delete")}
-              icon={<Trash2 aria-hidden className="size-3.5" />}
+              icon={<Trash2 aria-hidden className="icon-sm" />}
               tone="danger"
               confirmMode="press"
+              disabled={pending}
               onConfirm={async () => {
+                if (gate.current) return;
+                gate.current = true;
+                setPendingAction("delete");
                 setError("");
                 try {
                   await state.call("crews.agent.delete", { agentId: saved.id });
@@ -280,19 +352,27 @@ function LibraryMemberDialog({
                 } catch (reason) {
                   setError(reason instanceof Error ? reason.message : String(reason));
                   throw reason;
+                } finally {
+                  gate.current = false;
+                  setPendingAction(null);
                 }
               }}
             />
           ) : null}
           <span className="min-w-0 flex-1" />
           {saved?.projectId ? (
-            <Button variant="ghost" disabled={pending} onClick={() => save(true)}>
+            <Button
+              variant="ghost"
+              loading={pendingAction === "copy"}
+              disabled={pending}
+              onClick={() => save(true)}
+            >
               {t("Copy to all projects")}
             </Button>
           ) : null}
           <Button
             variant="primary"
-            loading={pending}
+            loading={pendingAction === "save"}
             disabled={pending}
             onClick={() => save(false)}
           >
@@ -301,7 +381,7 @@ function LibraryMemberDialog({
         </>
       }
     >
-      <fieldset disabled={pending} className="flex min-w-0 flex-col gap-3 border-0 p-4 pt-2">
+      <fieldset disabled={pending} className="flex min-w-0 flex-col gap-3 border-0">
         {error ? <Alert tone="danger">{error}</Alert> : null}
         <CrewMemberForm
           cwd={cwd}
@@ -311,10 +391,11 @@ function LibraryMemberDialog({
           groups={data.groupsSupported}
           groupSuggestions={groupNames}
           nameError={showIssues && !agent.name.trim() ? t("Add a name") : undefined}
+          modelError={showIssues && !agent.candidates.length ? t("Choose a model") : undefined}
           autoFocus={!saved}
         />
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <span className="text-sm font-medium">{t("Available in")}</span>
+          <span className="text-ui-body font-medium">{t("Available in")}</span>
           {saved ? (
             <Badge size="md">
               {saved.projectId ? t("This project") : t("All projects on this host")}
@@ -331,9 +412,10 @@ function LibraryMemberDialog({
             />
           )}
         </div>
-        <p className="text-xs text-(--ui-text-secondary)">
+        <p className="text-ui-caption text-(--ui-text-secondary)">
           {t("Crews keep their own copy. Changes here reach a crew only when you update it there.")}
         </p>
+        {confirmDialog}
       </fieldset>
     </Modal>
   );
@@ -358,15 +440,24 @@ function GroupDialog({
   const [name, setName] = useState(group);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [attempted, setAttempted] = useState(false);
+  const gate = useRef(false);
   const members = data.agents.filter((agent) => agent.groups?.includes(group));
   const apply = async () => {
+    if (gate.current) return;
     const next = name.trim().slice(0, 40);
     if (kind === "rename" && (!next || next === group)) return onClose();
+    gate.current = true;
     setPending(true);
     setError("");
     try {
+      const refreshed = await state.refetch();
+      if (refreshed.error) throw refreshed.error;
+      const currentMembers = (refreshed.data ?? data).agents.filter((agent) =>
+        agent.groups?.includes(group),
+      );
       // Groups are labels on each profile; members are never removed with a group.
-      for (const agent of members) {
+      for (const agent of currentMembers) {
         const groups = [
           ...new Set(
             (agent.groups ?? []).flatMap((item) =>
@@ -375,6 +466,7 @@ function GroupDialog({
           ),
         ];
         const { updatedAt, ...profile } = agent;
+        setAttempted(true);
         await state.call("crews.agent.save", {
           agent: { ...profile, groups: groups.length ? groups : undefined },
           expectedUpdatedAt: updatedAt,
@@ -384,6 +476,7 @@ function GroupDialog({
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
+      gate.current = false;
       setPending(false);
     }
   };
@@ -411,18 +504,19 @@ function GroupDialog({
         </>
       }
     >
-      <div className="flex flex-col gap-3 p-4 pt-2">
+      <div className="flex flex-col gap-3">
         {error ? <Alert tone="danger">{error}</Alert> : null}
         {kind === "rename" ? (
           <TextField
             label={t("Group name")}
             value={name}
+            disabled={pending || attempted}
             maxLength={40}
             autoFocus
             onChange={(event) => setName(event.target.value)}
           />
         ) : (
-          <p className="text-sm">
+          <p className="text-ui-body">
             {t("{p0} members leave this group. The members themselves are kept.", {
               p0: members.length,
             })}

@@ -133,7 +133,7 @@ describe("automation schedules", () => {
     );
   });
 
-  it("preserves each overdue occurrence after a delayed poll", () => {
+  it("selects only the newest overdue occurrence after a delayed poll", () => {
     const morning = createAutomationTrigger("time", "daily", { time: "09:00" });
     const later = createAutomationTrigger("time", "daily", { time: "10:00" });
     const firstRunAt = at("2026-09-19T09:00:00");
@@ -142,7 +142,22 @@ describe("automation schedules", () => {
       overdueTriggerOccurrences([morning, later], firstRunAt, at("2026-09-19T10:30:00")).map(
         (occurrence) => occurrence.scheduledFor,
       ),
-    ).toEqual([firstRunAt, at("2026-09-19T10:00:00")]);
+    ).toEqual([at("2026-09-19T10:00:00")]);
+  });
+
+  it("advances long overdue hourly and weekly schedules to their newest occurrence", () => {
+    const hourly = createAutomationTrigger("time", "hourly", { minute: 0 });
+    const weekly = createAutomationTrigger("time", "weekly", { time: "09:00", dayOfWeek: 1 });
+    const now = at("2026-09-21T10:30:00");
+    const first = at("2025-01-01T00:00:00");
+    expect(overdueTriggerOccurrences([hourly], first, now)[0]).toEqual({
+      scheduledFor: at("2026-09-21T10:00:00"),
+      nextRunAt: at("2026-09-21T11:00:00"),
+    });
+    expect(overdueTriggerOccurrences([weekly], first, now)[0]).toEqual({
+      scheduledFor: at("2026-09-21T09:00:00"),
+      nextRunAt: at("2026-09-28T09:00:00"),
+    });
   });
 
   it("labels the timezone offset and next run", () => {

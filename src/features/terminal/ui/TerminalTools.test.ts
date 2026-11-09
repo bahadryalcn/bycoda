@@ -22,9 +22,54 @@ beforeEach(() => {
   );
 });
 afterEach(() => vi.unstubAllGlobals());
+
+it("shows the effective terminal size and resets only through its owner callback", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const reset = vi.fn();
+  const terminal = {
+    focus: vi.fn(),
+    input: vi.fn(),
+    paste: vi.fn(),
+    buffer: { active: { type: "normal" }, onBufferChange: () => ({ dispose() {} }) },
+  } as unknown as Terminal;
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalTools, {
+          terminal,
+          ready: true,
+          mode: null,
+          onModeChange: vi.fn(),
+          fontSize: 19,
+          savedFontSize: 13,
+          onResetFontSize: reset,
+        }),
+      ),
+    );
+    await openTools(host);
+    expect(
+      document
+        .querySelector('[role="status"][aria-label="Terminal font size"]')
+        ?.textContent?.trim(),
+    ).toBe("19px");
+    const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (node) => node.getAttribute("aria-label") === "Reset text size",
+    )!;
+    await act(async () => button.click());
+    expect(reset).toHaveBeenCalledOnce();
+    expect(terminal.input).not.toHaveBeenCalled();
+    expect(terminal.paste).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
 async function openTools(host: HTMLElement) {
   await act(async () =>
-    host.querySelector<HTMLButtonElement>('[aria-label="Terminal · More actions"]')!.click(),
+    host.querySelector<HTMLButtonElement>('[aria-label="Terminal pane actions"]')!.click(),
   );
 }
 
@@ -120,6 +165,7 @@ it("opens PowerShell suggestions only from an explicit alternative without termi
     expect(help.getAttribute("aria-expanded")).toBe("false");
     await act(async () => help.click());
     expect(document.body.textContent).toContain("-NoProfile");
+    expect(document.body.textContent).toContain("PSReadLine 2.4+");
     await act(async () => help.click());
     await act(async () =>
       document.querySelector<HTMLButtonElement>('[aria-label="Shell suggestions"]')!.click(),
@@ -127,7 +173,6 @@ it("opens PowerShell suggestions only from an explicit alternative without termi
     const option = [...document.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]')].find(
       (element) => element.textContent?.includes("PowerShell suggestions"),
     )!;
-    expect(option.textContent).toContain("PSReadLine 2.4+");
     await act(async () => option.click());
     expect(enable).toHaveBeenCalledExactlyOnceWith("powershell");
     expect(paste).not.toHaveBeenCalled();
@@ -163,7 +208,7 @@ it("opens search directly and offers local view actions without writing shell in
     );
     expect(host.querySelector("input")).toBeNull();
     expect(host.querySelector("[data-terminal-tools]")).toBeNull();
-    expect(host.querySelector('[aria-label="Terminal · More actions"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="Terminal pane actions"]')).not.toBeNull();
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[aria-label="Find in terminal"]')!.click(),
     );

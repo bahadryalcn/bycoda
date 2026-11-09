@@ -11,9 +11,13 @@ export function acpUsageEvents(
     asRecord(update.token_usage) ??
     (policy.topLevelFields.some((field) => numberField(update, field) != null) ? update : null);
   if (!usage) return [];
-  const used =
-    policy.usedFields.map((field) => numberField(usage, field)).find((value) => value != null) ??
-    sumNumbers(usage, ["inputTokens", "outputTokens", "input_tokens", "output_tokens"]);
+  // A turn summary that spans several model calls sums them all, so its total
+  // can exceed the window; only a single-call usage describes the level.
+  const turnSum = (numberField(usage, "modelCalls") ?? 1) > 1;
+  const used = turnSum
+    ? undefined
+    : (policy.usedFields.map((field) => numberField(usage, field)).find((value) => value != null) ??
+      sumNumbers(usage, ["inputTokens", "outputTokens", "input_tokens", "output_tokens"]));
   const window =
     numberField(usage, "window") ??
     numberField(usage, "size") ??

@@ -6,7 +6,8 @@ test("background commands wrap without losing their start and remain separate", 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/transcript.html?chat-layout&background-work");
   const dock = page.getByRole("region", { name: "Turn activity", exact: true });
-  await dock.locator("button[aria-expanded]").click();
+  // The counts info button also reports aria-expanded; open the list toggle itself.
+  await dock.locator("button[data-dock-toggle]").click();
   const rows = dock.locator("[data-dock-agent]");
   await expect(rows).toHaveCount(10);
   await expect(rows.first()).toHaveAttribute("data-dock-agent", "layout-command-9");
@@ -40,7 +41,8 @@ test("background commands wrap without losing their start and remain separate", 
             .every(
               (row, i) => row.getBoundingClientRect().top >= rows[i].getBoundingClientRect().bottom,
             ),
-          divider: getComputedStyle(rows[1].parentElement!).borderTopWidth,
+          // Rows are separated by spacing, not rules: the list has no frame.
+          frame: getComputedStyle(rows[1].parentElement!).borderTopWidth,
         };
       });
       expect(geometry).toEqual({
@@ -48,7 +50,7 @@ test("background commands wrap without losing their start and remain separate", 
         startsVisible: true,
         wraps: true,
         separated: true,
-        divider: "1px",
+        frame: "0px",
       });
       await expect(
         dock.getByRole("button", { name: "Stop all background work", exact: true }),
@@ -109,11 +111,12 @@ for (const layout of ["chat", "full"] as const) {
         expect(longBox.x + longBox.width).toBeCloseTo(shortBox.x + shortBox.width, 0);
         expect(longBox.width).toBeGreaterThan(shortBox.width);
         expect(longBox.width).toBeLessThanOrEqual(row.width - 70);
-        expect(
-          await short.evaluate((node) => parseFloat(getComputedStyle(node).borderRadius)),
-        ).toBeGreaterThan(shortBox.height / 2);
+        // One bubble shape for every message length; a draft differs by fill.
+        await expect(short).toHaveCSS("border-radius", "12px");
         await expect(long).toHaveCSS("border-radius", "12px");
-        await expect(draft).toHaveCSS("border-style", "dashed");
+        const fill = (locator: typeof short) =>
+          locator.evaluate((node) => getComputedStyle(node).backgroundColor);
+        expect(await fill(draft)).not.toBe(await fill(short));
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
           width,
         );
@@ -122,6 +125,38 @@ for (const layout of ["chat", "full"] as const) {
     await page.screenshot({ path: info.outputPath(`${layout}-message-bubbles.png`) });
   });
 }
+
+test("a saved draft offers edit, remove and send on one row", async ({ page }, info) => {
+  await page.goto("/tests/browser/transcript.html?message-bubbles");
+  const draft = page.locator('[data-prompt-anchor="draft-user"] .user-message-bubble');
+  const actions = [
+    draft.getByRole("button", { name: "Edit draft", exact: true }),
+    draft.getByRole("button", { name: "Remove draft", exact: true }),
+    draft.getByRole("button", { name: "Send draft", exact: true }),
+  ];
+  for (const width of [800, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const theme of ["dark", "light"]) {
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const bubble = (await draft.boundingBox())!;
+      const boxes = await Promise.all(actions.map(async (action) => (await action.boundingBox())!));
+      for (const box of boxes) {
+        expect(box.y).toBeCloseTo(boxes[0].y, 0);
+        expect(box.x).toBeGreaterThanOrEqual(bubble.x);
+        expect(box.x + box.width).toBeLessThanOrEqual(bubble.x + bubble.width);
+      }
+      expect(boxes[0].x).toBeLessThan(boxes[1].x);
+      expect(boxes[1].x).toBeLessThan(boxes[2].x);
+      await draft.screenshot({ path: info.outputPath(`draft-actions-${width}-${theme}.png`) });
+    }
+  }
+  await actions[0].focus();
+  await page.keyboard.press("Tab");
+  await expect(actions[1]).toBeFocused();
+});
 
 test("chat messages, attachment references and running work keep a readable hierarchy", async ({
   page,
@@ -150,17 +185,49 @@ test("chat messages, attachment references and running work keep a readable hier
         .locator('[data-attachment-chip="image"]')
         .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().top));
       expect(new Set(thumbnailTops).size).toBe(1);
-      expect((await rail.boundingBox())!.height).toBeLessThan(85);
+      const card = rail.locator('[data-attachment-chip="image"]').first();
+      // Compact image cards contain only a thumbnail. File identity remains on
+      // the preview action and tooltip; size sits beside the copied text token.
+      await expect(image).toHaveAccessibleName("Open screenshot-1.png full screen");
+      await image.hover();
+      await expect(page.getByRole("tooltip")).toContainText("image1 · screenshot-1.png · 42 B");
+      await page.mouse.move(0, 0);
+      const cardBox = (await card.boundingBox())!;
+      expect(cardBox.width).toBe(88);
+      expect(cardBox.height).toBe(64);
+      expect((await image.boundingBox())!.height).toBe(
+        await card.evaluate((node) => node.clientHeight),
+      );
+      const railContent = await rail.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return {
+          height:
+            node.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
+          tallestCard: Math.max(
+            ...Array.from(node.querySelectorAll('[data-attachment-chip="image"]')).map(
+              (card) => card.getBoundingClientRect().height,
+            ),
+          ),
+        };
+      });
+      // clientHeight is integer-rounded while card rectangles can be fractional.
+      expect(Math.abs(railContent.height - railContent.tallestCard)).toBeLessThanOrEqual(1);
       const token = bubble.getByRole("button", {
         name: "Open [image1] (screenshot-1.png) full screen",
         exact: true,
       });
+      await expect(token.locator("[data-size]")).toHaveAttribute("data-size", "42 B");
       expect((await token.boundingBox())!.height).toBeLessThan(26);
       const track = dock.locator('[data-pacing-track="reserved"]');
       const summary = dock.locator(".activity-dock-summary");
       const trackBox = (await track.boundingBox())!;
       const summaryBox = (await summary.boundingBox())!;
-      expect(trackBox.x).toBeGreaterThanOrEqual(summaryBox.x + summaryBox.width);
+      // Wide docks keep the pacing track beside the summary; a narrow dock gives the
+      // summary its own line and the track wraps below it. Never overlapping.
+      expect(
+        trackBox.x >= summaryBox.x + summaryBox.width - 0.5 ||
+          trackBox.y >= summaryBox.y + summaryBox.height - 0.5,
+      ).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -173,18 +240,22 @@ test("chat messages, attachment references and running work keep a readable hier
   await expect(group.locator(".zen-phase-summary")).toHaveCount(0);
   await expect(group.getByText(/very-long-command-path-0/).first()).toBeVisible();
   await page.setViewportSize({ width: 390, height: 900 });
-  const command = group.locator(".tool-command-label").first();
+  // Trail rows keep one line height; a long command ends in an ellipsis inside its row
+  // while the row's name and overflow hint keep the full command.
+  const row = group.getByLabel(/^Tool call: .*very-long-command-path-0\.tsx$/).first();
+  const command = row.getByText(/very-long-command-path-0\.tsx/).first();
   await expect(command).toContainText("very-long-command-path-0.tsx");
   expect(
     await command.evaluate((node) => {
       const box = node.getBoundingClientRect();
-      const range = document.createRange();
-      range.selectNodeContents(node);
-      return [...range.getClientRects()].every(
-        (rect) => rect.left >= box.left - 1 && rect.right <= box.right + 1,
-      );
+      const style = getComputedStyle(node);
+      return {
+        inside: box.left >= 0 && box.right <= innerWidth + 1,
+        oneLine: box.height <= parseFloat(style.lineHeight) * 1.5,
+        ellipsis: style.textOverflow === "ellipsis",
+      };
     }),
-  ).toBe(true);
+  ).toEqual({ inside: true, oneLine: true, ellipsis: true });
   const lastImage = bubble.getByRole("button", {
     name: "Open screenshot-7.png full screen",
     exact: true,

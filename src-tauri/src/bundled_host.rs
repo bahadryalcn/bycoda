@@ -8,7 +8,8 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
 use crate::remote_ssh::{bootstrap_script, HostPlatform};
@@ -17,8 +18,63 @@ use crate::remote_ssh::{bootstrap_script, HostPlatform};
 const RELEASE_IDENTIFIER: &str = "com.bycoda.desktop";
 /// A deferred upgrade is retried while the app stays open.
 const RETRY_INTERVAL: Duration = Duration::from_secs(5 * 60);
+const MAX_RETRY_INTERVAL: Duration = Duration::from_secs(60 * 60);
+
+#[derive(Default, Deserialize, Serialize)]
+struct RetryState {
+    package: String,
+    failures: u32,
+    next_attempt: u64,
+}
+
+fn retry_delay(failures: u32) -> Duration {
+    RETRY_INTERVAL
+        .saturating_mul(1u32 << failures.saturating_sub(1).min(4))
+        .min(MAX_RETRY_INTERVAL)
+}
+
+fn package_identity(archive: &Path) -> std::io::Result<String> {
+    let mut file = std::fs::File::open(archive)?;
+    let mut digest = Sha256::new();
+    std::io::copy(&mut file, &mut digest)?;
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+impl RetryState {
+    fn load(path: &Path, package: &str) -> Self {
+        std::fs::read(path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Self>(&bytes).ok())
+            .filter(|state| state.package == package)
+            .unwrap_or_else(|| Self {
+                package: package.into(),
+                ..Self::default()
+            })
+    }
+
+    fn failed(&mut self, now: u64) -> Duration {
+        self.failures = self.failures.saturating_add(1);
+        let delay = retry_delay(self.failures);
+        self.next_attempt = now.saturating_add(delay.as_secs());
+        delay
+    }
+
+    fn remaining(&self, now: u64) -> Option<Duration> {
+        // A deadline beyond the maximum back-off can only come from a clock that
+        // moved backwards. Clamp it so a failed install is never blocked for good.
+        (self.next_attempt > now).then(|| {
+            Duration::from_secs((self.next_attempt - now).min(MAX_RETRY_INTERVAL.as_secs()))
+        })
+    }
+}
 /// Another window's or a crashed run's lock is ignored after this long.
-const STALE_LOCK: Duration = Duration::from_secs(10 * 60);
 /// A coordinator job that has not changed for this long is not running.
 const STALE_JOB: Duration = Duration::from_secs(30 * 60);
 const SCRIPT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -57,7 +113,13 @@ fn plan(
         return Plan::Deferred("Another host update is being installed.");
     }
     let Some(installed) = installed else {
-        return Plan::Install;
+        // Missing or damaged version metadata does not prove that no host is
+        // running. Keep the same activity gate as an ordinary upgrade.
+        return match busy {
+            Ok(false) => Plan::Install,
+            Ok(true) => Plan::Deferred("The host update waits until running sessions finish."),
+            Err(()) => Plan::Deferred("Could not check whether the host is busy."),
+        };
     };
     if !is_newer(bundled, installed) && healthy {
         return Plan::Current;
@@ -89,12 +151,75 @@ pub(crate) enum LifecycleProbeError {
     Unconfirmed,
 }
 
+// Dirty-source build identities include their complete path inventory. Retain
+// that identity while bounding both allocation and input consumption.
+const MAX_LIFECYCLE_RESPONSE_BYTES: usize = 1024 * 1024;
+
+fn read_lifecycle_response(
+    reader: impl std::io::Read,
+) -> Result<serde_json::Value, LifecycleProbeError> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    reader
+        .take((MAX_LIFECYCLE_RESPONSE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|_| LifecycleProbeError::Unconfirmed)?;
+    if bytes.len() > MAX_LIFECYCLE_RESPONSE_BYTES {
+        return Err(LifecycleProbeError::Unconfirmed);
+    }
+    serde_json::from_slice(&bytes).map_err(|_| LifecycleProbeError::Unconfirmed)
+}
+
+/// The Node owner keeps this SQLite transaction open for its entire lifetime.
+/// A legacy PID, corrupt record, or unavailable witness cannot prove a stop.
+fn owner_verified_stopped(base: &Path) -> bool {
+    let database = base.join("owner.db");
+    let has_database = match std::fs::metadata(&database) {
+        Ok(info) if info.is_file() => true,
+        Ok(_) => return false,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => return false,
+    };
+    let connection = if has_database {
+        let Ok(connection) = rusqlite::Connection::open_with_flags(
+            &database,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        ) else {
+            return false;
+        };
+        if connection.busy_timeout(Duration::ZERO).is_err()
+            || connection.execute_batch("BEGIN EXCLUSIVE").is_err()
+        {
+            return false;
+        }
+        Some(connection)
+    } else {
+        None
+    };
+    let result = match std::fs::read_to_string(base.join("owner.lock")) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+        Err(_) => false,
+        Ok(text) => serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .is_some_and(|value| {
+                has_database
+                    && value.get("version").and_then(serde_json::Value::as_u64) == Some(2)
+                    && value
+                        .get("pid")
+                        .and_then(serde_json::Value::as_u64)
+                        .is_some_and(|pid| pid > 0)
+            }),
+    };
+    drop(connection);
+    result
+}
+
 pub(crate) fn probe_lifecycle_status(
     base: &Path,
 ) -> Result<(serde_json::Value, serde_json::Value), LifecycleProbeError> {
     use LifecycleProbeError::{Stopped, Unconfirmed};
     let record = std::fs::read_to_string(base.join("running.json")).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
+        if error.kind() == std::io::ErrorKind::NotFound && owner_verified_stopped(base) {
             Stopped
         } else {
             Unconfirmed
@@ -113,7 +238,7 @@ pub(crate) fn probe_lifecycle_status(
         .and_then(serde_json::Value::as_str)
         .ok_or(Unconfirmed)?;
     let response = ureq::post(&format!("http://127.0.0.1:{port}/lifecycle"))
-        .timeout(Duration::from_secs(2))
+        .timeout(Duration::from_secs(5))
         .set("Authorization", &format!("Bearer {secret}"))
         .set("Content-Type", "application/json")
         .send_string(r#"{"action":"status"}"#)
@@ -125,15 +250,17 @@ pub(crate) fn probe_lifecycle_status(
                     .downcast_ref::<std::io::Error>()
                     .is_some_and(|io| io.kind() == std::io::ErrorKind::ConnectionRefused)
                 {
-                    return Stopped;
+                    return if owner_verified_stopped(base) {
+                        Stopped
+                    } else {
+                        Unconfirmed
+                    };
                 }
                 source = cause.source();
             }
             Unconfirmed
         })?;
-    let response: serde_json::Value =
-        serde_json::from_reader(std::io::Read::take(response.into_reader(), 4096))
-            .map_err(|_| Unconfirmed)?;
+    let response = read_lifecycle_response(response.into_reader())?;
     Ok((state, response))
 }
 
@@ -142,14 +269,40 @@ pub(crate) fn probe_lifecycle_status(
 fn host_healthy(base: &Path) -> bool {
     let probe = || -> Option<bool> {
         let runtime = std::fs::read_to_string(base.join("runtime-path")).ok()?;
-        let (state, response) = lifecycle_status(base)?;
+        let version = installed_version(base)?;
+        // A busy host can miss a probe; repairing (restarting) a healthy but slow
+        // host would interrupt the owner's work, so retry before calling it unhealthy.
+        let mut probe = probe_lifecycle_status(base);
+        for _ in 0..2 {
+            if probe != Err(LifecycleProbeError::Unconfirmed) {
+                break;
+            }
+            std::thread::sleep(Duration::from_secs(1));
+            probe = probe_lifecycle_status(base);
+        }
+        let (state, response) = probe.ok()?;
         Some(
             response.get("pid")?.as_u64()? == state.get("pid")?.as_u64()?
                 && Path::new(response.get("runtime")?.as_str()?)
-                    == PathBuf::from(runtime.trim()).join("host.mjs"),
+                    == PathBuf::from(runtime.trim()).join("host.mjs")
+                && response.get("version")?.as_str()? == version,
         )
     };
     probe().unwrap_or(false)
+}
+
+/// The service may still be starting when the installer returns.
+fn host_healthy_within(base: &Path, limit: Duration) -> bool {
+    let deadline = std::time::Instant::now() + limit;
+    loop {
+        if host_healthy(base) {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
 }
 
 fn version_parts(version: &str) -> Option<Vec<u64>> {
@@ -165,12 +318,31 @@ fn is_newer(candidate: &str, current: &str) -> bool {
     }
 }
 
+/// A successful installer exit is only an acknowledgement. The launcher must
+/// point at a release at least as new as this app and that exact runtime must
+/// answer the private lifecycle probe before installation is reported complete.
+fn installation_confirmed(installed: Option<&str>, bundled: &str, healthy: bool) -> bool {
+    match (installed.and_then(version_parts), version_parts(bundled)) {
+        (Some(installed), Some(bundled)) => installed >= bundled && healthy,
+        _ => false,
+    }
+}
+
 fn data_dir() -> Option<PathBuf> {
+    if crate::debug_profile::profile_id().is_some() {
+        return crate::debug_profile::host_data_dir();
+    }
     #[cfg(windows)]
     let home = std::env::var("USERPROFILE").ok()?;
     #[cfg(not(windows))]
     let home = std::env::var("HOME").ok()?;
     Some(PathBuf::from(home).join(".bycoda-host"))
+}
+
+/// Reuse the exact native Host selection, including isolated development data.
+/// Returning None never falls back from a missing debug profile to personal data.
+pub(crate) fn native_authority_profile() -> Option<PathBuf> {
+    data_dir()
 }
 
 /// The version of the runtime the installed launcher points at.
@@ -196,6 +368,14 @@ fn installed_version(base: &Path) -> Option<String> {
 fn host_busy(base: &Path) -> Result<bool, ()> {
     let database = base.join("host.db");
     if !database.exists() {
+        // Only a genuinely fresh install has no database. A missing database
+        // beside an existing host is a recovery condition, never evidence of idle.
+        if ["runtime-path", "running.json", "service.ps1"]
+            .iter()
+            .any(|name| base.join(name).exists())
+        {
+            return Err(());
+        }
         return Ok(false);
     }
     let connection = rusqlite::Connection::open_with_flags(
@@ -212,6 +392,17 @@ fn host_busy(base: &Path) -> Result<bool, ()> {
         )
         .map(|count| count > 0)
         .map_err(|_| ())
+}
+
+// Automatic maintenance may replace an existing install only when no owner
+// holds the profile and no session or shell is running. The owner's exclusive
+// transaction and the host activity read are the gates; the installed files,
+// the lock and the retry state are not evidence of activity themselves.
+fn automatic_activity(base: &Path) -> Result<bool, ()> {
+    if !owner_verified_stopped(base) {
+        return Err(());
+    }
+    host_busy(base)
 }
 
 /// A local update coordinator job for the host that is still in progress.
@@ -261,37 +452,84 @@ fn archive_name() -> Option<&'static str> {
 
 struct InstallLock(PathBuf);
 
+/// A lock older than this was left by a crashed or killed app. The installer
+/// itself is bounded by `SCRIPT_TIMEOUT`, plus its tree-kill attempt.
+const STALE_INSTALL_LOCK: Duration = Duration::from_secs(30 * 60);
+
+#[cfg(unix)]
+fn process_alive(pid: u32) -> bool {
+    let Ok(pid) = i32::try_from(pid) else {
+        return false;
+    };
+    if pid <= 0 {
+        return false;
+    }
+    // Signal 0 only probes. EPERM means the process exists under another user.
+    if unsafe { libc::kill(pid, 0) } == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+}
+
+#[cfg(not(unix))]
+fn process_alive(_pid: u32) -> bool {
+    // No portable liveness probe here; the age limit decides for these locks.
+    true
+}
+
+/// Whether an installer lock on disk still belongs to a running installer.
+/// A lock is stale when it is older than `STALE_INSTALL_LOCK` or its recorded
+/// owner process is gone. Unknown states count as held, never as reclaimable.
+fn install_lock_held(path: &Path) -> bool {
+    let modified = match std::fs::metadata(path) {
+        Ok(meta) => meta.modified().ok(),
+        Err(error) => return error.kind() != std::io::ErrorKind::NotFound,
+    };
+    let fresh = modified.is_none_or(|time| match SystemTime::now().duration_since(time) {
+        Ok(age) => age < STALE_INSTALL_LOCK,
+        Err(_) => true,
+    });
+    if !fresh {
+        return false;
+    }
+    match std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| text.trim().parse::<u32>().ok())
+    {
+        Some(pid) => process_alive(pid),
+        // Empty or legacy locks carry no owner; only their age can clear them.
+        None => true,
+    }
+}
+
 /// Whether this app's own host installer holds its lock right now.
 pub(crate) fn install_running(base: &Path) -> bool {
-    std::fs::metadata(base.join("app-install.lock"))
-        .and_then(|meta| meta.modified())
-        .ok()
-        .and_then(|time| SystemTime::now().duration_since(time).ok())
-        .is_some_and(|age| age <= STALE_LOCK)
+    install_lock_held(&base.join("app-install.lock"))
 }
 
 impl InstallLock {
     fn acquire(base: &Path) -> Option<Self> {
         std::fs::create_dir_all(base).ok()?;
         let path = base.join("app-install.lock");
+        // One reclaim of a stale lock; a lock that is still held fails closed.
         for _ in 0..2 {
             match std::fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
                 .open(&path)
             {
-                Ok(_) => return Some(Self(path)),
-                Err(_) => {
-                    let stale = std::fs::metadata(&path)
-                        .and_then(|meta| meta.modified())
-                        .ok()
-                        .and_then(|time| SystemTime::now().duration_since(time).ok())
-                        .is_some_and(|age| age > STALE_LOCK);
-                    if !stale {
-                        return None;
-                    }
-                    let _ = std::fs::remove_file(&path);
+                Ok(mut file) => {
+                    use std::io::Write;
+                    let _ = write!(file, "{}", std::process::id());
+                    return Some(Self(path));
                 }
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::AlreadyExists
+                        && !install_lock_held(&path) =>
+                {
+                    std::fs::remove_file(&path).ok()?;
+                }
+                Err(_) => return None,
             }
         }
         None
@@ -305,7 +543,13 @@ impl Drop for InstallLock {
 }
 
 /// Runs the bootstrap script against the bundled archive.
-fn run_installer(base: &Path, archive: &Path, upgrade: bool, repair: bool) -> Result<(), String> {
+fn run_installer(
+    base: &Path,
+    archive: &Path,
+    upgrade: bool,
+    repair: bool,
+    lock: std::sync::Arc<InstallLock>,
+) -> Result<(), String> {
     let windows = cfg!(windows);
     let platform = if windows {
         HostPlatform::Windows
@@ -344,6 +588,9 @@ fn run_installer(base: &Path, archive: &Path, upgrade: bool, repair: bool) -> Re
         .env("BYCODA_HOST_ARCHIVE", archive)
         .env("BYCODA_HOST_FORCE_UPGRADE", if upgrade { "1" } else { "0" })
         .env("BYCODA_HOST_REPAIR", if repair { "1" } else { "0" })
+        // Keep verified package bytes across failed retries and app restarts.
+        // Explicit SSH upgrades retain their fresh-extraction semantics.
+        .env("BYCODA_HOST_REUSE_PACKAGE", "1")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped());
@@ -355,15 +602,22 @@ fn run_installer(base: &Path, archive: &Path, upgrade: bool, repair: bool) -> Re
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
     }
-    let result = run_with_timeout(command, SCRIPT_TIMEOUT);
-    let _ = std::fs::remove_file(&script);
-    result
+    run_with_timeout(command, SCRIPT_TIMEOUT, lock, script)
 }
 
-fn run_with_timeout(mut command: Command, timeout: Duration) -> Result<(), String> {
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("Could not start the host installer: {error}"))?;
+fn run_with_timeout(
+    mut command: Command,
+    timeout: Duration,
+    lock: std::sync::Arc<InstallLock>,
+    script: std::path::PathBuf,
+) -> Result<(), String> {
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            let _ = std::fs::remove_file(&script);
+            return Err(format!("Could not start the host installer: {error}"));
+        }
+    };
     let mut stderr = child.stderr.take();
     let reader = std::thread::spawn(move || {
         let mut text = String::new();
@@ -377,6 +631,7 @@ fn run_with_timeout(mut command: Command, timeout: Duration) -> Result<(), Strin
         match child.try_wait() {
             Ok(Some(status)) => {
                 let errors = reader.join().unwrap_or_default();
+                let _ = std::fs::remove_file(&script);
                 if status.success() {
                     return Ok(());
                 }
@@ -387,11 +642,40 @@ fn run_with_timeout(mut command: Command, timeout: Duration) -> Result<(), Strin
                     .to_string());
             }
             Ok(None) if started.elapsed() > timeout => {
-                let _ = child.kill();
+                std::thread::spawn(move || {
+                    let _lock = lock;
+                    crate::harness::terminate_all(&[child.id()]);
+                    let _ = child.kill();
+                    // A reaped child releases the lock normally. If its exit cannot be
+                    // confirmed, keep the lock until its owner process is gone or it ages out.
+                    match child.wait() {
+                        Ok(_) => {
+                            let _ = std::fs::remove_file(&script);
+                            drop(_lock);
+                            let _ = reader.join();
+                        }
+                        Err(_) => std::mem::forget(_lock),
+                    }
+                });
                 return Err("The host installer did not finish in time.".into());
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(200)),
-            Err(error) => return Err(error.to_string()),
+            Err(error) => {
+                std::thread::spawn(move || {
+                    let _lock = lock;
+                    crate::harness::terminate_all(&[child.id()]);
+                    let _ = child.kill();
+                    match child.wait() {
+                        Ok(_) => {
+                            let _ = std::fs::remove_file(&script);
+                            drop(_lock);
+                            let _ = reader.join();
+                        }
+                        Err(_) => std::mem::forget(_lock),
+                    }
+                });
+                return Err(error.to_string());
+            }
         }
     }
 }
@@ -402,15 +686,21 @@ fn record(status: BundledHostStatus) {
     }
 }
 
-/// One attempt; returns true when a later retry could still change the result.
-fn ensure_once(app: &AppHandle) -> bool {
+/// One attempt; returns the delay before another useful probe.
+fn ensure_once(app: &AppHandle) -> Option<Duration> {
+    if crate::debug_profile::profile_id().is_some() {
+        // The dev supervisor owns its child Host. Never install a system service.
+        record(BundledHostStatus {
+            state: "unavailable".into(),
+            ..Default::default()
+        });
+        return None;
+    }
     let bundled = app.package_info().version.to_string();
-    let Some(name) = archive_name() else {
-        return false;
-    };
+    let name = archive_name()?;
     let archive = match app.path().resource_dir() {
         Ok(dir) => dir.join("host").join(name),
-        Err(_) => return false,
+        Err(_) => return None,
     };
     let (Some(base), true) = (data_dir(), archive.exists()) else {
         record(BundledHostStatus {
@@ -418,16 +708,17 @@ fn ensure_once(app: &AppHandle) -> bool {
             bundled: Some(bundled),
             ..Default::default()
         });
-        return false;
+        return None;
     };
-    let Some(_lock) = InstallLock::acquire(&base) else {
-        return true;
+    let Some(lock) = InstallLock::acquire(&base) else {
+        return Some(RETRY_INTERVAL);
     };
+    let lock = std::sync::Arc::new(lock);
     let installed = installed_version(&base);
     let decision = plan(
         installed.as_deref(),
         &bundled,
-        host_busy(&base),
+        automatic_activity(&base),
         job_pending(&base),
         host_healthy(&base),
     );
@@ -439,34 +730,76 @@ fn ensure_once(app: &AppHandle) -> bool {
     };
     match decision {
         Plan::Current => {
+            let _ = std::fs::remove_file(base.join("bundled-host-retry.json"));
             record(status("current", None));
-            false
+            // Services may be restarted or replaced while the desktop stays
+            // open. Keep reconciling instead of permanently ending this worker.
+            Some(RETRY_INTERVAL)
         }
         Plan::Deferred(reason) => {
             record(status("deferred", Some(reason.into())));
-            true
+            Some(RETRY_INTERVAL)
         }
         Plan::Install | Plan::Upgrade | Plan::Repair => {
+            let retry_path = base.join("bundled-host-retry.json");
+            let package = match package_identity(&archive) {
+                Ok(package) => package,
+                Err(error) => {
+                    record(status(
+                        "failed",
+                        Some(format!("Could not read the bundled host package: {error}")),
+                    ));
+                    return Some(MAX_RETRY_INTERVAL);
+                }
+            };
+            let mut retry = RetryState::load(&retry_path, &package);
+            if let Some(delay) = retry.remaining(unix_now()) {
+                record(status(
+                    "deferred",
+                    Some(format!(
+                        "The failed host installation will retry in {} seconds.",
+                        delay.as_secs()
+                    )),
+                ));
+                return Some(delay);
+            }
             let upgrade = decision == Plan::Upgrade;
             let repair = decision == Plan::Repair;
             // An interrupted same-version install may contain the old CLI.
-            // Re-extract the bundled package for repair, without downgrading a
-            // newer installed release.
+            // Select the verified bundled package for repair, without
+            // downgrading a newer installed release. Bootstrap reuses intact
+            // extracted bytes on later attempts.
             let replace = upgrade || (repair && installed.as_deref() == Some(bundled.as_str()));
-            match run_installer(&base, &archive, replace, repair) {
+            let result = run_installer(&base, &archive, replace, repair, lock.clone()).and_then(|()| {
+                if installation_confirmed(
+                    installed_version(&base).as_deref(),
+                    &bundled,
+                    host_healthy_within(&base, Duration::from_secs(30)),
+                ) {
+                    Ok(())
+                } else {
+                    Err("The host installer finished, but the expected host runtime is not running. Installation will retry.".into())
+                }
+            });
+            match result {
                 Ok(()) => {
+                    let _ = std::fs::remove_file(&retry_path);
                     record(BundledHostStatus {
                         state: if upgrade { "upgraded" } else { "installed" }.into(),
                         message: None,
                         bundled: Some(bundled.clone()),
                         installed: installed_version(&base),
                     });
-                    let _ = crate::local_host::local_host_connect(app.clone());
-                    false
+                    let _ = crate::local_host::local_host_connect_blocking(app.clone());
+                    Some(RETRY_INTERVAL)
                 }
                 Err(error) => {
+                    let delay = retry.failed(unix_now());
+                    if let Ok(bytes) = serde_json::to_vec(&retry) {
+                        let _ = std::fs::write(&retry_path, bytes);
+                    }
                     record(status("failed", Some(error)));
-                    true
+                    Some(delay)
                 }
             }
         }
@@ -480,8 +813,8 @@ pub fn start(app: &AppHandle) {
     }
     let app = app.clone();
     std::thread::spawn(move || {
-        while ensure_once(&app) {
-            std::thread::sleep(RETRY_INTERVAL);
+        while let Some(delay) = ensure_once(&app) {
+            std::thread::sleep(delay);
         }
     });
 }
@@ -497,6 +830,117 @@ mod tests {
     use super::*;
 
     #[test]
+    fn installer_completion_requires_the_expected_live_release() {
+        assert!(installation_confirmed(Some("0.6.75"), "0.6.75", true));
+        assert!(installation_confirmed(Some("0.6.76"), "0.6.75", true));
+        assert!(!installation_confirmed(Some("0.6.71"), "0.6.75", true));
+        assert!(!installation_confirmed(Some("0.6.75"), "0.6.75", false));
+        assert!(!installation_confirmed(None, "0.6.75", true));
+        assert!(!installation_confirmed(Some("unknown"), "0.6.75", true));
+        assert!(!installation_confirmed(Some("0.6.75"), "unknown", true));
+    }
+
+    #[test]
+    fn missing_version_metadata_does_not_bypass_the_activity_gate() {
+        assert_eq!(
+            plan(None, "0.6.75", Ok(true), false, false),
+            Plan::Deferred("The host update waits until running sessions finish.")
+        );
+        assert_eq!(
+            plan(None, "0.6.75", Err(()), false, false),
+            Plan::Deferred("Could not check whether the host is busy.")
+        );
+    }
+
+    #[test]
+    fn failed_installs_back_off_and_cap_at_one_hour() {
+        let mut retry = RetryState::default();
+        let delays: Vec<u64> = (0..8).map(|_| retry.failed(1_000).as_secs()).collect();
+        assert_eq!(delays, vec![300, 600, 1200, 2400, 3600, 3600, 3600, 3600]);
+        assert_eq!(retry_delay(u32::MAX), MAX_RETRY_INTERVAL);
+    }
+
+    #[test]
+    fn retry_deadline_survives_restarts_but_a_new_package_resets_it() {
+        let base = scratch("retry-state");
+        let path = base.join("retry.json");
+        let mut retry = RetryState::load(&path, "package-a");
+        retry.failed(1_000);
+        retry.failed(1_300);
+        std::fs::write(&path, serde_json::to_vec(&retry).unwrap()).unwrap();
+        let resumed = RetryState::load(&path, "package-a");
+        assert_eq!(resumed.remaining(1_400), Some(Duration::from_secs(500)));
+        assert_eq!(resumed.remaining(1_900), None);
+        assert_eq!(resumed.failures, 2);
+        let changed = RetryState::load(&path, "package-b");
+        assert_eq!(changed.remaining(1_400), None);
+        assert_eq!(changed.failures, 0);
+        std::fs::write(&path, "interrupted write").unwrap();
+        assert_eq!(RetryState::load(&path, "package-a").failures, 0);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn package_identity_changes_even_for_a_same_version_rebuild() {
+        let base = scratch("retry-package");
+        let archive = base.join("host.zip");
+        std::fs::write(&archive, "first build").unwrap();
+        let first = package_identity(&archive).unwrap();
+        assert_eq!(first, package_identity(&archive).unwrap());
+        std::fs::write(&archive, "second build").unwrap();
+        assert_ne!(first, package_identity(&archive).unwrap());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn lifecycle_response_preserves_large_dirty_source_identity() {
+        let identity = serde_json::json!({
+            "pid": 77,
+            "buildIdentity": {
+                "buildId": "isolated-dirty-source",
+                "sourceFingerprint": "source-fingerprint",
+                "dirtyPaths": (0..750).map(|i| serde_json::json!({
+                    "path": format!("src/features/verification/changed-surface-{i}.tsx"),
+                    "status": "M "
+                })).collect::<Vec<_>>()
+            }
+        });
+        let body = serde_json::to_vec(&identity).unwrap();
+        assert!(body.len() > 4096);
+        assert_eq!(read_lifecycle_response(body.as_slice()).unwrap(), identity);
+    }
+
+    #[test]
+    fn lifecycle_response_rejects_oversized_truncated_and_failed_reads() {
+        struct FailedRead;
+        impl std::io::Read for FailedRead {
+            fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("isolated read failure"))
+            }
+        }
+        for result in [
+            read_lifecycle_response(std::io::repeat(b' ')),
+            read_lifecycle_response(
+                br#"{"pid":77,"buildIdentity":{"buildId":"truncated""#.as_slice(),
+            ),
+            read_lifecycle_response(FailedRead),
+        ] {
+            assert_eq!(result, Err(LifecycleProbeError::Unconfirmed));
+        }
+        let mut boundary = b"{}".to_vec();
+        boundary.resize(MAX_LIFECYCLE_RESPONSE_BYTES, b' ');
+        assert_eq!(
+            read_lifecycle_response(boundary.as_slice()).unwrap(),
+            serde_json::json!({})
+        );
+        boundary.push(b' ');
+        assert_eq!(
+            read_lifecycle_response(boundary.as_slice()),
+            Err(LifecycleProbeError::Unconfirmed)
+        );
+    }
+
+    #[test]
     fn lifecycle_probe_distinguishes_missing_and_unreadable_records() {
         let base = std::env::temp_dir().join(format!("bycoda-probe-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&base).unwrap();
@@ -508,6 +952,73 @@ mod tests {
         assert_eq!(
             probe_lifecycle_status(&base),
             Err(LifecycleProbeError::Unconfirmed)
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn missing_or_refused_lifecycle_never_overrides_live_or_unknown_owner() {
+        let base = scratch("owner-probe");
+        let db = rusqlite::Connection::open(base.join("owner.db")).unwrap();
+        db.execute_batch("BEGIN EXCLUSIVE").unwrap();
+        std::fs::write(base.join("owner.lock"), r#"{"version":2,"pid":123}"#).unwrap();
+        assert_eq!(
+            probe_lifecycle_status(&base),
+            Err(LifecycleProbeError::Unconfirmed)
+        );
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        std::fs::write(
+            base.join("running.json"),
+            format!(r#"{{"port":{port},"secret":"test"}}"#),
+        )
+        .unwrap();
+        assert_eq!(
+            probe_lifecycle_status(&base),
+            Err(LifecycleProbeError::Unconfirmed)
+        );
+        drop(db);
+        assert_eq!(
+            probe_lifecycle_status(&base),
+            Err(LifecycleProbeError::Stopped)
+        );
+        std::fs::write(base.join("owner.lock"), "not valid").unwrap();
+        assert_eq!(
+            probe_lifecycle_status(&base),
+            Err(LifecycleProbeError::Unconfirmed)
+        );
+        std::fs::write(base.join("owner.lock"), "123").unwrap();
+        assert_eq!(
+            probe_lifecycle_status(&base),
+            Err(LifecycleProbeError::Unconfirmed)
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn automatic_updates_admit_fresh_only_and_preserve_installed_stop_intent() {
+        let base = scratch("automatic-authority");
+        assert_eq!(automatic_activity(&base), Ok(false));
+        assert_eq!(
+            plan(None, "0.6.75", automatic_activity(&base), false, false),
+            Plan::Install
+        );
+        std::fs::write(base.join("runtime-path"), "stopped-runtime").unwrap();
+        for installed in [None, Some("0.6.74"), Some("0.6.75")] {
+            assert!(matches!(
+                plan(installed, "0.6.75", automatic_activity(&base), false, false),
+                Plan::Deferred(_)
+            ));
+        }
+        // Owner-directed repair/upgrade retains the existing verified-idle plan.
+        assert_eq!(
+            plan(Some("0.6.75"), "0.6.75", Ok(false), false, false),
+            Plan::Repair
+        );
+        assert_eq!(
+            plan(Some("0.6.74"), "0.6.75", Ok(false), false, false),
+            Plan::Upgrade
         );
         std::fs::remove_dir_all(base).unwrap();
     }
@@ -533,6 +1044,60 @@ mod tests {
             Err(LifecycleProbeError::Unconfirmed)
         );
         server.join().unwrap();
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn health_requires_the_serving_version_to_match_selected_runtime_metadata() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let base = scratch("live-version");
+        let runtime = base.join("runtime").join("0.6.75-win32-x64-local");
+        std::fs::create_dir_all(&runtime).unwrap();
+        std::fs::write(base.join("runtime-path"), runtime.to_str().unwrap()).unwrap();
+        std::fs::write(runtime.join("version.json"), r#"{"version":"0.6.75"}"#).unwrap();
+        for actual_version in [Some("0.6.71"), Some("0.6.75"), None] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            std::fs::write(
+                base.join("running.json"),
+                format!(r#"{{"port":{port},"pid":77,"secret":"test"}}"#),
+            )
+            .unwrap();
+            let mut response = serde_json::json!({
+                "pid": 77,
+                "runtime": runtime.join("host.mjs"),
+            });
+            if let Some(version) = actual_version {
+                response["version"] = version.into();
+            }
+            let body = response.to_string();
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let mut buffer = [0; 512];
+                while !request.ends_with(br#"{"action":"status"}"#) {
+                    let count = stream.read(&mut buffer).unwrap();
+                    assert!(count > 0);
+                    request.extend_from_slice(&buffer[..count]);
+                }
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .unwrap();
+                stream.flush().unwrap();
+            });
+            let healthy = host_healthy(&base);
+            server.join().unwrap();
+            assert_eq!(healthy, actual_version == Some("0.6.75"));
+        }
         std::fs::remove_dir_all(base).unwrap();
     }
 
@@ -676,7 +1241,8 @@ mod tests {
                     request.extend_from_slice(&buffer[..count]);
                 }
                 assert!(String::from_utf8_lossy(&request).contains("Bearer test-secret"));
-                let body = serde_json::json!({"pid":pid,"runtime":entry}).to_string();
+                let body =
+                    serde_json::json!({"pid":pid,"runtime":entry,"version":"0.5.70"}).to_string();
                 write!(
                     socket,
                     "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -695,6 +1261,9 @@ mod tests {
     fn treats_an_unreadable_host_database_as_busy_not_idle() {
         let base = scratch("busy");
         assert_eq!(host_busy(&base), Ok(false));
+        std::fs::write(base.join("runtime-path"), "existing-runtime").unwrap();
+        assert_eq!(host_busy(&base), Err(()));
+        std::fs::remove_file(base.join("runtime-path")).unwrap();
         std::fs::write(base.join("host.db"), b"not a database").unwrap();
         assert_eq!(host_busy(&base), Err(()));
         std::fs::remove_file(base.join("host.db")).unwrap();

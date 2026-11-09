@@ -1,14 +1,23 @@
-import { Badge } from "../../shared/ui/Badge";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Alert } from "../../shared/ui/Alert";
 import { Button } from "../../shared/ui/Button";
+import { InfoPopover } from "../../shared/ui/InfoPopover";
+import { Meter } from "../../shared/ui/Meter";
+import { Surface } from "../../shared/ui/Surface";
+import { RefreshCw } from "../../shared/ui/icons";
 import { t, useLocale, getLocale } from "../../shared/i18n/technical";
 import { useEffect, useRef, useState } from "react";
 import { hostFeatureRequest, hostToolRequest } from "../connections/model/hostFeatureClient";
 import { hostToolTargetKey, type HostToolTarget } from "../connections/model/hostToolTarget";
+import {
+  peekToolsDraftPart,
+  subscribeToolsDraftTransfer,
+  writeToolsDraftPart,
+} from "./toolsDraftTransfer";
+import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionList";
 import "./diagnostics-panel.css";
 
-type Sample = {
+export type DiagnosticsSample = {
   at: number;
   host: {
     totalMemoryBytes: number;
@@ -24,7 +33,14 @@ type Sample = {
     uptimeSeconds: number;
   };
 };
-type Props = { cwd: string; hostTarget?: HostToolTarget; hostLabel?: string };
+type Sample = DiagnosticsSample;
+type Props = {
+  cwd: string;
+  hostTarget?: HostToolTarget;
+  hostLabel?: string;
+  active?: boolean;
+  transferScope?: import("./toolsDraftTransfer").ToolsDraftScope;
+};
 const mib = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 const gib = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
 const time = (at: number) => new Date(at).toLocaleTimeString(getLocale());
@@ -114,12 +130,31 @@ export function DiagnosticsPanel(props: Props) {
     />
   );
 }
-function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLabel }: Props) {
+function ProjectDiagnosticsPanel({
+  cwd,
+  hostTarget = { kind: "project" },
+  hostLabel,
+  active = true,
+  transferScope,
+}: Props) {
   useLocale();
-  const [samples, setSamples] = useState<Sample[]>([]);
+  const [samples, setSamples] = useState<Sample[]>(() =>
+    transferScope ? (peekToolsDraftPart(transferScope, "diagnostics")?.samples ?? []) : [],
+  );
+  useEffect(() => {
+    if (!transferScope) return;
+    return subscribeToolsDraftTransfer(transferScope, ({ diagnostics }) => {
+      if (diagnostics) setSamples(diagnostics.samples);
+    });
+  }, [transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue]);
+  useEffect(() => {
+    if (active && transferScope) writeToolsDraftPart(transferScope, "diagnostics", { samples });
+  }, [active, transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue, samples]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const alive = useRef(false);
+  const visible = useRef(active);
+  visible.current = active;
   const pending = useRef(false);
   const delay = useRef<{ timer: ReturnType<typeof setTimeout>; resolve: () => void } | null>(null);
   useEffect(() => {
@@ -142,7 +177,7 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
         )
       : null;
   const read = async () => {
-    if (pending.current) return;
+    if (pending.current || !visible.current) return;
     pending.current = true;
     setBusy(true);
     setError("");
@@ -162,7 +197,7 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
               hostTarget,
             );
       const result = await request();
-      if (!alive.current) return;
+      if (!alive.current || !visible.current) return;
       setSamples(result.samples);
       // One user request includes the two samples needed for a useful CPU measurement.
       if (result.samples[result.samples.length - 1]?.process.cpuPercent === null) {
@@ -170,7 +205,7 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
           delay.current = { timer: setTimeout(resolve, 1100), resolve };
         });
         delay.current = null;
-        if (!alive.current) return;
+        if (!alive.current || !visible.current) return;
         const measured = await request();
         if (alive.current) setSamples(measured.samples);
       }
@@ -188,102 +223,103 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
       aria-busy={busy}
     >
       <header className="resource-header">
-        <div className="host-tool-intro">
-          <h3>{t("Resource usage")}</h3>
-          <span className="host-tool-muted">{hostLabel ?? t("Host process")}</span>
-        </div>
-        <div className="resource-sampling">
-          <Button
-            motion="none"
-            variant="ghost"
-            size="sm"
-            type="button"
-            disabled={busy}
-            onClick={() => void read()}
-          >
-            {busy ? t("Measuring…") : error ? t("Retry") : t("Sample now")}
-          </Button>
-          <Badge role="status">
-            {busy
-              ? t("Measuring…")
-              : sample
-                ? `${t("Sampled at")} ${time(sample.at)}`
-                : t("No samples yet")}
-          </Badge>
-        </div>
-      </header>
-      {error ? (
-        <Alert tone="danger" role="alert">
-          {error}
-        </Alert>
-      ) : null}
-      {!sample && !busy && !error ? (
-        <EmptyState description={t("Take a sample to start the charts.")} />
-      ) : null}
-      <div className="resource-cards">
-        <article className="resource-card">
-          <h4>{t("bycoda host CPU")}</h4>
-          <strong className="resource-value">
-            {sample?.process.cpuPercent != null ? `${sample.process.cpuPercent.toFixed(1)}%` : "—"}
-          </strong>
-          <ResourceChart samples={samples} metric="cpu" label={t("bycoda host CPU")} />
-        </article>
-        <article className="resource-card">
-          <h4>{t("bycoda host memory")}</h4>
-          <strong className="resource-value">{sample ? mib(sample.process.rssBytes) : "—"}</strong>
-          <ResourceChart samples={samples} metric="memory" label={t("bycoda host memory")} />
-        </article>
-      </div>
-      <article className="resource-card resource-system-memory">
-        <div className="resource-memory-heading">
-          <h4>{t("Computer memory")}</h4>
-          <strong>{memoryUsed !== null ? `${memoryUsed.toFixed(1)}% ${t("Used")}` : "—"}</strong>
-        </div>
-        <div
-          className="resource-memory-bar"
-          role={memoryUsed !== null ? "meter" : undefined}
-          aria-label={t("Computer memory")}
-          aria-valuemin={memoryUsed !== null ? 0 : undefined}
-          aria-valuemax={memoryUsed !== null ? 100 : undefined}
-          aria-valuenow={memoryUsed ?? undefined}
+        <Button
+          motion="none"
+          variant="ghost"
+          iconOnly
+          label={error ? t("Retry") : t("Sample now")}
+          loading={busy}
+          loadingLabel={t("Measuring…")}
+          disabled={busy}
+          onClick={() => void read()}
         >
-          <span style={{ inlineSize: `${memoryUsed ?? 0}%` }} />
-        </div>
-        <div className="resource-memory-legend">
-          <span>
-            {t("Available")} <strong>{sample ? gib(sample.host.freeMemoryBytes) : "—"}</strong>
-          </span>
-          <span>
-            {t("Total")} <strong>{sample ? gib(sample.host.totalMemoryBytes) : "—"}</strong>
-          </span>
-        </div>
-      </article>
+          <RefreshCw className="icon-sm" aria-hidden />
+        </Button>
+        <span role="status" className="resource-sample-status">
+          {busy ? t("Measuring…") : sample ? time(sample.at) : t("No samples yet")}
+        </span>
+        <span
+          className="resource-scope"
+          title={t(
+            "Samples only when requested. CPU and memory describe the host's Node process; provider child processes are excluded. Up to 60 samples are retained.",
+          )}
+        >
+          {hostLabel ?? t("Host process")} · {t("Node process only")}
+        </span>
+        <InfoPopover label={t("Measurement details")}>
+          <p>{hostLabel ?? t("Host process")}</p>
+          {sample ? (
+            <DescriptionList size="sm">
+              <DescriptionItem term={t("Sampled at")}>{time(sample.at)}</DescriptionItem>
+              <DescriptionItem term={t("Node heap")}>
+                {mib(sample.process.heapUsedBytes)}
+              </DescriptionItem>
+              <DescriptionItem term={t("Logical CPUs")}>{sample.host.logicalCpus}</DescriptionItem>
+            </DescriptionList>
+          ) : null}
+          <p>
+            {t(
+              "Samples only when requested. CPU and memory describe the host's Node process; provider child processes are excluded. Up to 60 samples are retained.",
+            )}
+          </p>
+        </InfoPopover>
+      </header>
+      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {!sample && !busy && !error ? (
+        <EmptyState
+          description={t("Take a sample to start the charts.")}
+          action={
+            <Button variant="primary" disabled={busy} onClick={() => void read()}>
+              {t("Take a sample")}
+            </Button>
+          }
+        />
+      ) : null}
+      {sample ? (
+        <>
+          <div className="resource-cards">
+            <Surface as="article" variant="outline" className="resource-card">
+              <h3>{t("bycoda host CPU")}</h3>
+              <strong className="resource-value">
+                {sample?.process.cpuPercent != null
+                  ? `${sample.process.cpuPercent.toFixed(1)}%`
+                  : "—"}
+              </strong>
+              <ResourceChart samples={samples} metric="cpu" label={t("bycoda host CPU")} />
+            </Surface>
+            <Surface as="article" variant="outline" className="resource-card">
+              <h3>{t("bycoda host memory")}</h3>
+              <strong className="resource-value">
+                {sample ? mib(sample.process.rssBytes) : "—"}
+              </strong>
+              <ResourceChart samples={samples} metric="memory" label={t("bycoda host memory")} />
+            </Surface>
+          </div>
+          <Surface as="article" variant="outline" className="resource-card resource-system-memory">
+            <div className="resource-memory-heading">
+              <h3>{t("Computer memory")}</h3>
+              <strong>
+                {memoryUsed !== null ? `${memoryUsed.toFixed(1)}% ${t("Used")}` : "—"}
+              </strong>
+            </div>
+            <Meter label={t("Computer memory")} value={memoryUsed} warning={75} danger={90} />
+            <div className="resource-memory-legend">
+              <span>
+                {t("Available")} <strong>{sample ? gib(sample.host.freeMemoryBytes) : "—"}</strong>
+              </span>
+              <span>
+                {t("Total")} <strong>{sample ? gib(sample.host.totalMemoryBytes) : "—"}</strong>
+              </span>
+            </div>
+          </Surface>
+        </>
+      ) : null}
       {sample ? (
         <div className="resource-history-caption">
           <span>{t("Sample history")}</span>
           <span>{samples.length} / 60</span>
         </div>
       ) : null}
-      <ExpandableCard title={t("Measurement details")}>
-        {sample ? (
-          <dl className="host-tool-metrics">
-            <div>
-              <dt>{t("Node heap")}</dt>
-              <dd>{mib(sample.process.heapUsedBytes)}</dd>
-            </div>
-            <div>
-              <dt>{t("Logical CPUs")}</dt>
-              <dd>{sample.host.logicalCpus}</dd>
-            </div>
-          </dl>
-        ) : null}
-        <p className="host-tool-muted">
-          {t(
-            "Samples only when requested. CPU and memory describe the host's Node process; provider child processes are excluded. Up to 60 samples are retained.",
-          )}
-        </p>
-      </ExpandableCard>
     </section>
   );
 }
-import { ExpandableCard } from "../../shared/ui/ExpandableCard";

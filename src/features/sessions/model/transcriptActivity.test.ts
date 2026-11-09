@@ -33,6 +33,20 @@ import {
   workSummaryLine,
 } from "./transcriptActivity";
 
+it("does not keep a provider-interrupted subagent running or attribute it to the user", () => {
+  const block: Block = {
+    id: "interrupted",
+    role: "tool",
+    text: "Research",
+    tool: { callId: "child", kind: "agent", status: "interrupted" },
+    agentRun: { name: "Research", steps: [] },
+  };
+  expect(toolCallState(block)).toBe("accepted");
+  expect(hasRunningSubagent([block])).toBe(false);
+  expect(isStoppedBlock(block)).toBe(false);
+  expect(subagentStatusLine(block, [])).toBe("interrupted");
+});
+
 function shell(id: string, status = "completed", approval?: Block["approval"]): Block {
   return {
     id,
@@ -707,6 +721,9 @@ describe("the subagent stack", () => {
 
   it("names a run from its description, without the tool's own prefix", () => {
     expect(subagentName(agent("a1", "Task: Correctness review"))).toBe("Correctness review");
+    expect(subagentName(agent("a1", "GPT-6.1 Terra checks v2.1. Then more"))).toBe(
+      "GPT-6.1 Terra checks v2.1.",
+    );
     expect(
       subagentName({
         ...agent("a1", "Explore"),

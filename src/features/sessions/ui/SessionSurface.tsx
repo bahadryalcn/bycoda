@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { Portal } from "../../../shared/ui/Portal";
 
 /** Move a mounted pane between hosts without losing drafts or attachments. */
 export function SessionSurface({ host, children }: { host?: HTMLElement; children: ReactNode }) {
@@ -16,7 +16,8 @@ export function SessionSurface({ host, children }: { host?: HTMLElement; childre
   return (
     <>
       <div ref={fallback} className="h-full min-h-0 min-w-0" />
-      {createPortal(children, container)}
+      {/* Pane-hosted portal into the surface container, not an overlay: shared Popover/Modal do not apply. */}
+      <Portal target={container}>{children}</Portal>
     </>
   );
 }

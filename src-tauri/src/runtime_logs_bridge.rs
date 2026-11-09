@@ -11,6 +11,16 @@ fn grants() -> &'static Mutex<HashMap<String, Value>> {
     GRANTS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+pub(crate) fn clear_grants(session: Option<&str>) {
+    if let Ok(mut map) = grants().lock() {
+        if let Some(session) = session {
+            map.remove(session);
+        } else {
+            map.clear();
+        }
+    }
+}
+
 pub fn authorize_acp_frame(session_id: &str, line: String) -> String {
     let grant = grants()
         .lock()
@@ -68,41 +78,40 @@ fn decorate_frame(line: String, grant: &Value) -> String {
     request.to_string()
 }
 
-pub fn redact_lines(session_id: &str, lines: Vec<String>) -> Vec<String> {
-    let token = grants().lock().ok().and_then(|map| {
-        map.get(session_id)
-            .and_then(|grant| grant.get("token"))
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-    });
-    lines
-        .into_iter()
-        .map(|line| {
-            token
-                .as_ref()
-                .map(|token| line.replace(token, "[runtime log credential redacted]"))
-                .unwrap_or(line)
-        })
-        .collect()
-}
-
-#[tauri::command(async)]
-pub fn harness_runtime_logs_bridge(
+#[tauri::command]
+pub async fn harness_runtime_logs_bridge(
     app: AppHandle,
     session_id: String,
 ) -> Result<Option<Value>, String> {
-    if session_id.is_empty() {
-        return Ok(None);
-    }
-    let value =
-        crate::remote::local_runtime_logs_rpc(&app, "runtimeLogs.bridge.describe", json!({}));
-    Ok(value.ok())
+    crate::harness::run_blocking("harness_runtime_logs_bridge", move || {
+        if session_id.is_empty() {
+            return Ok(None);
+        }
+        // Optional metadata: a slow Host must not hold the send for 30 s.
+        let Some(deadline) = crate::session_tools_bridge::optional_host_deadline() else {
+            return Ok(None);
+        };
+        let value = crate::remote::NativeServiceChannel::connect_until(&app, Some(deadline))
+            .and_then(|service| {
+                service.project_until(
+                    "runtimeLogs.bridge.describe",
+                    json!({}),
+                    deadline,
+                    |value| {
+                        Ok(crate::session_tools_bridge::metadata(
+                            value.clone(),
+                            crate::session_tools_bridge::Group::RuntimeLogs,
+                        ))
+                    },
+                )
+            });
+        crate::session_tools_bridge::note_optional_host_outcome(deadline, value.is_ok());
+        Ok(value.ok())
+    })
+    .await
 }
 
-pub fn configure_child(app: &AppHandle, session_id: &str, command: &mut Command) {
-    if let Ok(mut map) = grants().lock() {
-        map.remove(session_id);
-    }
+pub(crate) fn strip_child_env(command: &mut Command) {
     let keys: Vec<String> = std::env::vars()
         .map(|(key, _)| key)
         .chain(
@@ -115,32 +124,53 @@ pub fn configure_child(app: &AppHandle, session_id: &str, command: &mut Command)
     for key in keys {
         command.env_remove(key);
     }
+}
+
+/// Issues, pins and caches this child's grant within `deadline`, returning
+/// the environment the child receives. Runs off the spawn thread.
+pub(crate) fn issue_child_grant(
+    app: &AppHandle,
+    session_id: &str,
+    stamp: (u64, u64),
+    deadline: std::time::Instant,
+) -> Result<Vec<(&'static str, String)>, String> {
     let primary = session_id
         .rsplit_once('#')
         .filter(|(_, suffix)| !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()))
         .map(|(id, _)| id)
         .unwrap_or(session_id);
-    let Ok(grant) = crate::remote::local_runtime_logs_rpc(
-        app,
+    let service = crate::remote::NativeServiceChannel::connect_until(app, Some(deadline))?;
+    service.project_until(
         "runtimeLogs.access.issue",
         json!({"sessionId": primary}),
-    ) else {
-        return;
-    };
-    let (Some(token), Some(endpoint), Some(environment)) = (
-        grant.get("token").and_then(Value::as_str),
-        grant.get("endpoint").and_then(Value::as_str),
-        grant.get("environmentId").and_then(Value::as_str),
-    ) else {
-        return;
-    };
-    command
-        .env("BYCODA_RUNTIME_LOGS_TOKEN", token)
-        .env("BYCODA_RUNTIME_LOGS_ENDPOINT", endpoint)
-        .env("BYCODA_RUNTIME_LOGS_ENVIRONMENT", environment);
-    if let Ok(mut map) = grants().lock() {
-        map.insert(session_id.to_owned(), grant);
-    }
+        deadline,
+        |issued| {
+            let mut issued = issued.clone();
+            issued["endpoint"] = json!(service.endpoint());
+            let grant = crate::session_tools_bridge::register_pinned(
+                app,
+                session_id,
+                stamp,
+                crate::session_tools_bridge::Group::RuntimeLogs,
+                issued,
+                service.clone(),
+            )?;
+            let (Some(token), Some(endpoint), Some(environment)) = (
+                grant.get("token").and_then(Value::as_str),
+                grant.get("endpoint").and_then(Value::as_str),
+                grant.get("environmentId").and_then(Value::as_str),
+            ) else {
+                return Err("Runtime log tool grant is incomplete".into());
+            };
+            let env = vec![
+                ("BYCODA_RUNTIME_LOGS_TOKEN", token.to_owned()),
+                ("BYCODA_RUNTIME_LOGS_ENDPOINT", endpoint.to_owned()),
+                ("BYCODA_RUNTIME_LOGS_ENVIRONMENT", environment.to_owned()),
+            ];
+            crate::session_tools_bridge::cache_grant(session_id, stamp, grants(), grant);
+            Ok(env)
+        },
+    )
 }
 
 #[cfg(test)]

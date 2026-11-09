@@ -1,3 +1,4 @@
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
 import type { SshHttpProxyOperation } from "../model/sshHttpProxyApproval";
 import type { SshEndpoint } from "../model/serverInventory";
@@ -5,7 +6,9 @@ import { useEffect, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Modal } from "../../../shared/ui/Modal";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { TextField } from "../../../shared/ui/TextField";
 import { Alert } from "../../../shared/ui/Alert";
 import { Progress } from "../../../shared/ui/Progress";
@@ -18,7 +21,7 @@ import {
   CloudUpload as Upload,
   RefreshCw,
 } from "../../../shared/ui/icons";
-import { t } from "../../../shared/i18n";
+import { formatNumber, t } from "../../../shared/i18n";
 import {
   cancelSftp,
   downloadSftp,
@@ -130,7 +133,7 @@ export function ServerFiles({
       const ticket = await approve({ kind: "sftpList", operationId: id, path: next });
       if (ticket === null || !canContinue(id)) return;
       const result = await listSftp(connectionId, next, id, ticket);
-      if (!mounted.current) return;
+      if (!canContinue(id)) return;
       setEntries(result);
       setPath(next);
       setQuery(next);
@@ -145,9 +148,9 @@ export function ServerFiles({
   return (
     <>
       <Modal title={t("SFTP files")} onClose={close} size="lg" fitViewport>
-        <div className="flex min-h-0 flex-col gap-3 p-4">
+        <div className="flex min-h-0 flex-col gap-3">
           {serverName ? (
-            <p className="truncate text-xs text-(--ui-text-muted)">
+            <p className="truncate text-ui-caption text-(--ui-text-muted)">
               {t("Target")}: {serverName}
             </p>
           ) : null}
@@ -161,12 +164,12 @@ export function ServerFiles({
             <Button
               variant="ghost"
               size="sm"
+              iconOnly
               disabled={busy || !loaded}
-              aria-label={t("Parent directory")}
-              title={t("Parent directory")}
+              label={t("Parent directory")}
               onClick={() => void load(sftpParent(path))}
             >
-              <ArrowUp className="size-3.5" />
+              <ArrowUp className="icon-sm" />
             </Button>
             <TextField
               label={t("Remote directory")}
@@ -177,7 +180,7 @@ export function ServerFiles({
               fieldClassName="min-w-0 flex-1"
             />
             <Button type="submit" loading={busy}>
-              {loaded ? <RefreshCw className="size-3.5" /> : null}
+              {loaded ? <RefreshCw className="icon-sm" /> : null}
               {t(loaded ? "Refresh" : "Open")}
             </Button>
             <Button
@@ -193,7 +196,7 @@ export function ServerFiles({
                   .catch((reason) => setError(String(reason)));
               }}
             >
-              <Upload className="size-3.5" />
+              <Upload className="icon-sm" />
               {t("Upload")}
             </Button>
             {busy ? (
@@ -218,20 +221,16 @@ export function ServerFiles({
                 max={progress?.totalBytes || 1}
                 tone="neutral"
               />
-              <span className="text-xs text-(--ui-text-muted)">
+              <span className="text-ui-caption text-(--ui-text-muted)">
                 {progress
-                  ? `${progress.transferredBytes.toLocaleString()}${progress.totalBytes != null ? ` / ${progress.totalBytes.toLocaleString()}` : ""} ${t("bytes")}`
+                  ? `${formatNumber(progress.transferredBytes)}${progress.totalBytes != null ? ` / ${formatNumber(progress.totalBytes)}` : ""} ${t("bytes")}`
                   : t("Waiting for transfer data…")}
               </span>
             </div>
           ) : null}
-          {error ? (
-            <Alert tone="danger" role="alert">
-              {error}
-            </Alert>
-          ) : null}
+          {error ? <Alert tone="danger">{error}</Alert> : null}
           {status ? (
-            <p role="status" className="text-xs text-(--ui-text-muted)">
+            <p role="status" className="text-ui-caption text-(--ui-text-muted)">
               {status}
             </p>
           ) : null}
@@ -246,14 +245,13 @@ export function ServerFiles({
                   setUpload({ ...upload, name: event.target.value });
                 }}
               />
-              <label className="flex items-start gap-2 text-xs">
-                <Checkbox
-                  checked={overwrite}
-                  disabled={busy}
-                  onChange={(event) => setOverwrite(event.target.checked)}
-                />
-                {t("I allow replacement if this remote filename already exists.")}
-              </label>
+              <Checkbox
+                checked={overwrite}
+                disabled={busy}
+                onChange={(event) => setOverwrite(event.target.checked)}
+                label={t("I allow replacement if this remote filename already exists.")}
+                className="flex items-start gap-2 text-ui-caption"
+              />
               <div className="flex gap-2">
                 <Button
                   disabled={!overwrite || busy || !upload.name}
@@ -279,7 +277,7 @@ export function ServerFiles({
                       if (mounted.current) {
                         setUpload(undefined);
                         setOverwrite(false);
-                        setStatus(`${t("Uploaded")}: ${bytes} ${t("bytes")}`);
+                        setStatus(`${t("Uploaded")}: ${formatNumber(bytes)} ${t("bytes")}`);
                       }
                     })
                   }
@@ -300,11 +298,16 @@ export function ServerFiles({
             </div>
           ) : null}
           {recoveries.length ? (
-            <details className="border-y border-stroke py-2 text-xs">
-              <summary className="cursor-pointer">
-                {t("Paused transfers")} ({recoveries.length})
-              </summary>
-              <div className="mbs-2 flex flex-col gap-2">
+            <Disclosure
+              size="sm"
+              className="border-y border-stroke py-2"
+              summary={
+                <>
+                  {t("Paused transfers")} ({recoveries.length})
+                </>
+              }
+            >
+              <div className="flex flex-col gap-2">
                 {recoveries.map((item) => (
                   <div key={item.id} className="flex flex-wrap items-center gap-2">
                     <span className="min-w-0 basis-full break-all">
@@ -352,11 +355,11 @@ export function ServerFiles({
                   </div>
                 ))}
               </div>
-            </details>
+            </Disclosure>
           ) : null}
           {review ? (
             <section
-              className="flex flex-col gap-2 border-b border-stroke pb-3 text-xs"
+              className="flex flex-col gap-2 border-b border-stroke pb-3 text-ui-caption"
               aria-label={t("Resume transfer review")}
             >
               <p className="break-all">
@@ -368,14 +371,13 @@ export function ServerFiles({
                 )}
               </p>
               {review.direction === "upload" ? (
-                <label className="flex items-start gap-2">
-                  <Checkbox
-                    checked={resumeOverwrite}
-                    disabled={busy}
-                    onChange={(event) => setResumeOverwrite(event.target.checked)}
-                  />
-                  {t("I allow replacement if this remote filename already exists.")}
-                </label>
+                <Checkbox
+                  checked={resumeOverwrite}
+                  disabled={busy}
+                  onChange={(event) => setResumeOverwrite(event.target.checked)}
+                  label={t("I allow replacement if this remote filename already exists.")}
+                  className="flex items-start gap-2"
+                />
               ) : null}
               <div className="flex gap-2">
                 <Button
@@ -415,20 +417,18 @@ export function ServerFiles({
               onChange={(event) => setFileSearch(event.target.value)}
             />
           ) : (
-            <p className="py-4 text-center text-xs text-(--ui-text-muted)">
-              {t("Open a directory to browse files.")}
-            </p>
+            <EmptyState size="inline" description={t("Open a directory to browse files.")} />
           )}
           <div className="max-h-[55dvh] min-h-0 overflow-auto" aria-label={t("Remote files")}>
             {visibleEntries.map((entry) => (
               <div
                 key={entry.name}
-                className="flex items-center gap-2 border-b border-stroke py-1.5 text-xs"
+                className="flex items-center gap-2 border-b border-stroke py-1.5 text-ui-caption"
               >
                 {entry.kind === "directory" ? (
-                  <Folder className="size-3.5 shrink-0" />
+                  <Folder className="icon-sm shrink-0" />
                 ) : (
-                  <File className="size-3.5 shrink-0" />
+                  <File className="icon-sm shrink-0" />
                 )}
                 {entry.kind === "directory" ? (
                   <Button
@@ -443,14 +443,14 @@ export function ServerFiles({
                       }
                     }}
                   >
-                    <span className="truncate" title={entry.name}>
-                      {entry.name}
-                    </span>
+                    <OverflowTooltip label={entry.name}>
+                      <span className="truncate">{entry.name}</span>
+                    </OverflowTooltip>
                   </Button>
                 ) : (
-                  <span className="min-w-0 flex-1 truncate" title={entry.name}>
-                    {entry.name}
-                  </span>
+                  <OverflowTooltip label={entry.name}>
+                    <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+                  </OverflowTooltip>
                 )}
                 {entry.kind === "symlink" ? (
                   <span className="text-(--ui-text-muted)">{t("Symlink; not followed")}</span>
@@ -458,9 +458,9 @@ export function ServerFiles({
                   <Button
                     variant="ghost"
                     size="sm"
+                    iconOnly
                     disabled={busy}
-                    aria-label={`${t("Download")} ${entry.name}`}
-                    title={t("Download")}
+                    label={`${t("Download")} ${entry.name}`}
                     onClick={() =>
                       void act(async (id) => {
                         const destination = await save({
@@ -481,30 +481,34 @@ export function ServerFiles({
                       })
                     }
                   >
-                    <Download className="size-3.5" />
+                    <Download className="icon-sm" />
                   </Button>
                 ) : null}
               </div>
             ))}
             {loaded && !entries.length ? (
-              <p className="py-6 text-center text-xs text-(--ui-text-muted)">
-                {t("Empty directory")}
-              </p>
+              <EmptyState size="inline" description={t("Empty directory")} />
             ) : null}
             {loaded && entries.length > 0 && visibleEntries.length === 0 ? (
-              <p className="py-6 text-center text-xs text-(--ui-text-muted)">
-                {t("No matching files.")}
-              </p>
+              <EmptyState
+                size="inline"
+                kind="filtered"
+                description={t("No matching files.")}
+                onReset={() => setFileSearch("")}
+              />
             ) : null}
           </div>
-          <details className="text-xs text-(--ui-text-muted)">
-            <summary className="cursor-pointer">{t("Connection and transfer details")}</summary>
-            <p className="mbs-2">
+          <Disclosure
+            size="sm"
+            className="text-ui-caption text-(--ui-text-muted)"
+            summary={t("Connection and transfer details")}
+          >
+            <p>
               {t(
                 "SFTP uses trusted OpenSSH keys or your agent. Downloads require a new local filename. Uploads require replacement consent. Interrupted transfers keep owned partials for explicit content-verified recovery. Symlink entries are not opened automatically.",
               )}
             </p>
-          </details>
+          </Disclosure>
         </div>
       </Modal>
       {proxy.dialog}

@@ -2,7 +2,120 @@
 use super::*;
 use std::sync::{Condvar, PoisonError};
 #[path = "leases.rs"]
-mod leases;
+pub(super) mod leases;
+#[path = "turn_paths.rs"]
+mod turn_paths;
+
+/// File metadata is still checked for legacy/mixed-version peers that do not
+/// publish a lease. Only changed payloads need reopening and JSON parsing.
+#[derive(Default)]
+pub(super) struct ActiveTurnIndex {
+    fingerprints: LockMap<String, String>,
+    legacy: BTreeMap<String, String>,
+    #[cfg(test)]
+    pub(super) payload_reads: usize,
+    #[cfg(test)]
+    pub(super) metadata_checks: usize,
+}
+
+#[cfg(unix)]
+fn turn_fingerprint(path: &Path) -> Result<Option<String>, String> {
+    use std::os::unix::fs::MetadataExt;
+    let meta = match std::fs::metadata(path) {
+        Ok(meta) => meta,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "Cannot read checkpoint metadata {}: {error}",
+                path.display()
+            ))
+        }
+    };
+    Ok(Some(format!(
+        "{}:{}:{}:{}:{}:{}:{}",
+        meta.dev(),
+        meta.ino(),
+        meta.mtime(),
+        meta.mtime_nsec(),
+        meta.ctime(),
+        meta.ctime_nsec(),
+        meta.len()
+    )))
+}
+
+#[cfg(windows)]
+fn turn_fingerprint(path: &Path) -> Result<Option<String>, String> {
+    use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
+    use windows_sys::Win32::Storage::FileSystem::{
+        FileBasicInfo, GetFileInformationByHandle, GetFileInformationByHandleEx,
+        BY_HANDLE_FILE_INFORMATION, FILE_BASIC_INFO, FILE_READ_ATTRIBUTES,
+    };
+    // Metadata-only access supplies the volume/file ID, not just size/mtime.
+    // A replacement retaining timestamps must still invalidate the cache.
+    let file = match std::fs::OpenOptions::new()
+        .access_mode(FILE_READ_ATTRIBUTES)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "Cannot read checkpoint metadata {}: {error}",
+                path.display()
+            ))
+        }
+    };
+    let mut info = BY_HANDLE_FILE_INFORMATION::default();
+    if unsafe {
+        GetFileInformationByHandle(file.as_raw_handle() as _, std::ptr::addr_of_mut!(info))
+    } == 0
+    {
+        return Err(format!(
+            "Cannot read checkpoint metadata {}: {}",
+            path.display(),
+            std::io::Error::last_os_error()
+        ));
+    }
+    let mut basic = FILE_BASIC_INFO::default();
+    if unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle() as _,
+            FileBasicInfo,
+            std::ptr::addr_of_mut!(basic).cast(),
+            std::mem::size_of::<FILE_BASIC_INFO>() as u32,
+        )
+    } == 0
+        || basic.ChangeTime <= 0
+    {
+        // Filesystems without a reliable change stamp keep the original
+        // read/parse verification; a preserved mtime is not proof of no edit.
+        return Ok(Some(format!("uncached:{}", uuid::Uuid::new_v4())));
+    }
+    // Windows can coalesce rapid writes into one change-time tick. In-place
+    // legacy writers may also restore the mtime, leaving every metadata field
+    // equal. Verify recent records until the timestamp has safely settled;
+    // archived records still take the metadata-only path.
+    let now_ticks = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_nanos()
+        / 100
+        + 116_444_736_000_000_000;
+    if now_ticks.saturating_sub(basic.ChangeTime as u128) <= 20_000_000 {
+        return Ok(Some(format!("uncached:{}", uuid::Uuid::new_v4())));
+    }
+    Ok(Some(format!(
+        "{}:{}:{}:{}:{}:{}:{}:{}",
+        info.dwVolumeSerialNumber,
+        info.nFileIndexHigh,
+        info.nFileIndexLow,
+        info.ftLastWriteTime.dwHighDateTime,
+        info.ftLastWriteTime.dwLowDateTime,
+        info.nFileSizeHigh,
+        info.nFileSizeLow,
+        basic.ChangeTime
+    )))
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,7 +141,10 @@ fn read_turn(dir: &Path) -> Result<Option<Turn>, String> {
             .map(Some)
             .map_err(|e| e.to_string()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error.to_string()),
+        Err(error) => Err(format!(
+            "Cannot read checkpoint {}: {error}",
+            dir.join("turn.json").display()
+        )),
     }
 }
 pub(super) fn has_recorded_turn(dir: &Path) -> Result<bool, String> {
@@ -65,20 +181,106 @@ fn output(root: &Path, args: &[&str], index: Option<&Path>) -> Result<Vec<u8>, S
     }
     Ok(out.stdout)
 }
-fn tree(root: &Path, dir: &Path, id: &str, phase: &str) -> Result<String, String> {
-    if git_output(root, &["config", "--bool", "core.sparseCheckout"])
-        .is_some_and(|v| v.starts_with(b"true"))
-    {
+/// Starts the private snapshot index from a copy of the real one, so `add -A`
+/// trusts its stat cache and hashes only changed files instead of the whole
+/// worktree. `read-tree -m HEAD` then resets the contents to HEAD exactly as a
+/// fresh `read-tree HEAD` would. Not used when an entry is assume-unchanged or
+/// skip-worktree (`add -A` would trust it blindly), with a split index, or when
+/// the real index cannot be merged (conflicts); the caller starts fresh.
+fn seed_index(root: &Path, index: &Path, real: &Path) -> bool {
+    let Some(listing) = git_output(root, &["ls-files", "-v", "-z"]) else {
+        return false;
+    };
+    // `ls-files -v` tags assume-unchanged entries in lower case, skip-worktree as S.
+    if listing.split(|b| *b == 0).any(|entry| {
+        entry
+            .first()
+            .is_some_and(|tag| tag.is_ascii_lowercase() || *tag == b'S')
+    }) {
+        return false;
+    }
+    std::fs::copy(real, index).is_ok()
+        && keep_index_timestamp(real, index)
+        && output(root, &["read-tree", "-m", "HEAD"], Some(index)).is_ok()
+}
+
+/// Gives the copy the real index's modification time: git treats entries
+/// modified at or after it as racily clean and re-hashes them. A copy stamped
+/// "now" would let a same-size edit within the timestamp granularity pass.
+fn keep_index_timestamp(real: &Path, index: &Path) -> bool {
+    let Ok(modified) = std::fs::metadata(real).and_then(|meta| meta.modified()) else {
+        return false;
+    };
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(index)
+        .and_then(|file| file.set_modified(modified))
+        .is_ok()
+}
+
+fn checkpoint_ref_prefix(dir: &Path) -> Result<String, String> {
+    let session = dir
+        .file_name()
+        .ok_or("Invalid checkpoint directory")?
+        .to_string_lossy();
+    Ok(format!("refs/bycoda/checkpoints/{session}/"))
+}
+
+/// Deletes this session's checkpoint refs in `root`, except those under `keep`.
+/// A ref only protects a turn's baseline tree from GC until `finish_turn` has
+/// copied what it needs, so the latest turn's is the only one worth keeping.
+fn drop_checkpoint_refs(root: &Path, prefix: &str, keep: Option<&str>) {
+    let Some(listing) = git_output(root, &["for-each-ref", "--format=%(refname)", prefix]) else {
+        return;
+    };
+    for name in String::from_utf8_lossy(&listing).lines() {
+        if name.is_empty() || keep.is_some_and(|keep| name.starts_with(keep)) {
+            continue;
+        }
+        let _ = output(root, &["update-ref", "-d", name], None);
+    }
+}
+
+/// `protect` keeps the tree reachable by a ref: the turn's baseline must survive
+/// GC until `finish_turn` reads it; the finishing tree is only read right away.
+fn tree(root: &Path, dir: &Path, id: &str, phase: &str, protect: bool) -> Result<String, String> {
+    // One read for both settings; `--get-regexp` lower-cases the keys.
+    let config = git_output(
+        root,
+        &[
+            "config",
+            "--bool",
+            "--get-regexp",
+            r"^core\.(sparsecheckout|splitindex)$",
+        ],
+    )
+    .map(|v| String::from_utf8_lossy(&v).into_owned())
+    .unwrap_or_default();
+    let enabled = |key: &str| config.lines().any(|line| line == format!("{key} true"));
+    if enabled("core.sparsecheckout") {
         return Err("Workspace checkpoints are unavailable for sparse checkouts".into());
     }
     let index = dir.join(format!("index-{}", uuid::Uuid::new_v4()));
     let result = (|| {
-        let initial = if head(root).is_some() {
-            "HEAD"
-        } else {
-            "--empty"
-        };
-        output(root, &["read-tree", initial], Some(&index))?;
+        // The real index's path and HEAD in one call; it fails without a commit.
+        let located = git_output(
+            root,
+            &["rev-parse", "--git-path", "index", "--verify", "HEAD"],
+        )
+        .and_then(|v| {
+            let text = String::from_utf8_lossy(&v).into_owned();
+            text.lines().next().map(|line| root.join(line.trim()))
+        });
+        let has_head = located.is_some() || head(root).is_some();
+        let seeded = !enabled("core.splitindex")
+            && located
+                .as_deref()
+                .is_some_and(|real| seed_index(root, &index, real));
+        if !seeded {
+            let _ = std::fs::remove_file(&index);
+            let initial = if has_head { "HEAD" } else { "--empty" };
+            output(root, &["read-tree", initial], Some(&index))?;
+        }
         output(root, &["add", "-A", "--", "."], Some(&index))?;
         let tree = String::from_utf8(output(root, &["write-tree"], Some(&index))?)
             .map_err(|e| e.to_string())?
@@ -86,12 +288,10 @@ fn tree(root: &Path, dir: &Path, id: &str, phase: &str) -> Result<String, String
             .to_owned();
         // A namespaced tree reference protects snapshot blobs from Git GC. It
         // creates no commit and never touches the real staging index or HEAD.
-        let session = dir
-            .file_name()
-            .ok_or("Invalid checkpoint directory")?
-            .to_string_lossy();
-        let reference = format!("refs/bycoda/checkpoints/{session}/{id}/{phase}");
-        output(root, &["update-ref", &reference, &tree], None)?;
+        if protect {
+            let reference = format!("{}{id}/{phase}", checkpoint_ref_prefix(dir)?);
+            output(root, &["update-ref", &reference, &tree], None)?;
+        }
         Ok(tree)
     })();
     let _ = std::fs::remove_file(&index);
@@ -208,7 +408,7 @@ impl RecoveryPlan {
         for (ticket, session, turn) in self.active {
             let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 self.store.exclusive(&session, &[&turn.cwd], |s| {
-                    s.finish_turn(&session, &turn.cwd, &turn.id, true)
+                    s.finish_checkpoint_turn(&session, &turn.cwd, &turn.id, true)
                 })
             }));
             match outcome {
@@ -238,6 +438,106 @@ impl RecoveryPlan {
 }
 
 impl CheckpointStore {
+    /// Refresh review metadata without a Git tree snapshot. Unsafe older aggregate
+    /// paths stay blocked individually instead of poisoning every later clean file.
+    pub(super) fn begin_checkpoint_turn(
+        &self,
+        session: &str,
+        cwd: &str,
+        id: &str,
+        user_block_id: &str,
+        experimental_exact_git_rewind: bool,
+    ) -> Result<(), String> {
+        if experimental_exact_git_rewind {
+            // The exact path must establish its Git baseline before any same-ID
+            // lightweight active record could trigger begin_turn's idempotence.
+            self.begin_turn(session, cwd, id)?;
+            return self.begin_files_turn(session, cwd, id, user_block_id);
+        }
+        self.ensure_timed(session, cwd)?;
+        let dir = self.session_dir(session);
+        let previous = read_turn(&dir)?;
+        if previous
+            .as_ref()
+            .is_some_and(|turn| turn.active && turn.id == id)
+        {
+            return self.begin_files_turn(session, cwd, id, user_block_id);
+        }
+        self.retire_resolved_paths(session, cwd)?;
+        let root = project_root(cwd)?;
+        let current_head = if has_git_marker(&root)? {
+            head(&root)
+        } else {
+            None
+        };
+        if let Some(old) = previous {
+            if old.active || old.shared || old.error.is_some() || old.head != current_head {
+                if let Some(mut manifest) = self.load_matching(session, cwd)? {
+                    manifest
+                        .undo_blocked
+                        .extend(manifest.touched.iter().cloned());
+                    write_manifest(&dir, &manifest)?;
+                }
+            }
+            if old.active {
+                leases::release(&self.leases, session, &old.id)?;
+            }
+        }
+        self.begin_files_turn(session, cwd, id, user_block_id)?;
+        save_turn(
+            &dir,
+            &Turn {
+                id: id.into(),
+                cwd: cwd.into(),
+                before: None,
+                head: current_head,
+                active: true,
+                shared: leases::shared(&self.leases, session, id)?,
+                error: None,
+                prepared_before: BTreeSet::new(),
+                dirty_before: BTreeMap::new(),
+                captured: BTreeSet::new(),
+            },
+        )
+    }
+
+    pub(super) fn light_turn_active(&self, session: &str, id: &str) -> Result<bool, String> {
+        Ok(read_turn(&self.session_dir(session))?
+            .is_some_and(|turn| turn.active && turn.id == id && turn.before.is_none()))
+    }
+
+    pub(super) fn settle_light_turn(
+        &self,
+        session: &str,
+        id: &str,
+        shared: bool,
+    ) -> Result<(), String> {
+        let dir = self.session_dir(session);
+        if let Some(mut turn) =
+            read_turn(&dir)?.filter(|turn| turn.active && turn.id == id && turn.before.is_none())
+        {
+            turn.shared |= shared;
+            turn.active = false;
+            save_turn(&dir, &turn)?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn finish_checkpoint_turn(
+        &self,
+        session: &str,
+        cwd: &str,
+        id: &str,
+        interrupted: bool,
+    ) -> Result<(), String> {
+        // A failed file-history settle must not leave the review turn recording:
+        // settle the review turn regardless, then report the first error.
+        let files = self.finish_files_turn(session, cwd, id, interrupted);
+        let review = self.finish_turn(session, cwd, id, interrupted);
+        files?;
+        review
+    }
+
     /// Retire accepted results in the existing manifest, without touching the
     /// working tree or the owner's index. A later edit must get a new baseline.
     pub(super) fn retire_resolved_paths(&self, session_id: &str, cwd: &str) -> Result<(), String> {
@@ -284,7 +584,11 @@ impl CheckpointStore {
                 .split(|b| *b == 0)
                 .filter(|p| !p.is_empty())
             {
-                pending.insert(String::from_utf8(path.to_vec()).map_err(|e| e.to_string())?);
+                // Manifest paths are UTF-8; an unrelated non-UTF-8 Git path
+                // cannot match one and must not abort finalization.
+                if let Ok(path) = std::str::from_utf8(path) {
+                    pending.insert(path.to_owned());
+                }
             }
         }
         let mut resolved = Vec::new();
@@ -356,18 +660,92 @@ impl CheckpointStore {
     }
     fn active_turns(&self, session_id: &str, cwd: &str) -> Result<Vec<(PathBuf, Turn)>, String> {
         let mut turns = Vec::new();
-        if !self.root.exists() {
-            return Ok(turns);
-        }
-        for entry in std::fs::read_dir(&self.root).map_err(|e| e.to_string())? {
+        let entries = match std::fs::read_dir(&self.root) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(turns),
+            Err(error) => return Err(error.to_string()),
+        };
+        let mut known = LockMap::new();
+        let mut existing = HashSet::new();
+        for entry in entries {
             let entry = entry.map_err(|e| e.to_string())?;
-            if entry.file_name().to_string_lossy() == session_id {
+            let session = entry.file_name().to_string_lossy().into_owned();
+            // Finder/Explorer metadata and scratch files are not session records.
+            // Do not follow symlinks into another checkpoint store either.
+            if validate_id(&session, "session").is_err()
+                || !entry.file_type().map_err(|e| e.to_string())?.is_dir()
+            {
                 continue;
             }
-            if let Some(turn) = read_turn(&entry.path())? {
-                if turn.active && overlap(cwd, &turn.cwd) {
-                    turns.push((entry.path(), turn));
+            existing.insert(session.clone());
+            #[cfg(test)]
+            {
+                self.active_turn_index.lock().unwrap().metadata_checks += 1;
+            }
+            let fingerprint = turn_fingerprint(&entry.path().join("turn.json"))?
+                .unwrap_or_else(|| "missing".into());
+            let unchanged = self
+                .active_turn_index
+                .lock()
+                .map_err(|_| "Checkpoint active index poisoned")?
+                .fingerprints
+                .get(&session)
+                == Some(&fingerprint);
+            if !unchanged {
+                let turn = read_turn(&entry.path())?;
+                let mut index = self
+                    .active_turn_index
+                    .lock()
+                    .map_err(|_| "Checkpoint active index poisoned")?;
+                #[cfg(test)]
+                {
+                    index.payload_reads += 1;
                 }
+                if let Some(turn) = turn.filter(|turn| turn.active) {
+                    index.legacy.insert(session.clone(), turn.cwd);
+                } else {
+                    index.legacy.remove(&session);
+                }
+            }
+            // Overflow is verified uncached instead of retaining unbounded names.
+            if known.len() < 32_768 {
+                known.insert(session, fingerprint);
+            }
+        }
+        let mut candidates: BTreeSet<String> = {
+            let mut index = self
+                .active_turn_index
+                .lock()
+                .map_err(|_| "Checkpoint active index poisoned")?;
+            index.legacy.retain(|session, _| existing.contains(session));
+            index.fingerprints = known;
+            index
+                .legacy
+                .iter()
+                .filter(|(_, root)| overlap(cwd, root))
+                .map(|(session, _)| session.clone())
+                .collect()
+        };
+        candidates.extend(leases::sessions(&self.leases, "native", cwd)?);
+        for session in candidates {
+            if session == session_id {
+                continue;
+            }
+            let dir = self.session_dir(&session);
+            #[cfg(test)]
+            {
+                self.active_turn_index.lock().unwrap().payload_reads += 1;
+            }
+            if let Some(turn) = read_turn(&dir)?.filter(|turn| turn.active) {
+                if overlap(cwd, &turn.cwd) {
+                    turns.push((dir, turn));
+                }
+            } else {
+                self.active_turn_index
+                    .lock()
+                    .map_err(|_| "Checkpoint active index poisoned")?
+                    .legacy
+                    .remove(&session);
             }
         }
         Ok(turns)
@@ -514,7 +892,7 @@ impl CheckpointStore {
                 other.shared = true;
                 save_turn(&other_dir, &other)?;
             }
-            tree(&root, &dir, id, "before")
+            tree(&root, &dir, id, "before", true)
         })();
         match capture {
             Ok(before) => turn.before = Some(before),
@@ -551,7 +929,7 @@ impl CheckpointStore {
                     .unwrap_or_else(|| "Missing turn baseline".into())
             })?;
             let root = project_root(cwd)?;
-            let after = tree(&root, &dir, id, "after")?;
+            let after = tree(&root, &dir, id, "after", false)?;
             let changed = output(
                 &root,
                 &[
@@ -575,16 +953,22 @@ impl CheckpointStore {
             let paths = changed
                 .split(|b| *b == 0)
                 .filter(|p| !p.is_empty())
-                .map(|p| String::from_utf8(p.to_vec()).map_err(|e| e.to_string()))
-                .collect::<Result<Vec<_>, _>>()?;
-            // A checkout-wide diff cannot attribute simultaneous shell edits.
-            // Only this session's explicit tool completions prove membership.
-            let paths: Vec<_> = paths
-                .into_iter()
-                .filter(|path| {
-                    (!ambiguous && turn.captured.is_empty()) || turn.captured.contains(path)
+                // Compare raw Git path bytes before decoding: unrelated Unix names
+                // need not be UTF-8 and must never alias a captured name.
+                .filter(|path| turn_paths::includes(path, &turn.captured, ambiguous))
+                // The manifest keys paths by String. A non-UTF-8 name cannot be
+                // represented there (and lossy decoding could alias another file),
+                // so skip it with a warning instead of failing the whole finalize.
+                .filter_map(|p| match String::from_utf8(p.to_vec()) {
+                    Ok(path) => Some(path),
+                    Err(_) => {
+                        eprintln!(
+                            "Checkpoint skipped a changed path that is not valid UTF-8 for session {session_id}"
+                        );
+                        None
+                    }
                 })
-                .collect();
+                .collect::<Vec<_>>();
             if paths.len() > MAX_SNAPSHOT_FILES {
                 return Err("Too many changed files for workspace checkpoint".into());
             }
@@ -699,6 +1083,12 @@ impl CheckpointStore {
             write_manifest(&dir, &manifest)
         })();
         turn.active = false;
+        if turn.before.is_some() {
+            // Earlier turns' baselines are settled; only this turn's ref stays.
+            if let (Ok(root), Ok(prefix)) = (project_root(cwd), checkpoint_ref_prefix(&dir)) {
+                drop_checkpoint_refs(&root, &prefix, Some(&format!("{prefix}{id}/")));
+            }
+        }
         turn.shared |= leases::shared(&self.leases, session_id, id)?;
         if let Err(error) = &result {
             turn.error = Some(error.clone());
@@ -726,7 +1116,9 @@ impl CheckpointStore {
         };
         for entry in entries.flatten() {
             let session = entry.file_name().to_string_lossy().into_owned();
-            if validate_id(&session, "session").is_err() {
+            if validate_id(&session, "session").is_err()
+                || !entry.file_type().is_ok_and(|kind| kind.is_dir())
+            {
                 continue;
             }
             match read_turn(&entry.path()) {
@@ -760,7 +1152,10 @@ impl CheckpointStore {
         let mut removed = 0;
         for entry in entries.flatten() {
             let session = entry.file_name().to_string_lossy().into_owned();
-            if validate_id(&session, "session").is_err() || known_sessions.contains(&session) {
+            if validate_id(&session, "session").is_err()
+                || known_sessions.contains(&session)
+                || !entry.file_type().is_ok_and(|kind| kind.is_dir())
+            {
                 continue;
             }
             let dir = entry.path();
@@ -776,12 +1171,13 @@ impl CheckpointStore {
             }
             let result = self.exclusive(&session, &[], |_| {
                 // Re-check under the session gate: a turn may have begun since.
-                if !old_enough(&dir)
-                    || read_turn(&dir).map_or(true, |t| t.is_some_and(|t| t.active))
-                {
-                    return Ok(false);
-                }
-                std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+                let turn = match read_turn(&dir) {
+                    Ok(turn) if old_enough(&dir) && !turn.as_ref().is_some_and(|t| t.active) => {
+                        turn
+                    }
+                    _ => return Ok(false),
+                };
+                discard_session_dir(&dir, turn)?;
                 Ok(true)
             });
             if matches!(result, Ok(true)) {
@@ -789,6 +1185,238 @@ impl CheckpointStore {
             }
         }
         removed
+    }
+
+    /// Keeps the checkpoint store inside a total size and idle-age budget across
+    /// sessions (each session is already capped on its own). Oldest idle sessions go
+    /// first and a session with an active turn is never touched. Sessions used within
+    /// `MIN_EVICT_IDLE` only lose their rebuildable baseline cache. Returns freed bytes.
+    pub(crate) fn enforce_budget(&self, max_bytes: u64, max_idle: std::time::Duration) -> u64 {
+        const MIN_EVICT_IDLE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+        struct Entry {
+            session: String,
+            dir: PathBuf,
+            last_used: std::time::SystemTime,
+            bytes: u64,
+        }
+        let Ok(entries) = std::fs::read_dir(&self.root) else {
+            return 0;
+        };
+        let now = std::time::SystemTime::now();
+        let idle_of =
+            |last_used: std::time::SystemTime| now.duration_since(last_used).unwrap_or_default();
+        let mut total = 0u64;
+        let mut idle = Vec::new();
+        for entry in entries.flatten() {
+            let session = entry.file_name().to_string_lossy().into_owned();
+            if validate_id(&session, "session").is_err()
+                || !entry.file_type().is_ok_and(|kind| kind.is_dir())
+            {
+                continue;
+            }
+            let dir = entry.path();
+            let bytes = file_revert::dir_bytes(&dir);
+            total = total.saturating_add(bytes);
+            // An unreadable record is never evicted: its state is unknown.
+            let active = read_turn(&dir).map_or(true, |turn| turn.is_some_and(|t| t.active))
+                || file_revert::has_active_files_turn(&dir).unwrap_or(true);
+            if active {
+                continue;
+            }
+            idle.push(Entry {
+                session,
+                last_used: last_activity(&dir),
+                dir,
+                bytes,
+            });
+        }
+        let start_total = total;
+        idle.sort_by_key(|entry| entry.last_used);
+        let mut evicted = HashSet::new();
+        let evict_whole = |entry: &Entry, total: &mut u64| {
+            let result = self.exclusive(&entry.session, &[], |_| {
+                // Re-check under the session gate: a turn may have begun since.
+                let turn = match read_turn(&entry.dir) {
+                    Ok(turn)
+                        if !turn.as_ref().is_some_and(|t| t.active)
+                            && !file_revert::has_active_files_turn(&entry.dir).unwrap_or(true) =>
+                    {
+                        turn
+                    }
+                    _ => return Ok(false),
+                };
+                discard_session_dir(&entry.dir, turn)?;
+                Ok(true)
+            });
+            match result {
+                Ok(true) => {
+                    *total = total.saturating_sub(entry.bytes);
+                    true
+                }
+                Ok(false) => false,
+                Err(error) => {
+                    eprintln!(
+                        "[checkpoint] budget eviction of {} failed: {error}",
+                        entry.session
+                    );
+                    false
+                }
+            }
+        };
+        // Age first: nothing keeps history of a session idle for months.
+        for entry in &idle {
+            if idle_of(entry.last_used) >= max_idle && evict_whole(entry, &mut total) {
+                evicted.insert(entry.session.clone());
+            }
+        }
+        // Then size, cheapest loss first: rebuildable baseline caches, oldest session first.
+        for entry in &idle {
+            if total <= max_bytes {
+                break;
+            }
+            if evicted.contains(&entry.session) {
+                continue;
+            }
+            let freed = self
+                .exclusive(&entry.session, &[], |_| {
+                    file_revert::drop_baseline_cache(&entry.dir)
+                })
+                .unwrap_or(0);
+            total = total.saturating_sub(freed);
+        }
+        for entry in &idle {
+            if total <= max_bytes {
+                break;
+            }
+            if evicted.contains(&entry.session) || idle_of(entry.last_used) < MIN_EVICT_IDLE {
+                continue;
+            }
+            if evict_whole(entry, &mut total) {
+                evicted.insert(entry.session.clone());
+            }
+        }
+        if total > max_bytes {
+            eprintln!(
+                "[checkpoint] store is {} MiB, over its {} MiB budget; recent or active sessions are kept",
+                total >> 20,
+                max_bytes >> 20
+            );
+        }
+        start_total.saturating_sub(total)
+    }
+}
+
+/// Removes a session's snapshot directory together with the Git refs that kept its
+/// trees alive. The caller holds the session gate and has checked there is no active turn.
+fn discard_session_dir(dir: &Path, turn: Option<Turn>) -> Result<(), String> {
+    if let (Some(turn), Ok(prefix)) = (turn, checkpoint_ref_prefix(dir)) {
+        if let Ok(root) = project_root(&turn.cwd) {
+            drop_checkpoint_refs(&root, &prefix, None);
+        }
+    }
+    std::fs::remove_dir_all(dir).map_err(|e| e.to_string())
+}
+
+/// Latest write to any record of the session (the directory mtime alone misses
+/// in-place rewrites of nested files).
+fn last_activity(dir: &Path) -> std::time::SystemTime {
+    ["turn.json", "manifest.json", "files-history.json"]
+        .iter()
+        .filter_map(|name| {
+            std::fs::metadata(dir.join(name))
+                .and_then(|meta| meta.modified())
+                .ok()
+        })
+        .chain(std::fs::metadata(dir).and_then(|meta| meta.modified()).ok())
+        .max()
+        .unwrap_or(std::time::UNIX_EPOCH)
+}
+
+#[cfg(test)]
+mod active_index_tests {
+    use super::*;
+
+    struct Scratch(PathBuf);
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    fn fixture() -> (Scratch, CheckpointStore) {
+        let root =
+            std::env::temp_dir().join(format!("bycoda-checkpoint-index-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        (Scratch(root.clone()), CheckpointStore::new(root))
+    }
+    fn inactive() -> String {
+        r#"{"id":"old","cwd":"/project","before":null,"head":null,"active":false,"shared":false,"error":null}"#.into()
+    }
+
+    #[test]
+    fn checkpoint_active_index_checks_metadata_without_reparsing_archive_payloads() {
+        for count in [10, 1000, 10_000] {
+            let (_scratch, store) = fixture();
+            let bytes = inactive();
+            for index in 0..count {
+                let dir = store.root.join(format!("history-{index}"));
+                std::fs::create_dir(&dir).unwrap();
+                std::fs::write(dir.join("turn.json"), &bytes).unwrap();
+            }
+            // The optimization targets archived records. Fresh Windows records
+            // are deliberately verified while their change-time tick is recent.
+            #[cfg(windows)]
+            std::thread::sleep(std::time::Duration::from_millis(2100));
+            assert!(store.active_turns("reader", "/project").unwrap().is_empty());
+            let before = {
+                let index = store.active_turn_index.lock().unwrap();
+                (index.payload_reads, index.metadata_checks)
+            };
+            assert_eq!(before.0, count);
+            assert!(store.active_turns("reader", "/project").unwrap().is_empty());
+            let index = store.active_turn_index.lock().unwrap();
+            assert_eq!(index.payload_reads - before.0, 0);
+            assert_eq!(index.metadata_checks - before.1, count);
+            eprintln!(
+                "checkpoint index history={count} warm payload reads=0 metadata checks={count}"
+            );
+        }
+    }
+
+    #[test]
+    fn checkpoint_active_index_detects_replaced_legacy_records_without_leases() {
+        let (_scratch, store) = fixture();
+        let dir = store.root.join("legacy");
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("turn.json");
+        let old = inactive();
+        std::fs::write(&path, &old).unwrap();
+        assert!(store.active_turns("reader", "/project").unwrap().is_empty());
+        let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let next = old.replace("\"active\":false", "\"active\":true ");
+        assert_eq!(next.len(), old.len());
+        let replacement = dir.join("replacement.tmp");
+        std::fs::write(&replacement, next).unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&replacement)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+        std::fs::rename(&replacement, &path).unwrap();
+        assert_eq!(store.active_turns("reader", "/project").unwrap().len(), 1);
+        std::fs::write(&path, &old).unwrap();
+        assert!(store.active_turns("reader", "/project").unwrap().is_empty());
+        let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+        std::fs::write(&path, old.replace("\"active\":false", "\"active\":true ")).unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+        assert_eq!(store.active_turns("reader", "/project").unwrap().len(), 1);
+        std::fs::write(&path, "broken json").unwrap();
+        assert!(store.active_turns("reader", "/project").is_err());
     }
 }
 
@@ -798,14 +1426,40 @@ pub async fn session_checkpoint_begin_turn(
     session_id: String,
     cwd: String,
     turn_id: String,
+    user_block_id: Option<String>,
+    experimental_exact_git_rewind: Option<bool>,
 ) -> Result<(), String> {
     validate_id(&session_id, "session")?;
     validate_id(&turn_id, "turn")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.coordinated(&session_id, &[&cwd], |s| {
-            s.begin_turn(&session_id, &cwd, &turn_id)
-        })
+        // Another session's capture in the same checkout must not stall this send
+        // indefinitely. Past the bound the turn runs without a file baseline: undo for
+        // this message is unavailable, no data is touched.
+        let result = store.exclusive_until(
+            &session_id,
+            &[&cwd],
+            Some(Instant::now() + BEGIN_GATE_WAIT),
+            |s| {
+                s.begin_checkpoint_turn(
+                    &session_id,
+                    &cwd,
+                    &turn_id,
+                    user_block_id.as_deref().unwrap_or(&turn_id),
+                    experimental_exact_git_rewind.unwrap_or(false),
+                )
+            },
+        );
+        match result {
+            Err(error) if error.contains(CHECKPOINT_BUSY) => {
+                eprintln!(
+                    "[checkpoint] begin skipped for turn {turn_id}: checkpoint busy for over {}s; file history is unavailable for this message",
+                    BEGIN_GATE_WAIT.as_secs()
+                );
+                Ok(())
+            }
+            other => other,
+        }
     })
     .await
     .map_err(|e| e.to_string())?
@@ -822,8 +1476,8 @@ pub async fn session_checkpoint_finish_turn(
     validate_id(&turn_id, "turn")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.coordinated(&session_id, &[&cwd], |s| {
-            s.finish_turn(&session_id, &cwd, &turn_id, interrupted.unwrap_or(false))
+        store.exclusive(&session_id, &[&cwd], |s| {
+            s.finish_checkpoint_turn(&session_id, &cwd, &turn_id, interrupted.unwrap_or(false))
         })
     })
     .await

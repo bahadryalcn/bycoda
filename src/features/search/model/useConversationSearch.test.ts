@@ -92,6 +92,19 @@ it("exposes a conversation error and recovers with Retry", async () => {
   expect(searchSessionContent).toHaveBeenCalledTimes(2);
   expect(view.error).toBeNull();
 });
+
+it("does not retry the index on later queries after an explicit retry completed", async () => {
+  searchSessionContent.mockResolvedValue(empty);
+  await render("first");
+  await advance(200);
+  act(() => view.retry());
+  await advance(200);
+  expect(searchSessionContent.mock.calls[1][0].retryIndex).toBe(true);
+  await render("second");
+  await advance(200);
+  expect(searchSessionContent.mock.calls[2][0].query).toBe("second");
+  expect(searchSessionContent.mock.calls[2][0].retryIndex).toBeUndefined();
+});
 it("cancels an old query and rejects its late result", async () => {
   let resolve!: (value: SessionContentResult) => void;
   searchSessionContent
@@ -123,4 +136,42 @@ it("retains incomplete results if an indexing poll fails and stops polling until
   expect(view.error).toBe("poll failed");
   await advance(6000);
   expect(searchSessionContent).toHaveBeenCalledTimes(2);
+});
+
+it("shows healthy committed hits with a background index error and retries only on request", async () => {
+  const healthy: SessionContentResult = {
+    ...empty,
+    pending: 1,
+    indexError: "Index failed",
+    sessions: [
+      {
+        sessionId: "healthy",
+        cwd: "/repo",
+        harness: "codex",
+        title: "Healthy",
+        titleRanges: [],
+        createdAt: 1,
+        updatedAt: 1,
+        archived: false,
+        hitCount: 1,
+        hits: [],
+      },
+    ],
+  };
+  searchSessionContent
+    .mockResolvedValueOnce(healthy)
+    .mockResolvedValueOnce({ ...healthy, indexError: undefined })
+    .mockResolvedValue(empty);
+  await render("needle");
+  await advance(200);
+  expect(view.result.sessions[0].sessionId).toBe("healthy");
+  expect(view.error).toBe("Index failed");
+  await advance(6000);
+  expect(searchSessionContent).toHaveBeenCalledTimes(1);
+  act(() => view.retry());
+  await advance(200);
+  expect(searchSessionContent.mock.calls[1][0].retryIndex).toBe(true);
+  await advance(2000);
+  expect(searchSessionContent).toHaveBeenCalledTimes(3);
+  expect(searchSessionContent.mock.calls[2][0].retryIndex).toBeUndefined();
 });

@@ -1,13 +1,15 @@
-import { SettingsFeedback } from "./settingsControls";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { Group, Row, SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
-import { ask } from "@tauri-apps/plugin-dialog";
-import { Pencil, Plus, Trash2 } from "../../../shared/ui/icons";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Modal } from "../../../shared/ui/Modal";
+import { MoreHorizontal, Plus } from "../../../shared/ui/icons";
+import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 
 import { loginHarness } from "../../../integrations/harness/core/auth";
 
-import { HARNESS_TITLE } from "../../sessions/model/session";
+import { HARNESS_TITLE, type HarnessId } from "../../sessions";
 
 import {
   newProviderAccount,
@@ -38,7 +40,9 @@ import {
   useProviderAccountIdentities,
 } from "../../providers/model/providerAccountIdentity";
 import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubtitle";
-import { AccountColorPicker } from "../../providers/ui/AccountColorPicker";
+import { AccountColorPopover } from "../../providers/ui/AccountColorPicker";
+import { AccountColorDot } from "../../providers/ui/AccountColorDot";
+import { exhaustedExplanation } from "../../providers/ui/providerStatus";
 
 import {
   accountStatus,
@@ -53,16 +57,14 @@ import { AccountStatusLabel, AccountUsageRefresh } from "../../providers/ui/Prov
 
 import { AntigravityAccountSettings } from "./AntigravityAccountSettings";
 import { TerminalProfileDiscovery } from "./TerminalProfileDiscovery";
+import { ProviderAccountEditor, type AccountEditor } from "./ProviderAccountEditor";
 import { Button } from "../../../shared/ui/Button";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
-import { TextField } from "../../../shared/ui/TextField";
 import {
   hasProbedHarnessAvailability,
   isHarnessAvailable,
   probeHarnessAvailability,
 } from "../../../integrations/harness/core/availability";
 import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
-import type { HarnessId } from "../../sessions/model/session";
 
 const SETTINGS_HARNESSES: readonly HarnessId[] = [
   ...PROVIDER_ACCOUNT_PROVIDERS,
@@ -71,22 +73,57 @@ const SETTINGS_HARNESSES: readonly HarnessId[] = [
   "antigravity",
 ];
 
-export type AccountEditor = {
-  provider: ProviderAccountProvider;
-  accountId?: string;
-  label: string;
-};
+/** Serialized account list: changes whenever any provider's accounts change in this or another window. */
+const providerAccountsSnapshot = () =>
+  JSON.stringify(PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts));
 
-export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
+export function ProviderAccountsSettings({
+  harness,
+  onBusyChange,
+}: {
+  harness?: HarnessId;
+  onBusyChange?: (busy: boolean) => void;
+}) {
   useLocale();
-  const [version, setVersion] = useState(0);
-  const [editor, setEditor] = useState<AccountEditor | null>(null);
+  const accountsRevision = useSyncExternalStore(
+    subscribeProviderAccounts,
+    providerAccountsSnapshot,
+    providerAccountsSnapshot,
+  );
+  // Local refreshes cover sign-in and removal results the account list itself does not show.
+  const [refreshes, setVersion] = useState(0);
+  const version = `${refreshes}|${accountsRevision}`;
+  const [editor, setEditorState] = useState<AccountEditor | null>(null);
   const [working, setWorking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<ProviderAccount | null>(null);
+  // The overflow menu and the colour popover share the row's menu button as their anchor.
+  const [menu, setMenu] = useState<{
+    account: ProviderAccount;
+    anchor: HTMLElement;
+  } | null>(null);
+  const [colorFor, setColorFor] = useState<{
+    account: ProviderAccount;
+    anchor: HTMLElement;
+  } | null>(null);
   const [completedSignIn, setCompletedSignIn] = useState<HarnessId | null>(null);
   const busy = useRef(false);
   const pendingAccount = useRef<ProviderAccount | null>(null);
   const registrationAbort = useRef<AbortController | null>(null);
+  const editorOpen = useRef(false);
+  // The parent hears about busy where it changes: an operation starts or ends, or the editor opens or closes.
+  const setEditor = (next: AccountEditor | null) => {
+    editorOpen.current = next !== null;
+    setEditorState(next);
+    onBusyChange?.(busy.current || editorOpen.current);
+  };
+  useEffect(
+    () => () => {
+      registrationAbort.current?.abort();
+      onBusyChange?.(false);
+    },
+    [onBusyChange],
+  );
 
   const cancelEditor = () => {
     if (registrationAbort.current) {
@@ -102,6 +139,7 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
     if (busy.current) return false;
     busy.current = true;
     setWorking(key);
+    onBusyChange?.(true);
     setError(null);
     setCompletedSignIn(null);
     return true;
@@ -109,9 +147,8 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
   const finish = () => {
     busy.current = false;
     setWorking(null);
+    onBusyChange?.(editorOpen.current);
   };
-
-  useEffect(() => subscribeProviderAccounts(() => setVersion((value) => value + 1)), []);
 
   const startAdd = (provider: ProviderAccountProvider) => {
     if (busy.current) return;
@@ -194,30 +231,26 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
     }
   };
 
+  const removeAccountMessage = (account: ProviderAccount) =>
+    account.id.startsWith("terminal-")
+      ? t(
+          "Disconnect “{p0}”? Running turns for this account will stop. Its terminal sign-in, settings and conversation history stay intact.",
+          { p0: account.label },
+        )
+      : account.id === DEFAULT_PROVIDER_ACCOUNT_ID
+        ? t(
+            "Remove “{p0}”? This signs out of the shared {p1} CLI profile and stops its running turns. CLI settings and conversation history stay on disk.",
+            { p0: account.label, p1: HARNESS_TITLE[account.provider] },
+          )
+        : t(
+            "Remove “{p0}”? Its stored credentials will be deleted and any running turns for this account will stop. Existing conversations stay in history, but cannot continue until you switch accounts.",
+            { p0: account.label },
+          );
+
   const removeAccount = async (account: ProviderAccount) => {
     const key = `remove:${account.provider}:${account.id}`;
     if (!begin(key)) return;
     try {
-      const confirmed = await ask(
-        account.id.startsWith("terminal-")
-          ? `Disconnect “${account.label}”? Running turns for this account will stop. Its terminal sign-in, settings and conversation history stay intact.`
-          : account.id === DEFAULT_PROVIDER_ACCOUNT_ID
-            ? `Remove “${account.label}”? This signs out of the shared ${HARNESS_TITLE[account.provider]} CLI profile and stops its running turns. CLI settings and conversation history stay on disk.`
-            : `Remove “${account.label}”? Its stored credentials will be deleted and any running turns for this account will stop. Existing conversations stay in history, but cannot continue until you switch accounts.`,
-        {
-          get title() {
-            return t("Remove {p0} account", {
-              p0: HARNESS_TITLE[account.provider],
-            });
-          },
-          kind: "warning",
-          okLabel: "Remove account",
-          get cancelLabel() {
-            return t("Cancel");
-          },
-        },
-      );
-      if (!confirmed) return;
       await removeProviderAccountCredentials(account.provider, account.id);
       clearCachedRateLimits(account.provider, account.id);
       setVersion((value) => value + 1);
@@ -262,10 +295,17 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
   };
 
   const identities = useProviderAccountIdentities(
-    PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts),
+    harness
+      ? supportsProviderAccounts(harness)
+        ? providerAccounts(harness)
+        : []
+      : PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts),
     version,
   );
-  const usage = useProviderAccountUsage(version);
+  const usage = useProviderAccountUsage(version, {
+    provider: harness && supportsProviderAccounts(harness) ? harness : undefined,
+    enabled: !harness || supportsProviderAccounts(harness),
+  });
   const standaloneHarness = harness === "cursor" || harness === "grok" ? harness : null;
   const accountProvider = harness
     ? supportsProviderAccounts(harness)
@@ -273,44 +313,57 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
       : null
     : PROVIDER_ACCOUNT_PROVIDERS[0];
 
+  const accountMenuItems = (account: ProviderAccount): DropdownMenuItem[] => [
+    { kind: "item", id: "rename", label: t("Rename account") },
+    ...(account.isDefault
+      ? []
+      : [{ kind: "item" as const, id: "default", label: t("Make default") }]),
+    { kind: "item", id: "color", label: t("Color…") },
+    { kind: "sep" },
+    { kind: "item", id: "remove", label: t("Remove account…"), danger: true },
+  ];
+
   return (
     <div hidden={!supportedHarness}>
-      <section
-        id="setting-provider-accounts"
-        data-setting-id="provider-accounts"
-        tabIndex={-1}
-        aria-label={t(harness === "cursor" || harness === "grok" ? "Sign in" : "Accounts")}
-        className="min-w-0"
-      >
-        <div className="provider-accounts-heading" aria-busy={Boolean(working) || usage.refreshing}>
-          <span className="provider-accounts-title">
-            {t(harness === "cursor" || harness === "grok" ? "Sign in" : "Accounts")}
-          </span>
-          {accountProvider ? (
-            <>
-              <Button
-                size="sm"
-                disabled={Boolean(working)}
-                onClick={() => startAdd(accountProvider)}
+      <div hidden={harness === "antigravity"}>
+        <Group
+          id="provider-accounts"
+          layout="full"
+          title={t(harness === "cursor" || harness === "grok" ? "Sign in" : "Accounts")}
+          action={
+            accountProvider ? (
+              <div
+                className="provider-accounts-actions"
+                aria-busy={Boolean(working) || usage.refreshing}
               >
-                <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
-                {t("Add account")}
-              </Button>
-              <AccountUsageRefresh
-                usage={{
-                  ...usage,
-                  refreshing: usage.refreshing || Boolean(working),
-                  refresh: () => {
-                    setVersion((value) => value + 1);
-                    usage.refresh();
-                  },
-                }}
-              />
-              <TerminalProfileDiscovery provider={accountProvider} disabled={Boolean(working)} />
-            </>
-          ) : null}
-        </div>
-        <div className="min-w-0">
+                <Button
+                  size="sm"
+                  disabled={Boolean(working)}
+                  onClick={() => startAdd(accountProvider)}
+                >
+                  <Plus className="icon-sm" strokeWidth={1.75} aria-hidden />
+                  {t("Add account")}
+                </Button>
+                <AccountUsageRefresh
+                  usage={{
+                    ...usage,
+                    refreshing: usage.refreshing || Boolean(working),
+                    refresh: () => {
+                      setVersion((value) => value + 1);
+                      usage.refresh();
+                    },
+                  }}
+                />
+                <TerminalProfileDiscovery
+                  key={accountProvider}
+                  provider={accountProvider}
+                  disabled={Boolean(working)}
+                />
+              </div>
+            ) : undefined
+          }
+          feedback={error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : undefined}
+        >
           {PROVIDER_ACCOUNT_PROVIDERS.map((provider) => {
             const accounts = providerAccounts(provider);
             const adding = editor?.provider === provider && !editor.accountId;
@@ -319,205 +372,237 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
               <div
                 key={provider}
                 hidden={Boolean(harness && provider !== harness)}
-                className="min-w-0"
+                className="provider-accounts-body"
               >
-                <div className="min-w-0">
-                  {accounts.map((account) => {
-                    const autoDefaultLabel =
-                      account.id === DEFAULT_PROVIDER_ACCOUNT_ID &&
-                      account.label === "Default account";
-                    const displayLabel = autoDefaultLabel ? t("Default account") : account.label;
-                    const editing =
-                      editor?.provider === provider && editor.accountId === account.id;
-                    const removing = working === `remove:${provider}:${account.id}`;
-                    const signingIn = working === `signin:${provider}:${account.id}`;
-                    const identity = identities[identityKey(account)];
-                    const orgTag = identityOrganizationTag(identity);
-                    const limits = usage.usage[accountUsageKey(account)];
-                    const signedOut = Boolean(limits && canSignIn(limits));
-                    const duplicateOf = duplicates[identityKey(account)];
-                    return editing ? (
-                      <ProviderAccountEditor
-                        key={account.id}
-                        editor={editor}
-                        working={Boolean(working)}
-                        onLabel={(label) =>
-                          setEditor((current) => (current ? { ...current, label } : current))
-                        }
-                        onCancel={cancelEditor}
-                        onSubmit={submitEditor}
-                      />
-                    ) : (
-                      <div key={account.id} className="provider-account-row">
-                        <div className="min-w-0 flex-1">
-                          <div className="provider-account-identity">
-                            <AccountColorPicker account={account} disabled={Boolean(working)} />
-                            <span title={account.label} className="provider-account-name">
-                              {displayLabel}
-                            </span>
-                            {account.isDefault && !autoDefaultLabel ? (
-                              <Badge size="sm" className="shrink-0">
-                                {t("Default account")}
-                              </Badge>
-                            ) : null}
-                            {orgTag ? (
-                              <Badge size="sm" className="max-w-[8rem] shrink-0 truncate">
-                                {orgTag}
-                              </Badge>
-                            ) : null}
-                          </div>
-                          <div className="provider-account-meta">
-                            {signedOut ? (
-                              <Badge size="sm" tone="warning" className="shrink-0">
-                                {t("Signed out")}
-                              </Badge>
-                            ) : (
-                              <AccountStatusLabel
-                                status={accountStatus(limits, usage.now)}
-                                className="shrink-0"
-                              />
-                            )}
-                            <ProviderAccountSubtitle
-                              identity={identity}
-                              fallback={
-                                isTerminalProviderAccount(account.id)
-                                  ? t("Provider CLI profile")
-                                  : account.id === DEFAULT_PROVIDER_ACCOUNT_ID
-                                    ? t("Shared CLI profile")
-                                    : t("Isolated profile")
-                              }
-                              className="provider-account-subtitle"
-                            />
-                          </div>
-                          {duplicateOf ? (
-                            <p
-                              className="mt-1 truncate text-[length:var(--ui-font-caption)] leading-4 text-warning dark:text-warning"
-                              role="note"
-                            >
-                              {t("Same sign-in as ")}
-                              {duplicateOf.label}
-                              {t(". Remove this account if you do not need it separately.")}
-                            </p>
-                          ) : null}
-                        </div>
-                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                          {signingIn || !limits || canSignIn(limits) ? (
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              loading={signingIn}
-                              disabled={Boolean(working)}
-                              aria-label={t("Sign in to {p0}", {
-                                p0: account.label,
-                              })}
-                              onClick={() => void signInAccount(account)}
-                            >
-                              {signingIn ? t("Signing in…") : t("Sign in")}
-                            </Button>
-                          ) : null}
-                          {account.isDefault ? null : (
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              disabled={Boolean(working)}
-                              aria-label={t("Use {p0} by default", {
-                                p0: account.label,
-                              })}
-                              onClick={() => makeDefault(account)}
-                            >
-                              {t("Make default")}
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            iconOnly
-                            label={t("Rename {p0}", { p0: account.label })}
-                            tooltip={t("Rename account")}
-                            disabled={Boolean(working)}
-                            onClick={() => startRename(account)}
-                          >
-                            <Pencil className="size-3.5" strokeWidth={1.75} aria-hidden />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            iconOnly
-                            label={t("Remove {p0}", { p0: account.label })}
-                            tooltip={t("Remove account")}
-                            loading={removing}
-                            disabled={Boolean(working)}
-                            onClick={() => void removeAccount(account)}
-                          >
-                            <Trash2 className="size-3.5" strokeWidth={1.75} aria-hidden />
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {accounts.length === 0 ? (
-                    <p className="px-4 py-3 text-[12px] text-(--ui-text-secondary)">
-                      {t("No accounts. Add an account to sign in.")}
-                    </p>
-                  ) : null}
-                  {adding && editor ? (
+                {accounts.map((account) => {
+                  const autoDefaultLabel =
+                    account.id === DEFAULT_PROVIDER_ACCOUNT_ID &&
+                    account.label === "Default account";
+                  const displayLabel = autoDefaultLabel ? t("Default account") : account.label;
+                  const editing = editor?.provider === provider && editor.accountId === account.id;
+                  const removing = working === `remove:${provider}:${account.id}`;
+                  const signingIn = working === `signin:${provider}:${account.id}`;
+                  const identity = identities[identityKey(account)];
+                  const orgTag = identityOrganizationTag(identity);
+                  const limits = usage.usage[accountUsageKey(account)];
+                  const signedOut = Boolean(limits && canSignIn(limits));
+                  const duplicateOf = duplicates[identityKey(account)];
+                  const status = accountStatus(limits, usage.now);
+                  const exhausted = !signedOut && status.tone === "exhausted";
+                  const menuOpen =
+                    menu?.account.id === account.id && menu.account.provider === provider;
+                  return editing ? (
                     <ProviderAccountEditor
+                      key={account.id}
                       editor={editor}
                       working={Boolean(working)}
                       onLabel={(label) =>
-                        setEditor((current) => (current ? { ...current, label } : current))
+                        setEditorState((current) => (current ? { ...current, label } : current))
                       }
                       onCancel={cancelEditor}
                       onSubmit={submitEditor}
                     />
-                  ) : null}
-                </div>
+                  ) : (
+                    <div key={account.id} className="provider-account-row">
+                      <AccountColorDot account={account} className="size-2.5" />
+                      <div className="provider-account-main">
+                        <div className="provider-account-identity">
+                          <OverflowTooltip label={account.label}>
+                            <span className="provider-account-name">{displayLabel}</span>
+                          </OverflowTooltip>
+                          {account.isDefault && !autoDefaultLabel ? (
+                            <Badge size="sm" className="shrink-0">
+                              {t("Default account")}
+                            </Badge>
+                          ) : null}
+                          {orgTag ? (
+                            <Badge size="sm" className="max-w-[8rem] shrink-0 truncate">
+                              {orgTag}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <div className="provider-account-meta">
+                          {signedOut ? (
+                            <Badge size="sm" tone="warning" className="shrink-0">
+                              {t("Signed out")}
+                            </Badge>
+                          ) : (
+                            <AccountStatusLabel status={status} className="shrink-0" />
+                          )}
+                          <ProviderAccountSubtitle
+                            identity={identity}
+                            fallback={
+                              isTerminalProviderAccount(account.id)
+                                ? t("Provider CLI profile")
+                                : account.id === DEFAULT_PROVIDER_ACCOUNT_ID
+                                  ? t("Shared CLI profile")
+                                  : t("Isolated profile")
+                            }
+                            className="provider-account-subtitle"
+                          />
+                        </div>
+                        {exhausted ? (
+                          <p className="provider-account-note" role="note">
+                            {exhaustedExplanation(limits, usage.now)}
+                          </p>
+                        ) : null}
+                        {duplicateOf ? (
+                          <p className="provider-account-note text-warning" role="note">
+                            {t("Same sign-in as ")}
+                            {duplicateOf.label}
+                            {t(". Remove this account if you do not need it separately.")}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="provider-account-actions">
+                        {signingIn || !limits || canSignIn(limits) ? (
+                          <Button
+                            reserveLabels={[t("Signing in…")]}
+                            size="sm"
+                            variant="secondary"
+                            loading={signingIn}
+                            disabled={Boolean(working)}
+                            aria-label={t("Sign in to {p0}", {
+                              p0: account.label,
+                            })}
+                            onClick={() => void signInAccount(account)}
+                          >
+                            {signingIn ? t("Signing in…") : t("Sign in")}
+                          </Button>
+                        ) : null}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          iconOnly
+                          label={t("Actions for {p0}", { p0: account.label })}
+                          tooltip={t("Account actions")}
+                          aria-haspopup="menu"
+                          aria-expanded={menuOpen}
+                          loading={removing}
+                          disabled={Boolean(working)}
+                          onClick={(event) => {
+                            const anchor = event.currentTarget;
+                            setMenu((current) =>
+                              current?.account.id === account.id &&
+                              current.account.provider === provider
+                                ? null
+                                : { account, anchor },
+                            );
+                          }}
+                        >
+                          <MoreHorizontal className="icon-md" strokeWidth={1.75} aria-hidden />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {accounts.length === 0 ? (
+                  <p className="provider-account-empty">
+                    {t("No accounts. Add an account to sign in.")}
+                  </p>
+                ) : null}
+                {adding && editor ? (
+                  <ProviderAccountEditor
+                    editor={editor}
+                    working={Boolean(working)}
+                    onLabel={(label) =>
+                      setEditorState((current) => (current ? { ...current, label } : current))
+                    }
+                    onCancel={cancelEditor}
+                    onSubmit={submitEditor}
+                  />
+                ) : null}
               </div>
             );
           })}
-        </div>
-        <div
-          hidden={harness !== "cursor" && harness !== "grok"}
-          className="flex flex-wrap items-center gap-2 border-t border-(--color-stroke) px-3 py-2.5"
-        >
-          <span className="min-w-[12rem] flex-1 text-[11px] text-(--ui-text-secondary)">
-            {harness === "cursor"
-              ? t("Use the Cursor CLI sign-in on this machine.")
-              : t("Use the Grok Build CLI sign-in on this machine.")}
-          </span>
-          {standaloneHarness &&
-          hasProbedHarnessAvailability() &&
-          !isHarnessAvailable(standaloneHarness) ? (
-            <span className="text-[11px] text-(--ui-text-secondary)">
-              {t("Install the CLI first, then sign in.")}
-            </span>
-          ) : (
-            <>
-              {completedSignIn === standaloneHarness ? (
-                <span role="status" className="text-[11px] text-success">
-                  {t("CLI sign-in completed")}
+          {standaloneHarness ? (
+            <Row
+              label={
+                standaloneHarness === "cursor"
+                  ? t("Use the Cursor CLI sign-in on this machine.")
+                  : t("Use the Grok Build CLI sign-in on this machine.")
+              }
+            >
+              {hasProbedHarnessAvailability() && !isHarnessAvailable(standaloneHarness) ? (
+                <span className="text-ui-micro text-(--ui-text-secondary)">
+                  {t("Install the CLI first, then sign in.")}
                 </span>
-              ) : null}
+              ) : (
+                <>
+                  {completedSignIn === standaloneHarness ? (
+                    <span role="status" className="text-ui-micro text-success">
+                      {t("CLI sign-in completed")}
+                    </span>
+                  ) : null}
+                  <Button
+                    reserveLabels={[t("Signing in…")]}
+                    variant="secondary"
+                    disabled={Boolean(working)}
+                    loading={working === `signin:${standaloneHarness}`}
+                    aria-label={t("Sign in to {p0}", {
+                      p0: HARNESS_TITLE[standaloneHarness],
+                    })}
+                    onClick={() => void signInStandaloneProvider(standaloneHarness)}
+                  >
+                    {working === `signin:${standaloneHarness}` ? t("Signing in…") : t("Sign in")}
+                  </Button>
+                </>
+              )}
+            </Row>
+          ) : null}
+        </Group>
+      </div>
+      <div hidden={harness !== "antigravity"}>
+        <AntigravityAccountSettings embedded />
+      </div>
+      {menu ? (
+        <DropdownMenu
+          anchor={menu.anchor}
+          label={t("Actions for {p0}", { p0: menu.account.label })}
+          items={accountMenuItems(menu.account)}
+          onClose={() => setMenu(null)}
+          onPick={(id) => {
+            const { account, anchor } = menu;
+            setMenu(null);
+            if (id === "rename") startRename(account);
+            else if (id === "default") makeDefault(account);
+            else if (id === "color") setColorFor({ account, anchor });
+            else if (id === "remove") setConfirmRemove(account);
+          }}
+        />
+      ) : null}
+      {colorFor ? (
+        <AccountColorPopover
+          account={colorFor.account}
+          anchor={colorFor.anchor}
+          onDismiss={() => setColorFor(null)}
+        />
+      ) : null}
+      {confirmRemove ? (
+        <Modal
+          size="sm"
+          title={t("Remove {p0} account", { p0: HARNESS_TITLE[confirmRemove.provider] })}
+          description={removeAccountMessage(confirmRemove)}
+          onClose={() => setConfirmRemove(null)}
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setConfirmRemove(null)}>{t("Cancel")}</Button>
               <Button
-                variant="secondary"
-                disabled={Boolean(working)}
-                loading={working === `signin:${standaloneHarness}`}
-                aria-label={t("Sign in to {p0}", {
-                  p0: standaloneHarness ? HARNESS_TITLE[standaloneHarness] : "",
-                })}
+                variant="danger"
                 onClick={() => {
-                  if (standaloneHarness) void signInStandaloneProvider(standaloneHarness);
+                  const account = confirmRemove;
+                  setConfirmRemove(null);
+                  void removeAccount(account);
                 }}
               >
-                {working === `signin:${standaloneHarness}` ? t("Signing in…") : t("Sign in")}
+                {t("Remove account")}
               </Button>
-            </>
-          )}
-        </div>
-        <div hidden={Boolean(harness && harness !== "antigravity")}>
-          <AntigravityAccountSettings embedded />
-        </div>
-        {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
-      </section>
+            </div>
+          }
+        >
+          {null}
+        </Modal>
+      ) : null}
     </div>
   );
 }
@@ -525,57 +610,4 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
 /** Sign-in can fix this account; a missing CLI needs an install first. */
 export function canSignIn(limits: ProviderRateLimits): boolean {
   return providerAccountSignedOut(limits);
-}
-
-export function ProviderAccountEditor({
-  editor,
-  working,
-  onLabel,
-  onCancel,
-  onSubmit,
-}: {
-  editor: AccountEditor;
-  working: boolean;
-  onLabel: (label: string) => void;
-  onCancel: () => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-}) {
-  useLocale();
-  const adding = !editor.accountId;
-  return (
-    <form
-      className="flex min-h-11 items-center border-b border-(--color-stroke) px-3 py-1.5 last:border-b-0"
-      onSubmit={onSubmit}
-    >
-      <div data-provider-account-editor-field className="flex min-w-0 flex-1 items-center gap-1.5">
-        <TextField
-          label={t("Account name")}
-          hideLabel
-          autoFocus
-          type="text"
-          maxLength={48}
-          value={editor.label}
-          disabled={working}
-          placeholder={t("Work or Personal")}
-          aria-label={t(adding ? "New {p1} account" : "Rename {p1} account", {
-            p1: HARNESS_TITLE[editor.provider],
-          })}
-          onChange={(event) => onLabel(event.target.value)}
-          className="min-w-0 flex-1"
-          fieldClassName="min-w-0 flex-1"
-        />
-        <SecondaryButton disabled={working && !adding} onClick={onCancel}>
-          {t("Cancel")}
-        </SecondaryButton>
-        <Button
-          type="submit"
-          variant="secondary"
-          loading={working}
-          disabled={working || !editor.label.trim()}
-        >
-          {adding ? (working ? t("Waiting for browser…") : t("Sign in and add")) : t("Save")}
-        </Button>
-      </div>
-    </form>
-  );
 }

@@ -1,3 +1,4 @@
+export { formatImportBytes as formatBytes } from "../../../shared/i18n/format";
 import type { ImportCandidate, ImportProvider } from "../../../platform/tauri/sessionImport";
 import { isEqualOrInside, pathKey, slash } from "../../../shared/lib/paths";
 
@@ -110,15 +111,6 @@ export function dominantRoot(candidates: readonly ImportCandidate[]): string | n
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
 }
 
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  if (bytes < 1024 * 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
-  }
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
 export type ImportCounts = {
   /** Selected and not yet in Bycoda: what the button will import. */
   toImport: number;
@@ -152,4 +144,12 @@ export function countSelection(
   }
   counts.folders = folders.size;
   return counts;
+}
+
+const TEMPORARY_FOLDER =
+  /(^|\/)(appdata\/local\/temp|tmp|var\/folders|private\/var\/folders|private\/tmp)(\/|$)|bycoda-e2e/i;
+
+/** Scratch folders (OS temp, e2e runs). Hidden by default; never deleted or imported silently. */
+export function isTemporaryFolder(path: string): boolean {
+  return TEMPORARY_FOLDER.test(slash(path));
 }

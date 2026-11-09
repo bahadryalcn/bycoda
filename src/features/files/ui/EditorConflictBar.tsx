@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { ChevronDown, ChevronUp } from "../../../shared/ui/icons";
@@ -38,7 +39,7 @@ export function EditorConflictBar({
       variant="ghost"
       motion="none"
       type="button"
-      title={t("Open the next conflicted file")}
+      tooltip={t("Open the next conflicted file")}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onNextFile}
       className="shrink-0"
@@ -49,24 +50,22 @@ export function EditorConflictBar({
   if (count === 0 && !canMarkResolved) return null;
   return (
     <header
-      className="flex h-8 shrink-0 items-center justify-between gap-3 border-b border-stroke px-3 pr-1 text-[11px]"
+      className="flex min-h-(--ui-control-height-compact) shrink-0 items-center justify-between gap-2 px-2 text-ui-caption"
       role="toolbar"
       aria-label={t("Merge conflicts")}
     >
       {count > 0 ? (
         <>
-          <span className="font-semibold tabular-nums text-warning" role="status">
+          <span className="font-medium tabular-nums text-(--ui-tone-warning-fg)" role="status">
             {count === 1 ? t("1 conflict") : t("{p0} conflicts", { p0: count })}
           </span>
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-1">
             {fileNote ? (
-              <span
-                className="mr-1 truncate text-[var(--ui-text-secondary)]"
-                role="status"
-                title={fileNote}
-              >
-                {fileNote}
-              </span>
+              <OverflowTooltip label={fileNote}>
+                <span className="mr-1 truncate text-[var(--ui-text-secondary)]" role="status">
+                  {fileNote}
+                </span>
+              </OverflowTooltip>
             ) : null}
             {nextFile}
             <Button
@@ -76,13 +75,12 @@ export function EditorConflictBar({
               variant="ghost"
               motion="none"
               type="button"
-              title={t("Previous conflict")}
               aria-label={t("Previous conflict")}
               onMouseDown={(event) => event.preventDefault()}
               onClick={onPrev}
               className={iconButton}
             >
-              <ChevronUp className="size-3.5" strokeWidth={1.75} />
+              <ChevronUp className="icon-sm" strokeWidth={1.75} />
             </Button>
             <Button
               size="sm"
@@ -91,36 +89,33 @@ export function EditorConflictBar({
               variant="ghost"
               motion="none"
               type="button"
-              title={t("Next conflict")}
               aria-label={t("Next conflict")}
               onMouseDown={(event) => event.preventDefault()}
               onClick={onNext}
               className={iconButton}
             >
-              <ChevronDown className="size-3.5" strokeWidth={1.75} />
+              <ChevronDown className="icon-sm" strokeWidth={1.75} />
             </Button>
           </div>
         </>
       ) : (
         <>
-          <span className="min-w-0 truncate text-[var(--ui-text-secondary)]" role="status">
-            {error ? (
-              <span className="text-danger" title={error}>
-                {error}
-              </span>
-            ) : (
-              t("All conflicts resolved")
-            )}
-          </span>
+          <OverflowTooltip label={error}>
+            <span className="min-w-0 truncate text-[var(--ui-text-secondary)]" role="status">
+              {error ? (
+                <span className="text-(--ui-tone-danger-fg)">{error}</span>
+              ) : (
+                t("All conflicts resolved")
+              )}
+            </span>
+          </OverflowTooltip>
           <div className="flex shrink-0 items-center gap-1">
             {fileNote ? (
-              <span
-                className="truncate text-[var(--ui-text-secondary)]"
-                role="status"
-                title={fileNote}
-              >
-                {fileNote}
-              </span>
+              <OverflowTooltip label={fileNote}>
+                <span className="truncate text-[var(--ui-text-secondary)]" role="status">
+                  {fileNote}
+                </span>
+              </OverflowTooltip>
             ) : null}
             {nextFile}
             <Button
@@ -131,8 +126,8 @@ export function EditorConflictBar({
               disabled={marking}
               onMouseDown={(event) => event.preventDefault()}
               onClick={onMarkResolved}
-              title={t("Save the file and stage it")}
-              className="mr-2 shrink-0"
+              tooltip={t("Save the file and stage it")}
+              className="shrink-0"
             >
               {marking ? t("Staging…") : t("Mark resolved")}
             </Button>

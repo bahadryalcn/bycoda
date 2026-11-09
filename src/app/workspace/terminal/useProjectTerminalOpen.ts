@@ -1,4 +1,5 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { recordGuideActivity } from "../../../features/onboarding/model/guideActivity";
 import { queueTerminalCommand } from "../../../features/terminal/model/terminalLaunchCommand";
 import {
   addTerminalToDock,
@@ -61,6 +62,7 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
     dock;
 
   const focusProjectTerminal = useCallback(() => {
+    recordGuideActivity("terminal-opened");
     setProjectTerminalFocused(true);
     setComposerFocused(false);
   }, []);
@@ -101,6 +103,7 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
     (cwd: string, asWorkspaceTab = false, occupySessionId?: string, profile?: string) => {
       const workdir = cwd || terminalCwd;
       if (!canOpenTerminalIn(projectCwdRef.current) || !canOpenTerminalIn(workdir)) return;
+      recordGuideActivity("terminal-opened");
       if (openProjectTerminal(workdir, profile)) return;
       const shellProfile = profile ?? loadTerminalProfile();
 

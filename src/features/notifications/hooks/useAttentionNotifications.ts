@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 import { sessionIssue } from "../../sessions/model/sessionIssue";
 import type { Session } from "../../sessions/model/session";
 import {
@@ -10,8 +10,11 @@ import {
   taskbarAttention,
   type SessionPhase,
 } from "../model/attention";
-import { loadNotificationEvents } from "../model/notificationEvents";
-import { allowsProjectNotificationIndicator } from "../model/notificationPreferences";
+import { loadNotificationEvents, subscribeNotificationEvents } from "../model/notificationEvents";
+import {
+  allowsProjectNotificationIndicator,
+  subscribeNotificationPreferences,
+} from "../model/notificationPreferences";
 import { knownNotificationProject } from "../model/notificationProjects";
 import {
   announceBackgroundFinish,
@@ -20,6 +23,7 @@ import {
   loadNotificationsEnabled,
   replaceUnseenAttention,
   subscribeAttention,
+  subscribeNotificationsEnabled,
   unseenAttentionSessions,
 } from "../model/notifications";
 
@@ -33,9 +37,10 @@ export function useAttentionNotifications(
   activeSessionId: string | undefined,
 ) {
   const phases = useRef(new Map<string, SessionPhase>());
-  const latest = useRef({ sessions, activeSessionId });
-  latest.current = { sessions, activeSessionId };
   const shownCount = useRef(0);
+  // The native call failed, so the next sync must resend even an unchanged count.
+  const nativeRetry = useRef(false);
+  const nativeSeq = useRef(0);
 
   useEffect(() => {
     const previous = phases.current;
@@ -45,47 +50,69 @@ export function useAttentionNotifications(
       if (issue) void announceSessionIssue(session, issue, session.id === activeSessionId);
       const phase = sessionPhase(session);
       next.set(session.id, phase);
-      if (!issue && previous.has(session.id) && enteredBackgroundFinish(previous.get(session.id), phase)) {
+      if (
+        !issue &&
+        previous.has(session.id) &&
+        enteredBackgroundFinish(previous.get(session.id), phase)
+      ) {
         void announceBackgroundFinish(session, session.id === activeSessionId);
       }
     }
     phases.current = next;
   }, [sessions, activeSessionId]);
 
+  const syncAttention = useEffectEvent(() => {
+    const focused = isWindowFocused();
+    replaceUnseenAttention(
+      pruneUnseen(unseenAttentionSessions(), sessions, activeSessionId, focused),
+    );
+    const events = loadNotificationEvents();
+    const next =
+      loadNotificationsEnabled() && events.taskbar
+        ? taskbarAttention(
+            sessions,
+            unseenAttentionSessions(),
+            activeSessionId,
+            focused,
+            (session) => {
+              const project = knownNotificationProject(session.cwd);
+              return (
+                !!project &&
+                events.input &&
+                allowsProjectNotificationIndicator({
+                  projectId: project.id,
+                  category: "agentInput",
+                })
+              );
+            },
+          )
+        : { count: 0, hasInput: false };
+    const flash = flashFor(shownCount.current, next, focused);
+    if (next.count === shownCount.current && flash === "none" && !nativeRetry.current) return;
+    const previousCount = shownCount.current;
+    const seq = ++nativeSeq.current;
+    shownCount.current = next.count;
+    nativeRetry.current = false;
+    void invoke("set_taskbar_attention", { count: next.count, flash }).catch(() => {
+      // Only the latest call may roll back; an older failure is already superseded.
+      if (seq !== nativeSeq.current) return;
+      shownCount.current = previousCount;
+      nativeRetry.current = true;
+    });
+  });
   useEffect(() => {
-    const sync = () => {
-      const { sessions, activeSessionId } = latest.current;
-      const focused = isWindowFocused();
-      replaceUnseenAttention(
-        pruneUnseen(unseenAttentionSessions(), sessions, activeSessionId, focused),
-      );
-      const events = loadNotificationEvents();
-      const next =
-        loadNotificationsEnabled() && events.taskbar
-          ? taskbarAttention(
-              sessions,
-              unseenAttentionSessions(),
-              activeSessionId,
-              focused,
-              (session) => {
-                const project = knownNotificationProject(session.cwd);
-                return (
-                  !!project &&
-                  events.input &&
-                  allowsProjectNotificationIndicator({
-                    projectId: project.id,
-                    category: "agentInput",
-                  })
-                );
-              },
-            )
-          : { count: 0, hasInput: false };
-      const flash = flashFor(shownCount.current, next, focused);
-      if (next.count === shownCount.current && flash === "none") return;
-      shownCount.current = next.count;
-      void invoke("set_taskbar_attention", { count: next.count, flash }).catch(() => {});
-    };
-    sync();
-    return subscribeAttention(sync);
+    syncAttention();
   }, [sessions, activeSessionId]);
+  useEffect(() => {
+    // Badge, event and project preferences (including mute expiry) change what
+    // the taskbar may show without any session changing.
+    const sync = () => syncAttention();
+    const unsubscribe = [
+      subscribeAttention(sync),
+      subscribeNotificationsEnabled(sync),
+      subscribeNotificationEvents(sync),
+      subscribeNotificationPreferences(sync),
+    ];
+    return () => unsubscribe.forEach((off) => off());
+  }, []);
 }

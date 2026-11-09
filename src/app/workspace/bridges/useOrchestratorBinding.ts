@@ -2,28 +2,59 @@ import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useLayoutEffect } from "react";
 import type { SubmitOptions } from "../helpers/types";
 import type { OrchestrationState } from "./useOrchestrationState";
-import { createOrchestratorWorkerBindings } from "./orchestratorWorkerBindings";
+import {
+  assertOriginalWorkerProcess,
+  createOrchestratorWorkerBindings,
+  finishOriginalWorkerProcess,
+  stopOriginalWorkerHarnesses,
+} from "./orchestratorWorkerBindings";
 import { type WorkspaceTab } from "../../../features/workspace/model/layout";
-import { type Session, type Attachment, HARNESSES, sessionWorkCwd } from "../../../features/sessions/model/session";
+import {
+  type Attachment,
+  HARNESSES,
+  sessionWorkCwd,
+} from "../../../features/sessions/model/session";
 import { type SessionSummary } from "../../../features/sessions/data/sessionStore";
 import { type SubmissionAcceptance } from "../../model/submissionAcceptance";
-import { setSessions, sessionsRef } from "../../../features/sessions/model/sessionsStore";
-import { attachOrchestrationWorkers, consolidateOrchestrationTabs } from "../../../features/orchestration/model/orchestrationWorkspace";
+import {
+  setSessions,
+  sessionsRef,
+  subscribeShell,
+} from "../../../features/sessions/model/sessionsStore";
+import {
+  attachOrchestrationWorkers,
+  consolidateOrchestrationTabs,
+} from "../../../features/orchestration/model/orchestrationWorkspace";
 import { orchestrator } from "../../../features/orchestration/model/orchestration";
 import { isHarnessAvailable } from "../../../integrations/harness/core/availability";
 import { modelsFor } from "../../../features/sessions/model/models";
 import { submitWithSettlement } from "../../model/managedSubmission";
 import { flushSync } from "react-dom";
-import { isLiveHarness, canSteerHarness, appendSteerUser, steerHarnessTurn, respondHarnessApproval, respondHarnessQuestion, stopHarnessSession } from "../../../integrations/harness";
-import { sessionChildHarnesses } from "../../../features/sessions/model/handoff";
-import { invoke } from "@tauri-apps/api/core";
+import {
+  isLiveHarness,
+  canSteerHarness,
+  appendSteerUser,
+  steerHarnessTurn,
+  respondHarnessQuestion,
+} from "../../../integrations/harness";
+import { captureChildProcess } from "../../../integrations/harness/core/child";
+import { captureHarnessControlTurn } from "../../../integrations/harness/core/registry";
+import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
+import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
+import { liveTurnHarness } from "../../../features/sessions/model/messageQueue";
+import { pendingApprovalForSession } from "../../../features/notifications/model/approvalToast";
+import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
+import {
+  approvalRequestDispatchStarted,
+  captureApprovalRequest,
+  submitApprovalIntent,
+} from "../../../features/sessions/model/approvalIntents";
 
 export interface OrchestratorBindingDeps {
   tabs: WorkspaceTab[];
   activeTabId: string;
   setTabs: (update: WorkspaceTab[] | ((previous: WorkspaceTab[]) => WorkspaceTab[])) => void;
   setActiveTabId: (id: string) => void;
-  sessions: Session[];
   orchestrationRuns: OrchestrationState["orchestrationRuns"];
   setHistory: Dispatch<SetStateAction<SessionSummary[]>>;
   setStoredLinkedSessions: Dispatch<SetStateAction<SessionSummary[]>>;
@@ -34,7 +65,7 @@ export interface OrchestratorBindingDeps {
     attachments: Attachment[],
     options?: SubmitOptions,
   ) => SubmissionAcceptance;
-  onStop: (sessionId: string, managed?: boolean) => void;
+  onStop: (sessionId: string, managed?: boolean, current?: () => boolean) => void;
   flushHarnessEvents: () => void;
 }
 
@@ -43,7 +74,6 @@ export function useOrchestratorBinding({
   activeTabId,
   setTabs,
   setActiveTabId,
-  sessions,
   orchestrationRuns,
   setHistory,
   setStoredLinkedSessions,
@@ -52,15 +82,29 @@ export function useOrchestratorBinding({
   onStop,
   flushHarnessEvents,
 }: OrchestratorBindingDeps): void {
-  useEffect(() => {
-    setSessions((prev) => attachOrchestrationWorkers(prev, orchestrationRuns));
-  }, [orchestrationRuns]);
+  // `orchestrationLeadId` is read straight from the shared sessions store by
+  // many consumers (sidebar, history, tray, inbox, approvals), so the projection
+  // stays a store write instead of a per-consumer selector. Both writes below
+  // are idempotent: the pure helpers return their input when nothing changes,
+  // and they are skipped outright when no run has any worker task.
+  const hasWorkerTasks = orchestrationRuns.some((run) => run.tasks.length > 0);
+  // Tab consolidation depends only on which worker sessions belong to which
+  // lead, not on run status churn, so key it on that link set.
+  const workerLinkKey = orchestrationRuns
+    .flatMap((run) => run.tasks.map((task) => `${run.leadId}>${task.sessionId}`))
+    .join("|");
 
   useEffect(() => {
+    if (!hasWorkerTasks) return;
+    setSessions((prev) => attachOrchestrationWorkers(prev, orchestrationRuns));
+  }, [orchestrationRuns, hasWorkerTasks]);
+
+  useEffect(() => {
+    if (!workerLinkKey) return;
     const next = consolidateOrchestrationTabs(tabs, activeTabId, orchestrationRuns);
     if (next.tabs !== tabs) setTabs(next.tabs);
     if (next.activeTabId !== activeTabId) setActiveTabId(next.activeTabId);
-  }, [tabs, activeTabId, orchestrationRuns]);
+  }, [tabs, activeTabId, workerLinkKey]);
   useLayoutEffect(() => {
     orchestrator.bind({
       session: (id) => sessionsRef.current.find((session) => session.id === id),
@@ -70,7 +114,12 @@ export function useOrchestratorBinding({
           harness,
           models: modelsFor(harness).map(({ id, name }) => ({ id, name })),
         })),
-      ...createOrchestratorWorkerBindings({ checkOpenWorktreeFiles, onStop, setHistory, setStoredLinkedSessions }),
+      ...createOrchestratorWorkerBindings({
+        checkOpenWorktreeFiles,
+        onStop,
+        setHistory,
+        setStoredLinkedSessions,
+      }),
       submit: (id, text, done) => {
         void submitWithSettlement({
           submit: (onSettled) => {
@@ -115,32 +164,98 @@ export function useOrchestratorBinding({
           text,
         });
       },
-      respondApproval: (id, requestId, decision) => {
+      respondApproval: (id, requestId, decision, approvalOccurrenceId) => {
         const session = sessionsRef.current.find((entry) => entry.id === id);
-        if (session) respondHarnessApproval(session.harness, id, requestId, decision);
+        const pending = session && pendingApprovalForSession(session);
+        if (
+          !session ||
+          pending?.kind !== "approval" ||
+          pending.requestId !== requestId ||
+          !isApprovalOccurrenceId(approvalOccurrenceId) ||
+          pending.block?.approval?.occurrenceId !== approvalOccurrenceId
+        )
+          return false;
+        // The caller supplies its original viewed nonce. Capture only this exact
+        // accepted source, never whichever numeric request exists after an await.
+        const token = captureApprovalRequest(session, requestId);
+        if (!token) return false;
+        const outcome = submitApprovalIntent(session, requestId, decision, token, () =>
+          sessionsRef.current.find((entry) => entry.id === id),
+        );
+        if (typeof outcome !== "boolean") void outcome.catch(() => undefined);
+        return approvalRequestDispatchStarted(token);
       },
       answerQuestion: (id, requestId, reply) => {
         const session = sessionsRef.current.find((entry) => entry.id === id);
         if (session) respondHarnessQuestion(session.harness, id, requestId, reply);
       },
-      stop: async (id) => {
+      captureStop: (id) => {
         const session = sessionsRef.current.find((entry) => entry.id === id);
+        const originalProcess = captureChildProcess(id);
+        const originalControl = captureHarnessControlTurn(id, originalProcess);
+        if (
+          !session ||
+          !originalProcess ||
+          !originalControl ||
+          hostSessionBinding(session) ||
+          remoteProjectFor(session.cwd)
+        )
+          return undefined;
+        const cwd = sessionWorkCwd(session);
+        const harness = liveTurnHarness(session);
+        const current = () => {
+          const now = sessionsRef.current.find((entry) => entry.id === id);
+          return (
+            !!now &&
+            !hostSessionBinding(now) &&
+            !remoteProjectFor(now.cwd) &&
+            sessionWorkCwd(now) === cwd &&
+            liveTurnHarness(now) === harness &&
+            captureChildProcess(id) === originalProcess &&
+            captureHarnessControlTurn(id, originalProcess) === originalControl
+          );
+        };
+        return {
+          current,
+          stop: async () => {
+            if (!current()) throw new Error("Original orchestration worker changed.");
+            onStop(id, true, current);
+            if (!current()) throw new Error("Original orchestration worker changed.");
+            await stopOriginalWorkerHarnesses(session);
+            await finishOriginalWorkerProcess(id, originalProcess, originalControl);
+          },
+        };
+      },
+      stop: async (id) => {
+        const originalProcess = captureChildProcess(id);
+        const originalControl = captureHarnessControlTurn(id, originalProcess);
+        const session = sessionsRef.current.find((entry) => entry.id === id);
+        assertOriginalWorkerProcess(id, originalProcess);
         onStop(id, true);
-        try {
-          if (session)
-            await Promise.all(
-              sessionChildHarnesses(session).map((harness) => stopHarnessSession(harness, id)),
-            );
-        } finally {
-          // Also reap processes left behind by a renderer reload, before the
-          // corresponding session has been restored in this window.
-          await invoke("harness_kill", { sessionId: id });
-          await invoke("control_turn_finished", { sessionId: id });
-        }
+        assertOriginalWorkerProcess(id, originalProcess);
+        if (session) await stopOriginalWorkerHarnesses(session);
+        // Source snapshots above survive every awaited family cleanup.
+        await finishOriginalWorkerProcess(id, originalProcess, originalControl);
       },
     });
   }, [checkOpenWorktreeFiles, submitSession, onStop]);
   useEffect(() => {
+    let disposed = false;
+    let scheduled = false;
+    const unsubscribe = subscribeShell(() => {
+      if (scheduled) return;
+      scheduled = true;
+      // A sync can wake workers and update sessions. Run after the current store
+      // transaction, coalescing synchronous updates before inspecting idle state.
+      queueMicrotask(() => {
+        scheduled = false;
+        if (!disposed) orchestrator.sync();
+      });
+    });
     orchestrator.sync();
-  }, [sessions]);
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, []);
 }

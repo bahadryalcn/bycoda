@@ -9,7 +9,11 @@ import {
   type ModelSource,
 } from "../../sessions/ui/modelSource";
 import type { HostDescriptor, HostModelCatalog, RemoteMachine } from "../model/protocol";
-import { HostModelSource as RawHostModelSource, hostModelSource } from "./HostModelSource";
+import {
+  HostModelSource as RawHostModelSource,
+  hostModelSource,
+  pendingCatalogRefetchMs,
+} from "./HostModelSource";
 
 const { request, projects } = vi.hoisted(() => ({ request: vi.fn(), projects: vi.fn() }));
 vi.mock("../model/connections", () => ({ remoteRequest: request }));
@@ -130,4 +134,11 @@ it("keeps desktop automations on the local source without querying a host", asyn
   );
   expect(current).toBe(LOCAL_MODEL_SOURCE);
   expect(request).not.toHaveBeenCalled();
+});
+
+it("backs off pending catalog polling: 1 s, then 5 s, then capped at 15 s", () => {
+  const intervals = Array.from({ length: 20 }, (_, polls) => pendingCatalogRefetchMs(polls));
+  expect(intervals.slice(0, 10)).toEqual(Array(10).fill(1_000));
+  expect(intervals.slice(10, 14)).toEqual([5_000, 5_000, 5_000, 5_000]);
+  expect(intervals.slice(14)).toEqual(Array(6).fill(15_000));
 });

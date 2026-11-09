@@ -51,7 +51,8 @@ it("collapses Groups and Projects independently and restores their saved state",
     [...container.querySelectorAll<HTMLButtonElement>("button[aria-expanded]")].find(
       (button) => button.textContent === label,
     )!;
-  const body = (label: string) => toggle(label).parentElement!.nextElementSibling as HTMLElement;
+  const body = (label: string) =>
+    toggle(label).closest("[data-section-label]")!.nextElementSibling as HTMLElement;
   try {
     await render();
     expect(toggle("Groups").getAttribute("aria-expanded")).toBe("true");

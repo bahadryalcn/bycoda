@@ -1,20 +1,35 @@
-import { t, useLocale } from "../i18n";
+import { useT } from "../i18n";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { hexToHsv, hsvToHex, normalizeHex, type Hsv } from "../lib/colorUtils";
-import { Pipette } from "./icons";
+import { Check, Pipette } from "./icons";
+import { TextField } from "./TextField";
 import { isImeComposition } from "../lib/keyboard";
+import styles from "./ColorPickerPopover.module.css";
 
 type Props = {
   value: string;
   onChange: (hex: string) => void;
+  /** The plane, hue and hex field dim and cannot be used. */
+  disabled?: boolean;
+  /** The colour is shown at full ink but cannot change. */
+  readOnly?: boolean;
 };
 
+const HEX_DRAFT = /^#?[0-9a-fA-F]{6}$/;
+
+/**
+ * Row of preset colour swatches with an optional custom-colour button (eyedropper glyph or the saved custom colour). `colorIndex` is the selected preset; omit `onToggleCustom` to hide the custom option. It does not open the picker itself.
+ * @group choice
+ * @use Choosing an accent, account or server colour from a preset palette.
+ * @avoid Arbitrary colour only: ColorPickerPopover. Non-colour options: SegmentedControl or Select.
+ */
 export function ColorSwatchRow({
   colors,
   labels,
@@ -24,20 +39,25 @@ export function ColorSwatchRow({
   customHighlighted,
   onPickIndex,
   onToggleCustom,
+  className,
 }: {
   colors: readonly string[];
   labels?: readonly string[];
   colorIndex: number | null | undefined;
-  customColor: string | null | undefined;
-  customPickerOpen: boolean;
+  /** The saved custom colour. Omit when the row has no custom option. */
+  customColor?: string | null | undefined;
+  customPickerOpen?: boolean;
   customHighlighted?: boolean;
   onPickIndex: (index: number) => void;
+  /** Opens the custom picker. Without it the row shows the preset swatches only: no custom button. */
   onToggleCustom?: () => void;
+  /** External placement of the row (for example a grid of swatches); colours stay internal. */
+  className?: string;
 }) {
-  useLocale();
-  const pipetteActive = customHighlighted ?? (customColor != null || customPickerOpen);
+  const t = useT();
+  const pipetteActive = customHighlighted ?? (customColor != null || !!customPickerOpen);
   return (
-    <div className="flex flex-wrap items-center justify-between gap-1 px-0.5">
+    <div className={className ? `${styles.swatchRow} ${className}` : styles.swatchRow}>
       {colors.map((color, index) => {
         const label = labels?.[index] ?? `Color ${index + 1}`;
         const selected =
@@ -51,50 +71,55 @@ export function ColorSwatchRow({
             aria-pressed={selected}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onPickIndex(index)}
-            className="grid size-(--ui-color-swatch-target) shrink-0 place-items-center rounded-full"
+            className={styles.swatch}
           >
-            <span
-              className={`size-3.5 rounded-full ${
-                selected ? "ring-2 ring-content/80 ring-offset-1 ring-offset-transparent" : ""
-              }`}
-              style={{ background: color }}
-            />
+            <span className={styles.dot} style={{ background: color }}>
+              {selected ? (
+                <Check className={styles.glyph} strokeWidth={3} aria-hidden="true" />
+              ) : null}
+            </span>
           </button>
         );
       })}
-      <button
-        type="button"
-        title={t("Custom color")}
-        aria-label={t("Custom color")}
-        aria-expanded={customPickerOpen}
-        aria-pressed={customColor != null}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={onToggleCustom}
-        className="grid size-(--ui-color-swatch-target) shrink-0 place-items-center rounded-full"
-      >
-        <span
-          className={`grid size-3.5 place-items-center overflow-hidden rounded-full ${
-            pipetteActive ? "ring-2 ring-content/80 ring-offset-1 ring-offset-transparent" : ""
-          }`}
-          style={
-            customColor
-              ? { background: customColor }
-              : {
-                  background: "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)",
-                }
-          }
+      {onToggleCustom ? (
+        <button
+          type="button"
+          title={t("Custom color")}
+          aria-label={t("Custom color")}
+          aria-expanded={customPickerOpen}
+          aria-pressed={customColor != null}
+          data-selected={pipetteActive || undefined}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={onToggleCustom}
+          className={styles.swatch}
         >
-          {!customColor ? (
-            <Pipette className="size-2 text-on-solid drop-shadow-sm" strokeWidth={2.25} />
-          ) : null}
-        </span>
-      </button>
+          <span
+            className={[styles.dot, customColor ? undefined : styles.spectrum]
+              .filter(Boolean)
+              .join(" ")}
+            style={customColor ? { background: customColor } : undefined}
+          >
+            {!customColor ? (
+              <Pipette className={styles.glyph} strokeWidth={2.25} aria-hidden="true" />
+            ) : pipetteActive ? (
+              <Check className={styles.glyph} strokeWidth={3} aria-hidden="true" />
+            ) : null}
+          </span>
+        </button>
+      ) : null}
     </div>
   );
 }
 
-export function ColorPickerPopover({ value, onChange }: Props) {
-  useLocale();
+/**
+ * Saturation/value plane, hue slider, hex field and eyedropper for an arbitrary colour; `value` and `onChange` use hex. `disabled` dims it, `readOnly` shows the colour at full ink without changes. Hex input and contrast semantics live here, not in callers.
+ * Render it inside a Popover opened from a ColorSwatchRow custom button.
+ * @group fields
+ * @use Picking a custom colour (appearance accent, rail background, allowed content colour).
+ * @avoid Preset palette only: ColorSwatchRow. A text hex field alone: TextField.
+ */
+export function ColorPickerPopover({ value, onChange, disabled = false, readOnly = false }: Props) {
+  const t = useT();
   const [hsv, setHsv] = useState<Hsv>(() => hexToHsv(value));
   const [hexDraft, setHexDraft] = useState(() => normalizeHex(value));
   const currentHsv = useRef(hsv);
@@ -102,18 +127,23 @@ export function ColorPickerPopover({ value, onChange }: Props) {
   const svRef = useRef<HTMLDivElement>(null);
   const hueRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  // Follow an external value change during render; keep the current hue when it already maps to the value.
+  const [syncedValue, setSyncedValue] = useState(value);
+  if (syncedValue !== value) {
     const hex = normalizeHex(value);
-    const previous = currentHsv.current;
-    const next = hsvToHex(previous.h, previous.s, previous.v) === hex ? previous : hexToHsv(hex);
-    currentHsv.current = next;
-    setHsv(next);
+    setSyncedValue(value);
+    setHsv(hsvToHex(hsv.h, hsv.s, hsv.v) === hex ? hsv : hexToHsv(hex));
     setHexDraft(hex);
-  }, [value]);
+  }
+  useLayoutEffect(() => {
+    currentHsv.current = hsv;
+  }, [hsv]);
   useEffect(() => () => dragCleanup.current?.(), []);
 
+  const inert = disabled || readOnly;
   const applyHsv = useCallback(
     (updater: Hsv | ((prev: Hsv) => Hsv)) => {
+      if (inert) return;
       const next = typeof updater === "function" ? updater(currentHsv.current) : updater;
       const hex = hsvToHex(next.h, next.s, next.v);
       currentHsv.current = next;
@@ -121,13 +151,14 @@ export function ColorPickerPopover({ value, onChange }: Props) {
       setHexDraft(hex);
       onChange(hex);
     },
-    [onChange],
+    [onChange, inert],
   );
 
   const onHexInput = (raw: string) => {
+    if (inert) return;
     setHexDraft(raw);
     const trimmed = raw.trim();
-    if (!/^#?[0-9a-fA-F]{6}$/.test(trimmed)) return;
+    if (!HEX_DRAFT.test(trimmed)) return;
     const hex = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
     const next = hexToHsv(hex);
     currentHsv.current = next;
@@ -137,7 +168,7 @@ export function ColorPickerPopover({ value, onChange }: Props) {
 
   const onSvPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
     const el = svRef.current;
-    if (!el || event.button !== 0) return;
+    if (!el || event.button !== 0 || inert) return;
     dragCleanup.current?.();
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -167,7 +198,7 @@ export function ColorPickerPopover({ value, onChange }: Props) {
 
   const onHuePointer = (event: ReactPointerEvent<HTMLDivElement>) => {
     const el = hueRef.current;
-    if (!el || event.button !== 0) return;
+    if (!el || event.button !== 0 || inert) return;
     dragCleanup.current?.();
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -196,20 +227,28 @@ export function ColorPickerPopover({ value, onChange }: Props) {
 
   const preview = hsvToHex(hsv.h, hsv.s, hsv.v);
   const hueColor = hsvToHex(hsv.h, 100, 100);
+  // A half-typed or malformed draft takes the danger frame until it is completed or the field is left.
+  const hexInvalid = !inert && hexDraft.trim() !== "" && !HEX_DRAFT.test(hexDraft.trim());
 
   return (
-    <div className="mt-2 rounded-lg border border-content/10 bg-content/5 p-2">
+    <div
+      className={styles.picker}
+      data-disabled={disabled || undefined}
+      data-readonly={readOnly || undefined}
+    >
       <div
         ref={svRef}
         role="slider"
-        tabIndex={0}
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled || undefined}
+        aria-readonly={readOnly || undefined}
         aria-label={t("Saturation and brightness")}
         aria-valuetext={`${Math.round(hsv.s)}%, ${Math.round(hsv.v)}%`}
         aria-description={t("Use Left/Right for saturation and Up/Down for brightness.")}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(hsv.s)}
-        className="relative h-28 w-full cursor-crosshair touch-none rounded-md focus-visible:outline-2 focus-visible:outline-accent"
+        className={styles.plane}
         style={{
           background: `linear-gradient(to top, var(--color-scrim), transparent), linear-gradient(to right, var(--color-on-solid), ${hueColor})`,
         }}
@@ -244,7 +283,7 @@ export function ColorPickerPopover({ value, onChange }: Props) {
         }}
       >
         <span
-          className="pointer-events-none absolute size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-on-solid shadow-md"
+          className={styles.handle}
           style={{
             left: `${hsv.s}%`,
             top: `${100 - hsv.v}%`,
@@ -256,12 +295,14 @@ export function ColorPickerPopover({ value, onChange }: Props) {
       <div
         ref={hueRef}
         role="slider"
-        tabIndex={0}
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled || undefined}
+        aria-readonly={readOnly || undefined}
         aria-label={t("Hue")}
         aria-valuemin={0}
         aria-valuemax={360}
         aria-valuenow={Math.round(hsv.h)}
-        className="relative mbs-2 h-3 w-full cursor-ew-resize touch-none rounded-full focus-visible:outline-2 focus-visible:outline-accent"
+        className={styles.hue}
         style={{
           background:
             "linear-gradient(to right, var(--palette-hexf00), var(--palette-hexff0), var(--palette-hex0f0), var(--palette-hex0ff), var(--palette-hex00f), var(--palette-hexf0f), var(--palette-hexf00))",
@@ -293,7 +334,7 @@ export function ColorPickerPopover({ value, onChange }: Props) {
         }}
       >
         <span
-          className="pointer-events-none absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-on-solid shadow-md"
+          className={styles.handle}
           style={{
             left: `${(hsv.h / 360) * 100}%`,
             background: hueColor,
@@ -301,17 +342,20 @@ export function ColorPickerPopover({ value, onChange }: Props) {
         />
       </div>
 
-      <div className="mt-2 flex items-center gap-2">
-        <span
-          className="size-7 shrink-0 rounded-md border border-content/10"
-          style={{ background: preview }}
-          aria-hidden
-        />
-        <input
+      <div className={styles.readout}>
+        <span className={styles.preview} style={{ background: preview }} aria-hidden />
+        <TextField
+          label={t("Hex color")}
+          hideLabel
+          fieldClassName={styles.hexField}
+          className={styles.hexInput}
           type="text"
           value={hexDraft}
+          disabled={disabled}
+          readOnly={readOnly}
+          aria-invalid={hexInvalid || undefined}
           spellCheck={false}
-          aria-label={t("Hex color")}
+          autoComplete="off"
           onChange={(e) => onHexInput(e.target.value)}
           onBlur={() => setHexDraft(preview)}
           onKeyDown={(event) => {
@@ -322,7 +366,6 @@ export function ColorPickerPopover({ value, onChange }: Props) {
               setHexDraft(preview);
             }
           }}
-          className="min-w-0 flex-1 rounded-md border border-content/10 bg-content/5 px-2 py-1 font-mono text-[12px] text-content focus-visible:outline-2 focus-visible:outline-accent"
         />
       </div>
     </div>

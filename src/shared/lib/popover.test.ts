@@ -115,4 +115,79 @@ describe("placePopover", () => {
       }),
     ).toMatchObject({ top: 292, maxHeight: 300 });
   });
+
+  describe("short windows", () => {
+    const short = { width: 1280, height: 520 };
+    const tall = { width: 228, height: 1288 };
+
+    it("fits a tall menu under a top anchor and leaves it scrollable inside the room", () => {
+      const position = placePopover(anchor(16, 16, 100, 28), tall, short, { side: "bottom" });
+      expect(position.side).toBe("bottom");
+      expect(position.top).toBe(50);
+      // The surface never extends past the bottom padding of the viewport.
+      expect(position.top! + position.maxHeight).toBe(short.height - 8);
+    });
+
+    it("opens a tall menu above a bottom anchor, bounded to the room above it", () => {
+      const position = placePopover(anchor(1100, 480, 100, 28), tall, short, { side: "bottom" });
+      expect(position.side).toBe("top");
+      expect(position.bottom).toBe(short.height - 480 + 6);
+      expect(position.maxHeight).toBe(480 - 6 - 8);
+    });
+
+    it("picks the larger side when neither fits and still stays inside the viewport", () => {
+      const position = placePopover(anchor(500, 300, 100, 28), tall, short, { side: "bottom" });
+      // Below: 520 - 328 - 14 = 178. Above: 300 - 14 = 286.
+      expect(position.side).toBe("top");
+      expect(position.maxHeight).toBe(286);
+      expect(position.bottom! + position.maxHeight).toBeLessThanOrEqual(short.height - 8);
+    });
+
+    it("never gives a flyout more height than the window has", () => {
+      const position = placePopover(anchor(900, 200, 228, 30), tall, short, {
+        side: "right",
+        gap: 4,
+      });
+      expect(position.top).toBeGreaterThanOrEqual(8);
+      expect(position.top! + position.maxHeight).toBeLessThanOrEqual(short.height - 8);
+      expect(position.maxHeight).toBe(short.height - 16);
+    });
+  });
+
+  describe("nested menus at the edge", () => {
+    it("flips a submenu to the left when the right edge has no room", () => {
+      // Parent row ends at 1272 of 1280: no 228px of room on the right, plenty on the left.
+      const position = placePopover(
+        anchor(1044, 100, 228, 28),
+        { width: 228, height: 200 },
+        { width: 1280, height: 600 },
+        { side: "right", gap: 4, width: 228 },
+      );
+      expect(position.side).toBe("left");
+      expect(position.left).toBe(1044 - 4 - 228);
+    });
+
+    it("flips to whichever side has more room when neither fits the full width", () => {
+      const position = placePopover(
+        anchor(100, 100, 228, 28),
+        { width: 228, height: 200 },
+        { width: 380, height: 600 },
+        { side: "right", gap: 4, width: 228 },
+      );
+      // 380 - 328 - 12 = 40 on the right, 100 - 12 = 88 on the left: the left is larger.
+      expect(position.side).toBe("left");
+      expect(position.left).toBeGreaterThanOrEqual(8);
+    });
+
+    it("clamps into the viewport when the window is narrower than two menus", () => {
+      const position = placePopover(
+        anchor(8, 100, 228, 28),
+        { width: 228, height: 200 },
+        { width: 300, height: 600 },
+        { side: "right", gap: 4, width: 228 },
+      );
+      expect(position.left).toBeGreaterThanOrEqual(8);
+      expect(position.left + position.width).toBeLessThanOrEqual(300 - 8);
+    });
+  });
 });

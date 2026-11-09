@@ -1,3 +1,4 @@
+import { withRoomPrivacyMutation } from "../../group-lock/model/roomPrivacyProjection";
 import { pathKey } from "../../../shared/lib/paths";
 import { openRemoteProject, parseRemotePath } from "../../connections/model/remoteProjects";
 import { autoNameOnConflict } from "../../projects/model/projectNames";
@@ -91,14 +92,25 @@ async function addRemotely(
   projectId: string,
   match: RemoteOpenMatch,
   userInitiated: boolean,
+  current: () => boolean = () => true,
 ): Promise<string> {
+  requireCurrent(current);
   const remote = await openRemoteProject(
-    (method, params) => match.target.request(method, params, userInitiated),
+    async (method, params) => {
+      const result = await match.target.request(method, params, userInitiated);
+      requireCurrent(current);
+      return result;
+    },
     match.target.environmentId,
     match.path,
   );
   // Appended, not opened: a background add must not reshuffle the rail or steal focus.
-  rememberImportedProjects([{ path: remote.key, lastUsedAt: Date.now() }]);
+  requireCurrent(current);
+  await withRoomPrivacyMutation(() => {
+    requireCurrent(current);
+    rememberImportedProjects([{ path: remote.key, lastUsedAt: Date.now() }]);
+  });
+  requireCurrent(current);
   if (!onRail(remote.key)) throw new Error("The project rail is full");
   // The host names the folder by another path (a symlink, say): the project
   // is on the rail under that location, so the announced one is not offered again.
@@ -117,12 +129,21 @@ function announce(): void {
  * as a remote project. Each project is added at most once: one the user later
  * removes is remembered as dismissed. A machine that cannot be reached is
  * retried on later calls, with a growing delay. Returns the added rail keys. */
-export async function autoAddRemoteProjects(now: number = Date.now()): Promise<string[]> {
+function requireCurrent(current: () => boolean): void {
+  if (!current()) throw new Error("SYNC_STOPPED");
+}
+
+export async function autoAddRemoteProjects(
+  now: number = Date.now(),
+  current: () => boolean = () => true,
+): Promise<string[]> {
+  requireCurrent(current);
   persistDismissed();
   if (openTargets.length === 0) return [];
   const added: string[] = [];
   const failedTargets = new Set<string>();
   for (const project of remoteOnlyProjects()) {
+    requireCurrent(current);
     const match = remoteOpenMatch(project);
     if (!match) continue;
     const retry = retries.get(project.projectId);
@@ -138,12 +159,14 @@ export async function autoAddRemoteProjects(now: number = Date.now()): Promise<s
       continue;
     }
     try {
-      added.push(await addRemotely(project.projectId, match, false));
+      added.push(await addRemotely(project.projectId, match, false, current));
     } catch {
+      requireCurrent(current);
       fail();
       failedTargets.add(match.target.environmentId);
     }
   }
+  requireCurrent(current);
   if (added.length > 0) announce();
   return added;
 }
@@ -163,17 +186,26 @@ async function folderExists(path: string): Promise<boolean> {
  * later removes is remembered as dismissed. Returns the added paths. */
 export async function adoptLocalProjects(
   exists: (path: string) => Promise<boolean> = folderExists,
+  current: () => boolean = () => true,
 ): Promise<string[]> {
+  requireCurrent(current);
   persistDismissed();
   const added: string[] = [];
   for (const project of locallyAdoptableProjects()) {
+    requireCurrent(current);
     const path = normalizeProjectPath(project.path);
     if (!isLocalProject(path) || !(await exists(path))) continue;
-    rememberImportedProjects([{ path, lastUsedAt: Date.now() }]);
+    requireCurrent(current);
+    await withRoomPrivacyMutation(() => {
+      requireCurrent(current);
+      rememberImportedProjects([{ path, lastUsedAt: Date.now() }]);
+    });
+    requireCurrent(current);
     if (!onRail(path) || projectIdForPath(path) !== project.projectId) continue;
     markAutoAdded(project.projectId, path);
     added.push(path);
   }
+  requireCurrent(current);
   if (added.length > 0) announce();
   return added;
 }

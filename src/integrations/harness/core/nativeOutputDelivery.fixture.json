@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "origin": "Independent Python struct/hashlib framing v1 reference, synthetic text",
+  "cases": [
+    {
+      "channel": "stdout",
+      "items": ["A", "İ漢🦀", "\u0000\r\n"],
+      "utf8Bytes": 13,
+      "frameHex": "6279636f64612d6e61746976652d6f75747075742d6974656d732d76310001030000000100000000000000410900000000000000c4b0e6bca2f09fa6800300000000000000000d0a",
+      "sha256": "c2fdb537f3dd022d3352d881938a7f709a698b42a5b10395e0a2f7c886bf89a3"
+    },
+    {
+      "channel": "stderr",
+      "items": ["﻿kept", "same\nsame"],
+      "utf8Bytes": 16,
+      "frameHex": "6279636f64612d6e61746976652d6f75747075742d6974656d732d76310002020000000700000000000000efbbbf6b657074090000000000000073616d650a73616d65",
+      "sha256": "5829d762df2858762b4f5b6bbef8ea1079df526673b3fcc3cccce521f3bea008"
+    },
+    {
+      "channel": "sse",
+      "items": ["{\"x\":\"漢\"}", "data: [DONE]\n"],
+      "utf8Bytes": 24,
+      "frameHex": "6279636f64612d6e61746976652d6f75747075742d6974656d732d76310003020000000b000000000000007b2278223a22e6bca2227d0d00000000000000646174613a205b444f4e455d0a",
+      "sha256": "c66e4c6a0a0d593d5f40d43defaf26af838823a17f6b91e024c6b14f162d364e"
+    },
+    {
+      "channel": "stdout",
+      "items": [""],
+      "utf8Bytes": 0,
+      "frameHex": "6279636f64612d6e61746976652d6f75747075742d6974656d732d76310001010000000000000000000000",
+      "sha256": "2146b7bd1854facc9c47fac4defc80c1b2c83ab758c210f6d9d64862ef9b8b68"
+    }
+  ]
+}

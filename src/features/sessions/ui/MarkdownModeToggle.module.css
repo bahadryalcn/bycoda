@@ -1,0 +1,5 @@
+/* Scale the document, leaving its scroll owner and the toolbar at native size.
+   Find uses viewport rectangles and scrollTop on that unscaled scroll owner. */
+.content [data-markdown-view-pane="preview"] :global(.markdown-preview) > div {
+  zoom: var(--markdown-document-zoom, 1);
+}

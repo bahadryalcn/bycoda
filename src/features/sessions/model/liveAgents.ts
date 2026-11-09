@@ -1,8 +1,16 @@
+export { formatLiveElapsed, formatLiveMinutes } from "../../../shared/i18n/format";
+import {
+  DELEGATION_PARENT_KEY,
+  decodeDelegationParent,
+} from "../../../shared/model/host-contracts/delegation";
 import { sessionIssue } from "./sessionIssue";
+import { delegationParentOf, isDelegatedChildOf } from "./delegatedAgents";
+import { sessionWait, type SessionWait } from "./sessionWait";
 import { executionUserIndex } from "./executionTurn";
 import { composeToolTitle } from "../../../integrations/harness/core/preview";
 import { displayPath } from "../../../shared/lib/paths";
 import {
+  hasPendingApproval,
   sessionDisplayTitle,
   sessionNeedsInput,
   type Block,
@@ -25,29 +33,54 @@ export type LiveAgent = {
   inputKind?: "approval" | "question";
   done: boolean;
   issue?: "retrying" | "failed";
+  /** The agent yielded but work it started still runs; not counted as working. */
+  waiting?: SessionWait;
 };
 
-/** Inbox discussions and orchestration workers have their own panels and
- * never appear as live agents. */
+/** Inbox discussions, orchestration workers and delegated children have their
+ * own panels (or the parent's activity dock) and never appear as live agents. */
 export function isLiveAgentSession(
-  session: Pick<Session, "inboxAsk" | "orchestrationLeadId">,
+  session: Pick<Session, "inboxAsk" | "orchestrationLeadId" | "modelSettings">,
 ): boolean {
-  return !session.inboxAsk && !session.orchestrationLeadId;
+  return (
+    !session.inboxAsk &&
+    !session.orchestrationLeadId &&
+    !decodeDelegationParent(session.modelSettings?.[DELEGATION_PARENT_KEY])
+  );
 }
 
+/** `waits`, when given, is the precomputed waiting map (it also carries Host wake sources). */
 export function liveAgentsFromSessions(
   sessions: Session[],
   unseenFinishedIds: ReadonlySet<string> = new Set(),
+  waits?: ReadonlyMap<string, SessionWait>,
 ): LiveAgent[] {
+  const byParent = new Map<string, Session[]>();
+  for (const session of sessions) {
+    const parentId = delegationParentOf(session)?.parentSessionId;
+    if (parentId) byParent.set(parentId, [...(byParent.get(parentId) ?? []), session]);
+  }
+  const waitOf = (session: Session): SessionWait | null =>
+    waits
+      ? (waits.get(session.id) ?? null)
+      : sessionWait(
+          session,
+          (byParent.get(session.id) ?? []).filter((child) => isDelegatedChildOf(child, session)),
+        );
   return sessions
+    .map((session) => ({
+      session,
+      wait: isLiveAgentSession(session) ? waitOf(session) : null,
+    }))
     .filter(
-      (session) =>
+      ({ session, wait }) =>
         isLiveAgentSession(session) &&
         (isWorking(session) ||
+          wait !== null ||
           sessionIssue(session) === "failed" ||
           unseenFinishedIds.has(session.id)),
     )
-    .map((session) => toLiveAgent(session, unseenFinishedIds.has(session.id)))
+    .map(({ session, wait }) => toLiveAgent(session, unseenFinishedIds.has(session.id), wait))
     .sort(compareLiveAgents);
 }
 
@@ -61,28 +94,23 @@ export function workingProjectPaths(agents: readonly LiveAgent[]): string[] {
   return [
     ...new Set(
       agents
-        .filter((agent) => !agent.done && !agent.needsApproval && agent.cwd)
+        .filter((agent) => !agent.done && !agent.needsApproval && !agent.waiting && agent.cwd)
         .map((agent) => agent.cwd),
     ),
   ];
 }
 
-export function formatLiveElapsed(startedAt: number, now: number): string {
-  const seconds = Math.max(1, Math.round((now - startedAt) / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  if (minutes < 60) return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const minRest = minutes % 60;
-  return minRest ? `${hours}h ${minRest}m` : `${hours}h`;
-}
-
-function toLiveAgent(session: Session, unseenFinished: boolean): LiveAgent {
+function toLiveAgent(
+  session: Session,
+  unseenFinished: boolean,
+  wait: SessionWait | null,
+): LiveAgent {
   const issue = sessionIssue(session);
-  const pending = session.blocks.find((block) => block.approval && !block.approval.decided);
+  const pending = hasPendingApproval(session.blocks)
+    ? session.blocks.find((block) => block.approval && !block.approval.decided)
+    : undefined;
   const pendingQuestion = session.pendingQuestion;
-  const done = (unseenFinished || issue === "failed") && !isWorking(session);
+  const done = (unseenFinished || issue === "failed") && !isWorking(session) && !(wait && !issue);
   const activityBlock = pending ?? lastActivityBlock(session.blocks);
   return {
     id: session.id,
@@ -106,6 +134,7 @@ function toLiveAgent(session: Session, unseenFinished: boolean): LiveAgent {
     needsApproval: Boolean(pending) || Boolean(pendingQuestion),
     inputKind: pendingQuestion ? "question" : pending ? "approval" : undefined,
     done,
+    waiting: wait && !done && !issue && !pending && !pendingQuestion ? wait : undefined,
   };
 }
 
@@ -120,6 +149,7 @@ function isWorking(session: Session): boolean {
 function compareLiveAgents(a: LiveAgent, b: LiveAgent): number {
   if (!!a.issue !== !!b.issue) return a.issue ? -1 : 1;
   if (a.needsApproval !== b.needsApproval) return a.needsApproval ? -1 : 1;
+  if (!!a.waiting !== !!b.waiting && !a.done && !b.done) return a.waiting ? 1 : -1;
   if (a.done !== b.done) return a.done ? 1 : -1;
   return (a.startedAt ?? Number.MAX_SAFE_INTEGER) - (b.startedAt ?? Number.MAX_SAFE_INTEGER);
 }

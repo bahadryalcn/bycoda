@@ -142,6 +142,13 @@ fn search_project_sync(
     scan_files(root, options, query, cancel)
 }
 
+/// UTF-8 locale for `git grep`. macOS always ships `en_US.UTF-8`; `C.UTF-8` is
+/// the common choice elsewhere. An unknown locale makes libc fall back to C.
+#[cfg(target_os = "macos")]
+const GREP_UTF8_LOCALE: &str = "en_US.UTF-8";
+#[cfg(not(target_os = "macos"))]
+const GREP_UTF8_LOCALE: &str = "C.UTF-8";
+
 fn git_grep(
     root: &Path,
     options: &SearchOptions,
@@ -161,6 +168,8 @@ fn git_grep_capped(
     let mut args = vec![
         "grep".to_string(),
         "--untracked".to_string(),
+        // Binary matches would print "Binary file ... matches" instead of a record.
+        "-I".to_string(),
         "-z".to_string(),
         "-n".to_string(),
     ];
@@ -180,17 +189,25 @@ fn git_grep_capped(
     args.extend(pathspecs(&options.include, &options.exclude));
 
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let (mut raw, mut truncated) =
-        match crate::fs::git_output_capped(root, &args, max_bytes, Some(cancel)) {
-            Some(output) => output,
-            None if cancel.load(Ordering::Acquire) => {
-                return Some(SearchResult {
-                    matches: Vec::new(),
-                    truncated: false,
-                });
-            }
-            None => return None,
-        };
+    // Case-insensitive matching of non-ASCII text needs a UTF-8 locale; a GUI
+    // launch on macOS inherits the C locale otherwise.
+    let locale_env = [("LC_ALL", GREP_UTF8_LOCALE)];
+    let (mut raw, mut truncated) = match crate::fs::git_output_capped_with_env(
+        root,
+        &args,
+        max_bytes,
+        Some(cancel),
+        &locale_env,
+    ) {
+        Some(output) => output,
+        None if cancel.load(Ordering::Acquire) => {
+            return Some(SearchResult {
+                matches: Vec::new(),
+                truncated: false,
+            });
+        }
+        None => return None,
+    };
     if truncated {
         // The cap can land inside a match record. Keep only complete lines so the
         // parser never invents a match from a partial path, number, or preview.
@@ -231,7 +248,7 @@ fn git_grep_capped(
             .ok()
             .and_then(|value| value.parse::<u32>().ok())
             .unwrap_or(1);
-        let preview = String::from_utf8_lossy(preview_bytes).to_string();
+        let preview = String::from_utf8_lossy(preview_bytes);
         let path = crate::fs::path_to_js(&root.join(&relative));
         let column = match_column(
             &preview,
@@ -245,7 +262,7 @@ fn git_grep_capped(
             relative,
             line,
             column,
-            preview,
+            preview: bounded_preview(&preview, column),
         });
         if matches.len() >= MAX_MATCHES {
             truncated = true;
@@ -329,7 +346,7 @@ fn scan_files(
                     relative: file.relative.clone(),
                     line: (index + 1) as u32,
                     column,
-                    preview: line.to_string(),
+                    preview: bounded_preview(line, column),
                 });
                 if matches.len() >= MAX_MATCHES {
                     truncated = true;
@@ -392,6 +409,40 @@ fn is_word_boundary(line: &str, start: usize, len: usize) -> bool {
     let after = line[start + len..].chars().next();
     let word = |ch: char| ch.is_alphanumeric() || ch == '_';
     !before.is_some_and(word) && !after.is_some_and(word)
+}
+
+/// Keep the original UTF-16 column for navigation while bounding displayed text.
+fn bounded_preview(line: &str, column: u32) -> String {
+    const LIMIT: usize = 512;
+    let target = column.saturating_sub(1) as usize;
+    let mut units = 0usize;
+    let mut match_byte = line.len();
+    for (index, ch) in line.char_indices() {
+        if units >= target {
+            match_byte = index;
+            break;
+        }
+        units += ch.len_utf16();
+    }
+    let start = line[..match_byte]
+        .char_indices()
+        .rev()
+        .nth(LIMIT / 4)
+        .map_or(0, |(index, _)| index);
+    let mut preview = String::new();
+    if start > 0 {
+        preview.push('…');
+    }
+    let tail = &line[start..];
+    let end = tail
+        .char_indices()
+        .nth(LIMIT)
+        .map_or(tail.len(), |(index, _)| index);
+    preview.push_str(&tail[..end]);
+    if end < tail.len() {
+        preview.push('…');
+    }
+    preview
 }
 
 fn match_column(
@@ -677,6 +728,31 @@ mod tests {
             .matches
             .iter()
             .all(|found| found.preview == "find me" && found.line > 0));
+    }
+
+    #[test]
+    fn git_grep_skips_binary_matches_without_corrupting_records() {
+        let dir = tmp("git-grep-binary");
+        if !git(&dir.0, &["init", "--quiet"]) {
+            return;
+        }
+        std::fs::write(dir.0.join("image.png"), b"\x89PNG\0needle\0").unwrap();
+        std::fs::write(dir.0.join("notes.txt"), "needle in text\n").unwrap();
+        assert!(git(&dir.0, &["add", "image.png", "notes.txt"]));
+
+        let result = git_grep_capped(
+            &dir.0,
+            &options(&dir.0, "needle"),
+            "needle",
+            MAX_GIT_GREP_BYTES,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+
+        assert_eq!(result.matches.len(), 1);
+        assert_eq!(result.matches[0].relative, "notes.txt");
+        assert_eq!(result.matches[0].line, 1);
+        assert_eq!(result.matches[0].preview, "needle in text");
     }
 
     #[test]

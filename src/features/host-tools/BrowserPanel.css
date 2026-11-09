@@ -1,0 +1,386 @@
+.host-tool-panel.host-browser-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 0;
+  padding: 0;
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow: hidden;
+}
+
+/* One browser chrome row: status, rounded address field and page tools, then view and
+   control tools. Wraps as a unit when the pane is narrow; a thin bar tracks host work. */
+.host-browser-panel > .host-browser-bar {
+  order: 0;
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  flex: none;
+  gap: 4px 8px;
+  min-block-size: 2.5rem;
+  padding: 4px 8px;
+  border-block-end: 1px solid var(--ui-pane-border);
+  background: var(--ui-workspace-panel);
+}
+
+.host-browser-bar > .host-browser-progress {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: -1px;
+  pointer-events: none;
+}
+
+.host-browser-bar > .host-browser-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  flex: 1 1 16rem;
+  align-items: center;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.host-browser-panel .host-browser-toolbar .host-browser-url {
+  --ui-field-radius: var(--radius-pill);
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+
+.host-browser-bar > .host-browser-view-actions {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+/* Status dot left of the address field; its tooltip names the state. */
+.host-browser-toolbar > .host-browser-status {
+  flex: none;
+}
+
+.host-browser-status-dot {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--ui-tone-warning-solid);
+}
+
+.host-browser-status-dot[data-tone="success"] {
+  background: var(--ui-tone-success-solid);
+}
+
+.host-browser-status-dot[data-tone="danger"] {
+  background: var(--ui-tone-danger-solid);
+}
+
+.host-browser-control-status {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-micro);
+  color: var(--ui-text-secondary);
+}
+
+/* Labelled control state at the row end: eye = view only, dot = you control it. */
+.host-browser-view-actions > .host-browser-control-toggle {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--ui-text-secondary);
+}
+
+.host-browser-panel .host-browser-control-toggle[data-controlling="true"] svg {
+  color: var(--ui-tone-success-fg);
+}
+
+.host-browser-highlight-label {
+  position: absolute;
+  inset-block-end: 100%;
+  inset-inline-start: 0;
+  max-inline-size: 240px;
+  inline-size: max-content;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--ui-surface-raised);
+  color: var(--color-content);
+  font-size: var(--ui-font-micro);
+  padding: 2px 4px;
+}
+
+.host-browser-highlight-label[data-align="end"] {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+}
+
+.host-browser-box-model {
+  position: absolute;
+  pointer-events: none;
+  border: 1px solid var(--ui-tone-info-fg);
+}
+
+.host-browser-box-model[data-part="margin"] {
+  border-style: dashed;
+  border-color: var(--ui-tone-warning-fg);
+}
+
+.host-browser-box-model[data-part="padding"] {
+  border-style: dotted;
+  border-color: var(--ui-tone-success-fg);
+}
+
+.host-browser-child-bound {
+  border-style: dotted;
+  border-color: var(--ui-tone-info-fg);
+}
+
+.host-browser-input-receiver {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.host-browser-panel > .host-browser-workspace {
+  order: 3;
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-block-size: 0;
+  min-inline-size: 0;
+  gap: 0;
+}
+
+.host-browser-panel .host-browser-stage {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  position: relative;
+  min-block-size: 0;
+  min-inline-size: 0;
+  padding: 0;
+  gap: 0;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.host-browser-panel .host-browser-preview {
+  container-type: size;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  inline-size: 100%;
+  block-size: 100%;
+  min-inline-size: 0;
+  min-block-size: 0;
+  max-block-size: none;
+  border: 0;
+  border-radius: 0;
+  padding: 3px;
+  overflow: auto;
+}
+
+.host-browser-panel .host-browser-preview .host-browser-surface {
+  inline-size: min(100cqw, calc(100cqh * var(--host-browser-aspect)));
+  box-shadow: 0 0 0 1px var(--ui-pane-border);
+  block-size: auto;
+  flex: none;
+}
+
+.host-browser-panel .host-browser-preview[data-actual-size="true"] {
+  align-items: start;
+  justify-content: start;
+}
+
+.host-browser-panel .host-browser-preview[data-actual-size="true"] .host-browser-surface {
+  inline-size: var(--host-browser-width);
+}
+
+/* Start page: icon, next step and recently opened addresses, centered in the stage. */
+.host-browser-start {
+  display: flex;
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  background: var(--ui-workspace-canvas-surface);
+}
+
+.host-browser-start-body {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 12px;
+  inline-size: 100%;
+  max-inline-size: 32rem;
+  margin: auto;
+  padding: 32px 20px;
+  text-align: center;
+}
+
+.host-browser-start-icon {
+  inline-size: 32px;
+  block-size: 32px;
+  color: var(--ui-text-secondary);
+  opacity: 0.7;
+}
+
+.host-browser-start-text {
+  margin: 0;
+  max-inline-size: 42ch;
+  font-size: var(--ui-font-body);
+  color: var(--ui-text-secondary);
+}
+
+.host-browser-recents {
+  inline-size: 100%;
+  margin-block-start: 12px;
+  text-align: start;
+}
+
+.host-browser-recents-title {
+  margin: 0 0 6px;
+  padding-inline: 4px;
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+  color: var(--ui-text-secondary);
+}
+
+.host-browser-recents ul {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--ui-radius-card);
+  overflow: hidden;
+}
+
+.host-browser-recents li {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-inline-end: 4px;
+}
+
+.host-browser-recents li + li {
+  border-block-start: 1px solid var(--ui-pane-border);
+}
+
+.host-browser-recents li > :first-child {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.host-browser-recent-url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-browser-selection-mode {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 6px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-inline-start: 8px;
+  background: var(--ui-surface-raised);
+  border-radius: var(--ui-radius-popup);
+  font-size: var(--ui-font-micro);
+  white-space: nowrap;
+}
+
+.host-browser-selection-popover {
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.host-browser-selection-popover .host-browser-side-section {
+  padding: 0;
+  gap: 8px;
+  background: none;
+  border-radius: 0;
+}
+
+.host-browser-selection-popover .host-browser-target {
+  margin: 0;
+  font-size: var(--ui-font-caption);
+  overflow-wrap: anywhere;
+}
+
+.host-browser-panel > .host-browser-setup {
+  order: 2;
+  flex: none;
+  padding: 6px 10px;
+  margin: 0;
+  font-size: var(--ui-font-caption);
+}
+
+.host-browser-controls .host-browser-error {
+  max-block-size: 140px;
+  overflow: auto;
+  color: var(--ui-tone-danger-fg);
+  font-size: var(--ui-font-caption);
+}
+
+.host-browser-error pre {
+  margin-block: 6px 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--color-content);
+  font: inherit;
+}
+
+.host-browser-setup {
+  order: 2;
+  flex: none;
+  padding: 6px 10px;
+  margin: 0;
+  font-size: var(--ui-font-caption);
+}
+
+.host-browser-error {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  color: var(--ui-tone-danger-fg);
+}
+
+.host-browser-error pre {
+  margin-block: 6px 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--color-content);
+  font: inherit;
+}
+
+.host-browser-setup {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.host-browser-setup strong {
+  font-weight: 500;
+}
+
+.host-browser-location {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}

@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
+vi.mock("../../connections/model/sessionExecutionBinding", async (original) => ({
+  ...(await original<typeof import("../../connections/model/sessionExecutionBinding")>()),
+  flushHostSessionBindings: vi.fn(async () => {}),
+}));
 
 const cache = await import("../model/draftCache");
 const store = await import("./composerDraftStore");
@@ -434,5 +438,400 @@ describe("composer draft store", () => {
     } finally {
       stop();
     }
+  });
+});
+
+describe("actual composer persistence observation", () => {
+  const attempts: { abandon(): void }[] = [];
+  let currentCache: typeof cache;
+  let currentStore: typeof store;
+  let registry: (typeof import("./persistenceDrain"))["rendererPersistenceDrain"];
+  function pending<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+  function begin(id = "drain-draft") {
+    const attempt = registry.beginAttempt([id]);
+    attempts.push(attempt);
+    return attempt;
+  }
+  const large = () => ({
+    id: "large",
+    name: "held.png",
+    kind: "image" as const,
+    mimeType: "image/png",
+    size: 4_500_001,
+    data: "A".repeat(6_000_004),
+  });
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    invoke.mockReset();
+    answer([]);
+    currentCache = await import("../model/draftCache");
+    currentStore = await import("./composerDraftStore");
+    registry = (await import("./persistenceDrain")).rendererPersistenceDrain;
+    await currentStore.hydrateComposerDrafts();
+  });
+  afterEach(async () => {
+    attempts.splice(0).forEach((attempt) => attempt.abandon());
+    answer([]);
+    await currentStore.flushComposerDrafts();
+    vi.doUnmock("./persistenceDrain");
+    vi.doUnmock("../model/draftCache");
+    vi.doUnmock("./sessionStore");
+    vi.useRealTimers();
+  });
+
+  it("retains the draft producer through blob spill and the subsequent native draft commit", async () => {
+    const blob = pending<string>();
+    const committed = pending<null>();
+    invoke.mockImplementation((command: string) =>
+      command === "write_attachment"
+        ? blob.promise
+        : command === "session_set_draft"
+          ? committed.promise
+          : Promise.resolve([]),
+    );
+    currentCache.setComposerDraft("drain-draft", "preserve text and bytes");
+    currentCache.setComposerAttachments("drain-draft", [large()]);
+    const saving = currentStore.flushComposerDrafts();
+    const attempt = begin();
+    let observed = false;
+    const observation = attempt.observe().then((value) => {
+      observed = true;
+      return value;
+    });
+    blob.resolve("/owned/held.png");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(observed).toBe(false);
+    expect(writes().at(-1)).toMatchObject({
+      sessionId: "drain-draft",
+      draft: {
+        text: "preserve text and bytes",
+        attachments: [{ id: "large", path: "/owned/held.png" }],
+      },
+    });
+    committed.resolve(null);
+    await saving;
+    await expect(observation).resolves.toMatchObject({ qualified: false });
+    attempt.assertCurrent();
+  });
+
+  it("invalidates late text but keeps and eventually saves the newest unsent draft", async () => {
+    const committed = pending<null>();
+    let count = 0;
+    invoke.mockImplementation((command: string) =>
+      command === "session_set_draft" && ++count === 1 ? committed.promise : Promise.resolve(null),
+    );
+    currentCache.setComposerDraft("drain-draft", "first");
+    const saving = currentStore.flushComposerDrafts();
+    await vi.advanceTimersByTimeAsync(0);
+    const attempt = begin();
+    const observation = expect(attempt.observe()).rejects.toMatchObject({ code: "late-producer" });
+    currentCache.setComposerDraft("drain-draft", "new retained text");
+    await observation;
+    committed.resolve(null);
+    await saving;
+    expect(currentCache.getComposerDraft("drain-draft")).toBe("new retained text");
+    expect(writes().at(-1)).toMatchObject({ draft: { text: "new retained text" } });
+  });
+
+  it("invalidates a late explicit clear without losing its empty native draft deletion", async () => {
+    const blob = pending<string>();
+    invoke.mockImplementation((command: string) =>
+      command === "write_attachment" ? blob.promise : Promise.resolve(null),
+    );
+    currentCache.setComposerDraft("drain-draft", "old image");
+    currentCache.setComposerAttachments("drain-draft", [large()]);
+    const saving = currentStore.flushComposerDrafts();
+    const attempt = begin();
+    currentCache.clearComposerDraft("drain-draft");
+    await expect(attempt.observe()).rejects.toMatchObject({ code: "late-producer" });
+    blob.resolve("/owned/old.png");
+    await saving;
+    expect(writes().at(-1)).toEqual({ sessionId: "drain-draft", draft: null });
+    expect(currentCache.getComposerAttachments("drain-draft")).toEqual([]);
+  });
+
+  it("retains failed spill bytes and permits a fresh strict attempt after a real full draft receipt", async () => {
+    invoke.mockImplementation(async (command: string) => {
+      if (command === "write_attachment") throw new Error("blob disk full");
+      return null;
+    });
+    currentCache.setComposerDraft("drain-draft", "keep failed bytes");
+    currentCache.setComposerAttachments("drain-draft", [large()]);
+    await expect(currentStore.flushComposerDrafts()).rejects.toThrow("blob disk full");
+    expect(currentCache.getComposerAttachments("drain-draft")[0].data).toHaveLength(6_000_004);
+    invoke.mockImplementation(async (command: string) =>
+      command === "write_attachment" ? "/owned/retried.png" : null,
+    );
+    await expect(begin().observe()).resolves.toMatchObject({ qualified: false });
+    expect(writes().at(-1)).toMatchObject({
+      draft: {
+        text: "keep failed bytes",
+        attachments: [{ path: "/owned/retried.png" }],
+      },
+    });
+  });
+
+  it("forces a native receipt when a failed commit is followed by a return to the old cached baseline", async () => {
+    currentCache.setComposerDraft("drain-draft", "original");
+    await currentStore.flushComposerDrafts();
+    currentCache.setComposerDraft("drain-draft", "unknown commit");
+    invoke.mockRejectedValueOnce(new Error("native reply lost"));
+    await expect(currentStore.flushComposerDrafts()).rejects.toThrow("native reply lost");
+    currentCache.setComposerDraft("drain-draft", "original");
+    invoke.mockClear();
+    invoke.mockResolvedValue(null);
+    await expect(begin().observe()).resolves.toMatchObject({ qualified: false });
+    expect(writes()).toEqual([
+      { sessionId: "drain-draft", draft: { text: "original", mcpTags: [], attachments: [] } },
+    ]);
+  });
+
+  it("strictly flushes only the requested draft and leaves another session's pending content intact", async () => {
+    currentCache.setComposerDraft("target-draft", "target");
+    currentCache.setComposerDraft("other-draft", "other retained");
+    await currentStore.flushComposerDraftsStrict(["target-draft"]);
+    expect(writes().map((write) => write.sessionId)).toEqual(["target-draft"]);
+    expect(currentCache.getComposerDraft("other-draft")).toBe("other retained");
+    await expect(begin("target-draft").observe()).resolves.toMatchObject({ qualified: false });
+    expect(writes().map((write) => write.sessionId)).toEqual(["target-draft"]);
+  });
+
+  it("retains a timed-out hydrate producer until its actual attachment check and cache restore settle", async () => {
+    const inspected = pending<unknown[]>();
+    invoke.mockImplementation((command: string) => {
+      if (command === "session_list_drafts")
+        return Promise.resolve([
+          saved("drain-draft", {
+            text: "late restored",
+            mcpTags: [],
+            attachments: [
+              {
+                id: "file",
+                name: "held.txt",
+                kind: "file",
+                mimeType: "text/plain",
+                size: 1,
+                path: "/owned/held.txt",
+              },
+            ],
+          }),
+        ]);
+      if (command === "inspect_paths") return inspected.promise;
+      return Promise.resolve(null);
+    });
+    const hydrating = currentStore.hydrateComposerDrafts();
+    await vi.advanceTimersByTimeAsync(2001);
+    await hydrating;
+    let settled = false;
+    const observation = begin()
+      .observe()
+      .then(() => {
+        settled = true;
+      });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    inspected.resolve([{ path: "/owned/held.txt" }]);
+    await observation;
+    expect(currentCache.getComposerDraft("drain-draft")).toBe("late restored");
+    expect(currentCache.getComposerAttachments("drain-draft")[0].path).toBe("/owned/held.txt");
+  });
+
+  it("preserves an old module's pending debounce and latest unsent text with a cached registry", async () => {
+    const persistence = await import("./persistenceDrain");
+    const sessions = await import("./sessionStore");
+    currentCache.setComposerDraft("drain-draft", "old pending text");
+    const retainedCache = currentCache;
+    vi.resetModules();
+    vi.doMock("./persistenceDrain", () => persistence);
+    vi.doMock("../model/draftCache", () => retainedCache);
+    vi.doMock("./sessionStore", () => sessions);
+    const reloaded = await import("./composerDraftStore");
+    currentCache.setComposerDraft("drain-draft", "newest unsent text");
+    await expect(begin().observe()).resolves.toMatchObject({ qualified: false });
+    expect(writes().at(-1)).toMatchObject({ draft: { text: "newest unsent text" } });
+    expect(currentCache.getComposerDraft("drain-draft")).toBe("newest unsent text");
+    await reloaded.flushComposerDraftsStrict(["drain-draft"]);
+    // A full-profile flush may retire the old hook. Its surviving subscription
+    // must reactivate that hook when it accepts another cache edit afterwards.
+    const full = registry.beginAttempt("profile");
+    attempts.push(full);
+    await full.observe();
+    currentCache.setComposerDraft("drain-draft", "later retained text");
+    await begin().observe();
+    expect(writes().at(-1)).toMatchObject({ draft: { text: "later retained text" } });
+  });
+
+  it("retains draft commit failure across module re-evaluation until an actual full native replacement", async () => {
+    const persistence = await import("./persistenceDrain");
+    const sessions = await import("./sessionStore");
+    currentCache.setComposerDraft("drain-draft", "retained failed draft");
+    invoke.mockRejectedValueOnce(new Error("old draft commit unknown"));
+    await expect(currentStore.flushComposerDrafts()).rejects.toThrow("commit unknown");
+    const retainedCache = currentCache;
+    vi.resetModules();
+    vi.doMock("./persistenceDrain", () => persistence);
+    vi.doMock("../model/draftCache", () => retainedCache);
+    vi.doMock("./sessionStore", () => sessions);
+    const reloaded = await import("./composerDraftStore");
+    await expect(reloaded.flushComposerDraftsStrict(["drain-draft"])).rejects.toThrow(
+      "Unconfirmed persistence",
+    );
+    invoke.mockResolvedValue(null);
+    await expect(begin().observe()).resolves.toMatchObject({ qualified: false });
+    expect(writes().at(-1)).toMatchObject({ draft: { text: "retained failed draft" } });
+  });
+
+  it("settles concurrent incumbent flushes and a new module flush without losing the newest draft or deadlocking", async () => {
+    const persistence = await import("./persistenceDrain");
+    const sessions = await import("./sessionStore");
+    const firstCommit = pending<null>();
+    let count = 0;
+    invoke.mockImplementation((command: string) =>
+      command === "session_set_draft" && ++count === 1 ? firstCommit.promise : Promise.resolve([]),
+    );
+    currentCache.setComposerDraft("drain-draft", "incumbent text");
+    const first = currentStore.flushComposerDrafts();
+    const concurrent = currentStore.flushComposerDrafts();
+    await vi.advanceTimersByTimeAsync(0);
+    const retainedCache = currentCache;
+    vi.resetModules();
+    vi.doMock("./persistenceDrain", () => persistence);
+    vi.doMock("../model/draftCache", () => retainedCache);
+    vi.doMock("./sessionStore", () => sessions);
+    const reloaded = await import("./composerDraftStore");
+    invoke.mockResolvedValue(null);
+    currentCache.setComposerDraft("drain-draft", "newest text");
+    const newer = reloaded.flushComposerDrafts();
+    const attempt = begin();
+    const observation = attempt.observe();
+    firstCommit.resolve(null);
+    await Promise.all([first, concurrent, newer]);
+    await observation;
+    expect(writes().at(-1)).toMatchObject({ draft: { text: "newest text" } });
+    expect(currentCache.getComposerDraft("drain-draft")).toBe("newest text");
+  });
+
+  it("retains accepted delete-to-clear lineage after the delete parent settles until the draft ACK", async () => {
+    const sessions = await import("./sessionStore");
+    currentCache.setComposerDraft("drain-draft", "saved before delete");
+    await currentStore.flushComposerDrafts();
+    const deleted = pending<null>();
+    const draftAck = pending<null>();
+    invoke.mockImplementation((command: string) =>
+      command === "session_delete"
+        ? deleted.promise
+        : command === "session_set_draft"
+          ? draftAck.promise
+          : Promise.resolve([]),
+    );
+    const deleting = sessions.deleteSession("drain-draft");
+    await vi.advanceTimersByTimeAsync(0);
+    const attempt = begin();
+    const observation = attempt.observe().then(
+      (result) => ({ result }),
+      (error: unknown) => ({ error }),
+    );
+    deleted.resolve(null);
+    await deleting;
+    // The original delete work is already settled before its descendant timer fires.
+    await vi.advanceTimersByTimeAsync(500);
+    let beforeAckError: unknown;
+    try {
+      attempt.assertCurrent();
+    } catch (error) {
+      beforeAckError = error;
+    }
+    expect(writes().at(-1)).toEqual({ sessionId: "drain-draft", draft: null });
+    draftAck.resolve(null);
+    const outcome = await observation;
+    expect(beforeAckError).toBeUndefined();
+    expect(outcome).toMatchObject({ result: { qualified: false } });
+    expect(currentCache.getComposerDraft("drain-draft")).toBeUndefined();
+  });
+
+  it("keeps pre-boundary debounce admission while a held profile write lets its timer fire", async () => {
+    const sessions = await import("./sessionStore");
+    const profile = pending<null>();
+    const draftAck = pending<null>();
+    invoke.mockImplementation((command: string) =>
+      command === "workspace_set_snapshot"
+        ? profile.promise
+        : command === "session_set_draft"
+          ? draftAck.promise
+          : Promise.resolve([]),
+    );
+    currentCache.setComposerDraft("drain-draft", "accepted before boundary");
+    const savingProfile = sessions.saveWorkspaceSnapshot({ sessionRecovery: {} });
+    await vi.advanceTimersByTimeAsync(0);
+    const attempt = begin();
+    const observation = attempt.observe().then(
+      (result) => ({ result }),
+      (error: unknown) => ({ error }),
+    );
+    await vi.advanceTimersByTimeAsync(501);
+    let beforeAckError: unknown;
+    try {
+      attempt.assertCurrent();
+    } catch (error) {
+      beforeAckError = error;
+    }
+    expect(writes().at(-1)).toMatchObject({ draft: { text: "accepted before boundary" } });
+    draftAck.resolve(null);
+    profile.resolve(null);
+    await savingProfile;
+    const outcome = await observation;
+    expect(beforeAckError).toBeUndefined();
+    expect(outcome).toMatchObject({ result: { qualified: false } });
+  });
+
+  it("still invalidates an ordinary late clear that replaces a pre-boundary debounce, preserving its deletion", async () => {
+    const sessions = await import("./sessionStore");
+    currentCache.setComposerDraft("drain-draft", "previously saved");
+    await currentStore.flushComposerDrafts();
+    const profile = pending<null>();
+    invoke.mockImplementation((command: string) =>
+      command === "workspace_set_snapshot" ? profile.promise : Promise.resolve(null),
+    );
+    currentCache.setComposerDraft("drain-draft", "pre-boundary pending");
+    const savingProfile = sessions.saveWorkspaceSnapshot({ sessionRecovery: {} });
+    const attempt = begin();
+    const observation = attempt.observe().then(
+      (result) => ({ result }),
+      (error: unknown) => ({ error }),
+    );
+    currentCache.clearComposerDraft("drain-draft");
+    await vi.advanceTimersByTimeAsync(501);
+    profile.resolve(null);
+    await savingProfile;
+    await expect(observation).resolves.toMatchObject({ error: { code: "late-producer" } });
+    expect(writes().at(-1)).toEqual({ sessionId: "drain-draft", draft: null });
+    expect(currentCache.getComposerDraft("drain-draft")).toBeUndefined();
+  });
+
+  it("keeps ordinary debounce timing and its accepted root even when the timer fires before observe", async () => {
+    const draftAck = pending<null>();
+    invoke.mockImplementation((command: string) =>
+      command === "session_set_draft" ? draftAck.promise : Promise.resolve(null),
+    );
+    currentCache.setComposerDraft("drain-draft", "timer-owned draft");
+    const attempt = begin();
+    await vi.advanceTimersByTimeAsync(499);
+    expect(writes()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(writes()).toHaveLength(1);
+    const observation = attempt.observe().then(
+      (result) => ({ result }),
+      (error: unknown) => ({ error }),
+    );
+    draftAck.resolve(null);
+    await expect(observation).resolves.toMatchObject({ result: { qualified: false } });
+    expect(writes().at(-1)).toMatchObject({ draft: { text: "timer-owned draft" } });
   });
 });

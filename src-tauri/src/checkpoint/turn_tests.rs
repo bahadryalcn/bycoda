@@ -1,6 +1,34 @@
 // Included in the existing checkpoint test module to reuse its isolated fixtures.
 
 #[test]
+fn turn_ignores_metadata_files_but_keeps_real_peer_record_errors() {
+    let repo = tmp("turn-metadata");
+    assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
+    let cwd = repo.0.to_string_lossy().into_owned();
+    let (_tmp, store) = store();
+    for name in [".DS_Store", "Thumbs.db", "notes"] {
+        std::fs::write(store.root.join(name), "metadata").unwrap();
+    }
+    store.recover_interrupted_turns();
+    store.begin_turn("session", &cwd, "one").unwrap();
+    std::fs::write(repo.0.join("a.txt"), "agent\n").unwrap();
+    store.finish_turn("session", &cwd, "one", false).unwrap();
+    assert!(store.status("session", &cwd).unwrap().files[0].undoable);
+    store.undo("session", &cwd, None).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(repo.0.join("a.txt")).unwrap(),
+        "base\n"
+    );
+    let peer = store.root.join("peer");
+    std::fs::create_dir_all(&peer).unwrap();
+    std::fs::create_dir(peer.join("turn.json")).unwrap();
+    let error = store.begin_turn("session", &cwd, "two").unwrap_err();
+    assert!(error.contains("Cannot read checkpoint"), "{error}");
+    assert!(error.contains("turn.json"), "{error}");
+    assert!(peer.join("turn.json").is_dir());
+}
+
+#[test]
 fn turn_shared_review_includes_own_new_files_without_adopting_peer_edits() {
     let repo = tmp("turn-own-new");
     assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
@@ -385,13 +413,19 @@ fn prune_orphans_removes_only_old_folders_of_deleted_idle_sessions() {
     let known: HashSet<String> = ["kept".to_string()].into();
 
     // Too recent: a session may checkpoint before its first save.
-    assert_eq!(store.prune_orphans(&known, std::time::Duration::from_secs(3600)), 0);
+    assert_eq!(
+        store.prune_orphans(&known, std::time::Duration::from_secs(3600)),
+        0
+    );
     assert!(store.session_dir("deleted").exists());
 
     assert_eq!(store.prune_orphans(&known, std::time::Duration::ZERO), 1);
     assert!(store.session_dir("kept").exists());
     assert!(!store.session_dir("deleted").exists());
-    assert!(store.session_dir("busy").exists(), "an active turn is never pruned");
+    assert!(
+        store.session_dir("busy").exists(),
+        "an active turn is never pruned"
+    );
     store.finish_turn("busy", &cwd, "one", false).unwrap();
 }
 
@@ -402,7 +436,12 @@ fn turn_record(store: &CheckpointStore, session: &str) -> serde_json::Value {
 
 /// Leaves `session` with an active turn, as after a forced kill, and returns a
 /// store over the same root whose recovery barrier starts empty, as at launch.
-fn crashed_session(store: &CheckpointStore, cwd: &str, session: &str, turn: &str) -> CheckpointStore {
+fn crashed_session(
+    store: &CheckpointStore,
+    cwd: &str,
+    session: &str,
+    turn: &str,
+) -> CheckpointStore {
     store.begin_turn(session, cwd, turn).unwrap();
     CheckpointStore::new(store.root.clone())
 }
@@ -532,4 +571,103 @@ fn recovery_wait_gives_up_after_its_bound_and_proceeds() {
         .barrier
         .wait_for("session", &[], std::time::Duration::from_millis(100));
     assert!(started.elapsed() >= std::time::Duration::from_millis(100));
+}
+
+fn bycoda_refs(repo: &Path) -> Vec<String> {
+    git_output(
+        repo,
+        &["for-each-ref", "--format=%(refname)", "refs/bycoda"],
+    )
+    .map(|bytes| {
+        String::from_utf8_lossy(&bytes)
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+#[test]
+fn prune_orphans_deletes_the_checkpoint_refs_of_a_deleted_session() {
+    let repo = tmp("prune-orphan-refs");
+    assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
+    let cwd = repo.0.to_string_lossy().into_owned();
+    let (_tmp, store) = store();
+    for session in ["kept", "deleted"] {
+        store.begin_turn(session, &cwd, "one").unwrap();
+        std::fs::write(repo.0.join("a.txt"), format!("{session}\n")).unwrap();
+        store.finish_turn(session, &cwd, "one", false).unwrap();
+    }
+    let refs = bycoda_refs(&repo.0);
+    assert!(refs.iter().any(|r| r.contains("/deleted/")), "{refs:?}");
+    let known: HashSet<String> = ["kept".to_string()].into();
+    assert_eq!(store.prune_orphans(&known, std::time::Duration::ZERO), 1);
+    let refs = bycoda_refs(&repo.0);
+    assert!(
+        refs.iter().any(|r| r.contains("/kept/")),
+        "a live session keeps its refs: {refs:?}"
+    );
+    assert!(
+        !refs.iter().any(|r| r.contains("/deleted/")),
+        "refs of a pruned session must go with its snapshots: {refs:?}"
+    );
+}
+
+#[test]
+fn checkpoint_refs_do_not_grow_with_every_turn_of_a_session() {
+    let repo = tmp("refs-bounded");
+    assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
+    let cwd = repo.0.to_string_lossy().into_owned();
+    let (_tmp, store) = store();
+    let turns = 6;
+    for turn in 1..=turns {
+        let id = format!("turn-{turn}");
+        store.begin_turn("session", &cwd, &id).unwrap();
+        std::fs::write(repo.0.join("a.txt"), format!("edit {turn}\n")).unwrap();
+        store.finish_turn("session", &cwd, &id, false).unwrap();
+    }
+    assert_eq!(
+        relatives(&store.status("session", &cwd).unwrap()),
+        vec!["a.txt"]
+    );
+    let refs = bycoda_refs(&repo.0);
+    assert!(
+        refs.len() < turns * 2,
+        "{} refs after {turns} turns",
+        refs.len()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn finalization_filters_unrelated_non_utf8_paths_before_decoding() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+    let repo = tmp("turn-non-utf8");
+    assert!(init_git_commit(&repo.0, &[("own.txt", "base\n")]));
+    let invalid = repo
+        .0
+        .join(OsString::from_vec(b"external-\xff.txt".to_vec()));
+    match std::fs::write(&invalid, "before") {
+        Ok(()) => {}
+        // APFS and other Unicode-only filesystems refuse non-UTF-8 names
+        // (EILSEQ), so such a path cannot occur in a repository there.
+        Err(error) if error.raw_os_error() == Some(libc::EILSEQ) => return,
+        Err(error) => panic!("create non-UTF-8 path: {error}"),
+    }
+    assert!(git(&repo.0, &["add", "--all"]));
+    assert!(git(&repo.0, &["commit", "-m", "external file"]));
+    let cwd = repo.0.to_string_lossy().into_owned();
+    let (_tmp, store) = store();
+    store.begin_turn("session", &cwd, "one").unwrap();
+    store.prepare("session", &cwd, &["own.txt".into()]).unwrap();
+    std::fs::write(repo.0.join("own.txt"), "agent\n").unwrap();
+    store.capture("session", &cwd, &["own.txt".into()]).unwrap();
+    std::fs::write(&invalid, "external").unwrap();
+    store.finish_turn("session", &cwd, "one", false).unwrap();
+    assert_eq!(
+        relatives(&store.status("session", &cwd).unwrap()),
+        vec!["own.txt"]
+    );
+    assert_eq!(std::fs::read(&invalid).unwrap(), b"external");
 }

@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { atScrollEdge, hasScrollRoom, lockOverscroll } from "./useLockOverscroll";
+
+// Pin the default to a non-mac platform; mac behaviour is exercised by passing `true`.
+vi.mock("../../platform/tauri/platform", () => ({ IS_MAC: false }));
 
 const box = (over: Partial<Record<string, number>> = {}) => ({
   scrollTop: 0,
@@ -30,7 +33,7 @@ describe("useLockOverscroll wheel guard", () => {
       const sizes = box({ scrollTop, scrollLeft, scrollWidth: 800 });
       expect(atScrollEdge(sizes, { deltaX, deltaY })).toBe(false);
       const scroller = sized(document.createElement("div"), sizes);
-      const detach = lockOverscroll(scroller);
+      const detach = lockOverscroll(scroller, true);
       const wheel = new WheelEvent("wheel", {
         deltaX,
         deltaY,
@@ -44,7 +47,7 @@ describe("useLockOverscroll wheel guard", () => {
 
   it.each(["ctrlKey", "shiftKey"])("leaves %s wheel gestures to the browser", (modifier) => {
     const scroller = sized(document.createElement("div"), box());
-    const detach = lockOverscroll(scroller);
+    const detach = lockOverscroll(scroller, true);
     const wheel = new WheelEvent("wheel", { deltaY: -40, cancelable: true });
     Object.defineProperty(wheel, modifier, { value: true });
     scroller.dispatchEvent(wheel);
@@ -63,7 +66,7 @@ describe("useLockOverscroll wheel guard", () => {
       inner.append(svg);
       outer.append(inner);
       document.body.append(outer);
-      const detach = lockOverscroll(outer);
+      const detach = lockOverscroll(outer, true);
       const wheel = new WheelEvent("wheel", {
         deltaY: 40,
         bubbles: true,
@@ -137,7 +140,7 @@ describe("useLockOverscroll wheel guard", () => {
       Object.assign(inner.style, { overflowX, overflowY });
       outer.append(inner);
       document.body.append(outer);
-      const detach = lockOverscroll(outer);
+      const detach = lockOverscroll(outer, true);
       const wheel = new WheelEvent("wheel", {
         deltaX,
         deltaY,
@@ -150,6 +153,21 @@ describe("useLockOverscroll wheel guard", () => {
       outer.remove();
     },
   );
+
+  it("attaches no wheel listener off macOS, so the wheel is never cancelled", () => {
+    const scroller = sized(document.createElement("div"), box({ scrollTop: 400 }));
+    const addSpy = vi.spyOn(scroller, "addEventListener");
+    const detach = lockOverscroll(scroller);
+    expect(addSpy).not.toHaveBeenCalled();
+    const wheel = new WheelEvent("wheel", { deltaY: 40, cancelable: true });
+    scroller.dispatchEvent(wheel);
+    expect(wheel.defaultPrevented).toBe(false);
+    // Chaining to outer scrollers is still contained, on the compositor.
+    expect(scroller.style.overscrollBehavior).toBe("contain");
+    detach();
+    expect(scroller.style.overscrollBehavior).toBe("");
+    addSpy.mockRestore();
+  });
 
   it("does not block horizontal wheel on vertically scrolling containers", () => {
     expect(atScrollEdge(box(), { deltaX: 40, deltaY: 0 })).toBe(false);
@@ -187,7 +205,7 @@ describe("useLockOverscroll wheel guard", () => {
     field.style.overflowY = "auto";
     scroller.append(field);
     document.body.append(scroller);
-    const detach = lockOverscroll(scroller);
+    const detach = lockOverscroll(scroller, true);
 
     const down = new WheelEvent("wheel", {
       deltaY: 40,

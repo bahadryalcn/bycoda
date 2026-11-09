@@ -6,9 +6,53 @@ import {
   savePendingRemoteCommand,
 } from "./connections";
 import type { HostCommand } from "./protocol";
-import { markRemoteCommandStopped, remoteCommandWasStopped } from "./remoteOutbox";
+import {
+  markRemoteCommandStopped,
+  remoteCommandWasStopped,
+  pendingRemoteAttachmentIds,
+  pendingRemoteEnvironmentAttachmentIds,
+  remoteRequestPastRetryLimit,
+} from "./remoteOutbox";
 
 beforeEach(() => localStorage.clear());
+
+it.each(["send", "draft"] as const)(
+  "retains an atomic %s without inventing its nested session ID",
+  (type) => {
+    const command: Extract<HostCommand, { type: "create" }> = {
+      type: "create",
+      commandId: "atomic-create",
+      projectId: "p",
+      harness: "codex",
+      model: "test",
+      runtimeMode: "supervised",
+      firstTurn: {
+        type,
+        commandId: "atomic-first",
+        text: "Original prompt",
+        attachments: [
+          {
+            id: "attachment-original",
+            name: "file.txt",
+            mimeType: "text/plain",
+            kind: "file",
+            size: 4,
+          },
+        ],
+      },
+    };
+    savePendingRemoteCommand("project", "env", command, "first-tab");
+    expect(pendingRemoteCommand("project", "env", null, "first-tab")).toEqual(command);
+    expect(command.firstTurn).not.toHaveProperty("sessionId");
+    expect(pendingRemoteAttachmentIds("project", "env", "first-tab")).toEqual([
+      "attachment-original",
+    ]);
+    expect(pendingRemoteEnvironmentAttachmentIds("env")).toEqual(["attachment-original"]);
+    expect(pendingRemoteCommand("project", "env", null, "first-tab")?.commandId).toBe(
+      "atomic-create",
+    );
+  },
+);
 it("persists Stop across command saves without changing the original request or follow-up", () => {
   savePendingRemoteCommand("project", "env", create, "first-tab", followup);
   markRemoteCommandStopped("project", "env", create.commandId);
@@ -57,4 +101,18 @@ it("can recover commands saved by the earlier desktop", () => {
     JSON.stringify(create),
   );
   expect(pendingRemoteCommand("project", "env", null, "first-tab")).toEqual(create);
+});
+
+it("treats only a request id older than the retry limit as unknown, never a legacy or future id", () => {
+  const day = 24 * 60 * 60 * 1000;
+  const issuedAt = Date.parse("2026-01-01T00:00:00.000Z");
+  const id = (ms: number) =>
+    `${ms.toString(16).padStart(12, "0")}`.replace(/^(.{8})(.{4})/, "$1-$2") +
+    "-7000-8000-000000000000";
+  expect(remoteRequestPastRetryLimit(id(issuedAt), issuedAt + 29 * day)).toBe(false);
+  expect(remoteRequestPastRetryLimit(id(issuedAt), issuedAt + 30 * day)).toBe(true);
+  expect(remoteRequestPastRetryLimit(id(issuedAt + day), issuedAt)).toBe(false);
+  expect(
+    remoteRequestPastRetryLimit("3f2b1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d", issuedAt + 400 * day),
+  ).toBe(false);
 });

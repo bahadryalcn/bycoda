@@ -1,26 +1,106 @@
 import { isPreparingHandoff } from "./handoff";
-import type { FollowUpBehavior } from "../../settings/model/settings";
+import type { FollowUpBehavior } from "../../settings";
+import { t } from "../../../shared/i18n/core";
 import { moveItem, orderByIds } from "../../../shared/lib/reorder";
+import { mergeModelSettings, modelEffortLabel, resolveModel } from "./models";
 import { hasMissingAttachment } from "./queuePersistence";
 import type { ModelTarget, QueuedMessage, Session, TurnIntent } from "./session";
 
 export function queuedModelTarget(
-  session: Pick<Session, "harness" | "model" | "modelSettings">,
+  session: Pick<Session, "harness" | "model" | "modelSettings"> &
+    Partial<Pick<Session, "providerAccountId" | "nextProviderAccountId">>,
 ): ModelTarget {
+  const providerAccountId = session.nextProviderAccountId ?? session.providerAccountId;
   return {
     harness: session.harness,
     model: session.model,
     modelSettings: { ...session.modelSettings },
+    ...(providerAccountId ? { providerAccountId } : {}),
   };
 }
 
-export function sameQueuedModelTarget(a: ModelTarget, b: ModelTarget): boolean {
+function sameSettings(a: Record<string, string>, b: Record<string, string>): boolean {
   return (
-    a.harness === b.harness &&
-    a.model === b.model &&
-    Object.keys(a.modelSettings).length === Object.keys(b.modelSettings).length &&
-    Object.entries(a.modelSettings).every(([key, value]) => b.modelSettings[key] === value)
+    Object.keys(a).length === Object.keys(b).length &&
+    Object.entries(a).every(([key, value]) => b[key] === value)
   );
+}
+
+/**
+ * The model and settings a target actually runs with. The composer stores
+ * either the sparse selection or every default once a setting is touched, so
+ * `{ effort: "high" }` and the same choice with its defaults filled in are one
+ * target. Models outside the settings catalog keep their raw values.
+ */
+function effectiveModelSettings(target: ModelTarget): Record<string, string> {
+  const model = resolveModel(target.harness, target.model);
+  return model.id === target.model && model.settings?.length
+    ? mergeModelSettings(model, target.modelSettings)
+    : target.modelSettings;
+}
+
+export function sameQueuedModelTarget(a: ModelTarget, b: ModelTarget): boolean {
+  if (a.harness !== b.harness || a.model !== b.model) return false;
+  return (
+    sameSettings(a.modelSettings, b.modelSettings) ||
+    sameSettings(effectiveModelSettings(a), effectiveModelSettings(b))
+  );
+}
+
+type RunningSelection = Pick<
+  Session,
+  "busy" | "harness" | "model" | "modelSettings" | "runningModelTarget"
+>;
+
+/**
+ * The provider that owns live-turn actions (approval, answer, steer). While a
+ * turn runs, `session.harness` may already be the next provider picked for the
+ * following message; the running turn still belongs to its own provider.
+ */
+export function liveTurnHarness(
+  session: Omit<RunningSelection, "busy"> & { busy?: boolean },
+): Session["harness"] {
+  return session.busy ? runningTargetOf(session).harness : session.harness;
+}
+
+/** The model and settings of the turn in progress. */
+export function runningTargetOf(session: Omit<RunningSelection, "busy">): ModelTarget {
+  return (
+    session.runningModelTarget ?? {
+      harness: session.harness,
+      model: session.model,
+      modelSettings: { ...session.modelSettings },
+    }
+  );
+}
+
+/**
+ * How an explicit Steer sends a row with the model it was queued for while a
+ * turn runs. "join" delivers it into the running turn (same target, or only
+ * settings the provider applies per message). "restart" stops the turn and
+ * starts the row as a new turn with its saved model. "switch" stops the turn
+ * and continues on the saved provider, as the composer's provider switch does.
+ */
+export type QueuedSteerRoute = "join" | "restart" | "switch";
+
+export function queuedSteerRoute(
+  session: RunningSelection,
+  message: QueuedMessage,
+  steerAppliesSettings: boolean,
+): QueuedSteerRoute {
+  if (!session.busy || !message.modelTarget) return "join";
+  const running = runningTargetOf(session);
+  if (message.modelTarget.harness !== running.harness) return "switch";
+  if (message.modelTarget.model !== running.model) return "restart";
+  return steerAppliesSettings || sameQueuedModelTarget(message.modelTarget, running)
+    ? "join"
+    : "restart";
+}
+
+/** Model name and effort a queued row was saved for, for its queue label. */
+export function queuedTargetSummary(target: ModelTarget): { model: string; effort?: string } {
+  const model = resolveModel(target.harness, target.model);
+  return { model: model.name, effort: modelEffortLabel(model, target.modelSettings) };
 }
 
 export function queuedHead(session: Session): QueuedMessage | undefined {
@@ -60,6 +140,32 @@ export function holdUndeliveredFollowUp(
       : [...(session.queuedMessages ?? []), message],
     queueStatus: "paused",
   };
+}
+
+/**
+ * A turn ended in a provider failure (an error, an exit, a usage limit) while
+ * follow-ups wait. The queue holds for the owner instead of sending the next
+ * row into the same failure, as the Host drainer does after a failed host turn.
+ * A queue the owner already paused, one restored from disk and a Resume in
+ * flight keep their status; a queue with no rows has nothing to hold.
+ */
+export function holdQueueAfterFailedTurn(session: Session): Session {
+  if (!session.queuedMessages?.length) return session;
+  if (session.queueStatus && session.queueStatus !== "active") return session;
+  return { ...session, queueStatus: "paused" };
+}
+
+/** The status row explaining a hold after a failed turn, with the failure when known. */
+export function failedTurnQueueNotice(reason?: string): string {
+  const detail = reason?.trim();
+  return detail
+    ? t(
+        "The queue is paused because this turn failed: {p0}. Resume it to send the next queued message.",
+        {
+          p0: detail,
+        },
+      )
+    : t("The queue is paused because this turn failed. Resume it to send the next queued message.");
 }
 
 /** Hold auto-dispatch only while the item about to send is being edited. */
@@ -162,15 +268,6 @@ export function queuedMessageForSubmit(
   if (mode === "steer") {
     if (session.busy && (message.intent === "plan" || message.intent === "orchestrate"))
       return undefined;
-    if (
-      session.busy &&
-      message.modelTarget &&
-      !sameQueuedModelTarget(
-        message.modelTarget,
-        session.runningModelTarget ?? queuedModelTarget(session),
-      )
-    )
-      return undefined;
     return message;
   }
   if (queuedHead(session)?.id !== messageId) return undefined;
@@ -188,9 +285,9 @@ export type FollowUpRoute = "dispatch" | "queue" | "steer";
  * queued message would be parked behind them), and otherwise follows
  * `requested` (an explicit per-send choice), defaulting to steer.
  *
- * An explicit "queue" beats the background-task steer unless the agent has
- * truly yielded (`backgroundOnly`), because with the agent still working the
- * queued message is sent when that turn ends.
+ * An explicit "queue" always waits for the turn to finish, including when
+ * only background commands remain. The user can steer a queued row instead
+ * if a long-running command keeps the turn open.
  */
 export function resolveFollowUpRoute(input: {
   busy: boolean;
@@ -210,7 +307,7 @@ export function resolveFollowUpRoute(input: {
   ) {
     return "queue";
   }
-  if (input.requested === "queue" && !input.backgroundOnly) return "queue";
+  if (input.requested === "queue") return "queue";
   if (input.backgroundTaskCount > 0) return "steer";
   return input.requested ?? "steer";
 }

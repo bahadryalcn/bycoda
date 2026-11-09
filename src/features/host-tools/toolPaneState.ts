@@ -1,29 +1,23 @@
+import { sameToolsSession } from "./toolsSessionRegistry";
 import { useSyncExternalStore } from "react";
+import { createStore } from "../../shared/lib/store";
 
 type PaneIdentity = { cwd: string; sessionId: string };
 const owners = new Map<object, readonly PaneIdentity[]>();
-const listeners = new Set<() => void>();
+const store = createStore();
 
 export function setDockedToolPanes(owner: object, panes: readonly PaneIdentity[]) {
   if (panes.length) owners.set(owner, panes);
   else owners.delete(owner);
-  listeners.forEach((listener) => listener());
+  store.notify();
 }
 
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
+const subscribe = store.subscribe;
 
 export function useDockedTools(tools: PaneIdentity) {
   return useSyncExternalStore(
     subscribe,
-    () =>
-      [...owners.values()].some((panes) =>
-        panes.some((pane) => pane.cwd === tools.cwd && pane.sessionId === tools.sessionId),
-      ),
+    () => [...owners.values()].some((panes) => panes.some((pane) => sameToolsSession(pane, tools))),
     () => false,
   );
 }

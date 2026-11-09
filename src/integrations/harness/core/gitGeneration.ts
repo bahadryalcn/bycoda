@@ -1,3 +1,5 @@
+import type { HarnessOperationContext } from "./types";
+import { captureTextInput } from "./textSource";
 import { gitRangeContext, gitStagedContext } from "../../../platform/tauri/fs";
 import {
   buildBranchNamePrompt,
@@ -16,6 +18,7 @@ type GitTextOptions = {
     timeoutMs: number;
     signal?: AbortSignal;
     providerAccountId?: string;
+    operationContext?: HarnessOperationContext;
   }) => Promise<string>;
   timeoutMs: number;
   label: string;
@@ -24,8 +27,13 @@ type GitTextOptions = {
 
 /** Share Git prompt policy while preserving each provider's timeout and account routing. */
 export function createGitTextGeneration(options: GitTextOptions) {
-  async function generateCommitMessage(cwd: string, signal?: AbortSignal): Promise<string> {
+  async function generateCommitMessage(
+    cwd: string,
+    signal?: AbortSignal,
+    operationContext?: HarnessOperationContext,
+  ): Promise<string> {
     signal?.throwIfAborted();
+    const captured = captureTextInput({ operationContext }).operationContext;
     const context = await gitStagedContext(cwd);
     signal?.throwIfAborted();
     const output = await options.run({
@@ -38,6 +46,7 @@ export function createGitTextGeneration(options: GitTextOptions) {
       }),
       timeoutMs: options.timeoutMs,
       signal,
+      operationContext: captured,
     });
     const parsed = parseCommitMessage(output);
     if (parsed) return formatCommitMessage(parsed);
@@ -51,12 +60,15 @@ export function createGitTextGeneration(options: GitTextOptions) {
 
   async function generatePrContent(
     cwd: string,
+    operationContext?: HarnessOperationContext,
   ): Promise<(PrContent & { base: string; head: string }) | null> {
+    const captured = captureTextInput({ operationContext }).operationContext;
     const range = await gitRangeContext(cwd);
     let parsed: PrContent | null = null;
     try {
       const output = await options.run({
         cwd,
+        operationContext: captured,
         prompt: buildPrContentPrompt({
           baseBranch: range.base,
           headBranch: range.head,
@@ -80,10 +92,16 @@ export function createGitTextGeneration(options: GitTextOptions) {
     };
   }
 
-  async function generateBranchName(cwd: string, message: string): Promise<string | null> {
+  async function generateBranchName(
+    cwd: string,
+    message: string,
+    operationContext?: HarnessOperationContext,
+  ): Promise<string | null> {
+    const captured = captureTextInput({ operationContext }).operationContext;
     try {
       const output = await options.run({
         cwd,
+        operationContext: captured,
         prompt: buildBranchNamePrompt(message),
         timeoutMs: options.timeoutMs,
       });

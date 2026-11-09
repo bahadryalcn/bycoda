@@ -1,9 +1,16 @@
+// The React-free core keeps this model usable from the headless Host bundle.
+import { t } from "../../../shared/i18n/core";
+import { createWindowStore } from "../../../shared/lib/store";
 import { themePalette } from "../../../shared/theme/palette";
 import type { HarnessId } from "../../sessions/model/session";
 
 const LEGACY_ACCOUNTS_KEY = "bycoda.providerAccounts.v1";
 const ACCOUNTS_KEY = "bycoda.providerAccounts.v2";
 const CHANGE_EVENT = "bycoda-provider-accounts-changed";
+const accountStore = createWindowStore({
+  event: CHANGE_EVENT,
+  storageKeys: [ACCOUNTS_KEY, LEGACY_ACCOUNTS_KEY],
+});
 
 export const DEFAULT_PROVIDER_ACCOUNT_ID = "default";
 const DEFAULT_PROVIDER_ACCOUNT_LABEL = "Default account";
@@ -334,22 +341,14 @@ export function providerAccountLabel(
     providerAccounts(provider).find(
       (account) => account.id === (accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID),
     )?.label ??
-    (accountId && accountId !== DEFAULT_PROVIDER_ACCOUNT_ID ? "Removed account" : "Default account")
+    (accountId && accountId !== DEFAULT_PROVIDER_ACCOUNT_ID
+      ? t("Removed account")
+      : t("Default account"))
   );
 }
 
 export function subscribeProviderAccounts(listener: () => void): () => void {
-  const local = () => listener();
-  const storage = (event: StorageEvent) => {
-    if (event.key === null || event.key === ACCOUNTS_KEY || event.key === LEGACY_ACCOUNTS_KEY)
-      listener();
-  };
-  window.addEventListener(CHANGE_EVENT, local);
-  window.addEventListener("storage", storage);
-  return () => {
-    window.removeEventListener(CHANGE_EVENT, local);
-    window.removeEventListener("storage", storage);
-  };
+  return accountStore.subscribe(() => listener());
 }
 
 function cleanLabel(value: unknown): string {

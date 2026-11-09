@@ -2,7 +2,38 @@ import { appendUser, applyHarnessEvents } from "../../../integrations/harness/co
 import { describe, expect, it } from "vitest";
 import { mapCodexNotification } from "../../../integrations/harness/providers/codex/codexProtocol";
 import { toolCallLabel } from "../model/transcriptActivity";
+import { conversationReplayPrompt } from "../model/conversationRewind";
 import { newSession, type Block, type BtwThread, type Session } from "../model/session";
+import { clearConversation } from "../model/clearConversation";
+it("retains failed physical shell retirement through desktop persistence sanitization", () => {
+  const session = newSession("codex", "G:/repo", "model");
+  session.blocks = [
+    {
+      id: "shell",
+      role: "system",
+      text: "",
+      shell: {
+        command: "long command",
+        output: "termination failed",
+        exitCode: 0,
+        terminationFailed: "original tree remains unknown",
+      },
+    },
+  ];
+  const saved = sanitizeSessionForPersist(session);
+  expect(saved.blocks[0].shell).toMatchObject({
+    terminationFailed: "original tree remains unknown",
+    exitCode: null,
+  });
+});
+import {
+  appendPreparingHandoff,
+  failHandoff,
+  pendingHarnessSwitch,
+  pendingHandoff,
+  releaseHandoffSource,
+  setPreparingHandoffBrief,
+} from "../model/handoff";
 import {
   backfillClaudeShellCommands,
   backfillCodexShellCommands,
@@ -34,6 +65,14 @@ it("persists an empty active transcript when rewound history remains", () => {
     blocks: [],
     rewindHistory: [{ fromBlockId: "removed-user" }],
   });
+});
+
+it("persists execution identity when clearing a legacy current conversation", () => {
+  const legacy = newSession("codex", "/repo");
+  legacy.blocks = [{ id: "turn", role: "user", text: "Established" }];
+  const payload = sanitizeSessionForPersist(clearConversation(legacy));
+  expect(payload.blocks).toEqual([]);
+  expect(payload).toHaveProperty("workspaceMode", "current");
 });
 
 describe("Claude Shell row recovery", () => {
@@ -73,6 +112,119 @@ describe("Claude Shell row recovery", () => {
 });
 
 describe("conversation rewind persistence", () => {
+  it.each(["failed", "cancelled"] as const)(
+    "preserves %s handoff source without turning it into a successful switch",
+    (status) => {
+      const source = {
+        from: "claude" as const,
+        fromModel: "claude:sonnet",
+        fromSettings: { thinking: "high", custom: "" },
+        fromProviderSessionId: "claude-thread",
+        fromProviderAccountId: "claude-account",
+      };
+      const preparing = appendPreparingHandoff(
+        {
+          ...newSession("codex", "/repo"),
+          blocks: [{ id: "u1", role: "user" as const, text: "Keep this context" }],
+          pendingSwitch: source,
+        },
+        "claude",
+        "codex",
+        source,
+      );
+      const failed = failHandoff(preparing, source, "Original cleanup is unknown");
+      failed.blocks.at(-1)!.handoff!.status = status;
+      const stored = sanitizeSessionForPersist(failed);
+      const divider = stored.blocks.at(-1)!;
+      expect(divider.handoff).toEqual({
+        from: "claude",
+        to: "codex",
+        status,
+        pending: false,
+        source,
+        error: "Original cleanup is unknown",
+      });
+      expect(
+        pendingHarnessSwitch({ ...failed, pendingSwitch: undefined, blocks: stored.blocks }),
+      ).toEqual(source);
+      expect(stored.blocks[0].text).toBe("Keep this context");
+    },
+  );
+
+  it("persists interrupted new handoff preparation as cancelled with original source, rather than ready", () => {
+    const source = { from: "claude" as const, fromModel: "claude:sonnet", fromSettings: {} };
+    const preparing = appendPreparingHandoff(
+      {
+        ...newSession("codex", "/repo"),
+        blocks: [{ id: "u1", role: "user" as const, text: "Continue" }],
+        pendingSwitch: source,
+      },
+      "claude",
+      "codex",
+      source,
+    );
+    expect(sanitizeSessionForPersist(preparing).blocks.at(-1)?.handoff).toMatchObject({
+      status: "cancelled",
+      pending: false,
+      source,
+    });
+  });
+
+  it("persists context-only retry after verified outgoing cleanup without reviving its source", () => {
+    const source = { from: "claude" as const, fromModel: "claude:sonnet", fromSettings: {} };
+    const preparing = setPreparingHandoffBrief(
+      appendPreparingHandoff(
+        {
+          ...newSession("codex", "/repo"),
+          blocks: [{ id: "u1", role: "user" as const, text: "Original request" }],
+          pendingSwitch: source,
+        },
+        "claude",
+        "codex",
+        source,
+      ),
+      "Keep the original Claude thread context.",
+    );
+    const failed = failHandoff(releaseHandoffSource(preparing), undefined, "Archive failed");
+    const stored = sanitizeSessionForPersist(failed);
+    expect(stored.blocks.at(-1)?.handoff).toMatchObject({ status: "failed", pending: true });
+    expect(stored.blocks.at(-1)?.handoff?.source).toBeUndefined();
+    const restored = { ...failed, pendingSwitch: undefined, blocks: stored.blocks };
+    expect(pendingHarnessSwitch(restored)).toBeUndefined();
+    expect(pendingHandoff(restored)?.text).toBe("Keep the original Claude thread context.");
+  });
+
+  it("stores recovery context for an unsent provider switch without duplicating the live handoff", () => {
+    const session = newSession("claude", "/repo");
+    session.blocks = [
+      { id: "u1", role: "user", text: "Keep the existing parser contract" },
+      { id: "a1", role: "assistant", text: "Updated the parser and verified its callers" },
+    ];
+    session.pendingSwitch = { from: "codex", fromModel: "gpt", fromSettings: {} };
+    const payload = sanitizeSessionForPersist(session);
+    expect(payload.pendingContextReplay).toContain("Keep the existing parser contract");
+    expect(payload.pendingContextReplay).toContain("verified its callers");
+    expect(payload.blocks).toEqual(session.blocks);
+    expect(session.pendingContextReplay).toBeUndefined();
+    expect(conversationReplayPrompt(session)).toBe("");
+    expect(session.pendingSwitch.from).toBe("codex");
+    expect(persistFingerprint(session)).not.toBe(
+      persistFingerprint({ ...session, pendingSwitch: undefined }),
+    );
+
+    session.pendingContextReplay = "previously retained context";
+    expect(sanitizeSessionForPersist(session).pendingContextReplay).toBe(
+      "previously retained context",
+    );
+    expect(
+      sanitizeSessionForPersist({
+        ...session,
+        pendingSwitch: undefined,
+        pendingContextReplay: undefined,
+      }),
+    ).not.toHaveProperty("pendingContextReplay");
+  });
+
   it("persists sanitized archived blocks and stop markers outside the active transcript", () => {
     const session = newSession("codex", "/repo");
     session.blocks = [
@@ -116,6 +268,46 @@ describe("conversation rewind persistence", () => {
     });
     expect(JSON.stringify(payload.rewindHistory)).not.toContain("ephemeral");
     expect(payload.pendingContextReplay).toBe("retained transcript context");
+  });
+});
+
+describe("host divergence persistence", () => {
+  it("saves a flagged divergence and its answer with the session, and nothing otherwise", () => {
+    const session = newSession("claude", "/repo");
+    expect(sanitizeSessionForPersist(session)).not.toHaveProperty("adoptedDivergence");
+    session.adoptedDivergence = { key: "3:a:b:x:y", keep: true };
+    const payload = sanitizeSessionForPersist(session);
+    expect(JSON.parse(payload.adoptedDivergence!)).toEqual({ key: "3:a:b:x:y", keep: true });
+    expect(persistFingerprint(session)).not.toBe(
+      persistFingerprint({ ...session, adoptedDivergence: undefined }),
+    );
+  });
+
+  it("saves the host head a divergence was flagged against", () => {
+    const session = newSession("claude", "/repo");
+    const hostHead = { count: 4, chain: "0123456789abcdef0123456789abcdef" };
+    session.adoptedDivergence = { key: "heads::1.a:2.b:3.c", hostHead };
+    expect(JSON.parse(sanitizeSessionForPersist(session).adoptedDivergence!)).toEqual({
+      key: "heads::1.a:2.b:3.c",
+      hostHead,
+    });
+  });
+});
+
+describe("agreed base persistence", () => {
+  it("saves the transcript head both computers last agreed on, and nothing otherwise", () => {
+    const session = newSession("claude", "/repo");
+    expect(sanitizeSessionForPersist(session)).not.toHaveProperty("adoptedBase");
+    const base = { count: 3, chain: "0123456789abcdef0123456789abcdef" };
+    session.adoptedBase = base;
+    expect(JSON.parse(sanitizeSessionForPersist(session).adoptedBase!)).toEqual(base);
+    // A new agreement is a change to save, or it would be lost on the next restart.
+    expect(persistFingerprint(session)).not.toBe(
+      persistFingerprint({ ...session, adoptedBase: undefined }),
+    );
+    expect(persistFingerprint(session)).not.toBe(
+      persistFingerprint({ ...session, adoptedBase: { ...base, count: 4 } }),
+    );
   });
 });
 
@@ -423,6 +615,23 @@ describe("persisting a subagent's trail", () => {
 });
 
 describe("sanitizeSessionForPersist", () => {
+  it("persists unresolved workspace preparation only on submitted user blocks", () => {
+    const session = newSession("codex", "/repo");
+    session.blocks = [
+      { id: "pending", role: "user", text: "Retry me", workspacePreparationPending: true },
+      {
+        id: "answer",
+        role: "assistant",
+        text: "Ignore malformed metadata",
+        workspacePreparationPending: true,
+      },
+    ];
+    const saved = sanitizeSessionForPersist(session);
+    expect(saved.blocks[0].workspacePreparationPending).toBe(true);
+    expect(saved.blocks[1].workspacePreparationPending).toBeUndefined();
+    expect(saved.workspaceMode).toBeUndefined();
+  });
+
   it.each(["pending", "undelivered", "uncertain"] as const)(
     "preserves %s follow-up recovery across local persistence",
     (followUpDelivery) => {
@@ -794,6 +1003,12 @@ describe("sanitizeSessionForPersist", () => {
         notice: "interrupt",
       },
       {
+        id: "info",
+        role: "system",
+        text: "Earlier conversation was not transferred. Saved history: /history.json",
+        notice: "info",
+      },
+      {
         id: "b1",
         role: "system",
         text: "Mystery",
@@ -810,8 +1025,9 @@ describe("sanitizeSessionForPersist", () => {
     const persisted = sanitizeSessionForPersist(session).blocks;
     expect(persisted[0]?.notice).toBe("error");
     expect(persisted[1]?.notice).toBe("interrupt");
-    expect(persisted[2]?.notice).toBeUndefined();
+    expect(persisted[2]?.notice).toBe("info");
     expect(persisted[3]?.notice).toBeUndefined();
+    expect(persisted[4]?.notice).toBeUndefined();
   });
 
   it("keeps a second-opinion card on the user turn", () => {

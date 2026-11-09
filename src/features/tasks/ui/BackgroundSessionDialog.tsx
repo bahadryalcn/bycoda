@@ -1,9 +1,10 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useState } from "react";
-import { LoaderCircle } from "../../../shared/ui/icons";
-import { Modal } from "../../../shared/ui/Modal";
+import { useEffect, useRef, useState } from "react";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import {
   loadBackgroundSessionSummary,
   type BackgroundSessionSummary,
@@ -24,17 +25,44 @@ export function BackgroundSessionDialog({
   const [summary, setSummary] = useState<BackgroundSessionSummary>();
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const pending = useRef(false);
+  // A new target or a retry starts over from the load; only another target
+  // clears the error, so a retry keeps it visible while it runs.
+  const [seen, setSeen] = useState({
+    machineId: target.machineId,
+    sessionId: target.sessionId,
+    revision,
+  });
+  if (
+    seen.machineId !== target.machineId ||
+    seen.sessionId !== target.sessionId ||
+    seen.revision !== revision
+  ) {
+    setSeen({ machineId: target.machineId, sessionId: target.sessionId, revision });
+    setSummary(undefined);
+    setLoading(true);
+    if (seen.machineId !== target.machineId || seen.sessionId !== target.sessionId) setError("");
+  }
 
   useEffect(() => {
     let alive = true;
-    setSummary(undefined);
-    setError("");
+    pending.current = true;
     loadBackgroundSessionSummary(target).then(
       (loaded) => {
-        if (alive) setSummary(loaded);
+        if (alive) {
+          setSummary(loaded);
+          setError("");
+          setLoading(false);
+          pending.current = false;
+        }
       },
       (reason: unknown) => {
-        if (alive) setError(reason instanceof Error ? reason.message : String(reason));
+        if (alive) {
+          setError(reason instanceof Error ? reason.message : String(reason));
+          setLoading(false);
+          pending.current = false;
+        }
       },
     );
     return () => {
@@ -43,48 +71,55 @@ export function BackgroundSessionDialog({
   }, [target.machineId, target.sessionId, revision]);
 
   return (
-    <Modal title={summary?.title ?? t("Background session")} onClose={onClose} size="md">
-      <div className="flex min-h-0 flex-col gap-3 p-4">
+    <Modal
+      title={summary?.title ?? t("Background session")}
+      onClose={onClose}
+      size="md"
+      footer={
+        <ModalActions>
+          <Button variant="ghost" type="button" onClick={onClose}>
+            {t("Close")}
+          </Button>
+        </ModalActions>
+      }
+    >
+      <div className="flex min-h-0 flex-col gap-3">
         {error ? (
-          <Alert tone="danger" role="alert" className="flex-wrap">
+          <Alert tone="danger" className="flex-wrap">
             <span>{error}</span>
-            <Button variant="ghost" type="button" onClick={() => setRevision((value) => value + 1)}>
+            <Button
+              variant="ghost"
+              type="button"
+              loading={loading}
+              onClick={() => {
+                if (pending.current) return;
+                pending.current = true;
+                setRevision((value) => value + 1);
+              }}
+            >
               {t("Retry")}
             </Button>
           </Alert>
         ) : !summary ? (
-          <div
-            role="status"
-            aria-label={t("Loading…")}
-            className="grid h-20 place-items-center text-(--ui-text-secondary)"
-          >
-            <LoaderCircle className="size-4 animate-spin" />
-          </div>
+          <LoadingText delay={false} className="h-20 justify-center" />
         ) : (
           <>
             <div className="flex flex-col gap-1">
-              <p className="text-[12px] leading-snug text-(--ui-text-secondary)">
+              <p className="text-ui-caption leading-snug text-(--ui-text-secondary)">
                 {summary.status}
                 {t(" · on this computer’s host")}
               </p>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-3 text-[12px] leading-relaxed text-(--ui-text-secondary)">
-              {summary.reply || (
-                <span className="text-(--ui-text-secondary)">{t("No reply yet.")}</span>
-              )}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-(--ui-radius-card) border border-(--ui-pane-border) p-3 text-ui-caption leading-relaxed text-(--ui-text-secondary)">
+              {summary.reply || <EmptyState size="inline" description={t("No reply yet.")} />}
             </div>
             {summary.note ? (
-              <p className="whitespace-pre-wrap break-words text-[12px] leading-snug text-(--ui-text-secondary)">
+              <p className="whitespace-pre-wrap break-words text-ui-caption leading-snug text-(--ui-text-secondary)">
                 {summary.note}
               </p>
             ) : null}
           </>
         )}
-        <div className="flex justify-end">
-          <Button variant="ghost" type="button" onClick={onClose}>
-            {t("Close")}
-          </Button>
-        </div>
       </div>
     </Modal>
   );

@@ -1,4 +1,10 @@
 import type { Block } from "./session";
+export type ShellPhysicalIdentity = {
+  pid: number;
+  hostPid: number;
+  spawnObservedAt: number;
+  helperPid?: number;
+};
 
 /**
  * A command the user ran from the composer with a leading `!`. It runs in the
@@ -6,6 +12,7 @@ import type { Block } from "./session";
  * message as context.
  */
 export type ShellRun = {
+  terminationFailed?: string;
   command: string;
   output: string;
   /** Null while running, and when the process was killed. */
@@ -21,6 +28,9 @@ export type ShellResult = {
   output: string;
   exitCode: number | null;
   timedOut: boolean;
+  /** Logical completion does not prove the original process tree retired. */
+  terminationFailed?: string;
+  physicalIdentity?: ShellPhysicalIdentity;
 };
 
 export const SHELL_TIMEOUT_MS = 120_000;
@@ -81,8 +91,9 @@ export function finishShellBlock(block: Block, result: ShellResult): Block {
     shell: {
       command: block.shell.command,
       output,
-      exitCode: result.exitCode,
+      exitCode: result.terminationFailed ? null : result.exitCode,
       ...(result.timedOut ? { timedOut: true } : {}),
+      ...(result.terminationFailed ? { terminationFailed: result.terminationFailed } : {}),
       ...(truncated ? { truncated: true } : {}),
     },
   };

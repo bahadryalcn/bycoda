@@ -1,12 +1,34 @@
 import { describe, expect, it } from "vitest";
 import { newSession, type Block } from "../../sessions/model/session";
 import { sessionConversationPage } from "./sessionConversation";
+import { parseLocalSessionLink } from "../../sessions/model/localSessionReference";
 
 function conversation(blocks: Block[]) {
   return { ...newSession("codex", "/repo"), id: "target", blocks };
 }
 
 describe("sessionConversationPage", () => {
+  it("returns stable exact-turn references without relaxing prose limits", () => {
+    const session = conversation([
+      { id: "stable-turn", role: "user", text: "U".repeat(7000) },
+      { id: "private", role: "reasoning", text: "never include" },
+      { id: "reply", role: "assistant", text: "A".repeat(7000) },
+    ]);
+    const locator = {
+      kind: "host" as const,
+      environmentId: "env",
+      sessionId: session.id,
+    };
+    const page = sessionConversationPage(session, { limit: 1, maxChars: 200 }, locator);
+    expect(parseLocalSessionLink(page.link!)?.locator).toEqual(locator);
+    expect(parseLocalSessionLink(page.turns[0].link!)).toEqual({
+      locator,
+      turnId: "stable-turn",
+    });
+    expect(page.turns[0].user.text).toHaveLength(200);
+    expect(page.turns[0].assistant?.text).toHaveLength(200);
+    expect(JSON.stringify(page)).not.toContain("never include");
+  });
   it("returns the newest three exchanges without tools or reasoning, then older pages", () => {
     const blocks: Block[] = [];
     for (let i = 1; i <= 5; i += 1) {

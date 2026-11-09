@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { ModelControlPills } from "../../src/features/sessions/ui/ModelPicker";
 import { createRoot } from "react-dom/client";
 import { Composer } from "../../src/features/sessions/ui/Composer";
 import { SessionAgentIdentity } from "../../src/features/sessions/ui/SessionAgentIdentity";
 import { ActivityDock } from "../../src/features/sessions/ui/ActivityDock";
 import { registerHarness } from "../../src/integrations/harness/core/registry";
+import { applyHarnessEvent } from "../../src/integrations/harness/core/apply";
 import { EmptySession } from "../../src/features/sessions/ui/EmptySession";
 import { Shimmer } from "../../src/shared/ui/Shimmer";
 import { UsageFooter } from "../../src/app/shell/UsageFooter";
@@ -17,7 +18,12 @@ import {
   setHarnessModels,
   defaultModelSettings,
 } from "../../src/features/sessions/model/models";
-import type { HarnessId, RuntimeMode } from "../../src/features/sessions/model/session";
+import {
+  setHarnessAttachmentsSupported,
+  newSession,
+  type HarnessId,
+  type RuntimeMode,
+} from "../../src/features/sessions/model/session";
 import { modelsForClaudeVersion } from "../../src/integrations/harness/providers/claude/claudeCatalog";
 import { parseCodexModelList } from "../../src/integrations/harness/providers/codex/codexCatalog";
 import { languageReady } from "../../src/shared/i18n";
@@ -52,10 +58,14 @@ const source = {
   refresh: () => {},
 };
 const accountPicker = new URLSearchParams(location.search).has("accounts");
+// A provider whose transport takes text only: files dragged over the composer are refused with a reason.
+if (new URLSearchParams(location.search).has("no-attachments"))
+  setHarnessAttachmentsSupported("claude", false);
 const welcome = new URLSearchParams(location.search).has("welcome");
 const withCrew = new URLSearchParams(location.search).has("crew");
 const withFooter = new URLSearchParams(location.search).has("footer");
 const chatLayout = new URLSearchParams(location.search).has("chat-layout");
+const workspaceFooter = new URLSearchParams(location.search).has("workspace-footer");
 const remoteLayout = new URLSearchParams(location.search).has("remote");
 const showProjectPicker = new URLSearchParams(location.search).has("project-picker");
 const longAccount = new URLSearchParams(location.search).has("long-account");
@@ -116,17 +126,59 @@ if (accountPicker) {
     provider: "claude",
     label: "work",
   });
+  // `accounts=N` adds more Claude profiles, so each account-control size can be captured.
+  const extra = ["Agency", "Client Acme", "Client Orbit", "Side project", "Team 2", "Research"];
+  const count = Number(new URLSearchParams(location.search).get("accounts")) || 2;
+  extra
+    .slice(0, Math.max(0, count - 2))
+    .forEach((label, index) =>
+      saveProviderAccount({ id: `account-extra-${index}`, provider: "claude", label }),
+    );
 }
 
 import {
   beginDeliveryProgress,
   updateDeliveryProgress,
+  clearDeliveryProgress,
 } from "../../src/features/sessions/model/deliveryProgress";
 
 function Fixture() {
+  const queueVisual = new URLSearchParams(location.search).get("queue-state");
+  const visualBackground = new URLSearchParams(location.search).has("queue-background");
+  const [fixtureRows, setFixtureRows] = useState(() =>
+    queueVisual === "empty" || queueVisual === "last-success"
+      ? []
+      : queueVisual === "one"
+        ? ["queued"]
+        : ["queued", "queued-next"],
+  );
+  useEffect(() => {
+    const theme = new URLSearchParams(location.search).get("theme");
+    if (theme) document.documentElement.classList.toggle("theme-light", theme === "light");
+  }, []);
   const queueFeedback = new URLSearchParams(location.search).has("queue-feedback");
   const deliveryProgress = new URLSearchParams(location.search).has("delivery-progress");
-  const [queueStatus, setQueueStatus] = useState<"paused" | "active">("paused");
+  const [queueStatus, setQueueStatus] = useState<"paused" | "active">(
+    ["active", "busy", "one", "empty", "last-success"].includes(queueVisual ?? "")
+      ? "active"
+      : "paused",
+  );
+  useEffect(() => {
+    if (queueVisual === "last-success") {
+      const progress = beginDeliveryProgress("composer-layout-fixture", "queued", "preparing");
+      updateDeliveryProgress("composer-layout-fixture", progress, "accepted");
+      return () => clearDeliveryProgress("composer-layout-fixture", progress);
+    }
+    if (queueVisual !== "rejected") return;
+    const progress = beginDeliveryProgress("composer-layout-fixture", "queued", "preparing");
+    updateDeliveryProgress(
+      "composer-layout-fixture",
+      progress,
+      "rejected",
+      "The provider rejected the message. It remains queued and paused.",
+    );
+    return () => clearDeliveryProgress("composer-layout-fixture", progress);
+  }, [queueVisual]);
   const [harness, setHarness] = useState<HarnessId>(
     antigravitySelection ? "antigravity" : "claude",
   );
@@ -135,11 +187,18 @@ function Fixture() {
   );
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>("supervised");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(
+    queueVisual === "active" || queueVisual === "busy" || queueVisual === "one",
+  );
   const [disabled, setDisabled] = useState(false);
   const [accountId, setAccountId] = useState("default");
   const [terminalOpened, setTerminalOpened] = useState(false);
   const [compacted, setCompacted] = useState(0);
+  const compactReading = new URLSearchParams(location.search).get("compact-context");
+  const [contextSession, setContextSession] = useState<ReturnType<typeof newSession>>(() => ({
+    ...newSession("claude", fixtureCwd),
+    context: { used: 64000, window: 128000 },
+  }));
   const composer = (
     <>
       <div
@@ -157,13 +216,33 @@ function Fixture() {
       </div>
       <Composer
         queuedMessages={
-          queueFeedback || deliveryProgress
-            ? [{ id: "queued", text: "Queued task waiting for the current turn", attachments: [] }]
-            : undefined
+          queueVisual
+            ? [
+                {
+                  id: "queued",
+                  text: "Connect GitHub and manage deployments from the repository",
+                  attachments: [],
+                  deliveryUnknown: queueVisual === "unknown" ? true : undefined,
+                },
+                {
+                  id: "queued-next",
+                  text: "Configure the Cloudflare DNS records",
+                  attachments: [],
+                },
+              ].filter((row) => fixtureRows.includes(row.id))
+            : queueFeedback || deliveryProgress
+              ? [
+                  {
+                    id: "queued",
+                    text: "Queued task waiting for the current turn",
+                    attachments: [],
+                  },
+                ]
+              : undefined
         }
-        queueStatus={queueFeedback || deliveryProgress ? queueStatus : undefined}
+        queueStatus={queueVisual || queueFeedback || deliveryProgress ? queueStatus : undefined}
         onResumeQueue={
-          queueFeedback || deliveryProgress
+          queueVisual || queueFeedback || deliveryProgress
             ? async () => {
                 await new Promise((resolve) => setTimeout(resolve, 800));
                 setQueueStatus("active");
@@ -175,7 +254,7 @@ function Fixture() {
             : undefined
         }
         onSteerQueuedMessage={
-          queueFeedback || deliveryProgress
+          queueVisual || queueFeedback || deliveryProgress
             ? async () => {
                 if (deliveryProgress) {
                   const progress = beginDeliveryProgress(
@@ -208,11 +287,13 @@ function Fixture() {
         cwd={fixtureCwd}
         focused={new URLSearchParams(location.search).has("hint-motion")}
         hideProjectPicker={!showProjectPicker}
-        hideBranchPicker
+        hideBranchPicker={!workspaceFooter}
+        branch={workspaceFooter ? "main" : undefined}
+        onWorktreeChange={workspaceFooter ? async () => {} : undefined}
         hideTopBar={!chatLayout}
         remoteSession={remoteLayout}
         remoteFeatures={remoteLayout ? { attachments: true, plan: true, draft: true } : undefined}
-        context={chatLayout ? { used: 64000, window: 128000 } : undefined}
+        context={chatLayout ? contextSession.context : undefined}
         contextBlocks={
           new URLSearchParams(location.search).has("response-speed")
             ? [
@@ -229,6 +310,16 @@ function Fixture() {
         compactSupported={chatLayout}
         onCompactContext={() => {
           setCompacted((count) => count + 1);
+          if (compactReading) {
+            setContextSession((session) =>
+              applyHarnessEvent(
+                session,
+                compactReading === "known"
+                  ? { type: "context.compacted", used: 16000, window: 128000 }
+                  : { type: "context.compacted" },
+              ),
+            );
+          }
           return true;
         }}
         initialDraft="Keep this chat draft"
@@ -273,6 +364,15 @@ function Fixture() {
   return (
     <ModelSourceContext.Provider value={source}>
       <main
+        style={
+          visualBackground
+            ? {
+                backgroundImage: "url('/crew/star-wars/r2-d2.svg')",
+                backgroundRepeat: "repeat",
+                backgroundSize: "240px",
+              }
+            : undefined
+        }
         className={
           welcome
             ? "flex h-screen min-w-0 flex-col bg-background-base text-content"
@@ -281,6 +381,23 @@ function Fixture() {
       >
         {!welcome ? (
           <div className="flex flex-wrap gap-2 text-xs">
+            {queueVisual ? (
+              <button
+                onClick={() => {
+                  const progress = beginDeliveryProgress(
+                    "composer-layout-fixture",
+                    "queued",
+                    "preparing",
+                  );
+                  setTimeout(() => {
+                    updateDeliveryProgress("composer-layout-fixture", progress, "accepted");
+                    setFixtureRows((rows) => rows.filter((row) => row !== "queued"));
+                  }, 100);
+                }}
+              >
+                Confirm queued
+              </button>
+            ) : null}
             {["claude", "codex", "grok", "gemini"].map((provider) => (
               <button
                 key={provider}

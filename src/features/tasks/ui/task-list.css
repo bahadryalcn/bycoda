@@ -1,0 +1,110 @@
+/* Compact table-like task list (Backlog and Sprints list view). */
+.task-management-list {
+  display: grid;
+  align-content: start;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  container-type: inline-size;
+}
+.task-management-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-inline-size: 0;
+  padding: 0.375rem 0.75rem;
+  border-block-end: 1px solid var(--ui-pane-border);
+}
+.task-management-row:hover {
+  background: var(--ui-surface-hover);
+}
+.task-management-row[data-selected],
+.task-management-row[data-active] {
+  background: var(--ui-surface-selected);
+}
+.task-list-dot {
+  flex: none;
+}
+.task-management-identity {
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+.task-list-open {
+  max-inline-size: 100%;
+  block-size: auto;
+  min-block-size: 1.5rem;
+  padding-inline: 0;
+  text-align: start;
+  font-size: var(--ui-font-body);
+  font-weight: 500;
+}
+.task-list-title {
+  display: block;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-list-caption {
+  margin: 0;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-muted);
+}
+.task-list-description {
+  color: var(--ui-text-secondary);
+}
+.task-list-error {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-tone-danger-fg);
+}
+.task-list-error:is(
+  [data-tone="neutral"],
+  [data-tone="accent"],
+  [data-tone="info"],
+  [data-tone="success"]
+) {
+  color: var(--ui-text-secondary);
+}
+.task-list-error[data-tone="warning"] {
+  color: var(--ui-tone-warning-fg);
+}
+.task-list-agent {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+  inline-size: 9rem;
+  min-inline-size: 0;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+.task-list-agent-name {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-list-updated {
+  flex: none;
+  inline-size: 8rem;
+  text-align: end;
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text-muted);
+}
+.task-list-status {
+  flex: none;
+}
+@container (max-inline-size: 52rem) {
+  .task-list-secondary {
+    display: none;
+  }
+}

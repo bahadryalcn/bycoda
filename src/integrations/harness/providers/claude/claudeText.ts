@@ -1,12 +1,23 @@
+import { captureTextInput, prepareTextProcess, runTextOperation } from "../../core/textSource";
+import { isTauri } from "@tauri-apps/api/core";
+import { captureByteTurnWriter } from "../turnWriter";
+import { killChild } from "../../core/child";
+import {
+  settleProviderRetirements,
+  withProviderRetirement,
+  observeProviderProbeCleanup,
+  createProviderRetirementLedger,
+  preserveProviderFailure,
+} from "../../core/providerRetirement";
 import { continueAfterFailure, settledTail } from "../../../../shared/lib/promiseQueue";
 import { modelsFor } from "../../../../features/sessions/model/models";
 import {
-  killChild,
+  createChildProcessHandle,
   resolveClaudeBinary,
   spawnChild,
   unwatchChild,
   watchChild,
-  writeChild,
+  type ChildProcessHandle,
 } from "../../core/child";
 import { isAgentToolName } from "../../core/preview";
 import {
@@ -25,15 +36,21 @@ import {
   toolKindFromName,
   toolStartFromEvent,
   toolTitle,
-  tryParseJsonRecord,
+  createJsonRecordAccumulator,
   turnStatusFromResult,
+  turnMetricsFromResult,
+  usageFromResult,
 } from "./claudeProtocol";
 import type { TurnIntent } from "../../../../features/sessions/model/session";
-import type { HarnessEvent } from "../../core/types";
+import type { HarnessEvent, HarnessOperationContext } from "../../core/types";
+import type { TextPromptInput } from "../../core/registry";
 import { mergeStream } from "../../core/streamText";
+import { utilityOutputExceeded, validateTextOutputLimit } from "../../core/textOutput";
+import type { ClaudeCliSettings } from "./claudeProtocol";
+
+const retirements = createProviderRetirementLedger("claude.text", killChild);
 
 const TEXT_CHILD_ID = "bycoda-claude-text";
-const INIT_TIMEOUT_MS = 8_000;
 const REQUEST_TIMEOUT_MS = 45_000;
 const TEXT_MODEL = "claude-haiku-4-5";
 
@@ -45,7 +62,7 @@ type TextSettings = {
   launchModel: string;
   effort?: string;
   promptEffort?: string;
-  settings: Record<string, boolean>;
+  settings: ClaudeCliSettings;
   permissionMode?: "plan";
 };
 
@@ -53,17 +70,22 @@ type InFlightTool = {
   id: string;
   name: string;
   input: Record<string, unknown>;
-  partialJson: string;
+  inputJson: ReturnType<typeof createJsonRecordAccumulator>;
   title: string;
 };
 
 type LiveText = {
+  child: ChildProcessHandle;
   cwd: string;
   providerAccountId?: string;
   model: string;
   settingsKey: string;
+  persistent: boolean;
+  threadId?: string;
   collecting: boolean;
   output: string;
+  outputLimit?: number;
+  reasoningChars?: number;
   closed: boolean;
   ready: boolean;
   turnDone: (() => void) | null;
@@ -72,15 +94,19 @@ type LiveText = {
   onEvent?: (event: HarnessEvent) => void;
   toolsByIndex: Map<number, InFlightTool>;
   toolsById: Map<string, InFlightTool>;
+  compacting?: boolean;
+  compactionConfirmed?: boolean;
 };
 
 let live: LiveText | null = null;
+let pendingSetup: LiveText | null = null;
 let turns: Promise<void> = Promise.resolve();
 
 function textSettings(
   model: string,
   modelSettings?: Record<string, string>,
   intent?: TurnIntent,
+  maxOutputTokens?: number,
 ): TextSettings {
   const effort = modelSettings?.effort?.trim() || undefined;
   const context = modelSettings?.context?.trim() || undefined;
@@ -90,7 +116,9 @@ function textSettings(
   const advisor = modelSettings?.advisor;
   const subagentModel = modelSettings?.subagentModel;
   const subagentPolicy = modelSettings?.subagentPolicy;
-  const settings: Record<string, boolean> = {};
+  const settings: ClaudeCliSettings = {};
+  if (maxOutputTokens !== undefined)
+    settings.env = { CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(maxOutputTokens) };
   if (thinking) settings.alwaysThinkingEnabled = true;
   if (fast) settings.fastMode = true;
   if (isClaudeUltracodeEffort(effort)) settings.ultracode = true;
@@ -104,6 +132,7 @@ function textSettings(
       advisor,
       subagentModel,
       subagentPolicy,
+      maxOutputTokens,
     }),
     advisor,
     subagentModel,
@@ -130,48 +159,73 @@ export async function stopClaudeTextPrompt(): Promise<void> {
   await dropLive();
 }
 
-export function warmupClaudeText(cwd: string): Promise<void> {
+export function warmupClaudeText(
+  cwd: string,
+  options?: { providerAccountId?: string; model?: string; modelSettings?: Record<string, string> },
+): Promise<void> {
   if (!cwd || cwd === "~") return Promise.resolve();
   const run = continueAfterFailure(turns, async () => {
-    await ensureLive(cwd);
+    if (!options) return void (await ensureLive(cwd));
+    // Same model and settings as promptOnLive, so the next matching prompt reuses this process.
+    const model = pickTextModel(options.model);
+    await ensureLive(
+      cwd,
+      options.providerAccountId,
+      model,
+      textSettings(model, options.modelSettings),
+    );
   });
   turns = settledTail(run);
-  return run.catch(() => undefined);
+  return observeProviderProbeCleanup(run);
 }
 
-export async function runClaudeTextPrompt(input: {
-  cwd: string;
-  providerAccountId?: string;
-  model?: string;
-  modelSettings?: Record<string, string>;
-  intent?: TurnIntent;
-  prompt: string;
-  timeoutMs?: number;
-  signal?: AbortSignal;
-  onEvent?: (event: HarnessEvent) => void;
-}): Promise<string> {
-  const run = turns.catch(() => undefined).then(() => promptOnLive(input));
+export async function runClaudeTextPrompt(input: TextPromptInput): Promise<string> {
+  input = captureTextInput(input);
+  const run = turns
+    .catch(() => undefined)
+    .then(() => runTextOperation(input.operationContext, () => promptOnLive(input)));
   turns = settledTail(run);
   return run;
 }
 
-async function promptOnLive(input: {
-  cwd: string;
-  providerAccountId?: string;
-  model?: string;
-  modelSettings?: Record<string, string>;
-  intent?: TurnIntent;
-  prompt: string;
-  timeoutMs?: number;
-  signal?: AbortSignal;
-  onEvent?: (event: HarnessEvent) => void;
-}): Promise<string> {
+async function promptOnLive(input: TextPromptInput): Promise<string> {
   input.signal?.throwIfAborted();
+  if (
+    isTauri() &&
+    !input.operationContext?.nativeControlTurn &&
+    !input.operationContext?.hostRun &&
+    (input.ephemeral === false || input.threadId || input.compactBefore)
+  )
+    throw new Error("Standalone text generation requires a new ephemeral thread.");
+  if (input.compactBefore && (input.ephemeral !== false || !input.threadId || !input.onCompacted))
+    throw new Error("Claude compaction requires its exact persistent utility thread and receipt.");
   const model = pickTextModel(input.model);
-  const settings = textSettings(model, input.modelSettings, input.intent);
-  const session = await ensureLive(input.cwd, input.providerAccountId, model, settings);
-  input.signal?.throwIfAborted();
+  validateTextOutputLimit(input.maxOutputTokens);
+  validateTextOutputLimit(input.maxOutputChars);
+  const settings = textSettings(model, input.modelSettings, input.intent, input.maxOutputTokens);
+  const session = await ensureLive(
+    input.cwd,
+    input.providerAccountId,
+    model,
+    settings,
+    input.operationContext,
+    input,
+  );
+  let write: Awaited<ReturnType<ReturnType<typeof captureByteTurnWriter>>>;
+  try {
+    prepareTextProcess(session.child, input.operationContext);
+    write = await captureByteTurnWriter(
+      session.child,
+      input.operationContext?.nativeControlTurn,
+      input.operationContext,
+    )();
+    input.signal?.throwIfAborted();
+  } catch (error) {
+    return preserveProviderFailure(error, dropLive(session));
+  }
   session.output = "";
+  session.outputLimit = input.maxOutputChars;
+  session.reasoningChars = 0;
   session.collecting = true;
   session.onEvent = input.onEvent;
   session.toolsByIndex = new Map();
@@ -191,49 +245,86 @@ async function promptOnLive(input: {
       })
     : null;
 
-  try {
-    const turnPromise = new Promise<void>((resolve, reject) => {
-      session.turnDone = resolve;
-      session.turnFailed = reject;
-    });
+  return withProviderRetirement(
+    async () => {
+      if (input.compactBefore) {
+        session.compacting = true;
+        session.compactionConfirmed = false;
+        const completed = new Promise<void>((resolve, reject) => {
+          session.turnDone = resolve;
+          session.turnFailed = reject;
+        });
+        completed.catch(() => undefined);
+        const compact = async () => {
+          await write(JSON.stringify(buildClaudeUserMessage({ text: "/compact" })));
+          await completed;
+        };
+        await Promise.race([
+          compact(),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(
+              () => reject(new Error("Claude text compaction timed out")),
+              timeoutMs,
+            );
+          }),
+          ...(abortPromise ? [abortPromise] : []),
+        ]);
+        clearTimeout(timeout);
+        timeout = undefined;
+        input.signal?.throwIfAborted();
+        if (!session.compactionConfirmed || session.threadId !== input.threadId)
+          throw new Error(
+            "Claude Code did not confirm context compaction for the original Chief thread.",
+          );
+        await input.onCompacted!({ threadId: session.threadId! });
+        input.signal?.throwIfAborted();
+        session.compacting = false;
+        session.output = "";
+        session.reasoningChars = 0;
+        session.toolsByIndex.clear();
+        session.toolsById.clear();
+      }
+      const turnPromise = new Promise<void>((resolve, reject) => {
+        session.turnDone = resolve;
+        session.turnFailed = reject;
+      });
+      turnPromise.catch(() => undefined);
 
-    await writeChild(
-      TEXT_CHILD_ID,
-      JSON.stringify(
-        buildClaudeUserMessage({
-          text: input.prompt,
-          effort: settings.promptEffort,
+      await write(
+        JSON.stringify(
+          buildClaudeUserMessage({
+            text: input.prompt,
+            effort: settings.promptEffort,
+          }),
+        ),
+      );
+
+      await Promise.race([
+        turnPromise,
+        new Promise<void>((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error("Claude text generation timed out")),
+            timeoutMs,
+          );
         }),
-      ),
-    );
+        ...(abortPromise ? [abortPromise] : []),
+      ]);
 
-    await Promise.race([
-      turnPromise,
-      new Promise<void>((_, reject) => {
-        timeout = setTimeout(
-          () => reject(new Error("Claude text generation timed out")),
-          timeoutMs,
-        );
-      }),
-      ...(abortPromise ? [abortPromise] : []),
-    ]);
-
-    const output = session.output.trim();
-    if (!output) throw new Error("Claude returned empty output.");
-    return output;
-  } catch (error) {
-    if (session.closed) await dropLive();
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-    if (abortHandler && input.signal) {
-      input.signal.removeEventListener("abort", abortHandler);
-    }
-    session.collecting = false;
-    session.turnDone = null;
-    session.turnFailed = null;
-    await dropLive();
-  }
+      const output = session.output.trim();
+      if (!output) throw new Error("Claude returned empty output.");
+      return output;
+    },
+    async () => {
+      clearTimeout(timeout);
+      if (abortHandler && input.signal) {
+        input.signal.removeEventListener("abort", abortHandler);
+      }
+      session.collecting = false;
+      session.turnDone = null;
+      session.turnFailed = null;
+      await dropLive(session);
+    },
+  );
 }
 
 async function ensureLive(
@@ -241,21 +332,36 @@ async function ensureLive(
   providerAccountId?: string,
   requestedModel?: string,
   requestedSettings?: TextSettings,
+  operationContext?: HarnessOperationContext,
+  context?: Pick<TextPromptInput, "ephemeral" | "threadId" | "onThreadId">,
 ): Promise<LiveText> {
   const model = pickTextModel(requestedModel);
   const settings = requestedSettings ?? textSettings(model);
-  if (
-    live &&
-    !live.closed &&
-    live.cwd === cwd &&
-    live.providerAccountId === providerAccountId &&
-    live.model === model &&
-    live.settingsKey === settings.key
-  ) {
-    return live;
+  const current = live;
+  if (current && !current.closed) {
+    prepareTextProcess(current.child, operationContext);
+    await captureByteTurnWriter(
+      current.child,
+      operationContext?.nativeControlTurn,
+      operationContext,
+    )();
+    if (live !== current || current.closed) throw new Error("Claude text generator stopped");
   }
-  await dropLive();
-  return startLive(cwd, providerAccountId, model, settings);
+  if (
+    current &&
+    live === current &&
+    !current.closed &&
+    current.cwd === cwd &&
+    current.providerAccountId === providerAccountId &&
+    current.model === model &&
+    current.settingsKey === settings.key &&
+    current.persistent === (context?.ephemeral === false) &&
+    (!context?.threadId || context.threadId === current.threadId)
+  ) {
+    if (current.threadId) await context?.onThreadId?.(current.threadId);
+    return current;
+  }
+  return startLive(cwd, providerAccountId, model, settings, operationContext, context);
 }
 
 async function startLive(
@@ -263,13 +369,25 @@ async function startLive(
   providerAccountId?: string,
   model = pickTextModel(),
   settings = textSettings(model),
+  operationContext?: HarnessOperationContext,
+  context?: Pick<TextPromptInput, "ephemeral" | "threadId" | "onThreadId">,
 ): Promise<LiveText> {
-  const { path } = await resolveClaudeBinary();
+  const previous = captureDrop();
+  const child = createChildProcessHandle(
+    TEXT_CHILD_ID,
+    operationContext?.nativeControlTurn,
+    operationContext?.nativeControlTurn ? undefined : "utility",
+  );
+  prepareTextProcess(child, operationContext, true);
+  retirements.admitPending(child);
   const session: LiveText = {
+    child,
     cwd,
     providerAccountId,
     model,
     settingsKey: settings.key,
+    persistent: context?.ephemeral === false,
+    ...(context?.ephemeral === false ? { threadId: context.threadId || crypto.randomUUID() } : {}),
     collecting: false,
     output: "",
     closed: false,
@@ -280,27 +398,40 @@ async function startLive(
     toolsByIndex: new Map(),
     toolsById: new Map(),
   };
-
-  watchChild(
-    TEXT_CHILD_ID,
-    (line) => handleLine(session, line),
-    () => {
-      session.closed = true;
-      if (live === session) live = null;
-      session.turnFailed?.(new Error("Claude text generator exited"));
-      session.readyDone?.();
-      session.turnDone = null;
-      session.turnFailed = null;
-      session.readyDone = null;
-    },
-  );
-
+  pendingSetup = session;
+  const stopping = dropLive(undefined, previous);
   try {
+    await stopping;
+    if (session.closed || pendingSetup !== session)
+      throw new Error("Claude text generator stopped");
+    const { path } = await resolveClaudeBinary();
+    if (session.closed || pendingSetup !== session)
+      throw new Error("Claude text generator stopped");
+    if (session.threadId) await context?.onThreadId?.(session.threadId);
+    watchChild(
+      session.child,
+      (line) => handleLine(session, line),
+      () => {
+        session.closed = true;
+        if (live === session) live = null;
+        session.turnFailed?.(new Error("Claude text generator exited"));
+        session.readyDone?.();
+        session.turnDone = null;
+        session.turnFailed = null;
+        session.readyDone = null;
+      },
+    );
     await spawnChild(
-      TEXT_CHILD_ID,
+      session.child,
       path,
       buildClaudeSpawnArgs({
         isolated: true,
+        persistSession: session.persistent,
+        ...(session.persistent
+          ? context?.threadId
+            ? { resume: context.threadId }
+            : { sessionId: session.threadId }
+          : {}),
         model: settings.launchModel,
         advisor: settings.advisor,
         subagentModel: settings.subagentModel,
@@ -313,30 +444,51 @@ async function startLive(
       { provider: "claude", id: providerAccountId ?? "default" },
       "claude",
     );
+    if (session.closed || pendingSetup !== session)
+      throw new Error("Claude text generator stopped");
+    await captureByteTurnWriter(child, operationContext?.nativeControlTurn, operationContext)();
+    pendingSetup = null;
     live = session;
-    await waitForReady(session, INIT_TIMEOUT_MS);
+    // Do not wait for `init`: current CLIs emit it only after the first message,
+    // and stream-json input is buffered until startup finishes. Waiting delayed
+    // every cold prompt (and any prompt queued behind a warmup) by 8 s.
     return session;
   } catch (error) {
-    session.closed = true;
-    unwatchChild(TEXT_CHILD_ID);
-    await killChild(TEXT_CHILD_ID).catch(() => undefined);
-    throw error;
+    return preserveProviderFailure(error, settleProviderRetirements([stopping, dropLive(session)]));
   }
 }
 
-async function dropLive(): Promise<void> {
-  const current = live;
-  live = null;
-  if (current) {
+function captureDrop() {
+  return {
+    targets: [
+      ...new Set([live, pendingSetup].filter((entry): entry is LiveText => entry !== null)),
+    ],
+    cohort: retirements.cohort(TEXT_CHILD_ID),
+  };
+}
+async function dropLive(
+  expected?: LiveText,
+  captured?: ReturnType<typeof captureDrop>,
+): Promise<void> {
+  const snapshot = captured ?? captureDrop();
+  const targets = expected ? [expected] : snapshot.targets;
+  for (const current of targets) {
+    if (live === current) live = null;
+    if (pendingSetup === current) pendingSetup = null;
     current.closed = true;
     current.readyDone?.();
     current.turnFailed?.(new Error("Claude text generator stopped"));
     current.turnDone = null;
     current.turnFailed = null;
     current.readyDone = null;
+    unwatchChild(current.child);
   }
-  unwatchChild(TEXT_CHILD_ID);
-  await killChild(TEXT_CHILD_ID).catch(() => undefined);
+  await (expected
+    ? retirements.retire(targets.map((current) => current.child))
+    : settleProviderRetirements([
+        snapshot.cohort.retire(),
+        retirements.retire(targets.map((current) => current.child)),
+      ]));
 }
 
 function handleLine(session: LiveText, line: string): void {
@@ -352,9 +504,21 @@ function handleLine(session: LiveText, line: string): void {
     session.readyDone = null;
   }
   if (!session.collecting) return;
+  if (
+    session.compacting &&
+    type === "system" &&
+    stringField(rec, "subtype") === "compact_boundary"
+  ) {
+    if (stringField(rec, "session_id") === session.threadId) session.compactionConfirmed = true;
+    return;
+  }
   if (type === "assistant") {
     const snapshot = assistantTextBlocks(rec).join("");
-    if (snapshot) session.output = mergeStream(session.output, snapshot);
+    if (snapshot) {
+      const output = mergeStream(session.output, snapshot);
+      if (!acceptOutput(session, output, session.reasoningChars ?? 0)) return;
+      session.output = output;
+    }
     return;
   }
   if (type === "stream_event") {
@@ -362,8 +526,18 @@ function handleLine(session: LiveText, line: string): void {
     return;
   }
   if (type === "result") {
+    if (session.compacting && stringField(rec, "session_id") !== session.threadId) {
+      session.turnFailed?.(
+        new Error("Claude compaction result does not identify its original thread."),
+      );
+      return;
+    }
+    const usage = usageFromResult(rec);
+    if (usage) session.onEvent?.({ type: "usage", ...usage });
+    const metrics = turnMetricsFromResult(rec);
+    if (metrics) session.onEvent?.({ type: "turn.metrics", ...metrics });
     const result = turnStatusFromResult(rec);
-    if (result.status === "failed") {
+    if (result.status === "failed" || (session.compacting && result.status !== "completed")) {
       session.turnFailed?.(new Error(result.error ?? "Claude turn failed"));
     } else {
       session.turnDone?.();
@@ -377,9 +551,13 @@ function handleStreamEvent(session: LiveText, rec: Record<string, unknown>): voi
   const delta = streamDeltaFromEvent(rec);
   if (delta) {
     if (delta.kind === "assistant") {
+      if (!acceptOutput(session, session.output + delta.text, session.reasoningChars ?? 0)) return;
       session.output += delta.text;
       session.onEvent?.({ type: "message.delta", text: delta.text });
     } else {
+      const reasoningChars = (session.reasoningChars ?? 0) + delta.text.length;
+      if (!acceptOutput(session, session.output, reasoningChars)) return;
+      session.reasoningChars = reasoningChars;
       session.onEvent?.({ type: "reasoning.delta", text: delta.text });
     }
     return;
@@ -391,7 +569,7 @@ function handleStreamEvent(session: LiveText, rec: Record<string, unknown>): voi
       id: started.id,
       name: started.name,
       input: started.input,
-      partialJson: "",
+      inputJson: createJsonRecordAccumulator(),
       title: toolTitle(started.name, started.input),
     };
     if (started.index >= 0) session.toolsByIndex.set(started.index, tool);
@@ -414,8 +592,7 @@ function handleStreamEvent(session: LiveText, rec: Record<string, unknown>): voi
   if (!jsonDelta) return;
   const tool = session.toolsByIndex.get(jsonDelta.index);
   if (!tool) return;
-  tool.partialJson += jsonDelta.partial;
-  const parsed = tryParseJsonRecord(tool.partialJson);
+  const parsed = tool.inputJson.append(jsonDelta.partial);
   if (!parsed) return;
   tool.input = parsed;
   tool.title = toolTitle(tool.name, parsed);
@@ -433,20 +610,13 @@ function handleStreamEvent(session: LiveText, rec: Record<string, unknown>): voi
   });
 }
 
-function waitForReady(session: LiveText, timeoutMs: number): Promise<void> {
-  if (session.ready) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      session.readyDone = null;
-      resolve();
-    }, timeoutMs);
-    session.readyDone = () => {
-      clearTimeout(timer);
-      if (session.closed) {
-        reject(new Error("Claude text generator exited"));
-        return;
-      }
-      resolve();
-    };
-  });
+function acceptOutput(session: LiveText, output: string, reasoningChars: number): boolean {
+  if (!utilityOutputExceeded(output, reasoningChars, session.outputLimit)) return true;
+  session.collecting = false;
+  session.turnFailed?.(
+    new Error(
+      "The utility response exceeded its local text allowance; provider usage is uncertain.",
+    ),
+  );
+  return false;
 }

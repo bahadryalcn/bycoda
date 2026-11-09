@@ -1,0 +1,39 @@
+{
+  "model": "clef-flash",
+  "state": {
+    "title": "Merchant sözleşme kabulü",
+    "steps": [
+      { "type": "navigate", "url": "/onboarding" },
+      { "type": "click", "selectors": [["#accept-agreement"]] }
+    ]
+  },
+  "questions": {
+    "businessArea": {
+      "type": "choice",
+      "instructions": "Senaryo hangi iş alanına ait?",
+      "criteria": {
+        "Onboarding": "Üyelik, merchant kaydı ve sözleşme kabulü",
+        "Ödeme": "Ödeme başlatma ve sonuçlandırma",
+        "İade": "İade ve iptal",
+        "Diğer": "Yukarıdaki alanlara uymayan senaryolar"
+      }
+    },
+    "hasUiInteraction": {
+      "type": "noul",
+      "instructions": "Senaryoda kullanıcı arayüzünde etkileşim var mı?",
+      "criteria": {
+        "true": "Evet, arayüzde gezinme veya tıklama var",
+        "false": "Hayır, arayüz etkileşimi yok"
+      }
+    },
+    "coverage": {
+      "type": "score",
+      "instructions": "Senaryonun sözleşme kabul akışını doğrulama kapsamı nedir?",
+      "criteria": [
+        "Akışa ait adım yok",
+        "Akışla etkileşim var ancak sonuç doğrulanmıyor",
+        "Akışla etkileşim var ve sonucu assertion ile doğrulanıyor"
+      ]
+    }
+  }
+}

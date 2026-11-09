@@ -10,6 +10,27 @@ vi.mock("./AgentTranscript", () => ({ ActivityRow: () => null, agentStepBlock: (
 import { ActivityDock } from "./ActivityDock";
 import { SubagentSheet, useSubagentSheet } from "./SubagentSheet";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+/** The sheet's Stop action, found by its visible label. */
+function stopButton(dialog: Element | null) {
+  return (
+    [...(dialog?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
+      (button) => button.textContent?.trim() === "Stop",
+    ) ?? null
+  );
+}
+
 const command: Block = {
   id: "command-1",
   role: "tool",
@@ -64,10 +85,46 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("arka plan komutuna tıklayınca detayını açar ve gelen çıktıyı günceller", async () => {
+it("names an advisor correctly and keeps its request form outside the message form", () => {
+  const advisor: Block = {
+    id: "advisor",
+    role: "tool",
+    text: "Review",
+    tool: { kind: "agent", callId: "advisor", status: "in_progress" },
+    agentRun: { name: "Reviewer", prompt: "Review changes", steps: [] },
+  };
+  act(() =>
+    root.render(
+      createElement(
+        "div",
+        { "data-session-drop": "" },
+        createElement(SubagentSheet, {
+          block: advisor,
+          busy: true,
+          visible: true,
+          agentRole: "advisor",
+          onClose: vi.fn(),
+          requests: createElement(
+            "form",
+            { "data-request-form": "" },
+            createElement("button", { type: "submit" }, "Answer"),
+          ),
+          relay: { mode: "direct", draft: "draft", setDraft: vi.fn(), send: vi.fn() },
+        }),
+      ),
+    ),
+  );
+  expect(container.querySelector('[role="dialog"]')?.textContent).toContain("Advisor: Reviewer");
+  const request = container.querySelector("[data-request-form]");
+  expect(request).not.toBeNull();
+  expect(request?.parentElement?.closest("form")).toBeNull();
+  expect(container.querySelector("textarea")?.value).toBe("draft");
+});
+
+it("opens the detail on clicking a background command and updates incoming output", async () => {
   const onStop = vi.fn().mockResolvedValue(undefined);
   act(() => root.render(createElement(Harness, { block: command, onStop })));
-  const toggle = container.querySelector<HTMLButtonElement>("button[aria-expanded]");
+  const toggle = container.querySelector<HTMLButtonElement>("[data-dock-toggle]");
   if (toggle?.getAttribute("aria-expanded") === "false") act(() => toggle.click());
   act(() => container.querySelector<HTMLButtonElement>("[data-dock-agent]")?.click());
   const dialog = container.querySelector('[role="dialog"]');
@@ -76,7 +133,9 @@ it("arka plan komutuna tıklayınca detayını açar ve gelen çıktıyı günce
   expect(dialog?.textContent).toContain("G:/project");
   expect(dialog?.textContent).toContain("Running");
   expect(dialog?.textContent).toContain("No output has been reported");
-  const stop = dialog?.querySelector<HTMLButtonElement>('button[title="Stop this command"]');
+  const stop = stopButton(dialog);
+  expect(stop).not.toBeNull();
+  expect(await tooltipText(stop!)).toBe("Stop this command");
   await act(async () => stop?.click());
   expect(onStop).toHaveBeenCalledOnce();
   act(() =>
@@ -98,7 +157,7 @@ it("arka plan komutuna tıklayınca detayını açar ve gelen çıktıyı günce
   expect(dialog?.textContent).toContain("3 passed");
   expect(dialog?.textContent).toContain("Tests passed");
   expect(dialog?.textContent).toContain("Done");
-  expect(dialog?.querySelector('button[title="Stop this command"]')).toBeNull();
+  expect(stopButton(dialog)).toBeNull();
   act(() =>
     document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
   );

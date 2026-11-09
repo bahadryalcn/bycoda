@@ -53,7 +53,9 @@ const click = (text: string) =>
 it("opens normally by default and applies a preference change only on the next launch", () => {
   render();
   expect(container.textContent).toContain("Private project and draft");
-  act(() => setStartInPrivacyMode(true));
+  act(() => {
+    setStartInPrivacyMode(true);
+  });
   expect(container.textContent).toContain("Private project and draft");
   expect(JSON.parse(localStorage.getItem("bycoda.groupLock")!).startInPrivacyMode).toBe(true);
   act(() => root.unmount());
@@ -84,7 +86,9 @@ it("cancel and Escape keep the workspace concealed; another window cannot disabl
   click("Show workspace");
   act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
   expect(mounted).not.toHaveBeenCalled();
-  act(() => setStartInPrivacyMode(false));
+  act(() => {
+    setStartInPrivacyMode(false);
+  });
   expect(container.textContent).toContain("Privacy mode");
 });
 

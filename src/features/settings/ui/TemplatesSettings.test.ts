@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { TemplatesSettings } from "./TemplatesSettings";
+import { clearRetainedTemplateDraft, TemplatesSettings } from "./TemplatesSettings";
 import { loadPromptTemplates, savePromptTemplates } from "../../sessions/model/promptTemplates";
 
 let container: HTMLDivElement;
@@ -12,6 +12,7 @@ const button = (text: string) =>
   [...container.querySelectorAll("button")].find((node) => node.textContent === text)!;
 beforeEach(async () => {
   localStorage.clear();
+  clearRetainedTemplateDraft();
   savePromptTemplates([original]);
   container = document.createElement("div");
   document.body.append(container);
@@ -23,6 +24,9 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
 });
+
+const statusText = () =>
+  [...container.querySelectorAll('[role="status"]')].map((node) => node.textContent).join(" ");
 
 it("retains saved data and the draft on storage failure, then reports successful retry", async () => {
   const input = container.querySelector<HTMLInputElement>('[aria-label="Template name"]')!;
@@ -40,15 +44,13 @@ it("retains saved data and the draft on storage failure, then reports successful
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Could not save templates",
   );
-  expect(container.querySelector('[role="status"]')?.textContent).toContain(
-    "Could not save templates",
-  );
+  expect(statusText()).toContain("Could not save templates");
   expect(loadPromptTemplates()[0].name).toBe("Review");
   expect(input.value).toBe("Updated draft");
   write.mockRestore();
   await act(async () => button("Save templates").click());
   expect(container.querySelector('[role="alert"]')).toBeNull();
-  expect(container.querySelector('[role="status"]')?.textContent).toContain("Saved");
+  expect(statusText()).toContain("Saved");
   expect(loadPromptTemplates()[0].name).toBe("Updated draft");
 });
 
@@ -64,10 +66,9 @@ it("updates a clean editor when templates change elsewhere", async () => {
 it("preserves a dirty draft and blocks stale writes until the user reloads", async () => {
   act(() => button("Add template").click());
   await act(async () => savePromptTemplates([{ ...original, name: "Updated elsewhere" }]));
-  expect(container.querySelectorAll('[aria-label="Template name"]')).toHaveLength(2);
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "Templates changed in another window",
-  );
+  expect(container.querySelectorAll('[aria-label="Template name"]')).toHaveLength(1);
+  expect(button("New template")).toBeDefined();
+  expect(container.textContent).toContain("Templates changed in another window");
   expect(button("Save templates").disabled).toBe(true);
   expect(loadPromptTemplates()[0].name).toBe("Updated elsewhere");
   act(() => button("Discard changes and reload").click());
@@ -76,4 +77,32 @@ it("preserves a dirty draft and blocks stale writes until the user reloads", asy
     "Updated elsewhere",
   );
   expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("retains unsaved authoring state when the manager is closed and reopened", async () => {
+  const input = container.querySelector<HTMLInputElement>('[aria-label="Template name"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Unsaved draft",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  act(() => root.unmount());
+  root = createRoot(container);
+  await act(async () => root.render(createElement(TemplatesSettings)));
+  expect(container.querySelector<HTMLInputElement>('[aria-label="Template name"]')?.value).toBe(
+    "Unsaved draft",
+  );
+  expect(loadPromptTemplates()[0].name).toBe("Review");
+});
+
+it("refuses to replace corrupt stored templates with an empty library", async () => {
+  await act(async () => {
+    localStorage.setItem("bycoda.promptTemplates", "{broken");
+    window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.promptTemplates" }));
+  });
+  expect(container.textContent).toContain("Template storage is unavailable");
+  expect(button("Save templates").disabled).toBe(true);
+  expect(localStorage.getItem("bycoda.promptTemplates")).toBe("{broken");
 });

@@ -3,9 +3,11 @@ import type { RuntimeMode } from "../../sessions/model/session";
 
 export const HOST_CREWS = "crews.v1";
 export const HOST_CREW_TASKS = "crews.tasks.v1";
+export const HOST_CREW_RUN_DELETE = "crews.run-delete.v1";
 export const HOST_CREW_DELETE = "crews.delete.v1";
 /** Library members carry specialty groups and crews remember which profile a member came from. */
 export const HOST_CREW_AGENT_GROUPS = "crews.agent-groups.v1";
+export const HOST_CREW_ACCESS = "crews.access.v1";
 export const CREW_CAPABILITIES = [
   "code",
   "review",
@@ -58,6 +60,8 @@ export type CrewPolicy = {
   allowUnknownCost: boolean;
   allowSubagents: boolean;
   delegateApprovals?: boolean;
+  /** Access mode for every member session of a run started from the owner UI. */
+  runtimeMode?: RuntimeMode;
 };
 export type SavedCrewAgent = CrewAgent & { projectId?: string; updatedAt: number };
 export type CrewDefinition = {
@@ -68,6 +72,11 @@ export type CrewDefinition = {
   policy: CrewPolicy;
   updatedAt: number;
 };
+/**
+ * `crews.list` clips each message to this many characters (host/crews/crews.ts) and omits
+ * `launch`. A message at the limit may be incomplete; the run view must say so.
+ */
+export const CREW_LIST_MESSAGE_LIMIT = 1000;
 export type CrewMessage = {
   id: string;
   from: string;
@@ -246,9 +255,22 @@ export function parseCrewDefinition(value: unknown): CrewDefinition {
       allowUnknownCost: p.allowUnknownCost === true,
       allowSubagents: p.allowSubagents === true,
       delegateApprovals: p.delegateApprovals === true,
+      ...(p.runtimeMode === undefined ? {} : { runtimeMode: crewRuntimeMode(p.runtimeMode) }),
     },
     updatedAt: typeof input.updatedAt === "number" ? input.updatedAt : 0,
   };
+}
+
+const CREW_RUNTIME_MODES: readonly RuntimeMode[] = [
+  "supervised",
+  "auto-accept-edits",
+  "auto",
+  "full-access",
+];
+function crewRuntimeMode(value: unknown): RuntimeMode {
+  const mode = CREW_RUNTIME_MODES.find((m) => m === value);
+  if (!mode) throw new Error("Invalid crew access");
+  return mode;
 }
 
 /** Required capability gates always precede preferences. Unknown is not support. */

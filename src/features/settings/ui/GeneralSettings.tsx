@@ -1,26 +1,48 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { openExternal } from "../../../platform/tauri/openExternal";
+import { openFeedbackDialog } from "../../account";
+import { copyText } from "../../../platform/tauri/clipboard";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Button } from "../../../shared/ui/Button";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { SettingsFeedback } from "./settingsControls";
 import {
   installPendingUpdate,
   isUpdaterEnabled,
+  knownAppVersionState,
+  knownUpdaterEnabledState,
   readAppVersion,
   runUpdateFlow,
   type UpdaterSnapshot,
 } from "../../../app/model/updater";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
-import { t, useLocale } from "../../../shared/i18n";
-import { MorphSelect } from "../../../shared/ui/MorphSelect";
+import {
+  setDomainLanguagePreference,
+  setLanguagePreference,
+  t,
+  useLocale,
+} from "../../../shared/i18n";
+import { Select } from "../../../shared/ui/Select";
 import { Progress } from "../../../shared/ui/Progress";
-import { ArrowDownCircle, Loader, RefreshCw } from "../../../shared/ui/icons";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import {
+  ArrowDownCircle,
+  Check,
+  Copy,
+  MessageSquare,
+  RefreshCw,
+  Star,
+} from "../../../shared/ui/icons";
 import { OPEN_ONBOARDING_EVENT } from "../../onboarding/model/onboarding";
 import { openUsageGuide } from "../../onboarding/model/usageGuide";
-import { OPEN_SESSION_IMPORT_EVENT } from "../../sessions/import/importModel";
+import { getTourSnapshot, startTour, subscribeTour } from "../../onboarding/model/tourState";
+import { startContribution, useContributeFlow } from "../../projects/public/contribute";
+import { OPEN_SESSION_IMPORT_EVENT } from "../../sessions/public/importModel";
 import {
+  CLOSE_TO_TRAY_DEFAULT,
+  KEEP_AWAKE_DEFAULT,
+  KEEP_AWAKE_SCREEN_DEFAULT,
   KEEP_AWAKE_HOLD_AFTER,
   KEEP_AWAKE_HOLD_AFTER_DEFAULT,
   isKeepAwakeHoldAfter,
@@ -38,13 +60,21 @@ import {
   subscribeKeepAwakeScreen,
 } from "../model/settings";
 import { LanguageSettings } from "./LanguageSettings";
-import { DiagnosticsGroup } from "./DiagnosticsSettings";
-import { AdvancedSettings, Group, Row, Toggle } from "./settingsControls";
+import { BuildIdentityDetails } from "./BuildIdentityDetails";
+import { UpdateChannelRow } from "./UpdateChannelRow";
+import { SessionFolderGroup, restoreSessionFolderDefault } from "./SessionFolderSettings";
+import { DiagnosticsGroup, restorePerformanceTraceDefault } from "./DiagnosticsSettings";
+import { Group, Row, Toggle, useSettingsPageReset } from "./settingsControls";
 import "./GeneralSettings.css";
 
 export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string) => void }) {
   useLocale();
-  const [closeToTray, setCloseToTray] = useStoredPreferenceState(loadCloseToTray, subscribeCloseToTray);
+  // A tour left part-way is resumed from where it stopped.
+  const tourState = useSyncExternalStore(subscribeTour, getTourSnapshot, () => "");
+  const [closeToTray, setCloseToTray] = useStoredPreferenceState(
+    loadCloseToTray,
+    subscribeCloseToTray,
+  );
   const onCloseToTray = (next: boolean) => {
     saveCloseToTray(next);
     setCloseToTray(next);
@@ -73,16 +103,37 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
   const onKeepAwakeScreen = (next: boolean) => {
     saveKeepAwakeScreen(next);
   };
+  // The shell confirms first; this restores only the settings on this page.
+  useSettingsPageReset(async () => {
+    if (IS_WIN) onCloseToTray(CLOSE_TO_TRAY_DEFAULT);
+    saveKeepAwakeEnabled(KEEP_AWAKE_DEFAULT);
+    saveKeepAwakeHoldAfter(KEEP_AWAKE_HOLD_AFTER_DEFAULT);
+    saveKeepAwakeScreen(KEEP_AWAKE_SCREEN_DEFAULT);
+    restorePerformanceTraceDefault();
+    await Promise.allSettled([
+      restoreSessionFolderDefault(),
+      setLanguagePreference("system"),
+      setDomainLanguagePreference("git", "app"),
+      setDomainLanguagePreference("technical", "app"),
+    ]);
+  });
+  const sleepBehavior = IS_WIN
+    ? t(
+        "Prevent idle sleep during agent work, and optionally after the last agent finishes. Closing the lid or choosing Sleep still works. On battery-powered Modern Standby PCs, Windows may stop the request five minutes after the sleep timeout.",
+      )
+    : IS_MAC
+      ? t(
+          "Prevent idle sleep during agent work, and optionally after the last agent finishes. Closing the lid or choosing Sleep still works.",
+        )
+      : t(
+          "Prevent idle sleep during agent work, and optionally after the last agent finishes. Automatic screen locking remains available. On GNOME, choosing Sleep may be blocked while this is active.",
+        );
   return (
-    <div className="general-settings">
-      <p className="general-save-note">{t("Changes save automatically")}</p>
+    <div className="general-settings settings-topics">
+      {/* Daily preferences first: language, app behavior, sleep. */}
       <LanguageSettings />
       {IS_WIN && (
-        <Group
-          title={t("Application behavior")}
-          layout="full"
-          scope={t("Applies to this Windows computer.")}
-        >
+        <Group title={t("Application behavior")}>
           <Row
             id="close-to-tray"
             label={t("Close to tray")}
@@ -96,13 +147,17 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
       )}
       <Group
         title={t("Sleep")}
-        layout="full"
-        scope={t("Applies to this computer, not remote computers running agents.")}
+        description={t("Applies to this computer, not remote computers running agents.")}
       >
         <Row
           id="keep-awake"
           label={t("Prevent sleep while agents work")}
           description={t("Keep this computer awake while an agent is working.")}
+          info={
+            <InfoPopover className="shrink-0" label={t("Sleep behavior")}>
+              <p>{sleepBehavior}</p>
+            </InfoPopover>
+          }
         >
           <Toggle
             label={t("Prevent sleep while agents work")}
@@ -110,73 +165,47 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
             onChange={onKeepAwake}
           />
         </Row>
-        <div
-          className="general-sleep-options"
-          role="group"
-          aria-label={t("Sleep")}
-          aria-describedby={!keepAwake ? "general-sleep-dependency" : undefined}
+        <Row
+          id="keep-awake-duration"
+          label={t("After agents finish")}
+          description={t(
+            "Choose when this computer can sleep again after the last agent finishes.",
+          )}
+          dependsOn={keepAwake}
+          disabledReason={t("Turn on Prevent sleep while agents work first")}
         >
-          {!keepAwake ? (
-            <p className="general-dependency" id="general-sleep-dependency">
-              {t(
-                "Enable Prevent sleep while agents work to use these options. Your choices are preserved.",
-              )}
-            </p>
-          ) : null}
-          <Row
-            id="keep-awake-duration"
-            label={t("After agents finish")}
-            description={t(
-              "Choose when this computer can sleep again after the last agent finishes.",
-            )}
-          >
-            <MorphSelect
-              label={t("Stay awake after an agent ends")}
-              value={keepAwakeHoldAfter}
-              options={[...KEEP_AWAKE_HOLD_AFTER]}
-              onChange={onKeepAwakeHoldAfter}
-              disabled={!keepAwake}
-            />
-          </Row>
-          <Row
-            id="keep-awake-screen"
+          <Select
+            hideLabel
+            label={t("Stay awake after an agent ends")}
+            value={keepAwakeHoldAfter}
+            options={[...KEEP_AWAKE_HOLD_AFTER]}
+            onValueChange={onKeepAwakeHoldAfter}
+            disabled={!keepAwake}
+          />
+        </Row>
+        <Row
+          id="keep-awake-screen"
+          label={t("Keep the screen on")}
+          description={t("Keep the display awake while sleep prevention is active.")}
+          dependsOn={keepAwake}
+          disabledReason={t("Turn on Prevent sleep while agents work first")}
+        >
+          <Toggle
             label={t("Keep the screen on")}
-            description={
-              IS_WIN || IS_MAC
-                ? t(
-                    "Keep the display awake while the sleep setting is active. Closing the lid or choosing Sleep still works.",
-                  )
-                : t(
-                    "Keep the display awake while the sleep setting is active. Automatic screen locking may be prevented.",
-                  )
-            }
-          >
-            <Toggle
-              label={t("Keep the screen on")}
-              on={keepAwakeScreen}
-              onChange={onKeepAwakeScreen}
-              disabled={!keepAwake}
-            />
-          </Row>
-        </div>
-        <AdvancedSettings title={t("Sleep behavior")}>
-          <p className="general-detail">
-            {IS_WIN
-              ? t(
-                  "Prevent idle sleep during agent work, and optionally after the last agent finishes. Closing the lid or choosing Sleep still works. On battery-powered Modern Standby PCs, Windows may stop the request five minutes after the sleep timeout.",
-                )
-              : IS_MAC
-                ? t(
-                    "Prevent idle sleep during agent work, and optionally after the last agent finishes. Closing the lid or choosing Sleep still works.",
-                  )
-                : t(
-                    "Prevent idle sleep during agent work, and optionally after the last agent finishes. Automatic screen locking remains available. On GNOME, choosing Sleep may be blocked while this is active.",
-                  )}
-          </p>
-        </AdvancedSettings>
+            on={keepAwakeScreen}
+            onChange={onKeepAwakeScreen}
+            disabled={!keepAwake}
+          />
+        </Row>
       </Group>
 
-      <Group title={t("Setup and help")} layout="full">
+      {/* Updates: version, check/install/restart state and progress share one compact action area. */}
+      <Group title={t("Updates")}>
+        <UpdateRow onOpenWhatsNew={onOpenWhatsNew} />
+      </Group>
+
+      {/* Secondary: setup help, diagnostics and product details. */}
+      <Group title={t("Setup and help")}>
         <Row
           id="import-history"
           label={t("Import history")}
@@ -184,20 +213,32 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
             "Choose Claude Code and Codex conversations to import. Originals stay unchanged.",
           )}
         >
-          <SecondaryButton
+          <Button
+            className="general-action shrink-0"
             onClick={() => window.dispatchEvent(new Event(OPEN_SESSION_IMPORT_EVENT))}
           >
             {t("Import…")}
-          </SecondaryButton>
+          </Button>
         </Row>
         <Row
           id="getting-started"
           label={t("Getting started")}
-          description={t("Connect computers, set up agents, and choose your projects.")}
+          description={t(
+            "Take a one-minute tour, or connect computers, set up agents and choose your projects.",
+          )}
         >
-          <SecondaryButton onClick={() => window.dispatchEvent(new Event(OPEN_ONBOARDING_EVENT))}>
-            {t("Open setup…")}
-          </SecondaryButton>
+          <div className="flex shrink-0 items-center gap-2">
+            {/* The tour request closes Settings and points at the workspace controls. */}
+            <Button className="general-action shrink-0" onClick={() => startTour("first-run")}>
+              {tourState.startsWith("paused:") ? t("Resume tour") : t("Take the tour")}
+            </Button>
+            <Button
+              className="general-action shrink-0"
+              onClick={() => window.dispatchEvent(new Event(OPEN_ONBOARDING_EVENT))}
+            >
+              {t("Open setup…")}
+            </Button>
+          </div>
         </Row>
         <Row
           id="usage-guide"
@@ -205,89 +246,279 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           description={t("Learn chat, queue, stop and essential shortcuts.")}
         >
           {/* The guide request closes Settings and walks through the workspace. */}
-          <SecondaryButton onClick={openUsageGuide}>{t("Open guide")}</SecondaryButton>
+          <Button className="general-action shrink-0" onClick={openUsageGuide}>
+            {t("Open guide…")}
+          </Button>
+        </Row>
+        <Row
+          id="send-feedback"
+          label={t("Send feedback")}
+          description={t(
+            "Report a problem or suggest an improvement. Nothing is attached unless you add it.",
+          )}
+        >
+          <Button
+            className="general-action shrink-0"
+            startIcon={<MessageSquare strokeWidth={1.75} aria-hidden />}
+            onClick={openFeedbackDialog}
+          >
+            {t("Send feedback")}
+          </Button>
         </Row>
       </Group>
 
+      <SessionFolderGroup />
+
       <DiagnosticsGroup />
 
-      <Group title={t("About")} layout="full">
-        <UpdateRow onOpenWhatsNew={onOpenWhatsNew} />
+      <Group title={t("About")}>
         <ProductDetails />
       </Group>
     </div>
   );
 }
+function ContributeRow() {
+  const flow = useContributeFlow();
+  const repositoryUrl = PRODUCT_IDENTITY.repositoryUrl;
+  if (!repositoryUrl) return null;
+  return (
+    <>
+      <Row
+        id="star-github"
+        label={t("Star on GitHub")}
+        description={t("Open the project repository on GitHub.")}
+      >
+        <Button
+          className="general-action shrink-0"
+          startIcon={<Star strokeWidth={1.75} aria-hidden />}
+          onClick={() => void openExternal(repositoryUrl).catch(() => undefined)}
+        >
+          {t("View on GitHub")}
+        </Button>
+      </Row>
+      <Row
+        id="contribute"
+        label={t("Contribute to bycoda")}
+        description={t("Clone the open-source repository and open it as a project.")}
+      >
+        <Button
+          className="general-action shrink-0"
+          loading={flow.status === "cloning"}
+          onClick={() => startContribution().catch(() => undefined)}
+        >
+          {t("Clone and open…")}
+        </Button>
+      </Row>
+    </>
+  );
+}
+
 function ProductDetails() {
-  const [opening, setOpening] = useState<string | null>(null);
-  const [error, setError] = useState(false);
-  const open = async (url: string) => {
-    if (opening) return;
-    setOpening(url);
-    setError(false);
-    try {
-      await openUrl(url);
-    } catch {
-      setError(true);
-    } finally {
-      setOpening(null);
-    }
-  };
-  const emailUrl = `mailto:${PRODUCT_IDENTITY.contactEmail}`;
   return (
     <>
       <Row label={t("Developed by")}>
-        <span>{PRODUCT_IDENTITY.developerName}</span>
+        <span className="general-about-value">{PRODUCT_IDENTITY.developerName}</span>
       </Row>
-      <Row label={t("Website")}>
-        <Button
-          variant="link"
-          loading={opening === PRODUCT_IDENTITY.websiteUrl}
-          disabled={!!opening}
-          onClick={() => open(PRODUCT_IDENTITY.websiteUrl)}
-        >
-          {PRODUCT_IDENTITY.websiteUrl.replace("https://", "")}
-        </Button>
-      </Row>
-      <Row label={t("Contact")}>
-        <Button
-          variant="link"
-          loading={opening === emailUrl}
-          disabled={!!opening}
-          onClick={() => open(emailUrl)}
-        >
-          {PRODUCT_IDENTITY.contactEmail}
-        </Button>
-      </Row>
-      {error && (
-        <div className="general-link-error">
-          <SettingsFeedback state="error">
-            {t("Could not open the link. Copy the address and open it manually.")}
-          </SettingsFeedback>
-        </div>
-      )}
+      <ProductLink
+        label={t("Website")}
+        address={PRODUCT_IDENTITY.websiteUrl}
+        href={PRODUCT_IDENTITY.websiteUrl}
+        displayAddress={PRODUCT_IDENTITY.websiteUrl.replace("https://", "")}
+        openLabel={t("Open website")}
+      />
+      <ProductLink
+        label={t("Contact")}
+        address={PRODUCT_IDENTITY.contactEmail}
+        href={`mailto:${PRODUCT_IDENTITY.contactEmail}`}
+      />
+      <ProductLink
+        label={t("Developer contact")}
+        address={PRODUCT_IDENTITY.developerContactEmail}
+        href={`mailto:${PRODUCT_IDENTITY.developerContactEmail}`}
+      />
+      <ContributeRow />
     </>
+  );
+}
+
+/** Each target owns its pending/error recovery; opening a link never sends a message. */
+function ProductLink({
+  label,
+  address,
+  href,
+  displayAddress = address,
+  openLabel,
+}: {
+  label: string;
+  address: string;
+  href: string;
+  displayAddress?: string;
+  openLabel?: string;
+}) {
+  const [pending, setPending] = useState<"open" | "retry" | "copy" | null>(null);
+  const [failure, setFailure] = useState<"open" | "copy" | null>(null);
+  const [copied, setCopied] = useState(false);
+  const inFlight = useRef(false);
+  const linkControl = useRef<HTMLButtonElement>(null);
+  const recoveryActions = useRef<HTMLDivElement>(null);
+  const returnFocus = useRef(false);
+
+  useEffect(() => {
+    if (pending !== null || failure !== null || !returnFocus.current) return;
+    returnFocus.current = false;
+    linkControl.current?.focus();
+  }, [pending, failure]);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1600);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
+  const run = async (operation: "open" | "retry" | "copy") => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    const beganInRecovery = Boolean(recoveryActions.current?.contains(document.activeElement));
+    returnFocus.current = false;
+    setPending(operation);
+    setCopied(false);
+    try {
+      if (operation !== "copy") await openUrl(href);
+      else {
+        await copyText(address);
+        setCopied(true);
+      }
+      // Recovery controls disappear on success; retain focus only if it is still there.
+      returnFocus.current =
+        beganInRecovery &&
+        (document.activeElement === document.body ||
+          Boolean(recoveryActions.current?.contains(document.activeElement)));
+      setFailure(null);
+    } catch {
+      setFailure(operation === "copy" ? "copy" : "open");
+    } finally {
+      inFlight.current = false;
+      setPending(null);
+    }
+  };
+
+  return (
+    <Row
+      label={label}
+      feedback={
+        failure ? (
+          <SettingsFeedback
+            state="error"
+            action={
+              <div ref={recoveryActions} className="flex flex-wrap items-center gap-2">
+                {failure === "open" ? (
+                  <Button
+                    disabled={pending !== null}
+                    loading={pending === "retry"}
+                    loadingLabel={t("Opening…")}
+                    onClick={() => void run("retry")}
+                  >
+                    {t("Retry")}
+                  </Button>
+                ) : null}
+                <Button
+                  disabled={pending !== null}
+                  loading={pending === "copy"}
+                  loadingLabel={t("Copying…")}
+                  aria-label={`${t("Copy")}: ${address}`}
+                  onClick={() => void run("copy")}
+                >
+                  {t("Copy")}
+                </Button>
+              </div>
+            }
+          >
+            <p>
+              {failure === "open"
+                ? t("Could not open the link. Copy the address and open it manually.")
+                : t("Could not copy. Select the details and copy them manually.")}
+            </p>
+            <span className="select-text break-all">{address}</span>
+          </SettingsFeedback>
+        ) : undefined
+      }
+    >
+      <Button
+        ref={linkControl}
+        variant="link"
+        className="general-about-link"
+        loading={pending === "open"}
+        loadingLabel={t("Opening…")}
+        disabled={pending !== null}
+        tooltip={
+          address.replace(/^https?:\/\//, "") === displayAddress.replace(/^https?:\/\//, "")
+            ? undefined
+            : address
+        }
+        onClick={() => void run("open")}
+      >
+        {displayAddress}
+      </Button>
+      {failure ? null : (
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          label={`${t("Copy")}: ${address}`}
+          tooltip={copied ? t("Copied") : t("Copy")}
+          disabled={pending !== null}
+          loading={pending === "copy"}
+          onClick={() => void run("copy")}
+        >
+          {copied ? (
+            <Check aria-hidden className="icon-xs" strokeWidth={1.75} />
+          ) : (
+            <Copy aria-hidden className="icon-xs" strokeWidth={1.75} />
+          )}
+        </Button>
+      )}
+      {openLabel ? (
+        <Button
+          size="sm"
+          disabled={pending !== null}
+          loading={pending === "open"}
+          loadingLabel={t("Opening…")}
+          onClick={() => void run("open")}
+        >
+          {openLabel}
+        </Button>
+      ) : null}
+      <span role="status" className="sr-only">
+        {copied ? t("Copied") : ""}
+      </span>
+    </Row>
   );
 }
 export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string) => void }) {
   useLocale();
   const [snapshot, setSnapshot] = useState<UpdaterSnapshot>({
     phase: "idle",
-    currentVersion: "…",
+    currentVersion: knownAppVersionState() ?? "…",
   });
 
-  // Unknown until the identifier resolves; only the official build updates.
-  const [updatesEnabled, setUpdatesEnabled] = useState<boolean | null>(null);
+  // Unknown until the identifier resolves (first visit only); only the official build updates.
+  const [updatesEnabled, setUpdatesEnabled] = useState<boolean | null>(
+    () => knownUpdaterEnabledState() ?? null,
+  );
 
   useEffect(() => {
     let cancelled = false;
-    void readAppVersion().then((currentVersion) => {
-      if (cancelled) return;
-      setSnapshot((current) => ({ ...current, currentVersion }));
-    });
-    void isUpdaterEnabled().then((enabled) => {
-      if (!cancelled) setUpdatesEnabled(enabled);
-    });
+    void readAppVersion()
+      .then((currentVersion) => {
+        if (cancelled) return;
+        setSnapshot((current) => ({ ...current, currentVersion }));
+      })
+      .catch(() => {});
+    void isUpdaterEnabled()
+      .then((enabled) => {
+        if (!cancelled) setUpdatesEnabled(enabled);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -311,91 +542,98 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
     }
   };
 
+  // Until support is known the line shows the neutral default instead of a flash of "Checking…".
   const status =
-    updatesEnabled === null
-      ? t("Checking whether this build supports updates…")
-      : updatesEnabled === false
-        ? t("Automatic updates are disabled in this build.")
-        : snapshot.phase === "available"
-          ? t("Version {p0} is available. Downloading installs it and restarts the app.", {
-              p0: snapshot.availableVersion ?? "",
-            })
-          : snapshot.phase === "downloading"
-            ? snapshot.progress != null
-              ? t("Downloading {p0}%… The app restarts after installation.", {
-                  p0: snapshot.progress,
-                })
-              : t("Downloading… The app restarts after installation.")
-            : snapshot.phase === "checking"
-              ? t("Checking for updates…")
-              : snapshot.phase === "current"
-                ? t("You're on the latest version.")
-                : snapshot.phase === "error"
-                  ? (snapshot.error ?? t("Update check failed."))
-                  : t(
-                      "Check the release feed for an update. Installation requires confirmation and restarts the app.",
-                    );
+    updatesEnabled === false
+      ? t("Automatic updates are disabled in this build.")
+      : snapshot.phase === "available"
+        ? t("Version {p0} is available. Downloading installs it and restarts the app.", {
+            p0: snapshot.availableVersion ?? "",
+          })
+        : snapshot.phase === "downloading"
+          ? snapshot.progress != null
+            ? t("Downloading {p0}%… The app restarts after installation.", {
+                p0: snapshot.progress,
+              })
+            : t("Downloading… The app restarts after installation.")
+          : snapshot.phase === "checking"
+            ? t("Checking for updates…")
+            : snapshot.phase === "current"
+              ? t("You're on the latest version.")
+              : snapshot.phase === "error"
+                ? (snapshot.error ?? t("Update check failed."))
+                : t("Check for a newer version.");
 
   return (
-    <Row
-      id="update"
-      label={
-        <span className="flex items-baseline gap-2">
-          {t("Version")}
-          <span className="general-version">{snapshot.currentVersion}</span>
-        </span>
-      }
-      description={snapshot.phase === "idle" && updatesEnabled === true ? status : undefined}
-      feedback={
-        snapshot.phase !== "idle" || updatesEnabled !== true ? (
-          <SettingsFeedback
-            state={
-              snapshot.phase === "error"
-                ? "error"
-                : updatesEnabled === false || hasUpdate
-                  ? "warning"
-                  : snapshot.phase === "current"
-                    ? "success"
-                    : "loading"
-            }
+    <>
+      <Row
+        id="update"
+        label={
+          <span className="flex min-w-0 flex-wrap items-baseline gap-2">
+            {t("Version")}
+            <span className="general-version">{snapshot.currentVersion}</span>
+          </span>
+        }
+        description={snapshot.phase === "idle" && updatesEnabled !== false ? status : undefined}
+        feedback={
+          <>
+            {snapshot.phase !== "idle" || updatesEnabled === false ? (
+              <SettingsFeedback
+                state={
+                  snapshot.phase === "error"
+                    ? "error"
+                    : updatesEnabled === false || hasUpdate
+                      ? "warning"
+                      : snapshot.phase === "current"
+                        ? "success"
+                        : "loading"
+                }
+              >
+                {status}
+              </SettingsFeedback>
+            ) : null}
+            <BuildIdentityDetails />
+          </>
+        }
+      >
+        <div className="general-update-actions">
+          <Button
+            className="shrink-0"
+            onClick={() => onOpenWhatsNew(snapshot.currentVersion)}
+            disabled={snapshot.currentVersion === "…"}
           >
-            {status}
-          </SettingsFeedback>
-        ) : null
-      }
-    >
-      <div className="general-update-actions">
-        <SecondaryButton
-          onClick={() => onOpenWhatsNew(snapshot.currentVersion)}
-          disabled={snapshot.currentVersion === "…"}
-        >
-          {t("What's new")}
-        </SecondaryButton>
-        {updatesEnabled === false ? null : (
-          <SecondaryButton
-            onClick={() => void onClick()}
-            disabled={busy || updatesEnabled !== true}
-          >
-            {busy ? (
-              <Loader className="size-3.5 motion-safe:animate-spin" aria-hidden />
-            ) : hasUpdate ? (
-              <ArrowDownCircle className="size-3.5 text-accent" aria-hidden />
-            ) : (
-              <RefreshCw className="size-3.5" strokeWidth={1.75} aria-hidden />
-            )}
-            {hasUpdate ? t("Download") : t("Check for updates")}
-          </SecondaryButton>
-        )}
-        {snapshot.phase === "downloading" ? (
-          <Progress
-            compact
-            label={t("Downloading…")}
-            value={snapshot.progress ?? undefined}
-            max={100}
-            className="w-32"
-          />
-        ) : null}
-      </div>
-    </Row>
+            {t("What's new")}
+          </Button>
+          {updatesEnabled === false ? null : (
+            <Button
+              className="shrink-0"
+              stableWidth
+              onClick={() => void onClick()}
+              disabled={busy || updatesEnabled !== true}
+              loading={busy}
+              startIcon={
+                hasUpdate ? (
+                  <ArrowDownCircle strokeWidth={1.75} aria-hidden />
+                ) : (
+                  <RefreshCw strokeWidth={1.75} aria-hidden />
+                )
+              }
+            >
+              {hasUpdate ? t("Install and restart") : t("Check for updates")}
+            </Button>
+          )}
+          {snapshot.phase === "downloading" ? (
+            <Progress
+              compact
+              label={t("Downloading…")}
+              value={snapshot.progress ?? undefined}
+              max={100}
+              className="w-32"
+            />
+          ) : null}
+        </div>
+      </Row>
+      {updatesEnabled ? <UpdateChannelRow /> : null}
+    </>
   );
 }

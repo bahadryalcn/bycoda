@@ -1,35 +1,44 @@
-import { useEffect, useRef } from "react";
-import { useDecorativeMotionEnabled } from "../../settings/model/decorativeMotion";
+import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
+import { loadCrewTheme, subscribeCrewTheme } from "../../settings/public/settings";
 import { drawPacingUncle } from "./pacingUncleArt";
 
-/** A small decorative walker; the activity text remains the accessible status. */
+/** About 1000 / `PACING_FPS` from the art module. */
+const FRAME_MS = 83;
+
+/**
+ * A small decorative walker that follows the crew theme; the activity text
+ * remains the accessible status.
+ */
 export function PacingUncle({ visible = true }: { visible?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const elapsed = useRef(0);
   const motion = useDecorativeMotionEnabled();
+  const theme = useSyncExternalStore(subscribeCrewTheme, loadCrewTheme, loadCrewTheme);
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    let last = 0;
-    let frame: number | null = null;
+    let last: number | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     let intersects = typeof IntersectionObserver === "undefined";
     let width = 0;
     const height = 32;
-    const paint = () => drawPacingUncle(ctx, width, height, elapsed.current);
-    const tick = (now: number) => {
-      if (now - last >= 50) {
-        if (last) elapsed.current += Math.min(now - last, 100) / 1000;
-        last = now;
-        paint();
-      }
-      frame = requestAnimationFrame(tick);
+    const paint = () => drawPacingUncle(ctx, width, height, elapsed.current, theme);
+    // A 12 Hz timer, not a per-vsync frame chain: the pixel art only changes 12 times a
+    // second, and unchanged frames (pauses, idle beads) do not touch the canvas at all.
+    const tick = () => {
+      const now = performance.now();
+      if (last !== null) elapsed.current += Math.min(now - last, 250) / 1000;
+      last = now;
+      paint();
+      timer = setTimeout(tick, FRAME_MS);
     };
     const update = () => {
-      if (frame !== null) cancelAnimationFrame(frame);
-      frame = null;
-      last = 0;
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+      last = null;
       const nextWidth = canvas.clientWidth;
       if (nextWidth !== width || canvas.width === 300) {
         width = nextWidth;
@@ -39,7 +48,10 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
       paint();
-      if (motion && visible && intersects && width > 0) frame = requestAnimationFrame(tick);
+      if (motion && visible && intersects && width > 0) {
+        last = performance.now();
+        timer = setTimeout(tick, FRAME_MS);
+      }
     };
     const intersection =
       typeof IntersectionObserver === "undefined"
@@ -54,12 +66,12 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
     window.addEventListener("resize", update);
     update();
     return () => {
-      if (frame !== null) cancelAnimationFrame(frame);
+      if (timer !== null) clearTimeout(timer);
       intersection?.disconnect();
       resize?.disconnect();
       window.removeEventListener("resize", update);
     };
-  }, [motion, visible]);
+  }, [motion, visible, theme]);
   return (
     <canvas
       ref={ref}

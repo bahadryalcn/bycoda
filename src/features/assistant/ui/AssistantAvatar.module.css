@@ -1,0 +1,36 @@
+/* Assistant portrait inside its round mark, and the portrait picker in Settings and setup. */
+.image {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tile.tile {
+  inline-size: 40px;
+  block-size: 40px;
+  padding: 2px;
+  border-radius: var(--radius-pill);
+}
+/* Selection is the accent ring, as on the Settings tiles. A shadow, because the Button's
+   hierarchy rules own its border colour. */
+.tile.tile[aria-checked="true"] {
+  box-shadow: 0 0 0 2px var(--ui-border-accent);
+}
+.tileImage {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: var(--radius-pill);
+  object-fit: cover;
+}

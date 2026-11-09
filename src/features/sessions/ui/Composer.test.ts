@@ -1,10 +1,24 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mcpInvoke = vi.hoisted(() => vi.fn());
+vi.mock("../../workspaces/model/workspaceCreation", () => ({
+  shortWorkspaceRef: (ref: string) => ref.replace(/^refs\/(heads|remotes)\//, ""),
+  useWorkspaceCreation: (
+    _cwd: string,
+    _active: boolean,
+    choice?: "current" | "worktree",
+    base?: string,
+  ) => ({
+    mode: choice ?? "worktree",
+    base: base || "main",
+    preview: { baseRef: "refs/heads/main", baseCommit: "12345678", excludedPaths: 2 },
+    pending: false,
+    refresh: vi.fn(),
+  }),
+}));
 vi.mock("../model/textareaSelectionRect", () => ({
   textareaSelectionRect: () => new DOMRect(20, 100, 120, 20),
 }));
@@ -13,9 +27,13 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
   return {
     ...original,
     invoke: (command: string, args?: unknown) =>
-      command === "mcp_discover" || command === "claude_mcp_list"
-        ? mcpInvoke(command, args)
-        : original.invoke(command, args),
+      command === "write_attachment"
+        ? Promise.resolve(`/attachments/${(args as { name: string }).name}`)
+        : command === "mcp_discover" || command === "claude_mcp_list"
+          ? mcpInvoke(command, args)
+          : command === "list_question_attachment_drafts"
+            ? Promise.resolve([])
+            : original.invoke(command, args),
   };
 });
 
@@ -36,7 +54,7 @@ vi.mock("../../source-control/hooks/useProjectBranches", () => ({
   }),
 }));
 
-import { Composer, ComposerAction } from "./Composer";
+import { Composer } from "./Composer";
 import { setRemoteCommandRunner } from "../../../platform/tauri/fs";
 import { invalidateSkills } from "../../skills/model/skills";
 import { invalidateProjectFiles } from "../../files/model/fileIndex";
@@ -49,39 +67,24 @@ import type { UserQuestionPrompt } from "../model/userQuestion";
 import { registerHarness } from "../../../integrations/harness/core/registry";
 import { codexAdapter } from "../../../integrations/harness/providers/codex/codexAdapter";
 import { antigravityAdapter } from "../../../integrations/harness/providers/antigravity/antigravityAdapter";
+import { saveLastModelChoice } from "../model/models";
+import {
+  saveDefaultTranslationChoice,
+  saveDefaultRepromptChoice,
+} from "../model/translationPreferences";
 
-function renderAction(busy: boolean, hasValue: boolean, allowBusySubmit = true) {
-  return renderToStaticMarkup(
-    createElement(ComposerAction, {
-      busy,
-      hasValue,
-      allowBusySubmit,
-      onSend: vi.fn(),
-      onStop: vi.fn(),
-    }),
-  );
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
 }
-
-describe("ComposerAction", () => {
-  it("keeps Stop alongside Send when typing during a running turn", () => {
-    const empty = renderAction(true, false);
-    expect(empty).toContain('aria-label="Stop"');
-    expect(empty).not.toContain('aria-label="Send"');
-
-    const typed = renderAction(true, true);
-    expect(typed).toContain('aria-label="Send"');
-    expect(typed).toContain('data-button-variant="primary"');
-    expect(typed).toContain('aria-label="Stop"');
-    expect(typed).toContain('title="Send (Enter)"');
-    expect(typed).toContain('title="Stop (Esc)"');
-  });
-
-  it("keeps Stop while busy when submitting follow-up text is disabled", () => {
-    const typed = renderAction(true, true, false);
-    expect(typed).toContain('aria-label="Stop"');
-    expect(typed).not.toContain('aria-label="Send"');
-  });
-});
 
 describe("Composer question focus", () => {
   let container: HTMLDivElement;
@@ -120,61 +123,74 @@ describe("Composer question focus", () => {
 
   afterEach(() => {
     act(() => root.unmount());
+    saveDefaultTranslationChoice(undefined);
+    saveDefaultRepromptChoice(undefined);
     container.remove();
     vi.unstubAllGlobals();
     registerHarness(codexAdapter);
   });
 
-  it("previews a selected draft translation, applies only on approval, and toggles with arrows", async () => {
-    const run = vi.fn(async () => "Hello");
-    registerHarness({ ...codexAdapter, runTextPrompt: run });
-    const original = "Before Merhaba after";
-    await renderComposer(
-      undefined,
-      vi.fn(),
-      false,
-      0,
-      original,
-      undefined,
-      vi.fn(),
-      "translate-draft",
-      "codex",
-    );
-    const textarea = container.querySelector("textarea")!;
-    textarea.focus();
-    vi.spyOn(textarea, "getBoundingClientRect").mockReturnValue(new DOMRect(20, 100, 300, 40));
-    await act(async () => {
-      textarea.setSelectionRange(7, 14);
-      textarea.dispatchEvent(new Event("select", { bubbles: true }));
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-    });
-    const translate = [
-      ...document.querySelectorAll<HTMLButtonElement>('[role="toolbar"] button'),
-    ].find((button) => button.textContent?.includes("Translate to English"))!;
-    expect(translate).toBeDefined();
-    expect(run).not.toHaveBeenCalled();
-    await act(async () => translate.click());
-    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(textarea.value).toBe(original);
-    const apply = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
-      (button) => button.textContent === "Apply translation",
-    )!;
-    await act(async () => apply.click());
-    expect(textarea.value).toBe("Before Hello after");
-    for (const [key, expected] of [
-      ["ArrowUp", original],
-      ["ArrowDown", "Before Hello after"],
-    ]) {
-      await act(async () =>
-        textarea.dispatchEvent(
-          new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
-        ),
+  it.each([
+    ["Translate to English", "Apply translation"],
+    ["Reprompt", "Apply prompt"],
+  ])(
+    "previews %s for a selected draft, applies only on approval, and toggles with arrows",
+    async (action, applyLabel) => {
+      saveLastModelChoice("codex", "codex:gpt-6.1");
+      const run = vi.fn(async () => "Hello");
+      registerHarness({ ...codexAdapter, runTextPrompt: run });
+      const original = "Before Merhaba after";
+      await renderComposer(
+        undefined,
+        vi.fn(),
+        false,
+        0,
+        original,
+        undefined,
+        vi.fn(),
+        "translate-draft",
+        "codex",
       );
-      expect(textarea.value).toBe(expected);
-    }
-    expect(run).toHaveBeenCalledOnce();
-  });
+      const textarea = container.querySelector("textarea")!;
+      textarea.focus();
+      vi.spyOn(textarea, "getBoundingClientRect").mockReturnValue(new DOMRect(20, 100, 300, 40));
+      await act(async () => {
+        textarea.setSelectionRange(7, 14);
+        textarea.dispatchEvent(new Event("select", { bubbles: true }));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      });
+      const translate = [
+        ...document.querySelectorAll<HTMLButtonElement>('[role="toolbar"] button'),
+      ].find((button) => button.textContent?.includes(action))!;
+      expect(translate).toBeDefined();
+      expect(run).not.toHaveBeenCalled();
+      await act(async () => translate.click());
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+      expect(textarea.value).toBe(original);
+      const apply = [
+        ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+      ].find((button) => button.textContent === applyLabel)!;
+      await act(async () => apply.click());
+      expect(textarea.value).toBe("Before Hello after");
+      for (const [key, expected] of [
+        ["ArrowUp", original],
+        ["ArrowDown", "Before Hello after"],
+      ]) {
+        await act(async () =>
+          textarea.dispatchEvent(
+            new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+          ),
+        );
+        expect(textarea.value).toBe(expected);
+      }
+      expect(run).toHaveBeenCalledOnce();
+    },
+  );
   it("opens the translation menu for an Antigravity model without silently calling Codex", async () => {
+    saveDefaultTranslationChoice({
+      harness: "antigravity",
+      model: "antigravity:gemini-3.8-flash-high",
+    });
     const run = vi.fn(async () => "Hello");
     registerHarness({ ...codexAdapter, runTextPrompt: run });
     const antigravityRun = vi.fn(async () => "Hello");
@@ -217,7 +233,11 @@ describe("Composer question focus", () => {
     expect(textarea.value).toBe("selam bugün nasılsın?");
   });
 
-  it("keeps an edited draft when translation finishes late", async () => {
+  it.each([
+    ["Translate to English", "Apply translation"],
+    ["Reprompt", "Apply prompt"],
+  ])("keeps an edited draft when %s finishes late", async (action, applyLabel) => {
+    saveLastModelChoice("codex", "codex:gpt-6.1");
     let resolve!: (value: string) => void;
     registerHarness({
       ...codexAdapter,
@@ -247,7 +267,7 @@ describe("Composer question focus", () => {
     });
     const translate = [
       ...document.querySelectorAll<HTMLButtonElement>('[role="toolbar"] button'),
-    ].find((button) => button.textContent?.includes("Translate to English"))!;
+    ].find((button) => button.textContent?.includes(action))!;
     await act(async () => translate.click());
     await act(async () => {
       textarea.value = "Changed draft";
@@ -255,7 +275,7 @@ describe("Composer question focus", () => {
       resolve("Hello");
     });
     const apply = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
-      (button) => button.textContent === "Apply translation",
+      (button) => button.textContent === applyLabel,
     )!;
     await act(async () => vi.waitFor(() => expect(apply.disabled).toBe(false)));
     await act(async () => apply.click());
@@ -321,6 +341,42 @@ describe("Composer question focus", () => {
       ),
     );
   }
+
+  it("keeps workspace actions and the message queue distinct while preserving the draft", async () => {
+    const consoleError = vi.spyOn(console, "error");
+    try {
+      await renderComposer(
+        undefined,
+        vi.fn(),
+        false,
+        0,
+        "Keep this draft",
+        undefined,
+        vi.fn(),
+        "managed-composer-identity",
+      );
+      const textarea = container.querySelector("textarea")!;
+      await renderComposer(
+        undefined,
+        vi.fn(),
+        false,
+        1,
+        "Keep this draft",
+        undefined,
+        vi.fn(),
+        "managed-composer-identity",
+      );
+      expect(container.querySelector("textarea")).toBe(textarea);
+      expect(textarea.value).toBe("Keep this draft");
+      expect(
+        consoleError.mock.calls.filter((args) =>
+          args.some((value) => String(value).includes("same key")),
+        ),
+      ).toEqual([]);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
 
   it("shows the working folder picker without additional projects", async () => {
     localStorage.clear();
@@ -467,7 +523,9 @@ describe("Composer question focus", () => {
     );
     expect(onSubmit).toHaveBeenCalledWith("/clear", [], { intent: "default" });
     expect(textarea.value).toBe("/clear");
-    expect(document.body.textContent).toContain("Stop the current turn");
+    // An idle session that refuses must not claim a turn is running (U16).
+    expect(document.body.textContent).toContain("cannot be cleared right now");
+    expect(document.body.textContent).not.toContain("Stop the current turn");
   });
 
   async function typeInto(textarea: HTMLTextAreaElement, value: string) {
@@ -692,17 +750,23 @@ describe("Composer question focus", () => {
 
     const list = document.querySelector<HTMLElement>('[data-mcp-picker] [role="listbox"]')!;
     expect(list.querySelectorAll('[role="option"]')).toHaveLength(6);
-    expect(list.classList.contains("max-h-[min(184px,45vh)]")).toBe(true);
+    expect(list.parentElement?.classList.contains("max-h-[min(184px,45vh)]")).toBe(true);
     expect(list.querySelector('[role="option"]')?.className).toContain("bycoda-arc");
-    expect(document.querySelector("[data-mcp-picker]")?.className).toContain("--ui-surface-raised");
+    expect(document.querySelector("[data-mcp-picker]")?.className).toContain(
+      "--ui-surface-floating",
+    );
     const searchInput = document.querySelector<HTMLInputElement>(
       '[aria-label="Search MCP servers"]',
     )!;
     const options = list.querySelectorAll<HTMLButtonElement>('[role="option"]');
     expect(searchInput.getAttribute("aria-controls")).toBe(list.id);
-    await act(async () => options[1].focus());
-    expect(options[1].getAttribute("aria-selected")).toBe("true");
+    expect(searchInput.getAttribute("aria-activedescendant")).toBe(options[0].id);
+    await act(async () => {
+      searchInput.focus();
+      searchInput.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    });
     expect(searchInput.getAttribute("aria-activedescendant")).toBe(options[1].id);
+    expect(options[1].getAttribute("data-highlighted")).toBe("true");
     await act(async () => {
       searchInput.focus();
       for (const key of ["ArrowDown", "Enter", "Escape"]) {
@@ -740,7 +804,7 @@ describe("Composer question focus", () => {
     await typeInto(textarea, "/mcp");
     await openPicker();
     const close = document.querySelector<HTMLButtonElement>('[aria-label="Close MCP picker"]')!;
-    expect(close.title).toContain("Esc");
+    expect(await tooltipText(close)).toContain("Esc");
     await act(async () => close.click());
     expect(document.querySelector("[data-mcp-picker]")).toBeNull();
   });
@@ -1158,9 +1222,7 @@ describe("Composer question focus", () => {
     );
     const textarea = document.querySelector("textarea")!;
     await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Add files or choose a mode"]')!
-        .click(),
+      container.querySelector<HTMLButtonElement>('[aria-label="Add files or skills"]')!.click(),
     );
     const skillsButton = Array.from(
       document.querySelectorAll<HTMLButtonElement>("[data-composer-plus] button"),
@@ -1176,7 +1238,7 @@ describe("Composer question focus", () => {
     expect(document.querySelector(".text-skill")?.textContent).toBe("$plugin:review");
   });
 
-  it("offers /operator in the slash picker and submits it as a local command", async () => {
+  it("hides /operator from suggestions but submits the typed command", async () => {
     const onSubmit = vi.fn(() => true);
     await act(async () =>
       root.render(
@@ -1202,12 +1264,9 @@ describe("Composer question focus", () => {
     const command = Array.from(
       document.querySelectorAll<HTMLButtonElement>('[role="option"]'),
     ).find((button) => button.textContent?.includes("/operator"));
-    expect(command).toBeDefined();
-    await act(async () => command!.click());
-    expect(textarea.value).toBe("/operator ");
-    expect(document.querySelector('[aria-label="Turn off Operator"]')).not.toBeNull();
+    expect(command).toBeUndefined();
     await act(async () => {
-      textarea.value += "list my notes";
+      textarea.value += " list my notes";
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () =>
@@ -1465,7 +1524,7 @@ describe("Composer question focus", () => {
     },
   );
 
-  it("offers Operator above Orchestrator and sends the /operator command", async () => {
+  it("lists Operator in the mode menu and preserves typed command retries", async () => {
     const onSubmit = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
     await act(async () =>
       root.render(
@@ -1487,22 +1546,18 @@ describe("Composer question focus", () => {
       ),
     );
     await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Add files or choose a mode"]')!
-        .click(),
+      container.querySelector<HTMLButtonElement>('[aria-label="Mode"]')!.click(),
     );
     const options = Array.from(
-      document.querySelectorAll<HTMLButtonElement>("[data-composer-plus] button"),
+      document.querySelectorAll<HTMLButtonElement>("[data-composer-mode-menu] button"),
     );
-    const operator = options.find((button) => button.textContent?.includes("Operator"))!;
-    expect(operator).toBeDefined();
-    expect(options.indexOf(operator)).toBeLessThan(
-      options.findIndex((button) => button.textContent?.includes("Orchestrator")),
-    );
-    await act(async () => operator.click());
+    expect(options.some((button) => button.textContent?.includes("Operator"))).toBe(true);
+    expect(options.some((button) => button.textContent?.includes("Orchestrator"))).toBe(true);
     const textarea = document.querySelector("textarea")!;
-    expect(textarea.value).toBe("List my notes");
-    expect(document.querySelector('[aria-label="Turn off Operator"]')).not.toBeNull();
+    await act(async () => {
+      textarea.value = "/operator List my notes";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
 
     const send = document.querySelector<HTMLButtonElement>('[aria-label="Send"]')!;
     await act(async () => send.click());
@@ -1510,7 +1565,7 @@ describe("Composer question focus", () => {
       intent: "default",
       onSendRejected: expect.any(Function),
     });
-    expect(textarea.value).toBe("List my notes");
+    expect(textarea.value).toBe("/operator List my notes");
     expect(document.querySelector('[aria-label="Turn off Operator"]')).not.toBeNull();
 
     await act(async () => {
@@ -1921,9 +1976,7 @@ describe("Composer question focus", () => {
     );
 
     await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Add files or choose a mode"]')!
-        .click(),
+      container.querySelector<HTMLButtonElement>('[aria-label="Mode"]')!.click(),
     );
     const draftMode = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
       button.textContent?.includes("Save this message"),
@@ -1977,7 +2030,7 @@ describe("Composer question focus", () => {
     expect(command).toBeDefined();
     await act(async () => command!.click());
     expect(textarea.value).toBe("/draft ");
-    expect(document.querySelector('[title="Turn off Draft mode"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Turn off Draft mode"]')).not.toBeNull();
     await act(async () => {
       textarea.value += "Explore a quieter empty state";
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
@@ -2103,7 +2156,7 @@ describe("Composer question focus", () => {
         }),
       ),
     );
-    expect(onWorkspaceModeChange).toHaveBeenLastCalledWith("worktree", "mc/greeting");
+    expect(onWorkspaceModeChange).toHaveBeenLastCalledWith("worktree", "main");
 
     await act(async () =>
       root.render(
@@ -2115,7 +2168,83 @@ describe("Composer question focus", () => {
         }),
       ),
     );
-    expect(onWorktreeBaseChange).toHaveBeenLastCalledWith("mc/greeting");
+    // "HEAD" is resolved to the checked-out branch when read; nothing is written back.
+    expect(onWorktreeBaseChange).not.toHaveBeenCalled();
+    expect(
+      document.querySelector('[aria-label="Create worktree from mc/greeting"]'),
+    ).not.toBeNull();
+  });
+
+  it("holds new remote sends until the creator explicitly supports managed ownership", async () => {
+    const onSubmit = vi.fn();
+    const onSaveDraft = vi.fn();
+    const props = {
+      focused: false,
+      harness: "codex" as const,
+      model: "codex:gpt-6.1",
+      runtimeMode: "supervised" as const,
+      cwd: "remote://fixture/repo",
+      executionCwd: "remote://fixture/repo",
+      draftWorkspace: true,
+      // Only an explicit worktree choice holds Send; a policy default falls back to current.
+      workspaceMode: "worktree" as const,
+      hideTopBar: true,
+      hideBranchPicker: true,
+      initialDraft: "Keep this remote draft",
+      canSaveDraft: true,
+      onSaveDraft,
+      onFocus: vi.fn(),
+      onCwdChange: vi.fn(),
+      onModelChange: vi.fn(),
+      onRuntimeModeChange: vi.fn(),
+      onSubmit,
+    };
+    await act(async () => root.render(createElement(Composer, props)));
+    expect(container.textContent).toContain(
+      "Update bycoda to create managed sessions on this remote Host.",
+    );
+    expect(container.querySelector<HTMLButtonElement>('[aria-label^="Send"]')?.disabled).toBe(true);
+    const textarea = container.querySelector("textarea")!;
+    await act(async () =>
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(textarea.value).toBe("Keep this remote draft");
+    await act(async () => {
+      textarea.value = "/draft Keep this remote draft";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.querySelector<HTMLButtonElement>('[aria-label^="Save draft"]')?.disabled).toBe(
+      true,
+    );
+    await act(async () =>
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(onSaveDraft).not.toHaveBeenCalled();
+    await act(async () => {
+      textarea.value = "Keep this remote draft";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      root.render(createElement(Composer, { ...props, managedWorkspaceCreationReady: true })),
+    );
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Send"]')?.disabled).toBe(false);
+    await act(async () =>
+      root.render(createElement(Composer, { ...props, draftWorkspace: false })),
+    );
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Send"]')?.disabled).toBe(false);
+    // Without an explicit worktree choice (policy default) the remote draft is not held.
+    await act(async () =>
+      root.render(createElement(Composer, { ...props, workspaceMode: undefined })),
+    );
+    expect(container.textContent).not.toContain(
+      "Update bycoda to create managed sessions on this remote Host.",
+    );
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Send"]')?.disabled).toBe(false);
   });
 
   it("focuses the draft from blank composer space without intercepting controls", async () => {
@@ -2287,9 +2416,7 @@ describe("Composer question focus", () => {
         ),
       );
       await act(async () =>
-        container
-          .querySelector<HTMLButtonElement>('[aria-label="Add files or choose a mode"]')!
-          .click(),
+        container.querySelector<HTMLButtonElement>('[aria-label="Mode"]')!.click(),
       );
       const draftMode = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
         button.textContent?.includes("Save this message"),

@@ -30,9 +30,30 @@
   transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
 }
 
+/* The glyphs are canvas pixels under this layer, so the selection cannot recolour them.
+   Multiplying the layer onto the white page keeps black glyphs black and turns the white
+   behind them into the fill; the fill is the accent pair derived for that page with dark ink
+   (accentContrast.ts paperSelectionPair), in both colour schemes. */
+.pdf-text-layer {
+  mix-blend-mode: multiply;
+}
+
 .pdf-text-layer ::selection {
-  background: var(--color-selection-strong);
+  background: var(--ui-paper-selection-background);
   color: transparent;
+}
+
+/* System colours: the opaque Highlight covers the canvas glyphs and the layer's own text is
+   shown in HighlightText, so the selected run is the system pair rather than black on Highlight. */
+@media (forced-colors: active) {
+  .pdf-text-layer {
+    mix-blend-mode: normal;
+  }
+
+  .pdf-text-layer ::selection {
+    background: Highlight;
+    color: HighlightText;
+  }
 }
 
 .pdf-text-layer .markedContent {

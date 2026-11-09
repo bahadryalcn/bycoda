@@ -1,3 +1,9 @@
+import { killChild } from "../../core/child";
+import {
+  assertOptionalProviderProbeError,
+  createProviderRetirementLedger,
+  withProviderRetirement,
+} from "../../core/providerRetirement";
 import { homeDir } from "../../../../platform/tauri/fs";
 import { withClaudeAdvisor } from "../../../../features/sessions/model/claudeAdvisor";
 import {
@@ -6,11 +12,10 @@ import {
   type ModelSetting,
 } from "../../../../features/sessions/model/models";
 import {
+  createChildProcessHandle,
   execChild,
-  killChild,
   resolveClaudeBinary,
   spawnChild,
-  unwatchChild,
   watchChild,
   writeChild,
 } from "../../core/child";
@@ -32,6 +37,8 @@ import {
   parseJsonLine,
   stringField,
 } from "./claudeProtocol";
+
+const retirements = createProviderRetirementLedger("claude.catalog", killChild);
 
 const EFFORT_LOW_TO_ULTRATHINK: ModelSetting = {
   id: "effort",
@@ -227,6 +234,7 @@ export function refreshClaudeCatalog(): Promise<void> {
       if (models.length > 0) setHarnessModels("claude", models);
     })
     .catch((error: unknown) => {
+      assertOptionalProviderProbeError(error);
       console.debug("[bycoda] claude catalog", error);
     })
     .finally(() => {
@@ -239,6 +247,7 @@ export async function discoverClaudeModels(workingDirectory?: string): Promise<A
   const { path } = await resolveClaudeBinary();
   if ((probeRetryAt.get(path) ?? 0) > Date.now()) return discoverViaVersion(workingDirectory);
   const listed = await discoverViaListModels(workingDirectory, path).catch((error: unknown) => {
+    assertOptionalProviderProbeError(error);
     console.debug("[bycoda] claude list_models catalog failed", error);
     // A hung CLI probe should not cost another 15 seconds for every project.
     // Authentication errors remain immediately retryable after signing in.
@@ -260,6 +269,10 @@ async function discoverViaListModels(
   const cwd = workingDirectory ?? (await homeDir());
   const sessionId = crypto.randomUUID();
   const probeId = `${PROBE_ID}-${sessionId}`;
+  const child = retirements.admit(
+    createChildProcessHandle(probeId, undefined, "management"),
+    "claude.catalog",
+  );
 
   let listed: ((models: AgentModel[]) => void) | null = null;
   let failed: ((error: Error) => void) | null = null;
@@ -273,20 +286,20 @@ async function discoverViaListModels(
     if (asked) return;
     asked = true;
     void writeChild(
-      probeId,
+      child,
       JSON.stringify(buildControlRequest(LIST_MODELS_REQUEST_ID, { subtype: "list_models" })),
     ).catch((error: unknown) => {
+      assertOptionalProviderProbeError(error);
       failed?.(error instanceof Error ? error : new Error(String(error)));
     });
   };
 
-  const stop = async () => {
-    unwatchChild(probeId);
-    await killChild(probeId).catch(() => undefined);
+  const stop = () => {
+    return retirements.retire([child]);
   };
 
   watchChild(
-    probeId,
+    child,
     (line) => {
       const rec = parseJsonLine(line);
       if (!rec) return;
@@ -299,38 +312,41 @@ async function discoverViaListModels(
     () => failed?.(new Error("Claude Code catalog probe exited")),
   );
 
-  try {
-    await spawnChild(
-      probeId,
-      path,
-      buildClaudeSpawnArgs({ isolated: true, sessionId }),
-      cwd,
-      undefined,
-      "claude",
-    );
-    pending.catch(() => undefined);
-    return await withTimeout(
-      DISCOVERY_TIMEOUT_MS,
-      (async () => {
-        await writeChild(
-          probeId,
-          JSON.stringify(buildControlRequest(INIT_REQUEST_ID, { subtype: "initialize" })),
-        );
-        return pending;
-      })(),
-      () => {
-        void stop();
-      },
-    );
-  } finally {
-    await stop();
-  }
+  return withProviderRetirement(
+    async () => {
+      await spawnChild(
+        child,
+        path,
+        buildClaudeSpawnArgs({ isolated: true, sessionId }),
+        cwd,
+        undefined,
+        "claude",
+      );
+      pending.catch(() => undefined);
+      return await withTimeout(
+        DISCOVERY_TIMEOUT_MS,
+        (async () => {
+          await writeChild(
+            child,
+            JSON.stringify(buildControlRequest(INIT_REQUEST_ID, { subtype: "initialize" })),
+          );
+          return pending;
+        })(),
+        () => {
+          void stop();
+        },
+      );
+    },
+    async () => {
+      await stop();
+    },
+  );
 }
 
 async function discoverViaVersion(workingDirectory?: string): Promise<AgentModel[]> {
   const { path } = await resolveClaudeBinary();
   const cwd = workingDirectory ?? (await homeDir());
-  const versionOut = await execChild(path, ["--version"], cwd, "claude");
+  const versionOut = await execChild(path, ["--version"], cwd, "claude", undefined, "management");
   const version = parseClaudeVersion(versionOut);
   return modelsForClaudeVersion(version);
 }
@@ -362,7 +378,7 @@ export function modelsFromClaudeListModels(raw: unknown): AgentModel[] {
     seen.add(key);
     models.push(withClaudeAdvisor(model));
   }
-  return models;
+  return models.map((model) => withClaudeAdvisor(model, models));
 }
 
 function modelFromListRow(raw: unknown): AgentModel | null {
@@ -383,12 +399,16 @@ function modelFromListRow(raw: unknown): AgentModel | null {
   const description = stringField(rec, "description") ?? "";
   const name = pickerName(displayName, description, nativeId, fromResolved.id);
   const settings = settingsFromListRow(rec, fromValue.context1m || fromResolved.context1m);
+  const capacity = [rec.contextWindow, rec.context_window].find(
+    (value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0,
+  );
 
   return {
     id: claudeCatalogId(nativeId),
     harness: "claude",
     name,
     nativeId,
+    ...(capacity ? { contextWindow: capacity } : {}),
     ...(fromResolved.id && fromResolved.id !== nativeId ? { aliasTarget: fromResolved.id } : {}),
     ...(settings.length > 0 ? { settings } : {}),
   };
@@ -533,7 +553,7 @@ function claudeLaunchId(valueId: string, resolvedId: string): string {
 }
 
 export function modelsForClaudeVersion(version: string | null | undefined): AgentModel[] {
-  return CLAUDE_MODEL_CATALOG.filter((model) => {
+  const models = CLAUDE_MODEL_CATALOG.filter((model) => {
     const slug = model.nativeId ?? "";
     if (slug === "claude-opus-5-5") {
       return version ? compareSemver(version, MINIMUM_CLAUDE_OPUS_5_5_VERSION) >= 0 : false;
@@ -554,5 +574,6 @@ export function modelsForClaudeVersion(version: string | null | undefined): Agen
       return version ? compareSemver(version, MINIMUM_CLAUDE_OPUS_4_7_VERSION) >= 0 : false;
     }
     return true;
-  }).map((model) => withClaudeAdvisor(model));
+  });
+  return models.map((model) => withClaudeAdvisor(model, models));
 }

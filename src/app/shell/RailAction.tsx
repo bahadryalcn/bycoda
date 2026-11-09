@@ -1,3 +1,5 @@
+import { Badge } from "../../shared/ui/Badge";
+import { StatusDot } from "../../shared/ui/StatusDot";
 import { Button } from "../../shared/ui/Button";
 import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import type { IconComponent } from "../../shared/ui/icons";
@@ -13,6 +15,8 @@ type Props = {
   shortcut?: string;
   command?: string;
   ariaLabel?: string;
+  /** Guide spotlight target name (`data-usage-guide`). */
+  guide?: string;
 };
 
 export function RailAction({
@@ -26,16 +30,24 @@ export function RailAction({
   shortcut: fallbackShortcut,
   command,
   ariaLabel,
+  guide,
 }: Props) {
   const currentShortcut = useKeybindingShortcut(command ?? "");
   const shortcut = command ? currentShortcut : fallbackShortcut;
+  // The Button's own shared tooltip: the name plus the live binding as key caps, right of
+  // the rail. No wrapper and no `title=""` workaround.
   return (
     <Button
+      tooltip={ariaLabel ?? label}
+      tooltipWhen={ariaLabel && ariaLabel !== label ? "always" : "overflow"}
+      shortcut={shortcut}
+      tooltipSide="right"
       selected={active}
       variant="item"
       motion="none"
       type="button"
       onClick={onClick}
+      data-usage-guide={guide}
       onContextMenu={
         onOpenContextMenu
           ? (event) => {
@@ -58,34 +70,37 @@ export function RailAction({
       }
       disabled={!onClick}
       aria-label={ariaLabel ?? label}
-      title={ariaLabel ?? label}
-      shortcut={shortcut}
       className={`relative flex w-full items-center gap-2 @max-[140px]/rail:justify-center`}
     >
       {badge != null ? (
-        <span
+        <Badge
+          variant="count"
+          size="sm"
+          max={99}
           aria-hidden
-          className="absolute left-1 top-1/2 grid min-h-4 min-w-4 -translate-y-1/2 place-items-center rounded-full bg-(--ui-surface-selected) px-1 text-(length:--ui-font-caption) font-semibold leading-4 text-content tabular-nums"
+          className="absolute left-1 top-1/2 -translate-y-1/2"
         >
-          {badge > 99 ? "99+" : badge}
-        </span>
+          {badge}
+        </Badge>
       ) : null}
       <Icon
-        className={`size-4 shrink-0 ${active ? "text-accent" : "text-(--ui-text-secondary)"} ${badge != null ? "ml-4" : ""}`}
+        className={`icon-sm shrink-0 ${active ? "text-content" : "text-(--ui-text-secondary)"} ${badge != null ? "ml-4" : ""}`}
         strokeWidth={1.75}
       />
-      <span className="min-w-0 flex-1 truncate text-sm font-medium leading-tight @max-[140px]/rail:hidden">
+      <span className="min-w-0 flex-1 truncate text-ui-caption font-medium leading-tight @max-[140px]/rail:hidden">
         {label}
       </span>
       {dot ? (
-        <span
+        <StatusDot
+          label={ariaLabel ?? label}
           aria-hidden
-          className="size-2 shrink-0 rounded-full bg-accent @max-[140px]/rail:absolute @max-[140px]/rail:right-2 @max-[140px]/rail:top-1.5 @max-[140px]/rail:size-1.5"
+          className="shrink-0 @max-[140px]/rail:absolute @max-[140px]/rail:right-2 @max-[140px]/rail:top-1.5"
         />
       ) : shortcut ? (
         <span
+          data-tooltip-shortcut=""
           aria-hidden
-          className="shrink-0 text-(length:--ui-font-caption) text-(--ui-text-secondary) @max-[200px]/rail:hidden"
+          className="shrink-0 text-ui-caption text-(--ui-text-secondary) @max-[200px]/rail:hidden"
         >
           {shortcut}
         </span>
@@ -115,6 +130,10 @@ export function RailSearch({
   const shortcut = command ? currentShortcut : fallbackShortcut;
   return (
     <Button
+      tooltip={ariaLabel ?? label}
+      tooltipWhen={ariaLabel && ariaLabel !== label ? "always" : "overflow"}
+      shortcut={shortcut}
+      tooltipSide="right"
       data-rail-search
       selected={active}
       variant="item"
@@ -123,22 +142,21 @@ export function RailSearch({
       onClick={onClick}
       disabled={!onClick}
       aria-label={ariaLabel ?? label}
-      title={ariaLabel ?? label}
-      shortcut={shortcut}
       className={`relative flex w-full items-center gap-2 @max-[140px]/rail:justify-center`}
     >
-      <Icon className="size-4 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+      <Icon className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
       <span
         data-rail-search-label
-        className="min-w-0 flex-1 truncate text-sm font-medium leading-tight @max-[140px]/rail:hidden"
+        className="min-w-0 flex-1 truncate text-ui-caption font-medium leading-tight @max-[140px]/rail:hidden"
       >
         {label}
       </span>
       {shortcut ? (
         <span
           data-rail-search-shortcut
+          data-tooltip-shortcut=""
           aria-hidden
-          className="shrink-0 text-(length:--ui-font-caption) text-(--ui-text-secondary) @max-[200px]/rail:hidden"
+          className="shrink-0 text-ui-caption text-(--ui-text-secondary) @max-[200px]/rail:hidden"
         >
           {shortcut}
         </span>

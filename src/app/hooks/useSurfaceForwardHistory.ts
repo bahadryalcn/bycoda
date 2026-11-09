@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 /** Remember surfaces dismissed by Back so Forward can restore them. */
 export function useSurfaceForwardHistory<T>(current: T, restore: (surface: T) => void) {
@@ -9,12 +9,11 @@ export function useSurfaceForwardHistory<T>(current: T, restore: (surface: T) =>
   });
   const canForward = history.entries.length > 0 && history.expectedKey === key;
 
-  useEffect(() => {
-    // A new view, tab or project starts a different navigation path.
-    if (history.expectedKey !== key && history.entries.length > 0) {
-      setHistory({ entries: [], expectedKey: key });
-    }
-  }, [key, history]);
+  // A new view, tab or project starts a different navigation path. Dropped while
+  // rendering so entries cannot come back if the key later matches again.
+  if (history.expectedKey !== key && history.entries.length > 0) {
+    setHistory({ entries: [], expectedKey: key });
+  }
 
   return {
     canForward,

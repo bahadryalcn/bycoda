@@ -3,7 +3,7 @@ import type { Session } from "../../sessions/model/session";
 import type { ProviderRateLimits } from "../../providers/model/rateLimits";
 import type { UsageRow } from "../../providers/model/providerUsage";
 
-export type BudgetScope = "project" | "session" | "workspace";
+export type BudgetScope = "project" | "session" | "workspace" | "machine";
 export type BudgetPeriod = "all" | "weekly" | "fiveHour";
 export type UsageBudget = {
   id: string;
@@ -34,7 +34,8 @@ export function normalizeBudget(value: unknown): UsageBudget | null {
   if (!value || typeof value !== "object") return null;
   const b = value as UsageBudget;
   if (
-    !["project", "session", "workspace"].includes(b.scope) ||
+    !["project", "session", "workspace", "machine"].includes(b.scope) ||
+    (b.scope === "machine" && (b.target !== "local" || b.metric !== "tokens")) ||
     !["all", "weekly", "fiveHour"].includes(b.period) ||
     !["tokens", "accountPercent"].includes(b.metric) ||
     !["monitor", "block"].includes(b.action) ||
@@ -77,11 +78,13 @@ export function budgetMatches(
   session: Pick<Session, "id" | "cwd">,
   groupFor: (cwd: string) => string | undefined,
 ): boolean {
-  return b.scope === "session"
-    ? b.target === session.id
-    : b.scope === "project"
-      ? pathKey(b.target) === pathKey(session.cwd)
-      : b.target === groupFor(session.cwd);
+  return b.scope === "machine"
+    ? b.target === "local" && !session.cwd.startsWith("remote://")
+    : b.scope === "session"
+      ? b.target === session.id
+      : b.scope === "project"
+        ? pathKey(b.target) === pathKey(session.cwd)
+        : b.target === groupFor(session.cwd);
 }
 
 export function budgetReading(

@@ -1,0 +1,178 @@
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: var(--space-4);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.lead {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-body);
+  line-height: var(--ui-leading-body);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.profile {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 3rem;
+  block-size: 3rem;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--ui-fill-subtle);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-body);
+  font-weight: 500;
+}
+
+.avatar img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.email {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  overflow-wrap: anywhere;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-block: var(--space-2);
+  border-block-end: 1px solid var(--ui-pane-border);
+}
+
+.row:last-child {
+  border-block-end: 0;
+}
+
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.rowTitle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: var(--ui-font-body);
+}
+
+.meta {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) repeat(4, minmax(3.5rem, auto));
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.gridHead {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  text-align: center;
+}
+
+.gridHead:first-child {
+  text-align: start;
+}
+
+.cell {
+  display: flex;
+  justify-content: center;
+}
+
+.quiet {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+}
+
+@media (max-width: 40rem) {
+  .grid {
+    gap: var(--space-2);
+  }
+
+  .screen {
+    padding: var(--space-3);
+  }
+}
+
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.tabScroll {
+  overflow-x: auto;
+}
+
+/* Keep full labels: the strip scrolls instead of truncating tabs at narrow widths. */
+.tabScroll [role="tablist"] {
+  inline-size: max-content;
+  min-inline-size: 100%;
+}
+
+.tabScroll [role="tab"] {
+  flex: none;
+}
+
+.benefits {
+  margin: 0;
+  padding-inline-start: var(--space-4);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-body);
+  line-height: var(--ui-leading-body);
+}

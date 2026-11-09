@@ -1,5 +1,5 @@
 /** Lucide glyphs behind bycoda's existing action and accessibility contracts. */
-import { forwardRef, useId } from "react";
+import { forwardRef, useId, type ReactNode } from "react";
 import {
   AlertCircle as LucideAlertCircle,
   AppWindow as LucideAppWindow,
@@ -7,15 +7,18 @@ import {
   ArrowDown as LucideArrowDown,
   ArrowDownCircle as LucideArrowDownCircle,
   ArrowLeft as LucideArrowLeft,
+  ArrowLeftRight as LucideArrowLeftRight,
   ArrowUp as LucideArrowUp,
   Quote as LucideBlockQuote,
   Bold as LucideBold,
   Bot as LucideBot,
+  Brain as LucideBrain,
   ListChecks as LucideCheckList,
   SquareCode as LucideCodeBlock,
   Heading as LucideHeading,
   Italic as LucideItalic,
   Link as LucideLink,
+  Link2 as LucideLink2,
   ListOrdered as LucideListNumbered,
   Lightbulb as LucideAiIdea,
   CaseSensitive as LucideCaseSensitive,
@@ -28,6 +31,7 @@ import {
   ChevronRight as LucideChevronRight,
   CornerDownRight as LucideCornerDownRight,
   ChevronUp as LucideChevronUp,
+  ChevronsDownUp as LucideChevronsDownUp,
   ChevronsUpDown as LucideChevronsUpDown,
   CircleAlert as LucideCircleAlert,
   CircleDashed as LucideCircleDashed,
@@ -36,6 +40,10 @@ import {
   Info as LucideInfo,
   CircleX as LucideCircleX,
   CloudUpload as LucideCloudUpload,
+  Calendar as LucideCalendar,
+  CalendarDays as LucideCalendarDays,
+  ImageOff as LucideImageOff,
+  TriangleAlert as LucideTriangleAlert,
   Clock as LucideClock,
   Copy as LucideCopy,
   MousePointer2 as LucideCursorMagicSelection,
@@ -65,6 +73,7 @@ import {
   Globe as LucideGlobe,
   Globe as LucideInternet,
   ImagePlus as LucideImagePlus,
+  Home as LucideHome,
   Inbox as LucideInbox,
   BellOff as LucideBellOff,
   Keyboard as LucideKeyboard,
@@ -74,12 +83,20 @@ import {
   ListFilter as LucideListFilter,
   Loader as LucideLoader,
   LoaderCircle as LucideLoaderCircle,
+  KeyRound as LucideKeyRound,
   Lock as LucideLock,
   LockOpen as LucideLockOpen,
   Maximize2 as LucideMaximize2,
+  Menu as LucideMenu,
   Minimize2 as LucideMinimize2,
   MessagesSquare as LucideMessageMultiple,
   MessageSquare as LucideMessageSquare,
+  Mic as LucideMic,
+  MicOff as LucideMicOff,
+  Laptop as LucideLaptop,
+  AudioLines as LucideAudioLines,
+  VolumeX as LucideVolumeX,
+  Volume2 as LucideVolume2,
   MessageSquarePlus as LucideMessageSquarePlus,
   Minus as LucideMinus,
   Strikethrough as LucideStrikethrough,
@@ -88,9 +105,13 @@ import {
   Palette as LucidePalette,
   Pause as LucidePause,
   PanelBottom as LucidePanelBottom,
+  PanelBottomClose as LucidePanelBottomClose,
   PanelLeft as LucidePanelLeft,
+  PanelLeftClose as LucidePanelLeftClose,
   PanelRight as LucidePanelRight,
+  PanelRightClose as LucidePanelRightClose,
   PanelTop as LucidePanelTop,
+  PanelTopClose as LucidePanelTopClose,
   PenLine as LucidePenLine,
   Pencil as LucidePencil,
   Pin as LucidePin,
@@ -109,6 +130,9 @@ import {
   Share as LucideShare,
   Shield as LucideShield,
   SlidersHorizontal as LucideSlidersHorizontal,
+  Smartphone as LucideSmartphone,
+  MonitorSmartphone as LucideMonitorSmartphone,
+  Dices as LucideDices,
   Sparkles as LucideSparkles,
   Square as LucideSquare,
   Columns2 as LucideSplitSquare,
@@ -123,6 +147,7 @@ import {
   Ungroup as LucideUngroup,
   WandSparkles as LucideWandSparkles,
   WholeWord as LucideWholeWord,
+  WrapText as LucideWrapText,
   Wrench as LucideWrench,
   X as LucideX,
   Zap as LucideZap,
@@ -133,9 +158,16 @@ import {
 export type IconProps = LucideProps & { title?: string };
 export type IconComponent = ReturnType<typeof wrap>;
 
+/**
+ * Defaults are a contract, not an accident. `size = 24` is the lucide grid: Button, MorphSelect and other CSS size icons through
+ * `svg[viewBox="0 0 24 24"]` or `.icon > svg` rules, and a bare icon with no size, class or CSS keeps its natural size.
+ * `strokeWidth = 1.75` mirrors the `--ui-icon-stroke` theme token. It stays a presentation attribute on purpose: an inline
+ * `style="stroke-width: var(--ui-icon-stroke)"` would outrank every stylesheet override, and attributes cannot hold `var()`.
+ * Pass `size`/`strokeWidth` (or style the glyph from CSS) to change either; the icon scale tokens are `--ui-icon-xs..lg`.
+ */
 function wrap(Icon: LucideIcon, name: string) {
   const Component = forwardRef<SVGSVGElement, IconProps>(function BycodaIcon(
-    { size = 24, strokeWidth = 2, title, children, ...props },
+    { size = 24, strokeWidth = 1.75, title, children, ...props },
     ref,
   ) {
     const id = useId();
@@ -159,21 +191,77 @@ function wrap(Icon: LucideIcon, name: string) {
   return Component;
 }
 
+/**
+ * Bycoda-drawn glyphs follow the same contract as the lucide wrapper above: a forwarded SVG ref, `size`
+ * (default 24, overridden by `className` such as `icon-sm`), `strokeWidth`, `color`, native SVG props, and the
+ * `title`/aria labelling rules. The `viewBox="0 0 24 24" fill="none" stroke="currentColor"` frame matches lucide so
+ * the shared Button icon sizing selectors apply to these glyphs too.
+ */
+function custom(name: string, glyph: ReactNode) {
+  const Component = forwardRef<SVGSVGElement, IconProps>(function BycodaCustomIcon(
+    {
+      size = 24,
+      strokeWidth = 1.75,
+      absoluteStrokeWidth,
+      color = "currentColor",
+      title,
+      children,
+      ...props
+    },
+    ref,
+  ) {
+    const id = useId();
+    const labeled = Boolean(title || props["aria-label"] || props["aria-labelledby"]);
+    void absoluteStrokeWidth;
+    return (
+      <svg
+        ref={ref}
+        xmlns="http://www.w3.org/2000/svg"
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        role={labeled ? "img" : undefined}
+        aria-hidden={labeled ? undefined : true}
+        aria-labelledby={title && !props["aria-label"] ? id : undefined}
+        {...props}
+      >
+        {title ? <title id={id}>{title}</title> : null}
+        {glyph}
+        {children}
+      </svg>
+    );
+  });
+  Component.displayName = name;
+  return Component;
+}
+
+/** Three usage bars; the settings and workspace navigation use it for Usage. */
+export const UsageIcon = custom("UsageIcon", <path d="M5 20V12M12 20V4M19 20V8" />);
+
 export const AlertCircle = wrap(LucideAlertCircle, "AlertCircle");
 export const AppWindow = wrap(LucideAppWindow, "AppWindow");
 export const Archive = wrap(LucideArchive, "Archive");
 export const ArrowDownCircle = wrap(LucideArrowDownCircle, "ArrowDownCircle");
 export const ArrowDown = wrap(LucideArrowDown, "ArrowDown");
 export const ArrowLeft = wrap(LucideArrowLeft, "ArrowLeft");
+export const ArrowLeftRight = wrap(LucideArrowLeftRight, "ArrowLeftRight");
 export const ArrowUp = wrap(LucideArrowUp, "ArrowUp");
+export const Home = wrap(LucideHome, "Home");
 export const BlockQuote = wrap(LucideBlockQuote, "BlockQuote");
 export const Bold = wrap(LucideBold, "Bold");
 export const Bot = wrap(LucideBot, "Bot");
+export const Brain = wrap(LucideBrain, "Brain");
 export const CheckList = wrap(LucideCheckList, "CheckList");
 export const CodeBlock = wrap(LucideCodeBlock, "CodeBlock");
 export const Heading = wrap(LucideHeading, "Heading");
 export const Italic = wrap(LucideItalic, "Italic");
 export const Link = wrap(LucideLink, "Link");
+export const Link2 = wrap(LucideLink2, "Link2");
 export const ListNumbered = wrap(LucideListNumbered, "ListNumbered");
 export const AiIdea = wrap(LucideAiIdea, "AiIdea");
 export const CaseSensitive = wrap(LucideCaseSensitive, "CaseSensitive");
@@ -186,6 +274,7 @@ export const ChevronLeft = wrap(LucideChevronLeft, "ChevronLeft");
 export const ChevronRight = wrap(LucideChevronRight, "ChevronRight");
 export const CornerDownRight = wrap(LucideCornerDownRight, "CornerDownRight");
 export const ChevronUp = wrap(LucideChevronUp, "ChevronUp");
+export const ChevronsDownUp = wrap(LucideChevronsDownUp, "ChevronsDownUp");
 export const ChevronsUpDown = wrap(LucideChevronsUpDown, "ChevronsUpDown");
 export const CircleAlert = wrap(LucideCircleAlert, "CircleAlert");
 export const CircleDashed = wrap(LucideCircleDashed, "CircleDashed");
@@ -194,6 +283,10 @@ export const CircleHelp = wrap(LucideCircleHelp, "CircleHelp");
 export const Info = wrap(LucideInfo, "Info");
 export const CircleX = wrap(LucideCircleX, "CircleX");
 export const CloudUpload = wrap(LucideCloudUpload, "CloudUpload");
+export const Calendar = wrap(LucideCalendar, "Calendar");
+export const CalendarDays = wrap(LucideCalendarDays, "CalendarDays");
+export const ImageOff = wrap(LucideImageOff, "ImageOff");
+export const TriangleAlert = wrap(LucideTriangleAlert, "TriangleAlert");
 export const Clock = wrap(LucideClock, "Clock");
 export const Copy = wrap(LucideCopy, "Copy");
 export const CursorMagicSelection = wrap(LucideCursorMagicSelection, "CursorMagicSelection");
@@ -230,14 +323,29 @@ export const ListBullet = wrap(LucideListBullet, "ListBullet");
 export const LayoutGrid = wrap(LucideLayoutGrid, "LayoutGrid");
 export const ListEnd = wrap(LucideListEnd, "ListEnd");
 export const ListFilter = wrap(LucideListFilter, "ListFilter");
+/**
+ * @deprecated Pending state uses `Spinner` (`./Spinner`): token sizes, `currentColor` and a
+ * reduced-motion fallback. A spinning icon with `animate-spin` ignores reduced motion.
+ */
 export const Loader = wrap(LucideLoader, "Loader");
+/**
+ * @deprecated Pending state uses `Spinner` (`./Spinner`), or `LoadingText` for a status line.
+ */
 export const LoaderCircle = wrap(LucideLoaderCircle, "LoaderCircle");
+export const KeyRound = wrap(LucideKeyRound, "KeyRound");
 export const Lock = wrap(LucideLock, "Lock");
 export const LockOpen = wrap(LucideLockOpen, "LockOpen");
 export const Maximize2 = wrap(LucideMaximize2, "Maximize2");
+export const Menu = wrap(LucideMenu, "Menu");
 export const Minimize2 = wrap(LucideMinimize2, "Minimize2");
 export const MessageMultiple = wrap(LucideMessageMultiple, "MessageMultiple");
 export const MessageSquare = wrap(LucideMessageSquare, "MessageSquare");
+export const Mic = wrap(LucideMic, "Mic");
+export const MicOff = wrap(LucideMicOff, "MicOff");
+export const Laptop = wrap(LucideLaptop, "Laptop");
+export const AudioLines = wrap(LucideAudioLines, "AudioLines");
+export const Volume2 = wrap(LucideVolume2, "Volume2");
+export const VolumeX = wrap(LucideVolumeX, "VolumeX");
 export const MessageSquarePlus = wrap(LucideMessageSquarePlus, "MessageSquarePlus");
 export const Minus = wrap(LucideMinus, "Minus");
 export const Strikethrough = wrap(LucideStrikethrough, "Strikethrough");
@@ -249,6 +357,10 @@ export const PanelBottom = wrap(LucidePanelBottom, "PanelBottom");
 export const PanelLeft = wrap(LucidePanelLeft, "PanelLeft");
 export const PanelRight = wrap(LucidePanelRight, "PanelRight");
 export const PanelTop = wrap(LucidePanelTop, "PanelTop");
+export const PanelBottomClose = wrap(LucidePanelBottomClose, "PanelBottomClose");
+export const PanelLeftClose = wrap(LucidePanelLeftClose, "PanelLeftClose");
+export const PanelRightClose = wrap(LucidePanelRightClose, "PanelRightClose");
+export const PanelTopClose = wrap(LucidePanelTopClose, "PanelTopClose");
 export const PenLine = wrap(LucidePenLine, "PenLine");
 export const Pencil = wrap(LucidePencil, "Pencil");
 export const Pin = wrap(LucidePin, "Pin");
@@ -267,6 +379,9 @@ export const UserRound = wrap(LucideUserRound, "UserRound");
 export const Share = wrap(LucideShare, "Share");
 export const Shield = wrap(LucideShield, "Shield");
 export const SlidersHorizontal = wrap(LucideSlidersHorizontal, "SlidersHorizontal");
+export const Smartphone = wrap(LucideSmartphone, "Smartphone");
+export const MonitorSmartphone = wrap(LucideMonitorSmartphone, "MonitorSmartphone");
+export const Dices = wrap(LucideDices, "Dices");
 export const Sparkles = wrap(LucideSparkles, "Sparkles");
 export const Square = wrap(LucideSquare, "Square");
 export const SplitSquare = wrap(LucideSplitSquare, "SplitSquare");
@@ -281,6 +396,7 @@ export const UnfoldVertical = wrap(LucideUnfoldVertical, "UnfoldVertical");
 export const Ungroup = wrap(LucideUngroup, "Ungroup");
 export const WandSparkles = wrap(LucideWandSparkles, "WandSparkles");
 export const WholeWord = wrap(LucideWholeWord, "WholeWord");
+export const WrapText = wrap(LucideWrapText, "WrapText");
 export const Wrench = wrap(LucideWrench, "Wrench");
 export const X = wrap(LucideX, "X");
 export const Zap = wrap(LucideZap, "Zap");

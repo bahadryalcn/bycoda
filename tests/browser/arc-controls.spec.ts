@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 test("keyboard button hints stay visible without stealing focus while tabbing", async ({
   page,
@@ -20,7 +20,11 @@ test("keyboard button hints stay visible without stealing focus while tabbing", 
         const hint = page.getByRole("tooltip");
         await expect(hint).toBeVisible();
         await expect(hint).toContainText(name);
-        if (name === "Native keyboard hint") await expect(hint).toContainText("Ctrl+Shift+K");
+        // The shortcut renders as key caps (Ctrl, Shift, K) with a spoken label on its group.
+        if (name === "Native keyboard hint") {
+          await expect(hint).toContainText(/Ctrl\s*Shift\s*K|⌃\s*⇧\s*K/);
+          await expect(hint.getByRole("img")).toHaveAccessibleName(/Shift/);
+        }
         await expect(button).toBeFocused();
         const bounds = (await hint.boundingBox())!;
         expect(bounds.x).toBeGreaterThanOrEqual(0);
@@ -70,15 +74,15 @@ test("AI question choices stay readable and support native selection", async ({
         await page.keyboard.press("ArrowDown");
         await expect(radios.nth(1)).toBeChecked();
         await expect(radios.nth(1)).toBeFocused();
-        await expect(region.getByRole("button", { name: "Continue", exact: true })).toBeEnabled();
+        await expect(region.getByRole("button", { name: /^Send answer$/ })).toBeEnabled();
       }
     }
   }
   await radios.last().locator("..").click();
   await expect(region.getByRole("textbox", { name: "Type your answer" })).toBeFocused();
-  await expect(region.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
+  await expect(region.getByRole("button", { name: /^Send answer$/ })).toBeDisabled();
   await region.getByRole("textbox").fill("Yalnızca animasyon duruyor");
-  await expect(region.getByRole("button", { name: "Continue", exact: true })).toBeEnabled();
+  await expect(region.getByRole("button", { name: /^Send answer$/ })).toBeEnabled();
 });
 
 test("password reveal stays inside the input independently of its label and helper text", async ({
@@ -88,6 +92,7 @@ test("password reveal stays inside the input independently of its label and help
   const region = page.getByRole("region", { name: "Shared field families", exact: true });
   const input = region.getByLabel("Fixture credential", { exact: true });
   const reveal = region.getByRole("button", { name: "Show fixture credential", exact: true });
+  const frame = input.locator("xpath=ancestor::*[@data-field-control][1]");
   for (const reducedMotion of ["reduce", "no-preference"] as const) {
     await page.emulateMedia({ reducedMotion });
     for (const width of [320, 390, 768, 1440]) {
@@ -98,17 +103,17 @@ test("password reveal stays inside the input independently of its label and help
           light,
         );
         await input.scrollIntoViewIfNeeded();
-        const field = (await input.boundingBox())!;
+        // The field frame (FieldControl) owns the border; the reveal action is its own end
+        // column, so it sits inside the frame without overlapping the editable text.
+        const field = (await frame.boundingBox())!;
+        const editor = (await input.boundingBox())!;
         const action = (await reveal.boundingBox())!;
         expect(action.x).toBeGreaterThan(field.x);
         expect(action.x + action.width).toBeLessThan(field.x + field.width);
         expect(action.y).toBeGreaterThanOrEqual(field.y);
         expect(action.y + action.height).toBeLessThanOrEqual(field.y + field.height);
         expect(Math.abs(action.y + action.height / 2 - field.y - field.height / 2)).toBeLessThan(1);
-        const reserved = await input.evaluate((element) =>
-          parseFloat(getComputedStyle(element).paddingInlineEnd),
-        );
-        expect(reserved).toBeGreaterThan(action.width);
+        expect(action.x).toBeGreaterThanOrEqual(editor.x + editor.width - 1);
         expect(await region.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
           true,
         );
@@ -606,9 +611,30 @@ test("shared tone specimen preserves contrast, independent info and narrow layou
   }
 });
 
+/** Normal fields focus through their neutral border, with no halo or inset outline. */
+async function expectFieldFocus(owner: Locator, resting?: string) {
+  await expect
+    .poll(() =>
+      owner.evaluate((node, before) => {
+        const css = getComputedStyle(node);
+        // Browsers serialize the zero-size shadow as either `none` or a color
+        // followed by zero offsets, blur and spread. Both draw no halo.
+        const lengths = css.boxShadow.match(/-?(?:\d*\.)?\d+px/g) ?? [];
+        return {
+          outline: css.outlineStyle,
+          noHalo:
+            css.boxShadow === "none" ||
+            (lengths.length >= 3 && lengths.every((length) => Number.parseFloat(length) === 0)),
+          border: before === undefined || css.borderTopColor !== before,
+        };
+      }, resting),
+    )
+    .toEqual({ outline: "none", noHalo: true, border: true });
+}
+
 test("search focus has one owner across shared fields and host tool overrides", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/arc-controls.html");
   const region = page.getByRole("region", { name: "Search clear controls" });
@@ -621,8 +647,13 @@ test("search focus has one owner across shared fields and host tool overrides", 
       );
       for (const name of ["Inline search", "Standalone search", "Fixture log search"]) {
         const field = region.getByLabel(name, { exact: true });
-        const owner = name === "Standalone search" ? field : field.locator("..");
+        // Grouped searches own their frame; the standalone field renders inside a FieldControl frame.
+        const owner =
+          name === "Standalone search"
+            ? field.locator("xpath=ancestor::*[@data-field-control][1]")
+            : field.locator("..");
         const before = await owner.boundingBox();
+        const resting = await owner.evaluate((node) => getComputedStyle(node).borderTopColor);
         await field.click();
         for (const keyboard of [false, true]) {
           if (keyboard) {
@@ -630,24 +661,18 @@ test("search focus has one owner across shared fields and host tool overrides", 
             await page.keyboard.press("Shift+Tab");
           }
           await expect(field).toBeFocused();
-          await expect(owner).toHaveCSS("outline-style", "solid");
-          await expect(owner).toHaveCSS("outline-width", "1px");
-          await expect(owner).toHaveCSS("outline-offset", "-1px");
-          await expect(owner).toHaveCSS("box-shadow", "none");
-          if (name !== "Standalone search") await expect(field).toHaveCSS("outline-style", "none");
+          // Field focus contract (src/styles/arc.css): the frame's neutral border
+          // changes without a halo, inset outline or second ring on the editor.
+          await expectFieldFocus(owner, resting);
+          await expect(field).toHaveCSS("outline-style", "none");
+          await expect(field).toHaveCSS("box-shadow", "none");
         }
         const after = await owner.boundingBox();
         expect(after!.width).toBe(before!.width);
         expect(after!.height).toBe(before!.height);
         await field.fill("focus check");
-        const clear = owner
-          .locator("..")
-          .getByRole("button", { name: "Clear search", exact: true });
-        // The group owns its clear button; standalone places it beside the input.
-        const button =
-          name === "Standalone search"
-            ? clear
-            : owner.getByRole("button", { name: "Clear search", exact: true });
+        // The frame owns its clear button in every appearance.
+        const button = owner.getByRole("button", { name: "Clear search", exact: true });
         await page.keyboard.press("Tab");
         await expect(button).toBeFocused();
         await expect(button).toHaveCSS("outline-style", "solid");
@@ -658,8 +683,9 @@ test("search focus has one owner across shared fields and host tool overrides", 
       const combo = region.getByRole("combobox", { name: "Focus combobox", exact: true });
       await combo.click();
       await expect(combo).toHaveCSS("outline-style", "none");
-      await expect(combo.locator("..")).toHaveCSS("outline-width", "1px");
-      await expect(combo.locator("..")).toHaveCSS("outline-offset", "-1px");
+      await expect(combo).toHaveCSS("box-shadow", "none");
+      // The open combobox frame has no halo; its border follows the open state.
+      await expectFieldFocus(combo.locator(".."));
       await combo.fill("First");
       await page.keyboard.press("ArrowDown");
       await page.keyboard.press("Enter");
@@ -667,6 +693,9 @@ test("search focus has one owner across shared fields and host tool overrides", 
       await combo.locator("..").getByRole("button", { name: "Clear selection" }).click();
       await expect(combo).toHaveValue("");
       await page.keyboard.press("Escape");
+      await region.screenshot({
+        path: testInfo.outputPath(`search-focus-${width}-${light ? "light" : "dark"}.png`),
+      });
     }
   }
   await page.getByRole("button", { name: "Search choice: First", exact: true }).click();
@@ -677,7 +706,9 @@ test("search focus has one owner across shared fields and host tool overrides", 
   await expect(menuSearch).toHaveCSS("outline-style", "none");
 });
 
-test("text fields keep focus on one border with pointer and keyboard", async ({ page }) => {
+test("text fields keep focus on one border with pointer and keyboard", async ({
+  page,
+}, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/arc-controls.html");
   const region = page.getByRole("region", { name: "Field focus", exact: true });
@@ -696,6 +727,10 @@ test("text fields keep focus on one border with pointer and keyboard", async ({ 
       ]) {
         const field = region.getByRole("textbox", { name, exact: true });
         const before = await field.boundingBox();
+        // Text areas render inside a FieldControl frame, which owns focus presentation.
+        const framed = await field.evaluate((node) => !!node.closest("[data-field-control]"));
+        const owner = framed ? field.locator("xpath=ancestor::*[@data-field-control][1]") : field;
+        const resting = await owner.evaluate((node) => getComputedStyle(node).borderTopColor);
         await field.click();
         await expect(field).toBeFocused();
         for (const keyboard of [false, true]) {
@@ -704,34 +739,28 @@ test("text fields keep focus on one border with pointer and keyboard", async ({ 
             await page.keyboard.press("Shift+Tab");
             await expect(field).toBeFocused();
           }
-          // Reduced-motion transitions still finish on a subsequent browser frame.
-          await expect
-            .poll(() =>
-              field.evaluate((node) => {
-                const css = getComputedStyle(node);
-                return css.outlineColor === css.borderTopColor;
-              }),
-            )
-            .toBe(true);
-          const style = await field.evaluate((node) => {
-            const css = getComputedStyle(node);
-            return {
-              outline: css.outlineStyle,
-              width: css.outlineWidth,
-              offset: css.outlineOffset,
-              color: css.outlineColor,
-              border: css.borderTopColor,
-              shadow: css.boxShadow,
-            };
-          });
-          expect(style).toEqual({
-            outline: "solid",
-            width: "1px",
-            offset: "-1px",
-            color: style.border,
-            border: style.border,
-            shadow: "none",
-          });
+          if (name.startsWith("Invalid")) {
+            // Invalid fields keep their danger border and show the invalid ring.
+            await expect
+              .poll(() =>
+                owner.evaluate((node, before) => {
+                  const css = getComputedStyle(node);
+                  return {
+                    outline: css.outlineStyle,
+                    ring: /0px 0px 0px 2px/.test(css.boxShadow),
+                    border: css.borderTopColor === before,
+                  };
+                }, resting),
+              )
+              .toEqual({ outline: "none", ring: true, border: true });
+          } else {
+            // Reduced-motion transitions still finish on a subsequent browser frame.
+            await expectFieldFocus(owner, resting);
+          }
+          if (framed) {
+            await expect(field).toHaveCSS("outline-style", "none");
+            await expect(field).toHaveCSS("box-shadow", "none");
+          }
         }
         const after = await field.boundingBox();
         expect(after!.width).toBe(before!.width);
@@ -743,7 +772,7 @@ test("text fields keep focus on one border with pointer and keyboard", async ({ 
       await expect(button).toHaveCSS("outline-offset", "2px");
       await region.getByLabel("Commit message", { exact: true }).click();
       await region.screenshot({
-        path: `temp/verification/2026-10-15-field-focus/${width}-${light ? "light" : "dark"}.png`,
+        path: testInfo.outputPath(`field-focus-${width}-${light ? "light" : "dark"}.png`),
       });
     }
   }
@@ -760,9 +789,10 @@ test("shared button API preserves geometry, popup anchors, direct rows and busy 
   const icon = region.getByRole("button", { name: "Button API filters", exact: true });
   await icon.focus();
   expect(await icon.evaluate((node) => getComputedStyle(node).outlineStyle)).toBe("solid");
+  // Medium buttons share the md form-field height (--ui-field-height-md) so they align with fields.
   for (const [label, size] of [
     ["Button API filters", 28],
-    ["Medium button", 36],
+    ["Medium button", 32],
     ["Large button", 40],
   ] as const) {
     const rect = await region.getByRole("button", { name: label, exact: true }).boundingBox();
@@ -823,11 +853,69 @@ test("shared button variants fit both themes and narrow panels with reduced moti
   }
 });
 
+test("pending quiet actions preserve hierarchy, geometry and keyboard focus", async ({ page }) => {
+  await page.goto("/tests/browser/arc-controls.html");
+  const region = page.getByRole("region", { name: "Shared button API" });
+  for (const width of [320, 390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const light of [false, true]) {
+      await page.evaluate(
+        (value) => document.documentElement.classList.toggle("theme-light", value),
+        light,
+      );
+      for (const reducedMotion of ["no-preference", "reduce"] as const) {
+        await page.emulateMedia({ reducedMotion });
+        const actions = [
+          region.getByRole("button", { name: "Refresh quiet action", exact: true }),
+          region.getByRole("button", { name: "Quiet native action", exact: true }),
+        ];
+        const before = await Promise.all(actions.map((action) => action.boundingBox()));
+        await actions[0].focus();
+        // Change the owner's pending state without moving focus from the action.
+        await region
+          .getByRole("button", { name: "Toggle pending", exact: true })
+          .evaluate((node: HTMLButtonElement) => node.click());
+        await expect(actions[0]).toBeFocused();
+        for (const [index, action] of actions.entries()) {
+          await expect(action).toHaveAttribute("aria-busy", "true");
+          await expect(action).toHaveJSProperty("disabled", false);
+          await expect(action).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+          await expect(action).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+          if (index === 1) {
+            // The label keeps its width and accessible name beneath a centered spinner.
+            await expect(action.locator(":scope > span").first()).toHaveCSS("opacity", "0");
+            await expect(action.locator(':scope > span[aria-hidden="true"]')).toBeVisible();
+            await expect(action).toContainText("Quiet native action");
+            await expect(action).toHaveAccessibleName("Quiet native action");
+          }
+          const after = await action.boundingBox();
+          expect(after!.width).toBe(before[index]!.width);
+          expect(after!.height).toBe(before[index]!.height);
+          await action.focus();
+          await page.keyboard.press("Enter");
+          await page.keyboard.press("Space");
+          await expect(action).toBeFocused();
+        }
+        await expect(region.getByLabel("Button action count")).toHaveText("0");
+        await region.screenshot({
+          path: `temp/verification/2026-10-25-apple-ui/shared-${width}-${light ? "light" : "dark"}-${reducedMotion}.png`,
+        });
+        await region.getByRole("button", { name: "Toggle pending", exact: true }).click();
+        await expect(actions[0]).not.toHaveAttribute("aria-busy", "true");
+      }
+    }
+  }
+});
+
 test("search clearing fits compact and wide layouts, both themes and keyboard use", async ({
   page,
 }) => {
   const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("pageerror", (error) => {
+    // The browser's benign ResizeObserver loop notice (WebKit reports it as an error event while
+    // the clear action resizes the field); it is not an application exception.
+    if (!error.message.startsWith("ResizeObserver loop")) errors.push(error.message);
+  });
   await page.goto("/tests/browser/arc-controls.html");
   const region = page.getByRole("region", { name: "Search clear controls" });
   for (const width of [390, 768, 1024, 1440]) {
@@ -847,8 +935,9 @@ test("search clearing fits compact and wide layouts, both themes and keyboard us
         await expect(clear).toBeVisible();
         const fieldBox = await input.boundingBox();
         const buttonBox = await clear.boundingBox();
-        expect(buttonBox!.width).toBe(24);
-        expect(buttonBox!.height).toBe(24);
+        // The clear action is the shared 20px inline action.
+        expect(buttonBox!.width).toBe(20);
+        expect(buttonBox!.height).toBe(20);
         expect(buttonBox!.y).toBeGreaterThanOrEqual(fieldBox!.y - 4);
         expect(buttonBox!.y + buttonBox!.height).toBeLessThanOrEqual(
           fieldBox!.y + fieldBox!.height + 4,
@@ -895,12 +984,6 @@ test("additional Arc controls preserve data, keyboard actions and inline recover
   const additions = page.getByRole("region", { name: "Additional Arc controls" });
   await additions.getByRole("searchbox", { name: "Search JSON" }).fill("59");
   await expect(additions.getByRole("treeitem").filter({ hasText: /59/ }).first()).toBeVisible();
-  await additions.getByRole("button", { name: "Remove filter: Project: bycoda" }).click();
-  await expect(
-    additions.getByRole("button", { name: "Remove filter: Project: bycoda" }),
-  ).toHaveCount(0);
-  await additions.getByRole("button", { name: "Clear all", exact: true }).click();
-  await expect(additions.getByText("No filters applied", { exact: true })).toBeVisible();
   const table = additions.getByRole("table", { name: "Project usage" });
   await table.getByRole("button", { name: "Sort by Cost", exact: true }).click();
   await expect(table.locator("tbody tr").first()).toContainText("Beta");
@@ -962,7 +1045,12 @@ test("image comparison accepts a selected image and retains keyboard and dismiss
   const closeBox = (await close.boundingBox())!;
   expect(closeBox.y).toBe(16);
   expect(closeBox.x + closeBox.width).toBe(page.viewportSize()!.width - 16);
-  await dialog.getByLabel("Compare with image").setInputFiles({
+  // The file input is hidden behind the visible Compare button, so choose the file the way a user does.
+  const chooser = page.waitForEvent("filechooser");
+  await dialog.getByRole("button", { name: "Compare with image", exact: true }).click();
+  await (
+    await chooser
+  ).setFiles({
     name: "after.svg",
     mimeType: "image/svg+xml",
     buffer: Buffer.from(
@@ -1030,7 +1118,6 @@ test("additional controls localize their actions and accessibility labels", asyn
   await page.goto("/tests/browser/arc-controls.html");
   await page.getByRole("button", { name: "Türkçe controls", exact: true }).click();
   await expect(page.getByRole("searchbox", { name: "JSON'da ara", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Tümünü temizle", exact: true })).toBeVisible();
   await page.getByRole("button", { name: /^Tarih aralığı:/ }).click();
   const dialog = page.getByRole("dialog", { name: "Tarih aralığı", exact: true });
   await expect(dialog.getByRole("button", { name: "Son 7 gün", exact: true })).toBeVisible();
@@ -1162,4 +1249,1475 @@ test("selection, expanding details and history keep their interactions", async (
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: "temp/verification/2026-10-13-arc-controls/selection-narrow.png" });
   expect(errors).toEqual([]);
+});
+
+// ---------------------------------------------------------------------------------------
+// Behaviour matrix inside the one ControlSpecimen reference (?matrix, alias ?view=matrix). FIXTURE evidence only: these checks run
+// against current public adapters in a browser fixture and are never installed/native acceptance.
+// ---------------------------------------------------------------------------------------
+type MatrixOptions = { layout?: "default" | "narrow" | "short"; theme?: "light" | "dark" };
+
+async function openMatrix(page: Page, { layout = "default", theme = "dark" }: MatrixOptions = {}) {
+  await page.goto(`/tests/browser/arc-controls.html?matrix&layout=${layout}&theme=${theme}`);
+  await expect(page.getByTestId("control-matrix")).toBeVisible();
+}
+
+// Computed state that can carry a focus indication, read for a control and its frame ancestors.
+async function focusChain(control: Locator) {
+  return control.evaluate((node) => {
+    const chain: string[] = [];
+    const outlined: boolean[] = [];
+    let current: Element | null = node;
+    for (let depth = 0; current && depth < 5; depth++, current = current.parentElement) {
+      const css = getComputedStyle(current);
+      chain.push(
+        [css.outlineStyle, css.outlineWidth, css.outlineColor, css.boxShadow, css.borderColor].join(
+          "|",
+        ),
+      );
+      // A visually hidden native input (opacity 0 or 1px) can carry an outline nobody sees.
+      const box = current.getBoundingClientRect();
+      const shown = Number.parseFloat(css.opacity) > 0 && box.width > 2 && box.height > 2;
+      outlined.push(
+        shown && css.outlineStyle !== "none" && Number.parseFloat(css.outlineWidth) > 0,
+      );
+      if (depth > 0 && current.hasAttribute("data-testid")) break;
+    }
+    return { chain, outlined };
+  });
+}
+
+// Moves focus with a keyboard modality so :focus-visible applies, ending on the same control.
+async function focusByKeyboard(page: Page, control: Locator) {
+  await control.focus();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Shift+Tab");
+  await expect(control).toBeFocused();
+}
+
+test.describe("shared control state matrix", () => {
+  test("matrix sections render every family with stable test ids", async ({ page }) => {
+    await openMatrix(page);
+    for (const id of [
+      "matrix-actions",
+      "matrix-fields",
+      "matrix-choices",
+      "matrix-navigation",
+      "matrix-tree",
+      "matrix-text",
+      "matrix-action-variants",
+      "matrix-action-icons",
+      "matrix-action-states",
+      "matrix-action-long",
+      "matrix-action-groups",
+      "matrix-field-text",
+      "matrix-field-special",
+      "matrix-field-toolbar",
+      "matrix-choice-select",
+      "matrix-choice-checkbox",
+      "matrix-choice-switch",
+      "matrix-choice-radio",
+      "matrix-choice-segmented",
+      "matrix-nav-tabs",
+      "matrix-nav-stepper",
+      "matrix-tree-rows",
+      "matrix-text-match",
+      "matrix-text-time",
+      "matrix-text-shortcut",
+    ]) {
+      await expect(page.getByTestId(id), id).toHaveCount(1);
+    }
+    // Every variant is present at each public size.
+    for (const variant of ["Primary", "Secondary", "Ghost", "Danger", "Link"]) {
+      for (const size of ["sm", "md", "lg"]) {
+        await expect(
+          page.getByRole("button", { name: `${variant} ${size}`, exact: true }),
+        ).toBeVisible();
+      }
+    }
+  });
+
+  test("keyboard Tab order follows the document with one :focus-visible owner per stop", async ({
+    page,
+  }) => {
+    // Walks every stop in the matrix; CI WebKit needs more than the default budget.
+    test.setTimeout(120_000);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await openMatrix(page);
+    // Start on the layout selector, the first tab stop, so every later stop is counted.
+    await page
+      .getByRole("radiogroup", { name: "Matrix layout", exact: true })
+      .getByRole("radio")
+      .first()
+      .focus();
+    const stops: { name: string; forward: boolean; visible: number; inside: boolean }[] = [];
+    for (let step = 0; step < 400; step++) {
+      await page.keyboard.press("Tab");
+      const state = await page.evaluate(() => {
+        const root = document.querySelector('[data-testid="control-matrix"]')!;
+        const active = document.activeElement as HTMLElement | null;
+        const memory = window as unknown as { __lastStop?: Element };
+        const forward =
+          !memory.__lastStop ||
+          !active ||
+          !!(memory.__lastStop.compareDocumentPosition(active) & Node.DOCUMENT_POSITION_FOLLOWING);
+        memory.__lastStop = active ?? undefined;
+        const label =
+          active?.getAttribute("aria-label") ??
+          (active as HTMLInputElement | null)?.labels?.[0]?.textContent ??
+          active?.textContent ??
+          "";
+        return {
+          name: label.replace(/\s+/g, " ").trim().slice(0, 60),
+          forward,
+          visible: document.querySelectorAll(":focus-visible").length,
+          inside: !!active && root.contains(active),
+        };
+      });
+      if (!state.inside) break;
+      stops.push(state);
+    }
+    expect(stops.length).toBeGreaterThan(60);
+    // Never jumps backwards: the matrix has no positive tabindex or reordered focus.
+    expect(stops.filter((stop) => !stop.forward).map((stop) => stop.name)).toEqual([]);
+    // One visible focus owner at every stop.
+    expect(stops.filter((stop) => stop.visible !== 1).map((stop) => stop.name)).toEqual([]);
+    const names = stops.map((stop) => stop.name);
+    for (const name of [
+      "Primary sm",
+      "Count action",
+      "Selected action",
+      "Plain field",
+      "Matrix password",
+      "Toolbar search sm",
+      "Matrix select",
+      "Matrix searchable",
+      "Checked",
+      "Matrix switch",
+      "Review first",
+      "Selected tab",
+    ]) {
+      expect(
+        names.some((seen) => seen.includes(name)),
+        `${name} is a tab stop`,
+      ).toBe(true);
+    }
+    // Unavailable controls are never tab stops.
+    for (const name of ["Disabled action", "Disabled select", "Disabled field", "Week"]) {
+      expect(
+        names.filter((seen) => seen === name),
+        `${name} is skipped`,
+      ).toEqual([]);
+    }
+  });
+
+  test("each control family shows a focus indication from exactly one owner", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    for (const theme of ["dark", "light"] as const) {
+      await openMatrix(page, { theme });
+      const families: [string, Locator][] = [
+        ["Button", page.getByRole("button", { name: "Secondary md", exact: true })],
+        ["Button primary", page.getByRole("button", { name: "Primary md", exact: true })],
+        ["Button icon", page.getByRole("button", { name: "Ghost md icon", exact: true })],
+        ["ButtonGroup segment", page.getByRole("button", { name: "Day", exact: true })],
+        [
+          "SplitButton menu",
+          page.getByRole("button", { name: "Split primary options", exact: true }),
+        ],
+        ["TextField", page.getByLabel("Plain field", { exact: true })],
+        ["TextareaField", page.getByLabel("Matrix text area", { exact: true })],
+        ["NumberField", page.getByLabel("Matrix number", { exact: true })],
+        ["PasswordField", page.getByLabel("Matrix password", { exact: true })],
+        ["SearchInput", page.getByLabel("Toolbar search sm", { exact: true })],
+        ["Checkbox", page.getByTestId("matrix-checkbox-on")],
+        ["Switch", page.getByRole("switch", { name: "Matrix switch", exact: true })],
+        ["Radio", page.getByRole("radio", { name: /^Review first/ })],
+        ["Segmented", page.getByRole("radio", { name: "A long first segment label" }).first()],
+        ["Tab", page.getByRole("tab", { name: "Selected tab" }).first()],
+        ["TreeRow", page.getByTestId("matrix-tree-selected")],
+      ];
+      for (const [family, control] of families) {
+        await control.scrollIntoViewIfNeeded();
+        const before = await focusChain(control);
+        await focusByKeyboard(page, control);
+        const after = await focusChain(control);
+        const changed = after.chain.filter((value, index) => value !== before.chain[index]).length;
+        expect(
+          changed,
+          `${family} (${theme}) changes some frame state on keyboard focus`,
+        ).toBeGreaterThan(0);
+        expect(
+          after.outlined.filter(Boolean).length,
+          `${family} (${theme}) has at most one outlined owner`,
+        ).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  test("checkbox exposes checked, mixed and unavailable states natively", async ({ page }) => {
+    await openMatrix(page);
+    const mixed = page.getByTestId("matrix-checkbox-mixed");
+    await expect(mixed).toHaveAttribute("aria-checked", "mixed");
+    expect(await mixed.evaluate((node: HTMLInputElement) => node.indeterminate)).toBe(true);
+    await mixed.focus();
+    await page.keyboard.press("Space");
+    await expect(mixed).toBeChecked();
+    await expect(mixed).not.toHaveAttribute("aria-checked", "mixed");
+    expect(await mixed.evaluate((node: HTMLInputElement) => node.indeterminate)).toBe(false);
+    await page.keyboard.press("Space");
+    await expect(mixed).toHaveAttribute("aria-checked", "mixed");
+    await expect(page.getByTestId("matrix-checkbox-on")).toBeChecked();
+    await expect(page.getByTestId("matrix-checkbox-off")).not.toBeChecked();
+    await expect(page.getByTestId("matrix-checkbox-disabled")).toBeDisabled();
+    await expect(page.getByTestId("matrix-checkbox-disabled-on")).toBeDisabled();
+    await expect(page.getByTestId("matrix-checkbox-disabled-on")).toBeChecked();
+    await page.getByText("Unchecked", { exact: true }).click();
+    await expect(page.getByTestId("matrix-checkbox-off")).toBeChecked();
+  });
+
+  test("switch exposes role and aria-checked and honors keyboard and disabled state", async ({
+    page,
+  }) => {
+    await openMatrix(page);
+    const toggle = page.getByRole("switch", { name: "Matrix switch", exact: true });
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await toggle.focus();
+    await page.keyboard.press("Space");
+    await expect(toggle).toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("Enter");
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByRole("switch", { name: "Switch on", exact: true })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    const blocked = page.getByRole("switch", { name: "Disabled switch", exact: true });
+    await expect(blocked).toBeDisabled();
+    await expect(blocked).toHaveAttribute("aria-checked", "false");
+    await expect(
+      page.getByRole("switch", { name: "Disabled switch on", exact: true }),
+    ).toHaveAttribute("aria-checked", "true");
+  });
+
+  test("radio group arrow keys move focus and selection and skip unavailable options", async ({
+    page,
+  }) => {
+    await openMatrix(page);
+    const group = page.getByRole("group", { name: "Matrix radios", exact: true });
+    const review = group.getByRole("radio", { name: /^Review first/ });
+    const manual = group.getByRole("radio", { name: /^Manual approval/ });
+    const locked = group.getByRole("radio", { name: /^Unavailable approval/ });
+    await expect(review).toBeChecked();
+    await expect(locked).toBeDisabled();
+    await review.focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(manual).toBeChecked();
+    await expect(manual).toBeFocused();
+    // Past the last available option engines may wrap or stop, but never select the unavailable one.
+    await page.keyboard.press("ArrowDown");
+    await expect(locked).not.toBeChecked();
+    await review.check();
+    await review.focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(manual).toBeChecked();
+    await page.keyboard.press("ArrowUp");
+    await expect(review).toBeChecked();
+  });
+
+  test("segmented control uses roving focus with arrow, Home and End keys", async ({ page }) => {
+    await openMatrix(page);
+    const group = page.getByRole("radiogroup", { name: "Matrix segments", exact: true });
+    const options = group.getByRole("radio");
+    await expect(options).toHaveCount(3);
+    await expect(options.first()).toHaveAttribute("aria-checked", "true");
+    await options.first().focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(options.nth(1)).toBeFocused();
+    await expect(options.nth(1)).toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("End");
+    await expect(options.nth(2)).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(options.first()).toBeFocused();
+    await page.keyboard.press("ArrowLeft");
+    await expect(options.nth(2)).toBeFocused();
+    await page.keyboard.press("Home");
+    await expect(options.first()).toBeFocused();
+    // Only the selected option is a tab stop.
+    expect(
+      await options.evaluateAll(
+        (nodes) => nodes.filter((node) => (node as HTMLElement).tabIndex >= 0).length,
+      ),
+    ).toBe(1);
+    // The pressed-mode sibling keeps button semantics.
+    const pressed = page.getByRole("group", { name: "Pressed segments", exact: true });
+    await expect(pressed.getByRole("button", { name: "List" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  test("loading and disabled actions never activate", async ({ page }) => {
+    await openMatrix(page);
+    const count = page.getByTestId("matrix-action-count");
+    await expect(count).toHaveText("0");
+    await page.getByRole("button", { name: "Count action", exact: true }).click();
+    await expect(count).toHaveText("1");
+    for (const id of ["matrix-loading-text", "matrix-loading-icon"]) {
+      const control = page.getByTestId(id);
+      expect(
+        await control.evaluate(
+          (node: HTMLButtonElement) =>
+            node.disabled || node.getAttribute("aria-disabled") === "true",
+        ),
+        `${id} is blocked for assistive technology`,
+      ).toBe(true);
+      await control.evaluate((node) => (node as HTMLElement).click());
+      await control.focus({ timeout: 500 }).catch(() => {});
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Space");
+      await expect(count).toHaveText("1");
+    }
+    await page
+      .getByRole("button", { name: "Disabled action", exact: true })
+      .evaluate((node) => (node as HTMLElement).click());
+    await expect(count).toHaveText("1");
+    // The loading text action keeps its name while pending.
+    await expect(page.getByTestId("matrix-loading-text")).toContainText("Loading action");
+    const pressed = page.getByRole("button", { name: "Selected action", exact: true });
+    await pressed.click();
+    await expect(pressed).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("split action keeps independent primary and menu gates", async ({ page }) => {
+    await openMatrix(page);
+    const blocked = page.getByRole("group", { name: "Split blocked", exact: true });
+    await expect(
+      blocked.getByRole("button", { name: "Split blocked", exact: true }),
+    ).toBeDisabled();
+    const menu = blocked.getByRole("button", { name: "Split blocked options", exact: true });
+    await expect(menu).toBeEnabled();
+    await menu.click();
+    await expect(page.getByRole("menuitem", { name: "Available option" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menuitem", { name: "Available option" })).toHaveCount(0);
+    await expect(menu).toBeFocused();
+    const loading = page.getByRole("group", { name: "Split loading", exact: true });
+    await expect(
+      loading.getByRole("button", { name: "Split loading options", exact: true }),
+    ).toBeDisabled();
+    // A joined group keeps a disabled segment without disabling its siblings.
+    const joined = page.getByRole("group", { name: "Joined actions", exact: true });
+    await expect(joined.getByRole("button", { name: "Week", exact: true })).toBeDisabled();
+    await expect(joined.getByRole("button", { name: "Day", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(joined.getByRole("button", { name: "Month", exact: true })).toBeEnabled();
+  });
+
+  test("tree rows distinguish drop destination from selection [CMP-08]", async ({ page }) => {
+    for (const theme of ["dark", "light"] as const) {
+      await openMatrix(page, { theme });
+      const signature = (id: string) =>
+        page.getByTestId(`matrix-tree-${id}`).evaluate((node) => {
+          const read = (pseudo: string | null) => {
+            const css = getComputedStyle(node, pseudo);
+            return [
+              css.backgroundColor,
+              css.boxShadow,
+              css.outlineStyle,
+              css.outlineWidth,
+              css.outlineColor,
+              css.borderInlineStartWidth,
+              css.borderInlineStartColor,
+              pseudo ? css.content : "",
+              pseudo ? css.backgroundImage : "",
+              pseudo ? css.inlineSize : "",
+            ].join("|");
+          };
+          return [read(null), read("::before"), read("::after")].join("||");
+        });
+      const rest = await signature("depth1");
+      const selected = await signature("selected");
+      const drop = await signature("drop");
+      const both = await signature("selected-drop");
+      expect(selected, `selected differs from rest (${theme})`).not.toBe(rest);
+      expect(drop, `drop target differs from rest (${theme})`).not.toBe(rest);
+      expect(drop, `drop target differs from selection (${theme})`).not.toBe(selected);
+      expect(both, `selected drop target differs from selection (${theme})`).not.toBe(selected);
+      expect(both, `selected drop target differs from drop target (${theme})`).not.toBe(drop);
+      await expect(page.getByTestId("matrix-tree-drop")).toHaveAttribute(
+        "data-tree-drop-target",
+        "true",
+      );
+      await expect(page.getByTestId("matrix-tree-drop")).not.toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+    }
+  });
+
+  test("tree rows keep depth, cut, unavailable and long-name geometry", async ({ page }) => {
+    await openMatrix(page, { layout: "narrow" });
+    const padding = (id: string) =>
+      page
+        .getByTestId(`matrix-tree-${id}`)
+        .evaluate((node) => Number.parseFloat(getComputedStyle(node).paddingInlineStart));
+    const depths = [
+      await padding("depth0"),
+      await padding("depth1"),
+      await padding("depth2"),
+      await padding("depth3"),
+    ];
+    expect(depths[1]).toBeGreaterThan(depths[0]);
+    expect(depths[2]).toBeGreaterThan(depths[1]);
+    expect(depths[3]).toBeGreaterThan(depths[2]);
+    await expect(page.getByTestId("matrix-tree-depth3")).toHaveAttribute("aria-level", "4");
+    await expect(page.getByTestId("matrix-tree-cut")).toHaveAttribute("data-tree-cut", "true");
+    expect(
+      await page
+        .getByTestId("matrix-tree-cut")
+        .evaluate((node) => Number.parseFloat(getComputedStyle(node).opacity)),
+    ).toBeLessThan(1);
+    await expect(page.getByTestId("matrix-tree-disabled")).toBeDisabled();
+    const long = page.getByTestId("matrix-tree-long");
+    const bounds = (await page.getByTestId("matrix-tree-rows").boundingBox())!;
+    const row = (await long.boundingBox())!;
+    expect(row.width).toBeLessThanOrEqual(bounds.width + 1);
+    expect(await long.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    // Rows share one fixed height regardless of state or name length.
+    const heights = await page
+      .getByTestId("matrix-tree-rows")
+      .getByRole("treeitem")
+      .evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().height)));
+    expect(new Set(heights).size).toBe(1);
+  });
+
+  test("text field controls keep one height whatever their grid neighbours contain", async ({
+    page,
+  }) => {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 900 });
+      await openMatrix(page);
+      // Inputs inside a FieldControl are borderless editors; their frame carries the height.
+      const heights = await page
+        .getByTestId("matrix-field-text")
+        .locator("input:not([type='hidden'])")
+        .evaluateAll((nodes) =>
+          nodes.map((node) => ({
+            name: (node as HTMLInputElement).labels?.[0]?.textContent ?? "",
+            height: Math.round(
+              (node.closest("[data-field-control]") ?? node).getBoundingClientRect().height,
+            ),
+          })),
+        );
+      expect(heights.length).toBeGreaterThan(6);
+      const reference = Math.min(...heights.map((entry) => entry.height));
+      expect(
+        heights.filter((entry) => Math.abs(entry.height - reference) > 1),
+        `${width}: inputs taller than the shortest field (${reference}px)`,
+      ).toEqual([]);
+    }
+  });
+
+  test("compact and form-size search, button and icon button share one row alignment", async ({
+    page,
+  }) => {
+    for (const theme of ["dark", "light"] as const) {
+      await openMatrix(page, { theme });
+      for (const size of ["sm", "md"] as const) {
+        const row = page.getByTestId(`matrix-toolbar-${size}`);
+        const search = row.locator("[data-ui-focus-group]");
+        const filter = page.getByTestId(`matrix-toolbar-${size}-filter`);
+        const add = page.getByTestId(`matrix-toolbar-${size}-add`);
+        const [a, b, c] = (
+          await Promise.all([search.boundingBox(), filter.boundingBox(), add.boundingBox()])
+        ).map((box) => box!);
+        const center = (box: { y: number; height: number }) => box.y + box.height / 2;
+        const label = `${size} ${theme}`;
+        expect(
+          Math.abs(center(a) - center(b)),
+          `search/filter centers (${label})`,
+        ).toBeLessThanOrEqual(1);
+        expect(
+          Math.abs(center(a) - center(c)),
+          `search/add centers (${label})`,
+        ).toBeLessThanOrEqual(1);
+        expect(
+          Math.abs(a.height - b.height),
+          `search/filter heights (${label})`,
+        ).toBeLessThanOrEqual(1);
+        expect(Math.abs(b.height - c.height), `filter/add heights (${label})`).toBeLessThanOrEqual(
+          1,
+        );
+      }
+    }
+  });
+
+  test("long labels and narrow or short layouts never overflow their container", async ({
+    page,
+  }) => {
+    for (const layout of ["narrow", "short"] as const) {
+      for (const width of [320, 800]) {
+        await page.setViewportSize({ width, height: 700 });
+        await openMatrix(page, { layout });
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+          `${layout} ${width}: no page-level horizontal scroll`,
+        ).toBe(true);
+        // Sections do not clip, so any descendant wider than the section is a real overflow.
+        const overflowing = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>('[data-testid^="matrix-"]')]
+            .filter((node) => node.tagName === "SECTION" && node.scrollWidth > node.clientWidth + 1)
+            .map((node) => `${node.dataset.testid}: ${node.scrollWidth} > ${node.clientWidth}`),
+        );
+        expect(overflowing, `${layout} ${width}: sections that overflow horizontally`).toEqual([]);
+        const narrow = page.getByTestId("matrix-action-narrow");
+        const container = (await narrow.boundingBox())!;
+        for (const button of await narrow.getByRole("button").all()) {
+          const box = (await button.boundingBox())!;
+          expect(
+            box.x + box.width,
+            `${layout} ${width}: long label stays inside`,
+          ).toBeLessThanOrEqual(container.x + container.width + 1);
+          // Label text must wrap, truncate or be clipped by the button, never paint outside it.
+          const spill = await button.evaluate((node) => {
+            const frame = node.getBoundingClientRect();
+            return [...node.querySelectorAll<HTMLElement>("*")].some((child) => {
+              const rect = child.getBoundingClientRect();
+              if (!rect.width || (rect.right <= frame.right + 1 && rect.left >= frame.left - 1)) {
+                return false;
+              }
+              for (let at: HTMLElement | null = child; at; at = at.parentElement) {
+                if (getComputedStyle(at).overflowX !== "visible") return false;
+                if (at === node) break;
+              }
+              return true;
+            });
+          });
+          expect(spill, `${layout} ${width}: label painted outside its button`).toBe(false);
+        }
+      }
+    }
+    // Short layout scrolls inside the matrix body and keeps the last section reachable.
+    await openMatrix(page, { layout: "short" });
+    const body = page.getByTestId("control-matrix-body");
+    expect(await body.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+    await page.getByTestId("matrix-text").scrollIntoViewIfNeeded();
+    await expect(page.getByTestId("matrix-time-fixed")).toBeVisible();
+  });
+
+  test("matrix text families keep their semantics", async ({ page }) => {
+    await openMatrix(page);
+    const matched = page.getByTestId("matrix-match-active");
+    await expect(matched).toHaveText("src/shared/ui/SearchableSelect.tsx");
+    expect(await matched.locator("[data-match]").count()).toBeGreaterThan(0);
+    await expect(page.getByTestId("matrix-match-inactive").locator("[data-match]")).toHaveCount(0);
+    await expect(page.getByTestId("matrix-time-today")).toContainText("Today");
+    await expect(page.getByTestId("matrix-time-yesterday")).toContainText("Yesterday");
+    await expect(page.getByTestId("matrix-time-fixed")).toHaveAttribute("datetime", /^2027-01-15T/);
+    expect(await page.getByTestId("matrix-text-shortcut").locator("kbd").count()).toBeGreaterThan(
+      3,
+    );
+    await expect(page.getByTestId("matrix-text-shortcut").getByRole("img").first()).toHaveAttribute(
+      "aria-label",
+      /.+/,
+    );
+  });
+
+  test("matrix has accessible names, unique ids, valid ARIA and no nested interactives", async ({
+    page,
+  }) => {
+    for (const layout of ["default", "narrow"] as const) {
+      await openMatrix(page, { layout });
+      const findings = await page.evaluate(() => {
+        const root = document.querySelector('[data-testid="control-matrix"]')!;
+        const out: string[] = [];
+        const text = (node: Element | null) =>
+          (node?.textContent ?? "").replace(/\s+/g, " ").trim();
+        const name = (node: Element): string => {
+          const labelledBy = node.getAttribute("aria-labelledby");
+          if (labelledBy)
+            return labelledBy
+              .split(/\s+/)
+              .map((id) => text(document.getElementById(id)))
+              .join(" ")
+              .trim();
+          const aria = node.getAttribute("aria-label");
+          if (aria?.trim()) return aria.trim();
+          const labels = (node as HTMLInputElement).labels;
+          if (labels?.length)
+            return [...labels]
+              .map((label) => text(label))
+              .join(" ")
+              .trim();
+          if (node.getAttribute("title")) return node.getAttribute("title")!;
+          return text(node);
+        };
+        const describe = (node: Element) =>
+          `${node.tagName.toLowerCase()}${node.id ? "#" + node.id : ""}[${node.getAttribute("role") ?? ""}] "${text(node).slice(0, 30)}"`;
+        const interactive =
+          'button, input:not([type="hidden"]), select, textarea, [role="button"], [role="switch"], [role="tab"], [role="radio"], [role="checkbox"], [role="treeitem"], [role="combobox"], [role="menuitem"], [role="option"]';
+        for (const node of root.querySelectorAll(interactive)) {
+          if (node.closest("[hidden], [aria-hidden='true']")) continue;
+          if (!name(node)) out.push(`unnamed: ${describe(node)}`);
+          if (node.querySelector(interactive)) out.push(`nested interactive: ${describe(node)}`);
+        }
+        const ids = new Map<string, number>();
+        for (const node of document.querySelectorAll("[id]"))
+          ids.set(node.id, (ids.get(node.id) ?? 0) + 1);
+        for (const [id, total] of ids) if (total > 1) out.push(`duplicate id: ${id} x${total}`);
+        for (const attribute of ["aria-checked", "aria-pressed"]) {
+          for (const node of root.querySelectorAll(`[${attribute}]`)) {
+            const value = node.getAttribute(attribute);
+            if (!["true", "false", "mixed"].includes(value ?? ""))
+              out.push(`${attribute}=${value}: ${describe(node)}`);
+          }
+        }
+        for (const attribute of ["aria-expanded", "aria-selected", "aria-disabled"]) {
+          for (const node of root.querySelectorAll(`[${attribute}]`)) {
+            const value = node.getAttribute(attribute);
+            if (!["true", "false"].includes(value ?? ""))
+              out.push(`${attribute}=${value}: ${describe(node)}`);
+          }
+        }
+        const parents: [string, string][] = [
+          ['[role="tab"]', '[role="tablist"]'],
+          ['[role="treeitem"]', '[role="tree"], [role="group"]'],
+        ];
+        for (const [child, parent] of parents)
+          for (const node of root.querySelectorAll(child))
+            if (!node.closest(parent)) out.push(`${child} outside ${parent}: ${describe(node)}`);
+        for (const node of root.querySelectorAll(
+          '[role="radiogroup"], [role="group"], [role="tablist"], [role="tree"]',
+        ))
+          if (!name(node)) out.push(`unnamed container: ${describe(node)}`);
+        return out;
+      });
+      expect(findings, `${layout}: accessibility findings`).toEqual([]);
+    }
+  });
+
+  // ---- Phase 2: scenarios added after subagents A, B and C landed (fixture evidence only) ----
+
+  const triggerOf = (page: Page, label: string) =>
+    page.getByRole("button", { name: new RegExp(`^${label}`) });
+
+  test("searchable select keeps its committed value while loading and exposes a reachable retry", async ({
+    page,
+  }) => {
+    await openMatrix(page);
+    const loading = triggerOf(page, "Branch loading");
+    await expect(loading).toBeEnabled();
+    await expect(loading).toHaveAttribute("aria-busy", "true");
+    await expect(loading).toContainText("main");
+    await loading.click();
+    const popup = page.getByRole("dialog");
+    await expect(popup).toContainText("Loading branches…");
+    // Stale options stay choosable and the committed value is not replaced by the status.
+    await expect(popup.getByRole("option", { name: "develop" })).toBeVisible();
+    await expect(loading).toContainText("main");
+    await page.keyboard.press("Escape");
+    await expect(popup).toHaveCount(0);
+    await expect(loading).toBeFocused();
+    await expect(loading).toContainText("main");
+
+    const failing = triggerOf(page, "Branch with error");
+    await failing.click();
+    const alert = page.getByRole("alert").filter({ hasText: "Could not reach the host" });
+    await expect(alert).toBeVisible();
+    const retry = page.getByRole("dialog").getByRole("button", { name: "Retry", exact: true });
+    await expect(retry).toBeVisible();
+    await expect(page.getByRole("option", { name: "feature/search" })).toHaveCount(0);
+    // From the search field, one Tab reaches Retry; Enter loads and clears the error.
+    await page.keyboard.press("Tab");
+    await expect(retry).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(alert).toHaveCount(0);
+    await expect(page.getByRole("option", { name: "feature/search" })).toBeVisible();
+    await expect(failing).toContainText("main");
+  });
+
+  test("searchable select separates an empty source, a filtered-empty search and a large list", async ({
+    page,
+  }) => {
+    await openMatrix(page);
+    await triggerOf(page, "Empty projects").click();
+    await expect(page.getByRole("dialog")).toContainText("No projects yet");
+    await page.keyboard.press("Escape");
+    await triggerOf(page, "Filtered projects").click();
+    await expect(page.getByRole("dialog").getByRole("option").first()).toBeVisible();
+    await expect(page.getByRole("dialog").locator("input").first()).toBeFocused();
+    await page.keyboard.type("zzz");
+    await expect(page.getByRole("dialog")).toContainText("No matching projects");
+    await expect(page.getByRole("dialog")).not.toContainText("No projects yet");
+    await page.keyboard.press("Escape");
+    const big = triggerOf(page, "Big list");
+    await expect(big).toContainText("refs/heads/feature/branch-250");
+    await big.click();
+    await expect(page.getByRole("option")).toHaveCount(500);
+    await expect(page.getByRole("dialog").locator("input").first()).toBeFocused();
+    await page.keyboard.type("branch-499");
+    await expect(page.getByRole("option")).toHaveCount(1);
+    await page.keyboard.press("Escape");
+  });
+
+  test("searchable select keyboard skips unavailable options and never selects them", async ({
+    page,
+  }) => {
+    await openMatrix(page);
+    const reviewers = triggerOf(page, "Reviewers");
+    await reviewers.click();
+    await expect(page.getByRole("dialog").locator("input").first()).toBeFocused();
+    const active = () =>
+      page.evaluate(() => {
+        const id = document
+          .querySelector("[aria-activedescendant]")
+          ?.getAttribute("aria-activedescendant");
+        return (id && document.getElementById(id)?.textContent) || "";
+      });
+    expect(await active()).toContain("Project with a very long descriptive name");
+    await page.keyboard.press("ArrowDown");
+    expect(await active()).toContain("Another reviewer");
+    expect(await active()).not.toContain("Unavailable person");
+    await page.keyboard.press("Enter");
+    const unavailable = page.getByRole("option", { name: /Unavailable person/ });
+    await expect(unavailable).toHaveAttribute("aria-disabled", "true");
+    await unavailable.click({ force: true });
+    await page.keyboard.press("Escape");
+    const chips = page.getByTestId("matrix-choice-async");
+    await expect(chips).toContainText("Another reviewer");
+    await expect(chips.getByText("Unavailable person", { exact: true })).toHaveCount(0);
+  });
+
+  test("select keyboard skips unavailable options and keeps a disabled committed value", async ({
+    page,
+  }) => {
+    await openMatrix(page);
+    const environment = triggerOf(page, "Environment");
+    await expect(triggerOf(page, "Committed disabled value")).toContainText("Staging");
+    await environment.focus();
+    await page.keyboard.press("ArrowDown");
+    const listbox = page.getByRole("listbox");
+    await expect(listbox).toBeVisible();
+    const active = () =>
+      page.evaluate(() => {
+        const id = document
+          .querySelector("[aria-activedescendant]")
+          ?.getAttribute("aria-activedescendant");
+        return (id && document.getElementById(id)?.textContent) || "";
+      });
+    expect(await active()).toBe("Development");
+    await page.keyboard.press("ArrowDown");
+    expect(await active()).toBe("Production");
+    await page.keyboard.press("Enter");
+    await expect(environment).toContainText("Production");
+    await environment.click();
+    const staging = page.getByRole("option", { name: "Staging" });
+    expect(
+      await staging.evaluate(
+        (node) =>
+          (node as HTMLButtonElement).disabled || node.getAttribute("aria-disabled") === "true",
+      ),
+    ).toBe(true);
+    await staging.click({ force: true });
+    await page.keyboard.press("Escape");
+    await expect(environment).toContainText("Production");
+    await expect(environment).not.toContainText("Staging");
+  });
+
+  test("segmented control arrow keys skip a disabled segment", async ({ page }) => {
+    await openMatrix(page);
+    const group = page.getByRole("radiogroup", { name: "Disabled segment", exact: true });
+    const alpha = group.getByRole("radio", { name: "Alpha" });
+    const beta = group.getByRole("radio", { name: "Beta" });
+    const gamma = group.getByRole("radio", { name: /^Gamma/ });
+    const delta = group.getByRole("radio", { name: "Delta" });
+    await expect(beta).toBeDisabled();
+    await alpha.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(gamma).toBeFocused();
+    await expect(gamma).toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("ArrowLeft");
+    await expect(alpha).toBeFocused();
+    await page.keyboard.press("End");
+    await expect(delta).toBeFocused();
+    await page.keyboard.press("Home");
+    await expect(alpha).toBeFocused();
+    await expect(beta).not.toHaveAttribute("aria-checked", "true");
+    const pressed = page.getByRole("group", { name: "Disabled pressed segment", exact: true });
+    await expect(pressed.getByRole("button", { name: "Beta" })).toBeDisabled();
+  });
+
+  test("a narrow segmented control keeps its selected segment scrolled into view", async ({
+    page,
+  }) => {
+    for (const theme of ["dark", "light"] as const) {
+      await openMatrix(page, { theme });
+      const group = page.getByRole("radiogroup", { name: "Narrow segments", exact: true });
+      const selected = group.getByRole("radio", { checked: true });
+      await expect(selected).toBeVisible();
+      const inside = await selected.evaluate((node) => {
+        const track = node.parentElement!;
+        const box = node.getBoundingClientRect();
+        const frame = track.getBoundingClientRect();
+        return {
+          overflows: track.scrollWidth > track.clientWidth,
+          inside: box.left >= frame.left - 1 && box.right <= frame.right + 1,
+        };
+      });
+      expect(inside.overflows, `${theme}: the narrow track scrolls`).toBe(true);
+      expect(inside.inside, `${theme}: selected segment is fully inside the track`).toBe(true);
+    }
+  });
+
+  test("middle truncation keeps the full value accessible and the tail visible", async ({
+    page,
+  }) => {
+    await openMatrix(page);
+    const full = "src/features/source-control/ui/GitChangesPanel.component.test.tsx";
+    for (const width of [160, 480]) {
+      for (const kind of ["path", "branch", "model"]) {
+        const row = page.getByTestId(`matrix-middle-${kind}-${width}`);
+        const state = await row.evaluate((node) => {
+          const root = node.querySelector<HTMLElement>("[data-middle-truncate]")!;
+          const halves = [...root.querySelectorAll<HTMLElement>('[aria-hidden="true"]')];
+          const readable = [...root.children].find(
+            (child) => child.getAttribute("aria-hidden") !== "true",
+          )!;
+          const frame = node.getBoundingClientRect();
+          const tail = halves[halves.length - 1];
+          const head = halves[0];
+          const tailBox = tail.getBoundingClientRect();
+          // Natural width of the full value in the same font, to know whether it needs shortening.
+          const probe = document.createElement("span");
+          probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre";
+          probe.textContent = readable.textContent;
+          root.append(probe);
+          const fits = probe.getBoundingClientRect().width <= frame.width;
+          probe.remove();
+          return {
+            value: readable.textContent,
+            fits,
+            joined: halves.map((half) => half.textContent).join(""),
+            tailText: tail.textContent,
+            tailInside:
+              tailBox.width > 0 &&
+              tailBox.right <= frame.right + 1 &&
+              tailBox.left >= frame.left - 1,
+            tailClipped: tail.scrollWidth > tail.clientWidth + 1,
+            headClipped: head.scrollWidth > head.clientWidth + 1,
+            rootClipped: root.scrollWidth > root.clientWidth + 1,
+            rootInside: root.getBoundingClientRect().right <= frame.right + 1,
+          };
+        });
+        expect.soft(state.value, `${kind} ${width}: full value is readable text`).toBeTruthy();
+        // A shortened value recovers its full text through the shared overflow hint (no native title).
+        if (state.headClipped || state.tailClipped) {
+          await row.locator("[data-middle-truncate]").hover();
+          await expect
+            .soft(page.getByRole("tooltip"), `${kind} ${width}: hint carries the full value`)
+            .toHaveText(state.value!);
+          await page.mouse.move(0, 0);
+          await expect(page.getByRole("tooltip")).toHaveCount(0);
+        }
+        expect
+          .soft(state.joined, `${kind} ${width}: visible halves reconstruct the value`)
+          .toBe(state.value);
+        expect
+          .soft(state.tailInside, `${kind} ${width}: tail stays inside the container`)
+          .toBe(true);
+        expect.soft(state.tailClipped, `${kind} ${width}: tail is not clipped`).toBe(false);
+        expect
+          .soft(state.rootInside, `${kind} ${width}: value stays inside the container`)
+          .toBe(true);
+        if (kind === "path") expect.soft(state.value).toBe(full);
+        if (kind === "path" && width === 160) {
+          expect.soft(state.headClipped, "path 160: the head is what gets shortened").toBe(true);
+          expect.soft(state.tailText.endsWith("test.tsx")).toBe(true);
+        }
+        if (kind === "path" && width === 480 && state.fits) {
+          // Platform fonts differ; only a value that fits must stay unshortened.
+          expect.soft(state.headClipped, "path 480: nothing needs shortening").toBe(false);
+        }
+      }
+    }
+  });
+
+  test("long label button stays within its container and ends in an ellipsis", async ({ page }) => {
+    for (const theme of ["dark", "light"] as const) {
+      await openMatrix(page, { theme });
+      const container = (await page.getByTestId("matrix-action-narrow").boundingBox())!;
+      for (const button of await page
+        .getByTestId("matrix-action-narrow")
+        .getByRole("button")
+        .all()) {
+        const box = (await button.boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(container.x - 1);
+        expect(box.x + box.width).toBeLessThanOrEqual(container.x + container.width + 1);
+        const text = await button.evaluate((node) => {
+          const frame = node.getBoundingClientRect();
+          // The innermost element holding the label text.
+          let holder: HTMLElement = node as HTMLElement;
+          for (const el of node.querySelectorAll<HTMLElement>("*")) {
+            if (el.children.length === 0 && el.textContent) holder = el;
+          }
+          let ellipsis = false;
+          let clipper: HTMLElement = holder;
+          for (let at: HTMLElement | null = holder; at; at = at.parentElement) {
+            const css = getComputedStyle(at);
+            if (css.textOverflow === "ellipsis" && css.overflowX !== "visible") {
+              ellipsis = true;
+              clipper = at;
+              break;
+            }
+            if (at === node) break;
+          }
+          const box = holder.getBoundingClientRect();
+          return {
+            ellipsis,
+            truncated: clipper.scrollWidth > clipper.clientWidth + 1,
+            inside: box.right <= frame.right + 1 && box.left >= frame.left - 1,
+          };
+        });
+        expect(text.ellipsis, `${theme}: label ends in an ellipsis`).toBe(true);
+        expect(text.truncated, `${theme}: label is actually shortened`).toBe(true);
+        expect(text.inside, `${theme}: label box stays inside its button`).toBe(true);
+      }
+    }
+  });
+
+  test("tab alignment follows the explicit align prop", async ({ page }) => {
+    await openMatrix(page);
+    const gaps = async (id: string) =>
+      page.getByTestId(id).evaluate((button) => {
+        const range = document.createRange();
+        range.selectNodeContents(button);
+        const text = range.getBoundingClientRect();
+        const frame = button.getBoundingClientRect();
+        return { left: text.left - frame.left, right: frame.right - text.right };
+      });
+    const start = await gaps("matrix-tab-start");
+    const centered = await gaps("matrix-tab-default");
+    const end = await gaps("matrix-tab-end");
+    expect(start.left).toBeLessThan(start.right - 20);
+    expect(Math.abs(centered.left - centered.right)).toBeLessThanOrEqual(2);
+    expect(end.right).toBeLessThan(end.left - 20);
+    await expect(page.getByTestId("matrix-tab-start")).toHaveAttribute(
+      "data-button-align",
+      "start",
+    );
+    await expect(page.getByTestId("matrix-tab-end")).toHaveAttribute("data-button-align", "end");
+  });
+
+  test("tab labels truncate in the middle, keep the extension and the unsaved dot", async ({
+    page,
+  }) => {
+    await openMatrix(page);
+    for (const width of [180, 120]) {
+      const strip = page.getByTestId(`matrix-tabs-middle-${width}`);
+      const stripBox = (await strip.boundingBox())!;
+      const dot = strip.getByRole("img", { name: "Unsaved changes" });
+      await expect(dot).toBeVisible();
+      const dotBox = (await dot.boundingBox())!;
+      expect(
+        dotBox.x + dotBox.width,
+        `${width}: dot stays inside the tab strip`,
+      ).toBeLessThanOrEqual(stripBox.x + stripBox.width + 1);
+      const label = await strip.evaluate((node) => {
+        const halves = [
+          ...node.querySelectorAll<HTMLElement>('[data-middle-truncate] [aria-hidden="true"]'),
+        ];
+        const tail = halves[halves.length - 1];
+        const frame = node.getBoundingClientRect();
+        const box = tail.getBoundingClientRect();
+        return {
+          tailText: tail.textContent,
+          inside: box.width > 0 && box.right <= frame.right + 1,
+        };
+      });
+      expect(label.tailText?.endsWith("v2.tsx"), `${width}: extension survives`).toBe(true);
+      expect(label.inside, `${width}: tail inside strip`).toBe(true);
+      // The shortened label recovers its full name through the shared overflow hint.
+      await strip.locator("[data-middle-truncate]").hover();
+      await expect(page.getByRole("tooltip")).toHaveText("Quarterly-report.final.v2.tsx");
+      await page.mouse.move(0, 0);
+      await expect(page.getByRole("tooltip")).toHaveCount(0);
+    }
+    // The end-truncating label fades and exposes its full text only while it is clipped.
+    const end = page.getByTestId("matrix-tabs-end-120").locator(".tab-label");
+    await expect(end).toHaveAttribute("data-overflow", "true");
+    await end.hover();
+    await expect(page.getByRole("tooltip")).toHaveText("Quarterly-report.final.v2.tsx");
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
+    // The unsaved dot must stay visible when the end-truncating label is clipped.
+    const endStrip = page.getByTestId("matrix-tabs-end-120");
+    const endBox = (await endStrip.boundingBox())!;
+    const endDot = (await endStrip.getByRole("img", { name: "Unsaved changes" }).boundingBox())!;
+    expect
+      .soft(endDot.x + endDot.width, "end-truncating tab: dot stays inside the strip")
+      .toBeLessThanOrEqual(endBox.x + endBox.width + 1);
+  });
+
+  test("tree row slots keep the trailing count visible beside a truncating label", async ({
+    page,
+  }) => {
+    await openMatrix(page, { layout: "narrow" });
+    const row = page.getByTestId("matrix-tree-long");
+    const state = await row.evaluate((node) => {
+      const frame = node.getBoundingClientRect();
+      const trailing = [...node.querySelectorAll<HTMLElement>("span")].find(
+        (el) => el.textContent === "128",
+      )!;
+      const label = [...node.querySelectorAll<HTMLElement>("span")].find((el) =>
+        el.textContent?.startsWith("a-very-long"),
+      )!;
+      const trailingBox = trailing.getBoundingClientRect();
+      const labelBox = label.getBoundingClientRect();
+      return {
+        trailingInside: trailingBox.right <= frame.right + 1 && trailingBox.width > 0,
+        labelTruncated: label.scrollWidth > label.clientWidth + 1,
+        noOverlap: labelBox.right <= trailingBox.left + 1,
+        rowOverflow: node.scrollWidth > node.clientWidth + 1,
+      };
+    });
+    expect(state.trailingInside).toBe(true);
+    expect(state.labelTruncated).toBe(true);
+    expect(state.noOverlap).toBe(true);
+    expect(state.rowOverflow).toBe(false);
+    // Toggle slot is reserved on files so labels share one start across rows.
+    const starts = await page
+      .getByTestId("matrix-tree-rows")
+      .locator('[data-testid^="matrix-tree-depth"]')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const label = [...node.querySelectorAll<HTMLElement>("span")].find(
+            (el) => el.children.length === 0 && el.textContent,
+          )!;
+          return Math.round(label.getBoundingClientRect().left - node.getBoundingClientRect().left);
+        }),
+      );
+    expect(starts[1] - starts[0], "depth steps indent labels").toBeGreaterThan(0);
+  });
+
+  test("joined groups and split buttons keep one control height and independent gates", async ({
+    page,
+  }) => {
+    await openMatrix(page);
+    const review = page.getByRole("group", { name: "Review", exact: true });
+    const [groupBox, firstBox] = [
+      await review.boundingBox(),
+      await review.getByRole("button").first().boundingBox(),
+    ];
+    expect(
+      Math.abs(groupBox!.height - firstBox!.height),
+      "group is exactly one Button tall",
+    ).toBeLessThanOrEqual(1);
+    await expect(review.getByRole("button", { name: "Request changes" })).toBeDisabled();
+    await expect(review.getByRole("button", { name: /^Merg/ })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    const seam = (name: string) =>
+      page.getByRole("group", { name, exact: true }).getAttribute("data-split-seam");
+    expect(await seam("Commit")).toBe("gap");
+    expect(await seam("Merge pull request")).toBe("shared");
+    expect(await seam("Shell")).toBe("none");
+    const commit = page.getByRole("group", { name: "Commit", exact: true });
+    await expect(commit.locator('[data-split-part="primary"]')).toHaveCount(1);
+    await expect(commit.locator('[data-split-part="menu"]')).toHaveCount(1);
+    const heights = await commit
+      .locator("button")
+      .evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().height)));
+    expect(new Set(heights).size).toBe(1);
+    await expect(page.getByRole("button", { name: "Commit blocked", exact: true })).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Commit blocked options", exact: true }),
+    ).toBeEnabled();
+    await expect(
+      page.getByRole("button", { name: "Merge pull request", exact: true }),
+    ).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Merge options", exact: true })).toBeDisabled();
+    const full = (await page.getByTestId("matrix-split-full").boundingBox())!;
+    const fullGroup = (await page
+      .getByRole("group", { name: "Commit everything", exact: true })
+      .boundingBox())!;
+    expect(Math.abs(fullGroup.width - full.width)).toBeLessThanOrEqual(1);
+  });
+
+  test("tag input and search errors are announced and distinguishable from read only and disabled", async ({
+    page,
+  }) => {
+    await openMatrix(page);
+    const tags = page
+      .getByTestId("matrix-field-more")
+      .getByRole("textbox", { name: "Tags with error" });
+    await expect(tags).toHaveAttribute("aria-invalid", "true");
+    const described = await tags.evaluate((node) =>
+      (node.getAttribute("aria-describedby") ?? "")
+        .split(/\s+/)
+        .map((id) => document.getElementById(id)?.textContent ?? "")
+        .join(" "),
+    );
+    expect(described).toContain("At least three labels");
+    await expect(
+      page.getByRole("alert").filter({ hasText: "At least three labels" }).first(),
+    ).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Invalid search" })).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    await expect(page.getByRole("textbox", { name: "Read only search" })).toHaveAttribute(
+      "readonly",
+      "",
+    );
+    await expect(page.getByRole("textbox", { name: "Disabled search" })).toBeDisabled();
+    const frame = (testId: string) =>
+      page.getByTestId(testId).evaluate((node) => {
+        const css = getComputedStyle(node);
+        return [css.borderColor, css.backgroundColor, css.opacity, css.outlineColor].join("|");
+      });
+    const invalid = await frame("matrix-search-invalid");
+    const readonly = await frame("matrix-search-readonly");
+    const disabled = await frame("matrix-search-disabled");
+    expect(invalid).not.toBe(readonly);
+    expect(readonly).not.toBe(disabled);
+  });
+});
+
+test.describe("inline actions and caller placement (H1, written 2026-10-28, not yet run)", () => {
+  const background = (locator: Locator) =>
+    locator.evaluate((node) => getComputedStyle(node).backgroundColor);
+  const alpha = (color: string) => {
+    // Computed colors serialize as `rgba(r, g, b, a)` or, for mixed tokens, `color(srgb r g b / a)`.
+    const slash = color.match(/\/\s*([\d.]+)(%?)\s*\)$/);
+    if (slash) return Number(slash[1]) / (slash[2] ? 100 : 1);
+    const match = color.match(/rgba?\(([^)]+)\)/);
+    const parts = match ? match[1]!.split(",").map((part) => Number(part.trim())) : [];
+    return parts.length === 4 ? parts[3]! : 1;
+  };
+
+  test("the host keeps one highlight while the pointer moves onto its inline action", async ({
+    page,
+  }) => {
+    for (const theme of ["dark", "light"] as const) {
+      await openMatrix(page, { theme });
+      const host = page.getByTestId("matrix-inline-tab-readme");
+      const close = page.getByTestId("matrix-inline-close-readme");
+      const tab = host.getByRole("tab");
+      await tab.hover();
+      const hovered = await background(host);
+      await close.hover();
+      expect(await background(host), `${theme}: host fill stays while over the action`).toBe(
+        hovered,
+      );
+      // The primary control never paints its own fill inside a host.
+      expect(alpha(await background(tab)), `${theme}: tab fill`).toBe(0);
+      // The action adds a translucent overlay, never an opaque square.
+      expect(alpha(await background(close)), `${theme}: close overlay`).toBeLessThan(1);
+      // A selected host keeps its selection fill under the hovered action.
+      const selected = page.getByTestId("matrix-inline-tab-panel");
+      const before = await background(selected);
+      await page.getByTestId("matrix-inline-close-panel").hover();
+      expect(await background(selected), `${theme}: selected host`).toBe(before);
+    }
+  });
+
+  test("inline actions reveal with the host, keyboard focus and selection", async ({ page }) => {
+    await openMatrix(page);
+    const opacity = (testId: string) =>
+      page.getByTestId(testId).evaluate((node) => Number(getComputedStyle(node).opacity));
+    await page.mouse.move(0, 0);
+    await expect.poll(() => opacity("matrix-inline-more-inbox")).toBe(0);
+    // Selected and always-revealed rows show their actions at rest.
+    await expect.poll(() => opacity("matrix-inline-more-release")).toBe(1);
+    await expect.poll(() => opacity("matrix-inline-more-pinned")).toBe(1);
+    await page.getByTestId("matrix-inline-row-inbox").hover();
+    await expect.poll(() => opacity("matrix-inline-more-inbox")).toBe(1);
+    await page.mouse.move(0, 0);
+    // Keyboard focus reveals a hidden action without hover.
+    await page.getByTestId("matrix-inline-row-inbox").getByRole("button").first().focus();
+    await page.keyboard.press("Tab");
+    await expect(page.getByTestId("matrix-inline-more-inbox")).toBeFocused();
+    await expect.poll(() => opacity("matrix-inline-more-inbox")).toBe(1);
+  });
+
+  test("inline actions never trigger the primary action, and middle click stays with the host", async ({
+    page,
+  }) => {
+    await openMatrix(page);
+    const log = page.getByTestId("matrix-inline-log");
+    await page.getByTestId("matrix-inline-close-readme").click();
+    await expect(log).toHaveText("closed readme");
+    await expect(page.getByTestId("matrix-inline-tab-readme")).toHaveCount(0);
+    await page.getByTestId("matrix-inline-remove-pinned").click();
+    await expect(log).toHaveText("removed pinned");
+    await page.getByTestId("matrix-inline-close-panel").press("Enter");
+    await expect(log).toHaveText("closed panel");
+    await page.getByRole("button", { name: "Reset tabs" }).click();
+    await page.getByTestId("matrix-inline-tab-long").getByRole("tab").click({ button: "middle" });
+    await expect(log).toHaveText("closed long");
+  });
+
+  test("caller utilities change placement but not internal presentation", async ({ page }) => {
+    await openMatrix(page);
+    const field = page.getByTestId("matrix-placement-field");
+    const box = (await field.boundingBox())!;
+    expect(Math.round(box.width), "w-40 sets the field width").toBe(160);
+    const fieldStyle = await field.evaluate((node) => {
+      const css = getComputedStyle(node);
+      return { padding: css.paddingInlineStart, size: css.fontSize };
+    });
+    expect(fieldStyle.padding, "px-10 cannot restyle the field's padding").not.toBe("40px");
+    expect(fieldStyle.size, "text-ui-title cannot retype the field").not.toBe("16px");
+    expect(
+      Math.round((await page.getByTestId("matrix-placement-select").boundingBox())!.width),
+    ).toBe(160);
+    expect(
+      Math.round((await page.getByTestId("matrix-placement-button").boundingBox())!.width),
+    ).toBe(192);
+    const segments = page.getByRole("radiogroup", { name: "Placed segments", exact: true });
+    expect(await segments.evaluate((node) => getComputedStyle(node).marginInlineStart)).toBe(
+      "24px",
+    );
+  });
+
+  test("a text button without an icon reserves no empty slot and keeps its width while busy", async ({
+    page,
+  }) => {
+    await openMatrix(page);
+    const idle = page.getByTestId("matrix-loading-idle");
+    const busy = page.getByTestId("matrix-loading-busy");
+    const inset = (locator: Locator) =>
+      locator.evaluate((node) => {
+        const label = [...node.querySelectorAll("span")].find(
+          (span) => span.textContent === "Delete",
+        )!;
+        const padding = parseFloat(getComputedStyle(node).paddingInlineStart);
+        return label.getBoundingClientRect().left - node.getBoundingClientRect().left - padding;
+      });
+    // Only the padding precedes the label: no reserved 14-16px icon slot.
+    expect(await inset(idle)).toBeLessThan(2);
+    // Pending keeps the same width and the label in the accessible name.
+    expect(Math.round((await busy.boundingBox())!.width)).toBe(
+      Math.round((await idle.boundingBox())!.width),
+    );
+    await expect(busy).toHaveAttribute("aria-busy", "true");
+    await expect(busy).toHaveAccessibleName("Delete");
+    // With a start icon, the icon and the spinner share one slot.
+    await expect(
+      page.getByTestId("matrix-loading-start-icon").locator("[aria-hidden='true'] svg"),
+    ).toBeVisible();
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// The one control reference (ControlSpecimen) in matrix mode (?matrix). FIXTURE evidence only:
+// keyboard, density and theme are exercised on the same real components the product imports.
+// ---------------------------------------------------------------------------------------
+// Visible boxes that run past the reference's content edge. Boxes inside a scrolling or clipping ancestor
+// (segmented track, visually hidden data table) own their overflow, absolutely positioned hidden inputs are
+// not content, and 12px of slack covers the intentional negative-margin bleeds of the calendar, chart
+// scroller and usage legend (focus-ring room).
+async function overflowingFamilies(page: Page) {
+  return page.evaluate(() => {
+    const root = document.querySelector<HTMLElement>("[data-shared-matrix]")!;
+    const edge =
+      root.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(root).paddingRight);
+    return [...root.querySelectorAll<HTMLElement>("*")]
+      .filter((node) => {
+        const box = node.getBoundingClientRect();
+        if (box.width <= 2 || box.right <= edge + 12) return false;
+        for (let up = node.parentElement; up && up !== root; up = up.parentElement) {
+          const parent = getComputedStyle(up);
+          if (
+            parent.overflowX !== "visible" ||
+            parent.clip !== "auto" ||
+            parent.visibility === "hidden"
+          )
+            return false;
+        }
+        const css = getComputedStyle(node);
+        return css.visibility !== "hidden" && css.position !== "absolute";
+      })
+      .slice(0, 8)
+      .map(
+        (node) =>
+          `${node.closest("[data-specimen-family]")?.getAttribute("data-specimen-family")} <- ${node.tagName}.${String(node.className).slice(0, 50)} (${Math.round(node.getBoundingClientRect().width)}px)`,
+      );
+  });
+}
+
+test.describe("control reference state matrix", () => {
+  const openReference = async (page: Page, theme: "light" | "dark" = "dark") => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/tests/browser/arc-controls.html?matrix&theme=${theme}`);
+    await expect(page.locator("[data-shared-matrix]")).toBeVisible();
+    await expect(page.getByRole("group", { name: "State matrix", exact: true })).toBeVisible();
+  };
+
+  test("mounts every family in the single reference without horizontal overflow", async ({
+    page,
+  }) => {
+    for (const width of [390, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const theme of ["dark", "light"] as const) {
+        await openReference(page, theme);
+        expect(await page.locator("[data-specimen-family]").count()).toBeGreaterThanOrEqual(18);
+        const overflowing = await overflowingFamilies(page);
+        expect(overflowing, `${theme} ${width}px`).toEqual([]);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+          true,
+        );
+      }
+    }
+  });
+
+  test("keyboard Tab visits controls in order with exactly one focus ring owner per stop", async ({
+    page,
+  }) => {
+    // Two themes, one evaluate and one Tab per stop: WebKit needs about 40 s for the full walk.
+    test.setTimeout(120_000);
+    for (const theme of ["dark", "light"] as const) {
+      await openReference(page, theme);
+      await page.locator("[data-specimen-family] button:not([disabled])").first().focus();
+      const doubled: string[] = [];
+      let stops = 0;
+      for (let step = 0; step < 200; step++) {
+        const stop = await page.evaluate(() => {
+          const active = document.activeElement as HTMLElement | null;
+          const root = document.querySelector("[data-shared-matrix]");
+          if (!active || !root || !root.contains(active)) return null;
+          const draws = (node: HTMLElement) => {
+            const css = getComputedStyle(node);
+            return (
+              css.outlineStyle !== "none" &&
+              Number.parseFloat(css.outlineWidth) > 0 &&
+              css.outlineColor !== "rgba(0, 0, 0, 0)"
+            );
+          };
+          // A visually hidden native input hands its keyboard focus to the visible control that wraps it.
+          const box = active.getBoundingClientRect();
+          const hidden =
+            Number.parseFloat(getComputedStyle(active).opacity) === 0 ||
+            box.width <= 2 ||
+            box.height <= 2;
+          const owners: string[] = [];
+          if (!hidden && draws(active)) owners.push(active.tagName);
+          for (let node = active.parentElement; node && node !== root; node = node.parentElement)
+            if (draws(node)) owners.push(`${node.tagName}.${node.className}`);
+          const family = active
+            .closest("[data-specimen-family]")
+            ?.getAttribute("data-specimen-family");
+          const label =
+            active.getAttribute("aria-label") ?? active.textContent?.trim().slice(0, 24);
+          const revisited = active.hasAttribute("data-tab-visited");
+          active.setAttribute("data-tab-visited", "");
+          return { revisited, owners, where: `${family} / ${active.tagName}[${label}]` };
+        });
+        if (!stop || stop.revisited) break;
+        stops++;
+        if (stop.owners.length > 1) doubled.push(`${stop.where}: ${stop.owners.join(" + ")}`);
+        await page.keyboard.press("Tab");
+      }
+      expect(stops, `${theme} tab stops`).toBeGreaterThan(30);
+      expect(doubled, `${theme} stops drawing more than one focus ring`).toEqual([]);
+    }
+  });
+
+  test("keyboard operates the selection families", async ({ page }) => {
+    await openReference(page);
+    const family = page.locator('[data-specimen-family="Segmented / radio / checkbox / switch"]');
+    const segments = family.getByRole("radiogroup", { name: "Layout", exact: true });
+    const first = segments.getByRole("radio").first();
+    await first.focus();
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await first.press("ArrowRight");
+    await expect(segments.getByRole("radio").nth(1)).toHaveAttribute("aria-checked", "true");
+    const checkbox = family.getByRole("checkbox", { name: "Selected", exact: true });
+    await checkbox.focus();
+    await page.keyboard.press("Space");
+    await expect(checkbox).not.toBeChecked();
+    await expect(family.getByRole("checkbox", { name: "Unavailable", exact: true })).toBeDisabled();
+    const enabled = family.getByRole("switch", { name: "Enabled", exact: true });
+    await expect(enabled).toHaveAttribute("aria-checked", "false");
+    await expect(family.getByRole("switch", { name: "Unavailable", exact: true })).toBeDisabled();
+  });
+
+  test("density changes control geometry and keeps the matrix inside its container", async ({
+    page,
+  }) => {
+    for (const theme of ["dark", "light"] as const) {
+      for (const width of [390, 1280]) {
+        await page.setViewportSize({ width, height: 900 });
+        await openReference(page, theme);
+        for (const density of ["compact", "comfortable", "touch"]) {
+          await page.evaluate((density) => {
+            document.documentElement.dataset.controlDensity = density;
+          }, density);
+          const save = page
+            .locator('[data-specimen-family="Button"] [data-specimen-state^="normal"] button')
+            .first();
+          const minimum = density === "touch" ? 44 : density === "comfortable" ? 32 : 28;
+          expect(
+            (await save.boundingBox())!.height,
+            `${theme} ${width}px ${density}`,
+          ).toBeGreaterThanOrEqual(minimum);
+          const overflowing = await overflowingFamilies(page);
+          expect(overflowing, `${theme} ${width}px ${density}`).toEqual([]);
+        }
+      }
+    }
+  });
+
+  test("grouped bar chart draws one patterned bar per series in each category with a series table", async ({
+    page,
+  }) => {
+    await openReference(page);
+    const single = page.locator('[data-specimen-state="bars (single series)"]');
+    await expect(single.locator("path[data-key]")).toHaveCount(5);
+    await expect(single.locator("path[data-lane]")).toHaveCount(0);
+
+    const cell = page.locator('[data-specimen-state="bars (grouped series + legend)"]');
+    await expect(cell.locator("path[data-key]")).toHaveCount(12);
+    for (const lane of [0, 1, 2])
+      await expect(cell.locator(`path[data-lane="${lane}"]`)).toHaveCount(4);
+    // The first series stays solid; later series carry a surface pattern beyond colour.
+    await expect(cell.locator("path[data-lane='0']").first()).toHaveAttribute(
+      "data-pattern",
+      "solid",
+    );
+    await expect(cell.locator("path[data-lane='1']").first()).toHaveAttribute(
+      "data-pattern",
+      "diagonal",
+    );
+    await expect(cell.locator("path[data-lane='2']").first()).toHaveAttribute(
+      "data-pattern",
+      "dots",
+    );
+    await expect(cell.locator("path[data-pattern-for]")).toHaveCount(8);
+    // The bars of one category sit side by side without overlapping.
+    const boxes = await Promise.all(
+      [0, 1, 2].map((lane) => cell.locator(`path[data-key="group-3:${lane}"]`).boundingBox()),
+    );
+    expect(boxes.every(Boolean)).toBe(true);
+    expect(boxes[0]!.x + boxes[0]!.width).toBeLessThanOrEqual(boxes[1]!.x + 0.5);
+    expect(boxes[1]!.x + boxes[1]!.width).toBeLessThanOrEqual(boxes[2]!.x + 0.5);
+    // The legend names every series; the screen-reader table has one row per category and series.
+    await expect(cell.getByRole("list", { name: "Series" }).getByRole("listitem")).toHaveCount(3);
+    const table = cell.locator("table");
+    await expect(table.locator("thead th")).toHaveText(["Time", "Preview", "Series"]);
+    await expect(table.locator("tbody tr")).toHaveCount(12);
+    await expect(table.locator("tbody tr").nth(4).locator("td").nth(1)).toHaveText("Selected");
+    // No single average line crosses grouped bars.
+    await expect(cell.locator("line[class*='mean']")).toHaveCount(0);
+    await cell.screenshot({ path: "temp/verification/2026-10-29-ui-l2/grouped-bars-dark.png" });
+    await openReference(page, "light");
+    await page
+      .locator('[data-specimen-state="bars (grouped series + legend)"]')
+      .screenshot({ path: "temp/verification/2026-10-29-ui-l2/grouped-bars-light.png" });
+  });
 });

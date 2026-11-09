@@ -1,43 +1,20 @@
-import { Switch } from "../../../shared/ui/Switch";
-import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { useState, type ComponentType, type FormEvent, type ReactNode } from "react";
 import { prettyCwd } from "../../../shared/lib/paths";
 import { type Worktree } from "../model/worktrees";
-import { Modal } from "../../../shared/ui/Modal";
+import {
+  useConfirm,
+  type ConfirmRequest,
+  type ConfirmState,
+} from "../../../shared/ui/ConfirmDialog";
+import { useEffect, useRef } from "react";
 import {
   CircleAlert,
   CloudUpload,
   FileDiff,
   Folder,
   GitBranch,
-  Loader,
   MessageSquare,
 } from "../../../shared/ui/icons";
-
-const TONE = {
-  danger: "text-danger",
-  warn: "text-warning",
-  muted: "text-[var(--ui-text-muted)]",
-};
-
-function Consequence({
-  icon: Icon,
-  tone = "muted",
-  children,
-}: {
-  icon: ComponentType<{ className?: string }>;
-  tone?: keyof typeof TONE;
-  children: ReactNode;
-}) {
-  useLocale();
-  return (
-    <li className="flex items-start gap-2.5">
-      <Icon className={`mt-px size-3.5 shrink-0 ${TONE[tone]}`} />
-      <span className="min-w-0 flex-1">{children}</span>
-    </li>
-  );
-}
 
 export function DeleteWorktreeDialog({
   cwd,
@@ -55,133 +32,100 @@ export function DeleteWorktreeDialog({
   onDeleted: () => void;
 }) {
   useLocale();
-  const [busy, setBusy] = useState(false);
-  const [deleteSessions, setDeleteSessions] = useState(false);
-  const [error, setError] = useState<string>();
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (busy) return;
-    setBusy(true);
-    setError(undefined);
-    try {
-      // Confirmation covers the complete destructive action, including any
-      // local changes that appeared after the last status refresh.
-      await onRemove(cwd, tree.path, true, deleteSessions);
-      onDeleted();
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
+  const { confirmWith, renderDialog } = useConfirm();
+  const callbacks = useRef({ onClose, onDeleted });
+  const started = useRef(false);
+  callbacks.current = { onClose, onDeleted };
+  const request: ConfirmRequest = {
+    title: t("Delete worktree?"),
+    message: t("This permanently deletes the working copy and everything inside it."),
+    cancelLabel: t("Cancel"),
+    details: (
+      <p className="flex items-start gap-2 text-ui-caption text-(--ui-text-secondary)">
+        <span className="flex h-(--ui-leading-caption) shrink-0 items-center text-(--ui-text-muted)">
+          <Folder className="icon-sm" />
+        </span>
+        <span className="min-w-0 flex-1 break-all font-mono">{prettyCwd(tree.path)}</span>
+      </p>
+    ),
+    confirmLabel: ({ acknowledged }: ConfirmState) =>
+      sessionCount && acknowledged
+        ? t(sessionCount === 1 ? "Delete worktree and session" : "Delete worktree and sessions")
+        : t("Delete worktree"),
+    consequences: ({ acknowledged }: ConfirmState) => [
+      sessionCount > 0 && {
+        key: "sessions",
+        icon: MessageSquare,
+        tone: acknowledged ? "danger" : "neutral",
+        content: acknowledged
+          ? t("Sessions using this worktree: {p0}. They will be permanently deleted.", {
+              p0: sessionCount,
+            })
+          : t(
+              "Sessions using this worktree: {p0}. They will be kept. Select a branch or worktree to continue them.",
+              { p0: sessionCount },
+            ),
+      },
+      tree.dirty && {
+        key: "dirty",
+        icon: FileDiff,
+        tone: "warning",
+        content: t("All uncommitted and untracked changes here are discarded."),
+      },
+      tree.dirty == null && {
+        key: "unchecked",
+        icon: CircleAlert,
+        tone: "warning",
+        content: t("Changes could not be checked. Anything uncommitted here is discarded."),
+      },
+      {
+        key: "branch",
+        icon: GitBranch,
+        tone: "neutral",
+        content: tree.branch ? (
+          <>
+            <span className="font-medium text-content">{tree.branch}</span>
+            {t(" branch and its commits are kept.")}
+          </>
+        ) : (
+          t("The branch is kept.")
+        ),
+      },
+      !!tree.unpushed && {
+        key: "unpushed",
+        icon: CloudUpload,
+        tone: "neutral",
+        content:
+          tree.unpushed === 1
+            ? t("One commit has not been pushed. It stays on the branch.")
+            : t("{p0} commits have not been pushed. They stay on the branch.", {
+                p0: tree.unpushed,
+              }),
+      },
+    ],
+    acknowledge:
+      sessionCount > 0
+        ? { label: t("Also delete associated sessions"), control: "switch" as const }
+        : undefined,
+    // Confirmation covers the complete destructive action, including changes
+    // that appeared after the last status refresh.
+    onConfirm: ({ acknowledged }) => onRemove(cwd, tree.path, true, acknowledged),
   };
-  return (
-    <Modal
-      languageDomain="git"
-      title={t("Delete worktree?")}
-      size="sm"
-      onClose={() => {
-        if (!busy) onClose();
-      }}
-    >
-      <form
-        className="flex flex-col gap-3.5 p-4 text-[13px] leading-[1.5]"
-        onSubmit={(e) => void submit(e)}
-      >
-        <p className="text-[var(--ui-text-secondary)]">
-          {t("This permanently deletes the working copy and everything inside it.")}
-        </p>
-        <div className="rounded-lg border border-[var(--color-stroke)] bg-[var(--ui-surface)] p-3">
-          <p className="flex items-start gap-2.5 text-[12px] text-[var(--ui-text-secondary)]">
-            <Folder className="mt-px size-3.5 shrink-0 text-[var(--ui-text-muted)]" />
-            <span className="min-w-0 flex-1 break-all font-mono">{prettyCwd(tree.path)}</span>
-          </p>
-          <ul className="mt-2.5 flex flex-col gap-2 border-t border-[var(--color-stroke)] pt-2.5 text-[12.5px] text-[var(--ui-text-secondary)]">
-            {sessionCount > 0 && (
-              <Consequence icon={MessageSquare} tone={deleteSessions ? "danger" : "muted"}>
-                {deleteSessions
-                  ? t("Sessions using this worktree: {p0}. They will be permanently deleted.", {
-                      p0: sessionCount,
-                    })
-                  : t(
-                      "Sessions using this worktree: {p0}. They will be kept. Select a branch or worktree to continue them.",
-                      { p0: sessionCount },
-                    )}
-              </Consequence>
-            )}
-            {tree.dirty && (
-              <Consequence icon={FileDiff} tone="warn">
-                {t("All uncommitted and untracked changes here are discarded.")}
-              </Consequence>
-            )}
-            {tree.dirty == null && (
-              <Consequence icon={CircleAlert} tone="warn">
-                {t("Changes could not be checked. Anything uncommitted here is discarded.")}
-              </Consequence>
-            )}
-            <Consequence icon={GitBranch}>
-              {tree.branch ? (
-                <>
-                  <span className="font-medium text-content">{tree.branch}</span>
-                  {t(" branch and its commits are kept.")}
-                </>
-              ) : (
-                t("The branch is kept.")
-              )}
-            </Consequence>
-            {!!tree.unpushed && (
-              <Consequence icon={CloudUpload}>
-                {tree.unpushed === 1
-                  ? t("One commit has not been pushed. It stays on the branch.")
-                  : t("{p0} commits have not been pushed. They stay on the branch.", {
-                      p0: tree.unpushed,
-                    })}
-              </Consequence>
-            )}
-          </ul>
-        </div>
-        {sessionCount > 0 && (
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-stroke)] p-3">
-            <span
-              id="delete-worktree-sessions-label"
-              className="text-[12.5px] text-[var(--ui-text-secondary)]"
-            >
-              {t("Also delete associated sessions")}
-            </span>
-            <Switch
-              aria-labelledby="delete-worktree-sessions-label"
-              checked={deleteSessions}
-              disabled={busy}
-              onCheckedChange={setDeleteSessions}
-            />
-          </div>
-        )}
-        {error && (
-          <p role="alert" className="break-words text-[12.5px] text-danger">
-            {error}
-          </p>
-        )}
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" motion="none" type="button" disabled={busy} onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            variant="primary"
-            motion="none"
-            type="submit"
-            disabled={busy}
-            className="inline-flex items-center gap-1.5"
-          >
-            {busy && <Loader className="size-3.5 animate-spin" />}
-            {sessionCount && deleteSessions
-              ? t(
-                  sessionCount === 1
-                    ? "Delete worktree and session"
-                    : "Delete worktree and sessions",
-                )
-              : t("Delete worktree")}
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  );
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void confirmWith(request).then(
+      (result) => {
+        if (result) callbacks.current.onDeleted();
+        else callbacks.current.onClose();
+      },
+      (error: unknown) => {
+        console.error("Delete worktree confirmation failed", error);
+        callbacks.current.onClose();
+      },
+    );
+    // The dialog is opened once; renderDialog below supplies live request data.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return renderDialog(request);
 }

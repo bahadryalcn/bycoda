@@ -1,9 +1,10 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
-import { LoaderCircle } from "../../../shared/ui/icons";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Timeline } from "../../../shared/ui/Timeline";
+import { firstSentence } from "../model/taskStatusLine";
+import { ClampedMarkdown } from "./TaskStatusLine";
 import {
-  TASK_INPUT_REQUIRED,
   canTakeOverBlockedTask,
   taskRequiresInstructions,
   type HostTask,
@@ -35,40 +36,16 @@ export function TaskAttemptHistory({
   isOpeningSession?: (sessionId: string) => boolean;
 }) {
   useLocale();
-  const stop = repairStopLabel(task);
-  if (!stop && !task.attemptHistory?.length) return null;
+  if (!task.attemptHistory?.length) return null;
+  // The current stop reason lives in the detail panel's status alert.
   return (
-    <section
-      aria-label={t("Attempt history")}
-      className="space-y-2 border-t border-(--ui-tone-neutral-border) pt-3"
-    >
-      {stop ? (
-        <div className="space-y-1 text-[12px] text-(--ui-tone-warning-fg)">
-          <p className="font-medium">{stop}</p>
-          <p className="whitespace-pre-wrap break-words">
-            {canTakeOverBlockedTask(task)
-              ? t(
-                  "A fresh AI session will inspect the previous attempts and continue the retained work automatically when capacity is available.",
-                )
-              : task.blockedTakeover && task.status !== "blocked"
-                ? t("The recovery agent must pass the original checks and review before delivery.")
-                : (task.repairStop?.message ??
-                  t("Inspect the previous worker and review before retrying."))}
-          </p>
-          <p className="text-(--ui-text-secondary)">
-            {taskRequiresInstructions(task) ? `${TASK_INPUT_REQUIRED} ` : ""}
-            {t(
-              "Dependent tasks stay queued until this task passes its checks and is delivered. Independent queued tasks can continue.",
-            )}
-          </p>
-        </div>
-      ) : null}
+    <section aria-label={t("Attempt history")} className="grid min-w-0 gap-2">
       {task.attemptHistory?.length ? (
         <>
-          <h3 className="text-[12px] font-medium text-(--ui-text-secondary)">
+          <SectionLabel as="h3" count={task.attemptHistory.length}>
             {t("Attempt outcomes")}
-          </h3>
-          <p className="text-[11px] text-(--ui-text-secondary)">
+          </SectionLabel>
+          <p className="text-ui-micro text-(--ui-text-muted)">
             {t(
               "Worker summaries describe what the agent reported. The review below records verification.",
             )}
@@ -88,30 +65,18 @@ export function TaskAttemptHistory({
               ].join(" · "),
               tone: entry.verdict === "pass" ? ("success" as const) : ("danger" as const),
               meta: new Date(entry.at).toLocaleString(getLocale()),
-              detail: (
-                <>
-                  <p className="whitespace-pre-wrap break-words text-(--ui-text-secondary)">
-                    {entry.workerSummary}
-                  </p>
-                  <p className="mt-2 whitespace-pre-wrap break-words text-(--ui-text-secondary)">
-                    {t("Review: ")}
-                    {entry.note}
-                  </p>
-                </>
-              ),
+              detail: <AttemptDetail summary={entry.workerSummary} note={entry.note} />,
               actions: (
-                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-(--ui-tone-info-fg)">
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-ui-micro text-(--ui-tone-info-fg)">
                   {entry.workerSessionId ? (
                     <Button
                       variant="ghost"
                       type="button"
 
                       disabled={isOpeningSession(entry.workerSessionId)}
+                      loading={isOpeningSession(entry.workerSessionId)}
                       onClick={() => onOpenSession(entry.workerSessionId!)}
                     >
-                      {isOpeningSession(entry.workerSessionId) ? (
-                        <LoaderCircle className="size-3 animate-spin" />
-                      ) : null}
                       {t("Open worker session")}
                     </Button>
                   ) : null}
@@ -121,11 +86,9 @@ export function TaskAttemptHistory({
                       type="button"
 
                       disabled={isOpeningSession(entry.reviewerSessionId)}
+                      loading={isOpeningSession(entry.reviewerSessionId)}
                       onClick={() => onOpenSession(entry.reviewerSessionId)}
                     >
-                      {isOpeningSession(entry.reviewerSessionId) ? (
-                        <LoaderCircle className="size-3 animate-spin" />
-                      ) : null}
                       {t("Open review session")}
                     </Button>
                   ) : null}
@@ -136,5 +99,25 @@ export function TaskAttemptHistory({
         </>
       ) : null}
     </section>
+  );
+}
+
+/** A worker's markdown summary and the review note, short until expanded. */
+function AttemptDetail({ summary, note }: { summary: string; note: string }) {
+  useLocale();
+  const shortNote = firstSentence(note, 160) ?? "";
+  const noteLine = (text: string) => (
+    <p className="mt-1.5 whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
+      {t("Review: ")}
+      {text}
+    </p>
+  );
+  return (
+    <ClampedMarkdown
+      text={summary.trim() || t("No summary.")}
+      long={shortNote !== note.replace(/\s+/g, " ").trim()}
+      collapsedExtra={noteLine(shortNote)}
+      extra={noteLine(note)}
+    />
   );
 }

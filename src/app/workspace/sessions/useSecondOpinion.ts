@@ -1,9 +1,25 @@
 import { type Dispatch, type MutableRefObject, type SetStateAction, useCallback } from "react";
-import { formatSessionTitle, newSession, sessionWorkCwd, type Block, type ModelTarget, type Session } from "../../../features/sessions/model/session";
+import {
+  formatSessionTitle,
+  newSession,
+  sessionWorkCwd,
+  type Block,
+  type ModelTarget,
+  type Session,
+} from "../../../features/sessions/model/session";
 import { type setSessions } from "../../../features/sessions/model/sessionsStore";
-import { leafIds, newTab, splitPane, type WorkspaceTab } from "../../../features/workspace/model/layout";
+import {
+  leafIds,
+  newTab,
+  splitPane,
+  type WorkspaceTab,
+} from "../../../features/workspace/model/layout";
 import { type Submit } from "../helpers/types";
-import { SECOND_OPINION_TITLE, buildSecondOpinionRequest, harnessForTurn } from "../../../features/sessions/model/secondOpinion";
+import {
+  SECOND_OPINION_TITLE,
+  buildSecondOpinionRequest,
+  harnessForTurn,
+} from "../../../features/sessions/model/secondOpinion";
 import { mergeModelSettings, resolveModel } from "../../../features/sessions/model/models";
 export interface SecondOpinionDeps {
   sessionsRef: MutableRefObject<Session[]>;

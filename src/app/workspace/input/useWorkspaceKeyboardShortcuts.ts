@@ -11,6 +11,7 @@ import {
   zoomOutUiScale,
 } from "../../../features/settings/model/uiScale";
 import { resolveZoomKeybinding } from "../../../features/settings/model/zoomKeybinding";
+import { installUiScaleWheel } from "../../../features/settings/model/uiScaleWheel";
 import {
   LAYOUT_SHORTCUTS,
   SETTINGS_SHORTCUTS,
@@ -258,8 +259,10 @@ export function useWorkspaceKeyboardShortcuts({
         else if (cmd === "split-down") run("split-down", () => a.onSplit("down"));
         else if (cmd === "new-terminal") run("new-terminal", a.onNewTerminal);
         else if (cmd === "new-terminal-tab") run("new-terminal-tab", a.onNewTerminalTab);
-        else if (cmd === "toggle-terminal") run("toggle-terminal", a.onToggleProjectTerminal);
-        else if (cmd === "prev-session") run("prev-session", () => a.onNavigateSessionList(-1));
+        // Holding the chord must not flip the dock on every key repeat.
+        else if (cmd === "toggle-terminal") {
+          if (!e.repeat) run("toggle-terminal", a.onToggleProjectTerminal);
+        } else if (cmd === "prev-session") run("prev-session", () => a.onNavigateSessionList(-1));
         else if (cmd === "next-session") run("next-session", () => a.onNavigateSessionList(1));
         else if (cmd === "prev-session-in-tab")
           run("prev-session-in-tab", () => a.onNavigateSessionList(-1, true));
@@ -338,4 +341,5 @@ export function useWorkspaceKeyboardShortcuts({
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [run]);
+  useEffect(() => installUiScaleWheel(window), []);
 }

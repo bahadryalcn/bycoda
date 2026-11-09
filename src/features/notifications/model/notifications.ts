@@ -1,6 +1,7 @@
 import { subscribePreferenceChanges } from "../../../shared/lib/storedSetting";
 import { invoke } from "@tauri-apps/api/core";
 import { projectName } from "../../../shared/lib/paths";
+import { t } from "../../../shared/i18n";
 import type { Session } from "../../sessions/model/session";
 import { loadSoundsEnabled, playCue } from "../../settings/model/sounds";
 import { isProjectLocked } from "../../group-lock/model/groupLock";
@@ -17,6 +18,7 @@ import {
 import { loadNotificationEvents } from "./notificationEvents";
 import { allowsProjectNotification, type NotificationSubject } from "./notificationPreferences";
 import { knownNotificationProject } from "./notificationProjects";
+import { reportAgentEvent } from "./serverRuntime";
 
 const KEY = "bycoda.notifications";
 
@@ -24,12 +26,18 @@ const KEY = "bycoda.notifications";
 export const NOTIFICATIONS_DEFAULT = false;
 
 export const NOTIFICATIONS_CHANGE_EVENT = "bycoda:notifications-change";
-export const subscribeNotificationsEnabled = (onChange: () => void) => subscribePreferenceChanges([KEY], NOTIFICATIONS_CHANGE_EVENT, onChange);
+export const subscribeNotificationsEnabled = (onChange: () => void) =>
+  subscribePreferenceChanges([KEY], NOTIFICATIONS_CHANGE_EVENT, onChange);
 
 /** Rust emits this with the session id when a notification is clicked. */
 export const NOTIFICATION_CLICK_EVENT = "bycoda:notification-click";
 
-export type NotificationPermission = "prompt" | "granted" | "denied" | "unsupported";
+export type NotificationPermission =
+  | "prompt"
+  | "granted"
+  | "denied"
+  | "unsupported"
+  | "unavailable";
 
 export function loadNotificationsEnabled(): boolean {
   try {
@@ -41,17 +49,25 @@ export function loadNotificationsEnabled(): boolean {
   }
 }
 
-export function saveNotificationsEnabled(value: boolean) {
+export function saveNotificationsEnabled(value: boolean): boolean {
   try {
     localStorage.setItem(KEY, value ? "1" : "0");
   } catch {
-    // private mode / quota
+    return false;
   }
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent<boolean>(NOTIFICATIONS_CHANGE_EVENT, { detail: value }));
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent<boolean>(NOTIFICATIONS_CHANGE_EVENT, { detail: value }));
+  return true;
 }
 
 let permission: NotificationPermission = "prompt";
+let permissionEpoch = 0;
+
+function permissionResult(value: unknown): NotificationPermission {
+  return value === "prompt" || value === "granted" || value === "denied" || value === "unsupported"
+    ? value
+    : "unavailable";
+}
 
 /** Last permission the OS reported; refreshed by the probes below. */
 export function cachedNotificationPermission(): NotificationPermission {
@@ -59,21 +75,29 @@ export function cachedNotificationPermission(): NotificationPermission {
 }
 
 export async function probeNotificationPermission(): Promise<NotificationPermission> {
+  const epoch = ++permissionEpoch;
+  let result: NotificationPermission;
   try {
-    permission = await invoke<NotificationPermission>("notification_permission");
+    result = permissionResult(await invoke<NotificationPermission>("notification_permission"));
   } catch {
-    permission = "unsupported";
+    result = "unavailable";
   }
+  if (epoch === permissionEpoch) permission = result;
   return permission;
 }
 
 /** Shows the OS prompt when undecided; otherwise reports the current state. */
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
+  const epoch = ++permissionEpoch;
+  let result: NotificationPermission;
   try {
-    permission = await invoke<NotificationPermission>("request_notification_permission");
+    result = permissionResult(
+      await invoke<NotificationPermission>("request_notification_permission"),
+    );
   } catch {
-    permission = "unsupported";
+    result = "unavailable";
   }
+  if (epoch === permissionEpoch) permission = result;
   return permission;
 }
 
@@ -124,22 +148,20 @@ function markUnseen(sessionId: string) {
 }
 
 /**
- * A banner only earns its place while the user is looking elsewhere: another
- * app, or another session. The transcript already shows the change on the
- * session that is on screen.
+ * OS banners are for when the user is in another app. In-app attention
+ * indicators remain independent of desktop delivery.
  */
 export function shouldNotify({
   enabled,
   permission,
   windowFocused,
-  sessionVisible,
 }: {
   enabled: boolean;
   permission: NotificationPermission;
   windowFocused: boolean;
   sessionVisible: boolean;
 }): boolean {
-  if (!enabled || (windowFocused && sessionVisible)) return false;
+  if (!enabled || windowFocused) return false;
   return permission === "granted" || permission === "prompt";
 }
 
@@ -220,15 +242,16 @@ export function setNotificationBatchDelay(ms: number) {
 const batcher = createNotificationBatcher(deliver, () => batchDelayMs);
 
 async function deliver(payload: NotificationPayload): Promise<boolean> {
+  // Recheck after batching: the owner may have returned during the delay.
+  if (windowFocused) return false;
   try {
-    await invoke("show_notification", {
+    return await invoke<boolean>("show_notification", {
       sessionId: payload.sessionId,
       title: payload.title,
       subtitle: payload.subtitle,
       body: payload.body,
       sound: loadSoundsEnabled(),
     });
-    return true;
   } catch {
     return false;
   }
@@ -261,7 +284,82 @@ export const BACKGROUND_NOTIFICATION_TARGETS = {
   tasks: "background:tasks",
   automations: "background:automations",
   summary: "background:summary",
+  assistant: "background:assistant",
+  /** Items of the signed-in account's feed (new device, announcements). */
+  account: "background:account",
 } as const;
+
+/** Assistant messages keep the same native delivery, mute and privacy gates. */
+export async function notifyAssistant(input: {
+  title: string;
+  body: string;
+  kind: AttentionKind;
+  projectPath?: string;
+  projectPaths?: string[];
+  occurredAt: number;
+}): Promise<boolean> {
+  if (
+    !shouldNotify({
+      enabled: loadNotificationsEnabled() && loadNotificationEvents()[input.kind],
+      permission,
+      windowFocused,
+      sessionVisible: false,
+    })
+  )
+    return false;
+  for (const path of new Set([
+    ...(input.projectPaths ?? []),
+    ...(input.projectPath ? [input.projectPath] : []),
+  ])) {
+    const project = knownNotificationProject(path);
+    if (
+      !project ||
+      !allowsProjectNotification({
+        projectId: project.id,
+        category: EVENT_CATEGORY[input.kind],
+        occurredAt: input.occurredAt,
+      })
+    )
+      return false;
+    // A queued event cannot reveal a project that was locked after creation.
+    if (isProjectLocked(path)) return false;
+  }
+  return deliver({
+    sessionId: BACKGROUND_NOTIFICATION_TARGETS.assistant,
+    kind: input.kind,
+    title: input.title,
+    subtitle: "",
+    body: input.body,
+    projectName: "",
+    sessionTitle: "",
+  });
+}
+
+/**
+ * One item of the account's notification feed, announced by the desktop. The global switch and
+ * the unfocused-window rule apply like for every other banner; the per-event OS channel and the
+ * quiet hours were already applied by `planFeed`.
+ */
+export async function notifyServerItem(item: { title: string; body: string }): Promise<boolean> {
+  if (
+    !shouldNotify({
+      enabled: loadNotificationsEnabled(),
+      permission,
+      windowFocused,
+      sessionVisible: false,
+    })
+  )
+    return false;
+  return deliver({
+    sessionId: BACKGROUND_NOTIFICATION_TARGETS.account,
+    kind: "finished",
+    title: item.title,
+    subtitle: "",
+    body: item.body,
+    projectName: "",
+    sessionTitle: "",
+  });
+}
 
 /** The daily summary of background work. The global switch applies; it has no
  * event setting of its own beyond the summary's own toggle. */
@@ -278,7 +376,7 @@ export async function notifyDailySummary(headline: string): Promise<boolean> {
   return deliver({
     sessionId: BACKGROUND_NOTIFICATION_TARGETS.summary,
     kind: "finished",
-    title: "Daily summary",
+    title: t("Daily summary"),
     subtitle: "",
     body: headline,
     projectName: "",
@@ -288,11 +386,14 @@ export async function notifyDailySummary(headline: string): Promise<boolean> {
 
 /**
  * A task or background automation on some machine changed in a way the owner
- * should hear about. Sent whether or not the window is focused, since no view
- * shows it unasked; the global switch and the event's own setting still apply.
+ * should hear about. Desktop delivery requires an unfocused app; the global
+ * switch and the event's own setting still apply.
  */
 export async function notifyBackground(transition: {
-  target: Exclude<keyof typeof BACKGROUND_NOTIFICATION_TARGETS, "summary">;
+  target: Exclude<
+    keyof typeof BACKGROUND_NOTIFICATION_TARGETS,
+    "summary" | "assistant" | "account"
+  >;
   kind: AttentionKind;
   message: string;
 }): Promise<boolean> {
@@ -343,13 +444,13 @@ const announcedIssues = new Map<string, string>();
 export async function announceSessionIssue(
   session: Session,
   issue: "retrying" | "failed",
-  _sessionVisible: boolean,
+  sessionVisible: boolean,
 ): Promise<void> {
   const key = `${turnKey(session)}:${issue}`;
   if (announcedIssues.get(session.id) === key) return;
   if (announcedIssues.size >= 1000) announcedIssues.delete(announcedIssues.keys().next().value!);
   announcedIssues.set(session.id, key);
-  await notifySession(session, "failed", false);
+  await notifySession(session, "failed", sessionVisible);
 }
 
 export async function announceSessionFinished(
@@ -389,6 +490,15 @@ async function notifyProjectSession(
   subject: NotificationSubject,
 ): Promise<boolean> {
   const kind = attentionKind(event);
+  // The phone hears about it when the owner is away and the project allows notifications. Only
+  // the event kind and a hash of the turn leave this computer; see serverRuntime.
+  if (!windowFocused && allowsProjectNotification(subject)) {
+    reportAgentEvent(
+      kind,
+      [session.id, turnKey(session), JSON.stringify(event)],
+      subject.occurredAt,
+    );
+  }
   const payload = decideNotification(
     session,
     kind,
@@ -406,6 +516,8 @@ async function notifyProjectSession(
     },
   );
   if (!payload) return false;
+  // Preserve unread attention for other chats even when foreground delivery
+  // is suppressed by deliver(). The active chat was excluded above.
   if (kind !== "input") markUnseen(session.id);
   return batcher.enqueue(isProjectLocked(session.cwd) ? maskLockedNotification(payload) : payload);
 }

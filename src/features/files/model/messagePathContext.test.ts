@@ -51,6 +51,37 @@ describe("message path context", () => {
     );
   });
 
+  it.each(["html", "pdf", "docx"])(
+    "finds a generated %s in a project-prefixed folder",
+    async (extension) => {
+      const cwd = "G:/Projects/Firisbe/UI DEVELOPMENTS/ui-tests";
+      const name = `Firisbe-Observer-Yatirimci-Sunumu.${extension}`;
+      const expected = `${cwd}/investor-deck/${name}`;
+      const text = `Sunumu hazırladım; hepsi \`ui-tests/investor-deck/\` klasöründe:\n- \`${name}\``;
+      statFiles.mockImplementation(async (paths: string[]) =>
+        paths.map((path) => ({ path, mtimeMs: path === expected ? 1 : null })),
+      );
+      await expect(resolveMessageFileReference(`${cwd}/${name}`, cwd, text)).resolves.toBe(
+        expected,
+      );
+      expect(statFiles).toHaveBeenCalledWith(expect.arrayContaining([expected]));
+    },
+  );
+
+  it("preserves a real nested folder with the same name as the project", async () => {
+    const cwd = "/repo/ui-tests";
+    const expected = `${cwd}/ui-tests/investor-deck/report.html`;
+    statFiles.mockImplementation(async (paths: string[]) =>
+      paths.map((path) => ({
+        path,
+        mtimeMs: path.endsWith("/report.html") && path !== `${cwd}/report.html` ? 1 : null,
+      })),
+    );
+    await expect(
+      resolveMessageFileReference(`${cwd}/report.html`, cwd, "`ui-tests/investor-deck/`"),
+    ).resolves.toBe(expected);
+  });
+
   it("returns the original path when nothing exists", async () => {
     statFiles.mockImplementation(async (paths: string[]) =>
       paths.map((path) => ({ path, mtimeMs: null })),

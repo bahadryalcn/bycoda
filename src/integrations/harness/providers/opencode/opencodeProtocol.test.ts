@@ -10,6 +10,7 @@ import {
 import {
   assertSupportedOpenCodeVersion,
   buildOpenCodePermissionRules,
+  openCodeTurnRules,
   compareSemver,
   sameDirectory,
   rememberBounded,
@@ -152,6 +153,21 @@ describe("parseOpenCodeVersion / compareSemver", () => {
 });
 
 describe("buildOpenCodePermissionRules", () => {
+  it("denies OpenCode's own subagents when the owner's selection must be held", () => {
+    const deny = (permission: string) => ({ permission, pattern: "*", action: "deny" });
+    for (const mode of ["full-access", "supervised"] as const) {
+      const rules = openCodeTurnRules({
+        runtimeMode: mode,
+        modelSettings: { nativeSubagents: "off" },
+      });
+      // Last matching rule wins, so the denies follow every allow.
+      expect(rules.slice(-2)).toEqual([deny("task"), deny("subagent")]);
+    }
+    expect(openCodeTurnRules({ runtimeMode: "full-access" })).toEqual(
+      buildOpenCodePermissionRules("full-access"),
+    );
+  });
+
   it("allows everything in full-access", () => {
     expect(buildOpenCodePermissionRules("full-access")).toEqual([
       { permission: "*", pattern: "*", action: "allow" },

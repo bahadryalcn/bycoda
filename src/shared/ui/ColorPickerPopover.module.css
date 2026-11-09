@@ -1,0 +1,157 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+/* Swatch and field placement is external layout, so a caller utility can resize or move it.
+   Swatch colours are user data; every other colour here comes from the shared semantic roles. */
+@layer components {
+  .swatchRow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.25rem;
+    padding-inline: 0.125rem;
+  }
+  .swatch {
+    display: grid;
+    flex: none;
+    inline-size: var(--ui-color-swatch-target);
+    block-size: var(--ui-color-swatch-target);
+    place-items: center;
+  }
+  .hexField {
+    flex: 1;
+    min-inline-size: 0;
+  }
+}
+
+.swatch {
+  padding: 0;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  cursor: pointer;
+}
+.dot {
+  position: relative;
+  display: grid;
+  inline-size: var(--ui-icon-sm);
+  block-size: var(--ui-icon-sm);
+  place-items: center;
+  overflow: hidden;
+  border-radius: 9999px;
+}
+/* The chosen swatch is a ring and a check on top of its colour, so selection never depends on hue.
+   The ring is an outline outside the dot, so it is never clipped with the glyph. */
+.swatch:is([aria-pressed="true"], [data-selected]) .dot {
+  outline: 2px solid var(--color-content);
+  outline-offset: 1px;
+}
+.glyph {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  inline-size: var(--ui-icon-xs);
+  block-size: var(--ui-icon-xs);
+  color: var(--color-on-solid);
+  filter: drop-shadow(0 0 1px var(--color-scrim));
+  pointer-events: none;
+}
+.swatch:focus-visible {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: 1px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .swatch:hover:not([aria-pressed="true"], [data-selected]) .dot {
+    outline: 1px solid var(--ui-control-border);
+    outline-offset: 1px;
+  }
+}
+
+/* The custom-colour spectrum is the hue contract of the picker, not a UI colour. */
+.spectrum {
+  background: conic-gradient(
+    var(--palette-hexf00),
+    var(--palette-hexff0),
+    var(--palette-hex0f0),
+    var(--palette-hex0ff),
+    var(--palette-hex00f),
+    var(--palette-hexf0f),
+    var(--palette-hexf00)
+  );
+}
+
+.picker {
+  margin-block-start: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--color-stroke);
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface-muted);
+}
+.plane,
+.hue {
+  position: relative;
+  inline-size: 100%;
+  touch-action: none;
+}
+.plane {
+  block-size: 7rem;
+  border-radius: calc(var(--ui-control-radius) - 2px);
+  cursor: crosshair;
+}
+.hue {
+  block-size: 0.75rem;
+  margin-block-start: 0.5rem;
+  border-radius: 9999px;
+  cursor: ew-resize;
+}
+.plane:focus-visible,
+.hue:focus-visible {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: 2px;
+}
+/* A handle is a white-edged disc over any colour; the value fill is the user's colour. */
+.handle {
+  position: absolute;
+  inline-size: var(--ui-icon-sm);
+  block-size: var(--ui-icon-sm);
+  border: 2px solid var(--color-on-solid);
+  border-radius: 9999px;
+  box-shadow: var(--ui-control-thumb-shadow);
+  pointer-events: none;
+  translate: -50% -50%;
+}
+.hue .handle {
+  top: 50%;
+}
+.readout {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block-start: 0.5rem;
+}
+.preview {
+  flex: none;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border: 1px solid var(--color-stroke);
+  border-radius: calc(var(--ui-control-radius) - 2px);
+}
+.hexInput {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* State contract: disabled dims the surfaces; read-only keeps full ink but drops the interactive cursor. */
+.picker[data-disabled] :is(.plane, .hue, .preview) {
+  cursor: not-allowed;
+  opacity: var(--ui-disabled-opacity, 0.5);
+}
+.picker[data-readonly] :is(.plane, .hue) {
+  cursor: default;
+}
+/* A long or wrapped readout never pushes the preview out of the picker. */
+.hexInput {
+  min-inline-size: 0;
+  text-overflow: ellipsis;
+}

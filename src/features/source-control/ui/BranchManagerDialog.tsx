@@ -4,9 +4,14 @@ import { SearchInput } from "../../../shared/ui/SearchInput";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useState, type FormEvent } from "react";
-import { ask } from "@tauri-apps/plugin-dialog";
-import { Check, GitBranch, Plus } from "../../../shared/ui/icons";
+import { useConfirm } from "../../../shared/ui/ConfirmDialog";
+import { Check, GitBranch, MoreHorizontal, Plus } from "../../../shared/ui/icons";
+import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import {
   gitCheckout,
   gitCreateBranch,
@@ -19,7 +24,6 @@ import {
 } from "../../../platform/tauri/fs";
 import { useProjectBranchesState } from "../hooks/useProjectBranches";
 import { deleteLocalBranch } from "../model/deleteBranch";
-import { appName } from "../../../shared/lib/appName";
 import { useGitPanelState, withGitOperation } from "../model/gitPanelState";
 
 type Props = {
@@ -51,6 +55,11 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Editing | null>(null);
   const [draft, setDraft] = useState("");
+  const [menu, setMenu] = useState<{
+    branch: GitBranchInfo;
+    anchor: HTMLElement;
+  } | null>(null);
+  const { confirm, dialog: confirmElement } = useConfirm();
   const current = branches?.detached ? null : (branches?.current ?? null);
 
   const needle = query.trim().toLowerCase();
@@ -83,10 +92,14 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
   const removeRemote = async (branch: GitBranchInfo) => {
     const { remote, name } = branch;
     if (!remote) return;
-    const confirmed = await ask(
-      `Delete branch ${name} on ${remote}? This removes it from the remote for everyone who uses it.`,
-      { title: appName(), kind: "warning", okLabel: "Delete" },
-    );
+    const confirmed = await confirm({
+      title: t("Delete"),
+      message: t(
+        "Delete branch {p0} on {p1}? This removes it from the remote for everyone who uses it.",
+        { p0: name, p1: remote },
+      ),
+      confirmLabel: t("Delete"),
+    });
     if (!confirmed) return;
     await run(() => gitDeleteRemoteBranch(cwd, remote, name));
   };
@@ -170,21 +183,22 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
     return (
       <li key={reference} className="flex h-8 items-center gap-1 px-1">
         {isCurrent ? (
-          <Check className="size-3.5 shrink-0" strokeWidth={1.75} />
+          <Check className="icon-sm shrink-0" strokeWidth={1.75} />
         ) : (
           <GitBranch
-            className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]"
+            className="icon-sm shrink-0 text-[var(--ui-text-secondary)]"
             strokeWidth={1.75}
           />
         )}
-        <span
-          title={reference}
-          className={`min-w-0 flex-1 truncate text-[13px] text-content ${
-            isCurrent ? "font-medium" : ""
-          }`}
-        >
-          {reference}
-        </span>
+        <OverflowTooltip label={reference}>
+          <span
+            className={`min-w-0 flex-1 truncate text-ui-secondary text-content ${
+              isCurrent ? "font-medium" : ""
+            }`}
+          >
+            {reference}
+          </span>
+        </OverflowTooltip>
         {isCurrent ? null : (
           <Button
             size="sm"
@@ -192,7 +206,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
             motion="none"
             type="button"
             disabled={busy}
-            title={
+            tooltip={
               branch.remote
                 ? t("Check out {p0} as a local branch", { p0: reference })
                 : t("Switch to {p0}", { p0: reference })
@@ -203,84 +217,80 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
             {t("Checkout")}
           </Button>
         )}
-        {current && !isCurrent ? (
-          <>
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={busy}
-              title={t("Merge {p0} into {p1}", { p0: reference, p1: current })}
-              onClick={() => void run(() => gitMerge(cwd, reference))}
-              className={ACTION}
-            >
-              {t("Merge")}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={busy}
-              title={t("Rebase {p0} onto {p1}", { p0: current, p1: reference })}
-              onClick={() => void run(() => gitRebase(cwd, reference))}
-              className={ACTION}
-            >
-              {t("Rebase")}
-            </Button>
-          </>
-        ) : null}
-        {branch.remote ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            motion="none"
-            type="button"
-            disabled={busy}
-            title={t("Delete {p0} from {p1}", { p0: branch.name, p1: branch.remote })}
-            onClick={() => void removeRemote(branch)}
-            className={ACTION}
-          >
-            {t("Delete")}
-          </Button>
-        ) : (
-          <>
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={busy}
-              onClick={() => startEditing({ kind: "rename", from: branch.name })}
-              className={ACTION}
-            >
-              {t("Rename")}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={busy || isCurrent}
-              title={isCurrent ? t("Cannot delete the current branch") : undefined}
-              onClick={() => void run(() => deleteLocalBranch(cwd, branch.name))}
-              className={ACTION}
-            >
-              {t("Delete")}
-            </Button>
-          </>
-        )}
+        <Button
+          iconOnly
+          size="sm"
+          variant="ghost"
+          motion="none"
+          type="button"
+          label={t("More actions")}
+          aria-haspopup="menu"
+          aria-expanded={menu?.branch === branch}
+          disabled={busy}
+          onClick={(event) =>
+            setMenu(menu?.branch === branch ? null : { branch, anchor: event.currentTarget })
+          }
+        >
+          <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
+        </Button>
       </li>
     );
+  };
+
+  const menuItems = (branch: GitBranchInfo): DropdownMenuItem[] => {
+    const reference = branchRef(branch);
+    const isCurrent = !branch.remote && branch.name === current;
+    const items: DropdownMenuItem[] = [];
+    if (current && !isCurrent) {
+      items.push(
+        {
+          kind: "item",
+          id: "merge",
+          label: t("Merge"),
+          title: t("Merge {p0} into {p1}", { p0: reference, p1: current }),
+        },
+        {
+          kind: "item",
+          id: "rebase",
+          label: t("Rebase"),
+          title: t("Rebase {p0} onto {p1}", { p0: current, p1: reference }),
+        },
+      );
+    }
+    if (!branch.remote) items.push({ kind: "item", id: "rename", label: t("Rename") });
+    if (items.length) items.push({ kind: "sep" });
+    items.push({
+      kind: "item",
+      id: "delete",
+      label: t("Delete"),
+      danger: true,
+      disabled: isCurrent,
+      title: branch.remote
+        ? t("Delete {p0} from {p1}", { p0: branch.name, p1: branch.remote })
+        : isCurrent
+          ? t("Cannot delete the current branch")
+          : undefined,
+    });
+    return items;
+  };
+
+  const pickMenu = (id: string) => {
+    if (!menu) return;
+    const { branch } = menu;
+    const reference = branchRef(branch);
+    if (id === "merge") void run(() => gitMerge(cwd, reference));
+    else if (id === "rebase") void run(() => gitRebase(cwd, reference));
+    else if (id === "rename") startEditing({ kind: "rename", from: branch.name });
+    else if (id === "delete") {
+      if (branch.remote) void removeRemote(branch);
+      else void run(() => deleteLocalBranch(cwd, branch.name));
+    }
   };
 
   const section = (title: string, rows: GitBranchInfo[]) =>
     rows.length === 0 ? null : (
       <li key={title}>
-        <h3 className="px-1 pt-2 pb-1 text-(length:--ui-font-caption) font-semibold text-(--ui-text-secondary)">
-          {title}
-        </h3>
+        <SectionLabel className="px-1 pt-2 pb-1">{title}</SectionLabel>
         <ul>{rows.map(renderRow)}</ul>
       </li>
     );
@@ -300,7 +310,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
         if (!busy) onClose();
       }}
     >
-      <div className="flex min-h-0 flex-col gap-2 p-3">
+      <div className="flex min-h-0 flex-col gap-2">
         <div className="flex items-center gap-2">
           <SearchInput
             appearance="field"
@@ -323,30 +333,39 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
             onClick={() => startEditing({ kind: "create" })}
             className="inline-flex shrink-0 items-center gap-1"
           >
-            <Plus className="size-3.5" strokeWidth={1.75} />
+            <Plus className="icon-sm" strokeWidth={1.75} />
             {t("New Branch…")}
           </Button>
         </div>
         {editing?.kind === "create" ? renderForm("New branch name", "Create") : null}
         {error ? (
-          <p
-            role="alert"
-            className="max-h-24 overflow-y-auto whitespace-pre-wrap text-[11px] leading-4 text-danger"
-          >
+          <InlineError className="max-h-24 overflow-y-auto whitespace-pre-wrap">
             {error}
-          </p>
+          </InlineError>
         ) : null}
         {listed.length === 0 ? (
-          <p className="px-1 py-2 text-[12px] text-(--ui-text-secondary)">
-            {needle ? t("No branches match") : t("No branches")}
-          </p>
+          <EmptyState
+            size="inline"
+            kind={needle ? "filtered" : "empty"}
+            description={needle ? t("No branches match") : t("No branches")}
+          />
         ) : (
           <ul className="min-h-0 overflow-y-auto">
-            {section("Local", localRows)}
-            {section("Remote", remoteRows)}
+            {section(t("Local"), localRows)}
+            {section(t("Remote"), remoteRows)}
           </ul>
         )}
       </div>
+      {confirmElement}
+      {menu ? (
+        <DropdownMenu
+          anchor={menu.anchor}
+          label={t("Branch actions")}
+          items={menuItems(menu.branch)}
+          onPick={pickMenu}
+          onClose={() => setMenu(null)}
+        />
+      ) : null}
     </Modal>
   );
 }

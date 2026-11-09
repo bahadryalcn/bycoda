@@ -3,13 +3,19 @@ import type { DesktopLiveHandlers } from "../../../features/connections/model/de
 import { isRemoteProjectPath, sameProjectPath } from "../../../features/projects/model/recents";
 import { getSession } from "../../../features/sessions/data/sessionStore";
 import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
+import {
+  approvalRequestDispatchStarted,
+  captureApprovalRequest,
+} from "../../../features/sessions/model/approvalIntents";
 import { orchestrator } from "../../../features/orchestration/model/orchestration";
 import type { useHistorySessionDelete } from "../sessions/useHistorySessionDelete";
 
 export interface DesktopLiveHandlersDeps {
   desktopLiveHandlers: MutableRefObject<DesktopLiveHandlers>;
-  onDeleteHistorySessionNow: ReturnType<typeof useHistorySessionDelete>["onDeleteHistorySessionNow"];
-  onStop: (sessionId: string) => void;
+  onDeleteHistorySessionNow: ReturnType<
+    typeof useHistorySessionDelete
+  >["onDeleteHistorySessionNow"];
+  onStop: (sessionId: string, managed?: boolean, current?: () => boolean) => void;
   onApproval: DesktopLiveHandlers["approve"];
   onQuestionReply: DesktopLiveHandlers["answer"];
 }
@@ -33,7 +39,9 @@ export function useDesktopLiveHandlers({
       if (!(await onDeleteHistorySessionNow(sessionId, true)))
         throw new Error("The conversation could not be deleted");
     },
-    stop: (sessionId) => onStop(sessionId),
+    stop: (sessionId, current) => onStop(sessionId, false, current),
+    captureApproval: captureApprovalRequest,
+    approvalDispatchStarted: approvalRequestDispatchStarted,
     approve: onApproval,
     answer: onQuestionReply,
   };

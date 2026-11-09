@@ -3,7 +3,6 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Shield } from "../../../shared/ui/icons";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { useGroupLock } from "../hooks/useGroupLock";
 import { getGroupLockView, verifyLockPassword } from "../model/groupLock";
 import { ForgotLockPasswordDialog } from "./ForgotLockPasswordDialog";
@@ -25,21 +24,24 @@ export function PrivacyLaunchGate({ children }: { children: ReactNode }) {
           aria-labelledby="privacy-launch-title"
           className="flex w-full max-w-sm flex-col items-center gap-5 text-center"
         >
-          <Shield aria-hidden className="size-10 text-content/50" strokeWidth={1.5} />
+          <Shield aria-hidden className="size-10 text-(--ui-text-muted)" strokeWidth={1.75} />
           <div>
-            <p className="mb-2 text-xs text-content/50">{PRODUCT_IDENTITY.displayName}</p>
-            <h1 id="privacy-launch-title" className="text-xl font-medium">
+            <p className="mb-2 text-ui-caption text-(--ui-text-muted)">
+              {PRODUCT_IDENTITY.displayName}
+            </p>
+            <h1 id="privacy-launch-title" className="text-ui-heading font-medium">
               {t("Privacy mode")}
             </h1>
-            <p className="mt-3 text-sm leading-relaxed text-content/65">
+            <p className="mt-3 text-ui-body leading-relaxed text-(--ui-text-secondary)">
               {t("Your workspace is hidden. Continue when you are ready.")}
             </p>
           </div>
-          <SecondaryButton
+          <Button
+            className="shrink-0"
             onClick={() => (lock.hasPassword ? setDialog("password") : setConcealed(false))}
           >
             {t("Show workspace")}
-          </SecondaryButton>
+          </Button>
           {lock.hasPassword ? (
             <Button type="button" variant="ghost" onClick={() => setDialog("recovery")}>
               {t("Forgot the password?")}

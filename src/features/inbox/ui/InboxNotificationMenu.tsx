@@ -1,10 +1,14 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { LiveText } from "../../../shared/ui/LiveText";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   inboxHasUnseenItems,
+  inboxSeenStatus,
   knownInboxEntries,
   markInboxItemsSeen,
+  retryInboxSeenStorage,
   useInboxSeenTick,
 } from "../model/inboxSeen";
 import { useProjectNotificationPreferences } from "../../notifications/hooks/useProjectNotificationPreferences";
@@ -31,15 +35,32 @@ type Props = {
 export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onClose }: Props) {
   useLocale();
   const notificationProjects = useNotificationProjects(projectPaths);
-  const [saveError, setError] = useState<string | null>(null);
-  const [customOpen, setCustomOpen] = useState(false);
   useInboxSeenTick();
+  const seenStatus = inboxSeenStatus();
   const preferences = useProjectNotificationPreferences();
   const pathsKey = JSON.stringify(projectPaths);
-  useEffect(() => {
-    setCustomOpen(false);
-    setError(null);
-  }, [pathsKey]);
+  // Dialog state belongs to the project set it was opened for; a different set
+  // starts closed and error-free without a reset effect.
+  const [local, setLocal] = useState({
+    key: pathsKey,
+    customOpen: false,
+    error: null as string | null,
+  });
+  const scoped = local.key === pathsKey ? local : { key: pathsKey, customOpen: false, error: null };
+  const customOpen = scoped.customOpen;
+  const saveError = scoped.error;
+  const setCustomOpen = (next: boolean) =>
+    setLocal((previous) => ({
+      ...(previous.key === pathsKey ? previous : { key: pathsKey, error: null }),
+      key: pathsKey,
+      customOpen: next,
+    }));
+  const setError = (next: string | null) =>
+    setLocal((previous) => ({
+      ...(previous.key === pathsKey ? previous : { customOpen: false }),
+      key: pathsKey,
+      error: next,
+    }));
   const entries = knownInboxEntries(projectPaths);
   const hasUnread = inboxHasUnseenItems(entries);
 
@@ -94,7 +115,7 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
         className="space-y-1 overflow-y-auto p-3"
       >
         <div className="space-y-1">
-          <p className="px-1 text-xs font-medium text-(--ui-text-secondary)">
+          <p className="px-1 text-ui-caption font-medium text-(--ui-text-secondary)">
             {t("Mute all projects")}
           </p>
         </div>
@@ -116,28 +137,40 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
       onClose={onClose}
       header={
         <div className="space-y-1 px-2 py-1.5">
-          <p className="text-xs font-medium text-(--ui-tone-neutral-fg)">{t("Inbox")}</p>
-          <p role="status" className="text-xs text-(--ui-text-secondary)">
-            {t(allIds.length === 1 ? "{p0} project · {p2} muted" : "{p0} projects · {p2} muted", {
-              p0: allIds.length,
-              p2: mutedIds.length,
-            })}
-          </p>
-          {saveError ? (
-            <Alert tone="danger" role="alert">
-              {saveError}
+          <p className="text-ui-caption font-medium text-(--ui-tone-neutral-fg)">{t("Inbox")}</p>
+          <LiveText
+            className="block text-ui-caption text-(--ui-text-secondary)"
+            text={t(
+              allIds.length === 1 ? "{p0} project · {p2} muted" : "{p0} projects · {p2} muted",
+              {
+                p0: allIds.length,
+                p2: mutedIds.length,
+              },
+            )}
+          />
+          {seenStatus.state === "loading" ? (
+            <Alert tone="info">{t("Loading Inbox read status…")}</Alert>
+          ) : seenStatus.state === "error" ? (
+            <Alert tone="danger">
+              {t("Inbox read status is unavailable. Unread indicators may be incomplete.")}{" "}
+              <Button variant="secondary" onClick={retryInboxSeenStorage}>
+                {t("Retry")}
+              </Button>
             </Alert>
           ) : null}
+          {saveError ? <Alert tone="danger">{t(saveError)}</Alert> : null}
         </div>
       }
       onPick={(id) => {
         if (id === "read-all") {
           if (!hasUnread) return;
-          if (!markInboxItemsSeen(entries)) {
-            setError("Could not save read status. Please try again.");
-            return;
-          }
-          onClose();
+          const applyResult = (saved: boolean) => {
+            if (!saved) setError("Some read status updates may have saved. Retry to complete.");
+            else onClose();
+          };
+          const result = markInboxItemsSeen(entries);
+          if (typeof result === "boolean") applyResult(result);
+          else void result.then(applyResult).catch(() => applyResult(false));
           return;
         }
         if (id === "settings") {

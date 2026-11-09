@@ -6,7 +6,7 @@ vi.mock("../model/prChecks", () => ({ fetchCheckDetails: vi.fn() }));
 import { CheckRepairForm } from "./CheckRepairForm";
 import { Modal } from "../../../shared/ui/Modal";
 
-it("repair popover mevcut overlay politikasını korur, üst pencere Escape'i tüketir", async () => {
+it("the repair popover keeps the existing overlay policy and the top window consumes Escape", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "ResizeObserver",

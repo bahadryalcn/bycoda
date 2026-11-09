@@ -1,0 +1,103 @@
+.dialog {
+  block-size: min(760px, calc(100dvh - 48px));
+}
+.form {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  block-size: 100%;
+}
+.navigation {
+  flex: none;
+  padding: 0 20px 8px;
+  border-block-end: 1px solid var(--ui-tone-neutral-border);
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.tabs {
+  inline-size: max-content;
+  min-inline-size: 100%;
+  flex-wrap: nowrap;
+}
+.content {
+  flex: 1;
+  min-block-size: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 20px 20px;
+  scrollbar-gutter: stable;
+  scroll-padding-block: 14px;
+  container-type: inline-size;
+}
+/* Each tab holds titled settings groups; the groups own their spacing. `ownRows` marks the tabs
+   built from profile rows; the projects and computer tabs keep their own control sizes. */
+.page[hidden] {
+  display: none;
+}
+/* One control column width in every row so selects, fields and segmented choices share a right
+   edge. Hours need room for two selects, a dash and a switch. Below 560px the rows stack. */
+@container (min-width: 560px) {
+  .ownRows :global(.settings-row:not([data-stacked]) > .settings-row-control) {
+    inline-size: 16rem;
+    max-inline-size: 16rem;
+  }
+  .ownRows :global(.settings-row:not([data-stacked]) > .settings-row-control):has([data-hours]) {
+    inline-size: 24rem;
+    max-inline-size: 24rem;
+  }
+}
+/* Presence and keep-awake status: one line under the presence group, on the rows' left edge. */
+.statusLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  padding-block-start: 12px;
+}
+
+/* One footer row that never wraps; the discard confirmation replaces its content. */
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+.footerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-inline-size: 0;
+  white-space: nowrap;
+}
+.footerRow > * {
+  min-inline-size: 0;
+}
+.footerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: auto;
+  flex: none;
+}
+.saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+@media (max-width: 640px) {
+  .dialog {
+    block-size: calc(100dvh - 24px);
+  }
+  .navigation {
+    padding-inline: 12px;
+  }
+  .content {
+    padding: 10px 12px 14px;
+  }
+}

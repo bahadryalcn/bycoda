@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  type DockAgent,
+  blockLifecycle,
   deriveActivityDock,
   dockCountLabel,
   dockStateLabel,
@@ -7,7 +9,9 @@ import {
   nextUnseenDone,
   type ActivityDockInput,
 } from "./activityDock";
-import type { Block } from "./session";
+import type { Block, Session } from "./session";
+import { newSession } from "./session";
+import { appendSteerUser, applyHarnessEvent } from "../../../integrations/harness/core/apply";
 
 const user: Block = { id: "u1", role: "user", text: "go", startedAt: 1_000 };
 
@@ -245,7 +249,23 @@ describe("deriveActivityDock", () => {
       blocks: [user, agent("a1", "in_progress")],
     });
     expect(dock.running).toBe(0);
-    expect(dock.agents[0].status).toBe("done");
+    // Never reported as finished: its outcome is unknown, same as the sheet.
+    expect(dock.agents[0].status).toBe("interrupted");
+    expect(dock.interrupted).toBe(1);
+    expect(dock.finished).toBe(0);
+    expect(dockCountLabel(dock)).toBe("1 interrupted");
+    expect(blockLifecycle(agent("a1", "in_progress"), false)).toBe("interrupted");
+    expect(blockLifecycle(agent("a1", "in_progress"), true)).toBe("running");
+  });
+
+  it("keeps an explicitly interrupted child terminal while its siblings still run", () => {
+    const dock = derive({
+      busy: true,
+      blocks: [user, agent("interrupted", "interrupted"), agent("running", "in_progress")],
+    });
+    expect(dock.agents.map((entry) => entry.status)).toEqual(["interrupted", "running"]);
+    expect(dock).toMatchObject({ running: 1, interrupted: 1, finished: 0, stopped: 0 });
+    expect(dock.agents[0].detail).toBe("Interrupted");
   });
 
   it("only looks at the latest turn", () => {
@@ -256,6 +276,92 @@ describe("deriveActivityDock", () => {
     });
     expect(dock.agents).toEqual([]);
     expect(dock.startedAt).toBe(9);
+  });
+
+  it("keeps running agents, commands and their original clock across repeated steers", () => {
+    let session: Session = {
+      ...newSession("codex", "/repo"),
+      busy: true,
+      blocks: [user, agent("a1", "in_progress"), background("b1", "in_progress")],
+    };
+    session = appendSteerUser(session, "Also check the API");
+    session = appendSteerUser(session, "Keep the background command running");
+    const dock = derive({ busy: session.busy, blocks: session.blocks });
+    expect(dock.agents.map((entry) => [entry.callId, entry.status])).toEqual([
+      ["a1", "running"],
+      ["b1", "running"],
+    ]);
+    expect(dock.startedAt).toBe(user.startedAt);
+    expect(dockCountLabel(dock)).toBe("2 running");
+
+    session = applyHarnessEvent(session, {
+      type: "tool.updated",
+      callId: "a1",
+      kind: "agent",
+      status: "completed",
+    });
+    const updated = derive({ busy: session.busy, blocks: session.blocks });
+    expect(updated.agents.map((entry) => entry.status)).toEqual(["done", "running"]);
+    expect(updated.startedAt).toBe(user.startedAt);
+  });
+
+  it("follows chained continuations without including earlier executions", () => {
+    const root: Block = { id: "root", role: "user", text: "start", startedAt: 2000 };
+    const first: Block = { id: "first", role: "user", text: "follow up", continuationOf: "root" };
+    const second: Block = { id: "second", role: "user", text: "again", continuationOf: "first" };
+    const dock = derive({
+      busy: true,
+      blocks: [
+        user,
+        agent("old", "completed"),
+        root,
+        agent("current", "in_progress"),
+        first,
+        second,
+      ],
+    });
+    expect(dock.agents.map((entry) => entry.blockId)).toEqual(["current"]);
+    expect(dock.startedAt).toBe(2000);
+  });
+
+  it("keeps internal work hidden and respects handoff boundaries", () => {
+    const blocks: Block[] = [
+      user,
+      agent("old", "in_progress"),
+      { id: "handoff", role: "handoff", text: "Switch provider" },
+      agent("hidden", "in_progress", { internal: true }),
+      agent("current", "in_progress"),
+      { id: "steer", role: "user", text: "Continue", continuationOf: user.id },
+    ];
+    const dock = derive({ busy: true, blocks });
+    expect(dock.agents.map((entry) => entry.blockId)).toEqual(["current"]);
+    expect(dock.startedAt).toBeUndefined();
+  });
+
+  it("does not pull earlier runs into a continuation with a missing owner", () => {
+    const dock = derive({
+      busy: true,
+      blocks: [
+        user,
+        agent("old", "completed"),
+        { id: "steer", role: "user", text: "Continue", continuationOf: "missing" },
+        agent("current", "in_progress"),
+      ],
+    });
+    expect(dock.agents.map((entry) => entry.blockId)).toEqual(["current"]);
+  });
+
+  it("does not let internal user messages replace the visible execution", () => {
+    const dock = derive({
+      busy: true,
+      blocks: [
+        user,
+        agent("current", "in_progress"),
+        { id: "internal", role: "user", text: "Internal work", internal: true },
+      ],
+    });
+    expect(dock.agents.map((entry) => entry.blockId)).toEqual(["current"]);
+    expect(dock.startedAt).toBe(user.startedAt);
   });
 
   it("has only the working line for a provider with no background tasks", () => {
@@ -286,5 +392,78 @@ describe("nextUnseenDone", () => {
   it("holds until cleared, and new work supersedes it", () => {
     expect(nextUnseenDone(true, false, false)).toBe(true);
     expect(nextUnseenDone(true, false, true)).toBe(false);
+  });
+});
+
+describe("delegated child sessions in the dock", () => {
+  const childRow = (patch: Partial<DockAgent> = {}): DockAgent => ({
+    blockId: "delegated:c1",
+    sessionId: "c1",
+    name: "Check the parser",
+    kind: "agent",
+    status: "running",
+    model: "GPT A",
+    detail: "2 steps",
+    ...patch,
+  });
+
+  it("merges child rows after the native rows and counts them", () => {
+    const dock = derive({
+      busy: true,
+      blocks: [user, agent("a", "completed")],
+      delegatedAgents: [
+        childRow(),
+        childRow({ blockId: "delegated:c2", sessionId: "c2", status: "failed" }),
+      ],
+    });
+    expect(dock.agents.map((entry) => entry.sessionId)).toEqual([undefined, "c1", "c2"]);
+    expect(dock).toMatchObject({ running: 1, failed: 1, finished: 1 });
+  });
+
+  it("stays in the background after the parent turn while a child still runs", () => {
+    const dock = derive({ busy: false, blocks: [user], delegatedAgents: [childRow()] });
+    expect(dock.state).toBe("background");
+    expect(dock.backgroundCount).toBe(1);
+    expect(dock.backgroundAgents).toBe(1);
+    expect(dockStateLabel(dock)).toBe("Finished · 1 background agent running");
+  });
+
+  it("goes idle once the children have finished after the parent turn", () => {
+    const dock = derive({
+      busy: false,
+      blocks: [user],
+      delegatedAgents: [childRow({ status: "done" })],
+    });
+    expect(dock.state).toBe("idle");
+    expect(dock.backgroundCount).toBe(0);
+  });
+
+  it("reports needs-input when a running child waits for approval", () => {
+    const dock = derive({
+      busy: false,
+      blocks: [user],
+      delegatedAgents: [childRow({ needsInput: true })],
+    });
+    expect(dock.state).toBe("needs-input");
+  });
+
+  it("does not report needs-input for a child that is no longer running", () => {
+    const dock = derive({
+      busy: false,
+      blocks: [user],
+      delegatedAgents: [childRow({ needsInput: true, status: "done" })],
+    });
+    expect(dock.state).toBe("idle");
+  });
+
+  it("counts a child as a working agent while the parent turn is still busy", () => {
+    const dock = derive({
+      busy: true,
+      blocks: [user],
+      delegatedAgents: [childRow()],
+    });
+    expect(dock.running).toBe(1);
+    expect(dock.backgroundCount).toBe(0);
+    expect(dock.state).toBe("working");
   });
 });

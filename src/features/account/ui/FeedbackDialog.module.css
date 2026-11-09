@@ -1,0 +1,77 @@
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.brandCentered {
+  flex-direction: column;
+  text-align: center;
+  padding-block: 8px;
+}
+.logo {
+  flex: none;
+  inline-size: 36px;
+  block-size: 36px;
+}
+.brandCentered .logo {
+  inline-size: 48px;
+  block-size: 48px;
+}
+.brandTitle {
+  margin: 0;
+  font-size: var(--ui-font-body);
+  font-weight: 600;
+  color: var(--ui-text-primary);
+}
+.brandText {
+  margin: 2px 0 0;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+.kinds {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.kind.kind {
+  flex-direction: column;
+  gap: 4px;
+  block-size: auto;
+  padding-block: 8px;
+}
+.kind.kind[aria-checked="true"] {
+  box-shadow: 0 0 0 2px var(--ui-border-accent);
+  background: var(--ui-tone-accent-subtle);
+}
+.ratingRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ratingLabel {
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+.stars {
+  display: flex;
+  gap: 2px;
+}
+.star.star {
+  padding: 4px;
+  color: var(--ui-text-secondary);
+}
+.starOn.starOn {
+  color: var(--ui-tone-warning-fg);
+}
+.starOn svg {
+  fill: currentColor;
+}
+.privacy {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}

@@ -26,6 +26,31 @@ afterEach(() => {
   vi.unstubAllGlobals();
   localStorage.removeItem("bycoda-low-latency-text");
 });
+describe("reveal cadence", () => {
+  it("re-renders a streaming reply at about 24 Hz on a 60 Hz display", () => {
+    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame", "performance"] });
+    try {
+      let renders = 0;
+      const text = "word ".repeat(300);
+      function Probe() {
+        renders++;
+        usePacedText(text, true);
+        return null;
+      }
+      act(() => root.render(createElement(Probe)));
+      renders = 0;
+      act(() => {
+        vi.advanceTimersByTime(400);
+      });
+      // 400 ms of 16 ms frames would render ~25 times ungated; the gate allows ~10.
+      expect(renders).toBeGreaterThan(0);
+      expect(renders).toBeLessThanOrEqual(11);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("bounded pacing", () => {
   it("shows a large burst and a completed response immediately", () => {
     const { result, rerender } = renderHook({ text: "", streaming: true });

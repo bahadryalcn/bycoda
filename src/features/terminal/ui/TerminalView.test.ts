@@ -11,6 +11,7 @@ const pty = vi.hoisted(() => ({
   writePty: vi.fn(async () => {}),
   subscribePty: vi.fn(() => () => {}),
   getPtyStatus: vi.fn(async () => ({ foreground: null })),
+  setPtyVisible: vi.fn(async () => {}),
 }));
 const native = vi.hoisted(() => ({ invoke: vi.fn(async () => {}) }));
 const assistance = vi.hoisted(() => ({
@@ -105,6 +106,7 @@ vi.mock("@xterm/xterm", () => ({
   },
 }));
 import { TerminalView } from "./TerminalView";
+import { WEBGL_IDLE_DROP_MS } from "../runtime/terminalWebgl";
 import { queueTerminalCommand } from "../model/terminalLaunchCommand";
 import { takeTerminalCommand } from "../model/terminalLaunchCommand";
 import {
@@ -152,6 +154,7 @@ it("zooms only the hovered terminal, clamps size and applies saved typography wi
         terminalSize: 20,
         terminalWeight: 600,
         terminalFont: "JetBrains Mono",
+        terminalFontSource: "custom",
         terminalLineHeight: 1.35,
       }),
     );
@@ -159,7 +162,7 @@ it("zooms only the hovered terminal, clamps size and applies saved typography wi
       expect(instance.options).toMatchObject({
         fontSize: 20,
         fontWeight: 600,
-        fontFamily: '"JetBrains Mono", monospace',
+        fontFamily: '"JetBrains Mono Variable", monospace',
         lineHeight: 1.35,
       });
     expect(pty.spawnPty).toHaveBeenCalledTimes(2);
@@ -280,38 +283,85 @@ it("reports terminal closure only after its own canonical PTY cleanup completes"
   }
 });
 
-it("changes server typography without replacing or restarting its SSH process", async () => {
+it("keeps the actual canvas policy when SSH typography overrides change without restarting its process", async () => {
   const { host, root } = setup();
-  const render = (fontSize: number) =>
+  // The parent really paints the terminal canvas; a token alone is not evidence
+  // of the pixels under a transparent renderer.
+  host.style.backgroundColor = "rgb(17, 34, 51)";
+  const render = (fontSize: number, lineHeight?: number) =>
     createElement(TerminalView, {
       id: "ssh-typography",
       cwd: "",
       sshConnectionId: "saved",
       active: true,
       fontSize,
-      lineHeight: 1.35,
+      lineHeight,
     });
   try {
-    await act(async () => root.render(render(15)));
+    await act(async () => root.render(render(15, 1.35)));
     const instance = xterm.instances[0];
     expect(instance.options).toMatchObject({
       fontSize: 15,
       lineHeight: 1.35,
-      minimumContrastRatio: 4.5,
+      minimumContrastRatio: 7,
     });
-    expect(instance.options).toHaveProperty(
-      "theme.background",
-      expect.not.stringMatching(/^(#00000000|transparent)$/),
+    expect(instance.options).toHaveProperty("theme.background", "rgba(17, 34, 51, 0)");
+    expect(host.querySelector("[data-terminal-canvas]")?.getAttribute("data-terminal-canvas")).toBe(
+      "resolved",
     );
+    // Omitting lineHeight changes typography only, never contrast/transparency.
     await act(async () => root.render(render(20)));
     expect(xterm.instances).toHaveLength(1);
-    expect(instance.options).toMatchObject({ fontSize: 20, lineHeight: 1.35 });
+    expect(instance.options).toMatchObject({ fontSize: 20, minimumContrastRatio: 7 });
+    expect(instance.options).toHaveProperty("theme.background", "rgba(17, 34, 51, 0)");
     expect(
       native.invoke.mock.calls.filter(([command]) => command === "ssh_terminal_spawn"),
     ).toHaveLength(1);
     expect(pty.killPty).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("updates the retained terminal when accessibility transparency changes", async () => {
+  vi.stubGlobal("IntersectionObserver", undefined);
+  const listeners = new Map<string, EventListener>();
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: false,
+    media: query,
+    addEventListener: (_type: string, listener: EventListener) => listeners.set(query, listener),
+    removeEventListener: (_type: string, listener: EventListener) => {
+      if (listeners.get(query) === listener) listeners.delete(query);
+    },
+  }));
+  const { host, root } = setup();
+  host.style.backgroundColor = "rgb(17, 34, 51)";
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalView, {
+          id: "transparency-change",
+          cwd: "",
+          sshConnectionId: "saved",
+          active: true,
+        }),
+      ),
+    );
+    const instance = xterm.instances[0];
+    expect(instance.options).toHaveProperty("theme.background", "rgba(17, 34, 51, 0)");
+    host.style.backgroundColor = "rgb(68, 85, 102)";
+    await act(async () => {
+      listeners.get("(prefers-reduced-transparency: reduce)")?.(new Event("change"));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+    expect(instance.options).toHaveProperty("theme.background", "rgba(68, 85, 102, 0)");
+    expect(xterm.instances).toHaveLength(1);
+    expect(pty.killPty).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    expect(listeners.size).toBe(0);
     host.remove();
   }
 });
@@ -332,7 +382,7 @@ it("opens opt-in integration through a new-tab callback without injecting into t
       ),
     );
     await act(async () =>
-      host.querySelector<HTMLButtonElement>('[aria-label="Terminal · More actions"]')!.click(),
+      host.querySelector<HTMLButtonElement>('[aria-label="Terminal pane actions"]')!.click(),
     );
     const button = Array.from(document.querySelectorAll("button")).find((element) =>
       element.textContent?.startsWith("Bash suggestions"),
@@ -543,17 +593,20 @@ it("signals startup review only once after the native ready prompt for this inte
 });
 
 it("resolves scoped theme colors for xterm and six-digit OSC replies", async () => {
+  // No visibility signal: the terminal counts as on screen, so theme changes apply.
+  vi.stubGlobal("IntersectionObserver", undefined);
   const { host, root } = setup();
   host.style.setProperty("--terminal-text", "#aabbcc");
   host.style.setProperty("--terminal-canvas", "#112233");
-  host.style.setProperty("--color-accent", "#778899");
+  host.style.backgroundColor = "rgb(17, 34, 51)";
+  host.style.setProperty("--ui-focus-ring-color", "#778899");
   try {
     await act(async () =>
       root.render(
         createElement(TerminalView, {
           id: "theme-terminal",
           cwd: "/tmp",
-          active: true,
+          active: false,
         }),
       ),
     );
@@ -563,13 +616,19 @@ it("resolves scoped theme colors for xterm and six-digit OSC replies", async () 
     await act(async () => {
       terminal.osc.get(10)?.("?");
       terminal.osc.get(11)?.("?");
+      terminal.osc.get(12)?.("?");
     });
     expect(pty.writePty).toHaveBeenCalledWith("theme-terminal", "\x1b]10;rgb:aaaa/bbbb/cccc\x1b\\");
     expect(pty.writePty).toHaveBeenCalledWith("theme-terminal", "\x1b]11;rgb:1111/2222/3333\x1b\\");
+    expect(pty.writePty).toHaveBeenCalledWith("theme-terminal", "\x1b]12;rgb:7777/8888/9999\x1b\\");
     host.style.setProperty("--terminal-text", "#ddeeff");
-    await act(async () =>
-      document.documentElement.style.setProperty("--terminal-test-theme", "updated"),
-    );
+    await act(async () => {
+      document.documentElement.style.setProperty("--terminal-test-theme", "updated");
+      // Root mutations are coalesced to one palette probe per frame.
+      await Promise.resolve();
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
     expect(terminal.options.theme?.foreground).toBe("#ddeeff");
   } finally {
     await act(async () => root.unmount());
@@ -631,8 +690,12 @@ it("fits before replaying hidden output and redraws on return even at the same s
     await act(async () => intersect([{ isIntersecting: true }]));
     expect(xterm.webgl).toHaveLength(1);
     const firstRenderer = xterm.webgl[0];
+    expect(pty.setPtyVisible).toHaveBeenLastCalledWith("visibility-replay", true);
     await act(async () => intersect([{ isIntersecting: false }]));
-    expect(firstRenderer.dispose).toHaveBeenCalledOnce();
+    // A quick hide/show keeps the renderer; it is only dropped after a grace period.
+    expect(firstRenderer.dispose).not.toHaveBeenCalled();
+    // The native side holds output while the terminal is off screen.
+    expect(pty.setPtyVisible).toHaveBeenLastCalledWith("visibility-replay", false);
     term.write.mockClear();
     receive("background output");
     expect(term.write).not.toHaveBeenCalled();
@@ -641,8 +704,10 @@ it("fits before replaying hidden output and redraws on return even at the same s
     pty.resizePty.mockClear();
     await act(async () => intersect([{ isIntersecting: true }]));
     expect(events.slice(0, 4)).toEqual(["fit", "write:background output", "drain", "fit"]);
+    expect(pty.setPtyVisible).toHaveBeenLastCalledWith("visibility-replay", true);
     expect(term.refresh).toHaveBeenCalledWith(0, 23);
-    expect(xterm.webgl).toHaveLength(2);
+    expect(xterm.webgl).toHaveLength(1);
+    expect(firstRenderer.dispose).not.toHaveBeenCalled();
     expect(pty.resizePty).not.toHaveBeenCalled();
     expect(pty.spawnPty).toHaveBeenCalledOnce();
     expect(pty.killPty).not.toHaveBeenCalled();
@@ -683,9 +748,13 @@ it("ignores a stale output drain after hiding and restores a visible window with
     await act(async () => drains.shift()!());
     expect(term.refresh).toHaveBeenCalledWith(0, 23);
     expect(xterm.webgl).toHaveLength(1);
+    vi.useFakeTimers();
     hidden = true;
     await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    expect(xterm.webgl[0].dispose).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(WEBGL_IDLE_DROP_MS));
     expect(xterm.webgl[0].dispose).toHaveBeenCalledOnce();
+    vi.useRealTimers();
     hidden = false;
     await act(async () => document.dispatchEvent(new Event("visibilitychange")));
     await act(async () => root.unmount());
@@ -694,6 +763,7 @@ it("ignores a stale output drain after hiding and restores a visible window with
     expect(term.refresh).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
+    vi.useRealTimers();
     hiddenSpy.mockRestore();
     host.remove();
   }
@@ -723,8 +793,8 @@ it("shows the native exit status and returns to servers without offering input r
     expect(assistance.suspendAutomatic).toHaveBeenCalled();
     await act(async () => xterm.instances.at(-1)!.dataHandler!("must-not-replay\r"));
     expect(pty.writePty).not.toHaveBeenCalled();
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain("Terminal closed");
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain("255");
+    expect(host.querySelector('[role="status"]')?.textContent).toContain("Terminal closed");
+    expect(host.querySelector('[role="status"]')?.textContent).toContain("255");
     expect(
       [...host.querySelectorAll("button")].some((button) =>
         button.textContent?.includes("Resume input"),
@@ -803,8 +873,8 @@ it("shows failed SSH startup as a closed terminal and discards pending input", a
         }),
       ),
     );
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain("Terminal closed");
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    expect(host.querySelector('[role="status"]')?.textContent).toContain("Terminal closed");
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(
       "SSH authentication failed",
     );
     await act(async () => xterm.instances.at(-1)!.dataHandler!("late\r"));
@@ -832,14 +902,14 @@ it.each(["terminal input is backed up", "disconnected"])(
         edit("\r");
       });
       expect(pty.writePty).toHaveBeenCalledExactlyOnceWith(`failure-${message}`, "npm test");
-      expect(host.querySelector('[role="alert"]')?.textContent).toContain(message);
+      expect(host.querySelector('[role="status"]')?.textContent).toContain(message);
       await act(async () => edit("discarded\r"));
       expect(pty.writePty).toHaveBeenCalledTimes(1);
       const resume = Array.from(host.querySelectorAll("button")).find((button) =>
         button.textContent?.includes("Resume input"),
       )!;
       await act(async () => resume.click());
-      expect(host.querySelector('[role="alert"]')).toBeNull();
+      expect(host.querySelector('[role="status"]')).toBeNull();
       await act(async () => edit("fresh"));
       expect(pty.writePty.mock.calls.map((call) => call[1])).toEqual(["npm test", "fresh"]);
     } finally {

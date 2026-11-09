@@ -1,15 +1,23 @@
 import { dateTimeFormat } from "../lib/intl";
 import { useEffect, useState } from "react";
 import { Timeline as ArcTimeline, type TimelineProps } from "./arc/timeline/timeline";
-import { getLocale, t, useLocale } from "../i18n";
+import { useLocale, useT } from "../i18n";
 
-/** Locale-aware history using the current machine's local time zone. */
+/**
+ * Chronological event list grouped by day (Today, Yesterday, dates) in the machine's local time zone, with
+ * localized headings. Ticks its own clock unless `now` is passed.
+ * @group data
+ * @use History of a task, thread or record: events with time, text and optional recovery actions.
+ * @avoid A single time value: Timestamp. Tabular records: SortableDataTable. Ordered workflow steps: Stepper.
+ * @arc timeline
+ */
 export function Timeline({
   className,
   now: providedNow,
   ...props
 }: Omit<TimelineProps, "now" | "messages" | "formatRelativeTime"> & { now?: number }) {
-  useLocale();
+  const t = useT();
+  const currentLocale = useLocale();
   const [clock, setClock] = useState<number | null>(null);
   useEffect(() => {
     if (providedNow !== undefined) return;
@@ -19,7 +27,7 @@ export function Timeline({
   }, [providedNow]);
   const now = providedNow ?? clock;
   if (now === null) return null;
-  const locale = props.locale ?? getLocale();
+  const locale = props.locale ?? currentLocale;
   const timeZone = props.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const clockFormat = dateTimeFormat(locale, {
     hour: "numeric",

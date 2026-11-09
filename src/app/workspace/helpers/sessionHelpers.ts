@@ -1,10 +1,25 @@
-import { cachedRemoteSessionSummary, remoteSessionFor } from "../../../features/connections/model/connections";
+import {
+  cachedRemoteSessionSummary,
+  remoteSessionFor,
+} from "../../../features/connections/model/connections";
 import { noteCardMeta, type NoteComposerCard } from "../../../features/notes";
 import { isRemoteProjectPath } from "../../../features/projects/model/recents";
 import { planComposerSwitch, withHarnessChoice } from "../../../features/sessions/model/handoff";
 import { mergeModelSettings, resolveModel } from "../../../features/sessions/model/models";
-import { sessionDisplayTitle, type PlanBuildTarget, type PlanStatus, type SecondOpinionMeta, type Session } from "../../../features/sessions/model/session";
-import { focusedFileTab, isCommitTab, isFilesystemTab, leafIds, type WorkspaceTab } from "../../../features/workspace/model/layout";
+import {
+  sessionDisplayTitle,
+  type PlanBuildTarget,
+  type PlanStatus,
+  type SecondOpinionMeta,
+  type Session,
+} from "../../../features/sessions/model/session";
+import {
+  focusedFileTab,
+  isCommitTab,
+  isFilesystemTab,
+  leafIds,
+  type WorkspaceTab,
+} from "../../../features/workspace/model/layout";
 import { type GitFileDiffKind } from "../../../platform/tauri/fs";
 import { displayPath } from "../../../shared/lib/paths";
 
@@ -31,7 +46,10 @@ export function lastAssistantTextInTurn(session: Session): string {
   return "";
 }
 
-export function userTurnCards(noteCard: NoteComposerCard | undefined, secondOpinion?: SecondOpinionMeta) {
+export function userTurnCards(
+  noteCard: NoteComposerCard | undefined,
+  secondOpinion?: SecondOpinionMeta,
+) {
   if (!noteCard && !secondOpinion) return undefined;
   return {
     ...(secondOpinion ? { secondOpinion } : {}),
@@ -45,8 +63,10 @@ export function withPlanBuildTarget(session: Session, target: PlanBuildTarget): 
   const plan = planComposerSwitch(session, target.harness);
   const next = withHarnessChoice(session, target.harness, resolved.id, modelSettings);
 
+  // A new provider conversation starts on the account the target was queued with.
+  const account = target.providerAccountId ? { providerAccountId: target.providerAccountId } : {};
   if (plan.kind === "arm") {
-    return { ...next, pendingSwitch: plan.pending };
+    return { ...next, ...account, pendingSwitch: plan.pending };
   }
   if (plan.kind === "revert") {
     return {
@@ -61,7 +81,7 @@ export function withPlanBuildTarget(session: Session, target: PlanBuildTarget): 
     };
   }
   if (plan.kind === "empty") {
-    return { ...next, pendingSwitch: undefined };
+    return { ...next, ...account, pendingSwitch: undefined };
   }
   return next;
 }

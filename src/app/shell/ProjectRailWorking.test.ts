@@ -5,6 +5,25 @@ import { expect, it, vi } from "vitest";
 import { ProjectRail } from "./ProjectRail";
 import { SessionRecoveryControl } from "./SessionRecoveryControl";
 import { workingProjectPaths } from "../../features/sessions/model/liveAgents";
+import { readFileSync } from "node:fs";
+
+it("keeps working decoration compositor-friendly and disables it with motion controls", () => {
+  const css = readFileSync("src/styles/working-row.css", "utf8");
+  expect(css).toMatch(
+    /@keyframes project-row-working-pulse\s*\{[\s\S]*?opacity: 0;[\s\S]*?opacity: 1;/,
+  );
+  expect(css).not.toMatch(/animation:\s*project-row-working-sweep/);
+  expect(css).toContain('[data-decorative-motion="off"]');
+  expect(css).toContain('[data-window-focus="off"]');
+  expect(css).toContain("prefers-reduced-motion: reduce");
+  expect(css).toContain("data-performance-no-shimmer");
+  // Appearance > Motion: "steady" stops only the pulse, "off" also drops the tint.
+  expect(css).toMatch(/\[data-working-indicator="steady"\][^,{]*::after/);
+  expect(css).toMatch(/\[data-working-indicator="off"\][^,{]*::before/);
+  const tokens = readFileSync("src/styles/index.css", "utf8");
+  expect(tokens).toMatch(/--ui-working-row-tint:[^;]*var\(--ui-working-row-color\)/);
+  expect(tokens).toMatch(/--ui-working-row-sweep:[^;]*var\(--ui-working-row-strength\)/);
+});
 
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,

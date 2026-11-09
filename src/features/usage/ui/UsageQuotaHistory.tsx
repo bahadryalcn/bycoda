@@ -1,5 +1,8 @@
+import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useMemo, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Select } from "../../../shared/ui/Select";
 import { SortableDataTable } from "../../../shared/ui/SortableDataTable";
 import {
@@ -56,18 +59,27 @@ export function QuotaHistory({
   return (
     <section className="usage-panel">
       <div className="usage-section-heading">
-        <h3>{t("Limit history")}</h3>
+        <div className="flex items-center gap-2">
+          <h3>{t("Limit history")}</h3>
+          <InfoPopover label={t("About limit history")}>
+            {t(
+              "Actual account-wide readings, collected when limits refresh. History starts with collection; gaps and resets are not interpolated. Project and model filters do not apply to account quotas.",
+            )}
+          </InfoPopover>
+        </div>
         <div className="usage-controls">
-          <Select
+          <SearchableSelect
+            hideLabel
             label={t("Account")}
             value={key}
-            onValueChange={setAccount}
+            onChange={setAccount}
             options={knownAccounts.map((a) => ({
               value: `${a.provider}:${a.id}`,
               label: `${a.provider} · ${a.label}`,
             }))}
           />
           <Select
+            hideLabel
             label={t("Limit window")}
             value={kind}
             onValueChange={setKind}
@@ -79,11 +91,6 @@ export function QuotaHistory({
           />
         </div>
       </div>
-      <p className="usage-muted">
-        {t(
-          "Actual account-wide readings, collected when limits refresh. History starts with collection; gaps and resets are not interpolated. Project and model filters do not apply to account quotas.",
-        )}
-      </p>
       {rows.length ? (
         <>
           <div
@@ -106,47 +113,65 @@ export function QuotaHistory({
               />
             ))}
           </div>
-          <details>
-            <summary>{t("Show as table")}</summary>
-            <SortableDataTable
-              caption={t("Limit history")}
-              rowKey="key"
-              rows={rows
-                .slice(-100)
-                .reverse()
-                .map((s) => ({
-                  key: String(s.at),
-                  at: s.at,
-                  time: s.at,
-                  used: s.used,
-                  minutes: s.minutes,
-                  reset: s.resetsAt ?? null,
-                }))}
-              columns={[
-                {
-                  key: "time",
-                  label: t("Time"),
-                  render: (v) => new Date(Number(v)).toLocaleString(locale),
-                },
-                {
-                  key: "used",
-                  label: t("Used (%)"),
-                  numeric: true,
-                  render: (v) => `${Number(v).toFixed(1)}%`,
-                },
-                { key: "minutes", label: t("Window (minutes)"), numeric: true },
-                {
-                  key: "reset",
-                  label: t("Reset"),
-                  render: (v) =>
-                    v == null
-                      ? t("Reset time unavailable")
-                      : new Date(Number(v)).toLocaleString(locale),
-                },
-              ]}
-            />
+          <p className="usage-quota-axis usage-muted">
+            <span>{new Date(window.start).toLocaleString(locale)}</span>
+            <span>
+              {t("Used (%)")} · {new Date(window.end).toLocaleString(locale)}
+            </span>
+          </p>
+          <Disclosure size="sm" summary={t("Show as table")}>
+            <div
+              className="usage-history-table"
+              role="region"
+              aria-label={t("Limit history")}
+              tabIndex={0}
+            >
+              <SortableDataTable
+                caption={t("Limit history")}
+                rowKey="key"
+                rows={rows
+                  .slice(-100)
+                  .reverse()
+                  .map((s) => ({
+                    key: String(s.at),
+                    at: s.at,
+                    time: s.at,
+                    used: s.used,
+                    minutes: s.minutes,
+                    reset: s.resetsAt ?? null,
+                  }))}
+                columns={[
+                  {
+                    key: "time",
+                    label: t("Time"),
+                    render: (v) => new Date(Number(v)).toLocaleString(locale),
+                  },
+                  {
+                    key: "used",
+                    label: t("Used (%)"),
+                    numeric: true,
+                    render: (v) => `${Number(v).toFixed(1)}%`,
+                  },
+                  {
+                    key: "minutes",
+                    label: t("Window (minutes)"),
+                    numeric: true,
+                    render: (value) =>
+                      `${Number(value) % 60 === 0 ? `${Number(value) / 60}h` : `${Number(value)}m`} (${value})`,
+                  },
+                  {
+                    key: "reset",
+                    label: t("Reset"),
+                    render: (v) =>
+                      v == null
+                        ? t("Reset time unavailable")
+                        : new Date(Number(v)).toLocaleString(locale),
+                  },
+                ]}
+              />
+            </div>
             <p className="usage-muted">{t("Latest 100 samples in the selected interval.")}</p>
-          </details>
+          </Disclosure>
         </>
       ) : (
         <p className="usage-empty">

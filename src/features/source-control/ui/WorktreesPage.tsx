@@ -1,33 +1,29 @@
 import { Button } from "../../../shared/ui/Button";
-import { Badge } from "../../../shared/ui/Badge";
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import styles from "./WorktreesPage.module.css";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useMemo, useState } from "react";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
+import { WorktreeRow } from "./WorktreeRow";
 import { DeleteWorktreeDialog } from "./DeleteWorktreeDialog";
-import { SearchableProjectPicker } from "../../projects/ui/SearchableProjectPicker";
-import { AdvancedSettings } from "../../settings/ui/settingsControls";
-import {
-  FolderOpen,
-  FolderTree,
-  GitBranch,
-  Loader,
-  Plus,
-  RefreshCw,
-  Trash2,
-} from "../../../shared/ui/icons";
+import { SearchableProjectPicker } from "../../projects/public/SearchableProjectPicker";
+import { SettingsFeedback } from "../../settings/public/settingsControls";
+import { Plus, RefreshCw } from "../../../shared/ui/icons";
 import { revealPath } from "../../../platform/tauri/fs";
 import { useProjectWorktrees } from "../hooks/useProjectWorktrees";
 import { isEqualOrInside, pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
-import { loadArchivedProjects, type RecentProject } from "../../projects/model/recents";
-import type { Session } from "../../sessions/model/session";
+import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
+import { loadArchivedProjects, type RecentProject } from "../../projects/public/recents";
+
+import type { Session } from "../../sessions";
 import {
   checkWorktreeRemoval,
   worktreeSessionIds,
   type RemoveWorktree,
   type Worktree,
 } from "../model/worktrees";
+import { WorkspacePolicySettings } from "../../workspaces/ui/WorkspacePolicySettings";
+import type { ManagedWorkspace } from "../../workspaces/model/contracts";
 
 export function WorktreesPage({
   cwd,
@@ -36,7 +32,10 @@ export function WorktreesPage({
   onRemove,
   onCheckRemove = checkWorktreeRemoval,
   onDeleteSessions,
+  boundary = false,
 }: {
+  /** Names the selected-repository task boundary when the page sits below global Git preferences. */
+  boundary?: boolean;
   cwd: string;
   recents?: RecentProject[];
   liveSessions?: Session[];
@@ -62,275 +61,243 @@ export function WorktreesPage({
   }, [cwd, recents]);
   const [project, setProject] = useState(cwd === "~" ? (projects[0]?.path ?? "") : cwd);
   const { data, error: loadError, refresh } = useProjectWorktrees(project);
-  const worktrees = data?.worktrees.filter((tree) => !tree.isMain) ?? [];
+  const rawWorktrees = data?.worktrees.filter((tree) => !tree.isMain) ?? [];
   const [error, setError] = useState<string>();
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<Worktree>();
   const [refreshingAfterFailure, setRefreshingAfterFailure] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [query, setQuery] = useState("");
-  const search = query.trim().toLocaleLowerCase();
-  const visibleWorktrees = worktrees.filter((tree) =>
-    `${tree.path} ${tree.branch ?? tree.head}`.toLocaleLowerCase().includes(search),
+  const [menu, setMenu] = useState<{ tree: Worktree; anchor: HTMLElement }>();
+  const [revealFailure, setRevealFailure] = useState<{
+    path: string;
+    message: string;
+  }>();
+  // Create, remove and preflight dispatch to this computer; only listing and Reveal
+  // follow a connected machine's path. Keep those actions off for remote projects.
+  const remoteProject = project.startsWith(REMOTE_PATH_PREFIX);
+  const remoteLifecycleNotice = t(
+    "Creating and deleting worktrees runs on this computer, so it is unavailable for a project on a connected machine.",
   );
+  const [managedWorkspaces, setManagedWorkspaces] = useState<ManagedWorkspace[] | null>(null);
+  const [managedLoading, setManagedLoading] = useState(true);
+  const managedPaths = new Set(managedWorkspaces?.map((workspace) => pathKey(workspace.path)));
+  const worktrees = rawWorktrees.filter((tree) => !managedPaths.has(pathKey(tree.path)));
+  // Menus can stay open across an inventory refresh; never act on their old snapshot.
+  const menuTree = menu && worktrees.find((tree) => pathKey(tree.path) === pathKey(menu.tree.path));
+  const revealWorktree = (path: string) => {
+    setRevealFailure(undefined);
+    void revealPath(path).catch((failure) => setRevealFailure({ path, message: String(failure) }));
+  };
   return (
-    <div data-setting-id="project-worktrees" id="setting-project-worktrees" className={styles.page}>
-      <div className={styles.toolbar}>
-        <div className={styles.project}>
-          <SearchableProjectPicker
-            cwd={project || "~"}
-            recents={projects}
-            className="w-fit max-w-full shrink-0"
-            buttonClassName="max-w-full gap-2"
-            onSelectProject={(path) => {
-              setProject(path);
-              setError(undefined);
-              setDeleting(undefined);
-              setQuery("");
-            }}
-          />
-          <p className={styles.scope} title={prettyCwd(project || "~")}>
-            {prettyCwd(project || "~")}
-          </p>
-        </div>
-        <div className={styles.actions}>
-          <Button
-            size="sm"
-            variant="ghost"
-            motion="none"
-            type="button"
-            iconOnly
-            label={t("Refresh worktrees")}
-            title={
-              loadError
-                ? t("Refresh failed: {p0}. Click to retry.", { p0: loadError })
-                : t("Refresh worktrees")
-            }
-            disabled={!project}
-            loading={refreshing}
-            loadingLabel={t("Refreshing…")}
-            onClick={async () => {
-              setRefreshing(true);
-              try {
-                await refresh();
-              } finally {
-                setRefreshing(false);
-              }
-            }}
-          >
-            <RefreshCw className="size-3.5" />
-            <span className="sr-only">{t("Refresh")}</span>
-          </Button>
-          <Button
-            size="sm"
-            variant="primary"
-            motion="none"
-            type="button"
-            disabled={!data}
-            onClick={() => setCreating(true)}
-            className="flex items-center gap-1.5"
-          >
-            <Plus className="size-3" />
-            {t("Create worktree")}
-          </Button>
-        </div>
-      </div>
-      {!data ? (
-        <p className="text-[12px] text-[var(--ui-text-secondary)]">
-          {!project
-            ? t("Select a project before creating a worktree.")
-            : loadError
-              ? t("Creation is unavailable until the repository loads. Refresh to retry.")
-              : t("Creation becomes available after the repository loads.")}
-        </p>
-      ) : null}
-      {data && worktrees.length > 0 && (
-        <div className={styles.listToolbar}>
-          <div className={styles.count}>
-            <span>{t("Worktrees")}</span>
-            <Badge size="sm">{worktrees.length}</Badge>
-          </div>
-          <SearchInput
-            appearance="field"
-            containerClassName={styles.search}
-            aria-label={t("Search worktrees")}
-            placeholder={t("Search worktrees")}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
-      )}
-      {error && (
-        <p role="alert" className="break-words text-[12px] text-danger">
-          {error}
-        </p>
-      )}
-      {data && loadError ? (
-        <p role="alert" className="break-words text-[12px] text-danger">
-          {t("Refresh failed: {p0}. Click to retry.", { p0: loadError })}
-        </p>
-      ) : null}
-      {refreshingAfterFailure ? (
-        <p role="status" className="text-[12px] text-[var(--ui-text-secondary)]">
-          {t("Refreshing after a failed deletion. Wait for current status before retrying.")}
-        </p>
-      ) : null}
-      {!project ? (
-        <p className="text-[12px] text-[var(--ui-text-secondary)]">
-          {t("Add a project to manage its worktrees.")}
-        </p>
-      ) : !data && loadError ? (
-        <p role="alert" className="break-words text-[12px] text-danger">
-          {loadError}
-        </p>
-      ) : !data ? (
-        <p className="flex items-center gap-2 text-[12px] text-[var(--ui-text-secondary)]">
-          <Loader className="size-4 animate-spin" />
-          {t("Loading worktrees…")}
-        </p>
-      ) : !worktrees.length ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-stroke px-4 py-8 text-center">
-          <FolderTree className="size-5 text-[var(--ui-text-muted)]" />
-          <p className="text-[13px] font-medium">{t("No additional worktrees")}</p>
-          <p className="text-[12px] text-[var(--ui-text-secondary)]">
-            {t("Create a worktree to work on another branch in a separate folder.")}
-          </p>
-        </div>
-      ) : !visibleWorktrees.length ? (
-        <div className={styles.empty} role="status">
-          <p>{t("No results")}</p>
-          <Button size="sm" variant="secondary" motion="none" onClick={() => setQuery("")}>
-            {t("Clear search")}
-          </Button>
-        </div>
-      ) : (
-        <div className={styles.list} role="list" aria-label={t("Worktrees")}>
-          {visibleWorktrees.map((tree) => {
-            const count = worktreeSessionIds(tree, liveSessions).length;
-            const blocked = tree.locked
-              ? t("Unlock this worktree in Git first")
-              : !tree.branch
-                ? t("Create a branch before deleting this detached worktree")
-                : undefined;
-            return (
-              <div key={tree.path} role="listitem" className={styles.row}>
-                <FolderTree aria-hidden="true" className={styles.treeIcon} />
-                <div className={styles.identity}>
-                  <div className={styles.name}>
-                    <span>{projectName(tree.path)}</span>
-                    {pathKey(tree.path) === pathKey(project) && (
-                      <Badge size="sm" tone="info">
-                        {t("Selected project folder")}
-                      </Badge>
-                    )}
-                  </div>
-                  {blocked || loadError || refreshingAfterFailure ? (
-                    <p className="[margin-block-start:0.5rem] text-[11px] text-warning">
-                      {blocked ??
-                        (loadError
-                          ? t("Deletion is unavailable until Refresh succeeds.")
-                          : t("Deletion is unavailable while status is being refreshed."))}
-                    </p>
-                  ) : null}
-                  <p className={styles.branch}>
-                    <GitBranch aria-hidden="true" className="size-3 shrink-0" />
-                    <span className="min-w-0 break-all">
-                      {tree.branch
-                        ? t("Current branch: {p0}", { p0: tree.branch })
-                        : t("Detached at {p0}", { p0: tree.head.slice(0, 7) })}
-                    </span>
-                  </p>
-                  <p className={styles.path} title={prettyCwd(tree.path)}>
-                    {prettyCwd(tree.path)}
-                  </p>
-                  <div className={styles.metadata}>
-                    <span>
-                      {count}
-                      {t(" session")}
-                      {count === 1 ? "" : "s"}
-                      {t(" in this worktree")}
-                    </span>
-                    <Badge
-                      size="sm"
-                      tone={
-                        tree.missing || tree.dirty
-                          ? "warning"
-                          : tree.dirty == null
-                            ? "neutral"
-                            : "success"
-                      }
-                    >
-                      {tree.missing
-                        ? t("Missing folder")
-                        : tree.dirty == null
-                          ? t("Status unavailable")
-                          : tree.dirty
-                            ? t("Uncommitted changes")
-                            : t("Clean")}
-                    </Badge>
-                    {!!tree.unpushed && (
-                      <Badge size="sm" tone="info">
-                        {tree.unpushed}
-                        {t(" unpublished commit")}
-                        {tree.unpushed === 1 ? "" : "s"}
-                      </Badge>
-                    )}
-                    {tree.locked && (
-                      <Badge size="sm" tone="warning">
-                        {t("Locked")}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-                <div className={styles.rowActions}>
-                  <Button
-                    size="sm"
-                    iconOnly
-                    label={t("Reveal {p0}", { p0: tree.branch ?? "worktree" })}
-                    variant="ghost"
-                    motion="none"
-                    type="button"
-                    disabled={tree.missing}
-                    aria-label={t("Reveal {p0}", { p0: tree.branch ?? "worktree" })}
-                    title={t("Reveal folder")}
-                    onClick={() => void revealPath(tree.path).catch((e) => setError(String(e)))}
-                  >
-                    <FolderOpen className="size-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    iconOnly
-                    label={t("Delete {p0}", { p0: tree.branch ?? "worktree" })}
-                    variant="ghost"
-                    motion="none"
-                    type="button"
-                    disabled={!!blocked || refreshingAfterFailure || !!loadError}
-                    aria-label={t("Delete {p0}", { p0: tree.branch ?? "worktree" })}
-                    title={blocked ?? t("Delete worktree")}
-                    onClick={() => {
-                      setError(undefined);
-                      setDeleting(tree);
-                    }}
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
+    <div
+      data-setting-id="project-worktrees"
+      id="setting-project-worktrees"
+      className={`${styles.page} settings-topics`}
+    >
+      <WorkspacePolicySettings
+        key={project}
+        cwd={project}
+        onInventory={(inventory) => {
+          setManagedLoading(inventory === null);
+          if (inventory !== null) setManagedWorkspaces(inventory);
+        }}
+        renderHeader={(refreshManaged, managedBusy, managedDisabled) => (
+          <header className={styles.header}>
+            {boundary && <h2 className="settings-section-title">{t("Worktrees")}</h2>}
+            <div className={styles.toolbar}>
+              <SearchableProjectPicker
+                cwd={project || "~"}
+                recents={projects}
+                className="w-fit max-w-full shrink-0"
+                buttonClassName="max-w-full gap-2"
+                onSelectProject={(path) => {
+                  setProject(path);
+                  setError(undefined);
+                  setDeleting(undefined);
+                  setMenu(undefined);
+                  setRevealFailure(undefined);
+                  setManagedWorkspaces(null);
+                  setManagedLoading(true);
+                }}
+              />
+              <div className={styles.actions}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  motion="none"
+                  type="button"
+                  disabled={!data || remoteProject}
+                  tooltip={remoteProject ? remoteLifecycleNotice : undefined}
+                  onClick={() => setCreating(true)}
+                  className="flex items-center gap-1.5"
+                >
+                  <Plus className="icon-xs" />
+                  {t("Create worktree")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  motion="none"
+                  type="button"
+                  iconOnly
+                  label={t("Refresh worktrees")}
+                  tooltip={
+                    loadError
+                      ? t("Refresh failed: {p0}. Click to retry.", {
+                          p0: loadError,
+                        })
+                      : undefined
+                  }
+                  disabled={!project || managedDisabled}
+                  loading={refreshing || managedBusy || (!!project && !data && !loadError)}
+                  loadingLabel={t("Refreshing…")}
+                  onClick={async () => {
+                    setRefreshing(true);
+                    try {
+                      await Promise.all([refresh(), refreshManaged()]);
+                    } finally {
+                      setRefreshing(false);
+                    }
+                  }}
+                >
+                  <RefreshCw className="icon-sm" />
+                  <span className="sr-only">{t("Refresh")}</span>
+                </Button>
               </div>
-            );
-          })}
-        </div>
-      )}
-      {data && (
-        <AdvancedSettings
-          id="worktree-location"
-          settingIds={["worktree-location"]}
-          title={t("Details")}
-        >
-          <p className={styles.location}>
-            {t("New worktrees are created in ")}
-            <span>{prettyCwd(data.defaultRoot)}</span>
-          </p>
-        </AdvancedSettings>
+            </div>
+            <p className={styles.scope}>{prettyCwd(project || "~")}</p>
+            {data && (
+              <p
+                id="setting-worktree-location"
+                data-setting-id="worktree-location"
+                className={styles.location}
+              >
+                {t("New worktrees are created in ")} <span>{prettyCwd(data.defaultRoot)}</span>
+              </p>
+            )}
+            {remoteProject && <p className="settings-description">{remoteLifecycleNotice}</p>}
+          </header>
+        )}
+        liveSessions={liveSessions}
+        policyCollapsed={!boundary}
+        hasWorktreeMatches={(query) =>
+          !data ||
+          managedLoading ||
+          !!error ||
+          !!loadError ||
+          worktrees.some((tree) =>
+            `${tree.path} ${tree.branch ?? tree.head}`
+              .toLocaleLowerCase()
+              .includes(query.trim().toLocaleLowerCase()),
+          ) ||
+          !query.trim()
+        }
+        renderWorktrees={(query) => (
+          <>
+            {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
+            {loadError && <SettingsFeedback state="error">{loadError}</SettingsFeedback>}
+            {refreshingAfterFailure && (
+              <p role="status">
+                {t("Refreshing after a failed deletion. Wait for current status before retrying.")}
+              </p>
+            )}
+            {!data && !loadError && (
+              <p role="status" className={styles.empty}>
+                {t("Loading worktrees…")}
+              </p>
+            )}
+            {managedLoading && (
+              <p role="status" className={styles.empty}>
+                {t(
+                  "Managed workspaces are loading. Deletion is unavailable until their status is known.",
+                )}
+              </p>
+            )}
+            {data && !worktrees.length && !managedWorkspaces?.length && (
+              <p className={styles.empty}>
+                {t("Create a worktree to work on another branch in a separate folder.")}
+              </p>
+            )}
+            {worktrees
+              .filter((tree) =>
+                `${tree.path} ${tree.branch ?? tree.head}`
+                  .toLocaleLowerCase()
+                  .includes(query.trim().toLocaleLowerCase()),
+              )
+              .map((tree) => {
+                const count = worktreeSessionIds(tree, liveSessions).length;
+                const folderName = projectName(tree.path);
+                const identityHint =
+                  liveSessions.find((session) =>
+                    worktreeSessionIds(tree, liveSessions).includes(session.id),
+                  )?.title ||
+                  tree.branch ||
+                  folderName;
+                const blocked = tree.locked
+                  ? t("Unlock this worktree in Git first")
+                  : !tree.branch
+                    ? t("Create a branch before deleting this detached worktree")
+                    : undefined;
+                const warning =
+                  blocked ??
+                  (loadError
+                    ? t("Deletion is unavailable until Refresh succeeds.")
+                    : refreshingAfterFailure
+                      ? t("Deletion is unavailable while status is being refreshed.")
+                      : undefined);
+                return (
+                  <WorktreeRow
+                    key={tree.path}
+                    tree={tree}
+                    selected={pathKey(tree.path) === pathKey(project)}
+                    sessionCount={count}
+                    identityHint={identityHint}
+                    warning={warning}
+                    revealError={
+                      revealFailure?.path === tree.path
+                        ? t("Couldn't reveal this folder: {p0}", { p0: revealFailure.message })
+                        : undefined
+                    }
+                    menuOpen={menu?.tree.path === tree.path}
+                    onReveal={() => revealWorktree(tree.path)}
+                    onMenu={(event) => setMenu({ tree, anchor: event.currentTarget })}
+                  />
+                );
+              })}
+          </>
+        )}
+      />
+      {menu && menuTree && (
+        <DropdownMenu
+          anchor={menu.anchor}
+          label={t("More actions")}
+          onClose={() => setMenu(undefined)}
+          items={[
+            { kind: "item", id: "reveal", label: t("Reveal folder"), disabled: menuTree.missing },
+            {
+              kind: "item",
+              id: "delete",
+              label: t("Delete {p0}", { p0: menuTree.branch ?? "worktree" }),
+              danger: true,
+              disabled:
+                menuTree.locked ||
+                !menuTree.branch ||
+                refreshingAfterFailure ||
+                !!loadError ||
+                remoteProject ||
+                managedLoading,
+            },
+          ]}
+          onPick={(id) => {
+            const tree = menuTree;
+            setMenu(undefined);
+            if (id === "reveal") revealWorktree(tree.path);
+            if (id === "delete") {
+              setError(undefined);
+              setDeleting(tree);
+            }
+          }}
+        />
       )}
       {creating && (
         <CreateWorktreeDialog

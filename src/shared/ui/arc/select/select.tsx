@@ -8,6 +8,7 @@ import type { Variants } from "motion/react";
 import { Check, ChevronDown, ChevronUp } from "../../icons";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./select.module.css";
+import { ComboboxItem } from "../combobox/combobox";
 
 export interface SelectProps extends Omit<
   ComponentPropsWithoutRef<typeof SelectPrimitive.Root>,
@@ -62,13 +63,8 @@ export const SelectTrigger = forwardRef<HTMLButtonElement, ComponentPropsWithout
   },
 );
 
-export const SelectOption = forwardRef<HTMLButtonElement, ComponentPropsWithoutRef<"button">>(
-  function SelectOption({ className, ...props }, ref) {
-    return (
-      <button {...props} ref={ref} className={[styles.item, className].filter(Boolean).join(" ")} />
-    );
-  },
-);
+/** The popup row shared with SearchableSelect (see ComboboxItem), so short and searchable pickers read alike. */
+export const SelectOption = ComboboxItem;
 
 export function SelectValue({ value, label }: { value: string; label: string }) {
   const reduced = useReducedMotion();

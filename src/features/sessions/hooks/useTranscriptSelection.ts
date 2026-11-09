@@ -13,7 +13,10 @@ function responseIdForNode(node: Node | null, root: HTMLElement): string | null 
 }
 
 function clampToResponse(range: Range, root: HTMLElement): Range {
-  const element = range.startContainer instanceof Element ? range.startContainer : range.startContainer.parentElement;
+  const element =
+    range.startContainer instanceof Element
+      ? range.startContainer
+      : range.startContainer.parentElement;
   const response = element?.closest<HTMLElement>(`[${SELECTABLE_AGENT_RESPONSE_ATTR}]`);
   if (!response || !root.contains(response) || response.contains(range.endContainer)) return range;
   // Whole-paragraph selections may end at the start of the following action row.
@@ -49,10 +52,8 @@ export function useTranscriptSelection(
   const dismissSelection = useCallback(() => setSelection(null), []);
 
   useEffect(() => {
-    if (!enabled || !root) {
-      dismissSelection();
-      return;
-    }
+    // Cleanup of the previous run already dismissed the selection.
+    if (!enabled || !root) return;
 
     let pointerSelecting = false;
 
@@ -165,5 +166,5 @@ export function useTranscriptSelection(
     };
   }, [dismissSelection, enabled, root]);
 
-  return { selection, dismissSelection };
+  return { selection: enabled && root ? selection : null, dismissSelection };
 }

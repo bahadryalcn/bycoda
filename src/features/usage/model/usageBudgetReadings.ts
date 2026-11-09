@@ -12,6 +12,8 @@ import { loadFreshRateLimits } from "../../providers/model/rateLimitsCache";
 import { getSession } from "../../sessions/data/sessionStore";
 import type { Session } from "../../sessions/model/session";
 import { loadUsageBudgets } from "./usageBudgetStore";
+import { isProjectLocked } from "../../group-lock/model/groupLock";
+import { getSessions } from "../../sessions/model/sessionsStore";
 import {
   accountBudgetReading,
   budgetMatches,
@@ -63,6 +65,14 @@ export function createBudgetReader(sessions: readonly Session[], now = Date.now(
           Date.now(),
         );
       }
+      if (
+        budget.scope === "machine" &&
+        sessions.some(
+          (session) =>
+            !session.cwd.startsWith("remote://") && !["codex", "claude"].includes(session.harness),
+        )
+      )
+        return budgetReading(budget, null);
       if (budget.scope === "session") {
         let session = sessions.find((s) => s.id === budget.target);
         if (!session || session.historyPartial || session.historyLoading) {
@@ -92,6 +102,17 @@ export function createBudgetReader(sessions: readonly Session[], now = Date.now(
         return budgetReading(budget, null);
       const accounts = (["codex", "claude"] as const).flatMap(providerAccounts);
       if (!accounts.length) return budgetReading(budget, null);
+      // IDs are unique, but linked/default profiles may resolve to one log home.
+      // The public report has no canonical source receipt. Never add potentially
+      // overlapping profiles or deduplicate equal row values (distinct real use).
+      if (
+        budget.scope === "machine" &&
+        accounts.some(
+          (account, index) =>
+            accounts.findIndex((candidate) => candidate.provider === account.provider) !== index,
+        )
+      )
+        return budgetReading(budget, null);
       const since = Math.floor(budgetSince(budget.period, now) / 900_000) * 900_000;
       const results = await Promise.all(
         accounts.map((account) => {
@@ -104,12 +125,17 @@ export function createBudgetReader(sessions: readonly Session[], now = Date.now(
           return report;
         }),
       );
+      if (budget.scope === "machine" && results.some((report) => !report.found))
+        return budgetReading(budget, null);
       // Native usage records are 15-minute buckets. Include the boundary bucket conservatively.
       const firstSlot = Math.floor(since / 900_000) * 900;
       let total = 0;
       for (const report of results)
         for (const row of report.rows) {
           if (row.slot < firstSlot || row.slot * 1000 > now) continue;
+          if (budget.scope === "machine" && row.project.startsWith("remote://")) continue;
+          if (budget.scope === "machine" && isProjectLocked(row.project))
+            return budgetReading(budget, null);
           if (budgetMatches(budget, { id: "", cwd: row.project }, groupFor))
             total += rowTokens(row);
         }
@@ -126,7 +152,11 @@ export function createBudgetReader(sessions: readonly Session[], now = Date.now(
 export async function assertUsageBudgets(session: Session): Promise<void> {
   const matching = blockingUsageBudgets(session);
   if (!matching.length) return;
-  const reader = createBudgetReader([session]);
+  const reader = createBudgetReader(
+    matching.some((budget) => budget.scope === "machine")
+      ? [...getSessions().filter((current) => current.id !== session.id), session]
+      : [session],
+  );
   const readings = await Promise.all(matching.map(async (b) => ({ b, reading: await reader(b) })));
   const blocked = readings.find(
     ({ reading }) => reading.state === "exceeded" || reading.state === "unknown",

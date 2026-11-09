@@ -1,26 +1,38 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { HarnessEvent } from "../../core/types";
 
 const sent: string[] = [];
 let onLine: ((line: string) => void) | undefined;
 let onExit: (() => void) | undefined;
-const execChild = vi.fn(async () => "");
+const execChild = vi.fn(async (..._args: unknown[]) => "");
 const killChild = vi.fn(async () => undefined);
 
-vi.mock("../../core/child", () => ({
-  resolveGrokBinary: async () => ({ path: "/fake/grok" }),
-  execChild,
-  spawnChild: async () => undefined,
-  killChild,
-  unwatchChild: () => undefined,
-  watchChild: (_id: string, line: (value: string) => void, exit: () => void) => {
-    onLine = line;
-    onExit = exit;
-  },
-  writeChild: async (_id: string, line: string) => {
-    sent.push(line);
-  },
-}));
+beforeEach(() => {
+  processConstructions.reset();
+  resolveGrokBinary.mockReset().mockResolvedValue({ path: "/fake/grok" });
+});
+const resolveGrokBinary = vi.fn(async () => ({ path: "/fake/grok" }));
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    resolveGrokBinary,
+    execChild,
+    prepareUtilitySessionCleanup:
+      async (_handle: unknown, command: string, args: string[], cwd: string, provider: string) =>
+      () =>
+        execChild(command, args, cwd, provider),
+    spawnChild: async () => undefined,
+    killChild,
+    unwatchChild: () => undefined,
+    watchChild: (_id: string, line: (value: string) => void, exit: () => void) => {
+      onLine = line;
+      onExit = exit;
+    },
+    writeChild: async (_id: string, line: string) => {
+      sent.push(line);
+    },
+  }),
+);
 
 const { runGrokTextPrompt, stopGrokTextPrompt, warmupGrokText } = await import("./grokText");
 
@@ -58,6 +70,93 @@ afterEach(async () => {
   await stopGrokTextPrompt();
 });
 
+it("does not launch binary-held A and keeps B's protocol on its own construction", async () => {
+  let release!: (value: { path: string }) => void;
+  resolveGrokBinary.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  const first = runGrokTextPrompt({ cwd: "/repo", prompt: "Never dispatch A" }).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  try {
+    await vi.waitFor(() => expect(resolveGrokBinary).toHaveBeenCalledOnce());
+    const original = processConstructions.created[0];
+    expect(original).toBeDefined();
+    await stopGrokTextPrompt();
+    expect(sent).toEqual([]);
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "spawn"),
+    ).toEqual([]);
+    const second = runGrokTextPrompt({ cwd: "/repo", prompt: "Dispatch B" });
+    void second.catch(() => undefined);
+    release({ path: "/late/grok-A" });
+    expect(await first).toEqual(
+      expect.objectContaining({ message: expect.stringContaining("startup cancelled") }),
+    );
+    await openTextSession();
+    await waitFor(() => !!outbound("session/prompt"), "B prompt");
+    const replacement = processConstructions.created[1];
+    expect(replacement).toBeDefined();
+    expect(replacement).not.toBe(original);
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "spawn")
+        .map((operation) => operation.handle),
+    ).toEqual([replacement]);
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "write")
+        .every((operation) => operation.handle === replacement),
+    ).toBe(true);
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "kill")
+        .every((operation) => operation.handle === original),
+    ).toBe(true);
+    reply("session/prompt", {});
+    await expect(second).resolves.toBe("");
+  } finally {
+    release?.({ path: "/late/grok-A" });
+    await stopGrokTextPrompt();
+  }
+});
+
+it.each([{ chunks: ["ha", "ha"] }, { chunks: ["-", "--"] }, { chunks: ["\n", "\n"] }])(
+  "preserves exact Grok utility delta chunks $chunks",
+  async ({ chunks }) => {
+    const events: HarnessEvent[] = [];
+    const result = runGrokTextPrompt({
+      cwd: "/repo",
+      prompt: "Exact text",
+      onEvent: (event) => events.push(event),
+    });
+    await openTextSession();
+    await waitFor(() => !!outbound("session/prompt"), "exact prompt");
+    for (const content of chunks)
+      onLine?.(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          method: "session/update",
+          params: {
+            sessionId: "550e8400-e29b-41d4-a716-446655440000",
+            update: { sessionUpdate: "agent_message_chunk", content },
+          },
+        }),
+      );
+    reply("session/prompt", {});
+    await expect(result).resolves.toBe(chunks.join(""));
+    expect(
+      events
+        .filter((event) => event.type === "message.delta")
+        .map((event) => event.text)
+        .join(""),
+    ).toBe(chunks.join(""));
+  },
+);
 it("forwards Grok text deltas without duplicating snapshots", async () => {
   const events: HarnessEvent[] = [];
   const result = runGrokTextPrompt({

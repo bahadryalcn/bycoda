@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Remote connection feedback fixture</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      localStorage.setItem("bycoda.language", "tr");
+      localStorage.setItem("bycoda.remoteAutoReconnect", "true");
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+      window.__TAURI_INTERNALS__ = {
+        metadata: { currentWebview: { label: "fixture" }, currentWindow: { label: "fixture" } },
+        transformCallback: () => 1,
+        unregisterCallback: () => {},
+        invoke: async (command, args) => {
+          if (command === "plugin:event|listen") return 1;
+          if (command === "remote_machines")
+            return [
+              {
+                id: "fixture-mac",
+                name: "tailm",
+                environmentId: "fixture-env",
+                endpoint: "http://fixture.invalid",
+              },
+            ];
+          if (command === "remote_request") {
+            if (window.fixtureConnectionDown)
+              throw "RPC_CONNECTION_INTERRUPTED: Host connection interrupted";
+            return { environmentId: "fixture-env", capabilities: [] };
+          }
+          return null;
+        },
+      };
+    </script>
+    <script type="module" src="./remote-connection-feedback.tsx"></script>
+  </body>
+</html>

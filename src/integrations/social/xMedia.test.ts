@@ -112,6 +112,9 @@ it("rejects expired uploads, mixed attachments, false media kinds and document b
     ),
   ).toBeTruthy();
   expect(() => xMediaFormat(new TextEncoder().encode("%PDF-1.7 fake"))).toThrow();
+  expect(xMediaIssue([{ kind: "document", uploadId: "pdf", title: "A document" }])).toContain(
+    "native documents",
+  );
   expect(() => xMediaFormat(new Uint8Array([137, 80]))).toThrow();
 });
 

@@ -13,19 +13,19 @@ outside the palette. Test fixtures are excluded from this rule.
 
 Use semantic roles rather than palette primitives:
 
-| Purpose | Role |
-| --- | --- |
-| Background and text | `--color-background-base`, `--color-content` |
-| Card and raised surface | `--ui-surface`, `--ui-surface-raised` |
-| Muted, hover and pressed surface | `--ui-surface-muted`, `--ui-surface-hover`, `--ui-surface-pressed` |
-| Primary button feedback | `--ui-primary-hover`, `--ui-primary-pressed` |
-| Secondary and disabled text | `--ui-text-secondary`, `--ui-text-disabled` |
-| Structural border | `--color-stroke` |
+| Purpose                                 | Role                                                                   |
+| --------------------------------------- | ---------------------------------------------------------------------- |
+| Background and text                     | `--color-background-base`, `--color-content`                           |
+| Card and raised surface                 | `--ui-surface`, `--ui-surface-raised`                                  |
+| Muted, hover and pressed surface        | `--ui-surface-muted`, `--ui-surface-hover`, `--ui-surface-pressed`     |
+| Primary button feedback                 | `--ui-primary-hover`, `--ui-primary-pressed`                           |
+| Secondary and disabled text             | `--ui-text-secondary`, `--ui-text-disabled`                            |
+| Structural border                       | `--color-stroke`                                                       |
 | Error, warning, success and information | `--color-danger`, `--color-warning`, `--color-success`, `--color-info` |
-| Feature and orchestration cues | `--color-feature`, `--color-orchestration` |
-| Search matches | `--color-search` |
-| Diff additions and deletions | `--color-diff-add`, `--color-diff-del` |
-| Invariant overlay colors | `--color-scrim`, `--color-on-solid` |
+| Feature and orchestration cues          | `--color-feature`, `--color-orchestration`                             |
+| Search matches                          | `--color-search`                                                       |
+| Diff additions and deletions            | `--color-diff-add`, `--color-diff-del`                                 |
+| Invariant overlay colors                | `--color-scrim`, `--color-on-solid`                                    |
 
 Tailwind classes such as `text-danger`, `bg-warning/10` and `border-success/20`
 use these roles and adapt to the light or dark theme. Avoid `text-red-400` and

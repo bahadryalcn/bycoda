@@ -22,6 +22,37 @@ const base = {
 };
 beforeEach(() => vi.mocked(invoke).mockReset());
 
+it("a failed spill waits for every accepted sibling's actual result", async () => {
+  let release!: (value: string) => void;
+  const held = new Promise<string>((resolve) => {
+    release = resolve;
+  });
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command !== "write_attachment") return undefined;
+    if ((args as { name: string }).name === "first.png") throw new Error("First spill failed");
+    return held;
+  });
+  let finished = false;
+  const actual = storeQuickAttachments([
+    { ...image, name: "first.png" },
+    { ...image, id: "second", name: "second.png" },
+  ]);
+  const rejected = expect(actual).rejects.toThrow("First spill failed");
+  void actual.then(
+    () => {
+      finished = true;
+    },
+    () => {
+      finished = true;
+    },
+  );
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(finished).toBe(false);
+  release("/tmp/second.png");
+  await rejected;
+});
+
 it("stores pasted images and sends only portable metadata across windows", async () => {
   vi.mocked(invoke).mockResolvedValue("/tmp/Screenshot.png");
   const stored = await storeQuickAttachments([image]);

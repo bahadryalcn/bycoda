@@ -9,20 +9,39 @@ for (const theme of ["light", "dark"]) {
       const appearance = page.locator(".appearance-settings");
       await expect(appearance.locator("details, summary")).toHaveCount(0);
       await expect(appearance.locator(".appearance-section")).toHaveCount(6);
+      // Custom surface colors (hue, saturation, dark lightness) sit behind a closed toggle row.
+      const surfaceColors = appearance.getByRole("button", {
+        name: "Özel yüzey renkleri",
+        exact: true,
+      });
+      await expect(surfaceColors).toHaveAttribute("aria-expanded", "false");
+      await surfaceColors.click();
+      await expect(surfaceColors).toHaveAttribute("aria-expanded", "true");
       for (const id of ["dark-lightness", "code-font-size", "sidebar-opacity", "tab-animations"]) {
         await expect(appearance.locator(`[data-setting-id="${id}"]`)).toBeVisible();
       }
-      await expect(appearance.locator(".appearance-scheme-option")).toHaveCount(3);
-      await expect(appearance.locator(".appearance-palette")).toHaveCount(6);
-      const tide = appearance.locator(".appearance-palette").filter({ hasText: "Tide" });
+      await expect(
+        appearance.getByRole("radiogroup", { name: "Renk şeması" }).getByRole("radio"),
+      ).toHaveCount(3);
+      await expect(appearance.locator(".theme-palette-card")).toHaveCount(6);
+      const tide = appearance.locator(".theme-palette-card").filter({ hasText: "Tide" });
       await tide.focus();
       await page.keyboard.press("Enter");
-      await expect(tide).toHaveAttribute("aria-pressed", "true");
+      await expect(tide).toHaveAttribute("aria-checked", "true");
       await page.reload();
-      await expect(tide).toHaveAttribute("aria-pressed", "true");
-      expect(await appearance.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(
-        true,
-      );
+      await expect(tide).toHaveAttribute("aria-checked", "true");
+      // Open rows outset their hover surface by 12px into the form's padding, so the measured
+      // boundary is the padded form and the scroller, not the inner appearance wrapper.
+      expect(
+        await page
+          .locator(".bycoda-settings-form")
+          .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+      ).toBe(true);
+      expect(
+        await page
+          .locator("[data-settings-scroller]")
+          .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+      ).toBe(true);
       const overflow = await appearance
         .locator(".settings-row, .settings-group-heading, .appearance-scheme-options")
         .evaluateAll((nodes) =>
@@ -35,7 +54,7 @@ for (const theme of ["light", "dark"]) {
         node.scrollTop = 0;
       });
       await page.screenshot({ path: testInfo.outputPath(`appearance-${theme}-${width}.png`) });
-      await appearance.locator(".appearance-type-sample").scrollIntoViewIfNeeded();
+      await appearance.locator('[data-setting-id="interface-font"]').scrollIntoViewIfNeeded();
       await page.screenshot({ path: testInfo.outputPath(`typography-${theme}-${width}.png`) });
     });
   }
@@ -56,7 +75,44 @@ test("settings expose advanced controls without opening a menu", async ({ page }
   ]) {
     await page.goto(`/tests/browser/settings.html?section=${section}&theme=dark&lang=en`);
     const form = page.locator(".bycoda-settings-form");
-    await expect(form.locator("details, summary")).toHaveCount(0);
+    // Optional provenance, recovery help and manual connection setup are intentionally disclosed.
+    // Keep this inventory exact so ordinary settings cannot silently move behind disclosures.
+    const optionalDisclosures: Record<string, string[]> = {
+      general: ["Build details"],
+      // Reconnection help moved from a disclosure into the group's information control.
+      connections: ["Connect to an existing host by URL"],
+    };
+    await expect
+      .poll(async () =>
+        (await form.locator("details > summary").allTextContents())
+          .map((label) => label.trim())
+          .sort(),
+      )
+      .toEqual((optionalDisclosures[section] ?? []).slice().sort());
+    if (section === "connections") {
+      const recovery = form.locator('[data-setting-id="remote-auto-reconnect"]');
+      await expect(
+        recovery.getByRole("switch", {
+          name: "Automatically reconnect to remote machines",
+          exact: true,
+        }),
+      ).toBeVisible();
+      await recovery.getByRole("button", { name: "Help", exact: true }).click();
+      await expect(
+        page.getByText("You can still reconnect manually when this is off.", {
+          exact: false,
+        }),
+      ).toBeVisible();
+      await page.keyboard.press("Escape");
+    }
+    if (section === "general") {
+      const buildDetails = form.getByTestId("build-identity-details");
+      await buildDetails.locator("summary").click();
+      await expect(
+        buildDetails.getByRole("button", { name: "Copy build details", exact: true }),
+      ).toBeVisible();
+      await expect(buildDetails).toContainText("Source comparison");
+    }
     expect(await form.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
   }
 });

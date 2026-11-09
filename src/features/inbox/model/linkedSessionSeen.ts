@@ -1,10 +1,12 @@
+import { createStore } from "../../../shared/lib/store";
+
 const KEY = "bycoda.linkedSessionSeen";
 const MAX_ENTRIES = 500;
 
 type SeenMap = Record<string, number>;
 type Listener = () => void;
 
-const listeners = new Set<Listener>();
+const listeners = createStore();
 let volatileSeen: SeenMap = {};
 
 function loadStoredSeenMap(): SeenMap {
@@ -42,7 +44,7 @@ function saveSeenMap(items: SeenMap) {
     // A later successful save merges and flushes these bounded timestamps.
     volatileSeen = items;
   }
-  for (const listener of listeners) listener();
+  listeners.notify();
 }
 
 export function linkedSessionSeenAt(sessionId: string): number {
@@ -66,6 +68,5 @@ export function markLinkedSessionUpdateSeen(sessionId: string, remoteUpdatedAt: 
 }
 
 export function subscribeLinkedSessionSeen(listener: Listener): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+  return listeners.subscribe(listener);
 }

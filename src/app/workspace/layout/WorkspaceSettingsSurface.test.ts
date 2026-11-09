@@ -7,7 +7,13 @@ import {
   type WorkspaceSettingsSurfaceProps,
 } from "./WorkspaceSettingsSurface";
 
-const { manage, remove } = vi.hoisted(() => ({ manage: vi.fn(), remove: vi.fn() }));
+const { manage, remove, view, loading } = vi.hoisted(() => ({
+  manage: vi.fn(),
+  remove: vi.fn(),
+  view: vi.fn(),
+  /** While set, the lazy Settings view is still loading (it suspends). */
+  loading: { promise: null as Promise<never> | null },
+}));
 vi.mock("../../../features/source-control/ui/WorktreesPage", () => ({
   WorktreesPage: (props: unknown) => {
     manage(props);
@@ -21,12 +27,30 @@ vi.mock("../../../features/source-control/ui/QuickDeleteWorktreeDialog", () => (
   },
 }));
 vi.mock("../../../shared/ui/Modal", () => ({
-  Modal: ({ children }: { children: React.ReactNode }) => children,
+  Modal: ({
+    children,
+    className,
+    title,
+  }: {
+    children: React.ReactNode;
+    className?: string;
+    title?: string;
+  }) => createElement("div", { "data-modal": title, className }, children),
 }));
 vi.mock("../../../shared/i18n/git", () => ({ t: (key: string) => key, useLocale: () => "en" }));
-vi.mock("../surfaces/lazySurfaces", () => ({ SettingsView: () => null }));
+vi.mock("../surfaces/lazySurfaces", () => ({
+  SettingsView: (props: unknown) => {
+    if (loading.promise) throw loading.promise;
+    view(props);
+    return null;
+  },
+  preloadToolSurface: vi.fn(),
+}));
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  loading.promise = null;
+});
 
 function props(deletePath?: string): WorkspaceSettingsSurfaceProps {
   return {
@@ -52,12 +76,17 @@ it("opens management for a general request and forwards repository and deletion 
       cwd: "remote://mac/repo",
       recents: input.visibleRecents,
       liveSessions: input.sessions,
-      onRemove: input.onRemoveWorktree,
-      onCheckRemove: input.onCheckWorktreeRemoval,
-      onDeleteSessions: input.onDeleteWorktreeSessions,
     }),
   );
   expect(input.onRemoveWorktree).not.toHaveBeenCalled();
+  // Handlers reach the page as stable proxies that call the workspace's own.
+  const forwarded = manage.mock.calls[0][0] as Record<string, (...args: unknown[]) => unknown>;
+  forwarded.onRemove("a");
+  forwarded.onCheckRemove("b");
+  forwarded.onDeleteSessions("c");
+  expect(input.onRemoveWorktree).toHaveBeenCalledWith("a");
+  expect(input.onCheckWorktreeRemoval).toHaveBeenCalledWith("b");
+  expect(input.onDeleteWorktreeSessions).toHaveBeenCalledWith("c");
 });
 
 it("keeps targeted deletion in the quick confirmation", () => {
@@ -66,10 +95,58 @@ it("keeps targeted deletion in the quick confirmation", () => {
   expect(html).toContain("Delete worktree?");
   expect(manage).not.toHaveBeenCalled();
   expect(remove).toHaveBeenCalledWith(
-    expect.objectContaining({
-      request: input.worktreeManagementRequest,
-      onRemove: input.onRemoveWorktree,
-    }),
+    expect.objectContaining({ request: input.worktreeManagementRequest }),
   );
   expect(input.onRemoveWorktree).not.toHaveBeenCalled();
+  const forwarded = remove.mock.calls[0][0] as { onRemove: (...args: unknown[]) => unknown };
+  forwarded.onRemove("feature");
+  expect(input.onRemoveWorktree).toHaveBeenCalledWith("feature");
+});
+
+function settingsProps(presentation?: "page" | "dialog"): WorkspaceSettingsSurfaceProps {
+  return {
+    ...props(),
+    presentation,
+    worktreeManagementRequest: null,
+    settingsOpen: true,
+    settingsSection: "skills",
+    onCloseSettings: vi.fn(),
+  } as unknown as WorkspaceSettingsSurfaceProps;
+}
+
+it("keeps the full-window page presentation by default, with its own chrome", () => {
+  const html = renderToStaticMarkup(createElement(WorkspaceSettingsSurface, settingsProps()));
+  expect(html).not.toContain("data-modal");
+  const shown = view.mock.calls[0][0] as Record<string, unknown>;
+  expect(shown.embedded).toBe(false);
+  expect(shown.onToggleMaximize).toBeUndefined();
+});
+
+it("shows Settings in the shared Modal with maximize and no duplicate window chrome", () => {
+  const html = renderToStaticMarkup(
+    createElement(WorkspaceSettingsSurface, settingsProps("dialog")),
+  );
+  expect(html).toContain('data-modal="Settings"');
+  expect(html).toContain("bycoda-settings-dialog");
+  // Every page shares one dialog geometry; only maximize changes it.
+  expect(html).toContain('data-settings-dialog-mode="standard"');
+  const shown = view.mock.calls[0][0] as Record<string, unknown>;
+  expect(shown.embedded).toBe(true);
+  expect(shown.maximized).toBe(false);
+  expect(typeof shown.onToggleMaximize).toBe("function");
+});
+
+it("keeps the dialog title and section visible while the Settings view is still loading", () => {
+  loading.promise = new Promise<never>(() => {});
+  const html = renderToStaticMarkup(
+    createElement(WorkspaceSettingsSurface, {
+      ...settingsProps("dialog"),
+      settingsSection: "appearance",
+    } as WorkspaceSettingsSurfaceProps),
+  );
+  // The Modal (title and close action) is already mounted; the placeholder names the section.
+  expect(html).toContain('data-modal="Settings"');
+  expect(html).toContain("data-settings-loading");
+  expect(html).toContain("Appearance");
+  expect(view).not.toHaveBeenCalled();
 });

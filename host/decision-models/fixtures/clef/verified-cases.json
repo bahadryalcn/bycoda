@@ -1,0 +1,470 @@
+{
+  "source": "clef/verification/20261006T104640Z/results.json",
+  "cases": [
+    {
+      "name": "C01-business-area",
+      "provenance": "Recorded live run, clef verification 20261006T104640Z (results.json). Copied, not edited.",
+      "request": {
+        "model": "clef-flash",
+        "state": "Yeni merchant hesabı açılıyor ve üyelik sözleşmesi kabul ediliyor.",
+        "questions": {
+          "answer": {
+            "type": "choice",
+            "instructions": "İşlemin iş alanı hangisidir?",
+            "criteria": {
+              "Onboarding": "Üyelik, merchant kaydı ve sözleşme kabulü",
+              "Ödeme": "Ödeme başlatma ve sonuçlandırma",
+              "İade": "İade ve iptal",
+              "Diğer": "Rapor indirme veya diğer işler"
+            }
+          }
+        }
+      },
+      "response": {
+        "model": "clef-flash",
+        "answers": {
+          "answer": {
+            "type": "choice",
+            "choice": "Onboarding",
+            "probabilities": {
+              "Diğer": 0.0031538460058569374,
+              "Onboarding": 0.9889457696280445,
+              "Ödeme": 0.003915241042971129,
+              "İade": 0.00398514332312772
+            },
+            "confidence": 0.985261026170726
+          }
+        },
+        "usage": {
+          "input_tokens": 214,
+          "output_tokens": 0
+        }
+      },
+      "expected": "Onboarding"
+    },
+    {
+      "name": "C02-business-area",
+      "provenance": "Recorded live run, clef verification 20261006T104640Z (results.json). Copied, not edited.",
+      "request": {
+        "model": "clef-flash",
+        "state": "Müşteri banka kartıyla 100 TL ödeme yapıyor; ödeme başarılı.",
+        "questions": {
+          "answer": {
+            "type": "choice",
+            "instructions": "İşlemin iş alanı hangisidir?",
+            "criteria": {
+              "Onboarding": "Üyelik, merchant kaydı ve sözleşme kabulü",
+              "Ödeme": "Ödeme başlatma ve sonuçlandırma",
+              "İade": "İade ve iptal",
+              "Diğer": "Rapor indirme veya diğer işler"
+            }
+          }
+        }
+      },
+      "response": {
+        "model": "clef-flash",
+        "answers": {
+          "answer": {
+            "type": "choice",
+            "choice": "Ödeme",
+            "probabilities": {
+              "Diğer": 0.014035965123703574,
+              "Onboarding": 0.02137842367642341,
+              "Ödeme": 0.9495262565559792,
+              "İade": 0.015059354643893793
+            },
+            "confidence": 0.9327016754079723
+          }
+        },
+        "usage": {
+          "input_tokens": 216,
+          "output_tokens": 0
+        }
+      },
+      "expected": "Ödeme"
+    },
+    {
+      "name": "C03-business-area",
+      "provenance": "Recorded live run, clef verification 20261006T104640Z (results.json). Copied, not edited.",
+      "request": {
+        "model": "clef-flash",
+        "state": "Önceden alınmış ödemenin tamamı müşteriye iade ediliyor.",
+        "questions": {
+          "answer": {
+            "type": "choice",
+            "instructions": "İşlemin iş alanı hangisidir?",
+            "criteria": {
+              "Onboarding": "Üyelik, merchant kaydı ve sözleşme kabulü",
+              "Ödeme": "Ödeme başlatma ve sonuçlandırma",
+              "İade": "İade ve iptal",
+              "Diğer": "Rapor indirme veya diğer işler"
+            }
+          }
+        }
+      },
+      "response": {
+        "model": "clef-flash",
+        "answers": {
+          "answer": {
+            "type": "choice",
+            "choice": "İade",
+            "probabilities": {
+              "Diğer": 0.015446126460002488,
+              "Onboarding": 0.02208939669636411,
+              "Ödeme": 0.03967525310804547,
+              "İade": 0.922789223735588
+            },
+            "confidence": 0.8970522983141174
+          }
+        },
+        "usage": {
+          "input_tokens": 215,
+          "output_tokens": 0
+        }
+      },
+      "expected": "İade"
+    },
+    {
+      "name": "C04-business-area",
+      "provenance": "Recorded live run, clef verification 20261006T104640Z (results.json). Copied, not edited.",
+      "request": {
+        "model": "clef-flash",
+        "state": "Aylık işlem raporu CSV dosyası olarak indiriliyor.",
+        "questions": {
+          "answer": {
+            "type": "choice",
+            "instructions": "İşlemin iş alanı hangisidir?",
+            "criteria": {
+              "Onboarding": "Üyelik, merchant kaydı ve sözleşme kabulü",
+              "Ödeme": "Ödeme başlatma ve sonuçlandırma",
+              "İade": "İade ve iptal",
+              "Diğer": "Rapor indirme veya diğer işler"
+            }
+          }
+        }
+      },
+      "response": {
+        "model": "clef-flash",
+        "answers": {
+          "answer": {
+            "type": "choice",
+            "choice": "Diğer",
+            "probabilities": {
+              "Diğer": 0.9524316339844808,
+              "Onboarding": 0.016023309678736306,
+              "Ödeme": 0.02197447740242664,
+              "İade": 0.009570578934356222
+            },
+            "confidence": 0.9365755119793078
+          }
+        },
+        "usage": {
+          "input_tokens": 212,
+          "output_tokens": 0
+        }
+      },
+      "expected": "Diğer"
+    },
+    {
+      "name": "C05-sql-operation",
+      "provenance": "Recorded live run, clef verification 20261006T104640Z (results.json). Copied, not edited.",
+      "request": {
+        "model": "clef-flash",
+        "state": {
+          "sql": "SELECT count(*) FROM transactions;"
+        },
+        "questions": {
+          "answer": {
+            "type": "choice",
+            "instructions": "Bu SQL hangi tür işlemi yapar?",
+            "criteria": {
+              "Okuma": "Yalnızca mevcut verileri okur",
+              "Silme": "Veri siler"
+            }
+          }
+        }
+      },
+      "response": {
+        "model": "clef-flash",
+        "answers": {
+          "answer": {
+            "type": "choice",
+            "choice": "Okuma",
+            "probabilities": {
+              "Okuma": 0.9786723065079295,
+              "Silme": 0.0213276934920705
+            },
+            "confidence": 0.9573446130158589
+          }
+        },
+        "usage": {
+          "input_tokens": 150,
+          "output_tokens": 0
+        }
+      },
+      "expected": "Okuma"
+    },
+    {
+      "name": "C06-sql-operation",
+      "provenance": "Recorded live run, clef verification 20261006T104640Z (results.json). Copied, not edited.",
+      "request": {
+        "model": "clef-flash",
+        "state": {
+          "sql": "DELETE FROM transactions;"
+        },
+        "questions": {
+          "answer": {
+            "type": "choice",
+            "instructions": "Bu SQL hangi tür işlemi yapar?",
+            "criteria": {
+              "Okuma": "Yalnızca mevcut verileri okur",
+              "Silme": "Veri siler"
+            }
+          }
+        }
+      },
+      "response": {
+        "model": "clef-flash",
+        "answers": {
+          "answer": {
+            "type": "choice",
+            "choice": "Silme",
+            "probabilities": {
+              "Okuma": 0.005537414496132846,
+              "Silme": 0.9944625855038671
+            },
+            "confidence": 0.9889251710077342
+          }
+        },
+        "usage": {
+          "input_tokens": 148,
+          "output_tokens": 0
+        }
+      },
+      "expected": "Silme"
+    },
+    {
+      "name": "C07-consent-negative",
+      "provenance": "Recorded live run, clef verification 20261006T104640Z (results.json). Copied, not edited.",
+      "request": {
+        "model": "clef-flash",
+        "state": "Kullanıcı kampanya e-postası almak istemediğini açıkça söyledi.",
+        "questions": {
+          "answer": {
+            "type": "noul",
+            "instructions": "Kullanıcı kampanya e-postası almak istiyor mu?",
+            "criteria": {
+              "true": "Evet",
+              "false": "Hayır"
+            }
+          }
+        }
+      },
+      "response": {
+        "model": "clef-flash",
+        "answers": {
+          "answer": {
+            "type": "noul",
+            "noul": 0.01577203927198383
+          }
+        },
+        "usage": {
+          "input_tokens": 152,
+          "output_tokens": 0
+        }
+      },
+      "expected": false
+    },
+    {
+      "name": "C08-consent-positive",
+      "provenance": "Recorded live run, clef verification 20261006T104640Z (results.json). Copied, not edited.",
+      "request": {
+        "model": "clef-flash",
+        "state": "Kullanıcı kampanya e-postası almak istediğini açıkça söyledi.",
+        "questions": {
+          "answer": {
+            "type": "noul",
+            "instructions": "Kullanıcı kampanya e-postası almak istiyor mu?",
+            "criteria": {
+              "true": "Evet",
+              "false": "Hayır"
+            }
+          }
+        }
+      },
+      "response": {
+        "model": "clef-flash",
+        "answers": {
+          "answer": {
+            "type": "noul",
+            "noul": 0.9782812900580788
+          }
+        },
+        "usage": {
+          "input_tokens": 151,
+          "output_tokens": 0
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "C09-ui-present",
+      "provenance": "Recorded live run, clef verification 20261006T104640Z (results.json). Copied, not edited.",
+      "request": {
+        "model": "clef-flash",
+        "state": {
+          "steps": [
+            {
+              "type": "click",
+              "target": "Kaydet düğmesi"
+            }
+          ]
+        },
+        "questions": {
+          "answer": {
+            "type": "noul",
+            "instructions": "Senaryoda kullanıcı arayüzü etkileşimi var mı?",
+            "criteria": {
+              "true": "Evet",
+              "false": "Hayır"
+            }
+          }
+        }
+      },
+      "response": {
+        "model": "clef-flash",
+        "answers": {
+          "answer": {
+            "type": "noul",
+            "noul": 0.9572380608306043
+          }
+        },
+        "usage": {
+          "input_tokens": 152,
+          "output_tokens": 0
+        }
+      },
+      "expected": true
+    },
+    {
+      "name": "C10-ui-absent",
+      "provenance": "Recorded live run, clef verification 20261006T104640Z (results.json). Copied, not edited.",
+      "request": {
+        "model": "clef-flash",
+        "state": {
+          "steps": [
+            {
+              "type": "http_request",
+              "method": "GET",
+              "url": "/health"
+            }
+          ]
+        },
+        "questions": {
+          "answer": {
+            "type": "noul",
+            "instructions": "Senaryoda kullanıcı arayüzü etkileşimi var mı?",
+            "criteria": {
+              "true": "Evet",
+              "false": "Hayır"
+            }
+          }
+        }
+      },
+      "response": {
+        "model": "clef-flash",
+        "answers": {
+          "answer": {
+            "type": "noul",
+            "noul": 0.023225919960503022
+          }
+        },
+        "usage": {
+          "input_tokens": 153,
+          "output_tokens": 0
+        }
+      },
+      "expected": false
+    },
+    {
+      "name": "C11-score-not-started",
+      "provenance": "Recorded live run, clef verification 20261006T104640Z (results.json). Copied, not edited.",
+      "request": {
+        "model": "clef-flash",
+        "state": "İşlem henüz başlatılmadı. Hiçbir adım yapılmadı.",
+        "questions": {
+          "answer": {
+            "type": "score",
+            "instructions": "İşlemin tamamlanma durumu hangi seviyededir?",
+            "criteria": ["İşlem hiç başlamadı", "İşlem devam ediyor", "İşlem başarıyla tamamlandı"]
+          }
+        }
+      },
+      "response": {
+        "model": "clef-flash",
+        "answers": {
+          "answer": {
+            "type": "score",
+            "score": 0.03258488960404614,
+            "legend": {
+              "0": "İşlem hiç başlamadı",
+              "1": "İşlem devam ediyor",
+              "2": "İşlem başarıyla tamamlandı"
+            },
+            "probabilities": {
+              "0": 0.9789734543855813,
+              "1": 0.009468201624791594,
+              "2": 0.011558343989627271
+            },
+            "confidence": 0.9511226655939308
+          }
+        },
+        "usage": {
+          "input_tokens": 183,
+          "output_tokens": 0
+        }
+      },
+      "expected": "0"
+    },
+    {
+      "name": "C12-score-completed",
+      "provenance": "Recorded live run, clef verification 20261006T104640Z (results.json). Copied, not edited.",
+      "request": {
+        "model": "clef-flash",
+        "state": "Bütün adımlar tamamlandı. İşlem başarıyla sonuçlandı.",
+        "questions": {
+          "answer": {
+            "type": "score",
+            "instructions": "İşlemin tamamlanma durumu hangi seviyededir?",
+            "criteria": ["İşlem hiç başlamadı", "İşlem devam ediyor", "İşlem başarıyla tamamlandı"]
+          }
+        }
+      },
+      "response": {
+        "model": "clef-flash",
+        "answers": {
+          "answer": {
+            "type": "score",
+            "score": 1.9750641506061986,
+            "legend": {
+              "0": "İşlem hiç başlamadı",
+              "1": "İşlem devam ediyor",
+              "2": "İşlem başarıyla tamamlandı"
+            },
+            "probabilities": {
+              "0": 0.008604240301923643,
+              "1": 0.007727368789954361,
+              "2": 0.9836683909081221
+            },
+            "confidence": 0.9625962259092975
+          }
+        },
+        "usage": {
+          "input_tokens": 180,
+          "output_tokens": 0
+        }
+      },
+      "expected": "2"
+    }
+  ]
+}

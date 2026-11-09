@@ -20,6 +20,10 @@ vi.mock("../../features/source-control/hooks/useProjectDiffStats", () => ({
   useProjectsDiffStats: () => [],
 }));
 vi.mock("./SidebarUpdate", () => ({ SidebarUpdateFooter: () => null }));
+vi.mock("./SidebarAccountFooter", () => ({
+  SidebarAccountFooter: ({ compact }: { compact?: boolean }) =>
+    compact ? null : createElement("div", { "data-github-prompt": true }),
+}));
 vi.mock("../../features/projects/model/projectData", () => ({
   projectSessionCount: vi.fn(async () => 0),
 }));
@@ -64,6 +68,40 @@ const render = async (cwd = "G:/wallet/api", paths = ["G:/wallet/api", "G:/walle
 const workspaceButton = () =>
   host.querySelector<HTMLButtonElement>('button[aria-label="Open Wallet"]')!;
 
+it("keeps application chrome on the panel and removes it from the project navigator", async () => {
+  await render();
+  expect(host.querySelector('[aria-label="Workspace tools"]')).not.toBeNull();
+  expect(host.querySelector("[data-github-prompt]")).not.toBeNull();
+  expect(host.querySelector('[aria-label="Resize project sidebar"]')).not.toBeNull();
+
+  await act(async () =>
+    root.render(
+      createElement(ProjectRail, {
+        presentation: "navigator",
+        cwd: "G:/wallet/api",
+        recents: ["G:/wallet/api", "G:/wallet/mobile"].map((path) => ({ path, openedAt: 1 })),
+        onSelectProject: select,
+        onOpenProject: vi.fn(),
+      }),
+    ),
+  );
+  expect(host.querySelector('[aria-label="Workspace tools"]')).toBeNull();
+  expect(host.querySelector("[data-github-prompt]")).toBeNull();
+  expect(host.querySelector('[aria-label="Resize project sidebar"]')).toBeNull();
+  expect(host.querySelector('[data-side-pane="rail"] > [data-tauri-drag-region]')).toBeNull();
+  expect(host.querySelector('button[aria-label="New project group"]')).not.toBeNull();
+  expect(host.querySelector('button[aria-label="Open project"]')).not.toBeNull();
+
+  const group = host.querySelector<HTMLButtonElement>('button[aria-label="Wallet, 2 projects"]')!;
+  await act(async () => group.click());
+  expect(loadProjectGroups()[0].collapsed).toBe(true);
+  await act(async () => group.click());
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-project-path="G:/wallet/mobile"] button')!.click(),
+  );
+  expect(select).toHaveBeenLastCalledWith("G:/wallet/mobile");
+});
+
 it("opens Servers from expanded and compact tools without a project", async () => {
   const onOpenServers = vi.fn();
   await act(async () =>
@@ -87,8 +125,10 @@ it("opens Servers from expanded and compact tools without a project", async () =
 
 it("selects the workspace root through normal project navigation without opening a modal", async () => {
   await render();
-  expect(workspaceButton().title).toBe("G:/wallet");
-  expect(host.textContent).toContain("Workspace");
+  // The root path rides in the shared tooltip, not a native title.
+  expect(workspaceButton().title).toBe("");
+  // The linked-workspace marker is an icon with an accessible name, not visible caption text.
+  expect(host.querySelector('[role="img"][aria-label="Workspace"]')).not.toBeNull();
   await act(async () => workspaceButton().click());
   expect(select).toHaveBeenCalledWith("G:/wallet");
   expect(loadProjectGroups()[0].collapsed).toBe(false);
@@ -120,6 +160,46 @@ it("represents the root once even when it is recent or pinned", async () => {
   expect(host.querySelector('[data-project-path="G:/wallet"]')).toBeNull();
   expect(host.querySelector('[data-project-path="G:/wallet/api"]')).not.toBeNull();
   expect(host.querySelector('[data-project-path="G:/wallet/mobile"]')).not.toBeNull();
+});
+
+it("keeps declared root and nested projects visible after moving the workspace into a parent", async () => {
+  saveProjectGroups([
+    { id: "team", name: "Team", collapsed: false },
+    {
+      id: "wallet",
+      name: "Wallet",
+      collapsed: false,
+      workspaceFile: "G:/wallet/wallet.code-workspace",
+      workspaceFolders: ["G:/wallet", "G:/wallet/core-pack"],
+    },
+  ]);
+  saveProjectGroupAssignments({ "g:/wallet": "team", "g:/wallet/core-pack": "wallet" });
+  savePinnedProjects(["G:/wallet"]);
+  await render("G:/wallet", ["G:/wallet", "G:/wallet/core-pack"]);
+  const parent = host.querySelector('[data-project-group="team"]')!;
+  const group = parent.querySelector('[data-project-group="wallet"]')!;
+  expect(group.querySelectorAll("[data-project-path]")).toHaveLength(2);
+  expect(host.querySelectorAll('[data-project-path="G:/wallet"]')).toHaveLength(1);
+  const row = group.querySelector<HTMLButtonElement>('[data-project-path="G:/wallet"] button')!;
+  await act(async () => row.click());
+  expect(select).toHaveBeenCalledWith("G:/wallet");
+  savePinnedProjects([]);
+  await render("G:/other", ["G:/wallet/core-pack"]);
+  expect(group.querySelector('[data-project-path="G:/wallet"]')).not.toBeNull();
+  expect(group.querySelectorAll("[data-project-path]")).toHaveLength(2);
+  await act(async () =>
+    root.render(
+      createElement(ProjectRail, {
+        cwd: "G:/wallet",
+        recents: [{ path: "G:/wallet/core-pack", openedAt: 1 }],
+        onSelectProject: select,
+        onOpenProject: vi.fn(),
+        projectFilter: "core-pack",
+      }),
+    ),
+  );
+  expect(group.querySelector('[data-project-path="G:/wallet"]')).toBeNull();
+  expect(group.querySelector('[data-project-path="G:/wallet/core-pack"]')).not.toBeNull();
 });
 
 it("opens the normal Changes tab for the workspace root from its Git shortcut", async () => {
@@ -158,4 +238,65 @@ it("toggles ordinary groups from their name, header space and arrow", async () =
     host.querySelector<HTMLButtonElement>('button[aria-label="Team group options"]')!.click(),
   );
   expect(loadProjectGroups()[0].collapsed).toBe(true);
+});
+
+const liveAgent = {
+  id: "live-1",
+  cwd: "G:/wallet/api",
+  title: "Refactor wallet",
+  harness: "codex" as const,
+  activity: "Working",
+  startedAt: 1_000,
+  needsApproval: false,
+  done: false,
+};
+
+it("lets the layout owner leave the live-agent summary out of the project navigator", async () => {
+  const props = {
+    presentation: "navigator" as const,
+    cwd: "G:/wallet/api",
+    recents: ["G:/wallet/api", "G:/wallet/mobile"].map((path) => ({ path, openedAt: 1 })),
+    onSelectProject: select,
+    onOpenProject: vi.fn(),
+    liveAgents: [liveAgent],
+    activeSessionId: "other",
+  };
+  await act(async () => root.render(createElement(ProjectRail, props)));
+  expect(host.querySelector("[data-live-agents-preview]")).not.toBeNull();
+  await act(async () =>
+    root.render(createElement(ProjectRail, { ...props, showLiveAgents: false })),
+  );
+  expect(host.querySelector("[data-live-agents-preview]")).toBeNull();
+  expect(host.querySelector('[data-live-agent-card="live-1"]')).toBeNull();
+});
+
+it("narrows the listed projects by name or group without touching the saved list", async () => {
+  const paths = ["G:/wallet/api", "G:/wallet/mobile", "G:/other/web"];
+  const props = {
+    presentation: "navigator" as const,
+    cwd: "G:/wallet/api",
+    recents: paths.map((path) => ({ path, openedAt: 1 })),
+    onSelectProject: select,
+    onOpenProject: vi.fn(),
+  };
+  const listed = () =>
+    [...host.querySelectorAll("[data-project-path]")].map((row) =>
+      row.getAttribute("data-project-path"),
+    );
+  await act(async () => root.render(createElement(ProjectRail, props)));
+  expect(listed()).toEqual(expect.arrayContaining(paths));
+  await act(async () =>
+    root.render(createElement(ProjectRail, { ...props, projectFilter: "web" })),
+  );
+  expect(listed()).toEqual(["G:/other/web"]);
+  await act(async () =>
+    root.render(createElement(ProjectRail, { ...props, projectFilter: "wallet" })),
+  );
+  expect(listed()).toEqual(expect.arrayContaining(["G:/wallet/api", "G:/wallet/mobile"]));
+  expect(listed()).not.toContain("G:/other/web");
+  await act(async () =>
+    root.render(createElement(ProjectRail, { ...props, projectFilter: "zzz" })),
+  );
+  expect(listed()).toEqual([]);
+  expect(host.textContent).toContain("No projects found");
 });

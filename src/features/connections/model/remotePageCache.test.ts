@@ -32,6 +32,13 @@ const snapshot: RemotePageSnapshot = {
     blocks: [{ id: "b1", role: "assistant", text: "tail" }],
   },
 };
+
+it("retains last activity and interrupted status in cached pages", () => {
+  expect(
+    sanitizeRemotePageSnapshot({ ...snapshot, status: "interrupted", lastActivityAt: 42 }),
+  ).toMatchObject({ status: "interrupted", lastActivityAt: 42 });
+  expect(sanitizeRemotePageSnapshot({ ...snapshot, lastActivityAt: -1 })).toBeUndefined();
+});
 const record = (index: number, bytes = 100, savedAt = index): RemotePageCacheRecord => ({
   schema: REMOTE_PAGE_CACHE_SCHEMA,
   key: JSON.stringify(["env", `s${index}`]),
@@ -56,6 +63,27 @@ it("evicts the oldest page to obey both entry and aggregate byte bounds", () => 
     REMOTE_PAGE_CACHE_MAX_BYTES,
   );
   expect(byBytes.map((entry) => entry.key)).toEqual([record(1).key, record(2).key]);
+});
+
+it("retains a same-revision expanded page when a narrower late response arrives", () => {
+  const expanded = {
+    ...record(1),
+    snapshot: {
+      ...snapshot,
+      history: { revision: 5, totalBlocks: 10, before: 0 },
+      session: {
+        ...snapshot.session,
+        blocks: Array.from({ length: 10 }, (_, index) => ({
+          id: `b${index}`,
+          role: "assistant" as const,
+          text: String(index),
+        })),
+      },
+    },
+  };
+  const narrow = { ...expanded, savedAt: 100, snapshot };
+  expect(planRemotePageCacheWrites([expanded], narrow)).toEqual([expanded]);
+  expect(planRemotePageCacheWrites([narrow], expanded)).toEqual([expanded]);
 });
 
 it("fails closed for wrong schema, expired records, and owner-key mismatches", () => {

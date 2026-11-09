@@ -279,3 +279,86 @@ describe.each(["workspace", "file"] as const)("%s tab open motion", (kind) => {
     expect(container.querySelector('[aria-label="Close third"]')).not.toBeNull();
   });
 });
+
+describe.each(["workspace", "file"] as const)("%s stable tab measurements", (kind) => {
+  it("keeps observers and layout reads stable during status renders, then closes at latest measured width", () => {
+    let created = 0;
+    let disconnected = 0;
+    let measurements = 0;
+    let width = 140;
+    const callbacks: (() => void)[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          created++;
+          callbacks.push(() => callback([], this as unknown as ResizeObserver));
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {
+          disconnected++;
+        }
+      },
+    );
+    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this.hasAttribute("data-tab-slot-id")) measurements++;
+      return new DOMRect(0, 0, width, 32);
+    });
+    vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {});
+    let stream!: () => void;
+    let select!: () => void;
+    let close!: () => void;
+    function Tabs() {
+      const [version, setVersion] = useState(0);
+      const [ids, setIds] = useState(["first", "second"]);
+      const [active, setActive] = useState("first");
+      stream = () => setVersion((value) => value + 1);
+      select = () => setActive("second");
+      close = () => setIds(["first"]);
+      const activeId = ids.includes(active) ? active : ids[0];
+      return kind === "workspace"
+        ? createElement(TitleBar, {
+            tabs: ids.map((id) => ({
+              ...workspaceTab(id),
+              title: `${id} ${version}`,
+              busyHarnesses: version % 2 ? ["codex" as const] : [],
+            })),
+            activeId,
+            cwd: "/project",
+            onToggleSidebar: vi.fn(),
+            onNew: vi.fn(),
+            onSelect: vi.fn(),
+            onClose: vi.fn(),
+            onCloseMany: vi.fn(),
+            onReorder: vi.fn(),
+          })
+        : createElement(SurfaceTabs, {
+            files: ids.map((id) => ({ id, path: id, cwd: "/project" })),
+            activeFileId: activeId,
+            dirtyFileIds: new Set(version % 2 ? ["first"] : []),
+            fileErrorCounts: new Map(),
+            onSelectFile: vi.fn(),
+            onCloseFile: vi.fn(),
+            onCloseOtherFiles: vi.fn(),
+            onReorder: vi.fn(),
+          });
+    }
+    act(() => root.render(createElement(Tabs)));
+    const initial = { created, disconnected, measurements };
+    for (let index = 0; index < 10; index++) act(() => stream());
+    act(() => select());
+    expect({ created, disconnected, measurements }).toEqual(initial);
+    expect(initial.measurements).toBe(2);
+    width = 188;
+    act(() => callbacks.forEach((callback) => callback()));
+    act(() => close());
+    expect(
+      container
+        .querySelector<HTMLElement>("[data-closing-tab]")!
+        .style.getPropertyValue("--tab-slot-width"),
+    ).toBe("188px");
+  });
+});

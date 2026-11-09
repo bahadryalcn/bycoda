@@ -1,0 +1,35 @@
+import type { SocialService } from "../social";
+
+/** The part of SocialService that extracted Social modules call. Everything else stays private. */
+export type SocialServiceInternals = Pick<
+  SocialService,
+  | "access"
+  | "adapterFor"
+  | "assertLength"
+  | "audience"
+  | "audit"
+  | "capability"
+  | "accessibleContact"
+  | "credentials"
+  | "decisionModels"
+  | "facts"
+  | "generateText"
+  | "generationControllers"
+  | "get"
+  | "ingest"
+  | "jobArchive"
+  | "list"
+  | "now"
+  | "optOut"
+  | "owner"
+  | "policy"
+  | "project"
+  | "put"
+  | "recordWhatsAppDelivery"
+  | "sendDraft"
+  | "setSetting"
+  | "setting"
+  | "store"
+  | "transaction"
+  | "writeJob"
+>;

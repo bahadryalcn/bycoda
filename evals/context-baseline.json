@@ -1,0 +1,55 @@
+{
+  "baselineKind": "synthetic-fixture-measurement",
+  "provenance": "Deterministic sanitized fixtures using imported production prompt, guidance, MCP tool schemas and validated Host DTOs; never sampled live traffic",
+  "boundaries": "Each entry is a distinct measurement boundary. A thread snapshot is nested inside its WS JSON response; do not sum these into total network or model context. UTF-8 excludes WebSocket/TLS/HTTP framing and compression. Provider entries measure actual prompt text, not a provider-specific request envelope.",
+  "schemaVersion": 1,
+  "measurement": "Exact UTF-8 bytes of the supplied serialized fixture; no tokens, quality score, compression, framing or live traffic inferred",
+  "totals": {
+    "provider-context": 1792,
+    "mcp-context": 176330,
+    "thread-transfer": 228,
+    "websocket-message": 278
+  },
+  "entries": [
+    {
+      "id": "title-prompt",
+      "layer": "provider-context",
+      "source": "src/features/sessions/model/sessionTitle.ts#buildThreadTitlePrompt",
+      "serialization": "raw prompt text (UTF-8)",
+      "utf8Bytes": 1431,
+      "sha256": "ee8787670260b16cbabd034bde1046e2ad1a7c91d3a8081d83eec4dd56da7a6b"
+    },
+    {
+      "id": "skill-guidance",
+      "layer": "provider-context",
+      "source": "src/integrations/harness/core/skillGuidance.ts#SKILL_INVOCATION_GUIDANCE",
+      "serialization": "raw instruction text (UTF-8)",
+      "utf8Bytes": 361,
+      "sha256": "5041fb6a87831a6a8512ed5e70d006d1d24447f810dd27e383dae6c6a04dccb1"
+    },
+    {
+      "id": "conversation-tool-catalog",
+      "layer": "mcp-context",
+      "source": "host/conversation/conversation-tools.ts#conversationToolCatalog",
+      "serialization": "JSON.stringify({tools:conversationToolCatalog()})",
+      "utf8Bytes": 176330,
+      "sha256": "fdccffed8b1e7aeea3135c68000f39ae1782bdb7f447694e2c3c8d6c1c119ad7"
+    },
+    {
+      "id": "session-sync-snapshot",
+      "layer": "thread-transfer",
+      "source": "src/shared/model/host-contracts/session-reads.ts#SessionSyncSchema",
+      "serialization": "JSON.stringify(validated SessionSync)",
+      "utf8Bytes": 228,
+      "sha256": "eac37dc68e8c08aa60e02709e28089de4f413f325eecc65de57b4fe6e6b53eae"
+    },
+    {
+      "id": "session-sync-ws-response",
+      "layer": "websocket-message",
+      "source": "src/shared/model/host-contracts/schemas.ts#RpcSuccessResponseSchema",
+      "serialization": "JSON.stringify(validated RpcSuccessResponse)",
+      "utf8Bytes": 278,
+      "sha256": "603a51ec11be0e1dbf700d575fefcddf71d050d576089ad97ac7e63b290b888e"
+    }
+  ]
+}

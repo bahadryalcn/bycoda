@@ -1,10 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { fixtureSourceScan } from "./fixtureSourceScan.ts";
 
 // The real rail has many imports; bundle it for deterministic browser startup.
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [fixtureSourceScan(), react(), tailwindcss()],
   build: {
     outDir: "temp/build/browser-workspace-navigation",
     emptyOutDir: false,

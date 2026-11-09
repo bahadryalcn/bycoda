@@ -1,5 +1,8 @@
+import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { t } from "../../../shared/i18n";
 import { inspectSshCertificate, type SshCertificateMetadata } from "../model/sshCertificate";
 
@@ -22,12 +25,15 @@ export function SshCertificateInspection({
     };
   }, []);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ revision: number; metadata: SshCertificateMetadata }>();
+  const [result, setResult] = useState<{
+    revision: number;
+    metadata: SshCertificateMetadata;
+  }>();
   const [error, setError] = useState<number>();
   const revision = current.current.revision;
   const metadata = result?.revision === revision ? result.metadata : undefined;
   return (
-    <div className="flex flex-col gap-2 text-xs">
+    <div className="flex flex-col gap-2 text-ui-caption">
       <div>
         <Button
           size="sm"
@@ -57,37 +63,30 @@ export function SshCertificateInspection({
         </Button>
       </div>
       {error === revision ? (
-        <p role="alert" className="text-(--ui-tone-danger-fg)">
-          {t("Couldn’t inspect the public SSH certificate.")}
-        </p>
+        <InlineError>{t("Couldn’t inspect the public SSH certificate.")}</InlineError>
       ) : null}
       {metadata ? (
-        <details>
-          <summary className="cursor-pointer text-(--ui-text-muted)">
-            {t("Certificate details")}
-          </summary>
-          <p className="mbs-2 text-(--ui-text-muted)">
+        <Disclosure summary={t("Certificate details")}>
+          <p className="mbe-2 text-(--ui-text-muted)">
             {t("Inspection does not establish trust or enroll this certificate.")}
           </p>
-          <dl className="mbs-2 grid min-w-0 grid-cols-[minmax(0,40%)_minmax(0,1fr)] gap-x-3 gap-y-1 break-all">
-            <dt className="text-(--ui-text-muted)">{t("Certificate type")}</dt>
-            <dd>{metadata.certificateType}</dd>
-            <dt className="text-(--ui-text-muted)">{t("Fingerprint")}</dt>
-            <dd>{metadata.fingerprint}</dd>
+          <DescriptionList size="sm">
+            <DescriptionItem term={t("Certificate type")}>
+              {metadata.certificateType}
+            </DescriptionItem>
+            <DescriptionItem term={t("Fingerprint")}>{metadata.fingerprint}</DescriptionItem>
             {metadata.signingCaFingerprint ? (
-              <>
-                <dt className="text-(--ui-text-muted)">{t("Signing CA fingerprint")}</dt>
-                <dd>{metadata.signingCaFingerprint}</dd>
-              </>
+              <DescriptionItem term={t("Signing CA fingerprint")}>
+                {metadata.signingCaFingerprint}
+              </DescriptionItem>
             ) : null}
-            <dt className="text-(--ui-text-muted)">{t("Serial")}</dt>
-            <dd>{metadata.serial}</dd>
-            <dt className="text-(--ui-text-muted)">{t("Validity")}</dt>
-            <dd>{metadata.validity}</dd>
-            <dt className="text-(--ui-text-muted)">{t("Principals")}</dt>
-            <dd>{metadata.principals.length ? metadata.principals.join(", ") : "—"}</dd>
-          </dl>
-        </details>
+            <DescriptionItem term={t("Serial")}>{metadata.serial}</DescriptionItem>
+            <DescriptionItem term={t("Validity")}>{metadata.validity}</DescriptionItem>
+            <DescriptionItem term={t("Principals")}>
+              {metadata.principals.length ? metadata.principals.join(", ") : "—"}
+            </DescriptionItem>
+          </DescriptionList>
+        </Disclosure>
       ) : null}
     </div>
   );

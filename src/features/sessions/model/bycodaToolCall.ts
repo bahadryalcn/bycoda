@@ -20,6 +20,11 @@ const ACTION_LABELS: Record<string, string> = {
   "notes.list": "List notes",
   "notes.read": "Read a note",
   "notes.write": "Write a note",
+  "agents.options": "List delegate models",
+  "agents.delegate": "Start a subagent",
+  "agents.consult": "Ask the advisor",
+  "agents.wait": "Wait for a subagent",
+  "agents.cancel": "Cancel a subagent",
 };
 
 /** Conservatively parse one shell invocation; compound commands use the shell row. */

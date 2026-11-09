@@ -23,6 +23,7 @@ export const APP_UI_SETTINGS = [
   "keybindings",
   "terminal",
   "chat",
+  "voice",
   "providers",
   "crews",
   "usage",

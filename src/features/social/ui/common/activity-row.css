@@ -1,0 +1,119 @@
+/* Activity row: a timeline entry with a status circle, title, meta line, status and row actions. */
+.social-activity-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.social-activity-head {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  min-width: 0;
+  padding: 0.375rem 0.5rem;
+  border-radius: var(--ui-radius-card);
+}
+
+.social-activity-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border: 1px solid var(--ui-pane-border);
+  border-radius: 50%;
+  background: var(--ui-fill-subtle);
+  color: var(--ui-text-secondary);
+}
+
+.social-activity-icon[data-tone="success"],
+.social-activity-icon[data-tone="info"],
+.social-activity-icon[data-tone="accent"],
+.social-activity-icon[data-tone="warning"],
+.social-activity-icon[data-tone="danger"] {
+  border-color: var(--social-activity-border);
+  background: var(--social-activity-subtle);
+  color: var(--social-activity-fg);
+}
+
+.social-activity-icon[data-tone="success"] {
+  --social-activity-border: var(--ui-tone-success-border);
+  --social-activity-subtle: var(--ui-tone-success-subtle);
+  --social-activity-fg: var(--ui-tone-success-fg);
+}
+
+.social-activity-icon[data-tone="info"] {
+  --social-activity-border: var(--ui-tone-info-border);
+  --social-activity-subtle: var(--ui-tone-info-subtle);
+  --social-activity-fg: var(--ui-tone-info-fg);
+}
+
+.social-activity-icon[data-tone="accent"] {
+  --social-activity-border: var(--ui-tone-accent-border);
+  --social-activity-subtle: var(--ui-tone-accent-subtle);
+  --social-activity-fg: var(--ui-tone-accent-fg);
+}
+
+.social-activity-icon[data-tone="warning"] {
+  --social-activity-border: var(--ui-tone-warning-border);
+  --social-activity-subtle: var(--ui-tone-warning-subtle);
+  --social-activity-fg: var(--ui-tone-warning-fg);
+}
+
+.social-activity-icon[data-tone="danger"] {
+  --social-activity-border: var(--ui-tone-danger-border);
+  --social-activity-subtle: var(--ui-tone-danger-subtle);
+  --social-activity-fg: var(--ui-tone-danger-fg);
+}
+
+.social-activity-main {
+  display: flex;
+  flex: 1 1 10rem;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.social-activity-title {
+  color: var(--color-content);
+  font-size: var(--ui-font-body);
+  overflow-wrap: anywhere;
+}
+
+.social-activity-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.375rem;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
+}
+
+.social-activity-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.social-activity-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.social-activity-details {
+  margin-inline-start: 3rem;
+  padding: 0 0.5rem 0.5rem 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+/* Timeline: a thin connector joins the status circles of consecutive rows. */
+.activity-timeline > .social-activity-row:not(:last-child)::before {
+  position: absolute;
+  inset-block: calc(0.375rem + 1.75rem + 1px) -0.375rem;
+  inset-inline-start: calc(0.5rem + 0.875rem - 0.5px);
+  inline-size: 1px;
+  background: var(--ui-pane-border);
+  content: "";
+}

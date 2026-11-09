@@ -9,6 +9,8 @@ import {
   type ProviderRateLimits,
 } from "./rateLimits";
 import {
+  captureChildProcess,
+  createChildProcessHandle,
   killChild,
   resolveCodexBinary,
   spawnChild,
@@ -17,6 +19,7 @@ import {
 } from "../../../integrations/harness/core/child";
 import { asRecord } from "../../../integrations/harness/providers/codex/codexProtocol";
 import { JsonRpcClient } from "../../../integrations/harness/core/jsonRpc";
+import { newRequestId } from "../../../shared/lib/id/requestId";
 
 const USAGE_CHILD_ID = "bycoda-codex-usage";
 const DISCOVERY_TIMEOUT_MS = 15_000;
@@ -159,7 +162,7 @@ export async function consumeCodexRateLimitResetCredit(
     cwd,
     "account/rateLimitResetCredit/consume",
     {
-      idempotencyKey: crypto.randomUUID(),
+      idempotencyKey: newRequestId(),
       ...(creditId ? { creditId } : {}),
     },
     accountId,
@@ -202,8 +205,11 @@ async function runCodexAccountRequest<T>(
   params: unknown,
   accountId: string,
 ): Promise<T> {
+  const previous = captureChildProcess(USAGE_CHILD_ID);
+  if (previous) await killChild(previous).catch(() => undefined);
+  const usageProcess = createChildProcessHandle(USAGE_CHILD_ID, undefined, "management");
   const rpc = new JsonRpcClient(
-    USAGE_CHILD_ID,
+    usageProcess,
     {
       onRequest: (id) => {
         void rpc.respond(id, {}).catch(() => undefined);
@@ -214,21 +220,19 @@ async function runCodexAccountRequest<T>(
 
   const stop = async () => {
     rpc.close();
-    unwatchChild(USAGE_CHILD_ID);
-    await killChild(USAGE_CHILD_ID).catch(() => undefined);
+    unwatchChild(usageProcess);
+    await killChild(usageProcess).catch(() => undefined);
   };
 
-  await killChild(USAGE_CHILD_ID).catch(() => undefined);
-
   watchChild(
-    USAGE_CHILD_ID,
+    usageProcess,
     (line) => rpc.pushLine(line),
     () => rpc.close(new Error("Codex usage probe exited")),
   );
 
   try {
     await spawnChild(
-      USAGE_CHILD_ID,
+      usageProcess,
       path,
       ["app-server"],
       cwd,

@@ -311,6 +311,14 @@ describe("shell command titles", () => {
     expect(isWeakToolTitle("bash")).toBe(true);
     expect(isWeakToolTitle("ls")).toBe(false);
   });
+
+  it("treats PowerShell as a weak placeholder so a long command wins over the tool name", () => {
+    expect(isWeakToolTitle("PowerShell")).toBe(true);
+    expect(isWeakToolTitle("pwsh")).toBe(true);
+    const command = `Get-ChildItem -Recurse ${"x".repeat(300)}`;
+    expect(titleFromToolInput("PowerShell", "execute", { command })).toBe(command);
+    expect(titleFromToolInput("PowerShell", "execute", {})).toBe("Shell");
+  });
 });
 
 describe("skill titles", () => {

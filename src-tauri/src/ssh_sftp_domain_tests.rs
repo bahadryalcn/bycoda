@@ -18,6 +18,130 @@ fn cancel_after_transfer(context: &TransferContext, owner: &str, phase: &str) ->
         })),
     }
 }
+#[test]
+fn progress_arguments_cannot_be_silenced_or_drop_an_identity_value() {
+    let endpoint = SshEndpoint {
+        host: "host.test".into(),
+        port: 22,
+        identity_file: Some("-q".into()),
+        ..Default::default()
+    };
+    let args = transfer_args(&endpoint, true).unwrap();
+    assert_eq!(args[0], "-vvv");
+    assert!(args.windows(2).any(|pair| pair == ["-i", "-q"]));
+    assert_eq!(
+        args.iter().filter(|value| value.as_str() == "-q").count(),
+        1
+    );
+}
+fn isolated_root() -> PathBuf {
+    let path = std::env::temp_dir().join(format!("bycoda-sftp-claim-{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&path).unwrap();
+    path
+}
+#[test]
+fn held_recovery_claim_refuses_concurrent_resume_and_discard() {
+    let context = TransferContext {
+        app: None,
+        root: isolated_root(),
+        observer: None,
+    };
+    let endpoint = SshEndpoint {
+        host: "host.test".into(),
+        port: 22,
+        ..Default::default()
+    };
+    let id = uuid::Uuid::new_v4().to_string();
+    let held = RecoveryClaim::acquire(&id).unwrap();
+    let owner = format!("recovery-claim-{id}");
+    crate::ssh_window_lifecycle::register(&owner).unwrap();
+    let op = operation(&owner, &endpoint);
+    assert_eq!(
+        resume_core(
+            &context,
+            &endpoint,
+            &op,
+            "fixture-server".into(),
+            id.clone(),
+            true
+        )
+        .unwrap_err(),
+        "Recovery already in progress"
+    );
+    assert_eq!(
+        discard_core(
+            &context,
+            &endpoint,
+            &op,
+            "fixture-server".into(),
+            id.clone()
+        )
+        .unwrap_err(),
+        "Recovery already in progress"
+    );
+    drop(held);
+    assert!(RecoveryClaim::acquire(&id).is_ok());
+}
+#[test]
+fn discard_clears_download_record_whose_partial_was_never_created() {
+    let context = TransferContext {
+        app: None,
+        root: isolated_root(),
+        observer: None,
+    };
+    let endpoint = SshEndpoint {
+        host: "host.test".into(),
+        port: 22,
+        ..Default::default()
+    };
+    let id = uuid::Uuid::new_v4().to_string();
+    let owner = format!("recovery-discard-{id}");
+    crate::ssh_window_lifecycle::register(&owner).unwrap();
+    let owner = owner.as_str();
+    let local = isolated_root()
+        .join("download.bin")
+        .to_string_lossy()
+        .into_owned();
+    let remote = "/remote/download.bin".to_owned();
+    let record = Recovery {
+        id: id.clone(),
+        owner: owner.into(),
+        connection_id: "fixture-server".into(),
+        endpoint_hash: endpoint_hash(&endpoint).unwrap(),
+        direction: "download".into(),
+        staging_path: staging_path("download", &id, &local, &remote).unwrap(),
+        local_path: local,
+        remote_path: remote,
+        partial_bytes: 0,
+        partial_hash: None,
+        source_hash: None,
+        total_bytes: None,
+        publication: None,
+    };
+    save(&context, &record).unwrap();
+    let op = operation(owner, &endpoint);
+    discard_core(
+        &context,
+        &endpoint,
+        &op,
+        "fixture-server".into(),
+        id.clone(),
+    )
+    .unwrap();
+    assert!(list_core(&context, owner, "fixture-server")
+        .unwrap()
+        .is_empty());
+}
+#[test]
+fn only_missing_remote_staging_errors_count_as_already_clean() {
+    assert!(is_missing_remote(
+        "SFTP failed: Can't ls: \"/a/.bycoda-upload-x.partial\" not found"
+    ));
+    assert!(!is_missing_remote(
+        "Warning: Identity file /k not accessible: No such file or directory"
+    ));
+    assert!(!is_missing_remote("SFTP failed: Permission denied"));
+}
 fn one_record(context: &TransferContext, owner: &str) -> Recovery {
     let views = list_core(context, owner, "fixture-server").unwrap();
     assert_eq!(views.len(), 1);

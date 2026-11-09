@@ -1,5 +1,11 @@
 # Skill availability and owner preferences
 
+Host and native policy writers preserve the shared lock/schema and sync staged
+state before replacement. An unreadable, corrupt or dangling-linked policy stays
+unavailable with its original bytes retained; it never becomes the unrestricted
+default. Repair the owning machine's stored policy before retrying discovery or
+invocation. Source edits and tests do not grant permission to enable skills.
+
 Skill files, provider discovery, provider permissions, and bycoda preferences are
 separate states. Installation and same-name precedence never grant enablement.
 
@@ -31,15 +37,23 @@ are carried on model turns, including revocation of older bycoda restrictions.
 Native commands keep their complete argument string intact. Host search, exact
 reads, alternative-copy reads and skill prompt expansion enforce the same policy.
 
-| Provider | Additional native enforcement |
-| --- | --- |
-| Codex | Read effective native configuration and discovery, merge only disabled path overrides into thread start/resume configuration. Preserve existing native disables. Refresh native discovery and structured skill inputs; carry current restrictions in collaboration developer instructions. Rebind the process to the same conversation when policy changes. Never write the provider's global config. |
-| Claude | Per-process `skillOverrides: off` and `--disallowedTools Skill(name)`; retain ordinary commands and enabled skills. Rebind to the same conversation when policy changes. Plugin visibility is not controlled by `skillOverrides`; the Skill denial and current restrictions still apply. |
-| OpenCode | Append per-skill deny rules to session permissions, including full-access mode and resumed sessions. Permission update failures propagate. |
-| Pi / OMP | Probe the provider's own catalog (including package resources), launch with `--no-skills` and explicit enabled `--skill` paths. Rebind when policy changes. Refuse incomplete catalogs that cannot preserve enabled skills safely. |
-| Cursor / Grok / FX / Hermes / Antigravity / Gemini / generic ACP | Current instructions and bycoda-owned tools/invocation gates. The connected protocols do not provide a verified individual native skill-loading control. These are instruction-level restrictions, not a guarantee against independent native discovery or arbitrary filesystem reads. |
+| Provider                                                         | Additional native enforcement                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Codex                                                            | Read effective native configuration and discovery, merge only disabled path overrides into thread start/resume configuration. Preserve existing native disables. Refresh native discovery and structured skill inputs; carry current restrictions in collaboration developer instructions. Rebind the process to the same conversation when policy changes. Never write the provider's global config. |
+| Claude                                                           | Per-process `skillOverrides: off` and `--disallowedTools Skill(name)`; retain ordinary commands and enabled skills. Rebind to the same conversation when policy changes. Plugin visibility is not controlled by `skillOverrides`; the Skill denial and current restrictions still apply.                                                                                                              |
+| OpenCode                                                         | Append per-skill deny rules to session permissions, including full-access mode and resumed sessions. Permission update failures propagate.                                                                                                                                                                                                                                                            |
+| Pi / OMP                                                         | Probe the provider's own catalog (including package resources), launch with `--no-skills` and explicit enabled `--skill` paths. Rebind when policy changes. Refuse incomplete catalogs that cannot preserve enabled skills safely.                                                                                                                                                                    |
+| Cursor / Grok / FX / Hermes / Antigravity / Gemini / generic ACP | Current instructions and bycoda-owned tools/invocation gates. The connected protocols do not provide a verified individual native skill-loading control. These are instruction-level restrictions, not a guarantee against independent native discovery or arbitrary filesystem reads.                                                                                                                |
 
 ## State and lifecycle boundaries
+
+Recommended catalog installations retain a `.bycoda-install.json` provider target.
+Host/native discovery filters that target before same-name precedence; composer
+and provider turn boundaries also apply fresh per-operation exclusions. This does
+not modify machine preferences or override provider restrictions. Legacy skills
+without catalog metadata keep their existing visibility. See
+[recommended skills](../guides/recommended-skills.md) for installation scope,
+source provenance and uncertain-result recovery.
 
 Search excludes bycoda-disabled and known provider-disabled skills. Returned
 `enabled` refers to the bycoda gate; `providerEnabled` is `enabled` only when native

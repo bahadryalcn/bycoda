@@ -29,12 +29,23 @@ export type NativeSearchableSelectProps = Omit<
     | "variant"
     | "layer"
     | "align"
+    | "hideLabel"
+    | "description"
+    | "fieldVariant"
   > & {
     value?: string;
     defaultValue?: string;
   };
 
-/** Searchable presentation with a real select owning native form semantics. */
+/**
+ * SearchableSelect presentation over a real native select that owns form semantics and validation.
+ * Label shown by default; `hideLabel` keeps it for assistive tech only, as in SearchableSelect.
+ * @group choice
+ * @use Only existing native form posts that need a real select element.
+ * @avoid New code: SearchableSelect.
+ * @status deprecated
+ * @instead SearchableSelect
+ */
 export function NativeSearchableSelect({
   label,
   options,
@@ -46,6 +57,9 @@ export function NativeSearchableSelect({
   variant,
   layer,
   align,
+  hideLabel,
+  description,
+  fieldVariant,
   ref,
   className,
   onChange,
@@ -145,6 +159,9 @@ export function NativeSearchableSelect({
           variant,
           layer,
           align,
+          hideLabel,
+          description,
+          fieldVariant,
         }}
         value={selection}
         disabled={nativeProps.disabled}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { historyKey, userPromptHistory, type HistoryKeyInput } from "./composerHistory";
 import type { Attachment, Block, QueuedMessage } from "./session";
+import { CONTINUE_PROMPT, RESUME_PROMPT } from "./inFlight";
 
 const user = (text: string, extra: Partial<Block> = {}): Block => ({
   id: text + Math.random(),
@@ -40,6 +41,16 @@ describe("userPromptHistory", () => {
       user("   "),
     ];
     expect(userPromptHistory({ blocks })).toEqual(["real"]);
+  });
+
+  it("skips the prompts bycoda sent to resume a turn", () => {
+    const blocks: Block[] = [
+      user("first"),
+      user(CONTINUE_PROMPT),
+      user(RESUME_PROMPT),
+      user("second"),
+    ];
+    expect(userPromptHistory({ blocks })).toEqual(["second", "first"]);
   });
 
   it("puts queued messages first, newest queued on top", () => {

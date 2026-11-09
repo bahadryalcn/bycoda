@@ -1,3 +1,5 @@
+import { createStore } from "../../../shared/lib/store";
+
 export type DeliveryStage =
   | "syncing"
   | "claiming"
@@ -13,6 +15,7 @@ export type DeliveryProgress = {
   stage: DeliveryStage;
   startedAt: number;
   detail?: string;
+  noticeOnly?: boolean;
   /** A manual review must not discard ownership of an outstanding late acknowledgement. */
   reconcileUntil?: number;
 };
@@ -21,13 +24,8 @@ export type DeliveryProgress = {
 const values = new Map<string, DeliveryProgress>();
 const operations = new Map<string, Map<string, DeliveryProgress>>();
 let operationId = 0;
-const listeners = new Set<() => void>();
-export const subscribeDeliveryProgress = (listener: () => void) => {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-};
+const store = createStore();
+export const subscribeDeliveryProgress = store.subscribe;
 export const readDeliveryProgress = (sessionId: string, messageId?: string) =>
   messageId ? operations.get(sessionId)?.get(messageId) : values.get(sessionId);
 const pending = (value: DeliveryProgress) =>
@@ -46,7 +44,7 @@ function publish(sessionId: string) {
     values.delete(sessionId);
     operations.delete(sessionId);
   }
-  listeners.forEach((listener) => listener());
+  store.notify();
 }
 export function beginDeliveryProgress(sessionId: string, messageId: string, stage: DeliveryStage) {
   const value: DeliveryProgress = {
@@ -69,6 +67,7 @@ export function updateDeliveryProgress(
   owner: DeliveryProgress,
   stage: DeliveryStage,
   detail?: string,
+  noticeOnly = false,
 ) {
   const current = operations.get(sessionId)?.get(owner.messageId);
   if (current?.operationId !== owner.operationId) return;
@@ -76,6 +75,7 @@ export function updateDeliveryProgress(
     ...current,
     stage,
     detail,
+    noticeOnly,
     ...(stage === "unknown" ? { reconcileUntil: Date.now() + 6 * 60_000 } : {}),
   });
   publish(sessionId);

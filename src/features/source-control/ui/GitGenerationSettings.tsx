@@ -1,4 +1,4 @@
-import { lazy, Suspense, useRef, useState } from "react";
+import { lazy, Suspense, useRef, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { ChevronDown } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
@@ -8,18 +8,28 @@ import {
   useDefaultGitGenerationChoice,
 } from "../model/gitGenerationPreferences";
 const ModelPicker = lazy(() =>
-  import("../../sessions/ui/ModelPicker").then((module) => ({
-    default: module.ModelPicker,
-  })),
+  import("../../sessions")
+    .then((entry) => entry.loadModelPicker())
+    .then((module) => ({
+      default: module.ModelPicker,
+    })),
 );
-import { defaultModelId, mergeModelSettings, resolveModel } from "../../sessions/model/models";
-import type { HarnessId } from "../../sessions/model/session";
+import { defaultModelId, mergeModelSettings, resolveModel } from "../../sessions/public/models";
+import { HARNESSES, type HarnessId } from "../../sessions";
 import {
-  TEXT_HARNESSES,
+  defaultProviderAccountId,
+  providerAccountLabel,
+  providerAccounts,
+  subscribeProviderAccounts,
+  supportsProviderAccounts,
+} from "../../providers/model/providerAccounts";
+import {
   pickTextHarness,
   automaticGitChoice,
   type GitGenerationChoice,
 } from "../model/gitGenerationChoice";
+
+import { canRunHarnessTextPrompt } from "../../../integrations/harness";
 
 const KEY = "bycoda.gitGeneration.v1:";
 function load(cwd: string): GitGenerationChoice | undefined {
@@ -71,10 +81,8 @@ export function GitGenerationModelControl({
         model={model.id}
         values={values}
         project={cwd}
-        allowedHarnesses={TEXT_HARNESSES}
-        hideSettings
+        allowedHarnesses={HARNESSES.filter(canRunHarnessTextPrompt)}
         showEffortSummary
-        showExtras
         extrasDisabled={disabled}
         onChange={(nextHarness, nextModel) => {
           if (disabled) return;
@@ -117,6 +125,14 @@ export function GitGenerationSettings({
   const harness = choice?.harness ?? pickTextHarness(preferred);
   const automatic = automaticGitChoice(preferred);
   const model = resolveModel(harness, choice?.model ?? automatic?.model ?? defaultModelId(harness));
+  const account = useSyncExternalStore(
+    subscribeProviderAccounts,
+    () =>
+      supportsProviderAccounts(harness) && providerAccounts(harness).length > 1
+        ? providerAccountLabel(harness, defaultProviderAccountId(harness))
+        : "",
+    () => "",
+  );
   return (
     <>
       <Button
@@ -129,14 +145,13 @@ export function GitGenerationSettings({
         ref={anchor}
         aria-label={t("AI generation settings")}
         aria-haspopup="dialog"
-        title={`${t("Commit and pull request generation")} · ${choice ? model.name : `${t("Automatic")} · ${model.name}`}`}
+        tooltip={`${t("Commit and pull request generation")} · ${choice ? model.name : `${t("Automatic")} · ${model.name}`}`}
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className="relative shrink-0"
+        className="shrink-0"
       >
-        {choice && <span className="absolute right-0.5 top-0.5 size-1 rounded-full bg-accent" />}
-        <ChevronDown className={`size-3 shrink-0 ${open ? "rotate-180" : ""}`} />
+        <ChevronDown className={`icon-xs shrink-0 ${open ? "rotate-180" : ""}`} />
       </Button>
       {open && (
         <Popover
@@ -153,10 +168,7 @@ export function GitGenerationSettings({
           }}
           className="flex flex-col gap-2 p-3"
         >
-          <p className="text-[12px] font-medium">{t("Commit and pull request generation")}</p>
-          {!choice && (
-            <p className="text-[11px] text-[var(--ui-text-secondary)]">{t("Automatic")}</p>
-          )}
+          <p className="text-ui-body font-medium">{t("Commit and pull request generation")}</p>
           <GitGenerationModelControl
             cwd={cwd}
             preferred={preferred}
@@ -164,16 +176,23 @@ export function GitGenerationSettings({
             onChange={onChange}
             disabled={disabled}
           />
+          {account ? (
+            <p className="text-ui-caption text-(--ui-text-secondary)">
+              {t("Account")} · {account}
+            </p>
+          ) : null}
           {hasOverride && (
-            <Button
-              size="sm"
-              variant="link"
-              className="self-start"
-              disabled={disabled}
-              onClick={() => onChange(undefined)}
-            >
-              {t("Use default selection")}
-            </Button>
+            <div className="flex items-center gap-1 text-ui-caption text-(--ui-text-secondary)">
+              <span>{t("Project setting")} ·</span>
+              <Button
+                size="sm"
+                variant="link"
+                disabled={disabled}
+                onClick={() => onChange(undefined)}
+              >
+                {t("Use global")}
+              </Button>
+            </div>
           )}
         </Popover>
       )}

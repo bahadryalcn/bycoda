@@ -1,0 +1,89 @@
+# Integrations and messages
+
+Settings > **Integrations** holds every external service bycoda connects to. Each card
+shows what the service supplies: **Inbox** (work items) or **Messages** (conversations
+you can reply to).
+
+| Service                                    | Supplies | How you connect                                                                                                              |
+| ------------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| GitHub, GitLab, Azure DevOps, Jira, Linear | Inbox    | Token or CLI, as before                                                                                                      |
+| Email (several accounts)                   | Messages | Gmail signs in with Google or uses an app password; Yahoo, iCloud and other IMAP/SMTP servers use a password or app password |
+| Slack                                      | Messages | Sign in with Slack in your browser; a bot token is the fallback                                                              |
+
+Discord, Microsoft Teams and Outlook / Hotmail mail are temporarily unavailable for new
+connections. Accounts connected earlier keep appearing in Messages.
+
+## Email
+
+Add as many accounts as you need. Pick a preset (Gmail, Yahoo, iCloud) or **Other
+IMAP/SMTP** and enter your server details. bycoda reads your inbox
+without marking anything as read and sends replies through your SMTP server.
+
+- **Gmail**: choose **Sign in with Google**, finish signing in in the browser that
+  opens, then save. The address fills in from the signed-in account. Google sign-in
+  is open to the first 100 users while bycoda's Google app is in testing, and a
+  Workspace administrator can block it. When Google shows an error page instead of
+  returning to bycoda, choose **Use an app password instead** under the sign-in button
+  (also under **Advanced**) and enter a Gmail app password; it needs 2-step
+  verification on your Google account.
+- **Outlook / Hotmail**: temporarily unavailable. Outlook.com no longer accepts IMAP
+  passwords, and Microsoft sign-in is not registered yet. Saved Outlook accounts can
+  still be edited.
+- **Yahoo, iCloud and other servers**: enter the password, or an app password when
+  2-step verification is on.
+
+## Slack
+
+Choose **Sign in with Slack**, approve access in the browser and the workspace is
+saved. bycoda then reads the channels and direct messages your Slack account can see
+and replies as you. To connect a bot instead, open **Advanced** and turn on **Use a bot
+token instead**; a bot sees only the channels it was invited to and replies as the bot.
+
+## Discord (temporarily unavailable)
+
+Discord connects with a bot token only, because Discord does not let apps read a
+user's own messages. Discord shows the channels you list; enable the bot's Message
+Content intent so message text is visible. Replies post as the bot and never mention
+anyone automatically.
+
+## Microsoft Teams and Outlook (temporarily unavailable)
+
+Microsoft sign-in shows a code. Open the sign-in page, enter the code and approve.
+It needs a Microsoft app registration; if the card says one is missing, add the client
+ID under advanced options. Some work accounts need an administrator to approve access.
+
+## Browser sign-in setup (owner)
+
+Browser sign-in needs an app registration for Google and for Slack. A build includes
+them from the environment variables below; a running app also reads the same variables
+at startup. A user can instead enter their own client ID under the card's advanced
+options.
+
+| Variable                      | Used for                                              |
+| ----------------------------- | ----------------------------------------------------- |
+| `BYCODA_GOOGLE_CLIENT_ID`     | Gmail sign-in                                         |
+| `BYCODA_GOOGLE_CLIENT_SECRET` | Gmail sign-in (Google issues one for desktop clients) |
+| `BYCODA_SLACK_CLIENT_ID`      | Slack sign-in                                         |
+
+**Google.** In Google Cloud, create an OAuth client of type **Desktop app** and add
+the Gmail API. While the consent screen is in **Testing**, only listed test users (up
+to 100) can sign in and their refresh tokens expire after 7 days, so they must sign in
+again weekly. The Gmail scope (`https://mail.google.com/`) is restricted: a public
+release needs Google's app verification and a CASA security assessment.
+
+**Slack.** Create a Slack app, turn on **PKCE** under OAuth & Permissions, add the
+redirect URL `https://bycoda.codes/oauth/slack/` (a static page that forwards the sign-in code to `http://localhost:47213/callback` on your device) and add these **user token** scopes:
+`channels:read`, `channels:history`, `groups:read`, `groups:history`, `im:read`,
+`im:history`, `mpim:read`, `mpim:history`, `users:read`, `chat:write`. Distribute the
+app so other workspaces can install it.
+
+## Reading and replying
+
+Open Inbox > **Messages** to see recent conversations from every connected account,
+newest first. Filter by account or service, search, and open a conversation to read
+it. Write a reply and press **Send** or Ctrl/Cmd+Enter. Nothing is sent without your
+click, and drafts are kept while you switch conversations. Messages refresh while the
+view is open; use the refresh button any time.
+
+Credentials stay on this computer. Remove an account from its card to disconnect it
+and delete its stored credentials.

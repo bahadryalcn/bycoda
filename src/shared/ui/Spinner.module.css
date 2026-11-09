@@ -1,0 +1,48 @@
+/* The single pending glyph. Size comes from the shared icon scale and the color is the
+   surrounding text color, so a Spinner never introduces its own tone. */
+.spinner {
+  --spinner-size: var(--ui-icon-sm);
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  inline-size: var(--spinner-size);
+  block-size: var(--spinner-size);
+  border: 1.5px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+  vertical-align: middle;
+  animation: rotate 0.7s linear infinite;
+}
+.spinner[data-size="xs"] {
+  --spinner-size: var(--ui-icon-xs, 0.75rem);
+}
+.spinner[data-size="md"] {
+  --spinner-size: var(--ui-icon-md, 1rem);
+}
+/* Inside text: follows the font size and sits on the text line. */
+.spinner[data-size="inline"] {
+  --spinner-size: 1em;
+  vertical-align: -0.125em;
+}
+@keyframes rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+/* Reduced motion keeps the pending state visible without rotation. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+}
+@media (forced-colors: active) {
+  .spinner {
+    border-color: CanvasText;
+    border-inline-end-color: transparent;
+  }
+}

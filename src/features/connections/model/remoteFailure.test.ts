@@ -3,6 +3,42 @@ import { classifyRemoteError, isConnectionFailure, unreachablePollDelay } from "
 
 describe("classifyRemoteError", () => {
   it.each([
+    ["RPC_WS_BLOCKED", "unreachable"],
+    ["RPC_WS_SCHEMA", "unreachable"],
+    ["RPC_WS_TLS", "unreachable"],
+    ["RPC_WS_UNAVAILABLE", "unreachable"],
+    ["RPC_WS_INTERRUPTED", "unreachable"],
+    ["RPC_WS_IDENTITY", "identity"],
+    ["RPC_WS_UNSUPPORTED", "outdated"],
+  ])("classifies native %s as a connection failure", (code, kind) => {
+    const error = Object.assign(new Error("Host admission failed"), { code });
+    expect(classifyRemoteError(error).kind).toBe(kind);
+    expect(classifyRemoteError(`${code}: Host admission failed`).kind).toBe(kind);
+    expect(isConnectionFailure(classifyRemoteError(error))).toBe(true);
+  });
+
+  it.each(["RPC_WS_DEADLINE", "RPC_WS_OVERLOAD", "RPC_WS_DETACHED"])(
+    "classifies native %s as temporary, not a lost connection",
+    (code) => {
+      const error = Object.assign(new Error("Host request was not sent"), { code });
+      expect(classifyRemoteError(error)).toEqual({
+        kind: "temporary",
+        message: "Host request was not sent",
+      });
+      expect(classifyRemoteError(`${code}: Host request was not sent`).kind).toBe("temporary");
+      expect(isConnectionFailure(classifyRemoteError(error))).toBe(false);
+    },
+  );
+
+  it("keeps workspace containment and request-specific Native failures local to the operation", () => {
+    for (const message of [
+      "Host rejected request: Path is outside this machine’s projects",
+      "RPC_WS_VALIDATION: Invalid workspace path",
+      "RPC_WS_RESOURCE_RETIRED: Session was removed",
+    ])
+      expect(isConnectionFailure(classifyRemoteError(message))).toBe(false);
+  });
+  it.each([
     "Machine is unreachable. Check the host and SSH tunnel, then reconnect.",
     "SSH connection failed: Permission denied. Open Settings → Connections and reconnect to check access.",
     "SSH timed out. Open Settings → Connections and reconnect to authenticate.",
@@ -15,6 +51,20 @@ describe("classifyRemoteError", () => {
   ])("treats %j as unreachable", (text) => {
     expect(classifyRemoteError(text).kind).toBe("unreachable");
     expect(classifyRemoteError(new Error(text)).kind).toBe("unreachable");
+  });
+
+  it.each([
+    "The host request did not complete [RPC_TIMEOUT] (workspace.run). The host exceeded the request deadline.",
+    "The host request did not complete [RPC_PROTOCOL] (git.index). The endpoint did not return a valid host response.",
+    "Invalid host response",
+    // A Host refusing a read for capacity, as older desktops reported it.
+    "Host rejected request: Host read capacity is busy; retry later.",
+    "RPC_WS_OVERLOAD: Host read capacity is busy; retry later.",
+    "Host pending read request limit reached",
+  ])("classifies %j as temporary, not a lost connection", (text) => {
+    expect(classifyRemoteError(text).kind).toBe("temporary");
+    expect(classifyRemoteError(new Error(text)).kind).toBe("temporary");
+    expect(isConnectionFailure(classifyRemoteError(text))).toBe(false);
   });
 
   it("recognises a host that does not know the command", () => {

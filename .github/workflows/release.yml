@@ -1,27 +1,57 @@
 name: Release
 
 # Push a vX.Y.Z tag that matches package.json. The workflow builds signed updater
-# artifacts into a draft release; installed apps see the update only after the
-# draft is published, because the feed reads releases/latest.
+# artifacts for review. The separate owner-dispatched release-publish workflow
+# rechecks the completed producer and exact package receipts before publication.
 on:
   push:
     tags: ["v*.*.*"]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  draft:
+  source-check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - name: Require full CI at the exact release source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release/release-candidate.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-candidate-${{ github.sha }}
+          path: temp/test-results/release-candidate/candidate.json
+          if-no-files-found: error
+          retention-days: 30
+
+  draft:
+    needs: source-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       release-id: ${{ steps.create.outputs.id }}
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - id: version
         name: Check tag, version files and release notes
         run: |
@@ -44,106 +74,39 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" --draft --verify-tag \
-            --title "bycoda ${{ steps.version.outputs.version }}" --notes-file release-notes.md
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            test "$(gh release view "${GITHUB_REF_NAME}" --json isDraft --jq .isDraft)" = "true" || { echo "::error::Release is already public"; exit 1; }
+          else
+            gh release create "${GITHUB_REF_NAME}" --draft --verify-tag \
+              --title "bycoda ${{ steps.version.outputs.version }}" --notes-file release-notes.md
+          fi
           echo "id=$(gh release view "${GITHUB_REF_NAME}" --json databaseId --jq .databaseId)" >> "$GITHUB_OUTPUT"
 
-  host-service-checks:
-    needs: draft
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 12.8.2
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Verify Windows host diagnostics and upgrade recovery
-        run: pnpm exec vitest run --config host/vitest.config.ts host/windows.test.ts host/service.test.ts
-
   build:
-    needs: [draft, host-service-checks]
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: windows-latest
-            args: --bundles nsis --config src-tauri/tauri.fork.conf.json
-          - platform: macos-latest
-            args: --target aarch64-apple-darwin --bundles app,dmg --config src-tauri/tauri.fork.macos.conf.json
-    runs-on: ${{ matrix.platform }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 12.8.2
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          # Tags cannot read caches from earlier tags. The default branch's
-          # release-cache workflow seeds this shared key for every release.
-          shared-key: desktop-release-${{ matrix.platform }}
-          save-if: false
-      - run: pnpm install --frozen-lockfile
-      # The installer ships this platform's host package; the app installs and
-      # upgrades its own host from it (src-tauri/src/bundled_host.rs).
-      - name: Package the bundled host
-        run: pnpm run host:package
-      # Local builds stay unsigned; only this workflow creates updater artifacts.
-      - name: Enable signed updater artifacts
-        shell: bash
-        run: echo '{"bundle":{"createUpdaterArtifacts":true}}' > release-updater.conf.json
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # SSH setup and Update Host download this release's host packages.
-          BYCODA_HOST_RELEASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}
-        with:
-          releaseId: ${{ needs.draft.outputs.release-id }}
-          args: ${{ matrix.args }} --config release-updater.conf.json
-          includeUpdaterJson: true
-          updaterJsonPreferNsis: true
+    needs: draft
+    permissions:
+      contents: write
+    uses: ./.github/workflows/desktop-package.yml
+    with:
+      release-id: ${{ needs.draft.outputs.release-id }}
+      expected-sha: ${{ github.sha }}
+      version: ${{ needs.draft.outputs.version }}
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+      BYCODA_GOOGLE_CLIENT_ID: ${{ secrets.BYCODA_GOOGLE_CLIENT_ID }}
+      BYCODA_GOOGLE_CLIENT_SECRET: ${{ secrets.BYCODA_GOOGLE_CLIENT_SECRET }}
+      BYCODA_SLACK_CLIENT_ID: ${{ secrets.BYCODA_SLACK_CLIENT_ID }}
+      BYCODA_MICROSOFT_CLIENT_ID: ${{ secrets.BYCODA_MICROSOFT_CLIENT_ID }}
 
-  # Host packages for every supported machine, for SSH setup and Update Host.
-  host-packages:
-    needs: [draft, host-service-checks]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 12.8.2
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Package hosts for all platforms
-        run: pnpm run host:package -- --all
-      - name: Upload host packages to the draft release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          files=(build/host-packages/bycoda-host-*.tar.gz build/host-packages/bycoda-host-*.zip)
-          if (( ${#files[@]} != 6 )); then
-            echo "::error::Expected 6 host packages, found ${#files[@]}"
-            exit 1
-          fi
-          for file in "${files[@]}"; do
-            test -s "$file.sha256" || { echo "::error::$file has no checksum"; exit 1; }
-          done
-          gh release upload "${GITHUB_REF_NAME}" "${files[@]}" "${files[@]/%/.sha256}" --clobber
+  # The reusable workflow builds portable JS/web once, then packages desktop
+  # variants and all six standalone Host archives from that exact artifact.

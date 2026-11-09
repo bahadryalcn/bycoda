@@ -1,4 +1,4 @@
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AgentTranscript } from "./AgentTranscript";
 import { TranscriptFind } from "./TranscriptFind";
@@ -9,10 +9,59 @@ import {
 } from "../model/transcriptJump";
 import { HarnessIcon } from "./HarnessIcon";
 import { findModel } from "../model/models";
-import { useSession } from "../model/sessionsStore";
+import { usePaneSession } from "../model/sessionsStore";
+import { PresentationVisibility } from "./presentationVisibility";
 import { HARNESS_TITLE, sessionDisplayTitle, sessionWorkCwd, type Session } from "../model/session";
 import { createNote, noteTitle } from "../../notes";
-import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/model/settings";
+import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/public/settings";
+import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
+import { useCitedTurnHistory } from "./useCitedTurnHistory";
+import { useReadOnlyHostSession } from "./useReadOnlyHostSession";
+import { Button } from "../../../shared/ui/Button";
+import { Alert } from "../../../shared/ui/Alert";
+
+type AgentTabViewProps = {
+  title: string;
+  session?: Session;
+  visible: boolean;
+  focused?: boolean;
+  onOpenFile?: (path: string) => void;
+};
+
+export function AgentTabView(props: AgentTabViewProps) {
+  // A hidden tab must not run its text-reveal frame loop.
+  return (
+    <PresentationVisibility.Provider value={props.visible}>
+      {props.session && hostSessionBinding(props.session) ? (
+        <HostAgentTabView {...props} session={props.session} />
+      ) : (
+        <LocalAgentTabView {...props} />
+      )}
+    </PresentationVisibility.Provider>
+  );
+}
+
+function HostAgentTabView(props: AgentTabViewProps & { session: Session }) {
+  const t = useT();
+  const remote = useReadOnlyHostSession(props.session, props.visible);
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {remote.error && (
+        <Alert tone="danger">
+          {remote.error}
+          <Button type="button" variant="secondary" onClick={remote.retry}>
+            {t("Retry")}
+          </Button>
+        </Alert>
+      )}
+      <div className="min-h-0 flex-1">
+        <LocalAgentTabView {...props} {...remote} remoteSession />
+      </div>
+    </div>
+  );
+}
+
+type HostHistoryProps = ReturnType<typeof useReadOnlyHostSession> & { remoteSession?: boolean };
 
 /**
  * One orchestration worker, watched from its lead's workspace.
@@ -22,26 +71,29 @@ import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/model/se
  * voice into a conversation the lead is holding, so the way to change course
  * is to say so in the lead's own transcript.
  */
-export function AgentTabView({
+function LocalAgentTabView({
   title,
   session: shellSession,
   visible,
   focused = visible,
   onOpenFile,
-}: {
-  title: string;
-  session?: Session;
-  visible: boolean;
-  focused?: boolean;
-  onOpenFile?: (path: string) => void;
-}) {
-  useLocale();
+  remoteSession = false,
+  remoteHistoryHasMore = false,
+  remoteHistoryLoading = false,
+  remoteHistoryError,
+  onLoadRemoteHistory,
+  onLoadRemoteBlock,
+}: AgentTabViewProps & Partial<HostHistoryProps>) {
+  const t = useT();
   // The shell's copy lags behind by streamed text; the store has the live one.
-  const session = useSession(shellSession?.id) ?? shellSession;
+  // A hidden tab follows the shell and skips streamed frames.
+  const live = usePaneSession(shellSession?.id, visible);
+  const session = remoteSession ? shellSession : (live ?? shellSession);
   const navigateBlockRef = useRef<((blockId: string | null, query?: string) => boolean) | null>(
     null,
   );
   const [navigatorReady, setNavigatorReady] = useState(false);
+  const [findTriggerContainer, setFindTriggerContainer] = useState<HTMLSpanElement | null>(null);
   const onNavigateReady = useCallback(
     (navigate: ((blockId: string | null, query?: string) => boolean) | null) => {
       navigateBlockRef.current = navigate;
@@ -58,6 +110,15 @@ export function AgentTabView({
     () => peekTranscriptJump(session?.id ?? ""),
     () => null,
   );
+  useCitedTurnHistory({
+    visible,
+    jump: jumpRequest,
+    blocks: session?.blocks ?? [],
+    hasMore: remoteHistoryHasMore,
+    loading: remoteHistoryLoading,
+    error: remoteHistoryError,
+    load: onLoadRemoteHistory,
+  });
   useEffect(() => {
     if (!visible || !navigatorReady || !session || !jumpRequest) return;
     const frame = requestAnimationFrame(() => {
@@ -66,7 +127,7 @@ export function AgentTabView({
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [visible, navigatorReady, jumpRequest, navigateBlock, session?.id]);
+  }, [visible, navigatorReady, jumpRequest, navigateBlock, session?.id, session?.blocks]);
   const notesEnabled = useSyncExternalStore(subscribeNotesEnabled, loadNotesEnabled, () => true);
   const saveNote = useCallback(
     async (text: string) => {
@@ -96,7 +157,7 @@ export function AgentTabView({
   if (!session) {
     return (
       <div className="grid h-full place-items-center px-6 text-center">
-        <p className="max-w-sm text-[12px] leading-5 text-(--ui-text-secondary)">
+        <p className="max-w-sm text-ui-caption leading-5 text-(--ui-text-secondary)">
           {t(
             "This agent is no longer running. Its work is summarised in the orchestrator's conversation.",
           )}
@@ -111,6 +172,13 @@ export function AgentTabView({
         <AgentTranscript
           blocks={session.blocks}
           busy={session.busy}
+          historyLoading={session.historyLoading}
+          historyLoadError={session.historyLoadError}
+          remoteHistoryHasMore={remoteHistoryHasMore}
+          remoteHistoryLoading={remoteHistoryLoading}
+          remoteHistoryError={remoteHistoryError}
+          onLoadRemoteHistory={onLoadRemoteHistory}
+          onLoadRemoteBlock={onLoadRemoteBlock}
           cwd={sessionWorkCwd(session)}
           harness={session.harness}
           model={session.model}
@@ -129,14 +197,16 @@ export function AgentTabView({
           visible={visible}
           focused={focused}
           onNavigate={navigateBlock}
+          triggerContainer={findTriggerContainer}
         />
       </div>
-      <footer className="flex shrink-0 items-center gap-1.5 border-t border-(--ui-tone-neutral-border) px-3 py-1.5 font-sans text-[11px] text-(--ui-text-secondary)">
+      <footer className="flex shrink-0 items-center gap-1.5 border-t border-(--ui-tone-neutral-border) px-3 py-1.5 font-sans text-ui-micro text-(--ui-text-secondary)">
         <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
         <span className="min-w-0 truncate" title={title}>
           {model} · {HARNESS_TITLE[session.harness]}
         </span>
         <span className="ml-auto shrink-0">{t("Run by the orchestrator · read-only")}</span>
+        <span ref={setFindTriggerContainer} className="shrink-0" />
       </footer>
     </div>
   );

@@ -1,0 +1,283 @@
+import type { FormEvent, ReactNode } from "react";
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import { DateTimeField } from "../../../shared/ui/DateTimePicker";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { NumberField } from "../../../shared/ui/NumberField";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { TextareaField } from "../../../shared/ui/TextareaField";
+import { t, useLocale } from "../../../shared/i18n";
+import { AUTOMATION_WEEKDAYS, automationScheduleLabel } from "../../automations/public/automations";
+import { projectDisplayName } from "../../projects/public/projectNames";
+import { looksLikeProject, type RecentProject } from "../../projects/public/recents";
+import { SearchableProjectPicker } from "../../projects/public/SearchableProjectPicker";
+import { AccessPicker } from "../../sessions/public/AccessPicker";
+import { ModelPicker } from "../../sessions/public/ModelPicker";
+import { MAX_OPEN_LIMIT, MAX_PROPOSALS_LIMIT } from "../model/hostStewards";
+import type { StewardDraft } from "../model/stewardClient";
+import { TASK_MACHINE_ERROR } from "../model/taskClient";
+import { SettingFrame, SettingRow } from "./TaskLimitsRow";
+import { AutoMergeField } from "./TaskFormFields";
+
+function scheduleOf(draft: StewardDraft) {
+  return {
+    scheduleKind: draft.scheduleKind,
+    minute: draft.minute,
+    time: draft.time,
+    dayOfWeek: draft.dayOfWeek,
+  };
+}
+
+const SCHEDULE_OPTIONS = [
+  {
+    value: "hourly",
+    get label() {
+      return t("Hourly");
+    },
+  },
+  {
+    value: "daily",
+    get label() {
+      return t("Daily");
+    },
+  },
+  {
+    value: "weekdays",
+    get label() {
+      return t("Weekdays");
+    },
+  },
+  {
+    value: "weekly",
+    get label() {
+      return t("Weekly");
+    },
+  },
+] as const;
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="task-ops-section">
+      <SectionLabel>{title}</SectionLabel>
+      {children}
+    </section>
+  );
+}
+
+/** The steward form: the project, what to look for, when to look, and the
+ * agent that does it, in titled sections with one primary action. */
+export function StewardForm({
+  draft,
+  recents,
+  machine,
+  saving,
+  error,
+  onChange,
+  onCancel,
+  onSubmit,
+}: {
+  draft: StewardDraft;
+  recents: RecentProject[];
+  machine?: string;
+  saving: boolean;
+  error: string | null;
+  onChange: (draft: StewardDraft) => void;
+  onCancel: () => void;
+  onSubmit: (event: FormEvent) => void;
+}) {
+  useLocale();
+  const update = <K extends keyof StewardDraft>(key: K, value: StewardDraft[K]) =>
+    onChange({ ...draft, [key]: value });
+  const valid = looksLikeProject(draft.cwd) && draft.model.length > 0 && machine != null;
+  const number = (
+    label: string,
+    value: number,
+    max: number,
+    key: "maxProposals" | "maxOpen" | "minute",
+    min = 1,
+  ) => (
+    <NumberField
+      hideLabel
+      label=""
+      aria-label={label}
+      min={min}
+      max={max}
+      value={value}
+      onChange={(event) => {
+        const next = Math.trunc(Number(event.target.value));
+        if (Number.isFinite(next)) update(key, Math.min(max, Math.max(min, next)));
+      }}
+      fieldClassName="w-24 max-w-24"
+    />
+  );
+  return (
+    <form
+      aria-label={draft.id ? t("Edit steward") : t("New steward")}
+      aria-busy={saving}
+      onSubmit={onSubmit}
+      className="task-ops-form"
+    >
+      <fieldset disabled={saving} inert={saving} className="task-ops-fields">
+        <Section title={t("Project")}>
+          <SettingFrame>
+            <SettingRow title={t("Project")}>
+              {draft.id ? (
+                // A steward stays with the project it was created for.
+                <span className="task-ops-caption">{projectDisplayName(draft.cwd)}</span>
+              ) : (
+                <SearchableProjectPicker
+                  cwd={draft.cwd}
+                  recents={recents}
+                  onSelectProject={(cwd) => update("cwd", cwd)}
+                />
+              )}
+            </SettingRow>
+            <SettingRow title={t("Runs on ").trim()}>
+              {machine ? (
+                <span className="task-ops-caption">{machine}</span>
+              ) : (
+                <InlineMessage tone="warning" live="assertive">
+                  {TASK_MACHINE_ERROR}
+                </InlineMessage>
+              )}
+            </SettingRow>
+          </SettingFrame>
+        </Section>
+        <Section title={t("Focus")}>
+          <TextareaField
+            hideLabel
+            label=""
+            aria-label={t("Focus")}
+            value={draft.focus}
+            onChange={(event) => update("focus", event.target.value)}
+            placeholder={t(
+              "What should it look for? e.g. follow docs/ROADMAP.md, or find bugs and missing tests",
+            )}
+            rows={2}
+            fieldClassName="block w-full"
+            className="resize-y"
+          />
+        </Section>
+        <Section title={t("Schedule")}>
+          <SettingFrame>
+            <SettingRow
+              title={t("Frequency")}
+              description={automationScheduleLabel(scheduleOf(draft))}
+            >
+              <SearchableSelect
+                variant="pill"
+                searchable={false}
+                label={t("Schedule")}
+                value={draft.scheduleKind}
+                options={SCHEDULE_OPTIONS}
+                onChange={(value) => update("scheduleKind", value as StewardDraft["scheduleKind"])}
+              />
+            </SettingRow>
+            {draft.scheduleKind === "weekly" ? (
+              <SettingRow title={t("Day of week")}>
+                <SearchableSelect
+                  variant="pill"
+                  searchable={false}
+                  label={t("Day of week")}
+                  value={String(draft.dayOfWeek)}
+                  options={AUTOMATION_WEEKDAYS.map((day, index) => ({
+                    value: String(index),
+                    label: day,
+                  }))}
+                  onChange={(value) => update("dayOfWeek", Number(value))}
+                />
+              </SettingRow>
+            ) : null}
+            <SettingRow title={draft.scheduleKind === "hourly" ? t("Minute") : t("Time")}>
+              {draft.scheduleKind === "hourly" ? (
+                number(t("Minute"), draft.minute, 59, "minute", 0)
+              ) : (
+                <DateTimeField
+                  mode="time"
+                  hideLabel
+                  // The HH:mm placeholder is the hint.
+                  description=""
+                  label={t("Time")}
+                  value={draft.time}
+                  onChange={(value) => {
+                    if (value) update("time", value);
+                  }}
+                />
+              )}
+            </SettingRow>
+          </SettingFrame>
+        </Section>
+        <Section title={t("Agent")}>
+          <SettingFrame>
+            <SettingRow title={t("Model")}>
+              <ModelPicker
+                harness={draft.harness}
+                model={draft.model}
+                values={draft.modelSettings}
+                project={draft.cwd}
+                onChange={(harness, model) => onChange({ ...draft, harness, model })}
+                onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
+              />
+            </SettingRow>
+            {draft.harness !== "fx" ? (
+              <SettingRow title={t("Access")}>
+                <AccessPicker
+                  value={draft.runtimeMode}
+                  onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
+                />
+              </SettingRow>
+            ) : null}
+          </SettingFrame>
+        </Section>
+        <Section title={t("Suggestions")}>
+          <SettingFrame>
+            <SettingRow title={t("Max suggestions per run")}>
+              {number(
+                t("Max suggestions per run"),
+                draft.maxProposals,
+                MAX_PROPOSALS_LIMIT,
+                "maxProposals",
+              )}
+            </SettingRow>
+            <SettingRow title={t("Pause at open suggestions")}>
+              {number(t("Pause at open suggestions"), draft.maxOpen, MAX_OPEN_LIMIT, "maxOpen")}
+            </SettingRow>
+            <Checkbox
+              className="task-ops-setting cursor-pointer justify-start text-ui-body"
+              label={t("Start suggestions automatically")}
+              checked={draft.autoStart}
+              onChange={(event) => update("autoStart", event.target.checked)}
+            />
+            <div className="task-ops-setting">
+              <AutoMergeField
+                checked={draft.autoMerge}
+                onChange={(checked) => update("autoMerge", checked)}
+              />
+            </div>
+          </SettingFrame>
+          {draft.autoStart ? (
+            <span role="status" className="task-ops-caption" data-tone="warning">
+              {t("Suggestions will run without you reviewing the idea first.")}
+              {t(" Each still waits for your review before it is merged.")}
+            </span>
+          ) : null}
+        </Section>
+      </fieldset>
+      {error ? (
+        <Alert tone="danger" className="mx-4 mb-3">
+          {error}
+        </Alert>
+      ) : null}
+      <div className="task-ops-footer">
+        <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
+          {t("Cancel")}
+        </Button>
+        <Button variant="primary" type="submit" loading={saving} disabled={!valid || saving}>
+          {t("Save")}
+        </Button>
+      </div>
+    </form>
+  );
+}

@@ -12,8 +12,11 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { GlassBackdrop } from "../../app/shell/GlassBackdrop";
+import { lockOverscroll } from "../hooks/useLockOverscroll";
 import { LAYER } from "../lib/layers";
+import { cumulativeCssZoom } from "../lib/cssZoom";
 import { OverlayMenuLayer, OverlayParent, overlayContainsTarget, useOverlay } from "./overlay";
+import styles from "./Popover.module.css";
 import {
   placePopover,
   type AnchorRect,
@@ -35,6 +38,55 @@ export type PopoverAnchor =
 
 export type PopoverDismissReason = "outside" | "escape";
 
+/**
+ * How a popover's content meets its height bound.
+ *
+ * - `"auto"` (default): the content keeps its natural height and, only when the
+ *   bound (`maxHeight`, or the room left in the viewport) is smaller, the content
+ *   element scrolls instead of the frame clipping it, so a short window never hides
+ *   the last row. Low priority (components layer): a consumer's own inner rail or
+ *   `overflow-*` utility wins, so menus and lists that own a rail are unchanged.
+ * - `"intrinsic"`: the content keeps its natural height and the frame clips it.
+ *   Only for content that must never scroll (tooltips, previews sized by the bound).
+ * - `"scroll"`: the popover owns one vertical scroll region. The content region
+ *   is capped at the bound, scrolls on wheel, touch and keyboard, contains
+ *   overscroll (no page scroll chaining or rubber-band) and never reads as an
+ *   outside dismissal. Do not add a second `overflow-y-auto` rail inside it.
+ *   Needs `constrainHeight` (the default); content with nothing focusable inside
+ *   should pass `tabIndex={0}` so keyboard users can scroll it.
+ *
+ * Forms, filter panels and help text vary in height with locale, zoom and viewport, so they use
+ * `"scroll"` (InfoPopover and DateTimeRangePicker do) when they want the strict single region.
+ * Menus and lists that already own a scroll rail (DropdownMenu, SearchableSelect, Select) keep the
+ * default; never nest a second rail in a `"scroll"` flow.
+ *
+ * `data-popover-flow` on the content element reflects the active mode.
+ */
+export type PopoverFlow = "auto" | "intrinsic" | "scroll";
+
+/**
+ * What the popover is, for assistive tech.
+ *
+ * - `"dialog"`: a non-modal dialog (a filter panel, a form, a details card). Sets
+ *   `role="dialog"`, moves focus to its first control on open (or the surface when there is
+ *   none) and returns focus to the trigger on close. Name it with `aria-labelledby` (a visible
+ *   title) or `aria-label`. Replaces a hand-set `role="dialog"`.
+ * - Omitted: no role; the content supplies its own (a listbox, a tooltip, a preview).
+ */
+export type PopoverKind = "dialog";
+
+const FOCUSABLE =
+  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], summary, [tabindex]:not([tabindex="-1"])';
+
+/** Dialog popovers take focus on open, unless a descendant already autofocused itself. */
+function focusDialog(surface: HTMLElement | null) {
+  if (!surface || surface.contains(document.activeElement)) return;
+  const first = [...surface.querySelectorAll<HTMLElement>(FOCUSABLE)].find(
+    (el) => el.getAttribute("aria-disabled") !== "true" && !el.closest("[inert]"),
+  );
+  (first ?? surface).focus({ preventScroll: true });
+}
+
 type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   anchor: PopoverAnchor;
   side?: PopoverSide;
@@ -46,6 +98,8 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   maxHeight?: number;
   /** Defaults to true. Disable for intrinsic-height surfaces like context menus. */
   constrainHeight?: boolean;
+  /** Content flow inside the height bound. Defaults to `"auto"`; see {@link PopoverFlow}. */
+  flow?: PopoverFlow;
   /** Defaults to `LAYER.popover`; a flyout off an open popover wants higher. */
   layer?: number;
   /** Drops the glass frame and keeps only placement and the content animation. */
@@ -54,14 +108,23 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   restoreFocus?: boolean;
   /** A non-interactive hint participates in modal containment without owning Escape. */
   passive?: boolean;
+  /** Keyboard hints and other frequent surfaces can skip their entrance motion. */
+  motion?: "auto" | "none";
   /**
    * Keeps the frame but paints an opaque surface instead of backdrop glass.
    * For popovers over live canvases (terminal WebGL): a backdrop-filter that
    * samples a moving canvas makes Chromium recomposite, and flash, the canvas.
    */
   solid?: boolean;
+  /**
+   * Frosted glass: a thin tint over a strong blur, for non-interactive hover cards that should
+   * let the pane beneath show through. Falls back to the opaque surface without blur support.
+   */
+  frosted?: boolean;
   style?: CSSProperties;
   autoFocus?: boolean;
+  /** See {@link PopoverKind}. `"dialog"` sets the role and the focus contract. */
+  kind?: PopoverKind;
   /** Wiring this in hands Popover the outside-click and Escape handling. */
   onDismiss?: (reason: PopoverDismissReason) => void;
   dismissOnEscape?: boolean;
@@ -70,7 +133,19 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   ref?: Ref<HTMLDivElement>;
 };
 
-const FRAME = "isolate overflow-hidden rounded-xl border border-content/10 shadow-xl";
+const FRAME =
+  "isolate overflow-hidden rounded-(--ui-radius-popup) border border-(color:--ui-pane-border) shadow-(--ui-elevation-floating)";
+
+/** Inline so an opt-in scroll region wins over utility classes a consumer put on the content. */
+const SCROLL_STYLE: CSSProperties = { overflowY: "auto", overscrollBehavior: "contain" };
+
+/** Stops macOS rubber-band at the scroll edges of an opted-in scroll region. */
+function useScrollFlow(surface: { current: HTMLElement | null }, flow: PopoverFlow) {
+  useEffect(() => {
+    if (flow !== "scroll" || !surface.current) return;
+    return lockOverscroll(surface.current);
+  }, [flow, surface]);
+}
 
 /** Which corner the open animation grows from, so it reads as anchored. */
 function origin(side: PopoverSide, align: PopoverAlign): string {
@@ -135,9 +210,12 @@ function samePosition(a: PopoverPosition | null, b: PopoverPosition): boolean {
 }
 
 /**
- * A menu, dropdown, or flyout that escapes its pane: portalled to the body so
- * no local stacking context can paint over it, placed against its anchor with
- * viewport flipping, and animated in from the anchored edge.
+ * Anchored secondary surface portalled to the body: placed against a trigger, rect or point with viewport flipping,
+ * animated from the anchored edge, with outside-press and Escape dismissal via `onDismiss`.
+ * `kind="dialog"` makes it a small non-modal form or details panel (role, focus in, focus return); `flow="scroll"` owns one scroll region.
+ * @group overlay
+ * @use Anchored custom content: filter panel, small form, details card, picker or list body.
+ * @avoid Command menus and searchable or nested pickers of commands: DropdownMenu or ContextMenu. Hover hints: Tooltip. Blocking tasks: Modal. Side panels: Sheet. Never a hand-set role="menu"/"listbox" or role="dialog": use DropdownMenu or kind="dialog".
  */
 export function Popover(props: Props) {
   const host = useContext(NativePopupHost);
@@ -157,9 +235,12 @@ function NativePopover({
   dismissOnEscape = true,
   restoreFocus = true,
   passive = false,
+  flow = "auto",
+  kind,
   ...props
 }: Props & { host: HTMLElement }) {
   const surface = useRef<HTMLDivElement | null>(null);
+  useScrollFlow(surface, flow);
   const overlayId = useOverlay(
     surface,
     false,
@@ -169,9 +250,11 @@ function NativePopover({
     restoreFocus,
     passive,
   );
+  const dialog = kind === "dialog";
   useEffect(() => {
-    if (autoFocus) surface.current?.focus({ preventScroll: true });
-  }, [autoFocus]);
+    if (dialog && autoFocus !== false) focusDialog(surface.current);
+    else if (autoFocus) surface.current?.focus({ preventScroll: true });
+  }, [autoFocus, dialog]);
   useEffect(() => {
     if (!onDismiss) return;
     const outside = (event: PointerEvent) => {
@@ -202,18 +285,26 @@ function NativePopover({
     layer: _layer,
     bare: _bare,
     solid: _solid,
+    frosted: _frosted,
+    motion: _motion,
     ...rest
   } = props;
   return createPortal(
     <div
+      {...(dialog ? { role: "dialog", tabIndex: -1 } : null)}
       {...rest}
       ref={(el) => {
         surface.current = el;
         if (typeof ref === "function") ref(el);
         else if (ref) ref.current = el;
       }}
-      style={{ maxHeight: maxHeight ?? 400, ...style }}
-      className={`relative w-full outline-none ${className ?? ""}`}
+      data-popover-flow={flow}
+      style={{
+        maxHeight: maxHeight ?? 400,
+        ...(flow === "scroll" ? SCROLL_STYLE : null),
+        ...style,
+      }}
+      className={`${flow === "auto" ? `${styles.bounded} ` : ""}relative w-full outline-none ${className ?? ""}`}
     >
       <OverlayParent.Provider value={overlayId}>{children}</OverlayParent.Provider>
     </div>,
@@ -231,21 +322,26 @@ function WebPopover({
   minHeight,
   maxHeight,
   constrainHeight = true,
+  flow = "auto",
   layer = LAYER.popover,
   bare = false,
   solid = false,
+  frosted = false,
   className,
   style,
-  autoFocus = false,
+  autoFocus,
+  kind,
   onDismiss,
   dismissOnEscape = true,
   restoreFocus = true,
   passive = false,
+  motion = "auto",
   ignore,
   ref,
   children,
   ...rest
 }: Props) {
+  const dialog = kind === "dialog";
   const menuLayer = useContext(OverlayMenuLayer);
   // Preserve the submenu offset while lifting menus above their owning dialog.
   const effectiveLayer = Math.max(layer, menuLayer + (layer === LAYER.submenu ? 1 : 0));
@@ -260,6 +356,9 @@ function WebPopover({
     passive,
   );
   const surface = useRef<HTMLDivElement | null>(null);
+  const scrolls = constrainHeight && flow === "scroll";
+  const bounded = constrainHeight && flow === "auto";
+  useScrollFlow(surface, scrolls ? "scroll" : "intrinsic");
   const [position, setPosition] = useState<PopoverPosition | null>(null);
   const anchorRef = useRef(anchor);
   anchorRef.current = anchor;
@@ -271,10 +370,27 @@ function WebPopover({
     const el = frame.current;
     const rect = anchorRect(anchorRef.current);
     if (!el || !rect) return;
+    // DOM rects are physical viewport pixels; CSS placement and offset sizes
+    // belong to the portal frame's cumulative zoom, not the trigger's zoom.
+    const zoom = cumulativeCssZoom(el);
+    const logicalAnchor = {
+      left: rect.left / zoom,
+      top: rect.top / zoom,
+      right: rect.right / zoom,
+      bottom: rect.bottom / zoom,
+      width: rect.width / zoom,
+      height: rect.height / zoom,
+    };
+    // offsetWidth rounds a fractional width down; pinning that width wraps the
+    // last word of shrink-to-fit content (tooltips), so round the box up.
+    const naturalWidth = Math.max(
+      el.offsetWidth,
+      Math.ceil(el.getBoundingClientRect().width / zoom - 0.05),
+    );
     const next = placePopover(
-      rect,
-      { width: el.offsetWidth, height: el.offsetHeight },
-      { width: window.innerWidth, height: window.innerHeight },
+      logicalAnchor,
+      { width: naturalWidth, height: el.offsetHeight },
+      { width: window.innerWidth / zoom, height: window.innerHeight / zoom },
       { side, align, gap, padding, width, minHeight, maxHeight },
     );
     setPosition((prev) => (samePosition(prev, next) ? prev : next));
@@ -308,21 +424,30 @@ function WebPopover({
     if (parentFrame)
       parentObserver.observe(parentFrame, { attributes: true, attributeFilter: ["style"] });
     window.addEventListener("resize", updatePlacement);
-    window.addEventListener("scroll", updatePlacement, true);
+    // Scrolling the popover's own content never moves its anchor.
+    const onScroll = (event: Event) => {
+      if (event.target instanceof Node && frame.current?.contains(event.target)) return;
+      updatePlacement();
+    };
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       observer.disconnect();
       parentObserver.disconnect();
       cancelAnimationFrame(placementFrame);
       window.removeEventListener("resize", updatePlacement);
-      window.removeEventListener("scroll", updatePlacement, true);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [place]);
 
   const positioned = position != null;
   useEffect(() => {
     // The measuring frame is hidden and cannot receive browser focus.
-    if (autoFocus && positioned) surface.current?.focus({ preventScroll: true });
-  }, [autoFocus, positioned]);
+    if (!positioned) return;
+    if (dialog && autoFocus !== false) focusDialog(surface.current);
+    // Content that already took focus (a menu row) keeps it.
+    else if (autoFocus && !surface.current?.contains(document.activeElement))
+      surface.current?.focus({ preventScroll: true });
+  }, [autoFocus, positioned, dialog]);
 
   useEffect(() => {
     if (!onDismiss) return;
@@ -386,9 +511,10 @@ function WebPopover({
           className="popover-solid pointer-events-none absolute inset-0 z-0 rounded-[inherit]"
         />
       ) : (
-        <GlassBackdrop />
+        <GlassBackdrop className={frosted ? "popover-backdrop popover-frosted" : undefined} />
       )}
       <div
+        {...(dialog ? { role: "dialog", tabIndex: -1 } : null)}
         {...rest}
         ref={(el) => {
           surface.current = el;
@@ -396,12 +522,14 @@ function WebPopover({
           else if (ref) ref.current = el;
         }}
         data-popover-side={position?.side ?? side}
+        data-popover-flow={scrolls ? "scroll" : bounded ? "auto" : "intrinsic"}
         style={{
           ...(contentMaxHeight != null ? { maxHeight: contentMaxHeight } : {}),
+          ...(scrolls ? SCROLL_STYLE : null),
           transformOrigin: origin(position?.side ?? side, align),
           ...style,
         }}
-        className={`${position ? "popover-open " : ""}relative z-[1] outline-none ${className ?? ""}`}
+        className={`${position && motion !== "none" ? "popover-open " : ""}${bounded ? `${styles.bounded} ` : ""}relative z-[1] outline-none ${className ?? ""}`}
       >
         <OverlayParent.Provider value={overlayId}>{children}</OverlayParent.Provider>
       </div>

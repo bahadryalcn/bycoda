@@ -1,17 +1,20 @@
 """Idle-only host/app installation. Spawned headlessly by local_update.py."""
 import json
+import contextlib
 import os
 import pathlib
 import plistlib
 import re
 import shutil
+import sqlite3
 import sys
 import tempfile
 import time
+import traceback
 import urllib.request
 
 from local_update_lib import (alive, backup, count, digest, lock, ps, ps_quote,
-                              read_json, run, safe_child, tree_hashes, verify_tree, write_json, windows_binary_digest, PRODUCT_IDENTITY, package_identity)
+                              read_json, run, safe_child, tree_hashes, verify_tree, write_json, windows_binary_digest, PRODUCT_IDENTITY, package_identity, package_components)
 
 BASE = pathlib.Path.home() / PRODUCT_IDENTITY['hostDirectory']
 MAC_APPLICATIONS = pathlib.Path('/Applications')
@@ -35,6 +38,46 @@ def windows_app_process_filter(app):
     allowed = '@(' + ','.join(ps_quote(path) for path in paths) + ')'
     return (f'Get-Process | Where-Object {{ $_.ProcessName -eq "{PRODUCT_IDENTITY["binaryName"]}" '
             f'-and {allowed} -contains $_.Path }}')
+
+def windows_app_snapshot(app, rollback, manifest):
+    """Reuse only an intact previous installation, never overwrite recovery data."""
+    saved = rollback / 'installation'
+    hashes_path = rollback / 'windows-installation-hashes.json'
+    if saved.exists() or hashes_path.exists():
+        if not saved.is_dir() or not hashes_path.is_file():
+            raise RuntimeError('Incomplete Windows rollback snapshot; recovery required')
+        hashes = read_json(hashes_path)
+        if not isinstance(hashes, dict) or app.name not in hashes or tree_hashes(saved) != hashes:
+            raise RuntimeError('Windows rollback snapshot failed integrity verification')
+        if not app.exists() or tree_hashes(app.parent) != hashes:
+            raise RuntimeError('Interrupted Windows update has unknown installation state; recovery required')
+        return hashes, False
+    if not app.exists():
+        return None, False
+    hashes = tree_hashes(app.parent)
+    shutil.copytree(app.parent, saved)
+    if tree_hashes(saved) != hashes:
+        raise RuntimeError('Windows rollback snapshot failed integrity verification')
+    write_json(hashes_path, hashes)
+    return hashes, False
+
+def verify_desktop_backup(path, seconds=15):
+    deadline = time.monotonic() + seconds
+    try:
+        if seconds <= 0:
+            raise RuntimeError('Database backup validation timed out')
+        if path.stat().st_size == 0:
+            raise RuntimeError('Empty database backup')
+        with contextlib.closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True,
+                                               timeout=min(1, seconds))) as connection:
+            connection.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+            if connection.execute('PRAGMA quick_check').fetchall() != [('ok',)]:
+                raise RuntimeError('Database integrity check failed')
+            tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if not {'sessions', 'in_flight_sessions'} <= tables or time.monotonic() > deadline:
+                raise RuntimeError('Database backup is incomplete or validation timed out')
+    except (OSError, sqlite3.Error, RuntimeError) as error:
+        raise RuntimeError('Existing desktop database backup requires recovery') from error
 
 def restore_windows_app(app, saved, hashes, rollback, process_filter):
     """Restore the complete installation, keeping the failed tree for diagnosis."""
@@ -115,6 +158,48 @@ def prepare_posix_node(runtime):
         staged.unlink(missing_ok=True)
     return node
 
+def prune_host_runtimes(current, previous):
+    """Removes Host runtimes other than the one just installed and the one it replaced.
+
+    The previous runtime stays: sessions started from it and a rollback may still launch
+    it. An old node.exe that is still exiting keeps its folder locked; the next install
+    removes it. Folders are compared by name, they all live directly in runtime/. A
+    failure here never fails the install."""
+    root = BASE / 'runtime'
+    keep = {pathlib.Path(current).name, pathlib.Path(previous).name}
+    removed = []
+    try:
+        entries = [entry for entry in root.iterdir() if entry.is_dir() and not entry.is_symlink()]
+    except OSError:
+        return removed
+    for entry in entries:
+        if entry.name.startswith('.') or entry.name in keep:
+            continue
+        shutil.rmtree(entry, ignore_errors=True)
+        if not entry.exists():
+            removed.append(entry.name)
+    return removed
+
+def installed_windows_host_port():
+    try:
+        port = read_json(BASE / 'running.json')['port']
+    except FileNotFoundError:
+        try:
+            config = read_json(BASE / 'service-launcher.json')
+        except FileNotFoundError:
+            service = (BASE / 'service.ps1').read_text(encoding='utf-8-sig')
+            match = re.search(r"--port'?\s+'?(\d+)", service)
+            if not match:
+                raise RuntimeError('Cannot recover the installed host port')
+            port = int(match.group(1))
+        else:
+            if pathlib.Path(config['directory']).resolve() != BASE.resolve():
+                raise RuntimeError('Installed host launcher configuration belongs to another directory')
+            port = config['port']
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise RuntimeError('Installed host port is invalid; recovery required')
+    return port
+
 def host_install(release, manifest, report):
     source = release / 'host'
     verify_tree(source, manifest['hostHashes'])
@@ -126,7 +211,7 @@ def host_install(release, manifest, report):
     if not (BASE / 'host.db').exists():
         # A fresh, independent product has no previous database to read. Never
         # reinterpret a missing DB for an existing installation as idle.
-        if any((BASE / name).exists() for name in ('runtime-path', 'running.json', 'service.ps1')):
+        if any((BASE / name).exists() for name in ('runtime-path', 'running.json', 'service.ps1', 'service-launcher.json')):
             raise RuntimeError('Existing bycoda host database is missing; installation requires recovery')
         launcher = PRODUCT_IDENTITY['hostLauncher'] + ('.cmd' if os.name == 'nt' else '')
         (BASE / 'bin').mkdir(parents=True, exist_ok=True)
@@ -143,7 +228,8 @@ def host_install(release, manifest, report):
         run([str(node), str(runtime/'host.mjs'), 'service', 'install', '--data-dir', str(BASE),
              '--port', str(PRODUCT_IDENTITY['hostPort'])])
         verify_host(runtime)
-        report('installed', runtime=str(runtime), firstInstall=True)
+        report('installed', runtime=str(runtime), firstInstall=True,
+               **installed_identity(manifest, runtime / 'bycoda-host.mjs', host=True))
         return
     wait_idle(BASE / 'host.db', "select count(*) from sessions where status='running' or shell_running=1", report)
     rollback = release / 'rollback-host'
@@ -151,24 +237,22 @@ def host_install(release, manifest, report):
     backup(BASE / 'host.db', rollback / 'host.db')
     configs = [BASE / 'runtime-path']
     if os.name == 'nt':
-        configs += [BASE / 'service.ps1', BASE / 'bin/bycoda-host.cmd']
+        configs += [BASE / 'service.ps1', BASE / 'service-launcher.json', BASE / 'bin/bycoda-host.cmd']
     else:
         configs += [pathlib.Path.home() / 'Library/LaunchAgents/com.bycoda.host.plist']
+    saved_configs, missing_configs = [], []
     for path in configs:
-        shutil.copy2(path, rollback / path.name)
+        if os.name == 'nt' and path.name != 'runtime-path' and not path.exists():
+            missing_configs.append(path)
+        else:
+            shutil.copy2(path, rollback / path.name)
+            saved_configs.append(path)
     previous = (BASE / 'runtime-path').read_text(encoding='utf-8-sig').strip()
     report('installing', runtime=str(runtime))
     if os.name == 'nt':
         # Use the new CLI's graceful shutdown + owned launcher-tree cleanup.
         # A legacy host can have removed running.json but still hold host.log.
-        try:
-            port = read_json(BASE / 'running.json')['port']
-        except FileNotFoundError:
-            service = (BASE / 'service.ps1').read_text(encoding='utf-8-sig')
-            match = re.search(r"--port'?\s+'?(\d+)", service)
-            if not match:
-                raise RuntimeError('Cannot recover the installed host port')
-            port = int(match.group(1))
+        port = installed_windows_host_port()
         node = runtime / 'node.exe'
         entry = runtime / 'host.mjs'
         run([str(node), str(entry), 'service', 'uninstall', '--data-dir', str(BASE)])
@@ -180,11 +264,16 @@ def host_install(release, manifest, report):
                     path.write_text(str(runtime)+'\n', encoding='utf-8')
                 elif path.name == 'bycoda-host.cmd':
                     content = '@echo off\r\nsetlocal DisableDelayedExpansion\r\n"'+str(runtime/'node.exe')+'" "'+str(runtime/'host.mjs')+'" %*\r\nexit /b %errorlevel%\r\n'
+                    path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_text(content, encoding='utf-8')
         except Exception:
             run([str(node), str(entry), 'service', 'uninstall', '--data-dir', str(BASE)])
-            for path in configs:
+            for path in saved_configs:
                 shutil.copy2(rollback / path.name, path)
+            for path in missing_configs:
+                path.unlink(missing_ok=True)
+            # The previous CLI reinstalls its own stable Node and, for native
+            # launchers, its matching engine helper from the retained runtime.
             run([str(pathlib.Path(previous)/'node.exe'), str(pathlib.Path(previous)/'host.mjs'),
                  'service', 'install', '--data-dir', str(BASE), '--port', str(port)])
             raise
@@ -221,7 +310,18 @@ def host_install(release, manifest, report):
                 prepare_posix_node(pathlib.Path(previous))
             run(['launchctl', 'bootstrap', domain, str(plist)])
             raise
-    report('installed', runtime=str(runtime))
+    pruned = prune_host_runtimes(runtime, previous)
+    report('installed', runtime=str(runtime), **({'prunedRuntimes': pruned} if pruned else {}),
+           **installed_identity(manifest, runtime / 'bycoda-host.mjs', host=True))
+
+def installed_identity(manifest, binary, host=False):
+    """An observed executable receipt; no credentials or runtime authentication."""
+    result = {'binaryPath': str(binary.resolve()),
+              'binaryHash': digest(binary) if host or os.name != 'nt' else windows_binary_digest(binary),
+              'binaryHashKind': 'sha256' if host or os.name != 'nt' else 'tauri-normalized-sha256'}
+    if manifest.get('buildIdentity'):
+        result['buildIdentity'] = manifest['buildIdentity']
+    return result
 
 def verify_windows_host_process(runtime, pid):
     path = ps(f'(Get-Process -Id {pid}).Path')
@@ -277,20 +377,18 @@ def app_install(release, manifest, report):
     rollback = release / 'rollback-app'
     rollback.mkdir(exist_ok=True)
     if has_database:
-        backup(desktop_db(), rollback / 'desktop.db')
+        if (rollback / 'desktop.db').exists():
+            verify_desktop_backup(rollback / 'desktop.db')
+        else:
+            backup(desktop_db(), rollback / 'desktop.db')
     report('installing')
     if windows:
         app = pathlib.Path(os.environ['LOCALAPPDATA']) / PRODUCT_IDENTITY['productName']/(PRODUCT_IDENTITY['binaryName']+'.exe')
         saved = rollback / 'installation'
-        previous_hashes = None
-        if not first_install:
-            if saved.exists():
-                raise RuntimeError('Windows rollback installation already exists; refusing overwrite')
-            previous_hashes = tree_hashes(app.parent)
-            shutil.copytree(app.parent, saved)
-            if tree_hashes(saved) != previous_hashes:
-                raise RuntimeError('Windows rollback snapshot failed integrity verification')
-            write_json(rollback / 'windows-installation-hashes.json', previous_hashes)
+        previous_hashes, already_installed = windows_app_snapshot(app, rollback, manifest)
+        if already_installed:
+            report('installed', version=manifest['version'], **installed_identity(manifest, app))
+            return
         app_q = ps_quote(app)
         process_filter = windows_app_process_filter(app)
         was_running = ps('@(' + process_filter + ').Count') != '0'
@@ -352,21 +450,25 @@ def app_install(release, manifest, report):
                 run(['open', '-a', str(app)])
             raise
         run(['open', '-a', str(app)])
-    report('installed', version=manifest['version'])
+    binary = app if windows else app / 'Contents/MacOS' / PRODUCT_IDENTITY['binaryName']
+    report('installed', version=manifest['version'], **installed_identity(manifest, binary))
 
-def main():
+def main(launch_key=None):
     manifest_path = pathlib.Path(sys.argv[1]).resolve()
     release = manifest_path.parent
     manifest = read_json(manifest_path)
     package_identity(manifest)
-    if not re.fullmatch(r'[a-f0-9]{16}-(local|release)(-\d+)?', manifest['id']) or not re.fullmatch(r'\d+\.\d+\.\d+', manifest['version']):
+    if not re.fullmatch(r'[a-f0-9]{16,20}-(local|release)(-\d+)?', manifest['id']) or not re.fullmatch(r'\d+\.\d+\.\d+', manifest['version']):
         raise ValueError('Invalid package id/version')
     component = sys.argv[2]
     if component not in ('host', 'app'):
         raise ValueError('Unknown install component')
+    package_components(manifest, (component,))
     record = BASE / 'update-jobs' / (component + '.json')
     def report(state, **values):
         message = {'pid': os.getpid(), 'id': manifest['id'], 'state': state, 'time': time.time(), **values}
+        if launch_key is not None:
+            message['launchKey'] = launch_key
         write_json(record, message)
         print(json.dumps(message), flush=True)
     with lock(BASE / 'update-jobs' / (component + '.lock')):
@@ -378,5 +480,39 @@ def main():
             report('failed', errorType=type(error).__name__, error=str(error) if not hasattr(error, 'cmd') else 'Command failed; see local stage logs')
             raise SystemExit(1)
 
+def wait_broker_launch(receipt, launch_key, seconds=15):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        try:
+            state = read_json(receipt)
+            if state.get('pid') == os.getpid() and state.get('launchKey') == launch_key and state.get('verified') is True:
+                return
+        except (OSError, ValueError):
+            pass
+        time.sleep(.05)
+    raise RuntimeError('Updater broker launch was not verified; installation did not start')
+
 if __name__ == '__main__':
-    main()
+    if len(sys.argv) in (5, 9) and sys.argv[3] == '--log':
+        expected = pathlib.Path(sys.argv[1]).resolve().parent / ('install-' + sys.argv[2] + '.log')
+        if sys.argv[2] not in ('host', 'app') or pathlib.Path(sys.argv[4]).resolve() != expected:
+            raise ValueError('Invalid updater log target')
+        # A broker cannot inherit the coordinator's redirected standard handles.
+        # Own the log for the entire helper lifetime, including startup failures.
+        with open(os.devnull, 'r') as source, expected.open('a', encoding='utf-8', buffering=1) as output:
+            sys.stdin = source
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                try:
+                    if len(sys.argv) == 9:
+                        receipt = expected.parent / ('launch-' + sys.argv[2] + '.json')
+                        if sys.argv[5] != '--broker-receipt' or pathlib.Path(sys.argv[6]).resolve() != receipt or sys.argv[7] != '--broker-key' or not re.fullmatch('[a-f0-9]{32}', sys.argv[8]):
+                            raise ValueError('Invalid updater launch receipt')
+                        wait_broker_launch(receipt, sys.argv[8])
+                    main(sys.argv[8] if len(sys.argv) == 9 else None)
+                except Exception:
+                    traceback.print_exc()
+                    raise SystemExit(1)
+    elif len(sys.argv) == 3:
+        main()
+    else:
+        raise ValueError('Invalid updater arguments')

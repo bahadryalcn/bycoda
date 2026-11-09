@@ -1,0 +1,5 @@
+#!/bin/sh
+# Opt-in only. This checks index content; it does not edit or stage files.
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+exec node scripts/checks/check-staged.mjs

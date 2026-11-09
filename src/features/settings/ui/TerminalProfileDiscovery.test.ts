@@ -116,7 +116,9 @@ it("closes on provider changes and ignores a late discovery error from the previ
   );
   await click("Find terminal profiles");
   await act(async () =>
-    root.render(createElement(TerminalProfileDiscovery, { provider: "codex", disabled: false })),
+    root.render(
+      createElement(TerminalProfileDiscovery, { key: "codex", provider: "codex", disabled: false }),
+    ),
   );
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   await click("Terminal account profiles");
@@ -141,8 +143,14 @@ it("does not save a connection receipt after its provider was changed", async ()
       }),
   );
   await click("Connect");
+  expect(document.querySelectorAll('button[aria-busy="true"]')).toHaveLength(1);
+  expect(document.querySelector('button[aria-busy="true"]')?.textContent).toBe("Connect");
+  await click("Connect");
+  expect(invoke).toHaveBeenCalledTimes(2);
   await act(async () =>
-    root.render(createElement(TerminalProfileDiscovery, { provider: "codex", disabled: false })),
+    root.render(
+      createElement(TerminalProfileDiscovery, { key: "codex", provider: "codex", disabled: false }),
+    ),
   );
   await act(async () => resolveConnect(profile));
   expect(providerAccounts("claude").map((account) => account.id)).not.toContain(profile.id);

@@ -1,11 +1,13 @@
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { providerLabel } from "../../../shared/lib/providerLabel";
-import { labelColor } from "../../../shared/lib/colorUtils";
 import { t, useLocale } from "../../../shared/i18n";
 import { CircleDot, GitPullRequest, X } from "../../../shared/ui/icons";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import type { GithubLabel, InboxComposerCard } from "../model/githubTasks";
+import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
+import type { InboxComposerCard } from "../model/githubTasks";
 import { InboxProviderMark } from "./InboxProviderMark";
+import { inboxLabelItems } from "./InboxPresentation";
 
 type Props = {
   card: InboxComposerCard;
@@ -18,83 +20,75 @@ export function InboxMiniCard({ card, onDismiss }: Props) {
   const kindLabel =
     card.kind === "pr" ? (card.provider === "gitlab" ? "Merge request" : "Pull request") : "Issue";
   const serviceLabel = providerLabel(card.provider);
+  const hasLabels = card.labels.length > 0;
 
   return (
     <div className="px-3 pt-2">
-      <div className="relative rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-2.5 py-2 pr-8">
-        <Button
-          variant="ghost"
-          type="button"
-          title={t("Open in {p0}", { p0: serviceLabel })}
-          aria-label={t("Open {p0} {p1} in {p2}", {
-            p0: kindLabel,
-            p1: card.identifier,
-            p2: serviceLabel,
-          })}
-          disabled={!card.url}
-          onClick={() => {
-            if (card.url) void openUrl(card.url);
-          }}
-          className="w-full flex-col text-left"
-        >
-          <span className="flex min-w-0 items-center gap-1.5">
-            <InboxProviderMark provider={card.provider} className="size-3.5 shrink-0" />
-            <KindIcon className="size-3 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
-            <span className="min-w-0 truncate text-[11px] text-(--ui-text-secondary)">
-              {kindLabel} · {card.identifier}
+      <ActionHost className="flex min-w-0 items-start gap-1">
+        {/* The label badges hold their own "+N" button, which cannot sit inside the open button:
+            with labels the source line is a sibling laid over it (clicks outside the badges fall
+            through to the button) and the button keeps the line's height. */}
+        <div className="relative min-w-0 flex-1">
+          <Button
+            data-action-primary=""
+            variant="item"
+            layout="stacked"
+            align="start"
+            type="button"
+            tooltip={t("Open in {p0}", { p0: serviceLabel })}
+            aria-label={t("Open {p0} {p1} in {p2}", {
+              p0: kindLabel,
+              p1: card.identifier,
+              p2: serviceLabel,
+            })}
+            disabled={!card.url}
+            onClick={() => {
+              if (card.url) openUrlSafely(card.url);
+            }}
+            className="w-full min-w-0"
+          >
+            <span className="line-clamp-2 wrap-anywhere text-ui-secondary font-medium leading-snug text-(--ui-tone-neutral-fg)">
+              {card.title}
             </span>
-          </span>
-          <span className="mt-1 line-clamp-1 text-[13px] font-semibold leading-snug text-(--ui-tone-neutral-fg)">
-            {card.title}
-          </span>
-          <span className="mt-1 flex min-w-0 items-center gap-2">
-            {card.source ? (
-              <span className="min-w-0 flex-1 truncate text-[11px] text-(--ui-text-secondary)">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <InboxProviderMark provider={card.provider} className="icon-sm shrink-0" />
+              <KindIcon
+                className="icon-xs shrink-0 text-(--ui-text-secondary)"
+                strokeWidth={1.75}
+              />
+              <span className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
+                {kindLabel} · {card.identifier}
+              </span>
+            </span>
+            {hasLabels ? (
+              <span aria-hidden="true" className="mt-1 block h-4" />
+            ) : card.source ? (
+              <span className="mt-1 min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
                 {card.source}
               </span>
-            ) : (
-              <span className="min-w-0 flex-1" />
-            )}
-            {card.labels.length > 0 ? (
-              <span className="flex min-w-0 shrink-0 items-center gap-1">
-                {card.labels.map((label) => (
-                  <InboxMiniLabel key={label.name} label={label} />
-                ))}
-              </span>
             ) : null}
-          </span>
-        </Button>
+          </Button>
+          {hasLabels ? (
+            <div className="pointer-events-none absolute inset-x-[calc(var(--space-3)+1px)] bottom-[calc(var(--space-2)+1px)] flex h-4 items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-ui-micro text-(--ui-text-secondary)">
+                {card.source}
+              </span>
+              <span className="pointer-events-auto min-w-0 max-w-[60%] shrink-0 [&>div>ul]:justify-end">
+                <BadgeList label={t("Labels")} size="xs" items={inboxLabelItems(card.labels)} />
+              </span>
+            </div>
+          ) : null}
+        </div>
         {onDismiss ? (
-          <Button
-            iconOnly
+          <InlineAction
             label={t("Remove {p0} {p1}", { p0: kindLabel, p1: card.identifier })}
-            variant="ghost"
             type="button"
-            title={t("Remove")}
-            aria-label={t("Remove {p0} {p1}", { p0: kindLabel, p1: card.identifier })}
             onClick={onDismiss}
           >
-            <X className="size-3" strokeWidth={2} />
-          </Button>
+            <X className="icon-xs" strokeWidth={1.75} />
+          </InlineAction>
         ) : null}
-      </div>
+      </ActionHost>
     </div>
-  );
-}
-
-function InboxMiniLabel({ label }: { label: GithubLabel }) {
-  useLocale();
-  const color = labelColor(label.color);
-  return (
-    <span className="inline-flex min-w-0 max-w-20 items-center gap-1 rounded bg-(--ui-surface-raised) px-1.5 py-px text-(length:--ui-font-caption) text-(--ui-text-secondary)">
-      {color ? (
-        <span
-          aria-hidden
-          className="size-1.5 shrink-0 rounded-full"
-          style={{ backgroundColor: color }}
-        />
-      ) : null}
-      <span className="min-w-0 truncate">{label.name}</span>
-    </span>
   );
 }

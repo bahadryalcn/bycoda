@@ -1,0 +1,89 @@
+/* Status line, chat transcript and footer controls of the companion panel. */
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+  margin-block-end: 10px;
+}
+/* A narrow panel moves the scope control to its own row instead of
+   squeezing the status into one character per line. */
+.statusText {
+  display: grid;
+  flex: 1 1 5rem;
+  min-inline-size: 0;
+}
+.statusLine {
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: break-word;
+}
+.caption {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.4;
+  overflow-wrap: break-word;
+}
+.scope {
+  flex-shrink: 0;
+  margin-inline-start: auto;
+}
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-inline-size: 0;
+  max-block-size: min(42dvh, 300px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin-block-end: 8px;
+}
+.row {
+  display: flex;
+  min-inline-size: 0;
+}
+.row[data-role="owner"] {
+  justify-content: flex-end;
+}
+.bubble {
+  max-inline-size: 85%;
+  padding: 6px 10px;
+  border-radius: var(--ui-radius-popup);
+  font-size: var(--ui-font-secondary);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.row[data-role="owner"] .bubble {
+  background: var(--ui-tone-accent-subtle);
+}
+.row[data-role="assistant"] .bubble {
+  background: var(--ui-tone-neutral-hover);
+}
+
+.errorRow {
+  display: grid;
+  gap: 4px;
+  min-inline-size: 0;
+  margin-block-end: 8px;
+  overflow-wrap: anywhere;
+}
+
+/* Footer: a single row that wraps only when the panel is narrower than its controls. */
+.bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.bar > * {
+  flex-shrink: 0;
+}
+.spacer {
+  flex: 1 1 0;
+  min-inline-size: 0;
+}

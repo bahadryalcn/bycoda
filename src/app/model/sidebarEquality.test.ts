@@ -135,3 +135,20 @@ describe("stringArraysEqual", () => {
     expect(stringArraysEqual(["a"], [])).toBe(false);
   });
 });
+
+it("notices delegation metadata arriving on an existing row", () => {
+  const child = {
+    parentSessionId: "p",
+    runId: "r",
+    kind: "advisor" as const,
+    model: "m",
+    startedAt: 1,
+  };
+  expect(sessionSummariesEqual([summary()], [summary({ delegationParent: child })])).toBe(false);
+  expect(
+    sessionSummariesEqual(
+      [summary({ delegationParent: child })],
+      [summary({ delegationParent: { ...child } })],
+    ),
+  ).toBe(true);
+});

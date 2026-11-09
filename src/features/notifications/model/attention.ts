@@ -5,6 +5,8 @@ import {
   type Block,
   type Session,
 } from "../../sessions/model/session";
+import { t } from "../../../shared/i18n";
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { deriveActivityDock } from "../../sessions/model/activityDock";
 import { isProviderFailureText } from "../../sessions/model/plan";
 import type { NotificationPermission } from "./notifications";
@@ -86,7 +88,7 @@ export function lastLine(text: string, max = SUMMARY_MAX): string {
       )
       .filter((part) => part && !part.startsWith("```"))
       .pop() ?? "";
-  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+  return truncateGraphemes(line, max);
 }
 
 function firstLine(text: string, max = SUMMARY_MAX): string {
@@ -95,7 +97,7 @@ function firstLine(text: string, max = SUMMARY_MAX): string {
       .split(/\r?\n/)
       .map((part) => part.replace(/\s+/g, " ").trim())
       .find(Boolean) ?? "";
-  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+  return truncateGraphemes(line, max);
 }
 
 export type SessionPhase = "idle" | "working" | "waiting" | "background" | "needs-input";
@@ -137,9 +139,9 @@ export function attentionText(
   const turn = latestTurn(session.blocks);
   if (kind === "finished") {
     return {
-      title: where("Finished"),
+      title: where(t("Finished")),
       subtitle,
-      body: lastLine(lastAssistantText(turn)) || `${harness} finished`,
+      body: lastLine(lastAssistantText(turn)) || t("{p0} finished", { p0: harness }),
     };
   }
   if (kind === "failed") {
@@ -147,10 +149,10 @@ export function attentionText(
     return {
       title: where(
         session.retryMessage && (session.busy || session.continuingElsewhere)
-          ? "Retrying"
+          ? t("Retrying")
           : session.usageLimit
-            ? "Usage limit reached"
-            : "Failed",
+            ? t("Usage limit reached")
+            : t("Failed"),
       ),
       subtitle,
       body:
@@ -160,7 +162,7 @@ export function attentionText(
             : (error?.text ?? ""),
         ) ||
         lastLine(lastAssistantText(turn)) ||
-        `${harness} could not finish`,
+        t("{p0} could not finish", { p0: harness }),
     };
   }
   const question =
@@ -170,11 +172,11 @@ export function attentionText(
       : undefined;
   if (question) {
     return {
-      title: where("Has a question"),
+      title: where(t("Has a question")),
       subtitle,
       body:
         firstLine(question.title || question.questions[0]?.prompt || "") ||
-        `${harness} has a question for you`,
+        t("{p0} has a question for you", { p0: harness }),
     };
   }
   const pending = session.blocks.find(
@@ -185,9 +187,11 @@ export function attentionText(
   );
   const what = pending?.tool?.title || pending?.text;
   return {
-    title: where("Needs approval"),
+    title: where(t("Needs approval")),
     subtitle,
-    body: what ? `Approve: ${firstLine(what, SUMMARY_MAX - 9)}` : `${harness} needs your approval`,
+    body: what
+      ? t("Approve: {p0}", { p0: firstLine(what, SUMMARY_MAX - 9) })
+      : t("{p0} needs your approval", { p0: harness }),
   };
 }
 
@@ -222,11 +226,11 @@ export const LOCKED_NOTIFICATION_TEXT = "A session in a locked group needs atten
 export function maskLockedNotification(payload: NotificationPayload): NotificationPayload {
   return {
     ...payload,
-    title: LOCKED_NOTIFICATION_TEXT,
+    title: t(LOCKED_NOTIFICATION_TEXT),
     subtitle: "",
     body: "",
-    projectName: "Locked group",
-    sessionTitle: "Locked session",
+    projectName: t("Locked group"),
+    sessionTitle: t("Locked session"),
   };
 }
 
@@ -276,12 +280,12 @@ export function coalesceNotifications(items: NotificationPayload[]): Notificatio
   const count = unique.length;
   const title =
     kinds.size > 1
-      ? `${count} sessions need attention`
+      ? t("{p0} sessions need attention", { p0: count })
       : urgent.kind === "finished"
-        ? `${count} sessions finished`
+        ? t("{p0} sessions finished", { p0: count })
         : urgent.kind === "failed"
-          ? `${count} sessions failed`
-          : `${count} sessions need you`;
+          ? t("{p0} sessions failed", { p0: count })
+          : t("{p0} sessions need you", { p0: count });
   const projects = [...new Set(unique.map((item) => item.projectName))];
   const shown = unique.slice(0, 3).map((item) => item.sessionTitle);
   const more = unique.length - shown.length;
@@ -291,7 +295,7 @@ export function coalesceNotifications(items: NotificationPayload[]): Notificatio
     title,
     subtitle:
       projects.slice(0, 3).join(", ") + (projects.length > 3 ? `, +${projects.length - 3}` : ""),
-    body: shown.join(" · ") + (more > 0 ? ` · +${more} more` : ""),
+    body: shown.join(" · ") + (more > 0 ? ` · ${t("+{p0} more", { p0: more })}` : ""),
     projectName: urgent.projectName,
     sessionTitle: urgent.sessionTitle,
   };

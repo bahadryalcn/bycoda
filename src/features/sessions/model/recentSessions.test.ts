@@ -5,6 +5,7 @@ import {
   liveSessionInfos,
   loadRecentSessionsPrefs,
   sameLiveSessionInfos,
+  withProjectlessKey,
   saveRecentSessionsPrefs,
   type LiveSessionInfo,
   type StoredSessionRow,
@@ -53,6 +54,39 @@ function build(rows: StoredSessionRow[], liveInfos: LiveSessionInfo[] = [], limi
 }
 
 describe("buildRecentSessions", () => {
+  it("shows saved interruption until a complete live transcript or active turn supersedes it", () => {
+    const rows = [stored("cut", 100, { interrupted: true })];
+    expect(build(rows)[0].status).toBe("interrupted");
+    expect(build(rows, [live("cut", { interruptionKnown: false })])[0].status).toBe("interrupted");
+    expect(build(rows, [live("cut", { interruptionKnown: true })])[0].status).toBeUndefined();
+    expect(build(rows, [live("cut", { status: "working" })])[0].status).toBe("working");
+  });
+  it("preserves Host management from stored and live rows without changing recency or pins", () => {
+    const management = {
+      assistant: true as const,
+      jobId: "job-one",
+      managedAt: 1,
+    };
+    const rows = build(
+      [stored("saved", 200, { managedBy: management, pinned: true })],
+      [
+        live("remote", {
+          cwd: REMOTE,
+          status: "working",
+          managedBy: management,
+        }),
+      ],
+    );
+    expect(rows[0]).toMatchObject({
+      id: "saved",
+      pinned: true,
+      managedBy: management,
+    });
+    expect(rows.find((row) => row.id === "remote")?.managedBy).toEqual(management);
+    expect(sameLiveSessionInfos([live("one")], [live("one", { managedBy: management })])).toBe(
+      false,
+    );
+  });
   it("preserves completion recency after the Done badge is read", () => {
     const rows = [stored("finished", 100), stored("other", 200)];
     const info = live("finished", { activityAt: 300, status: "done" });
@@ -97,6 +131,22 @@ describe("buildRecentSessions", () => {
   it("leaves out sessions of projects that are not on the rail", () => {
     const rows = build([stored("in", 2), stored("out", 3, { cwd: "/elsewhere" })]);
     expect(rows.map((row) => row.id)).toEqual(["in"]);
+  });
+
+  it("includes projectless sessions without making them pinnable", () => {
+    const rows = build([stored("blank", 9, { cwd: "~" }), stored("out", 3, { cwd: "/elsewhere" })]);
+    expect(rows.map((row) => row.id)).toEqual(["blank"]);
+    expect(rows[0]).toMatchObject({ cwd: "~", pinnable: false, remote: false });
+    const running = build([], [live("fresh", { cwd: "~", status: "working" })]);
+    expect(running.map((row) => row.id)).toEqual(["fresh"]);
+    expect(build([], [live("idle", { cwd: "~", activityAt: 5 })])).toEqual([]);
+  });
+
+  it("lets the all-sessions list admit projectless sessions only on top of the rail projects", () => {
+    const keys = withProjectlessKey(["/work/a"]);
+    expect(keys.has("~")).toBe(true);
+    expect(keys.has("/work/a")).toBe(true);
+    expect(keys.has("/work/b")).toBe(false);
   });
 
   it("overlays live status and bumps a running session to the top", () => {

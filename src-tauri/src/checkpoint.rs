@@ -2,7 +2,8 @@
 use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet, HashMap as LockMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, TryLockError, Weak};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -13,6 +14,7 @@ use crate::fs::{
     expand_home, git_checked, git_cmd, git_cmd_output, git_diff_files_for, git_output, path_to_js,
     resolve_repo_path, GitChangedFile, GitDiffIndex, MAX_TEXT_FILE_BYTES,
 };
+pub(crate) mod file_revert;
 pub(crate) mod turn;
 
 const MAX_SNAPSHOT_FILES: usize = 2000;
@@ -20,6 +22,37 @@ const MAX_SNAPSHOT_FILES: usize = 2000;
 /// than one Git process per file pair.
 const MAX_PAIRWISE_STATS: usize = 8;
 const MAX_TOPLEVEL_CACHE: usize = 64;
+/// Total desktop checkpoint store budget across all sessions.
+const STORE_BUDGET_BYTES: u64 = 1024 * 1024 * 1024;
+/// Idle sessions older than this lose their checkpoint history regardless of size.
+const STORE_MAX_IDLE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+/// How long a send waits for another session's checkpoint work in the same checkout
+/// before it proceeds without a file baseline (undo for that message is unavailable).
+const BEGIN_GATE_WAIT: Duration = Duration::from_secs(3);
+/// Marker error: a bounded gate wait expired. Never shown to users.
+const CHECKPOINT_BUSY: &str = "Checkpoint gate busy";
+
+fn lock_gate<'a>(
+    gate: &'a Mutex<()>,
+    deadline: Option<Instant>,
+    poisoned: &str,
+) -> Result<MutexGuard<'a, ()>, String> {
+    let Some(deadline) = deadline else {
+        return gate.lock().map_err(|_| poisoned.to_string());
+    };
+    loop {
+        match gate.try_lock() {
+            Ok(guard) => return Ok(guard),
+            Err(TryLockError::Poisoned(_)) => return Err(poisoned.to_string()),
+            Err(TryLockError::WouldBlock) => {
+                if Instant::now() >= deadline {
+                    return Err(CHECKPOINT_BUSY.into());
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
+}
 
 static TOPLEVEL_CACHE: std::sync::OnceLock<Mutex<LockMap<PathBuf, String>>> =
     std::sync::OnceLock::new();
@@ -50,6 +83,8 @@ pub struct CheckpointStore {
     leases: PathBuf,
     gates: Arc<Mutex<LockMap<String, Weak<Mutex<()>>>>>,
     barrier: Arc<turn::RecoveryBarrier>,
+    active_turn_index: Arc<Mutex<turn::ActiveTurnIndex>>,
+    authority: Option<crate::session_store::authority::ExecutionGate>,
 }
 
 fn checkpoint_gate(gates: &mut LockMap<String, Weak<Mutex<()>>>, key: String) -> Arc<Mutex<()>> {
@@ -76,12 +111,24 @@ impl CheckpointStore {
             leases,
             gates: Arc::new(Mutex::new(LockMap::new())),
             barrier: Arc::new(turn::RecoveryBarrier::default()),
+            active_turn_index: Arc::new(Mutex::new(turn::ActiveTurnIndex::default())),
+            authority: None,
         }
     }
 
     /// Command entry point: waits for startup recovery of an overlapping turn,
     /// then takes the gates. Waiting while holding a gate would deadlock with recovery.
     fn coordinated<T>(
+        &self,
+        session_id: &str,
+        cwds: &[&str],
+        operation: impl FnOnce(&Self) -> Result<T, String>,
+    ) -> Result<T, String> {
+        self.barrier.wait(session_id, cwds);
+        self.exclusive_read(session_id, cwds, operation)
+    }
+
+    fn coordinated_mutation<T>(
         &self,
         session_id: &str,
         cwds: &[&str],
@@ -97,6 +144,58 @@ impl CheckpointStore {
         cwds: &[&str],
         operation: impl FnOnce(&Self) -> Result<T, String>,
     ) -> Result<T, String> {
+        self.exclusive_until(session_id, cwds, None, operation)
+    }
+
+    /// `exclusive` whose gate acquisition gives up with `CHECKPOINT_BUSY` at `deadline`.
+    /// The operation itself is never interrupted once it holds the gates.
+    fn exclusive_until<T>(
+        &self,
+        session_id: &str,
+        cwds: &[&str],
+        deadline: Option<Instant>,
+        operation: impl FnOnce(&Self) -> Result<T, String>,
+    ) -> Result<T, String> {
+        match &self.authority {
+            Some(gate) => {
+                let mut completed = None;
+                let guarded = gate.guarded(session_id, "native-checkpoint", || {
+                    completed =
+                        Some(self.exclusive_read_until(session_id, cwds, deadline, operation)?);
+                    Ok(())
+                });
+                if let Some(value) = completed {
+                    if let Err(error) = guarded {
+                        eprintln!(
+                            "[checkpoint] operation succeeded; lease cleanup failed: {error}"
+                        );
+                    }
+                    Ok(value)
+                } else {
+                    guarded?;
+                    Err("Checkpoint operation did not complete".into())
+                }
+            }
+            None => self.exclusive_read_until(session_id, cwds, deadline, operation),
+        }
+    }
+
+    fn exclusive_read<T>(
+        &self,
+        session_id: &str,
+        cwds: &[&str],
+        operation: impl FnOnce(&Self) -> Result<T, String>,
+    ) -> Result<T, String> {
+        self.exclusive_read_until(session_id, cwds, None, operation)
+    }
+
+    fn exclusive_read_until<T>(
+        &self,
+        session_id: &str,
+        cwds: &[&str],
+        deadline: Option<Instant>,
+        operation: impl FnOnce(&Self) -> Result<T, String>,
+    ) -> Result<T, String> {
         // A session manifest and all affected working trees have one owner.
         // Git's absolute top-level unifies subdirectories; canonicalize unifies
         // symlink aliases. Different worktrees may proceed independently.
@@ -107,9 +206,7 @@ impl CheckpointStore {
                 .map_err(|_| "Checkpoint lock registry poisoned")?;
             checkpoint_gate(&mut gates, format!("session:{session_id}"))
         };
-        let _session = session_gate
-            .lock()
-            .map_err(|_| "Checkpoint session lock poisoned")?;
+        let _session = lock_gate(&session_gate, deadline, "Checkpoint session lock poisoned")?;
         let saved = read_manifest(&self.session_dir(session_id))?;
         let mut keys = BTreeSet::new();
         for cwd in cwds
@@ -152,10 +249,11 @@ impl CheckpointStore {
         };
         let mut guards = Vec::new();
         for gate in &repo_gates {
-            guards.push(
-                gate.lock()
-                    .map_err(|_| "Checkpoint repository lock poisoned")?,
-            );
+            guards.push(lock_gate(
+                gate,
+                deadline,
+                "Checkpoint repository lock poisoned",
+            )?);
         }
         operation(self)
     }
@@ -233,6 +331,7 @@ impl CheckpointStore {
         self.retire_resolved_paths(session_id, cwd)?;
         let root = project_root(cwd)?;
         let dir = self.session_dir(session_id);
+        file_revert::prepare(&dir, &root, paths)?;
         let mut manifest = match read_manifest(&dir)? {
             Some(manifest) if same_cwd(&manifest.cwd, cwd) => manifest,
             _ => return Ok(()),
@@ -292,6 +391,7 @@ impl CheckpointStore {
         }
         let root = project_root(cwd)?;
         let dir = self.session_dir(session_id);
+        file_revert::capture(&dir, &root, paths)?;
         let mut manifest = match read_manifest(&dir)? {
             Some(manifest) if same_cwd(&manifest.cwd, cwd) => manifest,
             _ => return Ok(()),
@@ -646,7 +746,10 @@ impl CheckpointStore {
         };
         for entry in entries.flatten() {
             let session_id = entry.file_name().to_string_lossy().into_owned();
-            if session_id == except_session_id {
+            if session_id == except_session_id
+                || validate_id(&session_id, "session").is_err()
+                || !entry.file_type().is_ok_and(|kind| kind.is_dir())
+            {
                 continue;
             }
             let dir = entry.path();
@@ -757,7 +860,12 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())?
         .join("checkpoints");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let store = CheckpointStore::new(dir);
+    let mut store = CheckpointStore::new(dir);
+    store.authority = Some(
+        app.try_state::<crate::session_store::SessionStore>()
+            .ok_or("NATIVE_AUTHORITY_STORE_UNAVAILABLE")?
+            .authority_execution_gate(),
+    );
     // Only a read-only scan runs before commands are accepted. Settling
     // interrupted turns runs git, so it stays off the UI thread.
     let recovery = store.plan_recovery();
@@ -800,6 +908,15 @@ fn start_orphan_pruning(app: &AppHandle, store: CheckpointStore) {
                 Ok(_) => {}
                 Err(error) => eprintln!("Checkpoint pruning skipped: {error}"),
             }
+            // Budget across sessions (each session is capped on its own), re-checked
+            // periodically because the store only ever grows between launches.
+            loop {
+                let freed = store.enforce_budget(STORE_BUDGET_BYTES, STORE_MAX_IDLE);
+                if freed > 0 {
+                    eprintln!("Checkpoint budget freed {} MiB", freed >> 20);
+                }
+                std::thread::sleep(Duration::from_secs(6 * 60 * 60));
+            }
         });
     if let Err(error) = spawned {
         eprintln!("checkpoint prune thread: {error}");
@@ -824,7 +941,7 @@ pub async fn session_checkpoint_ensure(
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let started = std::time::Instant::now();
-        store.coordinated(&session_id, &[&cwd], |store| {
+        store.coordinated_mutation(&session_id, &[&cwd], |store| {
             let waited = started.elapsed().as_secs_f64() * 1000.0;
             let mut timings = store.ensure_timed(&session_id, &cwd)?;
             timings.checkpoint_wait_ms = waited;
@@ -848,7 +965,7 @@ pub async fn session_checkpoint_prepare(
     }
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.coordinated(&session_id, &[&cwd], |store| {
+        store.coordinated_mutation(&session_id, &[&cwd], |store| {
             store.prepare(&session_id, &cwd, &paths)
         })
     })
@@ -869,7 +986,7 @@ pub async fn session_checkpoint_capture(
     }
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.coordinated(&session_id, &[&cwd], |store| {
+        store.coordinated_mutation(&session_id, &[&cwd], |store| {
             store.capture(&session_id, &cwd, &paths)
         })
     })
@@ -894,6 +1011,31 @@ pub async fn session_checkpoint_status(
     .map_err(|e| e.to_string())?
 }
 
+/// Read the desktop's checkpoint store for a host-authorized Conversation Tool.
+/// Never consult the host store: desktop turns capture their snapshots here.
+pub(crate) fn conversation_checkpoint_read(
+    app: &AppHandle,
+    action: &str,
+    session_id: &str,
+    cwd: &str,
+    relative: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    validate_id(session_id, "session")?;
+    let store = app.state::<CheckpointStore>();
+    store.coordinated(session_id, &[cwd], |store| match action {
+        "checkpoints.status" => {
+            serde_json::to_value(store.status(session_id, cwd)?).map_err(|error| error.to_string())
+        }
+        "checkpoints.diff" => serde_json::to_value(store.file_diff(
+            session_id,
+            cwd,
+            relative.ok_or("Checkpoint relative path required")?,
+        )?)
+        .map_err(|error| error.to_string()),
+        _ => Err("Unsupported checkpoint read".into()),
+    })
+}
+
 #[tauri::command]
 pub async fn session_checkpoint_apply(
     store: State<'_, CheckpointStore>,
@@ -904,7 +1046,7 @@ pub async fn session_checkpoint_apply(
     validate_id(&session_id, "session")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.coordinated(&session_id, &[&from_cwd, &to_cwd], |store| {
+        store.coordinated_mutation(&session_id, &[&from_cwd, &to_cwd], |store| {
             crate::fs::with_git_mutation(&crate::fs::expand_home(&to_cwd), || {
                 store.apply(&session_id, &from_cwd, &to_cwd)
             })
@@ -923,7 +1065,7 @@ pub async fn session_checkpoint_cleanup_safe(
     validate_id(&session_id, "session")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.coordinated(&session_id, &[&cwd], |store| {
+        store.coordinated_mutation(&session_id, &[&cwd], |store| {
             store.cleanup_safe(&session_id, &cwd)
         })
     })
@@ -939,7 +1081,7 @@ pub async fn session_checkpoint_forget(
     validate_id(&session_id, "session")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.coordinated(&session_id, &[], |store| store.forget(&session_id))
+        store.coordinated_mutation(&session_id, &[], |store| store.forget(&session_id))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -973,7 +1115,7 @@ pub async fn session_checkpoint_undo(
     validate_id(&session_id, "session")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.coordinated(&session_id, &[&cwd], |store| {
+        store.coordinated_mutation(&session_id, &[&cwd], |store| {
             crate::fs::with_git_mutation(&crate::fs::expand_home(&cwd), || {
                 store.undo(&session_id, &cwd, relative.as_deref())
             })
@@ -993,7 +1135,7 @@ pub async fn session_checkpoint_keep(
     validate_id(&session_id, "session")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.coordinated(&session_id, &[&cwd], |store| {
+        store.coordinated_mutation(&session_id, &[&cwd], |store| {
             store.keep(&session_id, &cwd, relative.as_deref())
         })
     })
@@ -1135,6 +1277,43 @@ fn path_contains_symlink(root: &Path, relative: &str) -> bool {
         match std::fs::symlink_metadata(&current) {
             Ok(meta) if meta.file_type().is_symlink() => return true,
             Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return false,
+            Err(_) => return true,
+        }
+    }
+    false
+}
+
+/// Parent directories already verified as symlink-free within one baseline pass.
+/// Lets the per-file stamp check only the file itself instead of every path component.
+#[derive(Default)]
+struct VerifiedDirs(std::collections::HashSet<String>);
+
+/// True when a parent directory of `relative` is a symlink or cannot be inspected.
+/// Each parent is walked once per `VerifiedDirs`; the file itself is not checked here.
+fn parent_contains_symlink(root: &Path, relative: &str, verified: &mut VerifiedDirs) -> bool {
+    let Some((parent, _)) = relative.rsplit_once('/') else {
+        return false;
+    };
+    if verified.0.contains(parent) {
+        return false;
+    }
+    let mut current = root.to_path_buf();
+    let mut prefix = String::new();
+    for part in parent.split('/') {
+        if !prefix.is_empty() {
+            prefix.push('/');
+        }
+        prefix.push_str(part);
+        current.push(part);
+        if verified.0.contains(&prefix) {
+            continue;
+        }
+        match std::fs::symlink_metadata(&current) {
+            Ok(meta) if meta.file_type().is_symlink() => return true,
+            Ok(_) => {
+                verified.0.insert(prefix.clone());
+            }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return false,
             Err(_) => return true,
         }
@@ -1852,6 +2031,38 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
+    fn authority_fence_blocks_checkpoint_and_recovery_mutations_but_allows_rescue_reads() {
+        let root = tmp("authority-fence");
+        let native = crate::session_store::SessionStore::open_in_memory().unwrap();
+        native.lock_conn().unwrap().execute("INSERT INTO native_authority_floor(environment_id,session_id,generation,phase,migration_id,min_writer_protocol) VALUES('env','native',1,'FENCED','migration',2)",[]).unwrap();
+        let mut store = CheckpointStore::new(root.0.clone());
+        store.authority = Some(native.authority_execution_gate());
+        let changed = std::cell::Cell::new(false);
+        assert!(store
+            .coordinated_mutation("native", &[], |_| {
+                changed.set(true);
+                Ok(())
+            })
+            .is_err());
+        assert!(store
+            .exclusive("native", &[], |_| {
+                changed.set(true);
+                Ok(())
+            })
+            .is_err());
+        assert!(!changed.get());
+        assert_eq!(
+            store
+                .coordinated("native", &[], |_| Ok("retained source rescue"))
+                .unwrap(),
+            "retained source rescue"
+        );
+        assert!(store
+            .coordinated_mutation("legacy", &[], |_| Ok(()))
+            .is_ok());
+    }
+
+    #[test]
     fn rollback_new_file_in_unborn_repository_clears_index_and_worktree() {
         let root = tmp("unborn-rollback");
         assert!(git(&root.0, &["init"]));
@@ -2063,6 +2274,69 @@ mod tests {
                 .insert(relative_to_root(&root, path).unwrap());
         }
         write_manifest(&dir, &manifest).unwrap();
+    }
+
+    #[test]
+    fn undo_accepts_a_linked_ancestor_and_refuses_a_link_inside_the_checkout() {
+        let temp = tmp("undo-ancestor");
+        let repo = temp.0.join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        assert!(init_git_commit(&repo, &[("sub/file.txt", "before\n")]));
+        let link = |path: &Path, target: &Path| {
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(target, path).unwrap();
+            #[cfg(windows)]
+            {
+                let mut command = Command::new("cmd");
+                crate::hide_window_console(&mut command);
+                let output = command
+                    .args(["/c", "mklink", "/J"])
+                    .arg(path.to_string_lossy().replace('/', "\\"))
+                    .arg(target.to_string_lossy().replace('/', "\\"))
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+        };
+        let unlink = |path: &Path| {
+            #[cfg(windows)]
+            std::fs::remove_dir(path).unwrap();
+            #[cfg(unix)]
+            std::fs::remove_file(path).unwrap();
+        };
+        let alias = temp.0.join("ancestor");
+        link(&alias, &temp.0);
+        let cwd = alias.join("repo").to_string_lossy().into_owned();
+        let canonical = crate::fs::path_to_js(&repo.canonicalize().unwrap());
+        let (_root, store) = store();
+        store.ensure("safe", &cwd).unwrap();
+        std::fs::write(repo.join("sub/file.txt"), "changed\n").unwrap();
+        record(&store, "safe", &cwd, &["sub/file.txt"]);
+        store.undo("safe", &canonical, None).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(repo.join("sub/file.txt")).unwrap(),
+            "before\n"
+        );
+
+        store.ensure("linked", &cwd).unwrap();
+        std::fs::write(repo.join("sub/file.txt"), "changed again\n").unwrap();
+        record(&store, "linked", &cwd, &["sub/file.txt"]);
+        std::fs::remove_dir_all(repo.join("sub")).unwrap();
+        let outside = temp.0.join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("file.txt"), "must survive\n").unwrap();
+        link(&repo.join("sub"), &outside);
+        assert!(store.undo("linked", &canonical, None).is_err());
+        assert_eq!(
+            std::fs::read_to_string(outside.join("file.txt")).unwrap(),
+            "must survive\n"
+        );
+        unlink(&repo.join("sub"));
+        unlink(&alias);
     }
 
     #[test]

@@ -1,6 +1,11 @@
 import { Button } from "../../shared/ui/Button";
+import { Badge } from "../../shared/ui/Badge";
+import { StatusDot } from "../../shared/ui/StatusDot";
+import { WindowChromeInset } from "../../shared/ui/PaneHeader";
+import { Tooltip } from "../../shared/ui/Tooltip";
+import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
-import { t, useLocale } from "../../shared/i18n";
+import { t, useLocale, useT } from "../../shared/i18n";
 import {
   AppWindow,
   CheckCircle,
@@ -8,6 +13,7 @@ import {
   ChevronRight,
   DashboardSquare,
   Inbox,
+  Menu,
   PanelLeft,
   Plus,
   Search,
@@ -15,6 +21,7 @@ import {
   SplitSquare,
   StickyNote,
   Terminal,
+  Wrench,
   X,
 } from "../../shared/ui/icons";
 import {
@@ -22,7 +29,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -31,10 +37,12 @@ import {
 } from "react";
 import { basename } from "../../platform/tauri/fs";
 import { ToolNavigationContext } from "./ToolNavigation";
+import { TitleBarActionsSlot } from "./TitleBarActionsSlot";
 import { looksLikeProject } from "../../features/projects/model/recents";
 import type { HarnessId } from "../../features/sessions/model/session";
 import { CwdPicker } from "../../features/projects/ui/CwdPicker";
 import { useLockOverscroll } from "../../shared/hooks/useLockOverscroll";
+import { useStableHandlers } from "../../shared/hooks/useStableHandlers";
 import { setDropFeedback } from "../../shared/lib/drag";
 import {
   useAnimatedReorder,
@@ -56,9 +64,22 @@ import {
 } from "../model/windowTransferPopout";
 import { beginWindowTabDrag } from "../model/windowDragPreview";
 import { WindowControls } from "./WindowControls";
+import { APP_MENU_TOGGLE_EVENT } from "./MenuBar";
 import { IS_MAC } from "../../platform/tauri/platform";
 import type { RecentProject } from "../../features/projects/model/recents";
 import { ExplorerMenu, type ExplorerMenuItem } from "../../features/files/ui/ExplorerMenu";
+import { tabStripOverflow, useTabStripScroll } from "./useTabStripScroll";
+import {
+  buildTitleTabContextMenuItems,
+  titleTabCanMoveToNewWindow,
+  titleTabClosable,
+  titleTabContextCloseIdSets,
+  titleTabContextCloseIds,
+  type TitleTabContextAction,
+} from "./titleTabContextMenu";
+
+export { tabStripOverflow, titleTabCanMoveToNewWindow, titleTabClosable, titleTabContextCloseIds };
+export type { TitleTabContextAction };
 import {
   paneDropFromPoint,
   setExternalPaneDrop,
@@ -228,50 +249,6 @@ export function tabCopy(tab: Tab): {
   return { headline, meta, tooltip: tooltipParts.join(" · ") };
 }
 
-/** Which tab-strip edges still have overflow to scroll toward. */
-export function tabStripOverflow(
-  scrollLeft: number,
-  clientWidth: number,
-  scrollWidth: number,
-): { left: boolean; right: boolean } {
-  const maxScroll = scrollWidth - clientWidth;
-  if (maxScroll <= 1) return { left: false, right: false };
-  return {
-    left: scrollLeft > 1,
-    right: scrollLeft < maxScroll - 1,
-  };
-}
-
-export function titleTabClosable(tab: Tab, tabCount: number): boolean {
-  return tabCount > 1 || !tab.blank;
-}
-
-/** Busy tabs stay: their stream is handled by this window's listeners, and a
- * shell cannot change windows. */
-/** Busy tabs may move too: the move is queued until their response finishes. */
-export function titleTabCanMoveToNewWindow(tab: Tab): boolean {
-  return !tab.hasTerminal && !tab.terminal && !tab.movingWindow;
-}
-
-export type TitleTabContextAction = "others" | "right" | "left";
-
-/** Tab ids affected by a context-menu action relative to its clicked tab. */
-export function titleTabContextCloseIds(
-  tabs: readonly Tab[],
-  targetId: string,
-  action: TitleTabContextAction,
-): string[] {
-  const targetIndex = tabs.findIndex((tab) => tab.id === targetId);
-  if (targetIndex < 0) return [];
-  if (action === "left") {
-    return tabs.slice(0, targetIndex).map((tab) => tab.id);
-  }
-  if (action === "right") {
-    return tabs.slice(targetIndex + 1).map((tab) => tab.id);
-  }
-  return tabs.filter((tab) => tab.id !== targetId).map((tab) => tab.id);
-}
-
 function TabHarnesses({
   harnesses,
   busyHarnesses,
@@ -299,13 +276,13 @@ function TabHarnesses({
             key={harness}
             data-harness-status={status}
             className={`grid size-3.5 shrink-0 place-items-center ${
-              status === "done" ? "opacity-100" : opacity
+              status !== "idle" ? "opacity-100" : opacity
             } ${i > 0 ? "-ml-0.5" : ""}`}
           >
             {status === "busy" ? (
-              <TerminalSpinner className="inline-block w-3.5 select-none text-center text-[11px] leading-none text-accent" />
+              <TerminalSpinner />
             ) : status === "done" ? (
-              <CheckCircle className="size-3.5 shrink-0 text-success" strokeWidth={2} />
+              <CheckCircle className="icon-sm shrink-0 text-success" strokeWidth={2} />
             ) : (
               <HarnessIcon harness={harness} className="size-3.5 shrink-0" />
             )}
@@ -313,17 +290,52 @@ function TabHarnesses({
         );
       })}
       {extra > 0 ? (
-        <span
-          className={`pl-0.5 text-(length:--ui-font-caption) leading-none ${dimmed ? "text-(--ui-text-secondary)" : "text-content"}`}
-        >
+        <Badge variant="count" size="xs" className="ms-0.5">
           +{extra}
-        </span>
+        </Badge>
       ) : null}
     </span>
   );
 }
 
 type SortableApi = ReturnType<typeof useAnimatedReorder>;
+
+const TAB_MOVE_LEFT_ID = "move-left";
+const TAB_MOVE_RIGHT_ID = "move-right";
+
+/**
+ * The menu alternative to dragging a tab: Move Left / Move Right, disabled at the strip ends.
+ * They sit above the first separator so closing actions stay grouped below.
+ */
+function withTabMoveItems(
+  items: ExplorerMenuItem[],
+  index: number,
+  count: number,
+  t: ReturnType<typeof useT>,
+): ExplorerMenuItem[] {
+  if (index < 0 || count < 2) return items;
+  const moveItems: ExplorerMenuItem[] = [
+    {
+      kind: "item",
+      id: TAB_MOVE_LEFT_ID,
+      get label() {
+        return t("Move Left");
+      },
+      disabled: index === 0,
+    },
+    {
+      kind: "item",
+      id: TAB_MOVE_RIGHT_ID,
+      get label() {
+        return t("Move Right");
+      },
+      disabled: index === count - 1,
+    },
+  ];
+  const firstSeparator = items.findIndex((item) => item.kind === "sep");
+  const at = firstSeparator < 0 ? items.length : firstSeparator;
+  return [...items.slice(0, at), ...moveItems, ...items.slice(at)];
+}
 
 function TitleTabItem({
   tab,
@@ -350,7 +362,7 @@ function TitleTabItem({
   onContextMenu: (id: string, event: ReactMouseEvent<HTMLDivElement>) => void;
   itemRef?: (el: HTMLDivElement | null) => void;
 }) {
-  useLocale();
+  const t = useT();
   const { headline, meta, tooltip } = tabCopy(tab);
   const fileIcon = tab.files[0];
   const accessibleTooltip = [
@@ -359,13 +371,20 @@ function TitleTabItem({
     ...((tab.doneHarnesses?.length ?? 0) > 0 ? ["Response complete"] : []),
   ].join(" · ");
 
+  const setItemRef = sortable.setItemRef;
+  const setNode = useCallback(
+    (el: HTMLDivElement | null) => {
+      setItemRef(tab.id, el);
+      itemRef?.(el);
+    },
+    [tab.id, setItemRef, itemRef],
+  );
+
   return (
-    <div
-      ref={(el) => {
-        sortable.setItemRef(tab.id, el);
-        itemRef?.(el);
-      }}
-      className="reorder-item tab-motion group @container relative flex h-full cursor-default touch-none items-center self-stretch min-w-0 w-full"
+    <ActionHost
+      selected={active}
+      ref={setNode}
+      className="reorder-item tab-motion group @container relative flex h-(--ui-control-height-compact) w-full min-w-0 cursor-default touch-none items-center self-center"
       data-tauri-drag-region="false"
       data-tab-draggable={canDrag || undefined}
       onDragStart={(event) => event.preventDefault()}
@@ -393,11 +412,13 @@ function TitleTabItem({
     >
       <Button
         selected={active}
-        variant="item"
+        variant="tab"
+        align="start"
         motion="none"
         type="button"
-        title={accessibleTooltip}
+        tooltip={accessibleTooltip}
         aria-label={accessibleTooltip}
+        aria-current={active ? "page" : undefined}
         data-tauri-drag-region="false"
         onClick={() => {
           if (sortable.consumeClick()) return;
@@ -408,6 +429,8 @@ function TitleTabItem({
           if (tab.previewSessionId) onKeepSession?.(tab.previewSessionId);
         }}
         onKeyDown={(event) => {
+          // Alt+Arrow moves the tab without dragging; the menu offers the same move.
+          if (canDrag && sortable.onItemKeyDown(tab.id, event)) return;
           if (event.key === "Enter" && (tab.previewFileId || tab.previewSessionId)) {
             if (tab.previewFileId) onPinFile?.(tab.previewFileId);
             if (tab.previewSessionId) onKeepSession?.(tab.previewSessionId);
@@ -424,66 +447,62 @@ function TitleTabItem({
           />
         ) : tab.terminal || !fileIcon ? (
           <Terminal
-            className={`size-3.5 shrink-0 ${active ? "text-content" : "text-content/55"}`}
+            className={`icon-sm shrink-0 ${active ? "text-content" : "text-(--ui-text-secondary)"}`}
             strokeWidth={1.75}
           />
         ) : (
           <span className={!active ? "opacity-55" : undefined}>
-            <FileTypeIcon name={fileIcon} isDir={false} size={14} />
+            <FileTypeIcon name={fileIcon} isDir={false} size="sm" />
           </span>
         )}
-        {/* Keep two-line tabs compact while leaving room for descenders. */}
-        <span className="flex min-w-0 flex-1 flex-col justify-center">
-          <span className="flex min-w-0 items-center gap-1">
+        {/* One 28px row: the headline leads, secondary meta follows when there is room. */}
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          <span className="flex min-w-0 flex-1 items-center gap-1">
             <TabLabel
-              className={`leading-tight ${tab.previewFileId || tab.previewSessionId ? "italic" : ""} ${
-                meta
-                  ? "text-[13px] @min-[11rem]:text-(length:--ui-font-caption) @min-[11rem]:font-medium"
-                  : "text-[13px]"
-              }`}
+              className={`leading-tight text-ui-secondary ${tab.previewFileId || tab.previewSessionId ? "italic" : ""}`}
             >
               {headline}
             </TabLabel>
             {tab.pendingWindowMove || tab.movingWindow ? (
-              <span
-                className="shrink-0 text-accent"
-                title={
-                  tab.movingWindow
-                    ? t("Opening new window…")
-                    : t("Moves to a new window when the response finishes")
-                }
-                aria-label={
+              <Tooltip
+                label={
                   tab.movingWindow
                     ? t("Opening new window…")
                     : t("Moves to a new window when the response finishes")
                 }
               >
-                <AppWindow className="size-3" strokeWidth={1.75} />
-              </span>
+                <span
+                  className="shrink-0 text-accent"
+                  role="img"
+                  aria-label={
+                    tab.movingWindow
+                      ? t("Opening new window…")
+                      : t("Moves to a new window when the response finishes")
+                  }
+                >
+                  <AppWindow className="icon-xs" strokeWidth={1.75} />
+                </span>
+              </Tooltip>
             ) : null}
             {tab.dirty ? (
-              <span
-                className="size-1.5 shrink-0 rounded-full bg-content/70"
-                title={t("Unsaved changes")}
-                aria-label={t("Unsaved changes")}
-              />
+              <Tooltip label={t("Unsaved changes")}>
+                <StatusDot tone="neutral" label={t("Unsaved changes")} />
+              </Tooltip>
             ) : null}
           </span>
           {meta ? (
-            <TabLabel className="hidden text-(length:--ui-font-caption) leading-tight text-(--ui-text-secondary) @min-[11rem]:block">
+            <TabLabel className="hidden max-w-[45%] shrink-0 text-ui-caption leading-tight text-(--ui-text-secondary) @min-[11rem]:block">
               {meta}
             </TabLabel>
           ) : null}
         </span>
       </Button>
       {closable ? (
-        <Button
-          iconOnly
+        <InlineAction
           label={t("Close {p0}", { p0: headline })}
-          variant="ghost"
           motion="none"
           type="button"
-          title={t("Close Tab")}
+          tooltip={t("Close Tab")}
           aria-label={t("Close {p0}", { p0: headline })}
           data-no-drag
           data-tauri-drag-region="false"
@@ -492,12 +511,18 @@ function TitleTabItem({
             e.stopPropagation();
             onClose(tab.id);
           }}
-          className="absolute end-0 inset-bs-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 group-has-[button:focus-visible]:opacity-100"
+          onAuxClick={(event) => {
+            // InlineAction keeps the host from seeing the click, so a middle click on the X closes here.
+            if (event.button !== 1) return;
+            event.preventDefault();
+            onClose(tab.id);
+          }}
+          className="absolute end-0 inset-bs-1/2 -translate-y-1/2"
         >
-          <X className="size-3" strokeWidth={1.75} />
-        </Button>
+          <X className="icon-xs" strokeWidth={1.75} />
+        </InlineAction>
       ) : null}
-    </div>
+    </ActionHost>
   );
 }
 
@@ -512,14 +537,12 @@ function TabStripChevron({ side, onClick }: { side: "left" | "right"; onClick: (
       variant="ghost"
       motion="none"
       type="button"
-      title={label}
-      aria-label={label}
       data-tauri-drag-region="false"
       onPointerDown={(event) => event.stopPropagation()}
       onClick={onClick}
-      className={`absolute top-1/2 z-40 -translate-y-1/2 ${side === "left" ? "left-1" : "right-1"}`}
+      className={`absolute top-1/2 z-1 -translate-y-1/2 ${side === "left" ? "left-1" : "right-1"}`}
     >
-      <Icon className="size-3.5" strokeWidth={1.75} />
+      <Icon className="icon-sm" strokeWidth={1.75} />
     </Button>
   );
 }
@@ -553,8 +576,6 @@ export function IconButton({
       variant="ghost"
       motion="none"
       type="button"
-      title={label}
-      aria-label={label}
       aria-pressed={active || accent}
       aria-disabled={disabled}
       data-tauri-drag-region="false"
@@ -592,25 +613,68 @@ export function IconButton({
   );
 }
 
-export function DevModeLabel() {
-  useLocale();
-  if (!import.meta.env.DEV) return null;
+/**
+ * Compact entry to the application menus (File, View, Terminal) on platforms
+ * without a native menu bar. It toggles the same menu bar the Alt key opens.
+ */
+function AppMenuButton() {
+  const t = useT();
   return (
-    <span
-      title={t("Development build")}
-      className="mr-1 min-w-0 truncate rounded-md bg-(--ui-tone-info-subtle) px-1.5 py-0.5 text-(length:--ui-font-caption) font-medium text-(--ui-tone-info-fg)"
-    >
-      {t("Development")}
-    </span>
+    <div className="flex shrink-0 items-center ps-1.5" data-app-menu-entry>
+      <Button
+        iconOnly
+        label={t("Application menu")}
+        shortcut="Alt"
+        variant="ghost"
+        motion="none"
+        type="button"
+        aria-haspopup="menu"
+        data-tauri-drag-region="false"
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          window.dispatchEvent(
+            new CustomEvent(APP_MENU_TOGGLE_EVENT, {
+              detail: { x: rect.left, y: rect.bottom + 2 },
+            }),
+          );
+        }}
+      >
+        <Menu className="icon-sm" strokeWidth={1.75} aria-hidden="true" />
+      </Button>
+    </div>
   );
 }
 
-/** Flex spacer that keeps the Development badge next to the visit arrows. */
-export function DevModeSlot({ fill = true }: { fill?: boolean }) {
-  useLocale();
+const TITLEBAR_HEIGHT = "calc(var(--ui-control-height-compact) + 0.5rem)";
+const TITLEBAR_HEIGHT_STYLE = { height: TITLEBAR_HEIGHT, minHeight: TITLEBAR_HEIGHT } as const;
+
+/**
+ * Development-build marker for the lower-left corner of a rail or sidebar: a small
+ * status-toned wrench with its word. In a rail narrower than 140px the word drops
+ * and the icon stays; the name and tooltip are always "Development build". Only
+ * development builds render it; production renders nothing.
+ */
+export function DevModeIndicator({ className }: { className?: string }) {
+  const t = useT();
+  if (!import.meta.env.DEV) return null;
   return (
-    <div className={`flex min-w-0 items-center justify-end ${fill ? "flex-1" : "shrink-0"}`}>
-      <DevModeLabel />
+    <div
+      data-dev-mode-indicator=""
+      className={`flex min-w-0 shrink-0 items-center px-3 pb-2 pt-1 @max-[140px]/rail:justify-center @max-[140px]/rail:px-0 ${className ?? ""}`}
+    >
+      <Tooltip label={t("Development")} when="overflow" side="top">
+        <Badge
+          size="xs"
+          tone="info"
+          appearance="subtle"
+          role="img"
+          aria-label={t("Development build")}
+          className="min-w-0"
+        >
+          <Wrench className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
+          <span className="truncate @max-[140px]/rail:hidden">{t("Development")}</span>
+        </Badge>
+      </Tooltip>
     </div>
   );
 }
@@ -632,11 +696,11 @@ export function TabVisitNav({
   panelActive?: boolean;
   panelLabel?: string;
 }) {
-  useLocale();
+  const t = useT();
   return (
     <div className="flex shrink-0 items-center">
       <IconButton label={t("Back")} command="Tab: Back" disabled={!canGoBack} onClick={onGoBack}>
-        <ChevronLeft className="size-3.5" strokeWidth={1.75} />
+        <ChevronLeft className="icon-sm" strokeWidth={1.75} />
       </IconButton>
       <IconButton
         label={t("Forward")}
@@ -644,7 +708,7 @@ export function TabVisitNav({
         disabled={!canGoForward}
         onClick={onGoForward}
       >
-        <ChevronRight className="size-3.5" strokeWidth={1.75} />
+        <ChevronRight className="icon-sm" strokeWidth={1.75} />
       </IconButton>
       {onTogglePanel ? (
         <IconButton
@@ -653,7 +717,7 @@ export function TabVisitNav({
           active={panelActive}
           onClick={onTogglePanel}
         >
-          <PanelLeft className="size-3.5" strokeWidth={1.75} />
+          <PanelLeft className="icon-sm" strokeWidth={1.75} />
         </IconButton>
       ) : null}
     </div>
@@ -668,7 +732,7 @@ export function OverlayNav({
   onBack?: () => void;
   onToggleSidebar?: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const navigation = useContext(ToolNavigationContext)?.history;
   if (navigation)
     return (
@@ -685,7 +749,7 @@ export function OverlayNav({
     <div className="flex shrink-0 items-center px-1.5">
       {onBack ? (
         <IconButton label={t("Back")} command="Tab: Back" onClick={onBack}>
-          <ChevronLeft className="size-3.5" strokeWidth={1.75} />
+          <ChevronLeft className="icon-sm" strokeWidth={1.75} />
         </IconButton>
       ) : null}
       {onToggleSidebar ? (
@@ -694,7 +758,7 @@ export function OverlayNav({
           command="App: Toggle Sidebar"
           onClick={onToggleSidebar}
         >
-          <PanelLeft className="size-3.5" strokeWidth={1.75} />
+          <PanelLeft className="icon-sm" strokeWidth={1.75} />
         </IconButton>
       ) : null}
     </div>
@@ -740,7 +804,7 @@ function TitleBarComponent({
   onSelectProject,
   layout,
 }: Props) {
-  useLocale();
+  const t = useT();
   const [layoutMenu, setLayoutMenu] = useState<{ x: number; y: number } | null>(null);
   const splitRightShortcut = useKeybindingShortcut("Pane: Split Right");
   const splitDownShortcut = useKeybindingShortcut("Pane: Split Down");
@@ -784,7 +848,7 @@ function TitleBarComponent({
     }
   };
   const tabIds = tabs.map((tab) => tab.id);
-  const { displayed, setTabNode, finishMotion } = useTabCloseMotion(tabs);
+  const { displayed, tabRef, finishMotion } = useTabCloseMotion(tabs);
   const popOutTab = useCallback(
     (tabId: string) => {
       const tab = tabs.find((entry) => entry.id === tabId);
@@ -929,7 +993,12 @@ function TitleBarComponent({
         }
       : undefined;
   }, [activeId, tabs, onPlaceOnPane, onMoveToNewWindow, popOutTab]);
-  const sortable = useAnimatedReorder(tabIds, onReorder, "x", externalTabDrop);
+  const sortable = useAnimatedReorder(tabIds, onReorder, "x", externalTabDrop, {
+    label: (tabId) => {
+      const tab = tabs.find((entry) => entry.id === tabId);
+      return tab ? tabCopy(tab).headline : "";
+    },
+  });
   const paneToTabDrop = useExternalTitleTabDrop();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const setTabStripRef = useCallback(
@@ -939,52 +1008,24 @@ function TitleBarComponent({
     },
     [lockOverscroll],
   );
-  const [tabOverflow, setTabOverflow] = useState({ left: false, right: false });
   const [tabMenu, setTabMenu] = useState<{
     tabId: string;
     x: number;
     y: number;
   } | null>(null);
-  const syncTabOverflow = useCallback(() => {
-    const el = tabStripRef.current;
-    const next = el
-      ? tabStripOverflow(el.scrollLeft, el.clientWidth, el.scrollWidth)
-      : { left: false, right: false };
-    setTabOverflow((prev) => (prev.left === next.left && prev.right === next.right ? prev : next));
-  }, []);
-  const scrollTabsBy = useCallback((direction: -1 | 1) => {
-    const el = tabStripRef.current;
-    if (!el) return;
-    const amount = Math.max(el.clientWidth * 0.6, 112);
-    el.scrollBy({ left: direction * amount, behavior: "smooth" });
-  }, []);
-  const activeTabRef = useRef<HTMLDivElement | null>(null);
+  const { tabOverflow, scrollTabsBy, activeTabRef } = useTabStripScroll({
+    tabStripRef,
+    activeId,
+    tabs,
+    dragging: Boolean(sortable.draggingId),
+  });
+  const setActiveTabNode = useCallback(
+    (node: HTMLDivElement | null) => {
+      activeTabRef.current = node;
+    },
+    [activeTabRef],
+  );
   const canDrag = tabs.length > 1 || Boolean(onMoveToNewWindow);
-
-  useEffect(() => {
-    if (sortable.draggingId) return;
-    activeTabRef.current?.scrollIntoView({
-      inline: "nearest",
-      block: "nearest",
-    });
-  }, [activeId, sortable.draggingId]);
-
-  useLayoutEffect(() => {
-    const el = tabStripRef.current;
-    if (!el) return;
-    syncTabOverflow();
-    el.addEventListener("scroll", syncTabOverflow, { passive: true });
-    const ro = new ResizeObserver(syncTabOverflow);
-    ro.observe(el);
-    return () => {
-      el.removeEventListener("scroll", syncTabOverflow);
-      ro.disconnect();
-    };
-  }, [syncTabOverflow]);
-
-  useLayoutEffect(() => {
-    syncTabOverflow();
-  }, [activeId, syncTabOverflow, tabs]);
 
   const activeTab = useMemo(() => tabs.find((t) => t.id === activeId), [activeId, tabs]);
   // The product name differs between the official, fork and dev builds.
@@ -1024,152 +1065,35 @@ function TitleBarComponent({
   }, [systemTitle]);
 
   const contextTab = tabMenu ? tabs.find((tab) => tab.id === tabMenu.tabId) : undefined;
-  const contextCloseIds = contextTab
-    ? {
-        others: titleTabContextCloseIds(tabs, contextTab.id, "others"),
-        right: titleTabContextCloseIds(tabs, contextTab.id, "right"),
-        left: titleTabContextCloseIds(tabs, contextTab.id, "left"),
-      }
-    : null;
+  const contextCloseIds = contextTab ? titleTabContextCloseIdSets(tabs, contextTab.id) : null;
   const contextMenuItems: ExplorerMenuItem[] = contextTab
-    ? [
-        ...(contextTab.previewSessionId || contextTab.previewFileId
-          ? [
-              {
-                kind: "item" as const,
-                id: "keep-open",
-                label: t("Keep open"),
-              },
-            ]
-          : []),
-        ...(detached && onReturnTabToMain
-          ? [
-              {
-                kind: "item" as const,
-                id: "return-main",
-                label: t("Return to main window"),
-                disabled: contextTab.hasTerminal || contextTab.dirty || contextTab.movingWindow,
-              },
-            ]
-          : []),
-        {
-          kind: "item",
-          id: "close",
-          get label() {
-            return t("Close Tab");
-          },
-          shortcut: closeShortcut ?? undefined,
-          disabled: !titleTabClosable(contextTab, tabs.length),
-        },
-        ...(onMoveToNewWindow
-          ? [
-              contextTab.pendingWindowMove
-                ? {
-                    kind: "item" as const,
-                    id: "cancel-new-window",
-                    get label() {
-                      return t("Cancel Move to New Window");
-                    },
-                    get description() {
-                      return t("Waiting for the running response to finish");
-                    },
-                  }
-                : {
-                    kind: "item" as const,
-                    id: "new-window",
-                    get label() {
-                      return t("Move to New Window");
-                    },
-                    disabled: !titleTabCanMoveToNewWindow(contextTab),
-                    description: contextTab.movingWindow
-                      ? "Opening new window…"
-                      : contextTab.hasTerminal || contextTab.terminal
-                        ? "Terminals cannot move between windows"
-                        : contextTab.busyHarnesses.length > 0
-                          ? "Moves once the running response finishes"
-                          : undefined,
-                  },
-            ]
-          : []),
-        { kind: "sep" },
-        {
-          kind: "item",
-          id: "others",
-          get label() {
-            return t("Close Other Tabs");
-          },
-          disabled: contextCloseIds?.others.length === 0,
-        },
-        {
-          kind: "item",
-          id: "right",
-          get label() {
-            return t("Close Tabs to the Right");
-          },
-          disabled: contextCloseIds?.right.length === 0,
-        },
-        {
-          kind: "item",
-          id: "left",
-          get label() {
-            return t("Close Tabs to the Left");
-          },
-          disabled: contextCloseIds?.left.length === 0,
-        },
-        ...(onCloseIdleTabs
-          ? [
-              {
-                kind: "item" as const,
-                id: "close-idle",
-                get label() {
-                  return t("Close Idle Tabs");
-                },
-                disabled: !idleTabCount,
-              },
-            ]
-          : []),
-        ...(contextTab.sessionCount > 0 && (onArchiveTab || onDeleteTab)
-          ? [
-              { kind: "sep" as const },
-              ...(onArchiveTab
-                ? [
-                    {
-                      kind: "item" as const,
-                      id: "archive",
-                      get label() {
-                        return t("Archive");
-                      },
-                      description:
-                        contextTab.sessionCount > 1
-                          ? `All ${contextTab.sessionCount} conversations in this tab`
-                          : undefined,
-                    },
-                  ]
-                : []),
-              ...(onDeleteTab
-                ? [
-                    {
-                      kind: "item" as const,
-                      id: "delete",
-                      get label() {
-                        return t("Delete");
-                      },
-                      description:
-                        contextTab.sessionCount > 1
-                          ? `Permanently delete all ${contextTab.sessionCount} conversations in this tab`
-                          : undefined,
-                      danger: true,
-                    },
-                  ]
-                : []),
-            ]
-          : []),
-      ]
+    ? withTabMoveItems(
+        buildTitleTabContextMenuItems({
+          contextTab,
+          tabs,
+          t,
+          detached,
+          closeShortcut,
+          idleTabCount,
+          hasReturnTabToMain: Boolean(onReturnTabToMain),
+          hasMoveToNewWindow: Boolean(onMoveToNewWindow),
+          hasCloseIdleTabs: Boolean(onCloseIdleTabs),
+          hasArchiveTab: Boolean(onArchiveTab),
+          hasDeleteTab: Boolean(onDeleteTab),
+        }),
+        tabs.findIndex((tab) => tab.id === contextTab.id),
+        tabs.length,
+        t,
+      )
     : [];
 
   const onPickTabMenu = (id: string) => {
     if (!contextTab || !contextCloseIds) return;
     setTabMenu(null);
+    if (id === TAB_MOVE_LEFT_ID || id === TAB_MOVE_RIGHT_ID) {
+      sortable.moveBy(contextTab.id, id === TAB_MOVE_LEFT_ID ? -1 : 1);
+      return;
+    }
     if (id === "keep-open") {
       if (contextTab.previewSessionId) onKeepSession?.(contextTab.previewSessionId);
       if (contextTab.previewFileId) onPinFile?.(contextTab.previewFileId);
@@ -1232,8 +1156,8 @@ function TitleBarComponent({
               selected={layoutMenu != null}
               motion="none"
               type="button"
+              tooltip={t("Split and arrange panes")}
               aria-label={t("Layout")}
-              title={t("Split and arrange panes")}
               onClick={() => {
                 if (layoutMenu) {
                   setLayoutMenu(null);
@@ -1247,7 +1171,7 @@ function TitleBarComponent({
                 });
               }}
             >
-              <SplitSquare className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              <SplitSquare className="icon-sm" strokeWidth={1.75} aria-hidden="true" />
             </Button>
           </div>
         ) : null}
@@ -1256,28 +1180,28 @@ function TitleBarComponent({
             {projectless && railClosed && onOpenInbox ? (
               <WorkspaceFeatureGate id="inbox">
                 <IconButton label={t("Inbox")} command="App: Open Inbox" onClick={onOpenInbox}>
-                  <Inbox className="size-3.5" strokeWidth={1.75} />
+                  <Inbox className="icon-sm" strokeWidth={1.75} />
                 </IconButton>
               </WorkspaceFeatureGate>
             ) : null}
             {projectless && railClosed && onOpenNotes ? (
               <IconButton label={t("Notes")} command="App: Open Notes" onClick={onOpenNotes}>
-                <StickyNote className="size-3.5" strokeWidth={1.75} />
+                <StickyNote className="icon-sm" strokeWidth={1.75} />
               </IconButton>
             ) : null}
             {!sessionSidebarOpen && !projectless ? (
               <>
                 <IconButton label={t("Go to File")} command="App: Go to File" onClick={onGoToFile}>
-                  <Search className="size-3.5" strokeWidth={1.75} />
+                  <Search className="icon-sm" strokeWidth={1.75} />
                 </IconButton>
                 <IconButton label={t("New session")} command="Tab: New" onClick={onNew}>
-                  <Plus className="size-3.5" strokeWidth={1.75} />
+                  <Plus className="icon-sm" strokeWidth={1.75} />
                 </IconButton>
               </>
             ) : null}
             {!projectRailOpen && !showCurrentProject && onOpenSettings ? (
               <IconButton label={t("Settings")} command="App: Settings" onClick={onOpenSettings}>
-                <Settings className="size-3.5" strokeWidth={1.75} />
+                <Settings className="icon-sm" strokeWidth={1.75} />
               </IconButton>
             ) : null}
           </div>
@@ -1291,15 +1215,19 @@ function TitleBarComponent({
   // exempts buttons, links and inputs on its own.
   return (
     <header
-      className={`bycoda-titlebar flex h-10 shrink-0 select-none items-stretch border-b border-stroke${
+      className={`bycoda-titlebar flex h-9 shrink-0 select-none items-stretch border-b border-b-(--ui-pane-border)!${
         compactRail ? " body-glass" : ""
       }`}
+      // The row is one compact control plus 4px above and below, so it grows with
+      // the density and UI-scale setting instead of clipping its controls at 36px.
+      style={TITLEBAR_HEIGHT_STYLE}
       data-tauri-drag-region="deep"
     >
+      {!IS_MAC ? <AppMenuButton /> : null}
       {compactRail ? (
         <div
           data-compact-title-nav
-          className={`flex shrink-0 items-center ${IS_MAC ? "ps-[70px]" : "ps-1.5"}`}
+          className={`flex shrink-0 items-center ${IS_MAC ? "ps-17.5" : "ps-1.5"}`}
         >
           <TabVisitNav
             canGoBack={canGoBack}
@@ -1313,29 +1241,31 @@ function TitleBarComponent({
           title bar takes over the traffic lights and the rail toggle. */}
       {projectless && railClosed && !compactRail ? (
         <>
-          {IS_MAC ? <div className="w-[78px] shrink-0" /> : null}
+          <WindowChromeInset />
           <div className="flex shrink-0 items-center px-1.5">
             <IconButton
               label={t("Toggle Sidebar")}
               command="App: Toggle Sidebar"
               onClick={onToggleSidebar}
             >
-              <PanelLeft className="size-3.5" strokeWidth={1.75} />
+              <PanelLeft className="icon-sm" strokeWidth={1.75} />
             </IconButton>
           </div>
         </>
       ) : null}
       {!sessionSidebarOpen && !projectless && onToggleSessionSidebar ? (
-        <div className="flex shrink-0 items-center px-1.5">
-          {IS_MAC && railClosed && !compactRail ? <div className="w-[70px] shrink-0" /> : null}
-          <IconButton
-            label={t("Toggle Session Sidebar")}
-            command="App: Toggle Session Sidebar"
-            onClick={onToggleSessionSidebar}
-          >
-            <DashboardSquare className="size-3.5" strokeWidth={1.75} />
-          </IconButton>
-        </div>
+        <>
+          <WindowChromeInset active={railClosed && !compactRail} />
+          <div className="flex shrink-0 items-center px-1.5">
+            <IconButton
+              label={t("Toggle Session Sidebar")}
+              command="App: Toggle Session Sidebar"
+              onClick={onToggleSessionSidebar}
+            >
+              <DashboardSquare className="icon-sm" strokeWidth={1.75} />
+            </IconButton>
+          </div>
+        </>
       ) : null}
       {showProjectButton && onSelectProject ? (
         <CwdPicker
@@ -1344,15 +1274,15 @@ function TitleBarComponent({
           placement="below"
           onCwdChange={onSelectProject}
           onNewTerminal={onNewTerminal}
-          buttonClassName="flex h-full min-w-0 max-w-64 shrink items-center gap-2 px-6 text-left text-sm font-medium leading-tight"
+          buttonClassName="flex h-full min-w-0 max-w-64 shrink items-center gap-2 px-6 text-left text-ui-body font-medium leading-tight"
         >
-          <span className="min-w-0 truncate text-content/50">{t("No project")}</span>
+          <span className="min-w-0 truncate text-(--ui-text-secondary)">{t("No project")}</span>
         </CwdPicker>
       ) : null}
 
       <div
         className={`flex min-w-0 flex-1 items-stretch${
-          showProjectButton ? " border-l border-stroke" : ""
+          showProjectButton ? " border-l border-l-(--ui-pane-border)" : ""
         }`}
       >
         <div
@@ -1380,9 +1310,7 @@ function TitleBarComponent({
               const tab = entry.item;
               const shell = (
                 <div
-                  ref={(el) => {
-                    if (!entry.closing) setTabNode(tab.id, el);
-                  }}
+                  ref={entry.closing ? undefined : tabRef(tab.id)}
                   className={
                     entry.closing || entry.opening
                       ? "relative flex h-full w-full min-w-0 overflow-hidden items-center"
@@ -1395,7 +1323,7 @@ function TitleBarComponent({
                   {!entry.closing && paneToTabDrop?.targetTabId === tab.id ? (
                     <span
                       data-pane-tab-drop-hint
-                      className={`pointer-events-none absolute inset-y-1 z-50 w-0.5 rounded-full ${paneToTabDrop.invalid ? "bg-danger" : "bg-accent shadow-[0_0_8px_var(--color-accent)]"} ${
+                      className={`pointer-events-none absolute inset-y-1 z-1 w-0.5 rounded-full ${paneToTabDrop.invalid ? "bg-danger" : "bg-accent"} ${
                         paneToTabDrop.position === "before" ? "left-0" : "right-0"
                       }`}
                     />
@@ -1417,13 +1345,7 @@ function TitleBarComponent({
                         y: event.clientY,
                       })
                     }
-                    itemRef={
-                      !entry.closing && tab.id === activeId
-                        ? (el) => {
-                            activeTabRef.current = el;
-                          }
-                        : undefined
-                    }
+                    itemRef={!entry.closing && tab.id === activeId ? setActiveTabNode : undefined}
                   />
                 </div>
               );
@@ -1458,13 +1380,14 @@ function TitleBarComponent({
             onClick={onReturnToMain}
             className="return-to-main my-1 shrink-0"
             aria-label={t("Return to main window")}
-            title={t(
+            tooltip={t(
               "Return all sessions to the main window; running responses finish before moving",
             )}
           >
-            <AppWindow className="size-4" aria-hidden />
+            <AppWindow className="icon-md" aria-hidden />
           </Button>
         ) : null}
+        <TitleBarActionsSlot />
         {trailingControls}
       </div>
       {layoutMenu && layout ? (
@@ -1492,4 +1415,9 @@ function TitleBarComponent({
   );
 }
 
-export const TitleBar = memo(TitleBarComponent);
+const MemoTitleBar = memo(TitleBarComponent);
+
+/** The workspace recreates most handlers per render; stable proxies let the memo hold. */
+export function TitleBar(props: Props) {
+  return <MemoTitleBar {...useStableHandlers(props)} />;
+}

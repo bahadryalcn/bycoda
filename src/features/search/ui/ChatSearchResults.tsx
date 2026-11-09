@@ -1,4 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
+import { Badge } from "../../../shared/ui/Badge";
+import { terminalText } from "../../../shared/lib/terminalText";
+import { MatchText, MAX_MATCH_POSITIONS } from "../../../shared/ui/MatchText";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { t, useLocale } from "../../../shared/i18n";
@@ -10,7 +13,6 @@ import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
 import {
   formatChatDate,
-  highlightRuns,
   type ChatDateRange,
   type ChatEntry,
   type ChatFilters,
@@ -48,18 +50,21 @@ export function ChatFilterBar({
     (key) => filters[key as keyof ChatFilters] !== DEFAULT_CHAT_FILTERS[key as keyof ChatFilters],
   );
   return (
-    <div className="flex shrink-0 justify-end px-3 py-1">
+    <div className="app-search-filters">
       <Button
         ref={trigger}
-        variant="ghost"
-        iconOnly
+        variant="secondary"
+        size="sm"
+        tone="accent"
         label={t("Chat search filters")}
         tooltip={t("Chat search filters")}
         selected={active}
         aria-expanded={filterOpen}
         onClick={() => setFilterOpen((value) => !value)}
       >
-        <SlidersHorizontal className="size-3.5" />
+        <SlidersHorizontal className="icon-sm" />
+        <span>{t(SCOPE_LABEL[filters.scope])}</span>
+        {active ? <Badge variant="dot" tone="info" label={t("Filters active")} /> : null}
       </Button>
       {filterOpen ? (
         <Popover anchor={trigger} align="end" onDismiss={() => setFilterOpen(false)}>
@@ -75,7 +80,7 @@ export function ChatFilterBar({
             >
               {(Object.keys(SCOPE_LABEL) as ChatScope[]).map((scope) => (
                 <option key={scope} value={scope} disabled={scope === "group" && !inGroup}>
-                  {SCOPE_LABEL[scope]}
+                  {t(SCOPE_LABEL[scope])}
                 </option>
               ))}
             </NativeSelect>
@@ -105,19 +110,22 @@ export function ChatFilterBar({
             >
               {(Object.keys(RANGE_LABEL) as ChatDateRange[]).map((range) => (
                 <option key={range} value={range}>
-                  {RANGE_LABEL[range]}
+                  {t(RANGE_LABEL[range])}
                 </option>
               ))}
             </NativeSelect>
-            <label className="flex items-center gap-1.5 text-[12px] text-(--ui-text-secondary)">
-              <Checkbox
-                checked={filters.archived}
-                onChange={(event) => onChange({ ...filters, archived: event.target.checked })}
-                className="size-3"
-              />
-              {t("Archived")}
-            </label>
-            <Button variant="ghost" size="sm" onClick={() => onChange({ ...DEFAULT_CHAT_FILTERS })}>
+            <Checkbox
+              checked={filters.archived}
+              onChange={(event) => onChange({ ...filters, archived: event.target.checked })}
+              label={t("Archived")}
+              className="flex items-center gap-1.5 text-ui-secondary text-(--ui-text-secondary)"
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!active}
+              onClick={() => onChange({ ...DEFAULT_CHAT_FILTERS })}
+            >
               {t("Reset")}
             </Button>
           </div>
@@ -129,28 +137,30 @@ export function ChatFilterBar({
 
 function Marked({ text, ranges }: { text: string; ranges: [number, number][] }) {
   useLocale();
-  return (
-    <>
-      {highlightRuns(text, ranges).map((run, index) =>
-        run.match ? (
-          <mark key={index} className="bg-transparent font-medium text-accent">
-            {run.text}
-          </mark>
-        ) : (
-          <span key={index}>{run.text}</span>
-        ),
-      )}
-    </>
-  );
+  const positions: number[] = [];
+  for (const [from, to] of ranges) {
+    for (
+      let index = Math.max(0, from);
+      index < Math.min(to, text.length) && positions.length < MAX_MATCH_POSITIONS;
+      index++
+    ) {
+      positions.push(index);
+    }
+    if (positions.length === MAX_MATCH_POSITIONS) break;
+  }
+  const clean = terminalText(text, positions);
+  return <MatchText {...clean} active={clean.positions.length > 0} />;
 }
 
 export function ChatSearchResults({
+  listId,
   groups,
   entries,
   active,
   onActive,
   onOpen,
 }: {
+  listId: string;
   groups: ChatProjectGroup[];
   entries: ChatEntry[];
   active: number;
@@ -190,6 +200,8 @@ export function ChatSearchResults({
       highlighted,
       entry: entries[index],
       buttonProps: {
+        id: `${listId}-option-${index}`,
+        tabIndex: -1,
         ref: highlighted ? activeRef : undefined,
         role: "option" as const,
         "aria-selected": highlighted,
@@ -205,55 +217,62 @@ export function ChatSearchResults({
 
   return (
     <div
+      id={listId}
       role="listbox"
       aria-label={t("Chat search results")}
       onMouseMove={onMouseMove}
       className="pb-2"
     >
       {groups.map((group) => (
-        <section key={group.key} aria-label={group.name} className="mb-1.5">
-          <h3 className="flex items-center gap-1.5 px-2 pb-1 pt-2 text-[11px] font-medium text-(--ui-text-secondary)">
-            <Folder className="size-3 shrink-0" strokeWidth={1.75} />
-            <span className="min-w-0 truncate">{group.name}</span>
+        <section key={group.key} aria-label={group.name} className="app-search-project">
+          <h3 className="app-search-project-heading">
+            <Folder className="icon-xs shrink-0" strokeWidth={1.75} />
+            <span className="min-w-0 flex-1 break-words" title={group.cwd}>
+              {group.name}
+            </span>
             {group.groupName ? (
-              <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1 py-px text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+              <Badge size="sm" appearance="subtle" className="shrink-0">
                 {group.groupName}
-              </span>
+              </Badge>
             ) : null}
           </h3>
+          <p className="app-search-project-path">{group.cwd}</p>
           {group.sessions.map((session) => {
             const row = rowProps(session.id);
             const more = session.hitCount - session.hits.length;
             return (
-              <div key={session.id}>
+              <div key={session.id} className="app-search-conversation">
                 <Button
                   variant="item"
+                  tone="accent"
                   motion="none"
                   fullWidth
                   selected={row.highlighted}
-                  className="app-search-result"
+                  className="app-search-result app-search-conversation-row @max-[560px]/search:flex-wrap"
                   type="button"
                   {...row.buttonProps}
                   onClick={() => row.entry && onOpen(row.entry)}
                 >
-                  <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">
+                  <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
+                  <span className="app-search-result-title min-w-0 flex-1">
                     <Marked text={session.title} ranges={session.titleRanges} />
                   </span>
-                  {session.archived ? (
-                    <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1 py-px text-(length:--ui-font-caption) text-(--ui-text-secondary)">
-                      {t("Archived")}
+                  <span className="flex flex-wrap items-center gap-1.5 @max-[560px]/search:basis-full @max-[560px]/search:ps-6">
+                    {session.archived ? (
+                      <Badge size="sm" appearance="subtle" className="shrink-0">
+                        {t("Archived")}
+                      </Badge>
+                    ) : null}
+                    {session.hitCount > 0 ? (
+                      <span className="shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary)">
+                        {session.hitCount === 1
+                          ? t("1 match")
+                          : t("{p0} matches", { p0: session.hitCount })}
+                      </span>
+                    ) : null}
+                    <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
+                      {formatChatDate(session.updatedAt)}
                     </span>
-                  ) : null}
-                  {session.hitCount > 0 ? (
-                    <span className="shrink-0 text-[11px] tabular-nums text-(--ui-text-secondary)">
-                      {session.hitCount === 1
-                        ? t("1 match")
-                        : t("{p0} matches", { p0: session.hitCount })}
-                    </span>
-                  ) : null}
-                  <span className="shrink-0 text-[11px] text-(--ui-text-secondary)">
-                    {formatChatDate(session.updatedAt)}
                   </span>
                 </Button>
                 {session.hits.map((hit) => {
@@ -261,30 +280,31 @@ export function ChatSearchResults({
                   return (
                     <Button
                       variant="item"
+                      tone="accent"
                       motion="none"
                       fullWidth
                       selected={hitRow.highlighted}
-                      className="app-search-result"
+                      className="app-search-result app-search-match"
                       key={hit.id}
                       type="button"
                       {...hitRow.buttonProps}
                       onClick={() => hitRow.entry && onOpen(hitRow.entry)}
                     >
                       <MessageSquare
-                        className="size-3 shrink-0 text-(--ui-text-secondary)"
+                        className="icon-xs shrink-0 text-(--ui-text-secondary)"
                         strokeWidth={1.75}
                       />
-                      <span className="app-search-result-copy app-search-result-preview">
+                      <span className="app-search-match-excerpt">
                         <Marked text={hit.snippet} ranges={hit.ranges} />
                       </span>
-                      <span className="shrink-0 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+                      <span className="app-search-chat-role shrink-0">
                         {hit.role === "user" ? t("You") : hit.role}
                       </span>
                     </Button>
                   );
                 })}
                 {more > 0 ? (
-                  <p className="ml-7 px-2 py-0.5 text-[11px] text-(--ui-text-secondary)">
+                  <p className="app-search-more">
                     {more === 1 ? t("1 more match") : t("{p0} more matches", { p0: more })}
                   </p>
                 ) : null}

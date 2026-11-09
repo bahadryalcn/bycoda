@@ -9,6 +9,8 @@ import {
   grokPromptBlocks,
   grokSessionNewParams,
   grokSpawnArgs,
+  grokSpawnShape,
+  sameGrokSpawn,
   grokTextSpawnArgs,
   modelsFromGrokModelsOutput,
   modelsFromInitialize,
@@ -213,6 +215,15 @@ describe("grok protocol", () => {
     ]);
   });
 
+  it("does not read a multi-call turn sum as the context level", () => {
+    expect(
+      eventsFromAcpUpdate({
+        sessionUpdate: "turn_completed",
+        usage: { inputTokens: 306024, outputTokens: 2708, totalTokens: 308732, modelCalls: 9 },
+      }),
+    ).toEqual([{ type: "turn.metrics", inputTokens: 306024, outputTokens: 2708 }]);
+  });
+
   it("accepts Hermes-style ACP usage size as the context window", () => {
     expect(
       eventsFromAcpUpdate({
@@ -349,7 +360,7 @@ describe("grok protocol", () => {
     expect(planFromExitPlan({ planContent: "Ship it" })).toBe("Ship it");
   });
 });
-it("Grok totalTokens önceliğini ve geniş top-level alan uygunluğunu korur", () => {
+it("preserves Grok totalTokens precedence and broad top-level field matching", () => {
   expect(eventsFromAcpUpdate({ update: { usage: { totalTokens: 900, used: 7 } } })).toEqual([
     { type: "context", used: 900 },
   ]);
@@ -360,4 +371,15 @@ it("Grok totalTokens önceliğini ve geniş top-level alan uygunluğunu korur", 
     { type: "context", used: 3 },
     { type: "turn.metrics", outputTokens: 3 },
   ]);
+});
+
+it("starts Grok without its own subagents when the owner's selection must be held", () => {
+  const off = grokSpawnShape({ runtimeMode: "auto", modelSettings: { nativeSubagents: "off" } });
+  const on = grokSpawnShape({ runtimeMode: "auto" });
+  expect(off.noSubagents).toBe(true);
+  // A selection change restarts the process instead of reusing a mismatched one.
+  expect(sameGrokSpawn(off, on)).toBe(false);
+  const args = grokSpawnArgs({ model: "grok:grok-4.7", noSubagents: true });
+  expect(args.indexOf("--no-subagents")).toBeLessThan(args.indexOf("agent"));
+  expect(grokSpawnArgs({ model: "grok:grok-4.7" })).not.toContain("--no-subagents");
 });

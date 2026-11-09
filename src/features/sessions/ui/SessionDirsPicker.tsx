@@ -1,8 +1,9 @@
+import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { basename, pickFolders } from "../../../platform/tauri/fs";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
@@ -15,8 +16,8 @@ import {
   loadSessionAdditionalDirs,
   saveSessionAdditionalDirs,
   subscribeSessionAdditionalDirs,
-} from "../../projects/model/additionalDirs";
-import { isLocalProject, loadRecents, type RecentProject } from "../../projects/model/recents";
+} from "../../projects/public/additionalDirs";
+import { isLocalProject, loadRecents, type RecentProject } from "../../projects/public/recents";
 
 function uniquePaths(paths: readonly string[]): string[] {
   const seen = new Set<string>();
@@ -58,11 +59,12 @@ export function SessionDirsPicker({
   enabled?: boolean;
   onClose?: () => void;
 }) {
-  useLocale();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"folders" | "project">("folders");
   const [query, setQuery] = useState("");
   const [picking, setPicking] = useState(false);
+  const pickingRef = useRef(false);
   const [error, setError] = useState<string>();
   const root = useRef<HTMLDivElement>(null);
   useSyncExternalStore(
@@ -115,7 +117,8 @@ export function SessionDirsPicker({
   };
 
   const browse = async () => {
-    if (picking || !enabled) return;
+    if (pickingRef.current || !enabled) return;
+    pickingRef.current = true;
     const choosingProject = mode === "project";
     setPicking(true);
     setError(undefined);
@@ -144,6 +147,7 @@ export function SessionDirsPicker({
       setError("Could not open the folder picker. Please try again.");
       setOpen(true);
     } finally {
+      pickingRef.current = false;
       setPicking(false);
     }
   };
@@ -153,7 +157,7 @@ export function SessionDirsPicker({
       <Button
         variant="ghost"
         type="button"
-        title={effective.map(prettyCwd).join("\n")}
+        tooltip={effective.map(prettyCwd).join("\n")}
         aria-label={t("Folders for this session")}
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -171,10 +175,10 @@ export function SessionDirsPicker({
         className="max-w-40"
       >
         <Folder
-          className={`size-3.5 shrink-0 ${overridden ? "text-(--ui-tone-accent-fg)" : ""}`}
+          className={`icon-sm shrink-0 ${overridden ? "text-(--ui-tone-accent-fg)" : ""}`}
           strokeWidth={1.75}
         />
-        <span data-session-dirs-label className="min-w-0 truncate text-[11px]">
+        <span data-session-dirs-label className="min-w-0 truncate text-ui-micro">
           {label}
         </span>
       </Button>
@@ -193,7 +197,7 @@ export function SessionDirsPicker({
           className="flex min-h-0 flex-col p-1.5"
         >
           <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-0.5">
-            <p className="text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
+            <p className="text-ui-caption font-medium text-(--ui-text-secondary)">
               {mode === "project" ? t("Change project") : t("Folders for this session")}
             </p>
             {onProjectChange ? (
@@ -225,10 +229,10 @@ export function SessionDirsPicker({
               const working = pathKey(path) === pathKey(workingDirectory);
               const details = (
                 <span className="flex min-w-0 flex-1 flex-col" title={path}>
-                  <span className="truncate text-[13px] text-(--ui-tone-neutral-fg)">
+                  <span className="truncate text-ui-secondary text-(--ui-tone-neutral-fg)">
                     {basename(path) || prettyCwd(path)}
                   </span>
-                  <span className="truncate text-[11px] text-(--ui-text-secondary)">
+                  <span className="truncate text-ui-micro text-(--ui-text-secondary)">
                     {prettyCwd(path)}
                   </span>
                 </span>
@@ -243,35 +247,37 @@ export function SessionDirsPicker({
                   onClick={() => changeProject(path)}
                   className="w-full text-left"
                 >
-                  <Folder className="size-3.5 shrink-0" />
+                  <Folder className="icon-sm shrink-0" />
                   {details}
                   {pathKey(path) === pathKey(project) ? (
-                    <span className="text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+                    <span className="text-ui-caption text-(--ui-text-secondary)">
                       {t("Current")}
                     </span>
                   ) : null}
                 </Button>
               ) : (
-                <label
-                  key={pathKey(path)}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-(--ui-surface-raised)"
-                >
+                <ActionHost key={pathKey(path)} className="rounded-md">
                   <Checkbox
                     checked={effectiveKeys.has(pathKey(path))}
                     disabled={working || picking || !enabled}
                     onChange={() => toggle(path)}
+                    label={
+                      <>
+                        {details}
+                        {working ? (
+                          <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
+                            {t("Working folder")}
+                          </span>
+                        ) : null}
+                      </>
+                    }
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 px-2 py-1.5"
                   />
-                  {details}
-                  {working ? (
-                    <span className="shrink-0 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
-                      {t("Working folder")}
-                    </span>
-                  ) : null}
-                </label>
+                </ActionHost>
               );
             })}
             {matching.length === 0 ? (
-              <p className="px-2 py-2 text-[12px] text-(--ui-text-secondary)">
+              <p className="px-2 py-2 text-ui-caption text-(--ui-text-secondary)">
                 {t("No matching folders")}
               </p>
             ) : null}
@@ -281,18 +287,15 @@ export function SessionDirsPicker({
             type="button"
             disabled={picking || !enabled}
             onClick={() => void browse()}
+            loading={picking}
+            startIcon={<Plus className="icon-sm shrink-0" />}
             className="mt-1 text-left"
           >
-            <Plus className="size-3.5 shrink-0" />
             {picking ? t("Choosing folders…") : t("Choose from {p0}…", { p0: browserLabel })}
           </Button>
-          {error ? (
-            <Alert tone="info" role="alert">
-              {error}
-            </Alert>
-          ) : null}
+          {error ? <Alert tone="danger">{error}</Alert> : null}
           <div className="flex items-center gap-2 px-2 pb-0.5 pt-1.5">
-            <p className="min-w-0 flex-1 text-[11px] leading-4 text-(--ui-text-secondary)">
+            <p className="min-w-0 flex-1 text-ui-micro leading-4 text-(--ui-text-secondary)">
               {mode === "project"
                 ? t("Existing conversations open a new session in the chosen project.")
                 : overridden

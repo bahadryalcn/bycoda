@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { useDismissPopover } from "./useDismissPopover";
 
-it("Escape odağını sonraki karede verir ve unmount sırasında kareyi iptal eder", () => {
+it("Escape returns focus on the next frame and cancels the frame on unmount", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const frames = new Map<number, FrameRequestCallback>();
   let id = 0;

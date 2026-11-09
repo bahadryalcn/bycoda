@@ -10,6 +10,11 @@ import { type HarnessEvent } from "../../../../integrations/harness";
 import { recordPerformanceEvent } from "../../../../shared/lib/performanceTrace";
 import { nudgeOpenEditors, trackSessionEdits } from "../../helpers/workspaceNotify";
 import { flushSync } from "react-dom";
+import {
+  captureNativeOutputEvent,
+  transferNativeOutputEventOrigin,
+  failNativeOutputEvents,
+} from "../../../../integrations/harness/core/nativeOutputDelivery";
 
 export function createSubmitTurnEvents(
   ctx: SubmitDeps,
@@ -57,31 +62,39 @@ export function createSubmitTurnEvents(
     if (intent !== "plan") return event;
     if (event.type === "plan") {
       turn.nativePlanSeen = true;
-      return {
+      const routed: HarnessEvent = {
         ...event,
         key: planEventKey,
       };
+      transferNativeOutputEventOrigin(event, routed);
+      return routed;
     }
     return event;
   };
 
   const pendingEditedEvents: HarnessEvent[] = [];
+  const retireBufferedEvents = () => {
+    failNativeOutputEvents(pendingEditedEvents, "turn-generation-retired");
+    pendingEditedEvents.length = 0;
+  };
   const applyTurnEvent = (event: HarnessEvent) => {
+    if (turnGen.current.get(sessionId) !== gen) {
+      failNativeOutputEvents([event], "turn-generation-retired");
+      return;
+    }
     orchestrator.observe(sessionId, event);
     if (options?.onSettled && event.type === "message.delta")
       turn.controlText = (turn.controlText + event.text).slice(-20_000);
     if (options?.onSettled && event.type === "message.completed") turn.controlText += "\n";
     if (event.type === "session.error") turn.controlOutcome.error = event.message;
-    if (
-      turn.wrap &&
-      (event.type === "session.started" || event.type === "session.providerBound")
-    ) {
+    if (turn.wrap && (event.type === "session.started" || event.type === "session.providerBound")) {
       revealHandoff(turn.wrap.text);
     }
     nudgeOpenEditors(event, workCwd, deferWorkspaceWork);
     if (!orchestrator.forSession(sessionId)) trackSessionEdits(sessionId, workCwd, event);
     const routed = routePlanEvent(event);
     if (routed) enqueueHarnessEvent(sessionId, routed);
+    else failNativeOutputEvents([event], "turn-output-consumer-not-persisted");
   };
   turn.sawProviderEvent = false;
   const contextReplay = conversationReplayPrompt(current);
@@ -89,16 +102,21 @@ export function createSubmitTurnEvents(
   const acceptContextReplay = () => {
     if (turn.contextReplayAccepted || turnGen.current.get(sessionId) !== gen) return;
     turn.contextReplayAccepted = true;
-    const consume = (session: Session) => session.id === sessionId &&
-      session.pendingContextReplay === contextReplay
+    const consume = (session: Session) =>
+      session.id === sessionId && session.pendingContextReplay === contextReplay
         ? { ...session, pendingContextReplay: undefined }
         : session;
     sessionsRef.current = sessionsRef.current.map(consume);
     setSessions((prev) => prev.map(consume));
   };
   const routeTurnEvent = (event: HarnessEvent) => {
-    if (event.type === "turn.started" || event.type === "message.delta" ||
-        event.type === "reasoning.delta" || event.type === "tool.started") {
+    captureNativeOutputEvent(sessionId, event);
+    if (
+      event.type === "turn.started" ||
+      event.type === "message.delta" ||
+      event.type === "reasoning.delta" ||
+      event.type === "tool.started"
+    ) {
       acceptContextReplay();
     }
     if (!turn.sawProviderEvent) {
@@ -106,7 +124,10 @@ export function createSubmitTurnEvents(
       recordPerformanceEvent("provider-first-event", {}, traceId);
     }
     recordPerformanceEvent("renderer-receive", {}, traceId);
-    if (turnGen.current.get(sessionId) !== gen) return;
+    if (turnGen.current.get(sessionId) !== gen) {
+      failNativeOutputEvents([event], "turn-generation-retired");
+      return;
+    }
     if (editedResend && !editedResend.isAccepted()) {
       pendingEditedEvents.push(event);
       return;
@@ -115,13 +136,29 @@ export function createSubmitTurnEvents(
   };
   const acceptEditedResend = () => {
     if (!editedResend || editedResend.isAccepted()) return;
+    if (turnGen.current.get(sessionId) !== gen) {
+      retireBufferedEvents();
+      return;
+    }
     flushSync(commitSubmittedTurn);
+    if (turnGen.current.get(sessionId) !== gen) {
+      retireBufferedEvents();
+      return;
+    }
     editedResend.markAccepted();
+    // The rewind is over: the turn that follows is an ordinary running turn, and
+    // a follow-up sent during it must queue or steer, not be refused as a change.
+    if (setup.editToken) ctx.refs.editedResends?.finish(sessionId, setup.editToken);
     for (const event of pendingEditedEvents) applyTurnEvent(event);
     pendingEditedEvents.length = 0;
   };
   const recoverEditedResend = () => {
     if (!editedResend || editedResend.isAccepted()) return;
+    if (turnGen.current.get(sessionId) !== gen) {
+      retireBufferedEvents();
+      return;
+    }
+    failNativeOutputEvents(pendingEditedEvents, "edited-resend-not-accepted");
     pendingEditedEvents.length = 0;
     const previous = sessionsRef.current.find((session) => session.id === sessionId);
     const recovered = previous ? editedResend.recoverAfterFailure(previous) : undefined;
@@ -131,8 +168,15 @@ export function createSubmitTurnEvents(
       );
     });
   };
-  return { revealHandoff, routeTurnEvent, acceptContextReplay, acceptEditedResend, recoverEditedResend, contextReplay, planEventKey };
+  return {
+    revealHandoff,
+    routeTurnEvent,
+    acceptContextReplay,
+    acceptEditedResend,
+    recoverEditedResend,
+    contextReplay,
+    planEventKey,
+  };
 }
-
 
 export type SubmitTurnEvents = ReturnType<typeof createSubmitTurnEvents>;

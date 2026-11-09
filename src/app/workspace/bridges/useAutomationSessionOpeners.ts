@@ -1,3 +1,4 @@
+import { reserveSessionWindow } from "../../model/sessionWindowOwnership";
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { routeWindowDestination } from "../../model/windowNavigation";
@@ -82,7 +83,7 @@ export function useAutomationSessionOpeners({
       setFilePickerOpen(false);
       setSidebarTab("sessions", session.cwd);
       setProjectCwd(session.cwd);
-      setRecents(rememberProject(session.cwd));
+      setRecents(await rememberProject(session.cwd));
       await onSelectHistorySession(sessionId);
     },
     [ensureOpenSession, onSelectHistorySession, toolWindow],
@@ -102,49 +103,57 @@ export function useAutomationSessionOpeners({
         return;
       const remote = parseRemotePath(target.cwd);
       if (!remote) {
-        const opened = await openLocalHostSession(target, {
-          machines: () => invoke("remote_machines"),
-          projects: (machineId) => remoteRequest<HostProject[]>(machineId, "projects.list"),
-          load: (machineId, sessionId) => loadRemoteSession(machineId, sessionId),
-          find: ensureOpenSession,
-          refresh: onRefreshAdoptedSession,
-          create: async (copy) => {
-            if (sessionsRef.current.some((session) => session.id === copy.id)) return false;
-            if (!(await upsertSessionIfUnchanged(copy, null))) return false;
-            if (sessionsRef.current.some((session) => session.id === copy.id)) return false;
-            invalidateLoadedSession(copy.id);
-            if (!copy.worktreeRemoved && copy.providerSessionId && isLiveHarness(copy.harness)) {
-              bindHarnessSession(
-                copy.harness,
-                copy.id,
-                copy.providerSessionId,
-                sessionWorkCwd(copy),
-                copy.providerAccountId,
-                copy.blocks,
+        const release = await reserveSessionWindow([target.sessionId]);
+        if (!release) return;
+        let retained = false;
+        try {
+          const opened = await openLocalHostSession(target, {
+            machines: () => invoke("remote_machines"),
+            projects: (machineId) => remoteRequest<HostProject[]>(machineId, "projects.list"),
+            load: (machineId, sessionId) => loadRemoteSession(machineId, sessionId),
+            find: ensureOpenSession,
+            refresh: onRefreshAdoptedSession,
+            create: async (copy) => {
+              if (sessionsRef.current.some((session) => session.id === copy.id)) return false;
+              if (!(await upsertSessionIfUnchanged(copy, null))) return false;
+              if (sessionsRef.current.some((session) => session.id === copy.id)) return false;
+              invalidateLoadedSession(copy.id);
+              if (!copy.worktreeRemoved && copy.providerSessionId && isLiveHarness(copy.harness)) {
+                bindHarnessSession(
+                  copy.harness,
+                  copy.id,
+                  copy.providerSessionId,
+                  sessionWorkCwd(copy),
+                  copy.providerAccountId,
+                  copy.blocks,
+                );
+              }
+              lastPersisted.current.set(copy.id, persistFingerprint(copy));
+              const next = [...sessionsRef.current, copy];
+              sessionsRef.current = next;
+              setSessions(next);
+              window.dispatchEvent(
+                new CustomEvent<string>(ADOPTED_SESSION_ADDED, { detail: copy.cwd }),
               );
-            }
-            lastPersisted.current.set(copy.id, persistFingerprint(copy));
-            const next = [...sessionsRef.current, copy];
-            sessionsRef.current = next;
-            setSessions(next);
-            window.dispatchEvent(
-              new CustomEvent<string>(ADOPTED_SESSION_ADDED, { detail: copy.cwd }),
-            );
-            return true;
-          },
-        });
-        setAutomationsViewOpen(false);
-        setServersViewOpen?.(false);
-        setSearchViewOpen(false);
-        setInboxViewOpen(false);
-        setNotesViewOpen(false);
-        setSettingsOpen(false);
-        setFilePickerOpen(false);
-        setSidebarTab("sessions", opened.cwd);
-        setProjectCwd(opened.cwd);
-        setRecents(rememberProject(opened.cwd));
-        await onSelectHistorySession(opened.sessionId);
-        return;
+              return true;
+            },
+          });
+          setAutomationsViewOpen(false);
+          setServersViewOpen?.(false);
+          setSearchViewOpen(false);
+          setInboxViewOpen(false);
+          setNotesViewOpen(false);
+          setSettingsOpen(false);
+          setFilePickerOpen(false);
+          setSidebarTab("sessions", opened.cwd);
+          setProjectCwd(opened.cwd);
+          setRecents(await rememberProject(opened.cwd));
+          await onSelectHistorySession(opened.sessionId);
+          retained = true;
+          return;
+        } finally {
+          await release(retained);
+        }
       }
       // By the host's project ID: a task's session may run in a worktree.
       let project = remoteProjectsOn(remote.environmentId).find(
@@ -159,9 +168,9 @@ export function useAutomationSessionOpeners({
       const knownBefore = loadRecents().map((item) => item.path);
       setSettingsOpen(false);
       setFilePickerOpen(false);
-      setRecents(rememberProject(project.key));
+      setRecents(await rememberProject(project.key));
       promptAddedProjectNames(knownBefore);
-      onSelectRemoteSession(project.key, target.sessionId);
+      await onSelectRemoteSession(project.key, target.sessionId);
     },
     [
       ensureOpenSession,

@@ -51,7 +51,7 @@ const folders = [
   },
 ];
 
-it("Windows disklerini doğrudan gösterir ve seçilen diske gider", async () => {
+it("shows Windows drives directly and navigates to the selected drive", async () => {
   await act(async () =>
     root.render(createElement(FolderPicker, { title: "Open", multiple: false, onPick, onClose })),
   );

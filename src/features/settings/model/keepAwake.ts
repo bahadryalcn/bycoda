@@ -1,6 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { sessionNeedsInput, type Session } from "../../sessions/model/session";
+import { sessionNeedsInput, type Session } from "../../sessions/public/session";
+
 import {
   KEEP_AWAKE_HOLD_AFTER_DEFAULT,
   keepAwakeHoldAfterMs,

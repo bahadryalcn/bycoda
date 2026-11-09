@@ -11,6 +11,8 @@ const api = vi.hoisted(() => ({
   releases: [] as Array<ReturnType<typeof vi.fn>>,
   deferred: [] as Array<() => void>,
   delayed: false,
+  destroyed: [] as Array<() => void>,
+  peerReleases: [] as Array<ReturnType<typeof vi.fn>>,
 }));
 vi.mock("@tauri-apps/api/event", () => ({
   emit: api.emit,
@@ -56,8 +58,21 @@ describe("window working registry lifecycle", () => {
     api.releases.length = 0;
     api.deferred.length = 0;
     api.delayed = false;
+    api.destroyed.length = 0;
+    api.peerReleases.length = 0;
     api.emit.mockResolvedValue(undefined);
-    api.getAllWindows.mockResolvedValue([{ label: "main" }]);
+    api.getAllWindows.mockResolvedValue([
+      { label: "main" },
+      {
+        label: "window-2",
+        listen: vi.fn((_event: string, handler: () => void) => {
+          api.destroyed.push(handler);
+          const release = vi.fn();
+          api.peerReleases.push(release);
+          return Promise.resolve(release);
+        }),
+      },
+    ]);
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -90,10 +105,76 @@ describe("window working registry lifecycle", () => {
       }),
     );
     expect(output.map((entry) => entry.id)).toEqual(["local", "other"]);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(5_000);
-    });
+    api.getAllWindows.mockResolvedValue([{ label: "main" }]);
+    await act(async () => api.destroyed[0]());
     expect(output.map((entry) => entry.id)).toEqual(["local"]);
+  });
+
+  it("requires fresh native absence before removing a closing window summary", async () => {
+    await act(async () => root.render(createElement(Probe)));
+    await act(async () =>
+      api.callbacks.get("workspace_live_agents")!({
+        payload: { ownerWindowLabel: "window-2", agents: [agent("other")] },
+      }),
+    );
+    expect(output.map((entry) => entry.id)).toEqual(["local", "other"]);
+    api.getAllWindows.mockClear();
+    api.getAllWindows.mockResolvedValue([{ label: "main" }]);
+    await act(async () =>
+      api.callbacks.get("workspace_live_agents_gone")!({
+        payload: { ownerWindowLabel: "window-2" },
+      }),
+    );
+    expect(output.map((entry) => entry.id)).toEqual(["local"]);
+    expect(api.getAllWindows).toHaveBeenCalledOnce();
+  });
+
+  it("has no periodic native sweep while visible or hidden and rechecks peers on visibility", async () => {
+    await act(async () => root.render(createElement(Probe)));
+    await act(async () =>
+      api.callbacks.get("workspace_live_agents")!({
+        payload: {
+          ownerWindowLabel: "window-2",
+          sourceId: "peer",
+          revision: 1,
+          agents: [agent("other")],
+        },
+      }),
+    );
+    api.getAllWindows.mockClear();
+    await act(async () => vi.advanceTimersByTimeAsync(120_000));
+    expect(api.getAllWindows).not.toHaveBeenCalled();
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    try {
+      await act(async () => vi.advanceTimersByTimeAsync(120_000));
+      expect(api.getAllWindows).not.toHaveBeenCalled();
+      hidden.mockReturnValue(false);
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect(api.getAllWindows).toHaveBeenCalledOnce();
+    } finally {
+      hidden.mockRestore();
+    }
+  });
+
+  it("answers initial and explicit summary requests even while hidden", async () => {
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    try {
+      await act(async () => root.render(createElement(Probe)));
+      expect(api.emit).toHaveBeenCalledWith("workspace_live_agents_request");
+      const count = api.emit.mock.calls.filter(([name]) => name === "workspace_live_agents").length;
+      await act(async () =>
+        api.callbacks.get("workspace_live_agents_request")!({ payload: undefined }),
+      );
+      expect(api.emit.mock.calls.filter(([name]) => name === "workspace_live_agents")).toHaveLength(
+        count + 1,
+      );
+      await act(async () => vi.advanceTimersByTimeAsync(120_000));
+      expect(api.getAllWindows).not.toHaveBeenCalled();
+    } finally {
+      hidden.mockRestore();
+    }
   });
 
   it("releases late listener registrations when unmounted before Tauri resolves", async () => {
@@ -103,7 +184,7 @@ describe("window working registry lifecycle", () => {
     await act(async () => {
       api.deferred.forEach((resolve) => resolve());
     });
-    expect(api.releases).toHaveLength(2);
+    expect(api.releases).toHaveLength(3);
     api.releases.forEach((release) => expect(release).toHaveBeenCalledOnce());
     expect(api.emit).not.toHaveBeenCalledWith("workspace_live_agents_request");
     // Recreate the root so the common cleanup remains valid.

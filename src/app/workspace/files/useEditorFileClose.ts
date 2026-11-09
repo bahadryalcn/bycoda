@@ -1,7 +1,6 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { flushSync } from "react-dom";
 import { confirmWorkspaceClose } from "../../model/closeConfirmation";
-import { basename } from "../../../platform/tauri/fs";
 import {
   confirmCloseTerminal,
   confirmCloseTerminals,
@@ -20,6 +19,7 @@ import {
 import { planWorkspaceTabClose } from "../../../features/workspace/model/workspaceTabGroups";
 import { newSession, type Session } from "../../../features/sessions/model/session";
 import { confirmDiscardUnsaved } from "../helpers/appHelpers";
+import { t } from "../../../shared/i18n";
 import type { useCloseTabActions } from "../tabs/useCloseTabActions";
 
 export interface EditorFileCloseDeps {
@@ -202,7 +202,12 @@ export function useEditorFileClose(deps: EditorFileCloseDeps): EditorFileClose {
         if (
           !(await confirmWorkspaceClose(
             needsUnsavedConfirm
-              ? () => confirmDiscardUnsaved(`Close ${basename(file.path)} without saving?`)
+              ? () =>
+                  confirmDiscardUnsaved({
+                    title: t("Close file without saving?"),
+                    confirmLabel: t("Discard and close"),
+                    files: [file],
+                  })
               : undefined,
             file.terminal && !opts?.skipConfirm ? () => confirmCloseTerminal(file) : undefined,
           ))
@@ -265,7 +270,11 @@ export function useEditorFileClose(deps: EditorFileCloseDeps): EditorFileClose {
           if (newlyDirty.length === 0) break;
           if (
             !(await confirmWorkspaceClose(() =>
-              confirmDiscardUnsaved("Close other tabs with unsaved files?"),
+              confirmDiscardUnsaved({
+                title: t("Close tabs with unsaved files?"),
+                confirmLabel: t("Discard and close"),
+                files: newlyDirty,
+              }),
             ))
           )
             return;
@@ -320,7 +329,12 @@ export function useEditorFileClose(deps: EditorFileCloseDeps): EditorFileClose {
         if (
           !(await confirmWorkspaceClose(
             unsaved.length > 0
-              ? () => confirmDiscardUnsaved("Close other tabs with unsaved files?")
+              ? () =>
+                  confirmDiscardUnsaved({
+                    title: t("Close tabs with unsaved files?"),
+                    confirmLabel: t("Discard and close"),
+                    files: unsaved,
+                  })
               : undefined,
             terminals.length > 0 ? () => confirmCloseTerminals(terminals) : undefined,
           ))

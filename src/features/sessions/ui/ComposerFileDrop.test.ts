@@ -10,7 +10,7 @@ import { Composer } from "./Composer";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke, isTauri: () => false }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({
     onDragDropEvent: async () => () => undefined,
@@ -107,7 +107,12 @@ describe("Composer Explorer file drops", () => {
         }),
       ),
     );
-    expect(container.textContent).toContain("Drop files to attach");
+    // One mark on the composer box and one badge that says what releasing does.
+    expect(
+      container.querySelector("[data-composer-box]")?.getAttribute("data-drop-indicator"),
+    ).toBe("inside");
+    expect(document.querySelector(".pointer-drop-hint")?.textContent).toBe("Attach 1 file");
+    expect(container.textContent).not.toContain("Drop files to attach");
 
     await act(async () => {
       window.dispatchEvent(

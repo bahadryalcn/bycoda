@@ -1,0 +1,290 @@
+/* Jobs tab, Today's active jobs and every job dialog. Canvas first: rows sit on the canvas
+   with hairlines; only the composer keeps a frame (PromptField). */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+.composer {
+  min-inline-size: 0;
+}
+.notice {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.listHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.listHead:empty {
+  display: none;
+}
+.bulk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: auto;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+/* Row: [checkbox slot] [status mark] [main] [actions] */
+.row {
+  display: grid;
+  grid-template-columns: auto 1rem minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 8px;
+  padding: 10px 4px;
+  border-block-end: 1px solid var(--ui-pane-border);
+  border-radius: var(--radius-control);
+  min-inline-size: 0;
+}
+.check {
+  align-self: center;
+  opacity: 0;
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.row:hover .check,
+.row:focus-within .check,
+.check[data-visible] {
+  opacity: 1;
+}
+.mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  block-size: 1.25rem;
+  color: var(--ui-text-secondary);
+}
+.mark[data-tone="success"] {
+  color: var(--ui-tone-success-fg);
+}
+.mark[data-tone="danger"] {
+  color: var(--ui-tone-danger-fg);
+}
+.mark[data-tone="warning"] {
+  color: var(--ui-tone-warning-fg);
+}
+.mark[data-tone="info"] {
+  color: var(--ui-tone-info-fg);
+}
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+.titleLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.title {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: start;
+  font-size: var(--ui-font-body);
+  font-weight: 500;
+}
+.project {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  max-inline-size: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.progressLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+}
+.progressLine > [role="meter"] {
+  flex: none;
+  inline-size: 6rem;
+}
+.caption {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-inline-size: 0;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--ui-text-secondary);
+}
+.empty h3 {
+  margin: 0;
+  color: var(--color-content);
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+}
+.empty p {
+  margin: 0;
+}
+
+/* Detail sheet */
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+.sheetStatus {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.request {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 4px;
+  min-inline-size: 0;
+}
+.request p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.block p {
+  margin: 0;
+}
+.muted {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.related {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 4px;
+  min-inline-size: 0;
+}
+.noteHit {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 4px;
+  padding-block-end: 8px;
+  border-block-end: 1px solid var(--ui-pane-border);
+  font-size: var(--ui-font-caption);
+  min-inline-size: 0;
+}
+.noteHit:last-child {
+  border-block-end: 0;
+}
+
+/* Dialogs */
+.subtitle {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+.reviewList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+.reviewJob {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-inline-size: 0;
+}
+.reviewJob + .reviewJob {
+  padding-block-start: var(--space-4);
+  border-block-start: 1px solid var(--ui-pane-border);
+}
+.reviewHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.reviewTools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.footerNote {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+}
+.deleteTasks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--ui-font-caption);
+}
+.deleteTasks li {
+  display: flex;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.deleteTasks strong {
+  font-weight: 500;
+}

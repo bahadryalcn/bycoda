@@ -28,6 +28,9 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": { "schemes": ["bycoda"] }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIxQ0UyNDFGNEQyN0FFNzgKUldSNHJpZE5IeVRPSVo3TFZERFpCVitHcjVNUWJ2NDFJay9PUHJEN3dvQjFyWXBhT05iNFFPcGwK",
       "endpoints": ["https://github.com/bahadryalcn/bycoda/releases/latest/download/latest.json"]

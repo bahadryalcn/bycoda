@@ -1,136 +1,107 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn } from "node:child_process";
+import { createProbeGrantWarningFilter } from "./security/probe-grant-warning";
 import { EventEmitter } from "node:events";
-import { authorizeSocialAcpFrame } from "./social-tools";
-import { authorizeRuntimeLogsAcpFrame, type RuntimeLogAccess } from "./runtime-log-tools";
-import { authorizeConversationAcpFrame } from "./conversation-tools";
-import { join, basename, dirname, extname, isAbsolute } from "node:path";
-import { readFile, stat, mkdtemp, mkdir, writeFile, open, realpath } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import {
+  SessionToolsRelay,
+  type SessionToolGroup,
+  type SessionToolCapability,
+} from "./sessions/session-tools-relay";
+import { authorizeSocialAcpFrame } from "./social/social-tools";
+import { authorizeRuntimeLogsAcpFrame, type RuntimeLogAccess } from "./execution/runtime-log-tools";
+import { authorizeConversationAcpFrame } from "./conversation/conversation-tools";
+import { join, basename, dirname, isAbsolute, relative } from "node:path";
+import {
+  readFile,
+  stat,
+  lstat,
+  rm,
+  rename,
+  mkdtemp,
+  mkdir,
+  writeFile,
+  open,
+  realpath,
+} from "node:fs/promises";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { homedir, tmpdir } from "node:os";
-import { GenericAcpService } from "./generic-acp";
+import { GenericAcpService } from "./providers/generic-acp";
 import type { GenericAcpConfig } from "../src/features/providers/model/genericAcp";
-import { saveHostGeneratedImage, deleteHostGeneratedImages } from "./generated-images";
+import { saveHostGeneratedImage, deleteHostGeneratedImages } from "./files/generated-images";
 import type { ChildBackend } from "../src/integrations/harness/core/child";
+import {
+  isHarnessConstructionId,
+  requireHarnessProcessReceipt,
+  type HarnessProcessReceipt,
+} from "../src/shared/model/harnessProcess";
 import { isRemoteProvider, type RemoteProvider } from "../src/features/connections/model/protocol";
-import { binaryNames, providerLaunch, resolveProvider } from "./process";
-import { providerAccountEnvironment } from "./provider-accounts";
-import { providerAuthStatus } from "./provider-auth";
+import { providerLaunch, resolveProvider } from "./process";
+import { isOpencodeAcpLaunch, opencodeLaunchEnv } from "./providers/opencode-launch-env";
+import { bridgeToolGroup } from "./mcp/hub/bridge";
+import { providerAccountEnvironment } from "./providers/provider-accounts";
+import { providerAuthStatus } from "./providers/provider-auth";
 import {
   ProviderLines,
   PROVIDER_STDOUT_LINE_BYTES,
   PROVIDER_STDERR_LINE_BYTES,
-} from "./provider-lines";
+} from "./providers/provider-lines";
+import { ProviderProcessLifecycle } from "./provider-process-lifecycle";
+import type { ProviderChild } from "./providers/provider-child";
+import { NativeGuardianChild, ProviderGuardianError } from "./provider-guardian";
+import { prepareProviderGuardian } from "./provider-guardian-deployment";
+import { ProviderConstructions } from "./providers/provider-constructions";
+import {
+  HostRunWriters,
+  type HostRunProcessReservation,
+  type HostRunProcessSource,
+  type HostRunCwdGrant,
+} from "./execution/run-writers";
+import { canonicalWorkspacePath, workspacePathKey } from "./workspaces/workspace-paths";
+import {
+  HostRunHttpTargets,
+  type HostHttpOrigin,
+  type HostHttpSourceHint,
+} from "./execution/run-http-targets";
+import { parseServerUrlFromOutput } from "../src/integrations/harness/providers/opencode/opencodeProtocol";
+import {
+  ProviderChildIdleReaper,
+  type ProviderChildIdleGate,
+} from "./providers/provider-children-idle";
+import {
+  configuredBinary,
+  execArgsAllowed,
+  loopbackUrl,
+  workingDirectory,
+} from "./providers/provider-binary";
+import type { HostRunHandle, HostRunBinding } from "../src/integrations/harness/core/hostRun";
 
-const ALLOWED_EXEC_ARGS: readonly (readonly string[])[] = [
-  ["--version"],
-  ["--list-models"],
-  ["models", "--verbose"],
-  ["models", "--json"],
-  ["models"],
-  ["status", "--json"],
-  ["agent", "list"],
-];
-// OpenCode 2.x runs as a background service; other providers' CLIs may give
-// these subcommands unrelated meanings, so they stay OpenCode-only.
-const OPENCODE_EXEC_ARGS: readonly (readonly string[])[] = [
-  ["service", "status"],
-  ["service", "start"],
-  ["service", "get", "password"],
-];
-
-function execArgsAllowed(provider: RemoteProvider, args: string[]): boolean {
-  const matches = (allowed: readonly string[]) =>
-    allowed.length === args.length && allowed.every((arg, index) => arg === args[index]);
-  return (
-    ALLOWED_EXEC_ARGS.some(matches) ||
-    (provider === "opencode" && OPENCODE_EXEC_ARGS.some(matches)) ||
-    (provider === "grok" &&
-      args.length === 4 &&
-      args[0] === "--no-auto-update" &&
-      args[1] === "sessions" &&
-      args[2] === "delete" &&
-      /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(args[3]))
-  );
-}
-
-function loopbackUrl(value: unknown): string {
-  const url = new URL(String(value));
-  if (
-    url.protocol !== "http:" ||
-    !["127.0.0.1", "localhost"].includes(url.hostname) ||
-    url.username ||
-    url.password
-  )
-    throw new Error("OpenCode HTTP is limited to localhost");
-  return url.href;
-}
-
-/** Native process implementation for the headless execution proof. */
-const expandHome = (path: string) =>
-  path === "~" || /^~[\\/]/.test(path) ? join(homedir(), path.slice(1)) : path;
-
-/** A configured provider binary: absolute, existing and launchable. Paths that arrive from a
- * client must also be named like the provider, as the desktop requires. */
-async function configuredBinary(
-  provider: RemoteProvider,
-  value: string,
-  requireProviderName: boolean,
-): Promise<string> {
-  const path = expandHome(value.trim());
-  if (!path || !isAbsolute(path))
-    throw new Error(`Configured ${provider} binary must be an absolute path`);
-  if (!(await stat(path).catch(() => undefined))?.isFile())
-    throw new Error(`Configured ${provider} binary was not found: ${path}`);
-  const windows = process.platform === "win32";
-  // Windows matches the file stem, like the desktop (agy_acp_server.par, agy.exe).
-  const name = windows ? basename(path, extname(path)) : basename(path);
-  if (
-    requireProviderName &&
-    provider !== "acp" &&
-    !binaryNames[provider].some((expected) =>
-      windows ? expected.toLowerCase() === name.toLowerCase() : expected === name,
-    )
-  )
-    throw new Error(
-      `Configured ${provider} binary must be named ${binaryNames[provider].join(" or ")}`,
-    );
-  await providerLaunch(path, []);
-  return path;
-}
-
-/** Spawn reports a missing cwd as the executable being missing; name the folder instead. */
-async function workingDirectory(value: string): Promise<string> {
-  const cwd = expandHome(value);
-  if (!(await stat(cwd).catch(() => undefined))?.isDirectory())
-    throw new Error(`Working directory does not exist on this host: ${cwd}`);
-  return cwd;
-}
-
-/** Host-owned provider binary overrides from `<host dir>/provider-binaries.json`. */
-export async function readProviderBinaryOverrides(
-  directory: string,
-): Promise<Partial<Record<RemoteProvider, string>>> {
-  try {
-    const value: unknown = JSON.parse(
-      await readFile(join(directory, "provider-binaries.json"), "utf8"),
-    );
-    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-    return Object.fromEntries(
-      Object.entries(value).filter(
-        ([provider, path]) =>
-          isRemoteProvider(provider) && typeof path === "string" && path.trim().length > 0,
-      ),
-    );
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT")
-      console.error("Ignoring invalid provider-binaries.json:", error);
-    return {};
-  }
-}
+type PreparedTool = { env: NodeJS.ProcessEnv; mcpUrl?: string; projectId?: string };
+type TextWorkspaceSlot = {
+  run: HostRunHandle;
+  cwd?: string;
+  key?: string;
+  cleanupPath?: string;
+  grant?: HostRunCwdGrant;
+  identity?: { dev: number; ino: number };
+  preparing: boolean;
+};
+type ToolPreparation = {
+  live: boolean;
+  owner?: object;
+  groups: Map<SessionToolGroup, Promise<PreparedTool | undefined>>;
+  capabilities: Set<SessionToolCapability>;
+  /** Revokes the memory-only grants issued for this preparation when its child ends. */
+  revokers: Set<() => void>;
+  expiry?: ReturnType<typeof setTimeout>;
+};
 
 export class HostChildBackend implements ChildBackend {
+  private readonly reportGrantWarning = createProbeGrantWarningFilter();
+  private readonly toolRelay = new SessionToolsRelay();
+  private readonly preparedTools = new Map<string, ToolPreparation>();
+  private readonly activeTools = new Map<string, ToolPreparation>();
   private readonly socialEnvironments = new Map<string, NodeJS.ProcessEnv>();
   private readonly runtimeLogEnvironments = new Map<string, NodeJS.ProcessEnv>();
   private readonly conversationEnvironments = new Map<string, NodeJS.ProcessEnv>();
@@ -142,8 +113,8 @@ export class HostChildBackend implements ChildBackend {
   setRuntimeLogAccess(service: RuntimeLogAccess, endpoint: string): void {
     this.runtimeLogAccess = { service, endpoint };
   }
-  private socialAccess?: { service: import("./social").SocialService; endpoint: string };
-  setSocialAccess(service: import("./social").SocialService, endpoint: string): void {
+  private socialAccess?: { service: import("./social/social").SocialService; endpoint: string };
+  setSocialAccess(service: import("./social/social").SocialService, endpoint: string): void {
     this.socialAccess = { service, endpoint };
   }
   private genericAcp?: GenericAcpService;
@@ -151,15 +122,101 @@ export class HostChildBackend implements ChildBackend {
     this.genericAcp = service;
   }
   private events = new EventEmitter();
-  private children = new Map<string, ChildProcessWithoutNullStreams>();
+  private children = new Map<string, ProviderChild>();
+  private idleGate?: ProviderChildIdleGate;
+  private readonly idle = new ProviderChildIdleReaper<ProviderChild>({
+    children: () => this.children,
+    retire: (id, child) => this.retireChild(id, child),
+    isStarting: (id) => !!this.pendingStarts.get(id)?.size,
+    gate: () => this.idleGate,
+  });
+  /** Idle teardown of quiet provider children starts once the Host can vouch for session state. */
+  setIdleGate(gate: ProviderChildIdleGate): void {
+    this.idleGate = gate;
+    if (!this.closing) this.idle.start();
+  }
+  private readonly constructions = new ProviderConstructions((child) =>
+    this.processLifecycles.completion(child),
+  );
+  private readonly processLifecycles = new ProviderProcessLifecycle();
+  private readonly processCwds = new WeakMap<ProviderChild, string>();
+  private readonly textWorkspaces = new Map<string, HostRunCwdGrant>();
+  private readonly textWorkspaceSlots = new Set<TextWorkspaceSlot>();
+  private textWorkspaceReap?: Promise<void>;
+  private readonly httpTargets = new HostRunHttpTargets();
+  private starts = new Map<string, object>();
+  private readonly pendingStarts = new Map<string, Set<object>>();
+  private startWork = new Set<Promise<HarnessProcessReceipt>>();
   private streams = new Map<string, AbortController>();
   private closing = false;
+  private closePromise?: Promise<void>;
 
   constructor(
     private readonly binaries: Partial<Record<RemoteProvider, string>> = {},
     private readonly artifactDirectory = join(homedir(), ".bycoda-host", "attachments"),
+    private readonly guardianDirectory = fileURLToPath(new URL("./", import.meta.url)),
+    private readonly runWriters?: HostRunWriters,
+    private readonly removeTextWorkspace: (path: string) => Promise<void> = (path) =>
+      rm(path, { recursive: true }),
+    private readonly mcpHub?: Pick<import("./mcp/hub/hub").McpHub, "externalMcp">,
   ) {
     this.events.setMaxListeners(0);
+  }
+
+  private reapTextWorkspaces(writers: HostRunWriters): Promise<void> {
+    if (this.textWorkspaceReap) return this.textWorkspaceReap;
+    const reap = (async () => {
+      const root = await realpath(tmpdir());
+      for (const slot of this.textWorkspaceSlots) {
+        if (slot.preparing || !writers.isFinished(slot.run)) continue;
+        if (slot.grant && !writers.retireTextGrant(slot.run, slot.grant)) continue;
+        if (!slot.cwd) continue;
+        if (!slot.identity || !slot.identity.ino) continue;
+        try {
+          const matches = async (path: string) => {
+            const current = await lstat(path);
+            const canonical = await realpath(path);
+            const child = relative(root, canonical);
+            return (
+              current.isDirectory() &&
+              !current.isSymbolicLink() &&
+              current.dev === slot.identity!.dev &&
+              current.ino === slot.identity!.ino &&
+              !!child &&
+              !child.startsWith("..") &&
+              !isAbsolute(child) &&
+              dirname(canonical) === root &&
+              workspacePathKey(canonical) === workspacePathKey(path)
+            );
+          };
+          slot.cleanupPath ??= join(root, `bycoda-text-cleanup-${randomUUID()}`);
+          let candidateExists = true;
+          try {
+            await lstat(slot.cleanupPath);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+            candidateExists = false;
+          }
+          if (!candidateExists) {
+            if (!(await matches(slot.cwd))) continue;
+            await rename(slot.cwd, slot.cleanupPath);
+          }
+          if (!(await matches(slot.cleanupPath))) continue;
+          await this.removeTextWorkspace(slot.cleanupPath);
+          if (slot.key) this.textWorkspaces.delete(slot.key);
+          this.textWorkspaceSlots.delete(slot);
+        } catch (error) {
+          console.warn("Text sandbox cleanup failed; retained for retry:", error);
+        }
+      }
+    })();
+    this.textWorkspaceReap = reap;
+    void reap
+      .finally(() => {
+        if (this.textWorkspaceReap === reap) this.textWorkspaceReap = undefined;
+      })
+      .catch(() => {});
+    return reap;
   }
 
   async resolve(provider: RemoteProvider): Promise<string> {
@@ -190,42 +247,20 @@ export class HostChildBackend implements ChildBackend {
         typeof args.accountId === "string" ? args.accountId : undefined,
       )) as T;
     }
-    if (command === "harness_conversation_tools_bridge") {
+    const toolGroup = bridgeToolGroup(command);
+    if (toolGroup) {
+      const tools = this.preparation(id);
+      const tool = await this.prepareTool(id, tools, toolGroup);
       return (
-        this.conversationAccess?.service.hasSession(id.replace(/#\d+$/, ""))
+        tool
           ? {
               command: process.execPath,
               args: [process.argv[1]],
-              mcpUrl: `${this.conversationAccess!.endpoint}/mcp/conversation`,
+              ...(tool.mcpUrl ? { mcpUrl: tool.mcpUrl } : {}),
+              ...(await this.mcpHub?.externalMcp(tool.mcpUrl, tool.projectId)),
             }
           : null
       ) as T;
-    }
-    if (command === "harness_runtime_logs_bridge") {
-      return (
-        this.runtimeLogAccess?.service.hasSession(id.replace(/#\d+$/, ""))
-          ? {
-              command: process.execPath,
-              args: [process.argv[1]],
-              mcpUrl: `${this.runtimeLogAccess!.endpoint}/mcp/runtime-logs`,
-            }
-          : null
-      ) as T;
-    }
-    if (command === "harness_social_bridge") {
-      if (!this.socialAccess) return null as T;
-      try {
-        this.socialAccess.service.store.session(id);
-        return {
-          command: process.execPath,
-          args: [process.argv[1]],
-          ...(this.socialAccess.service.isDelegated?.()
-            ? {}
-            : { mcpUrl: `${this.socialAccess.endpoint}/mcp/social` }),
-        } as T;
-      } catch {
-        return null as T;
-      }
     }
     if (command.startsWith("generic_acp_")) {
       const service = this.genericAcp;
@@ -275,11 +310,46 @@ export class HostChildBackend implements ChildBackend {
       case "harness_prepare_text_workspace": {
         if (typeof args.content !== "string" || args.content.length > 20_000)
           throw new Error("Invalid text agent profile");
-        const cwd = await mkdtemp(join(tmpdir(), "bycoda-antigravity-text-"));
-        const profile = join(cwd, ".agents", "agents");
-        await mkdir(profile, { recursive: true });
-        await writeFile(join(profile, "bycoda-text.md"), args.content, "utf8");
-        return { cwd, logPath: join(cwd, "agent.log") } as T;
+        const content = args.content;
+        const hostRun = args.hostRun as HostRunHandle | undefined;
+        const create = async (created?: (cwd: string) => Promise<void>) => {
+          const cwd = await mkdtemp(join(tmpdir(), "bycoda-antigravity-text-"));
+          await created?.(cwd);
+          const profile = join(cwd, ".agents", "agents");
+          await mkdir(profile, { recursive: true });
+          await writeFile(join(profile, "bycoda-text.md"), content, "utf8");
+          return { cwd, logPath: join(cwd, "agent.log") };
+        };
+        if (hostRun === undefined) return (await create()) as T;
+        const writers = this.requireRunWriters();
+        if (!writers.executionSource(hostRun).auxiliary)
+          throw new Error("An original auxiliary Host scope is required for a text sandbox.");
+        await this.reapTextWorkspaces(writers);
+        if (this.textWorkspaceSlots.size >= 512)
+          throw new Error("Host text sandbox ownership capacity is full.");
+        const slot: TextWorkspaceSlot = { run: hostRun, preparing: true };
+        this.textWorkspaceSlots.add(slot);
+        let started = false;
+        try {
+          return (await writers.runWork(hostRun, async () => {
+            started = true;
+            const workspace = await create(async (cwd) => {
+              slot.cwd = await canonicalWorkspacePath(cwd); // reclaim needs a symlink-free path
+              const { dev, ino } = await lstat(slot.cwd);
+              slot.identity = { dev, ino };
+            });
+            const grant = await writers.grantCwd(hostRun, workspace.cwd, "text-sandbox");
+            slot.grant = grant;
+            const canonical = await canonicalWorkspacePath(workspace.cwd);
+            writers.assertOpen(hostRun);
+            slot.key = workspacePathKey(canonical);
+            this.textWorkspaces.set(slot.key, grant);
+            return workspace;
+          })) as T;
+        } finally {
+          slot.preparing = false;
+          if (!started) this.textWorkspaceSlots.delete(slot);
+        }
       }
       case "harness_save_generated_image":
         return (await saveHostGeneratedImage(this.artifactDirectory, {
@@ -301,13 +371,46 @@ export class HostChildBackend implements ChildBackend {
         )
           throw new Error("Unsupported headless catalog command");
         const launch = await providerLaunch(commandPath, args.args as string[]);
-        const { stdout } = await exec(launch.command, launch.args, {
-          cwd: typeof args.cwd === "string" ? args.cwd : undefined,
-          timeout: 10_000,
-          maxBuffer: 8 * 1024 * 1024,
-          windowsHide: true,
-        });
-        return stdout as T;
+        const cwd = typeof args.cwd === "string" ? args.cwd : undefined;
+        const service =
+          provider === "opencode" &&
+          (args.args as string[])[0] === "service" &&
+          ["status", "start"].includes((args.args as string[])[1]);
+        const originSlot = service ? this.httpTargets.reserveOrigin() : undefined;
+        try {
+          const { stdout } = await exec(launch.command, launch.args, {
+            cwd,
+            timeout: 10_000,
+            maxBuffer: 8 * 1024 * 1024,
+            windowsHide: true,
+          });
+          if (originSlot) {
+            const origin = this.serviceOrigin(stdout);
+            if (origin) {
+              const status = await providerLaunch(commandPath, ["service", "status"]);
+              this.httpTargets.publishService(originSlot, origin, {
+                key: await realpath(commandPath),
+                owner: {},
+                validate: async () => {
+                  const actual = await exec(status.command, status.args, {
+                    cwd,
+                    timeout: 10_000,
+                    maxBuffer: 8 * 1024 * 1024,
+                    windowsHide: true,
+                  });
+                  if (this.serviceOrigin(actual.stdout) !== origin)
+                    throw new Error("Original external OpenCode service source changed.");
+                },
+              });
+            } else if ((args.args as string[])[1] === "status")
+              this.httpTargets.releaseUnused(originSlot);
+            else this.httpTargets.retainUnknown(originSlot);
+          }
+          return stdout as T;
+        } catch (error) {
+          if (originSlot) this.httpTargets.retainUnknown(originSlot);
+          throw error;
+        }
       }
       case "harness_free_port": {
         const server = createServer();
@@ -337,6 +440,94 @@ export class HostChildBackend implements ChildBackend {
           ),
         });
         return { status: response.status, body: await response.text() } as T;
+      }
+      case "harness_bind_http_host_run": {
+        const run = args.hostRun as HostRunHandle,
+          writers = this.requireRunWriters();
+        const hint = this.httpSourceHint(args.httpSource);
+        const original = this.httpTargets.capture(hint.baseUrl);
+        return (await writers.runWork(
+          run,
+          () => this.httpTargets.bind(original, run, writers.executionSource(run), hint),
+          { cwd: hint.directory, effectful: false },
+        )) as T;
+      }
+      case "harness_http_host_run": {
+        const run = args.hostRun as HostRunHandle,
+          binding = args.binding as HostRunBinding;
+        const writers = this.requireRunWriters(),
+          hint = this.httpSourceHint(args.httpSource);
+        const request = Object.freeze({
+          url: loopbackUrl(args.url),
+          method: String(args.method).toUpperCase(),
+          body: typeof args.body === "string" ? args.body : undefined,
+        });
+        const headers =
+          args.headers && typeof args.headers === "object"
+            ? Object.freeze(
+                Object.fromEntries(
+                  Object.entries(args.headers).map(([key, value]) => {
+                    if (typeof value !== "string") throw new Error("Invalid scoped HTTP header.");
+                    return [key, value];
+                  }),
+                ),
+              )
+            : undefined;
+        const timeoutMs = typeof args.timeoutMs === "number" ? Math.max(1, args.timeoutMs) : 30_000;
+        const fetchOriginal = (
+          url: string,
+          method: string,
+          body?: string,
+          assertTarget?: () => void,
+        ) =>
+          writers.runWork(
+            run,
+            async () => {
+              this.httpTargets.assertBound(binding, run, writers.executionSource(run));
+              assertTarget?.();
+              const response = await fetch(url, {
+                method,
+                headers,
+                body,
+                redirect: "error",
+                signal: AbortSignal.timeout(timeoutMs),
+              });
+              return { status: response.status, body: await response.text() };
+            },
+            { cwd: hint.directory },
+          );
+        return (await writers.runWork(
+          run,
+          async () => {
+            const reservation = await this.httpTargets.prepare(
+              binding,
+              run,
+              writers.executionSource(run),
+              hint,
+              request,
+              (url) => fetchOriginal(url, "GET"),
+              () => {
+                writers.executionSource(run);
+              },
+              (error) => writers.retainFailure(run, error),
+            );
+            try {
+              reservation.assertCurrent();
+              const response = await fetchOriginal(
+                request.url,
+                request.method,
+                request.body,
+                reservation.assertCurrent,
+              );
+              await reservation.complete(response);
+              return response;
+            } catch (error) {
+              reservation.fail(error);
+              throw error;
+            }
+          },
+          { cwd: hint.directory, effectful: false },
+        )) as T;
       }
       case "harness_sse_open": {
         const url = loopbackUrl(args.url);
@@ -394,38 +585,32 @@ export class HostChildBackend implements ChildBackend {
       }
       case "harness_spawn":
         return (await this.start(id, args)) as T;
-      case "harness_write": {
-        const child = this.children.get(id);
-        if (!child || child.stdin.destroyed) throw new Error("Provider process is not running");
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(() => {
-            reject(
-              new Error(
-                `Provider stdin write timed out (session ${id}, pid ${child.pid}, ${Buffer.byteLength(String(args.line))} bytes)`,
-              ),
-            );
-            // Retire only this generation; a replacement must never be killed.
-            if (this.children.get(id) === child) void this.kill(id);
-          }, 12_000);
-          child.stdin.write(
-            `${authorizeConversationAcpFrame(
-              authorizeRuntimeLogsAcpFrame(
-                authorizeSocialAcpFrame(String(args.line), this.socialEnvironments.get(id) ?? {}),
-                this.runtimeLogEnvironments.get(id) ?? {},
-              ),
-              this.conversationEnvironments.get(id) ?? {},
-            )}\n`,
-            (error) => {
-              clearTimeout(timer);
-              if (error) reject(error);
-              else resolve();
-            },
-          );
+      case "harness_bind_host_run": {
+        const child = this.requireChild(id, args.constructionId);
+        return (await this.requireRunWriters().bind(
+          args.hostRun as HostRunHandle,
+          child,
+          this.runProcessSource(id, args.constructionId as string, child),
+        )) as T;
+      }
+      case "harness_write_host_run": {
+        const child = this.requireChild(id, args.constructionId);
+        const source = this.runProcessSource(id, args.constructionId as string, child);
+        const line = String(args.line);
+        await this.requireRunWriters().write(args.binding as HostRunBinding, child, source, () => {
+          source.assertCurrent?.();
+          this.requireRunWriters().assertControlWrite(args.binding as HostRunBinding, line);
+          return this.writeFrame(id, child, line);
         });
         return undefined as T;
       }
+      case "harness_write": {
+        const child = this.requireChild(id, args.constructionId);
+        await this.writeFrame(id, child, String(args.line));
+        return undefined as T;
+      }
       case "harness_kill":
-        await this.kill(id);
+        await this.retireChild(id, this.constructions.require(id, args.constructionId).child);
         return undefined as T;
       case "harness_kill_all":
         await this.close();
@@ -496,144 +681,551 @@ export class HostChildBackend implements ChildBackend {
     }
   }
 
-  private async start(id: string, args: Record<string, unknown>): Promise<number> {
+  private start(id: string, args: Record<string, unknown>): Promise<HarnessProcessReceipt> {
+    const work = this.startOwned(id, args);
+    this.startWork.add(work);
+    void work.finally(() => this.startWork.delete(work)).catch(() => undefined);
+    return work;
+  }
+
+  private async startOwned(
+    id: string,
+    args: Record<string, unknown>,
+  ): Promise<HarnessProcessReceipt> {
     if (this.closing) throw new Error("Host is stopping");
-    let genericEnv: Record<string, string> = {};
-    if (args.genericAcpId) {
-      if (!this.genericAcp) throw new Error("Generic ACP management is unavailable");
-      const config = await this.genericAcp.get(String(args.genericAcpId));
-      args = { ...args, command: config.command, args: config.args };
-      genericEnv = config.env ?? {};
+    if (this.pendingStarts.get(id)?.size)
+      throw new Error("A provider is already starting for this session. Retry after it finishes.");
+    const beforeSpawn = args.beforeSpawn;
+    if (beforeSpawn !== undefined && typeof beforeSpawn !== "function")
+      throw new Error("beforeSpawn must be an in-process function.");
+    const attempt = {};
+    let tools: ToolPreparation | undefined;
+    let published = false;
+    let ownedChild: ProviderChild | undefined;
+    const hostRun = args.hostRun as HostRunHandle | undefined;
+    const runWriters = hostRun === undefined ? undefined : this.requireRunWriters();
+    let runPreparation: HostRunProcessReservation | undefined;
+    let cwd: string | undefined;
+    let admitted = false;
+    let failed = false;
+    let failure: unknown;
+    let outcome: HarnessProcessReceipt | undefined;
+    let httpOrigin: HostHttpOrigin | undefined;
+    let httpChildObserved = false;
+    const constructionSlot = this.constructions.reserve(id);
+    const pending = this.pendingStarts.get(id) ?? new Set<object>();
+    pending.add(attempt);
+    this.pendingStarts.set(id, pending);
+    if (hostRun === undefined) {
+      this.starts.set(id, attempt);
+      admitted = true;
     }
-    await this.kill(id);
-    if (this.closing) throw new Error("Host is stopping");
-    const account = await providerAccountEnvironment(
-      args.account as { provider?: string; id?: string } | undefined,
-    );
-    const cwd = await workingDirectory(String(args.cwd));
-    const launch = await providerLaunch(String(args.command), args.args as string[]);
-    if (this.closing) throw new Error("Host is stopping");
-    const env = await this.runtimeLogEnvironment(
-      id,
-      await this.socialEnvironment(id, { ...genericEnv, ...account?.set }),
-    );
-    for (const key of account?.remove ?? []) delete env[key];
-    if (this.closing) throw new Error("Host is stopping");
-    const child = spawn(
-      process.execPath,
-      [
-        fileURLToPath(new URL("./provider-guard.mjs", import.meta.url)),
-        launch.command,
-        ...launch.args,
-      ],
-      {
-        cwd,
-        stdio: ["pipe", "pipe", "pipe", "pipe"],
-        detached: process.platform !== "win32",
-        windowsHide: true,
-        env: { ...env, BYCODA_HOST: "1" },
-      },
-    );
-    this.children.set(id, child);
-    child.stdin.on("error", () => {
-      /* write callbacks report failures */
-    });
-    let exitReason: string | undefined;
-    const overflow = (reason: string) => {
-      if (exitReason) return;
-      exitReason = reason;
-      void this.kill(id);
+    const check = () => {
+      if (this.closing) throw new ProviderStartupCancelled("Host is stopping");
+      if (this.pendingStarts.get(id) !== pending || !pending.has(attempt))
+        throw new ProviderStartupCancelled("Provider startup cancelled");
+      if (admitted && this.starts.get(id) !== attempt)
+        throw new ProviderStartupCancelled("Provider startup cancelled");
+      if (runPreparation) runWriters!.assertPreparedProcess(runPreparation);
     };
-    this.lines(child, id, "stdout", overflow);
-    this.lines(child, id, "stderr", overflow);
-    child.on("close", (code) => {
-      if (this.children.get(id) === child) this.children.delete(id);
-      this.emit("harness-exit", {
-        sessionId: id,
-        code,
-        pid: child.pid,
-        ...(exitReason ? { reason: exitReason } : {}),
-      });
-    });
-    await new Promise<void>((resolve, reject) => {
-      child.once("spawn", resolve);
-      child.once("error", reject);
-    });
-    return child.pid!;
-  }
-
-  private async socialEnvironment(
-    id: string,
-    overrides: NodeJS.ProcessEnv = {},
-  ): Promise<NodeJS.ProcessEnv> {
-    this.socialEnvironments.delete(id);
-    const env: NodeJS.ProcessEnv = { ...process.env, ...overrides };
-    for (const key of Object.keys(env)) if (key.startsWith("BYCODA_SOCIAL_")) delete env[key];
-    if (!this.socialAccess) return env;
+    const restrict = async () => {
+      check();
+      if (runPreparation) await runWriters!.validatePreparedProcess(runPreparation);
+      if (beforeSpawn) await beforeSpawn();
+      check();
+    };
     try {
-      const sessionId = id.replace(/#\d+$/, "");
-      const grant = (await this.socialAccess.service.remoteAccess?.(sessionId)) ?? {
-        ...this.socialAccess.service.issueSessionGrant(sessionId),
-        endpoint: this.socialAccess.endpoint,
-        environmentId: this.socialAccess.service.store.environmentId,
-      };
-      env.BYCODA_SOCIAL_ENDPOINT = grant.endpoint;
-      env.BYCODA_SOCIAL_TOKEN = grant.token;
-      env.BYCODA_SOCIAL_ENVIRONMENT = grant.environmentId;
-      this.socialEnvironments.set(id, {
-        BYCODA_SOCIAL_TOKEN: grant.token,
-        BYCODA_SOCIAL_ENDPOINT: grant.endpoint,
-        BYCODA_SOCIAL_ENVIRONMENT: grant.environmentId,
+      if (runWriters && hostRun) {
+        const requestedCwd = await canonicalWorkspacePath(await workingDirectory(String(args.cwd)));
+        let cwdGrant: HostRunCwdGrant | undefined;
+        if (
+          args.binaryProvider === "antigravity" &&
+          workspacePathKey(requestedCwd) !==
+            workspacePathKey(runWriters.executionSource(hostRun).cwd)
+        ) {
+          const binary =
+            typeof args.binaryPath === "string" && args.binaryPath.trim()
+              ? await configuredBinary("antigravity", args.binaryPath, true)
+              : await this.resolve("antigravity");
+          const resolvedBinary = await realpath(binary);
+          if (
+            workspacePathKey(await realpath(String(args.command))) !==
+            workspacePathKey(resolvedBinary)
+          )
+            throw new Error("Antigravity launcher does not match its actual Host resolution.");
+          const launcherCwd = await canonicalWorkspacePath(dirname(resolvedBinary));
+          cwdGrant =
+            workspacePathKey(requestedCwd) === workspacePathKey(launcherCwd)
+              ? await runWriters.grantCwd(hostRun, launcherCwd, "antigravity-launcher")
+              : this.textWorkspaces.get(workspacePathKey(requestedCwd));
+        }
+        runPreparation = await runWriters.prepareProcess(hostRun, {
+          sessionId: id,
+          cwd: requestedCwd,
+          provider: typeof args.binaryProvider === "string" ? args.binaryProvider : undefined,
+          cwdGrant,
+        });
+        cwd = runPreparation.cwd;
+        check();
+        if (args.binaryProvider === "opencode") httpOrigin = this.httpTargets.reserveOrigin();
+        this.starts.set(id, attempt);
+        admitted = true;
+      }
+      if (beforeSpawn || runPreparation) await restrict();
+      let genericEnv: Record<string, string> = {};
+      if (args.genericAcpId) {
+        if (!this.genericAcp) throw new Error("Generic ACP management is unavailable");
+        const config = await this.genericAcp.get(String(args.genericAcpId));
+        check();
+        args = { ...args, command: config.command, args: config.args };
+        genericEnv = config.env ?? {};
+      }
+      if (beforeSpawn || runPreparation) await restrict();
+      const previous = this.children.get(id);
+      if (previous && previous.exitCode === null && previous.signalCode === null) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            this.retireChild(id, previous),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(
+                () =>
+                  reject(
+                    new Error("The original provider is still stopping. Retry when it exits."),
+                  ),
+                20_000,
+              );
+            }),
+          ]);
+        } catch (error) {
+          if (previous.exitCode === null && previous.signalCode === null) throw error;
+          console.warn("Provider exited with unverified cleanup:", error);
+        } finally {
+          clearTimeout(timer);
+        }
+        check();
+      }
+      await this.killCurrent(id);
+      check();
+      if (beforeSpawn || runPreparation) await restrict();
+      tools = this.preparation(id, attempt);
+      const account = await providerAccountEnvironment(
+        args.account as { provider?: string; id?: string } | undefined,
+      );
+      check();
+      if (beforeSpawn || runPreparation) await restrict();
+      cwd ??= await workingDirectory(String(args.cwd));
+      check();
+      if (beforeSpawn || runPreparation) await restrict();
+      const launch = await providerLaunch(String(args.command), args.args as string[]);
+      check();
+      if (beforeSpawn || runPreparation) await restrict();
+      const env: NodeJS.ProcessEnv = { ...process.env, ...genericEnv, ...account?.set };
+      for (const key of Object.keys(env))
+        if (
+          ["BYCODA_SOCIAL_", "BYCODA_RUNTIME_LOGS_", "BYCODA_CONVERSATION_"].some((prefix) =>
+            key.startsWith(prefix),
+          )
+        )
+          delete env[key];
+      for (const group of ["social", "conversation", "runtime-logs"] as const) {
+        const tool = await this.prepareTool(id, tools, group, check);
+        check();
+        if (beforeSpawn || runPreparation) await restrict();
+        Object.assign(env, tool?.env);
+        if (group === "conversation" && tool && isOpencodeAcpLaunch(launch.command, launch.args)) {
+          const published = await this.mcpHub?.externalMcp(tool.mcpUrl, tool.projectId);
+          Object.assign(env, opencodeLaunchEnv(launch.command, launch.args, published));
+        }
+      }
+      for (const key of account?.remove ?? []) delete env[key];
+      check();
+      if (beforeSpawn || runPreparation) await restrict();
+      // Preparation is local to this attempt. A cancelled older grant must not
+      // replace the authority used by a newer child under the same session ID.
+      for (const [prefix, target] of [
+        ["BYCODA_SOCIAL_", this.socialEnvironments],
+        ["BYCODA_RUNTIME_LOGS_", this.runtimeLogEnvironments],
+        ["BYCODA_CONVERSATION_", this.conversationEnvironments],
+      ] as const) {
+        const scoped = Object.fromEntries(
+          Object.entries(env).filter(([key]) => key.startsWith(prefix)),
+        );
+        target.delete(id);
+        if (Object.keys(scoped).length) target.set(id, scoped);
+      }
+      const guardian = await prepareProviderGuardian(this.guardianDirectory);
+      const plainSpawn = () =>
+        spawn(
+          process.execPath,
+          [
+            fileURLToPath(new URL("./provider-guard.mjs", import.meta.url)),
+            launch.command,
+            ...launch.args,
+          ],
+          {
+            cwd,
+            stdio: ["pipe", "pipe", "pipe", "pipe"],
+            detached: process.platform !== "win32",
+            windowsHide: true,
+            env: { ...env, BYCODA_HOST: "1" },
+          },
+        );
+      let child: ProviderChild;
+      try {
+        check();
+        if (beforeSpawn || runPreparation) await restrict();
+        check();
+        if (guardian) {
+          try {
+            child = guardian.spawn(
+              {
+                command: launch.command,
+                args: launch.args,
+                cwd,
+                env: { ...env, BYCODA_HOST: "1" },
+              },
+              restrict,
+              check,
+            );
+          } catch (error) {
+            if (!(error instanceof ProviderGuardianError)) throw error;
+            // The installed guardian changed or is unusable: use the plain guard.
+            console.warn(
+              "Provider guardian is unavailable; using the plain provider guard:",
+              error,
+            );
+            child = plainSpawn();
+          }
+        } else child = plainSpawn();
+      } catch (error) {
+        await guardian?.dispose();
+        throw error;
+      }
+      this.processLifecycles.register(
+        id,
+        child,
+        child instanceof NativeGuardianChild ? child.retirement : undefined,
+      );
+      if (runWriters && runPreparation)
+        runWriters.observePreparedProcess(runPreparation, this.processLifecycles.completion(child));
+      ownedChild = child;
+      const guardianCleanup = guardian?.dispose();
+      const constructionId = randomUUID();
+      this.processCwds.set(child, cwd);
+      if (runWriters && hostRun && runPreparation)
+        runWriters.attachProcess(
+          hostRun,
+          child,
+          { sessionId: id, constructionId, cwd },
+          runPreparation,
+        );
+      this.constructions.publish(constructionSlot, constructionId, child);
+      ownedChild = child;
+      this.children.set(id, child);
+      this.idle.touch(child);
+      this.activeTools.set(id, tools);
+      if (this.preparedTools.get(id) === tools) this.preparedTools.delete(id);
+      child.stdin.on("error", () => {
+        /* write callbacks report failures */
       });
-    } catch {
-      /* Isolated helper/catalog children do not receive session access. */
+      let exitReason: string | undefined;
+      const overflow = (reason: string) => {
+        if (exitReason) return;
+        exitReason = reason;
+        void this.retireChild(id, child).catch((error) =>
+          console.error("Provider overflow retirement failed:", error),
+        );
+      };
+      if (httpOrigin) {
+        this.httpTargets.observeChildCompletion(
+          httpOrigin,
+          this.processLifecycles.completion(child),
+        );
+        httpChildObserved = true;
+      }
+      const httpScope =
+        httpOrigin && hostRun && runWriters ? runWriters.executionSource(hostRun) : undefined;
+      this.lines(
+        child,
+        id,
+        constructionId,
+        "stdout",
+        overflow,
+        httpOrigin && httpScope
+          ? (line) => {
+              const origin = parseServerUrlFromOutput(line);
+              if (!origin) return;
+              try {
+                this.httpTargets.publishChild(httpOrigin!, origin, {
+                  owner: child,
+                  constructionId,
+                  scope: httpScope,
+                  assertCurrent: () => {
+                    this.runProcessSource(id, constructionId, child).assertCurrent?.();
+                    if (child.exitCode !== null || child.signalCode !== null)
+                      throw new Error("Original OpenCode child exited.");
+                  },
+                });
+              } catch (error) {
+                this.httpTargets.retainUnknown(httpOrigin!);
+                overflow(String(error));
+              }
+            }
+          : undefined,
+      );
+      this.lines(child, id, constructionId, "stderr", overflow);
+      child.on("close", (code) => {
+        if (child instanceof NativeGuardianChild && !child.retirementVerified) {
+          // A normal exit with unverified cleanup is a warning, not an exit failure.
+          if (code === 0)
+            console.warn("Provider cleanup could not be verified after a normal exit.");
+          else
+            exitReason ??=
+              "Provider cleanup could not be verified. This session cannot start a replacement.";
+        }
+        if (this.children.get(id) === child) {
+          this.children.delete(id);
+          this.releaseActiveTools(id);
+        }
+        this.emit("harness-exit", {
+          sessionId: id,
+          constructionId,
+          code,
+          pid: child.pid,
+          ...(exitReason ? { reason: exitReason } : {}),
+        });
+      });
+      const started =
+        child instanceof NativeGuardianChild
+          ? child.started
+          : new Promise<void>((resolve, reject) => {
+              child.once("spawn", resolve);
+              child.once("error", reject);
+            });
+      await guardianCleanup;
+      await started;
+      check();
+      const receipt = requireHarnessProcessReceipt(
+        { version: 1, backend: "host", sessionId: id, pid: child.pid, constructionId },
+        id,
+        "host",
+      );
+      published = true;
+      outcome = receipt;
+    } catch (error) {
+      failed = true;
+      failure = error;
     }
-    return env;
+    try {
+      this.constructions.release(constructionSlot);
+      if (!published && tools) {
+        if (this.preparedTools.get(id) === tools) this.preparedTools.delete(id);
+        this.retireTools(tools);
+        if (ownedChild) await this.retireChild(id, ownedChild);
+      }
+    } catch (error) {
+      failure = failed
+        ? new AggregateError([failure, error], "Original provider startup and cleanup failed.")
+        : error;
+      failed = true;
+    } finally {
+      if (runPreparation) {
+        if (failed) runWriters!.completeProcess(runPreparation, failure);
+        else runWriters!.completeProcess(runPreparation);
+      }
+      if (httpOrigin && !httpChildObserved) {
+        if (ownedChild) this.httpTargets.retainUnknown(httpOrigin);
+        else this.httpTargets.releaseUnused(httpOrigin);
+      }
+      if (this.starts.get(id) === attempt) this.starts.delete(id);
+      pending.delete(attempt);
+      if (!pending.size && this.pendingStarts.get(id) === pending) this.pendingStarts.delete(id);
+    }
+    if (failed) throw failure;
+    return outcome as HarnessProcessReceipt;
   }
 
-  private async runtimeLogEnvironment(
-    id: string,
-    env: NodeJS.ProcessEnv,
-  ): Promise<NodeJS.ProcessEnv> {
-    this.conversationEnvironments.delete(id);
-    for (const key of Object.keys(env)) if (key.startsWith("BYCODA_CONVERSATION_")) delete env[key];
-    if (this.conversationAccess) {
+  private grantPruning?: ReturnType<typeof setInterval>;
+  /** Expired memory-only grants are otherwise pruned only when another is issued. */
+  private startGrantPruning(): void {
+    if (this.grantPruning || this.closing) return;
+    this.grantPruning = setInterval(() => {
+      for (const access of [this.socialAccess, this.runtimeLogAccess, this.conversationAccess])
+        access?.service.pruneExpiredGrants?.();
+    }, 10 * 60_000);
+    this.grantPruning.unref();
+  }
+
+  private retireTools(tools: ToolPreparation): void {
+    tools.live = false;
+    clearTimeout(tools.expiry);
+    for (const capability of tools.capabilities) capability.dispose();
+    tools.capabilities.clear();
+    for (const revoke of tools.revokers) {
       try {
-        const grant = this.conversationAccess.service.issueSessionGrant(id.replace(/#\d+$/, ""));
-        const scoped = {
-          BYCODA_CONVERSATION_TOKEN: grant.token,
-          BYCODA_CONVERSATION_ENDPOINT: this.conversationAccess.endpoint,
-          BYCODA_CONVERSATION_ENVIRONMENT: this.conversationAccess.service.environmentId,
-        };
-        Object.assign(env, scoped);
-        this.conversationEnvironments.set(id, scoped);
-      } catch {
-        /* Helpers have no session authority. */
+        revoke();
+      } catch (error) {
+        console.warn("Session tool grant could not be revoked:", error);
       }
     }
+    tools.revokers.clear();
+  }
+
+  private releaseActiveTools(id: string): void {
+    const tools = this.activeTools.get(id);
+    if (tools) this.retireTools(tools);
+    this.activeTools.delete(id);
+    this.socialEnvironments.delete(id);
     this.runtimeLogEnvironments.delete(id);
-    for (const key of Object.keys(env)) if (key.startsWith("BYCODA_RUNTIME_LOGS_")) delete env[key];
-    if (!this.runtimeLogAccess) return env;
-    try {
-      const grant = this.runtimeLogAccess.service.issueSessionGrant(id.replace(/#\d+$/, ""));
-      const scoped = {
-        BYCODA_RUNTIME_LOGS_TOKEN: grant.token,
-        BYCODA_RUNTIME_LOGS_ENDPOINT: this.runtimeLogAccess.endpoint,
-        BYCODA_RUNTIME_LOGS_ENVIRONMENT: this.runtimeLogAccess.service.environmentId,
-      };
-      Object.assign(env, scoped);
-      this.runtimeLogEnvironments.set(id, scoped);
-    } catch {
-      /* Isolated title/catalog helpers have no authoritative session. */
+    this.conversationEnvironments.delete(id);
+  }
+
+  private preparation(id: string, owner?: object): ToolPreparation {
+    if (this.closing) throw new ProviderStartupCancelled("Host is stopping");
+    let tools = this.preparedTools.get(id);
+    if (tools && owner && tools.owner && tools.owner !== owner) {
+      this.retireTools(tools);
+      this.preparedTools.delete(id);
+      tools = undefined;
     }
-    return env;
+    if (!tools) {
+      if (this.preparedTools.size >= 512)
+        throw new Error("Session tool preparation capacity reached.");
+      tools = { live: true, groups: new Map(), capabilities: new Set(), revokers: new Set() };
+      this.preparedTools.set(id, tools);
+      const current = tools;
+      tools.expiry = setTimeout(() => {
+        if (this.preparedTools.get(id) === current && !current.owner) {
+          this.preparedTools.delete(id);
+          this.retireTools(current);
+        }
+      }, 60_000);
+      tools.expiry.unref();
+    }
+    if (owner) {
+      tools.owner = owner;
+      clearTimeout(tools.expiry);
+    }
+    return tools;
+  }
+
+  private async prepareTool(
+    id: string,
+    tools: ToolPreparation,
+    group: SessionToolGroup,
+    startupCheck = () => {},
+  ): Promise<PreparedTool | undefined> {
+    const check = () => {
+      startupCheck();
+      if (this.closing || !tools.live)
+        throw new ProviderStartupCancelled("Provider startup cancelled");
+    };
+    const existing = tools.groups.get(group);
+    if (existing) {
+      const value = await existing;
+      check();
+      return value;
+    }
+    const work = (async (): Promise<PreparedTool | undefined> => {
+      const access =
+        group === "social"
+          ? this.socialAccess
+          : group === "conversation"
+            ? this.conversationAccess
+            : this.runtimeLogAccess;
+      if (!access) return undefined;
+      const sessionId = id.replace(/#\d+$/, "");
+      const prefix =
+        group === "runtime-logs" ? "BYCODA_RUNTIME_LOGS" : `BYCODA_${group.toUpperCase()}`;
+      try {
+        if (group === "social") {
+          const social = this.socialAccess!.service;
+          const remote = await social.remoteAccess?.(sessionId);
+          check();
+          if (remote)
+            return {
+              env: {
+                BYCODA_SOCIAL_ENDPOINT: remote.endpoint,
+                BYCODA_SOCIAL_TOKEN: remote.token,
+                BYCODA_SOCIAL_ENVIRONMENT: remote.environmentId,
+              },
+            };
+          if (await social.isDelegated?.()) return undefined;
+          check();
+        }
+        this.startGrantPruning();
+        const grant = await access.service.issueSessionGrant(sessionId);
+        const issued = [grant.token];
+        tools.revokers.add(() => {
+          for (const token of issued) access.service.revokeSessionGrant?.(token);
+        });
+        check();
+        const capability = await this.toolRelay.create({
+          group,
+          upstream: access.endpoint,
+          grant,
+          renew: async (scope) => {
+            if (this.closing || !tools.live) throw new Error("Session tool capability retired.");
+            const localSocial = async () => {
+              if (
+                group === "social" &&
+                ((await this.socialAccess!.service.isDelegated?.()) ||
+                  (await this.socialAccess!.service.remoteAccess?.(sessionId)))
+              )
+                throw new Error("Social execution authority moved; reconnect explicitly.");
+            };
+            await localSocial();
+            const fresh = await access.service.issueSessionGrant(sessionId, undefined, scope);
+            issued.push(fresh.token);
+            await localSocial();
+            if (this.closing || !tools.live) throw new Error("Session tool capability retired.");
+            return fresh;
+          },
+        });
+        if (!tools.live || this.closing) capability.dispose();
+        tools.capabilities.add(capability);
+        check();
+        return {
+          mcpUrl: `${capability.endpoint}/mcp/${group}`,
+          projectId: grant.scope.projectId,
+          env: {
+            [`${prefix}_ENDPOINT`]: capability.endpoint,
+            [`${prefix}_TOKEN`]: capability.token,
+            [`${prefix}_ENVIRONMENT`]: grant.scope.environmentId,
+          },
+        };
+      } catch (error) {
+        check();
+        // Helpers without an authoritative session must not inherit any access.
+        if (error instanceof ProviderStartupCancelled) throw error;
+        if (this.reportGrantWarning(sessionId, group))
+          console.warn(
+            `Session ${group} tool access was not granted to the provider for ${sessionId}:`,
+            error,
+          );
+        return undefined;
+      }
+    })();
+    tools.groups.set(group, work);
+    void work.then(
+      (tool) => {
+        if (!tool && tools.groups.get(group) === work) tools.groups.delete(group);
+      },
+      () => {
+        if (tools.groups.get(group) === work) tools.groups.delete(group);
+      },
+    );
+    return work;
   }
 
   private lines(
-    child: ChildProcessWithoutNullStreams,
+    child: ProviderChild,
     id: string,
+    constructionId: string,
     stream: "stdout" | "stderr",
     onOverflow: (reason: string) => void,
+    onLine?: (line: string) => void,
   ): void {
     const maxBytes = stream === "stdout" ? PROVIDER_STDOUT_LINE_BYTES : PROVIDER_STDERR_LINE_BYTES;
     const tokens = [
@@ -645,8 +1237,11 @@ export class HostChildBackend implements ChildBackend {
       maxBytes,
       (line) => {
         for (const token of tokens) line = line.replaceAll(token, "[session credential redacted]");
+        onLine?.(line);
+        this.idle.touch(child);
         this.emit(`harness-${stream}`, {
           sessionId: id,
+          constructionId,
           line,
         });
       },
@@ -660,7 +1255,7 @@ export class HostChildBackend implements ChildBackend {
     child[stream].on("end", () => lines.end());
   }
 
-  private signal(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
+  private signal(child: ProviderChild, signal: NodeJS.Signals): void {
     try {
       if (process.platform === "win32") child.kill(signal);
       else if (child.pid) process.kill(-child.pid, signal);
@@ -670,9 +1265,112 @@ export class HostChildBackend implements ChildBackend {
   }
 
   async kill(id: string): Promise<void> {
+    this.pendingStarts.delete(id);
+    this.starts.delete(id);
+    const prepared = this.preparedTools.get(id);
+    if (prepared) this.retireTools(prepared);
+    this.preparedTools.delete(id);
+    await this.killCurrent(id);
+  }
+
+  private requireChild(id: string, constructionId: unknown): ProviderChild {
+    if (!isHarnessConstructionId(constructionId))
+      throw new Error("Provider process identity is required.");
+    const construction = this.constructions.require(id, constructionId);
+    if (this.children.get(id) !== construction.child)
+      throw new Error("Provider process identity changed or is no longer running.");
+    return construction.child;
+  }
+
+  private requireRunWriters(): HostRunWriters {
+    if (!this.runWriters) throw new Error("Host run writer authority is unavailable.");
+    return this.runWriters;
+  }
+
+  private httpSourceHint(value: unknown): HostHttpSourceHint {
+    if (!value || typeof value !== "object")
+      throw new Error("Original HTTP source metadata is required.");
+    const source = value as Record<string, unknown>;
+    if (
+      typeof source.baseUrl !== "string" ||
+      typeof source.directory !== "string" ||
+      (source.providerSessionId !== undefined && typeof source.providerSessionId !== "string")
+    )
+      throw new Error("Invalid original HTTP source metadata.");
+    return Object.freeze({
+      baseUrl: source.baseUrl,
+      directory: source.directory,
+      providerSessionId: source.providerSessionId,
+    });
+  }
+
+  private serviceOrigin(output: string): string | undefined {
+    const value = output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => /^http:\/\/(?:127\.0\.0\.1|localhost):\d+\/?$/i.test(line));
+    return value ? new URL(value).origin : undefined;
+  }
+
+  private runProcessSource(
+    id: string,
+    constructionId: string,
+    child: ProviderChild,
+  ): HostRunProcessSource {
+    const cwd = this.processCwds.get(child);
+    if (!cwd) throw new Error("Original provider execution directory is unavailable.");
+    return Object.freeze({
+      sessionId: id,
+      constructionId,
+      cwd,
+      assertCurrent: () => {
+        if (this.requireChild(id, constructionId) !== child)
+          throw new Error("Original provider construction changed.");
+      },
+    });
+  }
+
+  private writeFrame(id: string, child: ProviderChild, line: string): Promise<void> {
+    if (child.stdin.destroyed) throw new Error("Provider process is not running");
+    this.idle.touch(child);
+    return this.processLifecycles.write(
+      child,
+      `${authorizeConversationAcpFrame(
+        authorizeRuntimeLogsAcpFrame(
+          authorizeSocialAcpFrame(line, this.socialEnvironments.get(id) ?? {}),
+          this.runtimeLogEnvironments.get(id) ?? {},
+        ),
+        this.conversationEnvironments.get(id) ?? {},
+      )}\n`,
+      new Error(
+        `Provider stdin write timed out (session ${id}, pid ${child.pid}, ${Buffer.byteLength(line)} bytes)`,
+      ),
+      () => this.retireChild(id, child),
+    );
+  }
+
+  private async killCurrent(id: string): Promise<void> {
     const child = this.children.get(id);
-    if (!child) return;
-    this.children.delete(id);
+    if (!child) {
+      this.releaseActiveTools(id);
+    } else await this.retireChild(id, child);
+    // Also drain the captured lifecycle after the close callback removes the child.
+    await this.processLifecycles.drainSession(id);
+  }
+
+  private retireChild(_id: string, child: ProviderChild): Promise<void> {
+    // Original callbacks may arrive after replacement. They can retire only
+    // their captured process, never a newer child or pending startup by ID.
+    // Keep the current child discoverable until its close callback, including
+    // when a bounded caller stops waiting for retirement.
+    return this.processLifecycles.retire(child, () => this.stopChild(child));
+  }
+
+  private async stopChild(child: ProviderChild): Promise<void> {
+    if (child instanceof NativeGuardianChild) {
+      await child.stop();
+      return;
+    }
     if (process.platform === "win32") {
       // Kill descendants while the leader still exists. Closing stdin first
       // can let the leader exit, making its remaining children untraceable.
@@ -688,35 +1386,56 @@ export class HostChildBackend implements ChildBackend {
         }
       }
       child.stdin.destroy();
-      if (child.exitCode !== null || child.signalCode !== null) return;
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, 1_000);
-        child.once("close", () => {
-          clearTimeout(timer);
-          resolve();
-        });
-      });
       return;
     }
     child.stdin.destroy();
-    this.signal(child, "SIGTERM");
-    await new Promise<void>((resolve) => {
+    if (child.exitCode === null && child.signalCode === null) {
+      this.signal(child, "SIGTERM");
       const timer = setTimeout(() => {
+        if (child.exitCode !== null || child.signalCode !== null) return;
         this.signal(child, "SIGKILL");
-        resolve();
         // The guard needs a full second to escalate against the provider's
         // separate process group before we may kill the guard itself.
       }, 3_000);
-      child.once("close", () => {
-        clearTimeout(timer);
-        resolve();
-      });
-    });
+      child.once("close", () => clearTimeout(timer));
+    }
+    // The lifecycle owner joins the actual close observed since construction.
+    // OS request completion, exitCode and escalation timers do not certify it.
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
     this.closing = true;
+    this.idle.stop();
+    clearInterval(this.grantPruning);
+    this.starts.clear();
+    this.pendingStarts.clear();
+    for (const tools of this.preparedTools.values()) this.retireTools(tools);
+    this.preparedTools.clear();
+    for (const id of this.activeTools.keys()) this.releaseActiveTools(id);
     for (const id of this.streams.keys()) this.stopStream(id);
-    await Promise.all([...this.children.keys()].map((id) => this.kill(id)));
+    const work = [
+      ...[...this.children.keys()].map(async (id) => this.kill(id)),
+      ...this.startWork,
+      this.toolRelay.close(),
+    ];
+    this.closePromise = Promise.allSettled(work).then(async (results) => {
+      const errors = results.flatMap((result) =>
+        result.status === "rejected" && !(result.reason instanceof ProviderStartupCancelled)
+          ? [result.reason]
+          : [],
+      );
+      try {
+        await this.processLifecycles.drainAll();
+      } catch (error) {
+        if (error instanceof AggregateError) errors.push(...error.errors);
+        else errors.push(error);
+      }
+      if (errors.length)
+        throw new AggregateError(errors, "Provider shutdown could not drain every operation.");
+    });
+    return this.closePromise;
   }
 }
+
+class ProviderStartupCancelled extends Error {}

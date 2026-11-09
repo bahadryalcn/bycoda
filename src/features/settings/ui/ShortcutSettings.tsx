@@ -1,4 +1,6 @@
-import { TextField } from "../../../shared/ui/TextField";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { SearchInput } from "../../../shared/ui/SearchInput";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
@@ -6,10 +8,13 @@ import styles from "./ShortcutSettings.module.css";
 import { t, useLocale } from "../../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
 
-import { RotateCcw, CircleHelp, ListFilter } from "../../../shared/ui/icons";
+import { RotateCcw, ListFilter, X } from "../../../shared/ui/icons";
+import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { IS_MAC } from "../../../platform/tauri/platform";
+import { DESKTOP_STOP_COMMAND } from "../model/desktopStopKeybinding";
+import { applyDesktopStopShortcut } from "../../host-tools/desktopStopShortcut";
 
 import {
   filterKeybindings,
@@ -22,15 +27,14 @@ import {
   saveKeybindingOverride,
   prepareKeybindingOverride,
   validateKeybindingShortcut,
-  saveQuickComposerEnabled,
-  saveQuickComposerShortcut,
   subscribeKeybindings,
   subscribeQuickComposerEnabled,
+  subscribeQuickComposerShortcut,
   type KeybindingOverride,
   type KeybindingRow,
 } from "../model/settings";
 
-import { setQuickComposerShortcut } from "../../quick-composer/model/quickComposer";
+import { persistQuickComposerShortcut } from "../model/quickComposerPersist";
 import {
   isGlobalShortcut,
   QUICK_COMPOSER_DEFAULT_SHORTCUT,
@@ -43,8 +47,13 @@ import { Group, Row, RevealedSetting, Select, SettingsFeedback } from "./setting
 import { ShortcutRecorder } from "../../../shared/ui/ShortcutRecorder";
 
 export type ShortcutModifier = "metaKey" | "ctrlKey" | "altKey" | "shiftKey";
-type ShortcutFeedback = { state: "loading" | "success" | "error"; message: string };
-type ShortcutFeedbackProps = { onFeedbackChange?: (feedback: ShortcutFeedback | null) => void };
+type ShortcutFeedback =
+  | { state: "loading" }
+  | { state: "success" }
+  | { state: "error"; message: string };
+type ShortcutFeedbackProps = {
+  onFeedbackChange?: (feedback: ShortcutFeedback | null) => void;
+};
 
 export function shortcutModifier(event: KeyboardEvent): ShortcutModifier | null {
   if (event.key === "Meta" || event.code.startsWith("Meta")) return "metaKey";
@@ -72,11 +81,15 @@ export function ShortcutEditor({
   onDisable: () => void | Promise<void>;
   onReset: () => void | Promise<void>;
 } & ShortcutFeedbackProps) {
-  const locale = useLocale();
+  useLocale();
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const pending = useRef(false);
+  // Focus alone (Tab, programmatic focus) never starts capture; only a pointer press
+  // or Enter/Space on the recorder is an intentional start.
+  const intent = useRef(false);
+  const focusing = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState("");
   const held = useRef({
@@ -85,19 +98,6 @@ export function ShortcutEditor({
     altKey: false,
     shiftKey: false,
   });
-  useEffect(() => {
-    onFeedbackChange?.(
-      error
-        ? { state: "error", message: error }
-        : busy || saved
-          ? {
-              state: busy ? "loading" : "success",
-              message: busy ? t("Saving…") : t("Saved"),
-            }
-          : null,
-    );
-  }, [onFeedbackChange, error, busy, saved, locale]);
-
   const run = async (action: () => void | Promise<void>) => {
     if (pending.current) return;
     pending.current = true;
@@ -105,11 +105,15 @@ export function ShortcutEditor({
     setBusy(true);
     setError(null);
     setSaved(false);
+    onFeedbackChange?.({ state: "loading" });
     try {
       await action();
       setSaved(true);
+      onFeedbackChange?.({ state: "success" });
     } catch (reason) {
-      setError(String(reason));
+      const message = t("Could not save shortcut: {p0}", { p0: String(reason) });
+      setError(message);
+      onFeedbackChange?.({ state: "error", message });
     } finally {
       setBusy(false);
       pending.current = false;
@@ -127,6 +131,7 @@ export function ShortcutEditor({
     setPreview("");
     setError(null);
     setSaved(false);
+    onFeedbackChange?.(null);
     setRecording(true);
   };
 
@@ -145,6 +150,7 @@ export function ShortcutEditor({
       if (event.code === "Escape") {
         setRecording(false);
         setError(null);
+        onFeedbackChange?.(null);
         return;
       }
       // Delete disables, but only on its own so Cmd+Delete still records.
@@ -188,58 +194,98 @@ export function ShortcutEditor({
       window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("keyup", onKeyUp, true);
     };
-  }, [onApply, onDisable, recording]);
+  }, [onApply, onDisable, onFeedbackChange, recording]);
 
   return (
-    <div className={styles.editor} aria-busy={busy}>
-      <div className="flex items-center gap-0.5">
-        <ShortcutRecorder
-          label={t("Change {p0} shortcut", { p0: name })}
-          hideLabel
-          hideActions
-          platform={IS_MAC ? "mac" : "other"}
-          disabled={busy || disabled}
-          recording={recording}
-          displayKeys={
-            !recording && !busy && display && display !== t("Unassigned")
-              ? (display.match(/[⌘⌃⌥⇧]|(?:Ctrl|Control|Alt|Shift|Win)\+|.+/g) ?? [display]).map(
-                  (key) => (key.length > 1 ? key.replace(/\+$/, "") : key),
-                )
-              : undefined
-          }
-          onRecordingChange={(next) => {
-            if (next) beginRecording();
-            else setRecording(false);
+    <div className={styles.editor} aria-busy={busy} data-capturing={recording || undefined}>
+      <div
+        className={styles.control}
+        title={recording ? t("Del disables · Esc cancels") : undefined}
+      >
+        <div
+          className={styles.recorder}
+          onPointerDownCapture={() => {
+            intent.current = true;
           }}
-          displayText={
-            busy
-              ? t("Saving…")
-              : recording
-                ? preview || t("Record shortcut")
-                : (display ?? t("Disabled"))
-          }
-        />
-        {resetVisible ? (
-          <Button
-            variant="ghost"
-            iconOnly
-            label={t("Reset {p0} shortcut", { p0: name })}
+          onKeyDownCapture={(event) => {
+            if (event.key === "Enter" || event.key === " ") intent.current = true;
+          }}
+          onFocusCapture={() => {
+            focusing.current = true;
+          }}
+          onFocus={() => {
+            focusing.current = false;
+            intent.current = false;
+          }}
+          onBlur={() => {
+            focusing.current = false;
+            intent.current = false;
+          }}
+        >
+          <ShortcutRecorder
+            label={t("Change {p0} shortcut", { p0: name })}
+            hideLabel
+            hideActions
+            platform={IS_MAC ? "mac" : "other"}
             disabled={busy || disabled}
-            onClick={() => void run(onReset)}
-          >
-            <RotateCcw className="size-3.5" />
-          </Button>
-        ) : null}
+            recording={recording}
+            displayKeys={
+              !recording && !busy && display && display !== t("Unassigned")
+                ? (display.match(/[⌘⌃⌥⇧]|(?:Ctrl|Control|Alt|Shift|Win)\+|.+/g) ?? [display]).map(
+                    (key) => (key.length > 1 ? key.replace(/\+$/, "") : key),
+                  )
+                : undefined
+            }
+            onRecordingChange={(next) => {
+              if (!next) {
+                setRecording(false);
+                return;
+              }
+              if (focusing.current && !intent.current) return;
+              beginRecording();
+            }}
+            displayText={
+              busy
+                ? t("Saving…")
+                : recording
+                  ? preview || t("Record shortcut")
+                  : (display ?? t("Disabled"))
+            }
+          />
+        </div>
+        <span className={styles.actionSlot}>
+          {recording ? (
+            <Button
+              variant="ghost"
+              iconOnly
+              label={t("Cancel")}
+              tooltip={t("Del disables · Esc cancels")}
+              onClick={() => {
+                setRecording(false);
+                setError(null);
+                onFeedbackChange?.(null);
+              }}
+            >
+              <X aria-hidden className="icon-sm" />
+            </Button>
+          ) : resetVisible ? (
+            <Button
+              variant="ghost"
+              iconOnly
+              label={t("Reset {p0} shortcut", { p0: name })}
+              tooltip={t("Restore default")}
+              disabled={busy || disabled}
+              onClick={() => void run(onReset)}
+            >
+              <RotateCcw aria-hidden strokeWidth={1.75} />
+            </Button>
+          ) : null}
+        </span>
       </div>
-      {recording ? (
-        <p className={styles.hint} aria-live="polite">
-          {t("Del disables · Esc cancels")}
-        </p>
-      ) : null}
       {onFeedbackChange ? null : error ? (
         <SettingsFeedback state="error">{error}</SettingsFeedback>
       ) : busy || saved ? (
-        <SettingsFeedback state={busy ? "loading" : "success"}>
+        <SettingsFeedback state={busy ? "loading" : "success"} immediate>
           {busy ? t("Saving…") : t("Saved")}
         </SettingsFeedback>
       ) : null}
@@ -252,9 +298,28 @@ export function QuickComposerShortcutEditor({
   onFeedbackChange,
 }: { onSaved?: () => void } & ShortcutFeedbackProps = {}) {
   useLocale();
-  const [shortcut, setShortcut] = useState(loadQuickComposerShortcut);
-  const [enabled, setEnabled] = useState(loadQuickComposerEnabled);
-  useEffect(() => subscribeQuickComposerEnabled(() => setEnabled(loadQuickComposerEnabled())), []);
+  const [shortcut, setShortcut] = useStoredPreferenceState(
+    loadQuickComposerShortcut,
+    subscribeQuickComposerShortcut,
+  );
+  const [enabled, setEnabled] = useStoredPreferenceState(
+    loadQuickComposerEnabled,
+    subscribeQuickComposerEnabled,
+  );
+  const persist = async (
+    nextEnabled: boolean,
+    nextShortcut: string,
+    writeShortcut = true,
+    writeEnabled = false,
+  ) => {
+    try {
+      await persistQuickComposerShortcut(nextEnabled, nextShortcut, writeShortcut, writeEnabled);
+    } finally {
+      setShortcut(loadQuickComposerShortcut());
+      setEnabled(loadQuickComposerEnabled());
+    }
+    onSaved?.();
+  };
   const apply = async (next: string) => {
     if (!isGlobalShortcut(next))
       throw new Error(t("Quick Composer needs ⌘ or Ctrl as a global hotkey"));
@@ -262,20 +327,12 @@ export function QuickComposerShortcutEditor({
     // holding a registered global hotkey that settings does not know about.
     validateKeybindingShortcut("App: Quick Composer", next);
     // Recording while the feature is off must not silently switch it back on.
-    if (loadQuickComposerEnabled()) await setQuickComposerShortcut(true, next);
-    saveQuickComposerShortcut(next);
-    setShortcut(next);
-    onSaved?.();
+    await persist(loadQuickComposerEnabled(), next);
   };
   const reset = async () => {
     // Reset restores the whole default state, including the enabled flag.
     validateKeybindingShortcut("App: Quick Composer", QUICK_COMPOSER_DEFAULT_SHORTCUT);
-    await setQuickComposerShortcut(true, QUICK_COMPOSER_DEFAULT_SHORTCUT);
-    saveQuickComposerEnabled(true);
-    saveQuickComposerShortcut(QUICK_COMPOSER_DEFAULT_SHORTCUT);
-    setShortcut(QUICK_COMPOSER_DEFAULT_SHORTCUT);
-    setEnabled(true);
-    onSaved?.();
+    await persist(true, QUICK_COMPOSER_DEFAULT_SHORTCUT, true, true);
   };
   return (
     <ShortcutEditor
@@ -285,10 +342,7 @@ export function QuickComposerShortcutEditor({
       resetVisible={enabled !== true || shortcut !== QUICK_COMPOSER_DEFAULT_SHORTCUT}
       onApply={apply}
       onDisable={async () => {
-        await setQuickComposerShortcut(false);
-        saveQuickComposerEnabled(false);
-        setEnabled(false);
-        onSaved?.();
+        await persist(false, loadQuickComposerShortcut(), false, true);
       }}
       onReset={reset}
     />
@@ -345,12 +399,19 @@ function KeybindingSettingsRow({
     <Row
       id={keybindingSettingId(row.command)}
       label={
-        <span title={t(row.command)} className={disabled ? styles.disabled : undefined}>
+        <span className={disabled ? styles.disabled : undefined}>
           {t(row.command).replace(/^[^:]+:\s*/, "")}
           {modified ? <span className={styles.modified}>{t("Modified")}</span> : null}
         </span>
       }
-      scope={row.when === "Always" ? undefined : t("When: {p0}", { p0: t(row.when) })}
+      scope={
+        row.when === "Always" ? undefined : (
+          <OverflowTooltip label={t("When: {p0}", { p0: t(row.when) })}>
+            <span className={styles.context}>{t("When: {p0}", { p0: t(row.when) })}</span>
+          </OverflowTooltip>
+        )
+      }
+      descriptionVisible={false}
       description={
         modified
           ? t("Default: {p0}", {
@@ -359,12 +420,37 @@ function KeybindingSettingsRow({
             })
           : undefined
       }
-      feedback={
-        feedback ? (
-          <SettingsFeedback state={feedback.state}>{feedback.message}</SettingsFeedback>
-        ) : null
-      }
     >
+      <span className={styles.feedbackSlot} role={feedback?.state === "error" ? "alert" : "status"}>
+        <span className="sr-only">
+          {feedback?.state === "error"
+            ? feedback.message
+            : feedback?.state === "loading"
+              ? t("Saving…")
+              : feedback
+                ? t("Saved")
+                : ""}
+        </span>
+        {feedback ? (
+          <InfoPopover
+            label={
+              feedback.state === "error"
+                ? feedback.message
+                : feedback.state === "loading"
+                  ? t("Saving…")
+                  : t("Saved")
+            }
+          >
+            <p>
+              {feedback.state === "error"
+                ? feedback.message
+                : feedback.state === "loading"
+                  ? t("Saving…")
+                  : t("Saved")}
+            </p>
+          </InfoPopover>
+        ) : null}
+      </span>
       {row.command === "App: Quick Composer" ? (
         <QuickComposerShortcutEditor onSaved={onSaved} onFeedbackChange={setFeedback} />
       ) : (
@@ -381,6 +467,18 @@ function KeybindingSettingsRow({
   );
 }
 
+/** Rows change with the overrides and with the Quick composer's own stored state. */
+function subscribeKeybindingRows(onChange: () => void) {
+  const stopBindings = subscribeKeybindings(onChange);
+  const stopEnabled = subscribeQuickComposerEnabled(onChange);
+  const stopShortcut = subscribeQuickComposerShortcut(onChange);
+  return () => {
+    stopBindings();
+    stopEnabled();
+    stopShortcut();
+  };
+}
+
 export function KeybindingsPage() {
   const locale = useLocale();
   const revealed = useContext(RevealedSetting);
@@ -388,11 +486,9 @@ export function KeybindingsPage() {
   const [category, setCategory] = useRetainedState("keybindings:category", "all");
   const [status, setStatus] = useRetainedState("keybindings:status", "all");
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const pendingSave = useRef(false);
   const filterAnchor = useRef<HTMLButtonElement>(null);
-  const helpAnchor = useRef<HTMLButtonElement>(null);
   const [lastRevealed, setLastRevealed] = useState(revealed);
   if (revealed !== lastRevealed) {
     setLastRevealed(revealed);
@@ -402,8 +498,10 @@ export function KeybindingsPage() {
       setStatus("all");
     }
   }
-  const [overrides, setOverrides] = useState(loadKeybindingOverrides);
-  useEffect(() => subscribeKeybindings(() => setOverrides(loadKeybindingOverrides())), []);
+  const [overrides, setOverrides] = useStoredPreferenceState(
+    loadKeybindingOverrides,
+    subscribeKeybindingRows,
+  );
   const allRows = useMemo(() => currentKeybindings(), [overrides, locale]);
   const categories = [...new Set(KEYBINDINGS.map((row) => row.command.split(":")[0]))];
   const isModified = (command: string) =>
@@ -434,11 +532,41 @@ export function KeybindingsPage() {
     try {
       const previous = loadKeybindingOverrides();
       const next = prepareKeybindingOverride(command, override);
-      if (IS_MAC) await invoke("keybindings_set_overrides", { overrides: next });
+      let nativeAttempted = false;
+      let desktopAttempted = false;
       try {
+        if (command === DESKTOP_STOP_COMMAND) {
+          desktopAttempted = true;
+          await applyDesktopStopShortcut(next);
+        }
+        if (IS_MAC) {
+          nativeAttempted = true;
+          await invoke("keybindings_set_overrides", { overrides: next });
+        }
         saveKeybindingOverride(command, override);
       } catch (error) {
-        if (IS_MAC) await invoke("keybindings_set_overrides", { overrides: previous });
+        const rollbackErrors: unknown[] = [];
+        if (desktopAttempted) {
+          try {
+            await applyDesktopStopShortcut(previous);
+          } catch (rollbackError) {
+            rollbackErrors.push(rollbackError);
+          }
+        }
+        if (nativeAttempted) {
+          try {
+            await invoke("keybindings_set_overrides", { overrides: previous });
+          } catch (rollbackError) {
+            rollbackErrors.push(rollbackError);
+          }
+        }
+        if (rollbackErrors.length)
+          throw new Error(
+            t("Shortcut save failed: {p0}. Restoring the native shortcut also failed: {p1}", {
+              p0: String(error),
+              p1: rollbackErrors.map(String).join("; "),
+            }),
+          );
         throw error;
       }
     } finally {
@@ -449,152 +577,155 @@ export function KeybindingsPage() {
 
   return (
     <div className={styles.page}>
-      <Group
-        title={t("Shortcuts")}
-        layout="full"
-        description={t("Click a shortcut to record new keys. Changes save automatically.")}
-      >
-        <div className={styles.toolbar}>
-          <TextField
+      <div className={styles.band}>
+        <div className={styles.search}>
+          <SearchInput
             type="search"
-            label={t("Filter keybindings")}
-            hideLabel
+            appearance="quiet"
+            aria-label={t("Filter keybindings")}
+            placeholder={t("Filter keybindings")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("Filter keybindings")}
             spellCheck={false}
             autoComplete="off"
           />
+        </div>
+        <Button
+          ref={filterAnchor}
+          variant="ghost"
+          iconOnly
+          label={t("Filters")}
+          tooltip={t("Filters")}
+          selected={filtered}
+          aria-expanded={filtersOpen}
+          aria-haspopup="dialog"
+          onClick={() => setFiltersOpen(!filtersOpen)}
+        >
+          <ListFilter aria-hidden strokeWidth={1.75} />
+        </Button>
+        <InfoPopover label={t("Shortcut help")}>
+          <p>
+            {t(
+              "Most shortcuts apply while this app is focused. Stop computer use and Quick composer use global shortcuts on this computer.",
+            )}
+          </p>
+          <p>
+            {t(
+              "Click a shortcut to record new keys. Conflicting shortcuts are rejected. Press Escape to cancel, Delete to disable, or use Reset to restore the default.",
+            )}
+          </p>
+        </InfoPopover>
+        {query.trim() || filtered ? (
           <span className={styles.summary} role="status">
-            {rows.length} / {allRows.length} {t("bindings")}
+            {t("Showing {p0} of {p1} bindings", { p0: rows.length, p1: allRows.length })}
           </span>
-          <Button
-            ref={filterAnchor}
-            variant="ghost"
-            iconOnly
-            label={t("Filters")}
-            selected={filtered}
-            aria-expanded={filtersOpen}
-            aria-haspopup="dialog"
-            onClick={() => setFiltersOpen(!filtersOpen)}
+        ) : null}
+        {filtersOpen ? (
+          <Popover
+            anchor={filterAnchor}
+            role="dialog"
+            aria-label={t("Filters")}
+            width={280}
+            autoFocus
+            flow="scroll"
+            onDismiss={() => setFiltersOpen(false)}
           >
-            <ListFilter className="size-4" />
+            <div className={styles.popover}>
+              <span className="text-ui-secondary font-medium text-content">{t("Category")}</span>
+              <Select
+                hideLabel
+                label={t("Category")}
+                value={category}
+                onChange={setCategory}
+                options={[
+                  { value: "all", label: t("All categories") },
+                  ...categories.map((value) => ({ value, label: t(value) })),
+                ]}
+              />
+              <span className="text-ui-secondary font-medium text-content">{t("Status")}</span>
+              <Select
+                hideLabel
+                label={t("Status")}
+                value={status}
+                onChange={setStatus}
+                options={[
+                  { value: "all", label: t("All bindings") },
+                  { value: "modified", label: t("Modified") },
+                  { value: "disabled", label: t("Disabled") },
+                  { value: "unassigned", label: t("Unassigned") },
+                ]}
+              />
+              <Button variant="ghost" onClick={resetFilters} disabled={!filtered}>
+                {t("Reset filters")}
+              </Button>
+            </div>
+          </Popover>
+        ) : null}
+      </div>
+      {filtered ? (
+        <div className={styles.activeFilters}>
+          <span>
+            {[
+              category !== "all" ? `${t("Category")}: ${t(category)}` : null,
+              status !== "all"
+                ? `${t("Status")}: ${t(status === "modified" ? "Modified" : status === "disabled" ? "Disabled" : "Unassigned")}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+          <Button variant="ghost" size="sm" onClick={resetFilters}>
+            {t("Reset filters")}
           </Button>
-          <Button
-            ref={helpAnchor}
-            variant="ghost"
-            iconOnly
-            label={t("Shortcut help")}
-            aria-expanded={helpOpen}
-            aria-haspopup="dialog"
-            onClick={() => setHelpOpen(!helpOpen)}
+        </div>
+      ) : null}
+      <div className={styles.list}>
+        {rows.length === 0 ? (
+          <SettingsFeedback
+            state="empty"
+            action={
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setQuery("");
+                  resetFilters();
+                }}
+              >
+                {t("Clear search and filters")}
+              </Button>
+            }
           >
-            <CircleHelp className="size-4" />
-          </Button>
-          {filtersOpen ? (
-            <Popover
-              anchor={filterAnchor}
-              role="dialog"
-              aria-label={t("Filters")}
-              width={280}
-              autoFocus
-              onDismiss={() => setFiltersOpen(false)}
-            >
-              <div className={styles.popover}>
-                <Select
-                  label={t("Category")}
-                  value={category}
-                  onChange={setCategory}
-                  options={[
-                    { value: "all", label: t("All categories") },
-                    ...categories.map((value) => ({ value, label: t(value) })),
-                  ]}
-                />
-                <Select
-                  label={t("Status")}
-                  value={status}
-                  onChange={setStatus}
-                  options={[
-                    { value: "all", label: t("All bindings") },
-                    { value: "modified", label: t("Modified") },
-                    { value: "disabled", label: t("Disabled") },
-                    { value: "unassigned", label: t("Unassigned") },
-                  ]}
-                />
-                <Button variant="ghost" onClick={resetFilters} disabled={!filtered}>
-                  {t("Reset filters")}
-                </Button>
-              </div>
-            </Popover>
-          ) : null}
-          {helpOpen ? (
-            <Popover
-              anchor={helpAnchor}
-              role="dialog"
-              aria-label={t("Shortcut help")}
-              width={320}
-              autoFocus
-              onDismiss={() => setHelpOpen(false)}
-            >
-              <div className={styles.popover}>
-                <p>
-                  {t(
-                    "App shortcuts apply while this app is focused. Quick composer uses a global shortcut on this computer.",
-                  )}
-                </p>
-                <p>
-                  {t(
-                    "Conflicting shortcuts are rejected. Press Escape to cancel, Delete to disable, or use Reset to restore the default.",
-                  )}
-                </p>
-              </div>
-            </Popover>
-          ) : null}
-        </div>
-        <div className={styles.list}>
-          {rows.length === 0 ? (
-            <SettingsFeedback
-              state="empty"
-              action={
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setQuery("");
-                    resetFilters();
-                  }}
-                >
-                  {t("Reset filters")}
-                </Button>
-              }
-            >
-              {t("No matching bindings")}
-            </SettingsFeedback>
-          ) : (
-            categories.map((group) => {
-              const entries = rows.filter((row) => row.command.startsWith(`${group}:`));
-              if (!entries.length) return null;
-              return (
-                <section key={group} aria-label={t(group)}>
-                  <h3 className={styles.category}>
-                    {t(group)} <span>{entries.length}</span>
-                  </h3>
-                  {entries.map((row) => (
-                    <KeybindingSettingsRow
-                      key={row.command}
-                      row={row}
-                      override={overrides[row.command]}
-                      modified={isModified(row.command)}
-                      saving={saving}
-                      onSave={save}
-                      onSaved={() => setOverrides({ ...loadKeybindingOverrides() })}
-                    />
-                  ))}
-                </section>
-              );
-            })
-          )}
-        </div>
-      </Group>
+            {t("No matching bindings")}
+          </SettingsFeedback>
+        ) : (
+          categories.map((group) => {
+            const entries = rows.filter((row) => row.command.startsWith(`${group}:`));
+            if (!entries.length) return null;
+            return (
+              <Group
+                key={group}
+                title={
+                  <span>
+                    {t(group)} <span className={styles.groupCount}>· {entries.length}</span>
+                  </span>
+                }
+              >
+                {entries.map((row) => (
+                  <KeybindingSettingsRow
+                    key={row.command}
+                    row={row}
+                    override={overrides[row.command]}
+                    modified={isModified(row.command)}
+                    saving={saving}
+                    onSave={save}
+                    onSaved={() => setOverrides({ ...loadKeybindingOverrides() })}
+                  />
+                ))}
+              </Group>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }

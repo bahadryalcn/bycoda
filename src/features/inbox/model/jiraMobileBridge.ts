@@ -3,14 +3,15 @@ import {
   jiraProjectIdsForFetch,
   listJiraProjects,
   loadAllowedJiraBoardIds,
-  loadHiddenJiraProjectIds,
+  requireHiddenJiraProjectIds,
 } from "./jira";
 import type { RemoteJiraOperation } from "./jiraBoardProtocol";
 
 function currentPreferences() {
   return {
     allowedBoardIds: [...new Set(loadAllowedJiraBoardIds())].sort((a, b) => a - b),
-    hidden: [...new Set(loadHiddenJiraProjectIds())].sort(),
+    // Fails closed: a remote read never widens an unreadable desktop scope.
+    hidden: [...new Set(requireHiddenJiraProjectIds())].sort(),
   };
 }
 async function currentFilters() {

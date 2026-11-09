@@ -12,6 +12,7 @@ import {
   subscribeDirsChanged,
   verifiedDirAt,
   windowEntries,
+  displayDirEntries,
 } from "./fileTree";
 
 const root = "/tmp/empty-project";
@@ -36,6 +37,26 @@ vi.mock("../../../platform/tauri/fs", async (importOriginal) => {
 });
 
 describe("fileTree cache", () => {
+  it("yields large listing preparation and reuses unchanged presentation", async () => {
+    vi.useRealTimers();
+    const entries = Array.from({ length: 4096 }, (_, i) => ({
+      ...entry(`f${i}`),
+      ignored: i % 7 === 0,
+    }));
+    listDir.mockResolvedValue(entries);
+    let timerRan = false;
+    const marker = setTimeout(() => {
+      timerRan = true;
+    }, 0);
+    const first = await listCachedDir(root);
+    expect(timerRan).toBe(true);
+    const shown = displayDirEntries(first, false);
+    expect(shown).toHaveLength(entries.filter((item) => !item.ignored).length);
+    listDir.mockResolvedValue(entries.map((item) => ({ ...item })));
+    expect(await refreshDir(root)).toBe(first);
+    expect(displayDirEntries(peekDir(root), false)).toBe(shown);
+    clearTimeout(marker);
+  });
   it("backs off unchanged polls and bypasses the delay for a real change notification", async () => {
     vi.useFakeTimers();
     listDir.mockResolvedValue([]);

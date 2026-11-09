@@ -3,7 +3,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   MAX_NOTIFICATION_HISTORY,
   NOTIFICATION_HISTORY_KEY,
+  historyOccurrenceIds,
   readNotificationHistory,
+  readNotificationHistoryStatus,
   writeNotificationHistory,
   appendNotificationHistory,
   clearNotificationHistory,
@@ -94,4 +96,45 @@ it("retains latest-storage fallback when Web Locks is denied before mutation", a
   expect(readNotificationHistory()).toEqual([entry]);
   await clearNotificationHistory();
   expect(readNotificationHistory()).toEqual([]);
+});
+
+it("distinguishes unreadable history from an empty one and keeps local entries when appending", () => {
+  expect(readNotificationHistoryStatus()).toEqual({ state: "ready", entries: [] });
+  localStorage.setItem(NOTIFICATION_HISTORY_KEY, "bad json");
+  expect(readNotificationHistoryStatus()).toEqual({ state: "unavailable", entries: [] });
+  localStorage.setItem(NOTIFICATION_HISTORY_KEY, JSON.stringify({ not: "a list" }));
+  expect(readNotificationHistoryStatus().state).toBe("unavailable");
+
+  const local = { ...entry, key: "kept:approval:1", occurredAt: entry.occurredAt - 1 };
+  const added = { ...entry, key: "new:approval:1" };
+  expect(appendNotificationHistory([added], [local])).toEqual([added, local]);
+  expect(readNotificationHistoryStatus()).toEqual({ state: "ready", entries: [added, local] });
+});
+
+it("keeps occurrence identities stable when newer arrivals prepend", () => {
+  const older = { ...entry, occurredAt: 1000 };
+  const reused = { ...entry, occurredAt: 2000 };
+  const before = historyOccurrenceIds([reused, older]);
+  const after = historyOccurrenceIds([
+    { ...entry, key: "x:question:9", occurredAt: 3000 },
+    reused,
+    older,
+  ]);
+  expect(before).toEqual(after.slice(1));
+  expect(new Set(before).size).toBe(2);
+  // Identical key and time are still distinct rows.
+  const twin = historyOccurrenceIds([older, older]);
+  expect(new Set(twin).size).toBe(2);
+});
+
+it("records the provider so a stored title can drop its prefix", async () => {
+  const { historyEntry } = await import("./notificationHistory");
+  const stored = historyEntry({
+    sessionId: "s",
+    requestId: 1,
+    label: "x",
+    kind: "approval",
+    session: { cwd: "/p", title: "Codex · Fix", harness: "codex" },
+  } as never);
+  expect(stored.harness).toBe("codex");
 });

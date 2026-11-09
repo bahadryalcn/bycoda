@@ -1,236 +1,175 @@
 "use client";
-import { forwardRef, useEffect, useId, useRef, useState } from "react";
-import type { TextareaHTMLAttributes } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { motionTokens } from "../lib/motion-tokens";
+import {
+  forwardRef,
+  useCallback,
+  useId,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+} from "react";
+import type { CSSProperties, TextareaHTMLAttributes, ReactNode } from "react";
+import { FieldMessage } from "../lib/field-message";
+import { fieldDescribedBy, fieldMessageIds } from "../lib/field-ids";
+import { FieldControl } from "../../Field";
 import styles from "./textarea.module.css";
 export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label: string;
   description?: string;
   error?: string;
   fieldClassName?: string;
+  /** `form` (default) is comfortable; `compact` is the toolbar/inline composition. */
+  fieldVariant?: "form" | "compact";
+  /** Keep `label` as the accessible name only (editor-like fields with their own visible context). */
   hideLabel?: boolean;
-}
-/* Digits roll up when a number grows and down when it shrinks; `custom` hands the latest direction to digits already leaving. */
-const digit = {
-  enter: (direction: number) => ({
-    opacity: 0,
-    y: `${direction * 0.6}em`,
-  }),
-  center: { opacity: 1, y: 0,},
-  exit: (direction: number) => ({
-    opacity: 0,
-    y: `${direction * -0.6}em`,
-  }),
-};
-const isNumber = (word: string) => /^\d[\d.,/:]*%?$/.test(word);
-
-/** A count in the copy, such as "12 characters", rolls only the digits that changed; a gained or lost digit opens or closes its width. */
-function RollingNumber({ word }: { word: string }) {
-  const reduced = useReducedMotion();
-  const [shown, setShown] = useState({ word, direction: 1 });
-  if (shown.word !== word)
-    setShown({
-      word,
-      direction:
-        parseFloat(word.replace(/,/g, "")) < parseFloat(shown.word.replace(/,/g, "")) ? -1 : 1,
-    });
-  const characters = word.split("");
-  const transition = reduced
-    ? { duration: 0 }
-    : {
-        y: motionTokens.spring.snappy,
-        width: motionTokens.spring.morph,
-        opacity: { duration: motionTokens.duration.fast },
-      };
-  return (
-    <AnimatePresence initial={false}>
-      {characters.map((character, index) => (
-        <motion.span
-          key={characters.length - index}
-          className={styles.column}
-          initial={{ width: 0, opacity: 0 }}
-          animate={{ width: "auto", opacity: 1 }}
-          exit={{ width: 0, opacity: 0 }}
-          transition={transition}
-        >
-          <AnimatePresence initial={false} mode="popLayout" custom={shown.direction}>
-            <motion.span
-              key={character}
-              custom={shown.direction}
-              variants={digit}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={transition}
-            >
-              {character}
-            </motion.span>
-          </AnimatePresence>
-        </motion.span>
-      ))}
-    </AnimatePresence>
-  );
+  endAdornment?: ReactNode;
+  startAdornment?: ReactNode;
+  /** `bare` draws no frame, for an editor that fills its own panel (pair with `fill`). */
+  appearance?: "default" | "quiet" | "bare";
+  /** Take the parent's height (a flex or grid item) and scroll inside instead of sizing to rows. */
+  fill?: boolean;
+  /** Box density: `md` (default) is the form box; `sm` is the tighter inline/editor box. */
+  fieldSize?: "sm" | "md";
+  /** Smallest height in text lines. Replaces the fixed minimum box height. */
+  minRows?: number;
+  /** Tallest height in text lines; the field scrolls beyond it. */
+  maxRows?: number;
+  /** Grow and shrink with the content between `minRows` and `maxRows`; the manual resize handle is removed. */
+  autosize?: boolean;
+  /** Code, paths, JSON and logs: the shared monospace face. */
+  monospace?: boolean;
 }
 
-/** Changed words rise in and fade while unchanged words hold still, and numbers roll. Assistive tech reads the plain copy. */
-function MotionText({ text }: { text: string }) {
-  const reduced = useReducedMotion();
-  const words = text.split(" ");
-  return (
-    <>
-      <span className={styles.srOnly}>{text}</span>
-      <span className={styles.words} aria-hidden="true">
-        <AnimatePresence initial={false} mode="popLayout">
-          {words.map((word, index) => (
-            <motion.span
-              key={`${index}:${isNumber(word) ? "#" : word}`}
-              className={styles.word}
-              initial={
-                reduced
-                  ? { opacity: 0 }
-                  : { opacity: 0, y: "0.35em",}
-              }
-              animate={{ opacity: 1, y: 0,}}
-              exit={
-                reduced
-                  ? { opacity: 0, transition: { duration: 0 } }
-                  : {
-                      opacity: 0,
-                      y: "-0.35em",
-                      transition: {
-                        duration: motionTokens.duration.fast,
-                        ease: [...motionTokens.ease.standard],
-                      },
-                    }
-              }
-              transition={
-                reduced
-                  ? { duration: motionTokens.duration.instant }
-                  : { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] }
-              }
-            >
-              {isNumber(word) ? <RollingNumber word={word} /> : word}
-              {index < words.length - 1 ? " " : null}
-            </motion.span>
-          ))}
-        </AnimatePresence>
-      </span>
-    </>
-  );
-}
-
-/** Helper and error copy: the row opens its height on a spring, then the words settle in. */
-function FieldMessage({
-  id,
-  text,
-  className,
-  alert,
-}: {
-  id?: string;
-  text?: string;
-  className?: string;
-  alert?: boolean;
-}) {
-  return (
-    <AnimatePresence initial={false}>
-      {text ? (
-        <MessageRow key="message" id={id} text={text} className={className} alert={alert} />
-      ) : null}
-    </AnimatePresence>
-  );
-}
-
-/** The row tracks the measured copy, so a longer message that wraps opens its next line instead of snapping. */
-function MessageRow({
-  id,
-  text,
-  className,
-  alert,
-}: {
-  id?: string;
-  text: string;
-  className?: string;
-  alert?: boolean;
-}) {
-  const reduced = useReducedMotion();
-  const copyRef = useRef<HTMLSpanElement>(null);
-  const [height, setHeight] = useState<number | "auto">("auto");
-  useEffect(() => {
-    const node = copyRef.current;
-    if (!node || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry) setHeight(entry.borderBoxSize?.[0]?.blockSize ?? node.offsetHeight);
-    });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-  return (
-    <motion.span
-      className={styles.messageSlot}
-      initial={reduced ? false : { height: 0, opacity: 0 }}
-      animate={{ height, opacity: 1 }}
-      exit={{
-        height: 0,
-        opacity: 0,
-        transition: reduced
-          ? { duration: 0 }
-          : {
-              height: motionTokens.spring.smooth,
-              opacity: { duration: motionTokens.duration.instant },
-            },
-      }}
-      transition={
-        reduced
-          ? { duration: 0 }
-          : {
-              height: motionTokens.spring.smooth,
-              opacity: { duration: motionTokens.duration.fast },
-            }
-      }
-    >
-      <motion.span
-        ref={copyRef}
-        id={id}
-        className={className}
-        role={alert ? "alert" : undefined}
-        initial={reduced ? false : { y: "0.35em",}}
-        animate={{ y: 0,}}
-        transition={{
-          duration: reduced ? 0 : motionTokens.duration.standard,
-          ease: [...motionTokens.ease.enter],
-        }}
-      >
-        <MotionText text={text} />
-      </motion.span>
-    </motion.span>
-  );
+/** Height that fits the content, capped by the computed `max-height` (set from `maxRows`). */
+export function fitTextareaHeight(field: HTMLTextAreaElement) {
+  if (!field.isConnected) return;
+  const style = window.getComputedStyle(field);
+  const border =
+    style.boxSizing === "border-box"
+      ? (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0)
+      : 0;
+  const cap = parseFloat(style.maxHeight);
+  // Hold the parent's occupied space while measuring, so a scrolling ancestor cannot clamp its
+  // scroll position during the momentary `height: auto`.
+  const parent = field.parentElement;
+  const parentMin = parent?.style.minHeight ?? "";
+  if (parent) parent.style.minHeight = `${parent.offsetHeight}px`;
+  try {
+    field.style.height = "auto";
+    // A hidden tab has no layout box; keep the natural height until it is shown.
+    if (field.scrollHeight === 0) {
+      field.style.height = "";
+      return;
+    }
+    const natural = field.scrollHeight + border;
+    const height = Number.isFinite(cap) ? Math.min(natural, cap) : natural;
+    field.style.height = `${height}px`;
+    field.style.overflowY = Number.isFinite(cap) && natural > cap ? "auto" : "hidden";
+  } finally {
+    if (parent) parent.style.minHeight = parentMin;
+  }
 }
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
-  { label, description, error, id, className, fieldClassName, hideLabel = false, ...props },
+  {
+    label,
+    description,
+    error,
+    id,
+    className,
+    fieldClassName,
+    fieldVariant = "form",
+    hideLabel = false,
+    endAdornment,
+    startAdornment,
+    appearance = "default",
+    fill = false,
+    fieldSize,
+    minRows,
+    maxRows,
+    autosize = false,
+    monospace = false,
+    rows,
+    style,
+    onInput,
+    ...props
+  },
   ref,
 ) {
   const generatedId = useId();
   const controlId = id ?? generatedId;
-  const hintId = description ? `${controlId}-description` : undefined;
-  const errorId = error ? `${controlId}-error` : undefined;
+  const { description: hintId, error: errorId } = fieldMessageIds(controlId, {
+    description,
+    error,
+  });
+  const field = useRef<HTMLTextAreaElement>(null);
+  useImperativeHandle(ref, () => field.current!, []);
+  const fit = useCallback(() => {
+    if (autosize && field.current) fitTextareaHeight(field.current);
+  }, [autosize]);
+  // Controlled values, row bounds and font changes all re-measure before paint.
+  useLayoutEffect(fit, [fit, props.value, minRows, maxRows, monospace, fieldSize]);
+  useLayoutEffect(() => {
+    const node = field.current;
+    if (!autosize || !node || typeof ResizeObserver === "undefined") return;
+    // Width changes rewrap the text; ignore the height-only changes the fit itself causes.
+    let width = node.clientWidth;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      if (node.clientWidth === width) return;
+      width = node.clientWidth;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => fitTextareaHeight(node));
+    });
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [autosize]);
+  const rowStyle: CSSProperties & Record<`--${string}`, string | number> = { ...style };
+  if (minRows) rowStyle["--textarea-min-rows"] = minRows;
+  if (maxRows) rowStyle["--textarea-max-rows"] = maxRows;
   return (
-    <div className={[styles.field, fieldClassName].filter(Boolean).join(" ")}>
+    <div
+      className={[styles.field, fieldClassName].filter(Boolean).join(" ")}
+      data-variant={fieldVariant}
+      data-fill={fill ? "" : undefined}
+    >
       {!hideLabel && <label htmlFor={controlId}>{label}</label>}
-      <textarea
-        {...props}
-        aria-label={props["aria-label"] ?? (hideLabel ? label : undefined)}
-        id={controlId}
-        ref={ref}
-        className={[styles.control, className].filter(Boolean).join(" ")}
-        aria-invalid={error ? true : props["aria-invalid"]}
-        aria-describedby={
-          [props["aria-describedby"], hintId, errorId].filter(Boolean).join(" ") || undefined
-        }
-      />
-      <FieldMessage id={hintId} text={description} className={styles.hint} />
+      <FieldControl
+        startAdornment={startAdornment}
+        endAdornment={endAdornment}
+        appearance={appearance}
+        size={fieldSize}
+      >
+        <textarea
+          {...props}
+          rows={rows ?? minRows}
+          style={rowStyle}
+          data-field-size={fieldSize}
+          data-min-rows={minRows ? "" : undefined}
+          data-max-rows={maxRows ? "" : undefined}
+          data-autosize={autosize ? "" : undefined}
+          data-monospace={monospace ? "" : undefined}
+          onInput={(event) => {
+            onInput?.(event);
+            // Uncontrolled fields have no value prop to re-measure on.
+            if (props.value === undefined) fit();
+          }}
+          aria-label={props["aria-label"] ?? (hideLabel ? label : undefined)}
+          id={controlId}
+          ref={field}
+          className={[styles.control, className].filter(Boolean).join(" ")}
+          aria-invalid={error ? true : props["aria-invalid"]}
+          aria-describedby={fieldDescribedBy(
+            controlId,
+            { description, error },
+            props["aria-describedby"],
+          )}
+        />
+      </FieldControl>
       <FieldMessage id={errorId} text={error} className={styles.error} alert />
+      <FieldMessage id={hintId} text={description} className={styles.hint} />
     </div>
   );
 });

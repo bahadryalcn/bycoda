@@ -15,6 +15,14 @@ const BASE: MermaidConfig = {
   suppressErrorRendering: true,
 };
 
+function sameConfig(a: MermaidConfig, b: MermaidConfig): boolean {
+  const left = Object.entries(a) as [string, unknown][];
+  return (
+    left.length === Object.keys(b).length &&
+    left.every(([key, value]) => Object.is(value, (b as Record<string, unknown>)[key]))
+  );
+}
+
 export function createLazyMermaidPlugin(options: { config?: MermaidConfig } = {}): DiagramPlugin {
   let config: MermaidConfig = { ...BASE, ...options.config };
   let initialized = false;
@@ -24,7 +32,11 @@ export function createLazyMermaidPlugin(options: { config?: MermaidConfig } = {}
 
   const instance: MermaidInstance = {
     initialize(next: MermaidConfig) {
-      config = { ...BASE, ...options.config, ...next };
+      const merged = { ...BASE, ...options.config, ...next };
+      // Callers pass their config on every diagram render; re-initializing
+      // mermaid for an unchanged config only wastes work (and resets its state).
+      if (sameConfig(config, merged)) return;
+      config = merged;
       // The real plugin initializes eagerly; deferring it to `render` keeps
       // mermaid off the boot path without changing what gets applied.
       initialized = false;

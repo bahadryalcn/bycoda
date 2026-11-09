@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { t } from "../../../shared/i18n";
+import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import {
   useRemoteLifecycle,
@@ -35,7 +37,7 @@ export function RemoteConnectionDetails({ environmentId }: { environmentId: stri
     return () => clearInterval(timer);
   }, [ticking]);
   return (
-    <div className="flex min-w-0 flex-col gap-2 text-xs">
+    <div className="flex min-w-0 flex-col gap-2 text-ui-caption">
       <p role="status" className="text-(--ui-text-muted)">
         {t(phases[lifecycle.phase])}
         {lifecycle.phase === "checking" && lifecycle.startedAt != null && now != null ? (
@@ -57,39 +59,40 @@ export function RemoteConnectionDetails({ environmentId }: { environmentId: stri
           </span>
         ) : null}
       </p>
-      <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1">
+      <DescriptionList size="sm">
         {(
           Object.entries(lifecycle.features) as [
             RemoteFeature,
             NonNullable<typeof lifecycle.features.host>,
           ][]
         ).map(([feature, health]) => (
-          <div key={feature} className="contents">
-            <dt>{t(features[feature])}</dt>
-            <dd className="text-end text-(--ui-text-muted)">
-              <span>
-                {t(
-                  health.status === "ready"
-                    ? "Up to date"
-                    : health.status === "stale"
-                      ? "Refresh pending"
-                      : "Unavailable",
-                )}
-              </span>
-              {health.verifiedAt != null ? (
-                <>
-                  <span> · </span>
-                  <Timestamp value={health.verifiedAt} />
-                </>
-              ) : null}
-            </dd>
-          </div>
+          <DescriptionItem key={feature} term={t(features[feature])}>
+            <span>
+              {t(
+                health.status === "ready"
+                  ? "Up to date"
+                  : health.status === "stale"
+                    ? "Refresh pending"
+                    : "Unavailable",
+              )}
+            </span>
+            {health.verifiedAt != null ? (
+              <>
+                <span> · </span>
+                <Timestamp value={health.verifiedAt} />
+              </>
+            ) : null}
+          </DescriptionItem>
         ))}
-      </dl>
-      <details>
-        <summary className="cursor-pointer py-1">
-          {t("Connection history")} ({lifecycle.activity.length})
-        </summary>
+      </DescriptionList>
+      <Disclosure
+        size="sm"
+        summary={
+          <>
+            {t("Connection history")} ({lifecycle.activity.length})
+          </>
+        }
+      >
         <ol className="max-h-48 overflow-y-auto">
           {[...lifecycle.activity].reverse().map((event, index) => (
             <li
@@ -106,7 +109,7 @@ export function RemoteConnectionDetails({ environmentId }: { environmentId: stri
             </li>
           ))}
         </ol>
-      </details>
+      </Disclosure>
     </div>
   );
 }

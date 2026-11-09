@@ -3,22 +3,20 @@ import { newTerminalFile } from "../../workspace/model/layout";
 import { confirmCloseTerminal, confirmCloseTerminals } from "./terminalClose";
 
 const getPtyStatus = vi.fn();
-const ask = vi.fn();
+const confirmInApp = vi.fn();
 
 vi.mock("../../../platform/tauri/pty", () => ({
   getPtyStatus: (...args: unknown[]) => getPtyStatus(...args),
 }));
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  ask: (...args: unknown[]) => ask(...args),
+vi.mock("../../../shared/model/appConfirm", () => ({
+  confirmInApp: (...args: unknown[]) => confirmInApp(...args),
 }));
-
-const dialogOptions = { title: "bycoda", kind: "warning" } as const;
 
 describe("confirmCloseTerminal", () => {
   afterEach(() => {
     getPtyStatus.mockReset();
-    ask.mockReset();
+    confirmInApp.mockReset();
   });
 
   it("allows close when only the shell is foreground", async () => {
@@ -26,18 +24,43 @@ describe("confirmCloseTerminal", () => {
     getPtyStatus.mockResolvedValue({ foreground: null });
     await expect(confirmCloseTerminal(file)).resolves.toBe(true);
     expect(getPtyStatus).toHaveBeenCalledWith(file.id);
-    expect(ask).not.toHaveBeenCalled();
+    expect(confirmInApp).not.toHaveBeenCalled();
   });
 
   it("prompts when a process is running", async () => {
     const file = newTerminalFile("/repo", "agent-terminal");
     getPtyStatus.mockResolvedValue({ foreground: "npm" });
-    ask.mockResolvedValue(false);
+    confirmInApp.mockResolvedValue(false);
     await expect(confirmCloseTerminal(file)).resolves.toBe(false);
-    expect(ask).toHaveBeenCalledWith(
-      '"npm" is still running in agent-terminal. Close this terminal anyway?',
-      dialogOptions,
-    );
+    expect(confirmInApp).toHaveBeenCalledWith({
+      title: "Close terminal?",
+      message: "“npm” is still running in agent-terminal. Closing the terminal stops it.",
+      confirmLabel: "Close terminal",
+      tone: "danger",
+    });
+  });
+
+  it("asks before closing an idle last terminal, since the panel closes with it", async () => {
+    const file = newTerminalFile("/repo", "work");
+    getPtyStatus.mockResolvedValue({ foreground: null });
+    confirmInApp.mockResolvedValue(false);
+    await expect(confirmCloseTerminal(file, { last: true })).resolves.toBe(false);
+    expect(confirmInApp).toHaveBeenCalledWith({
+      title: "Close terminal?",
+      message:
+        "work is the last terminal. Closing it also closes the terminal panel. To keep it, hide the panel instead.",
+      confirmLabel: "Close terminal",
+      tone: "normal",
+    });
+  });
+
+  it("uses the running-process prompt for a busy last terminal", async () => {
+    const file = newTerminalFile("/repo", "work");
+    getPtyStatus.mockResolvedValue({ foreground: "node" });
+    confirmInApp.mockResolvedValue(true);
+    await expect(confirmCloseTerminal(file, { last: true })).resolves.toBe(true);
+    expect(confirmInApp).toHaveBeenCalledOnce();
+    expect(confirmInApp).toHaveBeenCalledWith(expect.objectContaining({ tone: "danger" }));
   });
 
   it.each([false, true])(
@@ -46,11 +69,13 @@ describe("confirmCloseTerminal", () => {
       const file = newTerminalFile("/repo", "work");
       if (failed) getPtyStatus.mockRejectedValue(new Error("connection lost"));
       else getPtyStatus.mockResolvedValue({ foreground: null, supported: false });
-      ask.mockResolvedValue(false);
+      confirmInApp.mockResolvedValue(false);
       await expect(confirmCloseTerminal(file)).resolves.toBe(false);
-      expect(ask).toHaveBeenCalledWith(
-        expect.stringContaining("Closing may stop running work"),
-        dialogOptions,
+      expect(confirmInApp).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining("Closing the terminal may stop running work"),
+          tone: "danger",
+        }),
       );
     },
   );
@@ -59,7 +84,7 @@ describe("confirmCloseTerminal", () => {
 describe("confirmCloseTerminals", () => {
   afterEach(() => {
     getPtyStatus.mockReset();
-    ask.mockReset();
+    confirmInApp.mockReset();
   });
 
   it("summarizes multiple running terminals", async () => {
@@ -70,12 +95,15 @@ describe("confirmCloseTerminals", () => {
       if (id === second.id) return { foreground: "jest" };
       return { foreground: null };
     });
-    ask.mockResolvedValue(true);
+    confirmInApp.mockResolvedValue(true);
     await expect(confirmCloseTerminals([first, second])).resolves.toBe(true);
-    expect(ask).toHaveBeenCalledWith(
-      "These terminals are still running:\n• dev (vite)\n• test (jest)\n\nClose them anyway?",
-      dialogOptions,
-    );
+    expect(confirmInApp).toHaveBeenCalledWith({
+      title: "Close 2 terminals?",
+      message:
+        "These terminals are still running:\n• dev (vite)\n• test (jest)\n\nClosing them stops the work running in them.",
+      confirmLabel: "Close 2 terminals",
+      tone: "danger",
+    });
   });
 
   it("includes unknown status in a group while excluding confirmed idle shells", async () => {
@@ -88,11 +116,13 @@ describe("confirmCloseTerminals", () => {
       .mockResolvedValueOnce({ foreground: null, supported: false })
       .mockResolvedValueOnce({ foreground: null, supported: true })
       .mockResolvedValueOnce({ foreground: "cargo", supported: true });
-    ask.mockResolvedValue(false);
+    confirmInApp.mockResolvedValue(false);
     await expect(confirmCloseTerminals(files)).resolves.toBe(false);
-    expect(ask).toHaveBeenCalledWith(
-      "These terminals may still have running processes:\n• unknown (process status unknown)\n• build (cargo)\n\nClose them anyway?",
-      dialogOptions,
+    expect(confirmInApp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message:
+          "These terminals may still have running processes:\n• unknown (process status unknown)\n• build (cargo)\n\nClosing them stops the work running in them.",
+      }),
     );
   });
 });

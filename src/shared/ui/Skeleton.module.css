@@ -1,0 +1,33 @@
+/* Inline placeholder bar for use inside paragraphs. Same tone and finite pulse as the block
+   skeleton; the shape stays visible and still under reduced or off decorative motion. */
+@keyframes skeleton-inline-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.52;
+  }
+}
+.inline {
+  display: inline-block;
+  inline-size: var(--skeleton-inline-width, 6em);
+  max-inline-size: 100%;
+  block-size: 0.75em;
+  vertical-align: baseline;
+  border-radius: var(--radius-control);
+  background: var(--ui-surface-selected);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .inline {
+    animation: skeleton-inline-pulse 1.8s var(--ease-in-out) 0s 11 both;
+  }
+  :global(html[data-decorative-motion="off"]) .inline {
+    animation: none;
+  }
+}
+
+/* Waiting inside the shared loading delay: keep the box, show and announce nothing. */
+.held {
+  visibility: hidden;
+}

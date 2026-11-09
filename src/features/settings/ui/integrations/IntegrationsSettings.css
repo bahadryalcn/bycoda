@@ -1,0 +1,100 @@
+/* Account forms and device sign-in for Settings > Integrations. Collections, tabs and field
+   widths reuse InboxSettings.css and SettingsCollection.css. */
+.integration-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 12px;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+/* Selects fill their grid column like the text fields beside them. */
+.integration-fields > .bycoda-arc {
+  max-inline-size: none;
+}
+.integration-fields[data-layout="single"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.integration-fields[data-layout="server"] {
+  grid-template-columns:
+    minmax(min(100%, 12rem), 2fr) minmax(min(100%, 6rem), 1fr)
+    minmax(min(100%, 8rem), 1fr);
+}
+@container (inline-size < 32rem) {
+  .integration-fields[data-layout="server"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.integration-secret {
+  display: flex;
+  align-items: end;
+  gap: 4px;
+  min-inline-size: 0;
+}
+.integration-secret > :first-child {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.integration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+/* Save/cancel sit directly in the group frame; align them with the rows above. */
+.settings-group-content > .integration-actions {
+  padding: 10px 16px;
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+/* A stacked row lays its control out as a wrapping flex row: lists, code and actions each take a
+   full line instead of sitting beside one another. */
+.integrations-settings
+  .settings-row-control
+  > :is(.settings-collection, .integration-actions, .integration-code) {
+  flex-basis: 100%;
+}
+
+/* Nine providers do not fit one strip in a narrow window; wrap so the selected tab stays visible. */
+.integrations-settings .inbox-provider-tabs {
+  flex-wrap: wrap;
+  overflow-x: visible;
+}
+
+.integration-device {
+  display: grid;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.integration-device p {
+  margin: 0;
+}
+.integration-device-code {
+  font-family: var(--font-mono);
+  font-size: var(--ui-font-title);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--color-content);
+  user-select: all;
+}
+
+.integration-code {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface);
+  font-family: var(--font-mono);
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.integration-steps {
+  margin: 0;
+  list-style: decimal;
+  padding-inline-start: 1.25rem;
+  display: grid;
+  gap: 4px;
+}

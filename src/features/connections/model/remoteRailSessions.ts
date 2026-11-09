@@ -1,7 +1,10 @@
-import type { LiveAgent } from "../../sessions/model/liveAgents";
-import type { LiveSessionInfo } from "../../sessions/model/recentSessions";
-import { sessionDisplayTitle } from "../../sessions/model/session";
+import type { LiveAgent, LiveSessionInfo } from "../../sessions";
+import { sessionDisplayTitle } from "../../sessions/public/session";
+import { wakeSourceWait, type SessionWait } from "../../sessions/public/sessionWait";
+import { sameProjectPath } from "../../projects/public/recents";
 import type { HostSessionSummary } from "./protocol";
+import type { RemoteCreateIntent } from "./remoteCreateIntent";
+import { isUserConversation } from "../../../shared/model/host-contracts/delegation";
 
 /** A host session of a remote project on the rail, as its machine last listed it.
  * `fresh` is false while only the cached list is known, whose status is not trusted. */
@@ -11,13 +14,34 @@ export type RemoteRailSession = {
   fresh?: boolean;
 };
 
-/** Host sessions no open tab has loaded; a loaded one is already in the app's session state. */
+/** Each project's listed sessions, cached or fresh. Delegated advisors and subagents
+ * belong to their parent's activity panel, so no rail, list or recovery sees them. */
+export function railSessions(
+  lists: ReadonlyMap<string, { list: readonly HostSessionSummary[]; fresh: boolean }>,
+): RemoteRailSession[] {
+  return [...lists].flatMap(([project, { list, fresh }]) =>
+    list.filter(isUserConversation).map((session) => ({ project, session, fresh })),
+  );
+}
+
+/** Host sessions no open tab has loaded; a loaded one is already in the app's session state.
+ * While a tab creates its host session (`creating`), the host lists that session
+ * before the tab is bound to it: any session of that project the create did not
+ * know about is the tab's own and is not offered as unopened. */
 export function unopenedRemoteSessions(
   listed: readonly RemoteRailSession[],
   loadedHostIds: ReadonlySet<string>,
+  creating: readonly Pick<RemoteCreateIntent, "project" | "knownSessionIds">[] = [],
 ): RemoteRailSession[] {
   return listed.filter(
-    ({ session }) => !session.archived && !session.draft && !loadedHostIds.has(session.id),
+    ({ project, session }) =>
+      !session.archived &&
+      !session.draft &&
+      !loadedHostIds.has(session.id) &&
+      !creating.some(
+        (intent) =>
+          sameProjectPath(intent.project, project) && !intent.knownSessionIds.has(session.id),
+      ),
   );
 }
 
@@ -31,9 +55,29 @@ export function remoteLiveSessionInfos(listed: readonly RemoteRailSession[]): Li
     model: session.model ?? "",
     status:
       session.issue ??
-      (session.needsInput ? "input" : session.status === "running" ? "working" : undefined),
-    activityAt: session.updatedAt,
+      (session.needsInput
+        ? "input"
+        : session.status === "running"
+          ? "working"
+          : session.status === "interrupted"
+            ? "interrupted"
+            : undefined),
+    activityAt: session.lastActivityAt ?? session.updatedAt,
   }));
+}
+
+/**
+ * "Waiting" for a listed host session: its Host-run turn is held open by background
+ * work, delegated children still run, or an idle session has a pending wake source.
+ * Issues, interruptions and needs-input outrank it; a plain running turn is working.
+ */
+export function remoteSessionWait(
+  session: Pick<HostSessionSummary, "status" | "issue" | "needsInput" | "waiting" | "wakeSources">,
+  now = Date.now(),
+): SessionWait | null {
+  if (session.issue || session.needsInput || session.status === "interrupted") return null;
+  if (session.status === "running") return session.waiting ?? null;
+  return session.waiting ?? wakeSourceWait(session.wakeSources, now);
 }
 
 /** The rail's working card for host sessions that run without an open tab
@@ -41,19 +85,23 @@ export function remoteLiveSessionInfos(listed: readonly RemoteRailSession[]): Li
 export function remoteLiveAgents(
   listed: readonly RemoteRailSession[],
   unseenFinishedIds: ReadonlySet<string> = new Set(),
+  now = Date.now(),
 ): LiveAgent[] {
   return listed
+    .map((row) => ({ ...row, wait: remoteSessionWait(row.session, now) }))
     .filter(
-      ({ session }) =>
+      ({ session, wait }) =>
         session.issue === "failed" ||
         session.needsInput ||
         session.status === "running" ||
+        wait !== null ||
         unseenFinishedIds.has(session.id),
     )
-    .map(({ project, session }) => {
+    .map(({ project, session, wait }) => {
       const done =
         !session.needsInput &&
         session.status !== "running" &&
+        !wait &&
         (session.issue === "failed" || unseenFinishedIds.has(session.id));
       return {
         id: session.id,
@@ -72,6 +120,7 @@ export function remoteLiveAgents(
               : "Working",
         needsApproval: !!session.needsInput,
         done,
+        ...(wait ? { waiting: wait } : {}),
       };
     });
 }

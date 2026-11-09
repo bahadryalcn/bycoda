@@ -1,4 +1,8 @@
-import { type MutableRefObject, useCallback } from "react";
+import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
+import { compactionContextEvents } from "../../../integrations/harness/core/compactionContext";
+import { type MutableRefObject, useCallback, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { t } from "../../../shared/i18n";
 import {
   HARNESS_TITLE,
   sessionWorkCwd,
@@ -6,12 +10,16 @@ import {
 } from "../../../features/sessions/model/session";
 import { type setSessions } from "../../../features/sessions/model/sessionsStore";
 import {
+  COMPACTED_TEXT,
+  COMPACTING_TEXT,
+  COMPACTION_STATUS_KEY,
+} from "../../../features/sessions/model/compactionStatus";
+import {
   applyHarnessEvent,
   canCompactHarnessContext,
-  canRewindHarnessLastTurn,
   compactHarnessContext,
   forgetHarnessSession,
-  rewindHarnessLastTurn,
+  stopHarnessSession,
   type HarnessEvent,
 } from "../../../integrations/harness";
 import { type EditedResendCoordinator } from "../../../features/sessions/model/editLastTurn";
@@ -19,6 +27,7 @@ import { type orchestrator } from "../../../features/orchestration/model/orchest
 import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
 import { remoteSessionActions } from "../../../features/connections/model/remoteSessionActions";
 import { syncDockBadge } from "../../../features/notifications/model/dockBadge";
+import { operatorEnabledInThread } from "../../../features/sessions/model/operatorCommand";
 import {
   sessionProviderAccountId,
   supportsProviderAccounts,
@@ -28,10 +37,19 @@ import {
   canRewindConversation,
   rewindConversationBeforeMessage,
 } from "../../../features/sessions/model/conversationRewind";
-import { conversationRewindStrategy } from "../../../features/sessions/model/conversationRewindStrategy";
 import { shouldPersistSession, upsertSession } from "../../../features/sessions/data/sessionStore";
 import { flushSync } from "react-dom";
 import { notifyReviewChanged } from "../../../features/sessions/model/checkpoint";
+import {
+  applyWorkspaceRewind,
+  planWorkspaceRewind,
+} from "../../../features/workspaces/model/rewindClient";
+import {
+  clearWorkspaceRewindUndo,
+  requestWorkspaceRewindPreview,
+  registerWorkspaceRewindUndoHandler,
+  type WorkspaceRewindUndoIdentity,
+} from "../../../features/workspaces/ui/WorkspaceRewindPreview";
 export interface CompactAndRewindDeps {
   sessionsRef: MutableRefObject<Session[]>;
   setSessions: typeof setSessions;
@@ -46,6 +64,26 @@ export interface CompactAndRewindDeps {
   lastBoundProvider: MutableRefObject<Map<string, string>>;
   lastPersistedUserBlock: MutableRefObject<Map<string, string>>;
   persistSession: (session: Session | undefined) => void;
+}
+
+/** Why a rewind from this message is refused, in words for the person. */
+function rewindRefusalReason(session: Session | undefined, submissionError: string | null): string {
+  if (!session) return "This conversation is no longer open, so it cannot be rewound.";
+  if (submissionError) return submissionError;
+  if (session.busy) return "Stop the running turn before rewinding the conversation.";
+  if (session.pendingQuestion || session.blocks.some((b) => b.approval && !b.approval.decided))
+    return "Answer the open question or approval before rewinding the conversation.";
+  if ((session.queuedMessages?.length ?? 0) > 0 || session.editingQueuedMessageId)
+    return "Send or delete the queued messages before rewinding the conversation.";
+  if (session.historyLoading || session.historyPartial || session.worktreePreparing)
+    return "The conversation is still loading. Rewind it once it has loaded.";
+  if (session.worktreeRemoved)
+    return "This conversation's workspace was removed, so it cannot be rewound.";
+  if (session.continuingElsewhere || session.adoptedSyncConflict)
+    return "The bycoda Host owns this conversation right now. Wait for it to finish before rewinding.";
+  if (session.orchestrationLeadId || session.automationId)
+    return "This conversation belongs to an orchestration or automation and cannot be rewound.";
+  return "This message cannot be rewound from here.";
 }
 
 /** Manual context compaction and conversation rewind for a session. */
@@ -64,11 +102,24 @@ export function useCompactAndRewind({
   lastPersistedUserBlock,
   persistSession,
 }: CompactAndRewindDeps) {
+  const say = useCallback(
+    (sessionId: string, text: string) => {
+      enqueueHarnessEvent(sessionId, { type: "status", text });
+      flushHarnessEvents();
+    },
+    [enqueueHarnessEvent, flushHarnessEvents],
+  );
   const onCompactContext = useCallback(
     (sessionId: string) => {
       const current = sessionsRef.current.find((session) => session.id === sessionId);
-      if (current && remoteProjectFor(current.cwd))
-        return remoteSessionActions(sessionId)?.compact() ?? false;
+      if (current && (hostSessionBinding(current) || remoteProjectFor(current.cwd))) {
+        if (remoteSessionActions(sessionId)?.compact()) return true;
+        say(
+          sessionId,
+          "Compaction did not start. The bycoda Host conversation must be connected, idle and without pending changes. Try /compact again once it is.",
+        );
+        return false;
+      }
       if (current?.busy && !current.worktreeRemoved) {
         // Keep the typed command and say why, instead of ignoring it silently.
         const waiting = sessionsRef.current.map((session) =>
@@ -106,15 +157,25 @@ export function useCompactAndRewind({
         session.id === sessionId
           ? applyHarnessEvent(
               { ...session, busy: true },
-              { type: "status", text: "Compacting context…" },
+              {
+                type: "status",
+                key: COMPACTION_STATUS_KEY,
+                running: true,
+                text: COMPACTING_TEXT,
+              },
             )
           : session,
       );
       sessionsRef.current = started;
       syncDockBadge(started);
       setSessions(started);
+      const operatorAccess = operatorEnabledInThread(current.blocks);
+      const controlsAgents = operatorAccess || orchestrator.run(sessionId)?.status === "active";
 
       void (async () => {
+        const contextEvents = compactionContextEvents((event) =>
+          enqueueHarnessEvent(sessionId, event),
+        );
         try {
           await compactHarnessContext({
             harness: current.harness,
@@ -126,15 +187,20 @@ export function useCompactAndRewind({
               ? sessionProviderAccountId(current.harness, current)
               : undefined,
             runtimeMode: current.runtimeMode,
+            controlsAgents,
+            appAccess: operatorAccess,
             onEvent: (event) => {
               if (turnGen.current.get(sessionId) !== gen) return;
-              enqueueHarnessEvent(sessionId, event);
+              contextEvents.onEvent(event);
             },
           });
           if (turnGen.current.get(sessionId) !== gen) return;
+          contextEvents.complete();
           enqueueHarnessEvent(sessionId, {
             type: "status",
-            text: "Compacted context",
+            key: COMPACTION_STATUS_KEY,
+            running: false,
+            text: COMPACTED_TEXT,
           });
         } catch (error: unknown) {
           if (turnGen.current.get(sessionId) !== gen) return;
@@ -159,8 +225,75 @@ export function useCompactAndRewind({
       })();
       return true;
     },
-    [enqueueHarnessEvent, flushHarnessEvents],
+    [enqueueHarnessEvent, flushHarnessEvents, say],
   );
+
+  const reconcileManaged = useCallback((sessionId: string, next: Session) => {
+    turnGen.current.set(sessionId, (turnGen.current.get(sessionId) ?? 0) + 1);
+    lastBoundProvider.current.delete(sessionId);
+    lastPersistedUserBlock.current.delete(sessionId);
+    sessionsRef.current = sessionsRef.current.map((session) =>
+      session.id === sessionId ? next : session,
+    );
+    flushSync(() =>
+      setSessions((prev) => prev.map((session) => (session.id === sessionId ? next : session))),
+    );
+    notifyReviewChanged(sessionId);
+  }, []);
+  const undoManaged = useCallback(
+    async (sessionId: string, { workspaceId, operationId }: WorkspaceRewindUndoIdentity) => {
+      const current = sessionsRef.current.find((session) => session.id === sessionId);
+      if (
+        !current ||
+        current.workspaceId !== workspaceId ||
+        hostSessionBinding(current) ||
+        remoteProjectFor(current.cwd) ||
+        current.busy ||
+        windowTransferPendingRef.current ||
+        movingSessionIds.current.has(sessionId) ||
+        retiringTurns.current.has(sessionId)
+      )
+        throw new Error(t("Wait for this session to finish before undoing the rewind."));
+      const editToken = editedResends.start(sessionId);
+      if (!editToken)
+        throw new Error(t("Wait for this session to finish before undoing the rewind."));
+      const authorityGeneration = current.adoptedAuthorityGeneration;
+      try {
+        await stopHarnessSession(current.harness, sessionId);
+        const undoPlan = await planWorkspaceRewind(
+          current,
+          workspaceId,
+          { operationId },
+          { authorityGeneration },
+        );
+        const undoKey = crypto.randomUUID();
+        await requestWorkspaceRewindPreview(
+          undoPlan,
+          async () => {
+            const latest = sessionsRef.current.find((session) => session.id === sessionId);
+            if (
+              !latest ||
+              latest.blocks !== current.blocks ||
+              latest.busy ||
+              latest.adoptedAuthorityGeneration !== authorityGeneration
+            )
+              throw new Error(t("The conversation changed. Close this preview and try again."));
+            const undone = await applyWorkspaceRewind(latest, undoPlan, undoKey, {
+              authorityGeneration,
+            });
+            await forgetHarnessSession(current.harness, sessionId);
+            reconcileManaged(sessionId, undone.session);
+            clearWorkspaceRewindUndo(sessionId);
+          },
+          sessionId,
+        );
+      } finally {
+        editedResends.finish(sessionId, editToken);
+      }
+    },
+    [editedResends, reconcileManaged],
+  );
+  useEffect(() => registerWorkspaceRewindUndoHandler("*", undoManaged), [undoManaged]);
 
   const onRewindMessage = useCallback(
     async (sessionId: string, blockId: string): Promise<boolean> => {
@@ -169,45 +302,42 @@ export function useCompactAndRewind({
         movingSessionIds.current.has(sessionId) ||
         retiringTurns.current.has(sessionId) ||
         editedResends.isActive(sessionId)
-      )
+      ) {
+        enqueueHarnessEvent(sessionId, {
+          type: "status",
+          text: "Another change to this conversation is still finishing. Try again in a moment.",
+        });
+        flushHarnessEvents();
         return false;
+      }
       flushHarnessEvents();
       const snapshot = sessionsRef.current.find((session) => session.id === sessionId);
-      if (
-        !snapshot ||
-        !canRewindConversation(snapshot, blockId) ||
-        orchestrator.submissionError(sessionId)
-      )
+      const submissionError = snapshot ? orchestrator.submissionError(sessionId) : null;
+      if (!snapshot || !canRewindConversation(snapshot, blockId) || submissionError) {
+        say(sessionId, rewindRefusalReason(snapshot, submissionError));
         return false;
-      if (remoteProjectFor(snapshot.cwd)) {
-        return (await remoteSessionActions(sessionId)?.rewind(blockId)) ?? false;
       }
-      if (!editedResends.start(sessionId)) return false;
-      const strategy = conversationRewindStrategy(
-        snapshot,
-        blockId,
-        canRewindHarnessLastTurn(snapshot.harness),
-      );
-      let providerSessionId = snapshot.providerSessionId;
+      if (hostSessionBinding(snapshot) || remoteProjectFor(snapshot.cwd)) {
+        if (await remoteSessionActions(sessionId)?.rewind(blockId)) return true;
+        say(
+          sessionId,
+          "The bycoda Host did not rewind this conversation. Check the connection and that no turn is running, then try again.",
+        );
+        return false;
+      }
+      const editToken = editedResends.start(sessionId);
+      if (!editToken) {
+        say(
+          sessionId,
+          "Another change to this conversation is still finishing. Try again in a moment.",
+        );
+        return false;
+      }
       try {
-        if (strategy.preserveProviderBinding) {
-          await rewindHarnessLastTurn({
-            harness: snapshot.harness,
-            sessionId,
-            cwd: sessionWorkCwd(snapshot),
-            model: snapshot.model,
-            modelSettings: snapshot.modelSettings,
-            providerAccountId: snapshot.providerAccountId,
-            runtimeMode: snapshot.runtimeMode,
-            providerTurnId: strategy.providerTurnId,
-            onEvent: (event) => {
-              if (event.type === "session.providerBound")
-                providerSessionId = event.providerSessionId;
-            },
-          });
-        } else {
-          await forgetHarnessSession(snapshot.harness, sessionId);
-        }
+        // Edit from here has an exact message boundary. A provider turn may
+        // contain several user steers, and provider rewind can also touch files.
+        // Reopen retained context instead of invoking provider/Git restoration.
+        await forgetHarnessSession(snapshot.harness, sessionId);
         const latest = sessionsRef.current.find((session) => session.id === sessionId);
         if (
           !latest ||
@@ -219,14 +349,12 @@ export function useCompactAndRewind({
         ) {
           throw new Error("The conversation changed while returning to the message. Try again.");
         }
-        const rewound = rewindConversationBeforeMessage(
-          strategy.preserveProviderBinding ? { ...latest, providerSessionId } : latest,
-          strategy.blockId,
-          Date.now(),
-          strategy,
-        );
+        const rewound = rewindConversationBeforeMessage(latest, blockId);
         if (rewound === latest) return false;
         if (shouldPersistSession(rewound)) await upsertSession(rewound);
+        if (sessionsRef.current.find((session) => session.id === sessionId) !== latest) {
+          throw new Error("The conversation changed while returning to the message. Try again.");
+        }
         turnGen.current.set(sessionId, (turnGen.current.get(sessionId) ?? 0) + 1);
         lastBoundProvider.current.delete(sessionId);
         lastPersistedUserBlock.current.delete(sessionId);
@@ -239,6 +367,12 @@ export function useCompactAndRewind({
           ),
         );
         persistSession(rewound);
+        // Retire removed message history only after the replacement transcript
+        // is durable. A cleanup failure must not undo the successful chat edit.
+        await invoke("session_files_forget_from_message", {
+          sessionId,
+          userBlockId: blockId,
+        }).catch((error) => console.warn("File history retirement failed", error));
         notifyReviewChanged(sessionId);
         return true;
       } catch (error) {
@@ -263,10 +397,10 @@ export function useCompactAndRewind({
         }
         throw error;
       } finally {
-        editedResends.finish(sessionId);
+        editedResends.finish(sessionId, editToken);
       }
     },
-    [editedResends, flushHarnessEvents, persistSession],
+    [editedResends, enqueueHarnessEvent, flushHarnessEvents, persistSession, say],
   );
   return { onCompactContext, onRewindMessage };
 }

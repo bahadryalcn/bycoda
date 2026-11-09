@@ -1,0 +1,35 @@
+/* Settings as a dialog over the work context. The shared Modal owns the backdrop, inert
+   background, Escape and focus return; this only sizes its panel. Every page and sub-view
+   shares ONE geometry, the widest standard size (88rem x 60rem): the panel never resizes by
+   page, tab or content, and never exceeds the viewport. Maximize/restore is the only change.
+   The percentage margin re-centers a panel wider than the Modal's own wrapper. */
+.bycoda-settings-dialog {
+  --settings-dialog-width: min(88rem, calc(100vw - 24px));
+  --settings-dialog-height: min(60rem, calc(100dvh - 32px));
+  inline-size: var(--settings-dialog-width);
+  block-size: var(--settings-dialog-height);
+  max-inline-size: calc(100vw - 24px);
+  margin-inline: calc((100% - var(--settings-dialog-width)) / 2);
+}
+.bycoda-settings-dialog:has([data-settings-dialog-mode="maximized"]) {
+  --settings-dialog-width: calc(100vw - 24px);
+  --settings-dialog-height: calc(100dvh - 24px);
+}
+.bycoda-settings-dialog:has([data-settings-dialog-mode="peek"]) {
+  inline-size: min(380px, 100vw);
+  block-size: 100dvh;
+  max-inline-size: 100vw;
+  max-block-size: none;
+  margin: 0;
+}
+.bycoda-settings-dialog:has([data-settings-dialog-mode="peek"])
+  .appearance-settings
+  [role="tablist"] {
+  overflow-x: auto;
+}
+.bycoda-settings-dialog-body {
+  display: flex;
+  flex: 1 1 0;
+  min-block-size: 0;
+  min-inline-size: 0;
+}

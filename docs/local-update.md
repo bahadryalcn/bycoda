@@ -12,11 +12,51 @@ one source snapshot and builds Windows and the configured macOS SSH machine in
 parallel. It does not switch branches, commit, push, or publish a release. Local
 scratch files, documentation, and Python bytecode are excluded from build snapshots.
 
+## Worktree source and build provenance
+
+Run the coordinator from the owner-selected source worktree. Project identity and
+execution path differ: a change committed on a session branch is not automatically
+included in an integration checkout or its next package. Do not switch branches,
+merge, copy another workspace's dirty files, or start installation to resolve that
+difference. Builds and installation remain owner-directed.
+
+Before diagnosing a screenshot, compare the requested source/workspace against the
+build actually displayed and the responsive running Host. The managed-workspace
+build contract records repository, branch, HEAD, source fingerprint, dirty paths,
+component identities and included source/delivery references; see
+[Managed workspaces](reference/managed-workspaces.md). `build:status` is the planned
+comparison command owned by the development-environment stream; it is not available
+on the contracts baseline. Use it only when the integrated package provides it.
+Without a build stamp or comparison capability, report **source identity unknown**.
+Equal versions, an earlier completion time, or a successful package build do not
+prove that a particular commit is installed or running.
+
+Keep requested-source, packaged, installed, responsive Host and pending-install
+status separate in reports. `-Status` and the coordinator's recorded artifacts
+establish update stage completion; a scheduled update is not a completed install.
+Preserve separate Host/app idle gates, persistent caches, databases, credentials
+and rollback files. Never print raw authentication state for provenance checks.
+
 ## Prerequisites and machine configuration
 
 Python 3.12+, Node.js, the packageManager-pinned pnpm version, Rust, Tauri platform
 prerequisites, and the host tools must already be installed. The coordinator does
 not install additional system tools.
+
+Windows Host packaging also compiles its native service launcher with Rust; the
+ordinary `host:build` command remains JavaScript-only. To sign local Windows Host,
+application and installer binaries, configure `BYCODA_WINDOWS_SIGNING_CERT_SHA1`
+with an existing code-signing certificate and optionally
+`BYCODA_WINDOWS_SIGNING_STORE` (`CurrentUser` or `LocalMachine`). Windows SDK
+SignTool and private-key access are required only when signing is configured.
+Without that identity, local packages remain unsigned. The coordinator invalidates
+the relevant package caches when launcher source or signing identity changes.
+
+On Windows, if the global pnpm executable differs from the pinned version, the
+worker can select an already provisioned exact-version executable from pnpm's
+package-manager store. It validates package metadata and the executable, changes
+only the worker's PATH, then verifies the version again. It does not install or
+upgrade a global package manager; an unavailable exact version remains an error.
 
 Review `scripts/local-update/local-update.config.json` before use. The checked-in values are
 placeholder defaults, not discovered machines: `mac-builder` must resolve through
@@ -24,6 +64,13 @@ your SSH configuration, the remote Python path must exist, and Cargo target path
 must match your checkout. Put machine-specific values in the ignored
 `scripts/local-update/local-update.local.json`; its sections override the defaults
 key by key. No SSH credentials belong in either file.
+
+Release builds compile account endpoints in with `option_env!`; without them the app is
+guest-only. Put the public values in the local file's `buildEnv` object
+(`BYCODA_ACCOUNT_ENV`, `BYCODA_CLERK_ISSUER`, `BYCODA_CLERK_CLIENT_ID`,
+`BYCODA_ACCOUNT_API_URL`, optional `BYCODA_STAGING_*`). Both machines' builds receive them;
+other keys and values with whitespace are refused. After changing them, rebuild with
+`-ForceBuild` so an already installed build of the same source is replaced.
 
 Use `-Platforms windows` or `-Platforms mac` to select one machine. From a macOS
 checkout, use `sh scripts/update-local.sh` for a macOS-only update.
@@ -46,9 +93,26 @@ source. It cannot be combined with `-BuildOnly`.
 Use `-Components host` or `-Components app` to install only that component;
 both are selected by default. Host and app installation have independent idle gates.
 
+`-Components host` also limits the build to the Host: dependency preparation,
+Host compile checks and Host packaging, including the Rust service launcher on
+Windows. It does not build the web app or produce a desktop installer. Its immutable run directory has a `-host` suffix,
+and its manifest declares only the Host component. Host archives, checksums and
+manifest sidecars are retained in `~/.bycoda-build/packages/`. An app build still
+packages the Host because the desktop installer bundles it.
+
+`-InstallOnly` selects the last coordinator request and validates every requested
+component before scheduling anything. After a Host-only build, use
+`-Components host -InstallOnly`; requesting the app from that package is rejected.
+Building or scheduling only the Host leaves another pending app package/job intact.
+To select an older preserved package explicitly, use a single platform and
+`-InstallOnly -SnapshotRequest <runs/.../manifest.json> -Components app` (or `host`).
+The manifest selects the immutable package; no source transfer or build occurs.
+An app retry must select a manifest that contains the app. This does not resolve
+an unknown launch or an ambiguous installation state.
+
 When another session is editing the checkout, apply only completed files to a
 verified earlier snapshot with
-`-BaseSnapshot <coordinator-request.json> -SourcePaths host/device-host.ts,host/device-host.test.ts`.
+`-BaseSnapshot <coordinator-request.json> -SourcePaths host/devices/device-host.ts,host/devices/device-host.test.ts`.
 The archive checksum and fingerprint are checked before applying the selected
 repository paths. This option cannot be combined with `-SnapshotRequest`,
 `-InstallOnly`, or a version change.
@@ -57,16 +121,37 @@ repository paths. This option cannot be combined with `-SnapshotRequest`,
 
 - The persistent source directory is `~/.bycoda-build/source`. It uses real
   `node_modules`; new directories or junctions are not created for every run.
-- Existing dependencies are reused unless `package.json` changes. Missing
-  `node_modules` requires an initial install. A package change triggers
+- Existing dependencies are reused when install inputs are unchanged. A product
+  version-only change and JSON formatting do not invalidate them. Other
+  `package.json` fields, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.npmrc`,
+  `.pnpmfile.cjs`, files under `patches/`, and workspace manifests under
+  `apps/`/`packages/` are install inputs. Missing
+  `node_modules` requires an initial install. An install-input change triggers
   `pnpm install --frozen-lockfile --prefer-offline` in the managed build directory.
-  Lockfile-only changes, missing build artifacts, and `-ForceBuild` do not force
-  dependency installation.
+  Missing build artifacts and `-ForceBuild` do not force dependency installation.
+  Older cache markers refresh dependencies once because they did not track all
+  pnpm lock/workspace inputs.
 - `verifyDepsBeforeRun: false` prevents pnpm from automatically installing before
   `run`/`exec`; the coordinator owns installation decisions.
-- Web, host, and native inputs are tracked separately. Host-only changes do not
-  rebuild the web/native app. Successful stages are recorded immediately and can
-  be reused after a later-stage failure.
+- Web, Host compilation, Host packaging, and native inputs are tracked separately.
+  Host compile inputs come from every actual entrypoint in `host/build.mjs` through
+  esbuild's in-memory dependency metadata, plus non-test Host resources retained
+  conservatively for dynamic workers, copied guards and bundled skills. Shared
+  `src/` modules are tracked through that graph, rather than every UI file. Unknown
+  dynamic build configuration fails input discovery instead of accepting an
+  incomplete cache key. Discovery does not write or execute Host bundles.
+- Host compile reuse requires equal input/dependency fingerprints and matching
+  hashes for every declared compiled output. Package-adjacent version/build
+  identity is finalized in a separate Host package stage. A provenance-only change
+  can reuse proven equivalent executable bytes while producing a new package
+  stamped for the current frozen source. It never copies an old package's identity
+  onto changed or unverified code. Cache manifests record compile-input and output
+  hashes; immutable component manifests and payloads cannot be overwritten.
+- For a desktop build, Host-only changes can reuse web assets but still trigger
+  app packaging so the embedded Host matches. Web/native source identity remains
+  part of their build keys because the desktop embeds web and native metadata;
+  this change does not relabel an old desktop executable. Cargo can reuse unchanged
+  native compilation. Successful stages are recorded immediately for later retries.
 - Web assets are built once; Tauri's duplicate `beforeBuildCommand` is skipped.
 - Host Node archives use a persistent checksum-verified cache. The host stage also
   writes the distribution archive and its checksum, because release-identity
@@ -86,6 +171,36 @@ Build duration depends on the machine and inputs; no fixed completion time is gu
 Each machine has separate hidden host and app helpers. The host waits for running
 sessions in its database; the app waits for its `in_flight_sessions` records.
 A database read failure means wait/recovery, never zero active sessions.
+
+Windows helpers launch through the local current-user WMI broker so closing the
+desktop does not terminate its updater. The broker verifies the same user and
+interactive session, uses hidden processes, and creates no scheduled task or stored
+credential. A keyed launch receipt must be verified before installation starts.
+Status projects an unfinished helper whose known PID has exited as `interrupted`,
+retaining its recorded phase. An unknown launch without a verified PID requires
+inspection and is not automatically repeated.
+
+Status also reads independent Host/app idle gates afresh, in read-only mode, with
+an observation time. A helper's old count is shown as `reportedActiveSessions`;
+it is not current activity proof. An unreadable or absent database yields an
+`unknown` idle gate. This projection never rewrites job records or repairs a DB.
+
+An interrupted helper is not automatically relaunched by another build. Inspect
+status and explicitly retry the same immutable package with `-InstallOnly` and the
+appropriate `-Components`. A known exited helper interrupted before effects
+(`starting`/`waiting`) may resume; the new helper still waits for its own fresh
+idle gate. Unknown launch/effect states and interrupted Host mutation require
+inspection. For a Windows app interrupted during installation, a retry requires
+no relevant installer/helper process, a verified full rollback tree and unchanged
+current old installation, plus any required valid DB backup. Partial or ambiguous
+replacement is left for recovery. No active session is killed and no stale
+`in_flight_sessions` row is deleted to permit a retry.
+
+`-InstallOnly` can resume the same interrupted Windows package when the preserved
+rollback installation passes its saved full-tree hashes and the current installation
+still matches that complete old tree. Partial, changed or corrupt installations and
+unverified rollback/database backups require recovery; the coordinator never
+overwrites the preserved installation snapshot to force a retry.
 
 On Windows, stop the host through its lifecycle command, rather than leaving an
 orphaned Node process with `Stop-ScheduledTask`. Service scripts and launchers use
@@ -116,6 +231,10 @@ recovery from an exited host whose state file remains.
 If the registered Windows host PID has already exited, installation may proceed
 after idle database and stopped-service checks. If the PID still runs, a lifecycle
 failure blocks installation. A connection error is not evidence that the host is idle.
+The desktop's automatic bundled-Host installer admits a fresh, empty profile only.
+For an existing profile it cannot prove all activity owners or distinguish an
+intentional stop from a failure, so it defers automatic repair and upgrades. The
+owner-directed update coordinator retains its separate admission and recovery checks.
 
 Database backups have a 15-second limit and release their connections. The app
 closes after its active turn ends. Verify the macOS bundle signature/version,
@@ -157,6 +276,8 @@ Logs, stage timings, immutable payloads, and manifests live at
 `~/.bycoda-host/update-jobs/{host,app}.json`. `-Status` reads both machines.
 The macOS build log is `.bycoda-build/mac-<id>.log` under the coordinator's home.
 Helpers can continue after the command returns: **scheduled does not mean installed**.
+Reusing a completed host installation also checks the running host process and
+database health, rather than trusting only its package files and an old job record.
 
 ## Checks without building
 
@@ -168,8 +289,7 @@ python -B scripts/local-update/test_local_update.py
 These validate the scripts and plan without starting a build, installation, or SSH
 session. They do not establish actual build or end-to-end installation acceptance.
 
-Local updates and CI use `pnpm-lock.yaml`. `package-lock.json` is retained for the
-existing version script and legacy metadata; it does not drive installation.
+Local updates and CI use `pnpm-lock.yaml`; no npm lockfile is read or written.
 
 ## Installation identity and publishing
 
@@ -183,6 +303,13 @@ The host uses `~/.bycoda-host`, services `com.bycoda.host` / `bycoda-host.servic
 Windows task `Bycoda Host-<SID>`, port `3776`, and launcher `bycoda-host(.cmd)`.
 Existing installations and data are preserved; there is no automatic migration.
 Internal database names remain for compatibility.
+
+Windows updates retain both legacy `service.ps1` and native `service-launcher.json`
+configuration when present. If `running.json` is absent, the updater recovers the
+port from the native configuration or the legacy script. Corrupt or foreign native
+configuration requires recovery rather than falling back silently. Failed updates
+restore prior configuration presence and contents, then reinstall the previous
+runtime's service so its Node engine and native helper match that runtime.
 
 If session data was transferred before the first app install, the coordinator
 waits for the database to be idle and backs it up. It does not require rollback

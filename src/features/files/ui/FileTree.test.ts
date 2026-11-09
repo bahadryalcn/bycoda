@@ -21,6 +21,7 @@ import {
 } from "../../../shared/lib/drag";
 import { FileTree, NameRow } from "./FileTree";
 import { invoke } from "@tauri-apps/api/core";
+import { registerConfirmStub, unregisterConfirmStub } from "./FileTree.test-support";
 
 const { iconRender, directories, failures, pendingReads, clipboardFiles, copied, dragDrop } =
   vi.hoisted(() => ({
@@ -36,6 +37,7 @@ const { iconRender, directories, failures, pendingReads, clipboardFiles, copied,
   }));
 
 vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => false,
   invoke: vi.fn(async (command: string, args: Record<string, string>) => {
     if (command === "list_dir") {
       const failure = failures.get(args.path);
@@ -162,6 +164,7 @@ function row(name: string): HTMLButtonElement {
 }
 
 beforeEach(async () => {
+  registerConfirmStub();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   cwd = `/project-${++project}`;
   props = { cwd, onOpenFile: vi.fn() };
@@ -174,6 +177,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  unregisterConfirmStub();
   act(() => root.unmount());
   container.remove();
   localStorage.removeItem("bycoda.showExcludedFiles");
@@ -246,6 +250,90 @@ describe("NameRow filesystem collision ownership", () => {
   });
 });
 
+describe("NameRow IME composition", () => {
+  const mount = async () => {
+    const onCommit = vi.fn().mockResolvedValue(undefined);
+    const onCancel = vi.fn();
+    const outside = vi.fn();
+    document.addEventListener("keydown", outside);
+    await act(async () =>
+      root.render(
+        createElement(NameRow, { depth: 0, isDir: false, siblings: [], onCommit, onCancel }),
+      ),
+    );
+    const input = container.querySelector<HTMLInputElement>("input")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "notes.md",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    return {
+      input,
+      onCommit,
+      onCancel,
+      outside,
+      finish: () => document.removeEventListener("keydown", outside),
+    };
+  };
+  const key = (input: HTMLInputElement, init: KeyboardEventInit & { keyCode?: number }) =>
+    act(async () => {
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }),
+      );
+    });
+
+  it("ignores Enter and Escape while the IME owns them and keeps the edit open", async () => {
+    const { input, onCommit, onCancel, outside, finish } = await mount();
+    await act(async () =>
+      input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+    );
+    await key(input, { key: "Enter", isComposing: true, keyCode: 229 });
+    await key(input, { key: "Escape", isComposing: true, keyCode: 229 });
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(container.contains(input)).toBe(true);
+    expect(input.value).toBe("notes.md");
+    // The keys are not preventDefault-ed (the IME needs them) and stay inside the field.
+    expect(outside).not.toHaveBeenCalled();
+    finish();
+  });
+
+  it("treats the WebKit confirming keydown (keyCode 229 after compositionend) as IME input", async () => {
+    const { input, onCommit, onCancel, finish } = await mount();
+    await act(async () =>
+      input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+    );
+    await act(async () =>
+      input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "x" })),
+    );
+    await key(input, { key: "Enter", isComposing: false, keyCode: 229 });
+    await key(input, { key: "Escape", isComposing: false, keyCode: 229 });
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+    finish();
+  });
+
+  it("commits once on Enter after composition ended and cancels on a plain Escape", async () => {
+    const first = await mount();
+    await act(async () =>
+      first.input.dispatchEvent(
+        new CompositionEvent("compositionend", { bubbles: true, data: "x" }),
+      ),
+    );
+    await key(first.input, { key: "Enter", isComposing: false, keyCode: 13 });
+    expect(first.onCommit).toHaveBeenCalledExactlyOnceWith("notes.md");
+    first.finish();
+    await act(async () => root.render(null));
+    const second = await mount();
+    await key(second.input, { key: "Escape", isComposing: false, keyCode: 27 });
+    expect(second.onCancel).toHaveBeenCalledTimes(1);
+    expect(second.onCommit).not.toHaveBeenCalled();
+    second.finish();
+  });
+});
+
 describe("FileTree render isolation", () => {
   it.each(["New File", "New Folder", "Rename"])(
     "commits %s once and retries only the failed listing",
@@ -295,16 +383,52 @@ describe("FileTree render isolation", () => {
       expect(vi.mocked(invoke).mock.calls.filter(([name]) => name === command)).toHaveLength(1);
     },
   );
-  it("exposes a file manager action for the project folder in the toolbar", async () => {
+  it("exposes a file manager action for the project folder in the header menu", async () => {
     await act(async () => render());
-    const reveal = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-      /Finder|File Explorer|File Manager|Containing Folder/i.test(
-        button.getAttribute("aria-label") ?? "",
-      ),
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Explorer actions"]')!.click(),
+    );
+    const reveal = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+      (button) =>
+        /Finder|File Explorer|File Manager|Containing Folder/i.test(button.textContent ?? ""),
     )!;
     expect(reveal).toBeTruthy();
     await act(async () => reveal.click());
     expect(invoke).toHaveBeenCalledWith("reveal_path", { path: cwd });
+  });
+
+  it("shows tree-local progress while an operation is pending and ignores repeated requests", async () => {
+    await act(async () => render());
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Explorer actions"]')!.click(),
+    );
+    const reveal = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+      (button) =>
+        /Finder|File Explorer|File Manager|Containing Folder/i.test(button.textContent ?? ""),
+    )!;
+    let finish!: () => void;
+    vi.mocked(invoke).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    act(() => {
+      reveal.click();
+      reveal.click();
+    });
+    expect(vi.mocked(invoke).mock.calls.filter(([name]) => name === "reveal_path")).toHaveLength(1);
+    expect(
+      [...container.querySelectorAll('[role="status"]')].some((status) =>
+        status.textContent?.includes("Working…"),
+      ),
+    ).toBe(true);
+    await act(async () => finish());
+    expect(
+      [...container.querySelectorAll('[role="status"]')].some((status) =>
+        status.textContent?.includes("Working…"),
+      ),
+    ).toBe(false);
   });
 
   it("shows an initial read failure separately from an empty directory and retries the root", async () => {
@@ -347,7 +471,7 @@ describe("FileTree render isolation", () => {
     props = { ...props, cwd };
     await act(async () => render());
     await act(async () => {
-      const rootRow = container.querySelector<HTMLButtonElement>(`button[title="${nextRoot}"]`)!;
+      const rootRow = container.querySelector<HTMLButtonElement>("button[data-explorer-root]")!;
       if (rootRow.getAttribute("aria-expanded") !== "true") rootRow.click();
     });
     expect(container.querySelector('[data-remote-data-state="ready"]')).not.toBeNull();
@@ -449,9 +573,9 @@ describe("FileTree render isolation", () => {
 
     await act(async () => render());
 
-    const rootButton = container.querySelector<HTMLButtonElement>(`button[title="${cwd}"]`)!;
+    const rootButton = container.querySelector<HTMLButtonElement>("button[data-explorer-root]")!;
     expect(rootButton.textContent).toContain("mc/update-readme-tests");
-    expect(rootButton.lastElementChild?.className).toContain("uppercase");
+    expect(rootButton.lastElementChild?.className).not.toContain("uppercase");
     expect(container.querySelector('[role="tree"]')?.getAttribute("aria-label")).toBe(
       "mc/update-readme-tests files",
     );
@@ -479,7 +603,7 @@ describe("FileTree render isolation", () => {
       },
     };
     act(() => render(1));
-    expect(row("first.ts").querySelector(".text-warning")).not.toBeNull();
+    expect(row("first.ts").querySelector('[class*="ui-tone-warning-fg"]')).not.toBeNull();
     act(() => row("first.ts").click());
     expect(onOpenFile).toHaveBeenCalledWith(`${cwd}/first.ts`, undefined, {
       exact: true,
@@ -526,6 +650,43 @@ describe("FileTree render isolation", () => {
 });
 
 describe("FileTree excluded files", () => {
+  it("explains retained hidden selection and includes its exact scope in delete confirmation", async () => {
+    directories.set(cwd, [file("first.ts"), file("debug.log", true)]);
+    await refreshDir(cwd);
+    saveShowExcludedFiles(true);
+    await act(async () => render());
+    await act(async () => row("debug.log").click());
+    await act(async () =>
+      row("first.ts").dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true })),
+    );
+    act(() => saveShowExcludedFiles(false));
+    expect(row("debug.log")).toBeNull();
+    const scope = container.querySelector("[data-explorer-selection-scope]");
+    expect(scope?.textContent).toContain("Selected: 2");
+    expect(scope?.textContent).toContain("Selection includes hidden items: 1");
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    await press(row("first.ts"), { key: "Delete" });
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining(`${cwd}/debug.log`));
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === "delete_path"),
+    ).toHaveLength(0);
+  });
+
+  it("distinguishes an excluded-only folder from an empty listing", async () => {
+    directories.set(cwd, [file("debug.log", true)]);
+    await refreshDir(cwd);
+    await act(async () => render());
+    expect(container.querySelector("[data-explorer-empty]")?.textContent).toContain(
+      "Only excluded files in this folder",
+    );
+    const show = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Show excluded files",
+    )!;
+    await act(async () => show.click());
+    expect(row("debug.log")).not.toBeNull();
+  });
+
   it("hides ignored entries by default and follows the setting", async () => {
     directories.set(cwd, [
       folder("dist", true),
@@ -615,8 +776,13 @@ describe("FileTree accepts files from outside the tree", () => {
         payload: { type: "over", position: { x: 10, y: 10 } },
       });
     });
-    expect(target.getAttribute("data-tree-drop-target")).toBe("true");
+    // The shared drop mark and cursor badge replace the row's own external-drop highlight.
+    expect(target.getAttribute("data-drop-indicator")).toBe("inside");
+    expect(target.getAttribute("data-tree-drop-target")).toBeNull();
+    expect(document.querySelector(".pointer-drop-hint")?.textContent).toBe("Copy files into docs");
     await nativeDrop(["/Users/me/Desktop/a.txt"]);
+    expect(document.querySelector(".pointer-drop-hint")).toBeNull();
+    expect(target.getAttribute("data-drop-indicator")).toBeNull();
     expect(copied).toEqual([{ from: "/Users/me/Desktop/a.txt", destParent: `${cwd}/docs` }]);
     expect(target.className).not.toContain("bg-selection");
   });
@@ -639,6 +805,33 @@ describe("FileTree copies paths", () => {
   it("copies the selected path on Mod+Shift+C", async () => {
     await press(row("first.ts"), { key: "C", metaKey: true, shiftKey: true });
     expect(await navigator.clipboard.readText()).toBe(`${cwd}/first.ts`);
+  });
+
+  it("reports a rejected clipboard and false fallback, cleans the temporary field and retries exact text", async () => {
+    const write = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockRejectedValueOnce(new Error("clipboard denied"));
+    const previous = Object.getOwnPropertyDescriptor(document, "execCommand");
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: vi.fn(() => false),
+    });
+    try {
+      await press(row("first.ts"), { key: "C", metaKey: true, shiftKey: true });
+      expect(container.textContent).toContain("Could not copy. Try again.");
+      expect(container.textContent).not.toContain("Copied");
+      expect(document.querySelector("textarea")).toBeNull();
+      const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent === "Retry",
+      )!;
+      await act(async () => retry.click());
+      expect(await navigator.clipboard.readText()).toBe(`${cwd}/first.ts`);
+      expect(container.textContent).toContain("Copied");
+    } finally {
+      write.mockRestore();
+      if (previous) Object.defineProperty(document, "execCommand", previous);
+      else Reflect.deleteProperty(document, "execCommand");
+    }
   });
 
   it("copies the project root path from the root row", async () => {
@@ -1005,9 +1198,18 @@ describe("FileTree multiple selection", () => {
     );
     failures.set(cwd, "refresh failed");
     await press(row("b.ts"), { key: "Delete" });
-    expect(props.onFileDeleted).toHaveBeenCalledExactlyOnceWith(`${cwd}/a.ts`);
-    expect(selected()).toEqual(["b.ts"]);
+    expect(props.onFileDeleted).toHaveBeenCalledTimes(2);
+    expect(selected()).toEqual([]);
     expect(container.textContent).toContain("refresh failed");
+    expect(container.textContent).toContain("File change saved. Refresh failed.");
+    failures.delete(cwd);
+    const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Retry",
+    )!;
+    await act(async () => retry.click());
+    expect(props.onFileDeleted).toHaveBeenCalledTimes(2);
+    expect(row("a.ts")).toBeNull();
+    expect(row("b.ts")).toBeNull();
   });
   it("retries only remaining cut files after a partial move failure", async () => {
     await click("a.ts");
@@ -1017,6 +1219,35 @@ describe("FileTree multiple selection", () => {
     failures.set(`${cwd}/b.ts`, "move failed");
     await click("dest");
     await press(row("dest"), { key: "v", ctrlKey: true });
+    expect(props.onFileMoved).toHaveBeenCalledTimes(1);
+    failures.delete(`${cwd}/b.ts`);
+    await press(row("dest"), { key: "v", ctrlKey: true });
+    expect(props.onFileMoved).toHaveBeenCalledTimes(2);
+    const moves = vi.mocked(invoke).mock.calls.filter(([command]) => command === "move_path");
+    expect(moves.map(([, args]) => (args as { from: string }).from)).toEqual([
+      `${cwd}/a.ts`,
+      `${cwd}/b.ts`,
+      `${cwd}/b.ts`,
+    ]);
+  });
+
+  it("retries listing only after a completed cut move, then moves only the remaining entry", async () => {
+    await click("a.ts");
+    await click("b.ts", { ctrlKey: true });
+    await press(row("b.ts"), { key: "x", ctrlKey: true });
+    failures.set(cwd, "listing failed");
+    failures.set(`${cwd}/b.ts`, "move failed");
+    await click("dest");
+    await press(row("dest"), { key: "v", ctrlKey: true });
+    expect(props.onFileMoved).toHaveBeenCalledExactlyOnceWith(`${cwd}/a.ts`, `${cwd}/dest/a.ts`);
+    expect(container.textContent).toContain("File change saved. Refresh failed.");
+    failures.delete(cwd);
+    const retry =
+      container.querySelector<HTMLButtonElement>('[role="alert"]:last-of-type button') ??
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent === "Retry",
+      )!;
+    await act(async () => retry.click());
     expect(props.onFileMoved).toHaveBeenCalledTimes(1);
     failures.delete(`${cwd}/b.ts`);
     await press(row("dest"), { key: "v", ctrlKey: true });
@@ -1134,5 +1365,133 @@ describe("FileTree multiple selection", () => {
     expect(selected()).toEqual([]);
     await press(row("next.ts"), { key: "a", ctrlKey: true });
     expect(selected()).toEqual(["next.ts"]);
+  });
+});
+
+describe("FileTree drag feedback", () => {
+  const hint = () => document.querySelector<HTMLElement>(".pointer-drop-hint");
+  const announcement = () =>
+    document.querySelector<HTMLElement>("[data-drag-announcer]")?.textContent ?? "";
+  const down = (name: string, pointerId: number) =>
+    act(async () => {
+      row(name).dispatchEvent(
+        new PointerEvent("pointerdown", {
+          button: 0,
+          pointerId,
+          clientX: 10,
+          clientY: 10,
+          bubbles: true,
+        }),
+      );
+    });
+  const move = (pointerId: number, init: PointerEventInit = {}) =>
+    act(async () => {
+      window.dispatchEvent(
+        new PointerEvent("pointermove", { pointerId, clientX: 40, clientY: 40, ...init }),
+      );
+    });
+  const over = (name: string) =>
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: () => row(name),
+    });
+  beforeEach(async () => {
+    directories.set(cwd, [folder("dest"), folder("other"), file("a.ts")]);
+    directories.set(`${cwd}/dest`, []);
+    directories.set(`${cwd}/other`, []);
+    await refreshDir(cwd);
+    props.onFileMoved = vi.fn();
+    await act(async () => render());
+  });
+  afterEach(() => {
+    Reflect.deleteProperty(document, "elementFromPoint");
+  });
+
+  it("marks the target folder inside and says move in the one badge, copy with a modifier", async () => {
+    over("dest");
+    await down("a.ts", 11);
+    await move(11);
+    expect(row("dest").getAttribute("data-drop-indicator")).toBe("inside");
+    expect(hint()?.textContent).toBe("Move to dest");
+    expect(document.querySelectorAll(".pointer-drop-hint")).toHaveLength(1);
+    expect(announcement()).toBe("Move to dest");
+    await move(11, { ctrlKey: true });
+    expect(hint()?.textContent).toBe("Copy to dest");
+    expect(row("dest").getAttribute("data-drop-indicator")).toBe("inside");
+    // Releasing the modifier switches back without moving the pointer.
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: "Control" }));
+    });
+    expect(hint()?.textContent).toBe("Move to dest");
+  });
+
+  it("shows a blocked mark and reason for a folder into itself and for a move that changes nothing", async () => {
+    over("dest");
+    await down("dest", 12);
+    await move(12);
+    expect(row("dest").getAttribute("data-drop-indicator")).toBe("blocked");
+    expect(hint()?.textContent).toBe("Cannot drop a folder into itself");
+    expect(hint()?.getAttribute("data-action")).toBe("blocked");
+    await act(async () => {
+      window.dispatchEvent(new PointerEvent("pointercancel", { pointerId: 12 }));
+    });
+    expect(hint()).toBeNull();
+    expect(row("dest").getAttribute("data-drop-indicator")).toBeNull();
+
+    Reflect.deleteProperty(document, "elementFromPoint");
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: () => container.querySelector("[data-explorer-root]"),
+    });
+    await down("a.ts", 13);
+    await move(13);
+    expect(hint()?.textContent).toContain("Already in");
+    expect(
+      container.querySelector("[data-explorer-root]")?.getAttribute("data-drop-indicator"),
+    ).toBe("blocked");
+    await move(13, { ctrlKey: true });
+    expect(hint()?.textContent).toContain("Copy to");
+  });
+
+  it("clears the badge and the mark on Escape, blur and unmount, and announces the cancel", async () => {
+    over("dest");
+    for (const [pointerId, end] of [
+      [14, () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))],
+      [15, () => window.dispatchEvent(new Event("blur"))],
+    ] as const) {
+      await down("a.ts", pointerId);
+      await move(pointerId);
+      expect(hint()).not.toBeNull();
+      await act(async () => {
+        end();
+      });
+      expect(hint()).toBeNull();
+      expect(row("dest").getAttribute("data-drop-indicator")).toBeNull();
+      expect(document.documentElement.classList.contains("is-grabbing")).toBe(false);
+      expect(announcement()).toContain("Drag cancelled");
+      expect(props.onFileMoved).not.toHaveBeenCalled();
+    }
+    await down("a.ts", 16);
+    await move(16);
+    expect(hint()).not.toBeNull();
+    act(() => root.unmount());
+    expect(hint()).toBeNull();
+    expect(document.documentElement.classList.contains("is-grabbing")).toBe(false);
+    root = createRoot(container);
+  });
+
+  it("announces the outcome once after a drop and removes the marks", async () => {
+    over("dest");
+    await down("a.ts", 17);
+    await move(17);
+    await act(async () => {
+      window.dispatchEvent(
+        new PointerEvent("pointerup", { pointerId: 17, clientX: 40, clientY: 40 }),
+      );
+    });
+    expect(props.onFileMoved).toHaveBeenCalledWith(`${cwd}/a.ts`, `${cwd}/dest/a.ts`);
+    expect(hint()).toBeNull();
+    expect(announcement()).toContain("Moved to dest");
+    expect(container.querySelector("[data-drop-indicator]")).toBeNull();
   });
 });

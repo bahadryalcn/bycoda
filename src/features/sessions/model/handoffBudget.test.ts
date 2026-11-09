@@ -1,8 +1,183 @@
 import { describe, expect, it } from "vitest";
 import { newSession } from "./session";
-import { buildBudgetedHandoff, handoffTokenEstimate } from "./handoffBudget";
+import {
+  buildBudgetedHandoff,
+  handoffContextSession,
+  handoffHistory,
+  handoffTokenEstimate,
+} from "./handoffBudget";
+import { modelContextWindow, resetHarnessModelOverlays, setHarnessModels } from "./models";
 
 describe("capacity-aware handoff", () => {
+  it("archives recovered context without adding its unbounded replay to the current prompt", () => {
+    const session = {
+      ...newSession("grok", "/project"),
+      pendingContextReplay: "Unique recovered state not already visible in the transcript.",
+      blocks: [{ id: "visible", role: "user" as const, text: "Visible intent" }],
+    };
+    const packet = buildBudgetedHandoff(session, {
+      contextWindow: 4096,
+      historyPath: "/owner/history.json",
+      request: "Continue",
+    });
+    expect(packet.history.retainedContext).toBe(session.pendingContextReplay);
+    expect(packet.text).toContain("retainedContext");
+    expect(packet.text).not.toContain(session.pendingContextReplay);
+    expect(packet.estimatedTokens).toBeLessThanOrEqual(packet.budgetTokens);
+    expect(session.pendingContextReplay).toContain("Unique recovered state");
+  });
+  it("archives file-only turns with owned references without copying image bytes or preview functions", () => {
+    const attachment = {
+      id: "original-file",
+      name: "contract.txt",
+      mimeType: "text/plain",
+      kind: "file" as const,
+      size: 12,
+      path: "/owner/contract.txt",
+      hostEnvironmentId: "original-host",
+      data: "private-inline-payload",
+      previewUrl: "blob:preview",
+      loadPreview: async () => "preview",
+    };
+    const session = {
+      ...newSession("claude", "/project"),
+      blocks: [{ id: "file-turn", role: "user" as const, text: "", attachments: [attachment] }],
+    };
+    const archive = handoffHistory(session);
+    expect(archive.messages).toHaveLength(1);
+    expect(archive.messages[0].attachments).toEqual([
+      {
+        id: "original-file",
+        name: "contract.txt",
+        mimeType: "text/plain",
+        kind: "file",
+        size: 12,
+        path: "/owner/contract.txt",
+        hostEnvironmentId: "original-host",
+        availability: "reference",
+      },
+    ]);
+    expect(JSON.stringify(archive)).not.toContain("private-inline-payload");
+    expect(JSON.stringify(archive)).not.toContain("blob:preview");
+    attachment.path = "/replacement.txt";
+    expect(archive.messages[0].attachments![0].path).toBe("/owner/contract.txt");
+  });
+
+  it("distinguishes unavailable and inline-only attachments and charges reference text to the model budget", () => {
+    const session = {
+      ...newSession("codex", "/project"),
+      blocks: [
+        {
+          id: "images",
+          role: "user" as const,
+          text: "Read the original image.",
+          attachments: [
+            {
+              id: "inline",
+              name: "image.png",
+              mimeType: "image/png",
+              kind: "image" as const,
+              size: 10,
+              data: "secret-bytes",
+            },
+            {
+              id: "missing",
+              name: "missing.txt",
+              mimeType: "text/plain",
+              kind: "file" as const,
+              size: 12,
+              path: "/missing.txt",
+              missing: true,
+            },
+          ],
+        },
+      ],
+    };
+    const packet = buildBudgetedHandoff(session, {
+      contextWindow: 4096,
+      historyPath: "/owner/history.json",
+    });
+    expect(packet.history.messages[0].attachments?.map((item) => item.availability)).toEqual([
+      "session-only",
+      "missing",
+    ]);
+    expect(packet.text).toContain("no archived file reference");
+    expect(packet.text).toContain("unavailable attachment");
+    expect(packet.text).not.toContain("secret-bytes");
+    expect(packet.estimatedTokens).toBeLessThanOrEqual(packet.budgetTokens);
+  });
+
+  it("omits only the exact unsubmitted failed-handoff retry from context while retaining the transcript and genuine repeats", () => {
+    const original = newSession("claude", "/project");
+    const source = { from: "claude" as const, fromModel: "claude:model", fromSettings: {} };
+    const session = {
+      ...original,
+      blocks: [
+        { id: "delivered", role: "user" as const, text: "continue" },
+        {
+          id: "divider",
+          role: "handoff" as const,
+          text: "",
+          handoff: {
+            from: "claude" as const,
+            to: "codex" as const,
+            status: "failed" as const,
+            source,
+          },
+        },
+        { id: "unsubmitted", role: "user" as const, text: "continue" },
+        {
+          id: "error",
+          role: "system" as const,
+          text: "Original cleanup unknown",
+          notice: "error" as const,
+        },
+      ],
+    };
+    const context = handoffContextSession(session, "continue", []);
+    expect(context.blocks.map((block) => block.id)).toEqual(["delivered", "divider", "error"]);
+    expect(session.blocks.map((block) => block.id)).toContain("unsubmitted");
+    expect(handoffContextSession(session, "changed request", [])).toBe(session);
+    expect(
+      handoffContextSession(session, "continue", [
+        { id: "new", name: "new.txt", kind: "file", mimeType: "text/plain", size: 1 },
+      ]),
+    ).toBe(session);
+    const entered = {
+      ...session,
+      blocks: session.blocks.map((block) =>
+        block.handoff ? { ...block, handoff: { ...block.handoff, source: undefined } } : block,
+      ),
+    };
+    expect(handoffContextSession(entered, "continue", [])).toBe(entered);
+  });
+  it("keeps native provider prefixes and URL-like custom model identities distinct", () => {
+    try {
+      setHarnessModels("pi", [
+        {
+          id: "pi:provider-a:model",
+          nativeId: "provider-a:model",
+          harness: "pi",
+          name: "A",
+          contextWindow: 256_000,
+        },
+        {
+          id: "pi:https://a.example/model",
+          nativeId: "https://a.example/model",
+          harness: "pi",
+          name: "URL",
+          contextWindow: 64_000,
+        },
+      ]);
+      expect(modelContextWindow("pi:provider-a:model", "pi")).toBe(256_000);
+      expect(modelContextWindow("provider-a:model", "pi")).toBe(256_000);
+      expect(modelContextWindow("provider-b:model", "pi")).toBe(32_000);
+      expect(modelContextWindow("https://a.example/model", "pi")).toBe(64_000);
+      expect(modelContextWindow("http://a.example/model", "pi")).toBe(32_000);
+    } finally {
+      resetHarnessModelOverlays();
+    }
+  });
   it("preserves recent whole messages and archives oversized old text", () => {
     const session = {
       ...newSession("codex", "/project"),
@@ -23,13 +198,97 @@ describe("capacity-aware handoff", () => {
     expect(packet.estimatedTokens).toBeLessThanOrEqual(packet.budgetTokens);
   });
   it("never exceeds even a tiny target or a request consuming the window", () => {
-    expect(() =>
-      buildBudgetedHandoff(newSession("codex", "/project"), {
-        contextWindow: 32,
-        request: "a".repeat(200),
-      }),
-    ).toThrow("capacity");
-    expect(handoffTokenEstimate("界")).toBe(3);
+    const packet = buildBudgetedHandoff(newSession("codex", "/project"), {
+      contextWindow: 32,
+      request: "a".repeat(200),
+      historyPath: "/host/history.json",
+    });
+    expect(packet.text).toBe("");
+    expect(packet.notice).toContain("not transferred");
+    expect(packet.notice).toContain("/host/history.json");
+    expect(packet.estimatedTokens).toBe(0);
+    expect(handoffTokenEstimate("Türkçe")).toBe(6);
+    expect(handoffTokenEstimate("界")).toBe(2);
+  });
+  it("sends a long Turkish request with reduced history on an unknown Codex model", () => {
+    const session = newSession("codex", "/project");
+    session.model = "codex:unknown-modern-model";
+    session.blocks = [
+      { id: "old", role: "user", text: "ğ".repeat(80_000) },
+      { id: "recent", role: "assistant", text: "Preserve this decision." },
+    ];
+    const request = "İşlemleri değiştir, önceki çalışmaları koru. ".repeat(700);
+    expect(new TextEncoder().encode(request).length).toBeGreaterThan(20_000);
+    const packet = buildBudgetedHandoff(session, { request, historyPath: "/history.json" });
+    expect(packet.omittedIds).toEqual(["old"]);
+    expect(packet.selectedIds).toEqual(["recent"]);
+    expect(packet.text).toContain("/history.json");
+    expect(packet.notice).toBeUndefined();
+  });
+  it("degrades history, recap, reference, then supplies a notice without clipping the request", () => {
+    const session = newSession("codex", "/project");
+    session.blocks = [{ id: "old", role: "user", text: "x".repeat(1000) }];
+    const options = {
+      contextWindow: 2000,
+      reservedTokens: 512,
+      brief: "recap ".repeat(50),
+      historyPath: "/history.json",
+    };
+    const full = buildBudgetedHandoff(session, options);
+    expect(full.selectedIds).toEqual([]);
+    expect(full.text).toContain("Recap:");
+    const reference = buildBudgetedHandoff(session, { ...options, request: "x".repeat(1100) });
+    expect(reference.text).toContain("/history.json");
+    expect(reference.text).not.toContain("Recap:");
+    expect(
+      buildBudgetedHandoff(
+        { ...session, blocks: [{ id: "small", role: "user", text: "Keep." }] },
+        { ...options, request: "x".repeat(1100) },
+      ).selectedIds,
+    ).toEqual([]);
+    const empty = buildBudgetedHandoff(session, { ...options, request: "x".repeat(2000) });
+    expect(empty.text).toBe("");
+    expect(empty.notice).toContain("/history.json");
+  });
+  it("uses discovered exact/native/alias windows ahead of static values and harness defaults", () => {
+    try {
+      setHarnessModels("grok", [
+        { id: "grok:grok-4.6", harness: "grok", name: "Live", contextWindow: 2048 },
+      ]);
+      expect(modelContextWindow("grok:grok-4.6", "grok")).toBe(2048);
+      setHarnessModels("grok", [{ id: "grok:grok-4.6", harness: "grok", name: "No capacity" }]);
+      expect(modelContextWindow("grok:grok-4.6", "grok")).toBe(500_000);
+      expect(modelContextWindow("unreported-custom-model")).toBeUndefined();
+      setHarnessModels("codex", [
+        {
+          id: "codex:live",
+          nativeId: "live",
+          harness: "codex",
+          name: "Live",
+          contextWindow: 256_000,
+        },
+      ]);
+      expect(modelContextWindow("live", "codex")).toBe(256_000);
+      expect(modelContextWindow("codex:custom", "codex")).toBe(128_000);
+      setHarnessModels("claude", [
+        {
+          id: "claude:opus",
+          nativeId: "opus",
+          aliasTarget: "claude-opus-5-5",
+          harness: "claude",
+          name: "Opus",
+          contextWindow: 200_000,
+        },
+      ]);
+      expect(modelContextWindow("claude:opus-5-5", "claude")).toBe(200_000);
+      expect(modelContextWindow("custom", "acp")).toBe(32_000);
+      setHarnessModels("codex", [
+        { id: "codex:invalid", harness: "codex", name: "Invalid", contextWindow: Infinity },
+      ]);
+      expect(modelContextWindow("codex:invalid", "codex")).toBe(128_000);
+    } finally {
+      resetHarnessModelOverlays();
+    }
   });
   it("keeps original user intent before spending remaining budget on recent exchanges", () => {
     const session = {

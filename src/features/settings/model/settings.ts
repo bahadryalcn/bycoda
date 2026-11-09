@@ -1,10 +1,18 @@
-import { createStoredSetting, storedFlag, subscribePreferenceChanges } from "../../../shared/lib/storedSetting";
-import { t, sourceMessages } from "../../../shared/i18n";
+import {
+  createStoredSetting,
+  storedFlag,
+  subscribePreferenceChanges,
+} from "../../../shared/lib/storedSetting";
+import { ACCOUNT_SECTION } from "./accountSection";
+import { SECRETS_SECTION } from "./secretsSection";
+import { SETTINGS_GROUPS, SETTINGS_SECTION_ORDER, type SettingsGroupId } from "./settingsGroups";
+import { t, sourceMessages } from "../../../shared/i18n/core";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { HARNESSES, HARNESS_TITLE } from "../../sessions/model/session";
+import { HARNESSES, HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
 import {
   ALT,
   FULLSCREEN_SHORTCUT,
+  IS_LINUX,
   IS_MAC,
   IS_WIN,
   MOD,
@@ -19,9 +27,15 @@ import {
   shortcutTokens,
 } from "../../quick-composer/model/quickComposerShortcut";
 import { readFlag, writeFlag } from "./storageFlags";
-
+import { DESKTOP_STOP_COMMAND } from "./desktopStopKeybinding";
+import { APPEARANCE_SETTINGS_INDEX } from "./appearanceSettingsIndex";
+import { PRIVACY_SETTINGS_INDEX } from "./privacySettingsIndex";
+import { GENERAL_SETTINGS_INDEX } from "./generalSettingsIndex";
+import {
+  INTEGRATIONS_CONTROL_LABELS,
+  INTEGRATIONS_SETTINGS_INDEX,
+} from "./integrationsSettingsIndex";
 const SECTION_KEY = "bycoda.settingsSection";
-
 export type StreamingTextMode = "paced" | "adaptive";
 const streamingTextModeSetting = createStoredSetting<StreamingTextMode>({
   key: "bycoda.streamingTextMode",
@@ -47,47 +61,23 @@ export type SettingsSectionId =
   | "keybindings"
   | "terminal"
   | "chat"
+  | "voice"
   | "providers"
   | "crews"
   | "usage"
   | "limits"
   | "mcp"
   | "skills"
+  | "integrations"
+  | "account"
+  | "secrets"
+  /** Retired home of the Inbox credential cards; opening it lands on Integrations. */
   | "inbox"
   | "worktrees"
   | "groupLock"
   | "archive";
 
-/** Rail buckets. Sections list in order under their group label. */
-export type SettingsGroupId = "app" | "agents" | "workspace" | "about";
-
-export const SETTINGS_GROUPS: { id: SettingsGroupId; label: string }[] = [
-  {
-    id: "app",
-    get label() {
-      return t("App");
-    },
-  },
-
-  {
-    id: "workspace",
-    get label() {
-      return t("Workspace");
-    },
-  },
-  {
-    id: "agents",
-    get label() {
-      return t("Agents");
-    },
-  },
-  {
-    id: "about",
-    get label() {
-      return t("About");
-    },
-  },
-];
+export type { SettingsGroupId };
 
 export type SettingsSection = {
   id: SettingsSectionId;
@@ -99,6 +89,7 @@ export type SettingsSection = {
 };
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
+  ACCOUNT_SECTION,
   {
     id: "general",
     group: "app",
@@ -159,7 +150,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "workspace",
-    group: "workspace",
+    group: "code",
     get label() {
       return t("Workspace");
     },
@@ -170,7 +161,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "terminal",
-    group: "workspace",
+    group: "app",
     get label() {
       return t("Terminal");
     },
@@ -181,7 +172,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "connections",
-    group: "workspace",
+    group: "connections",
     get label() {
       return t("Connections");
     },
@@ -192,7 +183,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "worktrees",
-    group: "workspace",
+    group: "code",
     get label() {
       return t("Source control");
     },
@@ -200,23 +191,25 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       return t("Commit and pull request generation, code review and project worktrees.");
     },
     keywords:
-      "git branch worktree working copy project create delete commit pull request generation diff review kaynak kontrolü",
+      "git branch worktree working copy project create delete commit pull request generation diff review retention pin cleanup disk budget storage kaynak kontrolü",
   },
   {
-    id: "inbox",
-    group: "workspace",
+    id: "integrations",
+    group: "connections",
     get label() {
-      return t("Inbox");
+      return t("Integrations");
     },
     get description() {
-      return t("Connect the services that supply your Inbox.");
+      return t("Connect the services {p0} reads from and replies through.", {
+        p0: PRODUCT_IDENTITY.displayName,
+      });
     },
-    keywords: "github gitlab linear jira atlassian azure devops connect token integration",
+    keywords:
+      "inbox github gitlab azure devops jira atlassian linear slack discord teams email gmail outlook hotmail yahoo icloud imap smtp connect token integration",
   },
-
   {
     id: "archive",
-    group: "workspace",
+    group: "about",
     get label() {
       return t("Archive settings");
     },
@@ -226,14 +219,20 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     keywords: "archived restore delete hidden",
   },
   {
-    id: "crews", group: "agents",
-    get label() { return t("Crews"); },
-    get description() { return t("Reusable agent teams, project crews and model allocation policies."); },
-    keywords: "crew team coordinator specialist reviewer advisor orchestration model cost quality capability",
+    id: "crews",
+    group: "agents",
+    get label() {
+      return t("Crews");
+    },
+    get description() {
+      return t("Reusable agent teams, project crews and model allocation policies.");
+    },
+    keywords:
+      "crew team coordinator specialist reviewer advisor orchestration model cost quality capability",
   },
   {
     id: "chat",
-    group: "agents",
+    group: "app",
     get label() {
       return t("Chat");
     },
@@ -241,6 +240,18 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       return t("Conversation layout, text display, translation, follow-ups and prompt templates.");
     },
     keywords: "transcript composer prompt message layout template snippet trigger queue",
+  },
+  {
+    id: "voice",
+    group: "app",
+    get label() {
+      return t("Voice assistant");
+    },
+    get description() {
+      return t("Dictation, voice companion, speakers and conversation style.");
+    },
+    keywords:
+      "voice speech dictation microphone companion speaker whisper realtime grok openai ses dikte mikrofon",
   },
   {
     id: "providers",
@@ -260,10 +271,10 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: "usage",
     group: "agents",
     get label() {
-      return t("Usage");
+      return t("Provider usage");
     },
     get description() {
-      return t("Account limits, remaining capacity and usage by project.");
+      return t("Provider limits, remaining capacity and usage by project.");
     },
     keywords: "quota limits weekly session tokens cost",
   },
@@ -302,6 +313,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     },
     keywords: "skill instructions prompt",
   },
+  SECRETS_SECTION,
   {
     id: "policies",
     group: "about",
@@ -323,7 +335,9 @@ export function settingsSectionsByGroup(): {
 }[] {
   return SETTINGS_GROUPS.map((group) => ({
     ...group,
-    sections: SETTINGS_SECTIONS.filter((section) => section.group === group.id),
+    sections: SETTINGS_SECTIONS.filter((section) => section.group === group.id).sort(
+      (a, b) => SETTINGS_SECTION_ORDER.indexOf(a.id) - SETTINGS_SECTION_ORDER.indexOf(b.id),
+    ),
   })).filter((group) => group.sections.length > 0);
 }
 
@@ -339,22 +353,7 @@ export type SettingsEntry = {
 };
 
 export const SETTINGS_INDEX: SettingsEntry[] = [
-  {
-    id: "performance-trace",
-    section: "general",
-    get label() {
-      return t("Performance trace");
-    },
-    keywords: "diagnostics performance trace freeze lag slow startup long task debug performans tanılama izleme donma",
-  },
-  {
-    id: "performance-trace-data",
-    section: "general",
-    get label() {
-      return t("Trace data");
-    },
-    keywords: "copy clear export json diagnostics performance trace izleme verisi kopyala temizle",
-  },
+  ...GENERAL_SETTINGS_INDEX,
   {
     id: "privacy-policy",
     section: "policies",
@@ -520,6 +519,54 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "claude tools connections oauth authenticate login add remove",
   },
   {
+    id: "workspace-policy",
+    section: "worktrees",
+    get label() {
+      return t("Workspace policy");
+    },
+    keywords: "default workspace mode current checkout worktree host project policy",
+  },
+  {
+    id: "default-workspace-mode",
+    section: "worktrees",
+    get label() {
+      return t("Default workspace");
+    },
+    keywords: "current checkout worktree new session default mode",
+  },
+  {
+    id: "workspace-pinning",
+    section: "worktrees",
+    get label() {
+      return t("Pin workspaces");
+    },
+    keywords: "pin new workspaces retention automatic cleanup keep never",
+  },
+  {
+    id: "workspace-retention",
+    section: "worktrees",
+    get label() {
+      return t("Automatic cleanup");
+    },
+    keywords: "directory retention cleanup lifecycle active idle finished merged closed never days",
+  },
+  {
+    id: "workspace-disk-policy",
+    section: "worktrees",
+    get label() {
+      return t("Storage limits");
+    },
+    keywords: "disk budget warning free space gib directories cleanup",
+  },
+  {
+    id: "workspace-storage-status",
+    section: "worktrees",
+    get label() {
+      return t("Workspace storage");
+    },
+    keywords: "disk usage cache recovery blocked paused free space",
+  },
+  {
     id: "project-worktrees",
     section: "worktrees",
     get label() {
@@ -534,6 +581,14 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       return t("Version");
     },
     keywords: "update upgrade release what's new build changelog",
+  },
+  {
+    id: "update-channel",
+    section: "general",
+    get label() {
+      return t("Preview updates");
+    },
+    keywords: "update channel preview beta early insider stable feed",
   },
   {
     id: "import-history",
@@ -617,6 +672,30 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "help tour onboarding shortcuts chat queue stop learn",
   },
   {
+    id: "send-feedback",
+    section: "general",
+    get label() {
+      return t("Send feedback");
+    },
+    keywords: "feedback report bug problem suggestion idea contact support help geri bildirim",
+  },
+  {
+    id: "star-github",
+    section: "general",
+    get label() {
+      return t("Star on GitHub");
+    },
+    keywords: "github star repository open source contribute project support yıldız",
+  },
+  {
+    id: "contribute",
+    section: "general",
+    get label() {
+      return t("Contribute to bycoda");
+    },
+    keywords: "open source clone repository github contribution about",
+  },
+  {
     id: "working-agents",
     section: "workspace",
     get label() {
@@ -625,20 +704,20 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "live running sessions rail card",
   },
   {
+    id: "exact-git-rewind",
+    section: "workspace",
+    get label() {
+      return t("Exact Git rewind (experimental)");
+    },
+    keywords: "experimental exact git rewind snapshot managed worktree host capture turn",
+  },
+  {
     id: "file-tabs",
     section: "workspace",
     get label() {
       return t("File tabs");
     },
     keywords: "editor open top workspace normal session pane beside chat",
-  },
-  {
-    id: "tab-animations",
-    section: "appearance",
-    get label() {
-      return t("Tab animations");
-    },
-    keywords: "motion open close resize transition",
   },
   {
     id: "streaming-text-mode",
@@ -678,44 +757,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       ]
     : []),
   {
-    id: "theme",
-    section: "appearance",
-    get label() {
-      return t("Color scheme");
-    },
-    keywords: "dark light system appearance mode",
-  },
-  {
-    id: "interface-contrast",
-    section: "appearance",
-    get label() {
-      return t("Contrast");
-    },
-    keywords: "borders secondary text softer stronger",
-  },
-  {
     id: "chat-width",
     section: "chat",
     get label() {
       return t("Chat width");
     },
     keywords: "comfortable wide full messages composer",
-  },
-  {
-    id: "interface-font",
-    section: "appearance",
-    get label() {
-      return t("Interface font");
-    },
-    keywords: "typography typeface Segoe Arial Verdana",
-  },
-  {
-    id: "monospace-font",
-    section: "appearance",
-    get label() {
-      return t("Monospace font");
-    },
-    keywords: "code terminal font size Consolas Menlo typography",
   },
   {
     id: "code-word-wrap",
@@ -725,119 +772,19 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     },
     keywords: "code long lines wrapping",
   },
-  {
-    id: "decorative-motion",
-    section: "appearance",
-    get label() {
-      return t("Decorative animations");
-    },
-    keywords: "motion reduced accessibility mascot particles welcome effects",
-  },
-  {
-    id: "accent-color",
-    section: "appearance",
-    get label() {
-      return t("Accent color");
-    },
-    keywords: "highlight bubble send button tint",
-  },
-  {
-    id: "diff-colors",
-    section: "appearance",
-    get label() {
-      return t("Diff colors");
-    },
-    keywords:
-      "colorblind color blind accessibility added removed red green blue orange high contrast changes",
-  },
-  {
-    id: "hue",
-    section: "appearance",
-    get label() {
-      return t("Hue");
-    },
-    keywords: "tint color chrome",
-  },
-  {
-    id: "saturation",
-    section: "appearance",
-    get label() {
-      return t("Saturation");
-    },
-    keywords: "tint color neutral grey gray",
-  },
-  {
-    id: "dark-lightness",
-    section: "appearance",
-    get label() {
-      return t("Dark-mode lightness");
-    },
-    keywords: "black brightness contrast background",
-  },
-  {
-    id: "sidebar-opacity",
-    section: "appearance",
-    get label() {
-      return t("Sidebar opacity");
-    },
-    keywords: "glass translucent transparency vibrancy rail",
-  },
-  {
-    id: "blur",
-    section: "appearance",
-    get label() {
-      return t("Blur radius");
-    },
-    keywords: "glass translucent vibrancy backdrop",
-  },
-  {
-    id: "main-pane-glass",
-    section: "appearance",
-    get label() {
-      return t("Main pane glass");
-    },
-    keywords: "translucent transparency body window",
-  },
-  {
-    id: "main-pane-opacity",
-    section: "appearance",
-    get label() {
-      return t("Main pane opacity");
-    },
-    keywords: "glass translucent transparency body window",
-  },
-  {
-    id: "interface-scale",
-    section: "appearance",
-    get label() {
-      return t("Interface scale");
-    },
-    keywords: "zoom font size bigger smaller ui",
-  },
-  {
-    id: "control-density",
-    section: "appearance",
-    get label() {
-      return t("Control density");
-    },
-    keywords: "compact comfortable touch controls target size spacing density",
-  },
-  {
-    id: "collapsed-project-rail",
-    section: "appearance",
-    get label() {
-      return t("Collapsed project rail");
-    },
-    keywords: "sidebar compact icons hidden navigation layout",
-  },
-  {
-    id: "session-list",
-    section: "appearance",
-    get label() {
-      return t("Session list");
-    },
-    keywords: "sidebar sessions rows density compact detailed model branch",
-  },
+  // Linux has no window glass row; its main pane glass covers translucency.
+  ...(IS_LINUX
+    ? []
+    : [
+        {
+          id: "window-glass",
+          section: "appearance" as const,
+          get label() {
+            return t("Window glass");
+          },
+          keywords: "acrylic mica vibrancy transparent opaque performance gpu",
+        },
+      ]),
   {
     id: "show-excluded-files",
     section: "workspace",
@@ -847,21 +794,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "explorer gitignore ignored hidden files tree",
   },
   {
-    id: "chat-background",
-    section: "appearance",
+    id: "title-model-default",
+    section: "chat",
     get label() {
-      return t("Chat background");
-    },
-    keywords: "wallpaper image picture opacity backdrop blur",
-  },
-  {
-    id: "live-background",
-    section: "appearance",
-    get label() {
-      return t("Live background");
+      return t("Default title model");
     },
     keywords:
-      "animated wallpaper matrix code rain ascii face speech ai slats web threads scanner lightfall prism side rays light pixel blast dot grid hyperspeed letter glitch motion backdrop",
+      "conversation title regenerate rename model provider account haiku terra flash başlık isim yeniden oluştur varsayılan",
   },
   {
     id: "translation-model-default",
@@ -870,6 +809,15 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       return t("Default translation model");
     },
     keywords: "translation translate language model provider account default çeviri dil varsayılan",
+  },
+  {
+    id: "reprompt-model-default",
+    section: "chat",
+    get label() {
+      return t("Default reprompt model");
+    },
+    keywords:
+      "reprompt rewrite clarify prompt model provider account default yeniden yaz netleştir varsayılan",
   },
   {
     id: "git-generation-default",
@@ -888,6 +836,31 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "full width chat bubble message",
   },
   {
+    id: "dictation-enabled",
+    section: "voice",
+    get label() {
+      return t("Enable dictation");
+    },
+    keywords: "dictate dictation speech to text microphone diktate dikte yazdır mikrofon",
+  },
+  {
+    id: "speech-microphone",
+    section: "voice",
+    get label() {
+      return t("Microphone access");
+    },
+    keywords: "microphone permission privacy macos windows linux mikrofon izin",
+  },
+  {
+    id: "voice-companion",
+    section: "voice",
+    get label() {
+      return t("Voice companion");
+    },
+    keywords:
+      "voice speech microphone whisper voxcpm python models ses konuşma mikrofon sesli model kurulum",
+  },
+  {
     id: "anchor-prompts",
     section: "chat",
     get label() {
@@ -896,20 +869,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "scroll position sticky message",
   },
   {
-    id: "follow-up",
-    section: "chat",
-    get label() {
-      return t("Sending while working");
-    },
-    keywords: "queue steer interrupt send while running",
-  },
-  {
     id: "composer-spelling",
     section: "chat",
     get label() {
       return t("Spelling and autocorrect");
     },
-    keywords: "spellcheck spelling autocorrect correction yazım düzeltme",
+    keywords:
+      "spellcheck spelling autocorrect correction yazım düzeltme queue steer interrupt send while running",
   },
   {
     id: "resume-at-reset",
@@ -950,7 +916,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("Format on save");
     },
-    keywords: "prettier quotes editor save format",
+    keywords: "oxfmt biome prettier formatter quotes editor save format",
   },
   {
     id: "diff-view",
@@ -959,32 +925,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       return t("Diff view");
     },
     keywords: "unified editor review changes working tree",
-  },
-  {
-    id: "crew-scene",
-    section: "appearance",
-    get label() {
-      return t("Agent crew");
-    },
-    keywords:
-      "crew ekip agents ajanlar coffeehouse kahvehane tea çay amcalar bebek baby context grow büyüme ambient scene",
-  },
-  {
-    id: "crew-theme",
-    section: "appearance",
-    get label() {
-      return t("Crew theme");
-    },
-    keywords: "crew theme ekip tema classic star wars starwars yoda obi wan vader luke leia r2 d2 lord of the rings lotr yüzüklerin efendisi gandalf sauron nazgul orc ork dwarf cüce hobbit",
-  },
-  {
-    id: "crew-growth",
-    section: "appearance",
-    get label() {
-      return t("Grow with context");
-    },
-    keywords:
-      "crew ekip age yaş baby bebek child çocuk adult yetişkin uncle amca context window compact büyüme color renk doluluk battery şarj",
   },
   {
     id: "agent-clis",
@@ -1040,18 +980,10 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "usage limit meter bar left used quota percent",
   },
   {
-    id: "mask-emails",
-    section: "groupLock",
-    get label() {
-      return t("Mask account emails");
-    },
-    keywords: "email privacy blur hide screenshot account",
-  },
-  {
     id: "provider-usage",
     section: "usage",
     get label() {
-      return t("Usage");
+      return t("Provider usage");
     },
     keywords: "usage tokens cost spend billing cache model project account",
   },
@@ -1070,46 +1002,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       return t("Project notifications");
     },
     keywords: "mute resume sounds banners reminders categories",
-  },
-  {
-    id: "github",
-    section: "inbox",
-    get label() {
-      return t("GitHub");
-    },
-    keywords: "gh cli connect pull request sign in",
-  },
-  {
-    id: "gitlab",
-    section: "inbox",
-    get label() {
-      return t("GitLab");
-    },
-    keywords: "token self-managed merge request connect",
-  },
-  {
-    id: "azuredevops",
-    section: "inbox",
-    get label() {
-      return t("Azure DevOps");
-    },
-    keywords: "azure devops boards repos pull request pat organization connect",
-  },
-  {
-    id: "jira",
-    section: "inbox",
-    get label() {
-      return t("Jira");
-    },
-    keywords: "atlassian cloud site email api token issues projects connect",
-  },
-  {
-    id: "linear",
-    section: "inbox",
-    get label() {
-      return t("Linear");
-    },
-    keywords: "api key issues teams connect",
   },
   {
     id: "show-archived",
@@ -1169,6 +1061,18 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       keywords: "theme palette colors preset tint lightness accent tema palet renk hazır",
     },
     {
+      id: "saved-themes",
+      section: "appearance",
+      label: "Saved themes",
+      keywords: "save look appearance preset custom theme name restore tema kaydet görünüm",
+    },
+    {
+      id: "background-library",
+      section: "appearance",
+      label: "Background image library",
+      keywords: "images generated history gallery wallpaper saved again kütüphane görsel arka plan",
+    },
+    {
       id: "getting-started",
       section: "general",
       label: "Getting started",
@@ -1191,6 +1095,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       section: "groupLock",
       label: "Unlock groups together",
       keywords: "unlock all password gruplar kilit birlikte",
+    },
+    {
+      id: "terminal-available-shells",
+      section: "terminal",
+      label: "Advanced terminal settings",
+      keywords: "local available shells discovery advanced gelişmiş kabuk keşif",
     },
     {
       id: "host-shells",
@@ -1253,7 +1163,8 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       id: "terminal-font",
       section: "appearance",
       label: "Terminal font",
-      keywords: "terminal font family typeface yazı tipi monospace cascadia jetbrains",
+      keywords:
+        "terminal font family typeface yazı tipi monospace cascadia jetbrains same as code font",
     },
     {
       id: "terminal-font-size",
@@ -1325,6 +1236,9 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     },
     keywords: item.keywords,
   })),
+  ...APPEARANCE_SETTINGS_INDEX,
+  ...PRIVACY_SETTINGS_INDEX,
+  ...INTEGRATIONS_SETTINGS_INDEX,
 ];
 
 export type SettingsSearchResult = {
@@ -1340,7 +1254,9 @@ export function settingsSectionForAnchor(
   section: SettingsSectionId | undefined,
   anchor?: string | null,
 ): SettingsSectionId | undefined {
-  return (anchor && SETTINGS_INDEX.find((entry) => entry.id === anchor)?.section) || section;
+  const target =
+    (anchor && SETTINGS_INDEX.find((entry) => entry.id === anchor)?.section) || section;
+  return target === "inbox" ? "integrations" : target;
 }
 
 /** Shared with shortcut rows so search uses the same stable anchor. */
@@ -1351,8 +1267,9 @@ const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
   "git-generation-default": ["Default generation model"],
   theme: ["Theme and colors", "System", "Light", "Dark"],
   "theme-palettes": ["Blue", "Violet", "Pink", "Red", "Orange", "Green"],
+  "canvas-background": ["Pure", "Tinted"],
   "file-access": ["File access", "Change file access"],
-  "file-access-permissions": ["Separate permissions"],
+  "file-access-permissions": ["File access"],
   "import-history": ["Import Claude Code and Codex sessions"],
   "file-tabs": ["Beside chat", "Top bar"],
   "collapsed-project-rail": ["Icon rail", "Hidden"],
@@ -1369,7 +1286,7 @@ const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
   "chat-width": ["Comfortable", "Wide", "Full width"],
   "interface-font": ["System default"],
   "transcript-layout": ["Full width", "Chat"],
-  "follow-up": ["Queue", "Steer"],
+  "composer-spelling": ["Queue", "Steer"],
   "model-controls": [
     "Compact",
     "Show active choices",
@@ -1379,22 +1296,8 @@ const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
   "streaming-text-mode": ["Paced (default)", "Immediate with adaptive fade"],
   "crew-growth": ["Color with context", "Grow with context"],
   "chat-background": ["Empty only", "All sessions"],
-  "live-background": [
-    "Gradient ASCII",
-    "Code rain",
-    "Micro slats",
-    "Web threads",
-    "Scanner",
-    "Lightfall",
-    "Prism",
-    "Side rays",
-    "Light rays",
-    "Pixel blast",
-    "Dot grid",
-    "Hyperspeed",
-    "Letter glitch",
-  ],
-  "format-on-save": ["Editor", "Advanced editor settings", "Prettier"],
+  "live-background": ["Neural tree", "Latent face", "Thought weaver", "ASCII mask"],
+  "format-on-save": ["Editor", "Advanced editor settings"],
   "diff-view": ["Editor", "Unified", "Code review"],
   "agent-clis": [
     "Agent CLIs",
@@ -1427,7 +1330,7 @@ const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
   "cost-overview": ["Cost range", "Estimated cost", "Input", "Output", "Cache"],
   "daily-summary": ["Daily summary time"],
   "mcp-scopes": ["Scope", "Personal", "Project", "Local project"],
-  "host-shells": ["Advanced terminal settings", "This computer · Available shells"],
+  "terminal-available-shells": ["Advanced terminal settings", "This computer · Available shells"],
   "group-lock-options": ["Advanced: automatic locking"],
   "claude-hooks": ["Advanced provider options"],
   "archived-projects": ["Restore", "Delete"],
@@ -1440,10 +1343,7 @@ const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
     "Agent approvals and questions",
     "Agent failures and usage limits",
   ],
-  jira: ["Inbox scope", "Refresh boards", "Account configuration"],
-  linear: ["Inbox scope", "Refresh teams", "Account configuration"],
-  gitlab: ["Account configuration", "Save and test connection"],
-  azuredevops: ["Account configuration", "Save and test connection"],
+  ...INTEGRATIONS_CONTROL_LABELS,
   "group-lock-password": [
     "Change password…",
     "Remove password…",
@@ -1548,9 +1448,59 @@ export function settingsSectionDescription(id: SettingsSectionId): string {
   return SETTINGS_SECTIONS.find((section) => section.id === id)?.description ?? "";
 }
 
+/**
+ * How a page wants to be presented. `bounded`: short preferences and forms in a readable
+ * track over the work context. `wide`: collections, tables and analytics that need a
+ * usable width. `workspace`: list/detail libraries that own the full height and are
+ * the pages worth maximizing. A hint only: the embedding surface decides the geometry
+ * and a page never remounts when it changes.
+ */
+export type SettingsPresentation = "bounded" | "wide" | "workspace";
+
+/** Pages that persist every change themselves; the header says so once. */
+export const AUTOMATIC_SAVE_SECTIONS: readonly string[] = [
+  "general",
+  "appearance",
+  "workspace",
+  "chat",
+  "voice",
+  "terminal",
+];
+
+const SETTINGS_PRESENTATION: Record<SettingsSectionId, SettingsPresentation> = {
+  general: "bounded",
+  appearance: "bounded",
+  workspace: "bounded",
+  terminal: "bounded",
+  chat: "bounded",
+  voice: "bounded",
+  notifications: "bounded",
+  groupLock: "bounded",
+  policies: "bounded",
+  providers: "wide",
+  mcp: "wide",
+  connections: "wide",
+  inbox: "bounded",
+  integrations: "bounded",
+  account: "bounded",
+  secrets: "bounded",
+  crews: "wide",
+  keybindings: "wide",
+  usage: "wide",
+  limits: "wide",
+  skills: "workspace",
+  archive: "bounded",
+  worktrees: "workspace",
+};
+
+export function settingsSectionPresentation(id: SettingsSectionId): SettingsPresentation {
+  return SETTINGS_PRESENTATION[id] ?? "bounded";
+}
+
 export function loadSettingsSection(): SettingsSectionId {
   try {
     const raw = localStorage.getItem(SECTION_KEY);
+    if (raw === "inbox") return "integrations";
     return isSettingsSectionId(raw) ? raw : SETTINGS_SECTION_DEFAULT;
   } catch {
     return SETTINGS_SECTION_DEFAULT;
@@ -1570,6 +1520,7 @@ const COMPOSER_EFFORT_VISIBLE_KEY = "bycoda.composerEffortVisible";
 const MODEL_CONTROLS_KEY = "bycoda.modelControls";
 
 const FILE_TAB_MODE_KEY = "bycoda.fileTabMode";
+const FILE_TAB_MODE_CHANGE_EVENT = "bycoda:file-tab-mode-change";
 
 const TAB_ANIMATIONS_ENABLED_KEY = "bycoda.tabAnimationsEnabled";
 
@@ -1597,7 +1548,13 @@ export function saveFileTabMode(value: FileTabMode) {
   } catch {
     // private mode / quota
   }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(FILE_TAB_MODE_CHANGE_EVENT));
+  }
 }
+
+export const subscribeFileTabMode = (onChange: () => void) =>
+  subscribePreferenceChanges([FILE_TAB_MODE_KEY], FILE_TAB_MODE_CHANGE_EVENT, onChange);
 
 export const TAB_ANIMATIONS_ENABLED_DEFAULT = false;
 
@@ -1607,7 +1564,16 @@ export function loadTabAnimationsEnabled(): boolean {
 
 export function saveTabAnimationsEnabled(value: boolean) {
   writeFlag(TAB_ANIMATIONS_ENABLED_KEY, value);
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent("bycoda:tab-animations-change"));
 }
+
+export const subscribeTabAnimationsEnabled = (onChange: () => void) =>
+  subscribePreferenceChanges(
+    [TAB_ANIMATIONS_ENABLED_KEY],
+    "bycoda:tab-animations-change",
+    onChange,
+  );
 
 export type CollapsedProjectRailMode = "compact" | "hidden";
 
@@ -1665,7 +1631,11 @@ export function saveModelControls(value: ModelControls) {
 }
 
 export function subscribeModelControls(onStoreChange: () => void) {
-  return subscribePreferenceChanges([MODEL_CONTROLS_KEY, COMPOSER_EFFORT_VISIBLE_KEY], MODEL_CONTROLS_CHANGE_EVENT, onStoreChange);
+  return subscribePreferenceChanges(
+    [MODEL_CONTROLS_KEY, COMPOSER_EFFORT_VISIBLE_KEY],
+    MODEL_CONTROLS_CHANGE_EVENT,
+    onStoreChange,
+  );
 }
 
 const NOTES_ENABLED_KEY = "bycoda.notesEnabled";
@@ -1679,6 +1649,7 @@ const notesEnabledSetting = storedFlag(
   NOTES_ENABLED_KEY,
   NOTES_ENABLED_DEFAULT,
   NOTES_ENABLED_CHANGE_EVENT,
+  true,
 );
 
 export function loadNotesEnabled(): boolean {
@@ -1707,8 +1678,16 @@ export function loadQuickComposerEnabled(): boolean {
   return quickComposerEnabledSetting.load() ?? QUICK_COMPOSER_ENABLED_DEFAULT;
 }
 
-export function saveQuickComposerEnabled(value: boolean) {
-  quickComposerEnabledSetting.save(value);
+export function saveQuickComposerEnabled(value: boolean): boolean {
+  try {
+    localStorage.setItem(QUICK_COMPOSER_ENABLED_KEY, value ? "1" : "0");
+    if (localStorage.getItem(QUICK_COMPOSER_ENABLED_KEY) !== (value ? "1" : "0")) return false;
+  } catch {
+    return false;
+  }
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent("bycoda:quick-composer-enabled-change"));
+  return true;
 }
 
 export const subscribeQuickComposerEnabled = quickComposerEnabledSetting.subscribe;
@@ -1722,16 +1701,28 @@ export function loadQuickComposerShortcut(): string {
   }
 }
 
-export function saveQuickComposerShortcut(value: string) {
-  if (!isGlobalShortcut(value)) return;
+export const QUICK_COMPOSER_SHORTCUT_CHANGE_EVENT = "bycoda:quick-composer-shortcut-change";
+export const subscribeQuickComposerShortcut = (onChange: () => void) =>
+  subscribePreferenceChanges(
+    [QUICK_COMPOSER_SHORTCUT_KEY],
+    QUICK_COMPOSER_SHORTCUT_CHANGE_EVENT,
+    onChange,
+  );
+
+export function saveQuickComposerShortcut(value: string): boolean {
+  if (!isGlobalShortcut(value)) return false;
   // Same conflict rules as every other row, so the separately stored Quick
   // Composer chord cannot claim a combination another command already owns.
   const shortcut = validateKeybindingShortcut(QUICK_COMPOSER_COMMAND, value);
   try {
     localStorage.setItem(QUICK_COMPOSER_SHORTCUT_KEY, shortcut);
+    if (localStorage.getItem(QUICK_COMPOSER_SHORTCUT_KEY) !== shortcut) return false;
   } catch {
-    // private mode / quota
+    return false;
   }
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent(QUICK_COMPOSER_SHORTCUT_CHANGE_EVENT));
+  return true;
 }
 
 const LIVE_AGENTS_ENABLED_KEY = "bycoda.liveAgentsEnabled";
@@ -1938,7 +1929,8 @@ export function saveCloseToTray(value: boolean) {
   writeFlag(CLOSE_TO_TRAY_KEY, value);
   if (typeof window !== "undefined") window.dispatchEvent(new Event("bycoda:close-to-tray-change"));
 }
-export const subscribeCloseToTray = (onChange: () => void) => subscribePreferenceChanges([CLOSE_TO_TRAY_KEY], "bycoda:close-to-tray-change", onChange);
+export const subscribeCloseToTray = (onChange: () => void) =>
+  subscribePreferenceChanges([CLOSE_TO_TRAY_KEY], "bycoda:close-to-tray-change", onChange);
 
 const CREW_SCENE_ENABLED_KEY = "bycoda.crewSceneEnabled";
 
@@ -1969,14 +1961,18 @@ export function saveCrewSceneEnabled(value: boolean) {
 }
 
 export function subscribeCrewSceneEnabled(onStoreChange: () => void) {
-  return subscribePreferenceChanges([CREW_SCENE_ENABLED_KEY, LEGACY_CREW_SCENE_ENABLED_KEY], CREW_SCENE_ENABLED_CHANGE_EVENT, onStoreChange);
+  return subscribePreferenceChanges(
+    [CREW_SCENE_ENABLED_KEY, LEGACY_CREW_SCENE_ENABLED_KEY],
+    CREW_SCENE_ENABLED_CHANGE_EVENT,
+    onStoreChange,
+  );
 }
 
 const CREW_GROWTH_ENABLED_KEY = "bycoda.crewGrowthEnabled";
 
-export type CrewTheme = "classic" | "star-wars" | "lotr";
+export type CrewTheme = "classic" | "star-wars" | "lotr" | "matrix";
 const parseCrewTheme = (value: unknown): CrewTheme =>
-  value === "star-wars" || value === "lotr" ? value : "classic";
+  value === "star-wars" || value === "lotr" || value === "matrix" ? value : "classic";
 const crewThemeSetting = createStoredSetting<CrewTheme>({
   key: "bycoda.crewTheme",
   fallback: "classic",
@@ -2011,7 +2007,11 @@ export function saveCrewGrowthEnabled(value: boolean) {
 }
 
 export function subscribeCrewGrowthEnabled(onStoreChange: () => void) {
-  return subscribePreferenceChanges([CREW_GROWTH_ENABLED_KEY], CREW_GROWTH_ENABLED_CHANGE_EVENT, onStoreChange);
+  return subscribePreferenceChanges(
+    [CREW_GROWTH_ENABLED_KEY],
+    CREW_GROWTH_ENABLED_CHANGE_EVENT,
+    onStoreChange,
+  );
 }
 
 const DIFF_VIEWER_KEY = "bycoda.diffViewer";
@@ -2047,15 +2047,15 @@ export const subscribeDiffViewer = diffViewerSetting.subscribe;
 const DIFF_LAYOUT_KEY = "bycoda.diffLayout";
 
 /** How a single file's changes are drawn: one column, or before | after. */
-export type DiffLayout = "inline" | "split";
+export type DiffLayout = "auto" | "inline" | "split";
 
-export const DIFF_LAYOUT_DEFAULT: DiffLayout = "inline";
+export const DIFF_LAYOUT_DEFAULT: DiffLayout = "auto";
 
 /** Fired on `window` when the single-file diff layout flips. */
 export const DIFF_LAYOUT_CHANGE_EVENT = "bycoda:diff-layout-change";
 
 function isDiffLayout(value: unknown): value is DiffLayout {
-  return value === "inline" || value === "split";
+  return value === "auto" || value === "inline" || value === "split";
 }
 
 const diffLayoutSetting = createStoredSetting<DiffLayout>({
@@ -2079,21 +2079,45 @@ const RESUME_AT_RESET_KEY = "bycoda.resumeAtReset";
 export const RESUME_AT_RESET_DEFAULT = true;
 
 /** Whether a usage limit notice starts armed to continue at the reset. */
-const resumeAtResetSetting = storedFlag(RESUME_AT_RESET_KEY, RESUME_AT_RESET_DEFAULT);
+const resumeAtResetSetting = storedFlag(
+  RESUME_AT_RESET_KEY,
+  RESUME_AT_RESET_DEFAULT,
+  "bycoda:resume-at-reset-change",
+  true,
+);
+export const subscribeResumeAtReset = resumeAtResetSetting.subscribe;
+
+function saveChatFlag(key: string, value: boolean, event: string): boolean {
+  try {
+    const raw = value ? "1" : "0";
+    localStorage.setItem(key, raw);
+    if (localStorage.getItem(key) !== raw) return false;
+  } catch {
+    return false;
+  }
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(event));
+  return true;
+}
 
 export function loadResumeAtReset(): boolean {
   return resumeAtResetSetting.load() ?? RESUME_AT_RESET_DEFAULT;
 }
 
 export function saveResumeAtReset(value: boolean) {
-  resumeAtResetSetting.save(value);
+  return saveChatFlag(RESUME_AT_RESET_KEY, value, "bycoda:resume-at-reset-change");
 }
 
 const FORMAT_ON_SAVE_KEY = "bycoda.formatOnSave";
+const FORMAT_ON_SAVE_CHANGE_EVENT = "bycoda:format-on-save-change";
 
 export const FORMAT_ON_SAVE_DEFAULT = true;
 
-const formatOnSaveSetting = storedFlag(FORMAT_ON_SAVE_KEY, FORMAT_ON_SAVE_DEFAULT);
+const formatOnSaveSetting = storedFlag(
+  FORMAT_ON_SAVE_KEY,
+  FORMAT_ON_SAVE_DEFAULT,
+  FORMAT_ON_SAVE_CHANGE_EVENT,
+  true,
+);
 
 export function loadFormatOnSave(): boolean {
   return formatOnSaveSetting.load() ?? FORMAT_ON_SAVE_DEFAULT;
@@ -2102,6 +2126,8 @@ export function loadFormatOnSave(): boolean {
 export function saveFormatOnSave(value: boolean) {
   formatOnSaveSetting.save(value);
 }
+
+export const subscribeFormatOnSave = formatOnSaveSetting.subscribe;
 
 const AUTOSAVE_KEY = "bycoda.autosave";
 const AUTOSAVE_CHANGE_EVENT = "bycoda:autosave-change";
@@ -2138,7 +2164,12 @@ const CLAUDE_HOOKS_KEY = "bycoda.claudeHooks";
 
 export const CLAUDE_HOOKS_DEFAULT = true;
 
-const claudeHooksSetting = storedFlag(CLAUDE_HOOKS_KEY, CLAUDE_HOOKS_DEFAULT, "bycoda:claude-hooks-change", true);
+const claudeHooksSetting = storedFlag(
+  CLAUDE_HOOKS_KEY,
+  CLAUDE_HOOKS_DEFAULT,
+  "bycoda:claude-hooks-change",
+  true,
+);
 export const subscribeClaudeHooks = claudeHooksSetting.subscribe;
 
 export function loadClaudeHooks(): boolean {
@@ -2163,6 +2194,9 @@ export type KeybindingRow = {
  * focused surface handlers such as the draft composer workspace toggle.
  */
 export const KEYBINDINGS: KeybindingRow[] = [
+  { command: "Voice: Push to Talk", keys: "", when: "Voice connected and microphone paused" },
+  { command: "Voice: Open Companion", keys: `${MOD}${SHIFT}K`, when: "Voice companion closed" },
+  { command: DESKTOP_STOP_COMMAND, keys: `${CTRL}${IS_MAC ? "⌥" : "Alt+"}Esc`, when: "Anywhere" },
   { command: "App: Settings", keys: `${MOD},`, when: "Always" },
   { command: "App: Search", keys: `${MOD}K`, when: "Always" },
   { command: "App: Go to File", keys: `${MOD}P`, when: "Always" },
@@ -2315,6 +2349,7 @@ export type KeybindingOverrides = Record<string, KeybindingOverride>;
 const VALID_COMMANDS = new Set(KEYBINDINGS.map((row) => row.command));
 
 const KEY_CODES: Record<string, string> = {
+  Esc: "Escape",
   " ": "Space",
   Enter: "Enter",
   Space: "Space",
@@ -2398,6 +2433,8 @@ function shortcutOwners(): Map<string, string> {
 function validateShortcut(command: string, shortcut: string): string {
   const canonical = canonicalShortcut(shortcut);
   if (!canonical) throw new Error("That combination is not a valid shortcut");
+  if (command === DESKTOP_STOP_COMMAND && !isGlobalShortcut(canonical))
+    throw new Error("Emergency stop needs Command or Control as a global hotkey");
   if (command === ACTIVATE_RANGE_COMMAND && !/Digit[1-8]$/.test(canonical)) {
     throw new Error("Tab: Activate 1–8 needs a number key from 1 to 8");
   }
@@ -2623,5 +2660,16 @@ export function loadAutoContinueInterrupted(): boolean {
 }
 
 export function saveAutoContinueInterrupted(value: boolean) {
-  writeFlag(AUTO_CONTINUE_INTERRUPTED_KEY, value);
+  return saveChatFlag(
+    AUTO_CONTINUE_INTERRUPTED_KEY,
+    value,
+    "bycoda:auto-continue-interrupted-change",
+  );
 }
+
+export const subscribeAutoContinueInterrupted = (onChange: () => void) =>
+  subscribePreferenceChanges(
+    [AUTO_CONTINUE_INTERRUPTED_KEY],
+    "bycoda:auto-continue-interrupted-change",
+    onChange,
+  );

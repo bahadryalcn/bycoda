@@ -11,7 +11,7 @@ for (const theme of ["light", "dark"])
       await search.getByRole("button").first().click();
       const input = search.getByRole("combobox");
       await expect
-        .poll(async () => (await input.boundingBox())?.width ?? 0)
+        .poll(async () => (await input.locator("..").boundingBox())?.width ?? 0)
         .toBeGreaterThanOrEqual(160);
       await input.fill("zzzz-no-setting-matches");
       const empty = page.locator("p").filter({ hasText: /^Eşleşen ayar bulunamadı$/ });

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Sidebar } from "./Sidebar";
 import { rememberRemoteProject } from "../../features/connections/model/remoteProjects";
 import { refreshRemoteProjectSessions } from "../../features/connections/model/connections";
+import { LOADING_DELAY_MS } from "../../shared/hooks/useDelayedVisible";
 import { resetRemoteHealth } from "../../features/connections/model/remoteHealth";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -14,6 +15,10 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 vi.mock("../../features/source-control/hooks/useProjectDiffStats", () => ({
   useProjectDiffStats: vi.fn(() => null),
+  useProjectsDiffStats: vi.fn(() => []),
+}));
+vi.mock("../../features/source-control/hooks/useProjectWorktrees", () => ({
+  useProjectWorktrees: () => ({ data: undefined, refresh: async () => false }),
 }));
 vi.mock("../../features/source-control/hooks/useGitFileStatuses", () => ({
   useGitFileStatuses: () => ({ files: new Map(), dirs: new Map() }),
@@ -109,6 +114,11 @@ it("explains an orphaned project's connection and offers machine settings", asyn
 
 it("says it is loading a remote project's sessions until they arrive", async () => {
   await renderRemoteProject();
+  // Passive loaders stay hidden for LOADING_DELAY_MS so a quick load never flashes one.
+  expect(container.textContent).not.toContain("Loading sessions");
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, LOADING_DELAY_MS + 100));
+  });
   expect(container.textContent).toContain("Loading sessions from MacBook…");
   expect(container.textContent).not.toContain("isn’t connected");
 

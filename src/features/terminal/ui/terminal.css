@@ -1,5 +1,5 @@
 .project-terminal-dock {
-  --terminal-canvas: var(--color-background-base);
+  --terminal-canvas: var(--ui-workspace-canvas, var(--color-background-base));
   --terminal-text: var(--color-content);
   --terminal-muted: var(--ui-text-secondary);
   --terminal-border: var(--color-stroke);
@@ -10,23 +10,7 @@
   color: var(--terminal-text);
 }
 .terminal-header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex: 0 0 30px;
-  min-inline-size: 0;
-  padding-inline: 7px 4px;
-  border-block-end: 1px solid var(--terminal-border);
-  background: var(--bycoda-panel);
-}
-.terminal-toolbar {
-  display: flex;
-  align-items: center;
-  min-inline-size: 0;
-  gap: 2px;
-}
-.terminal-toolbar {
-  flex-shrink: 0;
+  background: var(--ui-workspace-panel, var(--ui-surface-panel));
 }
 .terminal-body {
   position: relative;
@@ -40,82 +24,58 @@
   flex-direction: column;
   flex: 0 0 auto;
   min-inline-size: 0;
-  border-inline-end: 1px solid var(--terminal-border);
-  background: var(--bycoda-panel);
-}
-.terminal-sidebar-sash {
-  position: relative;
-  z-index: 1;
-  flex: 0 0 0;
-  cursor: col-resize;
-  touch-action: none;
-}
-.terminal-sidebar-sash::after {
-  content: "";
-  position: absolute;
-  inset-block: 0;
-  inset-inline: -4px;
-}
-.terminal-sidebar-sash:focus-visible {
-  outline: var(--ui-focus-width) solid var(--color-accent);
-  outline-offset: 0;
-}
-.terminal-sidebar-sash[data-dragging]::after,
-.terminal-sidebar-sash:active::after {
-  background: var(--terminal-selected);
-}
-@media (hover: hover) and (pointer: fine) {
-  .terminal-sidebar-sash:hover::after {
-    background: var(--terminal-selected);
-  }
+  /* The list width is an explicit, user-resizable size, so its rows adapt to it rather
+     than to the window (container query below). */
+  container: terminal-list / inline-size;
+  background: var(--ui-workspace-panel, var(--ui-surface-panel));
 }
 .terminal-list {
   min-block-size: 0;
   overflow-y: auto;
-  padding-block: 3px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .terminal-list-row {
   position: relative;
   display: flex;
   align-items: center;
 }
+/* The row being dragged lifts above its neighbours; the gap it leaves is the placeholder. */
+.terminal-list-row:is([data-dragging], [data-settling]) {
+  background: var(--ui-surface-raised);
+  box-shadow: var(--ui-elevation-floating);
+  cursor: grabbing;
+}
 .terminal-list-item {
   display: flex;
   align-items: center;
   gap: 6px;
   text-align: start;
-  padding-inline-end: calc(var(--control-height-sm) + 6px);
   cursor: pointer;
-}
-.terminal-list-row:has(.terminal-row-actions > :nth-child(2)) .terminal-list-item {
-  padding-inline-end: calc(var(--control-height-sm) * 2 + 6px);
 }
 .terminal-row-actions {
-  position: absolute;
-  inset-inline-end: 3px;
   display: flex;
-  opacity: 0;
-  pointer-events: none;
+  flex-shrink: 0;
 }
-.terminal-row-actions button {
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-}
-.terminal-list-row:focus-within .terminal-row-actions {
-  opacity: 1;
-  pointer-events: auto;
-}
-@media (hover: hover) and (pointer: fine) {
-  .terminal-list-row:hover .terminal-row-actions {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
-@media (hover: none), (pointer: coarse) {
+/* In a narrow list the name needs the width more than two idle icons do. The actions
+   take no space at rest and appear on hover, keyboard focus and for the active terminal;
+   touch always shows them. Width is shared by container, not by window. */
+@container terminal-list (max-width: 10rem) {
   .terminal-row-actions {
-    opacity: 1;
-    pointer-events: auto;
+    max-inline-size: 0;
+    overflow: hidden;
+  }
+  .terminal-list-row:is(:hover, :focus-within, [data-selected]) .terminal-row-actions {
+    max-inline-size: none;
+    overflow: visible;
+  }
+  @media (hover: none), (pointer: coarse) {
+    .terminal-row-actions {
+      max-inline-size: none;
+      overflow: visible;
+    }
   }
 }
 .terminal-canvas {

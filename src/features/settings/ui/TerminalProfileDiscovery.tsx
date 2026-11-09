@@ -1,7 +1,7 @@
 import { SettingsFeedback } from "./settingsControls";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { UserRound } from "../../../shared/ui/icons";
@@ -42,7 +42,8 @@ export function TerminalProfileDiscovery({
   const revealProfiles =
     revealedSetting === settingId || revealedSetting === "terminal-account-profiles";
   const [profiles, setProfiles] = useState<TerminalProfile[] | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [activeOperation, setActiveOperation] = useState<string | null>(null);
+  const busy = activeOperation !== null;
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [openPopover, setOpenPopover] = useState(false);
@@ -52,15 +53,13 @@ export function TerminalProfileDiscovery({
   const providerRevision = useRef(0);
   const operationBusy = useRef(false);
 
-  useLayoutEffect(() => {
-    providerRevision.current += 1;
-    operationBusy.current = false;
-    setOpenPopover(false);
-    setBusy(false);
-    setProfiles(null);
-    setError(null);
-    setMessage(null);
-  }, [provider]);
+  // Callers key this control by provider; unmounting retires in-flight operations.
+  useEffect(() => {
+    const revision = providerRevision;
+    return () => {
+      revision.current += 1;
+    };
+  }, []);
 
   useEffect(() => {
     if (!autoDiscover || disabled) return;
@@ -101,12 +100,12 @@ export function TerminalProfileDiscovery({
     }
   }, [openPopover, revealProfiles, provider]);
 
-  const run = async (action: (current: () => boolean) => Promise<void>) => {
+  const run = async (key: string, action: (current: () => boolean) => Promise<void>) => {
     if (operationBusy.current) return;
     operationBusy.current = true;
     const revision = providerRevision.current;
     const current = () => providerRevision.current === revision;
-    setBusy(true);
+    setActiveOperation(key);
     setError(null);
     setMessage(null);
     try {
@@ -116,7 +115,7 @@ export function TerminalProfileDiscovery({
     } finally {
       if (current()) {
         operationBusy.current = false;
-        setBusy(false);
+        setActiveOperation(null);
       }
     }
   };
@@ -154,7 +153,6 @@ export function TerminalProfileDiscovery({
         ref={trigger}
         iconOnly={!showLabel}
         label={t("Terminal account profiles")}
-        tooltip={t("Terminal account profiles")}
         size="sm"
         variant="ghost"
         aria-expanded={openPopover}
@@ -162,7 +160,7 @@ export function TerminalProfileDiscovery({
         aria-controls={`${settingId}-popover`}
         onClick={() => setOpenPopover((current) => !current)}
       >
-        <UserRound className="size-4" strokeWidth={1.75} aria-hidden />
+        <UserRound className="icon-md" strokeWidth={1.75} aria-hidden />
         {showLabel
           ? providerProfiles
             ? t("Profiles ({p0})", { p0: providerProfiles.length })
@@ -187,27 +185,27 @@ export function TerminalProfileDiscovery({
             id={`setting-${settingId}`}
             data-setting-id={settingId}
             tabIndex={-1}
-            className="max-h-[min(65vh,24rem)] min-w-0 space-y-2 overflow-y-auto outline-none"
+            className="max-h-[min(65vh,24rem)] min-w-0 space-y-2 overflow-y-auto"
             role="group"
             aria-label={t("Terminal account profiles")}
             aria-busy={busy}
           >
-            <p className="text-[11px] leading-relaxed text-(--ui-text-secondary)">
+            <p className="text-ui-micro leading-relaxed text-(--ui-text-secondary)">
               {t(
                 "Accounts on this machine. The default account belongs to its provider; it does not select the default provider or model.",
               )}
             </p>
-            <p className="text-[11px] leading-relaxed text-(--ui-text-secondary)">
+            <p className="text-ui-micro leading-relaxed text-(--ui-text-secondary)">
               {t(
                 "Separate sign-ins per provider. New conversations use the default account; each conversation can pick its own account from the composer.",
               )}
             </p>
-            <p className="text-[length:var(--ui-font-caption)] leading-relaxed text-(--ui-text-secondary)">
+            <p className="text-ui-caption leading-relaxed text-(--ui-text-secondary)">
               {t(
                 "Uses existing CLI sign-ins. Finds standard and named home profiles; choose a folder for other locations.",
               )}
             </p>
-            <p className="text-[length:var(--ui-font-caption)] leading-relaxed text-(--ui-text-secondary)">
+            <p className="text-ui-caption leading-relaxed text-(--ui-text-secondary)">
               {t(
                 "Discovery reads profile folders on this computer. Connecting stores a path, not credentials.",
               )}
@@ -215,7 +213,7 @@ export function TerminalProfileDiscovery({
             {disabled ? (
               <p
                 role="status"
-                className="text-[length:var(--ui-font-caption)] leading-relaxed text-(--ui-text-secondary)"
+                className="text-ui-caption leading-relaxed text-(--ui-text-secondary)"
               >
                 {t(
                   "Wait for the current account operation to finish, then discover or connect a terminal profile.",
@@ -225,10 +223,10 @@ export function TerminalProfileDiscovery({
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 aria-label={t("Find terminal profiles")}
-                loading={busy}
+                loading={activeOperation === "find"}
                 disabled={disabled || busy}
                 onClick={() =>
-                  void run(async (current) => {
+                  void run("find", async (current) => {
                     const found = await invoke<TerminalProfile[]>("provider_terminal_profiles", {
                       provider,
                     });
@@ -239,9 +237,10 @@ export function TerminalProfileDiscovery({
                 {busy ? t("Working…") : t("Find terminal profiles")}
               </Button>
               <Button
+                loading={activeOperation === "choose"}
                 disabled={disabled || busy}
                 onClick={() =>
-                  void run(async (current) => {
+                  void run("choose", async (current) => {
                     const path = await open({
                       directory: true,
                       multiple: false,
@@ -274,7 +273,10 @@ export function TerminalProfileDiscovery({
                     </div>
                     <Button
                       disabled={(connected && !onConnected) || disabled || busy}
-                      onClick={() => void run((current) => connect(profile.path, current))}
+                      loading={activeOperation === profile.id}
+                      onClick={() =>
+                        void run(profile.id, (current) => connect(profile.path, current))
+                      }
                     >
                       {onConnected ? t("Use account") : connected ? t("Connected") : t("Connect")}
                     </Button>

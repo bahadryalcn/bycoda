@@ -1,9 +1,11 @@
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useMemo, useState } from "react";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ActivityHeatmap, BarChart, DonutChart, LineChart } from "../../../shared/ui/Charts";
 import { ChevronLeft, ChevronRight } from "../../../shared/ui/icons";
 import { Select } from "../../../shared/ui/Select";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import {
   bucketStart,
   effectiveResolution,
@@ -17,12 +19,19 @@ import {
   type UsageWindow,
 } from "../model/usageAnalytics";
 import { usageChartColor } from "../model/usageColors";
-import { formatBucket, formatMetric, formatUsagePercent, PagedUsageTable } from "./UsageCharts";
+import {
+  formatBucket,
+  formatMetric,
+  formatMetricTick,
+  formatUsagePercent,
+  metricNames,
+  ContinuousUsageTable,
+} from "./UsageCharts";
 
 type Colors = ReadonlyMap<string, string>;
 export function UsageTrend({
   buckets,
-  series,
+  series: allSeries,
   metric,
   resolution,
   percent,
@@ -39,6 +48,9 @@ export function UsageTrend({
 }) {
   useLocale();
   const [active, setActive] = useState<string | null>(null);
+  const [singleSeries, setSingleSeries] = useState<ReadonlySet<string> | null>(null);
+  // Series without any value in the interval only add flat lines and $0 tooltip rows.
+  const series = useMemo(() => allSeries.filter((entry) => entry[metric] > 0), [allSeries, metric]);
   const point = buckets.find((bucket) => bucket.key === active);
   const format = (value: number) =>
     percent ? formatUsagePercent(value) : formatMetric(value, metric);
@@ -72,42 +84,83 @@ export function UsageTrend({
   return (
     <section className="usage-panel usage-trend" data-usage-chart="trend">
       <div className="usage-section-heading">
-        <h3>{t("Usage over time")}</h3>
+        <div>
+          <h3>{t("Usage over time")}</h3>
+          <p className="usage-muted">
+            {t(metricNames[metric])} ·{" "}
+            {t({ "15m": "15 minutes", hour: "Hourly", day: "Daily", week: "Weekly" }[resolution])}
+          </p>
+        </div>
         <Button
+          size="sm"
           variant="ghost"
-          disabled={!point}
-          onClick={() => point && onSelect({ start: point.start, end: point.end })}
+          disabled={!point && buckets.length !== 1}
+          onClick={() => {
+            const interval = point ?? (buckets.length === 1 ? buckets[0] : undefined);
+            if (interval) onSelect({ start: interval.start, end: interval.end });
+          }}
         >
           {t("Select interval")}
         </Button>
       </div>
-      <LineChart
-        label={t("Usage over time")}
-        data={series.length ? data : []}
-        emptyLabel={t("No usage recorded in this period.")}
-        selectSeriesLabel={t("Choose a series to show")}
-        series={series.map((s) => ({
-          key: s.key,
-          label: s.label,
-          color: usageChartColor(colors, s.key),
-          area: false,
-        }))}
-        height={250}
-        curve="linear"
-        formatValue={format}
-        formatTick={format}
-        onActiveChange={(_, datum) => {
-          if (datum) setActive(datum.key);
-        }}
-      />
-      <details>
-        <summary>{t("Show as table")}</summary>
-        <PagedUsageTable
+      {buckets.length === 1 ? (
+        <div className="usage-single-period">
+          <p className="usage-muted">
+            {formatBucket(buckets[0].start, resolution)} –{" "}
+            {formatBucket(buckets[0].end, resolution)}
+          </p>
+          {series.map((item) => (
+            <p key={item.key}>
+              <Checkbox
+                className="min-w-0 items-center"
+                label={item.label}
+                checked={singleSeries === null || singleSeries.has(item.key)}
+                onChange={(event) => {
+                  const checked = event.currentTarget.checked;
+                  setSingleSeries((previous) => {
+                    const next = new Set(previous ?? series.map((entry) => entry.key));
+                    if (checked) next.add(item.key);
+                    else next.delete(item.key);
+                    return next;
+                  });
+                }}
+              />
+              <strong hidden={singleSeries !== null && !singleSeries.has(item.key)}>
+                {format(data[0]?.values[item.key] ?? 0)}
+              </strong>
+            </p>
+          ))}
+        </div>
+      ) : (
+        <LineChart
+          label={t("Usage over time")}
+          data={series.length ? data : []}
+          emptyLabel={t("No usage recorded in this period.")}
+          selectSeriesLabel={t("Choose a series to show")}
+          series={series.map((s, index) => ({
+            key: s.key,
+            label: s.label,
+            color: usageChartColor(colors, s.key),
+            area: false,
+            // Series differ by stroke pattern as well as colour (solid, dash, dot).
+            pattern: (["solid", "dash", "dot"] as const)[index % 3],
+          }))}
+          height={250}
+          curve="linear"
+          formatValue={format}
+          formatTick={percent ? formatUsagePercent : (value) => formatMetricTick(value, metric)}
+          onActiveChange={(_, datum) => {
+            if (datum) setActive(datum.key);
+          }}
+        />
+      )}
+      <Disclosure size="sm" summary={t("Show as table")}>
+        <ContinuousUsageTable
           caption={t("Usage over time")}
           rows={buckets.map((b) => ({ ...b, label: formatBucket(b.start, resolution) }))}
           metric={metric}
         />
-      </details>
+      </Disclosure>
     </section>
   );
 }
@@ -177,7 +230,7 @@ export function Contribution({
       <div className="usage-contributions">
         {rows.slice(0, 5).map((row) => (
           <div className="usage-contribution" key={row.key}>
-            <Button variant="link" onClick={() => onSelect(row.key)} title={row.label}>
+            <Button variant="link" onClick={() => onSelect(row.key)}>
               {row.label}
             </Button>
             <span>
@@ -297,6 +350,59 @@ export function TimeDistribution({
     calendarDays.push({ date: dayKey(date), count: daily.get(dayKey(date)) ?? 0 });
   return (
     <div className="usage-time-layout">
+      <div className="usage-time-secondary">
+        <section className="usage-panel usage-hourly-chart" data-usage-chart="hourly">
+          <div className="usage-section-heading">
+            <h3>{t(metricNames[metric])}</h3>
+            <Select
+              hideLabel
+              label={t("Time grouping")}
+              value={intervalMode}
+              onValueChange={(value) => setIntervalMode(value as "clock" | UsageResolution)}
+              options={[
+                { value: "clock", label: t("Hour of day") },
+                { value: "15m", label: t("15 minutes") },
+                { value: "hour", label: t("Hourly") },
+                { value: "day", label: t("Daily") },
+                { value: "week", label: t("Weekly") },
+              ]}
+            />
+          </div>
+          <BarChart
+            label={`${t(intervalMode === "clock" ? "Hour of day" : "Usage over time")} · ${t(metricNames[metric])}`}
+            period={`${dateLabel(window.start)} – ${dateLabel(window.end - 1)}`}
+            data={intervalMode === "clock" ? hours : intervalBars}
+            height={190}
+            formatValue={(value) => formatMetric(value, metric)}
+          />
+        </section>
+        {calendarDays.length >= 56 && (
+          <section className="usage-panel" data-usage-chart="calendar">
+            <div className="usage-section-heading">
+              <h3>{t("Daily activity")}</h3>
+              <span>{t("Latest 90 days within the selected interval")}</span>
+            </div>
+            <ActivityHeatmap
+              days={calendarDays}
+              thresholds={(() => {
+                const maximum = Math.max(0, ...calendarDays.map((day) => day.count));
+                return [maximum * 0.25, maximum * 0.5, maximum * 0.75];
+              })()}
+              label={t("Daily activity")}
+              period={`${calendarDays[0].date} – ${calendarDays[calendarDays.length - 1].date}`}
+              unit={{ one: "", other: "" }}
+              formatValue={(value) => formatMetric(value, metric)}
+              onSelectDate={(date) => {
+                const start = new Date(`${date}T00:00:00`).getTime();
+                onSelect({
+                  start: Math.max(start, window.start),
+                  end: Math.min(addDays(start, 1), window.end),
+                });
+              }}
+            />
+          </section>
+        )}
+      </div>
       <section className="usage-panel usage-week-panel" data-usage-chart="week">
         <div className="usage-section-heading">
           <div>
@@ -313,7 +419,7 @@ export function TimeDistribution({
               disabled={page === 0}
               onClick={() => setWeekOffset((value) => value + 1)}
             >
-              <ChevronLeft className="size-3.5" />
+              <ChevronLeft className="icon-sm" />
             </Button>
             <Button
               variant="ghost"
@@ -322,15 +428,21 @@ export function TimeDistribution({
               disabled={page === weekStarts.length - 1}
               onClick={() => setWeekOffset((value) => Math.max(0, value - 1))}
             >
-              <ChevronRight className="size-3.5" />
+              <ChevronRight className="icon-sm" />
             </Button>
           </div>
         </div>
         <div
           className="usage-week-grid"
+          data-single-day={dates.length === 1 || undefined}
           role="grid"
           aria-label={t("Day and hour activity")}
-          style={{ gridTemplateColumns: `3.5rem repeat(${dates.length}, minmax(0, 1fr))` }}
+          style={{
+            gridTemplateColumns:
+              dates.length === 1
+                ? "repeat(2, minmax(0, 1fr))"
+                : `3.5rem repeat(${dates.length}, minmax(0, 1fr))`,
+          }}
         >
           <div role="row" className="usage-week-row">
             <span role="columnheader">{t("Time")}</span>
@@ -382,12 +494,20 @@ export function TimeDistribution({
                       })
                     }
                     onKeyDown={(event) => {
-                      const delta = {
-                        ArrowLeft: [0, -1],
-                        ArrowRight: [0, 1],
-                        ArrowUp: [-1, 0],
-                        ArrowDown: [1, 0],
-                      }[event.key];
+                      const delta =
+                        dates.length === 1
+                          ? {
+                              ArrowLeft: [-1, 0],
+                              ArrowRight: [1, 0],
+                              ArrowUp: [-2, 0],
+                              ArrowDown: [2, 0],
+                            }[event.key]
+                          : {
+                              ArrowLeft: [0, -1],
+                              ArrowRight: [0, 1],
+                              ArrowUp: [-1, 0],
+                              ArrowDown: [1, 0],
+                            }[event.key];
                       if (!delta) return;
                       event.preventDefault();
                       const row = Math.max(0, Math.min(23, rowIndex + delta[0]));
@@ -419,58 +539,6 @@ export function TimeDistribution({
           <span>{t("Select an hour to inspect")}</span>
         </div>
       </section>
-      <div className="usage-time-secondary">
-        <section className="usage-panel usage-hourly-chart" data-usage-chart="hourly">
-          <div className="usage-section-heading">
-            <h3>{t(intervalMode === "clock" ? "Hour of day" : "Usage over time")}</h3>
-            <Select
-              label={t("Time grouping")}
-              value={intervalMode}
-              onValueChange={(value) => setIntervalMode(value as "clock" | UsageResolution)}
-              options={[
-                { value: "clock", label: t("Hour of day") },
-                { value: "15m", label: t("15 minutes") },
-                { value: "hour", label: t("Hourly") },
-                { value: "day", label: t("Daily") },
-                { value: "week", label: t("Weekly") },
-              ]}
-            />
-          </div>
-          <BarChart
-            label={t("Hour of day")}
-            period={`${dateLabel(window.start)} – ${dateLabel(window.end - 1)}`}
-            data={intervalMode === "clock" ? hours : intervalBars}
-            height={190}
-            formatValue={(value) => formatMetric(value, metric)}
-          />
-        </section>
-        {calendarDays.length >= 56 && (
-          <section className="usage-panel" data-usage-chart="calendar">
-            <div className="usage-section-heading">
-              <h3>{t("Daily activity")}</h3>
-              <span>{t("Latest 90 days within the selected interval")}</span>
-            </div>
-            <ActivityHeatmap
-              days={calendarDays}
-              thresholds={(() => {
-                const maximum = Math.max(0, ...calendarDays.map((day) => day.count));
-                return [maximum * 0.25, maximum * 0.5, maximum * 0.75];
-              })()}
-              label={t("Daily activity")}
-              period={`${calendarDays[0].date} – ${calendarDays[calendarDays.length - 1].date}`}
-              unit={{ one: "", other: "" }}
-              formatValue={(value) => formatMetric(value, metric)}
-              onSelectDate={(date) => {
-                const start = new Date(`${date}T00:00:00`).getTime();
-                onSelect({
-                  start: Math.max(start, window.start),
-                  end: Math.min(addDays(start, 1), window.end),
-                });
-              }}
-            />
-          </section>
-        )}
-      </div>
     </div>
   );
 }

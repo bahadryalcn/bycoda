@@ -11,7 +11,7 @@ import {
   attachmentPathText,
   isVisionImage,
   promptText,
-} from "../../../../features/sessions/model/attachments";
+} from "../../../../features/sessions/model/attachmentPrompt";
 import { isTaskListToolName } from "../../../../features/sessions/model/taskList";
 import { extractToolPreview } from "../../core/preview";
 import type { HarnessEvent } from "../../core/types";
@@ -198,12 +198,18 @@ export function isOpenCodeNotFound(cause: unknown): boolean {
 export function buildOpenCodePermissionRules(
   runtimeMode: RuntimeMode,
   disabledSkills: readonly string[] = [],
+  noSubagents = false,
 ): OpenCodePermissionRule[] {
   const denied: OpenCodePermissionRule[] = disabledSkills.map((name) => ({
     permission: "skill",
     pattern: name,
     action: "deny",
   }));
+  // OpenCode's own subagents cannot be held to the owner's selection. The v1 API
+  // names the permission "task"; v2 (verified live on 2.2.5) names it "subagent".
+  if (noSubagents)
+    for (const permission of ["task", "subagent"])
+      denied.push({ permission, pattern: "*", action: "deny" });
   if (runtimeMode === "full-access") {
     return [{ permission: "*", pattern: "*", action: "allow" }, ...denied];
   }
@@ -218,6 +224,19 @@ export function buildOpenCodePermissionRules(
     rules.push({ permission: "read", pattern: "*", action: "allow" });
   }
   return [...rules, ...denied];
+}
+
+/** A turn's session rules: runtime mode, disabled skills and the subagent selection. */
+export function openCodeTurnRules(input: {
+  runtimeMode: RuntimeMode;
+  skillPolicy?: { disabledNames?: string[] };
+  modelSettings?: Readonly<Record<string, string>>;
+}): OpenCodePermissionRule[] {
+  return buildOpenCodePermissionRules(
+    input.runtimeMode,
+    input.skillPolicy?.disabledNames,
+    input.modelSettings?.nativeSubagents === "off",
+  );
 }
 
 export function toOpenCodeV2PermissionRules(

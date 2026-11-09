@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { EditorState, Compartment, type Text } from "@codemirror/state";
-import { Decoration, EditorView, lineNumbers, WidgetType } from "@codemirror/view";
+import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { minimalSetup } from "codemirror";
 import { presentableDiff } from "@codemirror/merge";
-import { editorSearch } from "../../files/editor/editorSearch";
+import { editorSearch } from "../../files/public/editorSearch";
 import { Button } from "../../../shared/ui/Button";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import {
   ChevronDown,
   ChevronUp,
@@ -18,9 +21,11 @@ import { openSearchPanel } from "@codemirror/search";
 import { mergeResolution, type MergeChoice, type MergeResolution } from "../model/mergeResolution";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
-import { isLightScheme } from "../../settings/model/appearance";
-import { languageForPath, schemeExtensions } from "../../files/editor/editorChrome";
-import { editorReadability } from "../../files/editor/editorReadability";
+import { isLightScheme } from "../../settings/public/appearance";
+import { languageForPath } from "../../files/public/editorLanguage";
+import { schemeExtensions } from "../../files/public/editorChrome";
+import { editorReadability } from "../../files/public/editorReadability";
+import { editorSurface } from "../../files/public/editorSurface";
 import {
   conflictReplacement,
   findConflictBlocks,
@@ -38,7 +43,6 @@ import {
   type PaneSizes,
 } from "./ConflictSash";
 import "./conflict-layout.css";
-
 type Layout = "stacked" | "columns" | "inline";
 export type ConflictControls = {
   state: MergeResolution;
@@ -231,137 +235,144 @@ export function ConflictLayout({
         } as CSSProperties
       }
     >
-      {provenance ? (
-        <div
-          className="conflict-provenance"
-          title={[provenance.ours.detail, provenance.theirs.detail].join(" ← ")}
-        >
-          <span>
-            {t(
-              provenance.operation === "rebase"
-                ? "Rebase"
-                : provenance.operation === "cherry-pick"
-                  ? "Cherry-pick"
-                  : provenance.operation === "revert"
-                    ? "Revert"
-                    : "Merge",
-            )}
-          </span>
-          <strong>{provenance.ours.label || t("Current")}</strong>
-          <span aria-hidden="true">←</span>
-          <strong>{provenance.theirs.label || t("Incoming")}</strong>
-        </div>
-      ) : null}
-      <div className="conflict-layout-controls" role="group" aria-label={t("Conflict layout")}>
-        {(
-          [
-            ["stacked", "Sources above"],
-            ["columns", "Side by side"],
-            ["inline", "Result only"],
-          ] as const
-        ).map(([value, label]) => (
-          <Button
-            key={value}
-            variant="tab"
-            size="sm"
-            motion="none"
-            iconOnly
-            label={t(label)}
-            aria-pressed={layout === value}
-            onClick={() => {
-              setLayout(value);
-              try {
-                localStorage.setItem("bycoda.conflictLayout", value);
-              } catch {
-                /* In-memory preference still works. */
-              }
-            }}
-          >
-            {value === "stacked" ? (
-              <PanelTop size={14} />
-            ) : value === "columns" ? (
-              <SplitSquare size={14} />
-            ) : (
-              <File size={14} />
-            )}
-          </Button>
-        ))}
-        {layout !== "inline" ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            motion="none"
-            iconOnly
-            label={t("Sync scrolling")}
-            tooltip={t("Keep matching conflicts aligned while scrolling")}
-            aria-pressed={syncScroll}
-            onClick={() => {
-              const next = !syncScroll;
-              setSyncScroll(next);
-              sync.enabled = next;
-              if (next) sync.follow("result");
-              try {
-                localStorage.setItem("bycoda.conflictScrollSync", next ? "1" : "0");
-              } catch {
-                /* In-memory preference still works. */
-              }
-            }}
-          >
-            <Link size={14} />
-          </Button>
-        ) : null}
-        {controls ? (
-          <div className="conflict-navigation" role="group" aria-label={t("Merge conflicts")}>
-            <span
-              role="status"
-              className="conflict-progress"
-              data-complete={controls.state.regions.every((region) => region.choice !== null)}
-            >
-              {`${controls.state.active + 1} / ${controls.state.regions.length}`}
-              {" · "}
-              {t("{p0} unresolved", {
-                p0: controls.state.regions.filter((region) => region.choice === null).length,
-              })}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              motion="none"
-              iconOnly
-              label={t("Previous conflict")}
-              tooltip={t("Previous conflict (Shift+F7)")}
-              disabled={controls.disabled || controls.state.regions.length < 2}
-              onClick={() => controls.select(stepConflict(controls.state, -1))}
-            >
-              <ChevronUp size={14} />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              motion="none"
-              iconOnly
-              label={t("Next conflict")}
-              tooltip={t("Next conflict (F7)")}
-              disabled={controls.disabled || controls.state.regions.length < 2}
-              onClick={() => controls.select(stepConflict(controls.state, 1))}
-            >
-              <ChevronDown size={14} />
-            </Button>
+      <PaneHeader
+        className="conflict-toolbar"
+        leading={
+          <div className="conflict-layout-controls">
+            <SegmentedControl
+              label={t("Conflict layout")}
+              value={layout}
+              options={[
+                {
+                  value: "stacked",
+                  label: t("Sources above"),
+                  icon: <PanelTop className="icon-sm" aria-hidden />,
+                  iconOnly: true,
+                },
+                {
+                  value: "columns",
+                  label: t("Side by side"),
+                  icon: <SplitSquare className="icon-sm" aria-hidden />,
+                  iconOnly: true,
+                },
+                {
+                  value: "inline",
+                  label: t("Result only"),
+                  icon: <File className="icon-sm" aria-hidden />,
+                  iconOnly: true,
+                },
+              ]}
+              onValueChange={(value) => {
+                const next = value as Layout;
+                setLayout(next);
+                try {
+                  localStorage.setItem("bycoda.conflictLayout", next);
+                } catch {
+                  /* In-memory preference still works. */
+                }
+              }}
+            />
+            {layout !== "inline" ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                motion="none"
+                iconOnly
+                label={t("Sync scrolling")}
+                tooltip={t("Keep matching conflicts aligned while scrolling")}
+                pressed={syncScroll}
+                onClick={() => {
+                  const next = !syncScroll;
+                  setSyncScroll(next);
+                  sync.enabled = next;
+                  if (next) sync.follow("result");
+                  try {
+                    localStorage.setItem("bycoda.conflictScrollSync", next ? "1" : "0");
+                  } catch {
+                    /* In-memory preference still works. */
+                  }
+                }}
+              >
+                <Link className="icon-sm" />
+              </Button>
+            ) : null}
           </div>
+        }
+        actions={
+          controls ? (
+            <div className="conflict-navigation" role="group" aria-label={t("Merge conflicts")}>
+              <span
+                role="status"
+                className="conflict-progress"
+                data-complete={controls.state.regions.every((region) => region.choice !== null)}
+              >
+                {`${controls.state.active + 1} / ${controls.state.regions.length}`}
+                {" · "}
+                {t("{p0} unresolved", {
+                  p0: controls.state.regions.filter((region) => region.choice === null).length,
+                })}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                motion="none"
+                iconOnly
+                label={t("Previous conflict")}
+                tooltip={t("Previous conflict (Shift+F7)")}
+                disabled={controls.disabled || controls.state.regions.length < 2}
+                onClick={() => controls.select(stepConflict(controls.state, -1))}
+              >
+                <ChevronUp className="icon-sm" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                motion="none"
+                iconOnly
+                label={t("Next conflict")}
+                tooltip={t("Next conflict (F7)")}
+                disabled={controls.disabled || controls.state.regions.length < 2}
+                onClick={() => controls.select(stepConflict(controls.state, 1))}
+              >
+                <ChevronDown className="icon-sm" />
+              </Button>
+            </div>
+          ) : undefined
+        }
+      >
+        {provenance ? (
+          <Tooltip label={[provenance.ours.detail, provenance.theirs.detail].join(" ← ")}>
+            <div className="conflict-provenance">
+              <span className="conflict-provenance-operation">
+                {t(
+                  provenance.operation === "rebase"
+                    ? "Rebase"
+                    : provenance.operation === "cherry-pick"
+                      ? "Cherry-pick"
+                      : provenance.operation === "revert"
+                        ? "Revert"
+                        : "Merge",
+                )}
+              </span>
+              <strong>{provenance.ours.label || t("Current")}</strong>
+              <span aria-hidden="true">←</span>
+              <strong>{provenance.theirs.label || t("Incoming")}</strong>
+            </div>
+          </Tooltip>
         ) : null}
-      </div>
+      </PaneHeader>
       <div className="conflict-layout-panes" ref={panes}>
         <section className="conflict-pane conflict-pane-result" aria-label={t("Resolved output")}>
-          <header className="conflict-pane-heading">
-            <strong
-              className="conflict-pane-heading-text"
-              title={`${t("Working tree")} · ${t("Editable")}`}
-            >
-              {t("Resolved output")}
-              {dirty ? " *" : ""}
-            </strong>
-            <div className="conflict-pane-actions">{resultActions}</div>
-          </header>
+          <PaneHeader
+            as="header"
+            titleAs="div"
+            className="conflict-pane-header"
+            title={`${t("Resolved output")}${dirty ? " *" : ""}`}
+            meta={
+              <span className="conflict-result-meta">{`${t("Working tree")} · ${t("Editable")}`}</span>
+            }
+            actions={resultActions}
+          />
           {children}
         </section>
         <ConflictSourcePane
@@ -445,6 +456,9 @@ function ConflictSourcePane({
   controlsRef.current = controls;
   const colorScheme = useColorScheme();
   const heading = side === "ours" ? "Current" : "Incoming";
+  const identity = provenance?.label
+    ? provenance.label
+    : source.label.replace(/^([a-f0-9]{7})[a-f0-9]{1,33}(?=\s|$)/i, "$1");
   useEffect(() => {
     if (!host.current || source.text === null) return;
     const language = new Compartment();
@@ -454,7 +468,7 @@ function ConflictSourcePane({
       doc: source.text,
       extensions: [
         minimalSetup,
-        lineNumbers(),
+        editorSurface,
         EditorState.readOnly.of(true),
         EditorView.editable.of(false),
         EditorView.contentAttributes.of({
@@ -546,21 +560,25 @@ function ConflictSourcePane({
   }, [controls?.state.active, source.highlights]);
   return (
     <section className={`conflict-pane conflict-pane-${side}`} aria-label={t(heading)}>
-      <header className="conflict-pane-heading">
-        <div className="conflict-source-title">
-          <div
-            className="conflict-source-identity"
-            title={`${t(source.origin)} · ${t("Read only")} · ${provenance?.detail ?? source.label}`}
+      <PaneHeader
+        as="header"
+        titleAs="div"
+        className="conflict-pane-header"
+        icon={<span className="conflict-side-dot" />}
+        title={t(heading)}
+        meta={
+          <Tooltip
+            asChild
+            label={`${t(source.origin)} · ${t("Read only")} · ${provenance?.detail ?? source.label}`}
           >
-            <strong>
-              {t(heading)}
-              {provenance?.label || source.label
-                ? ` · ${provenance?.label ?? source.label.replace(/^([a-f0-9]{7})[a-f0-9]{1,33}(?=\s|$)/i, "$1")}`
-                : ""}
-            </strong>
-            {provenance?.subject ? <span>{provenance.subject}</span> : null}
-          </div>
-          <div className="conflict-pane-actions">
+            <span className="conflict-source-identity" data-origin={t(source.origin)}>
+              {identity ? <strong>{identity}</strong> : null}
+              {provenance?.subject ? <span>{provenance.subject}</span> : null}
+            </span>
+          </Tooltip>
+        }
+        actions={
+          <>
             {controls?.chooseAll ? (
               <Button
                 variant="ghost"
@@ -585,11 +603,11 @@ function ConflictSourcePane({
                 if (view) openSearchPanel(view);
               }}
             >
-              <Search size={14} />
+              <Search className="icon-sm" />
             </Button>
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
       {source.text === null ? (
         <p className="conflict-source-missing">{t("Deleted in this version")}</p>
       ) : (

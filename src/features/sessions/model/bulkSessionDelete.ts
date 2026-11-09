@@ -69,7 +69,9 @@ export async function deleteSessionsInBulk(
 
 export function bulkDeleteOutcome(result: BulkSessionDeleteResult): string {
   const success =
-    result.deleted.length > 0 ? `${conversations(result.deleted.length)} deleted.` : "";
+    result.deleted.length > 0 && (result.skipped.length > 0 || result.failed.length > 0)
+      ? `${conversations(result.deleted.length)} deleted.`
+      : "";
   return [success, bulkDeleteSummary(result)].filter(Boolean).join(" ");
 }
 

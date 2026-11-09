@@ -1,4 +1,6 @@
-import { listSessionsByProject, type SessionSummary } from "../../sessions/data/sessionStore";
+import { withRoomPrivacyMutation } from "../../group-lock/model/roomPrivacyProjection";
+import { listSessionsByProject, type SessionSummary } from "../../sessions/public/sessionStore";
+
 import { getGroupLockView } from "../../group-lock/model/groupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { pathKey, projectKey } from "../../../shared/lib/paths";
@@ -26,23 +28,42 @@ import {
   saveSessionFolders,
   type FolderMoveTarget,
   type SessionFolder,
-} from "../../sessions/model/sessionFolders";
+} from "../../sessions/public/sessionFolders";
 import {
   loadSessionOrder,
   saveSessionOrder,
   type SessionOrder,
-} from "../../sessions/model/sessionOrder";
+} from "../../sessions/public/sessionOrder";
+import {
+  executeOrganizationOperation,
+  organizationFoldersForProject,
+  organizationOrderForProject,
+  type OrganizationOperation,
+} from "../../sessions/public/sessionOrganizationOperations";
+import {
+  hydrateSessionOrganization,
+  listSessionOrganizationGestures,
+  NATIVE_SESSION_ORGANIZATION_ACTIVE,
+  reconcileSessionOrganizationReceipt,
+} from "../../sessions/public/sessionOrganizationStore";
 
 export type ProjectOrganizationContext = {
   environmentId: string;
-  sourceSessionId: string;
+  sourceSessionId?: string;
+  sourceThreadId?: string;
+  projectId?: string;
   projectCwd: string;
   workingCwd: string;
   valid: () => boolean;
+  authorize?: () => Promise<boolean>;
+  /** Native pending operation holding the privacy permit for this exact write. */
+  privacyRequestId?: string;
 };
 export type ProjectOrganizationSnapshot = {
   environmentId: string;
-  sourceSessionId: string;
+  sourceSessionId?: string;
+  sourceThreadId?: string;
+  projectId?: string;
   projectCwd: string;
   workingCwd: string;
   revision: string;
@@ -165,6 +186,16 @@ function rawMetadata() {
   return raw;
 }
 
+async function reviewedMetadata() {
+  const raw = rawMetadata();
+  if (!NATIVE_SESSION_ORGANIZATION_ACTIVE) return raw;
+  const organization = await hydrateSessionOrganization();
+  const combined = JSON.stringify([raw, organization.folders, organization.order]);
+  if (combined.length > 4 * 1024 * 1024)
+    throw new Error("Organization metadata exceeds the review budget");
+  return combined;
+}
+
 function privacySignature() {
   const lock = getGroupLockView().lock;
   return JSON.stringify([[...lock.lockedGroupIds].sort(), [...lock.lockedProjectKeys].sort()]);
@@ -182,6 +213,8 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
     JSON.stringify([
       context.environmentId,
       context.sourceSessionId,
+      context.sourceThreadId,
+      context.projectId,
       context.projectCwd,
       context.workingCwd,
     ]);
@@ -189,6 +222,8 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
     const lock = getGroupLockView().lock;
     if (
       !context.valid() ||
+      !!context.sourceSessionId === !!context.sourceThreadId ||
+      (!!context.sourceThreadId && !context.projectId) ||
       context.projectCwd.startsWith("remote://") ||
       isProjectLockedIn(lock, context.projectCwd) ||
       isProjectLockedIn(lock, context.workingCwd)
@@ -198,7 +233,10 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
   const capture = async (context: ProjectOrganizationContext) => {
     assert(context);
     const privacy = privacySignature();
-    const raw = rawMetadata();
+    const raw = await reviewedMetadata();
+    const nativeOrganization = NATIVE_SESSION_ORGANIZATION_ACTIVE
+      ? await hydrateSessionOrganization()
+      : undefined;
     const stored = await deps.sessions(context.projectCwd);
     assert(context);
     if (stored.length > 500)
@@ -212,7 +250,12 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
       .filter((row) => !row.orchestrationLeadId && pathKey(row.cwd) === pathKey(context.projectCwd))
       .map((row) => ({ id: row.id, title: row.title.slice(0, 1000) }));
     const ownIds = new Set(sessions.map((row) => row.id));
-    const folders = loadSessionFolders(context.projectCwd);
+    const folders = nativeOrganization
+      ? organizationFoldersForProject(nativeOrganization, context.projectCwd)
+      : loadSessionFolders(context.projectCwd);
+    const sessionOrder = nativeOrganization
+      ? organizationOrderForProject(nativeOrganization, context.projectCwd)
+      : loadSessionOrder(context.projectCwd);
     if (folders.length > 500 || folders.some((folder) => folder.sessionIds.length > 500))
       throw new Error("Project folders exceed the organization review budget");
     const groupIds = new Set(directory.groups.map((row) => row.id));
@@ -229,11 +272,13 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
       JSON.stringify([salt, scope(context), raw, privacy, sessions]),
     );
     assert(context);
-    if (rawMetadata() !== raw || privacySignature() !== privacy)
+    if ((await reviewedMetadata()) !== raw || privacySignature() !== privacy)
       throw new Error("Desktop organization changed while reading; refresh it");
     const snapshot: ProjectOrganizationSnapshot = {
       environmentId: context.environmentId,
       sourceSessionId: context.sourceSessionId,
+      sourceThreadId: context.sourceThreadId,
+      projectId: context.projectId,
       projectCwd: context.projectCwd,
       workingCwd: context.workingCwd,
       revision,
@@ -255,13 +300,13 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
       })),
       sessions,
       order: Object.fromEntries(
-        Object.entries(loadSessionOrder(context.projectCwd)).map(([list, entries]) => [
+        Object.entries(sessionOrder).map(([list, entries]) => [
           list,
           entries.filter((id) => ownIds.has(id)),
         ]),
       ),
     };
-    return { snapshot, raw, privacy, folders, groups, peers, groupIds, ownIds };
+    return { snapshot, raw, privacy, folders, sessionOrder, groups, peers, groupIds, ownIds };
   };
   const visibleStatus = async (
     context: ProjectOrganizationContext,
@@ -281,11 +326,32 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
       exact(input, ["operationId"]);
       if (!id(input.operationId)) throw new Error("Invalid organization operation");
       const receipt = receipts.get(input.operationId);
+      if ((!receipt || receipt.status.state === "unknown") && NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+        const saved = (await listSessionOrganizationGestures()).find(
+          (entry) => entry.id === input.operationId,
+        );
+        const descriptor = saved?.descriptor;
+        if (
+          saved &&
+          record(descriptor) &&
+          descriptor.kind === "reviewed" &&
+          descriptor.authorityScope === scope(context)
+        ) {
+          if (saved.state === "applied") return { state: "applied" };
+          if (saved.state === "rejected") return { state: "failed" };
+          const outcome = await reconcileSessionOrganizationReceipt(
+            `${saved.id}:effect:${saved.attempt}`,
+          );
+          return outcome ? { state: outcome.applied ? "applied" : "failed" } : { state: "unknown" };
+        }
+      }
       return receipt?.scope === scope(context)
         ? visibleStatus(context, receipt.status)
         : { state: "unknown" };
     }
     if (action !== "organization.patch") throw new Error("Unsupported organization action");
+    if (context.sourceThreadId && !context.authorize)
+      throw new Error("Room effect authority is unavailable");
     exact(input, ["expectedRevision", "operationId", "change"]);
     if (
       !id(input.operationId) ||
@@ -309,13 +375,35 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
       status: { state: "unknown" } as ProjectOrganizationStatus,
     };
     receipts.set(input.operationId, receipt);
+    let nativeOutcome: "unknown" | "applied" | undefined;
     try {
       const current = await capture(context);
       if (current.snapshot.revision !== input.expectedRevision)
         throw new Error("Desktop organization changed; review it again");
       const change = input.change as Change;
-      let save: () => void;
-      let verify: () => boolean;
+      let save: () => void | Promise<void>;
+      let verify: () => boolean | Promise<boolean>;
+      const saveNative = async (operation: OrganizationOperation) => {
+        const result = await executeOrganizationOperation(input.operationId as string, {
+          kind: "reviewed",
+          cwd: context.projectCwd,
+          authorityScope: scope(context),
+          expectedFolders: JSON.stringify(current.folders),
+          expectedOrder: JSON.stringify(current.sessionOrder),
+          operation,
+        });
+        if (result.state === "unknown") {
+          nativeOutcome = "unknown";
+          throw new Error("Organization outcome is unknown.");
+        }
+        if (result.state === "applied-unavailable") {
+          nativeOutcome = "applied";
+          throw new Error("Organization was applied, but refresh failed.");
+        }
+        if (result.state !== "applied")
+          throw new Error("Desktop organization changed; review it again.");
+        nativeOutcome = "applied";
+      };
       const folder = (value: unknown) => {
         if (!id(value)) throw new Error("Invalid folder selection");
         const found = current.folders.find((row) => row.id === value);
@@ -328,10 +416,19 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
           throw new Error("Conversation is not in this project");
         return chosen;
       };
-      const saveFolders = (next: SessionFolder[]) => {
-        save = () => saveSessionFolders(context.projectCwd, next);
-        verify = () =>
-          JSON.stringify(loadSessionFolders(context.projectCwd)) === JSON.stringify(next);
+      const saveFolders = (next: SessionFolder[], operation: OrganizationOperation) => {
+        save = NATIVE_SESSION_ORGANIZATION_ACTIVE
+          ? () => saveNative(operation)
+          : () => saveSessionFolders(context.projectCwd, next);
+        verify = NATIVE_SESSION_ORGANIZATION_ACTIVE
+          ? async () =>
+              JSON.stringify(
+                organizationFoldersForProject(
+                  await hydrateSessionOrganization(),
+                  context.projectCwd,
+                ),
+              ) === JSON.stringify(next)
+          : () => JSON.stringify(loadSessionFolders(context.projectCwd)) === JSON.stringify(next);
       };
       switch (change.kind) {
         case "projectName": {
@@ -390,7 +487,10 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
           if (!groupId || !current.groupIds.has(groupId))
             throw new Error("Assign this project to an available group first");
           const label = name(change.name);
-          save = () => updateProjectGroup(groupId, (group) => ({ ...group, name: label }));
+          save = () => {
+            if (!updateProjectGroup(groupId, (group) => ({ ...group, name: label })))
+              throw new Error("Could not save group name");
+          };
           verify = () => loadProjectGroups().find((row) => row.id === groupId)?.name === label;
           break;
         }
@@ -416,17 +516,34 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
               : folder(change.parentId);
           if (parent && folderDepth(current.folders, parent.id) >= MAX_FOLDER_DEPTH)
             throw new Error("Folder nesting limit reached");
+          const label = name(change.name);
+          const folderId = crypto.randomUUID();
           saveFolders(
-            createFolderWithSessions(current.folders, chosen, name(change.name), {
+            createFolderWithSessions(current.folders, chosen, label, {
               parentId: parent?.id,
+              id: folderId,
             }).folders,
+            {
+              kind: "create",
+              cwd: context.projectCwd,
+              folderId,
+              sessionIds: chosen,
+              name: label,
+              parentId: parent?.id,
+            },
           );
           break;
         }
         case "folderName": {
           exact(change, ["kind", "folderId", "name"]);
           const target = folder(change.folderId);
-          saveFolders(renameFolder(current.folders, target.id, name(change.name)));
+          const label = name(change.name);
+          saveFolders(renameFolder(current.folders, target.id, label), {
+            kind: "rename",
+            cwd: context.projectCwd,
+            folderId: target.id,
+            name: label,
+          });
           break;
         }
         case "folderMove": {
@@ -451,24 +568,43 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
             throw new Error("Invalid folder placement");
           if (!canMoveFolder(current.folders, targetFolder.id, target as FolderMoveTarget))
             throw new Error("Folder move would create a cycle or exceed nesting");
-          saveFolders(moveFolder(current.folders, targetFolder.id, target as FolderMoveTarget));
+          saveFolders(moveFolder(current.folders, targetFolder.id, target as FolderMoveTarget), {
+            kind: "moveFolder",
+            cwd: context.projectCwd,
+            folderId: targetFolder.id,
+            target: target as FolderMoveTarget,
+          });
           break;
         }
         case "folderOrder": {
           exact(change, ["kind", "folderIds"]);
           const selected = ids(change.folderIds);
           selected.forEach(folder);
-          saveFolders(reorderSessionFolders(current.folders, selected));
+          saveFolders(reorderSessionFolders(current.folders, selected), {
+            kind: "folderOrder",
+            cwd: context.projectCwd,
+            folderIds: selected,
+          });
           break;
         }
         case "sessionMove": {
           exact(change, ["kind", "sessionId", "folderId"]);
           const [sessionId] = sessions([change.sessionId]);
           if (change.folderId === null) {
-            saveFolders(removeSessionFromFolder(current.folders, sessionId));
+            saveFolders(removeSessionFromFolder(current.folders, sessionId), {
+              kind: "assign",
+              cwd: context.projectCwd,
+              folderId: null,
+              sessionIds: [sessionId],
+            });
           } else {
             const to = folder(change.folderId);
-            saveFolders(addSessionToFolder(current.folders, to.id, sessionId));
+            saveFolders(addSessionToFolder(current.folders, to.id, sessionId), {
+              kind: "assign",
+              cwd: context.projectCwd,
+              folderId: to.id,
+              sessionIds: [sessionId],
+            });
           }
           break;
         }
@@ -477,7 +613,13 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
           const target = folder(change.folderId);
           const chosen = sessions(change.sessionIds);
           const unknown = target.sessionIds.filter((id) => !current.ownIds.has(id));
-          saveFolders(arrangeFolderSessions(current.folders, target.id, [...chosen, ...unknown]));
+          saveFolders(arrangeFolderSessions(current.folders, target.id, [...chosen, ...unknown]), {
+            kind: "reviewedFolderSessions",
+            cwd: context.projectCwd,
+            folderId: target.id,
+            sessionIds: chosen,
+            knownIds: [...current.ownIds],
+          });
           break;
         }
         case "sessionOrder": {
@@ -485,30 +627,52 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
           if (change.list !== "loose" && change.list !== "pinned")
             throw new Error("Invalid conversation list");
           const chosen = sessions(change.sessionIds);
-          const before = loadSessionOrder(context.projectCwd);
+          const before = current.sessionOrder;
           const list = change.list;
           const existing = before[list] ?? [];
           const next = {
             ...before,
             [list]: [...chosen, ...existing.filter((id) => !chosen.includes(id))],
           };
-          save = () => saveSessionOrder(context.projectCwd, next);
-          verify = () =>
-            JSON.stringify(loadSessionOrder(context.projectCwd)) === JSON.stringify(next);
+          save = NATIVE_SESSION_ORGANIZATION_ACTIVE
+            ? () =>
+                saveNative({
+                  kind: "reviewedOrder",
+                  cwd: context.projectCwd,
+                  list,
+                  sessionIds: chosen,
+                })
+            : () => saveSessionOrder(context.projectCwd, next);
+          verify = NATIVE_SESSION_ORGANIZATION_ACTIVE
+            ? async () =>
+                JSON.stringify(
+                  organizationOrderForProject(
+                    await hydrateSessionOrganization(),
+                    context.projectCwd,
+                  ),
+                ) === JSON.stringify(next)
+            : () => JSON.stringify(loadSessionOrder(context.projectCwd)) === JSON.stringify(next);
           break;
         }
         default:
           throw new Error("Unsupported organization change");
       }
       assert(context);
-      if (rawMetadata() !== current.raw || privacySignature() !== current.privacy)
-        throw new Error("Desktop organization changed before saving");
-      save!();
-      if (!verify!()) throw new Error("Organization save could not be verified");
+      if (context.authorize && !(await context.authorize()))
+        throw new Error("Organization authority revoked");
+      await withRoomPrivacyMutation(async () => {
+        if (context.authorize && !(await context.authorize()))
+          throw new Error("Organization authority revoked");
+        assert(context);
+        if ((await reviewedMetadata()) !== current.raw || privacySignature() !== current.privacy)
+          throw new Error("Desktop organization changed before saving");
+        await save!();
+        if (!(await verify!())) throw new Error("Organization save could not be verified");
+      }, context.privacyRequestId);
       receipt.status = { state: "applied", snapshot: (await capture(context)).snapshot };
     } catch {
       receipt.status = {
-        state: "failed",
+        state: nativeOutcome ?? "failed",
         message:
           "The organization change could not be verified. Refresh the desktop state before another change.",
       };

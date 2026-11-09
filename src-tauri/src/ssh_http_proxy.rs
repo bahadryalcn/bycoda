@@ -10,6 +10,88 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
+// Shutdown of tracked sockets can wake readiness; this bound also lets
+// the original lease/deadline be rechecked if a platform reports no wakeup.
+const TLS_READY_SLICE: Duration = Duration::from_millis(100);
+
+#[cfg(unix)]
+pub(crate) fn wait_tcp_ready<T: std::os::fd::AsRawFd>(
+    interests: &[(&T, bool, bool)],
+    timeout: Duration,
+) -> std::io::Result<usize> {
+    let mut descriptors: Vec<libc::pollfd> = interests
+        .iter()
+        .filter(|(_, read, write)| *read || *write)
+        .map(|(socket, read, write)| libc::pollfd {
+            fd: socket.as_raw_fd(),
+            events: (if *read { libc::POLLIN } else { 0 })
+                | (if *write { libc::POLLOUT } else { 0 }),
+            revents: 0,
+        })
+        .collect();
+    if descriptors.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Missing TCP readiness interest",
+        ));
+    }
+    let timeout = timeout.min(TLS_READY_SLICE).as_millis().max(1) as i32;
+    // Every descriptor borrows a live original socket for the duration of poll.
+    let result = unsafe {
+        libc::poll(
+            descriptors.as_mut_ptr(),
+            descriptors.len() as libc::nfds_t,
+            timeout,
+        )
+    };
+    if result >= 0 {
+        return Ok(result as usize);
+    }
+    let error = std::io::Error::last_os_error();
+    if error.kind() == std::io::ErrorKind::Interrupted {
+        Ok(0)
+    } else {
+        Err(error)
+    }
+}
+
+#[cfg(windows)]
+pub(crate) fn wait_tcp_ready<T: std::os::windows::io::AsRawSocket>(
+    interests: &[(&T, bool, bool)],
+    timeout: Duration,
+) -> std::io::Result<usize> {
+    use windows_sys::Win32::Networking::WinSock::{
+        WSAGetLastError, WSAPoll, POLLRDNORM, POLLWRNORM, WSAPOLLFD,
+    };
+    let mut descriptors: Vec<WSAPOLLFD> = interests
+        .iter()
+        .filter(|(_, read, write)| *read || *write)
+        .map(|(socket, read, write)| WSAPOLLFD {
+            fd: socket.as_raw_socket() as _,
+            events: (if *read { POLLRDNORM } else { 0 }) | (if *write { POLLWRNORM } else { 0 }),
+            revents: 0,
+        })
+        .collect();
+    if descriptors.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Missing TCP readiness interest",
+        ));
+    }
+    let timeout = timeout.min(TLS_READY_SLICE).as_millis().max(1) as i32;
+    // WSAPoll observes live original SOCKET handles; it owns no extra stream.
+    let result = unsafe { WSAPoll(descriptors.as_mut_ptr(), descriptors.len() as u32, timeout) };
+    if result >= 0 {
+        return Ok(result as usize);
+    }
+    let error = std::io::Error::from_raw_os_error(unsafe { WSAGetLastError() });
+    if error.kind() == std::io::ErrorKind::Interrupted {
+        Ok(0)
+    } else {
+        Err(error)
+    }
+}
+
 const ADDRESS: &str = "BYCODA_SSH_HTTP_PROXY_ADDRESS";
 const CAPABILITY: &str = "BYCODA_SSH_HTTP_PROXY_CAPABILITY";
 const MAGIC: &[u8] = b"BYCODA_HTTP_PROXY_V1 ";
@@ -293,7 +375,15 @@ impl HttpProxyLease {
                         return;
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        std::thread::sleep(Duration::from_millis(20))
+                        // Listener is owned by this lease. Recheck its captured
+                        // stop state and expiry after each bounded readiness wait.
+                        // Tracked stream shutdown retains its existing wake path.
+                        let remaining = expiry.saturating_duration_since(Instant::now());
+                        if remaining.is_zero()
+                            || wait_tcp_ready(&[(&listener, true, false)], remaining).is_err()
+                        {
+                            break;
+                        }
                     }
                     Err(_) => break,
                 }
@@ -544,6 +634,7 @@ fn tls_upstream(
             return Err(HttpProxyFailure::Cancelled);
         }
         remaining(deadline)?;
+        let mut progressed = false;
         if tls.conn.wants_write() {
             match tls.conn.write_tls(&mut tls.sock) {
                 Ok(0) => {
@@ -553,7 +644,7 @@ fn tls_upstream(
                         HttpProxyFailure::Transport
                     })
                 }
-                Ok(_) => {}
+                Ok(_) => progressed = true,
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
                 Err(_) => {
                     return Err(if state.stopped.load(Ordering::Acquire) {
@@ -576,6 +667,7 @@ fn tls_upstream(
                 tls.conn
                     .process_new_packets()
                     .map_err(|_| HttpProxyFailure::Transport)?;
+                progressed = true;
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
             Err(_) => {
@@ -586,7 +678,19 @@ fn tls_upstream(
                 })
             }
         }
-        std::thread::sleep(Duration::from_millis(2));
+        if !progressed && tls.conn.is_handshaking() {
+            wait_tcp_ready(
+                &[(&tls.sock, tls.conn.wants_read(), tls.conn.wants_write())],
+                remaining(deadline)?,
+            )
+            .map_err(|_| {
+                if state.stopped.load(Ordering::Acquire) {
+                    HttpProxyFailure::Cancelled
+                } else {
+                    HttpProxyFailure::Transport
+                }
+            })?;
+        }
     }
     tls.sock
         .set_nonblocking(false)
@@ -777,16 +881,21 @@ fn relay_tls_connection(
         if state.stopped.load(Ordering::Acquire) {
             return Err(HttpProxyFailure::Cancelled);
         }
+        let mut progressed = false;
         if !local_eof && !connection.wants_write() {
             match local.read(&mut bytes) {
                 Ok(0) => {
                     local_eof = true;
                     connection.send_close_notify();
+                    progressed = true;
                 }
-                Ok(count) => connection
-                    .writer()
-                    .write_all(&bytes[..count])
-                    .map_err(|_| HttpProxyFailure::Transport)?,
+                Ok(count) => {
+                    connection
+                        .writer()
+                        .write_all(&bytes[..count])
+                        .map_err(|_| HttpProxyFailure::Transport)?;
+                    progressed = true;
+                }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
                 Err(_) => return Err(HttpProxyFailure::Transport),
             }
@@ -794,15 +903,21 @@ fn relay_tls_connection(
         while connection.wants_write() {
             match connection.write_tls(&mut socket) {
                 Ok(0) => return Err(HttpProxyFailure::Transport),
-                Ok(_) => {}
+                Ok(_) => progressed = true,
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
                 Err(_) => return Err(HttpProxyFailure::Transport),
             }
         }
         if pending.is_empty() && !remote_eof {
             match connection.reader().read(&mut bytes) {
-                Ok(0) => remote_eof = true,
-                Ok(count) => pending.extend_from_slice(&bytes[..count]),
+                Ok(0) => {
+                    remote_eof = true;
+                    progressed = true;
+                }
+                Ok(count) => {
+                    pending.extend_from_slice(&bytes[..count]);
+                    progressed = true;
+                }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     match connection.read_tls(&mut socket) {
                         Ok(0) => return Err(HttpProxyFailure::Transport),
@@ -810,6 +925,7 @@ fn relay_tls_connection(
                             connection
                                 .process_new_packets()
                                 .map_err(|_| HttpProxyFailure::Transport)?;
+                            progressed = true;
                         }
                         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
                         Err(_) => return Err(HttpProxyFailure::Transport),
@@ -823,6 +939,7 @@ fn relay_tls_connection(
                 Ok(0) => return Err(HttpProxyFailure::Transport),
                 Ok(count) => {
                     offset += count;
+                    progressed = true;
                     if offset == pending.len() {
                         pending.clear();
                         offset = 0;
@@ -837,11 +954,35 @@ fn relay_tls_connection(
                 .shutdown(Shutdown::Write)
                 .map_err(|_| HttpProxyFailure::Transport)?;
             closed_local_write = true;
+            progressed = true;
         }
         if local_eof && remote_eof && pending.is_empty() && !connection.wants_write() {
             return Ok(());
         }
-        std::thread::sleep(Duration::from_millis(2));
+        if !progressed {
+            wait_tcp_ready(
+                &[
+                    (
+                        &local,
+                        !local_eof && !connection.wants_write(),
+                        !pending.is_empty(),
+                    ),
+                    (
+                        &socket,
+                        !remote_eof && pending.is_empty(),
+                        connection.wants_write(),
+                    ),
+                ],
+                TLS_READY_SLICE,
+            )
+            .map_err(|_| {
+                if state.stopped.load(Ordering::Acquire) {
+                    HttpProxyFailure::Cancelled
+                } else {
+                    HttpProxyFailure::Transport
+                }
+            })?;
+        }
     }
 }
 

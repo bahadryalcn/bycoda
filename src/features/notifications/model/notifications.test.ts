@@ -98,7 +98,7 @@ describe("shouldNotify", () => {
     ).toBe(false);
   });
 
-  it("fires for a session that is not on screen even when focused", () => {
+  it("stays quiet for another session while the app is focused", () => {
     expect(
       shouldNotify({
         enabled: true,
@@ -106,7 +106,7 @@ describe("shouldNotify", () => {
         windowFocused: true,
         sessionVisible: false,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("respects the toggle and the OS decision", () => {

@@ -1,0 +1,323 @@
+// @vitest-environment happy-dom
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { newSession, type Session } from "../../../features/sessions/model/session";
+import { createEditedResendCoordinator } from "../../../features/sessions/model/editLastTurn";
+import { useCompactAndRewind, type CompactAndRewindDeps } from "./useCompactAndRewind";
+
+const effects = vi.hoisted(() => ({
+  forget: vi.fn(),
+  providerRewind: vi.fn(),
+  stop: vi.fn(),
+  plan: vi.fn(),
+  apply: vi.fn(),
+  save: vi.fn(),
+  reviewChanged: vi.fn(),
+  retireFiles: vi.fn(),
+  preview: vi.fn(),
+  registerUndo: vi.fn(),
+  compact: vi.fn(),
+  canCompact: vi.fn(() => false),
+}));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: effects.retireFiles }));
+
+vi.mock("../../../shared/i18n", () => ({ t: (value: string) => value }));
+vi.mock("../../../integrations/harness", () => ({
+  forgetHarnessSession: effects.forget,
+  rewindHarnessLastTurn: effects.providerRewind,
+  canRewindHarnessLastTurn: () => true,
+  stopHarnessSession: effects.stop,
+  canCompactHarnessContext: effects.canCompact,
+  compactHarnessContext: effects.compact,
+  applyHarnessEvent: (session: Session) => session,
+}));
+vi.mock("../../../features/connections/model/remoteProjects", () => ({
+  remoteProjectFor: () => undefined,
+}));
+vi.mock("../../../features/connections/model/remoteSessionActions", () => ({
+  remoteSessionActions: () => undefined,
+}));
+vi.mock("../../../features/notifications/model/dockBadge", () => ({
+  syncDockBadge: vi.fn(),
+}));
+vi.mock("../../../features/providers/model/providerAccounts", () => ({
+  sessionProviderAccountId: () => undefined,
+  supportsProviderAccounts: () => false,
+}));
+vi.mock("../../../features/sessions/data/sessionStore", () => ({
+  shouldPersistSession: () => true,
+  upsertSession: effects.save,
+}));
+vi.mock("../../../features/sessions/model/checkpoint", () => ({
+  notifyReviewChanged: effects.reviewChanged,
+}));
+vi.mock("../../../features/workspaces/model/rewindClient", () => ({
+  planWorkspaceRewind: effects.plan,
+  applyWorkspaceRewind: effects.apply,
+}));
+vi.mock("../../../features/workspaces/ui/WorkspaceRewindPreview", () => ({
+  clearWorkspaceRewindUndo: vi.fn(),
+  requestWorkspaceRewindPreview: effects.preview,
+  registerWorkspaceRewindUndoHandler: (_id: string, handler: unknown) => {
+    effects.registerUndo(handler);
+    return () => {};
+  },
+}));
+
+let root: Root;
+let deps: CompactAndRewindDeps;
+let actions: ReturnType<typeof useCompactAndRewind>;
+
+function chat(worktree = false): Session {
+  return {
+    ...newSession("codex", "/repo"),
+    id: "session",
+    providerSessionId: "provider-before-rewind",
+    ...(worktree ? { workspaceId: "workspace", workspaceMode: "worktree" as const } : {}),
+    blocks: [
+      { id: "earlier-user", role: "user", text: "Keep earlier prompt" },
+      { id: "earlier-answer", role: "assistant", text: "Keep earlier answer" },
+      {
+        id: "first-steer",
+        role: "user",
+        text: "Keep first steer in this turn",
+        providerTurnId: "same-provider-turn",
+      },
+      { id: "steer-answer", role: "assistant", text: "Keep response to first steer" },
+      {
+        id: "selected-user",
+        role: "user",
+        text: "Edit selected prompt",
+        providerTurnId: "same-provider-turn",
+      },
+      { id: "removed-answer", role: "assistant", text: "Remove answer after selection" },
+    ],
+  };
+}
+
+beforeEach(async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.clearAllMocks();
+  effects.forget.mockReset().mockResolvedValue(undefined);
+  effects.save.mockReset().mockResolvedValue(undefined);
+  effects.retireFiles.mockReset().mockResolvedValue(undefined);
+  effects.compact.mockReset().mockResolvedValue(undefined);
+  effects.canCompact.mockReset().mockReturnValue(false);
+  deps = {
+    sessionsRef: { current: [chat()] },
+    setSessions: (update) => {
+      deps.sessionsRef.current =
+        typeof update === "function" ? update(deps.sessionsRef.current) : update;
+    },
+    turnGen: { current: new Map([["session", 4]]) },
+    enqueueHarnessEvent: vi.fn(),
+    flushHarnessEvents: vi.fn(),
+    retiringTurns: { current: new Map() },
+    editedResends: createEditedResendCoordinator(),
+    windowTransferPendingRef: { current: false },
+    movingSessionIds: { current: new Set() },
+    orchestrator: {
+      submissionError: () => undefined,
+      run: () => undefined,
+    } as unknown as CompactAndRewindDeps["orchestrator"],
+    lastBoundProvider: { current: new Map([["session", "provider-before-rewind"]]) },
+    lastPersistedUserBlock: { current: new Map([["session", "selected-user"]]) },
+    persistSession: vi.fn(),
+  };
+  function Harness() {
+    actions = useCompactAndRewind(deps);
+    return null;
+  }
+  root = createRoot(document.createElement("div"));
+  await act(async () => root.render(createElement(Harness)));
+});
+
+afterEach(async () => {
+  await act(async () => root.unmount());
+  vi.unstubAllGlobals();
+});
+
+it.each([false, true])(
+  "carries persisted operator=%s into standalone Native compaction without changing the source thread",
+  async (enabled) => {
+    const original = chat();
+    if (enabled) original.blocks[0] = { ...original.blocks[0]!, bycoda: true };
+    deps.sessionsRef.current = [original];
+    effects.canCompact.mockReturnValue(true);
+    let outcome: unknown;
+    await act(async () => {
+      outcome = actions.onCompactContext("session");
+    });
+    expect(outcome).toBe(true);
+    await vi.waitFor(() => expect(effects.compact).toHaveBeenCalledOnce());
+    expect(effects.compact.mock.calls[0]?.[0]).toMatchObject({
+      sessionId: "session",
+      appAccess: enabled,
+      controlsAgents: enabled,
+      model: original.model,
+      runtimeMode: original.runtimeMode,
+    });
+  },
+);
+
+it("keeps local Host compact and rewind out of Native when its owner client is detached", async () => {
+  const session = chat(true);
+  session.hostBinding = {
+    kind: "local-host",
+    machineId: "local",
+    environmentId: "home",
+    projectId: "project",
+    sessionId: session.id,
+    authorityGeneration: 1,
+    created: true,
+  };
+  deps.sessionsRef.current = [session];
+  expect(actions.onCompactContext(session.id)).toBe(false);
+  expect(await actions.onRewindMessage(session.id, "selected-user")).toBe(false);
+  expect(effects.providerRewind).not.toHaveBeenCalled();
+  expect(effects.apply).not.toHaveBeenCalled();
+  expect(effects.save).not.toHaveBeenCalled();
+});
+
+it("keeps a managed Undo review's original authority when it changes during preparation", async () => {
+  const original = { ...chat(true), adoptedAuthorityGeneration: 2 };
+  deps.sessionsRef.current = [original];
+  effects.stop.mockImplementationOnce(async () => {
+    deps.sessionsRef.current = [{ ...original, adoptedAuthorityGeneration: 3 }];
+  });
+  effects.plan.mockResolvedValueOnce({ authorityGeneration: 2, token: "original-preview" });
+  effects.preview.mockImplementationOnce(async (_plan, apply) => apply());
+  const undo = effects.registerUndo.mock.calls.at(-1)![0] as (
+    id: string,
+    target: { workspaceId: string; operationId: string },
+  ) => Promise<void>;
+  await expect(
+    undo("session", { workspaceId: "workspace", operationId: "original-operation" }),
+  ).rejects.toThrow("conversation changed");
+  expect(effects.plan).toHaveBeenCalledWith(
+    original,
+    "workspace",
+    { operationId: "original-operation" },
+    { authorityGeneration: 2 },
+  );
+  expect(effects.apply).not.toHaveBeenCalled();
+  expect(deps.sessionsRef.current[0].adoptedAuthorityGeneration).toBe(3);
+});
+
+it("passes the same captured authority through an explicit fresh managed Undo confirmation", async () => {
+  const current = { ...chat(true), adoptedAuthorityGeneration: 3 };
+  deps.sessionsRef.current = [current];
+  const plan = { authorityGeneration: 3, token: "fresh-preview" };
+  effects.plan.mockResolvedValueOnce(plan);
+  effects.apply.mockResolvedValueOnce({ session: current });
+  effects.preview.mockImplementationOnce(async (_plan, apply) => apply());
+  const undo = effects.registerUndo.mock.calls.at(-1)![0] as (
+    id: string,
+    target: { workspaceId: string; operationId: string },
+  ) => Promise<void>;
+  await undo("session", { workspaceId: "workspace", operationId: "operation" });
+  expect(effects.apply).toHaveBeenCalledWith(current, plan, expect.any(String), {
+    authorityGeneration: 3,
+  });
+});
+
+it.each([false, true])(
+  "rewinds the exact selected message with worktree=%s, preserving earlier steers and resetting provider context",
+  async (worktree) => {
+    const original = chat(worktree);
+    deps.sessionsRef.current = [original];
+    await expect(actions.onRewindMessage("session", "selected-user")).resolves.toBe(true);
+    const rewound = deps.sessionsRef.current[0];
+    expect(rewound.blocks).toEqual(original.blocks.slice(0, 4));
+    expect(rewound.rewindHistory?.[0]).toMatchObject({
+      fromBlockId: "selected-user",
+      blocks: original.blocks.slice(4),
+    });
+    expect(rewound.providerSessionId).toBeUndefined();
+    expect(rewound.pendingContextReplay).toContain("Keep first steer in this turn");
+    expect(rewound.pendingContextReplay).not.toContain("Edit selected prompt");
+    expect(rewound.pendingContextReplay).not.toContain("Remove answer after selection");
+    expect(effects.forget).toHaveBeenCalledWith("codex", "session");
+    expect(effects.retireFiles).toHaveBeenCalledWith("session_files_forget_from_message", {
+      sessionId: "session",
+      userBlockId: "selected-user",
+    });
+    expect(effects.save.mock.invocationCallOrder[0]).toBeLessThan(
+      effects.retireFiles.mock.invocationCallOrder[0],
+    );
+    expect(effects.providerRewind).not.toHaveBeenCalled();
+    expect(effects.stop).not.toHaveBeenCalled();
+    expect(effects.plan).not.toHaveBeenCalled();
+    expect(effects.apply).not.toHaveBeenCalled();
+    expect(effects.save).toHaveBeenCalledWith(rewound);
+    expect(deps.persistSession).toHaveBeenCalledWith(rewound);
+    expect(effects.reviewChanged).toHaveBeenCalledWith("session");
+    expect(deps.turnGen.current.get("session")).toBe(5);
+    expect(deps.lastBoundProvider.current.has("session")).toBe(false);
+    expect(deps.lastPersistedUserBlock.current.has("session")).toBe(false);
+    expect(deps.editedResends.isActive("session")).toBe(false);
+    expect(original.blocks).toHaveLength(6);
+  },
+);
+
+it("rejects a busy conversation before provider or persistence work", async () => {
+  const original = { ...chat(), busy: true };
+  deps.sessionsRef.current = [original];
+  await expect(actions.onRewindMessage("session", "selected-user")).resolves.toBe(false);
+  expect(deps.sessionsRef.current[0]).toBe(original);
+  expect(effects.forget).not.toHaveBeenCalled();
+  expect(effects.save).not.toHaveBeenCalled();
+  expect(deps.persistSession).not.toHaveBeenCalled();
+});
+
+it("preserves a newer conversation when state changes during provider reset", async () => {
+  const original = chat();
+  const newer = {
+    ...original,
+    blocks: [...original.blocks, { id: "new-message", role: "user" as const, text: "Newer work" }],
+  };
+  deps.sessionsRef.current = [original];
+  effects.forget.mockImplementationOnce(async () => {
+    deps.sessionsRef.current = [newer];
+  });
+  await expect(actions.onRewindMessage("session", "selected-user")).rejects.toThrow(
+    "conversation changed",
+  );
+  expect(deps.sessionsRef.current[0].blocks).toBe(newer.blocks);
+  expect(deps.sessionsRef.current[0].pendingContextReplay).toContain("Newer work");
+  expect(effects.save).not.toHaveBeenCalled();
+  expect(deps.editedResends.isActive("session")).toBe(false);
+});
+
+it("preserves visible history when durable rewind persistence fails", async () => {
+  const original = chat(true);
+  deps.sessionsRef.current = [original];
+  effects.save.mockRejectedValueOnce(new Error("Storage unavailable"));
+  await expect(actions.onRewindMessage("session", "selected-user")).rejects.toThrow(
+    "Storage unavailable",
+  );
+  expect(deps.sessionsRef.current[0].blocks).toBe(original.blocks);
+  expect(deps.sessionsRef.current[0].providerSessionId).toBeUndefined();
+  expect(deps.sessionsRef.current[0].pendingContextReplay).toContain("Edit selected prompt");
+  expect(effects.reviewChanged).not.toHaveBeenCalled();
+  expect(deps.editedResends.isActive("session")).toBe(false);
+});
+
+it("preserves a newer conversation when state changes during durable persistence", async () => {
+  const original = chat();
+  const newer = {
+    ...original,
+    blocks: [...original.blocks, { id: "new-message", role: "user" as const, text: "Newer work" }],
+  };
+  deps.sessionsRef.current = [original];
+  effects.save.mockImplementationOnce(async () => {
+    deps.sessionsRef.current = [newer];
+  });
+  await expect(actions.onRewindMessage("session", "selected-user")).rejects.toThrow(
+    "conversation changed",
+  );
+  expect(deps.sessionsRef.current[0].blocks).toBe(newer.blocks);
+  expect(effects.reviewChanged).not.toHaveBeenCalled();
+  expect(deps.editedResends.isActive("session")).toBe(false);
+});

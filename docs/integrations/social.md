@@ -1,417 +1,620 @@
 # Social Media host integration
 
-The global Social Media screen opens from the project rail or session composer. Accounts belong to a host authority; campaigns and conversations refer to projects. UI, session MCP and host CLI operations use the same `SocialService`, SQLite queue and authorization checks.
+Social Media connects ten platforms (X, LinkedIn, Facebook, WhatsApp, Telegram, Reddit,
+Instagram, YouTube, TikTok, Snapchat) to one Host-owned workflow: audience discovery,
+people and lists, direct messages, comments, email, and publishing. The Host owns the
+durable queue, credentials, policy and every external action. The UI, session tools
+and host CLI call the same operations through one `social.request` RPC.
 
-## Manage the workspace
+Accounts belong to a Host authority. Campaigns, rules and conversations refer to
+projects. Credentials are host-only: the vault syncs its encrypted state before
+replacement and creates Windows vault keys exclusively after a completed file sync.
+Invalid or undecryptable vault state stays intact and blocks mutation. No read failure
+creates a blank vault; repair storage or restore the correct key before retrying.
 
-### Browser workspace and registration
+## Screens
 
-Every platform account has an owner-assisted **Browser workspace** on its selected
-executor host. It opens a dedicated Chrome/Edge profile for login, registration,
-inbox navigation, supported publishing pages or a validated public post URL for
-comments. WhatsApp and Telegram registration is completed through their own native clients;
-YouTube has no general private-message inbox. Facebook and Instagram open their
-home surface for publishing; the owner chooses the composer there. These routes
-are navigation workflows, not new automated publishing or inbox adapters.
+The Social workspace has five screens. The shell keeps the AI stop control and the
+connection/project filters visible on each of them.
 
-The owner starts or cancels work from Accounts. Registration terms, passwords,
-Google account selection, verification codes and challenges are completed in the
-browser. The host stores up to 20 workflow metadata records per account and tracks
-queued, awaiting-owner, closed, cancelled, expired, interrupted and failed states.
-Closing a window never establishes successful registration, authenticated identity
-or delivery. A host restart marks unfinished work interrupted and does not reopen
-registration automatically. Work expires after 20 minutes. Switching executor or
-disconnecting cancels active assisted work and removes the host's saved browser
-profile. Entered fields, cookies, target post
-URLs and page content are not included in workflow records.
+| Screen   | Purpose                                                                                                                                                                  |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Command  | Attention queue, "Waiting for you" items that need the owner (browser checkpoints, approvals), activity feed, AI stop and resume.                                        |
+| Content  | Drafts and approved content for each account, with a Repeat control for recurring publication and AI programs.                                                           |
+| Audience | People, lists, segments, capture rules, sequences and enrollments, the person panel (handles, interactions, consent record, delete and export), and import.              |
+| Inbox    | Unified conversations and comments across accounts, with status, timeline, reply options and auto-refresh.                                                               |
+| Accounts | Connections, account type and driver, per-account permissions, the autonomy policy, the browser section (visibility, live view, NEEDS_HUMAN), and the AI model settings. |
 
-The X workspace shares the existing X browser profile and serialization lock.
-After registration, use **Manage browser connection** to verify the saved X
-identity and connect the existing publishing adapter. Assisted work must finish
-before this verification starts. The other platforms' API capabilities remain
-unchanged: opening their web page does not grant automated messaging, polling or
-publishing support. Their browser identity checks, read/write recipes and live
-delivery acceptance remain to be implemented and verified separately.
+Screen state is retained across navigation. Drafts, forms and per-conversation reply
+text are independent. Switching hosts clears that host's private data. A failed refresh
+keeps the last data and shows a retry action.
 
-Owner-device RPC methods are `social.browser.workflow.begin` (`accountId`,
-`intent`, optional `targetUrl`, `acknowledgeRisk: true`),
-`social.browser.workflow.status` (`accountId`) and
-`social.browser.workflow.cancel` (`accountId`). Session social tools cannot use
-these owner-only methods or gain send permission through them.
+## Account modes and driver selection
 
-### Background operation
+Each account has one connection mode per platform: **API** (official developer app
+credentials and OAuth) or **Browser** (an isolated, signed-in web profile on the
+selected executor host). The account type (personal, Page, channel, organization,
+professional, business, bot, public profile, and so on) is part of the saved identity.
+A personal browser account never gains API access by changing its label.
 
-Connected X browser accounts also expose an owner-only **X profile and follow**
-section. Explicit actions read the public editor fields, apply changed name/bio/
-location/HTTPS website fields, upload JPEG/PNG avatar/banner assets, or follow one
-exact username. Saved text is re-read from a reopened editor; changed images require
-new persisted public image URLs. Follow resolves the exact profile to a numeric
-target and verifies its Following control; an existing follow is a no-op.
-Unknown layouts/outcomes fail visibly and never cause an automatic retry.
+Every operation chooses a driver with these rules:
 
-Host owner RPCs are `social.browser.profile.read`, `.update` and `.follow` with
-`accountId`; update accepts `patch` and `confirm: UPDATE_X_PROFILE`, follow accepts
-`handle` and `confirm: FOLLOW_X_ACCOUNT`. These actions require a connected,
-unpaused X browser account on its executor host, share the profile lock, recheck
-identity and honor the global stop state. They do not enable campaign sending or
-change policy. Session social credentials cannot invoke these owner methods.
-Session-agent proposal/owner-review integration and recurring follow rules are not
-implemented. Passwords, passcodes, birth dates and authentication fields are not
-accepted as profile patches. Account setup/credential intervention remains separate
-from ordinary public profile management.
+1. A free official API that supports the operation is the default driver.
+2. If no free API supports the operation, the browser driver is used, when the account
+   has a verified browser connection for that platform.
+3. Fallback from API to browser is allowed only before a send is submitted. A send
+   whose API result is uncertain is never retried through the browser, and vice versa.
+4. Paid API products are never selected automatically.
 
-Connected accounts do not need a foreground account window for routine supported
-operations. `SocialService.tick` runs on the host, polls eligible accounts when
-`inbox.polling` is enabled, feeds inbound events into existing activated rules and
-dispatches approved jobs. Continuous product promotion uses the existing
-`SocialPrograms` schedule, verified public facts, generation limits and activation
-signature. Automatic reply rules require explicit activation once; matching events
-then enqueue and execute without a per-message approval. Incoming content never
-changes those grants or limits. This does not enable live sending merely by
-opening a browser workspace or configuring a draft program.
+Audience collection follows the same rule. It uses the API where one exists. Where no
+API exists, browser collection is on by default for public data, rate-limited, and can
+be turned off per account.
 
-X browser accounts participate in that same loop. The adapter captures recognized
-mentions/reply timeline responses and legacy web DM inbox responses, validates the
-authenticated numeric identity before and after each read, and passes bounded
-inbound events to the existing deduplicating ingestion pipeline. It reads recent
-web snapshots only; complete historical backfill and encrypted X Chat are not
-implemented. If one read channel is unavailable, the successful channel can still
-ingest events while monitoring reports partial coverage. Unrecognized response
-formats never count as an empty inbox.
+## Capabilities and reason codes
 
-Browser polling also rotates through two saved published post IDs per tick and
-reads their recognized `TweetDetail` responses. Directed replies are ingested
-through the same account identity checks and event deduplication. The durable
-cursor rotates the saved post list; this is a bounded recent snapshot, not a
-complete historical or hidden-reply backfill. Monitoring reports comments as a
-separate channel.
+Capability answers are computed per operation from: platform support, configured
+connection, verified account identity, project access, sending enablement, the autonomy
+level and the approval state. These facts are distinct. A verified connection does not
+imply send permission, and an enabled platform does not imply that a specific account
+type supports the operation.
 
-The X composer accepts up to four owner-uploaded JPEG/PNG images (5 MiB each) or
-one MP4 video (64 MiB), including post replies/comments. Mixed image/video batches
-are rejected. New file selections replace existing attachments; removal is explicit.
-Documents such as PDF are shared by URL, not as native tweet attachments.
-The browser waits for a video attachment and enabled Post control before submitting;
-an ambiguous create response still requires review. The OAuth adapter uses the
-v2 initialize/append/finalize/status media flow, checkpoints pending processing,
-and never creates the post before processing succeeds. These local byte limits
-are deliberately narrower than X's account-dependent platform limits.
-OAuth DM sends accept one uploaded image/video attachment using DM media categories.
-Browser DM media and encrypted X Chat remain unavailable. Editing draft attachments
-is owner-only, revokes the previous approval, and includes the media in the next
-exact draft review and queued send.
+Each unavailable capability carries a stable reason code, for example `browser.ready`,
+`browser.reconnect`, `browser.no_recipe`, `x.publish.api_required`,
+`reddit.media_unsupported`, `reddit.one_subreddit`, `reddit.audience_unsupported`,
+`whatsapp.window_closed_template_required`, `meta.window_closed` and
+`audience.collect.not_implemented`. The UI maps codes to localized text. Reason codes
+never contain page text, field values, cookies or URLs.
 
-A missing mentions response counts as an empty read only when the authenticated
-page positively exposes the selected mentions tab and its known empty-state
-structure on the exact X mentions route. Redirects into `/i/chat/pin/` report
-required Chat credential setup; other `/i/chat` routes report unsupported
-encrypted Chat. Neither route is treated as a legacy inbox or successful read.
+## Platform support
 
-Legacy browser DM sends require `dm.write`, an exact numeric recipient and an
-observed conversation containing that recipient and the connected sender. The
-adapter accepts delivery only when a matching platform message ID, sender,
-recipient and exact text are present in the response. Missing/ambiguous evidence
-requires review and is not automatically resent. Newly connected browser accounts
-record DM capabilities; older sessions must reconnect to obtain them. Project
-message permissions, contact consent and send/rule authorization still apply.
+The matrices below describe implemented contracts from source and mocked tests. They
+are not proof of live platform acceptance. Live verification for each platform is still
+required on real accounts. Platform terms, app review, quotas and account eligibility
+continue to apply.
 
-`social.monitoring.status` accepts `accountId` and returns the last checked time,
-healthy/partial/blocked status, read-channel coverage, polling enablement and
-whether the account is active on this executor. It contains no cookies or message
-bodies. This status describes the last read and does not prove future delivery.
-The Accounts recovery disclosure displays it and supports explicit refresh.
+### Support matrix
 
-The X web parser/driver has synthetic adapter and host-loop acceptance; live
-authenticated acceptance, including the current Chat UI, remains unverified.
-Other platforms' autonomous browser read/write adapters and automatic account
-registration are not implemented by the owner-assisted route registry. Credentials,
-verification challenges and account creation/terms approval remain separate from
-routine background operation.
+| Platform  | Official API (free where listed)                                                                                                                                                                                                                            | Browser connection                                                                                                                                                                                           | Deferred or not implemented                                                                                                                                                               |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| X         | OAuth posts, text plus up to four JPEG/PNG images or one MP4, replies, delete, mentions and comments on own posts, profile read, metrics, rate-limit pause. DM read and reply with DM scopes. Likes/reposts are adapter functions without an operation row. | Posts, images or one video, mentions and saved-post comments, legacy web DM text, owner profile and follow controls.                                                                                         | Threads (not implemented), quote posts and polls (no model field, not reachable), encrypted Chat, DM attachments, search-based discovery on the API (product tier dependent).             |
+| Instagram | Professional account: HTTPS image, feed Reel, mixed carousel up to four assets, owned-media comments and replies, text inbox replies in the supported window.                                                                                               | Image, carousel or one video publishing, saved-post comments and replies, recognized existing-thread text replies.                                                                                           | Stories, cold or new DMs, DM attachments, hashtag discovery (author field unverified), post delete (no path found).                                                                       |
+| Facebook  | Managed Page text/link, up to four HTTPS photos, Reels from an uploaded MP4 with durable verification, comments, Messenger text replies in the response window.                                                                                             | Personal or Page actor, text and media publishing, saved-post comments, recognized existing-thread Messenger replies.                                                                                        | Ordinary Page video publishing, Stories, Page post edit, comment hide/delete through the host (helper only).                                                                              |
+| LinkedIn  | Member text, Page text, Page images (one to four, alt text, readiness verification), Page PDF documents, comments on known posts, token refresh hook. Single-image Page uploads verify byte content.                                                        | Verified member or organization text, images or video, one titled PDF, comments and replies, existing personal chats, first-degree connection requests and acceptance (exports exist; no operation row yet). | Organization inbox, InMail, video through the API (multipart ETag handling is blocked), carousel, polls, analytics, groups and newsletters.                                               |
+| YouTube   | Verified channel upload with resumable upload and processing checks, comments and replies, analytics, profile and health checks, owner-video and keyword commenter collection (search costs quota).                                                         | Studio upload with metadata and declarations, saved-video comments and replies.                                                                                                                              | Community posts, Shorts settings, live chat, captions, thumbnail/playlist/moderation (adapter functions without operation rows).                                                          |
+| TikTok    | Direct Post of one video or up to four photo URLs on a verified domain, inbox (draft) upload, creator settings, status polling to completion, video list, metrics, health check.                                                                            | Studio upload of one local video, saved-video comments and replies, commenter collection on own videos.                                                                                                      | Comment management through Business API, browser comment delete, hashtag and keyword search (research API), browser inbox, scheduling, DM, Live.                                          |
+| Snapchat  | Public Profile API: encrypted Spotlight MP4 upload with exact Spotlight ID tracking until LIVE, health check.                                                                                                                                               | Member chat text replies in existing chats; Public Profile uploader for Spotlight or 24-hour Story video. Current Story acceptance lacks a durable Snap ID and is held for review.                           | Public Story through the API, Marketing API, Creative Kit, metrics, Story interactions, API audience collection.                                                                          |
+| WhatsApp  | Business Cloud API: signed incoming text, text or one image/video reply within the 24-hour window, delivery receipts. Business-initiated free text is refused before I/O.                                                                                   | Personal Web session: bounded visible direct chats, text and one image or video per send. Audience collection from chat senders is not offered (no sender reader is wired).                                  | Templates and interactive messages (exported, not reachable from jobs), catalog, Status and Channels, group messages, bulk messaging for personal accounts, auto-reply, quality webhooks. |
+| Telegram  | Bot token: bounded text polling, text and one image or video send, webhook parser, bot-sender collection. Channel: administrator bot publishing with receipts.                                                                                              | Personal Web session: direct chats only, stable cursor, text and one image or video per send.                                                                                                                | Polls, inline buttons, edit and pin (functions only, no host path), webhook route, moderation, MTProto, stories, channel settings.                                                        |
+| Reddit    | Script or web app OAuth, text and link posts to one subreddit per item, subreddit rules and required flair, comments and replies, inbox polling, private message start and reply, keyword search, own-post commenters, delete.                              | No browser recipe (`browser.no_recipe`).                                                                                                                                                                     | Image, video and gallery posts; edit; account commenters; moderation and chat; upvote and save.                                                                                           |
 
-### Platform connections
+Which operations are free depends on each platform's current pricing, which this document
+does not verify. The rule is fixed in the Host: the free official API is the default driver,
+and paid products are never selected automatically.
 
-Accounts supports X, Instagram, Facebook, LinkedIn, YouTube, TikTok, Snapchat,
-WhatsApp and Telegram. Capabilities reflect the implemented adapter, independently
-of a successful account connection. Project grants and external-send approval still apply.
+### Platform connection setup
 
-- TikTok: OAuth identity and Direct Post video publishing through `user.info.basic`
-  and `video.publish`. Use the TikTok client
-  key as `BYCODA_SOCIAL_TIKTOK_CLIENT_ID`, and configure the matching
-  `_CLIENT_SECRET`, `_REDIRECT_URI` and `_APPROVED=1` variables. Callback:
-  `/social/oauth/tiktok/callback`. Existing profile-only accounts must reconnect to
-  grant `video.publish`. The campaign editor loads current creator settings, offers
-  only the returned privacy choices without a default, previews the video and
-  requires explicit music/content consent. The current adapter uses one HTTPS video
-  URL on a domain or URL prefix verified with TikTok (`PULL_FROM_URL`); local file
-  uploads and photos are not implemented. Processing keeps a durable publish ID,
-  never initializes the same job twice, and reports success only at `PUBLISH_COMPLETE`.
-  An accepted post cannot be recalled through the queue. App audit/access restrictions
-  still apply; an unaudited client is limited to TikTok's private-account/private-viewing
-  test rules. The integration does not establish that bycoda has obtained an app audit.
-  Personal/creator Login and Content Posting do not provide general comment/DM
-  management. Those require separately eligible TikTok for Business/Organic products;
-  no communication adapter for them is currently installed.
-- Snapchat: Public Profile OAuth with `snapchat-profile-api`. Configure
-  `BYCODA_SOCIAL_SNAPCHAT_CLIENT_ID`, `_CLIENT_SECRET`, `_REDIRECT_URI`,
-  `_APPROVED=1`. Callback: `/social/oauth/snapchat/callback`. An eligible Public
-  Profile and approved API access are required. Publishing, comments and messaging
-  are not implemented; local campaign drafts remain available.
-- Telegram: configure `BYCODA_SOCIAL_TELEGRAM_TOKEN` and
-  `BYCODA_SOCIAL_TELEGRAM_APPROVED=1` on the selected host, then choose **Host hesabını
-  bağla**. The host verifies the bot with `getMe`. Text messages are read using
-  `getUpdates` with a durable offset and sent with `sendMessage`. Existing webhooks
-  disable polling; bycoda never deletes them. Bots cannot contact arbitrary users:
-  the chat must already be accessible, and outbound initiation requires recorded
-  consent. Channel publishing, attachments and personal-user sessions are not supported.
-- WhatsApp: Business Cloud API only. Configure `BYCODA_SOCIAL_WHATSAPP_TOKEN`,
-  `BYCODA_SOCIAL_WHATSAPP_PHONE_NUMBER_ID`, `_APPROVED=1`, `_CLIENT_SECRET`
-  (the Meta app secret) and `_WEBHOOK_VERIFY_TOKEN`. The host verifies the phone
-  identity before connection. Register `/social/webhooks/whatsapp` and subscribe the
-  Business Account to `messages`. Signed text-message events populate Inbox and
-  permit text replies within 24 hours of the inbound timestamp. Replayed events are
-  deduplicated. Personal accounts, historical inbox polling, templates, attachments,
-  Channels/Status publishing and outbound initiation are not implemented.
-
-Token configuration currently selects one bot/phone identity per platform per host.
-Secrets stay in host configuration and the existing OS-protected social credential
-store; they are never returned in account snapshots or supplied to session tools.
-Connecting or preparing a draft does not send anything. Real-account authorization,
-platform reviews and webhook subscriptions require deployment-specific setup.
-
-### Messaging and comments
-
-| Connection                   | Comment reads/replies                                                                                 | Private messages                                                                                              |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| X OAuth/API                  | Mentions/replies through permitted reads; replies to post IDs                                         | Read/reply/send with DM scopes, enabled API product and recipient eligibility                                 |
-| X browser session            | Bounded recent mentions/replies from recognized web responses; replies to exact post IDs | Legacy web inbox and verified numeric-conversation text sends; encrypted Chat unavailable |
-| Instagram professional OAuth | Read/reply on owned media                                                                             | Read and reply to user-initiated conversations within the supported response window; no cold initiation       |
-| Facebook Page OAuth          | Read/reply to eligible Page content                                                                   | Read and reply to user-initiated Page conversations within the supported response window; no cold initiation  |
-| LinkedIn OAuth               | Comments on known published posts; organization discovery additionally requires Posts API read access | Not implemented; LinkedIn Messages API is a restricted partner product, not enabled by ordinary sharing OAuth |
-
-Select the intended capabilities before OAuth. Selecting polling requests the
-comment and message read permissions together. An existing account with only one
-authorized read channel can still synchronize that channel; polling does not
-require unrelated Page comment permissions for Messenger-only accounts. X DM sends
-request `dm.write`, `dm.read`, `tweet.read` and `users.read`. Reconnecting to add
-scopes never grants project send permission or turns on external sending.
-
-References: [X messaging](https://docs.x.com/x-api/direct-messages/manage/introduction),
-[Instagram conversations](https://www.postman.com/meta/messenger-platform-api/folder/22794852-255610cd-47f5-4f4d-b3fa-71aec360be9a),
-[LinkedIn partner messaging restrictions](https://learn.microsoft.com/en-us/linkedin/shared/integrations/communications/messages),
-[TikTok Direct Post and audit requirements](https://developers.tiktok.com/docs/en/content-sharing-guidelines),
-[TikTok Business Messaging prerequisites](https://business-api.tiktok.com/portal/docs/business-messaging-api-get-started/v1.3).
-
-API references: [TikTok user info](https://developers.tiktok.com/docs/en/tiktok-api-v2-get-user-info),
-[Snapchat profiles](https://developers.snap.com/marketing-api/Public-Profile-API/Profiles),
-[Telegram Bot API](https://core.telegram.org/bots/api),
-[WhatsApp Cloud API](https://developers.facebook.com/documentation/business-messaging/whatsapp/overview).
-
-The left navigation separates Accounts, Campaigns, Inbox, Audience, Automations and Settings.
-The connection and project filters stay visible. Forms retain their content when
-switching sections or visiting another tool; reply forms also retain separate text
-for each conversation. Creation and editing dialogs preserve the underlying list layout.
-Switching hosts clears that host's private data and forms. Failed refreshes preserve
-the current data and show a retry action.
-
-Start by connecting an account and granting the relevant project access. Prepare a
-campaign, save it, and check its current preview before approving it for the queue.
-Text counters use the account's effective character policy. In Inbox, assign the
-conversation to a project before saving a reply. Review drafts can be edited and
-saved before approval. Editing a draft removes its previous approval and automatic
-rule authorization. Drafts already queued or dispatched cannot be edited.
-
-Audience lists filter locally by name and segment. Saving a contact or adding it to
-a project does not create consent. Consent must have an explicit source and date.
-Automations separates publishing plans, reply rules, and sending controls, including polling.
-Operation history stays inside Social Media: its toolbar shortcut opens the History
-subview within Automations. It shows queue and completed results with status, account,
-type, date, and text filters; it is not a separate left-navigation entry.
-Settings contains content policies and advanced cross-computer authority
-configuration. Technical account permissions remain under account details.
-
-## Schedule recurring publications
-
-For topic-driven AI generation, independent image providers, fixed-time/frequency schedules and customizable approval stages, see [AI campaign programs](social-programs.md). The original approved-pool plans below keep their existing behavior.
-
-1. Connect the account in **Accounts** and grant publication access to the selected
-   project. The connection must support publishing; connecting an account alone
-   does not enable sending.
-2. In **Campaigns**, prepare and save the content pool. Review and approve the exact
-   text, media and account variant of every campaign you intend to publish.
-3. Open **Automations → Publishing plans**, create a plan, select the account,
-   project and approved campaigns, and choose the daily time window and IANA time
-   zone. Set minimum and maximum intervals, for example **09:00–18:00,
-   Europe/Istanbul, 2–5 hours**. The preset fills these values; they remain editable.
-4. Save the plan. It starts paused. Review its schedule and content pool, enable
-   external sending if needed, confirm the review checkbox and explicitly activate
-   the displayed plan revision. The executor host must remain online.
-
-The first publication is due in the next allowed window. Later publications use
-stable varying intervals between the selected minimum and maximum, measured from
-the preceding actual dispatch. Each exact approved campaign variant is published
-once. The finite pool stops when exhausted; it does not repeat old posts or invent
-new content. Add approved content and review the updated plan to continue. The plan
-shows its next publication, completed/remaining pool count and latest job result;
-queue history retains individual outcomes.
-
-The end time is exclusive. An end earlier than the start spans midnight; equal
-start and end mean the whole day. Timezone rules, including daylight saving gaps
-and repeated hours, apply to the daily window. Quiet hours can extend the maximum
-interval until the next open window. After host downtime, the scheduler publishes
-one due item and measures the next interval from that dispatch instead of sending
-a burst of missed posts.
-
-An account can have one active publishing plan. Campaign variants share the same
-deduplication key with one-off scheduling, and an active plan reserves its remaining
-pool. Editing a plan saves it paused; keeping its completed pool prefix preserves
-confirmed progress. Changes to campaign approval, effective content policy,
-connection or project permissions require review and reactivation. Failed or
-ambiguous publication outcomes pause the plan; an uncertain dispatch or restart
-during sending remains in review and is never blindly retried.
-
-These are owner UI operations: `publishing-plans.create`, `publishing-plans.update`,
-`publishing-plans.list`, `publishing-plans.activate` and `publishing-plans.pause`.
-Activation requires the exact reviewed revision and explicit owner confirmation.
-Session MCP/CLI grants cannot activate a publishing plan or approve its content.
-
-## Prepare bulk replies, comments and messages
-
-In **Inbox**, select conversations and choose **Prepare replies to selected
-conversations** to answer multiple comments or messages. In **Audience**, select
-individual contacts or select all members of a displayed segment, then prepare
-new messages or comments. A new comment requires the target platform post ID for
-each selected person. Bulk selection does not expand a platform's supported
-operations; for example, X browser-session mode cannot read or send encrypted
-X Chat messages.
-
-The recipient preview checks the account's effective character policy, project
-access, platform capability, opt-out state and communication eligibility. New
-messages require recorded outbound consent; replies require a valid assigned
-conversation and any applicable reply window; comments require eligible targets.
-A contact, segment membership or imported list does not grant permission. Policy
-is read separately for each account before text is prepared, and the host checks
-current authorization and limits again before dispatch.
-
-Preparation reports a result for each recipient: draft ready, skipped with a
-reason, or failed. Successful preparation creates drafts only. Review and
-explicitly approve/send each recipient's exact content; one recipient's approval
-does not authorize the others. Editing invalidates the previous approval. After a
-partial preparation failure, retry only the failed draft rows to preserve drafts
-already created. Queue retries apply only to explicitly failed sends; successful
-or uncertain deliveries are not repeated.
-
-## Configure an account connection
-
-Use an existing local or paired bycoda Host. Configure the host service environment with the relevant platform app settings; do not place them in provider environments, frontend storage, project files or prompts.
-
-For each platform, replace `PLATFORM` with `X`, `INSTAGRAM`, `FACEBOOK`, `LINKEDIN` or `YOUTUBE`:
+Configure platform app values only in the host service environment or the existing
+credential store. Never place them in frontend storage, project files, prompts or
+provider environments. For each platform `PLATFORM` (`X`, `INSTAGRAM`, `FACEBOOK`,
+`LINKEDIN`, `YOUTUBE`, `TIKTOK`, `SNAPCHAT`, `REDDIT`):
 
 - `BYCODA_SOCIAL_PLATFORM_CLIENT_ID`
-- `BYCODA_SOCIAL_PLATFORM_CLIENT_SECRET` (required for Meta/LinkedIn/Google; optional for a public X PKCE client)
+- `BYCODA_SOCIAL_PLATFORM_CLIENT_SECRET` (required for Meta, LinkedIn and Google; optional for a public X PKCE client)
 - `BYCODA_SOCIAL_PLATFORM_REDIRECT_URI`, pointing to `/social/oauth/<platform>/callback` on this host
-- `BYCODA_SOCIAL_PLATFORM_APPROVED=1` only after checking the app's actual product access/review
+- `BYCODA_SOCIAL_PLATFORM_APPROVED=1`, only after the app's real product access and review are confirmed
 
-Public callbacks must use HTTPS. Loopback HTTP callbacks are accepted for local development only when the platform app permits them. Default Graph API version is `v25.0`; `BYCODA_SOCIAL_GRAPH_VERSION` selects another valid version. LinkedIn defaults to `202609`; `BYCODA_SOCIAL_LINKEDIN_VERSION` selects a supported monthly version.
+Public callbacks must use HTTPS. Loopback HTTP is accepted for local development only
+where the platform app allows it. The default Graph API version is `v25.0`
+(`BYCODA_SOCIAL_GRAPH_VERSION`). LinkedIn defaults to `202609`
+(`BYCODA_SOCIAL_LINKEDIN_VERSION`). Select the operations whose permissions should be
+requested before OAuth. Choose the identity returned by the platform; requested scopes
+are not assumed granted. Reconnecting to add scopes never grants project send
+permission or turns on external sending.
 
-In Accounts, add the correct account type and related projects, choose the operations whose permissions should be requested, then connect through OAuth. Choose the identity returned by the platform; scopes requested by the app are not assumed granted. Facebook requires an eligible managed Page; Instagram uses a professional Business/Creator account with Instagram Login. LinkedIn organization connections require an organization ID and verified administrative access.
+Access and refresh tokens stay in a host-only vault. Its key is protected by Windows
+DPAPI (CurrentUser), macOS Keychain or Linux Secret Service. There is no plaintext
+fallback. A locked or missing key preserves existing credentials and fails the
+operation. Renewal runs for X, YouTube, TikTok and Snapchat with a valid refresh token,
+without changing scopes. Instagram Login exchanges its short-lived token for a
+long-lived token and renews it near expiry. LinkedIn and Facebook token refresh and
+Reddit refresh are present in source but not all are scheduled by the Host (see Open
+questions). Expired, revoked or scope-changed connections require reconnection.
 
-Access and refresh tokens stay in a host-only encrypted vault. Its encryption key is protected by Windows DPAPI CurrentUser, macOS Keychain or Linux Secret Service. There is no plaintext fallback. A locked or missing key preserves existing encrypted credentials and fails the operation. X and YouTube connections with valid refresh tokens renew through the host OAuth integration without changing scopes. Unsupported, revoked or scope-changed connections require owner reconnection.
+#### X
 
-## X browser-session mode
+- Browser mode uses the owner's own X web session and automates x.com. It is unofficial,
+  can break when the site changes, and X may restrict accounts it considers automated.
+  The owner accepts that risk per connection.
+- The host launches system Microsoft Edge or Google Chrome (`BYCODA_SOCIAL_BROWSER`
+  selects another Chromium executable) with a dedicated profile under
+  `social/x-browser/<accountId>`. **Sign in to X in the browser** opens a plain window on
+  the executor host. The owner logs in, including with Google, and closes the window.
+  bycoda never receives the password. Login completes only when the `auth_token` and
+  `twid` cookies exist. The `twid` user ID becomes the account identity. Reconnecting
+  with a different X account is rejected. Cookies stay in the profile; the vault stores
+  only a marker. Disconnecting deletes the profile.
+- Sends verify the logged-in user ID, type the text, attach images or one video and
+  click Post. The post ID comes from the `CreateTweet`/`CreateNoteTweet` response. If no
+  response confirms the outcome after the click, the job goes to review. Operations on
+  one profile are serialized and sends are spaced at least 30 seconds apart.
+  `BYCODA_SOCIAL_BROWSER_HEADED=1` shows the window for debugging.
+- Legacy browser DM sends require an exact numeric recipient, an observed conversation
+  with that recipient and a matching delivery acknowledgement. Missing evidence goes to
+  review. Encrypted X Chat and browser DM attachments are unavailable.
+- A missing mentions response counts as empty only when the authenticated page shows the
+  mentions tab and its known empty state. Redirects into `/i/chat` report unsupported
+  encrypted Chat, not an empty inbox.
 
-X accounts can alternatively connect through the owner's own logged-in X web session instead of the paid X API. This mode is unofficial: it automates x.com, can break when the site changes, and X may restrict or suspend accounts it considers automated. The owner must explicitly accept that risk for each connection.
+#### Instagram, Facebook and Meta
 
-The host launches system Microsoft Edge or Google Chrome (`BYCODA_SOCIAL_BROWSER` selects another Chromium executable) with a dedicated profile under the host's `social/x-browser/<accountId>` directory. No browser is downloaded. **Log in to X in browser** opens a plain, non-automated window on the executor host (Google and X block sign-in in debugger-controlled browsers). The owner logs in, including with Google, and closes the window; bycoda never receives the password. The host then opens the profile in the background and completes login only when the `auth_token` and `twid` cookies exist. The `twid` user ID becomes the account identity, and reconnecting with a different X account is rejected. The profile is the credential: cookies stay in the profile (encrypted by the browser), the vault stores only a marker, and nothing reaches the renderer, session tools or logs. Disconnecting deletes the profile.
+- Professional Instagram accounts use Instagram Login. The short-lived token is exchanged
+  for a long-lived token before identity selection. Facebook requires an eligible managed
+  Page. A personal browser account does not grant professional or Page API access.
+- Meta webhook receivers are `/social/webhooks/instagram` and `/social/webhooks/facebook`.
+  Configure `BYCODA_SOCIAL_PLATFORM_WEBHOOK_VERIFY_TOKEN` and the client secret, verify the
+  callback in the platform dashboard and create the account subscription. The receiver
+  checks the raw HMAC signature before parsing and deduplicates event IDs. Presence of
+  the receiver alone does not prove the external subscription works.
+- Facebook Reels: a Reel is an explicit destination. The local envelope is one uploaded
+  MP4 up to 64 MiB, 4–60 seconds, 9:16, at least 540 × 960, with the frame rate entered
+  by the owner. The description is bounded to 2200 UTF-16 units. The queue checkpoints
+  the exact video ID before transfer and final publication. A ready video is not counted as
+  published until the receipt shows the exact video, published=true and a completed
+  publishing phase. Processing never creates another Reel. Contract:
+  [Meta Reels publishing collection](https://github.com/fbsamples/Facebook-Reels-Publishing-API-Postman-Collection).
+- Browser Messenger and Instagram DM reads cover recognized existing threads only. An
+  unrecognized group thread is skipped and its coverage is reported as partial.
 
-Sends use the same approval, queue and policy checks as OAuth accounts. Each send launches the profile headless (`BYCODA_SOCIAL_BROWSER_HEADED=1` shows the window for debugging), verifies the logged-in user ID matches the account, types the text, attaches up to four images and clicks Post. The post ID comes from the X web `CreateTweet`/`CreateNoteTweet` response. If no response confirms the outcome after the click, the job goes to review and is never retried automatically. Operations on one profile are serialized and sends are spaced at least 30 seconds apart.
+#### LinkedIn
 
-Publishing supports text, links, up to four JPEG/PNG images or one MP4 video, and
-replies to a given post ID. Background monitoring reads recognized mentions and
-saved-post comments, plus legacy web DM responses. Legacy text DM sending requires
-verified numeric participants and a matching delivery acknowledgement. Encrypted
-X Chat, browser DM attachments and search are unavailable. Inspect monitoring
-coverage for partial results. The executor host must run in an interactive user
-session for the login window to appear.
+- Member and organization connections use separate types. Organization connections need
+  a numeric organization ID and verified administrative access. Browser organization setup
+  requires the owner to supply the Company Page ID or URL name. The host verifies the
+  selected actor and never derives it from the display label.
+- Publishing limits are checked before submission: Page commentary (3000 units in source,
+  not compared with current docs), images with byte checks, PDF documents through the
+  Documents API (title 200, 100 MB API limit in source), and browser PDFs up to 5 MiB.
+- Browser connection requests, acceptance and personal chat use the same verification and
+  challenge handling as other browser recipes.
+- **AI exclusion:** the current rule code still blocks LinkedIn inbound third-party
+  content from automatic reply rules. See Autonomy policy and Open questions.
 
-## Project access and approval
+#### YouTube
 
-Account grants separately control reading, drafting, publishing, replies, outbound messages and comments for each project. A session's project and provider come from the host/native session registry, never the tool's JSON. Private threads from another project cannot be read or sent to. Unmatched conversations remain in owner review until explicitly assigned.
+For API mode, enable YouTube Data API v3 in the Google Cloud project, configure a Web
+application OAuth client with the exact `/social/oauth/youtube/callback` redirect, and set
+`BYCODA_SOCIAL_YOUTUBE_CLIENT_ID`, `BYCODA_SOCIAL_YOUTUBE_CLIENT_SECRET`,
+`BYCODA_SOCIAL_YOUTUBE_REDIRECT_URI` and `BYCODA_SOCIAL_YOUTUBE_APPROVED`. Publishing
+requests `youtube.upload` and `youtube.readonly` (channel binding and processing reads).
+Comments and replies use `youtube.force-ssl`. Existing upload-only connections need
+reconnection for the read permission. Google account and Brand-channel choice happens in
+Google's flow; ambiguous channel enumeration is rejected.
 
-Campaigns may select multiple projects/accounts and store independent content, media, links and publication times. Only explicitly entered, verified public project facts are offered to drafts/rules; project files and private transcripts are not scraped. Editing content invalidates its exact-content approval. Successful, pending and uncertain targets cannot be silently duplicated.
+Upload: the host receives the file in 1 MiB chunks, verifies the current channel, starts
+a resumable upload and sends one final PUT. As soon as YouTube returns a video ID, the
+host checkpoints that ID. Later attempts never upload the file again. They read
+`videos.list` (`processingDetails,status,snippet`) for the same ID and verify the owning
+channel. Success requires completed processing and the current visibility. Failed,
+rejected or deleted states fail without discarding the ID. Missing or mismatched
+evidence goes to review. The result reports the actual returned privacy. The local
+64 MiB limit is an adapter bound, not YouTube's maximum. Quota errors back off for six
+hours or the supplied Retry-After. The upload-session URI is not persisted, so an
+interruption before a video ID exists is an uncertain outcome for review.
 
-Real sending is disabled initially. The owner must explicitly enable execution and approve the exact campaign/draft, or explicitly activate an automatic rule. Existing user authorization outside this module is not inferred from a draft or stored contact.
+Polling reads at most four comment or reply pages per account sync with a durable cursor.
+A thread with `canReply=false` cannot receive a reply. Video-change push notifications do
+not supply comment or DM inbox events.
 
-Automatic rules support draft-only, approval and automatic modes. Rules start paused. An automatic rule needs explicit confirmation, an account/project, an inbound trigger, allowed topics, exact keyword-to-public-fact mappings, a daily limit and stop conditions. Uncertain, out-of-scope, complaint and suspicious instruction content is held for review. LinkedIn inbound third-party API content is withheld from AI session tools and automatic reply rules under its developer AI policy.
+Contracts: [OAuth](https://developers.google.com/youtube/v3/guides/auth/server-side-web-apps),
+[video insert](https://developers.google.com/youtube/v3/docs/videos/insert),
+[processing states](https://developers.google.com/youtube/data/reference/rest/v3/videos#processingDetails),
+[video status reads](https://developers.google.com/youtube/data/reference/rest/v3/videos/list),
+[upload protocol](https://developers.google.com/youtube/v3/guides/using_resumable_upload_protocol),
+[comment threads](https://developers.google.com/youtube/v3/docs/commentThreads/list),
+[comment replies](https://developers.google.com/youtube/v3/docs/comments/insert),
+[push notifications](https://developers.google.com/youtube/v3/guides/push_notifications).
 
-## Saved agents and content limits
+#### TikTok
 
-In **Settings → Content and AI settings**, the owner saves a global provider/model and separate maximum character counts for campaign content, comments/comment replies, and messages/message replies. An unset global agent keeps verified fixed replies until an agent is explicitly saved. The saved provider uses that host's configured authentication, independently of the chat provider. A model ID is optional; blank uses the selected provider's default model. No unavailable provider is silently replaced with Claude or another provider.
+- API: OAuth identity (`user.info.basic`) and Direct Post (`video.publish`) with
+  `BYCODA_SOCIAL_TIKTOK_CLIENT_ID`, `_CLIENT_SECRET`, `_REDIRECT_URI` and `_APPROVED=1`.
+  Callback: `/social/oauth/tiktok/callback`. Existing profile-only accounts must reconnect.
+  The campaign editor loads current creator settings and offers only the returned privacy
+  choices, with no default. Explicit music and content consent is required; editing clears
+  it. Media is one HTTPS video or one to four HTTPS photos on a verified domain
+  (`PULL_FROM_URL`). Local API uploads are not implemented.
+- Processing keeps the publish ID and reports success only at `PUBLISH_COMPLETE`. An
+  accepted post cannot be recalled through the queue. Unaudited clients are limited to
+  TikTok's private-viewing rules. This document does not establish that bycoda has an app
+  audit.
+- Comment management requires TikTok Business or Organic products. These are not installed.
 
-Each platform can override individual fields. Empty platform fields inherit global values; clearing an override restores inheritance. A rule-specific agent overrides the global agent, while an explicit platform agent takes precedence over both. Limits accept integers from 1 to 20,000, count Unicode code points (including links), and remain subject to platform/API limits. Limits are enforced when drafting, scheduling and immediately before dispatch, including existing queued jobs after a policy change. These settings do not grant communication permission or enable external sending.
+#### Snapchat
 
-The host persists generation tasks with the selected agent and effective limits, passes the same policy in every generation prompt, and checks authorization and policy again after generation. Prompts contain only owner-entered public facts and brand voice, never raw inbound instructions, social credentials or project files. Generation uses the existing harness text runner in an empty host workspace without a social session grant. Gemini has a fresh ACP plan-mode helper with no client filesystem/terminal tools or attached social MCP, and permission requests are denied. Its compatible installed CLI and login must be verified on the executor host; a mocked ACP test does not establish account access. Harnesses without a text runner hold the draft for review.
+- API: Public Profile OAuth (`snapchat-profile-api`) with `BYCODA_SOCIAL_SNAPCHAT_CLIENT_ID`,
+  `_CLIENT_SECRET`, `_REDIRECT_URI` and `_APPROVED=1`. Callback:
+  `/social/oauth/snapchat/callback`. The host verifies `my_profile` and the Public Profile
+  UUID. Spotlight accepts one owner-uploaded 6–60 second MP4 of at least 540 × 960 with an
+  explicit locale. The exact returned Spotlight ID is saved before status polling. Only the
+  same profile and ID at `LIVE` succeeds. Snapchat Public Story has no caption or link and
+  is not implemented through the API.
+- Browser member connections use `web.snapchat.com` for bounded chat reads and existing
+  conversation text replies. Public Profile connections use `my.snapchat.com`. The uploader's
+  automatically selected Saved Story target is cleared. Current `PostProfileMedia`
+  acceptance has no durable Snap ID and is held for review.
 
-Draft/approval rules may produce rewritten text for owner review. Automatic sends require the generated text to match an allowed verified answer exactly; rewritten facts, exceeding limits, invalid output, stopped rules, opted-out recipients or changed policies require review. Generation consumes the rule's daily generation budget, including held drafts. Queued tasks survive restart; interrupted running tasks require review rather than rerunning blindly. A host tick generates at most one draft and has a 90-second deadline. The UI shows the selected agent, model and generation state on drafts.
+#### Telegram
+
+- Bot API: set `BYCODA_SOCIAL_TELEGRAM_TOKEN` and `BYCODA_SOCIAL_TELEGRAM_APPROVED=1` on
+  the selected host, then connect the bot from Accounts. The host verifies the bot with
+  `getMe`. Text is read with `getUpdates` using a durable offset and sent with
+  `sendMessage`. An existing webhook disables polling; bycoda never deletes it. Bots
+  cannot start a conversation with an arbitrary user. The chat must already be accessible.
+- Bot attachments use `sendPhoto` or `sendVideo` with one owner-uploaded PNG/JPEG up to
+  **10 MiB** or one MP4 up to **50 MiB** (`adapters/messaging-shared.ts`). Captions fit
+  1024 UTF-16 units. Returned chat, message and media IDs must match the request.
+- Channel: choose the channel account type and inspect the numeric ID or public username.
+  `getMe`, `getChat` and `getChatMember` confirm the bot, the channel type and the
+  administrator `can_post_messages` permission. Those checks run again before publication.
+  Text fits 4096 UTF-16 units; one PNG/JPEG up to 10 MiB or MP4 up to 50 MiB accepts a
+  caption of 1024 units. Channel assets never consume the bot's `getUpdates` stream.
+- Personal Web sessions use the member type. They read direct chats only, with a stable
+  cursor. Groups are skipped and are not sent to.
+- Bot token storage: the token module is vault-first, but the dispatcher has not been
+  switched to it yet (see Open questions).
+
+#### WhatsApp
+
+- Business Cloud API: `BYCODA_SOCIAL_WHATSAPP_TOKEN`, `_PHONE_NUMBER_ID`, `_APPROVED=1`,
+  `_CLIENT_SECRET` (the Meta app secret) and `_WEBHOOK_VERIFY_TOKEN`. Register
+  `/social/webhooks/whatsapp` and subscribe the business account to `messages`. Signed text
+  events populate the inbox. Replies within 24 hours of the inbound timestamp can be text or
+  one PNG/JPEG (5 MiB) or MP4 (16 MiB) with an optional caption of 1024 units. Replayed events
+  are deduplicated. Delivery statuses (`sent`, `delivered`, `read`, `failed`) update the
+  delivery record only when account, message ID and recipient match. They never regress
+  confirmed evidence. Provider error text is not stored.
+- Personal Web session: bounded visible direct chats, text and one image or video per
+  send. Identity checks, draft guards and persisted-send checks apply. Bulk-marked jobs are
+  refused. A single message to a new number is still possible through the `send` route.
+  This is an accepted gap against the earlier "existing chat only" limit. QR and link-device
+  screens raise NEEDS_HUMAN and no QR image is read.
+
+#### Reddit
+
+- OAuth is a Reddit script or web app. The identity call uses `oauth.reddit.com/api/v1/me`.
+  The host allowlist must include Reddit before runtime use; without it the connection is
+  denied. Renewal is present, but Reddit is not yet in the host's due-refresh list.
+- One subreddit per post item. Flair is required when the subreddit requires it, and the
+  flair ID is sent. Text fits 300 characters (title), 10000 (body), 40000 (self text) and
+  2048 (link). Images, video and gallery are not supported.
+- Inbox polling reads `/message/inbox` with a `before` cursor and 100 items. Backlog beyond
+  100 is an open limit. Private message start needs a subject (default "Message"). The
+  adapter does not reconcile an uncertain start.
+- Keyword capture uses search with a `r/<subreddit>` prefix. Subreddit capture as a
+  separate source is not implemented.
+
+## Audience, lists and capture rules
+
+The Audience screen manages people, not just rows. A **person** groups one or more
+platform handles, email addresses and interaction history. A **handle** belongs to one
+account and platform. People are merged by suggestion first: same handle, linked profile
+or email. The owner decided that automatic merge is allowed only on an exact email match. Similar
+names never merge people.
+
+- **Lists** are owner-named sets of people. Adding or removing members is a list operation,
+  not a consent operation.
+- **Segments** are saved filters over people fields and interactions. They do not infer
+  sensitive traits.
+- **Capture rules** (`captureRules.*`) collect people from public sources, for example
+  keyword search or a post's commenters, into lists. Rules can be enabled or disabled.
+  Browser capture covers public data only, as the owner decided.
+- **Import** (`audience.import`) is owner-only. Imported labels never grant consent and never
+  alter opt-outs.
+- **People score** (`people.score`) is a ranking aid for the owner. It is not a send decision.
+
+## Outreach, sequences and email
+
+Outreach sends messages to people. Cold direct messages, WhatsApp and Telegram messages,
+email and comments are allowed for any person who is not suppressed, when the account's
+autonomy level for the action allows it. There is no per-contact consent gate. Consent
+records remain informational data that the owner can read and edit.
+
+- **Sequences** are ordered steps (message, email, comment) with waits between them.
+  Enrollments hold the state for each person. `sequences.start`, `sequences.pause` and
+  `sequences.stats` manage them. Each send step goes through the same gates as any other send.
+- **Pacing** limits how fast a sequence advances per account and channel. Pacing does not
+  override platform limits or daily limits.
+- **Email** uses SMTP through `nodemailer` (`smtp-sender`), Resend and Postmark over HTTPS
+  (`resend-sender`, `postmark-sender`). Credentials are host secrets. Every message has a
+  visible unsubscribe link and a `List-Unsubscribe` header. A message without an HTTPS
+  unsubscribe link cannot be built, and the email account must have one set.
+- Email actions go through `email.send`. The design applies the same autonomy, suppression
+  and limit checks as other channels. The live email path is not verified.
+
+## Suppression and personal data
+
+Suppression is the single send gate. Every outbound path (single, bulk, rules, AI tools,
+sequences, execution) passes through the same check before anything leaves the Host. The
+check resolves the target before comparing it with suppression records. A suppression
+record covers one channel or `all`. An opt-out is a suppression with its source and reason.
+Opt-out must reach the person, not one account handle.
+
+- `suppressions.add` lets an owner or AI add a suppression. Removing one is owner-only.
+- **Export** (`people.export`, owner-only) returns a JSON document for a person.
+- **Delete** (`people.delete`, owner-only) removes the person, handles, interactions,
+  thread text and enrollments. It keeps a minimal suppression record so that the person is
+  never contacted again. Deleting one person does not
+  delete published posts or messages on the platform.
+- Disconnecting an account deletes its local token and pauses the account. It keeps account
+  metadata and stored records. Use the delete action to remove person data.
+
+## Unified inbox
+
+The Inbox screen shows conversations and comments from every connected account and
+platform in one list. Each thread has a status, a timeline of inbound and outbound items,
+and reply options that respect the account's permission and the platform window.
+
+- `inbox.unified` lists threads across accounts. `inbox.timeline` reads one thread. `inbox.setStatus` changes the status. `inbox.replyOptions` lists allowed reply
+  types for the thread.
+- **Auto-refresh is on by default.** Only an explicitly stored "false" turns it off. The
+  account-level polling interval is stored with the inbox settings. Without an override an
+  account polls every 60 seconds, a browser-session account every 5 minutes and an account
+  with a live webhook every 15 minutes; overrides never go below 60 seconds. Every
+  platform's cursor is durable, so a restart resumes from the last read item.
+- Polling is bounded. Each platform reads a fixed page per cycle, and backlog continues
+  on the next cycle. Coverage is reported per channel. A partial or blocked channel never
+  reports an empty inbox.
+- Inbound text is untrusted data. It cannot change grants, autonomy, suppression or secrets.
+
+## Autonomy policy
+
+Each account has an autonomy policy. It sets one level per action. The actions are
+`publish`, `reply`, `comment`, `message`, `email`, `outreach`, `audience` and `contacts`.
+
+| Level               | Meaning                                                                                         |
+| ------------------- | ----------------------------------------------------------------------------------------------- |
+| `suggest` (default) | AI proposes the item. The owner acts. Nothing is queued for sending.                            |
+| `approve`           | AI queues the item. The owner approves each item before it is sent.                             |
+| `autonomous`        | AI sends without per-item approval, within the limits below. Only the owner can set this level. |
+
+Default daily limits per account and action (from `DEFAULT_AUTONOMY`): publish 10,
+reply 100, comment 50, message 50, email 100, outreach 200, audience 2000, contacts 2000.
+The owner can change them within 0–1,000,000. Working hours are optional: an IANA time
+zone, weekdays and a start and end time, where an end before the start spans midnight.
+Outside working hours, autonomous items are scheduled for the next open window, within
+nine days.
+
+Every autonomous send is re-checked at execution time. A changed policy, a stop or a
+lowered level stops it. These checks always apply, at every level:
+
+- platform limits and the account's connection and project access
+- suppression and opt-out (see Suppression and personal data)
+- working hours and daily limits
+- the AI stop (`ai.stop`, `ai.resume`), the global send stop, and the external-sending switch
+  (off until the owner enables it)
+
+The owner principal never uses the autonomy path. Owner actions follow the owner's
+normal approval flow. `autonomy.get` is available to AI and read-only. `autonomy.set` is
+owner-only.
+
+Decisions behind this policy: [decision provenance](../../.agents/skills/feature-social-media/references/decisions.md).
+
+## Browser layers, NEEDS_HUMAN and live view
+
+Browser actions run through a layered driver. It tries these layers in order:
+
+1. **API** (the adapter, before the driver is involved)
+2. **Recipe**: the platform's fixed selectors and steps
+3. **Decision**: when a recipe step fails on an unexpected screen, a decision model
+   classifies the visible screen (text summary only) and chooses one action from the
+   candidates. Unsafe labels are filtered. The decision layer only acts on states it
+   recognizes as actionable.
+4. **Desktop**: the Host desktop control, only when every gate below passes.
+
+Each layer's outcome is recorded with a fixed reason, never with page text, field values
+or URLs.
+
+**Desktop gate.** The desktop layer runs only when all of these hold: desktop control is
+allowed for the account, a computer is selected, the step is explicitly not outreach,
+presence is known, the computer is not locked, the owner is away (status away or idle for
+at least ten minutes), and the owner's active screen is not the selected computer.
+Otherwise the job becomes NEEDS_HUMAN.
+
+**NEEDS_HUMAN.** A captcha, a verification step, a suspicious-login screen, a login prompt
+or an unexpected screen stops automation for that account. The job waits as NEEDS_HUMAN
+and the owner is notified. The Command screen lists these items with a live view and an
+"I'm done" action. The owner is alerted through this list; the desktop notification
+planned as a desktop notification is not verified. Automation never clicks, types or solves a captcha,
+verification or suspicious-login screen. The decision layer treats these states as
+human-only, and the desktop layer refuses them. A challenge is recognized and reported only.
+
+**Visibility.** Browser windows are hidden by default (`visibility: hidden`), and the
+owner can switch an account to visible. A hidden window stays rendered off every display;
+on Windows it also has no taskbar or Alt+Tab entry. A live view streams frames while the
+owner has it open. It is capped in frame rate and size and stops after idle. Pointer and key input from
+the live view goes to the account's page.
+
+## Accounts registration and browser workspace
+
+Each account can have a browser workspace on its executor host: a dedicated Chrome or
+Edge profile used for login, registration navigation, inbox reads and publishing pages.
+The owner starts or cancels assisted work from Accounts. Passwords, verification codes,
+challenges and terms are completed in the platform window. They are never supplied through
+a conversation or a session tool.
+
+- Workflow records are retained for up to 20 ordinary metadata entries per account.
+  Records track queued, awaiting-owner, closed, cancelled, expired, interrupted and failed
+  states. Work expires after 20 minutes. A host restart marks unfinished work interrupted.
+  It does not reopen registration automatically.
+- Closing a window never proves registration, identity or delivery.
+- Switching executor cancels active assisted work and pauses the account. Disconnecting
+  deletes this host's browser profile.
+- Final LinkedIn Page creation uses owner-only review and submit methods, with a two-minute
+  review bound to the observed administrator, fields and terms. Unknown results keep a
+  durable hold and are never resubmitted automatically.
+- Generic signup is not brand provisioning. A Facebook signup does not create a Page; a
+  Google account does not create a YouTube channel; an Instagram API connection needs a
+  professional account.
+
+Owner RPC methods: `social.browser.workflow.begin` (`accountId`, `intent`, optional
+`targetUrl` or signup `registration`, `acknowledgeRisk: true`),
+`social.browser.workflow.status` and `social.browser.workflow.cancel`. Session tools cannot
+call these methods.
+
+Connected X browser accounts also expose an owner-only profile and follow section
+(`social.browser.profile.read`, `.update` with `confirm: UPDATE_X_PROFILE`, `.follow` with
+`confirm: FOLLOW_X_ACCOUNT`). LinkedIn organization name, tagline and logo, Facebook Page
+logo and Instagram bio and profile photo use the same owner profile transport.
+Unsupported fields are rejected. A partial or uncertain update requires inspection and is
+never repeated automatically.
+
+## Content, repeats and AI programs
+
+The Content screen holds drafts and approved content. Each piece of content has exact text,
+media, links and per-account variants. Editing content invalidates its approval. Queued or
+dispatched content is not edited in place.
+
+- **Repeat** (on the Content editor) schedules recurring publication of approved content.
+  Interval, fixed-time and weekday schedules use IANA time zones. Each approved variant is
+  published once per occurrence. A finite pool stops when exhausted and never invents new
+  content. The former standalone publishing plans and program screen are folded into this
+  control.
+- **AI programs** generate content from a topic brief, verified public facts and brand
+  voice, then schedule it. See [AI campaign programs](social-programs.md).
+- Under the Publish autonomy level, a program's occurrences can dispatch without per-item
+  approval. The dispatch check skips the approval-content check when the caller marks the
+  dispatch as autonomous. Source supports this path. End-to-end use is not verified.
+- LinkedIn program content still requires final publication review in the current code. This differs from the owner decision that LinkedIn follows the same autonomy policy. See Open questions.
 
 ## Session tools
 
-MCP tool names are `social_accounts_list`, `social_campaigns_create`, etc. CLI actions retain dots. All session actions are available through the same host service:
+AI tools are the registry actions marked for AI use. The MCP tool names use underscores
+(`social_accounts_list`); the CLI and RPC keep dots. The list is the single source of truth
+in the Social tool registry. Tools call the same Host operations as the UI, so every gate
+applies to them.
 
 ```text
-policy.get           accounts.list        capabilities.get
-campaigns.create     campaigns.preview     campaigns.schedule     campaigns.status
-inbox.list           thread.read           replies.draft           replies.send
-contacts.upsert      contacts.search       segments.create
-messages.draft       messages.send         comments.draft          comments.send
-automations.create   automations.pause     jobs.status             jobs.cancel
-programs.list        programs.configure    programs.status         programs.generate
+policy.get            accounts.list           capabilities.get
+campaigns.create      campaigns.preview       campaigns.schedule     campaigns.status
+inbox.list            inbox.unified           inbox.setStatus        inbox.timeline
+inbox.replyOptions    thread.read             replies.draft          replies.send
+drafts.read           drafts.update
+contacts.upsert       contacts.search         segments.create
+people.list           people.get              people.update         people.merge
+people.matchSuggestions people.score
+lists.list            lists.save              lists.delete           lists.addMembers
+lists.removeMembers   audience.collect
+captureRules.list     captureRules.save       captureRules.setEnabled captureRules.delete
+sequences.list        sequences.save          sequences.start        sequences.pause
+sequences.stats       enrollments.list        email.send             suppressions.add
+messages.draft        messages.send           comments.draft         comments.send
+automations.create    automations.pause       jobs.status            jobs.cancel
+programs.list         programs.configure      programs.status        programs.generate
 programs.preview-schedule
+autonomy.get          ai.actions.list         ai.actions.undo        ai.stop
+ai.summary            ai.report
+browser.needsHuman.list browser.recipeSuggestions.list
 ```
 
-The native/headless backend supplies a limited, memory-only session credential directly to the agent process. The renderer receives executable metadata only. Claude and Codex receive process-local MCP configuration; ACP session setup adds the same stdio server. OpenCode v2 uses a private ACP process for social-enabled sessions. Pi/OMP and other shell-capable agents can use the host CLI bridge. Existing running processes need to be stopped/restarted to receive a newly connected authority or newly available MCP server; stored sessions retain access when resumed through a new process.
+Rules for every tool:
 
-Run the executable command shown to the agent with `social --help` for actions, or `social <action> --input -` with JSON on stdin. The CLI does not accept actor/provider/token claims from that JSON. Session credentials cannot use owner controls or unrelated host operations.
+- A tool cannot exceed the account's autonomy level, suppression, limits, working hours,
+  the AI stop or the global stop. Tools read these facts; they do not hold authority.
+- A tool cannot change owner-only state. Owner-only operations, including `people.delete`,
+  `people.export`, `audience.import`, `autonomy.set`, policy saves, program activation and
+  browser workflow methods, are not tools.
+- Write tools take an optional `requestId`. Retrying with the same ID is safe. An ID does
+  not grant send authority.
+- Every AI action is written to the AI actions log with its actor, account, status and an
+  undo when one exists. `ai.actions.list` reads the log. `ai.actions.undo` reverts an undoable
+  action.
+- `ai.stop` is available to any principal. `ai.resume` is owner-only.
+- Plans from `ai.command` are stored and run through their own plan operations. A step that
+  needs approval runs only after owner approval.
 
-Every provider's session instructions require `social_policy_get` (CLI `policy.get`) with the target account before generating social text. It returns the effective platform/global policy under the account's read grant. `policy.save` is owner-only and is not exposed as a session MCP tool. Incoming content cannot change these settings or communication grants.
+The native and headless backends provide a memory-only session credential to the agent
+process. The renderer receives executable metadata only. Running processes must restart
+to receive newly connected authority. Run `social --help` for actions, or
+`social <action> --input -` with JSON on stdin. The CLI does not accept actor, provider or
+token claims in its JSON.
 
-## One authority across computers
+## Project access and authority
 
-Pair the hosts using the existing Connections workflow. In Social Media, choose one central host and expand “Session araçlarının merkezi host'u”. Explicitly map local projects to projects on the authority and provide this source host's HTTPS endpoint reachable from the authority. Limited peer credentials remain between native code and hosts. The authority verifies source session identity on calls and again before queued sends.
+Account grants control reading, drafting, publishing, replies, outbound messages and
+comments for each project. A session's project and provider come from the host session
+registry, never from tool JSON. Private threads from another project cannot be read or
+sent to. Unmatched conversations stay in owner review until assigned or reviewed.
 
-Selecting a central authority suspends the source host's execution and polling. Both Windows and Mac should select that authority; connecting the same account independently on unrelated hosts does not create a shared queue. Peer chains are rejected. Removing delegation keeps local execution stopped until the owner explicitly enables it again.
+Assistant access to an account is denied by default. The owner grants read and, separately,
+draft access. Revoking or changing the grant invalidates existing access. Personal drafts use
+no project facts and never authorize a send.
 
-## Inbox events and delivery
+Pair hosts with the Connections workflow. Choose one central host for the account's
+execution. Selecting a central authority suspends the source host's execution and polling.
+Peer chains are rejected. The authority checks the source identity on calls and again before
+queued sends. Connecting the same account independently on unrelated hosts does not create a
+shared queue.
 
-Meta webhook receivers use `/social/webhooks/instagram` and `/social/webhooks/facebook`. Configure each host's `BYCODA_SOCIAL_PLATFORM_WEBHOOK_VERIFY_TOKEN` and client secret, verify the callback in the platform dashboard and create the required account subscription. The receiver verifies the raw HMAC signature before parsing and deduplicates event IDs. Its presence alone does not prove that external subscription works; capabilities remain pending. X/LinkedIn webhook receivers are not implemented.
+## Delivery, retries and uncertain outcomes
 
-Owner-enabled polling uses authorized API reads with durable pagination cursors and platform backoff. Historic coverage still depends on platform access and retention. The UI can request a manual account sync. Incoming text is untrusted data and cannot alter account grants, secrets or send approval.
+The Host owns the durable queue. Jobs survive closing the UI or the session. They do not run
+while the host is offline.
 
-The host owns the durable queue. Jobs continue across UI/session closure, but do not execute while the host is offline. Account/campaign/global stops, opt-outs, consent and current project permissions are checked before dispatch, including after credential I/O. Parallel replies to the same inbound event produce one job.
+Before each dispatch, the Host rechecks the connected account, executor, project grants,
+approval, suppression, autonomy, limits and the AI and global stops. Recipes verify the
+signed-in actor and exact target, then mark the submission boundary. Any failure after that
+boundary becomes an uncertain outcome for review.
 
-Rate limits use Retry-After/reset headers. A dispatched timeout, crash or uncertain platform response goes to review; these adapters do not have a reliable reconciliation lookup and will not retry blindly. Only explicitly failed jobs can be retried. Per-target results retain error state and publication URL when returned. Media preparation checkpoints survive retries.
+- A timeout, crash or uncertain platform response goes to review and is never resent
+  blindly. Accepted TikTok publish IDs and YouTube video IDs resume read-only status checks
+  for that exact resource.
+- Only explicitly failed jobs can be retried. Accepted-ID state is kept, so a retry cannot
+  create a second accepted post.
+- Rate-limited jobs use Retry-After or reset headers. The owner decided that after
+  eight attempts or 72 hours a job moves to review, never to automatic resend. Confirm the
+  implemented cap in the Host queue before relying on it.
+- Per-target results keep the error state, actual visibility and publication URL when the
+  platform returns them.
+- WhatsApp and Telegram receipts are separate from queue acceptance. A successful send
+  records accepted. Later receipts update delivery state only when they match the account,
+  message ID and recipient.
 
-Source and browser-fixture checks verify the implementation and mocked workflow.
-They do not prove that an installed app/host includes these changes, that an actual
-platform account permits every operation, or that a real publication was delivered.
-Use the shared [local update workflow](../local-update.md) for app/host installation;
-verify installed versions and real account results separately. Scheduling a job or
-activating a plan is not evidence that it has been sent.
+For bounded history, `jobs.status` and `campaigns.status` accept `page: true`, an optional
+zero-based `offset` and a `limit` from 1 to 100. The response includes `jobs` and
+`page: { offset, limit, total, nextOffset? }`. Legacy array responses fail rather than
+truncate when more than 1,000 jobs match. Settled jobs older than the active window move to
+readable cold storage in bounded batches, and full records remain available through
+exact-ID reads. `jobs.archive-status` reports the counts. Archival is not deletion.
 
-## Current adapter boundaries
+## Open questions
 
-- X: text with up to four locally uploaded JPEG/PNG images (5 MiB each) or one MP4 video (64 MiB); mentions, saved-post browser comments and API direct messages. API messages accept one image/video attachment. Encrypted browser Chat is unavailable. External search is a documented product candidate, not an implemented discovery command.
-- Instagram: one HTTPS image, owned-media comments and permitted professional inbox replies. Cold messaging and arbitrary third-party comments are unavailable.
-- Facebook: managed Page text/link or one HTTPS photo, eligible comments and standard-window inbox replies. Personal-profile publication and unsolicited messaging are unavailable.
-- LinkedIn: member/organization text and one locally uploaded organization image with readiness verification; approved comments. General inbox messaging is unavailable. Member image publishing is not implemented with write-only tokens.
-- YouTube: an OAuth-verified channel, one owner-selected MP4/WebM video up to 64 MiB per campaign target, explicit title/description/privacy/audience/synthetic-media declarations, published channel comments and complete reply pagination. Replies use top-level comment IDs. Eligible comments on external videos resolve the video's channel ID through the API. General direct messages, Community-post creation, external discovery and comment webhooks are not implemented.
+These points are known to differ between owner decisions, source and platform reality.
+They are not verified as fixed.
 
-Videos on platforms other than YouTube, carousels, Stories and reply/message attachments are rejected explicitly in this version. A contact record alone grants no communication permission. Manual/imported/API contacts retain independent outbound consent, reply eligibility, comment eligibility, exact platform identity, project tags and interaction history. Cross-platform identities are not merged by similar names, and segments do not infer sensitive traits.
+- **LinkedIn AI exclusion.** The owner decided LinkedIn follows the same
+  autonomy policy. Source still excludes LinkedIn inbound third-party content from automatic
+  reply rules, and LinkedIn program content still requires review. This document describes
+  the current source. It does not describe that decision as implemented.
+- **Owner-run autonomous plan steps.** The owner principal never takes the autonomy path. A
+  plan step that is autonomous and run by the owner is refused. The owner must choose how
+  such steps are authorized.
+- **Legacy consent gate.** The owner decided consent is informational only. Outreach
+  actions do not check consent. The older eligibility check in the Host core has not been
+  confirmed removed in every path.
+- **Bot token storage (Telegram).** The token module is vault-first. The dispatcher still
+  reads the host environment value.
+- **Token refresh coverage.** LinkedIn, Facebook and Reddit refresh code exists, but these
+  platforms are not all in the Host's due-refresh list.
+- **Reddit allowlist and refresh wiring.** Reddit runs only after its host allowlist entry is
+  configured, and refresh is not scheduled.
+- **Session-agent and AI program activation.** The autonomous program dispatch path is in
+  source. End-to-end use with an autonomous account is not verified.
 
-## YouTube configuration and delivery
+## Verification status
 
-Enable YouTube Data API v3 in the Google Cloud project and configure a Web Application OAuth client, consent screen, allowed users/access approval and the exact `/social/oauth/youtube/callback` redirect on the central host. Use `BYCODA_SOCIAL_YOUTUBE_CLIENT_ID`, `BYCODA_SOCIAL_YOUTUBE_CLIENT_SECRET`, `BYCODA_SOCIAL_YOUTUBE_REDIRECT_URI` and `BYCODA_SOCIAL_YOUTUBE_APPROVED`. The owner must review the actual app access before setting the approval flag. OAuth requests `youtube.readonly` to verify the selected channel, `youtube.upload` for video publishing and `youtube.force-ssl` for comments/replies. Google account/Brand-channel selection happens in Google's external authorization flow; ambiguous channel enumeration is rejected. Tokens and upload-session URLs never reach the renderer, session tools or transcripts.
-
-Select a Channel account, upload a video to the host in 1 MiB chunks and choose its metadata. Visibility defaults to **private**. The exact metadata is included in the owner's campaign approval and passed through the same provider-independent tool/queue contract. The host submits a resumable-upload initiation followed by one final video PUT; the result records the returned privacy rather than assuming the requested visibility. Upload acceptance does not prove video processing/playback success. This adapter does not persist/resume the platform upload session after an interruption: timeout/restart after dispatch requires review and never starts another upload automatically. Host ingestion of an incomplete file must be restarted; completed files and jobs survive restart. Incomplete staging uploads expire after 30 minutes and are cleaned on subsequent uploads.
-
-The 64 MiB limit is an explicit local adapter bound, not YouTube's maximum. Platform quotas, comments-disabled responses, OAuth expiry and processing/access restrictions still apply. Quota errors back off for six hours or the supplied Retry-After; the effective Google Cloud quota must be checked externally. Owner-enabled polling reads at most four comment/reply pages per account sync with a durable cursor; channel-owner comments are skipped. A thread with `canReply=false` cannot be sent a reply through the shared service. Video-change push notifications do not supply comment/DM inbox events.
-
-Official contracts: [OAuth](https://developers.google.com/youtube/v3/guides/auth/server-side-web-apps), [video insert](https://developers.google.com/youtube/v3/docs/videos/insert), [upload protocol](https://developers.google.com/youtube/v3/guides/using_resumable_upload_protocol), [comment threads](https://developers.google.com/youtube/v3/docs/commentThreads/list), [comment replies](https://developers.google.com/youtube/v3/docs/comments/insert), [new video comments](https://developers.google.com/youtube/v3/docs/commentThreads/insert), [push notifications](https://developers.google.com/youtube/v3/guides/push_notifications).
+This document describes source contracts and mocked tests. It was written from source
+reading. No live platform account, real publication, real email send, real browser login or
+live captcha page was checked. Installed host builds need the shared
+[local update workflow](../local-update.md). Real acceptance for each platform, each driver
+and each delivery path stays separate from source checks. Scheduling a job, activating a
+plan or connecting an account is not evidence that it was sent.

@@ -41,6 +41,8 @@ afterEach(async () => {
   container.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  document.documentElement.style.removeProperty("zoom");
+  document.body.style.removeProperty("zoom");
 });
 
 async function frame() {
@@ -102,4 +104,145 @@ it("keeps the frame but paints no backdrop glass when solid", async () => {
   );
   expect(document.body.querySelector(".popover-solid")).not.toBeNull();
   expect(document.body.querySelector(".popover-backdrop, .backdrop-blur-xl")).toBeNull();
+});
+
+it.each([
+  [1, 1],
+  [1.25, 1],
+  [1.25, 1.2],
+])(
+  "places in portal coordinates for document zoom %s and body zoom %s",
+  async (documentZoom, bodyZoom) => {
+    document.documentElement.style.setProperty("zoom", String(documentZoom));
+    document.body.style.setProperty("zoom", String(bodyZoom));
+    // A trigger can have a different local scale; the portal frame does not inherit it.
+    anchor.style.setProperty("zoom", "2");
+    const zoom = documentZoom * bodyZoom;
+    vi.spyOn(anchor, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(200 * zoom, 100 * zoom, 80 * zoom, 20 * zoom),
+    );
+    await act(async () => root.render(createElement(Popover, { anchor, bare: true }, "Menu")));
+    const surface = document.querySelector<HTMLElement>("[data-popover-side]")!;
+    expect(Number.parseFloat(surface.style.left)).toBeCloseTo(200);
+    expect(Number.parseFloat(surface.style.top)).toBeCloseTo(126);
+  },
+);
+
+it("clamps the full physical width inside the viewport at 125 percent zoom", async () => {
+  document.documentElement.style.setProperty("zoom", "1.25");
+  vi.stubGlobal("innerWidth", 1000);
+  vi.spyOn(anchor, "getBoundingClientRect").mockReturnValue(new DOMRect(950, 100, 40, 20));
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(200);
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(100);
+  await act(async () => root.render(createElement(Popover, { anchor, bare: true }, "Menu")));
+  const surface = document.querySelector<HTMLElement>("[data-popover-side]")!;
+  expect(Number.parseFloat(surface.style.left)).toBe(592);
+  expect((Number.parseFloat(surface.style.left) + 200) * 1.25).toBe(990);
+});
+
+it("bounds the default content so it scrolls instead of clipping, and owns one strict region when asked", async () => {
+  await act(async () => root.render(createElement(Popover, { anchor, solid: true }, "Menu")));
+  let content = document.querySelector<HTMLElement>("[data-popover-flow]")!;
+  expect(content.dataset.popoverFlow).toBe("auto");
+  // Low-priority class, not inline: a consumer's own overflow utility or inner rail wins.
+  expect(content.style.overflowY).toBe("");
+  expect(content.className).toMatch(/bounded/);
+  await act(async () =>
+    root.render(createElement(Popover, { anchor, solid: true, flow: "intrinsic" }, "Menu")),
+  );
+  content = document.querySelector<HTMLElement>("[data-popover-flow]")!;
+  expect(content.dataset.popoverFlow).toBe("intrinsic");
+  expect(content.className).not.toMatch(/bounded/);
+  await act(async () =>
+    root.render(createElement(Popover, { anchor, solid: true, flow: "scroll" }, "Menu")),
+  );
+  content = document.querySelector<HTMLElement>("[data-popover-flow]")!;
+  expect(content.dataset.popoverFlow).toBe("scroll");
+  expect(content.style.overflowY).toBe("auto");
+  expect(content.style.overscrollBehavior).toBe("contain");
+  expect(content.hasAttribute("flow")).toBe(false);
+});
+
+it("does not scroll when the height is not constrained", async () => {
+  await act(async () =>
+    root.render(createElement(Popover, { anchor, flow: "scroll", constrainHeight: false }, "Menu")),
+  );
+  let content = document.querySelector<HTMLElement>("[data-popover-flow]")!;
+  expect(content.dataset.popoverFlow).toBe("intrinsic");
+  expect(content.style.overflowY).toBe("");
+  await act(async () =>
+    root.render(createElement(Popover, { anchor, constrainHeight: false }, "Menu")),
+  );
+  content = document.querySelector<HTMLElement>("[data-popover-flow]")!;
+  expect(content.dataset.popoverFlow).toBe("intrinsic");
+  expect(content.className).not.toMatch(/bounded/);
+});
+
+it("bounds a tall popover to the room left in a short window", async () => {
+  vi.spyOn(anchor, "getBoundingClientRect").mockReturnValue(new DOMRect(40, 440, 80, 20));
+  vi.stubGlobal("innerHeight", 520);
+  vi.stubGlobal("innerWidth", 800);
+  await act(async () => root.render(createElement(Popover, { anchor, width: 200 }, "Menu")));
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get: () => 900,
+  });
+  try {
+    await act(async () => resized());
+    await frame();
+    const placed = document.querySelector<HTMLElement>(
+      "[data-popover-side]:not([data-popover-flow])",
+    )!;
+    // Not enough room below the anchor: opens above it and is capped to the room there.
+    expect(placed.dataset.popoverSide).toBe("top");
+    const room = 440 - 6 - 8;
+    expect(Number.parseFloat(placed.style.maxHeight)).toBe(room);
+    const content = document.querySelector<HTMLElement>("[data-popover-flow]")!;
+    expect(Number.parseFloat(content.style.maxHeight)).toBeLessThanOrEqual(room);
+  } finally {
+    delete (HTMLElement.prototype as { offsetHeight?: number }).offsetHeight;
+  }
+});
+
+it("treats scrolling inside the popover as neither a re-placement nor an outside dismissal", async () => {
+  const measure = vi
+    .spyOn(anchor, "getBoundingClientRect")
+    .mockReturnValue(new DOMRect(40, 50, 80, 20));
+  const dismiss = vi.fn();
+  await act(async () =>
+    root.render(createElement(Popover, { anchor, flow: "scroll", onDismiss: dismiss }, "Menu")),
+  );
+  await frame();
+  const content = document.querySelector<HTMLElement>("[data-popover-flow]")!;
+  measure.mockClear();
+  await act(async () => {
+    content.dispatchEvent(new Event("scroll"));
+    content.dispatchEvent(new WheelEvent("wheel", { deltaY: 40, bubbles: true }));
+  });
+  await frame();
+  expect(measure).not.toHaveBeenCalled();
+  expect(dismiss).not.toHaveBeenCalled();
+  // A scroll elsewhere still follows the anchor.
+  await act(async () => {
+    window.dispatchEvent(new Event("scroll"));
+  });
+  await frame();
+  expect(measure).toHaveBeenCalledTimes(1);
+});
+
+it("keeps a passive tooltip out of Escape handling", async () => {
+  const dismiss = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(
+        Popover,
+        { anchor, role: "tooltip", passive: true, restoreFocus: false, onDismiss: dismiss },
+        "Hint",
+      ),
+    ),
+  );
+  await act(async () => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  expect(dismiss).not.toHaveBeenCalledWith("escape");
 });

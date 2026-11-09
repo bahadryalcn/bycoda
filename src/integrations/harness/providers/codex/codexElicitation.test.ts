@@ -79,7 +79,7 @@ const typed = {
   },
 };
 describe("MCP typed forms", () => {
-  it("yanıtları türlere dönüştürür ve isteğe bağlı alanı atlar", () => {
+  it("converts answers to types and skips the optional field", () => {
     const form = codexMcpForm(typed)!;
     expect(form).not.toBeNull();
     expect(
@@ -108,7 +108,7 @@ describe("MCP typed forms", () => {
     });
   });
   it.each(["NaN", "1.5", "5", "Infinity", "", "0x10"])(
-    "geçersiz integer yanıtını reddeder: %s",
+    "rejects an invalid integer answer: %s",
     (count) => {
       const form = codexMcpForm({
         ...typed,
@@ -127,7 +127,7 @@ describe("MCP typed forms", () => {
       ).toThrow();
     },
   );
-  it("required ve enum/multiselect sınırlarını doğrular", () => {
+  it("validates required and enum/multiselect limits", () => {
     const form = codexMcpForm(typed)!;
     expect(() => codexMcpFormResponse(form, { kind: "answered", answers: {} })).toThrow("required");
     const enumForm = codexMcpForm({
@@ -155,7 +155,7 @@ describe("MCP typed forms", () => {
     { type: "string", format: "password" },
     { type: "string", pattern: "secret.*" },
     { type: "integer", multipleOf: 2 },
-  ])("bilinmeyen veya gizli alan sözleşmesini sessizce kabul etmez: %j", (field) => {
+  ])("does not silently accept an unknown or hidden field contract: %j", (field) => {
     expect(
       codexMcpForm({
         ...typed,
@@ -165,7 +165,7 @@ describe("MCP typed forms", () => {
   });
 });
 it.each([true, false])(
-  "literal Other enum ve enumNames aynı başlıkları ID ile çözer; required=%s",
+  "literal Other enum and enumNames resolve the same titles by ID; required=%s",
   (required) => {
     const form = codexMcpForm({
       mode: "form",
@@ -200,7 +200,7 @@ it.each([true, false])(
     ).toEqual({ value: "second" });
   },
 );
-it("array Other literal kalır ve boş text/enum/array değerleri görünür temsil edilir", () => {
+it("array Other stays literal and empty text/enum/array values are represented visibly", () => {
   const form = codexMcpForm({
     mode: "form",
     requestedSchema: {
@@ -236,7 +236,7 @@ it("array Other literal kalır ve boş text/enum/array değerleri görünür tem
     }).content,
   ).toEqual({ text: "", choice: "", list: [] });
 });
-it("schema default required kullanıcı yanıtının yerine geçmez", () => {
+it("a schema default does not replace a required user answer", () => {
   const form = codexMcpForm({
     mode: "form",
     requestedSchema: {

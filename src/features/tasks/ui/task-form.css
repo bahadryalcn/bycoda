@@ -1,0 +1,106 @@
+/* New/edit task dialog (shared with the goal dialog): target pickers, settings-style
+   rows and the grouped option blocks. Container frames are hairlines on the canvas. */
+
+.task-form-targets {
+  display: grid;
+  gap: 0.25rem;
+  min-inline-size: 0;
+}
+.task-form-targets-row {
+  display: flex;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.task-form-targets-note {
+  display: flex;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+
+/* Settings row: title and one-line description left, the control right. */
+.task-form-rows {
+  display: grid;
+  min-inline-size: 0;
+}
+.task-form-rows > * + * {
+  border-block-start: 1px solid var(--ui-pane-border);
+}
+.task-form-row {
+  display: flex;
+  min-inline-size: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-block: 0.5rem;
+  font-size: var(--ui-font-secondary);
+  color: var(--color-content);
+}
+/* A Checkbox row: the box stays first in the DOM (label order) and sits at the end edge. */
+.task-form-check {
+  flex-direction: row-reverse;
+  cursor: pointer;
+}
+.task-form-row-text {
+  display: grid;
+  min-inline-size: 0;
+  gap: 0.125rem;
+}
+.task-form-row-desc {
+  font-size: var(--ui-font-micro);
+  color: var(--ui-text-secondary);
+}
+.task-form-row-control {
+  display: flex;
+  flex: none;
+  max-inline-size: 60%;
+  min-inline-size: 0;
+  align-items: center;
+}
+
+.task-form-summary-hint {
+  margin-inline-start: 0.5rem;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-muted);
+}
+
+.task-form-agent {
+  display: grid;
+  gap: 0.5rem;
+  min-inline-size: 0;
+}
+.task-form-agent-picks {
+  display: flex;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Number inputs fit the dialog width, not the viewport width. */
+.task-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: 0.5rem;
+  min-inline-size: 0;
+}
+
+/* Advanced groups: each block (check command, branch, workflow, budget) breathes between hairlines. */
+.task-form-advanced > div > * {
+  padding-block: 0.5rem;
+}
+.task-form-advanced > div > :first-child {
+  padding-block-start: 0;
+}
+.task-form-advanced > div > :last-child {
+  padding-block-end: 0;
+}

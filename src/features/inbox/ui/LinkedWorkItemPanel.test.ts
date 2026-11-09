@@ -5,13 +5,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearInboxCache, type GithubWorkItem } from "../model/githubTasks";
 import type { LinkedWorkItem } from "../../sessions/model/session";
-import { LinkedWorkItemPanel } from "./InboxView";
+import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { LinkedWorkItemPanel as RawLinkedWorkItemPanel } from "./InboxView";
 
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
   invoke: vi.fn(),
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+
+const LinkedWorkItemPanel = withQueryClient(RawLinkedWorkItemPanel);
 
 const target: LinkedWorkItem = {
   kind: "issue",
@@ -79,13 +82,17 @@ function render(visible: boolean) {
   );
 }
 
+// Project logo detection is unrelated to the panel's own fetches.
+const dataCalls = () =>
+  vi.mocked(invoke).mock.calls.filter(([command]) => command !== "detect_project_logo");
+
 describe("LinkedWorkItemPanel tab persistence", () => {
   it("keeps fetched data mounted while hidden and reuses it when shown again", async () => {
     await act(async () => render(true));
     await act(async () => {});
 
     expect(container.textContent).toContain("Keep the linked panel warm");
-    expect(invoke).toHaveBeenCalledTimes(3);
+    expect(dataCalls()).toHaveLength(3);
     expect(invoke).toHaveBeenCalledWith("git_github_work_item_details", {
       cwd: "/tmp/web",
       repo: "acme/web",
@@ -108,6 +115,6 @@ describe("LinkedWorkItemPanel tab persistence", () => {
 
     expect(container.querySelector("aside")?.classList).toContain("flex");
     expect(container.textContent).toContain("Keep the linked panel warm");
-    expect(invoke).toHaveBeenCalledTimes(3);
+    expect(dataCalls()).toHaveLength(3);
   });
 });

@@ -9,7 +9,7 @@ import {
 import { readRemoteConnection, subscribeChanges } from "./remoteHealth";
 import { parseRemotePath } from "./remoteProjects";
 import {
-  isReconnecting,
+  isReconnectRequested,
   reconnectRemoteMachine,
   startRemoteAutoRecovery,
   subscribeReconnecting,
@@ -32,7 +32,7 @@ export function useRemoteConnection(cwdOrEnvironmentId?: string) {
   const state = useSyncExternalStore(subscribeChanges, read, () => INITIAL_CONNECTION);
   const reconnecting = useSyncExternalStore(
     subscribeReconnecting,
-    () => !!environmentId && isReconnecting(environmentId),
+    () => !!environmentId && isReconnectRequested(environmentId),
     () => false,
   );
   const { machines } = useRemoteMachines(!!environmentId);
@@ -56,7 +56,8 @@ export function useRemoteConnection(cwdOrEnvironmentId?: string) {
     status: state.status,
     error: state.error,
     lastSeen: state.lastSeen,
-    /** A reconnect the user asked for is under way. */
+    /** A reconnect the user asked for is under way. Quiet background retries
+     * (on their backoff timer, and when the window regains focus) do not set it. */
     reconnecting,
     /** Whether a message can reach the machine, as far as is known. */
     canSend: !blocksSending(state.status),

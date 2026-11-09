@@ -10,7 +10,7 @@ beforeEach(() => {
   vi.mocked(invoke).mockReset();
   localStorage.clear();
 });
-it("GitLab checks ve günlükleri dış URL yerine yapılandırılmış native referansla okur", async () => {
+it("reads GitLab checks and logs through a structured native reference instead of an external URL", async () => {
   vi.mocked(invoke).mockResolvedValueOnce({
     headOid: "head",
     checks: [],
@@ -51,7 +51,7 @@ it("GitLab checks ve günlükleri dış URL yerine yapılandırılmış native r
     expectedInstance: "https://git.example",
   });
 });
-it("Azure policy build detayını doğru komuta yollar ve referanssız URLyi takip etmez", async () => {
+it("routes the Azure policy build detail to the right command and does not follow a URL without a reference", async () => {
   const check = {
     name: "build",
     workflow: "policy",
@@ -77,7 +77,7 @@ it("Azure policy build detayını doğru komuta yollar ve referanssız URLyi tak
   );
   expect(invoke).not.toHaveBeenCalled();
 });
-it("Yerel checkout olmadan projeyi gizler ve tercihleri instance/provider bazında ayırır", () => {
+it("hides the project without a local checkout and separates preferences per instance/provider", () => {
   saveHiddenScopes("gitlab", "https://one.example/", ["1", "1"]);
   expect(readHiddenScopes("gitlab", "https://one.example")).toEqual(["1"]);
   expect(readHiddenScopes("gitlab", "https://two.example")).toEqual([]);
@@ -111,7 +111,7 @@ it("Yerel checkout olmadan projeyi gizler ve tercihleri instance/provider bazın
     ),
   ).toEqual([]);
 });
-it("Onarım bağlamında gerçek MR URLsi, provider kimliği ve sınırlı günlük kanıtı korunur", () => {
+it("keeps the real MR URL, provider identity and bounded log evidence in the repair context", () => {
   const result = buildCiRepairRequest({
     provider: "gitlab",
     instance: "https://git.example",

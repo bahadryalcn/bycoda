@@ -1,4 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "window-a" }),
+}));
 
 const listen = vi.hoisted(() => vi.fn());
 const invoke = vi.hoisted(() => vi.fn());

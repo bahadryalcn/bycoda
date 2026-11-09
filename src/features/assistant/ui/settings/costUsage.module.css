@@ -1,0 +1,61 @@
+/* Advanced tab: three limit columns from 900px of content width, two below. Retention and usage share one row. */
+.cost {
+  container-type: inline-size;
+  display: grid;
+  gap: 14px;
+  min-inline-size: 0;
+}
+.fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+  align-items: start;
+  min-inline-size: 0;
+}
+.fieldGrid > * {
+  min-inline-size: 0;
+}
+@container (min-width: 900px) {
+  .fieldGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.disclosure {
+  justify-self: start;
+}
+
+.usage {
+  inline-size: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 6px 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--radius-pill);
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+.chip strong {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+}
+.note {
+  margin: 0;
+}

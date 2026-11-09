@@ -137,28 +137,31 @@ export function useProjectTerminalDockActions(deps: ProjectTerminalDockActionDep
         mapProjectTerminal(prev, projectPath, (entry) => closeTerminalInDock(entry, fileId)),
       );
     };
-    void confirmCloseTerminal(file).then((ok) => ok && finishClose());
+    // The last terminal takes the panel with it, so it asks even when idle.
+    const last = dock?.pane.files.length === 1;
+    void confirmCloseTerminal(file, { last }).then((ok) => ok && finishClose());
   }, []);
 
-  const onCloseOtherProjectTerminals = useCallback((fileId: string) => {
+  /** Closes every terminal but `keepId`; without it, every terminal and the panel. */
+  const onCloseProjectTerminals = useCallback((keepId?: string) => {
     const projectPath = projectCwdRef.current;
     const dock = findProjectTerminal(projectTerminalsRef.current, projectPath);
-    if (!dock?.pane.files.some((file) => file.id === fileId)) return;
-    const closingFiles = dock.pane.files.filter((file) => file.id !== fileId);
+    if (!dock) return;
+    if (keepId !== undefined && !dock.pane.files.some((file) => file.id === keepId)) return;
+    const closingFiles = dock.pane.files.filter((file) => file.id !== keepId);
     if (closingFiles.length === 0) return;
     const closingIds = new Set(closingFiles.map((file) => file.id));
 
     const finishClose = () => {
       setProjectTerminals((prev) =>
         mapProjectTerminal(prev, projectPath, (entry) => {
-          if (!entry.pane.files.some((file) => file.id === fileId)) {
+          if (keepId !== undefined && !entry.pane.files.some((file) => file.id === keepId)) {
             return entry;
           }
-          const files = entry.pane.files.filter((file) => !closingIds.has(file.id));
-          return {
-            ...entry,
-            pane: { ...entry.pane, files, activeFileId: fileId },
-          };
+          // A terminal opened while the dialog was up stays.
+          let next: typeof entry | null = entry;
+          for (const id of closingIds) next = next && closeTerminalInDock(next, id);
+          return next && keepId !== undefined ? selectDockTerminal(next, keepId) : next;
         }),
       );
     };
@@ -238,7 +241,7 @@ export function useProjectTerminalDockActions(deps: ProjectTerminalDockActionDep
     onSelectProjectTerminal,
     onReorderProjectTerminals,
     onCloseProjectTerminal,
-    onCloseOtherProjectTerminals,
+    onCloseProjectTerminals,
     onTerminalMetaChange,
     onToggleRunningTerminal,
     onNewTerminalTab,

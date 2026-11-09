@@ -1,4 +1,7 @@
+import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Surface } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
 import { useId, useState, useSyncExternalStore } from "react";
 import { getCiRepairs, subscribeCiRepairs, type TrackedCiRepair } from "../model/ciRepairTracking";
@@ -8,7 +11,6 @@ import {
   ChevronRight,
   CircleDashed,
   CircleX,
-  LoaderCircle,
   MessageSquare,
   type IconComponent,
 } from "../../../shared/ui/icons";
@@ -138,20 +140,20 @@ export function useCheckRepairs(
   return [...groups.values()];
 }
 
-const neutral = "text-(--ui-text-secondary)";
-const positive = "text-(--ui-tone-success-fg) dark:text-(--ui-tone-success-fg)";
-const negative = "text-(--ui-tone-danger-fg) dark:text-(--ui-tone-danger-fg)";
-const active = "text-(--ui-tone-warning-fg) dark:text-(--ui-tone-warning-fg)";
+const neutral = "neutral";
+const positive = "success";
+const negative = "danger";
+const active = "accent";
 const states: Record<
   RepairState,
-  { label: string; summary: string; Icon: IconComponent; color: string }
+  { label: string; summary: string; Icon: IconComponent | "spinner"; color: BadgeTone }
 > = {
   repairing: {
     get label() {
       return t("Repairing");
     },
     summary: "Repair in progress",
-    Icon: LoaderCircle,
+    Icon: "spinner",
     color: active,
   },
   waiting: {
@@ -167,7 +169,7 @@ const states: Record<
       return t("Refreshing");
     },
     summary: "Refreshing CI checks",
-    Icon: LoaderCircle,
+    Icon: "spinner",
     color: neutral,
   },
   stale: {
@@ -199,7 +201,7 @@ const states: Record<
       return t("CI running");
     },
     summary: "running",
-    Icon: LoaderCircle,
+    Icon: "spinner",
     color: active,
   },
   cancel: {
@@ -255,10 +257,12 @@ function StatusIcon({ state }: { state: RepairState }) {
   useLocale();
   const { Icon, color } = states[state];
   return (
-    <Icon
+    <Badge
+      appearance="subtle"
+      size="xs"
+      tone={color}
       aria-hidden="true"
-      strokeWidth={1.75}
-      className={`size-3.5 shrink-0 ${color} ${["repairing", "refreshing", "pending"].includes(state) ? "animate-spin motion-reduce:animate-none" : ""}`}
+      icon={Icon === "spinner" ? <Spinner size="sm" /> : <Icon strokeWidth={1.75} />}
     />
   );
 }
@@ -267,15 +271,17 @@ export function CheckRepairStatus({ item }: { item: RepairItem }) {
   useLocale();
   const status = states[item.state];
   return (
-    <span
+    <Badge
+      size="xs"
+      tone={status.color}
+      appearance="subtle"
+      icon={status.Icon === "spinner" ? <Spinner size="sm" /> : <status.Icon strokeWidth={1.75} />}
       data-repair-status
       role="status"
       title={t(status.summary)}
-      className={`inline-flex shrink-0 items-center gap-1.5 text-[11px] font-medium ${status.color}`}
     >
-      <StatusIcon state={item.state} />
       {status.label}
-    </span>
+    </Badge>
   );
 }
 
@@ -320,8 +326,8 @@ function RepairCard({
       (check) => check.name === single.check.name && check.workflow === single.check.workflow,
     ).length === 1;
   return (
-    <div className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-hover)">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5">
+    <Surface variant="outline" padding="none" className="overflow-hidden">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-2 py-2">
         <Button
           variant="ghost"
           type="button"
@@ -329,16 +335,17 @@ function RepairCard({
           aria-expanded={expanded}
           aria-controls={detailsId}
           onClick={() => setExpanded(!expanded)}
-          className="min-w-0 flex-1 text-left"
+          align="start"
+          className="min-w-0 flex-1"
         >
           <StatusIcon state={lead} />
           <span className="min-w-0 flex-1">
             <span
               role="status"
-              className="flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] font-medium"
+              className="flex flex-wrap gap-x-3 gap-y-0.5 text-ui-caption font-medium"
             >
               {[...counts].map(([state, count]) => (
-                <span key={state} className={states[state].color}>
+                <Badge key={state} tone={states[state].color} size="xs" appearance="subtle">
                   {["pass", "fail", "pending", "cancel", "skipping", "unknown"].includes(state)
                     ? single
                       ? states[state].label
@@ -346,19 +353,19 @@ function RepairCard({
                     : counts.size === 1
                       ? t(states[state].summary)
                       : `${count} ${states[state].label.toLowerCase()}`}
-                </span>
+                </Badge>
               ))}
             </span>
             <span
               title={single ? `${single.check.workflow}: ${single.check.name}` : undefined}
-              className="mt-0.5 block truncate text-[11px] text-(--ui-text-secondary)"
+              className="mt-0.5 block break-words text-ui-caption text-(--ui-text-secondary)"
             >
               {single ? single.check.name : t("CI repair for {p0}", { p0: label })}
             </span>
           </span>
           <ChevronRight
             aria-hidden="true"
-            className={`size-3 shrink-0 text-(--ui-text-secondary) transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
+            className={`icon-xs shrink-0 text-(--ui-text-secondary) transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
           />
         </Button>
         {canShowCheck ? (
@@ -378,7 +385,7 @@ function RepairCard({
             onClick={() => void repair.onOpenSession?.(group.sessionId)}
             className="shrink-0"
           >
-            <MessageSquare aria-hidden="true" className="size-3.5" />
+            <MessageSquare aria-hidden="true" className="icon-sm" />
             {t("Open conversation")}
           </Button>
         ) : null}
@@ -386,7 +393,7 @@ function RepairCard({
       {expanded ? (
         <div
           id={detailsId}
-          className="space-y-2 border-t border-(--ui-tone-neutral-border) px-3 py-2.5 text-[11px] text-(--ui-text-secondary)"
+          className="space-y-2 border-t border-(--ui-tone-neutral-border) px-3 py-2.5 text-ui-micro text-(--ui-text-secondary)"
         >
           <p>{t("Included checks")}</p>
           <ul className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto">
@@ -394,7 +401,7 @@ function RepairCard({
               <li
                 key={JSON.stringify([check.workflow, check.name, check.url])}
                 title={check.workflow}
-                className="max-w-full truncate rounded bg-(--ui-surface-raised) px-2 py-1 text-(--ui-text-secondary)"
+                className="max-w-full break-words rounded bg-(--ui-surface-raised) px-2 py-1 text-(--ui-text-secondary)"
               >
                 {check.name}
               </li>
@@ -409,7 +416,7 @@ function RepairCard({
           </p>
         </div>
       ) : null}
-    </div>
+    </Surface>
   );
 }
 

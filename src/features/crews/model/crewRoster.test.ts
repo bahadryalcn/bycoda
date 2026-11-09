@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { defaultCrewPolicy, type CrewAgent, type CrewDefinition, type CrewRun } from "./crew";
+import type { HostModelCatalog } from "../../connections/model/protocol";
 import {
+  candidateDetailLabel,
+  candidatePassesPolicy,
+  crewPolicyImpact,
   crewRosterIssues,
   crewRosterValid,
   crewRunTitle,
   libraryUpdate,
+  memberDraftStarted,
   memberFromLibrary,
+  memberModelSummary,
 } from "./crewRoster";
 
 const candidate = {
@@ -94,5 +100,77 @@ describe("crew roster", () => {
         launch: { ...run.launch!, prompt: "x".repeat(100) },
       }),
     ).toHaveLength(72);
+  });
+
+  const catalog = {
+    models: { codex: [{ id: "m", name: "Model M", harness: "codex" }] },
+    errors: {},
+  } as unknown as HostModelCatalog;
+
+  it("summarizes a member's model the same way everywhere", () => {
+    expect(memberModelSummary(catalog, agent("a", "specialist"))).toBe("Fixed: Model M");
+    expect(memberModelSummary(catalog, agent("a", "specialist", { candidates: [] }))).toBe(
+      "No model",
+    );
+    const pool = [candidate, { ...candidate, id: "codex/n", model: "n" }];
+    expect(
+      memberModelSummary(
+        catalog,
+        agent("a", "specialist", { selection: "automatic", candidates: pool }),
+      ),
+    ).toBe("Automatic: 2 candidates");
+    expect(
+      memberModelSummary(
+        catalog,
+        agent("a", "specialist", { selection: "automatic", candidates: [candidate] }),
+      ),
+    ).toBe("Automatic: 1 candidate");
+  });
+
+  it("qualifies a candidate with its provider and keeps unknown models readable", () => {
+    expect(candidateDetailLabel(catalog, candidate)).toBe("Model M · codex");
+    expect(candidateDetailLabel(catalog, { ...candidate, model: "gone" })).toBe("gone · codex");
+    expect(candidateDetailLabel(catalog, undefined)).toBe("");
+  });
+
+  it("lists the members the eligibility guards affect, fixed pins included", () => {
+    const rated = (id: string, cost?: number, quality?: number) => ({
+      ...candidate,
+      id,
+      model: id,
+      cost,
+      quality,
+    });
+    const policy = { allowUnknownCost: false, maxEstimatedCost: 2, minimumQuality: 70 };
+    expect(candidatePassesPolicy(rated("a", 2, 70), policy)).toBe(true);
+    expect(candidatePassesPolicy(rated("a", 3, 90), policy)).toBe(false);
+    expect(candidatePassesPolicy(rated("a", undefined, 90), policy)).toBe(false);
+    expect(candidatePassesPolicy(rated("a", 1, 40), policy)).toBe(false);
+    expect(candidatePassesPolicy(rated("a"), { allowUnknownCost: true })).toBe(true);
+
+    const impact = crewPolicyImpact(
+      [
+        // A pin that fails the guard is blocked, not exempted.
+        agent("pinned", "specialist", { candidates: [rated("x", 3, 90), rated("y", 1, 90)] }),
+        agent("ok", "reviewer", { candidates: [rated("y", 1, 90)] }),
+        agent("auto", "specialist", {
+          selection: "automatic",
+          candidates: [rated("x", 3, 90), rated("y", 1, 90)],
+        }),
+        agent("none", "specialist", { selection: "automatic", candidates: [rated("x", 3, 90)] }),
+        agent("empty", "advisor", { candidates: [] }),
+      ],
+      policy,
+    );
+    expect(impact.blocked.map((item) => item.agent.id)).toEqual(["pinned", "none"]);
+    expect(impact.narrowed.map((item) => [item.agent.id, item.eligible, item.pool])).toEqual([
+      ["auto", 1, 2],
+    ]);
+  });
+
+  it("tells a started member draft from an untouched one and shortens name lists", () => {
+    expect(memberDraftStarted({ name: "  ", instructions: "", groups: [] })).toBe(false);
+    expect(memberDraftStarted({ name: "", instructions: " x ", groups: undefined })).toBe(true);
+    expect(memberDraftStarted({ name: "", instructions: "", groups: ["UI"] })).toBe(true);
   });
 });

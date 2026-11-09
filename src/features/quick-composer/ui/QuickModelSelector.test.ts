@@ -7,6 +7,8 @@ import {
   resetHarnessModelOverlays,
   setHarnessModels,
   saveLastModelSettings,
+  defaultModelSettings,
+  resolveModel,
   type AgentModel,
 } from "../../sessions/model/models";
 
@@ -98,32 +100,46 @@ it("browses one provider at a time and selects a model without closing settings"
 });
 
 it("updates effort inline and closes with Escape", () => {
-  const slider = container.querySelector<HTMLElement>('[role="slider"]')!;
+  const reasoning = container.querySelector<HTMLSelectElement>('[aria-label="Reasoning"]')!;
+  act(() => {
+    reasoning.value = "high";
+    reasoning.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(onSettingsChange).toHaveBeenCalledWith({
+    ...defaultModelSettings(resolveModel("claude", claude.id)),
+    effort: "high",
+    fast: "false",
+  });
   act(() =>
-    slider.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }),
-    ),
+    reasoning.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
   );
-  expect(onSettingsChange).toHaveBeenCalledWith({ effort: "high" });
-  act(() => slider.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
   expect(onClose).toHaveBeenCalledOnce();
 });
 
 it("shows saved favorites across provider tabs", () => {
-  act(() => container.querySelector<HTMLButtonElement>('[title="Add to favorites"]')!.click());
+  act(() =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label^="Add "][aria-label$=" to favorites"]')!
+      .click(),
+  );
   act(() =>
     container.querySelector<HTMLButtonElement>('[role="tab"][aria-label="Favorites"]')!.click(),
   );
   expect(container.querySelector('[role="listbox"]')?.textContent).toContain("Test Claude");
-  act(() => container.querySelector<HTMLButtonElement>('[title="Remove from favorites"]')!.click());
+  act(() =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label^="Remove "][aria-label$=" from favorites"]')!
+      .click(),
+  );
   expect(container.querySelector('[role="listbox"]')?.textContent).toContain("No favorite models");
 });
 
-it("toggles fast mode from the lightning button", () => {
-  const fast = container.querySelector<HTMLButtonElement>('[aria-label="Fast mode"]')!;
-  expect(fast.getAttribute("aria-pressed")).toBe("false");
+it("toggles fast mode from the Fast switch", () => {
+  const fast = container.querySelector<HTMLButtonElement>('[aria-label="Fast"]')!;
+  expect(fast.getAttribute("aria-checked")).toBe("false");
   act(() => fast.click());
   expect(onSettingsChange).toHaveBeenCalledWith({
+    ...defaultModelSettings(resolveModel("claude", claude.id)),
     effort: "low",
     fast: "true",
   });
@@ -143,16 +159,25 @@ it("resets reasoning and fast mode to saved user defaults", () => {
       }),
     ),
   );
-  const fast = container.querySelector<HTMLButtonElement>('[aria-label="Fast mode"]')!;
-  expect(fast.getAttribute("aria-pressed")).toBe("true");
-  expect(fast.querySelector("svg")?.getAttribute("fill")).toBe("currentColor");
+  const fast = container.querySelector<HTMLButtonElement>('[aria-label="Fast"]')!;
+  expect(fast.getAttribute("aria-checked")).toBe("true");
   act(() =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Reset to saved defaults"]')!.click(),
+    [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Reset to saved defaults")!
+      .click(),
   );
   expect(onSettingsChange).toHaveBeenCalledWith({
     effort: "high",
     fast: "false",
     context: "256k",
+    crossAdvisor: JSON.stringify({
+      harness: "claude",
+      model: "test-claude",
+      providerAccountId: "default",
+    }),
+    crossSubagents: JSON.stringify([
+      { harness: "claude", model: "test-claude", providerAccountId: "default" },
+    ]),
   });
 });
 

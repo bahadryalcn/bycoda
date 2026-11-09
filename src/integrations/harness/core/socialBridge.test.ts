@@ -6,8 +6,8 @@ const bridge = {
   command: "C:\\Program Files\\nodejs\\node.exe",
   args: ["G:\\bycoda Host\\host.mjs"],
 };
-describe("Provider bağımsız sosyal araç köprüsü", () => {
-  it("Claude ve Codex MCP; ACP aynı stdio sunucusu; diğer provider'lar güvenli CLI tanımı alır", () => {
+describe("Provider-independent social tool bridge", () => {
+  it("Claude and Codex get MCP, ACP gets the same stdio server, other providers get a safe CLI definition", () => {
     expect(socialSpawnArgs("claude", ["--print"], bridge)).toContain("--mcp-config");
     const codex = socialSpawnArgs("codex", ["app-server"], bridge);
     expect(codex.join(" ")).toContain("mcp_servers.bycoda-social");
@@ -57,7 +57,7 @@ describe("Provider bağımsız sosyal araç köprüsü", () => {
       },
     });
   });
-  it("katalog ve izole başlık helper'larına MCP eklenmez; bağlantısız host normal session'ı bozmaz", async () => {
+  it("MCP is not added to catalog and isolated title helpers; a disconnected host does not break a normal session", async () => {
     expect(socialSpawnArgs("claude", ["--strict-mcp-config"], bridge)).toEqual([
       "--strict-mcp-config",
     ]);

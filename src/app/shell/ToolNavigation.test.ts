@@ -6,13 +6,23 @@ import { invoke } from "@tauri-apps/api/core";
 import { ToolHeader, ToolNavigationContext, ToolPanel } from "./ToolNavigation";
 import type { ToolId, WorkspaceToolId } from "../model/toolWindows";
 import { routeWindowDestination } from "../model/windowNavigation";
+import { preloadToolSurface } from "../workspace/surfaces/lazySurfaces";
+
+vi.mock("../workspace/surfaces/lazySurfaces", () => ({ preloadToolSurface: vi.fn() }));
+vi.mock("../../features/assistant/model/assistantClient", () => ({
+  useAssistantIdentity: () => ({ name: "Arif", room: "Arif's Room", setupComplete: true }),
+}));
 
 vi.mock("../model/windowNavigation", () => ({
   routeWindowDestination: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("../../shared/i18n", () => ({ t: (text: string) => text, useLocale: () => {} }));
+vi.mock("../../shared/i18n", () => ({
+  t: (text: string) => text,
+  useT: () => (text: string) => text,
+  useLocale: () => {},
+}));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const roots: ReturnType<typeof createRoot>[] = [];
 afterEach(async () => {
@@ -55,6 +65,19 @@ async function mount(
   );
   return { container, onSelect };
 }
+
+it("preloads a tool on pointer and keyboard intent without navigating", async () => {
+  const { container, onSelect } = await mount();
+  const inbox = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (tab) => tab.textContent === "Inbox",
+  )!;
+  await act(() => inbox.dispatchEvent(new MouseEvent("pointerover", { bubbles: true })));
+  expect(preloadToolSurface).toHaveBeenCalledWith("inbox");
+  vi.mocked(preloadToolSurface).mockClear();
+  await act(() => inbox.focus());
+  expect(preloadToolSurface).toHaveBeenCalledWith("inbox");
+  expect(onSelect).not.toHaveBeenCalled();
+});
 
 it("includes Servers in the main workspace and offers the combined tools window", async () => {
   const { container, onSelect } = await mount(true, true, "servers", true);
@@ -147,7 +170,9 @@ it("opens a separate tool or a combined tool window with the current project", a
     grouped: false,
   });
   await act(() =>
-    container.querySelector<HTMLButtonElement>('[title="Open all tools in one window"]')!.click(),
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Open all tools in one window"]')!
+      .click(),
   );
   expect(invoke).toHaveBeenLastCalledWith("open_tool_window", {
     tool: "tasks",
@@ -165,11 +190,45 @@ it("reports a rejected native window and permits retry", async () => {
   expect(button.disabled).toBe(false);
 });
 
+it.each([false, true])(
+  "shows progress only on the initiating window action (grouped=%s)",
+  async (grouped) => {
+    let resolve!: () => void;
+    vi.mocked(invoke).mockReturnValueOnce(
+      new Promise<void>((done) => {
+        resolve = done;
+      }),
+    );
+    const { container } = await mount();
+    const single = container.querySelector<HTMLButtonElement>('[aria-label="Open in new window"]')!;
+    const combined = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Open all tools in one window"]',
+    )!;
+    const selected = grouped ? combined : single;
+    const other = grouped ? single : combined;
+    selected.focus();
+    await act(async () => {
+      selected.click();
+      selected.click();
+    });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(selected.getAttribute("aria-busy")).toBe("true");
+    expect(other.hasAttribute("aria-busy")).toBe(false);
+    expect(other.disabled).toBe(true);
+    expect(document.activeElement).toBe(selected);
+    await act(async () => resolve());
+    expect(selected.hasAttribute("aria-busy")).toBe(false);
+    expect(other.disabled).toBe(false);
+  },
+);
+
 it("reveals the existing combined tools window instead of opening a duplicate", async () => {
   vi.mocked(routeWindowDestination).mockResolvedValueOnce(true);
   const { container } = await mount();
   await act(() =>
-    container.querySelector<HTMLButtonElement>('[title="Open all tools in one window"]')!.click(),
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Open all tools in one window"]')!
+      .click(),
   );
   expect(routeWindowDestination).toHaveBeenCalledWith({
     kind: "tool",
@@ -212,9 +271,12 @@ it("retains edits between tool tabs and suspends hidden listeners", async () => 
 
 it("includes and selects all added tools in a grouped window", async () => {
   const { container, onSelect } = await mount(true, true, "inbox", true, true);
-  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(8);
-  for (const label of ["Servers", "Conversation tools", "Terminal"]) {
-    const tab = container.querySelector<HTMLButtonElement>(`[title="${label}"]`)!;
+  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(9);
+  for (const label of ["Servers", "Conversation tools", "Terminal", "Arif's Room"]) {
+    // Tabs are named by their visible label; the hint rides in the shared tooltip.
+    const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((item) =>
+      [...item.querySelectorAll("span")].some((span) => span.textContent === label),
+    )!;
     expect(tab).not.toBeNull();
     await act(() => tab.click());
   }
@@ -222,5 +284,6 @@ it("includes and selects all added tools in a grouped window", async () => {
     "servers",
     "conversation-tools",
     "terminal",
+    "assistant",
   ]);
 });

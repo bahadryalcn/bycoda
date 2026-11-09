@@ -13,6 +13,46 @@ import { useDragResize } from "../hooks/useDragResize";
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
+it("keeps existing inert boundaries stable while streaming and isolates new siblings", async () => {
+  const background = document.createElement("div");
+  let value = false;
+  const writes = vi.fn((next: boolean) => {
+    value = next;
+  });
+  Object.defineProperty(background, "inert", {
+    configurable: true,
+    get: () => value,
+    set: writes,
+  });
+  document.body.append(background);
+  await act(async () =>
+    root.render(
+      createElement(Modal, {
+        title: "Stable boundary",
+        onClose: vi.fn(),
+        children: "Contents",
+      }),
+    ),
+  );
+  expect(background.inert).toBe(true);
+  writes.mockClear();
+  await act(async () => {
+    background.append(document.createElement("span"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(writes).not.toHaveBeenCalled();
+  const sibling = document.createElement("button");
+  await act(async () => {
+    document.body.append(sibling);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(sibling.inert).toBe(true);
+  expect(writes).not.toHaveBeenCalled();
+  await act(async () => root.render(null));
+  expect(background.inert).toBe(false);
+  expect(sibling.inert).toBe(false);
+});
+
 it("keeps image preview focus inside, closes with Escape and restores its trigger", async () => {
   const trigger = document.createElement("button");
   document.body.append(trigger);
@@ -401,6 +441,27 @@ it("clamps resized viewports below min and allows keyboard reset", async () => {
   await act(async () => window.dispatchEvent(new Event("resize")));
   expect(separator.getAttribute("aria-valuenow")).toBe("150");
   expect(separator.getAttribute("aria-valuemin")).toBe("150");
+});
+
+it("keeps the live Sash drag width when the container resizes mid-drag", async () => {
+  let sash: ReturnType<typeof useDragResize>["sashProps"] | null = null;
+  function Example() {
+    const resize = useDragResize({ min: 200, max: () => 600, initial: 400, defaultWidth: 240 });
+    sash = resize.sashProps;
+    return createElement("div", { ref: resize.setPaneRef });
+  }
+  await act(async () => root.render(createElement(Example)));
+  const pane = container.firstElementChild as HTMLElement;
+  await act(async () => {
+    sash!.onResizeStart();
+    sash!.onResize(60);
+  });
+  expect(pane.style.width).toBe("460px");
+  // The pane's parent resizes with each frame; that must not snap back to 400.
+  await act(async () => window.dispatchEvent(new Event("resize")));
+  expect(pane.style.width).toBe("460px");
+  await act(async () => sash!.onResizeEnd(60, { cancelled: false, moved: true, keyboard: false }));
+  expect(pane.style.width).toBe("460px");
 });
 
 it("changes resize axis without retaining the previous dimension", async () => {

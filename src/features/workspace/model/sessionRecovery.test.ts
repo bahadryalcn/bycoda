@@ -16,11 +16,58 @@ import {
   setSessionRecovery,
   removeRecoverySessions,
   dropRecoverySessions,
+  eligibleRecoverySessions,
 } from "./sessionRecovery";
+
+describe("eligible recovery population", () => {
+  it("uses the same deduplicated unlocked unresolved entries for rail and panel", () => {
+    const value = captureSessionRecovery(null, snapshot(["a", "b", "c"]), 100)!;
+    value.workspace.sessions.push(value.workspace.sessions[0]);
+    value.resolvedIds = ["c"];
+    expect(
+      eligibleRecoverySessions(
+        value,
+        [],
+        (cwd) => cwd === "/b",
+        () => undefined,
+      ).map((row) => row.id),
+    ).toEqual(["a"]);
+  });
+  it("deduplicates exact remote host identities while retaining different projects", () => {
+    const value = captureSessionRecovery(null, snapshot(["a", "b", "c"]), 100)!;
+    value.workspace.sessions = value.workspace.sessions.map((stub, index) => ({
+      ...stub,
+      cwd: index === 2 ? "remote://env/other" : "remote://env/repo",
+      remoteSessionId: "host-chat",
+    }));
+    expect(
+      eligibleRecoverySessions(
+        value,
+        [],
+        () => false,
+        () => undefined,
+      ).map((row) => row.id),
+    ).toEqual(["a", "c"]);
+    const open = { ...chat("open"), cwd: "remote://env/repo" };
+    expect(
+      eligibleRecoverySessions(
+        value,
+        [open],
+        () => false,
+        () => "host-chat",
+      ).map((row) => row.id),
+    ).toEqual(["c"]);
+  });
+});
 import { saveWorkspaceSnapshot } from "../../sessions/data/sessionStore";
 import { invoke } from "@tauri-apps/api/core";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn().mockResolvedValue(undefined),
+  isTauri: () => false,
+}));
+// Workspace persistence belongs to the primary native window.
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ label: "main" }) }));
 const chat = (id: string) => ({
   ...newSession("codex", `/${id}`),
   id,
@@ -172,6 +219,18 @@ describe("durable session recovery", () => {
     expect(recoveryNeedsAttention("done")).toBe(false);
     expect(recoveryNeedsAttention("idle")).toBe(false);
   });
+  it("resolves an explicit owner stop without reviving an earlier interruption", () => {
+    const stopped = markTurnInterrupted(chat("stopped"));
+    stopped.blocks.push(
+      { id: "stop", role: "system", notice: "interrupt", text: "Stopped by you." },
+      { id: "metadata", role: "system", text: "Restored from disk" },
+    );
+    const status = recoveryStatus(stopped, false, true);
+    expect(status).toBe("idle");
+    expect(recoveryNeedsAttention(status)).toBe(false);
+    expect(recoveryStatus(stopped, true, false)).toBe("unknown");
+    expect(recoveryStatus({ ...stopped, busy: true }, false, true)).toBe("working");
+  });
   it("keeps failed and unfinished turns separate from completed sessions", () => {
     const failed = chat("a");
     failed.blocks.push({ id: "error", role: "system", text: "Provider failed", notice: "error" });
@@ -180,6 +239,28 @@ describe("durable session recovery", () => {
     expect(recoveryNeedsAttention("interrupted")).toBe(true);
     expect(recoveryNeedsAttention("working")).toBe(true);
     expect(recoveryStatus({ ...chat("a"), blocks: [] }, false, true)).toBe("idle");
+  });
+  it("resolves a legacy owner Stop followed directly by the old quit marker", () => {
+    const stopped = chat("legacy-stopped");
+    stopped.blocks.push(
+      { id: "stop", role: "system", notice: "interrupt", text: "Stopped by you." },
+      {
+        id: "quit",
+        role: "system",
+        notice: "interrupt",
+        text: "Turn interrupted when bycoda quit.",
+      },
+    );
+    expect(recoveryStatus(stopped, false, true)).toBe("idle");
+    expect(recoveryStatus(stopped, true, false)).toBe("unknown");
+    stopped.blocks.push({ id: "next", role: "user", text: "New work" });
+    stopped.blocks.push({
+      id: "new-quit",
+      role: "system",
+      notice: "interrupt",
+      text: "Turn interrupted when bycoda quit.",
+    });
+    expect(recoveryStatus(stopped, false, true)).toBe("interrupted");
   });
   it("holds recovered conversations from automatic sends even after acknowledgment", () => {
     const recovery = captureSessionRecovery(null, snapshot(["a"]), 100)!;

@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ACCENT_COLOR_DEFAULT,
+  applyCanvasBackground,
+  applyThemeTint,
   DIFF_PALETTE_DEFAULT,
   loadDiffPalette,
   saveDiffPalette,
@@ -9,6 +11,7 @@ import {
   CHAT_BACKGROUND_OPACITY_DEFAULT,
   CHAT_BACKGROUND_SCOPE_DEFAULT,
   loadChatBackgroundOpacity,
+  applyAccentColor,
   loadAccentColor,
   loadChatBackgroundPath,
   loadChatBackgroundScope,
@@ -50,6 +53,13 @@ import {
   SESSION_SIDEBAR_WIDTH_MAX,
   SESSION_SIDEBAR_WIDTH_MIN,
 } from "./appearance";
+import { contrastRatio } from "./accentContrast";
+import {
+  APPEARANCE_DEFAULTS,
+  applyAppearancePreferences,
+  loadAppearancePreferences,
+  normalizeAppearancePreferences,
+} from "./appearancePreferences";
 
 const KEY = "bycoda.transcriptLayout";
 const ACCENT_COLOR_KEY = "bycoda.accentColor";
@@ -435,5 +445,80 @@ describe("session sidebar width", () => {
     expect(loadSessionSidebarWidth()).toBe(SESSION_SIDEBAR_WIDTH_MAX);
     localStorage.setItem(WIDTH_KEY, "x");
     expect(loadSessionSidebarWidth()).toBe(SESSION_SIDEBAR_WIDTH_DEFAULT);
+  });
+});
+
+describe("accent readability", () => {
+  beforeEach(mockLocalStorage);
+  afterEach(() => {
+    const root = document.documentElement;
+    root.removeAttribute("style");
+    delete root.dataset.accentReadability;
+    root.className = "";
+  });
+
+  const read = (name: string) => document.documentElement.style.getPropertyValue(name);
+
+  it("defaults to auto and migrates records saved before the preference existed", () => {
+    expect(APPEARANCE_DEFAULTS.accentReadability).toBe("auto");
+    expect(normalizeAppearancePreferences({}).accentReadability).toBe("auto");
+    expect(
+      normalizeAppearancePreferences({ accentReadability: "bogus" as never }).accentReadability,
+    ).toBe("auto");
+    localStorage.setItem("bycoda.appearancePreferences.v1", JSON.stringify({ contrast: 120 }));
+    expect(loadAppearancePreferences().accentReadability).toBe("auto");
+    expect(loadAppearancePreferences().contrast).toBe(120);
+  });
+
+  it("publishes a solid pair that reaches 4.5:1 for custom accents and keeps the saved colour", () => {
+    for (const accent of ["#fde68a", "#3b0764", "#a855f7", "#ff0000", "#0000ff"]) {
+      applyAccentColor(accent);
+      expect(read("--user-accent-color")).toBe(accent);
+      expect(
+        contrastRatio(read("--user-accent-solid"), read("--user-accent-foreground")),
+      ).toBeGreaterThanOrEqual(4.5);
+      expect(read("--user-accent-solid")).toBe(accent);
+    }
+  });
+
+  it("keeps the saved solid fill and raises the selection pair when strong is selected", () => {
+    localStorage.setItem(ACCENT_COLOR_KEY, "#a855f7");
+    applyAppearancePreferences({ ...APPEARANCE_DEFAULTS, accentReadability: "strong" });
+    applyAccentColor(loadAccentColor());
+    expect(document.documentElement.dataset.accentReadability).toBe("strong");
+    expect(read("--user-accent-color")).toBe("#a855f7");
+    expect(read("--user-accent-solid")).toBe("#a855f7");
+    expect(loadAccentColor()).toBe("#a855f7");
+    // The published ink travels with each fill (it can flip to keep both 7:1 text and 3:1 canvas).
+    for (const scheme of ["dark", "light"]) {
+      expect(
+        contrastRatio(
+          read(`--user-accent-selection-${scheme}`),
+          read(`--user-accent-selection-${scheme}-ink`),
+        ),
+      ).toBeGreaterThanOrEqual(7);
+    }
+    expect(contrastRatio(read("--user-accent-selection-paper"), "#000000")).toBeGreaterThanOrEqual(
+      7,
+    );
+  });
+
+  it("publishes hover and pressed steps that keep the ink readable", () => {
+    applyAccentColor("#8b5cf6");
+    for (const name of ["--user-accent-solid-hover", "--user-accent-solid-pressed"]) {
+      expect(contrastRatio(read(name), read("--user-accent-foreground"))).toBeGreaterThanOrEqual(
+        4.5,
+      );
+    }
+  });
+});
+
+describe("canvas tone", () => {
+  it("paints a pure canvas for custom surface colors too, not only theme palettes", () => {
+    applyThemeTint(123, 37);
+    expect(applyCanvasBackground("pure")).toBe(true);
+    expect(document.documentElement.dataset.canvasBackground).toBe("pure");
+    expect(applyCanvasBackground("tinted")).toBe(false);
+    expect(document.documentElement.dataset.canvasBackground).toBe("tinted");
   });
 });

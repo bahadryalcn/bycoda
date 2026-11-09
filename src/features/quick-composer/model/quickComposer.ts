@@ -2,6 +2,7 @@ import { projectDisplayName } from "../../projects/model/projectNames";
 import { parseQuickAttachments } from "./quickAttachments";
 import { isHarnessAvailable } from "../../../integrations/harness/core/availability";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { loadQuickComposerShortcut } from "../../settings/model/settings";
 import { visibleProjects } from "../../group-lock/model/groupLock";
@@ -49,6 +50,56 @@ export const QUICK_COMPOSER_SHOWN_EVENT = "quick_composer_shown";
 export const QUICK_COMPOSER_CATALOG_REQUEST_EVENT = "quick_composer_catalog_request";
 /** Workspace windows answer with every live catalog they hold. */
 export const QUICK_COMPOSER_CATALOG_EVENT = "quick_composer_catalog";
+
+let catalogGeneration = 0;
+let catalogRequest:
+  | { requestId: string; generation: number; started: number; correlated: boolean }
+  | undefined;
+let catalogTimers: ReturnType<typeof setTimeout>[] = [];
+
+export function requestQuickCatalog(harness: HarnessId): void {
+  for (const timer of catalogTimers) clearTimeout(timer);
+  catalogTimers = [];
+  const request = { requestId: crypto.randomUUID(), generation: ++catalogGeneration, harness };
+  catalogRequest = { ...request, started: performance.now(), correlated: false };
+  const send = () => {
+    void emit(QUICK_COMPOSER_CATALOG_REQUEST_EVENT, request).catch(() => undefined);
+  };
+  send();
+  const retry = () => {
+    send();
+    if (!catalogRequest?.correlated)
+      void emit(QUICK_COMPOSER_CATALOG_REQUEST_EVENT, harness).catch(() => undefined);
+  };
+  catalogTimers = [setTimeout(retry, 750), setTimeout(retry, 2000)];
+}
+
+export function acceptQuickCatalog(payload: unknown): unknown | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const value = payload as Record<string, unknown>;
+  // Older workspaces answer without identity. Accept only as delayed fallback,
+  // and never let one overwrite a correlated answer for this request.
+  if (!("requestId" in value))
+    return catalogRequest &&
+      !catalogRequest.correlated &&
+      performance.now() - catalogRequest.started >= 700
+      ? payload
+      : undefined;
+  if (
+    !catalogRequest ||
+    value.requestId !== catalogRequest.requestId ||
+    value.generation !== catalogRequest.generation
+  )
+    return undefined;
+  catalogRequest.correlated = true;
+  return value.catalog;
+}
+
+export function stopQuickCatalogRequests(): void {
+  for (const timer of catalogTimers) clearTimeout(timer);
+  catalogTimers = [];
+  catalogRequest = undefined;
+}
 
 const LAST_PROJECT_KEY = "bycoda.quickComposerProject";
 

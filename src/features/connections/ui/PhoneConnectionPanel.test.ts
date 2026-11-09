@@ -17,12 +17,23 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("../model/phonePairingApi", () => ({ phonePairingApi: api }));
 vi.mock("../../../shared/ui/Modal", () => ({
-  Modal: ({ children, onClose }: { children: ReactNode; onClose: () => void }) =>
+  ModalActions: ({ children }: { children?: ReactNode }) =>
+    createElement("div", { "data-modal-actions": "" }, children),
+  Modal: ({
+    children,
+    footer,
+    onClose,
+  }: {
+    children: ReactNode;
+    footer?: ReactNode;
+    onClose: () => void;
+  }) =>
     createElement(
       "div",
       { role: "dialog" },
       createElement("button", { "aria-label": "Close", onClick: onClose }, "Close"),
       children,
+      footer,
     ),
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
@@ -91,13 +102,23 @@ afterEach(async () => {
 async function click(text: string, within: Element = container) {
   const button =
     [...within.querySelectorAll<HTMLElement>("button")].find(
-      (entry) => entry.textContent === text,
+      (entry) =>
+        entry.textContent === text ||
+        (entry.getAttribute("role") === "switch" && entry.getAttribute("aria-label") === text),
     ) ??
     [...within.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find((entry) =>
       [...(entry.labels ?? [])].some((label) => label.textContent?.trim() === text),
     );
   expect(button, text).toBeDefined();
   await act(async () => button!.click());
+}
+
+async function pickOption(trigger: HTMLButtonElement, label: string) {
+  await act(async () => trigger.click());
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((element) =>
+    element.textContent?.includes(label),
+  )!;
+  await act(async () => option.click());
 }
 
 async function render() {
@@ -120,12 +141,9 @@ it("opens on the local computer without enabling networking and supports the sav
   await click("Connect your phone");
   expect(api.access).toHaveBeenCalledWith(local, "lan");
   expect(api.enable).not.toHaveBeenCalled();
-  const select = container.querySelector<HTMLSelectElement>("select")!;
-  expect(select.value).toBe(local.id);
-  await act(async () => {
-    select.value = remote.id;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  const trigger = container.querySelector<HTMLButtonElement>('[aria-label^="Computer:"]')!;
+  expect(trigger.textContent).toContain("This computer");
+  await pickOption(trigger, remote.name);
   expect(api.access).toHaveBeenLastCalledWith(remote, "lan");
   await click("Connect your phone", container.querySelector('[role="dialog"]')!);
   expect(api.create).toHaveBeenCalledWith(remote);
@@ -151,7 +169,7 @@ it("requires the explicit secure connection button before creating the QR", asyn
   await click("Enable secure connection");
   expect(api.enable).toHaveBeenCalledWith(local, "tailscale", undefined);
   expect(api.create).toHaveBeenCalledWith(local);
-  expect(container.textContent).toContain("Code expires in");
+  expect(container.textContent).toContain("s left");
 });
 
 it("enables LAN without Tailscale, selects an interface and closes the QR when disabled", async () => {
@@ -170,16 +188,18 @@ it("enables LAN without Tailscale, selects an interface and closes the QR when d
   await click("Connect your phone");
   expect(container.textContent).not.toContain("Install Tailscale");
   expect(container.textContent).toContain("Tailscale is not required");
-  const select = container.querySelector<HTMLSelectElement>(
-    'select[aria-label="Local network address"]',
-  )!;
-  await act(async () => {
-    select.value = "10.0.0.5";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  await click("Enable local network access");
+  await pickOption(
+    container.querySelector<HTMLButtonElement>('[aria-label^="Local network address:"]')!,
+    "10.0.0.5",
+  );
+  await click("Local network access");
   expect(api.enable).toHaveBeenCalledWith(local, "lan", "10.0.0.5");
-  expect(container.textContent).toContain("same local network");
+  // The local-network hint now lives in the connection help popover.
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Connection help"]')!.click(),
+  );
+  expect(document.body.textContent).toContain("same local network");
+  await click("Local network access");
   await click("Turn off local network access");
   expect(api.disable).toHaveBeenCalledWith(local);
   expect(api.cancel).toHaveBeenCalledWith(local, "pair-local");

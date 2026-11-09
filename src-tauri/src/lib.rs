@@ -1,17 +1,33 @@
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
+mod account;
 mod account_identity;
+mod app_update;
+#[path = "assistant/assistant_observation_outbox.rs"]
+mod assistant_observation_outbox;
+#[path = "assistant/assistant_presence.rs"]
+mod assistant_presence;
+#[path = "assistant/assistant_server_observation.rs"]
+mod assistant_server_observation;
+#[path = "assistant/assistant_session_observation.rs"]
+pub(crate) mod assistant_session_observation;
 mod automations;
 mod azure_devops;
+pub mod build_info;
 mod bundled_host;
 mod chat_background;
+mod chat_background_library;
 mod checkpoint;
 mod claude_commands;
 mod control;
 pub mod control_cli;
 mod conversation_tools_bridge;
 mod cursor_store;
+mod debug_profile;
+mod desktop_control_page;
+mod desktop_control_window;
 mod desktop_inbox_review;
+mod desktop_shortcut;
 mod external_editor;
 mod file_access;
 mod fs;
@@ -19,13 +35,16 @@ mod generic_acp;
 mod git_conflicts;
 mod git_submodules;
 mod git_watch;
+mod github_cli;
 mod github_review;
 mod gitlab;
 mod handoff_history;
 mod harness;
 mod harness_updates;
+mod host_ws;
 mod html_preview;
 mod inbox_media;
+mod inline_visual;
 mod integrations;
 mod jira;
 mod keep_awake;
@@ -38,12 +57,35 @@ mod macos;
 mod macos_background;
 mod mcp;
 mod menu;
+mod messaging;
 mod mobile_pty;
+mod native_authority_bootstrap;
+mod native_authority_channel;
+mod native_authority_checkpoint;
+mod native_authority_deployment;
+mod native_authority_helper;
+mod native_authority_peer;
+mod native_authority_pipe;
+mod native_authority_runtime;
+mod native_authority_source;
+mod native_editor_drafts;
 mod native_language;
+mod native_projection_coordinator;
+mod native_provider_output;
+mod native_window_lifecycle;
+mod native_workspace;
 mod notes;
 mod notifications;
+mod oauth_loopback;
+mod oauth_loopback_page;
+#[cfg(windows)]
+mod owned_process_job;
+mod package_smoke;
 mod pasteboard;
 mod pi_usage;
+mod presence;
+mod privacy_projection;
+mod privacy_settings;
 mod project_logo;
 mod provider_terminal_profiles;
 mod provider_usage;
@@ -51,17 +93,28 @@ mod pty;
 mod pty_runtime_logs;
 #[cfg(target_os = "macos")]
 mod quick_composer;
+#[cfg(any(target_os = "macos", test))]
+mod quick_native;
 mod rate_limits;
 mod reminders;
 mod remote;
 mod remote_files;
+mod remote_routes;
 mod remote_ssh;
+#[path = "assistant/room/room_browser_panel.rs"]
+mod room_browser_panel;
+#[path = "assistant/room/room_organization_owner.rs"]
+mod room_organization_owner;
 mod runtime_logs_bridge;
 mod search;
 mod server_inventory;
+mod session_folder;
 mod session_import;
+mod session_links;
 mod session_store;
+mod session_tools_bridge;
 mod session_transfer;
+mod session_window_ownership;
 mod skills;
 mod social_bridge;
 mod ssh_agent_forwarding;
@@ -82,6 +135,7 @@ mod ssh_sftp;
 mod ssh_shell_integration;
 mod ssh_terminal;
 mod ssh_window_lifecycle;
+mod sync_owner;
 mod terminal_completion;
 mod terminal_profiles;
 mod termius_import;
@@ -92,8 +146,10 @@ mod trackpad_zoom;
 mod tray;
 mod turn_probe;
 mod turn_steps;
+mod voice_overlay;
 mod window;
 mod window_fullscreen;
+mod window_glass_state;
 mod window_transfer;
 #[cfg(windows)]
 mod windows;
@@ -101,6 +157,12 @@ mod windows;
 mod windows_instance;
 mod worktree_lifecycle;
 mod worktrees;
+
+/// Headless private transport entrypoint. The executable checks this before any
+/// GUI, Store, provider, control server or process-reaping initialization.
+pub fn maybe_run_native_authority_helper() -> Option<i32> {
+    native_authority_helper::maybe_run()
+}
 
 // Phase 1 seam: spawn / kill harness children per bycoda thread.
 // Adapters own the protocol; this host only supervises processes.
@@ -281,12 +343,23 @@ fn set_dock_badge(
 #[tauri::command]
 async fn open_new_window(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     transfer: Option<String>,
     x: Option<f64>,
     y: Option<f64>,
 ) -> Result<(), String> {
+    let source = if transfer.is_some() {
+        Some(control::receipts::capture(&window)?)
+    } else {
+        None
+    };
     tauri::async_runtime::spawn_blocking(move || match transfer {
-        Some(payload) => window::open_transfer_window(&app, payload, x.zip(y)),
+        Some(payload) => window::open_transfer_window(
+            &app,
+            source.expect("transfer issuer captured"),
+            payload,
+            x.zip(y),
+        ),
         None => window::open_new_window(&app),
     })
     .await
@@ -306,6 +379,19 @@ async fn open_tool_window(
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         window::open_tool_window(&app, &tool, &cwd, grouped)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn open_host_tools_window(
+    app: tauri::AppHandle,
+    title: String,
+    payload: serde_json::Value,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        window::open_host_tools_window(&app, &title, &payload)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -349,7 +435,14 @@ pub fn run() {
     // Reject duplicate GUI launches before stores, relays, hosts or trays start.
     #[cfg(windows)]
     let builder = builder.plugin(windows_instance::init());
+    #[cfg(target_os = "linux")]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
+        let _ = window::show_existing_or_open_new(app);
+    }));
     let app = builder
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(session_links::init())
+        .plugin(native_window_lifecycle::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
@@ -361,6 +454,11 @@ pub fn run() {
                     window::QUICK_COMPOSER_LABEL,
                     window::QUICK_COMPOSER_GIT_LABEL,
                 ])
+                // The voice window keeps its own place; never restore it as a workspace.
+                .with_filter(|label| {
+                    !voice_overlay::is_voice_overlay(label)
+                        && !desktop_control_window::is_indicator(label)
+                })
                 .build(),
         )
         .manage(harness::HarnessHost::new())
@@ -375,23 +473,44 @@ pub fn run() {
         .manage(ssh_execution::SshExecutionReviews::default())
         .manage(std::sync::Arc::new(ssh_execution::SshExecutions::default()))
         .manage(window_transfer::WindowTransferState::new())
+        .manage(session_store::window_barrier::WindowBarrier::new())
+        .on_page_load(|webview, payload| {
+            native_window_lifecycle::on_page_load(webview, payload);
+            package_smoke::on_page_load(webview, payload);
+        })
         .setup(|app| {
+            native_window_lifecycle::observe_existing(app.handle());
             for window in window::workspace_windows(app.handle()) {
                 ssh_window_lifecycle::register(window.label())?;
             }
-            harness::reap_orphaned_harness_processes();
+            if !package_smoke::active() {
+                harness::reap_orphaned_harness_processes();
+            }
             app.state::<remote::RemoteConnections>()
                 .emit_tunnel_exits(app.handle().clone());
+            if let Ok(directory) = app.path().app_data_dir() {
+                remote_routes::init(&directory);
+            }
+            remote_routes::watch_better_routes(app.handle().clone());
             file_access::init(app.handle())?;
+            package_smoke::prepare(app.handle())?;
             session_store::init(app.handle())?;
+            package_smoke::start(app.handle())?;
             control::init(app.handle())?;
             reminders::init(app.handle());
             // Keep this computer's host in step with the desktop it shipped with.
-            bundled_host::start(app.handle());
+            if !package_smoke::active() {
+                bundled_host::start(app.handle());
+            }
             conversation_tools_bridge::start_desktop_relay(app.handle().clone());
             checkpoint::init(app.handle())?;
             menu::install(app.handle())?;
             tray::install(app.handle())?;
+            desktop_shortcut::init(app.handle())?;
+            if !package_smoke::active() {
+                desktop_control_window::init(app.handle()).map_err(std::io::Error::other)?;
+                assistant_presence::init(app.handle()).map_err(std::io::Error::other)?;
+            }
             #[cfg(target_os = "macos")]
             {
                 quick_composer::init(app.handle())?;
@@ -405,17 +524,52 @@ pub fn run() {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.set_decorations(false);
                     let _ = window.set_shadow(true);
+                    #[cfg(target_os = "linux")]
+                    voice_media_origin::enable(&window);
                 }
+            }
+            if !package_smoke::active() {
+                native_authority_runtime::start(app.handle());
             }
             Ok(())
         })
         .on_menu_event(|app, event| {
             menu::dispatch(app, event.id().as_ref());
         })
-        .register_uri_scheme_protocol("html-preview", |_context, request| {
-            html_preview::respond(request)
-        })
+        .register_asynchronous_uri_scheme_protocol(
+            "html-preview",
+            |_context, request, responder| html_preview::respond_async(request, responder),
+        )
         .invoke_handler(tauri::generate_handler![
+            package_smoke::package_smoke_dom_proof,
+            build_info::build_identity,
+            native_authority_checkpoint::native_renderer_checkpoint,
+            native_authority_checkpoint::native_renderer_checkpoint_status,
+            native_projection_coordinator::native_projection_checkpoint_prepared,
+            native_projection_coordinator::native_projection_checkpoint_verify,
+            native_projection_coordinator::native_projection_checkpoint_raw_status,
+            native_projection_coordinator::native_projection_checkpoint_release,
+            session_store::rewind::managed_turn_begin,
+            session_store::rewind::managed_turn_end,
+            session_store::rewind::managed_rewind_plan,
+            session_store::rewind::managed_rewind_apply,
+            session_store::rewind::managed_rewind_undo,
+            session_store::rewind::managed_rewind_reconcile,
+            worktrees::managed_worktree_removal_plan,
+            worktrees::managed_worktree_removal_apply,
+            native_workspace::managed_workspace_buffers,
+            native_workspace::managed_workspace_buffer_recovery_list,
+            native_workspace::managed_workspace_buffer_recovery_read,
+            native_workspace::managed_workspace_buffer_recovery_status,
+            native_workspace::managed_workspace_host_buffer_recovery_list,
+            native_workspace::managed_workspace_host_buffer_recovery_read,
+            native_workspace::managed_workspace_host_buffer_recovery_status,
+            native_editor_drafts::native_editor_draft_put,
+            native_editor_drafts::native_editor_draft_open,
+            native_editor_drafts::native_editor_draft_read_current,
+            native_editor_drafts::native_editor_draft_read_recovery,
+            native_editor_drafts::native_editor_draft_inventory,
+            native_editor_drafts::native_editor_draft_clear_saved,
             remote::remote_machines,
             server_inventory::server_inventory_list,
             termius_import::termius_import_preview,
@@ -468,6 +622,7 @@ pub fn run() {
             ssh_certificate::ssh_certificate_inspect,
             ssh_terminal::ssh_agent_forwarding_review,
             remote::remote_connect,
+            inline_visual::inline_visual_read,
             local_host::local_host_connect,
             local_host::local_host_status,
             local_host::local_host_start,
@@ -482,6 +637,14 @@ pub fn run() {
             handoff_history::handoff_history_read,
             remote::remote_disconnect,
             remote::remote_request,
+            remote::assistant_native_send,
+            remote::assistant_native_finish,
+            remote::assistant_native_reconcile,
+            remote::host_connection_attach,
+            remote::host_connection_detach,
+            remote::host_connection_request,
+            remote::host_connection_cancel,
+            remote::host_connection_bulk,
             remote::dev_access::remote_dev_server_url,
             remote::folder_access::remote_open_live_folder,
             remote_files::begin_remote_file_copy,
@@ -492,13 +655,27 @@ pub fn run() {
             remote_files::prepare_local_file,
             remote::social_authority_status,
             remote::social_authority_connect,
+            remote::assistant_room_delegation::room_delegation_issue,
+            remote::assistant_room_delegation::room_delegation_call,
+            remote::assistant_room_delegation::room_delegation_revoke,
+            remote::assistant_room_delegation::room_delegation_native_identity,
+            conversation_tools_bridge::voice_generation_retirement::voice_runtime_birth,
+            conversation_tools_bridge::voice_generation_retirement::voice_generation_bind,
+            conversation_tools_bridge::voice_generation_retirement::voice_runtime_closed,
+            remote::assistant_room_delegation::room_delegation_issue_status,
+            remote::assistant_room_delegation::room_delegation_revoke_retained,
             remote::remote_ssh_begin,
             remote::remote_ssh_reconnect,
             remote::remote_machine_update,
+            remote_routes::remote_machine_routes,
+            remote_routes::remote_machine_route_settings,
+            remote_routes::remote_machine_route_check,
             remote::remote_ssh_poll,
             remote::remote_ssh_answer,
             remote::remote_ssh_cancel,
             control::control_enable,
+            control::control_grant_capture,
+            control::control_disable_captured,
             control::control_disable,
             control::control_reply,
             control::control_desktop_authorize_effect,
@@ -510,6 +687,13 @@ pub fn run() {
             control::control_authorize_turn,
             control::control_turn_finished,
             control::control_history_sources,
+            control::control_assistant_source,
+            control::control_assistant_source_v2,
+            control::control_assistant_visibility,
+            privacy_projection::control_privacy_projection_read,
+            room_browser_panel::control_room_browser_panel_request,
+            privacy_projection::control_privacy_projection_begin,
+            privacy_projection::control_privacy_projection_transition,
             mobile_pty::mobile_pty_call,
             control::app_cli_path,
             social_bridge::harness_social_bridge,
@@ -519,10 +703,14 @@ pub fn run() {
             home_dir,
             path_environment,
             keep_awake::set_keep_awake,
+            app_update::app_update_check,
+            presence::get_user_presence,
             notifications::notification_permission,
+            notifications::assistant_notification_capability,
             notifications::request_notification_permission,
             notifications::show_notification,
             notifications::open_notification_settings,
+            privacy_settings::open_privacy_settings,
             notifications::set_taskbar_attention,
             tray::tray_sessions_update,
             reminders::reminder_list,
@@ -546,6 +734,8 @@ pub fn run() {
             html_preview::open_html_in_chrome,
             html_preview::create_html_preview,
             html_preview::close_html_preview,
+            desktop_control_page::desktop_control_page_token,
+            desktop_control_page::desktop_control_page_verify,
             fs::resolve_project_location,
             file_access::authorize_project_path,
             file_access::revoke_file_access,
@@ -631,6 +821,17 @@ pub fn run() {
             linear::linear_issue_details,
             linear::linear_issue_thread,
             linear::linear_issue_comment,
+            messaging::commands::messaging_list_accounts,
+            messaging::commands::messaging_save_account,
+            messaging::commands::messaging_remove_account,
+            messaging::commands::messaging_list_threads,
+            messaging::commands::messaging_thread_messages,
+            messaging::commands::messaging_reply,
+            messaging::commands::messaging_microsoft_device_start,
+            messaging::commands::messaging_microsoft_device_poll,
+            messaging::commands::messaging_browser_sign_in_start,
+            messaging::commands::messaging_browser_sign_in_poll,
+            messaging::commands::messaging_browser_sign_in_cancel,
             jira::jira_status,
             jira::jira_set_config,
             jira::jira_list_projects,
@@ -720,9 +921,17 @@ pub fn run() {
             fs::read_binary_file,
             fs::read_project_image,
             fs::write_attachment,
+            fs::question_attachment::create_question_attachment,
+            fs::question_attachment::reserve_question_attachment,
+            fs::question_attachment::claim_question_attachment,
+            fs::question_attachment::read_question_attachment,
+            fs::question_attachment::list_question_attachment_drafts,
+            fs::question_attachment::retain_question_attachment,
+            fs::question_attachment::release_question_attachment,
             fs::save_generated_image,
             fs::delete_generated_images,
-            fs::read_text_file,
+            fs::large_text::read_text_file,
+            fs::large_text::read_text_file_slice,
             fs::format_text_file,
             fs::omp_session_interjections,
             fs::omp_active_assistant_texts,
@@ -746,7 +955,9 @@ pub fn run() {
             harness::harness_runtime_binary_paths,
             harness::harness_resolve_claude,
             harness::claude_mcp_list,
+            harness::codex_mcp_list,
             mcp::mcp_discover,
+            mcp::enablement::mcp_set_enabled,
             mcp::mcp_add,
             harness::claude_mcp_add,
             harness::claude_mcp_remove,
@@ -759,8 +970,14 @@ pub fn run() {
             harness::harness_resolve_antigravity,
             harness::harness_free_port,
             harness::harness_spawn,
+            session_window_ownership::claim_session_windows,
+            session_window_ownership::release_session_windows,
+            session_window_ownership::verify_session_window_owner,
             harness::harness_write,
+            harness::turn_writes::harness_bind_turn,
+            harness::turn_writes::harness_write_controlled,
             harness::harness_kill,
+            harness::harness_retire,
             harness::harness_kill_all,
             harness::harness_set_owner,
             harness::harness_http,
@@ -773,11 +990,20 @@ pub fn run() {
             harness::run_shell_command,
             terminal_profiles::terminal_profiles,
             terminal_profiles::set_terminal_profile,
+            session_folder::session_folder,
+            session_folder::set_session_folder,
             harness_updates::harness_latest_version,
             harness_updates::harness_update_check_claim,
             harness_updates::harness_update,
             harness::provider_account_remove,
             account_identity::provider_account_identity,
+            account::commands::account_status,
+            account::commands::account_sign_in_start,
+            account::commands::account_sign_in_poll,
+            account::commands::account_sign_in_cancel,
+            account::commands::account_access_token,
+            account::commands::account_sign_out,
+            account::commands::account_device_info,
             provider_terminal_profiles::provider_terminal_profiles,
             provider_terminal_profiles::provider_terminal_profile_connect,
             pi_usage::fetch_pi_usage,
@@ -786,10 +1012,14 @@ pub fn run() {
             rate_limits::fetch_opencode_go_usage,
             provider_usage::provider_usage_report,
             session_store::usage::session_usage_report,
+            session_store::usage::session_worked_ms,
             provider_usage::provider_model_prices,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,
+            pty::pty_set_visible,
+            pty::pty_output_ack,
+            pty::pty_output_flow,
             pty::pty_status,
             pty::pty_suggestions,
             pty::pty_kill,
@@ -799,6 +1029,31 @@ pub fn run() {
             session_import::import_read_codex,
             session_import::import_placeholder_dir,
             session_store::session_upsert,
+            sync_owner::sync_cycle_begin,
+            sync_owner::sync_cycle_complete,
+            harness::management_authority::harness_management_grant,
+            harness::management_authority::harness_utility_cleanup_grant,
+            harness::management_authority::harness_management_spawn_grant,
+            harness::owned_opencode::owned_opencode_acquire,
+            harness::owned_opencode::owned_opencode_catalog_acquire,
+            harness::owned_opencode::owned_opencode_utility_acquire,
+            harness::owned_opencode::owned_opencode_release,
+            session_store::canonical_store::canonical_store_get,
+            session_store::canonical_store::canonical_store_receipt,
+            session_store::canonical_store::canonical_store_legacy_list,
+            session_store::canonical_store::assistant_draft_backup_list,
+            session_store::canonical_store::assistant_draft_backup_read,
+            session_store::canonical_store::canonical_store_page_token,
+            session_store::canonical_store::canonical_store_session_guard_ready,
+            session_store::canonical_store::canonical_store_read,
+            session_store::canonical_store::canonical_store_list,
+            session_store::canonical_store::canonical_store_list_bounded,
+            session_store::canonical_store::outbox_export_oversize,
+            session_store::canonical_store::canonical_store_transaction,
+            session_store::canonical_store::canonical_store_claim,
+            session_store::canonical_store::canonical_store_mark_submitted,
+            session_store::canonical_store::canonical_store_settle,
+            session_store::canonical_store::canonical_store_recover,
             session_store::incremental::session_apply_delta,
             session_store::incremental::session_get_page,
             session_store::session_import,
@@ -807,13 +1062,22 @@ pub fn run() {
             session_store::session_rebase_project,
             session_store::session_list_linked,
             session_store::session_list_recent,
+            session_store::session_list_recent_since,
+            session_store::session_list_recent_since_page,
             session_store::session_search,
             session_store::session_search_content,
             session_store::cancel_session_search,
             session_store::session_get,
+            session_store::session_deleted_ids,
+            session_store::references::session_reference_get,
+            session_store::references::session_reference_resolve,
+            session_links::session_links_take_pending,
             session_store::session_delete,
             session_store::session_set_archived,
             session_store::session_set_pinned,
+            session_store::pin_receipts::session_pin_state,
+            session_store::pin_receipts::session_pin_receipt,
+            session_store::pin_receipts::session_pin_apply,
             session_store::session_set_linked_work_item,
             session_store::session_set_queue,
             turn_probe::probe_turn_tail,
@@ -824,6 +1088,7 @@ pub fn run() {
             session_store::session_attachment_references,
             session_store::session_set_in_flight,
             session_store::session_list_in_flight,
+            session_store::session_recovery_candidates,
             session_store::session_take_in_flight,
             session_store::workspace_set_snapshot,
             session_store::workspace_get_snapshot,
@@ -838,6 +1103,10 @@ pub fn run() {
             notes::notes_save_image,
             notes::notes_image_path,
             checkpoint::session_checkpoint_ensure,
+            checkpoint::file_revert::session_files_revert_plan,
+            checkpoint::file_revert::session_files_revert,
+            checkpoint::file_revert::session_files_forget_from_message,
+            checkpoint::file_revert::session_checkpoint_file_changes,
             trackpad_zoom::set_trackpad_zoom_enabled,
             checkpoint::turn::session_checkpoint_begin_turn,
             checkpoint::turn::session_checkpoint_finish_turn,
@@ -856,17 +1125,34 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             menu::keybindings_set_overrides,
             native_language::native_language_set,
+            desktop_shortcut::desktop_shortcut_configure,
+            desktop_control_window::desktop_control_indicator_state,
+            assistant_presence::assistant_presence_state,
+            assistant_presence::assistant_presence_refresh,
+            assistant_presence::assistant_presence_set,
+            desktop_control_window::desktop_control_indicator_stop,
+            desktop_control_window::desktop_control_indicator_dismiss,
+            desktop_control_window::desktop_control_indicator_fit,
             #[cfg(target_os = "macos")]
             menu::autosave_set_enabled,
             open_new_window,
             open_tool_window,
+            open_host_tools_window,
             window::hide_window,
             window::destroy_window,
+            window::workspace_primary_label,
             window::quit_poll_reply,
             window::quit_decision,
+            window::quit_commit_dialog,
             window::quit_ready,
-            window::set_window_glass_enabled,
+            window::quit_finalization::request_app_restart,
+            window_glass_state::set_window_glass_enabled,
             window_fullscreen::set_window_fullscreen,
+            voice_overlay::voice_overlay_open,
+            voice_overlay::voice_overlay_fit,
+            voice_overlay::voice_overlay_nudge,
+            voice_overlay::voice_overlay_close,
+            voice_overlay::voice_overlay_show_owner,
             #[cfg(target_os = "macos")]
             quick_composer::quick_composer_set_enabled,
             #[cfg(target_os = "macos")]
@@ -875,6 +1161,12 @@ pub fn run() {
             quick_composer::quick_composer_fit,
             #[cfg(target_os = "macos")]
             quick_composer::quick_composer_submit,
+            #[cfg(target_os = "macos")]
+            quick_composer::quick_composer_launch_scope,
+            #[cfg(target_os = "macos")]
+            quick_composer::quick_composer_submit_intent,
+            #[cfg(target_os = "macos")]
+            quick_composer::quick_composer_submit_status,
             #[cfg(target_os = "macos")]
             quick_composer::quick_composer_take,
             #[cfg(target_os = "macos")]
@@ -895,6 +1187,8 @@ pub fn run() {
             quick_composer::git_popup::quick_composer_dismiss,
             window_transfer::take_window_transfer,
             window_transfer::window_transfer_ready,
+            window_transfer::window_transfer_probe_reply,
+            fs::entry_spelling::resolve_file_entry_spelling,
             window_transfer::reject_window_transfer,
             window_transfer::move_window_tabs,
             window_transfer::try_relocate_workspace_window,
@@ -904,11 +1198,18 @@ pub fn run() {
             chat_background::remove_chat_background,
             chat_background::save_project_chat_background,
             chat_background::remove_project_chat_background,
+            chat_background_library::list_background_library,
+            chat_background_library::add_background_library_image,
+            chat_background_library::delete_background_library_image,
             project_logo::save_project_logo,
             project_logo::remove_project_logo,
             project_logo::forget_logo_file,
+            project_logo::detect::detect_project_logo,
         ])
-        .build(webview_debug_context(tauri::generate_context!()))
+        .build(window_glass_state::apply_to_context(webview_debug_context(
+            package_smoke::context(debug_profile::context(tauri::generate_context!()))
+                .expect("invalid isolated package smoke profile"),
+        )))
         .expect("error while building bycoda");
 
     app.run(|handle, event| match event {
@@ -952,7 +1253,11 @@ pub fn run() {
             event: tauri::WindowEvent::Destroyed,
             ..
         } => {
+            voice_overlay::window_destroyed(handle, &label);
             window_transfer::window_closed(handle, &label);
+            handle
+                .state::<remote::RemoteConnections>()
+                .detach_window(&label);
             ssh_window_lifecycle::close(&label);
             handle
                 .state::<ssh_forward::SshForwards>()
@@ -975,6 +1280,23 @@ pub fn run() {
             let other_window = window::workspace_windows(handle)
                 .iter()
                 .any(|window| window.label() != label);
+            // The primary role moves when the closed window could have held it: `main`
+            // always does, and without `main` the oldest window may have been closed.
+            // Send the current primary to each remaining window, as destroy_window does.
+            // The manager has already dropped this window, so the label excludes it.
+            // destroy_window's own destroy also reaches here: the repeated label is harmless.
+            let remaining = window::workspace_windows(handle);
+            if label == "main" || !remaining.iter().any(|window| window.label() == "main") {
+                if let Some(primary) = window::primary_workspace_label(handle) {
+                    for other in remaining.iter().filter(|window| window.label() != label) {
+                        let _ = handle.emit_to(
+                            other.label(),
+                            window::PRIMARY_WORKSPACE_CHANGED,
+                            primary.clone(),
+                        );
+                    }
+                }
+            }
             control::window_closed(handle, &label);
             if let Some(state) = handle.try_state::<keep_awake::KeepAwakeState>() {
                 state.window_closed(&label);
@@ -1015,6 +1337,19 @@ pub fn run() {
             window::request_quit(handle);
         }
         tauri::RunEvent::Exit => {
+            assistant_presence::shutdown(handle);
+            conversation_tools_bridge::shutdown_ssh_executions();
+            if handle
+                .try_state::<desktop_control_window::State>()
+                .is_some()
+            {
+                desktop_control_window::shutdown(handle);
+            }
+            if let Some(host) = handle.try_state::<harness::HarnessHost>() {
+                host.shutdown_provider_output();
+            }
+            native_authority_runtime::shutdown(handle);
+            let _ = native_workspace::retire_buffers(handle);
             ssh_window_lifecycle::shutdown();
             if let Some(state) = handle.try_state::<keep_awake::KeepAwakeState>() {
                 state.shutdown();
@@ -1083,6 +1418,10 @@ fn finish_reaping_on_exit(handle: &tauri::AppHandle) {
 pub fn ensure_macos_dev_bundle() {
     macos::ensure_dev_bundle();
 }
+
+#[cfg(any(target_os = "linux", test))]
+#[path = "voice/media_origin.rs"]
+mod voice_media_origin;
 
 #[cfg(test)]
 mod tests {

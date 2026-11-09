@@ -27,7 +27,7 @@ describe("empty session background", () => {
     expect(markup).not.toContain("<canvas");
   });
 
-  it("composer yokken giriş tezgahını ve ajan ekibini göstermez", () => {
+  it("does not show the entry bench or the agent crew without a composer", () => {
     const markup = renderToStaticMarkup(createElement(EmptySession, { cwd: "/work/demo" }));
     expect(markup).not.toContain("bycoda-entry-workbench");
     expect(markup).not.toContain("crew-scene");

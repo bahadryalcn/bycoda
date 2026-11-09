@@ -1,5 +1,7 @@
-import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { newDefaultSession } from "../../../features/sessions/model/session";
+import { getSessions, useShellSessions } from "../../../features/sessions/model/sessionsStore";
+import { withoutDelegatedTabs } from "../../../features/workspace/model/delegatedWorkspace";
 import { lastProjectPath } from "../../../features/projects/model/recents";
 import {
   isolateTerminalPanes,
@@ -34,13 +36,18 @@ export interface TabStateDeps {
 
 /** Tab list (with pane isolation on every write) and the active tab id. */
 export function useTabState({ seed, windowTransfer, resumed }: TabStateDeps) {
-  const [tabs, setTabsState] = useState<WorkspaceTab[]>(() =>
+  const sessions = useShellSessions();
+  const [storedTabs, setTabsState] = useState<WorkspaceTab[]>(() =>
     (windowTransfer?.tabs ?? resumed?.tabs ?? [seed.tab]).map(isolateTerminalPanes),
   );
   const setTabs = useCallback(
     (update: WorkspaceTab[] | ((previous: WorkspaceTab[]) => WorkspaceTab[])) => {
       setTabsState((previous) => {
-        const next = typeof update === "function" ? update(previous) : update;
+        const visible = withoutDelegatedTabs(previous, getSessions());
+        const next = withoutDelegatedTabs(
+          typeof update === "function" ? update(visible) : update,
+          getSessions(),
+        );
         if (next === previous) return previous;
         return next.map((tab) => normalizeSessionPreview(isolateTerminalPanes(tab)));
       });
@@ -50,7 +57,19 @@ export function useTabState({ seed, windowTransfer, resumed }: TabStateDeps) {
   const [activeTabId, setActiveTabIdState] = useState(
     () => windowTransfer?.activeTabId ?? resumed?.activeTabId ?? seed.tab.id,
   );
-  return { tabs, setTabs, activeTabId, setActiveTabIdState };
+  const tabs = useMemo(() => withoutDelegatedTabs(storedTabs, sessions), [storedTabs, sessions]);
+  if (tabs !== storedTabs) {
+    // Drop a delegated child's pane for good: a shell that reloads without its
+    // lineage must not bring the tab back and pull focus from the parent.
+    setTabsState(tabs);
+    if (!tabs.some((tab) => tab.id === activeTabId)) setActiveTabIdState(tabs[0]?.id ?? "");
+  }
+  return {
+    tabs,
+    setTabs,
+    activeTabId: tabs.some((tab) => tab.id === activeTabId) ? activeTabId : (tabs[0]?.id ?? ""),
+    setActiveTabIdState,
+  };
 }
 
 export interface ActiveTabSetterDeps {

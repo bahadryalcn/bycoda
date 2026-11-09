@@ -1,11 +1,21 @@
 /* Official free Arc source adapted through the bycoda public adapter. */
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+/* External layout shares the components layer so a caller utility can size or place the control.
+   Presentation (type, ink, track, thumb, states) stays unlayered so a caller class cannot reskin it. */
+@layer components {
+  .root {
+    display: grid;
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+}
+
 /* Set --elastic-thumb and --elastic-track to resize. The rail is inset by half a thumb, so a thumb at either limit stays inside the box. */
 .root {
   --elastic-thumb: 24px;
   --elastic-track: 8px;
-  display: grid;
-  width: 100%;
-  min-width: 0;
   gap: var(--space-2);
   color: var(--foreground);
   font-size: var(--text-sm);
@@ -123,7 +133,7 @@
   width: var(--elastic-thumb);
   height: var(--elastic-thumb);
   translate: 50% -50%;
-  border: 0;
+  border: 1px solid var(--ui-control-thumb-border);
   border-radius: var(--radius-pill);
   background: var(--control-thumb);
   box-shadow: var(--control-thumb-shadow);
@@ -131,6 +141,12 @@
   cursor: grab;
   outline: none;
   transition: box-shadow var(--duration-fast) var(--ease-standard);
+}
+/* Keyboard focus is a ring around the thumb, written one class stronger than the shared [tabindex] rule so the
+   thumb's own scale and offset stay in control. Pointer focus stays quiet. */
+.thumb.thumb:focus-visible {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
 }
 /* A generous invisible hit area for fingertips. */
 .thumb::after {
@@ -210,8 +226,21 @@
 .root[data-disabled] {
   color: var(--ui-text-disabled);
 }
+/* Disabled dims through its semantic pair: a muted fill and a thumb on the disabled surface and border. */
+.root[data-disabled] .fill {
+  background: var(--ui-text-disabled);
+}
+.root[data-disabled] .tick[data-on] {
+  background: var(--ui-control-disabled-surface);
+}
 .root[data-disabled] .thumb {
-  background: var(--ui-tone-neutral-disabled-fg);
+  border-color: var(--ui-control-disabled-border);
+  background: var(--ui-control-disabled-surface);
+}
+.root[data-disabled] .readout,
+.root[data-disabled] .markLabel,
+.root[data-disabled] .markLabel[data-on] {
+  color: var(--ui-text-disabled);
 }
 .root[data-disabled] .control,
 .root[data-disabled] .thumb,
@@ -221,6 +250,7 @@
 @media (prefers-reduced-motion: reduce) {
   .thumb,
   .tick,
+  .readout,
   .markLabel {
     transition: none;
   }

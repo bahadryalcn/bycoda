@@ -1,3 +1,5 @@
+import { useContext as useSocialContext } from "react";
+import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { t, useLocale } from "../../../shared/i18n";
 import { Globe } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
@@ -20,17 +22,18 @@ export function SocialShortcut({
   /** Follows the resizable project rail's icon-only container breakpoint. */
   responsiveRail?: boolean;
 }) {
+  const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const visible = useWorkspaceFeature("social");
   if (!visible && !active) return null;
   return (
     <Button
+      disabled={socialLocked}
       variant={responsiveRail ? "item" : "ghost"}
       motion="none"
-      {...(compact || rail
-        ? { iconOnly: true, label: t("Social Media") }
-        : { iconOnly: false })}
-      title={t("Social Media")}
+      {...(compact || rail ? { iconOnly: true, label: t("Social Media") } : { iconOnly: false })}
+      tooltip={t("Social Media")}
+      tooltipWhen="overflow"
       aria-pressed={active}
       aria-label={t("Social Media")}
       onClick={() => window.dispatchEvent(new CustomEvent(SOCIAL_PANEL_EVENT, { detail: { cwd } }))}
@@ -38,7 +41,7 @@ export function SocialShortcut({
       <span
         className={`flex min-w-0 items-center gap-2 ${responsiveRail ? "w-full @max-[140px]/rail:justify-center" : ""}`}
       >
-        <Globe className="size-4 shrink-0" aria-hidden />
+        <Globe className="icon-md shrink-0" aria-hidden />
         {compact || rail ? null : (
           <span className={`min-w-0 truncate ${responsiveRail ? "@max-[140px]/rail:hidden" : ""}`}>
             {t("Social Media")}

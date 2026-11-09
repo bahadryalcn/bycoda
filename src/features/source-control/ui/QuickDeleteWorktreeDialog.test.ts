@@ -83,7 +83,7 @@ it("does not treat a status failure as zero changes or allow deletion", async ()
   expect(document.querySelector("dl")).toBeNull();
   await act(async () =>
     [...document.querySelectorAll("button")]
-      .find((button) => button.textContent === "Git operation failed")!
+      .find((button) => button.getAttribute("aria-label") === "Details: Git operation failed")!
       .click(),
   );
   expect(document.body.textContent).toContain("Status unavailable");
@@ -110,7 +110,7 @@ it("keeps a failed deletion open with the original output", async () => {
   expect(onClose).not.toHaveBeenCalled();
   await act(async () =>
     [...document.querySelectorAll("button")]
-      .find((button) => button.textContent === "Git operation failed")!
+      .find((button) => button.getAttribute("aria-label") === "Details: Git operation failed")!
       .click(),
   );
   expect(document.querySelector("pre")?.textContent).toContain("worktree remove failed");

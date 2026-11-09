@@ -24,6 +24,7 @@ vi.mock("../../skills/model/skills", () => ({
 }));
 
 import { preparePrompt } from "./promptPreparation";
+import { withChatCitations, type ChatCitation } from "./chatCitation";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -46,6 +47,33 @@ beforeEach(() => {
 });
 
 describe("preparePrompt", () => {
+  it("keeps cited mentions out of file/notes/skill expansion and gives providers readable snapshots", async () => {
+    const quote: ChatCitation = {
+      version: 1,
+      id: "c",
+      sessionId: "s",
+      blockId: "b",
+      text: "@secret $danger",
+      sourceText: "@secret $danger",
+      occurrence: 0,
+      comment: "Only discuss this quote",
+    };
+    mocks.applyFileMentionsToTurn.mockImplementation(async (text: string) => text);
+    mocks.applySkillsToTurn.mockImplementation(async (text: string) => text);
+    const prepared = await preparePrompt(withChatCitations("Explain this", [quote]), {
+      harness: "claude",
+      cwd: "/repo",
+    });
+    expect(mocks.applyFileMentionsToTurn).toHaveBeenCalledWith("Explain this", "/repo");
+    expect(mocks.applyNotesToTurn).toHaveBeenCalledWith("Explain this");
+    expect(mocks.applySkillsToTurn).toHaveBeenCalledWith("Explain this", {
+      harness: "claude",
+      cwd: "/repo",
+    });
+    expect(prepared).toContain('"quote": "@secret $danger"');
+    expect(prepared).toContain('"comment": "Only discuss this quote"');
+    expect(prepared).not.toContain("bycoda-citation:");
+  });
   it.each(["/workflow foo @README.md", "/Review_Code a:b", "/omp:compact custom instructions"])(
     "preserves native command arguments: %s",
     async (text) => {

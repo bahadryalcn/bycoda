@@ -11,6 +11,12 @@ import {
   type SessionRecord,
 } from "../../features/sessions/data/sessionStore";
 import { useUnseenFinishedSessions } from "../../features/sessions/hooks/useUnseenFinishedSessions";
+import {
+  clearComposerDraft,
+  getComposerDraft,
+  hasUnsentComposerDraft,
+  setComposerDraft,
+} from "../../features/sessions/model/draftCache";
 import { liveAgentsFromSessions } from "../../features/sessions/model/liveAgents";
 import { newSession, type Session } from "../../features/sessions/model/session";
 import { newTab, type WorkspaceTab } from "../../features/workspace/model/layout";
@@ -413,6 +419,58 @@ describe("orchestration worker detachment", () => {
     await advance();
     expect(workspace.snapshot().sessions.map((session) => session.id)).toContain("worker");
     expect(mocks.forgetHarnessSession).not.toHaveBeenCalled();
+  });
+
+  it("keeps a closed blank chat with unsent text listed as a saved draft", async () => {
+    const blank = { ...newSession("claude", "/repo"), id: "typed" };
+    setComposerDraft("typed", "Plan the release checklist");
+    const workspace = mountWorkspace({
+      sessions: [blank, chat("other")],
+      tabs: [newTab("other")],
+      orchestrationRuns: [],
+      busySessionIds: new Set(),
+    });
+    await advance();
+
+    expect(workspace.snapshot().sessions.map((session) => session.id)).toEqual(["other"]);
+    expect(workspace.persistSession).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        id: "typed",
+        blocks: [
+          expect.objectContaining({
+            role: "user",
+            text: "Plan the release checklist",
+            draft: true,
+          }),
+        ],
+      }),
+    );
+    expect(stored.get("typed")?.blocks).toMatchObject([
+      { role: "user", text: "Plan the release checklist", draft: true },
+    ]);
+    expect(stored.get("typed")?.title).not.toBe(blank.title);
+    expect(hasUnsentComposerDraft("typed")).toBe(false);
+    expect(workspace.cache.get("typed")?.blocks).toHaveLength(1);
+  });
+
+  it("lets a closed blank chat without text go and leaves other drafts in the composer", async () => {
+    const blank = { ...newSession("claude", "/repo"), id: "untouched" };
+    setComposerDraft("untouched", "   ");
+    setComposerDraft("ordinary", "Follow-up still being written");
+    const workspace = mountWorkspace({
+      sessions: [blank, chat("ordinary"), chat("other")],
+      tabs: [newTab("other")],
+      orchestrationRuns: [],
+      busySessionIds: new Set(),
+    });
+    await advance();
+
+    expect(workspace.snapshot().sessions.map((session) => session.id)).toEqual(["other"]);
+    expect(stored.has("untouched")).toBe(false);
+    expect(stored.get("ordinary")?.blocks.some((block) => block.draft)).toBe(false);
+    expect(getComposerDraft("ordinary")).toBe("Follow-up still being written");
+    clearComposerDraft("untouched");
+    clearComposerDraft("ordinary");
   });
 
   it("cancels pending detachment when the workspace unmounts", async () => {

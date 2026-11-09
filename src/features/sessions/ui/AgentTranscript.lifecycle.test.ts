@@ -5,6 +5,19 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Block } from "../model/session";
 import { AgentTranscript } from "./AgentTranscript";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 let root: ReturnType<typeof createRoot>;
 let host: HTMLDivElement;
 beforeEach(() => {
@@ -24,6 +37,39 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
   vi.unstubAllGlobals();
+});
+
+it("refreshes every historical Edit from here action when idle eligibility changes", async () => {
+  const blocks: Block[] = Array.from({ length: 3 }, (_, index): Block[] => [
+    { id: `user-${index}`, role: "user", text: `Request ${index}` },
+    { id: `answer-${index}`, role: "assistant", text: `Answer ${index}` },
+  ]).flat();
+  const onRewindMessage = vi.fn();
+  const buttons = () => [
+    ...host.querySelectorAll<HTMLButtonElement>('[aria-label="Edit from here"]'),
+  ];
+  const renderEligibility = async (eligible: boolean) =>
+    act(async () =>
+      root.render(
+        createElement(AgentTranscript, {
+          blocks,
+          busy: false,
+          onRewindMessage,
+          canRewindMessage: () => eligible,
+        }),
+      ),
+    );
+  await renderEligibility(false);
+  expect(buttons()).toHaveLength(3);
+  expect(buttons().every((button) => button.disabled)).toBe(true);
+  // No block identity, busy state or action callback changes: only a completed
+  // preparation/permission check makes the existing messages rewindable.
+  await renderEligibility(true);
+  expect(buttons().every((button) => !button.disabled)).toBe(true);
+  await act(async () => buttons()[1].click());
+  expect(onRewindMessage).toHaveBeenCalledExactlyOnceWith(blocks[2], "edit");
+  await renderEligibility(false);
+  expect(buttons().every((button) => button.disabled)).toBe(true);
 });
 
 it("reveals a remote page whose callback resolves before its blocks reach React", async () => {
@@ -122,7 +168,7 @@ it("holds pending follow-ups and prevents send or removal while delivery is acti
   const remove = host.querySelector<HTMLButtonElement>('[aria-label="Remove draft"]')!;
   expect(send.disabled).toBe(true);
   expect(remove.disabled).toBe(true);
-  expect(send.title).toContain("still being delivered");
+  expect(await tooltipText(send)).toContain("still being delivered");
   expect(host.querySelector('[role="status"]')?.textContent).toContain("Sending...");
   await act(async () => {
     send.click();

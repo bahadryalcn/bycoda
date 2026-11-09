@@ -7,6 +7,8 @@ use tauri::{AppHandle, Manager};
 
 use crate::fs::expand_home;
 
+pub(crate) mod detect;
+
 const MAX_LOGO_BYTES: u64 = 2 * 1024 * 1024;
 const ALLOWED_EXT: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
 
@@ -142,6 +144,7 @@ fn validate_logo_bytes(bytes: &[u8], ext: &str) -> Result<(), String> {
         "jpg" | "jpeg" => image::ImageFormat::Jpeg,
         "gif" => image::ImageFormat::Gif,
         "webp" => image::ImageFormat::WebP,
+        "ico" => image::ImageFormat::Ico,
         _ => return Err("Logo must be a PNG, JPG, GIF, WebP, or SVG image.".into()),
     };
     let mut reader = image::ImageReader::with_format(Cursor::new(bytes), format);

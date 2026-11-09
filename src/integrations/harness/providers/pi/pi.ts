@@ -1,3 +1,4 @@
+import type { HarnessOperationContext } from "../turnWriter";
 import {
   bindSession,
   cancelTurn,
@@ -45,20 +46,24 @@ export function respondPiApproval(
   sessionId: string,
   requestId: number,
   decision: ApprovalDecision,
+  approvalOccurrenceId?: string,
 ): void {
-  respondApproval(PI_FLAVOR, sessionId, requestId, decision);
+  respondApproval(PI_FLAVOR, sessionId, requestId, decision, approvalOccurrenceId);
 }
 
-export function cancelPiTurn(sessionId: string): Promise<void> {
-  return cancelTurn(PI_FLAVOR, sessionId);
+export function cancelPiTurn(sessionId: string, context?: HarnessOperationContext): Promise<void> {
+  return cancelTurn(PI_FLAVOR, sessionId, context);
 }
 
-export function stopPiSession(sessionId: string): Promise<void> {
-  return stopSession(PI_FLAVOR, sessionId);
+export function stopPiSession(sessionId: string, context?: HarnessOperationContext): Promise<void> {
+  return stopSession(PI_FLAVOR, sessionId, context);
 }
 
-export function forgetPiSession(sessionId: string): Promise<void> {
-  return forgetSession(PI_FLAVOR, sessionId);
+export function forgetPiSession(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  return forgetSession(PI_FLAVOR, sessionId, context);
 }
 
 export function bindPiSession(threadId: string, providerSessionId: string, cwd: string): void {

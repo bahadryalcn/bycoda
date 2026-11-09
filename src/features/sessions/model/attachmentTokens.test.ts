@@ -80,6 +80,9 @@ describe("findTokens", () => {
     "````markdown\n```\n[image1]\n[image2]\n````",
     "~~~~\n~~~\n[image1]\n[image2]\n~~~~",
     "    [image1]\n    [image2]",
+    "> ```\n> [image1]\n> [image2]\n> ```",
+    "- ```\n  [image1]\n  [image2]\n  ```",
+    "\t[image1]\n\t[image2]",
   ])("preserves literal Markdown code through token operations: %s", (code) => {
     const text = `${code}\n\n[image2]`;
     expect(findTokens(text, files).map((match) => match.start)).toEqual([
@@ -95,6 +98,10 @@ describe("findTokens", () => {
   it("matches the exact token only", () => {
     expect(findTokens("[Image1] [image0] [image01] [image 1] [img1]", files)).toEqual([]);
     expect(findTokens("[image1]", [])).toEqual([]);
+  });
+  it("does not hide tokens after unmatched inline delimiters or escaped backticks", () => {
+    expect(findTokens("` unmatched [image1]", files)).toHaveLength(1);
+    expect(findTokens("\\`[image1]", files)).toHaveLength(1);
   });
   it("protects an unclosed tilde fence through the end of the draft", () => {
     const text = "~~~\n[image1]\n[image2]";

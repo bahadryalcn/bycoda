@@ -1,6 +1,9 @@
+import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
-import { Modal } from "../../../shared/ui/Modal";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
 import { t } from "../../../shared/i18n";
 import { previewSshConfiguration, type SshConfigurationPreview } from "../model/sshGroupDefaults";
@@ -54,77 +57,12 @@ export function SshConfigurationConnectReview({
   }, [server.id, target, revision]);
   const configuration = scope === target ? review?.configuration : undefined;
   return (
-    <Modal title={t("Review SSH configuration")} onClose={onClose} size="sm">
-      <div className="flex min-w-0 flex-col gap-3 p-4">
-        {configuration ? (
-          <>
-            <p className="break-all text-sm font-medium">
-              {sshEndpointPreview(configuration.endpoint)}
-            </p>
-            <dl className="grid min-w-0 grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-xs">
-              {(
-                [
-                  ["user", t("SSH user"), configuration.endpoint.user ?? t("Default")],
-                  ["port", t("SSH port"), String(configuration.endpoint.port)],
-                  [
-                    "identityFile",
-                    t("Identity file"),
-                    configuration.endpoint.identityFile ?? t("Default"),
-                  ],
-                  [
-                    "certificateFile",
-                    t("Public SSH certificate file"),
-                    configuration.endpoint.certificateFile ?? t("Default"),
-                  ],
-                ] as const
-              ).map(([field, label, value]) => (
-                <div key={field} className="contents">
-                  <dt className="text-(--ui-text-muted)">{label}</dt>
-                  <dd className="min-w-0 break-all">
-                    {value}
-                    {!(
-                      value === t("Default") &&
-                      configuration.provenance[field]?.source === "default"
-                    ) && (
-                      <span className="ms-2 text-(--ui-text-muted)">
-                        {configuration.provenance[field]?.source === "group"
-                          ? `${t("Group")} · ${configuration.provenance[field].groupId} · ${configuration.provenance[field].revision}`
-                          : configuration.provenance[field]?.source === "default"
-                            ? t("Default")
-                            : t("Connection")}
-                      </span>
-                    )}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-            {configuration.environment.length ? (
-              <details className="text-xs">
-                <summary className="cursor-pointer py-1">{t("Remote environment")}</summary>
-                <dl className="mbs-2 flex flex-col gap-2">
-                  {configuration.environment.map((entry) => (
-                    <div key={entry.name}>
-                      <dt className="text-(--ui-text-muted)">{entry.name}</dt>
-                      <dd className="break-all">{entry.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-                <p className="mbs-2 text-(--ui-text-muted)">
-                  {t("These literal values apply only to this new SSH terminal.")}
-                </p>
-              </details>
-            ) : null}
-          </>
-        ) : error ? (
-          <Alert tone="danger" role="alert">
-            {error}
-          </Alert>
-        ) : (
-          <p role="status" className="text-xs text-(--ui-text-muted)">
-            {t("Loading…")}
-          </p>
-        )}
-        <div className="flex flex-wrap justify-end gap-2">
+    <Modal
+      title={t("Review SSH configuration")}
+      onClose={onClose}
+      size="sm"
+      footer={
+        <ModalActions>
           <Button variant="ghost" onClick={onClose}>
             {t("Cancel")}
           </Button>
@@ -142,7 +80,68 @@ export function SshConfigurationConnectReview({
           >
             {t("Connect")}
           </Button>
-        </div>
+        </ModalActions>
+      }
+    >
+      <div className="flex min-w-0 flex-col gap-3">
+        {configuration ? (
+          <>
+            <p className="break-all text-ui-body font-medium">
+              {sshEndpointPreview(configuration.endpoint)}
+            </p>
+            <DescriptionList size="sm">
+              {(
+                [
+                  ["user", t("SSH user"), configuration.endpoint.user ?? t("Default")],
+                  ["port", t("SSH port"), String(configuration.endpoint.port)],
+                  [
+                    "identityFile",
+                    t("Identity file"),
+                    configuration.endpoint.identityFile ?? t("Default"),
+                  ],
+                  [
+                    "certificateFile",
+                    t("Public SSH certificate file"),
+                    configuration.endpoint.certificateFile ?? t("Default"),
+                  ],
+                ] as const
+              ).map(([field, label, value]) => (
+                <DescriptionItem key={field} term={label}>
+                  {value}
+                  {!(
+                    value === t("Default") && configuration.provenance[field]?.source === "default"
+                  ) && (
+                    <span className="ms-2 text-(--ui-text-muted)">
+                      {configuration.provenance[field]?.source === "group"
+                        ? `${t("Group")} · ${configuration.provenance[field].groupId} · ${configuration.provenance[field].revision}`
+                        : configuration.provenance[field]?.source === "default"
+                          ? t("Default")
+                          : t("Connection")}
+                    </span>
+                  )}
+                </DescriptionItem>
+              ))}
+            </DescriptionList>
+            {configuration.environment.length ? (
+              <Disclosure size="sm" summary={t("Remote environment")}>
+                <DescriptionList size="sm">
+                  {configuration.environment.map((entry) => (
+                    <DescriptionItem key={entry.name} term={entry.name}>
+                      {entry.value}
+                    </DescriptionItem>
+                  ))}
+                </DescriptionList>
+                <p className="mbs-2 text-(--ui-text-muted)">
+                  {t("These literal values apply only to this new SSH terminal.")}
+                </p>
+              </Disclosure>
+            ) : null}
+          </>
+        ) : error ? (
+          <Alert tone="danger">{error}</Alert>
+        ) : (
+          <LoadingText />
+        )}
       </div>
     </Modal>
   );

@@ -1,18 +1,17 @@
 import { PasswordField } from "../../../shared/ui/PasswordField";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-
-import { useCallback, useContext, useEffect, useId, useRef, useState } from "react";
-import { Check } from "../../../shared/ui/icons";
-
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
-
+import { useCallback, useEffect, useRef, useState } from "react";
+import { InboxScopeCollection } from "./InboxScopeCollection";
 import { JiraSettings } from "./JiraSettings";
-import { InboxConnectionStatus, InboxConnectionError } from "./InboxConnectionStatus";
-
+import {
+  InboxAccountActions,
+  InboxAccountChecking,
+  InboxConnectionStatus,
+  InboxConnectionError,
+  useConnectionVerification,
+} from "./InboxConnectionStatus";
 import { InboxProviderMark } from "../../inbox/ui/InboxProviderMark";
-
 import {
   azureDevOpsConnected,
   disconnectAzureDevOps,
@@ -25,20 +24,19 @@ import {
   LINEAR_CHANGE_EVENT,
   linearConnected,
   listLinearTeams,
-  loadHiddenLinearTeamIds,
   notifyLinearChange,
   saveHiddenLinearTeamIds,
   saveLinearToken,
   type LinearTeam,
 } from "../../inbox/model/linear";
-
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import "./InboxSettings.css";
+import { isInboxScopeString, useInboxScopePreference } from "./useInboxScopePreference";
+import { Row, SettingsFeedback } from "./settingsControls";
 
-import { Group, Row, RevealedSetting } from "./settingsControls";
-
-const INBOX_PROVIDERS = [
+export const INBOX_PROVIDERS = [
   {
     id: "github",
     name: "GitHub",
@@ -71,86 +69,9 @@ const INBOX_PROVIDERS = [
   },
 ] as const;
 
-export function InboxPage() {
-  useLocale();
-  const revealed = useContext(RevealedSetting);
-  const [selection, setSelection] = useState(() => ({
-    active:
-      (INBOX_PROVIDERS.find((provider) => provider.id === revealed)?.id as string) ?? "github",
-    revealed,
-  }));
-  let active = selection.active;
-  // Resolve an external Settings search before its scroll/focus effect runs.
-  // Manual tab changes remain independent until the search target changes.
-  if (selection.revealed !== revealed) {
-    active = INBOX_PROVIDERS.find((provider) => provider.id === revealed)?.id ?? active;
-    setSelection({ active, revealed });
-  }
-  const setActive = (next: string) => setSelection((current) => ({ ...current, active: next }));
-  const tabsId = useId();
-  const tabs = useRef<HTMLDivElement>(null);
-
-  return (
-    <div className="inbox-settings">
-      <div ref={tabs} role="tablist" aria-label={t("Inbox")} className="inbox-provider-tabs">
-        {INBOX_PROVIDERS.map((provider, index) => (
-          <Button
-            key={provider.id}
-            variant="tab"
-            role="tab"
-            id={`${tabsId}-tab-${provider.id}`}
-            aria-controls={`${tabsId}-panel-${provider.id}`}
-            aria-selected={active === provider.id}
-            selected={active === provider.id}
-            tabIndex={active === provider.id ? 0 : -1}
-            startIcon={<InboxProviderMark provider={provider.id} className="size-4 shrink-0" />}
-            onClick={() => setActive(provider.id)}
-            onKeyDown={(event) => {
-              const last = INBOX_PROVIDERS.length - 1;
-              const next =
-                event.key === "ArrowRight"
-                  ? (index + 1) % INBOX_PROVIDERS.length
-                  : event.key === "ArrowLeft"
-                    ? (index + last) % INBOX_PROVIDERS.length
-                    : event.key === "Home"
-                      ? 0
-                      : event.key === "End"
-                        ? last
-                        : -1;
-              if (next < 0) return;
-              event.preventDefault();
-              event.stopPropagation();
-              setActive(INBOX_PROVIDERS[next].id);
-              tabs.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
-            }}
-          >
-            {provider.name}
-          </Button>
-        ))}
-      </div>
-      {INBOX_PROVIDERS.map(({ id, name, description, Component }) => (
-        <div
-          key={id}
-          role="tabpanel"
-          id={`${tabsId}-panel-${id}`}
-          aria-labelledby={`${tabsId}-tab-${id}`}
-          hidden={active !== id}
-          tabIndex={0}
-        >
-          <Group
-            layout="full"
-            scope={t("This computer · Inbox account")}
-            id={id}
-            title={name}
-            description={t(description)}
-          >
-            <Component />
-          </Group>
-        </div>
-      ))}
-    </div>
-  );
-}
+export const inboxProviderMark = (id: (typeof INBOX_PROVIDERS)[number]["id"]) => (
+  <InboxProviderMark provider={id} className="icon-md shrink-0" />
+);
 
 export function GithubSettings() {
   useLocale();
@@ -182,53 +103,65 @@ export function GithubSettings() {
     };
   }, [checkStatus]);
 
+  // While the pinned copy installs, poll until it is ready or has failed.
+  useEffect(() => {
+    if (!status?.installing) return;
+    const timer = window.setTimeout(() => checkStatus().catch(() => undefined), 2000);
+    return () => window.clearTimeout(timer);
+  }, [status, checkStatus]);
+
   const description = error
     ? t("Could not check GitHub CLI. Retry on this computer.")
     : checking || !status
       ? t("Checking GitHub CLI on this computer.")
-      : status?.connected
+      : status.connected
         ? t("GitHub CLI is installed and authenticated. {p0} uses it for GitHub inbox items.", {
             p0: PRODUCT_IDENTITY.displayName,
           })
-        : status?.installed
+        : status.installed
           ? t("Run gh auth login on this computer, complete sign-in, then check again.")
-          : t(
-              "Install GitHub CLI on this computer from cli.github.com, run gh auth login, then check again.",
-            );
+          : status.installError
+            ? t(
+                "GitHub CLI could not be set up automatically. Check your internet connection, then check again.",
+              )
+            : t("Installing GitHub CLI on this computer. This takes about a minute.");
   const label = checking
     ? t("Checking")
     : error || !status
       ? t("Check failed")
-      : status?.connected
+      : status.connected
         ? t("Connected")
-        : status?.installed
+        : status.installed
           ? t("Sign in required")
-          : t("Not installed");
+          : status.installError
+            ? t("Setup failed")
+            : t("Installing");
 
   return (
     <>
       <Row
         label={t("Connection")}
-        description={description}
+        info={description}
         scope={t("This computer · GitHub CLI account")}
       >
-        <span role="status" aria-live="polite" className="text-[12px] text-content/50">
+        <Badge
+          size="sm"
+          appearance="subtle"
+          role="status"
+          aria-live="polite"
+          aria-busy={checking || undefined}
+        >
           {label}
-        </span>
-        {!checking && status && !status.installed ? (
-          <SecondaryButton
-            onClick={() => {
-              void openUrl("https://cli.github.com/").catch((err: unknown) =>
-                setError(String(err)),
-              );
-            }}
-          >
-            {t("Installation guide")}
-          </SecondaryButton>
-        ) : null}
-        <SecondaryButton onClick={() => void checkStatus()} disabled={checking}>
+        </Badge>
+        <Button
+          stableWidth
+          reserveLabels={[t("Checking")]}
+          className="shrink-0"
+          onClick={() => void checkStatus()}
+          loading={checking}
+        >
           {checking ? t("Checking") : t("Check again")}
-        </SecondaryButton>
+        </Button>
       </Row>
       <InboxConnectionError error={error} />
     </>
@@ -237,26 +170,33 @@ export function GithubSettings() {
 
 export function GitlabSettings() {
   useLocale();
+  const verification = useConnectionVerification();
   const [url, setUrl] = useState("https://gitlab.com");
+  const [savedUrl, setSavedUrl] = useState("https://gitlab.com");
+  const [editing, setEditing] = useState(false);
+  const mutation = useRef(false);
   const [token, setToken] = useState("");
   const [connected, setConnected] = useState(false);
   const [checking, setChecking] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState<"save" | "disconnect" | null>(null);
+  const busy = operation !== null;
   const [error, setError] = useState<string | null>(null);
 
+  const [statusError, setStatusError] = useState<string | null>(null);
   const request = useRef(0);
   const checkStatus = useCallback(async (hydrate = false) => {
     const generation = ++request.current;
     setChecking(true);
-    setError(null);
+    setStatusError(null);
     try {
       const status = await gitlabConnected();
       if (generation !== request.current) return;
       setConnected(status.connected);
+      setSavedUrl((previous) => status.url || previous);
       if (hydrate) setUrl(status.url);
     } catch (err: unknown) {
       if (generation === request.current)
-        setError(err instanceof Error ? err.message : String(err));
+        setStatusError(err instanceof Error ? err.message : String(err));
     } finally {
       if (generation === request.current) setChecking(false);
     }
@@ -270,38 +210,48 @@ export function GitlabSettings() {
   }, [checkStatus]);
 
   const onSave = async () => {
-    if (!url.trim() || !token.trim() || busy || checking) return;
-    setBusy(true);
+    if (!url.trim() || !token.trim() || busy || checking || mutation.current) return;
+    mutation.current = true;
+    request.current += 1;
+    setOperation("save");
     setError(null);
     try {
       const status = await saveGitlabConfig(url, token);
       if (!status.connected)
         throw new Error(t("Connection test failed. Check your credentials and retry."));
       setUrl(status.url);
+      setSavedUrl(status.url);
+      setStatusError(null);
+      verification.markVerified();
+      setEditing(false);
       setToken("");
       setConnected(status.connected);
       clearInboxCache();
     } catch (err: unknown) {
-      setConnected(false);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setBusy(false);
+      mutation.current = false;
+      setOperation(null);
     }
   };
 
   const onDisconnect = async () => {
-    if (busy) return;
-    setBusy(true);
+    if (busy || checking || mutation.current) return;
+    mutation.current = true;
+    request.current += 1;
+    setOperation("disconnect");
     setError(null);
     try {
-      const status = await disconnectGitlab(url);
+      const status = await disconnectGitlab(savedUrl);
       setConnected(false);
+      verification.clearVerified();
       setUrl(status.url);
       clearInboxCache();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setBusy(false);
+      mutation.current = false;
+      setOperation(null);
     }
   };
 
@@ -311,27 +261,46 @@ export function GitlabSettings() {
         checking={checking}
         busy={busy || Boolean(token)}
         configured={connected}
-        error={error}
+        verifiedAt={verification.verifiedAt}
+        error={statusError}
         onCheck={() => void checkStatus()}
       />
       <Row
-        label={t("Account configuration")}
-        persistence={{ mode: "explicit", state: busy ? "saving" : token ? "dirty" : "idle" }}
-        description={t(
+        label={t("Account")}
+        stacked={!checking && !(connected && !editing)}
+        persistence={{
+          mode: "explicit",
+          state: operation === "save" ? "saving" : token ? "dirty" : "idle",
+        }}
+        info={t(
           "Connect GitLab.com or a self-managed GitLab instance. Use a personal access token with API access; the token is stored locally and Disconnect deletes it.",
         )}
       >
-        {connected ? (
-          <div className="inbox-account-fields">
-            <span title={url} className="max-w-56 break-all text-[12px] text-content/50">
-              {url}
+        {checking ? (
+          <InboxAccountChecking />
+        ) : connected && !editing ? (
+          <div className="inbox-account-fields" data-state="summary">
+            <span className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)">
+              {savedUrl}
             </span>
-            <SecondaryButton onClick={() => void onDisconnect()} disabled={busy || checking}>
-              {busy ? t("Disconnecting") : t("Disconnect")}
-            </SecondaryButton>
+            <Button
+              stableWidth
+              disabled={busy || checking}
+              onClick={() => {
+                setUrl(savedUrl);
+                setEditing(true);
+              }}
+            >
+              {t("Edit")}
+            </Button>
+            <InboxAccountActions
+              onDisconnect={() => void onDisconnect()}
+              loading={operation === "disconnect"}
+              disabled={busy || checking}
+            />
           </div>
         ) : (
-          <div className="inbox-account-fields">
+          <div className="inbox-account-fields" data-state="form">
             <TextField
               label={t("GitLab URL")}
               type="url"
@@ -357,8 +326,12 @@ export function GitlabSettings() {
               spellCheck={false}
               disabled={busy || checking}
             />
-            <SecondaryButton
+            <Button
+              stableWidth
+              reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
+              className="shrink-0"
               onClick={() => void onSave()}
+              loading={operation === "save"}
               disabled={busy || checking || !url.trim() || !token.trim()}
             >
               {busy
@@ -366,7 +339,20 @@ export function GitlabSettings() {
                 : error
                   ? t("Retry save and test")
                   : t("Save and test connection")}
-            </SecondaryButton>
+            </Button>
+            {connected ? (
+              <Button
+                stableWidth
+                disabled={busy}
+                onClick={() => {
+                  setEditing(false);
+                  setUrl(savedUrl);
+                  setToken("");
+                }}
+              >
+                {t("Cancel")}
+              </Button>
+            ) : null}
           </div>
         )}
       </Row>
@@ -377,26 +363,33 @@ export function GitlabSettings() {
 
 export function AzureDevOpsSettings() {
   useLocale();
+  const verification = useConnectionVerification();
   const [url, setUrl] = useState("https://dev.azure.com/myorg");
+  const [savedUrl, setSavedUrl] = useState("https://dev.azure.com/myorg");
+  const [editing, setEditing] = useState(false);
+  const mutation = useRef(false);
   const [token, setToken] = useState("");
   const [connected, setConnected] = useState(false);
   const [checking, setChecking] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState<"save" | "disconnect" | null>(null);
+  const busy = operation !== null;
   const [error, setError] = useState<string | null>(null);
 
+  const [statusError, setStatusError] = useState<string | null>(null);
   const request = useRef(0);
   const checkStatus = useCallback(async (hydrate = false) => {
     const generation = ++request.current;
     setChecking(true);
-    setError(null);
+    setStatusError(null);
     try {
       const status = await azureDevOpsConnected();
       if (generation !== request.current) return;
       setConnected(status.connected);
+      setSavedUrl((previous) => status.url || previous);
       if (hydrate && status.url) setUrl(status.url);
     } catch (err: unknown) {
       if (generation === request.current)
-        setError(err instanceof Error ? err.message : String(err));
+        setStatusError(err instanceof Error ? err.message : String(err));
     } finally {
       if (generation === request.current) setChecking(false);
     }
@@ -410,38 +403,48 @@ export function AzureDevOpsSettings() {
   }, [checkStatus]);
 
   const onSave = async () => {
-    if (!url.trim() || !token.trim() || busy || checking) return;
-    setBusy(true);
+    if (!url.trim() || !token.trim() || busy || checking || mutation.current) return;
+    mutation.current = true;
+    request.current += 1;
+    setOperation("save");
     setError(null);
     try {
       const status = await saveAzureDevOpsConfig(url, token);
       if (!status.connected)
         throw new Error(t("Connection test failed. Check your credentials and retry."));
       setUrl(status.url);
+      setSavedUrl(status.url);
+      setStatusError(null);
+      verification.markVerified();
+      setEditing(false);
       setToken("");
       setConnected(status.connected);
       clearInboxCache();
     } catch (err: unknown) {
-      setConnected(false);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setBusy(false);
+      mutation.current = false;
+      setOperation(null);
     }
   };
 
   const onDisconnect = async () => {
-    if (busy) return;
-    setBusy(true);
+    if (busy || checking || mutation.current) return;
+    mutation.current = true;
+    request.current += 1;
+    setOperation("disconnect");
     setError(null);
     try {
-      const status = await disconnectAzureDevOps(url);
+      const status = await disconnectAzureDevOps(savedUrl);
       setConnected(false);
+      verification.clearVerified();
       setUrl(status.url || url);
       clearInboxCache();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setBusy(false);
+      mutation.current = false;
+      setOperation(null);
     }
   };
 
@@ -451,27 +454,46 @@ export function AzureDevOpsSettings() {
         checking={checking}
         busy={busy || Boolean(token)}
         configured={connected}
-        error={error}
+        verifiedAt={verification.verifiedAt}
+        error={statusError}
         onCheck={() => void checkStatus()}
       />
       <Row
-        label={t("Account configuration")}
-        persistence={{ mode: "explicit", state: busy ? "saving" : token ? "dirty" : "idle" }}
-        description={t(
+        label={t("Account")}
+        stacked={!checking && !(connected && !editing)}
+        persistence={{
+          mode: "explicit",
+          state: operation === "save" ? "saving" : token ? "dirty" : "idle",
+        }}
+        info={t(
           "Connect your ADO organization with a personal access token (Boards + Repos read & write for comments). The token is stored locally and Disconnect deletes it.",
         )}
       >
-        {connected ? (
-          <div className="inbox-account-fields">
-            <span title={url} className="max-w-56 break-all text-[12px] text-content/50">
-              {url}
+        {checking ? (
+          <InboxAccountChecking />
+        ) : connected && !editing ? (
+          <div className="inbox-account-fields" data-state="summary">
+            <span className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)">
+              {savedUrl}
             </span>
-            <SecondaryButton onClick={() => void onDisconnect()} disabled={busy || checking}>
-              {busy ? t("Disconnecting") : t("Disconnect")}
-            </SecondaryButton>
+            <Button
+              stableWidth
+              disabled={busy || checking}
+              onClick={() => {
+                setUrl(savedUrl);
+                setEditing(true);
+              }}
+            >
+              {t("Edit")}
+            </Button>
+            <InboxAccountActions
+              onDisconnect={() => void onDisconnect()}
+              loading={operation === "disconnect"}
+              disabled={busy || checking}
+            />
           </div>
         ) : (
-          <div className="inbox-account-fields">
+          <div className="inbox-account-fields" data-state="form">
             <TextField
               label={t("Azure DevOps organization URL")}
               type="url"
@@ -497,8 +519,12 @@ export function AzureDevOpsSettings() {
               spellCheck={false}
               disabled={busy || checking}
             />
-            <SecondaryButton
+            <Button
+              stableWidth
+              reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
+              className="shrink-0"
               onClick={() => void onSave()}
+              loading={operation === "save"}
               disabled={busy || checking || !url.trim() || !token.trim()}
             >
               {busy
@@ -506,7 +532,20 @@ export function AzureDevOpsSettings() {
                 : error
                   ? t("Retry save and test")
                   : t("Save and test connection")}
-            </SecondaryButton>
+            </Button>
+            {connected ? (
+              <Button
+                stableWidth
+                disabled={busy}
+                onClick={() => {
+                  setEditing(false);
+                  setUrl(savedUrl);
+                  setToken("");
+                }}
+              >
+                {t("Cancel")}
+              </Button>
+            ) : null}
           </div>
         )}
       </Row>
@@ -517,18 +556,33 @@ export function AzureDevOpsSettings() {
 
 export function LinearSettings() {
   useLocale();
+  const verification = useConnectionVerification();
   const [token, setToken] = useState("");
   const [connected, setConnected] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [accountEpoch, setAccountEpoch] = useState(0);
+  const mutation = useRef(false);
+  const [operation, setOperation] = useState<"save" | "disconnect" | null>(null);
+  const busy = operation !== null;
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [teamsError, setTeamsError] = useState<string | null>(null);
+  const [teamsLoading, setTeamsLoading] = useState(false);
   const [teams, setTeams] = useState<LinearTeam[]>([]);
-  const [hiddenTeamIds, setHiddenTeamIds] = useState(loadHiddenLinearTeamIds);
+  const teamScope = useInboxScopePreference(
+    "bycoda.linearHiddenTeams",
+    LINEAR_CHANGE_EVENT,
+    isInboxScopeString,
+    saveHiddenLinearTeamIds,
+    `linear:${connected}:${accountEpoch}`,
+  );
+  const hiddenTeamIds = teamScope.value;
   const teamRequest = useRef(0);
 
   const loadTeams = useCallback(async () => {
     const generation = ++teamRequest.current;
+    setTeamsLoading(true);
     setTeamsError(null);
     try {
       const next = await listLinearTeams();
@@ -536,6 +590,8 @@ export function LinearSettings() {
     } catch (err: unknown) {
       if (generation === teamRequest.current)
         setTeamsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (generation === teamRequest.current) setTeamsLoading(false);
     }
   }, []);
 
@@ -543,7 +599,7 @@ export function LinearSettings() {
   const checkStatus = useCallback(async () => {
     const generation = ++request.current;
     setChecking(true);
-    setError(null);
+    setStatusError(null);
     try {
       const status = await linearConnected();
       if (generation !== request.current) return;
@@ -551,7 +607,7 @@ export function LinearSettings() {
       if (status.connected) await loadTeams();
     } catch (err: unknown) {
       if (generation === request.current)
-        setError(err instanceof Error ? err.message : String(err));
+        setStatusError(err instanceof Error ? err.message : String(err));
     } finally {
       if (generation === request.current) setChecking(false);
     }
@@ -565,45 +621,49 @@ export function LinearSettings() {
     };
   }, [checkStatus]);
 
-  // The inbox filter menu writes the same list, so follow it while both are mounted.
-  useEffect(() => {
-    const onChange = () => setHiddenTeamIds(loadHiddenLinearTeamIds());
-    window.addEventListener(LINEAR_CHANGE_EVENT, onChange);
-    return () => window.removeEventListener(LINEAR_CHANGE_EVENT, onChange);
-  }, []);
-
   const onSave = async () => {
-    if (!token.trim() || busy || checking) return;
+    if (!token.trim() || busy || checking || mutation.current) return;
+    mutation.current = true;
     request.current += 1;
     teamRequest.current += 1;
-    setBusy(true);
+    setTeamsLoading(false);
+    setOperation("save");
     setError(null);
     try {
       const status = await saveLinearToken(token);
       if (!status.connected)
         throw new Error(t("Connection test failed. Check your credentials and retry."));
       setToken("");
+      setEditing(false);
       setConnected(true);
+      setStatusError(null);
+      verification.markVerified();
+      setAccountEpoch((value) => value + 1);
+      setTeams([]);
       clearInboxCache();
       notifyLinearChange();
       await loadTeams();
     } catch (err: unknown) {
-      setConnected(false);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setBusy(false);
+      mutation.current = false;
+      setOperation(null);
     }
   };
 
   const onDisconnect = async () => {
-    if (busy) return;
+    if (busy || checking || mutation.current) return;
+    mutation.current = true;
     request.current += 1;
     teamRequest.current += 1;
-    setBusy(true);
+    setTeamsLoading(false);
+    setOperation("disconnect");
     setError(null);
     try {
       await disconnectLinear();
       setConnected(false);
+      verification.clearVerified();
+      setAccountEpoch((value) => value + 1);
       setTeams([]);
       setTeamsError(null);
       clearInboxCache();
@@ -611,17 +671,17 @@ export function LinearSettings() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setBusy(false);
+      mutation.current = false;
+      setOperation(null);
     }
   };
 
-  const toggleTeam = (id: string) => {
-    const next = new Set(hiddenTeamIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    const ids = [...next];
-    setHiddenTeamIds(ids);
-    saveHiddenLinearTeamIds(ids);
+  const setVisibleTeams = (visible: string[]) => {
+    const known = new Set(teams.map((team) => team.id));
+    teamScope.update((current) => [
+      ...current.filter((id) => !known.has(id)),
+      ...teams.filter((team) => !visible.includes(team.id)).map((team) => team.id),
+    ]);
     clearInboxCache();
   };
 
@@ -631,22 +691,39 @@ export function LinearSettings() {
         checking={checking}
         busy={busy || Boolean(token)}
         configured={connected}
-        error={error}
+        verifiedAt={verification.verifiedAt}
+        error={statusError}
         onCheck={() => void checkStatus()}
       />
       <Row
-        persistence={{ mode: "explicit", state: busy ? "saving" : token ? "dirty" : "idle" }}
+        stacked={!checking && !(connected && !editing)}
+        persistence={{
+          mode: "explicit",
+          state: operation === "save" ? "saving" : token ? "dirty" : "idle",
+        }}
         label={t("API key")}
-        description={t(
+        info={t(
           "Create a personal API key in Linear → Settings → Security & Access. Disconnect deletes it.",
         )}
       >
-        {connected ? (
-          <SecondaryButton onClick={() => void onDisconnect()} disabled={busy || checking}>
-            {t("Disconnect")}
-          </SecondaryButton>
+        {checking ? (
+          <InboxAccountChecking />
+        ) : connected && !editing ? (
+          <div className="inbox-account-fields" data-state="summary">
+            <span className="text-ui-caption text-(--ui-text-secondary)">
+              {t("API key saved on this computer")}
+            </span>
+            <Button stableWidth disabled={busy || checking} onClick={() => setEditing(true)}>
+              {t("Edit")}
+            </Button>
+            <InboxAccountActions
+              onDisconnect={() => void onDisconnect()}
+              loading={operation === "disconnect"}
+              disabled={busy || checking}
+            />
+          </div>
         ) : (
-          <div className="inbox-account-fields">
+          <div className="inbox-account-fields" data-state="form">
             <PasswordField
               label={t("Linear API key")}
 
@@ -661,8 +738,12 @@ export function LinearSettings() {
               spellCheck={false}
               disabled={busy || checking}
             />
-            <SecondaryButton
+            <Button
+              stableWidth
+              reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
+              className="shrink-0"
               onClick={() => void onSave()}
+              loading={operation === "save"}
               disabled={busy || checking || !token.trim()}
             >
               {busy
@@ -670,48 +751,75 @@ export function LinearSettings() {
                 : error
                   ? t("Retry save and test")
                   : t("Save and test connection")}
-            </SecondaryButton>
+            </Button>
+            {connected ? (
+              <Button
+                stableWidth
+                disabled={busy}
+                onClick={() => {
+                  setEditing(false);
+                  setToken("");
+                }}
+              >
+                {t("Cancel")}
+              </Button>
+            ) : null}
           </div>
         )}
       </Row>
       <InboxConnectionError error={error} />
       {connected ? (
-        <Row label={t("Teams")} persistence={{ mode: "automatic" }}>
-          <SecondaryButton disabled={busy || checking} onClick={() => void loadTeams()}>
-            {teamsError ? t("Retry") : t("Refresh teams")}
-          </SecondaryButton>
+        <Row
+          stacked
+          label={t("Teams")}
+          info={t("Unchecked teams stay out of the inbox.")}
+          persistence={{ mode: "automatic" }}
+          feedback={
+            teamScope.error ? (
+              <SettingsFeedback
+                state="error"
+                action={
+                  <Button stableWidth onClick={teamScope.retry}>
+                    {t("Retry")}
+                  </Button>
+                }
+              >
+                {t("Saved Inbox scope is unavailable. Retry before changing it.")}
+              </SettingsFeedback>
+            ) : undefined
+          }
+        >
+          {teamScope.available ? (
+            <InboxScopeCollection
+              label={t("Teams")}
+              searchLabel={t("Search teams")}
+              items={teams.map((team) => ({ id: team.id, title: team.name, meta: team.key }))}
+              selectedIds={teams
+                .filter((team) => !hiddenTeamIds.includes(team.id))
+                .map((team) => team.id)}
+              onChange={setVisibleTeams}
+              disabled={busy || checking || teamsLoading || Boolean(teamsError)}
+              loading={teamsLoading}
+              summary={(count, total) => t("{p0} of {p1} teams selected", { p0: count, p1: total })}
+              emptyLabel={t("No teams available. Refresh teams to try again.")}
+              noMatchLabel={t("No matching teams")}
+              actions={
+                <Button
+                  stableWidth
+                  className="shrink-0"
+                  size="sm"
+                  loading={teamsLoading}
+                  disabled={busy || checking}
+                  onClick={() => void loadTeams()}
+                >
+                  {teamsError ? t("Retry") : t("Refresh teams")}
+                </Button>
+              }
+            />
+          ) : null}
         </Row>
       ) : null}
       <InboxConnectionError error={teamsError} />
-      {connected && teams.length > 0 ? (
-        <div className="border-b border-content/5 px-4 py-3.5 last:border-b-0">
-          <div className="text-[13px] font-medium text-content">{t("Teams")}</div>
-          <p className="mt-1 text-[12px] leading-relaxed text-content/45">
-            {t("Unchecked teams stay out of the inbox.")}
-          </p>
-          <div className="-mx-2 mt-2 flex flex-col gap-0.5">
-            {teams.map((team) => {
-              const checked = !hiddenTeamIds.includes(team.id);
-              return (
-                <Button
-                  variant="item"
-                  aria-pressed={checked}
-                  key={team.id}
-                  type="button"
-                  onClick={() => toggleTeam(team.id)}
-                  className="w-full"
-                >
-                  <span className="min-w-0 flex-1 truncate">
-                    {team.name}
-                    {team.key ? <span className="ml-1.5 text-content/40">{team.key}</span> : null}
-                  </span>
-                  {checked ? <Check className="size-3.5 shrink-0" strokeWidth={2.25} /> : null}
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
     </>
   );
 }

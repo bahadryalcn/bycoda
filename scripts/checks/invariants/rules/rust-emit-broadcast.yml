@@ -1,0 +1,15 @@
+id: rust-emit-broadcast
+language: rust
+severity: error
+message: "`app.emit` / `window.emit` broadcasts to every webview (Tauri v2), and a plain JS `listen()` receives even `emit_to` events. For a window-targeted event use `app.emit_to(label, ...)` or `emit_to_focused`, and listen with the window-scoped helper in src/platform/tauri/listenWindow.ts."
+note: Rule K-WINDOW-EVENT in docs/reference/code-invariants.md
+files:
+  - "src-tauri/src/**"
+ignores:
+  - "**/*_tests.rs"
+  - "**/tests.rs"
+rule:
+  pattern: $APP.emit($EVENT, $PAYLOAD)
+constraints:
+  APP:
+    regex: "^(app|handle|app_handle|window|webview)$"

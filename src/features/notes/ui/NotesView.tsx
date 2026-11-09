@@ -1,12 +1,26 @@
+import { BadgeList } from "../../../shared/ui/BadgeList";
+import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Button } from "../../../shared/ui/Button";
+import { ContinuousList } from "../../../shared/ui/ContinuousList";
+import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Select } from "../../../shared/ui/Select";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { Modal } from "../../../shared/ui/Modal";
+import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { ContextMenu } from "../../../shared/ui/ContextMenu";
 import { Alert } from "../../../shared/ui/Alert";
-import { Badge } from "../../../shared/ui/Badge";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { TagInput } from "../../../shared/ui/TagInput";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { LiveText } from "../../../shared/ui/LiveText";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { Sash } from "../../../shared/ui/Sash";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import { NoteTagsEditor, sameTags } from "./NoteTagsEditor";
+import { NoteWordCount } from "./NoteWordCount";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { bridgeQueryEvents } from "../../../shared/lib/queryClient";
@@ -15,12 +29,10 @@ import { ToolHeader } from "../../../app/shell/ToolNavigation";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import { t, useLocale } from "../../../shared/i18n";
 import {
-  LoaderCircle,
   Plus,
   Search,
   File,
   Trash2,
-  ChevronDown,
   SlidersHorizontal,
   MessageSquarePlus,
   Check,
@@ -28,8 +40,10 @@ import {
 import { Popover } from "../../../shared/ui/Popover";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
+import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
+import { MoreHorizontal } from "../../../shared/ui/icons";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { openSearchPanel } from "@codemirror/search";
 import type { EditorView } from "@codemirror/view";
 import {
@@ -40,8 +54,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type DragEvent as ReactDragEvent,
-  type ClipboardEvent as ReactClipboardEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
@@ -57,13 +69,13 @@ import {
   createNote,
   noteTitleError,
   deleteNote,
-  loadNoteSummaries,
-  MAX_NOTE_TAGS,
+  getNote,
+  loadLibraryNoteSummaries,
   NOTES_CHANGED_EVENT,
-  normalizeNoteTags,
   noteSourceProject,
   noteTitle,
-  peekNoteSummaries,
+  peekLibraryNoteSummaries,
+  peekNoteDetail,
   summarizeNote,
   searchNotes,
   upsertNote,
@@ -71,18 +83,9 @@ import {
   type Note,
   type NoteSummary,
 } from "../notes";
-import {
-  createRecoveredNote,
-  insertNoteImagesMarkdown,
-  saveNoteImagesFromFiles,
-  saveNoteImagesFromPaths,
-  type NoteImageAsset,
-} from "../noteImages";
+import { createRecoveredNote } from "../noteImages";
 import { projectKey } from "../../../shared/lib/paths";
-import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { IS_MAC } from "../../../platform/tauri/platform";
-import { pickImageFiles } from "../../../platform/tauri/fs";
-import { filesFromClipboard } from "../../sessions/model/attachments";
 import { looksLikeProject, type RecentProject } from "../../projects/model/recents";
 import {
   loadTabGroupColors,
@@ -95,12 +98,19 @@ import {
 import { openReplacePanel } from "../../files/editor/editorSearch";
 import { NoteMarkdownEditor, NoteMarkdownToolbar } from "./NoteMarkdownEditor";
 import { NoteEditablePreview } from "./NoteEditablePreview";
+import { NoteSaveStatus } from "./NoteSaveStatus";
 import { NoteEditorPane } from "./NoteEditorPane";
+import { useNoteEditorMode } from "./useNoteEditorMode";
+import { useNoteInView } from "./useNoteInView";
+import { useNoteFindRequest } from "./useNoteFindRequest";
+import { useNoteImageInsertion } from "./useNoteImageInsertion";
 import {
   filterNoteLibrary,
   groupNoteLibrary,
   loadNoteLibraryPreferences,
   noteLibraryProjects,
+  noteLibraryDate,
+  noteLibraryMatchLocation,
   noteProjectKey,
   saveNoteLibraryPreferences,
   type NoteGrouping,
@@ -108,8 +118,12 @@ import {
 } from "../noteLibrary";
 import { useNoteDetail } from "../useNoteDetail";
 import { OPEN_NOTE_LIBRARY_EVENT, takeNoteLibraryTarget } from "../noteNavigation";
-import { noteLibraryItemIndex, windowNoteLibrary } from "../noteLibraryWindow";
-import { LIST_PAGE_SIZE } from "../../../shared/lib/listWindow";
+import {
+  groupCreateScope,
+  noteMenuItems,
+  type NoteCreateScope,
+  type NoteMenuTarget,
+} from "../noteLibraryMenu";
 import "./notes.css";
 import {
   drafts,
@@ -117,11 +131,28 @@ import {
   notifyDrafts,
   mountNotesView,
   pruneDraft,
-  noteSaveQueues,
   enqueueNoteSave,
+  draftInputOwner,
+  removeNoteDraft,
   type Draft,
   type Edits,
 } from "../noteDrafts";
+import {
+  beginNoteWork,
+  deriveNoteInputResult,
+  noteActivityOwner,
+  noteInputWorkError,
+  type NoteInputWork,
+} from "../notesInputOwners";
+import {
+  useNoteExternal,
+  useNoteInputState,
+  useNotePreparing,
+  useNoteTextInput,
+  noteInputBudgetHandlers,
+} from "../useNoteInput";
+import type { NativeInputPublication } from "../../../shared/lib/native-input-observer";
+import { copyNativeCaptureData } from "../../../shared/lib/native-capture-json";
 
 const MIN_WIDTH = 240;
 const MAX_WIDTH = 520;
@@ -129,10 +160,14 @@ const DEFAULT_WIDTH = 320;
 
 let rememberedWidth = DEFAULT_WIDTH;
 let rememberedNoteId: string | null = null;
-let rememberedLibraryStart = 0;
-let rememberedLibraryScroll = 0;
 
-type NoteViewMode = "preview" | "source" | "split";
+type NoteFindRequest = { noteId: string; query: string; token: number } | null;
+/** A failed library mutation and, when it has one here, the action that repeats it. */
+type NotesActionFailure = {
+  kind: "create" | "delete" | "bulk" | "chat";
+  message: string;
+  retry?: () => void;
+};
 
 type Props = {
   besideRail?: boolean;
@@ -155,17 +190,7 @@ export function NotesView({
   useEffect(mountNotesView, []);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
-  const listLock = useLockOverscroll<HTMLDivElement>();
   const listScroller = useRef<HTMLDivElement | null>(null);
-  const setListScroller = useCallback(
-    (element: HTMLDivElement | null) => {
-      if (!element && listScroller.current)
-        rememberedLibraryScroll = listScroller.current.scrollTop;
-      listScroller.current = element;
-      listLock(element);
-    },
-    [listLock],
-  );
   const resize = useDragResize({
     min: MIN_WIDTH,
     max: () => Math.min(MAX_WIDTH, Math.round(window.innerWidth * 0.5)),
@@ -180,10 +205,13 @@ export function NotesView({
   const notesQuery = useQuery({
     queryKey: ["notes", "summaries"],
     enabled: queryVisible,
-    queryFn: () => loadNoteSummaries(true),
-    initialData: () => peekNoteSummaries() ?? undefined,
+    queryFn: () => loadLibraryNoteSummaries(true),
+    initialData: () => peekLibraryNoteSummaries() ?? undefined,
     initialDataUpdatedAt: 0,
     staleTime: 30_000,
+    // Preserve the exact published DTO/summary identity. Equal-value cache
+    // reconstruction cannot carry an original writer's private view proof.
+    structuralSharing: false,
   });
   const notes = notesQuery.data ?? [];
   const loading = notesQuery.isPending;
@@ -195,7 +223,11 @@ export function NotesView({
     },
     [queryClient],
   );
-  const [error, setError] = useState<string | null>(null);
+  // A list-load failure belongs to the query: a later successful refetch clears it.
+  // Create/delete/bulk failures are separate and carry their own retry, so a list
+  // refresh can neither hide nor "retry" an unresolved mutation.
+  const listError = notesQuery.error ? notesQuery.error.message : null;
+  const [actionFailure, setActionFailure] = useState<NotesActionFailure | null>(null);
   const [, updateDrafts] = useState(0);
   useEffect(() => {
     const update = () => {
@@ -211,15 +243,32 @@ export function NotesView({
     return () => window.removeEventListener(DRAFT_CHANGED_EVENT, update);
   }, []);
   const [query, setQuery] = useState("");
+  const [findRequest, setFindRequest] = useState<{
+    noteId: string;
+    query: string;
+    token: number;
+  } | null>(null);
+  const findSequence = useRef(0);
+  const completeFind = useCallback(
+    (token: number) => setFindRequest((current) => (current?.token === token ? null : current)),
+    [],
+  );
   const deferredQuery = useDeferredValue(query);
-  const [bodyMatches, setBodyMatches] = useState<{ query: string; ids: Set<string> } | null>(null);
+  const [bodyMatches, setBodyMatches] = useState<{
+    query: string;
+    ids: Set<string>;
+  } | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchingBody, setSearchingBody] = useState(false);
+  const [searchRevision, setSearchRevision] = useState(0);
   useEffect(() => {
     const needle = deferredQuery.trim();
     if (!needle) {
       setSearchError(null);
+      setSearchingBody(false);
       return;
     }
+    setSearchingBody(true);
     let active = true;
     // Coalesce typing before asking the native body index. Stale query results
     // never join a newer set of metadata filters.
@@ -229,10 +278,14 @@ export function NotesView({
           if (active) {
             setBodyMatches({ query: needle, ids: new Set(ids) });
             setSearchError(null);
+            setSearchingBody(false);
           }
         },
         (cause: unknown) => {
-          if (active) setSearchError(cause instanceof Error ? cause.message : String(cause));
+          if (active) {
+            setSearchError(cause instanceof Error ? cause.message : String(cause));
+            setSearchingBody(false);
+          }
         },
       );
     }, 150);
@@ -240,7 +293,7 @@ export function NotesView({
       active = false;
       clearTimeout(timer);
     };
-  }, [deferredQuery, notes]);
+  }, [deferredQuery, notes, searchRevision]);
   const [libraryPreferences, setLibraryPreferences] = useState(loadNoteLibraryPreferences);
   const [projectFilter, setProjectFilter] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -253,7 +306,7 @@ export function NotesView({
   const allTags = useMemo(() => [...new Set(notes.flatMap((note) => note.tags))].sort(), [notes]);
   useEffect(() => saveNoteLibraryPreferences(libraryPreferences), [libraryPreferences]);
   const [selectedId, setSelectedId] = useState<string | null>(() => {
-    const cached = peekNoteSummaries();
+    const cached = peekLibraryNoteSummaries();
     return (
       cached?.find((note) => note.id === rememberedNoteId)?.id ??
       cached?.[0]?.id ??
@@ -265,6 +318,18 @@ export function NotesView({
   const [checkedIds, setCheckedIds] = useState<Set<string>>(() => new Set());
   const [selectionNotes, setSelectionNotes] = useState(notesQuery.data);
   const [deleteTargets, setDeleteTargets] = useState<NoteSummary[] | null>(null);
+  type LibraryMenu = { target: NoteMenuTarget } & (
+    | { x: number; y: number }
+    | { anchor: HTMLElement }
+  );
+  const [menu, setMenu] = useState<LibraryMenu | null>(null);
+  const menuBusy = useRef(false);
+  const [addingToChat, setAddingToChat] = useState(false);
+  const [titleFocus, setTitleFocus] = useState<{
+    id: string;
+    token: number;
+  } | null>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const bulkBusy = useRef(false);
   const selectionButton = useRef<HTMLButtonElement>(null);
@@ -292,18 +357,15 @@ export function NotesView({
     });
   }
   const [creating, setCreating] = useState(false);
+  const creatingRef = useRef(false);
   const logos = useTabGroupLogos();
   const [groupMascots] = useState(loadTabGroupMascots);
   const [groupColors] = useState(loadTabGroupColors);
   const [groupCustomColors] = useState(loadTabGroupCustomColors);
 
   const refresh = useCallback(async () => {
-    const result = await notesQuery.refetch();
-    setError(result.error ? result.error.message : null);
+    await notesQuery.refetch();
   }, [notesQuery.refetch]);
-  useEffect(() => {
-    if (notesQuery.error) setError(notesQuery.error.message);
-  }, [notesQuery.error]);
   useEffect(() => {
     if (loading) return;
     setSelectedId((current) => {
@@ -338,19 +400,7 @@ export function NotesView({
     rememberedNoteId = selectedId;
   }, [selectedId]);
 
-  const [libraryStart, setLibraryStart] = useState(rememberedLibraryStart);
-  useEffect(() => {
-    rememberedLibraryStart = libraryStart;
-  }, [libraryStart]);
-  useEffect(() => {
-    if (listScroller.current) listScroller.current.scrollTop = rememberedLibraryScroll;
-  }, []);
-
-  useEffect(() => {
-    listScroller.current
-      ?.querySelector<HTMLElement>('[aria-current="true"]')
-      ?.scrollIntoView?.({ block: "nearest" });
-  }, [selectedId, loading, libraryStart]);
+  useNoteInView(listScroller, [selectedId, loading, deferredQuery, projectFilter, tagFilter]);
   useEffect(() => {
     const requested = pendingListFocus.current;
     if (!requested) return;
@@ -363,7 +413,7 @@ export function NotesView({
       button.focus();
       pendingListFocus.current = null;
     }
-  }, [selectedId, selectedGroup, libraryStart]);
+  }, [selectedId, selectedGroup]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -398,12 +448,15 @@ export function NotesView({
     [visible, libraryPreferences.grouping],
   );
   const headings = libraryPreferences.grouping !== "none";
-  const selectedIndex = noteLibraryItemIndex(
-    groups,
-    collapsedGroups,
-    selectedId,
-    headings,
-    selectedGroup,
+  const libraryRows = useMemo(
+    () =>
+      groups.flatMap((group) => [
+        ...(headings ? [{ kind: "heading" as const, group }] : []),
+        ...(collapsedGroups.has(group.key)
+          ? []
+          : group.notes.map((note) => ({ kind: "note" as const, group, note }))),
+      ]),
+    [groups, headings, collapsedGroups],
   );
   const navigable = useMemo(
     () =>
@@ -444,17 +497,15 @@ export function NotesView({
     setSelectedGroup(target.group);
     setSelectedId(target.note.id);
   };
-  useEffect(() => {
-    setLibraryStart(
-      selectedIndex >= 0 ? Math.floor(selectedIndex / LIST_PAGE_SIZE) * LIST_PAGE_SIZE : 0,
-    );
-  }, [selectedId, selectedIndex, deferredQuery, projectFilter, tagFilter]);
-  const libraryWindow = useMemo(
-    () => windowNoteLibrary(groups, collapsedGroups, libraryStart, headings),
-    [groups, collapsedGroups, libraryStart, headings],
-  );
   const clearFilters = () => {
     setQuery("");
+    setProjectFilter(null);
+    setTagFilter(null);
+  };
+  // The trigger counts and resets the project/tag scope; the search box and the
+  // group/sort options keep their own controls.
+  const scopeFilterCount = (projectFilter !== null ? 1 : 0) + (tagFilter !== null ? 1 : 0);
+  const clearScopeFilters = () => {
     setProjectFilter(null);
     setTagFilter(null);
   };
@@ -469,48 +520,98 @@ export function NotesView({
       ? summarizeNote(recovery.saved ?? recovery.base)
       : null) ??
     null;
+  const selectedRowGroup = selectedSummary
+    ? (groups.find(
+        (group) =>
+          group.key === selectedGroup && group.notes.some((note) => note.id === selectedSummary.id),
+      ) ?? groups.find((group) => group.notes.some((note) => note.id === selectedSummary.id)))
+    : null;
   const recovered = selectedSummary
     ? (drafts.get(selectedSummary.id)?.saved ?? drafts.get(selectedSummary.id)?.base)
     : null;
+  const cachedSelected = selectedSummary
+    ? peekNoteDetail(selectedSummary.id, selectedSummary.updatedAt)
+    : null;
   const selectedInput = useMemo(
     () =>
-      selectedSummary && recovered?.updatedAt === selectedSummary.updatedAt
-        ? { ...recovered, ...selectedSummary, body: recovered.body }
+      selectedSummary && !cachedSelected && recovered?.updatedAt === selectedSummary.updatedAt
+        ? deriveNoteInputResult(
+            { ...recovered, ...selectedSummary, body: recovered.body },
+            recovered,
+            selectedSummary,
+          )
         : selectedSummary,
-    [selectedSummary, recovered],
+    [selectedSummary, recovered, cachedSelected],
   );
   const {
     note: selected,
     loading: detailLoading,
     error: detailError,
+    retrying: detailRetrying,
     retry: retryDetail,
   } = useNoteDetail(selectedInput);
+  // "Edit title" from a menu opens the note first; the field exists once its editor has mounted.
+  useEffect(() => {
+    if (!titleFocus || selected?.id !== titleFocus.id) return;
+    const input = workspaceRef.current?.querySelector<HTMLInputElement>(".note-detail-title input");
+    if (!input) return;
+    input.focus();
+    input.select();
+    setTitleFocus(null);
+  }, [titleFocus, selected]);
 
-  const onCreate = async () => {
-    if (creating) return;
+  // Toolbar "New note" and the empty-area menu share this scope: the active filters, else the open project.
+  const defaultCreateScope = (): NoteCreateScope => ({
+    ...(projectFilter === ""
+      ? {}
+      : projectFilter !== null
+        ? { sourceCwd: projects.find((project) => project.key === projectFilter)?.path }
+        : cwd && looksLikeProject(cwd)
+          ? { sourceCwd: cwd }
+          : {}),
+    ...(tagFilter ? { tags: [tagFilter] } : {}),
+  });
+  const createScopeLabel = (scope: NoteCreateScope) =>
+    [
+      scope.sourceCwd ? projectDisplayName(scope.sourceCwd) : t("No project"),
+      ...(scope.tags ?? []).map((tag) => `#${tag}`),
+    ].join(" · ");
+
+  // An explicit scope (a group heading) is used as given; no scope means the library's own.
+  const onCreate = async (scope?: NoteCreateScope) => {
+    if (creatingRef.current) return;
+    const work = beginNoteWork("library-create");
+    if (!work) {
+      setActionFailure({
+        kind: "create",
+        message: noteInputWorkError().message,
+        retry: () => void onCreate(scope),
+      });
+      return;
+    }
+    setActionFailure((current) => (current?.kind === "create" ? null : current));
+    creatingRef.current = true;
     setCreating(true);
     try {
-      const note = await createNote({
-        title: "",
-        body: "",
-        ...(projectFilter === ""
-          ? {}
-          : projectFilter !== null
-            ? { sourceCwd: projects.find((project) => project.key === projectFilter)?.path }
-            : cwd && looksLikeProject(cwd)
-              ? { sourceCwd: cwd }
-              : {}),
-        ...(tagFilter ? { tags: [tagFilter] } : {}),
-      });
-      setNotes(await loadNoteSummaries(true));
+      const note = await createNote(
+        { title: "", body: "", ...(scope ?? defaultCreateScope()) },
+        work,
+      );
+      setNotes(await loadLibraryNoteSummaries(true));
       setSelectedId(note.id);
       setMobileListVisible(false);
       setQuery("");
       setCollapsedGroups(new Set());
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setActionFailure({
+        kind: "create",
+        message: err instanceof Error ? err.message : String(err),
+        retry: () => void onCreate(scope),
+      });
     } finally {
+      creatingRef.current = false;
       setCreating(false);
+      work();
     }
   };
 
@@ -526,21 +627,27 @@ export function NotesView({
     });
   };
 
-  const onDelete = async (id: string, expectedUpdatedAt?: number) => {
+  const onDelete = async (id: string, expectedUpdatedAt?: number, parent?: NoteInputWork) => {
     try {
-      await deleteNote(id, expectedUpdatedAt);
-      drafts.delete(id);
+      await deleteNote(id, expectedUpdatedAt, parent);
+      removeNoteDraft(id);
       notifyDrafts();
       setNotes((current) => current.filter((note) => note.id !== id));
       setSelectedId((current) => {
         if (current !== id) return current;
         return notes.find((note) => note.id !== id)?.id ?? null;
       });
+      setActionFailure((current) => (current?.kind === "delete" ? null : current));
       // A list refresh failure must not turn a successful deletion into failure.
       void refresh();
       return true;
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      // The editor's Delete confirmation stays on this note and is its retry owner;
+      // the library only reports the failure.
+      setActionFailure({
+        kind: "delete",
+        message: err instanceof Error ? err.message : String(err),
+      });
       return false;
     }
   };
@@ -559,142 +666,277 @@ export function NotesView({
       return next;
     });
   };
-  const deleteChecked = async () => {
-    if (!deleteTargets || bulkBusy.current) return;
+  // Resolves to a message when the batch could not start; the confirmation then stays
+  // open on the same targets so Delete retries them. Per-note failures are reported in the library.
+  const deleteChecked = async (): Promise<string | null> => {
+    if (!deleteTargets || bulkBusy.current) return null;
+    let targets: NoteSummary[];
+    try {
+      targets = copyNativeCaptureData(deleteTargets);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setActionFailure({ kind: "bulk", message });
+      return message;
+    }
+    const activity = noteActivityOwner();
+    const batch = activity.operation("bulk-delete");
+    if (!batch) return noteInputWorkError().message;
+    const ownerBatches = new Map([[activity, batch as NoteInputWork | null]]);
+    const originals = targets.map((note) => {
+      const draft = drafts.get(note.id);
+      const owner = draft ? draftInputOwner(draft) : activity;
+      if (!ownerBatches.has(owner)) ownerBatches.set(owner, owner.operation("bulk-delete"));
+      return ownerBatches.get(owner)!;
+    });
+    if (originals.some((work) => !work)) {
+      ownerBatches.forEach((work) => work?.());
+      // The confirmation stays open with the same selection; retry runs it again.
+      const message = noteInputWorkError().message;
+      setActionFailure({ kind: "bulk", message, retry: () => void deleteChecked() });
+      return message;
+    }
     bulkBusy.current = true;
     setBulkDeleting(true);
     const removed = new Set<string>();
     const failures: string[] = [];
+    const failedNotes: NoteSummary[] = [];
     // Freeze selected drafts before awaiting existing writes. Their unmount cleanup
     // and debounce timers must never recreate a deleted document.
-    for (const note of deleteTargets) {
+    for (const note of targets) {
       const draft = drafts.get(note.id);
       if (draft) draft.skipSave.current = true;
     }
     try {
-      for (const note of deleteTargets) {
+      for (const [index, note] of targets.entries()) {
         try {
-          await enqueueNoteSave(note.id, async (latest) => {
-            const draft = drafts.get(note.id);
-            const version = latest ?? draft?.saved ?? note;
-            await deleteNote(note.id, version.updatedAt);
-          });
+          await enqueueNoteSave(
+            note.id,
+            async (latest, queued) => {
+              const draft = drafts.get(note.id);
+              const version = latest ?? draft?.saved ?? note;
+              await deleteNote(note.id, version.updatedAt, queued);
+            },
+            originals[index]!,
+          );
           removed.add(note.id);
-          drafts.delete(note.id);
+          removeNoteDraft(note.id);
         } catch (reason) {
           const draft = drafts.get(note.id);
           if (draft) draft.skipSave.current = false;
           failures.push(
             `${note.title}: ${reason instanceof Error ? reason.message : String(reason)}`,
           );
+          failedNotes.push(note);
         }
       }
       setNotes((current) => current.filter((note) => !removed.has(note.id)));
+      setSelectedId((current) =>
+        current && removed.has(current)
+          ? (notes.find((note) => !removed.has(note.id))?.id ?? null)
+          : current,
+      );
       setCheckedIds((current) => new Set([...current].filter((id) => !removed.has(id))));
       notifyDrafts();
-      setError(failures.length ? failures.join("\n") : null);
+      // Partial failures stay tied to the notes that failed; retry asks again for those only.
+      setActionFailure(
+        failures.length
+          ? {
+              kind: "bulk",
+              message: failures.join("\n"),
+              retry: () => setDeleteTargets(failedNotes),
+            }
+          : null,
+      );
       setDeleteTargets(null);
       if (!failures.length) setSelectionMode(false);
     } finally {
+      ownerBatches.forEach((work) => work?.());
       bulkBusy.current = false;
       setBulkDeleting(false);
       selectionButton.current?.focus();
     }
+    return null;
   };
+
+  const openMenu = (
+    target: NoteMenuTarget,
+    place: { x: number; y: number } | { anchor: HTMLElement },
+  ) => setMenu({ target, ...place });
+  const addNoteToChatFromMenu = async (summary: NoteSummary) => {
+    if (menuBusy.current) return;
+    menuBusy.current = true;
+    setAddingToChat(true);
+    const retry = () => void addNoteToChatFromMenu(summary);
+    try {
+      const stored = selected?.id === summary.id ? selected : await getNote(summary.id);
+      if (!stored) throw new Error(t("This note could not be found."));
+      // The open note's unsaved edits travel with it, exactly like the editor's own button.
+      const edits = drafts.get(summary.id)?.edits.current ?? {};
+      const body = edits.body ?? stored.body;
+      const note: Note = {
+        ...stored,
+        ...edits,
+        body,
+        title: (edits.title ?? stored.title).trim() || noteTitle(body),
+      };
+      if (!body.trim()) throw new Error(t("This note has no content to add to chat."));
+      onAddToChat(note);
+    } catch (err: unknown) {
+      setActionFailure({
+        kind: "chat",
+        message: err instanceof Error ? err.message : String(err),
+        retry,
+      });
+    } finally {
+      menuBusy.current = false;
+      setAddingToChat(false);
+    }
+  };
+  const pickMenu = (id: string) => {
+    const open = menu;
+    setMenu(null);
+    if (!open) return;
+    const { target } = open;
+    if (target.kind === "library") {
+      if (id === "new-note") void onCreate();
+      return;
+    }
+    if (target.kind === "group") {
+      if (id === "new-note")
+        void onCreate(groupCreateScope(libraryPreferences.grouping, target) ?? {});
+      else if (id === "toggle-group")
+        setCollapsedGroups((current) => {
+          const next = new Set(current);
+          if (next.has(target.key)) next.delete(target.key);
+          else next.add(target.key);
+          return next;
+        });
+      return;
+    }
+    // The note may have been deleted or filtered away while the menu was open.
+    const summary = notes.find((note) => note.id === target.id);
+    if (!summary) return;
+    if (id === "open" || id === "edit-title") {
+      setSelectedGroup(target.group);
+      setSelectedId(summary.id);
+      setMobileListVisible(false);
+      if (id === "edit-title") setTitleFocus({ id: summary.id, token: ++findSequence.current });
+    } else if (id === "add-to-chat") void addNoteToChatFromMenu(summary);
+    else if (id === "toggle-check") {
+      if (selectionMode) toggleChecked(summary.id);
+      else {
+        setSelectionMode(true);
+        setCheckedIds(new Set([summary.id]));
+      }
+    } else if (id === "delete") setDeleteTargets([summary]);
+    else if (id === "delete-selected")
+      setDeleteTargets(notes.filter((note) => checkedIds.has(note.id)));
+  };
+  const menuNote =
+    menu?.target.kind === "note"
+      ? notes.find((note) => note.id === (menu.target as { id: string }).id)
+      : undefined;
 
   const list = (
     <div
       ref={resize.setPaneRef}
-      className="note-library-sidebar relative flex h-full min-h-0 shrink-0 flex-col border-r border-stroke"
+      className="note-library-sidebar relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) bg-transparent"
     >
-      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-(--ui-tone-neutral-border) px-2">
-        <div className="relative flex h-7 min-w-0 flex-1 items-center">
-          <Search className="pointer-events-none absolute left-2 size-3 shrink-0 opacity-50" />
-          <TextField
-            label={t("Filter notes")}
-            clearable
-            hideLabel
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("Filter notes")}
-            aria-label={t("Filter notes")}
-            spellCheck={false}
-            autoComplete="off"
-            fieldClassName="bycoda-arc-field--search"
-          />
-        </div>
+      <div className="flex min-h-9 shrink-0 items-center gap-1 px-2 pt-1">
+        <LiveText
+          className="min-w-0 flex-1 truncate ps-1 text-ui-caption tabular-nums text-(--ui-text-secondary)"
+          text={
+            filtered
+              ? t("{p0} of {p1} notes", { p0: visible.length, p1: notes.length })
+              : t("{p0} notes", { p0: notes.length })
+          }
+        />
+        {notes.length > 0 || selectionMode ? (
+          <Button
+            ref={selectionButton}
+            variant="ghost"
+            size="sm"
+            label={t("Select notes")}
+            selected={selectionMode}
+            aria-pressed={selectionMode}
+            disabled={bulkDeleting}
+            onClick={() => {
+              setSelectionMode((current) => !current);
+              setCheckedIds(new Set());
+            }}
+          >
+            <Check className="icon-sm" />
+            {t("Select notes")}
+          </Button>
+        ) : null}
         <Button
-          iconOnly
-          label={t("Filters and options")}
-          variant="ghost"
-          size="sm"
-          selected={projectFilter !== null || tagFilter !== null}
-          ref={filtersButton}
-          type="button"
-          title={t("Filters and options")}
-          aria-label={t("Filters and options")}
-          aria-haspopup="dialog"
-          aria-expanded={filtersOpen}
-          onClick={(event) => {
-            event.currentTarget.focus();
-            setFiltersOpen((open) => !open);
-          }}
-          className="shrink-0"
-          data-active={projectFilter !== null || tagFilter !== null || undefined}
-        >
-          <SlidersHorizontal className="size-3.5" strokeWidth={1.75} />
-          {projectFilter !== null || tagFilter !== null ? (
-            <span className="note-filter-dot" />
-          ) : null}
-        </Button>
-        <Button
-          ref={selectionButton}
-          variant="ghost"
-          iconOnly
-          label={t("Select notes")}
-          selected={selectionMode}
-          aria-pressed={selectionMode}
-          disabled={bulkDeleting}
-          onClick={() => {
-            setSelectionMode((current) => !current);
-            setCheckedIds(new Set());
-          }}
-        >
-          <Check className="size-3.5" />
-        </Button>
-        <Button
-          iconOnly
-          label={t("New note")}
-          variant="ghost"
+          variant="secondary"
           size="sm"
           loading={creating}
-          type="button"
-          title={t("New note")}
-          aria-label={t("New note")}
-          disabled={creating}
           onClick={() => void onCreate()}
-          className="shrink-0"
+          startIcon={<Plus className="icon-sm" />}
         >
-          {creating ? (
-            <LoaderCircle className="size-3.5 animate-spin" strokeWidth={1.75} />
-          ) : (
-            <Plus className="size-3.5" strokeWidth={1.75} />
-          )}
+          {t("New note")}
         </Button>
       </div>
+      {notes.length > 0 || filtered || loading ? (
+        <div className="flex shrink-0 items-center gap-1 px-2 py-1">
+          <SearchInputGroup appearance="field" className="min-w-0 flex-1">
+            <Search className="icon-xs shrink-0 text-(--ui-text-secondary)" aria-hidden="true" />
+            <SearchInput
+              focusOwner="group"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("Filter notes")}
+              aria-label={t("Filter notes")}
+              aria-busy={searchingBody}
+              spellCheck={false}
+              autoComplete="off"
+            />
+            {searchingBody ? (
+              <span role="status" aria-label={t("Searching note content…")}>
+                <WorkingIndicator size="xs" />
+              </span>
+            ) : null}
+          </SearchInputGroup>
+          <FilterTrigger
+            label={t("Filters and options")}
+            icon={<SlidersHorizontal className="icon-sm" />}
+            activeCount={scopeFilterCount}
+            onReset={clearScopeFilters}
+            resetLabel={t("Reset project and tag filters")}
+            size="sm"
+            ref={filtersButton}
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={filtersOpen}
+            onClick={(event) => {
+              event.currentTarget.focus();
+              setFiltersOpen((open) => !open);
+            }}
+            className="shrink-0"
+          />
+        </div>
+      ) : null}
       {filtersOpen ? (
         <Popover
           anchor={filtersButton}
           align="end"
           width={320}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Filters and options")}
-          autoFocus
-          onDismiss={() => setFiltersOpen(false)}
+          flow="scroll"
+          onDismiss={(reason) => {
+            setFiltersOpen(false);
+            // The shared trigger re-renders with its count while a filter changes, so
+            // return focus to the current trigger instead of the one that opened this.
+            if (reason === "escape") filtersButton.current?.focus();
+          }}
           className="note-filters-popover"
         >
           <div className="note-library-controls">
             <SearchableSelect
+              hideLabel
               label={t("Filter by project")}
               value={projectFilter ?? "all"}
               onChange={(value) => setProjectFilter(value === "all" ? null : value)}
@@ -722,6 +964,7 @@ export function NotesView({
               ]}
             />
             <SearchableSelect
+              hideLabel
               label={t("Filter by tag")}
               value={tagFilter ?? ""}
               onChange={(value) => setTagFilter(value || null)}
@@ -731,6 +974,7 @@ export function NotesView({
               ]}
             />
             <Select
+              hideLabel
               label={t("Group notes by")}
               value={libraryPreferences.grouping}
               onValueChange={(value) =>
@@ -746,6 +990,7 @@ export function NotesView({
               ]}
             />
             <Select
+              hideLabel
               label={t("Sort notes by")}
               value={libraryPreferences.sort}
               onValueChange={(value) =>
@@ -765,35 +1010,34 @@ export function NotesView({
       ) : null}
       {selectionMode ? (
         <div className="note-bulk-actions">
-          <label className="note-select-all">
-            <Checkbox
-              aria-label={t("Select all filtered notes")}
-              disabled={bulkDeleting || visible.length === 0}
-              checked={visible.length > 0 && visible.every((note) => checkedIds.has(note.id))}
-              indeterminate={
-                visible.some((note) => checkedIds.has(note.id)) &&
-                !visible.every((note) => checkedIds.has(note.id))
-              }
-              onChange={(event) => {
-                const checked = event.target.checked;
-                setCheckedIds((current) => {
-                  const next = new Set(current);
-                  for (const note of visible) {
-                    if (checked) next.add(note.id);
-                    else next.delete(note.id);
-                  }
-                  return next;
-                });
-              }}
-            />
-            <span>{t("{p0} selected", { p0: checkedIds.size })}</span>
-          </label>
+          <Checkbox
+            aria-label={t("Select all filtered notes")}
+            disabled={bulkDeleting || visible.length === 0}
+            checked={visible.length > 0 && visible.every((note) => checkedIds.has(note.id))}
+            indeterminate={
+              visible.some((note) => checkedIds.has(note.id)) &&
+              !visible.every((note) => checkedIds.has(note.id))
+            }
+            onChange={(event) => {
+              const checked = event.target.checked;
+              setCheckedIds((current) => {
+                const next = new Set(current);
+                for (const note of visible) {
+                  if (checked) next.add(note.id);
+                  else next.delete(note.id);
+                }
+                return next;
+              });
+            }}
+            label={t("{p0} selected", { p0: checkedIds.size })}
+            className="note-select-all"
+          />
           <Button
             tone="danger"
             disabled={checkedIds.size === 0 || bulkDeleting}
             onClick={() => setDeleteTargets(notes.filter((note) => checkedIds.has(note.id)))}
           >
-            <Trash2 className="size-3.5" />
+            <Trash2 className="icon-sm" />
             {t("Delete selected")}
           </Button>
           <Button
@@ -808,51 +1052,48 @@ export function NotesView({
           </Button>
         </div>
       ) : null}
-      <div
-        className="flex min-h-9 items-center justify-between gap-2 border-b border-stroke px-3 text-[11px] text-content/65"
-        aria-live="polite"
-      >
-        <span>{t("{p0} of {p1} notes", { p0: visible.length, p1: notes.length })}</span>
-        {filtered ? (
-          <Button variant="ghost" size="sm" type="button" onClick={clearFilters}>
+      {filtered ? (
+        <div className="flex justify-end px-2 pb-1">
+          <Button variant="link" onClick={clearFilters}>
             {t("Clear filters")}
           </Button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
       <div
-        ref={setListScroller}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-none"
-        onScroll={(event) => {
-          rememberedLibraryScroll = event.currentTarget.scrollTop;
+        ref={listScroller}
+        className="min-h-0 flex-1 overflow-hidden flex flex-col"
+        onScroll={() => setMenu((current) => (current && "x" in current ? null : current))}
+        onContextMenu={(event) => {
+          // Rows and headings own their menus; only empty space and the empty state reach here.
+          if ((event.target as Element).closest("button, a, input, [role='alert']")) return;
+          event.preventDefault();
+          openMenu({ kind: "library" }, { x: event.clientX, y: event.clientY });
         }}
       >
-        {error ? (
+        {actionFailure ? (
           <Alert tone="danger" className="">
             {t("Could not load or update notes: ")}
-            {error}{" "}
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              onClick={() => void refresh()}
-              className="underline"
-            >
-              {t("Retry")}
-            </Button>
-          </Alert>
-        ) : null}
-        {searchError ? (
-          <Alert tone="danger" className="">
-            {t("Could not load or update notes: ")}
-            {searchError}{" "}
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              onClick={() => void refresh()}
-              className="underline"
-            >
-              {t("Retry")}
+            {actionFailure.message}{" "}
+            {actionFailure.retry ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                loading={
+                  actionFailure.kind === "create"
+                    ? creating
+                    : actionFailure.kind === "chat"
+                      ? addingToChat
+                      : bulkDeleting
+                }
+                onClick={() => actionFailure.retry?.()}
+                className="underline"
+              >
+                {t("Retry")}
+              </Button>
+            ) : null}
+            <Button variant="ghost" size="sm" type="button" onClick={() => setActionFailure(null)}>
+              {t("Dismiss")}
             </Button>
           </Alert>
         ) : null}
@@ -868,131 +1109,130 @@ export function NotesView({
             </Alert>
           ))}
         {loading && notes.length === 0 ? (
-          <div className="flex justify-center py-10 text-content/40">
-            <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
-          </div>
-        ) : error && notes.length === 0 ? null : visible.length === 0 ? (
-          <EmptyState
-            description={
-              filtered
-                ? t("No matching notes")
-                : t("No notes yet. Save a turn from the transcript, or create one here.")
-            }
-          />
+          <LoadingText layout="fill" className="py-10">
+            {t("Loading notes…")}
+          </LoadingText>
         ) : (
-          <div className="p-1.5" data-note-library>
-            {libraryWindow.groups.map((group) => (
-              <section key={group.key}>
-                {libraryPreferences.grouping !== "none" ? (
-                  <Button
-                    variant="item"
-                    size="sm"
-                    motion="none"
-                    type="button"
-                    className="note-group-heading"
-                    title={group.path}
-                    aria-expanded={!collapsedGroups.has(group.key)}
-                    onClick={() =>
-                      setCollapsedGroups((current) => {
-                        const next = new Set(current);
-                        if (next.has(group.key)) next.delete(group.key);
-                        else next.add(group.key);
-                        return next;
-                      })
-                    }
-                  >
-                    <ChevronDown
-                      className={`size-3 shrink-0 ${collapsedGroups.has(group.key) ? "-rotate-90" : ""}`}
-                    />
-                    <span className="min-w-0 flex-1 truncate">
-                      {group.label ||
+          <div data-note-library className="min-h-0 flex flex-1 flex-col">
+            <ContinuousList
+              fill
+              className="p-1.5 overscroll-none"
+              label={t("Notes")}
+              items={libraryRows}
+              stateKey={`notes:${JSON.stringify([libraryPreferences.grouping, libraryPreferences.sort, projectFilter, tagFilter])}`}
+              itemKey={(row) =>
+                row.kind === "heading"
+                  ? `group:${row.group.key}`
+                  : `note:${row.group.key}:${row.note.id}`
+              }
+              requiredKey={
+                selectedSummary && selectedRowGroup
+                  ? `note:${selectedRowGroup.key}:${selectedSummary.id}`
+                  : null
+              }
+              estimateSize={76}
+              loading={notesQuery.isFetching || searchingBody}
+              error={listError ?? searchError}
+              onRetry={() => {
+                if (listError) void refresh();
+                else setSearchRevision((value) => value + 1);
+              }}
+              emptyMessage={
+                searchingBody
+                  ? t("Searching note content…")
+                  : filtered
+                    ? t("No matching notes")
+                    : t("No notes yet. Save a turn from the transcript, or create one here.")
+              }
+              renderItem={(row) =>
+                row.kind === "heading" ? (
+                  <div role="listitem">
+                    <NoteGroupHeading
+                      group={{ ...row.group, totalNotes: row.group.notes.length }}
+                      label={
+                        row.group.label ||
                         (libraryPreferences.grouping === "project"
                           ? t("No project")
-                          : t("Untagged"))}
-                    </span>
-                    <span className="tabular-nums text-content/60">{group.totalNotes}</span>
-                  </Button>
-                ) : null}
-                {collapsedGroups.has(group.key) ? null : (
-                  <ul className="flex flex-col gap-0.5">
-                    {group.notes.map((note) => (
-                      <li key={note.id} className="note-selectable-row">
-                        {selectionMode ? (
-                          <Checkbox
-                            aria-label={t("Select note: {p0}", { p0: note.title })}
-                            checked={checkedIds.has(note.id)}
-                            disabled={bulkDeleting}
-                            onChange={() => toggleChecked(note.id)}
-                          />
-                        ) : null}
-                        <NoteCard
-                          note={note}
-                          group={group.key}
-                          active={selectedSummary?.id === note.id}
-                          logos={logos}
-                          mascots={groupMascots}
-                          colors={groupColors}
-                          customColors={groupCustomColors}
-                          onSelect={() => {
-                            if (selectionMode) {
-                              toggleChecked(note.id);
-                              return;
-                            }
-                            setSelectedGroup(group.key);
-                            setSelectedId(note.id);
-                            setMobileListVisible(false);
-                          }}
-                          onNavigate={(event) => navigateNote(event, note.id, group.key)}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-            ))}
+                          : t("Untagged"))
+                      }
+                      collapsed={collapsedGroups.has(row.group.key)}
+                      menuOpen={menu?.target.kind === "group" && menu.target.key === row.group.key}
+                      onToggle={() =>
+                        setCollapsedGroups((current) => {
+                          const next = new Set(current);
+                          if (next.has(row.group.key)) next.delete(row.group.key);
+                          else next.add(row.group.key);
+                          return next;
+                        })
+                      }
+                      onMenu={(place) =>
+                        openMenu(
+                          {
+                            kind: "group",
+                            key: row.group.key,
+                            label:
+                              row.group.label ||
+                              (libraryPreferences.grouping === "project"
+                                ? t("No project")
+                                : t("Untagged")),
+                            path: row.group.path,
+                          },
+                          place,
+                        )
+                      }
+                    />
+                  </div>
+                ) : (
+                  <div role="listitem" className="note-selectable-row">
+                    {selectionMode ? (
+                      <Checkbox
+                        aria-label={t("Select note: {p0}", { p0: row.note.title })}
+                        checked={checkedIds.has(row.note.id)}
+                        disabled={bulkDeleting}
+                        onChange={() => toggleChecked(row.note.id)}
+                      />
+                    ) : null}
+                    <NoteCard
+                      note={row.note}
+                      group={row.group.key}
+                      grouping={libraryPreferences.grouping}
+                      sort={libraryPreferences.sort}
+                      query={deferredQuery}
+                      bodyMatches={
+                        bodyMatches?.query === deferredQuery.trim() ? bodyMatches.ids : undefined
+                      }
+                      active={selectedSummary?.id === row.note.id}
+                      logos={logos}
+                      mascots={groupMascots}
+                      colors={groupColors}
+                      customColors={groupCustomColors}
+                      onSelect={() => {
+                        if (selectionMode) {
+                          toggleChecked(row.note.id);
+                          return;
+                        }
+                        setSelectedGroup(row.group.key);
+                        setSelectedId(row.note.id);
+                        setMobileListVisible(false);
+                      }}
+                      onNavigate={(event) => navigateNote(event, row.note.id, row.group.key)}
+                      menuOpen={menu?.target.kind === "note" && menu.target.id === row.note.id}
+                      onMenu={(place) =>
+                        openMenu({ kind: "note", id: row.note.id, group: row.group.key }, place)
+                      }
+                    />
+                  </div>
+                )
+              }
+            />
           </div>
         )}
       </div>
-      {libraryWindow.total > LIST_PAGE_SIZE ? (
-        <nav className="note-library-pages" aria-label={t("Notes")}>
-          <Button
-            variant="ghost"
-            size="sm"
-            type="button"
-            disabled={libraryWindow.start === 0}
-            onClick={() => {
-              setLibraryStart(libraryWindow.start - LIST_PAGE_SIZE);
-              if (listScroller.current) listScroller.current.scrollTop = 0;
-            }}
-          >
-            {t("Back")}
-          </Button>
-          <span aria-live="polite" className="tabular-nums">
-            {Math.floor(libraryWindow.start / LIST_PAGE_SIZE) + 1} /{" "}
-            {Math.ceil(libraryWindow.total / LIST_PAGE_SIZE)}
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            type="button"
-            disabled={libraryWindow.end >= libraryWindow.total}
-            onClick={() => {
-              setLibraryStart(libraryWindow.end);
-              if (listScroller.current) listScroller.current.scrollTop = 0;
-            }}
-          >
-            {t("Show more")}
-          </Button>
-        </nav>
-      ) : null}
-      <div
-        {...resize.separatorProps}
-        aria-label={t("Resize notes list")}
-        className={`absolute inset-y-0 -right-px z-10 w-1.5 cursor-col-resize touch-none ${
-          resize.dragging ? "bg-content/15" : "hover:bg-content/10"
-        }`}
-        onPointerDown={resize.onPointerDown}
-        onDoubleClick={resize.onDoubleClick}
+      <Sash
+        {...resize.sashProps}
+        label={t("Resize notes list")}
+        appearance="hidden"
+        className="absolute inset-y-0 -right-px"
       />
     </div>
   );
@@ -1001,42 +1241,38 @@ export function NotesView({
     <div
       role="region"
       aria-label={t("Notes")}
+      ref={workspaceRef}
       data-app-notes
       data-library-visible={mobileListVisible}
       className="notes-workspace flex min-h-0 min-w-0 flex-1 flex-col text-content"
     >
-      <div
-        className="flex h-10 shrink-0 select-none items-center border-b border-stroke"
-        data-tauri-drag-region="deep"
+      <PaneHeader
+        dragRegion
+        chromeInset={!besideRail ? true : compactRail ? "compact" : false}
+        className="select-none"
+        leading={
+          besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
+        }
+        trailing={IS_MAC ? null : <WindowControls />}
       >
-        {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
-        {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
-        {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
         <ToolHeader>
-          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
-            <File className="size-3.5 shrink-0 text-content/45" strokeWidth={1.75} />
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
+            <File className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
             <span className="min-w-0 truncate text-content">{t("Notes")}</span>
           </div>
         </ToolHeader>
-        {IS_MAC ? null : <WindowControls />}
-      </div>
+      </PaneHeader>
       <div className="note-mobile-navigation">
-        <Button
-          variant="tab"
-          selected={mobileListVisible}
-          aria-pressed={mobileListVisible}
-          onClick={() => setMobileListVisible(true)}
-        >
-          {t("Notes")}
-        </Button>
-        <Button
-          variant="tab"
-          selected={!mobileListVisible}
-          aria-pressed={!mobileListVisible}
-          onClick={() => setMobileListVisible(false)}
-        >
-          {t("Editor")}
-        </Button>
+        <SegmentedControl
+          label={t("Notes sections")}
+          selectionRole="pressed"
+          value={mobileListVisible ? "list" : "editor"}
+          onValueChange={(value) => setMobileListVisible(value === "list")}
+          options={[
+            { value: "list", label: t("Notes") },
+            { value: "editor", label: t("Editor") },
+          ]}
+        />
       </div>
       <div className="flex min-h-0 min-w-0 flex-1">
         {list}
@@ -1045,10 +1281,27 @@ export function NotesView({
           className="notes-workspace-detail flex min-h-0 min-w-0 flex-1 flex-col"
         >
           {selectedSummary && !visible.some((note) => note.id === selectedSummary.id) ? (
-            <div className="flex flex-wrap items-center gap-2 border-b border-stroke px-5 py-2 text-[12px] text-content/70">
+            <div className="flex flex-wrap items-center gap-2 border-b border-stroke px-5 py-2 text-ui-caption text-(--ui-text-secondary)">
               {t("This note is outside the current filters.")}
               <Button variant="ghost" size="sm" type="button" onClick={clearFilters}>
                 {t("Clear filters")}
+              </Button>
+            </div>
+          ) : null}
+          {selected && deferredQuery.trim() ? (
+            <div className="flex flex-wrap items-center gap-2 px-4 py-1 text-ui-caption text-(--ui-text-secondary)">
+              {t("Search in this note")}
+              <Button
+                variant="link"
+                onClick={() =>
+                  setFindRequest({
+                    noteId: selected.id,
+                    query: deferredQuery.trim(),
+                    token: ++findSequence.current,
+                  })
+                }
+              >
+                {t("Find in note")}
               </Button>
             </div>
           ) : null}
@@ -1056,17 +1309,25 @@ export function NotesView({
             <Alert tone="danger" className="">
               {t("Could not load or update notes: ")}
               {detailError}{" "}
-              <Button variant="ghost" size="sm" type="button" onClick={retryDetail}>
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                loading={detailRetrying}
+                onClick={retryDetail}
+              >
                 {t("Retry")}
               </Button>
             </Alert>
           ) : null}
           {detailLoading && !selected ? (
-            <div role="status" className="grid min-h-0 flex-1 place-items-center">
-              <LoaderCircle className="size-4 animate-spin text-content/40" strokeWidth={1.75} />
-            </div>
+            <LoadingText layout="fill" className="flex-1">
+              {t("Loading note…")}
+            </LoadingText>
           ) : (
             <NoteDetail
+              findRequest={findRequest}
+              onFindHandled={completeFind}
               note={selected}
               recents={recents}
               activeCwd={cwd}
@@ -1078,42 +1339,86 @@ export function NotesView({
         </div>
       </div>
       {deleteTargets ? (
-        <Modal
-          title={t("Delete {p0} notes permanently?", { p0: deleteTargets.length })}
-          size="sm"
-          onClose={() => {
+        <ConfirmDialog
+          key={deleteTargets.map((note) => note.id).join(",")}
+          request={{
+            title:
+              deleteTargets.length === 1
+                ? t("Delete note permanently?")
+                : t("Delete {p0} notes permanently?", { p0: deleteTargets.length }),
+            message: (
+              <span className="note-delete-description">
+                <span className="block">
+                  {t(
+                    "This cannot be undone. Unsaved changes in the selected notes will also be deleted.",
+                  )}
+                </span>
+                <span className="block">
+                  {deleteTargets
+                    .slice(0, 5)
+                    .map((note) => note.title || t("Untitled"))
+                    .join(" · ")}
+                </span>
+                {deleteTargets.length > 5 ? (
+                  <span className="block">
+                    {t("And {p0} more", { p0: deleteTargets.length - 5 })}
+                  </span>
+                ) : null}
+                {deleteTargets.some((note) => !visible.some((item) => item.id === note.id)) ? (
+                  <span className="block">
+                    {t("{p0} of them are hidden by the current filters.", {
+                      p0: deleteTargets.filter(
+                        (note) => !visible.some((item) => item.id === note.id),
+                      ).length,
+                    })}
+                  </span>
+                ) : null}
+              </span>
+            ),
+            confirmLabel: t("Confirm delete"),
+            onConfirm: async () => {
+              const problem = await deleteChecked();
+              if (problem) throw new Error(problem);
+            },
+          }}
+          onSettle={() => {
             if (!bulkBusy.current) setDeleteTargets(null);
           }}
-        >
-          <div className="note-delete-description">
-            <p>
-              {t(
-                "This cannot be undone. Unsaved changes in the selected notes will also be deleted.",
-              )}
-            </p>
-            <ul>
-              {deleteTargets.slice(0, 5).map((note) => (
-                <li key={note.id}>{note.title}</li>
-              ))}
-            </ul>
-            {deleteTargets.length > 5 ? (
-              <p>{t("And {p0} more", { p0: deleteTargets.length - 5 })}</p>
-            ) : null}
-          </div>
-          <div className="note-delete-actions">
-            <Button disabled={bulkDeleting} onClick={() => setDeleteTargets(null)}>
-              {t("Cancel")}
-            </Button>
-            <Button
-              variant="primary"
-              tone="danger"
-              loading={bulkDeleting}
-              onClick={() => void deleteChecked()}
-            >
-              {t("Confirm delete")}
-            </Button>
-          </div>
-        </Modal>
+        />
+      ) : null}
+      {menu ? (
+        <ContextMenu
+          {...("anchor" in menu
+            ? { anchor: menu.anchor, side: "bottom" as const, align: "start" as const }
+            : { x: menu.x, y: menu.y })}
+          ariaLabel={t("Note actions")}
+          width={236}
+          header={
+            <div className="min-w-0 px-2 py-1 text-ui-caption text-(--ui-text-secondary)">
+              <span className="block truncate font-medium text-content">
+                {menu.target.kind === "note"
+                  ? menuNote?.title || t("Untitled")
+                  : menu.target.kind === "group"
+                    ? menu.target.label
+                    : t("Notes")}
+              </span>
+              {menu.target.kind === "note" && menuNote?.sourceCwd ? (
+                <span className="block truncate">{projectDisplayName(menuNote.sourceCwd)}</span>
+              ) : null}
+            </div>
+          }
+          items={noteMenuItems(menu.target, {
+            openId: selectedId,
+            selectionMode,
+            checkedIds,
+            creating,
+            deleting: bulkDeleting,
+            collapsed: menu.target.kind === "group" && collapsedGroups.has(menu.target.key),
+            scopeLabel: createScopeLabel(defaultCreateScope()),
+          })}
+          onPick={pickMenu}
+          onClose={() => setMenu(null)}
+        />
       ) : null}
     </div>
   );
@@ -1160,42 +1465,13 @@ function NoteProjectMark({
   );
 }
 
-function NoteDetailTab({
-  id,
-  controls,
-  label,
-  selected,
-  onSelect,
-}: {
-  id: string;
-  controls: string;
-  label: string;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  useLocale();
-  return (
-    <Button
-      variant="tab"
-      size="sm"
-      motion="none"
-      type="button"
-      role="tab"
-      id={id}
-      aria-controls={controls}
-      tabIndex={selected ? 0 : -1}
-      aria-selected={selected}
-      onClick={onSelect}
-      selected={selected}
-    >
-      {label}
-    </Button>
-  );
-}
-
 function NoteCard({
   note,
   group,
+  grouping,
+  sort,
+  query,
+  bodyMatches,
   active,
   logos,
   mascots,
@@ -1203,71 +1479,186 @@ function NoteCard({
   customColors,
   onSelect,
   onNavigate,
+  menuOpen,
+  onMenu,
 }: {
   note: NoteSummary;
   group: string;
+  grouping: NoteGrouping;
+  sort: NoteSort;
+  query: string;
+  bodyMatches?: ReadonlySet<string>;
   active: boolean;
   onSelect: () => void;
   onNavigate: (event: ReactKeyboardEvent<HTMLButtonElement>) => void;
+  menuOpen: boolean;
+  onMenu: (place: MenuPlace) => void;
 } & ProjectMarks) {
   useLocale();
-  const preview = note.preview;
+  const date = noteLibraryDate(note, sort);
+  const validDate = Number.isFinite(date.timestamp) && date.timestamp > 0;
+  const time = validDate ? formatRelativeTime(new Date(date.timestamp).toISOString()) : "";
   const project = noteSourceProject(note.sourceCwd);
-  const time = formatRelativeTime(new Date(note.updatedAt).toISOString());
-  const hint = [note.title, project].filter(Boolean).join(" · ");
+  const match = noteLibraryMatchLocation(note, query, bodyMatches);
+  const hint = [note.title, note.sourceCwd || project, ...note.tags].filter(Boolean).join(" · ");
   return (
-    <Button
-      variant="item"
-      motion="none"
-      selected={active}
-      type="button"
-      title={hint}
-      aria-current={active ? "true" : undefined}
-      data-note-id={note.id}
-      data-note-group={group}
-      onClick={onSelect}
-      onKeyDown={onNavigate}
-      className="note-library-card flex w-full flex-col"
-    >
-      <span className="flex items-center gap-2">
-        {project && note.sourceCwd ? (
-          <span className="min-w-0 flex-1 text-[11px] text-content/50">
-            <NoteProjectMark
-              cwd={note.sourceCwd}
-              logos={logos}
-              mascots={mascots}
-              colors={colors}
-              customColors={customColors}
-            />
+    <ActionHost selected={active} className="min-w-0 flex-1 items-start">
+      {/* The tag badges hold their own "+N" button, which cannot sit inside the row button: the tag
+        line is a sibling laid over the row (clicks outside the badges fall through to the row)
+        and the row keeps the line's height. It also holds the gutter the row actions cover. */}
+      <div className="relative min-w-0 flex-1">
+        <Button
+          data-action-primary=""
+          variant="item"
+          layout="stacked"
+          motion="none"
+          tooltip={hint}
+          aria-current={active ? "true" : undefined}
+          aria-haspopup="menu"
+          data-note-id={note.id}
+          data-note-group={group}
+          onClick={onSelect}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onMenu({ x: event.clientX, y: event.clientY });
+          }}
+          onKeyDown={(event) => {
+            if (isMenuKey(event)) {
+              event.preventDefault();
+              onMenu({ anchor: event.currentTarget });
+            } else onNavigate(event);
+          }}
+          className="w-full min-w-0"
+        >
+          <span className="line-clamp-2 min-w-0 wrap-anywhere text-ui-secondary font-medium">
+            {note.title || t("Untitled")}
           </span>
-        ) : (
-          <span className="min-w-0 flex-1" />
-        )}
-        {time ? (
-          <span className="shrink-0 text-[11px] tabular-nums text-content/45">{time}</span>
+          <span className="line-clamp-1 text-ui-caption text-(--ui-text-secondary)">
+            {match === "content" ? t("Match in note") : note.preview || t("No preview")}
+          </span>
+          <span className="flex min-w-0 flex-nowrap items-center gap-x-2 overflow-hidden text-ui-micro text-(--ui-text-secondary)">
+            {grouping !== "project" && project && note.sourceCwd ? (
+              <span className="min-w-0 max-w-full truncate">
+                <NoteProjectMark
+                  cwd={note.sourceCwd}
+                  logos={logos}
+                  mascots={mascots}
+                  colors={colors}
+                  customColors={customColors}
+                />
+              </span>
+            ) : null}
+            {time ? (
+              <Timestamp
+                value={date.timestamp}
+                format="relative"
+                prefix={t(date.label)}
+                className="shrink-0"
+              />
+            ) : null}
+            {!note.preview ? <span className="sr-only">{t("No preview")}</span> : null}
+            {/* Empty trailing gutter: the row actions sit over it, so the title, preview and meta never move. */}
+            {note.tags.length ? null : (
+              <span data-action-yield="" aria-hidden="true" className="ms-auto shrink-0" />
+            )}
+          </span>
+          {note.tags.length ? <span aria-hidden="true" className="mt-1 block h-4" /> : null}
+        </Button>
+        {note.tags.length ? (
+          <div className="pointer-events-none absolute inset-x-[calc(var(--space-3)+1px)] bottom-[calc(var(--space-2)+1px)] flex h-4 items-center gap-2">
+            <BadgeList
+              label={t("Tags")}
+              size="xs"
+              items={note.tags.map((tag) => ({ id: tag, label: `#${tag}` }))}
+              className="pointer-events-auto"
+            />
+            <span data-action-yield="" aria-hidden="true" className="ms-auto shrink-0" />
+          </div>
         ) : null}
-      </span>
-      <span className="mt-1 line-clamp-1 text-[13px] font-semibold leading-snug text-content">
-        {note.title}
-      </span>
-      {preview ? (
-        <span className="mt-1 line-clamp-1 text-[12px] leading-snug text-content/45">
-          {preview}
-        </span>
-      ) : null}
-      {note.tags.length > 0 ? (
-        <span className="mt-1.5 flex min-w-0 items-center gap-1 overflow-hidden">
-          {note.tags.slice(0, 3).map((tag) => (
-            <Badge key={tag} size="sm" className="max-w-24 truncate">
-              #{tag}
-            </Badge>
-          ))}
-          {note.tags.length > 3 ? (
-            <span className="shrink-0 text-(length:--ui-font-caption) text-(--ui-text-secondary)">+{note.tags.length - 3}</span>
-          ) : null}
-        </span>
-      ) : null}
-    </Button>
+      </div>
+      <div
+        data-action-slot="collapse"
+        data-action-anchor="end"
+        className="flex shrink-0 items-center"
+      >
+        <InlineAction
+          label={t("Actions for {p0}", { p0: note.title || t("Untitled") })}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={(event) => onMenu({ anchor: event.currentTarget })}
+        >
+          <MoreHorizontal className="icon-sm" />
+        </InlineAction>
+      </div>
+    </ActionHost>
+  );
+}
+
+type MenuPlace = { x: number; y: number } | { anchor: HTMLElement };
+/** The keyboard routes to a context menu: the Menu key and Shift+F10. */
+function isMenuKey(event: ReactKeyboardEvent) {
+  return event.key === "ContextMenu" || (event.shiftKey && event.key === "F10");
+}
+
+/** A project or tag group's heading: expand/collapse, with the group's own actions beside it. */
+function NoteGroupHeading({
+  group,
+  label,
+  collapsed,
+  menuOpen,
+  onToggle,
+  onMenu,
+}: {
+  group: { key: string; path?: string; totalNotes: number };
+  label: string;
+  collapsed: boolean;
+  menuOpen: boolean;
+  onToggle: () => void;
+  onMenu: (place: MenuPlace) => void;
+}) {
+  useLocale();
+  return (
+    <SectionLabel
+      collapsible
+      expanded={!collapsed}
+      onExpandedChange={onToggle}
+      count={group.totalNotes}
+      className="note-group-heading mt-1"
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onMenu({ x: event.clientX, y: event.clientY });
+      }}
+      onKeyDown={(event) => {
+        if (!isMenuKey(event)) return;
+        event.preventDefault();
+        onMenu({
+          anchor: event.target instanceof HTMLElement ? event.target : event.currentTarget,
+        });
+      }}
+      actions={
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          label={t("Actions for {p0}", { p0: label })}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={(event) => onMenu({ anchor: event.currentTarget })}
+        >
+          <MoreHorizontal className="icon-sm" />
+        </Button>
+      }
+    >
+      {group.path ? (
+        <Tooltip label={group.path}>
+          <span>{label}</span>
+        </Tooltip>
+      ) : (
+        label
+      )}
+    </SectionLabel>
   );
 }
 
@@ -1278,21 +1669,22 @@ function NoteDetail({
   onSaved,
   onDelete,
   onAddToChat,
+  findRequest,
+  onFindHandled,
 }: {
   note: Note | null;
   recents: RecentProject[];
   activeCwd?: string;
   onSaved: (note: Note) => void;
-  onDelete: (id: string, expectedUpdatedAt?: number) => Promise<boolean>;
+  onDelete: (id: string, expectedUpdatedAt?: number, parent?: NoteInputWork) => Promise<boolean>;
   onAddToChat: (note: Note) => void;
+  findRequest?: NoteFindRequest;
+  onFindHandled?: (token: number) => void;
 }) {
   useLocale();
   if (!note) {
     return (
-      <div className="flex h-full min-w-0 flex-1 flex-col items-center justify-center px-6 text-center">
-        <File className="mb-3 size-6 text-content/30" strokeWidth={1.75} />
-        <p className="text-[13px] text-content/45">{t("Select a note")}</p>
-      </div>
+      <EmptyState icon={<File />} description={t("Select a note")} className="min-w-0 flex-1" />
     );
   }
   return (
@@ -1304,6 +1696,8 @@ function NoteDetail({
       onSaved={onSaved}
       onDelete={onDelete}
       onAddToChat={onAddToChat}
+      findRequest={findRequest}
+      onFindHandled={onFindHandled}
     />
   );
 }
@@ -1315,53 +1709,42 @@ function NoteEditor({
   onSaved,
   onDelete,
   onAddToChat,
+  findRequest,
+  onFindHandled,
 }: {
   note: Note;
   recents: RecentProject[];
   activeCwd?: string;
   onSaved: (note: Note) => void;
-  onDelete: (id: string, expectedUpdatedAt?: number) => Promise<boolean>;
+  onDelete: (id: string, expectedUpdatedAt?: number, parent?: NoteInputWork) => Promise<boolean>;
   onAddToChat: (note: Note) => void;
+  findRequest?: NoteFindRequest;
+  onFindHandled?: (token: number) => void;
 }) {
   useLocale();
   const modesId = useId();
-  const panelId = `${modesId}-panel`;
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
-  const detailRef = useRef<HTMLDivElement>(null);
-  const [narrow, setNarrow] = useState(false);
-  const [narrowPane, setNarrowPane] = useState<"source" | "preview">("source");
-  useEffect(() => {
-    const node = detailRef.current;
-    if (!node || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry) setNarrow(entry.contentRect.width <= 780);
-    });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
+  const [previewEditing, setPreviewEditing] = useState(false);
+  // Mode, narrow-pane routing and toolbar target; find and image insertion read
+  // the committed values through its refs.
+  const {
+    detailRef,
+    narrow,
+    mode,
+    visibleMode,
+    modeRef,
+    setMode,
+    showSource,
+    toolbarTarget,
+    setToolbarTarget,
+    toolbarTargetRef,
+  } = useNoteEditorMode(note.id, previewEditing);
   const blank = !note.body.trim() && note.title === "Untitled";
-  const [mode, setModeState] = useRetainedState<NoteViewMode>(
-    `note-editor:${note.id}:mode`,
-    "split",
-  );
-  const setMode = (next: NoteViewMode) => {
-    if (narrow && mode === "split" && next !== "split") setNarrowPane(next);
-    else setModeState(next);
-    setToolbarTarget("source");
-  };
-  // Narrow panels show one pane without overwriting the retained desktop mode.
-  const visibleMode = narrow && mode === "split" ? narrowPane : mode;
-  const modeRef = useRef(visibleMode);
-  modeRef.current = visibleMode;
   const [draftState] = useState(() => {
     const existing = drafts.get(note.id);
-    const recover =
-      existing &&
-      (Object.keys(existing.edits.current).length > 0 ||
-        existing.project.current ||
-        existing.error ||
-        noteSaveQueues.has(note.id));
-    const draft: Draft = (recover ? existing : undefined) ?? {
+    // Reuse even a clean logical record: StrictMode can invoke this initializer
+    // twice, and a second disposable record must not replace the live owner.
+    const draft: Draft = existing ?? {
       edits: { current: {} },
       project: { current: null },
       skipSave: { current: false },
@@ -1372,6 +1755,17 @@ function NoteEditor({
     return draft;
   });
   const [edits, setEdits] = useState<Edits>(draftState.edits.current);
+  const [tagPublication, setTagPublication] = useState<{
+    value: string[];
+    proof?: NativeInputPublication;
+  } | null>(null);
+  const [bodyPublication, setBodyPublication] = useState<{
+    value: string;
+    proof?: NativeInputPublication;
+  } | null>(null);
+  const inputOwner = draftInputOwner(draftState);
+  const preparing = useNotePreparing(inputOwner);
+  useNoteExternal(inputOwner, note);
   const title = edits.title ?? note.title;
   const titleError = noteTitleError(title);
   const body = edits.body ?? note.body;
@@ -1388,27 +1782,27 @@ function NoteEditor({
     notifyDrafts();
   };
   const [deleting, setDeleting] = useState(false);
-  const [imageDrag, setImageDrag] = useState(false);
-  const [imageBusy, setImageBusy] = useState(false);
   const editsRef = draftState.edits;
   const bodyRef = useRef(body);
   const projectChangeRef = draftState.project;
   const noteRef = useRef(note);
-  const dropZoneRef = useRef<HTMLDivElement>(null);
   const titleFieldRef = useRef<HTMLInputElement>(null);
   const finalizeRef = useRef<{ title: string } | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const previewViewRef = useRef<EditorView | null>(null);
   const previewRangeRef = useRef<{ from: number; to: number } | null>(null);
-  const [previewEditing, setPreviewEditing] = useState(false);
-  const [toolbarTarget, setToolbarTarget] = useState<"source" | "preview">("source");
-  const toolbarTargetRef = useRef(toolbarTarget);
-  toolbarTargetRef.current = toolbarTarget;
+  const [actionsOpen, setActionsOpen] = useState(false);
+  // While the delete question is open, Escape answers it instead of closing the menu.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const actionsButton = useRef<HTMLButtonElement>(null);
   const [saving, setSaving] = useState(false);
   const [recovering, setRecovering] = useState(false);
-  const lastDropAt = useRef(0);
+  const recoveringRef = useRef(false);
+  const [saveAction, setSaveAction] = useState<"save" | "retry" | null>(null);
+  const saveActionRef = useRef<"save" | "retry" | null>(null);
   const skipSave = draftState.skipSave;
   const saveTimer = useRef<number | null>(null);
+  const saveTimerWork = useRef<NoteInputWork | null>(null);
   const onSavedRef = useRef(onSaved);
   bodyRef.current = body;
   // A refreshed row must not silently rebase an existing draft onto another
@@ -1421,6 +1815,36 @@ function NoteEditor({
     noteRef.current = draftState.saved ?? draftState.base;
   }
   onSavedRef.current = onSaved;
+  // Picker, preview paste, DOM and native drops; the draft owner applies the body.
+  const { imageBusy, dropZoneRef, dropZoneHandlers, insertImage, pasteImages, onPreviewPaste } =
+    useNoteImageInsertion({
+      noteId: note.id,
+      inputOwner,
+      draftState,
+      bodyRef,
+      modeRef,
+      toolbarTargetRef,
+      editorViewRef,
+      previewViewRef,
+      previewRangeRef,
+      onInserted: (value) => {
+        editNote({ body: value });
+        setSaveError(null);
+        scheduleSave();
+      },
+      onError: setSaveError,
+    });
+  useNoteTextInput(inputOwner, "title", titleFieldRef);
+  useNoteInputState(inputOwner, "library-state", {
+    mode: visibleMode,
+    previewEditing,
+    previewRange: previewRangeRef.current,
+    saving,
+    recovering,
+    deleting,
+    imageBusy,
+    finalize: finalizeRef.current,
+  });
   const time = formatRelativeTime(new Date(note.updatedAt).toISOString());
   useEffect(() => {
     const sync = () => {
@@ -1432,16 +1856,31 @@ function NoteEditor({
     return () => window.removeEventListener(DRAFT_CHANGED_EVENT, sync);
   }, [draftState]);
 
-  const editNote = useCallback((change: Edits) => {
-    const next = { ...editsRef.current, ...change };
-    editsRef.current = next;
-    if (change.body !== undefined) bodyRef.current = change.body;
-    setEdits(next);
-  }, []);
+  const editNote = useCallback(
+    (change: Edits) => {
+      if (!inputOwner.allowed()) return;
+      const next = { ...editsRef.current, ...change };
+      editsRef.current = next;
+      if (change.body !== undefined) bodyRef.current = change.body;
+      if (change.tags !== undefined)
+        setTagPublication({
+          value: change.tags,
+          proof: inputOwner.publishControl("tags", change.tags),
+        });
+      if (change.body !== undefined)
+        setBodyPublication({
+          value: change.body,
+          proof: inputOwner.publishControl("source", change.body),
+        });
+      setEdits(next);
+      inputOwner.changed();
+    },
+    [inputOwner],
+  );
 
-  const persist = useCallback(async (latest?: Note) => {
-    if (skipSave.current) return;
-    const current = latest ?? noteRef.current;
+  const persist = useCallback(async (latest?: Note, parent?: NoteInputWork) => {
+    if (skipSave.current || draftState.unadmittedInputs?.length) return;
+    const current = latest ?? draftState.saved ?? noteRef.current;
     const changes = editsRef.current;
     const nextBody = changes.body ?? current.body;
     const titleFocused = document.activeElement === titleFieldRef.current;
@@ -1467,6 +1906,11 @@ function NoteEditor({
       if (remaining.tags === changes.tags) delete remaining.tags;
       editsRef.current = remaining;
       bodyRef.current = remaining.body ?? saved.body;
+      const publishedTags = remaining.tags ?? saved.tags;
+      setTagPublication({
+        value: publishedTags,
+        proof: inputOwner.publishControl("tags", publishedTags, parent),
+      });
       setEdits(remaining);
       if (projectChangeRef.current === nextProject) {
         projectChangeRef.current = null;
@@ -1483,189 +1927,123 @@ function NoteEditor({
       sameTags(nextTags, current.tags) &&
       (!nextProject || nextProject.path === current.sourceCwd)
     ) {
-      acceptSaved(current);
+      if (parent) parent.apply(() => acceptSaved(current));
+      else acceptSaved(current);
       return current;
     }
     setSaving(true);
     try {
-      const saved = await upsertNote({
-        id: current.id,
-        expectedUpdatedAt: current.updatedAt,
-        title: nextTitle,
-        body: nextBody,
-        tags: nextTags,
-        ...(finalizeSlug ? { finalizeSlug: true } : {}),
-        ...(nextProject ? { sourceCwd: nextProject.path } : {}),
-      });
-      if (finalizeSlug && finalizeRef.current === finalizeRequest) finalizeRef.current = null;
-      acceptSaved(saved);
-      onSavedRef.current(saved);
+      const saved = await upsertNote(
+        {
+          id: current.id,
+          expectedUpdatedAt: current.updatedAt,
+          title: nextTitle,
+          body: nextBody,
+          tags: nextTags,
+          ...(finalizeSlug ? { finalizeSlug: true } : {}),
+          ...(nextProject ? { sourceCwd: nextProject.path } : {}),
+        },
+        parent,
+      );
+      const publish = () => {
+        if (finalizeSlug && finalizeRef.current === finalizeRequest) finalizeRef.current = null;
+        acceptSaved(saved);
+        onSavedRef.current(saved);
+      };
+      if (parent) parent.apply(publish);
+      else publish();
       return saved;
     } catch (err: unknown) {
-      setSaveError(err instanceof Error ? err.message : String(err));
+      const failed = () => setSaveError(err instanceof Error ? err.message : String(err));
+      if (parent) parent.apply(failed);
+      else failed();
       return current;
     } finally {
       setSaving(false);
     }
   }, []);
 
-  const saveNow = useCallback(() => {
-    if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
-    saveTimer.current = null;
-    return enqueueNoteSave(note.id, persist);
-  }, [note.id, persist]);
-
-  const scheduleSave = useCallback(() => {
-    if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      saveTimer.current = null;
-      void saveNow();
-    }, 400);
-  }, [saveNow]);
-
-  const insertionRange = useCallback(() => {
-    if (
-      toolbarTargetRef.current === "preview" &&
-      previewRangeRef.current &&
-      previewViewRef.current
-    ) {
-      const { from, to } = previewViewRef.current.state.selection.main;
-      return { start: previewRangeRef.current.from + from, end: previewRangeRef.current.from + to };
-    }
-    const view = editorViewRef.current;
-    if (!view || modeRef.current === "preview") {
-      const end = bodyRef.current.length;
-      return { start: end, end };
-    }
-    const { from, to } = view.state.selection.main;
-    return { start: from, end: to };
-  }, []);
-
-  const addDroppedImages = useCallback(
-    async (load: () => Promise<NoteImageAsset[]>, range: { start: number; end: number }) => {
-      setImageBusy(true);
-      setImageDrag(false);
-      try {
-        const images = await load();
-        const inserted = insertNoteImagesMarkdown(bodyRef.current, range.start, range.end, images);
-        editNote({ body: inserted.value });
-        setSaveError(null);
-        scheduleSave();
-        window.requestAnimationFrame(() => {
-          const view = editorViewRef.current;
-          if (!view || modeRef.current === "preview") return;
-          view.focus();
-          view.dispatch({
-            selection: {
-              anchor: Math.min(inserted.cursor, view.state.doc.length),
-            },
-            scrollIntoView: true,
-          });
-        });
-      } catch (err: unknown) {
-        setSaveError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setImageBusy(false);
+  const saveNow = useCallback(
+    (parent?: NoteInputWork) => {
+      const delayed = saveTimerWork.current;
+      if (draftState.unadmittedInputs?.length) {
+        if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+        saveTimerWork.current = null;
+        delayed?.();
+        return Promise.resolve();
       }
+      const work = inputOwner.operation("save-request", parent ?? delayed ?? undefined);
+      if (!work) {
+        if (!inputOwner.closed()) setSaveError(noteInputWorkError(inputOwner).message);
+        return Promise.resolve();
+      }
+      if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      saveTimerWork.current = null;
+      return enqueueNoteSave(note.id, persist, work)
+        .catch((error) => setSaveError(String(error)))
+        .finally(() => {
+          delayed?.();
+          work();
+        });
     },
-    [editNote, scheduleSave],
+    [note.id, persist, inputOwner],
   );
 
-  const pasteImages = useCallback(
-    (files: File[]) => {
-      const range = insertionRange();
-      void addDroppedImages(() => saveNoteImagesFromFiles(note.id, files), range);
-    },
-    [addDroppedImages, insertionRange, note.id],
-  );
-
-  const insertImage = useCallback(async () => {
-    // Read the caret before the dialog takes focus from the editor.
-    const range = insertionRange();
-    let paths: string[] | null;
-    try {
-      paths = await pickImageFiles();
-    } catch (err: unknown) {
-      setSaveError(err instanceof Error ? err.message : String(err));
+  const saveFromAction = async (action: "save" | "retry") => {
+    if (saving || recovering || deleting || saveActionRef.current) return;
+    const work = inputOwner.operation(action);
+    if (!work) {
+      if (!inputOwner.closed()) setSaveError(noteInputWorkError(inputOwner).message);
       return;
     }
-    if (!paths) return;
-    await addDroppedImages(() => saveNoteImagesFromPaths(note.id, paths), range);
-  }, [addDroppedImages, insertionRange, note.id]);
-
-  // The editor takes its own pastes; this catches a paste on the preview.
-  const onPreviewPaste = (event: ReactClipboardEvent<HTMLDivElement>) => {
-    if (event.defaultPrevented || modeRef.current !== "preview") return;
-    const target = event.target as HTMLElement;
-    if (target.closest("input, textarea, [contenteditable='true']")) return;
-    const images = filesFromClipboard(event.clipboardData).filter((file) =>
-      file.type.startsWith("image/"),
-    );
-    if (images.length === 0) return;
-    event.preventDefault();
-    pasteImages(images);
+    saveActionRef.current = action;
+    setSaveAction(action);
+    try {
+      await saveNow(work);
+    } finally {
+      saveActionRef.current = null;
+      setSaveAction(null);
+      work();
+    }
   };
 
-  useEffect(() => {
-    let cancelled = false;
-    let unlisten: (() => void) | undefined;
+  const scheduleSave = useCallback(() => {
+    const work = inputOwner.operation("autosave-delay");
+    if (!work) {
+      if (!inputOwner.closed()) setSaveError(noteInputWorkError(inputOwner).message);
+      return;
+    }
+    if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
+    saveTimerWork.current?.();
+    saveTimerWork.current = work;
+    saveTimer.current = window.setTimeout(() => {
+      saveTimer.current = null;
+      void saveNow(work);
+    }, 400);
+  }, [saveNow, inputOwner]);
 
-    const toClientPoint = (x: number, y: number) => {
-      const scale = window.devicePixelRatio || 1;
-      if (scale !== 1 && (x > window.innerWidth || y > window.innerHeight)) {
-        return { x: x / scale, y: y / scale };
-      }
-      return { x, y };
-    };
-    const overDropZone = (x: number, y: number) => {
-      const zone = dropZoneRef.current;
-      if (!zone) return false;
-      const point = toClientPoint(x, y);
-      const rect = zone.getBoundingClientRect();
-      return (
-        point.x >= rect.left &&
-        point.x <= rect.right &&
-        point.y >= rect.top &&
-        point.y <= rect.bottom
-      );
-    };
-
-    void getCurrentWebview()
-      .onDragDropEvent((event) => {
-        if (event.payload.type === "leave") {
-          setImageDrag(false);
-          return;
-        }
-        const { x, y } = event.payload.position;
-        const over = overDropZone(x, y);
-        if (event.payload.type === "enter" || event.payload.type === "over") {
-          setImageDrag(over);
-          return;
-        }
-        if (event.payload.type !== "drop") return;
-        setImageDrag(false);
-        if (!over || Date.now() - lastDropAt.current < 250) return;
-        lastDropAt.current = Date.now();
-        const range = insertionRange();
-        const paths = event.payload.paths;
-        void addDroppedImages(() => saveNoteImagesFromPaths(note.id, paths), range);
-      })
-      .then((fn) => {
-        if (cancelled) fn();
-        else unlisten = fn;
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [addDroppedImages, insertionRange, note.id]);
+  useNoteFindRequest({
+    findRequest,
+    noteId: note.id,
+    narrow,
+    mode,
+    showSource,
+    editorViewRef,
+    onFindHandled,
+  });
 
   useEffect(() => {
     draftState.mounts = (draftState.mounts ?? 0) + 1;
+    inputOwner.changed();
     return () => {
       draftState.mounts = Math.max(0, (draftState.mounts ?? 1) - 1);
+      inputOwner.external(() => {});
+      if (inputOwner.closed() && !saveTimerWork.current) {
+        pruneDraft(note.id, draftState);
+        return;
+      }
       if (noteRef.current.slugPending) {
         finalizeRef.current = {
           title:
@@ -1674,7 +2052,7 @@ function NoteEditor({
       }
       void saveNow().finally(() => pruneDraft(note.id, draftState));
     };
-  }, [saveNow, draftState, note.id]);
+  }, [saveNow, draftState, note.id, inputOwner]);
 
   const onTitleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Enter") return;
@@ -1729,130 +2107,224 @@ function NoteEditor({
       className="note-detail min-h-0 min-w-0 flex-1"
     >
       <SurfaceSelection
+        {...noteInputBudgetHandlers(inputOwner, (field) =>
+          field.getAttribute("aria-label") === t("Add note tag")
+            ? "tags"
+            : field.getAttribute("aria-label") === t("Note title")
+              ? "title"
+              : undefined,
+        )}
         className="note-detail-content"
         allowNotes={false}
         cwd={sourceCwd ?? undefined}
         contentVersion={body}
       >
         <header className="note-detail-header">
-          <div className="note-detail-identity flex min-w-0 items-center gap-2 text-[12px] text-content/50">
-            <File className="size-3.5 shrink-0" strokeWidth={1.75} />
-            <span>{t("Note")}</span>
-            {note.slug ? <span className="min-w-0 truncate">{note.slug}</span> : null}
-            <SearchableProjectPicker
-              cwd={sourceCwd ?? "~"}
-              recents={recents}
-              mode="move"
-              railCwd={activeCwd}
-              buttonClassName="px-1.5"
-              onSelectProject={(path) => {
-                const change = { path };
-                projectChangeRef.current = change;
-                setProjectChange(change);
-                void saveNow();
-              }}
-            />
-            {time ? (
-              <span className="note-detail-updated">
-                {t("Updated ")}
-                {time}
-              </span>
-            ) : null}
-          </div>
-          <TextField
-            label={t("Note title")}
-            error={titleError}
-            hideLabel
-            ref={titleFieldRef}
-            value={title}
-            onChange={(event) => {
-              finalizeRef.current = null;
-              editNote({ title: event.target.value });
-              scheduleSave();
-            }}
-            onBlur={() => {
-              const next = title.trim() || noteTitle(body);
-              if (next !== title) editNote({ title: next });
-              if (noteRef.current.slugPending) finalizeRef.current = { title: next };
-              void saveNow();
-            }}
-            onKeyDown={onTitleKeyDown}
-            aria-label={t("Note title")}
-            fieldClassName="note-detail-title"
-            placeholder={t("Untitled")}
-          />
-          <details className="note-detail-tags">
-            <summary>
-              {t("Tags")}
-              {tags.length ? ` · ${tags.length}` : ""}
-            </summary>
-            <NoteTagsEditor
-              tags={tags}
-              onChange={(next) => {
-                editNote({ tags: next });
+          <div className="note-detail-titlerow">
+            <TextField
+              label={t("Note title")}
+              error={titleError}
+              hideLabel
+              ref={titleFieldRef}
+              value={title}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (!inputOwner.allowed() || !inputOwner.canRetainText("title", value)) {
+                  inputOwner.external(() => {
+                    draftState.unadmittedInputs = [
+                      ...new Set([...(draftState.unadmittedInputs ?? []), "title"]),
+                    ];
+                    editsRef.current = { ...editsRef.current, title: value };
+                    setEdits(editsRef.current);
+                    setSaveError(
+                      t(
+                        "This input was not admitted. Your text is retained; open the note to edit it.",
+                      ),
+                    );
+                  });
+                  return;
+                }
+                draftState.unadmittedInputs = draftState.unadmittedInputs?.filter(
+                  (key) => key !== "title",
+                );
+                finalizeRef.current = null;
+                editNote({ title: value });
                 scheduleSave();
               }}
-            />
-          </details>
-          <div className="note-detail-actions">
-            <Button
-              variant="primary"
-              size="sm"
-              type="button"
-              disabled={!canAddToChat}
-              onClick={() => onAddToChat(draft)}
-            >
-              <MessageSquarePlus className="size-3.5" strokeWidth={1.75} />
-              {t("Add to chat")}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={saving}
-              disabled={deleting}
-              onClick={() => void saveNow()}
-            >
-              {t("Save")}
-            </Button>
-            <ConfirmMorph
-              disabled={deleting}
-              label={t("Delete")}
-              icon={<Trash2 className="size-3.5" />}
-              prompt={t("Delete note permanently?")}
-              confirmTimeout={0}
-              onConfirm={async () => {
-                setDeleting(true);
-                skipSave.current = true;
-                if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
-                try {
-                  await enqueueNoteSave(note.id, async () => {
-                    if (!(await onDelete(note.id, noteRef.current.updatedAt)))
-                      throw new Error(t("Delete failed"));
-                  });
-                } catch (reason) {
-                  skipSave.current = false;
-                  setDeleting(false);
-                  scheduleSave();
-                  throw reason;
-                }
+              onBlur={() => {
+                if (!inputOwner.allowed() || draftState.unadmittedInputs?.includes("title")) return;
+                const next = title.trim() || noteTitle(body);
+                if (next !== title) editNote({ title: next });
+                if (noteRef.current.slugPending) finalizeRef.current = { title: next };
+                void saveNow();
               }}
+              onKeyDown={onTitleKeyDown}
+              readOnly={preparing}
+              aria-label={t("Note title")}
+              fieldClassName="note-detail-title"
+              placeholder={t("Untitled")}
             />
+            <div className="note-detail-actions">
+              {preparing ? (
+                <span role="status">{t("Preparing checkpoint…")}</span>
+              ) : (
+                <NoteSaveStatus
+                  state={
+                    deleting
+                      ? "deleting"
+                      : saveError
+                        ? "failed"
+                        : titleError
+                          ? "attention"
+                          : recovering
+                            ? "recovering"
+                            : saving || saveAction
+                              ? "saving"
+                              : dirty
+                                ? "unsaved"
+                                : "saved"
+                  }
+                />
+              )}
+              <Button
+                variant={dirty || saveError ? "secondary" : "ghost"}
+                size="sm"
+                loading={saveAction === "save" || (saving && saveAction !== "retry")}
+                disabled={preparing || deleting || recovering || saveAction === "retry"}
+                onClick={() => void saveFromAction("save")}
+              >
+                {t("Save")}
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={!canAddToChat}
+                onClick={() => onAddToChat(draft)}
+                startIcon={<MessageSquarePlus className="icon-sm" />}
+              >
+                {t("Add to chat")}
+              </Button>
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Note actions")}
+                ref={actionsButton}
+                disabled={deleting}
+                aria-haspopup="dialog"
+                aria-expanded={actionsOpen}
+                onClick={() => setActionsOpen((open) => !open)}
+              >
+                <MoreHorizontal className="icon-sm" />
+              </Button>
+              {actionsOpen ? (
+                <Popover
+                  anchor={actionsButton}
+                  align="end"
+                  width={320}
+                  role="dialog"
+                  aria-label={t("Note actions")}
+                  onDismiss={deleting ? undefined : () => setActionsOpen(false)}
+                  dismissOnEscape={!confirmingDelete}
+                  autoFocus
+                  className="p-3"
+                >
+                  <div className="flex min-w-0 flex-col gap-2 text-ui-caption text-(--ui-text-secondary)">
+                    <span className="wrap-anywhere">{note.title}</span>
+                    {note.slug ? (
+                      <span className="wrap-anywhere">
+                        {t("Note")}: {note.slug}
+                      </span>
+                    ) : null}
+                    {sourceCwd ? (
+                      <span className="wrap-anywhere">
+                        {t("Project")}: {sourceCwd}
+                      </span>
+                    ) : null}
+                    <span>
+                      {t("Created")}: {new Date(note.createdAt).toLocaleString()}
+                    </span>
+                    <span>
+                      {t("Updated")}: {new Date(note.updatedAt).toLocaleString()}
+                      {time ? ` · ${time}` : ""}
+                    </span>
+                    <span className="flex">
+                      <ConfirmMorph
+                        disabled={deleting}
+                        label={t("Delete")}
+                        icon={<Trash2 className="icon-sm" />}
+                        prompt={t("Delete note permanently?")}
+                        confirmTimeout={0}
+                        onStateChange={(state) => setConfirmingDelete(state === "confirming")}
+                        onConfirm={async () => {
+                          const work = inputOwner.operation("delete");
+                          if (!work) throw noteInputWorkError(inputOwner);
+                          setDeleting(true);
+                          skipSave.current = true;
+                          if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
+                          saveTimer.current = null;
+                          saveTimerWork.current?.();
+                          saveTimerWork.current = null;
+                          try {
+                            await enqueueNoteSave(
+                              note.id,
+                              async (_latest, queued) => {
+                                if (!(await onDelete(note.id, noteRef.current.updatedAt, queued)))
+                                  throw new Error(t("Delete failed"));
+                              },
+                              work,
+                            );
+                          } catch (reason) {
+                            skipSave.current = false;
+                            setDeleting(false);
+                            scheduleSave();
+                            throw reason;
+                          } finally {
+                            work();
+                          }
+                        }}
+                      />
+                    </span>
+                  </div>
+                </Popover>
+              ) : null}
+            </div>
           </div>
-          <Badge
-            role="status"
-            tone={saveError ? "danger" : saving ? "info" : dirty ? "warning" : "neutral"}
-            className="note-detail-status"
-          >
-            {saveError
-              ? t("Unsaved changes")
-              : saving
-                ? t("Saving…")
-                : dirty
-                  ? t("Unsaved changes")
-                  : t("Saved")}
-            {" · "}
-            <NoteWordCount body={body} />
-          </Badge>
+          <div className="note-detail-meta">
+            <div className="flex min-w-0 items-center gap-1" aria-label={t("Note project")}>
+              <SearchableProjectPicker
+                cwd={sourceCwd ?? "~"}
+                recents={recents}
+                mode="move"
+                railCwd={activeCwd}
+                buttonClassName="px-1.5"
+                onSelectProject={(path) => {
+                  if (!inputOwner.allowed()) return;
+                  const change = { path };
+                  projectChangeRef.current = change;
+                  setProjectChange(change);
+                  inputOwner.changed();
+                  void saveNow();
+                }}
+              />
+            </div>
+            <div className="note-detail-tags">
+              <NoteTagsEditor
+                inputObserver={inputOwner.observer("tags")}
+                inputPublication={
+                  tagPublication?.value === tags
+                    ? tagPublication.proof
+                    : inputOwner.resultControlPublication(note, "tags", tags)
+                }
+                tags={tags}
+                onChange={(next) => {
+                  editNote({ tags: next });
+                  scheduleSave();
+                }}
+              />
+            </div>
+            <span className="note-detail-words">
+              <NoteWordCount body={body} />
+            </span>
+          </div>
           {saveError ? (
             <Alert tone="danger" className="note-detail-error">
               <span>
@@ -1863,10 +2335,9 @@ function NoteEditor({
                 variant="ghost"
                 size="sm"
                 type="button"
-                onClick={() => {
-                  setSaveError(null);
-                  void saveNow();
-                }}
+                loading={saveAction === "retry"}
+                disabled={recovering || deleting || (saving && saveAction !== "retry")}
+                onClick={() => void saveFromAction("retry")}
                 className="shrink-0 underline hover:no-underline"
               >
                 {t("Retry")}
@@ -1874,20 +2345,40 @@ function NoteEditor({
               <Button
                 variant="ghost"
                 size="sm"
-                disabled={recovering}
+                loading={recovering}
+                disabled={saving || deleting}
                 onClick={async () => {
+                  if (recoveringRef.current) return;
+                  const work = inputOwner.operation("recovery-copy");
+                  if (!work) {
+                    if (!inputOwner.closed()) setSaveError(noteInputWorkError(inputOwner).message);
+                    return;
+                  }
+                  recoveringRef.current = true;
                   setRecovering(true);
                   try {
-                    await createRecoveredNote({ title, body, tags, sourceCwd });
-                    editsRef.current = {};
-                    projectChangeRef.current = null;
-                    setEdits({});
+                    const submittedEdits = { ...editsRef.current };
+                    const submittedProject = projectChangeRef.current;
+                    await createRecoveredNote({ title, body, tags, sourceCwd }, work);
+                    const remaining = { ...editsRef.current };
+                    if (remaining.title === submittedEdits.title) delete remaining.title;
+                    if (remaining.body === submittedEdits.body) delete remaining.body;
+                    if (remaining.tags === submittedEdits.tags) delete remaining.tags;
+                    editsRef.current = remaining;
+                    bodyRef.current = remaining.body ?? noteRef.current.body;
+                    setEdits(remaining);
+                    if (projectChangeRef.current === submittedProject) {
+                      projectChangeRef.current = null;
+                      setProjectChange(null);
+                    }
                     setSaveError(null);
                     window.dispatchEvent(new Event(NOTES_CHANGED_EVENT));
                   } catch (error) {
                     setSaveError(error instanceof Error ? error.message : String(error));
                   } finally {
+                    recoveringRef.current = false;
                     setRecovering(false);
+                    work();
                   }
                 }}
               >
@@ -1896,120 +2387,80 @@ function NoteEditor({
             </Alert>
           ) : null}
         </header>
-        <div className="note-editor-toolbar flex flex-wrap items-center gap-x-4 border-b border-stroke">
-          <div
-            role="tablist"
-            aria-label={t("Note sections")}
-            onKeyDown={(event) => {
-              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-              const tabs = [
-                ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
-              ];
-              const index = tabs.indexOf(event.target as HTMLButtonElement);
-              if (index < 0) return;
-              event.preventDefault();
-              const next =
-                event.key === "Home"
-                  ? 0
-                  : event.key === "End"
-                    ? tabs.length - 1
-                    : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
-              tabs[next]?.focus();
-              tabs[next]?.click();
-            }}
-            className="flex shrink-0 items-stretch gap-4"
-          >
-            <NoteDetailTab
-              id={`${modesId}-preview`}
-              controls={panelId}
-              label={t("Edit preview")}
-              selected={visibleMode === "preview"}
-              onSelect={() => setMode("preview")}
-            />
-            <NoteDetailTab
-              id={`${modesId}-source`}
-              controls={panelId}
-              label={t("Source")}
-              selected={visibleMode === "source"}
-              onSelect={() => setMode("source")}
-            />
-            {narrow ? null : (
-              <NoteDetailTab
-                id={`${modesId}-split`}
-                controls={panelId}
-                label={t("Split")}
-                selected={mode === "split"}
-                onSelect={() => setMode("split")}
-              />
-            )}
-          </div>
-          <NoteMarkdownToolbar
-            viewRef={previewEditing && toolbarTarget === "preview" ? previewViewRef : editorViewRef}
-            editing={editing}
-            imageBusy={imageBusy}
-            onInsertImage={() => void insertImage()}
-          />
-        </div>
-        <div
-          ref={dropZoneRef}
-          id={panelId}
-          role="tabpanel"
-          aria-labelledby={`${modesId}-${visibleMode}`}
-          data-external-drop-owner="note-images"
-          aria-busy={imageBusy}
-          className={`note-editor-body relative rounded-lg border transition-colors ${
-            imageDrag
-              ? "border-(--ui-border-accent) bg-(--ui-surface-selected)"
-              : "border-transparent"
-          }`}
-          onDragOver={(event: ReactDragEvent<HTMLDivElement>) => {
-            if (!hasDroppedFiles(event.dataTransfer)) return;
-            event.preventDefault();
-            event.dataTransfer.dropEffect = "copy";
-            setImageDrag(true);
-          }}
-          onDragLeave={(event: ReactDragEvent<HTMLDivElement>) => {
-            const next = event.relatedTarget as Node | null;
-            if (next && event.currentTarget.contains(next)) return;
-            setImageDrag(false);
-          }}
-          onDrop={(event: ReactDragEvent<HTMLDivElement>) => {
-            if (!hasDroppedFiles(event.dataTransfer)) return;
-            event.preventDefault();
-            setImageDrag(false);
-            if (Date.now() - lastDropAt.current < 250) return;
-            lastDropAt.current = Date.now();
-            const files = [...event.dataTransfer.files];
-            if (files.length === 0) return;
-            const range = insertionRange();
-            void addDroppedImages(() => saveNoteImagesFromFiles(note.id, files), range);
-          }}
+        <Tabs
+          value={visibleMode}
+          onValueChange={(next) => setMode(next as typeof mode)}
+          panels="shared"
+          id={modesId}
         >
-          {imageDrag || imageBusy ? (
-            <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-lg bg-background-base/80 text-[12px] text-content/70 backdrop-blur-sm">
-              {imageBusy ? t("Adding images…") : t("Drop images here")}
-            </div>
-          ) : null}
-          <div className={visibleMode === "split" ? "note-layout note-split" : "note-layout"}>
-            {/* Stays mounted in preview so undo history survives the switch. */}
-            <NoteEditorPane label={t("Source")} hidden={visibleMode === "preview"}>
-              <NoteMarkdownEditor
-                viewRef={editorViewRef}
-                minHeight={0}
-                autoFocus={blank}
-                value={body}
-                onChange={(next) => {
-                  editNote({ body: next });
-                  scheduleSave();
-                }}
-                onSave={() => void saveNow()}
-                onPasteImages={pasteImages}
-                onFocus={() => setToolbarTarget("source")}
-              />
-            </NoteEditorPane>
-            {visibleMode === "source" ? null : (
-              <NoteEditorPane label={t("Edit preview")}>
+          <div className="note-editor-toolbar">
+            <TabList label={t("Note sections")}>
+              <Tab value="preview">{t("Document")}</Tab>
+              <Tab value="source">{t("Source")}</Tab>
+              {narrow ? null : <Tab value="split">{t("Split")}</Tab>}
+            </TabList>
+            <NoteMarkdownToolbar
+              viewRef={
+                visibleMode === "preview"
+                  ? previewViewRef
+                  : visibleMode === "source"
+                    ? editorViewRef
+                    : previewEditing && toolbarTarget === "preview"
+                      ? previewViewRef
+                      : editorViewRef
+              }
+              editing={editing}
+              imageBusy={imageBusy}
+              onInsertImage={() => void insertImage()}
+            />
+          </div>
+          <TabPanel
+            ref={dropZoneRef}
+            tabIndex={undefined}
+            data-external-drop-owner="note-images"
+            aria-busy={imageBusy}
+            className="note-editor-body relative rounded-(--ui-radius-card) border border-(--ui-editor-border) transition-colors"
+            {...dropZoneHandlers}
+          >
+            <div className={visibleMode === "split" ? "note-layout note-split" : "note-layout"}>
+              {/* Stays mounted in preview so undo history survives the switch. */}
+              <NoteEditorPane
+                label={t("Source")}
+                scrollKey={`${note.id}:source`}
+                hidden={visibleMode === "preview"}
+                split={visibleMode === "split"}
+              >
+                <NoteMarkdownEditor
+                  inputObserver={inputOwner.observer("source")}
+                  inputPublication={
+                    bodyPublication?.value === body
+                      ? bodyPublication.proof
+                      : inputOwner.resultControlPublication(note, "source", body)
+                  }
+                  viewRef={editorViewRef}
+                  minHeight={0}
+                  autoFocus={blank && visibleMode === "source"}
+                  value={body}
+                  onChange={(next) => {
+                    editNote({ body: next });
+                    scheduleSave();
+                  }}
+                  onSave={() => void saveNow()}
+                  onPasteImages={pasteImages}
+                  onFocus={() => setToolbarTarget("source")}
+                />
+              </NoteEditorPane>
+              <NoteEditorPane
+                label={t("Document")}
+                document
+                scrollKey={`${note.id}:document`}
+                hidden={visibleMode === "source"}
+                split={visibleMode === "split"}
+              >
                 <NoteEditablePreview
+                  stateObserver={inputOwner.observer("preview-state")}
+                  inputObserver={inputOwner.observer("preview-block")}
+                  canMutate={inputOwner.allowed}
                   value={body}
                   cwd={sourceCwd}
                   viewRef={previewViewRef}
@@ -2024,56 +2475,10 @@ function NoteEditor({
                   onPasteImages={pasteImages}
                 />
               </NoteEditorPane>
-            )}
-          </div>
-        </div>
+            </div>
+          </TabPanel>
+        </Tabs>
       </SurfaceSelection>
     </div>
   );
-}
-
-function NoteTagsEditor({
-  tags,
-  onChange,
-}: {
-  tags: string[];
-  onChange: (tags: string[]) => void;
-}) {
-  useLocale();
-  return (
-    <TagInput
-      label={t("Tags")}
-      hideLabel
-      value={tags}
-      maxTags={MAX_NOTE_TAGS}
-      normalize={normalizeNoteTags}
-      backspaceBehavior="remove"
-      formatTag={(tag) => `#${tag}`}
-      placeholder={t("Add tag…")}
-      removeLabel={(tag) => t("Remove #{p0}", { p0: tag })}
-      inputProps={{ "aria-label": t("Add note tag"), spellCheck: false, autoComplete: "off" }}
-      onValueChange={(next) => {
-        if (!sameTags(next, tags)) onChange(next);
-      }}
-    />
-  );
-}
-
-function sameTags(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((tag, index) => tag === right[index]);
-}
-
-function hasDroppedFiles(data: DataTransfer | null): data is DataTransfer {
-  if (!data) return false;
-  return [...data.types].some((type) => type === "Files" || type === "application/x-moz-file");
-}
-
-function NoteWordCount({ body }: { body: string }) {
-  useLocale();
-  const deferredBody = useDeferredValue(body);
-  const count = useMemo(
-    () => (deferredBody.trim() ? deferredBody.trim().split(/\s+/u).length : 0),
-    [deferredBody],
-  );
-  return t("{p0} words", { p0: count });
 }

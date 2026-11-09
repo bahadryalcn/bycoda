@@ -9,13 +9,18 @@ import {
 import type { Session } from "../../../features/sessions/model/session";
 import {
   persistFingerprint,
+  saveSessionIdle,
   shouldPersistSession,
-  upsertSession,
   upsertSessionLive,
   type SessionSummary,
 } from "../../../features/sessions/data/sessionStore";
 import { mergeProjectHistorySummary } from "../../../features/sessions/data/sessionHistory";
 import { sessionPersistenceRevision } from "../../../features/sessions/model/sessionPersistenceRevision";
+import {
+  needsSessionOutputWrite,
+  pendingSessionOutputSnapshots,
+  subscribePendingSessionOutput,
+} from "../../../features/sessions/data/sessionOutputProjection";
 import { getSessionsRevision, sessionsRef } from "../../../features/sessions/model/sessionsStore";
 import type { WorkspaceTab } from "../../../features/workspace/model/layout";
 import { takePendingSessionWrites } from "../../model/pendingSessionWrites";
@@ -110,12 +115,15 @@ export function useSessionPersistence({
     const revision = snapshotRevision(session);
     // Leaving a session flushes it. An unchanged one would still rewrite and
     // re-diff its whole transcript under the store lock, stalling the next load.
-    if (lastPersisted.current.get(session.id) === revision) return;
-    void upsertSession(session)
-      .then((summary) => {
-        if (!summary) return;
+    if (lastPersisted.current.get(session.id) === revision && !needsSessionOutputWrite(session))
+      return;
+    // Turn end and metadata changes send a delta when a baseline exists.
+    void saveSessionIdle(session)
+      .then((saved) => {
+        if (!saved) return;
         lastPersisted.current.set(session.id, revision);
-        if (summary.cwd === sidebarCwdRef.current) {
+        const summary = saved.summary;
+        if (summary && summary.cwd === sidebarCwdRef.current) {
           setHistory((current) => mergeProjectHistorySummary(current, summary));
         }
       })
@@ -123,6 +131,38 @@ export function useSessionPersistence({
         console.warn("App operation failed", error);
       });
   }, []);
+
+  // Real reducer no-ops can add a new output origin without changing React's
+  // session object. Wake idle persistence for those applications too. Failed
+  // writes stay held; the ledger does not emit an automatic retry notification.
+  useEffect(
+    () =>
+      subscribePendingSessionOutput(() => {
+        for (const session of pendingSessionOutputSnapshots())
+          if (
+            !session.busy &&
+            needsSessionOutputWrite(session) &&
+            shouldPersistSession(session) &&
+            !removingSessionIds.current.has(session.id) &&
+            !switchingWorktrees.current.has(session.id)
+          ) {
+            const revision = snapshotRevision(session);
+            // No-op/status applications can arrive while an older save is held.
+            // Reuse the bounded live slot rather than append full snapshots.
+            void upsertSessionLive(session, {
+              shouldWrite: () =>
+                !removingSessionIds.current.has(session.id) &&
+                !switchingWorktrees.current.has(session.id),
+              onStart: () => lastPersisted.current.set(session.id, revision),
+              onFailed: () => {
+                if (lastPersisted.current.get(session.id) === revision)
+                  lastPersisted.current.delete(session.id);
+              },
+            }).catch((error) => console.warn("App operation failed", error));
+          }
+      }),
+    [persistSession],
+  );
 
   useEffect(() => {
     const liveIds = new Set(sessions.map((session) => session.id));
@@ -176,11 +216,30 @@ export function useSessionPersistence({
           )
             return;
           const revision = snapshotRevision(session);
-          if (lastPersisted.current.get(session.id) === revision) return;
-          const summary = await upsertSession(session).catch(() => null);
-          if (!summary) return;
+          if (
+            lastPersisted.current.get(session.id) === revision &&
+            !needsSessionOutputWrite(session)
+          )
+            return;
+          if (session.busy) {
+            // A running session saves through the bounded live slot.
+            await upsertSessionLive(session, {
+              shouldWrite: () =>
+                !removingSessionIds.current.has(session.id) &&
+                !switchingWorktrees.current.has(session.id),
+              onStart: () => lastPersisted.current.set(session.id, revision),
+              onFailed: () => {
+                if (lastPersisted.current.get(session.id) === revision)
+                  lastPersisted.current.delete(session.id);
+              },
+            }).catch((error) => console.warn("App operation failed", error));
+            return;
+          }
+          const saved = await saveSessionIdle(session).catch(() => null);
+          if (!saved) return;
           lastPersisted.current.set(session.id, revision);
-          if (summary.cwd === sidebarCwdRef.current) {
+          const summary = saved.summary;
+          if (summary && summary.cwd === sidebarCwdRef.current) {
             setHistory((current) => mergeProjectHistorySummary(current, summary));
           }
         }),
@@ -202,7 +261,8 @@ export function useSessionPersistence({
         )
           continue;
         const revision = snapshotRevision(session);
-        if (lastPersisted.current.get(session.id) === revision) continue;
+        if (lastPersisted.current.get(session.id) === revision && !needsSessionOutputWrite(session))
+          continue;
         // The snapshot revision is recorded when the write starts: a snapshot that
         // is replaced while queued behind a slow write never claims to be saved.
         void upsertSessionLive(session, {
@@ -215,6 +275,8 @@ export function useSessionPersistence({
               lastPersisted.current.delete(session.id);
             }
           },
+        }).catch((error) => {
+          console.warn("Live session persistence failed", error);
         });
       }
     }, LIVE_PERSIST_MS);

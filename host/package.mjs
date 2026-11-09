@@ -1,8 +1,42 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile, chmod, copyFile, readdir, rm, utimes } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  writeFile,
+  chmod,
+  copyFile,
+  cp,
+  readdir,
+  rm,
+  utimes,
+  lstat,
+} from "node:fs/promises";
 import { execFileSync } from "node:child_process";
-import { resolve, join } from "node:path";
+import { resolve, join, dirname } from "node:path";
 import { createTarArchive, extractTarMembers } from "./package-archive.mjs";
+import { readBuildIdentity } from "../scripts/build/build-info.mjs";
+import { readDesktopHelper, copyDesktopHelperBundle } from "../scripts/setup/agent-desktop.mjs";
+import { signDesktopHelperBundle } from "../scripts/release/sign-desktop-helper.mjs";
+import {
+  buildHostServiceLauncher,
+  copyHostServiceLauncher,
+  readHostServiceLauncher,
+} from "../scripts/build/host-service-launcher.mjs";
+import {
+  admissionSourceFingerprint,
+  assertAdmissionPackagingSeparation,
+  copyAdmissionBundle,
+  readAdmissionBundle,
+  smokeAdmissionBundle,
+  validateAdmissionPackageDestination,
+} from "../scripts/build/physical-store-admission.mjs";
+import {
+  assertGuardianPackagingSeparation,
+  copyGuardianBundle,
+  guardianManifestName,
+  guardianSourceFingerprint,
+  readGuardianBundle,
+} from "../scripts/build/provider-guardian.mjs";
 
 // Official Node release checksums, pinned so release builds are reproducible.
 // https://nodejs.org/dist/v24.21.0/SHASUMS256.txt
@@ -41,11 +75,149 @@ const target = args.includes("--target")
   ? args[args.indexOf("--target") + 1]
   : `${process.platform}-${process.arch}`;
 const targets = args.includes("--all") ? Object.keys(runtimes) : [target];
+const launcherDirectoryIndex = args.indexOf("--host-launcher-dir");
+if (
+  launcherDirectoryIndex >= 0 &&
+  (!args[launcherDirectoryIndex + 1] || args[launcherDirectoryIndex + 1].startsWith("--"))
+)
+  throw new Error("--host-launcher-dir requires a directory");
+const launcherDirectory = resolve(
+  launcherDirectoryIndex >= 0 ? args[launcherDirectoryIndex + 1] : "build/host-launcher",
+);
+const signDesktopHelper = args.includes("--sign-desktop-helper");
+if (
+  signDesktopHelper &&
+  (process.platform !== "win32" ||
+    targets.length !== 1 ||
+    target !== `win32-${process.arch}` ||
+    !args.includes("--desktop-helper"))
+)
+  throw new Error("--sign-desktop-helper requires one local Windows target and --desktop-helper.");
+// macOS: sign the bundled helper with a stable identity so Accessibility and Screen
+// Recording grants survive Host updates. codesign exists only on macOS.
+const macosSigningIdentity =
+  process.env.BYCODA_MACOS_SIGNING_IDENTITY?.trim() || process.env.APPLE_SIGNING_IDENTITY?.trim();
+const desktopHelperCacheIndex = args.indexOf("--desktop-helper-cache");
+if (
+  desktopHelperCacheIndex >= 0 &&
+  (!args[desktopHelperCacheIndex + 1] || args[desktopHelperCacheIndex + 1].startsWith("--"))
+)
+  throw new Error("--desktop-helper-cache requires a directory");
+const desktopHelperCache =
+  desktopHelperCacheIndex >= 0 ? resolve(args[desktopHelperCacheIndex + 1]) : undefined;
+const desktopHelpers = new Map();
+for (const target of targets) {
+  if (!(target in runtimes)) throw new Error(`Unsupported host target: ${target}`);
+  const [platform, arch] = target.split("-");
+  const helper = await readDesktopHelper({ cacheRoot: desktopHelperCache, platform, arch });
+  if (!helper && (args.includes("--desktop-helper") || desktopHelperCacheIndex >= 0))
+    throw new Error(`Prepare the pinned desktop helper before packaging ${target}`);
+  if (helper) desktopHelpers.set(target, helper);
+}
+const nativeAdmission = args.includes("--native-admission");
+const admissionDirectoryIndex = args.indexOf("--native-admission-dir");
+if (
+  admissionDirectoryIndex >= 0 &&
+  (!nativeAdmission ||
+    !args[admissionDirectoryIndex + 1] ||
+    args[admissionDirectoryIndex + 1].startsWith("--"))
+)
+  throw new Error("--native-admission-dir requires --native-admission and a directory");
+const admissionDirectory = resolve(
+  admissionDirectoryIndex >= 0 ? args[admissionDirectoryIndex + 1] : "build/host-native",
+);
+const providerGuardian = args.includes("--provider-guardian");
+const guardianDirectoryIndex = args.indexOf("--provider-guardian-dir");
+if (
+  guardianDirectoryIndex >= 0 &&
+  (!providerGuardian ||
+    !args[guardianDirectoryIndex + 1] ||
+    args[guardianDirectoryIndex + 1].startsWith("--"))
+)
+  throw new Error("--provider-guardian-dir requires --provider-guardian and a directory");
+const guardianDirectory = resolve(
+  guardianDirectoryIndex >= 0 ? args[guardianDirectoryIndex + 1] : "build/host-guardian",
+);
 const output = resolve("build/host-packages");
 const cache = resolve(process.env.BYCODA_HOST_RUNTIME_CACHE ?? "build/host-runtime-cache");
 await mkdir(output, { recursive: true });
 await mkdir(cache, { recursive: true });
 const { version } = JSON.parse(await readFile("package.json", "utf8"));
+const manifestPath = process.env.BYCODA_BUILD_MANIFEST ?? resolve("build/build-info.json");
+const buildIdentity = await readBuildIdentity(manifestPath);
+if (process.env.BYCODA_BUILD_MANIFEST && !buildIdentity)
+  throw new Error("Build identity manifest is missing or invalid");
+if (buildIdentity && buildIdentity.version !== version)
+  throw new Error("Build identity version does not match the host package");
+// A present default bundle is included; an explicitly requested missing one is fatal.
+// lstat observes dangling links too, so invalid declared metadata cannot disappear.
+const guardianBundles = new Map();
+for (const target of targets) {
+  const directory = join(guardianDirectory, target);
+  let present = false;
+  try {
+    await lstat(join(directory, guardianManifestName));
+    present = true;
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (providerGuardian || present) {
+    const bundle = await readGuardianBundle(directory, target);
+    guardianBundles.set(target, { directory, manifest: bundle.manifest });
+  }
+}
+const guardianFingerprint = guardianBundles.size
+  ? await guardianSourceFingerprint(resolve("."))
+  : null;
+async function validateGuardianInputs() {
+  if (!guardianBundles.size) return;
+  await assertGuardianPackagingSeparation(
+    [...guardianBundles.values()].map((bundle) => bundle.directory),
+    output,
+    targets,
+  );
+  if ((await guardianSourceFingerprint(resolve("."))) !== guardianFingerprint)
+    throw new Error("Guardian source inputs changed before packaging");
+  for (const [target, expected] of guardianBundles) {
+    const actual = await readGuardianBundle(expected.directory, target);
+    if (
+      actual.manifest.sourceFingerprint !== guardianFingerprint ||
+      JSON.stringify(actual.manifest) !== JSON.stringify(expected.manifest)
+    )
+      throw new Error(`Guardian source/artifact mismatch for ${target}`);
+  }
+}
+await validateGuardianInputs();
+// Validate every requested native input before downloading or replacing a package.
+const admissionFingerprint = nativeAdmission
+  ? await admissionSourceFingerprint(resolve("."))
+  : null;
+if (nativeAdmission) await assertAdmissionPackagingSeparation(admissionDirectory, output, targets);
+if (nativeAdmission)
+  for (const target of targets) {
+    const bundle = await readAdmissionBundle(join(admissionDirectory, target), target);
+    if (bundle.manifest.sourceFingerprint !== admissionFingerprint)
+      throw new Error(`Native admission source mismatch for ${target}`);
+    if (target === `${process.platform}-${process.arch}`)
+      await validateAdmissionPackageDestination(output, target, bundle.manifest.artifact);
+  }
+// Windows services require a packaged native launcher. Never compile source or
+// decode a PowerShell payload on the installed machine. Validate all targets
+// before downloading runtimes or replacing a previously usable package.
+if (
+  launcherDirectoryIndex < 0 &&
+  process.platform === "win32" &&
+  targets.some((value) => value.startsWith("win32-"))
+)
+  await mkdir(launcherDirectory, { recursive: true });
+if (targets.some((value) => value.startsWith("win32-")))
+  await assertGuardianPackagingSeparation([launcherDirectory], output, targets);
+for (const target of targets.filter((value) => value.startsWith("win32-"))) {
+  const directory = join(launcherDirectory, target);
+  if (launcherDirectoryIndex < 0 && process.platform === "win32")
+    await buildHostServiceLauncher({ target, outputDirectory: directory });
+  await readHostServiceLauncher({ target, directory });
+}
 for (const target of targets) {
   if (!(target in runtimes)) throw new Error(`Unsupported host target: ${target}`);
   const windows = target.startsWith("win32-");
@@ -69,32 +241,119 @@ for (const target of targets) {
     await writeFile(archive, bytes);
   }
   const folder = join(output, target);
+  await validateGuardianInputs();
+  if (nativeAdmission) {
+    await assertAdmissionPackagingSeparation(admissionDirectory, output, targets);
+    const bundle = await readAdmissionBundle(join(admissionDirectory, target), target);
+    if (bundle.manifest.sourceFingerprint !== admissionFingerprint)
+      throw new Error(`Native admission source mismatch for ${target}`);
+    if (target === `${process.platform}-${process.arch}`)
+      await validateAdmissionPackageDestination(output, target, bundle.manifest.artifact);
+  }
   await rm(folder, { recursive: true, force: true });
   await mkdir(folder, { recursive: true });
+  // npm ships with the Node runtime so the Host can install its browser and
+  // device tools on first use without anything preinstalled on the machine.
   if (windows) {
-    if (process.platform === "win32") {
-      const unpacked = join(folder, "runtime");
+    const unpacked = join(folder, "runtime");
+    if (process.platform === "win32")
       ps(`Expand-Archive -LiteralPath ${psQuote(archive)} -DestinationPath ${psQuote(unpacked)}`);
-      await copyFile(join(unpacked, stem, "node.exe"), join(folder, "node.exe"));
-      await copyFile(join(unpacked, stem, "LICENSE"), join(folder, "LICENSE"));
-      await rm(unpacked, { recursive: true, force: true });
-    } else {
+    else
       execFileSync("unzip", [
         "-q",
-        "-j",
         archive,
         `${stem}/node.exe`,
         `${stem}/LICENSE`,
+        `${stem}/node_modules/npm/*`,
         "-d",
-        folder,
+        unpacked,
       ]);
-    }
-  } else extractTarMembers(archive, folder, [`${stem}/bin/node`, `${stem}/LICENSE`]);
+    await copyFile(join(unpacked, stem, "node.exe"), join(folder, "node.exe"));
+    await copyFile(join(unpacked, stem, "LICENSE"), join(folder, "LICENSE"));
+    await cp(join(unpacked, stem, "node_modules", "npm"), join(folder, "node_modules", "npm"), {
+      recursive: true,
+    });
+    await rm(unpacked, { recursive: true, force: true });
+  } else
+    extractTarMembers(archive, folder, [
+      `${stem}/bin/node`,
+      `${stem}/LICENSE`,
+      `${stem}/lib/node_modules/npm`,
+    ]);
   await copyFile("build/host/host.mjs", join(folder, "host.mjs"));
   await copyFile("build/host/bycoda-host.mjs", join(folder, "bycoda-host.mjs"));
+  await copyFile("build/host/host-notes-worker.mjs", join(folder, "host-notes-worker.mjs"));
+  await copyFile("build/host/store-worker.mjs", join(folder, "store-worker.mjs"));
+  await copyFile("build/host/session-read-helper.mjs", join(folder, "session-read-helper.mjs"));
+  await copyFile("build/host/snapshot-worker.mjs", join(folder, "snapshot-worker.mjs"));
+  await copyFile(
+    "build/host/workspace-cleanup-worker.mjs",
+    join(folder, "workspace-cleanup-worker.mjs"),
+  );
   await copyFile("host/provider-guard.mjs", join(folder, "provider-guard.mjs"));
+  if (windows)
+    await copyHostServiceLauncher({
+      target,
+      directory: join(launcherDirectory, target),
+      outputDirectory: folder,
+    });
+  if (desktopHelpers.has(target)) {
+    const expected = desktopHelpers.get(target),
+      [platform, arch] = target.split("-");
+    const copied = await copyDesktopHelperBundle(
+      dirname(expected.manifestPath),
+      join(folder, "agent-desktop"),
+      { platform, arch },
+    );
+    if (JSON.stringify(copied.manifest) !== JSON.stringify(expected.manifest))
+      throw new Error(`Desktop helper changed before packaging ${target}`);
+    if (platform === "darwin") {
+      if (process.platform === "darwin" && macosSigningIdentity)
+        await signDesktopHelperBundle(join(folder, "agent-desktop"), {
+          platform,
+          arch,
+          identity: macosSigningIdentity,
+        });
+      else
+        console.log(
+          `Desktop helper for ${target} stays ad-hoc signed (${
+            process.platform === "darwin"
+              ? "set BYCODA_MACOS_SIGNING_IDENTITY or APPLE_SIGNING_IDENTITY"
+              : "codesign requires macOS"
+          }); macOS resets its Accessibility and Screen Recording grants on every Host update.`,
+        );
+    } else if (signDesktopHelper)
+      await signDesktopHelperBundle(join(folder, "agent-desktop"), {
+        certificateThumbprint: process.env.BYCODA_WINDOWS_SIGNING_CERT_SHA1,
+        storeLocation: process.env.BYCODA_WINDOWS_SIGNING_STORE || "CurrentUser",
+        arch,
+      });
+  }
+  if (nativeAdmission)
+    await copyAdmissionBundle(
+      join(admissionDirectory, target),
+      folder,
+      target,
+      admissionFingerprint,
+    );
+  if (guardianBundles.has(target)) {
+    const expected = guardianBundles.get(target);
+    const copied = await copyGuardianBundle(
+      expected.directory,
+      folder,
+      target,
+      guardianFingerprint,
+    );
+    if (JSON.stringify(copied) !== JSON.stringify(expected.manifest))
+      throw new Error(`Guardian artifact changed while packaging ${target}`);
+  }
   await copyFile("LICENSE", join(folder, "BYCODA-LICENSE"));
-  await writeFile(join(folder, "version.json"), JSON.stringify({ version, nodeVersion, target }));
+  await writeFile(
+    join(folder, "version.json"),
+    JSON.stringify({ version, nodeVersion, target, ...(buildIdentity ? { buildIdentity } : {}) }),
+  );
+  if (buildIdentity)
+    await writeFile(join(folder, "build-info.json"), JSON.stringify(buildIdentity));
   if (windows) {
     await writeFile(
       join(folder, "bycoda-host.cmd"),
@@ -114,6 +373,7 @@ for (const target of targets) {
       windowsHide: true,
     }).trim();
     if (actual !== version) throw new Error("Packaged host failed its executable smoke test");
+    if (nativeAdmission) await smokeAdmissionBundle(executable, folder, target);
   }
   // Local installation consumes this directory directly: no ZIP/tar round trip.
   if (args.includes("--directory-only")) {

@@ -1,8 +1,12 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useComposerDockMotion } from "./useComposerDockMotion";
+import {
+  READING_SETTLE_FRAMES,
+  useComposerDockMotion,
+  useComposerReadingMotion,
+} from "./useComposerDockMotion";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -74,6 +78,68 @@ describe("useComposerDockMotion", () => {
     motion.captureLaunch();
     render(true);
 
+    expect(animate).not.toHaveBeenCalled();
+  });
+});
+
+describe("useComposerReadingMotion", () => {
+  function ReadingHarness({ reading }: { reading: boolean }) {
+    const ref = useRef<HTMLDivElement>(null);
+    useComposerReadingMotion(ref, true, reading);
+    return createElement(
+      "div",
+      { ref, "data-slot": "reading" },
+      createElement("div", { "data-composer-box": "", "data-slot": "box" }),
+    );
+  }
+  function renderReading(reading: boolean) {
+    act(() => root.render(createElement(ReadingHarness, { reading })));
+  }
+  const targets = () => animate.mock.contexts.map((target) => (target as HTMLElement).dataset.slot);
+
+  it("settles the writing box with a fade when reading starts or ends", () => {
+    renderReading(false);
+    renderReading(true);
+    renderReading(false);
+    expect(targets()).toEqual(["box", "box"]);
+    expect(animate.mock.calls[0][0]).toBe(READING_SETTLE_FRAMES);
+  });
+
+  it("animates only opacity and transform, never layout", () => {
+    for (const frame of READING_SETTLE_FRAMES) {
+      expect(Object.keys(frame).sort()).toEqual(["opacity", "transform"]);
+    }
+  });
+
+  it("does not animate on first render or when the mode is unchanged", () => {
+    renderReading(false);
+    renderReading(false);
+    expect(animate).not.toHaveBeenCalled();
+  });
+
+  it("changes the layout without motion under reduced motion", () => {
+    reduce = true;
+    renderReading(false);
+    renderReading(true);
+    expect(animate).not.toHaveBeenCalled();
+  });
+
+  it("asks anchored popovers to re-read their trigger when the swap moves it", () => {
+    const scrolled = vi.fn();
+    window.addEventListener("scroll", scrolled, true);
+    renderReading(false);
+    renderReading(true);
+    window.removeEventListener("scroll", scrolled, true);
+    expect(scrolled).toHaveBeenCalled();
+  });
+
+  it("does not animate while a menu is open", () => {
+    renderReading(false);
+    const menu = document.createElement("div");
+    menu.dataset.popoverSide = "top";
+    document.body.append(menu);
+    renderReading(true);
+    menu.remove();
     expect(animate).not.toHaveBeenCalled();
   });
 });

@@ -30,20 +30,21 @@ export function LanguageSettings() {
     }
   };
   return (
-    <Group title={t("Language")} layout="full">
+    <Group title={t("Language")}>
       <Row
         id="interface-language"
         label={t("Application language")}
         description={t("Changes apply immediately. Your conversations and drafts are preserved.")}
         feedback={
           pending || error ? (
-            <SettingsFeedback state={error ? "error" : "loading"}>
+            <SettingsFeedback state={error ? "error" : "loading"} immediate>
               {error ? t("Could not load the language. Please try again.") : t("Loading language…")}
             </SettingsFeedback>
           ) : null
         }
       >
         <Select
+          hideLabel
           label={t("Application language")}
           value={getLanguagePreference()}
           options={[{ value: "system", label: t("System language") }, ...LANGUAGES]}
@@ -83,7 +84,7 @@ function DomainLanguageRow({ domain }: { domain: LanguageDomain }) {
       label={label}
       feedback={
         pending || error ? (
-          <SettingsFeedback state={error ? "error" : "loading"}>
+          <SettingsFeedback state={error ? "error" : "loading"} immediate>
             {error ? t("Could not load the language. Please try again.") : t("Loading language…")}
           </SettingsFeedback>
         ) : null
@@ -91,12 +92,11 @@ function DomainLanguageRow({ domain }: { domain: LanguageDomain }) {
       description={
         domain === "git"
           ? t("Git panels, branches, commits and diffs. English by default.")
-          : t(
-              "Terminal, file viewer and developer tool controls. Code and command output keep their original language.",
-            )
+          : t("Terminal, file viewer and developer tools. Code and output stay as written.")
       }
     >
       <Select
+        hideLabel
         label={label}
         value={getDomainLanguagePreference(domain)}
         options={[{ value: "app", label: t("Follow application language") }, ...LANGUAGES]}

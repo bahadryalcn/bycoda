@@ -4,7 +4,10 @@ import { type SessionSummary } from "../../../features/sessions/data/sessionStor
 import {
   liveSessionInfos,
   sameLiveSessionInfos,
+  type LiveSessionInfo,
+  type RecentSessionRow,
 } from "../../../features/sessions/model/recentSessions";
+import type { PinTarget } from "../../../features/sessions/data/sessionPinReceipts";
 import { remoteLiveSessionInfos } from "../../../features/connections/model/remoteRailSessions";
 import { type WorkspaceTab } from "../../../features/workspace/model/layout";
 import { type PendingWindowMoves } from "../../model/windowTransferPopout";
@@ -17,7 +20,11 @@ export interface RailSessionListsDeps {
   unseenFinishedIds: ReturnType<typeof useUnseenFinishedIds>;
   unopenedRemote: Parameters<typeof remoteLiveSessionInfos>[0];
   history: SessionSummary[];
-  onPinHistorySession: (sessionId: string, pinned: boolean) => Promise<void>;
+  onPinHistorySession: (
+    sessionId: string,
+    pinned: boolean,
+    captured?: { cwd: string; target: PinTarget | null },
+  ) => Promise<unknown>;
   deckProjectTabs: WorkspaceTab[];
   dirtyFiles: Set<string>;
   pendingWindowMoves: PendingWindowMoves;
@@ -31,12 +38,42 @@ export interface RailSessionLists {
   recentSessions: {
     history: SessionSummary[];
     live: ReturnType<typeof liveSessionInfos>;
-    onPin: (sessionId: string, pinned: boolean) => Promise<void>;
+    onPin: (row: RecentSessionRow, pinned: boolean) => Promise<unknown>;
   };
   titleTabs: TitleTab[];
 }
 
-/** Rail and title-tab session lists. Memos and render-synced refs only. */
+/**
+ * Per-session rail entry. Session objects are immutable, so a shell change that
+ * touches one session re-derives only that one instead of rescanning every
+ * transcript. The unseen flag is the only outside input that matters.
+ */
+const liveInfoCache = new WeakMap<Session, { unseen: boolean; infos: LiveSessionInfo[] }>();
+function liveInfosCached(
+  sessions: readonly Session[],
+  unseenFinishedIds: ReadonlySet<string>,
+): LiveSessionInfo[] {
+  const infos: LiveSessionInfo[] = [];
+  for (const session of sessions) {
+    const unseen = unseenFinishedIds.has(session.id);
+    let entry = liveInfoCache.get(session);
+    if (!entry || entry.unseen !== unseen) {
+      entry = {
+        unseen,
+        infos: liveSessionInfos([session], unseen ? new Set([session.id]) : undefined),
+      };
+      liveInfoCache.set(session, entry);
+    }
+    for (const info of entry.infos) infos.push(info);
+  }
+  return infos;
+}
+
+/**
+ * Rail and title-tab session lists. `sessions` is the shell view, so streamed
+ * text frames never reach this hook; the memos below also keep unrelated App
+ * renders from rescanning sessions and tabs.
+ */
 export function useRailSessionLists(deps: RailSessionListsDeps): RailSessionLists {
   const {
     sessions,
@@ -54,7 +91,7 @@ export function useRailSessionLists(deps: RailSessionListsDeps): RailSessionList
   const liveSessionInfoRef = useRef<ReturnType<typeof liveSessionInfos>>([]);
   const railLiveSessions = useMemo(() => {
     const next = [
-      ...liveSessionInfos(sessions, unseenFinishedIds),
+      ...liveInfosCached(sessions, unseenFinishedIds),
       ...remoteLiveSessionInfos(unopenedRemote),
     ];
     if (sameLiveSessionInfos(liveSessionInfoRef.current, next)) {
@@ -67,15 +104,27 @@ export function useRailSessionLists(deps: RailSessionListsDeps): RailSessionList
     () => ({
       history,
       live: railLiveSessions,
-      onPin: onPinHistorySession,
+      onPin: (row: RecentSessionRow, pinned: boolean) =>
+        onPinHistorySession(row.id, pinned, { cwd: row.cwd, target: row.pinTarget ?? null }),
     }),
     [history, railLiveSessions, onPinHistorySession],
   );
 
-  const nextTitleTabs: TitleTab[] = deckProjectTabs.map((tab) => ({
-    ...toTitleTab(tab, sessions, dirtyFiles, unseenFinishedIds, tab.id in pendingWindowMoves),
-    movingWindow: windowTransferPending || movingWindows.has(tab.id),
-  }));
+  const nextTitleTabs = useMemo(() => {
+    const tabs: TitleTab[] = deckProjectTabs.map((tab) => ({
+      ...toTitleTab(tab, sessions, dirtyFiles, unseenFinishedIds, tab.id in pendingWindowMoves),
+      movingWindow: windowTransferPending || movingWindows.has(tab.id),
+    }));
+    return tabs;
+  }, [
+    deckProjectTabs,
+    sessions,
+    dirtyFiles,
+    unseenFinishedIds,
+    pendingWindowMoves,
+    windowTransferPending,
+    movingWindows,
+  ]);
   tabProjectsRef.current = new Map(nextTitleTabs.map((tab) => [tab.id, tab.project]));
   const titleTabsRef = useRef(nextTitleTabs);
   if (!titleTabsEqual(titleTabsRef.current, nextTitleTabs)) {

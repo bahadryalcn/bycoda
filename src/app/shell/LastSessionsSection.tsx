@@ -1,9 +1,20 @@
+import { AssistantManagedBadge } from "../../features/sessions/ui/AssistantManagedBadge";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Button } from "../../shared/ui/Button";
-import { useMinuteNow } from "./RelativeSessionTime";
-import { t, useLocale, getLocale } from "../../shared/i18n";
+import { ContinuousList } from "../../shared/ui/ContinuousList";
+import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
+import { useMinuteNow } from "../../shared/hooks/useMinuteNow";
+import { getLocale, useT } from "../../shared/i18n";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { ChevronDown, Clock, Internet, Pin, PinOff } from "../../shared/ui/icons";
+import {
+  ChevronDown,
+  CircleAlert,
+  FolderOpen,
+  Internet,
+  PenLine,
+  Pin,
+  PinOff,
+} from "../../shared/ui/icons";
 import { basename } from "../../platform/tauri/fs";
 import { projectKey, projectName } from "../../shared/lib/paths";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
@@ -12,13 +23,14 @@ import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
 import { ExplorerMenu } from "../../features/files/ui/ExplorerMenu";
 import {
-  RAIL_DRAG_HANDLE,
-  RAIL_SECTION_HEADER,
+  RAIL_SECTION_BLOCK,
+  RAIL_SECTION_LABEL,
   SectionMenuButton,
   type RailSectionDrag,
 } from "./useRailSections";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import { useRecentSessions } from "../../features/sessions/hooks/useRecentSessions";
+import { useUnsentComposerDraft } from "../../features/sessions/hooks/useUnsentComposerDraft";
 import {
   buildRecentSessions,
   formatRelative,
@@ -26,6 +38,7 @@ import {
   RECENT_SESSION_COUNTS,
   recentCountLabel,
   saveRecentSessionsPrefs,
+  isProjectlessCwd,
   type LiveSessionInfo,
   type RecentSessionRow,
   type RecentSessionsPrefs,
@@ -47,7 +60,7 @@ export type RecentSessionsSource = {
   history: SessionSummary[];
   /** Sessions held in memory: running state, and remote sessions the store never sees. */
   live: LiveSessionInfo[];
-  onPin: (sessionId: string, pinned: boolean) => Promise<void>;
+  onPin: (row: RecentSessionRow, pinned: boolean) => Promise<unknown>;
 };
 
 export type Appearance = {
@@ -86,7 +99,12 @@ export function useLastSessionsRows({
     saveRecentSessionsPrefs(next);
   };
   const togglePin = (row: RecentSessionRow) => {
-    void source.onPin(row.id, !row.pinned).then(refresh);
+    void source
+      .onPin(row, !row.pinned)
+      .then(refresh)
+      .catch((error: unknown) => {
+        console.error("Could not refresh pinned session:", error);
+      });
   };
   return { prefs, update, rows, hasRows: rows.length > 0, togglePin, refresh };
 }
@@ -94,6 +112,7 @@ export function useLastSessionsRows({
 const STATUS_LABEL: Record<RecentSessionStatus, string> = {
   retrying: "Retrying",
   failed: "Failed",
+  interrupted: "Interrupted",
   working: "Working",
   input: "Needs input",
   done: "Done",
@@ -102,7 +121,8 @@ const STATUS_LABEL: Record<RecentSessionStatus, string> = {
 const STATUS_DOT: Record<RecentSessionStatus, string> = {
   retrying: "bg-warning",
   failed: "bg-danger",
-  working: "bg-accent animate-pulse motion-reduce:animate-none",
+  interrupted: "bg-warning",
+  working: "working-dot bg-accent animate-pulse motion-reduce:animate-none",
   input: "bg-warning",
   done: "bg-success",
 };
@@ -115,8 +135,11 @@ export function LastSessionsSection({
   searchActive,
   onOpenSession,
   onOpenProject,
+  onOpenLastSessions,
+  lastSessionsOpen = false,
   drag,
   onShownChange,
+  listScopeKey,
   ...appearance
 }: {
   source: RecentSessionsSource;
@@ -125,58 +148,75 @@ export function LastSessionsSection({
   enabled: boolean;
   activeSessionId?: string;
   searchActive: boolean;
-  onOpenSession?: (sessionId: string, options?: { keepOpen?: boolean }) => void;
+  onOpenSession?: (sessionId: string, cwd: string, options?: { keepOpen?: boolean }) => void;
   onOpenProject: (path: string) => void;
+  onOpenLastSessions?: () => void;
+  lastSessionsOpen?: boolean;
   /** Lets the rail move this section by its header. */
   drag?: RailSectionDrag;
   /** Reports whether the section is on screen: it has nothing to show without sessions. */
   onShownChange?: (shown: boolean) => void;
+  /** Optional owner scope for query-specific Last sessions viewports. */
+  listScopeKey?: string;
 } & Appearance) {
-  useLocale();
+  const t = useT();
   const { prefs, update, rows, hasRows, togglePin } = useLastSessionsRows({
     source,
     projectKeys,
     enabled,
   });
   useEffect(() => {
-    onShownChange?.(hasRows);
+    onShownChange?.(true);
     return () => onShownChange?.(false);
-  }, [hasRows, onShownChange]);
-  if (!hasRows) return null;
-
+  }, [onShownChange]);
   return (
-    <div ref={drag?.setRef} className="reorder-item rail-reorder-block mb-2 shrink-0">
-      <div
+    <div
+      ref={drag?.setRef}
+      className={RAIL_SECTION_BLOCK}
+      data-collapsed={prefs.collapsed || undefined}
+    >
+      {/* One header surface: ActionHost paints hover and the open state for chevron, label and
+          actions together, so the open list reads as a row, not as two pills. */}
+      <ActionHost
         {...drag?.headerProps}
-        title={drag ? t("Drag to reorder") : undefined}
-        className={`${RAIL_SECTION_HEADER} ${drag ? RAIL_DRAG_HANDLE : ""}`}
+        selected={lastSessionsOpen}
+        className="group min-h-(--ui-control-height-compact) gap-0 px-2"
       >
+        {/* A direct, non-inset child: the host owns its fills, so an expanded section shows
+            no separate chip (inset actions paint aria-expanded as an open menu). */}
         <Button
-          variant="item"
+          variant="ghost"
+          iconOnly
+          size="sm"
           motion="none"
           type="button"
+          data-no-drag
+          label={t(prefs.collapsed ? "Expand" : "Collapse")}
           aria-expanded={!prefs.collapsed}
           onClick={() => update({ ...prefs, collapsed: !prefs.collapsed })}
-          size="sm"
-          className={`min-w-0 flex-1 ${drag ? "cursor-grab" : ""}`}
         >
-          <Clock
-            className="size-3.5 shrink-0 group-hover:hidden group-has-[button:focus-visible]:hidden"
-            strokeWidth={1.75}
-          />
-          <ChevronDown
-            className={`hidden size-3.5 shrink-0 group-hover:block group-has-[button:focus-visible]:block ${
-              prefs.collapsed ? "-rotate-90" : ""
-            }`}
-            strokeWidth={1.75}
-          />
+          <ChevronDown className={`icon-xs ${prefs.collapsed ? "-rotate-90" : ""}`} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          motion="none"
+          type="button"
+          data-no-drag
+          tooltip={t("All sessions across your projects")}
+          onClick={onOpenLastSessions}
+          aria-current={lastSessionsOpen ? "page" : undefined}
+          className={`min-w-0 flex-1 justify-start px-1 ${RAIL_SECTION_LABEL} ${
+            lastSessionsOpen ? "text-content" : ""
+          }`}
+        >
           <span className="truncate">{t("Last sessions")}</span>
         </Button>
-        {prefs.collapsed ? null : (
+        {!prefs.collapsed && hasRows ? (
           <CountPicker count={prefs.count} onChange={(count) => update({ ...prefs, count })} />
-        )}
+        ) : null}
         {drag ? <SectionMenuButton label={t("Last sessions")} onOpen={drag.openMenu} /> : null}
-      </div>
+      </ActionHost>
       {prefs.collapsed ? null : (
         <LastSessionsRows
           rows={rows}
@@ -186,6 +226,7 @@ export function LastSessionsSection({
           onOpenProject={onOpenProject}
           onTogglePin={togglePin}
           className={drag?.folded ? "hidden" : "flex"}
+          listScopeKey={listScopeKey}
           {...appearance}
         />
       )}
@@ -202,17 +243,19 @@ export function LastSessionsRows({
   onOpenProject,
   onTogglePin,
   className,
+  listScopeKey,
   ...appearance
 }: {
   rows: RecentSessionRow[];
   activeSessionId?: string;
   searchActive: boolean;
-  onOpenSession?: (sessionId: string, options?: { keepOpen?: boolean }) => void;
+  onOpenSession?: (sessionId: string, cwd: string, options?: { keepOpen?: boolean }) => void;
   onOpenProject: (path: string) => void;
   onTogglePin: (row: RecentSessionRow) => void;
   className?: string;
+  listScopeKey?: string;
 } & Appearance) {
-  useLocale();
+  const t = useT();
   const [menu, setMenu] = useState<{
     x: number;
     y: number;
@@ -226,21 +269,27 @@ export function LastSessionsRows({
       <div
         role="list"
         aria-label={t("Last sessions")}
-        className={`flex-col gap-px overflow-y-auto px-2 ${className ?? ""}`}
+        className={`flex min-h-0 flex-1 flex-col gap-px ${className ?? ""}`}
       >
-        {rows.map((row) => (
-          <SessionRow
-            key={row.id}
-            row={row}
-            now={now}
-            selected={!searchActive && row.id === activeSessionId}
-            onOpen={() => onOpenSession?.(row.id)}
-            onKeepOpen={() => onOpenSession?.(row.id, { keepOpen: true })}
-            onTogglePin={() => onTogglePin(row)}
-            onOpenMenu={(x, y) => setMenu({ x, y, row })}
-            {...appearance}
-          />
-        ))}
+        <ContinuousList
+          className="flex-1 min-h-0 px-2"
+          items={rows}
+          itemKey={(row) => JSON.stringify([row.cwd, row.id])}
+          stateKey={listScopeKey ?? "last-sessions:rail"}
+          estimateSize={56}
+          renderItem={(row) => (
+            <SessionRow
+              row={row}
+              now={now}
+              selected={!searchActive && row.id === activeSessionId}
+              onOpen={() => onOpenSession?.(row.id, row.cwd)}
+              onKeepOpen={() => onOpenSession?.(row.id, row.cwd, { keepOpen: true })}
+              onTogglePin={() => onTogglePin(row)}
+              onOpenMenu={(x, y) => setMenu({ x, y, row })}
+              {...appearance}
+            />
+          )}
+        />
       </div>
       {menu && menuRow ? (
         <ExplorerMenu
@@ -264,17 +313,21 @@ export function LastSessionsRows({
                   },
                 ]
               : []),
-            {
-              kind: "item",
-              id: "project",
-              get label() {
-                return t("Open project");
-              },
-            },
+            ...(isProjectlessCwd(menuRow.cwd)
+              ? []
+              : [
+                  {
+                    kind: "item" as const,
+                    id: "project",
+                    get label() {
+                      return t("Open project");
+                    },
+                  },
+                ]),
           ]}
           onPick={(id) => {
             setMenu(null);
-            if (id === "open") onOpenSession?.(menuRow.id);
+            if (id === "open") onOpenSession?.(menuRow.id, menuRow.cwd);
             else if (id === "pin") onTogglePin(menuRow);
             else if (id === "project") onOpenProject(menuRow.cwd);
           }}
@@ -292,7 +345,7 @@ function CountPicker({
   count: RecentSessionsPrefs["count"];
   onChange: (count: RecentSessionsPrefs["count"]) => void;
 }) {
-  useLocale();
+  const t = useT();
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   return (
@@ -303,7 +356,7 @@ function CountPicker({
         ref={anchor}
         type="button"
         data-no-drag
-        title={t("Sessions shown")}
+        tooltip={t("Sessions shown")}
         aria-label={t("Sessions shown: {p0}", { p0: recentCountLabel(count) })}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -312,7 +365,7 @@ function CountPicker({
         className="shrink-0 tabular-nums"
       >
         {count === 50 ? t("All") : count}
-        <ChevronDown className="size-3" strokeWidth={1.75} />
+        <ChevronDown className="icon-xs" strokeWidth={1.75} />
       </Button>
       {open ? (
         <DropdownMenu
@@ -358,23 +411,29 @@ function SessionRow({
   onTogglePin: () => void;
   onOpenMenu: (x: number, y: number) => void;
 } & Appearance) {
-  useLocale();
+  const t = useT();
   const key = projectKey(row.cwd);
   const seed = projectName(row.cwd);
-  const project = resolveTabGroupLabel(key, groupLabels, basename(row.cwd));
+  const projectless = isProjectlessCwd(row.cwd);
+  const project = projectless
+    ? t("No project")
+    : resolveTabGroupLabel(key, groupLabels, basename(row.cwd));
   const logoPath = resolveTabGroupLogo(key, groupLogos);
   const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
   const agent = HARNESS_TITLE[row.harness];
   const model = row.model ? resolveModel(row.harness, row.model).name : "";
   const time = formatRelative(row.updatedAt, now);
   const status = row.status;
+  // Text left unsent in another session's composer; the open session shows its own.
+  const draft = useUnsentComposerDraft(row.id, !selected);
   const location = row.remote ? `${remoteProjectFor(row.cwd)?.cwd ?? row.cwd} (remote)` : row.cwd;
   const tooltip = [
     row.title,
-    `${project} · ${location}`,
+    projectless ? project : `${project} · ${location}`,
     model ? `${agent} · ${model}` : agent,
+    draft ? t("Draft") : "",
     status
-      ? STATUS_LABEL[status]
+      ? t(STATUS_LABEL[status])
       : time && `Last activity ${new Date(row.updatedAt).toLocaleString(getLocale())}`,
   ]
     .filter(Boolean)
@@ -387,20 +446,28 @@ function SessionRow({
   };
 
   return (
-    <div
+    <ActionHost
       role="listitem"
-      data-selected={selected || undefined}
-      className="group relative flex"
+      selected={selected}
+      className="group relative flex min-w-0 items-center rounded-md"
       onContextMenu={openMenuAt}
     >
+      {/* One 28px row on the rail grid, like the tool and project rows: a 14px project mark,
+          the title, then quiet trailing state. Project and agent live in the tooltip and name. */}
       <Button
         variant="item"
         motion="none"
         type="button"
-        title={tooltip}
+        tooltip={tooltip}
         selected={selected}
         aria-current={selected ? "true" : undefined}
-        aria-label={[row.title, project, agent, status ? STATUS_LABEL[status].toLowerCase() : time]
+        aria-label={[
+          row.title,
+          project,
+          agent,
+          draft ? t("Draft") : "",
+          status ? t(STATUS_LABEL[status]) : time,
+        ]
           .filter(Boolean)
           .join(", ")}
         onClick={onOpen}
@@ -411,92 +478,94 @@ function SessionRow({
           const rect = event.currentTarget.getBoundingClientRect();
           onOpenMenu(rect.left, rect.bottom);
         }}
-        layout="stacked"
-        className="min-w-0 flex-1"
+        className="flex min-w-0 flex-1 items-center gap-1.5"
       >
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-5">
-            {row.title}
-          </span>
-          {status ? (
-            <span
-              role="img"
-              aria-label={STATUS_LABEL[status]}
-              title={STATUS_LABEL[status]}
-              className={`size-1.5 shrink-0 rounded-full ${STATUS_DOT[status]}`}
+        <span className="grid icon-sm shrink-0 place-items-center" aria-hidden="true">
+          {projectless ? (
+            <FolderOpen className="icon-sm text-(--ui-text-secondary)" strokeWidth={1.75} />
+          ) : logoPath && status !== "working" ? (
+            <ProjectLogoIcon
+              path={logoPath}
+              className="icon-sm rounded-sm"
+              imageClassName="icon-sm"
             />
-          ) : null}
-          {time ? (
-            <span className="shrink-0 text-[11px] tabular-nums text-(--ui-text-secondary)">
-              {time}
-            </span>
-          ) : null}
+          ) : (
+            <ProjectMascot
+              project={seed}
+              color={color}
+              name={resolveTabGroupMascot(key, groupMascots)}
+              className="icon-sm"
+              active={status === "working"}
+            />
+          )}
         </span>
-        <span
-          className={`flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-(--ui-text-secondary) ${row.pinnable ? "pe-7" : ""}`}
-        >
-          <span className="grid size-3 shrink-0 place-items-center" aria-hidden="true">
-            {logoPath && status !== "working" ? (
-              <ProjectLogoIcon
-                path={logoPath}
-                className="size-3 rounded-sm"
-                imageClassName="size-3"
-              />
-            ) : (
-              <ProjectMascot
-                project={seed}
-                color={color}
-                name={resolveTabGroupMascot(key, groupMascots)}
-                className="size-3"
-                active={status === "working"}
-              />
-            )}
+        <span className="min-w-0 flex-1 truncate text-ui-secondary leading-tight">{row.title}</span>
+        <AssistantManagedBadge management={row.managedBy} compact local={!row.remote} />
+        {draft ? (
+          <PenLine
+            aria-hidden="true"
+            className="icon-xs shrink-0 text-(--ui-tone-warning-fg)"
+            strokeWidth={1.75}
+          />
+        ) : null}
+        {row.pinned ? (
+          <Pin
+            aria-label={t("Pinned")}
+            className="icon-xs shrink-0 text-(--ui-text-secondary)"
+            strokeWidth={1.75}
+          />
+        ) : null}
+        {row.remote ? (
+          <Internet
+            aria-label={t("On another machine")}
+            className="icon-xs shrink-0 text-(--ui-text-secondary)"
+            strokeWidth={1.75}
+          />
+        ) : null}
+        <HarnessIcon harness={row.harness} className="icon-xs shrink-0 @max-[200px]/rail:hidden" />
+        {status === "interrupted" ? (
+          <CircleAlert
+            role="img"
+            aria-label={t("Interrupted")}
+            className="icon-xs shrink-0 text-(--ui-tone-warning-fg)"
+            strokeWidth={1.75}
+          />
+        ) : status ? (
+          <span
+            role="img"
+            aria-label={t(STATUS_LABEL[status])}
+            title={t(STATUS_LABEL[status])}
+            className={`size-1.5 shrink-0 rounded-full ${STATUS_DOT[status]}`}
+          />
+        ) : null}
+        {time ? (
+          <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
+            {time}
           </span>
-          {row.pinned ? (
-            <Pin
-              aria-label={t("Pinned")}
-              className="size-3 shrink-0 text-(--ui-text-secondary)"
-              strokeWidth={1.75}
-            />
-          ) : null}
-          {row.remote ? (
-            <Internet
-              aria-label={t("On another machine")}
-              className="size-3 shrink-0"
-              strokeWidth={1.75}
-            />
-          ) : null}
-          <span className="min-w-0 flex-1 truncate">{project}</span>
-          <span className="flex shrink-0 items-center gap-1">
-            <span aria-hidden="true">·</span>
-            <HarnessIcon harness={row.harness} className="size-3 shrink-0" />
-            <span>{agent}</span>
-          </span>
-        </span>
+        ) : null}
       </Button>
       {row.pinnable ? (
-        <Button
-          variant="ghost"
-          motion="none"
-          type="button"
-          iconOnly
-          size="sm"
-          label={row.pinned ? t("Unpin session") : t("Pin session")}
-          title={row.pinned ? t("Unpin session") : t("Pin session")}
-          aria-label={row.pinned ? t("Unpin session") : t("Pin session")}
-          onClick={(event) => {
-            event.stopPropagation();
-            onTogglePin();
-          }}
-          className="absolute end-1 bottom-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
-        >
-          {row.pinned ? (
-            <PinOff className="size-3.5" strokeWidth={1.75} />
-          ) : (
-            <Pin className="size-3.5" strokeWidth={1.75} />
-          )}
-        </Button>
+        // Keep a separate action column so revealing the pin cannot cover age or title text.
+        <div data-session-pin-slot="" className="flex shrink-0 items-center">
+          <InlineAction
+            motion="none"
+            type="button"
+            label={row.pinned ? t("Unpin session") : t("Pin session")}
+            aria-label={row.pinned ? t("Unpin session") : t("Pin session")}
+            onClick={(event) => {
+              event.stopPropagation();
+              onTogglePin();
+            }}
+            className="me-1"
+          >
+            {row.pinned ? (
+              <PinOff className="icon-sm" strokeWidth={1.75} />
+            ) : (
+              <Pin className="icon-sm" strokeWidth={1.75} />
+            )}
+          </InlineAction>
+        </div>
       ) : null}
-    </div>
+    </ActionHost>
   );
 }

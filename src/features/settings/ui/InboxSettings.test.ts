@@ -8,8 +8,8 @@ import {
   GithubSettings,
   GitlabSettings,
   LinearSettings,
-  InboxPage,
 } from "./InboxSettings";
+import { INTEGRATIONS, IntegrationsPage } from "./integrations/IntegrationsSettings";
 import { RevealedSetting } from "./settingsControls";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -83,7 +83,7 @@ it.each([
       url: "https://target.example.com",
       token: "keep-token",
     });
-    expect(container.textContent).toContain("Configured");
+    expect(container.textContent).toContain("Verified");
     expect(container.querySelector('input[type="password"]')).toBeNull();
   },
 );
@@ -132,6 +132,8 @@ it("separates a Linear team read failure from saved credentials and offers retry
   });
   await act(async () => root.render(createElement(LinearSettings)));
   expect(container.textContent).toContain("Configured");
+  // Reading saved credentials never claims the provider accepted them.
+  expect(container.querySelector('[data-state="verified"]')).toBeNull();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Teams unavailable");
   fail = false;
   await click("Retry");
@@ -164,7 +166,15 @@ it.each([false, true])(
     });
     await act(async () => root.render(createElement(LinearSettings)));
     await click("Refresh teams");
-    await click("Disconnect");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Account actions"]')!.click(),
+    );
+    await act(async () => document.querySelector<HTMLElement>('[role="menuitem"]')!.click());
+    await act(async () =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+        .find((button) => button.textContent?.includes("Disconnect"))!
+        .click(),
+    );
     await fill("Linear API key", "replacement-test-key");
     await click("Save and test connection");
     expect(container.textContent).toContain("New account team");
@@ -181,10 +191,12 @@ it("preserves drafts across provider tabs, supports keyboard navigation, and rev
     url: "https://gitlab.com",
   });
   const render = (revealed: string | null) =>
-    createElement(RevealedSetting.Provider, { value: revealed }, createElement(InboxPage));
+    createElement(RevealedSetting.Provider, { value: revealed }, createElement(IntegrationsPage));
   await act(async () => root.render(render(null)));
   const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
-  expect(tabs).toHaveLength(5);
+  // One tab per offered integration; paused messaging providers have none.
+  expect(tabs).toHaveLength(INTEGRATIONS.length);
+  const last = tabs[tabs.length - 1]!;
   await act(async () => tabs[1].click());
   await fill("GitLab access token", "unsaved-draft");
   await act(async () => tabs[3].click());
@@ -196,8 +208,74 @@ it("preserves drafts across provider tabs, supports keyboard navigation, and rev
   await act(async () =>
     tabs[1].dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })),
   );
-  expect(tabs[4].getAttribute("aria-selected")).toBe("true");
-  expect(document.activeElement).toBe(tabs[4]);
+  expect(last.getAttribute("aria-selected")).toBe("true");
+  expect(document.activeElement).toBe(last);
   await act(async () => root.render(render("jira")));
   expect(tabs[3].getAttribute("aria-selected")).toBe("true");
+});
+
+it.each([
+  [GitlabSettings, "gitlab_status", "gitlab_set_config", "GitLab access token"],
+  [
+    AzureDevOpsSettings,
+    "azure_devops_status",
+    "azure_devops_set_config",
+    "Azure DevOps personal access token",
+  ],
+] as const)(
+  "shows local save progress and blocks repeat %s submissions",
+  async (Component, statusCommand, saveCommand, tokenLabel) => {
+    let finish!: () => void;
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === statusCommand) return { connected: false, url: "https://example.com" };
+      if (command === saveCommand)
+        return new Promise((resolve) => {
+          finish = () => resolve({ connected: true, url: "https://example.com" });
+        });
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    await act(async () => root.render(createElement(Component)));
+    await fill(tokenLabel, "test-key");
+    await click("Save and test connection");
+    const saving = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Saving and testing"),
+    )!;
+    expect(saving.getAttribute("aria-busy")).toBe("true");
+    await act(async () => saving.click());
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === saveCommand),
+    ).toHaveLength(1);
+    await act(async () => finish());
+    expect(container.textContent).toContain("Verified");
+    expect(container.querySelector('button[aria-busy="true"]')).toBeNull();
+  },
+);
+
+it("keeps Linear team refresh local, preserves results while pending, and explains an empty result", async () => {
+  let reads = 0;
+  let finish!: () => void;
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "linear_status") return { connected: true };
+    if (command === "linear_list_teams") {
+      reads += 1;
+      if (reads === 1) return [{ id: "engineering", key: "ENG", name: "Engineering" }];
+      return new Promise((resolve) => {
+        finish = () => resolve([]);
+      });
+    }
+    throw new Error(`Unexpected command: ${command}`);
+  });
+  await act(async () => root.render(createElement(LinearSettings)));
+  await click("Refresh teams");
+  const refresh = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes("Refresh teams"),
+  )!;
+  expect(refresh.getAttribute("aria-busy")).toBe("true");
+  expect(container.textContent).toContain("Engineering");
+  expect(container.textContent).not.toContain("No teams available");
+  await act(async () => refresh.click());
+  expect(reads).toBe(2);
+  await act(async () => finish());
+  expect(refresh.getAttribute("aria-busy")).not.toBe("true");
+  expect(container.textContent).toContain("No teams available. Refresh teams to try again.");
 });

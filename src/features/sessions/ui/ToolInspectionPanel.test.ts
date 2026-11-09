@@ -4,10 +4,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ToolInspectionPanel, inspectionJson } from "./ToolInspectionPanel";
 import type { Block } from "../model/session";
+const clipboard = vi.hoisted(() => ({ copy: vi.fn(async (_text: string) => {}) }));
+vi.mock("../../../platform/tauri/clipboard", () => ({ copyMessage: clipboard.copy }));
 
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
+  clipboard.copy.mockReset().mockResolvedValue(undefined);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "ResizeObserver",
@@ -21,6 +24,84 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
 });
+
+it("keeps copy feedback local, blocks duplicates and permits retry after a failure", async () => {
+  let reject!: (error: Error) => void;
+  clipboard.copy.mockReturnValueOnce(
+    new Promise<void>((_resolve, failure) => {
+      reject = failure;
+    }),
+  );
+  const block: Block = {
+    id: "copy",
+    role: "tool",
+    text: "Result",
+    tool: { output: "saved output", status: "completed" },
+  };
+  await act(async () => root.render(createElement(ToolInspectionPanel, { block })));
+  const button = container.querySelector("button")!;
+  button.focus();
+  act(() => {
+    button.click();
+    button.click();
+  });
+  expect(clipboard.copy).toHaveBeenCalledExactlyOnceWith("saved output");
+  expect(button.getAttribute("aria-busy")).toBe("true");
+  expect(document.activeElement).toBe(button);
+  await act(async () => reject(new Error("Clipboard denied")));
+  expect(container.textContent).toContain("Copy failed");
+  expect(button.hasAttribute("aria-busy")).toBe(false);
+  await act(async () => button.click());
+  expect(clipboard.copy).toHaveBeenCalledTimes(2);
+  expect(button.getAttribute("aria-label")).toBe("Copied");
+});
+
+it("does not show an old copy result on a different tool output", async () => {
+  let resolve!: () => void;
+  clipboard.copy.mockReturnValueOnce(
+    new Promise<void>((done) => {
+      resolve = done;
+    }),
+  );
+  const block: Block = {
+    id: "first",
+    role: "tool",
+    text: "Result",
+    tool: { output: "first output", status: "completed" },
+  };
+  await act(async () => root.render(createElement(ToolInspectionPanel, { block })));
+  act(() => container.querySelector("button")!.click());
+  await act(async () =>
+    root.render(
+      createElement(ToolInspectionPanel, {
+        block: { ...block, id: "second", tool: { output: "second output", status: "completed" } },
+      }),
+    ),
+  );
+  await act(async () => resolve());
+  expect(container.querySelector("button")!.getAttribute("aria-label")).toBe("Copy");
+  await act(async () => container.querySelector("button")!.click());
+  expect(clipboard.copy).toHaveBeenLastCalledWith("second output");
+});
+it("wraps plain output by default and keeps the choice after Wrap lines is toggled", async () => {
+  const block: Block = {
+    id: "wrap",
+    role: "tool",
+    text: "Result",
+    tool: { output: "a long line of output", status: "completed" },
+  };
+  await act(async () => root.render(createElement(ToolInspectionPanel, { block })));
+  const pre = container.querySelector("pre")!;
+  expect(pre.className).toContain("whitespace-pre-wrap");
+  const wrapButton = container.querySelector<HTMLButtonElement>('button[aria-label="Wrap lines"]')!;
+  expect(wrapButton.getAttribute("aria-pressed")).toBe("true");
+  await act(async () => wrapButton.click());
+  expect(container.querySelector("pre")!.className).not.toContain("whitespace-pre-wrap");
+  expect(localStorage.getItem("bycoda.toolOutputWrap")).toBe("0");
+  await act(async () => wrapButton.click());
+  expect(container.querySelector("pre")!.className).toContain("whitespace-pre-wrap");
+});
+
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
@@ -32,6 +113,36 @@ it("recognizes only complete saved JSON collections", () => {
   expect(inspectionJson('[{"ok":true}]')).toEqual({ data: [{ ok: true }] });
   for (const text of ['{"result":', 'log: {"ok":true}', "null", "42", "<script>alert(1)</script>"])
     expect(inspectionJson(text)).toBeNull();
+});
+
+it("parses saved JSON once across render and copy feedback, then refreshes changed output", async () => {
+  const text = '{"result":{"cached":true}}';
+  const changed = '{"result":{"cached":false}}';
+  const block: Block = {
+    id: "json-cache",
+    role: "tool",
+    text: "Result",
+    tool: { output: text, status: "completed" },
+  };
+  const parse = vi.spyOn(JSON, "parse");
+  try {
+    await act(async () => root.render(createElement(ToolInspectionPanel, { block })));
+    await act(async () => container.querySelector("button")!.click());
+    await act(async () => root.render(createElement(ToolInspectionPanel, { block })));
+    expect(parse.mock.calls.filter(([value]) => value === text)).toHaveLength(1);
+    expect(clipboard.copy).toHaveBeenCalledWith(text);
+    await act(async () =>
+      root.render(
+        createElement(ToolInspectionPanel, {
+          block: { ...block, tool: { ...block.tool, output: changed } },
+        }),
+      ),
+    );
+    expect(parse.mock.calls.filter(([value]) => value === changed)).toHaveLength(1);
+    expect(container.querySelector('[role="tree"]')).not.toBeNull();
+  } finally {
+    parse.mockRestore();
+  }
 });
 
 it("renders JSON output as a tree while truncated output and commands retain their exact text", async () => {

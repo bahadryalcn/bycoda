@@ -1,12 +1,20 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { syncNativeGlass } from "./appearance";
+import {
+  readNativeGlassError,
+  readNativeGlassPending,
+  readNativeGlassRestartRequired,
+} from "./nativeGlassStatus";
 
-const platform = vi.hoisted(() => ({ isLinux: false }));
+const platform = vi.hoisted(() => ({ isLinux: false, isWin: false }));
 vi.mock("../../../platform/tauri/platform", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../platform/tauri/platform")>()),
   get IS_LINUX() {
     return platform.isLinux;
+  },
+  get IS_WIN() {
+    return platform.isWin;
   },
 }));
 
@@ -17,6 +25,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
 }));
 
 const BODY_GLASS_KEY = "bycoda.bodyGlass";
+const WINDOW_GLASS_KEY = "bycoda.windowGlass";
 
 function hasGlass() {
   return document.documentElement.classList.contains("has-native-glass");
@@ -24,8 +33,9 @@ function hasGlass() {
 
 beforeEach(() => {
   invoke.mockReset();
-  invoke.mockResolvedValue(undefined);
+  invoke.mockResolvedValue({ applied: true, restartRequired: false });
   platform.isLinux = false;
+  platform.isWin = false;
   localStorage.clear();
   document.documentElement.className = "";
   document.documentElement.style.cssText = "";
@@ -54,6 +64,7 @@ describe("native glass", () => {
       expect(invoke).toHaveBeenCalledWith("set_window_glass_enabled", {
         enabled: false,
         background: expect.any(Object),
+        preference: expect.any(Boolean),
       }),
     );
   });
@@ -65,6 +76,7 @@ describe("native glass", () => {
       expect(invoke).toHaveBeenCalledWith("set_window_glass_enabled", {
         enabled: false,
         background: { r: 51, g: 51, b: 51 },
+        preference: expect.any(Boolean),
       }),
     );
   });
@@ -78,6 +90,7 @@ describe("native glass", () => {
       expect(invoke).toHaveBeenCalledWith("set_window_glass_enabled", {
         enabled: false,
         background: { r: 23, g: 23, b: 23 },
+        preference: expect.any(Boolean),
       }),
     );
   });
@@ -93,18 +106,53 @@ describe("native glass", () => {
     );
   });
 
+  it("keeps the dark window opaque on Windows and macOS when window glass is off", async () => {
+    localStorage.setItem(WINDOW_GLASS_KEY, "0");
+    syncNativeGlass("dark");
+    expect(hasGlass()).toBe(false);
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("set_window_glass_enabled", {
+        enabled: false,
+        background: { r: 23, g: 23, b: 23 },
+        preference: expect.any(Boolean),
+      }),
+    );
+  });
+
+  it("reports a restart only while the saved glass setting differs from the window", async () => {
+    invoke.mockResolvedValueOnce({ applied: false, restartRequired: true });
+    syncNativeGlass("dark");
+    await vi.waitFor(() => expect(readNativeGlassRestartRequired()).toBe(true));
+    expect(hasGlass()).toBe(false);
+
+    invoke.mockResolvedValueOnce({ applied: true, restartRequired: false });
+    syncNativeGlass("light");
+    await vi.waitFor(() => expect(readNativeGlassRestartRequired()).toBe(false));
+  });
+
+  it("defaults window glass off on Windows and on elsewhere", async () => {
+    for (const isWin of [true, false]) {
+      platform.isWin = isWin;
+      vi.resetModules();
+      const appearance = await import("./appearance");
+      expect(appearance.WINDOW_GLASS_DEFAULT).toBe(!isWin);
+    }
+  });
+
   it("waits for the window to settle before the page changes", async () => {
     let settle = () => {};
     invoke.mockReturnValue(
-      new Promise<void>((resolve) => {
-        settle = resolve;
+      new Promise<unknown>((resolve) => {
+        settle = () => resolve({ applied: true, restartRequired: false });
       }),
     );
     syncNativeGlass("dark");
     await Promise.resolve();
     expect(hasGlass()).toBe(false);
+    expect(readNativeGlassPending()).toBe(true);
     settle();
     await vi.waitFor(() => expect(hasGlass()).toBe(true));
+    expect(readNativeGlassPending()).toBe(false);
   });
 
   it("fades the page opaque before the window stops being transparent", async () => {
@@ -122,6 +170,7 @@ describe("native glass", () => {
       expect(invoke).toHaveBeenCalledWith("set_window_glass_enabled", {
         enabled: false,
         background: { r: 23, g: 23, b: 23 },
+        preference: expect.any(Boolean),
       }),
     );
   });
@@ -162,6 +211,8 @@ describe("native glass", () => {
     expect(hasGlass()).toBe(false);
 
     settle();
+    await Promise.resolve();
+    expect(readNativeGlassPending()).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 250));
     expect(hasGlass()).toBe(false);
     expect(invoke).toHaveBeenLastCalledWith(
@@ -170,12 +221,17 @@ describe("native glass", () => {
     );
   });
 
-  it("still flips the page when the window call fails", async () => {
+  it("keeps the page opaque when enabling the window fails and recovers on retry", async () => {
     invoke.mockRejectedValue(new Error("no window"));
     syncNativeGlass("light");
     await vi.waitFor(() => expect(hasGlass()).toBe(false));
     invoke.mockRejectedValue(new Error("no window"));
     syncNativeGlass("dark");
+    await vi.waitFor(() => expect(readNativeGlassError()).toBe(true));
+    expect(hasGlass()).toBe(false);
+    invoke.mockResolvedValue({ applied: true, restartRequired: false });
+    syncNativeGlass("dark");
     await vi.waitFor(() => expect(hasGlass()).toBe(true));
+    expect(readNativeGlassError()).toBe(false);
   });
 });

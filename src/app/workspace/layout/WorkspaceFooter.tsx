@@ -1,9 +1,12 @@
+import { memo } from "react";
+import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import type { ComponentProps, Dispatch, SetStateAction } from "react";
 import type { Session } from "../../../features/sessions/model/session";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
 import { canOpenTerminalIn } from "../../../features/projects/model/recents";
 import { ProjectTerminalDock } from "../../../features/terminal/ui/ProjectTerminalDock";
 import { ApprovalToasts } from "../../../features/sessions/ui/ApprovalToasts";
+import { HiddenDictationIndicator } from "../../../features/voice/ui/HiddenDictationIndicator";
 import { UsageFooter } from "../../shell/UsageFooter";
 import { WorkspaceControls } from "../../shell/WorkspaceControls";
 import { t } from "../../../shared/i18n";
@@ -44,13 +47,11 @@ export interface WorkspaceFooterProps {
   // Approval toasts
   pendingNotifications: ApprovalProps["notices"];
   hiddenApprovalToasts: ApprovalProps["popupNotices"];
-  reminderNoticesHeight: number;
-  harnessUpdateHeight: number;
   onOpenApprovalSession: ApprovalProps["onFocusSession"];
   onApproval: ApprovalProps["onApproval"];
 }
 
-export function WorkspaceFooter({
+function WorkspaceFooterComponent({
   searchViewOpen,
   inboxViewOpen,
   notesViewOpen,
@@ -78,8 +79,6 @@ export function WorkspaceFooter({
   onOpenFile,
   pendingNotifications,
   hiddenApprovalToasts,
-  reminderNoticesHeight,
-  harnessUpdateHeight,
   onOpenApprovalSession,
   onApproval,
 }: WorkspaceFooterProps) {
@@ -141,18 +140,23 @@ export function WorkspaceFooter({
         }
       />
       <div className="flex shrink-0 items-center pe-2">
+        <HiddenDictationIndicator onOpenSession={onOpenApprovalSession} />
         <ApprovalToasts
           notices={pendingNotifications}
           popupNotices={hiddenApprovalToasts}
-          topOffset={
-            48 +
-            (reminderNoticesHeight ? reminderNoticesHeight + 8 : 0) +
-            (harnessUpdateHeight ? harnessUpdateHeight + 8 : 0)
-          }
           onFocusSession={onOpenApprovalSession}
+          onOpenHistorySession={(sessionId) => onOpenApprovalSession(sessionId)}
+          onOpenSettings={() => openSettings("notifications", "notifications")}
           onApproval={onApproval}
         />
       </div>
     </div>
   );
+}
+
+const MemoWorkspaceFooter = memo(WorkspaceFooterComponent);
+
+/** Workspace recreates most handlers per render; stable proxies let the memo hold. */
+export function WorkspaceFooter(props: WorkspaceFooterProps) {
+  return <MemoWorkspaceFooter {...useStableHandlers(props)} />;
 }

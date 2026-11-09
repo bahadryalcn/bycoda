@@ -1,3 +1,6 @@
+import type { Session } from "./session";
+import { formatTokens } from "../../../shared/i18n/format";
+export { formatTokens };
 /**
  * How much of the model context window the session is currently occupying.
  *
@@ -25,18 +28,6 @@ export function contextPercent(usage: ContextUsage | undefined): number | null {
   const ratio = contextRatio(usage);
   if (ratio === null) return null;
   return Math.round(ratio * 100);
-}
-
-/** Compact token count for chrome: 980, 176K, 1.2M. */
-export function formatTokens(count: number): string {
-  if (!Number.isFinite(count) || count < 0) return "0";
-  if (count < 1000) return String(Math.round(count));
-  if (count < 1_000_000) {
-    const thousands = count / 1000;
-    return `${thousands < 10 ? thousands.toFixed(1).replace(/\.0$/, "") : Math.round(thousands)}K`;
-  }
-  const millions = count / 1_000_000;
-  return `${millions < 10 ? millions.toFixed(1).replace(/\.0$/, "") : Math.round(millions)}M`;
 }
 
 /** Two-line hover text: "69% context used" over "176K / 256K tokens". */
@@ -79,4 +70,24 @@ export function mergeContextUsage(
 export function dropContextWindow(usage: ContextUsage | undefined): ContextUsage | undefined {
   if (!usage) return undefined;
   return { used: usage.used };
+}
+
+export function applyContextReading(
+  session: Session,
+  event: { type: "context" | "context.compacted"; used?: number; window?: number },
+): Session {
+  if (
+    event.type === "context.compacted" &&
+    (event.used === undefined || !Number.isFinite(event.used) || event.used < 0)
+  )
+    return { ...session, context: undefined };
+  if (event.used === undefined && !session.context) return session;
+  const context = mergeContextUsage(session.context, event);
+  if (
+    session.context &&
+    session.context.used === context.used &&
+    session.context.window === context.window
+  )
+    return session;
+  return { ...session, context };
 }

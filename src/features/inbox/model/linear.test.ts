@@ -1,6 +1,15 @@
+// @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { linearIssueDetails, linearTeamIdsForFetch, peekLinearIssueDetails } from "./linear";
+import {
+  linearIssueDetails,
+  linearTeamIdsForFetch,
+  peekLinearIssueDetails,
+  readHiddenLinearTeamIds,
+  requireHiddenLinearTeamIds,
+  saveHiddenLinearTeamIds,
+  subscribeLinearScope,
+} from "./linear";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -57,5 +66,34 @@ describe("linearTeamIdsForFetch", () => {
         allTeams.slice(0, 50).map((team) => team.id),
       ),
     ).toEqual(["team-50", "team-51", "team-52"]);
+  });
+});
+
+describe("linear saved team scope", () => {
+  it("separates an empty scope from an unreadable one and fails closed", () => {
+    localStorage.removeItem("bycoda.linearHiddenTeams");
+    expect(readHiddenLinearTeamIds()).toEqual([]);
+    localStorage.setItem("bycoda.linearHiddenTeams", "{not json");
+    expect(readHiddenLinearTeamIds()).toBeNull();
+    expect(() => requireHiddenLinearTeamIds()).toThrow("scope is unavailable");
+    localStorage.removeItem("bycoda.linearHiddenTeams");
+  });
+
+  it("reports whether a save was read back and tells sibling windows", () => {
+    const changed = vi.fn();
+    const stop = subscribeLinearScope(changed);
+    expect(saveHiddenLinearTeamIds(["t1"])).toBe(true);
+    expect(changed).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.linearHiddenTeams" }));
+    window.dispatchEvent(new StorageEvent("storage", { key: "unrelated" }));
+    expect(changed).toHaveBeenCalledTimes(2);
+    const setItem = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new Error("quota");
+    });
+    expect(saveHiddenLinearTeamIds(["t2"])).toBe(false);
+    setItem.mockRestore();
+    expect(readHiddenLinearTeamIds()).toEqual(["t1"]);
+    stop();
+    localStorage.removeItem("bycoda.linearHiddenTeams");
   });
 });

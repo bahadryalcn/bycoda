@@ -11,8 +11,19 @@ import type {
 import type { TurnUsage } from "../../../features/sessions/model/sessionUsage";
 import type {
   UserQuestion,
+  UserQuestionBehavior,
+  UserQuestionDelivery,
+  UserQuestionDismissAction,
   UserQuestionReply,
 } from "../../../features/sessions/model/userQuestion";
+
+/** Provider-supplied post-write evidence, independent of display previews. */
+export type HarnessFileChange = {
+  path: string;
+  kind: "add" | "delete" | "update";
+  /** Full file text for add/delete; the provider's unified patch for update. */
+  contents: string;
+};
 
 export type HarnessEvent =
   | { type: "session.started" }
@@ -25,7 +36,12 @@ export type HarnessEvent =
       model?: string;
       modelSettings?: Record<string, string>;
     }
-  | { type: "status"; text: string; key?: string }
+  /**
+   * `running` marks a status row that is still in progress (compaction). Its
+   * later event with the same `key` and `running: false` settles that same
+   * row; an empty `text` then closes it without leaving a row behind.
+   */
+  | { type: "status"; text: string; key?: string; running?: boolean }
   /** The provider refused the turn until its usage window resets (epoch ms). */
   | { type: "usage.limited"; resetsAt?: number }
   /**
@@ -73,6 +89,8 @@ export type HarnessEvent =
       preview?: ToolPreview;
       /** Every path affected when one structured edit changes multiple files. */
       paths?: string[];
+      /** Presence, even empty, identifies post-write file notifications. */
+      fileChanges?: HarnessFileChange[];
     }
   | {
       type: "tool.updated";
@@ -83,9 +101,16 @@ export type HarnessEvent =
       kind?: string;
       status?: string;
       detail?: string;
+      /**
+       * The provider already dropped part of `detail` (for example the head of
+       * a long running output). Applied as `tool.outputTruncated`.
+       */
+      detailTruncated?: boolean;
       preview?: ToolPreview;
       /** Every path affected when one structured edit changes multiple files. */
       paths?: string[];
+      /** Presence, even empty, identifies post-write file notifications. */
+      fileChanges?: HarnessFileChange[];
     }
   /** Something a subagent did, mirrored onto its parent Agent tool call. */
   | {
@@ -119,6 +144,7 @@ export type HarnessEvent =
   | {
       type: "approval.requested";
       requestId: number;
+      occurrenceId?: string;
       title: string;
       kind?: string;
       callId?: string;
@@ -127,21 +153,28 @@ export type HarnessEvent =
   | {
       type: "approval.resolved";
       requestId: number;
+      occurrenceId?: string;
       /** "cancelled" = a PermissionRequest hook decided before the user could. */
       decision: "allow" | "deny" | "cancelled";
     }
   | {
       type: "question.asked";
       requestId: number;
+      occurrenceId?: string;
       title?: string;
       questions: UserQuestion[];
       callId?: string;
+      behavior?: UserQuestionBehavior;
+      dismissAction?: UserQuestionDismissAction;
+      providerTurnId?: string;
       autoResolveAt?: number;
     }
   | {
       type: "question.updated";
       requestId: number;
       autoResolveAt?: number;
+      delivery?: UserQuestionDelivery;
+      error?: string;
     }
   | {
       type: "question.resolved";
@@ -174,6 +207,8 @@ export type HarnessEvent =
     }
   /** Context-window level after the harness's latest request. */
   | { type: "context"; used?: number; window?: number }
+  /** Authoritative post-compaction reading, or unknown when omitted. */
+  | { type: "context.compacted"; used?: number; window?: number }
   | ({ type: "usage" } & TurnUsage)
   /** Provider token accounting for the active user turn. */
   | ({ type: "turn.metrics" } & TurnMetrics);
@@ -183,10 +218,36 @@ export type ApprovalDecision = "allow" | "deny";
 /** The provider cannot accept a follow-up until the active turn is ready. */
 export class TurnNotReadyError extends Error {}
 
+/** Internal source observation; identity comes from the original registry call. */
+export type HarnessOperationContext = Readonly<{
+  operation?: object;
+  nativeSessionCapability?: import("./controlTurn").NativeSessionCapability;
+  nativeControlTurn?: import("./controlTurn").ControlTurnHandle;
+  /** Original actual Host authority capability, never a run-id DTO. */
+  hostRun?: import("./hostRun").HostRunHandle;
+  /** Separately issued original cleanup view; never substitutes a normal run. */
+  hostControlRun?: import("./hostRun").HostRunHandle;
+  /** Internal receipt for a successfully completed, globally owned utility operation. */
+  onUtilityStarted?: (utility: object) => void;
+  onUtilityCompleted?: (utility: object) => void;
+  onUtilityFailed?: (utility: object) => void;
+  originalProcess?: import("./child").ChildProcessHandle;
+  originalProcesses?: readonly import("./child").ChildProcessHandle[];
+}>;
+
 export type HarnessSessionInput = {
+  /** Original local Native authority turn; never serialized into provider input. */
+  nativeControlTurn?: import("./controlTurn").ControlTurnHandle;
+  /** Private operation observation; never a provider protocol field. */
+  operationContext?: HarnessOperationContext;
+  /** Report every actual source selected before startup/binding effects. */
+  onOriginalProcess?: (process: import("./child").ChildProcessHandle) => void;
   /** Current machine restrictions; never grants provider enablement. */
   skillPolicy?: import("./skillPolicy").SkillPolicy;
   sessionId: string;
+  /** Original logical locator after a real local persistence ACK. Native still
+   * validates actual construction/ownership; omission preserves unbound callers. */
+  nativeOutputSessionId?: string;
   cwd: string;
   model: string;
   modelSettings?: Record<string, string>;
@@ -216,6 +277,9 @@ export type SendTurnInput = HarnessSessionInput & {
 export type CompactContextInput = HarnessSessionInput;
 
 export type SteerTurnInput = {
+  /** Captured from the original submitted operation, never the latest turn. */
+  nativeControlTurn?: import("./controlTurn").ControlTurnHandle;
+  operationContext?: HarnessOperationContext;
   /** Local progress only; never serialized into a provider request. */
   onReady?: () => void;
   skillPolicy?: import("./skillPolicy").SkillPolicy;

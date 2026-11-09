@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { gitOperationStatus, subscribeGitChanged } from "../../../platform/tauri/fs";
-import { isRemoteProjectPath } from "../../projects/model/recents";
-import { remotePollDue, reportRemoteLoad } from "../../connections/model/remoteHealth";
+import { isRemoteProjectPath } from "../../projects/public/recents";
+import { remotePollDue, reportRemoteLoad } from "../../connections/public/remoteHealth";
 import type { LegacyConflictStatus } from "../model/conflictSection";
 
 const POLL_MS = 5000;
@@ -15,25 +15,30 @@ const POLL_MS = 5000;
  */
 export function useLegacyConflictStatus(cwd: string, active: boolean): LegacyConflictStatus | null {
   const remote = isRemoteProjectPath(cwd);
-  const [status, setStatus] = useState<LegacyConflictStatus | null>(null);
+  const [loaded, setLoaded] = useState<{
+    cwd: string;
+    status: LegacyConflictStatus | null;
+  } | null>(null);
+
+  // Going inactive forgets the last state, as a fresh start does.
+  if (!active && loaded !== null) setLoaded(null);
 
   const load = useCallback(() => {
     if (!active || document.hidden) return;
     void gitOperationStatus(cwd).then(
       (next) => {
         if (remote) reportRemoteLoad(cwd, "banner");
-        setStatus(next);
+        setLoaded({ cwd, status: next });
       },
       (error: unknown) => {
         // An unreachable machine keeps the last state shown.
         if (remote) return reportRemoteLoad(cwd, "banner", error);
-        setStatus(null);
+        setLoaded({ cwd, status: null });
       },
     );
   }, [active, cwd, remote]);
 
   useEffect(() => {
-    setStatus(null);
     if (!active) return;
     load();
     const timer = window.setInterval(() => {
@@ -48,5 +53,6 @@ export function useLegacyConflictStatus(cwd: string, active: boolean): LegacyCon
     };
   }, [active, cwd, load, remote]);
 
-  return active ? status : null;
+  // A state loaded for another project is never shown for this one.
+  return active && loaded?.cwd === cwd ? loaded.status : null;
 }

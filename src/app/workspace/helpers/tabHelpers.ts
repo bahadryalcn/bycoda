@@ -65,13 +65,26 @@ export function titleTabsEqual(a: TitleTab[], b: TitleTab[]): boolean {
   });
 }
 
+const sessionIndexes = new WeakMap<Session[], Map<string, Session>>();
+
+/** Id → session for one sessions array, built once per array; the first match wins, as `find` did. */
+function sessionsById(sessions: Session[]): Map<string, Session> {
+  let index = sessionIndexes.get(sessions);
+  if (!index) {
+    index = new Map();
+    for (const session of sessions) if (!index.has(session.id)) index.set(session.id, session);
+    sessionIndexes.set(sessions, index);
+  }
+  return index;
+}
+
 export function isBlankWorkspaceTab(tab: WorkspaceTab, sessions: Session[]): boolean {
   if (tab.editorPanes.some((pane) => pane.files.length > 0)) return false;
   if ((tab.terminalPanes ?? []).some((pane) => pane.files.length > 0)) return false;
   const ids = leafIds(tab.layout);
   if (ids.length !== 1) return false;
   if (remoteSessionFor(ids[0]) || remotePendingWorktree(ids[0])) return false;
-  return isBlankSession(sessions.find((entry) => entry.id === ids[0]));
+  return isBlankSession(sessionsById(sessions).get(ids[0]));
 }
 
 export function toTitleTab(
@@ -83,15 +96,16 @@ export function toTitleTab(
 ): TitleTab {
   const paneIds = leafIds(tab.layout);
   const multiPane = paneIds.length > 1;
+  const byId = sessionsById(sessions);
   const tabSessions = paneIds
-    .map((id) => sessions.find((session) => session.id === id))
+    .map((id) => byId.get(id))
     .filter((session): session is Session => session != null);
   const sessionFocused = tabSessions.some((session) => session.id === tab.focusedId);
   const fileFocused =
     !sessionFocused &&
     (tab.editorPanes.some((pane) => pane.id === tab.focusedId) ||
       (tab.terminalPanes ?? []).some((pane) => pane.id === tab.focusedId));
-  const focused = sessions.find((session) => session.id === tab.focusedId) ?? tabSessions[0];
+  const focused = byId.get(tab.focusedId) ?? tabSessions[0];
 
   const seen = new Set<HarnessId>();
   const harnesses: HarnessId[] = [];

@@ -7,6 +7,309 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.7]
+
+### Account (optional)
+
+- Sign in with a bycoda account from the desktop (browser sign-in with PKCE, tokens in the system keychain); without an account every local feature keeps working. Builds without `BYCODA_*` settings stay guest-only.
+- Account center in Settings: profile, security (opens the web account page), devices with remote sign-out and "Sign out of all other devices", active time, notifications with a daily digest e-mail switch, privacy and data, support requests, account status (deactivate, delete).
+- Sidebar footer with the account avatar and availability, account menu, update icon and a dismissible GitHub star that returns once after each update.
+- Send feedback (idea, problem, praise) from the sidebar, the account menu or Support, signed in or without an account; app version and system are attached only when you tick the box.
+- After some days of use, bycoda asks once whether you want to contribute: it clones the source code and opens it as a project. Also available in Settings → About.
+- Announcements appear as notices; anonymous statistics are asked once and stay off unless you turn them on.
+
+### Today and activity
+
+- Today view with this computer's and connected computers' active time; Usage shows active time; history syncs to your account when signed in.
+
+### Sessions and composer
+
+- Replace close and reopen with settle and idle auto-settle, owned by the Host.
+- Quote citation tokens in the composer; delegated advisors and subagents stay on the parent activity panel.
+- Keep mixed-provider queues moving when a steer was not sent, and queue busy turns with Shift+Tab.
+
+### Integrations
+
+- MCP hub with inventory, HTTP bridge and child process wiring; owner approvals in chat or the in-app confirmation.
+- Messaging over IMAP, Slack, Discord and Teams, browser Gmail and Slack sign-in, decision models and expanded Social workflows.
+- `secrets.run` with stored, redacted secrets and conversation image tools.
+
+### Settings and appearance
+
+- Settings rail grouped by area with the account row pinned at the bottom; more theme fields for typography, interface, background and motion.
+
+### Releases and reliability
+
+- Signed preview builds after green `main` CI; CI runs on `release/*` branches; native Windows Host launcher.
+- Separate browser viewing from control, recover session-store WAL orphans, and skip the saved SSH approval only for full-access coding sessions.
+
+## [0.7.5]
+
+### Remote hosts and two-computer use
+
+- Report a Host refusal (lease held by another computer, drain lease, changed shared queue, session already running) as not sent instead of an unknown outcome, so the other computer waits instead of showing an error.
+- Reconcile a pending remote command automatically after a reconnect, recovery or focus: settle it when the Host has a receipt, otherwise resend the same command id; offline sends are kept and sent after reconnect.
+- Wait up to 90 seconds for a reconnect before queue and command requests fail, and fall back to HTTP for WebSocket requests that were provably not sent.
+- Keep shared queues running while the other computer is busy, put a queued message back at the head when the session is not ready, and back off before offering it again.
+- Retry outbox writes that conflict with another window or tab instead of failing the send.
+- Keep a WebSocket lane usable while a Host restarts (503 for internal authentication errors, limited retries after an earlier successful sign-in), keep live streams running when another window joins, and detach a window's connection on page reload.
+
+### Reliability and data safety
+
+- Repair a damaged owner lock or tunnel state automatically, keeping a quarantined copy, unless the damaged lock names a live legacy Host.
+- Retire command receipts after a 30-day replay horizon: new request ids carry their issue time and the Host refuses expired ids instead of running them again.
+- Reconcile social media references in the background so Host start is not blocked; media is quarantined or purged only after reconciliation completes.
+- Stop lists from crashing after many distinct searches, and keep typed search text out of list state keys.
+- Make cross-drive moves work on Windows, remove the recovery copy after a verified move, and stop renaming a symlink from replacing its target.
+- Keep social workspaces and the Host inbox working beyond 1000 social jobs, and clean up unused social media files.
+- Release the installer lock after the installer exits and allow automatic Host maintenance on existing installations.
+- Match non-ASCII text case-insensitively in desktop search on macOS.
+
+### Quality
+
+- Fix Rust test compilation, clippy, formatting and lint findings; enforce file-size structure limits by moving helpers into feature modules.
+
+## [0.7.4]
+
+### Conversations and navigation
+
+- Keep owner-stopped turns distinct from interrupted work in conversation lists, history and recovery across desktop and Host reads.
+- Preserve undelivered input when project-folder preparation is rejected or fails before a turn starts.
+- Edit, remove or send local saved drafts from their cards, restoring text and attachments to the unsent composer when editing. Host-bound drafts retain Send and Remove.
+- Allow the Host's retirement window to finish before desktop run-lease acquisition times out, and retain uncertain ownership guards until an unrenewed lease expires.
+- Make attachment cards more compact while retaining filenames, reference tokens, metadata and full-screen access.
+- Add direct assistant-room navigation and keep Settings pinned at the bottom of the project rail and sidebar, including short windows.
+
+### Task board reliability
+
+- Keep task-change subscriptions stable across background polls to avoid repeated invalidation and refresh loops.
+- Refresh task data silently in the background while retaining visible progress for initial loading and owner-requested refreshes.
+
+## [0.7.3]
+
+### Voice and assistant
+
+- Add a professional conversation preset with automatic turn ending, longer pauses and interruption support.
+- Handle requests to pause, listening acknowledgments and resumed answers without losing the current conversation turn.
+- Track played and interrupted audio per response so conversation history and assistant briefings reflect what was delivered.
+- Improve recognition of bycoda feature names without including private project or session names in transcription hints.
+- Avoid return briefings when presence is unknown and reserve spoken return updates for meaningful activity.
+- Reorganize assistant settings with explicit saves, confirmation of saved changes and protection for unsaved drafts.
+- Group assistant history by day and make saved memory searchable by rules, profile information and learned facts.
+
+### Conversations and previews
+
+- Quote selected message text with source references, comments and matching highlights.
+- Add recent conversations across accessible projects and retain the provider and model history of submitted turns and handoffs.
+- Refine attachment references, session rows, sidebar controls and translated interface text.
+- Open inline visuals in a resizable side panel or expanded view, with shared preview, source and reload controls.
+- Choose the project when starting a new conversation and summarize work already listed in the current project without duplicating its running sessions.
+- Preserve interrupted status and last activity when reading stored conversations.
+- Attach, paste or drop files into free-text question answers, retain them with the question draft and upload them to the executing Host before remote delivery.
+
+### Connected servers
+
+- Run an exact command on a saved SSH server through the conversation tools, with native owner approval and strict host-key verification.
+- Read bounded command output and request cancellation by operation ID, with explicit unknown outcomes when remote termination cannot be confirmed.
+
+### Reliability
+
+- Validate provider history in remote session reads and retain large-response deletion safeguards.
+
+- Keep streaming output following the latest reply after delayed WebKit scroll updates while preserving deliberate history scrolling.
+- Consolidate remote connection notices and fall back to HTTP when a WebSocket connection is slow to become ready.
+- Preserve independent Git subscriptions across windows and validate authenticated subscription requests consistently.
+- Keep cross-machine sprint planning available while filtering tasks by project.
+- Make task starts and queue ordering atomic, preserve board state during pending or failed changes, and improve review recovery.
+- Keep queued messages in a recoverable waiting state when delivery is deferred, with clear progress instead of reporting an unconfirmed send as complete.
+
+## [0.7.2]
+
+### Voice and assistant
+
+- Keep voice connected across navigation and bind each spoken request to the conversation it was made in.
+- Start dictation while the recognizer loads, keep it warm for five minutes, and report a dropped connection instead of stopping silently.
+- Keep the dictation connection alive while buffered phrases finish after you stop.
+- Approve desktop actions on an assistant thread without a coding session.
+- Offer a one-million token draft budget and re-check setup before saving.
+- Keep follow-up activity on the original run until its children finish, and resolve bare filenames against a folder named in the same reply.
+- Announce voice errors and speakers reliably to screen readers.
+
+### macOS permissions
+
+- Ask for Screen Recording before quick-composer screenshots and open the right Privacy & Security pane when microphone or screen access is missing.
+- Declare local network, removable and network volume, Apple Events and camera usage so macOS can prompt for them.
+- Sign the app and the desktop-control helper with a Developer ID and notarize them when Apple credentials are configured, so permissions survive updates.
+
+### Security and reliability
+
+- Refuse hidden files such as `.env` in HTML previews and stop previews from sending data to other sites.
+- Reject invalid social webhook signatures instead of accepting them, and keep the Host running when an asynchronous error is not handled.
+- Keep Turkish and other non-ASCII text intact in large formatter and CLI inputs, and refuse to save files that are not UTF-8 or that became symlinks.
+- Retry a failed LAN gateway configuration load, use a free port when the saved one is taken, and start background services independently.
+- Rate-limit MCP requests per token and report rate limiting clearly.
+- Give secondary windows only the permissions they use.
+- Enable the microphone on Linux and bundle the correct Host on Intel Macs.
+
+### Interface
+
+- Refit running terminals after renderer changes so returning from a hidden panel uses the current cell size without restarting the shell.
+- Add missing translations, translate remaining English messages and keep keyboard focus in translated menus.
+- Follow the light theme during startup, keep SSH jump host order and focus when reordering, and show errors when a link cannot be opened.
+- Use shared icons, errors, tooltips and typography across the assistant, voice and desktop-control screens.
+
+### Build and verification
+
+- Run format, lint, translation, color, UI and documentation checks in CI, and require Node.js 22.12 or newer.
+- Stop tracking the unused npm lockfile and a stray process file.
+
+## [0.7.1]
+
+### Personal assistant
+
+- Add persistent jobs, session supervision, owner decisions, notes and memory that remain available when voice is disconnected.
+- Simplify the assistant Room, conversations and settings while preserving drafts, approvals and recovery controls.
+- Show colored availability indicators and recognize project display names alongside folder names.
+
+### Voice and reliability
+
+- Keep essential voice setup controls visible and retain advanced preferences in a compact disclosure.
+- Keep following live output after returning from earlier conversation history.
+- Add explicit turn-ending controls for longer requests and recover safely when audio cleanup cannot be confirmed.
+- Preserve session ownership, task follow-up status and saved daily summaries across reconnects and retries.
+- Keep abandoned attachment cleanup working alongside indexed assistant history while retaining active references.
+
+### Sounds
+
+- Replace the six interface sounds with CC0 recordings from Openverse/Freesound; credits are in CREDITS.md.
+
+## [0.7.0]
+
+### Reliability
+
+- Preserve run ownership when the same desktop renews an expired lease.
+- Keep shortcut recording, conflict feedback and reset actions usable in narrow Settings layouts.
+- Refresh remote skill restrictions with the catalog without persisting remote policy as local preferences.
+
+### Build and verification
+
+- Build shared web and Host JavaScript once per release candidate, while retaining platform packaging, signatures and packaged launch/migration checks.
+- Check contracts and Rust formatting before long CI jobs, and distribute browser and Host tests without dropping regression coverage.
+
+## [0.6.94]
+
+### Edit from here
+
+- Add Edit from here to every message you sent: rewind the chat to before that message and get its prompt and attachments back in the composer.
+- Choose Revert and keep changes to keep your files, or Revert files too to also restore the files this session changed since that message; files someone else changed meanwhile are skipped and listed.
+
+### Sessions and workspaces
+
+- Start new sessions, tasks, goals and automations in the current checkout by default; a worktree is now an explicit choice per session or a project setting.
+- Make worktree sessions lightweight: no whole-project snapshot or provider restart on every turn, and no turn locks. Exact Git rewind remains available as an experimental setting, off by default.
+- Sessions that were stuck with "A different managed turn is still active" continue normally after updating.
+- Start handoffs and second opinions in the current checkout, and keep a failed first send from switching the session to a worktree.
+
+### Model switches
+
+- Never block a message when switching provider or model: use the model's real context window, shorten the transferred history or recap when needed, and show a notice when earlier conversation could not be transferred.
+
+## [0.6.92]
+
+### Sessions
+
+- Start sessions in the current checkout even while the Host has not yet been updated for managed workspaces, when Current checkout is chosen explicitly.
+- Explain that a pending Host update installs automatically once active sessions finish, offer Use current checkout in the composer, and clear the notice automatically after the Host reconnects with the new capabilities.
+
+## [0.6.91]
+
+### Worktree-first sessions and tasks
+
+- Run new coding sessions, tasks, goal tasks, writing automations and steward discovery in their own managed Git worktree and branch by default; existing current-checkout sessions keep working unchanged.
+- Review a session's changes and deliver them only with owner approval: SHA-bound merge into the target branch, or push and create a pull request from one dialog. Agents can commit on their own branch but cannot merge, push or publish.
+- Rewind a conversation together with its worktree: files and commits made after the selected turn are restored, Undo rewind brings them back, and displaced commits stay in recoverable refs.
+- Clean up finished, merged, abandoned and idle worktrees automatically after configurable periods, with quick delete, pinning, a storage budget and Windows-safe removal that detaches dependency junctions first and never deletes uncommitted or unmerged work.
+
+### Verification and build identity
+
+- Give each worktree its own dependency install and leased dev-server, HMR, host and debug ports, with an isolated dev host profile for parallel native runs.
+- Stamp local builds with source branch, commit and dirty-state identity; `build:status` reports which source the installed app and running host contain.
+
+### Agent guidance
+
+- Replace the shared-checkout rules with worktree-first instructions, scope tiers that cover every surface of a named feature, verification that scales with the change, and project feature cards for the most-used areas.
+- Fix cross-platform path handling for linked temp and home directories on macOS and Linux, and align RPC metrics labels with sprint and task requests.
+
+## [0.6.90]
+
+### Sessions and host reliability
+
+- Improve provider and model identity validation, queued questions, handoffs and session recovery.
+- Reduce host database contention and strengthen authenticated session tool relays.
+- Add device image annotation and improve device controls, voice settings and remote workflows.
+
+### Planning and interface
+
+- Add project-scoped sprint planning, management and reports across connected hosts.
+- Refine compact navigation, shared controls, split diffs and live backgrounds.
+- Expand social publishing, media validation, registration review and channel management.
+- Improve mobile model selection, text selection and translated interface labels.
+
+## [0.6.78]
+
+### Performance and reliability
+
+- Move host persistence, Notes processing and workspace search into asynchronous workers to reduce blocking.
+- Improve remote session decoding, synchronization and recovery across machines.
+- Strengthen bundled host lifecycle checks and resumable local updates.
+
+### Tasks and workspace
+
+- Add task acceptance evidence, freshness checks, final review and cumulative execution budgets.
+- Improve saved workflows and task preparation checks.
+- Refine shared controls across tasks, crews, settings, social tools and file previews.
+- Improve editable Notes previews, session deletion and translation controls.
+
+## [0.6.75]
+
+### Remote sessions and coordination
+
+- Improve remote session discovery, transcript paging, previews and synchronization across machines.
+- Strengthen shared queues, run leases, checkpoint coordination and recovery from interrupted work.
+- Refine task, goal, steward and crew workflows, including shared default instructions.
+
+### Host tools and workspace
+
+- Expand reviewed file operations and improve host tool concurrency, caching and device discovery.
+- Improve document and spreadsheet previews, including background processing for Word documents.
+- Refine local voice setup, runtime discovery and settings.
+- Improve translation defaults, result workflows and ambient backgrounds.
+- Improve server controls, shared interface components and workspace presentation.
+- Expand regression and performance coverage across native, host and desktop workflows.
+
+## [0.6.70]
+
+### Idle performance
+
+- Stop the live chat background from repainting while no turn is running or the window is unfocused (thanks @gorkemduman, #272); new installs start with no live background.
+- Stop decorative scenes, working indicators, tickers and per-row pulses when nothing is working or the window is hidden or unfocused.
+- Hold terminal output for off-screen terminals, batch terminal runtime logs and skip status polls for unfocused windows.
+- Cut idle host work: event-driven project session lists, cached desktop metadata, skipped crew, social and inbox scans, and fewer git spawns.
+- Prune checkpoint refs, ignore them in the git watcher, and stop rewriting the git index while counting changes.
+- Lazy-load transcript images, contain settled transcript turns, and let stale or long-unseen tabs hibernate.
+- Rebuild the tray menu, dock badge and window glass only when they change.
+
+### Host install
+
+- Fix the macOS host service install that failed on long launchd listings and left a new runtime folder on every retry (thanks @gorkemduman, #271).
+- Keep only the current and previous host runtimes after an install.
+- Reuse a verified host package across failed desktop install retries and back off between retries.
+
+### Voice and interface
+
+- Add a local voice companion with on-device transcription and speech.
+- Move shell, connections and automations controls to the shared button, type and icon scales.
+
 ## [0.6.68]
 
 ### Providers and onboarding

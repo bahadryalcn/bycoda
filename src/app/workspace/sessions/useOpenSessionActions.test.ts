@@ -1,4 +1,9 @@
 // @vitest-environment happy-dom
+vi.mock("../../model/sessionWindowOwnership", () => ({
+  reserveSessionWindow: vi.fn(async () => async () => {}),
+}));
+import { rememberRemoteSession } from "../../../features/connections/model/connections";
+import { reserveSessionWindow } from "../../model/sessionWindowOwnership";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -31,6 +36,13 @@ function Harness() {
   actions = useOpenSessionActions(deps);
   return null;
 }
+
+it("carries the Room privacy mutation through a history open", async () => {
+  await act(async () => {
+    await actions.onSelectHistorySession(sessions[0].id, { workspaceRequestId: "native-pending" });
+  });
+  expect(deps.followProject).toHaveBeenCalledWith(sessions[0].cwd, expect.anything());
+});
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -153,6 +165,8 @@ it("does not replace another project's preview or a busy session", async () => {
 });
 
 it("ignores slow earlier opens and navigation superseded by a project change", async () => {
+  sessions[0].cwd = "/project-a";
+  sessions[1].cwd = "/project-b";
   let resolve!: (value: Session) => void;
   deps.ensureOpenSession = vi.fn((id: string) =>
     id === sessions[0].id
@@ -173,6 +187,8 @@ it("ignores slow earlier opens and navigation superseded by a project change", a
   });
   expect(deps.tabsRef.current).toHaveLength(1);
   expect(deps.tabsRef.current[0].previewSessionId).toBe(sessions[1].id);
+  expect(deps.followProject).toHaveBeenCalledTimes(1);
+  expect(deps.followProject).toHaveBeenLastCalledWith("/project-b");
   act(() => {
     pending = actions.onPreviewHistorySession(sessions[0].id);
   });
@@ -242,4 +258,145 @@ it("keeps a preview when its workspace gains an editor", async () => {
   expect(deps.tabsRef.current).toHaveLength(2);
   expect(deps.tabsRef.current[0].editorPanes[0].files[0].path).toBe("a.ts");
   expect(deps.tabsRef.current[0].previewSessionId).toBeUndefined();
+});
+
+it("does not create a local pane when another window owns the requested session", async () => {
+  vi.mocked(reserveSessionWindow).mockResolvedValueOnce(null);
+  await act(async () => {
+    await actions.onSelectHistorySession(sessions[0].id);
+  });
+  expect(deps.tabsRef.current).toHaveLength(0);
+  expect(deps.replaceBlankPaneWithSession).not.toHaveBeenCalled();
+});
+
+it("releases an in-flight reservation when navigation becomes stale", async () => {
+  let resolve!: (value: (retain?: boolean) => Promise<void>) => void;
+  const release = vi.fn(async () => {});
+  vi.mocked(reserveSessionWindow).mockReturnValueOnce(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const opened = actions.onSelectHistorySession(sessions[0].id);
+  await vi.waitFor(() => expect(reserveSessionWindow).toHaveBeenCalled());
+  currentNavigation = false;
+  await act(async () => {
+    resolve(release);
+    await opened;
+  });
+  expect(release).toHaveBeenCalledWith(false);
+  expect(deps.tabsRef.current).toHaveLength(0);
+});
+
+it.each(["advisor", "subagent"] as const)(
+  "never opens a delegated %s as a workspace tab",
+  async (kind) => {
+    sessions[1].modelSettings = {
+      delegationParent: JSON.stringify({
+        parentSessionId: sessions[0].id,
+        runId: "r",
+        kind,
+        model: "m",
+        startedAt: 1,
+      }),
+    };
+    await act(async () => actions.onSelectHistorySession(sessions[1].id));
+    expect(deps.tabsRef.current.flatMap((tab) => leafIds(tab.layout))).toContain(sessions[0].id);
+    await act(async () =>
+      actions.onOpenSessionsSideBySide([sessions[0].id, sessions[1].id, sessions[2].id]),
+    );
+    expect(deps.tabsRef.current.flatMap((tab) => leafIds(tab.layout))).not.toContain(
+      sessions[1].id,
+    );
+    expect(deps.tabsRef.current.flatMap((tab) => leafIds(tab.layout))).toContain(sessions[0].id);
+  },
+);
+
+it("does not navigate for missing, cyclic, or unverified host-bound parents", async () => {
+  for (const parentId of ["missing", sessions[1].id]) {
+    sessions[1].modelSettings = {
+      delegationParent: JSON.stringify({
+        parentSessionId: parentId,
+        runId: "r",
+        kind: "advisor",
+        model: "m",
+        startedAt: 1,
+      }),
+    };
+    await act(async () => actions.onSelectHistorySession(sessions[1].id));
+    expect(deps.tabsRef.current).toHaveLength(0);
+  }
+  sessions[1].modelSettings = {
+    delegationParent: JSON.stringify({
+      parentSessionId: sessions[0].id,
+      runId: "r",
+      kind: "advisor",
+      model: "m",
+      startedAt: 1,
+    }),
+  };
+  sessions[1].hostBinding = {
+    kind: "local-host",
+    machineId: "m",
+    environmentId: "e",
+    projectId: "p",
+    sessionId: "child",
+    authorityGeneration: null,
+    created: true,
+  };
+  await act(async () => actions.onSelectHistorySession(sessions[1].id));
+  expect(deps.tabsRef.current).toHaveLength(0);
+});
+
+it("opens verified Host parent shell for a child whose canonical parent ID differs", async () => {
+  const binding = {
+    kind: "local-host" as const,
+    machineId: "m",
+    environmentId: "e",
+    projectId: "p",
+    sessionId: "host-parent",
+    authorityGeneration: null,
+    created: true,
+  };
+  sessions[0].hostBinding = binding;
+  sessions[1].hostBinding = { ...binding, sessionId: "host-child" };
+  sessions[1].modelSettings = {
+    delegationParent: JSON.stringify({
+      parentSessionId: "host-parent",
+      runId: "r",
+      kind: "advisor",
+      model: "m",
+      startedAt: 1,
+    }),
+  };
+  resetSessionsStore(sessions);
+  await act(async () => actions.onSelectHistorySession(sessions[1].id));
+  expect(deps.tabsRef.current.flatMap((tab) => leafIds(tab.layout))).toContain(sessions[0].id);
+  expect(deps.tabsRef.current.flatMap((tab) => leafIds(tab.layout))).not.toContain(sessions[1].id);
+});
+
+it("opens an already mapped remote parent shell for a remote child", async () => {
+  sessions[0].cwd = sessions[1].cwd = "remote://environment/repo";
+  sessions[1].modelSettings = {
+    delegationParent: JSON.stringify({
+      parentSessionId: "remote-parent",
+      runId: "r",
+      kind: "advisor",
+      model: "m",
+      startedAt: 1,
+    }),
+  };
+  rememberRemoteSession(sessions[0].id, "remote-parent");
+  rememberRemoteSession(sessions[1].id, "remote-child");
+  resetSessionsStore(sessions);
+  try {
+    await act(async () => actions.onSelectHistorySession(sessions[1].id));
+    expect(deps.tabsRef.current.flatMap((tab) => leafIds(tab.layout))).toContain(sessions[0].id);
+    expect(deps.tabsRef.current.flatMap((tab) => leafIds(tab.layout))).not.toContain(
+      sessions[1].id,
+    );
+  } finally {
+    rememberRemoteSession(sessions[0].id);
+    rememberRemoteSession(sessions[1].id);
+  }
 });

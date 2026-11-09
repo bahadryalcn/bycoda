@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { useTransientFlag } from "./useTransientFlag";
 
-it("tekrar tetiklenince süreyi yeniler ve unmount sonrası timer bırakmaz", () => {
+it("refreshes the duration when retriggered and leaves no timer after unmount", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
   const container = document.createElement("div");

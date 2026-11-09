@@ -1,9 +1,8 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
-import { Alert } from "../../../shared/ui/Alert";
 import { basename } from "../../../platform/tauri/fs";
 import { folderRenameError } from "../model/projectFolderRename";
 
@@ -21,6 +20,7 @@ export function RenameProjectFolderDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const invalid = folderRenameError(name);
+  const formId = useId();
   return (
     <Modal
       title={t("Rename folder")}
@@ -29,9 +29,27 @@ export function RenameProjectFolderDialog({
       onClose={() => {
         if (!busy) onClose();
       }}
+      footer={
+        <ModalActions>
+          <Button type="button" disabled={busy} onClick={onClose} variant="ghost">
+            {t("Cancel")}
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            disabled={busy || !!invalid || name === basename(path)}
+            variant="primary"
+            loading={busy}
+            loadingLabel={t("Renaming…")}
+          >
+            {busy ? t("Renaming…") : t("Rename folder")}
+          </Button>
+        </ModalActions>
+      }
     >
       <form
-        className="space-y-3 p-4"
+        id={formId}
+        className="space-y-3"
         onSubmit={(event) => {
           event.preventDefault();
           if (busy || invalid || name === basename(path)) return;
@@ -43,37 +61,18 @@ export function RenameProjectFolderDialog({
             .finally(() => setBusy(false));
         }}
       >
-        <p className="break-all text-xs text-(--ui-text-secondary)">{path}</p>
-        <label className="block space-y-1 text-xs text-(--ui-text-secondary)">
-          <span>{t("Folder name")}</span>
-          <TextField
-            label=""
-            hideLabel
-            autoFocus
-            value={name}
-            disabled={busy}
-            onChange={(event) => {
-              setName(event.target.value);
-              setError(null);
-            }}
-            aria-invalid={!!invalid || !!error}
-          />
-        </label>
-        {invalid || error ? <Alert tone="danger">{invalid ?? error}</Alert> : null}
-        <div className="flex justify-end gap-2">
-          <Button type="button" disabled={busy} onClick={onClose} variant="secondary">
-            {t("Cancel")}
-          </Button>
-          <Button
-            type="submit"
-            disabled={busy || !!invalid || name === basename(path)}
-            variant="primary"
-            loading={busy}
-            loadingLabel={t("Renaming…")}
-          >
-            {busy ? t("Renaming…") : t("Rename folder")}
-          </Button>
-        </div>
+        <p className="break-all text-ui-caption text-(--ui-text-secondary)">{path}</p>
+        <TextField
+          label={t("Folder name")}
+          autoFocus
+          value={name}
+          disabled={busy}
+          error={invalid ?? error ?? undefined}
+          onChange={(event) => {
+            setName(event.target.value);
+            setError(null);
+          }}
+        />
       </form>
     </Modal>
   );

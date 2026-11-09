@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { LOADING_DELAY_MS } from "../../../shared/hooks/useDelayedVisible";
 import { act, createElement, Profiler } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
@@ -16,6 +17,13 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ ask: vi.fn() }));
+vi.mock("../../../shared/model/appConfirm", async () => {
+  const { ask } = await import("@tauri-apps/plugin-dialog");
+  return {
+    confirmInApp: (request: { title: string; message: string; confirmLabel: string }) =>
+      ask(request.message, { title: request.title, okLabel: request.confirmLabel }),
+  };
+});
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     isMaximized: async () => false,
@@ -83,18 +91,36 @@ async function render() {
   await act(async () => root.render(createElement(SkillsPage, { cwd: "D:/repo" })));
 }
 
+it("opens New skill as a dialog without copying the search text into the name", async () => {
+  await render();
+  const filter = container.querySelector<HTMLInputElement>('[aria-label="Filter skills"]')!;
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(filter, "aawd");
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("New skill");
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+  expect(document.querySelector<HTMLInputElement>('input[aria-label="Skill name"]')?.value).toBe(
+    "",
+  );
+  await click("Cancel");
+  expect(document.querySelector("form")).toBeNull();
+  expect(filter.value).toBe("aawd");
+});
+
 it("keeps policy explanations collapsed without changing owner restrictions", async () => {
   saveDisabledSkillPaths([skills[0].path]);
   await render();
   const target = container.querySelector<HTMLElement>('[data-setting-id="skill-folders"]')!;
   const disclosure = target.closest("details")!;
   expect(disclosure.open).toBe(false);
+  expect(button("Project guide").closest("[data-off]")).not.toBeNull();
+  await click("Project guide");
   expect(
     container
       .querySelector('[role="switch"][aria-label="Enable Project guide in bycoda"]')
       ?.getAttribute("aria-checked"),
   ).toBe("false");
-  expect(container.textContent).toContain("Disabled");
   await act(async () => disclosure.querySelector("summary")!.click());
   expect(disclosure.open).toBe(true);
   expect(vi.mocked(invoke).mock.calls.some(([method]) => method === "skill_policy_set")).toBe(
@@ -142,16 +168,22 @@ describe("Settings skill preview", () => {
   it("persists owner restrictions before updating the toggle, and keeps it off when save fails", async () => {
     const named = { ...skills[0], name: "project-guide" };
     const policy = { disabledNames: [named.name], disabledPaths: [] as string[] };
+    const savingPolicy = deferred<typeof policy>();
     const original = vi.mocked(invoke).getMockImplementation()!;
     vi.mocked(invoke).mockImplementation(async (command, args) => {
-      if (command === "skill_policy_set") return policy;
+      if (command === "skill_policy_set") return savingPolicy.promise;
       if (command === "list_skills") return [named];
       return original(command, args);
     });
     await render();
+    await click("project-guide");
     const toggle = () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Enable project-guide in bycoda"]')!;
     await act(async () => toggle().click());
+    expect(toggle().closest('[aria-busy="true"]')).not.toBeNull();
+    expect(toggle().getAttribute("aria-checked")).toBe("true");
+    await act(async () => savingPolicy.resolve(policy));
+    expect(toggle().closest('[aria-busy="true"]')).toBeNull();
     expect(invoke).toHaveBeenCalledWith("skill_policy_set", {
       cwd: "",
       name: named.name,
@@ -337,21 +369,18 @@ describe("Settings skill preview", () => {
     },
   );
 
-  it.each(["Project guide", "Preview skill Project guide"])(
-    "restores focus to %s after refreshing the list",
-    async (label) => {
-      await render();
-      const opener = await click(label);
-      const reload = deferred<DiscoveredSkill[]>();
-      vi.mocked(invoke).mockImplementationOnce(() => reload.promise);
-      await click("Refresh skills");
-      expect(opener.isConnected).toBe(false);
-      await act(async () => reload.resolve(skills));
-      const replacement = button(label);
-      await click("Close skill preview");
-      expect(document.activeElement === replacement).toBe(true);
-    },
-  );
+  it.each(["Project guide"])("restores focus to %s after refreshing the list", async (label) => {
+    await render();
+    await click(label);
+    const reload = deferred<DiscoveredSkill[]>();
+    vi.mocked(invoke).mockImplementationOnce(() => reload.promise);
+    await click("Refresh skills");
+    // The list stays mounted while it refreshes, so the opener can be kept or replaced.
+    await act(async () => reload.resolve(skills));
+    const replacement = button(label);
+    await click("Close skill preview");
+    expect(document.activeElement === replacement).toBe(true);
+  });
 
   it("returns focus to the filter if the preview opener disappears after refresh", async () => {
     await render();
@@ -368,7 +397,7 @@ describe("Settings skill preview", () => {
       [true, false].map((preview) => ({ control, preview })),
     ),
   ])(
-    "lets Escape cancel Add skill from $control before closing Settings (preview: $preview)",
+    "lets Escape cancel New skill from $control before closing Settings (preview: $preview)",
     async ({ control, preview }) => {
       const closeSettings = vi.fn();
       await act(async () =>
@@ -387,10 +416,10 @@ describe("Settings skill preview", () => {
       );
       if (preview) await openPreview("Project guide");
       const previewPanel = container.querySelector('[aria-label="Skill preview"]');
-      await click("Add skill");
+      await click("New skill");
       expect(document.activeElement?.getAttribute("aria-label")).toBe("Skill name");
       if (control !== "Skill name") {
-        const input = container.querySelector<HTMLInputElement>('[aria-label="Skill name"]')!;
+        const input = document.querySelector<HTMLInputElement>('[aria-label="Skill name"]')!;
         act(() => {
           Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
             input,
@@ -399,7 +428,7 @@ describe("Settings skill preview", () => {
           input.dispatchEvent(new Event("input", { bubbles: true }));
         });
         const target = Array.from(
-          container.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
+          document.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
             "form button, form input[type=radio]",
           ),
         ).find(
@@ -423,9 +452,10 @@ describe("Settings skill preview", () => {
           ),
         );
       escape();
-      expect(container.querySelector("form")).toBeNull();
+      expect(document.querySelector("form")).toBeNull();
       expect(container.querySelector('[aria-label="Skill preview"]')).toBe(previewPanel);
-      expect(document.activeElement === button("Add skill")).toBe(true);
+      await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+      expect(document.activeElement === button("New skill")).toBe(true);
       expect(closeSettings).not.toHaveBeenCalled();
       if (preview) {
         escape();
@@ -460,17 +490,16 @@ describe("Settings skill preview", () => {
       "Tests",
       "Passed",
     ]);
-    await click("Source");
-    expect(panel.querySelector("pre")?.textContent).toBe(source);
+    await click("Edit");
+    expect(
+      EditorView.findFromDOM(panel.querySelector<HTMLElement>(".cm-editor")!)?.state.doc.toString(),
+    ).toBe(source);
     await click("Preview");
   });
 
-  it("opens an inline panel from an eye icon and switches skills without closing it", async () => {
+  it("opens an inline panel by name and switches skills without closing it", async () => {
     await render();
-    const opener = button("Preview skill Project guide");
-    expect(opener.textContent).toBe("");
-    expect(opener.querySelector("svg")).not.toBeNull();
-    await click("Preview skill Project guide");
+    const opener = await openPreview("Project guide");
     const panel = container.querySelector('[aria-label="Skill preview"]');
     expect(panel).not.toBeNull();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
@@ -478,7 +507,7 @@ describe("Settings skill preview", () => {
     await openPreview("Other guide");
     expect(container.querySelector('[aria-label="Skill preview"]')).toBe(panel);
     expect(panel?.textContent).toContain(skills[2].path);
-    expect(opener.getAttribute("aria-expanded")).toBe("false");
+    expect(button("Project guide").getAttribute("aria-expanded")).toBe("false");
     expect(document.activeElement).toBe(button("Other guide"));
   });
 
@@ -546,8 +575,11 @@ describe("Settings skill preview", () => {
     expect(tab.defaultPrevented).toBe(false);
     await openPreview("Other guide");
     expect(document.activeElement).toBe(button("Other guide"));
-    await click("Source");
-    expect(document.querySelector<HTMLElement>('[aria-label="Markdown source"]')?.tabIndex).toBe(0);
+    await click("Edit");
+    // The editor is a contenteditable surface, so it is focusable and scrolls with the keyboard.
+    expect(
+      document.querySelector<HTMLElement>(".cm-content")?.getAttribute("contenteditable"),
+    ).toBe("true");
     await click("Preview");
   });
 
@@ -579,7 +611,7 @@ describe("Settings skill preview", () => {
       expect(document.querySelector('[aria-label="Skill preview"]')).toBeNull();
       expect(document.activeElement).toBe(opener);
       expect(filter.value).toBe("project");
-      expect(container.querySelectorAll('[role="switch"]')).toHaveLength(1);
+      expect(container.querySelector('[aria-label="Other guide"]')).toBeNull();
     },
   );
 
@@ -610,6 +642,9 @@ describe("Settings skill preview", () => {
       await render();
       vi.mocked(invoke).mockImplementationOnce(() => previous.promise);
       await openPreview("Project guide");
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, LOADING_DELAY_MS + 50));
+      });
       expect(document.querySelector('[role="status"]')?.textContent).toContain("Loading skill");
       vi.mocked(invoke).mockImplementationOnce(() => current.promise);
       await openPreview("Other guide");
@@ -631,10 +666,10 @@ describe("Settings skill preview", () => {
     },
   );
 
-  it("opens project and harness skills using Preview skill", async () => {
+  it("opens project and harness skills by name", async () => {
     await render();
     for (const skill of [skills[0], skills[2]]) {
-      await click(`Preview skill ${skill.name}`);
+      await click(skill.name);
       expect(document.querySelector('[aria-label="Skill preview"]')?.textContent).toContain(
         skill.path,
       );
@@ -659,9 +694,13 @@ describe("Settings skill preview", () => {
     expect(invoke).toHaveBeenCalledWith("read_text_file", {
       path: skills[1].path,
     });
-    await click("Source");
-    expect(dialog.querySelector("pre")?.textContent).toBe(markdown);
-    expect(button("Source").getAttribute("aria-checked")).toBe("true");
+    await click("Edit");
+    expect(
+      EditorView.findFromDOM(
+        dialog.querySelector<HTMLElement>(".cm-editor")!,
+      )?.state.doc.toString(),
+    ).toBe(markdown);
+    expect(button("Edit").getAttribute("aria-checked")).toBe("true");
     expect(loadDisabledSkillPaths()).toEqual([skills[1].path]);
     expect(
       container
@@ -698,7 +737,11 @@ describe("Skills on connected machines", () => {
     environmentId: `env-${id}`,
   });
   const b64 = (text: string) => btoa(text);
-  let hostCalls: { machineId: string; command: string; args: Record<string, unknown> }[];
+  let hostCalls: {
+    machineId: string;
+    command: string;
+    args: Record<string, unknown>;
+  }[];
 
   /** The desktop's own commands plus a `workspace.run` per machine. */
   function connect(
@@ -719,8 +762,15 @@ describe("Skills on connected machines", () => {
       if (command === "skill_import") return "C:/Users/test/.agents/skills/mac-notes/SKILL.md";
       if (command === "remote_request") {
         const found = machines.find((entry) => entry.id === input.machineId)!;
-        const params = input.params as { command: string; args: Record<string, unknown> };
-        hostCalls.push({ machineId: found.id, command: params.command, args: params.args });
+        const params = input.params as {
+          command: string;
+          args: Record<string, unknown>;
+        };
+        hostCalls.push({
+          machineId: found.id,
+          command: params.command,
+          args: params.args,
+        });
         return host(found.environmentId, params.command, params.args);
       }
       throw new Error(`Unexpected command: ${command}`);
@@ -758,7 +808,14 @@ describe("Skills on connected machines", () => {
     expect(container.textContent).toContain("kit:plan");
   });
 
-  it("lists a machine's skill names with a Transfer button while the open project is local", async () => {
+  async function machinesTab(name: string) {
+    await click(name);
+    await act(async () => {});
+    await click("Machines");
+    return container.querySelector<HTMLElement>('[aria-label="Machines"]')!;
+  }
+
+  it("merges machines into one list with presence marks while the open project is local", async () => {
     connect([machine("mac", "Mac mini")], () => macSkills);
     await renderLocalProject();
 
@@ -766,26 +823,33 @@ describe("Skills on connected machines", () => {
       expect.objectContaining({ command: "list_skills", args: { cwd: "" } }),
     );
     const text = container.textContent ?? "";
-    expect(text).toContain("This computer");
-    expect(text).toContain("Mac mini");
     expect(text).toContain("mac-notes");
     expect(text).toContain("kit:plan");
     expect(text).toContain("Personal guide");
-    // 1 on this computer + 2 on the Mac.
-    expect(text).toContain("3 skills");
-    // Names only: no description line, no catalog switch on the other machine's rows.
+    // All three are personal skills: one group, one list.
+    expect(container.querySelectorAll("[data-continuous-list]")).toHaveLength(1);
     expect(text).not.toContain("Notes from the Mac");
+    // One column per machine, headed by its name; each cell shows ✓ or a copy action.
+    expect(container.textContent).toContain("This PC");
+    expect(container.textContent).toContain("Mac mini");
+    const row = (name: string) => button(name).closest<HTMLElement>("[aria-busy]")!;
     expect(
-      container.querySelector('[aria-label="Include mac-notes in bycoda catalog"]'),
-    ).toBeNull();
-    expect(button("Copy mac-notes to this computer").querySelector("svg")).not.toBeNull();
-    // A plugin skill belongs to its plugin: nothing to transfer.
-    expect(container.querySelector('[aria-label="Copy kit:plan to this computer"]')).toBeNull();
-    // Rows on this computer can be copied to the single connected machine.
-    expect(button("Copy Personal guide to Mac mini")).toBeDefined();
+      row("Personal guide").querySelector('[role="img"][aria-label="On This computer"]'),
+    ).not.toBeNull();
+    expect(button("Copy Personal guide to Mac mini").querySelector("svg")).not.toBeNull();
+    expect(row("mac-notes").querySelector('[role="img"][aria-label="On Mac mini"]')).not.toBeNull();
+    expect(button("Copy mac-notes to This computer")).toBeDefined();
+    // A plugin skill belongs to its plugin: its missing cell offers nothing.
+    expect(container.querySelector('[aria-label="Copy kit:plan to This computer"]')).toBeNull();
+    expect(
+      row("kit:plan").querySelector('[role="img"][aria-label="Missing on This computer"]'),
+    ).not.toBeNull();
+    const panel = await machinesTab("Personal guide");
+    expect(panel.textContent).toContain("Not installed");
+    expect(panel.querySelector('[aria-label="Copy Personal guide to Mac mini"]')).toBeNull();
   });
 
-  it("lists the open remote project's skills in its machine's section", async () => {
+  it("lists the open remote project's skills and offers each other machine a copy", async () => {
     const { rememberRemoteProject } = await import("../../connections/model/remoteProjects");
     const project = rememberRemoteProject("env-mac", {
       id: "p1",
@@ -813,12 +877,13 @@ describe("Skills on connected machines", () => {
     expect(hostCalls.find((call) => call.machineId === "machine-mac")?.args).toEqual({
       cwd: "/Users/me/shop",
     });
-    const text = container.textContent ?? "";
-    expect(text).toContain("shop-deploy");
-    expect(text).toContain("Office PC");
-    expect(text).toContain("No skills on this machine.");
-    // Several machines: the local rows offer a choice instead of one target.
-    expect(button("Copy Personal guide to another machine")).toBeDefined();
+    expect(container.textContent).toContain("shop-deploy");
+    // Missing on two machines: each machine's column offers its own copy.
+    expect(button("Copy shop-deploy to This computer")).toBeDefined();
+    expect(button("Copy shop-deploy to Office PC")).toBeDefined();
+    expect(container.querySelector('[aria-label="Copy shop-deploy to Mac mini"]')).toBeNull();
+    const panel = await machinesTab("shop-deploy");
+    expect(panel.textContent).toContain("Office PC");
   });
 
   it("opens a machine's skill by asking that machine for its SKILL.md", async () => {
@@ -841,17 +906,16 @@ describe("Skills on connected machines", () => {
     const panel = container.querySelector('[aria-label="Skill preview"]')!;
     expect(panel.textContent).toContain("Mac mini");
     expect(panel.textContent).toContain("Remote body.");
-    expect(button("Copy mac-notes to this computer")).toBeDefined();
   });
 
-  it("transfers a machine's skill to this computer", async () => {
+  it("transfers a machine's skill to this computer from its row", async () => {
     connect([machine("mac", "Mac mini")], (_env, command) =>
       command === "list_skills"
         ? macSkills
         : { name: "notes", files: [{ path: "SKILL.md", data: b64("# Mac notes") }] },
     );
     await renderLocalProject();
-    await click("Copy mac-notes to this computer");
+    await click("Copy mac-notes to This computer");
     await act(async () => {});
 
     expect(hostCalls.some((call) => call.command === "skill_export")).toBe(true);
@@ -863,19 +927,23 @@ describe("Skills on connected machines", () => {
     });
   });
 
-  it("explains an outdated host in its own section only", async () => {
+  it("explains an outdated host in its own alert only", async () => {
     connect([machine("mac", "Mac mini"), machine("old", "Old box")], (env, command) => {
       if (env === "env-old") throw "Host rejected request: Invalid workspace path";
+      // A current host answers its skill policy too; only the outdated one fails.
+      if (command === "skill_policy_get") return { disabledNames: [], disabledPaths: [] };
       return command === "list_skills" ? macSkills : [];
     });
     await renderLocalProject();
 
-    const old = container.querySelector('[aria-label="Skills on Old box"]')!;
-    expect(old.textContent).toContain("needs updating");
-    expect(old.querySelector('[role="alert"]')).not.toBeNull();
-    const mac = container.querySelector('[aria-label="Skills on Mac mini"]')!;
-    expect(mac.textContent).toContain("mac-notes");
-    expect(mac.querySelector('[role="alert"]')).toBeNull();
+    const alerts = Array.from(
+      container.querySelectorAll('[role="alert"]'),
+      (item) => item.textContent,
+    );
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toContain("needs updating");
+    expect(alerts[0]).not.toContain("Mac mini");
+    expect(container.textContent).toContain("mac-notes");
   });
 
   it("says when a machine cannot be reached", async () => {
@@ -886,4 +954,63 @@ describe("Skills on connected machines", () => {
     expect(container.textContent).toContain("Couldn't reach Mac mini.");
     expect(container.textContent).toContain("Personal guide");
   });
+});
+
+it("hides the cloud action when every connected machine already has the skill", async () => {
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    const input = (args ?? {}) as Record<string, unknown>;
+    if (command === "skill_policy_get") return { disabledNames: [], disabledPaths: [] };
+    if (command === "remote_machines")
+      return [
+        {
+          id: "machine-mac",
+          name: "Mac mini",
+          endpoint: "http://mac.example",
+          environmentId: "env-mac",
+        },
+      ];
+    if (command === "list_skills") return [skills[1]];
+    if (command === "remote_request") {
+      const params = input.params as { command: string };
+      if (params.command === "skill_policy_get") return { disabledNames: [], disabledPaths: [] };
+      return [{ ...skills[1], path: "/Users/me/.agents/skills/guide/SKILL.md" }];
+    }
+    throw new Error(`Unexpected command: ${command}`);
+  });
+  await render();
+  await act(async () => {});
+  await act(async () => {});
+  expect(button("Personal guide")).toBeDefined();
+  expect(container.querySelector('[role="img"][aria-label="On This computer"]')).not.toBeNull();
+  expect(container.querySelector('[role="img"][aria-label="On Mac mini"]')).not.toBeNull();
+  expect(container.querySelector('[aria-label^="Copy Personal guide"]')).toBeNull();
+});
+
+it("disables and re-enables a skill from its row actions without opening it", async () => {
+  let disabledNames: string[] = [];
+  const original = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "skill_policy_set") {
+      const input = args as { name: string; enabled: boolean };
+      disabledNames = input.enabled
+        ? disabledNames.filter((name) => name !== input.name)
+        : [...disabledNames, input.name];
+      return { disabledNames, disabledPaths: [] };
+    }
+    if (command === "list_skills") return [{ ...skills[1], name: "personal-guide" }];
+    return original(command, args);
+  });
+  await render();
+  await click("Actions for personal-guide");
+  await click("Disable personal-guide");
+  expect(invoke).toHaveBeenCalledWith("skill_policy_set", {
+    cwd: "",
+    name: "personal-guide",
+    enabled: false,
+  });
+  expect(button("personal-guide").closest("[data-off]")).not.toBeNull();
+  expect(container.querySelector('[aria-label="Skill preview"]')).toBeNull();
+  await click("Actions for personal-guide");
+  await click("Enable personal-guide");
+  expect(button("personal-guide").closest("[data-off]")).toBeNull();
 });

@@ -1,41 +1,112 @@
+import { QuestionFields, updateCustomAnswer, nextSelection } from "./QuestionFields";
+import { useQuestionFormDraft } from "./useQuestionFormDraft";
+import { useQuestionAttachmentRecovery } from "./useQuestionAttachmentRecovery";
+import { useQuestionAttachmentReader } from "./useQuestionAttachmentReader";
+import { questionFormPresentation } from "./questionFormPresentation";
+import { QuestionAttachmentError } from "./QuestionAttachmentError";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
-import { RadioGroup } from "../../../shared/ui/RadioGroup";
-import { Checkbox } from "../../../shared/ui/Checkbox";
 import styles from "./QuestionForm.module.css";
-import { TextField } from "../../../shared/ui/TextField";
-import { t, useLocale } from "../../../shared/i18n";
+import { LiveText } from "../../../shared/ui/LiveText";
+import { QuestionAttachmentList } from "./QuestionAttachmentList";
+import { useComposerFileDrop } from "./useComposerFileDrop";
+import { useAttachmentSink } from "./useComposerAttachments";
+import {
+  attachmentsFromFiles,
+  filesFromClipboard,
+  pickAttachments,
+  MAX_ATTACHMENTS,
+} from "../model/attachments";
+import { questionTransportHeld, runQuestionAttachmentEffect } from "../model/questionAttachments";
+import { useT } from "../../../shared/i18n";
 import { usePresentationVisible } from "./presentationVisibility";
+import { useEffect, useLayoutEffect, useId, useRef, useState } from "react";
+import { ChevronLeft, FilePlus, MessageSquare } from "../../../shared/ui/icons";
+import { questionDraftKey, type QuestionDraft } from "../model/questionDrafts";
 import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from "react";
-import { MessageSquare } from "../../../shared/ui/icons";
-import {
-  CUSTOM_OPTION_ID,
   buildQuestionReply,
-  isOtherOption,
   questionIsComplete,
-  type UserQuestion,
   type UserQuestionPrompt,
   type UserQuestionReply,
 } from "../model/userQuestion";
 
 type Props = {
   prompt: UserQuestionPrompt;
+  /** Session identity; unfinished answers stay separate across sessions. */
+  draftScope?: string;
+  /** Actual logical root; draftScope may instead be a remote cache namespace. */
+  parentSessionId?: string;
+  sessionId?: string;
+  /** Alternate wording for a non-destructive skip, such as a retained owner question. */
+  dismissLabel?: string;
+  /** A retained owner card can postpone the whole prompt without answering earlier fields. */
+  dismissEntirePrompt?: boolean;
+  attachmentsSupported?: boolean;
+  remote?: boolean;
   onReply: (requestId: number, reply: UserQuestionReply) => void;
   onInteraction?: (requestId: number) => void;
 };
 
-export function QuestionForm({ prompt, onReply, onInteraction }: Props) {
-  useLocale();
-  const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string[]>>({});
-  const [custom, setCustom] = useState<Record<string, string>>({});
+export function QuestionForm(props: Props) {
+  return <QuestionFormContent key={questionDraftKey(props.draftScope, props.prompt)} {...props} />;
+}
+
+function QuestionFormContent({
+  prompt,
+  draftScope,
+  parentSessionId,
+  sessionId,
+  dismissLabel,
+  dismissEntirePrompt,
+  attachmentsSupported = true,
+  remote = false,
+  onReply,
+  onInteraction,
+}: Props) {
+  const t = useT();
+  const {
+    draft,
+    draftRef,
+    setDraft,
+    submitted,
+    submitting,
+    setSubmitting,
+    localUnknown,
+    setLocalUnknown,
+    form,
+    parentClosed,
+    parentChanged,
+    reserved,
+    reservation,
+    mounted,
+    capacityIssue,
+    updateDraft,
+  } = useQuestionFormDraft(prompt, draftScope, parentSessionId);
+  const { step, answers, custom } = draft;
+  const statusId = useId();
   const [now, setNow] = useState(Date.now);
   const visible = usePresentationVisible();
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [readingAttachments, setReadingAttachments] = useState(false);
+  const attachmentFlight = useRef(false);
+  const recovery = useQuestionAttachmentRecovery(
+    draft,
+    readingAttachments,
+    updateDraft,
+    setAttachmentError,
+    sessionId,
+    questionDraftKey(draftScope, prompt),
+    prompt,
+    setReadingAttachments,
+  );
+  const sending = submitting || prompt.delivery === "sending";
+  const transportHeld = questionTransportHeld(
+    parentClosed,
+    sending,
+    localUnknown || draft.delivery === "unknown",
+    prompt.delivery,
+  );
+  const held = transportHeld || !reserved || readingAttachments || recovery.blocked;
 
   useEffect(() => {
     if (prompt.autoResolveAt == null || !visible) return;
@@ -45,61 +116,229 @@ export function QuestionForm({ prompt, onReply, onInteraction }: Props) {
   }, [prompt.requestId, prompt.autoResolveAt, visible]);
 
   const interact = () => {
+    if (!reserved || !reservation.current?.current() || !parentChanged.canMutate()) return;
     if (prompt.autoResolveAt != null) onInteraction?.(prompt.requestId);
   };
-
-  useEffect(() => {
-    setStep(0);
-    setAnswers({});
-    setCustom({});
-  }, [prompt.requestId]);
 
   const questions = prompt.questions;
   const total = questions.length;
   const index = Math.min(step, Math.max(total - 1, 0));
   const question = questions[index];
+  const canAttach =
+    attachmentsSupported && !!question?.allowCustom && !question.preserveCustomWhitespace;
+  const files = draft.attachments?.[question?.id ?? ""] ?? [];
+  const filesRef = useRef(files);
+  useLayoutEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+  const readAttachments = useQuestionAttachmentReader({
+    canAttach,
+    held,
+    interact,
+    attachmentFlight,
+    setReadingAttachments,
+    setAttachmentError,
+    parentChanged,
+    draftRef,
+    mounted,
+    reservation,
+    updateDraft,
+    sessionId,
+    draftScope,
+    prompt,
+    question,
+    t,
+  });
+  const sink = useAttachmentSink({
+    attachmentsSupported: canAttach,
+    remote,
+    addAttachments: () => {},
+  });
+  useComposerFileDrop({
+    enabled: canAttach,
+    disabled: held,
+    attachmentsSupported: canAttach,
+    boxRef: form,
+    sinkRef: sink,
+    attachmentsRef: filesRef,
+    persistBlobs: false,
+    readDroppedAttachments: readAttachments,
+    setPasteError: setAttachmentError,
+  });
   const last = index >= total - 1;
-  const ready = useMemo(
-    () => (question ? questionIsComplete(question, answers, custom) : false),
-    [answers, custom, question],
-  );
+  const ready = question
+    ? !Object.values(draft.attachments ?? {})
+        .flat()
+        .some((file) => file.missing) &&
+      (questionIsComplete(question, answers, custom) || (canAttach && files.length > 0))
+    : false;
 
-  const finish = (nextAnswers = answers, nextCustom = custom) => {
-    onReply(prompt.requestId, buildQuestionReply(questions, nextAnswers, nextCustom));
+  const sendNow = (
+    reply: UserQuestionReply,
+    pendingAction: QuestionDraft["pendingAction"] = "answer",
+  ) => {
+    if (submitted.current || held) return;
+    const originalReservation = reservation.current;
+    if (!originalReservation?.current()) return;
+    const admitted = parentChanged.admit();
+    if (!admitted) return;
+    try {
+      admitted.apply(() => {
+        if (!updateDraft((current) => ({ ...current, delivery: "sending", pendingAction }))) return;
+        submitted.current = true;
+        setSubmitting(true);
+        setLocalUnknown(false);
+        parentChanged();
+        try {
+          onReply(prompt.requestId, reply);
+        } catch {
+          if (mounted.current) setSubmitting(false);
+          // A callback can throw after dispatch. Only an authoritative failed
+          // transport update can establish that sending again is safe.
+          if (mounted.current) setLocalUnknown(true);
+          // This is the original synchronous admitted continuation, including
+          // when dispatch retired the view. It records uncertainty, never retries.
+          const original = originalReservation.read();
+          if (original) {
+            const retained = originalReservation.write({ ...original, delivery: "unknown" });
+            if (retained.ok && mounted.current && reservation.current === originalReservation) {
+              draftRef.current = retained.value;
+              setDraft(retained.value);
+              parentChanged();
+            }
+          }
+        }
+      });
+    } finally {
+      admitted.finish();
+    }
   };
+  const send = (reply: UserQuestionReply, action: QuestionDraft["pendingAction"] = "answer") => {
+    const all = Object.values(draftRef.current.attachments ?? {}).flat();
+    if (held || (reply.kind === "answered" && all.some((file) => file.missing))) return;
+    runQuestionAttachmentEffect(
+      all,
+      reply.kind === "answered" ? "retain" : "release",
+      () => sendNow(reply, action),
+      setReadingAttachments,
+      setAttachmentError,
+      attachmentFlight,
+    );
+  };
+  const finish = (
+    nextAnswers = answers,
+    nextCustom = custom,
+    pendingAction: QuestionDraft["pendingAction"] = "answer",
+  ) =>
+    send(
+      buildQuestionReply(
+        questions,
+        nextAnswers,
+        nextCustom,
+        draftRef.current.attachments,
+        draftRef.current.notes,
+      ),
+      pendingAction,
+    );
 
-  const skipCurrent = () => {
+  const skipNow = () => {
+    if (held || submitted.current) return;
+    if (
+      dismissEntirePrompt ||
+      prompt.dismissAction === "cancel" ||
+      prompt.dismissAction === "decline"
+    ) {
+      send({ kind: "skipped" }, "dismiss");
+      return;
+    }
     if (!question) {
-      finish();
+      finish(answers, custom, "dismiss");
       return;
     }
     const nextAnswers = { ...answers };
     const nextCustom = { ...custom };
+    const nextAttachments = { ...draftRef.current.attachments };
+    delete nextAttachments[question.id];
     delete nextAnswers[question.id];
     delete nextCustom[question.id];
+    const nextNotes = { ...draftRef.current.notes };
+    delete nextNotes[question.id];
     if (last) {
-      finish(nextAnswers, nextCustom);
+      if (
+        !updateDraft((current) => ({
+          ...current,
+          notes: nextNotes,
+          answers: nextAnswers,
+          custom: nextCustom,
+          attachments: nextAttachments,
+        }))
+      )
+        return;
+      finish(nextAnswers, nextCustom, "dismiss");
       return;
     }
-    setAnswers(nextAnswers);
-    setCustom(nextCustom);
-    setStep(index + 1);
+    updateDraft(() => ({
+      notes: nextNotes,
+      answers: nextAnswers,
+      custom: nextCustom,
+      attachments: nextAttachments,
+      step: index + 1,
+    }));
   };
 
+  const skipCurrent = () => {
+    if (held || submitted.current) return;
+    if (
+      dismissEntirePrompt ||
+      prompt.dismissAction === "cancel" ||
+      prompt.dismissAction === "decline"
+    ) {
+      skipNow();
+      return;
+    }
+    runQuestionAttachmentEffect(
+      files,
+      "release",
+      skipNow,
+      setReadingAttachments,
+      setAttachmentError,
+      attachmentFlight,
+    );
+  };
   const continueCurrent = () => {
-    if (!question || !ready) return;
+    if (!question || !ready || held || submitted.current) return;
     if (last) {
       finish();
       return;
     }
-    setStep(index + 1);
+    updateDraft((current) => ({ ...current, step: index + 1 }));
   };
 
   if (!question) return null;
 
   const heading = question.header?.trim() || prompt.title?.trim();
   // Providers may repeat the entire question as their header.
-  const title = heading && heading !== question.prompt.trim() ? heading : t("Question");
+  const title = heading && heading !== question.prompt.trim() ? heading : undefined;
+  const {
+    uncertain,
+    capacityMessage,
+    failed,
+    dismissing,
+    pendingLabel,
+    status,
+    StatusIcon,
+    SubmitIcon,
+    submitLabel,
+  } = questionFormPresentation({
+    t,
+    prompt,
+    sending,
+    localUnknown,
+    draftDelivery: draft.delivery,
+    pendingAction: draft.pendingAction,
+    capacityIssue,
+    last,
+  });
 
   return (
     <div
@@ -112,276 +351,177 @@ export function QuestionForm({ prompt, onReply, onInteraction }: Props) {
       onChangeCapture={interact}
     >
       <form
-        className={styles.form}
+        ref={form}
+        className={`bycoda-arc ${styles.form}`}
+        aria-label={t("Question")}
+        aria-busy={sending}
+        onPaste={(event) => {
+          const pasted = filesFromClipboard(event.clipboardData);
+          if (!canAttach || !pasted.length) return;
+          event.preventDefault();
+          event.stopPropagation();
+          readAttachments(async () => {
+            const attached = await attachmentsFromFiles(pasted, { persistBlobs: false });
+            if (attached.length !== pasted.length)
+              throw new Error(t("Some files could not be attached. Try attaching them again."));
+            return attached;
+          });
+        }}
         onSubmit={(event) => {
           event.preventDefault();
           continueCurrent();
         }}
       >
-        <div className="flex items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
-          <MessageSquare
-            className="size-3.5 shrink-0 text-(--ui-text-secondary)"
-            strokeWidth={1.75}
-          />
-          <span
-            className="min-w-0 flex-1 truncate text-xs text-(--ui-text-secondary)"
-            title={title}
-          >
-            {title}
-          </span>
+        <div className={styles.context}>
+          <MessageSquare className="icon-sm shrink-0" aria-hidden />
+          <span className={styles.contextTitle}>{title ?? t("Question")}</span>
           {total > 1 ? (
-            <span
-              className="shrink-0 text-xs text-(--ui-text-secondary) tabular-nums"
-              aria-live="polite"
-            >
-              {index + 1}
-              {" / "}
-              {total}
-            </span>
+            <LiveText className={styles.progress} text={`${index + 1} / ${total}`} />
           ) : null}
         </div>
-        <div className="px-3 py-3">
+        <fieldset className={styles.body} disabled={sending}>
           <QuestionFields
             key={question.id}
             question={question}
             selected={answers[question.id] ?? []}
             custom={custom[question.id] ?? ""}
-            onSelect={(optionId) =>
-              setAnswers((current) => ({
+            note={draft.notes?.[question.id] ?? ""}
+            onNote={(value) =>
+              updateDraft((current) => ({
                 ...current,
-                [question.id]: nextSelection(question, current[question.id] ?? [], optionId),
+                notes: { ...current.notes, [question.id]: value },
               }))
             }
-            onCustom={(value) => {
-              setCustom((current) => ({ ...current, [question.id]: value }));
-              setAnswers((current) => {
-                const selected = current[question.id] ?? [];
-                if (question.multiSelect) {
-                  const without = selected.filter((id) => !isCustomId(question, id));
-                  return {
-                    ...current,
-                    [question.id]: [...without, customOptionId(question)],
-                  };
-                }
-                return {
-                  ...current,
-                  [question.id]: [customOptionId(question)],
-                };
-              });
+            locked={held}
+            onSelect={(optionId) =>
+              updateDraft((current) => ({
+                ...current,
+                answers: {
+                  ...current.answers,
+                  [question.id]: nextSelection(
+                    question,
+                    current.answers[question.id] ?? [],
+                    optionId,
+                  ),
+                },
+              }))
+            }
+            onCustom={(value) =>
+              updateDraft((current) => updateCustomAnswer(current, question, value))
+            }
+            onRejectedInput={() => {
+              if (mounted.current) parentChanged();
             }}
           />
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-(--ui-tone-neutral-border) px-3 py-2">
-          {prompt.autoResolveAt != null ? (
-            <span
-              className="min-w-0 flex-1 text-xs text-(--ui-text-secondary) tabular-nums"
-              title={t("Interact to keep this question open.")}
-            >
-              {prompt.autoResolveAt - now > 60_000
-                ? t("Optional question")
-                : t("Continues without an answer in {p0}s", {
-                    p0: Math.max(0, Math.ceil((prompt.autoResolveAt - now) / 1000)),
-                  })}
-            </span>
+          {canAttach && files.length ? (
+            <div className={styles.attachments} aria-label={t("Attachments")}>
+              <QuestionAttachmentList
+                files={files}
+                held={held}
+                questionId={question.id}
+                update={updateDraft}
+                busy={setReadingAttachments}
+                error={setAttachmentError}
+                flight={attachmentFlight}
+              />
+            </div>
           ) : null}
-          <Button variant="ghost" type="button" onClick={skipCurrent}>
-            {t("Skip")}
-          </Button>
-          {index > 0 ? (
+          <QuestionAttachmentError
+            message={attachmentError}
+            blocked={recovery.blocked}
+            retry={recovery.retry}
+          />
+        </fieldset>
+        <div className={styles.footer}>
+          {canAttach ? (
             <Button
               variant="ghost"
+              size="sm"
               type="button"
-              className="shrink-0"
-              onClick={() => setStep(index - 1)}
-            >
-              {t("Back")}
-            </Button>
+              iconOnly
+              label={t("Attach files")}
+              startIcon={<FilePlus />}
+              disabled={held || files.length >= MAX_ATTACHMENTS}
+              loading={readingAttachments}
+              onClick={() => readAttachments(() => pickAttachments())}
+            />
           ) : null}
-          <Button variant="primary" type="submit" disabled={!ready}>
-            {t("Continue")}
-          </Button>
+          <div className={styles.feedback}>
+            {parentClosed ? (
+              <LiveText text={t("Preparing session checkpoint. Your draft is kept.")} />
+            ) : null}
+            {capacityMessage ? <InlineError>{capacityMessage}</InlineError> : null}
+            <p
+              role={failed || uncertain ? "alert" : "status"}
+              className={styles.status}
+              id={statusId}
+              data-error={failed ? "true" : undefined}
+            >
+              {StatusIcon ? <StatusIcon className="icon-sm shrink-0" aria-hidden /> : null}
+              <span>{status}</span>
+            </p>
+            {prompt.autoResolveAt != null && !transportHeld ? (
+              <span
+                className="text-ui-caption text-(--ui-text-secondary) tabular-nums"
+                title={t("Interact to keep this question open.")}
+              >
+                {prompt.autoResolveAt - now > 60_000
+                  ? t("Optional question")
+                  : t("Continues without an answer in {p0}s", {
+                      p0: Math.max(0, Math.ceil((prompt.autoResolveAt - now) / 1000)),
+                    })}
+              </span>
+            ) : null}
+          </div>
+          <div className={styles.actions}>
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              disabled={held}
+              loading={dismissing}
+              loadingLabel={pendingLabel}
+              reserveLabels={[prompt.dismissAction === "cancel" ? t("Cancelling…") : t("Sending…")]}
+              aria-describedby={held ? statusId : undefined}
+              onClick={skipCurrent}
+            >
+              {dismissing
+                ? pendingLabel
+                : prompt.dismissAction === "cancel"
+                  ? t("Cancel question")
+                  : prompt.dismissAction === "decline"
+                    ? t("Decline")
+                    : (dismissLabel ?? t("Skip"))}
+            </Button>
+            {index > 0 ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                className="shrink-0"
+                disabled={held}
+                startIcon={<ChevronLeft />}
+                onClick={() => updateDraft((current) => ({ ...current, step: index - 1 }))}
+              >
+                {t("Back")}
+              </Button>
+            ) : null}
+            <Button
+              variant="primary"
+              size="sm"
+              type="submit"
+              disabled={!ready || held}
+              loading={sending && !dismissing}
+              loadingLabel={pendingLabel}
+              startIcon={<SubmitIcon />}
+              reserveLabels={[t("Sending answer…"), t("Send again"), t("Connection issue")]}
+              aria-describedby={statusId}
+            >
+              {submitLabel}
+            </Button>
+          </div>
         </div>
       </form>
     </div>
   );
-}
-
-function QuestionFields({
-  question,
-  selected,
-  custom,
-  onSelect,
-  onCustom,
-}: {
-  question: UserQuestion;
-  selected: string[];
-  custom: string;
-  onSelect: (optionId: string) => void;
-  onCustom: (value: string) => void;
-}) {
-  useLocale();
-  const options = displayOptions(question);
-  const customSelected = selected.some((id) => isCustomId(question, id));
-  const [highlighted, setHighlighted] = useState(() => {
-    const selectedIndex = options.findIndex((option) => selected.includes(option.id));
-    return selectedIndex >= 0 ? selectedIndex : 0;
-  });
-  const fields = useRef<HTMLFieldSetElement | null>(null);
-  const optionInputs = () =>
-    Array.from(
-      fields.current?.querySelectorAll<HTMLInputElement>(
-        'input[type="radio"], input[type="checkbox"]',
-      ) ?? [],
-    );
-  const customInput = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    if (customSelected) customInput.current?.focus({ preventScroll: true });
-  }, [customSelected]);
-
-  const highlight = (index: number) => {
-    setHighlighted(index);
-    optionInputs()[index]?.focus();
-  };
-
-  const onOptionKeyDown = (event: ReactKeyboardEvent<HTMLFieldSetElement>, index: number) => {
-    if (event.altKey || event.ctrlKey || event.metaKey) return;
-
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      const offset = event.key === "ArrowDown" ? 1 : -1;
-      const next = (index + offset + options.length) % options.length;
-      highlight(next);
-      if (!question.multiSelect) onSelect(options[next].id);
-      return;
-    }
-    if (event.key === "Home" || event.key === "End") {
-      event.preventDefault();
-      const next = event.key === "Home" ? 0 : options.length - 1;
-      highlight(next);
-      if (!question.multiSelect) onSelect(options[next].id);
-      return;
-    }
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onSelect(options[index].id);
-      return;
-    }
-
-    const shortcut = Number(event.key);
-    if (Number.isInteger(shortcut) && shortcut >= 1 && shortcut <= Math.min(options.length, 9)) {
-      event.preventDefault();
-      const shortcutIndex = shortcut - 1;
-      highlight(shortcutIndex);
-      onSelect(options[shortcutIndex].id);
-    }
-  };
-
-  return (
-    <fieldset
-      className={styles.fields}
-      ref={fields}
-      onKeyDownCapture={(event) => {
-        const index = optionInputs().indexOf(event.target as HTMLInputElement);
-        if (index >= 0) onOptionKeyDown(event, index);
-      }}
-    >
-      {question.multiSelect || options.length === 0 ? <legend>{question.prompt}</legend> : null}
-      {question.multiSelect ? (
-        <p className="[margin-block-start:0.5rem] text-xs text-(--ui-text-secondary)">
-          {t("Select all that apply")}
-        </p>
-      ) : null}
-      {options.length === 0 && question.allowCustom ? (
-        <TextField
-          hideLabel
-          label={t("Type your answer")}
-          value={custom}
-          onChange={(event) => onCustom(event.target.value)}
-          placeholder={t("Type your answer")}
-          fieldClassName="[margin-block-start:0.75rem] w-full"
-        />
-      ) : (
-        <div className={styles.options} role="group" aria-label={question.prompt}>
-          {!question.multiSelect ? (
-            <RadioGroup
-              className={styles.radio}
-              label={question.prompt}
-              name={question.id}
-              value={selected[0] ?? ""}
-              options={options.map((option) => ({
-                value: option.id,
-                label: option.label,
-                description: option.description,
-              }))}
-              onValueChange={onSelect}
-            />
-          ) : (
-            options.map((option, optionIndex) => (
-              <label key={option.id} className={styles.option}>
-                <Checkbox
-                  checked={selected.includes(option.id)}
-                  aria-keyshortcuts={optionIndex < 9 ? String(optionIndex + 1) : undefined}
-                  tabIndex={highlighted === optionIndex ? 0 : -1}
-                  onFocus={() => setHighlighted(optionIndex)}
-                  onChange={() => onSelect(option.id)}
-                />
-                <span className={styles.copy}>
-                  <span>{option.label}</span>
-                  {option.description ? <small>{option.description}</small> : null}
-                </span>
-              </label>
-            ))
-          )}
-        </div>
-      )}
-      {options.length > 0 && customSelected ? (
-        <TextField
-          hideLabel
-          label={t("Type your answer")}
-          ref={customInput}
-          value={custom}
-          onChange={(event) => onCustom(event.target.value)}
-          aria-label={t("Type your answer")}
-          placeholder={t("Type your answer")}
-          fieldClassName="[margin-block-start:0.75rem] w-full"
-        />
-      ) : null}
-    </fieldset>
-  );
-}
-
-function displayOptions(question: UserQuestion): UserQuestion["options"] {
-  if (question.options.length === 0) return question.options;
-  if (question.options.some(isOtherOption) || !question.allowCustom) {
-    return question.options;
-  }
-  return [
-    ...question.options,
-    {
-      id: CUSTOM_OPTION_ID,
-      get label() {
-        return t("Other");
-      },
-    },
-  ];
-}
-
-function customOptionId(question: UserQuestion): string {
-  return question.options.find(isOtherOption)?.id ?? CUSTOM_OPTION_ID;
-}
-
-function isCustomId(question: UserQuestion, optionId: string): boolean {
-  return optionId === CUSTOM_OPTION_ID || optionId === customOptionId(question);
-}
-
-function nextSelection(question: UserQuestion, current: string[], optionId: string): string[] {
-  if (!question.multiSelect) return [optionId];
-  if (current.includes(optionId)) {
-    return current.filter((id) => id !== optionId);
-  }
-  if (isCustomId(question, optionId)) {
-    return [...current.filter((id) => !isCustomId(question, id)), optionId];
-  }
-  return [...current, optionId];
 }

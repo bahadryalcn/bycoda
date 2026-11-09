@@ -5,7 +5,7 @@ import { humanField, textFromContent } from "../../../../shared/lib/contentText"
 import {
   promptBlocks,
   type PromptContentBlock,
-} from "../../../../features/sessions/model/attachments";
+} from "../../../../features/sessions/model/attachmentPrompt";
 import type {
   AgentModel,
   ModelSetting,
@@ -25,6 +25,7 @@ import type {
 } from "../../../../features/sessions/model/userQuestion";
 import {
   questionsFromUnknown,
+  assertQuestionNotesSupported,
   selectedAnswerLabels,
 } from "../../../../features/sessions/model/userQuestion";
 import {
@@ -88,6 +89,7 @@ export function askQuestionResponse(
   questions: UserQuestion[],
 ): Record<string, unknown> {
   if (reply.kind !== "answered") return { outcome: "skip_interview" };
+  assertQuestionNotesSupported(questions, reply);
   const answers: Record<string, string | string[]> = {};
   for (const question of questions) {
     const labels = selectedAnswerLabels(question, reply);
@@ -105,13 +107,35 @@ export function grokPromptBlocks(
   return promptBlocks(text, attachments);
 }
 
+/** What a running Grok process was started with; any change needs a new process. */
+export type GrokSpawnShape = { fullAccess: boolean; planning: boolean; noSubagents: boolean };
+
+export function grokSpawnShape(input: {
+  intent?: string;
+  runtimeMode: string;
+  modelSettings?: Readonly<Record<string, string>>;
+}): GrokSpawnShape {
+  const planning = input.intent === "plan";
+  return {
+    planning,
+    fullAccess: input.runtimeMode === "full-access" && !planning,
+    // The owner's subagent selection bounds every path; Grok's own cannot honor it.
+    noSubagents: input.modelSettings?.nativeSubagents === "off",
+  };
+}
+
+export const sameGrokSpawn = (a: GrokSpawnShape, b: GrokSpawnShape) =>
+  a.fullAccess === b.fullAccess && a.planning === b.planning && a.noSubagents === b.noSubagents;
+
 export function grokSpawnArgs(input: {
   model: string;
   effort?: string;
   fullAccess?: boolean;
   plan?: boolean;
+  noSubagents?: boolean;
 }): string[] {
   const args = ["--no-auto-update"];
+  if (input.noSubagents) args.push("--no-subagents");
   if (input.plan) args.push("--permission-mode", "plan");
   args.push("agent", "--no-leader");
   const native = nativeId(input.model);

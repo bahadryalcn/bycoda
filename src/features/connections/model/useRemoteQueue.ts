@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { loadStoredQueue, setSessionQueue } from "../../sessions/data/sessionStore";
+import { loadStoredQueue, setSessionQueue } from "../../sessions/public/sessionStore";
 import { remoteBackoffDelay } from "./remotePollingPolicy";
-import type { Attachment } from "../../sessions/model/session";
+import type { Attachment } from "../../sessions";
 import {
   EMPTY_REMOTE_QUEUE,
   editRemoteMessage,

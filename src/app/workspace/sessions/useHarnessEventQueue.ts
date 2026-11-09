@@ -1,7 +1,15 @@
 import { useLayoutEffect, useState, type MutableRefObject } from "react";
 import { HarnessEventQueue } from "../../model/harnessFlush";
+import { recordAppliedSessionOutput } from "../../../features/sessions/data/sessionOutputProjection";
 import { TranscriptPool } from "../../../features/sessions/ui/TranscriptPool";
 import { applyHarnessEvents } from "../../../integrations/harness";
+import {
+  failNativeOutputEvents,
+  markNativeOutputEventsApplied,
+} from "../../../integrations/harness/core/nativeOutputDelivery";
+import { resolveQuestionDraft } from "../../../features/sessions/model/questionDrafts";
+import { observeApprovalResolutions } from "../../../features/sessions/model/approvalIntents";
+import type { UserQuestionPrompt } from "../../../features/sessions/model/userQuestion";
 import { syncDockBadge } from "../../../features/notifications/model/dockBadge";
 import { leafIds, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import {
@@ -57,12 +65,49 @@ export function useHarnessEventQueue({
           const prev = sessionsRef.current;
           const next = prev.map((session) => {
             const events = batches.get(session.id);
-            return events ? applyHarnessEvents(session, events) : session;
+            if (events) {
+              const questions = new Map<number, UserQuestionPrompt>(
+                [
+                  ...(session.submittedQuestions ?? []),
+                  ...(session.pendingQuestion ? [session.pendingQuestion] : []),
+                ].map((question) => [question.requestId, question]),
+              );
+              for (const event of events) {
+                if (event.type === "question.asked") questions.set(event.requestId, event);
+              }
+              const next = applyHarnessEvents(session, events);
+              observeApprovalResolutions(session, next, events);
+              const retained = [
+                ...(next.submittedQuestions ?? []),
+                ...(next.pendingQuestion ? [next.pendingQuestion] : []),
+              ];
+              for (const question of questions.values()) {
+                if (
+                  !retained.some(
+                    (current) =>
+                      current.requestId === question.requestId &&
+                      current.callId === question.callId &&
+                      current.providerTurnId === question.providerTurnId,
+                  )
+                )
+                  resolveQuestionDraft(session.id, question);
+              }
+              return next;
+            }
+            return session;
           });
-          if (!next.some((session, index) => session !== prev[index])) return;
-          sessionsRef.current = next;
-          if (!isTextOnlyChange(prev, next)) syncDockBadge(next);
-          setSessions(next);
+          if (next.some((session, index) => session !== prev[index])) {
+            sessionsRef.current = next;
+            if (!isTextOnlyChange(prev, next)) syncDockBadge(next);
+            setSessions(next);
+          }
+          for (const [sessionId, events] of batches) {
+            const applied = next.find((session) => session.id === sessionId);
+            if (applied) {
+              markNativeOutputEventsApplied(sessionId, events);
+              recordAppliedSessionOutput(applied, events);
+            } else failNativeOutputEvents(events, "session-application-missing");
+          }
         },
       ),
   );

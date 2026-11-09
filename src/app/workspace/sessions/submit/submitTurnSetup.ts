@@ -1,20 +1,60 @@
-import type { SetupResult, SubmitDeps, SubmitInput, SubmitPreflight, SubmitTurn } from "./submitTypes";
+import type {
+  SetupResult,
+  SubmitDeps,
+  SubmitInput,
+  SubmitPreflight,
+  SubmitTurn,
+} from "./submitTypes";
 
 import { syncDockBadge } from "../../../../features/notifications/model/dockBadge";
-import { proposalBlock, type OrchestrationProposal } from "../../../../features/orchestration/model/orchestrationPlan";
-import { sessionProviderAccountId, supportsProviderAccounts } from "../../../../features/providers/model/providerAccounts";
+import {
+  proposalBlock,
+  type OrchestrationProposal,
+} from "../../../../features/orchestration/model/orchestrationPlan";
+import {
+  sessionProviderAccountId,
+  supportsProviderAccounts,
+} from "../../../../features/providers/model/providerAccounts";
+import {
+  beginActiveSubmit,
+  endActiveSubmit,
+} from "../../../../features/sessions/model/activeSubmits";
 import { displayAttachments } from "../../../../features/sessions/model/attachments";
-import { appendPreparingHandoff, handoffTurnCard, pendingHandoff } from "../../../../features/sessions/model/handoff";
-import { queuedModelTarget, sentQueuedMessage } from "../../../../features/sessions/model/messageQueue";
+import {
+  appendPreparingHandoff,
+  handoffTurnCard,
+  pendingHandoff,
+} from "../../../../features/sessions/model/handoff";
+import {
+  queuedModelTarget,
+  sentQueuedMessage,
+} from "../../../../features/sessions/model/messageQueue";
 import { resolveModel } from "../../../../features/sessions/model/models";
 import { SECOND_OPINION_TITLE } from "../../../../features/sessions/model/secondOpinion";
-import { HARNESS_LABEL, canReplaceSessionTitle, formatSessionTitle, titleFromPrompt, type Session } from "../../../../features/sessions/model/session";
+import {
+  HARNESS_LABEL,
+  canReplaceSessionTitle,
+  formatSessionTitle,
+  titleFromPrompt,
+  type Session,
+} from "../../../../features/sessions/model/session";
 import { shouldGenerateSessionTitle } from "../../../../features/sessions/model/sessionTitle";
 import { resolveLinkedWorkItem } from "../../../../features/sessions/model/sessionWorkItem";
 import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
-import { appendUser, canRewindHarnessLastTurn, cancelHarnessTurn, forgetHarnessSession, generateHarnessTitle, isLiveHarness, stopStreaming } from "../../../../integrations/harness";
+import {
+  appendUser,
+  canRewindHarnessLastTurn,
+  cancelHarnessTurn,
+  forgetHarnessSession,
+  generateHarnessTitle,
+  isLiveHarness,
+  stopStreaming,
+} from "../../../../integrations/harness";
 import { t } from "../../../../shared/i18n";
-import { beginSessionPerformanceTrace, recordPerformanceEvent } from "../../../../shared/lib/performanceTrace";
+import {
+  beginSessionPerformanceTrace,
+  recordPerformanceEvent,
+} from "../../../../shared/lib/performanceTrace";
 import { userTurnCards, withPlanBuildTarget } from "../../helpers/sessionHelpers";
 import { flushSync } from "react-dom";
 
@@ -26,12 +66,33 @@ export function prepareSubmittedTurn(
   const { dismissNoticesForContinuedSession } = ctx;
   const { editedResends, turnGen } = ctx.refs;
   const { sessionId, attachments, options } = input;
-  const { draftBlock, current, submitTarget, editedResend, intent, approvedPlan, noteCard, handoffCard, providerAccountId, initialWorkCwd, createDraftWorktree, submittedText, operatorCommand, promptText, rawCommand, ciContext, harnessText, pendingSwitch } = pre;
+  const {
+    draftBlock,
+    current,
+    submitTarget,
+    editedResend,
+    intent,
+    approvedPlan,
+    noteCard,
+    handoffCard,
+    providerAccountId,
+    initialWorkCwd,
+    createDraftWorktree,
+    submittedText,
+    operatorCommand,
+    promptText,
+    rawCommand,
+    ciContext,
+    harnessText,
+    pendingSwitch,
+  } = pre;
 
   const traceId = beginSessionPerformanceTrace(sessionId);
   recordPerformanceEvent("send-prepare", { phase: 0 }, traceId);
   const gen = (turnGen.current.get(sessionId) ?? 0) + 1;
   turnGen.current.set(sessionId, gen);
+  // Owned until startSubmittedTurn settles; guards use it to spot a stale handoff.
+  beginActiveSubmit(sessionId, gen);
   const proposalId = intent === "orchestrate" ? crypto.randomUUID() : undefined;
   // Turn state that later phases read and write (formerly the `let`s of the
   // submit body). Initial values are the original declarations' initializers.
@@ -75,6 +136,7 @@ export function prepareSubmittedTurn(
     checkpointRetirementUncertain: false,
     sawProviderEvent: false,
     contextReplayAccepted: false,
+    replyCompleted: false,
   };
   const isFirstTurn = current.blocks.length === 0;
   const placeholderTitle =
@@ -89,8 +151,7 @@ export function prepareSubmittedTurn(
         )
       : current.title;
   const visible = displayAttachments(attachments);
-  const card =
-    options?.secondOpinion ?? (handoffCard ? handoffTurnCard(handoffCard) : undefined);
+  const card = options?.secondOpinion ?? (handoffCard ? handoffTurnCard(handoffCard) : undefined);
   const visibleText = operatorCommand.matched
     ? promptText
     : card?.kind === "handoff"
@@ -108,10 +169,13 @@ export function prepareSubmittedTurn(
     ...(options?.managed ? { internal: true } : {}),
   };
   const live = isLiveHarness(current.harness);
-  const queuedHandoff = live && !pendingSwitch ? pendingHandoff(current) : null;
+  const queuedHandoff = live ? pendingHandoff(current) : null;
 
   if (pendingSwitch && current.busy) {
-    void cancelHarnessTurn(pendingSwitch.from, sessionId);
+    // The old provider is retired next; a cancel that was not confirmed is only logged.
+    cancelHarnessTurn(pendingSwitch.from, sessionId).catch((error) => {
+      console.warn("Could not stop the previous provider's turn", error);
+    });
   }
 
   dismissNoticesForContinuedSession(sessionId);
@@ -139,6 +203,8 @@ export function prepareSubmittedTurn(
           },
           providerAccountId,
           usageLimit: undefined,
+          // Automatic remains unresolved until the asynchronous policy read succeeds.
+          workspaceMode: selected.workspaceMode,
           worktreePreparing: createDraftWorktree ? true : selected.worktreePreparing,
           inboxCard: rawCommand || options?.ciRepair ? s.inboxCard : undefined,
           noteCard: rawCommand || options?.ciRepair ? s.noteCard : undefined,
@@ -168,7 +234,7 @@ export function prepareSubmittedTurn(
           next = sentQueuedMessage(next, options.queuedMessageId);
         }
         if (!live) {
-          return {
+          return withWorkspacePreparation({
             ...next,
             title: titled,
             pendingSwitch: undefined,
@@ -189,22 +255,46 @@ export function prepareSubmittedTurn(
                 notice: "error",
               },
             ],
-          };
+          });
         }
         if (pendingSwitch) {
           const sealed = stopStreaming({
             ...next,
             title: titled,
-            pendingSwitch: undefined,
+            pendingSwitch,
           });
-          return appendUser(
-            appendPreparingHandoff(sealed, pendingSwitch.from, next.harness),
-            visibleText,
-            visible,
-            cards,
+          return withWorkspacePreparation(
+            appendUser(
+              appendPreparingHandoff(sealed, pendingSwitch.from, next.harness, pendingSwitch),
+              visibleText,
+              visible,
+              cards,
+            ),
           );
         }
-        return appendUser({ ...next, title: titled }, visibleText, visible, cards);
+        return withWorkspacePreparation(
+          appendUser({ ...next, title: titled }, visibleText, visible, cards),
+        );
+
+        function withWorkspacePreparation(submitted: Session): Session {
+          if (
+            !createDraftWorktree &&
+            !submitted.blocks.some((block) => block.workspacePreparationPending)
+          )
+            return submitted;
+          let userIndex = submitted.blocks.length - 1;
+          while (userIndex >= 0 && submitted.blocks[userIndex].role !== "user") userIndex--;
+          return {
+            ...submitted,
+            blocks: submitted.blocks.map((block, index) =>
+              createDraftWorktree && index === userIndex
+                ? { ...block, workspacePreparationPending: true }
+                : !createDraftWorktree && block.workspacePreparationPending
+                  ? { ...block, workspacePreparationPending: undefined }
+                  : block,
+            ),
+          };
+        }
       }),
     );
   };
@@ -262,8 +352,11 @@ export function prepareSubmittedTurn(
   };
 
   if (!live) {
+    endActiveSubmit(sessionId, gen);
     if (pendingSwitch) {
-      void forgetHarnessSession(pendingSwitch.from, sessionId);
+      void forgetHarnessSession(pendingSwitch.from, sessionId).catch((error) => {
+        console.warn("App operation failed", error);
+      });
     }
     editedResend?.reject();
     options?.onSettled?.({
@@ -273,8 +366,19 @@ export function prepareSubmittedTurn(
     });
     return { settled: true, value: true };
   }
+  let editToken: symbol | undefined;
   if (editedResend && canRewindHarnessLastTurn(current.harness)) {
-    editedResends.start(sessionId);
+    editToken = editedResends.start(sessionId);
+    if (!editToken) {
+      endActiveSubmit(sessionId, gen);
+      editedResend.reject();
+      options?.onSettled?.({
+        status: "failed",
+        text: "",
+        error: "Another change to this conversation is still finishing.",
+      });
+      return { settled: true, value: false };
+    }
     const locked = sessionsRef.current.map((session) =>
       session.id === sessionId ? { ...session, busy: true } : session,
     );
@@ -297,6 +401,17 @@ export function prepareSubmittedTurn(
     );
   }
 
-  return { settled: false, setup: { traceId, gen, proposalId, queuedHandoff, commitSubmittedTurn, launchTitleGeneration, turn } };
+  return {
+    settled: false,
+    setup: {
+      editToken,
+      traceId,
+      gen,
+      proposalId,
+      queuedHandoff,
+      commitSubmittedTurn,
+      launchTitleGeneration,
+      turn,
+    },
+  };
 }
-

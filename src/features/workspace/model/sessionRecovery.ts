@@ -1,8 +1,81 @@
 import { sessionNeedsInput, type Session } from "../../sessions/model/session";
-import { isTurnInterruptMessage } from "../../sessions/model/inFlight";
+import {
+  isOwnerStopNotice,
+  isOwnerStoppedTurn,
+  isTurnInterruptionNotice,
+} from "../../sessions/model/turnInterruption";
 import { sessionIssue } from "../../sessions/model/sessionIssue";
 import { closeLeaf, leafIds, type WorkspaceTab } from "./layout";
 import { parseWorkspaceSnapshot, type WorkspaceSnapshot } from "./workspaceSnapshot";
+import { isRemoteProjectPath, sameProjectPath } from "../../projects/model/recents";
+import type { HostSessionSummary } from "../../connections/model/protocol";
+import type { WorkspaceSessionStub } from "./workspaceSnapshot";
+
+/** One population for the panel and rail; never acknowledges or removes history. */
+export function eligibleRecoverySessions(
+  recovery: SessionRecovery,
+  sessions: readonly Session[],
+  isLocked: (cwd: string) => boolean,
+  hostSessionFor: (id: string) => string | null | undefined,
+): WorkspaceSessionStub[] {
+  const seen = new Set<string>();
+  const rows: WorkspaceSessionStub[] = [];
+  for (const stub of recovery.workspace.sessions) {
+    if (seen.has(stub.id) || recovery.resolvedIds?.includes(stub.id) || isLocked(stub.cwd))
+      continue;
+    seen.add(stub.id);
+    if (isRemoteProjectPath(stub.cwd) && stub.remoteSessionId) {
+      if (
+        sessions.some(
+          (session) =>
+            sameProjectPath(session.cwd, stub.cwd) &&
+            hostSessionFor(session.id) === stub.remoteSessionId,
+        )
+      )
+        continue;
+      if (
+        rows.some(
+          (row) =>
+            sameProjectPath(row.cwd, stub.cwd) && row.remoteSessionId === stub.remoteSessionId,
+        )
+      )
+        continue;
+    }
+    rows.push(stub);
+  }
+  return rows;
+}
+
+export class RecoveryOpenError extends Error {
+  constructor(
+    readonly opened: string[],
+    readonly alreadyOpen: string[],
+    readonly failed: string[],
+    readonly acknowledgmentFailed = false,
+  ) {
+    super(
+      acknowledgmentFailed
+        ? "Conversation tabs are open, but the recovery update could not be saved."
+        : "Some recovery entries could not be opened.",
+    );
+    this.name = "RecoveryOpenError";
+  }
+}
+
+type RecoverySaveFailure = { owner: object; retry: () => Promise<void> } | null;
+let saveFailure: RecoverySaveFailure = null;
+const saveFailureListeners = new Set<() => void>();
+export const getRecoverySaveFailure = () => saveFailure;
+export const subscribeRecoverySaveFailure = (listener: () => void) => {
+  saveFailureListeners.add(listener);
+  return () => {
+    saveFailureListeners.delete(listener);
+  };
+};
+export function setRecoverySaveFailure(value: RecoverySaveFailure) {
+  saveFailure = value;
+  for (const listener of saveFailureListeners) listener();
+}
 
 export type SessionRecovery = {
   capturedAt: number;
@@ -184,6 +257,7 @@ export function recoveryStatus(
   if (issue) return issue;
   if (session.busy || session.continuingElsewhere) return "working";
   if (sessionNeedsInput(session)) return "input";
+  if (isOwnerStoppedTurn(session.blocks)) return "idle";
   // An interrupt remains meaningful through later status/metadata rows, but
   // never carries into a newer submitted user turn.
   for (let index = session.blocks.length - 1; index >= 0; index--) {
@@ -192,17 +266,41 @@ export function recoveryStatus(
       if (session.historyLoading || session.historyLoadError) return "unknown";
       return block.durationMs !== undefined ? "done" : "unknown";
     }
-    if (
-      block.notice === "interrupt" ||
-      (block.role === "system" && isTurnInterruptMessage(block.text))
-    )
-      return "interrupted";
+    if (isOwnerStopNotice(block)) return "idle";
+    if (isTurnInterruptionNotice(block)) return "interrupted";
   }
   return "idle";
 }
 
 export function recoveryNeedsAttention(status: RecoveryStatus): boolean {
   return status !== "done" && status !== "idle";
+}
+
+/**
+ * Status of one journal entry from the best evidence at hand: a fresh Host
+ * summary for remote chats, otherwise the loaded or stored session. A stored
+ * read that returned nothing is "unavailable"; a failed read stays unverified.
+ */
+export function recoveryEntryStatus(input: {
+  remote: boolean;
+  host?: { fresh?: boolean; session: Pick<HostSessionSummary, "issue" | "needsInput" | "status"> };
+  local: Session | undefined;
+  storedMissing: boolean;
+}): RecoveryStatus {
+  const { remote, host, local, storedMissing } = input;
+  if (remote && host?.fresh)
+    return (
+      host.session.issue ??
+      (host.session.needsInput
+        ? "input"
+        : host.session.status === "running"
+          ? "working"
+          : host.session.status === "interrupted"
+            ? "interrupted"
+            : "idle")
+    );
+  if (!remote && storedMissing && !local) return "unavailable";
+  return recoveryStatus(local, remote, false);
 }
 
 const recoveryOrder: RecoveryStatus[] = [

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { LOADING_DELAY_MS } from "../../../shared/hooks/useDelayedVisible";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
@@ -134,6 +135,9 @@ it("shows loading before an empty graph and settles to the real empty state", as
   const request = deferred<Awaited<ReturnType<typeof gitHistory>>>();
   vi.mocked(gitHistory).mockReturnValueOnce(request.promise);
   await graph();
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, LOADING_DELAY_MS + 50));
+  });
   expect(container.textContent).toContain("Loading commit graph…");
   expect(container.textContent).not.toContain("No commits yet");
   expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
@@ -153,7 +157,7 @@ it("retains commits while refreshing and after a failed refresh, then retries", 
   await click("Refresh commit graph");
   expect(container.textContent).not.toContain("Refreshing commit graph…");
   expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
-  expect(container.querySelector(".animate-spin")).not.toBeNull();
+  expect(container.querySelector('button[aria-busy="true"]')).not.toBeNull();
   expect(container.textContent).toContain("Existing commit");
   await act(async () => request.reject(new Error("Permission denied")));
   expect(container.textContent).toContain("Couldn’t load commit graph");
@@ -209,13 +213,16 @@ it("shows progress while loading another page and retains existing commits", asy
   expect(container.querySelector(".animate-spin")).toBeNull();
 });
 
-it("tam grafik açılınca tüm branch geçmişini yükler", async () => {
+it("loads the full branch history when the full graph opens", async () => {
   const request = deferred<Awaited<ReturnType<typeof gitHistory>>>();
   vi.mocked(gitHistory).mockReturnValueOnce(request.promise);
   await graph();
   vi.mocked(gitHistory).mockReturnValueOnce(request.promise);
   await click("Open full graph");
   expect(gitHistory).toHaveBeenLastCalledWith("/repo", 200, true);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, LOADING_DELAY_MS + 50));
+  });
   expect(document.body.textContent?.match(/Loading commit graph/g)?.length).toBe(2);
   await act(async () => request.resolve({ head: commit.sha, commits: [commit] }));
   expect(document.body.textContent?.match(/Existing commit/g)?.length).toBe(2);

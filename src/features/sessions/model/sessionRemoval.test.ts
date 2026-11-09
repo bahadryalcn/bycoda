@@ -7,12 +7,17 @@ import {
   newTerminalFile,
   openTerminalTab,
 } from "../../workspace/model/layout";
+import { appendPreparingHandoff, isPreparingHandoff } from "./handoff";
 import { newSession, type Session } from "./session";
 import type { SessionWorkspaceRemoval } from "./sessionWorkspaceLifecycle";
 import { createSessionRemover } from "./sessionRemoval";
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke, isTauri: () => false }));
+vi.mock("../../connections/model/sessionExecutionBinding", async (original) => ({
+  ...(await original<typeof import("../../connections/model/sessionExecutionBinding")>()),
+  flushHostSessionBindings: vi.fn(async () => {}),
+}));
 
 function deferred() {
   let resolve!: () => void;
@@ -43,6 +48,9 @@ function fixture(mode: "archive" | "delete") {
   state.activeTabId = state.tabs[0].id;
   const confirmClose = vi.fn(async () => true);
   const stop = vi.fn(async () => {});
+  const progress = vi.fn();
+  const warn = vi.fn();
+  const stoppedSessions: Session[] = [];
   const commit = vi.fn((removal: SessionWorkspaceRemoval) => {
     state = { ...state, ...removal };
   });
@@ -60,6 +68,9 @@ function fixture(mode: "archive" | "delete") {
     },
     confirmClose,
     stop,
+    progress,
+    warn,
+    stoppedSessions,
     commit,
     run: () => {
       const remover = createSessionRemover({
@@ -73,6 +84,7 @@ function fixture(mode: "archive" | "delete") {
               commit(change.removal);
               return;
             }
+            stoppedSessions.push(change.session);
             state = {
               ...state,
               sessions: state.sessions.map((session) =>
@@ -83,6 +95,8 @@ function fixture(mode: "archive" | "delete") {
         },
         confirm: confirmClose,
         stop,
+        onProgress: progress,
+        onWarning: warn,
       });
       return remover.remove(closing.id);
     },
@@ -92,6 +106,31 @@ function fixture(mode: "archive" | "delete") {
 afterEach(() => mocks.invoke.mockReset());
 
 describe.each(["archive", "delete"] as const)("%s lifecycle", (mode) => {
+  it("reports the pending step while shutdown is blocked and does not remove early", async () => {
+    const f = fixture(mode);
+    const shutdown = deferred();
+    f.stop.mockImplementation(() => shutdown.promise);
+    const pending = f.run();
+    await vi.waitFor(() => expect(f.stop).toHaveBeenCalled());
+    expect(f.progress).toHaveBeenLastCalledWith("stopping");
+    expect(f.commit).not.toHaveBeenCalled();
+    shutdown.resolve();
+    expect(await pending).toBe(true);
+    expect(f.progress.mock.calls.map(([stage]) => stage)).toEqual(
+      mode === "delete"
+        ? ["stopping", "provider", "checkpoint", "deleting"]
+        : ["stopping", "checkpoint"],
+    );
+  });
+
+  it("does not announce shutdown or deletion after confirmation is cancelled", async () => {
+    const f = fixture(mode);
+    f.confirmClose.mockResolvedValue(false);
+    expect(await f.run()).toBe(false);
+    expect(f.progress).not.toHaveBeenCalled();
+    expect(f.stop).not.toHaveBeenCalled();
+  });
+
   it("creates the replacement session behind the removal interface", async () => {
     const f = fixture(mode);
     const onlyTab = f.read().tabs[0];
@@ -163,6 +202,23 @@ describe.each(["archive", "delete"] as const)("%s lifecycle", (mode) => {
     });
     expect(f.read().sessions[0].blocks[1].streaming).toBeFalsy();
     expect(f.read().tabs).toHaveLength(2);
+  });
+
+  it("still removes the session when stopping its turn fails", async () => {
+    const f = fixture(mode);
+    f.stop.mockRejectedValue(new Error("cancel failed"));
+    expect(await f.run()).toBe(true);
+    expect(f.commit).toHaveBeenCalledOnce();
+    expect(f.warn).toHaveBeenCalledWith(expect.stringContaining("cancel failed"));
+  });
+
+  it("cancels a handoff that is still preparing instead of completing it", async () => {
+    const f = fixture(mode);
+    const preparing = appendPreparingHandoff(f.closing, "cursor", "claude");
+    f.write({ ...f.read(), sessions: [preparing, f.other] });
+    expect(await f.run()).toBe(true);
+    expect(isPreparingHandoff(f.stoppedSessions[0])).toBe(false);
+    expect(f.stoppedSessions[0].blocks.at(-1)?.handoff?.status).toBe("cancelled");
   });
 
   it("does not stop or write anything if confirmation is declined", async () => {

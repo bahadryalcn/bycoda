@@ -341,6 +341,10 @@ describe("lastLine", () => {
     expect(lastLine("## Done\n- first\n- all good\n\n")).toBe("all good");
     expect(lastLine("```\ncode\n```")).toBe("code");
     expect(lastLine("x".repeat(200), 10)).toBe(`${"x".repeat(9)}…`);
+    // The cut must keep the emoji whole rather than leave its high surrogate.
+    const emoji = lastLine(`${"a".repeat(138)}🚀🚀c`, 140);
+    expect(emoji).toBe(`${"a".repeat(138)}🚀…`);
+    expect(emoji).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
     expect(lastLine("")).toBe("");
   });
 });

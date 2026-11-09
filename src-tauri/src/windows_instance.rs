@@ -1,6 +1,6 @@
 //! A local named pipe is both the atomic instance lock and the relaunch signal.
 //! GUI launches only: main.rs handles control/app/SSH askpass before this plugin.
-use std::io;
+use std::io::{self, Read, Write};
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::sync::Arc;
@@ -13,8 +13,8 @@ use windows_sys::Win32::{
         INVALID_HANDLE_VALUE,
     },
     Storage::FileSystem::{
-        CreateFileW, FlushFileBuffers, ReadFile, WriteFile, FILE_FLAG_FIRST_PIPE_INSTANCE,
-        OPEN_EXISTING, PIPE_ACCESS_INBOUND,
+        CreateFileW, FlushFileBuffers, ReadFile, FILE_FLAG_FIRST_PIPE_INSTANCE, OPEN_EXISTING,
+        PIPE_ACCESS_INBOUND,
     },
     System::Pipes::{
         ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, GetNamedPipeServerProcessId,
@@ -43,11 +43,20 @@ fn pipe_name(app: &tauri::AppHandle) -> Result<Vec<u16>, Box<dyn std::error::Err
         hash.update([0]);
     }
     for argument in std::env::args_os().skip(1) {
+        // A navigation target must reach the existing profile, not create a
+        // different instance lock for every session URL.
+        if crate::session_links::is_session_link(&argument.to_string_lossy()) {
+            continue;
+        }
         let units: Vec<u16> = argument.encode_wide().collect();
         hash.update((units.len() as u64).to_le_bytes());
         for unit in units {
             hash.update(unit.to_le_bytes());
         }
+    }
+    if let Some(profile) = crate::debug_profile::profile_id() {
+        hash.update(profile.as_bytes());
+        hash.update([0]);
     }
     Ok(format!(r"\\.\pipe\bycoda-relaunch-{:x}", hash.finalize())
         .encode_utf16()
@@ -58,8 +67,12 @@ fn pipe_name(app: &tauri::AppHandle) -> Result<Vec<u16>, Box<dyn std::error::Err
 fn notify_existing(name: &[u16]) -> io::Result<()> {
     let name = name.to_vec();
     let (send, receive) = std::sync::mpsc::sync_channel(1);
+    let link = std::env::args_os()
+        .skip(1)
+        .filter_map(|argument| argument.into_string().ok())
+        .find(|value| crate::session_links::is_session_link(value));
     std::thread::spawn(move || {
-        let _ = send.send(send_relaunch(&name));
+        let _ = send.send(send_relaunch(&name, link.as_deref()));
     });
     receive
         .recv_timeout(std::time::Duration::from_secs(10))
@@ -71,7 +84,7 @@ fn notify_existing(name: &[u16]) -> io::Result<()> {
         })?
 }
 
-fn send_relaunch(name: &[u16]) -> io::Result<()> {
+fn send_relaunch(name: &[u16], link: Option<&str>) -> io::Result<()> {
     unsafe {
         let mut raw = CreateFileW(
             name.as_ptr(),
@@ -101,23 +114,19 @@ fn send_relaunch(name: &[u16]) -> io::Result<()> {
         if raw == INVALID_HANDLE_VALUE {
             return Err(io::Error::last_os_error());
         }
-        let pipe = OwnedHandle::from_raw_handle(raw);
+        let mut pipe = std::fs::File::from_raw_handle(raw);
         let mut pid = 0;
         if GetNamedPipeServerProcessId(pipe.as_raw_handle(), &mut pid) == 0 {
             return Err(io::Error::last_os_error());
         }
         // Give only the running instance permission to foreground its window.
         AllowSetForegroundWindow(pid);
-        let mut written = 0;
-        if WriteFile(
-            pipe.as_raw_handle(),
-            &1u8,
-            1,
-            &mut written,
-            std::ptr::null_mut(),
-        ) == 0
-        {
-            return Err(io::Error::last_os_error());
+        if let Some(link) = link {
+            pipe.write_all(&[2])?;
+            pipe.write_all(&(link.len() as u32).to_le_bytes())?;
+            pipe.write_all(link.as_bytes())?;
+        } else {
+            pipe.write_all(&[1])?;
         }
         // Keep the client connected until Ready's listener consumes the signal.
         // Otherwise ConnectNamedPipe can see a closed client during startup.
@@ -138,7 +147,7 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                     PIPE_REJECT_REMOTE_CLIENTS,
                     1,
                     0,
-                    1,
+                    8192,
                     5_000,
                     std::ptr::null(),
                 )
@@ -188,8 +197,30 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 let mut read = 0;
                 let received =
                     unsafe { ReadFile(raw, &mut signal, 1, &mut read, std::ptr::null_mut()) } != 0;
+                let link = if received && read == 1 && signal == 2 {
+                    let reader = pipe.try_clone().map(std::fs::File::from);
+                    reader
+                        .ok()
+                        .and_then(|mut reader| {
+                            let mut size = [0; 4];
+                            reader.read_exact(&mut size).ok()?;
+                            let size = u32::from_le_bytes(size) as usize;
+                            if size > 4096 {
+                                return None;
+                            }
+                            let mut bytes = vec![0; size];
+                            reader.read_exact(&mut bytes).ok()?;
+                            String::from_utf8(bytes).ok()
+                        })
+                        .filter(|value| crate::session_links::is_session_link(value))
+                } else {
+                    None
+                };
                 unsafe { DisconnectNamedPipe(raw) };
-                if received && read == 1 && signal == 1 {
+                if let Some(link) = link {
+                    crate::session_links::enqueue(&app, [link]);
+                }
+                if received && read == 1 && matches!(signal, 1 | 2) {
                     let target = app.clone();
                     if let Err(error) = app.run_on_main_thread(move || {
                         if let Err(error) = crate::window::show_existing_or_open_new(&target) {

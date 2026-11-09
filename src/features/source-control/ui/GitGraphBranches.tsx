@@ -1,17 +1,16 @@
+import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
 import { useState, useMemo, useDeferredValue } from "react";
 import { t, useLocale } from "../../../shared/i18n/git";
-import {
-  Check,
-  ChevronDown,
-  ChevronRight,
-  GitBranch,
-  MoreHorizontal,
-  Plus,
-} from "../../../shared/ui/icons";
+import { Check, GitBranch, Plus } from "../../../shared/ui/icons";
 import {
   gitBranches,
   gitCheckout,
@@ -26,7 +25,8 @@ import { useCallback } from "react";
 import { useGitResource } from "../hooks/useGitResource";
 import { deleteLocalBranch } from "../model/deleteBranch";
 import { confirmNative } from "../model/gitConfirmation";
-import { ExplorerMenu, type ExplorerMenuItem } from "../../files/ui/ExplorerMenu";
+import { ExplorerMenu, type ExplorerMenuItem } from "../../files/public/ExplorerMenu";
+
 import { RefNameDialog } from "./RefNameDialog";
 
 export type GraphRun = (label: string, action: () => Promise<unknown>) => Promise<boolean>;
@@ -143,127 +143,113 @@ export function GitGraphBranches({
   ];
   return (
     <section aria-label={t("Branches")} className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-9 shrink-0 items-center justify-between px-3">
-        <h3 className="text-xs font-medium text-[var(--ui-text-secondary)]">{t("Branches")}</h3>
-        <Button
-          iconOnly
-          label={t("New branch")}
-          variant="ghost"
-          motion="none"
-          type="button"
-          aria-label={t("New branch")}
-          title={t("New branch")}
-          disabled={disabled}
-          onClick={() => create("HEAD")}
-        >
-          <Plus className="size-3.5" />
-        </Button>
-      </div>
-      <label className="mx-2 mb-2">
-        <span className="sr-only">{t("Filter branches")}</span>
+      <PaneHeader
+        titleAs="h3"
+        title={t("Branches")}
+        bordered={false}
+        actions={
+          <Button
+            iconOnly
+            size="sm"
+            label={t("New branch")}
+            variant="ghost"
+            motion="none"
+            type="button"
+            disabled={disabled}
+            onClick={() => create("HEAD")}
+          >
+            <Plus className="icon-sm" />
+          </Button>
+        }
+      />
+      <div className="mx-2 mb-2">
         <SearchInput
           appearance="field"
           standalone
+          aria-label={t("Filter branches")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t("Filter branches")}
           containerClassName="w-full"
         />
-      </label>
+      </div>
       <div className="min-h-0 overflow-y-auto pb-3">
         {error ? (
-          <div role="alert" className="px-3 text-[12px] text-danger">
+          <InlineError className="px-3" retry={{ onRetry: refresh }}>
             {error}
-            <Button variant="ghost" motion="none" onClick={refresh} className="ml-2 underline">
-              {t("Retry")}
-            </Button>
-          </div>
+          </InlineError>
         ) : null}
         {loading && !data ? (
-          <p role="status" className="px-3 text-[12px] text-[var(--ui-text-secondary)]">
-            {t("Loading branches…")}
-          </p>
+          <LoadingText className="px-3 py-1">{t("Loading branches…")}</LoadingText>
         ) : null}
         {data?.detached ? (
-          <p className="px-3 py-1 text-[12px] text-warning">{t("Detached HEAD")}</p>
+          <InlineMessage tone="warning" live="off" className="px-3 py-1">
+            {t("Detached HEAD")}
+          </InlineMessage>
         ) : null}
-        {[false, true].map((remote) => (
-          <div key={String(remote)}>
-            <Button
-              variant="ghost"
-              motion="none"
-              size="sm"
-              aria-expanded={!!deferredQuery || !collapsed[remote ? "remote" : "local"]}
-              onClick={() =>
-                setCollapsed({
-                  ...collapsed,
-                  [remote ? "remote" : "local"]: !collapsed[remote ? "remote" : "local"],
-                })
-              }
-              className="w-full justify-start gap-2"
-            >
-              {!deferredQuery && collapsed[remote ? "remote" : "local"] ? (
-                <ChevronRight className="size-3" />
-              ) : (
-                <ChevronDown className="size-3" />
-              )}
-              {t(remote ? "Remotes" : "Local")}
-              <span className="ms-auto tabular-nums">
-                {branches.filter((b) => !!b.remote === remote).length}
-              </span>
-            </Button>
-            {branches
-              .filter(
-                (b) =>
-                  !!b.remote === remote &&
-                  (!!deferredQuery || !collapsed[remote ? "remote" : "local"]),
-              )
-              .map((branch) => (
-                <div
-                  key={reference(branch)}
-                  className={`group flex h-8 items-center px-2 ${branch.current && !remote ? "bg-selection text-content" : "text-[var(--ui-text-secondary)] hover:bg-[var(--ui-surface-hover)]"}`}
-                >
-                  <Button
-                    variant="ghost"
-                    motion="none"
-                    type="button"
-                    disabled={disabled || (branch.current && !remote)}
-                    title={t("Switch to {p0}", { p0: reference(branch) })}
-                    aria-label={t("Switch to {p0}", { p0: reference(branch) })}
-                    onClick={() => void pick("checkout", branch)}
-                    className="flex h-full min-w-0 flex-1 items-center gap-2 text-left"
-                  >
-                    {branch.current && !remote ? (
-                      <Check className="size-3.5 shrink-0 text-accent" />
-                    ) : (
-                      <GitBranch className="size-3.5 shrink-0" />
-                    )}
-                    <span className="truncate">{reference(branch)}</span>
-                  </Button>
-                  <Button
-                    iconOnly
-                    label={t("Actions for {p0}", {
-                      p0: reference(branch),
-                    })}
-                    variant="ghost"
-                    motion="none"
-                    type="button"
-                    disabled={disabled}
-                    aria-label={t("Actions for {p0}", {
-                      p0: reference(branch),
-                    })}
-                    onClick={(e) => setMenu({ branch, anchor: e.currentTarget })}
-                  >
-                    <MoreHorizontal className="size-3.5" />
-                  </Button>
-                </div>
-              ))}
-          </div>
-        ))}
+        {[false, true].map((remote) => {
+          const group = remote ? "remote" : "local";
+          const open = !!deferredQuery || !collapsed[group];
+          return (
+            <div key={String(remote)}>
+              <SectionLabel
+                className="px-1"
+                collapsible
+                expanded={open}
+                count={branches.filter((b) => !!b.remote === remote).length}
+                onExpandedChange={() => setCollapsed({ ...collapsed, [group]: !collapsed[group] })}
+              >
+                {t(remote ? "Remotes" : "Local")}
+              </SectionLabel>
+              {open
+                ? branches
+                    .filter((b) => !!b.remote === remote)
+                    .map((branch) => {
+                      const current = branch.current && !remote;
+                      return (
+                        <ActionHost
+                          key={reference(branch)}
+                          selected={current}
+                          className="mx-1 min-h-(--ui-control-height-compact) pe-1"
+                        >
+                          <Button
+                            variant="item"
+                            size="sm"
+                            motion="none"
+                            type="button"
+                            disabled={disabled || current}
+                            label={t("Switch to {p0}", { p0: reference(branch) })}
+                            tooltip={t("Switch to {p0}", { p0: reference(branch) })}
+                            onClick={() => void pick("checkout", branch)}
+                            className={`min-w-0 flex-1 justify-start gap-2 ${current ? "text-content" : "text-(--ui-text-secondary)"}`}
+                          >
+                            {current ? (
+                              <Check className="icon-sm shrink-0 text-(--ui-tone-accent-fg)" />
+                            ) : (
+                              <GitBranch className="icon-sm shrink-0" />
+                            )}
+                            <span className="truncate">{reference(branch)}</span>
+                          </Button>
+                          <InlineMoreAction
+                            label={t("Actions for {p0}", { p0: reference(branch) })}
+                            disabled={disabled}
+                            expanded={menu?.branch === branch}
+                            onOpen={(anchor) => setMenu({ branch, anchor })}
+                          />
+                        </ActionHost>
+                      );
+                    })
+                : null}
+            </div>
+          );
+        })}
         {!loading && branches.length === 0 ? (
-          <p className="px-3 py-3 text-[12px] text-[var(--ui-text-secondary)]">
-            {t("No matching branches")}
-          </p>
+          <EmptyState
+            size="inline"
+            kind={deferredQuery ? "filtered" : "empty"}
+            className="px-3"
+            description={t("No matching branches")}
+          />
         ) : null}
       </div>
       {menu ? (

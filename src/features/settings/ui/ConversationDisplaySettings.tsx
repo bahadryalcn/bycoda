@@ -1,16 +1,22 @@
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   loadStreamingTextMode,
   subscribeStreamingTextMode,
   saveStreamingTextMode,
 } from "../model/settings";
-import { Row, Select, Toggle } from "./settingsControls";
+import { Row, Select, SettingsFeedback, Toggle } from "./settingsControls";
+import { Button } from "../../../shared/ui/Button";
 import type { AppearanceSettings } from "./useAppearanceSettings";
 
 export function ConversationDisplaySettings({ appearance: a }: { appearance: AppearanceSettings }) {
   useLocale();
   const p = a.preferences;
+  const [failedMode, setFailedMode] = useState<"paced" | "adaptive" | null>(null);
+  const saveMode = (next: "paced" | "adaptive") => {
+    saveStreamingTextMode(next);
+    setFailedMode(loadStreamingTextMode() === next ? null : next);
+  };
   const streamingTextMode = useSyncExternalStore(
     subscribeStreamingTextMode,
     loadStreamingTextMode,
@@ -26,6 +32,7 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
         )}
       >
         <Select
+          hideLabel
           label={t("Chat width")}
           value={p.chatWidth}
           options={[
@@ -71,19 +78,30 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
       </Row>
       <Row
         id="streaming-text-mode"
+        feedback={
+          failedMode ? (
+            <SettingsFeedback
+              state="error"
+              action={<Button onClick={() => saveMode(failedMode)}>{t("Retry")}</Button>}
+            >
+              {t("Could not save changes")}
+            </SettingsFeedback>
+          ) : undefined
+        }
         label={t("Streaming text animation")}
         description={t(
           "Paced reveals words steadily. Adaptive shows text as it arrives and adjusts the fade to the stream rhythm.",
         )}
       >
         <Select
+          hideLabel
           label={t("Streaming text animation")}
           value={streamingTextMode}
           options={[
             { value: "paced", label: t("Paced (default)") },
             { value: "adaptive", label: t("Immediate with adaptive fade") },
           ]}
-          onChange={(value) => saveStreamingTextMode(value === "adaptive" ? "adaptive" : "paced")}
+          onChange={(value) => saveMode(value === "adaptive" ? "adaptive" : "paced")}
         />
       </Row>
     </>

@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  clearProjectModelChoice,
   clearProjectProviders,
   loadProjectProviderSettings,
+  projectProviderSettingsPersisted,
   projectProvidersRevision,
   rebaseProjectProviders,
+  setProjectSessionDefaults,
   setProjectDefaultModel,
   setProjectDefaultProvider,
   setProjectProviderHidden,
@@ -88,5 +91,35 @@ describe("project provider settings", () => {
     const before = projectProvidersRevision();
     setProjectProviderHidden("/repo/a", "cursor", true);
     expect(projectProvidersRevision()).toBeGreaterThan(before);
+  });
+
+  it("returns one provider's model to global without clearing other overrides", () => {
+    setProjectDefaultProvider("/repo/a", "claude", "claude:opus-5");
+    setProjectDefaultModel("/repo/a", "claude", "claude:sonnet-5");
+    setProjectDefaultModel("/repo/a", "codex", "codex:gpt-5");
+    setProjectSessionDefaults("/repo/a", "claude", { effort: "high" });
+    setProjectProviderHidden("/repo/a", "cursor", true);
+
+    clearProjectModelChoice("/repo/a", "claude");
+
+    expect(loadProjectProviderSettings("/repo/a")).toEqual({
+      defaultHarness: "claude",
+      models: { codex: "codex:gpt-5" },
+      defaults: { claude: { effort: "high" } },
+      hidden: ["cursor"],
+    });
+  });
+
+  it("reports whether the last write reached storage", () => {
+    setProjectProviderHidden("/repo/a", "cursor", true);
+    expect(projectProviderSettingsPersisted()).toBe(true);
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: () => {
+        throw new Error("quota");
+      },
+    });
+    setProjectProviderHidden("/repo/a", "grok", true);
+    expect(projectProviderSettingsPersisted()).toBe(false);
   });
 });

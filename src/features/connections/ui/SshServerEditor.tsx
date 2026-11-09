@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { Disclosure } from "../../../shared/ui/Disclosure";
+import { useId, useState } from "react";
 import { SshCertificateInspection } from "./SshCertificateInspection";
 import { SshIdentityField } from "./SshIdentityField";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { SshJumpPolicyEditor } from "./SshJumpPolicyEditor";
+import { NumberField } from "../../../shared/ui/NumberField";
 import { Switch } from "../../../shared/ui/Switch";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import {
@@ -16,9 +18,11 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { sshEndpointPreview, validSshEndpointPreview } from "../model/sshEndpointReview";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Modal } from "../../../shared/ui/Modal";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { TextField } from "../../../shared/ui/TextField";
 import { saveSshConnection, type ServerRecord, type SshEndpoint } from "../model/serverInventory";
+import { errorText } from "./serverActionFeedback";
 
 /** Stores endpoint references only. Password and private key material never enter this form. */
 export function SshServerEditor({
@@ -50,7 +54,7 @@ export function SshServerEditor({
     `${scope}:certificate`,
     server?.sshEndpoint?.certificateFile ?? "",
   );
-  const [jumpHosts, setJumpHosts] = useRetainedState<string[]>(
+  const [jumpHosts, setJumpHosts, retireJumpHosts] = useRetainedState<string[]>(
     `${scope}:jump-chain`,
     server?.sshEndpoint?.jumpHosts ??
       (server?.sshEndpoint?.jumpHost ? [server.sshEndpoint.jumpHost] : [""]),
@@ -59,12 +63,12 @@ export function SshServerEditor({
     `${scope}:per-hop-policy`,
     Boolean(server?.sshEndpoint?.jumpPolicies?.length),
   );
-  const [policyDrafts, setPolicyDrafts] = useRetainedState<SshJumpPolicyDraft[]>(
-    `${scope}:jump-policies`,
-    () =>
-      server?.sshEndpoint?.jumpPolicies?.length
-        ? sshJumpPolicyDrafts(server.sshEndpoint.jumpPolicies)
-        : [emptySshJumpPolicyDraft()],
+  const [policyDrafts, setPolicyDrafts, retirePolicyDrafts] = useRetainedState<
+    SshJumpPolicyDraft[]
+  >(`${scope}:jump-policies`, () =>
+    server?.sshEndpoint?.jumpPolicies?.length
+      ? sshJumpPolicyDrafts(server.sshEndpoint.jumpPolicies)
+      : [emptySshJumpPolicyDraft()],
   );
   const jumpPolicies = sshJumpPoliciesFromDrafts(policyDrafts);
   const [proxyEnabled, setProxyEnabled] = useRetainedState(
@@ -112,6 +116,29 @@ export function SshServerEditor({
     validSshEndpointPreview(endpoint);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const formId = useId();
+  // A saved new server or quick connection must not reopen pre-filled. Edits keep their draft.
+  const clearDraft = () => {
+    if (server) return;
+    setName("");
+    setHost("");
+    setUser("");
+    setPort("22");
+    setIdentityFile("");
+    setCertificateFile("");
+    const emptyHops = [""];
+    setJumpHosts(emptyHops);
+    retireJumpHosts(emptyHops);
+    setPerHopPolicy(false);
+    const emptyPolicies = [emptySshJumpPolicyDraft()];
+    setPolicyDrafts(emptyPolicies);
+    retirePolicyDrafts(emptyPolicies);
+    setProxyEnabled(false);
+    setProxyHost("");
+    setProxyScheme("http");
+    setProxyPort("8080");
+    setSaveConnection(false);
+  };
   return (
     <Modal
       title={onConnect ? t("Quick connect") : server ? t("Edit SSH server") : t("Add SSH server")}
@@ -119,9 +146,20 @@ export function SshServerEditor({
         if (!saving) onClose();
       }}
       size="md"
+      footer={
+        <ModalActions>
+          <Button variant="ghost" disabled={saving} onClick={onClose}>
+            {t("Cancel")}
+          </Button>
+          <Button variant="primary" type="submit" form={formId} loading={saving}>
+            {onConnect ? t("Connect") : t("Save")}
+          </Button>
+        </ModalActions>
+      }
     >
       <form
-        className="flex flex-col gap-3 p-4"
+        id={formId}
+        className="flex flex-col gap-3"
         onSubmit={async (event) => {
           event.preventDefault();
           if (saving) return;
@@ -132,6 +170,7 @@ export function SshServerEditor({
           }
           setSaving(true);
           setError("");
+          let phase: "save" | "connect" = "save";
           try {
             if (!valid) {
               setError(t("Enter a valid SSH endpoint."));
@@ -144,13 +183,14 @@ export function SshServerEditor({
                 name: name.trim() || sshEndpointPreview(endpoint),
                 endpoint,
               });
-            if (onConnect) onConnect(endpoint, name.trim() || sshEndpointPreview(endpoint), saved);
-            else if (saved) onSaved?.(saved);
-          } catch {
+            if (onConnect) {
+              phase = "connect";
+              onConnect(endpoint, name.trim() || sshEndpointPreview(endpoint), saved);
+            } else if (saved) onSaved?.(saved);
+            clearDraft();
+          } catch (reason) {
             setError(
-              onConnect
-                ? t("Couldn’t open this SSH connection.")
-                : t("Couldn’t save the SSH server."),
+              `${phase === "connect" ? t("Couldn’t open this SSH connection.") : t("Couldn’t save the SSH server.")} ${errorText(reason)}`,
             );
           } finally {
             setSaving(false);
@@ -158,15 +198,7 @@ export function SshServerEditor({
         }}
       >
         <fieldset className="flex min-w-0 flex-col gap-3">
-          <legend className="mbe-3 text-sm font-medium">{t("Connection")}</legend>
-          <TextField
-            label={t("Name")}
-            value={name}
-            required={!onConnect || saveConnection}
-            maxLength={200}
-            onChange={(event) => setName(event.target.value)}
-            disabled={saving}
-          />
+          <legend className="mbe-3 text-ui-body font-medium">{t("Connection")}</legend>
           <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_6rem] items-start gap-3">
             <TextField
               label={t("Host")}
@@ -177,9 +209,8 @@ export function SshServerEditor({
               onChange={(event) => setHost(event.target.value)}
               disabled={saving}
             />
-            <TextField
+            <NumberField
               label={t("SSH port")}
-              type="number"
               value={port}
               min={1}
               max={65535}
@@ -190,7 +221,7 @@ export function SshServerEditor({
           </div>
         </fieldset>
         <fieldset className="flex min-w-0 flex-col gap-3 border-t border-stroke pbs-3">
-          <legend className="text-sm font-medium">{t("Credentials")}</legend>
+          <legend className="text-ui-body font-medium">{t("Credentials")}</legend>
           <TextField
             label={t("SSH user")}
             value={user}
@@ -200,33 +231,45 @@ export function SshServerEditor({
           />
           <SshIdentityField value={identityFile} onChange={setIdentityFile} disabled={saving} />
         </fieldset>
-        <details className="text-xs text-(--ui-text-muted)">
-          <summary className="cursor-pointer py-1">{t("Connection help")}</summary>
-          <p className="mbs-2">
+        <TextField
+          label={t("Name")}
+          value={name}
+          required={!onConnect || saveConnection}
+          maxLength={200}
+          onChange={(event) => setName(event.target.value)}
+          disabled={saving}
+        />
+        <Disclosure
+          size="sm"
+          className="text-ui-caption text-(--ui-text-muted)"
+          summary={t("Connection help")}
+        >
+          <p>
             {t(
               "Enter the server address and SSH user. Connect opens a terminal; Save adds it to your servers.",
             )}
           </p>
           <p className="mbs-2">{t("Leave empty to use your SSH agent and default identities.")}</p>
-        </details>
+        </Disclosure>
         {!onConnect && valid && endpoint.httpProxy ? (
-          <p className="break-all text-xs text-(--ui-text-muted)">
+          <p className="break-all text-ui-caption text-(--ui-text-muted)">
             {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
             {sshEndpointPreview(endpoint.httpProxy)}
           </p>
         ) : null}
-        <details
-          open={Boolean(
+        <Disclosure
+          size="sm"
+          defaultOpen={Boolean(
             server?.sshEndpoint?.certificateFile ||
             server?.sshEndpoint?.httpProxy ||
             server?.sshEndpoint?.jumpHost ||
             server?.sshEndpoint?.jumpHosts?.length ||
             server?.sshEndpoint?.jumpPolicies?.length,
           )}
-          className="border-t border-stroke pbs-3 text-xs text-(--ui-text-muted)"
+          className="border-t border-stroke pbs-3 text-ui-caption text-(--ui-text-muted)"
+          summary={t("Advanced SSH settings")}
         >
-          <summary className="cursor-pointer py-1">{t("Advanced SSH settings")}</summary>
-          <div className="mbs-2 flex flex-col gap-3">
+          <div className="flex flex-col gap-3">
             <TextField
               label={t("Public SSH certificate file")}
               value={certificateFile}
@@ -238,15 +281,12 @@ export function SshServerEditor({
               )}
             />
             <SshCertificateInspection reference={certificateFile} disabled={saving} />
-            <div className="flex items-center gap-2 text-xs">
-              <Switch
-                checked={perHopPolicy}
-                onCheckedChange={setPerHopPolicy}
-                disabled={saving}
-                aria-label={t("Per-hop SSH policy")}
-              />
-              <span>{t("Per-hop SSH policy")}</span>
-            </div>
+            <Switch
+              checked={perHopPolicy}
+              onCheckedChange={setPerHopPolicy}
+              disabled={saving}
+              label={t("Per-hop SSH policy")}
+            />
             {perHopPolicy ? (
               <SshJumpPolicyEditor
                 value={policyDrafts}
@@ -257,19 +297,19 @@ export function SshServerEditor({
               <SshJumpChainEditor value={jumpHosts} onChange={setJumpHosts} disabled={saving} />
             )}
           </div>
-        </details>
-        <details className="text-xs text-(--ui-text-muted)">
-          <summary className="cursor-pointer py-1">{t("Connection proxy")}</summary>
-          <div className="mbs-2 flex min-w-0 flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={proxyEnabled}
-                onCheckedChange={setProxyEnabled}
-                disabled={saving}
-                aria-label={t("HTTP CONNECT upstream")}
-              />
-              <span>{t("HTTP CONNECT upstream")}</span>
-            </div>
+        </Disclosure>
+        <Disclosure
+          size="sm"
+          className="text-ui-caption text-(--ui-text-muted)"
+          summary={t("Connection proxy")}
+        >
+          <div className="flex min-w-0 flex-col gap-2">
+            <Switch
+              checked={proxyEnabled}
+              onCheckedChange={setProxyEnabled}
+              disabled={saving}
+              label={t("HTTP CONNECT upstream")}
+            />
             {proxyEnabled ? (
               <>
                 <fieldset disabled={saving} className="border-0 p-0">
@@ -306,78 +346,65 @@ export function SshServerEditor({
                   )}
                 </p>
                 {proxyConflict ? (
-                  <p role="status" className="text-(--ui-tone-danger-fg)">
+                  <InlineError live="polite">
                     {t(
                       "Choose either an HTTP proxy or a jump chain. Both cannot be used together.",
                     )}
-                  </p>
+                  </InlineError>
                 ) : null}
               </>
             ) : null}
           </div>
-        </details>
+        </Disclosure>
         {onConnect ? (
           <>
-            <label className="flex items-center gap-2 text-xs">
-              <Checkbox
-                checked={saveConnection}
-                disabled={saving}
-                onChange={(event) => setSaveConnection(event.target.checked)}
-              />
-              {t("Save connection")}
-            </label>
-            <div
-              aria-label={t("Endpoint preview")}
-              className="border-t border-stroke pbs-3 text-xs"
-            >
-              <p className="break-all font-medium">
-                {valid ? sshEndpointPreview(endpoint) : t("Endpoint preview")}
-              </p>
-              {endpoint.jumpHosts?.length ? (
-                <p className="mbs-1 break-all text-(--ui-text-muted)">
-                  {t("Jump chain")}: {endpoint.jumpHosts.join(" → ")}
-                </p>
-              ) : null}
-              {endpoint.jumpPolicies?.length ? (
-                <p className="mbs-1 break-all text-(--ui-text-muted)">
-                  {t("Jump chain")}: {endpoint.jumpPolicies.map(sshEndpointPreview).join(" → ")}
-                </p>
-              ) : null}
-              {endpoint.httpProxy ? (
-                <p className="mbs-1 break-all text-(--ui-text-muted)">
-                  {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
-                  {sshEndpointPreview(endpoint.httpProxy)}
-                </p>
-              ) : null}
-              {endpoint.identityFile ? (
-                <p className="mbs-1 break-all text-(--ui-text-muted)">
-                  {t("Identity file")}: {endpoint.identityFile}
-                </p>
-              ) : null}
-              {endpoint.certificateFile ? (
-                <p className="mbs-1 break-all text-(--ui-text-muted)">
-                  {t("Public SSH certificate file")}: {endpoint.certificateFile}
-                </p>
-              ) : null}
-              {!endpoint.user ? (
-                <p className="mbs-1 text-(--ui-text-muted)">{t("Uses the default SSH user.")}</p>
-              ) : null}
-            </div>
+            <Checkbox
+              checked={saveConnection}
+              disabled={saving}
+              onChange={(event) => setSaveConnection(event.target.checked)}
+              label={t("Save connection")}
+              className="flex items-center gap-2 text-ui-caption"
+            />
+            {valid ? (
+              <div
+                aria-label={t("Endpoint preview")}
+                className="border-t border-stroke pbs-3 text-ui-caption"
+              >
+                <p className="break-all font-medium">{sshEndpointPreview(endpoint)}</p>
+                {endpoint.jumpHosts?.length ? (
+                  <p className="mbs-1 break-all text-(--ui-text-muted)">
+                    {t("Jump chain")}: {endpoint.jumpHosts.join(" → ")}
+                  </p>
+                ) : null}
+                {endpoint.jumpPolicies?.length ? (
+                  <p className="mbs-1 break-all text-(--ui-text-muted)">
+                    {t("Jump chain")}: {endpoint.jumpPolicies.map(sshEndpointPreview).join(" → ")}
+                  </p>
+                ) : null}
+                {endpoint.httpProxy ? (
+                  <p className="mbs-1 break-all text-(--ui-text-muted)">
+                    {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
+                    {sshEndpointPreview(endpoint.httpProxy)}
+                  </p>
+                ) : null}
+                {endpoint.identityFile ? (
+                  <p className="mbs-1 break-all text-(--ui-text-muted)">
+                    {t("Identity file")}: {endpoint.identityFile}
+                  </p>
+                ) : null}
+                {endpoint.certificateFile ? (
+                  <p className="mbs-1 break-all text-(--ui-text-muted)">
+                    {t("Public SSH certificate file")}: {endpoint.certificateFile}
+                  </p>
+                ) : null}
+                {!endpoint.user ? (
+                  <p className="mbs-1 text-(--ui-text-muted)">{t("Uses the default SSH user.")}</p>
+                ) : null}
+              </div>
+            ) : null}
           </>
         ) : null}
-        {error ? (
-          <p role="alert" className="text-xs text-(--ui-tone-danger-fg)">
-            {error}
-          </p>
-        ) : null}
-        <div className="sticky inset-be-0 z-10 -mbe-4 flex justify-end gap-2 border-t border-stroke bg-(--ui-surface) py-3">
-          <Button variant="ghost" disabled={saving} onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          <Button variant="primary" type="submit" loading={saving}>
-            {onConnect ? t("Connect") : t("Save")}
-          </Button>
-        </div>
+        {error ? <InlineError>{error}</InlineError> : null}
       </form>
     </Modal>
   );

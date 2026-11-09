@@ -4,15 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   full: vi.fn(),
   files: vi.fn(),
-  listeners: new Set<() => void>(),
+  listeners: new Set<(change?: { cwd?: string; scope: string }) => void>(),
 }));
 vi.mock("../../../platform/tauri/fs", () => ({
   gitDiffIndex: api.full,
   gitDiffFiles: api.files,
-  notifyGitChanged: () => {
-    for (const listener of [...api.listeners]) listener();
+  notifyGitChanged: (cwd?: string, scope = "refs") => {
+    for (const listener of [...api.listeners]) listener({ cwd, scope });
   },
-  subscribeGitChanged: (listener: () => void) => {
+  subscribeGitChanged: (listener: (change?: { cwd?: string; scope: string }) => void) => {
     api.listeners.add(listener);
     return () => api.listeners.delete(listener);
   },
@@ -25,6 +25,7 @@ import {
   notifyGitChangedWith,
   resetGitIndexStore,
 } from "./gitIndexStore";
+import { CHECKOUT_CACHE_ENTRIES } from "./checkoutCache";
 
 const index = (head: string) => ({ head, files: [] }) as never;
 
@@ -50,6 +51,42 @@ afterEach(() => {
 });
 
 describe("fetchGitIndex", () => {
+  it("re-reads evicted checkout snapshots but preserves original pending owners", async () => {
+    const gate = deferred<unknown>();
+    api.files.mockImplementation((cwd: string) =>
+      cwd === "/held" ? gate.promise : Promise.resolve(index(cwd)),
+    );
+    const original = fetchGitIndex("/held");
+    await fetchGitIndex("/idle");
+    for (let i = 0; i <= CHECKOUT_CACHE_ENTRIES; i++) await fetchGitIndex(`/other-${i}`);
+    const before = api.files.mock.calls.length;
+    expect(fetchGitIndex("/held")).toBe(original);
+    expect(api.files).toHaveBeenCalledTimes(before);
+    await fetchGitIndex("/idle");
+    expect(api.files).toHaveBeenCalledTimes(before + 1);
+    gate.resolve(index("settled"));
+    await original;
+  });
+  it("keeps superseded original flights owned across invalidation and cache pressure", async () => {
+    const old = deferred<unknown>(),
+      current = deferred<unknown>();
+    api.files.mockImplementation((cwd: string) =>
+      cwd === "/held" ? old.promise : Promise.resolve(index(cwd)),
+    );
+    api.full.mockReturnValue(current.promise);
+    const first = fetchGitIndex("/held");
+    invalidateGitIndex("/held");
+    const second = fetchGitIndex("/held", { full: true });
+    current.resolve(index("current"));
+    await second;
+    for (let i = 0; i <= CHECKOUT_CACHE_ENTRIES; i++) await fetchGitIndex(`/other-${i}`);
+    const count = api.full.mock.calls.length;
+    expect(await fetchGitIndex("/held", { full: true })).toEqual(index("current"));
+    expect(api.full).toHaveBeenCalledTimes(count);
+    old.resolve(index("stale"));
+    await first;
+    expect(await fetchGitIndex("/held", { full: true })).toEqual(index("current"));
+  });
   it("shares a slow pending read after the completed-result freshness window", async () => {
     const gate = deferred<unknown>();
     api.files.mockReturnValue(gate.promise);
@@ -166,5 +203,33 @@ describe("invalidation", () => {
     await fetchGitIndex("/r");
     expect(api.full).toHaveBeenCalledTimes(1);
     expect(api.files).not.toHaveBeenCalled();
+  });
+
+  it("retains another checkout's fresh result after a scoped change", async () => {
+    await fetchGitIndex("/a");
+    const other = await fetchGitIndex("/b");
+    notifyGitChangedWith("/a", "index", {});
+    expect(await fetchGitIndex("/b")).toBe(other);
+    expect(api.files).toHaveBeenCalledTimes(2);
+    await fetchGitIndex("/a");
+    expect(api.files).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps sharing an unrelated pending checkout read", async () => {
+    const gate = deferred<unknown>();
+    api.files.mockReturnValue(gate.promise);
+    const first = fetchGitIndex("/b");
+    notifyGitChangedWith("/a", "checkout", {});
+    const second = fetchGitIndex("/b");
+    gate.resolve(index("same"));
+    expect(await second).toBe(await first);
+    expect(api.files).toHaveBeenCalledOnce();
+  });
+
+  it("preserves global refs invalidation for shared-worktree metadata", async () => {
+    await fetchGitIndex("/b", { full: true });
+    notifyGitChangedWith("/a", "refs", {});
+    await fetchGitIndex("/b", { full: true });
+    expect(api.full).toHaveBeenCalledTimes(2);
   });
 });

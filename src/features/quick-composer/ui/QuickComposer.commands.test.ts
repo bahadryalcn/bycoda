@@ -4,9 +4,21 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { QuickComposer } from "./QuickComposer";
+import { quickNativeReply } from "../model/nativeQuickLaunch.fixture";
+import { createQuickComposerClosureRuntime } from "../model/quickComposerClosure";
+import { createMountedComposerRegistry } from "../../sessions/data/composerClosure";
+import { PersistenceDrainRegistry } from "../../sessions/data/persistenceDrain";
 
 const native = vi.hoisted(() => ({
   shown: () => {},
+}));
+vi.mock("../../workspaces/model/workspaceCreation", () => ({
+  shortWorkspaceRef: (value: string) => value,
+  useWorkspaceCreation: (_cwd: string, _active: boolean, choice?: string) => ({
+    mode: choice ?? "current",
+    pending: false,
+    refresh: vi.fn(),
+  }),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({
@@ -26,7 +38,7 @@ vi.mock("./QuickProjectIcon", () => ({
 }));
 vi.mock("./QuickModelSelector", () => ({ QuickModelSelector: () => null }));
 vi.mock("./useQuickAttachments", () => ({
-  useQuickAttachments: () => ({ files: [], clear: () => {} }),
+  useQuickAttachments: () => ({ files: [], clear: () => {}, clearAfterHandoff: async () => {} }),
 }));
 vi.mock("../model/quickComposer", async (actual) => ({
   ...(await actual<object>()),
@@ -82,11 +94,19 @@ beforeEach(async () => {
     getItem: (key: string) => stored.get(key) ?? null,
     setItem: (key: string, value: string) => stored.set(key, value),
   });
-  vi.mocked(invoke).mockReset().mockResolvedValue(undefined);
+  vi.mocked(invoke)
+    .mockReset()
+    .mockImplementation(async (command, args) => quickNativeReply(command, args));
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => root.render(createElement(QuickComposer, { onShown: () => {} })));
+  const closure = createQuickComposerClosureRuntime(
+    createMountedComposerRegistry({
+      registry: new PersistenceDrainRegistry(),
+      publish: async () => {},
+    }),
+  );
+  await act(async () => root.render(createElement(QuickComposer, { onShown: () => {}, closure })));
   prompt = container.querySelector("textarea")!;
 });
 
@@ -97,38 +117,87 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("shows launch progress once and preserves a newer draft after completion", async () => {
+  let finish!: () => void;
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "quick_composer_submit_intent")
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    return quickNativeReply(command, args);
+  });
+  input("First request");
+  const start = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Start",
+  )!;
+  start.focus();
+  act(() => {
+    start.click();
+    start.click();
+  });
+  await act(async () => {});
+  expect(
+    vi.mocked(invoke).mock.calls.filter(([command]) => command === "quick_composer_submit_intent"),
+  ).toHaveLength(1);
+  expect(start.getAttribute("aria-busy")).toBe("true");
+  expect(document.activeElement).toBe(start);
+  input("Next draft while the first request finishes");
+  await act(async () => finish());
+  expect(prompt.value).toBe("Next draft while the first request finishes");
+  expect(start.getAttribute("aria-busy")).not.toBe("true");
+});
+
+it("keeps a failed launch draft and exposes the complete error for recovery", async () => {
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "quick_composer_submit_intent")
+      throw new Error("Reconnect the owning computer before retrying this unchanged draft.");
+    return quickNativeReply(command, args);
+  });
+  input("Keep this request");
+  await key("Enter");
+  expect(prompt.value).toBe("Keep this request");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Reconnect the owning computer before retrying this unchanged draft.",
+  );
+});
+
 it.each(["Enter", "Tab"])(
-  "offers /operator and completes it with %s before submitting the prompt",
+  "hides Operator, completes Plan with %s and preserves typed /operator",
   async (completionKey) => {
     input("/");
-    expect(commands()?.textContent).toContain("Operator");
-    input("/op");
+    expect(commands()?.textContent).not.toContain("Operator");
+    input("/pl");
     await key("ArrowDown");
     await key("ArrowUp");
-    expect(commands()?.querySelector('[aria-selected="true"]')?.textContent).toContain("Operator");
+    expect(commands()?.querySelector('[aria-selected="true"]')?.textContent).toContain("Plan");
     await key(completionKey);
-    expect(prompt.value).toBe("/operator ");
+    expect(prompt.value).toBe("/plan ");
     expect(prompt.selectionStart).toBe(prompt.value.length);
     expect(commands()).toBeNull();
-    expect(invoke).not.toHaveBeenCalledWith("quick_composer_submit", expect.anything());
+    expect(invoke).not.toHaveBeenCalledWith("quick_composer_submit_intent", expect.anything());
 
     input("/operator list my notes");
     await key("Enter");
-    expect(invoke).toHaveBeenCalledWith("quick_composer_submit", {
-      request: expect.objectContaining({
-        prompt: "/operator list my notes",
-        reveal: false,
+    expect(invoke).toHaveBeenCalledWith(
+      "quick_composer_submit_intent",
+      expect.objectContaining({
+        submission: expect.objectContaining({
+          request: expect.objectContaining({
+            prompt: "/operator list my notes",
+            reveal: false,
+          }),
+        }),
       }),
-    });
+    );
     expect(prompt.value).toBe("");
   },
 );
 
 it("completes a command by mouse while preserving the rest of the prompt and caret", async () => {
-  input("  /op list my notes", 5);
+  input("  /pl list my notes", 5);
   await act(async () => commands()!.querySelector<HTMLButtonElement>('[role="option"]')!.click());
-  expect(prompt.value).toBe("  /operator list my notes");
-  expect(prompt.selectionStart).toBe("  /operator ".length);
+  expect(prompt.value).toBe("  /plan list my notes");
+  expect(prompt.selectionStart).toBe("  /plan ".length);
   expect(prompt.selectionEnd).toBe(prompt.selectionStart);
   expect(document.activeElement).toBe(prompt);
   expect(commands()).toBeNull();
@@ -156,14 +225,22 @@ it("does not suggest Operator inside normal text or paths and filters unknown co
 
 it("preserves typed /operator for start-and-open and retains it after a failed launch", async () => {
   input("/operator list my notes");
-  vi.mocked(invoke).mockRejectedValueOnce(new Error("Could not start session"));
-  await key("Enter", { metaKey: true });
-  expect(invoke).toHaveBeenCalledWith("quick_composer_submit", {
-    request: expect.objectContaining({
-      prompt: "/operator list my notes",
-      reveal: true,
-    }),
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "quick_composer_submit_intent") throw new Error("Could not start session");
+    return quickNativeReply(command, args);
   });
+  await key("Enter", { metaKey: true });
+  expect(invoke).toHaveBeenCalledWith(
+    "quick_composer_submit_intent",
+    expect.objectContaining({
+      submission: expect.objectContaining({
+        request: expect.objectContaining({
+          prompt: "/operator list my notes",
+          reveal: true,
+        }),
+      }),
+    }),
+  );
   expect(prompt.value).toBe("/operator list my notes");
   expect(container.textContent).toContain("Could not start session");
   await act(async () => native.shown());
@@ -177,7 +254,7 @@ it("does not consume command selection keys during IME composition", async () =>
   await key("Enter", { isComposing: true });
   expect(prompt.value).toBe("/op");
   expect(commands()).not.toBeNull();
-  expect(invoke).not.toHaveBeenCalledWith("quick_composer_submit", expect.anything());
+  expect(invoke).not.toHaveBeenCalledWith("quick_composer_submit_intent", expect.anything());
 });
 
 function modePill() {
@@ -187,7 +264,8 @@ function modePill() {
 it("lists every mode command and launches each in its mode", async () => {
   input("/");
   const listed = commands()!.textContent;
-  for (const name of ["Plan", "Operator", "Orchestrator", "Draft"]) expect(listed).toContain(name);
+  for (const name of ["Plan", "Orchestrator", "Draft"]) expect(listed).toContain(name);
+  expect(listed).not.toContain("Operator");
 
   input("/orch");
   await key("Enter");
@@ -196,19 +274,29 @@ it("lists every mode command and launches each in its mode", async () => {
   expect(modePill()).toBeNull();
   input("/orchestrator ship it");
   await key("Enter");
-  expect(invoke).toHaveBeenLastCalledWith("quick_composer_submit", {
-    request: expect.objectContaining({
-      prompt: "ship it",
-      intent: "orchestrate",
+  expect(invoke).toHaveBeenLastCalledWith(
+    "quick_composer_submit_intent",
+    expect.objectContaining({
+      submission: expect.objectContaining({
+        request: expect.objectContaining({
+          prompt: "ship it",
+          intent: "orchestrate",
+        }),
+      }),
     }),
-  });
+  );
 
   input("/draft remember this");
   expect(container.textContent).toContain("Save draft");
   await key("Enter");
-  expect(invoke).toHaveBeenLastCalledWith("quick_composer_submit", {
-    request: expect.objectContaining({ prompt: "remember this", draft: true }),
-  });
+  expect(invoke).toHaveBeenLastCalledWith(
+    "quick_composer_submit_intent",
+    expect.objectContaining({
+      submission: expect.objectContaining({
+        request: expect.objectContaining({ prompt: "remember this", draft: true }),
+      }),
+    }),
+  );
 });
 
 it("keeps /plan in the prompt and sends the plan intent", async () => {
@@ -217,10 +305,15 @@ it("keeps /plan in the prompt and sends the plan intent", async () => {
   expect(prompt.value).toBe("/plan ");
   input("/plan sketch the refactor");
   await key("Enter");
-  expect(invoke).toHaveBeenLastCalledWith("quick_composer_submit", {
-    request: expect.objectContaining({
-      prompt: "sketch the refactor",
-      intent: "plan",
+  expect(invoke).toHaveBeenLastCalledWith(
+    "quick_composer_submit_intent",
+    expect.objectContaining({
+      submission: expect.objectContaining({
+        request: expect.objectContaining({
+          prompt: "sketch the refactor",
+          intent: "plan",
+        }),
+      }),
     }),
-  });
+  );
 });

@@ -1,5 +1,5 @@
-/* Opening motion belongs to surfaces, never streamed rows or file editors.
-   Page/session fades avoid creating containing blocks for fixed overlays.
+/* Opening motion belongs to occasional dialogs, never repeated work navigation,
+   streamed rows or file editors. Retained pages and sessions appear immediately.
    No forwards fill: release compositor layers as soon as the entrance ends. */
 :root {
   --motion-surface-duration: 200ms;
@@ -7,15 +7,6 @@
   --motion-notice-duration: 180ms;
   --motion-surface-distance: 8px;
   --motion-sheet-distance: 16px;
-}
-
-@keyframes ui-surface-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
 }
 
 @keyframes ui-sheet-in {
@@ -48,20 +39,29 @@
   animation: none;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .ui-page-enter,
-  .bycoda-settings-panel > *,
-  .app-search:not(.app-search-dialog),
-  [data-session-drop][data-session-visible="true"] {
-    animation: ui-surface-fade-in var(--motion-surface-duration) var(--motion-ease-out) backwards;
+/* Bottom placement (Modal placement="bottom", Sheet side="bottom") rises from its edge. */
+@keyframes ui-sheet-bottom-in {
+  from {
+    opacity: 0;
+    translate: 0 var(--motion-sheet-distance);
   }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
 
+@media (prefers-reduced-motion: no-preference) {
   [data-modal-placement="center"] {
     animation: ui-dialog-in var(--motion-surface-duration) var(--motion-ease-out) backwards;
   }
 
   [data-modal-placement="end"] {
     animation: ui-sheet-in var(--motion-sheet-duration) var(--motion-ease-out) backwards;
+  }
+
+  [data-modal-placement="bottom"] {
+    animation: ui-sheet-bottom-in var(--motion-sheet-duration) var(--motion-ease-out) backwards;
   }
 }
 

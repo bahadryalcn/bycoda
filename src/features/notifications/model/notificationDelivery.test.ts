@@ -4,6 +4,10 @@ import {
   announceBackgroundFinish,
   announceSessionFinished,
   notifySession,
+  notifyBackground,
+  notifyDailySummary,
+  notifyAssistant,
+  unseenAttentionSessions,
   saveNotificationsEnabled,
   setNotificationBatchDelay,
   setWindowFocused,
@@ -11,6 +15,7 @@ import {
 import { updateNotificationPreferences } from "./notificationPreferences";
 import { newSession, type Block } from "../../sessions/model/session";
 import { saveNotificationEvent } from "./notificationEvents";
+import { saveSoundsEnabled } from "../../settings/model/sounds";
 
 const { invoke, play } = vi.hoisted(() => ({ invoke: vi.fn(), play: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
@@ -23,10 +28,62 @@ beforeEach(() => {
   localStorage.clear();
   invoke.mockReset();
   play.mockClear();
-  invoke.mockResolvedValue(undefined);
+  invoke.mockResolvedValue(true);
   saveNotificationsEnabled(true);
   setWindowFocused(false);
   setNotificationBatchDelay(0);
+});
+
+it("routes assistant delivery through native outcome and current project mute", async () => {
+  const message = {
+    title: "Assistant update",
+    body: "A job needs attention",
+    kind: "input" as const,
+    projectPath: "/work/app",
+    occurredAt: Date.now(),
+  };
+  updateNotificationPreferences(["local:/work/app"], { mutedUntil: null });
+  expect(await notifyAssistant(message)).toBe(false);
+  expect(invoke).not.toHaveBeenCalled();
+  localStorage.clear();
+  saveNotificationsEnabled(true);
+  invoke.mockResolvedValueOnce(false);
+  expect(await notifyAssistant(message)).toBe(false);
+  invoke.mockResolvedValueOnce(true);
+  expect(await notifyAssistant(message)).toBe(true);
+  expect(invoke).toHaveBeenLastCalledWith(
+    "show_notification",
+    expect.objectContaining({ sessionId: "background:assistant", body: message.body }),
+  );
+});
+it("suppresses a multi-project assistant banner when any participating project is muted", async () => {
+  updateNotificationPreferences(["local:/private"], { mutedUntil: null });
+  expect(
+    await notifyAssistant({
+      title: "Shared job",
+      body: "Changed both projects",
+      kind: "finished",
+      projectPath: "/work/app",
+      projectPaths: ["/work/app", "/private"],
+      occurredAt: Date.now(),
+    }),
+  ).toBe(false);
+  expect(invoke).not.toHaveBeenCalled();
+});
+
+it("suppresses assistant banners for foreground and disabled event preferences", async () => {
+  const message = {
+    title: "Assistant",
+    body: "Update",
+    kind: "finished" as const,
+    occurredAt: Date.now(),
+  };
+  setWindowFocused(true);
+  expect(await notifyAssistant(message)).toBe(false);
+  setWindowFocused(false);
+  saveNotificationEvent("finished", false);
+  expect(await notifyAssistant(message)).toBe(false);
+  expect(invoke).not.toHaveBeenCalled();
 });
 
 it("returns false without a banner or sound for a non-project path", async () => {
@@ -157,4 +214,60 @@ it("coalesces a burst of finishing sessions into one banner", async () => {
   };
   await Promise.all([announceSessionFinished(a, false), announceSessionFinished(b, false)]);
   expect(banners()).toEqual([expect.objectContaining({ title: "2 sessions finished" })]);
+});
+
+it.each([
+  "finished",
+  "failed",
+  { kind: "approval", requestId: 71 },
+  { kind: "question", requestId: 72 },
+] as const)(
+  "suppresses focused-app desktop delivery for %j, including another chat",
+  async (event) => {
+    setWindowFocused(true);
+    const session = { ...newSession("claude", "/work/app"), id: "foreground-other" };
+    expect(await notifySession(session, event, false)).toBe(false);
+    expect(banners()).toEqual([]);
+    if (typeof event === "string") expect(unseenAttentionSessions().has(session.id)).toBe(true);
+  },
+);
+
+it("keeps background work and daily summaries inside the focused app", async () => {
+  setWindowFocused(true);
+  expect(await notifyBackground({ target: "tasks", kind: "failed", message: "Task failed" })).toBe(
+    false,
+  );
+  expect(await notifyBackground({ target: "automations", kind: "finished", message: "Done" })).toBe(
+    false,
+  );
+  expect(await notifyDailySummary("Summary")).toBe(false);
+  expect(banners()).toEqual([]);
+});
+
+it("drops a batched banner when focus returns before dispatch, without replay", async () => {
+  vi.useFakeTimers();
+  try {
+    setNotificationBatchDelay(800);
+    const sent = notifySession(newSession("claude", "/work/app"), "finished", false);
+    setWindowFocused(true);
+    await vi.advanceTimersByTimeAsync(800);
+    expect(await sent).toBe(false);
+    setWindowFocused(false);
+    await vi.advanceTimersByTimeAsync(800);
+    expect(banners()).toEqual([]);
+    const next = notifySession(newSession("claude", "/work/app"), "finished", false);
+    await vi.advanceTimersByTimeAsync(800);
+    expect(await next).toBe(true);
+    expect(banners()).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("retains the in-app cue when native focus suppresses a banner", async () => {
+  saveSoundsEnabled(true);
+  invoke.mockResolvedValue(false);
+  await announceSessionFinished(turn({ id: "a", role: "assistant", text: "Done" }), false);
+  expect(banners()).toHaveLength(1);
+  expect(play).toHaveBeenCalled();
 });

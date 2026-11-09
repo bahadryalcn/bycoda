@@ -1,10 +1,21 @@
-import { lazy, Suspense, type ComponentType } from "react";
+import { lazy, Suspense, type ComponentType, type ReactNode } from "react";
 import { RecoveryBoundary } from "./RecoveryBoundary";
 
-/** Keep optional surfaces out of the composer's startup dependency graph. */
+/**
+ * Keep optional surfaces out of the composer's startup dependency graph.
+ *
+ * `suspense: false` leaves loading to the caller's own boundary (navigation keeps the current
+ * screen visible). Otherwise `fallback` fills the surface's place while its chunk loads; pass a
+ * layout-preserving placeholder for a large region and leave it out for a small popup. A failed
+ * import reaches the RecoveryBoundary with a retry, and the failed import is never cached.
+ * Returns the component with a `preload()` method.
+ * @group layout
+ * @use Code-split an optional pane, dialog or heavy view that should not load at startup.
+ * @avoid Plain React.lazy (no retry or recovery). Always-needed UI.
+ */
 export function lazySurface<Props extends object>(
   load: () => Promise<{ default: ComponentType<Props> }>,
-  { suspense = true }: { suspense?: boolean } = {},
+  { suspense = true, fallback = null }: { suspense?: boolean; fallback?: ReactNode } = {},
 ) {
   let pending: ReturnType<typeof load> | undefined;
   const preload = () => {
@@ -21,7 +32,7 @@ export function lazySurface<Props extends object>(
     if (!suspense) return <Surface {...props} />;
     return (
       <RecoveryBoundary>
-        <Suspense fallback={null}>
+        <Suspense fallback={fallback}>
           <Surface {...props} />
         </Suspense>
       </RecoveryBoundary>

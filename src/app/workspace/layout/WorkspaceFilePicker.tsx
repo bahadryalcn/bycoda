@@ -1,4 +1,12 @@
-import type { ComponentProps, Dispatch, MutableRefObject, SetStateAction } from "react";
+import {
+  memo,
+  type ComponentProps,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
+import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
+import { useHeldValue } from "../helpers/stableProps";
 import type { Session } from "../../../features/sessions/model/session";
 import type { WorkspaceTab } from "../../../features/workspace/model/layout";
 import type { LayoutPreset } from "../../../features/workspace/model/layoutPresets";
@@ -30,7 +38,7 @@ export interface WorkspaceFilePickerProps {
   actions: MutableRefObject<WorkspaceActions>;
 }
 
-export function WorkspaceFilePicker({
+function WorkspaceFilePickerComponent({
   filePickerOpen,
   filePickerResetToken,
   filePickerInitialQuery,
@@ -74,4 +82,17 @@ export function WorkspaceFilePicker({
       onClose={() => setFilePickerOpen(false)}
     />
   ) : null;
+}
+
+const MemoFilePicker = memo(WorkspaceFilePickerComponent);
+
+/** Closed, the picker renders nothing: it keeps the values it last opened with so
+ * the memo skips the workspace's renders until it opens again. */
+export function WorkspaceFilePicker(props: WorkspaceFilePickerProps) {
+  const held = useHeldValue(props, props.filePickerOpen);
+  return (
+    <MemoFilePicker
+      {...useStableHandlers(props.filePickerOpen ? props : { ...held, filePickerOpen: false })}
+    />
+  );
 }

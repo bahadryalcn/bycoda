@@ -1,0 +1,2005 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Existing code-invariant findings counted per file and rule by scripts/checks/check-invariants.mjs. Counts may only fall; regenerate with --update-baseline after reducing them and review the diff.",
+  "counts": {
+    "host/app-skills/app-skills.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/assistant/core/assistant-keep-awake.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "host/attachments/attachments.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "host/automations/automations.ts": {
+      "oxlint/no-restricted-properties": 1
+    },
+    "host/browser/browser-runtime.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/browser/shared-browser.ts": {
+      "ts-date-toisostring-unguarded": 1
+    },
+    "host/checkpoints/checkpoint-leases.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/checkpoints/checkpoints.ts": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 1
+    },
+    "host/child-backend.ts": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 1
+    },
+    "host/cli.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "host/conversation/conversation-file-mutations.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "host/desktop/desktopSessions.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "host/devices/device-host.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/devices/expo-go.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/devices/native-devices.test-support.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/engine-operations.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "host/engine.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "host/execution/runtime-logs.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "host/execution/shellProfiles.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/files/generated-images.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/git/branch-delivery.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/git/git-actions.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "host/git/turn-git-history.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/host-notes-async.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "host/mobile/mobile-lan.ts": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 2
+    },
+    "host/mobile/mobile-pairing.ts": {
+      "ts-date-toisostring-unguarded": 1
+    },
+    "host/native-authority/deployment.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "host/native-authority/fixtures/retained-helper.mjs": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/native-authority/fixtures/source-helper.mjs": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/native-authority/source-registry.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "host/native-buffer/native-buffer-catalog.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "host/package.mjs": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/provider-process-lifecycle.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "host/providers/generic-acp.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/providers/provider-activity-retirement.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "host/service.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/sessions/session-file-revert.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/sessions/transcriptPage.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "host/skills/skill-policy.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/skills/skills.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/social/social-browser-platforms.ts": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 1
+    },
+    "host/social/social-browser-workflows.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "host/social/social-browser.ts": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 4
+    },
+    "host/social/social-program-schedule.ts": {
+      "oxlint/no-restricted-properties": 1
+    },
+    "host/social/social-suggestions.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "host/social/social.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "host/stewards/stewards.ts": {
+      "oxlint/no-restricted-properties": 1
+    },
+    "host/storage/snapshots.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/tasks/task-budgets.ts": {
+      "oxlint/no-restricted-properties": 1
+    },
+    "host/tunnels/tunnel-process.ts": {
+      "ts-void-promise-without-catch": 5
+    },
+    "host/tunnels/tunnels.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/voice/voice-python-install.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/workspace-cleanup.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "host/workspaces/workspace-commands.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src-tauri/src/azure_devops.rs": {
+      "rust-command-output-without-timeout": 2
+    },
+    "src-tauri/src/chat_background.rs": {
+      "rust-rename-without-fsync": 2
+    },
+    "src-tauri/src/checkpoint.rs": {
+      "rust-command-output-without-timeout": 1,
+      "rust-rename-without-fsync": 1
+    },
+    "src-tauri/src/checkpoint/file_revert.rs": {
+      "rust-rename-without-fsync": 3
+    },
+    "src-tauri/src/checkpoint/leases.rs": {
+      "rust-rename-without-fsync": 1
+    },
+    "src-tauri/src/checkpoint/turn.rs": {
+      "rust-rename-without-fsync": 2
+    },
+    "src-tauri/src/desktop_shortcut.rs": {
+      "rust-emit-broadcast": 1
+    },
+    "src-tauri/src/fs.rs": {
+      "rust-bufreader-lines-on-stream": 3,
+      "rust-command-output-without-timeout": 5,
+      "rust-rename-without-fsync": 7
+    },
+    "src-tauri/src/generic_acp.rs": {
+      "rust-rename-without-fsync": 1
+    },
+    "src-tauri/src/git_conflicts.rs": {
+      "rust-command-output-without-timeout": 2
+    },
+    "src-tauri/src/gitlab.rs": {
+      "rust-accept-inherits-nonblocking": 1,
+      "rust-command-output-without-timeout": 1
+    },
+    "src-tauri/src/handoff_history.rs": {
+      "rust-rename-without-fsync": 1
+    },
+    "src-tauri/src/harness.rs": {
+      "rust-command-output-without-timeout": 2,
+      "rust-emit-broadcast": 2
+    },
+    "src-tauri/src/lib.rs": {
+      "rust-command-output-without-timeout": 1
+    },
+    "src-tauri/src/menu.rs": {
+      "rust-emit-broadcast": 1
+    },
+    "src-tauri/src/native_workspace.rs": {
+      "rust-accept-inherits-nonblocking": 1,
+      "rust-command-output-without-timeout": 1
+    },
+    "src-tauri/src/notifications.rs": {
+      "rust-emit-broadcast": 1
+    },
+    "src-tauri/src/pasteboard.rs": {
+      "rust-rename-without-fsync": 1
+    },
+    "src-tauri/src/project_logo.rs": {
+      "rust-rename-without-fsync": 1
+    },
+    "src-tauri/src/provider_usage.rs": {
+      "rust-rename-without-fsync": 1
+    },
+    "src-tauri/src/pty.rs": {
+      "rust-command-output-without-timeout": 1,
+      "rust-emit-broadcast": 1
+    },
+    "src-tauri/src/quick_composer.rs": {
+      "rust-command-output-without-timeout": 1
+    },
+    "src-tauri/src/reminders.rs": {
+      "rust-emit-broadcast": 3
+    },
+    "src-tauri/src/remote.rs": {
+      "rust-accept-inherits-nonblocking": 3,
+      "rust-emit-broadcast": 1
+    },
+    "src-tauri/src/remote_ssh.rs": {
+      "rust-command-output-without-timeout": 3
+    },
+    "src-tauri/src/server_inventory.rs": {
+      "rust-emit-broadcast": 4
+    },
+    "src-tauri/src/session_store.rs": {
+      "rust-command-output-without-timeout": 1,
+      "rust-emit-broadcast": 1
+    },
+    "src-tauri/src/session_store/native_projection_join_tests/raw_v3_interop.rs": {
+      "rust-command-output-without-timeout": 1
+    },
+    "src-tauri/src/session_tools_bridge.rs": {
+      "rust-accept-inherits-nonblocking": 1
+    },
+    "src-tauri/src/session_transfer.rs": {
+      "rust-rename-without-fsync": 2
+    },
+    "src-tauri/src/skills.rs": {
+      "rust-rename-without-fsync": 4
+    },
+    "src-tauri/src/ssh_configuration.rs": {
+      "rust-emit-broadcast": 3
+    },
+    "src-tauri/src/ssh_jump_config.rs": {
+      "rust-command-output-without-timeout": 2
+    },
+    "src-tauri/src/ssh_runbooks.rs": {
+      "rust-emit-broadcast": 5
+    },
+    "src-tauri/src/terminal_profiles.rs": {
+      "rust-command-output-without-timeout": 2
+    },
+    "src-tauri/src/termius_import.rs": {
+      "rust-emit-broadcast": 1
+    },
+    "src-tauri/src/termius_keys.rs": {
+      "rust-command-output-without-timeout": 1
+    },
+    "src-tauri/src/termius_reader.rs": {
+      "rust-command-output-without-timeout": 2
+    },
+    "src-tauri/src/window.rs": {
+      "rust-emit-broadcast": 3
+    },
+    "src-tauri/src/windows.rs": {
+      "rust-bufreader-lines-on-stream": 1
+    },
+    "src-tauri/src/worktree_lifecycle.rs": {
+      "rust-command-output-without-timeout": 1
+    },
+    "src-tauri/src/worktrees.rs": {
+      "rust-command-output-without-timeout": 1,
+      "rust-rename-without-fsync": 1
+    },
+    "src/app/App.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/hooks/useIdleSessionDetach.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/hooks/useWorkspaceNavigation.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/model/appLifecycle.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/app/model/bootRestoreNotice.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/model/updater.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/app/model/useAppUpdater.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/model/useWindowLiveAgents.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "src/app/model/windowNavigation.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "src/app/model/windowTransferNotice.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/shell/DetachedWorkingBar.tsx": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/app/shell/FullscreenButton.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/shell/GithubStarPrompt.tsx": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "src/app/shell/LastSessionsSection.tsx": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/app/shell/MenuBar.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/shell/ProjectRail.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/shell/SessionRecoveryControl.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/shell/SessionRecoveryPanel.tsx": {
+      "ts-void-promise-without-catch": 10
+    },
+    "src/app/shell/Sidebar.tsx": {
+      "jsx-a11y/click-events-have-key-events": 1,
+      "jsx-a11y/no-noninteractive-element-interactions": 1,
+      "jsx-a11y/no-static-element-interactions": 1,
+      "oxlint/no-restricted-imports": 2,
+      "oxlint/no-restricted-properties": 4,
+      "ts-void-promise-without-catch": 13
+    },
+    "src/app/shell/TitleBar.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/shell/ToolNavigation.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/shell/UsageFooter.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/shell/UsageProviderChip.tsx": {
+      "ts-locale-format-outside-shared": 2,
+      "ts-void-promise-without-catch": 3
+    },
+    "src/app/shell/WindowControls.tsx": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/app/shell/useProjectMenu.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/shell/useSessionBulkDelete.ts": {
+      "oxlint/no-restricted-properties": 1
+    },
+    "src/app/shell/useSessionSelection.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/actions/useAccountActions.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/actions/useLinkedCardActions.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/actions/useMiscWorkspaceActions.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/bridges/useAutomationLaunch.ts": {
+      "oxlint/no-restricted-properties": 3
+    },
+    "src/app/workspace/bridges/useAutomationRecovery.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/app/workspace/bridges/useLinkedWorkItemPanels.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/bridges/useOrchestrationActions.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/bridges/useOrchestrationWorkerPanes.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/bridges/useRunningOnHostLoader.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/control/useGuideActions.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/derived/useWorkspaceUsage.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/files/useClearTabSession.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/files/useEditorDraftRecovery.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/files/useEditorFileClose.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/files/useSourceControlSurfaces.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/helpers/workspaceNotify.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/input/useNativeMenuEvents.ts": {
+      "ts-void-promise-without-catch": 7
+    },
+    "src/app/workspace/input/useWindowChromeActions.ts": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/app/workspace/input/useWorkspaceKeyboardShortcuts.ts": {
+      "ts-void-promise-without-catch": 5
+    },
+    "src/app/workspace/layout/BufferReportRecoveryView.tsx": {
+      "ts-locale-format-outside-shared": 1,
+      "ts-void-promise-without-catch": 4
+    },
+    "src/app/workspace/layout/EditorDraftRecoverySection.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/layout/WorkspaceAuxSurfaces.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/layout/WorkspaceDialogs.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/layout/WorkspaceFilePicker.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/layout/useWorkspaceTitleBar.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/lifecycle/useBootWatchers.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/app/workspace/lifecycle/useHarnessLifecycle.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/app/workspace/lifecycle/useLiveAgentAnnouncements.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/navigation/useListNavigation.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/projects/useProjectImport.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/projects/useProjectRemoval.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/projects/useWorkspaceDirectoryActions.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/projects/useWorktreeSelection.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/sessions/submit/submitBusySteer.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/sessions/submit/submitTurnDispatch.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/sessions/useApprovalActions.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/sessions/useHistoryRefresh.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/sessions/useHistorySessionArchive.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/sessions/useHistorySessionDelete.ts": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/app/workspace/sessions/useHistorySessionMeta.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/sessions/useSessionLoading.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/app/workspace/sessions/useSessionModelActions.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/sessions/useSessionPersistence.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/sessions/useSessionPlacement.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/sessions/useSessionRecoveryActions.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/sessions/useSessionRename.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/sessions/useSessionShell.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/sessions/useTitleTabActions.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/app/workspace/surfaces/useProviderSignInPrompts.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/surfaces/useSurfaceOpeners.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/tabs/useCloseAllTabs.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/tabs/useClosePaneActions.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/tabs/useCloseTabActions.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/tabs/usePaneDetachActions.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/terminal/useProjectTerminalDockActions.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/app/workspace/terminal/useProjectTerminalOpen.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/app/workspace/windows/useMoveTabsToNewWindow.ts": {
+      "ts-void-promise-without-catch": 7
+    },
+    "src/app/workspace/windows/useWindowMoveActions.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/assistant/model/assistantClient.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/assistant/model/assistantManual.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/assistant/model/assistantSessions.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/assistant/ui/AssistantBriefingCard.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/assistant/ui/AssistantHistory.tsx": {
+      "ts-locale-format-outside-shared": 2
+    },
+    "src/features/assistant/ui/AssistantNotifications.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/assistant/ui/AssistantOwnerQuestions.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/assistant/ui/AssistantPresenceMenu.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/assistant/ui/AssistantSessions.tsx": {
+      "ts-locale-format-outside-shared": 1,
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/assistant/ui/AssistantSettings.tsx": {
+      "ts-locale-format-outside-shared": 5,
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/assistant/ui/AssistantSetup.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/assistant/ui/AssistantView.tsx": {
+      "ts-locale-format-outside-shared": 5,
+      "ts-void-promise-without-catch": 33
+    },
+    "src/features/assistant/ui/ManualSessionSupervision.tsx": {
+      "ts-void-promise-without-catch": 10
+    },
+    "src/features/assistant/ui/MemoryEditor.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/automations/hooks/useAutomationHistory.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/automations/model/automationEvents.ts": {
+      "oxlint/no-restricted-properties": 1
+    },
+    "src/features/automations/model/automationSchedule.ts": {
+      "oxlint/no-restricted-properties": 1
+    },
+    "src/features/automations/model/automations.ts": {
+      "oxlint/no-restricted-imports": 1,
+      "oxlint/no-restricted-properties": 6
+    },
+    "src/features/automations/model/hostAutomationClient.ts": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/automations/model/machineSnapshot.ts": {
+      "oxlint/no-restricted-properties": 2
+    },
+    "src/features/automations/model/refreshScheduler.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/automations/model/workspaceAutomationEvents.ts": {
+      "oxlint/no-restricted-properties": 1
+    },
+    "src/features/automations/ui/AutomationAssistant.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/automations/ui/AutomationsView.tsx": {
+      "ts-date-toisostring-unguarded": 1,
+      "ts-void-promise-without-catch": 10
+    },
+    "src/features/automations/ui/TriggerEditor.tsx": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/connections/model/bundledHostStatus.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/connections/model/connections.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/connections/model/remoteConnection.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/features/connections/model/remoteGitWatch.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/connections/model/remoteMachineChannel.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/connections/model/remotePageCache.ts": {
+      "ts-void-promise-without-catch": 5
+    },
+    "src/features/connections/model/remoteRailPoller.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/connections/model/remoteReconnect.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/connections/model/remoteTunnelEvents.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "src/features/connections/model/runLeaseClient.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/connections/model/serverInventory.ts": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/connections/model/useDesktopLive.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/connections/model/usePhonePairing.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/connections/model/useRemotePageCacheRestore.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/connections/model/useSharedLocalQueues.ts": {
+      "ts-void-promise-without-catch": 12
+    },
+    "src/features/connections/model/workspaceUrls.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "src/features/connections/ui/AddRemoteProjectDialog.tsx": {
+      "ts-void-promise-without-catch": 12
+    },
+    "src/features/connections/ui/AdoptedSessionNotice.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/connections/ui/ConnectionsSettings.tsx": {
+      "ts-void-promise-without-catch": 11
+    },
+    "src/features/connections/ui/ExternalTunnelsPanel.tsx": {
+      "ts-void-promise-without-catch": 12
+    },
+    "src/features/connections/ui/HostModelSource.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/connections/ui/LocalHostDownNotice.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/connections/ui/LocalHostUpdateNotice.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/connections/ui/PhoneConnectionPanel.tsx": {
+      "ts-void-promise-without-catch": 9
+    },
+    "src/features/connections/ui/PhonePairingDialog.tsx": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/connections/ui/RemoteConnectionBanner.tsx": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/connections/ui/RemoteDataStatus.tsx": {
+      "ts-locale-format-outside-shared": 3
+    },
+    "src/features/connections/ui/RemoteLoadError.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/connections/ui/RemoteSession.tsx": {
+      "ts-void-promise-without-catch": 15
+    },
+    "src/features/connections/ui/ServerFiles.tsx": {
+      "ts-locale-format-outside-shared": 2,
+      "ts-void-promise-without-catch": 7
+    },
+    "src/features/connections/ui/ServerForwards.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/connections/ui/ServerItem.tsx": {
+      "jsx-a11y/label-has-associated-control": 1
+    },
+    "src/features/connections/ui/ServerStatus.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/connections/ui/ServerTerminalRestoreControls.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/connections/ui/ServersConnectionTools.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/connections/ui/ServersTerminalWorkspace.tsx": {
+      "ts-void-promise-without-catch": 5
+    },
+    "src/features/connections/ui/ServersView.tsx": {
+      "ts-void-promise-without-catch": 5
+    },
+    "src/features/connections/ui/SharedQueueRecoveryNotice.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/connections/ui/SshAgentForwarding.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/connections/ui/SshGroupSettings.tsx": {
+      "ts-void-promise-without-catch": 6
+    },
+    "src/features/connections/ui/SshRunbookQueue.tsx": {
+      "ts-void-promise-without-catch": 6
+    },
+    "src/features/connections/ui/SshRunbooks.tsx": {
+      "ts-locale-format-outside-shared": 1,
+      "ts-void-promise-without-catch": 10
+    },
+    "src/features/connections/ui/SshSettings.tsx": {
+      "ts-void-promise-without-catch": 5
+    },
+    "src/features/connections/ui/SshSetupPromptForm.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/connections/ui/TermiusImportDialog.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/connections/ui/useSshSetupJob.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/crews/ui/CrewDialogs.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/crews/ui/CrewEditor.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/crews/ui/CrewLibrary.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1,
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/crews/ui/CrewRailSection.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/crews/ui/CrewSessions.tsx": {
+      "ts-void-promise-without-catch": 9
+    },
+    "src/features/crews/ui/CrewTaskPicker.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/crews/ui/CrewWorkDetail.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/crews/ui/CrewWorkSessions.tsx": {
+      "jsx-a11y/aria-role": 2
+    },
+    "src/features/crews/ui/CrewsSettings.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1,
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/devices/DevicePanel.tsx": {
+      "ts-locale-format-outside-shared": 3,
+      "ts-void-promise-without-catch": 16
+    },
+    "src/features/files/editor/editorConflicts.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/features/files/editor/editorFindBridge.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/files/editor/editorLint.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/features/files/model/fileIndex.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/files/model/fileTree.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/files/model/fileWatch.ts": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/files/ui/BinaryFileView.tsx": {
+      "jsx-a11y/click-events-have-key-events": 1,
+      "jsx-a11y/no-noninteractive-element-interactions": 2,
+      "jsx-a11y/no-noninteractive-tabindex": 1,
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/files/ui/ChatFolderBrowser.tsx": {
+      "ts-void-promise-without-catch": 6
+    },
+    "src/features/files/ui/CodeMirrorEditor.tsx": {
+      "ts-void-promise-without-catch": 7
+    },
+    "src/features/files/ui/DocxViewer.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1
+    },
+    "src/features/files/ui/EditorContextMenu.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/files/ui/FileEditor.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1,
+      "ts-void-promise-without-catch": 10
+    },
+    "src/features/files/ui/FilePane.tsx": {
+      "jsx-a11y/no-static-element-interactions": 1
+    },
+    "src/features/files/ui/FilePicker.tsx": {
+      "jsx-a11y/label-has-associated-control": 1
+    },
+    "src/features/files/ui/FilePickerError.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1
+    },
+    "src/features/files/ui/FilePreview.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1
+    },
+    "src/features/files/ui/FilePreviewSearch.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 1,
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/files/ui/FileTree.tsx": {
+      "jsx-a11y/no-static-element-interactions": 1,
+      "ts-locale-format-outside-shared": 2,
+      "ts-void-promise-without-catch": 5
+    },
+    "src/features/files/ui/HtmlPreview.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1
+    },
+    "src/features/files/ui/PdfViewer.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1,
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/files/ui/SheetGridView.tsx": {
+      "jsx-a11y/click-events-have-key-events": 1
+    },
+    "src/features/files/ui/useFileTreeExternalDrop.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/files/ui/useFileTreeKeyboard.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/host-tools/BrowserPanel.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 1,
+      "ts-void-promise-without-catch": 19
+    },
+    "src/features/host-tools/DesktopControlIndicatorStrip.tsx": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/host-tools/DesktopControlSettings.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/host-tools/DesktopHelperSetup.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/host-tools/DevServersPanel.tsx": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 19
+    },
+    "src/features/host-tools/DiagnosticsPanel.tsx": {
+      "ts-locale-format-outside-shared": 1,
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/host-tools/RuntimeLogsPanel.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1,
+      "ts-i18n-concat": 1,
+      "ts-void-promise-without-catch": 10
+    },
+    "src/features/host-tools/SessionHostTools.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/host-tools/browserComposer.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/host-tools/desktopControlWindowMain.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/host-tools/logsComposer.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/host-tools/runtimeLogsModel.ts": {
+      "ts-date-toisostring-unguarded": 1
+    },
+    "src/features/host-tools/ui/RuntimeLogRow.tsx": {
+      "jsx-a11y/label-has-associated-control": 1,
+      "ts-date-toisostring-unguarded": 1,
+      "ts-locale-format-outside-shared": 3
+    },
+    "src/features/inbox/hooks/useGithubPrChecks.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/inbox/hooks/useInboxUnseen.ts": {
+      "ts-void-promise-without-catch": 6
+    },
+    "src/features/inbox/hooks/useProviderConnections.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/inbox/model/ciRepair.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/features/inbox/model/linkedWorkItemActivity.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/features/inbox/ui/CheckEvidence.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/inbox/ui/CheckRepairForm.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/inbox/ui/CheckRepairProgress.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/inbox/ui/InboxComments.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/inbox/ui/InboxDetail.tsx": {
+      "ts-locale-format-outside-shared": 1,
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/inbox/ui/InboxMedia.tsx": {
+      "jsx-a11y/click-events-have-key-events": 1,
+      "jsx-a11y/no-noninteractive-element-interactions": 1
+    },
+    "src/features/inbox/ui/InboxPrActions.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/inbox/ui/InboxPrChecks.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 1
+    },
+    "src/features/inbox/ui/InboxView.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 1,
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/inbox/ui/JiraBoardView.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 1,
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 8
+    },
+    "src/features/inbox/ui/LinkedWorkItemUpdateNotice.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/notes/noteDrafts.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/notes/notes.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/features/notes/ui/NoteDraftRecoveryNotice.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/notes/ui/NoteEditorPane.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1
+    },
+    "src/features/notes/ui/NotesView.tsx": {
+      "jsx-a11y/no-static-element-interactions": 1,
+      "ts-date-toisostring-unguarded": 3,
+      "ts-i18n-concat": 2,
+      "ts-locale-format-outside-shared": 3,
+      "ts-void-promise-without-catch": 19
+    },
+    "src/features/notes/ui/SessionNotesPanel.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 1,
+      "jsx-a11y/no-redundant-roles": 1,
+      "ts-date-toisostring-unguarded": 1,
+      "ts-void-promise-without-catch": 8
+    },
+    "src/features/notes/ui/useNoteImageInsertion.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/notifications/hooks/useAttentionNotifications.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/notifications/hooks/useBackgroundNotifications.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/notifications/hooks/useDailySummary.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/notifications/hooks/useInputNotifications.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/notifications/hooks/useSessionReminders.ts": {
+      "ts-void-promise-without-catch": 6
+    },
+    "src/features/notifications/ui/ProjectNotificationSettings.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1
+    },
+    "src/features/notifications/ui/notificationMuteActions.ts": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/onboarding/ui/GuidedTour.tsx": {
+      "ts-void-promise-without-catch": 5
+    },
+    "src/features/onboarding/ui/OnboardingAgents.tsx": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/onboarding/ui/OnboardingDialog.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/onboarding/ui/OnboardingPreferences.tsx": {
+      "jsx-a11y/label-has-associated-control": 1
+    },
+    "src/features/orchestration/model/orchestration.ts": {
+      "ts-void-promise-without-catch": 6
+    },
+    "src/features/orchestration/ui/OrchestrationPreview.tsx": {
+      "jsx-a11y/role-supports-aria-props": 2,
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/orchestration/ui/OrchestrationSidebarAgents.tsx": {
+      "jsx-a11y/click-events-have-key-events": 1,
+      "jsx-a11y/no-static-element-interactions": 1,
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/projects/ui/AdditionalDirsDialog.tsx": {
+      "jsx-a11y/label-has-associated-control": 1
+    },
+    "src/features/projects/ui/FolderPicker.tsx": {
+      "jsx-a11y/no-static-element-interactions": 1,
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/projects/ui/GroupFetchPopover.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/projects/ui/NewSessionProjectDialog.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/projects/ui/ProjectBackgroundDialog.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/projects/ui/ProjectQuickActions.tsx": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "src/features/providers/model/accountUsage.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/providers/model/harnessUpdates.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "src/features/providers/model/providerAccountIdentity.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/providers/model/providerUsage.ts": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/providers/model/rateLimitsCache.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/providers/model/rateLimitsFetch.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/providers/ui/CatalogReceiptStatus.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/providers/ui/GenericAcpSettings.tsx": {
+      "ts-void-promise-without-catch": 5
+    },
+    "src/features/providers/ui/HarnessUpdateNotice.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/providers/ui/ProviderAccountUsage.tsx": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/providers/ui/ProviderStatusGroup.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/quick-composer/hooks/useQuickComposerLaunches.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/quick-composer/main.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/quick-composer/ui/QuickComposer.tsx": {
+      "jsx-a11y/label-has-associated-control": 1,
+      "jsx-a11y/no-static-element-interactions": 2,
+      "jsx-a11y/role-supports-aria-props": 1,
+      "ts-void-promise-without-catch": 5
+    },
+    "src/features/quick-composer/ui/QuickModelSelector.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 1
+    },
+    "src/features/quick-composer/ui/QuickPermissions.tsx": {
+      "jsx-a11y/no-static-element-interactions": 1
+    },
+    "src/features/quick-composer/ui/QuickWorkspaceControls.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/quick-composer/ui/useQuickAttachments.ts": {
+      "ts-void-promise-without-catch": 7
+    },
+    "src/features/search/model/appSearch.ts": {
+      "ts-text-truncate-utf16": 2
+    },
+    "src/features/search/model/chatSearch.ts": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/search/model/useConversationSearch.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/sessions/data/nativeProjectionCheckpoint.ts": {
+      "ts-void-promise-without-catch": 8
+    },
+    "src/features/sessions/data/sessionStore.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/sessions/model/agentOutput.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/features/sessions/model/btwQuestion.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/features/sessions/model/checkpoint.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/sessions/model/confirmSessionDelete.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/features/sessions/model/plan.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/features/sessions/model/promptTemplates.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/features/sessions/model/recentSessions.ts": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/sessions/model/sessionReminders.ts": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/sessions/model/shellRun.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/features/sessions/model/usageLimit.ts": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/sessions/ui/AgentMarkdown.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 2,
+      "jsx-a11y/no-noninteractive-tabindex": 3,
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/sessions/ui/AgentTranscript.tsx": {
+      "jsx-a11y/click-events-have-key-events": 1,
+      "jsx-a11y/no-noninteractive-element-interactions": 1,
+      "jsx-a11y/no-static-element-interactions": 1,
+      "ts-locale-format-outside-shared": 1,
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/sessions/ui/AgentTranscriptActivity.tsx": {
+      "jsx-a11y/click-events-have-key-events": 1,
+      "jsx-a11y/no-static-element-interactions": 1,
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/sessions/ui/ApprovalToasts.tsx": {
+      "jsx-a11y/click-events-have-key-events": 1,
+      "jsx-a11y/no-static-element-interactions": 1,
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/sessions/ui/AssistantSessionControl.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/sessions/ui/AttachmentChip.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/sessions/ui/AttachmentFilePreview.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1
+    },
+    "src/features/sessions/ui/AttachmentTokenText.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/sessions/ui/ClaudeSessionPicker.tsx": {
+      "ts-locale-format-outside-shared": 2
+    },
+    "src/features/sessions/ui/Composer.tsx": {
+      "jsx-a11y/no-static-element-interactions": 1,
+      "ts-i18n-concat": 1,
+      "ts-void-promise-without-catch": 5
+    },
+    "src/features/sessions/ui/ContextMeter.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1
+    },
+    "src/features/sessions/ui/LocalSessionReferenceLink.tsx": {
+      "ts-void-promise-without-catch": 8
+    },
+    "src/features/sessions/ui/McpServerPicker.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 1
+    },
+    "src/features/sessions/ui/NotificationHistoryItem.tsx": {
+      "ts-locale-format-outside-shared": 3,
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/sessions/ui/ProviderAccountRecoveryDialog.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/sessions/ui/ProviderRetryNotice.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/sessions/ui/QueuedMessageEditDialog.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/sessions/ui/SecondOpinionButton.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/sessions/ui/SessionDirsPicker.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/sessions/ui/SessionFiltersMenu.tsx": {
+      "jsx-a11y/role-has-required-aria-props": 1
+    },
+    "src/features/sessions/ui/SessionImportDialog.tsx": {
+      "ts-locale-format-outside-shared": 13,
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/sessions/ui/SessionImportResult.tsx": {
+      "ts-locale-format-outside-shared": 3
+    },
+    "src/features/sessions/ui/SessionPane.tsx": {
+      "jsx-a11y/no-static-element-interactions": 1,
+      "ts-locale-format-outside-shared": 1,
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/sessions/ui/SessionReview.tsx": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/sessions/ui/SubagentSheet.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 2
+    },
+    "src/features/sessions/ui/ToolInspectionPanel.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1
+    },
+    "src/features/sessions/ui/TranscriptPool.tsx": {
+      "jsx-a11y/no-static-element-interactions": 1
+    },
+    "src/features/sessions/ui/TranscriptSelectionMenu.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/sessions/ui/TranslationResultDialog.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 2
+    },
+    "src/features/sessions/ui/UserLinkPreview.tsx": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/sessions/ui/UserTextPreview.tsx": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/sessions/ui/modelSource.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/sessions/ui/useComposerMcpCatalog.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/sessions/ui/useComposerSkills.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/sessions/ui/useMessageRewind.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/sessions/ui/useReadOnlyHostSession.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/settings/model/appearance.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/settings/model/sounds.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/settings/model/uiScale.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/settings/ui/AntigravityAccountSettings.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/settings/ui/AppearanceSettings.tsx": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/settings/ui/ArchiveSettings.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 2,
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/settings/ui/BuildIdentityDetails.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/settings/ui/ExternalMcpAccess.tsx": {
+      "ts-locale-format-outside-shared": 1,
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/settings/ui/FileAccessSettings.tsx": {
+      "ts-void-promise-without-catch": 5
+    },
+    "src/features/settings/ui/GeneralSettings.tsx": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 6
+    },
+    "src/features/settings/ui/InboxConnectionStatus.tsx": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/settings/ui/InboxSettings.tsx": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 18
+    },
+    "src/features/settings/ui/JiraSettings.tsx": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 5
+    },
+    "src/features/settings/ui/LanguageSettings.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/settings/ui/McpSettings.tsx": {
+      "ts-void-promise-without-catch": 8
+    },
+    "src/features/settings/ui/NotificationsSettings.tsx": {
+      "ts-void-promise-without-catch": 6
+    },
+    "src/features/settings/ui/PoliciesSettings.tsx": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "src/features/settings/ui/ProviderAccountsSettings.tsx": {
+      "oxlint/no-console": 1,
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/settings/ui/ProviderBinarySettings.tsx": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/settings/ui/ProviderSettings.tsx": {
+      "ts-void-promise-without-catch": 5
+    },
+    "src/features/settings/ui/SettingsView.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/settings/ui/ShortcutSettings.tsx": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/settings/ui/TerminalProfileDiscovery.tsx": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/settings/ui/TerminalSettings.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/settings/ui/useAppearanceSettings.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/skills/ui/SkillPicker.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 1
+    },
+    "src/features/skills/ui/SkillsPage.tsx": {
+      "ts-void-promise-without-catch": 7
+    },
+    "src/features/social/model/publishingPlanForm.ts": {
+      "ts-locale-format-outside-shared": 3
+    },
+    "src/features/social/model/socialAttention.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/features/social/model/socialProgram.ts": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/social/model/socialProgramForm.ts": {
+      "ts-date-toisostring-unguarded": 1,
+      "ts-locale-format-outside-shared": 2
+    },
+    "src/features/social/ui/CampaignBrowser.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/social/ui/CampaignComposer.tsx": {
+      "ts-locale-format-outside-shared": 1,
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/social/ui/ContactTagSuggestions.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/social/ui/PlanSuggestion.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/social/ui/ProductKnowledge.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/social/ui/ProgramDetailPanel.tsx": {
+      "ts-void-promise-without-catch": 6
+    },
+    "src/features/social/ui/ProgramList.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/social/ui/ProgramSetupForm.tsx": {
+      "ts-void-promise-without-catch": 6
+    },
+    "src/features/social/ui/ProgramTargetEditor.tsx": {
+      "ts-void-promise-without-catch": 6
+    },
+    "src/features/social/ui/RuleSimplifyReview.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/social/ui/SocialAccounts.tsx": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 10
+    },
+    "src/features/social/ui/SocialAssistant.tsx": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/social/ui/SocialAuthority.tsx": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/social/ui/SocialBrowserWorkspace.tsx": {
+      "ts-locale-format-outside-shared": 1,
+      "ts-void-promise-without-catch": 5
+    },
+    "src/features/social/ui/SocialBulkComposer.tsx": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/social/ui/SocialCampaigns.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/social/ui/SocialDrafts.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/social/ui/SocialHistory.tsx": {
+      "ts-date-toisostring-unguarded": 3,
+      "ts-text-truncate-utf16": 1,
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/social/ui/SocialHistoryPage.tsx": {
+      "ts-date-toisostring-unguarded": 1
+    },
+    "src/features/social/ui/SocialInbox.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/social/ui/SocialManagement.tsx": {
+      "ts-void-promise-without-catch": 8
+    },
+    "src/features/social/ui/SocialPrograms.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/social/ui/SocialPublishingPlans.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/social/ui/SocialRegistrationReview.tsx": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/social/ui/SocialReplySuggestion.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/social/ui/SocialSendingControls.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/social/ui/SocialToday.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/social/ui/SocialView.tsx": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/social/ui/TelegramChannelConnection.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/social/ui/TikTokPublishingFields.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/social/ui/XProfileManager.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/social/ui/socialShared.tsx": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/social/ui/useSocialToday.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/social/ui/useSocialWorkspaceController.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/source-control/hooks/useDiffIndex.ts": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/source-control/hooks/useGitFileStatuses.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/source-control/hooks/useGitResource.ts": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/source-control/hooks/useGitSubmodules.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/source-control/hooks/useProjectBranches.ts": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/source-control/hooks/useProjectDiffStats.ts": {
+      "ts-void-promise-without-catch": 6
+    },
+    "src/features/source-control/hooks/useProjectWorktrees.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/source-control/model/gitGraphDisplay.ts": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/source-control/ui/BranchManagerDialog.tsx": {
+      "ts-void-promise-without-catch": 6
+    },
+    "src/features/source-control/ui/BranchPicker.tsx": {
+      "ts-void-promise-without-catch": 5
+    },
+    "src/features/source-control/ui/ConflictLayout.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/source-control/ui/GitActionsMenu.tsx": {
+      "ts-void-promise-without-catch": 16
+    },
+    "src/features/source-control/ui/GitChangesList.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/source-control/ui/GitChangesPanel.tsx": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 13
+    },
+    "src/features/source-control/ui/GitFeedback.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1
+    },
+    "src/features/source-control/ui/GitFileInspector.tsx": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/source-control/ui/GitGraphBranches.tsx": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/source-control/ui/GitGraphCommitInspector.tsx": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/source-control/ui/GitGraphConflictEditor.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/source-control/ui/GitGraphList.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 1
+    },
+    "src/features/source-control/ui/GitGraphWorkspace.tsx": {
+      "ts-void-promise-without-catch": 9
+    },
+    "src/features/source-control/ui/GitHistoryGraph.tsx": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/source-control/ui/GitOperationBanner.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/source-control/ui/GitStashSection.tsx": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/source-control/ui/MergeConflictEditor.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/source-control/ui/QuickDeleteWorktreeDialog.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/source-control/ui/SidebarWorktreeSwitcher.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/source-control/ui/SourceControl.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/source-control/ui/SwitchBranchDialog.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/source-control/ui/UnifiedDiffView.tsx": {
+      "jsx-a11y/no-static-element-interactions": 1,
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/source-control/ui/WorkingTreeDiff.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/source-control/ui/WorktreePicker.tsx": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/sync/model/syncClient.ts": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/sync/model/syncRemoteProjects.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/sync/model/useSync.ts": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/tasks/model/sprintClient.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/tasks/model/useTaskBoardQueries.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/tasks/ui/AssistantTaskBadge.tsx": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/tasks/ui/SprintManagement.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1,
+      "ts-date-toisostring-unguarded": 1,
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/tasks/ui/SprintPlanningControls.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/tasks/ui/SprintReports.tsx": {
+      "ts-locale-format-outside-shared": 3
+    },
+    "src/features/tasks/ui/TaskAcceptanceEvidence.tsx": {
+      "ts-date-toisostring-unguarded": 1,
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/tasks/ui/TaskAttemptHistory.tsx": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/tasks/ui/TaskBoardCard.tsx": {
+      "jsx-a11y/click-events-have-key-events": 2,
+      "jsx-a11y/no-static-element-interactions": 3
+    },
+    "src/features/tasks/ui/TaskBoardColumns.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 2,
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/tasks/ui/TaskBulkToolbar.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/tasks/ui/TaskDetail.tsx": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/tasks/ui/TaskFormFields.tsx": {
+      "jsx-a11y/label-has-associated-control": 2
+    },
+    "src/features/tasks/ui/TaskGoals.tsx": {
+      "ts-void-promise-without-catch": 11
+    },
+    "src/features/tasks/ui/TaskList.tsx": {
+      "jsx-a11y/label-has-associated-control": 1
+    },
+    "src/features/tasks/ui/TaskReviewNotes.tsx": {
+      "ts-date-toisostring-unguarded": 1,
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/tasks/ui/TaskRunInsights.tsx": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/tasks/ui/TaskSessionSheet.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/tasks/ui/TaskStewards.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/tasks/ui/TaskSummaryPanel.tsx": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/features/tasks/ui/TaskWorkflowControls.tsx": {
+      "ts-void-promise-without-catch": 10
+    },
+    "src/features/tasks/ui/TaskWorkspacePicker.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/tasks/ui/TasksView.tsx": {
+      "ts-locale-format-outside-shared": 1,
+      "ts-void-promise-without-catch": 22
+    },
+    "src/features/tasks/ui/useTaskBoardOperations.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/terminal/model/sshShellIntegration.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/terminal/model/terminalLinks.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "src/features/terminal/runtime/terminalVisibility.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/terminal/ui/ProjectTerminalDock.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 1,
+      "jsx-a11y/no-static-element-interactions": 1
+    },
+    "src/features/terminal/ui/RemoteShellSuggestions.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1,
+      "jsx-a11y/no-static-element-interactions": 1,
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/terminal/ui/TerminalTools.tsx": {
+      "jsx-a11y/no-static-element-interactions": 2,
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/terminal/ui/TerminalView.tsx": {
+      "jsx-a11y/no-static-element-interactions": 1,
+      "ts-void-promise-without-catch": 6
+    },
+    "src/features/usage/ui/UsageBudgets.tsx": {
+      "ts-date-toisostring-unguarded": 1,
+      "ts-locale-format-outside-shared": 2,
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/usage/ui/UsageCharts.tsx": {
+      "ts-locale-format-outside-shared": 6
+    },
+    "src/features/usage/ui/UsageOverview.tsx": {
+      "ts-locale-format-outside-shared": 3,
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/usage/ui/UsagePage.tsx": {
+      "ts-date-toisostring-unguarded": 1,
+      "ts-locale-format-outside-shared": 2,
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/usage/ui/UsageQuotaHistory.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1,
+      "ts-locale-format-outside-shared": 5
+    },
+    "src/features/usage/ui/UsageVisualizations.tsx": {
+      "ts-locale-format-outside-shared": 5
+    },
+    "src/features/voice/model/localVoice.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/voice/model/voiceDocumentContext.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/voice/model/voicePresence.ts": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/voice/model/voicePreview.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/voice/ui/DictationButton.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/voice/ui/VoiceChoiceCard.tsx": {
+      "jsx-a11y/no-static-element-interactions": 1
+    },
+    "src/features/voice/ui/VoiceCloudKey.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/voice/ui/VoiceCompanion.tsx": {
+      "oxlint/no-console": 2,
+      "ts-void-promise-without-catch": 21
+    },
+    "src/features/voice/ui/VoiceCompanionGate.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/voice/ui/VoiceMemoryDialog.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/voice/ui/VoiceSettings.tsx": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 10
+    },
+    "src/features/voice/ui/VoiceSetupSteps.tsx": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/features/voice/voiceOverlayMain.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/workspace/ui/SurfaceTabs.tsx": {
+      "jsx-a11y/role-supports-aria-props": 1
+    },
+    "src/features/workspace/ui/TabGroupMenu.tsx": {
+      "jsx-a11y/role-supports-aria-props": 1,
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/workspace/ui/WorkspacePicker.tsx": {
+      "jsx-a11y/no-static-element-interactions": 2,
+      "ts-void-promise-without-catch": 1
+    },
+    "src/features/workspaces/ui/SessionWorkspaceActions.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/features/workspaces/ui/WorkspaceDirectoryRemoval.tsx": {
+      "ts-void-promise-without-catch": 4
+    },
+    "src/features/workspaces/ui/WorkspacePolicySettings.tsx": {
+      "ts-void-promise-without-catch": 9
+    },
+    "src/features/workspaces/ui/WorkspaceReview.tsx": {
+      "ts-void-promise-without-catch": 6
+    },
+    "src/features/workspaces/ui/WorkspaceRewindPreview.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/integrations/harness/core/auth.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/integrations/harness/core/preview.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/integrations/harness/core/registry.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/integrations/harness/providers/antigravity/antigravityStreamProtocol.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/integrations/harness/providers/antigravity/antigravityText.ts": {
+      "ts-void-promise-without-catch": 7
+    },
+    "src/integrations/harness/providers/claude/claude.ts": {
+      "ts-void-promise-without-catch": 5
+    },
+    "src/integrations/harness/providers/claude/claudeCatalog.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/integrations/harness/providers/claude/claudeProtocol.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/integrations/harness/providers/codex/codex.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/integrations/harness/providers/codex/codexCatalog.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/integrations/harness/providers/cursor/cursorCatalog.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/integrations/harness/providers/grok/grokCatalog.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/integrations/harness/providers/hermes/hermesCatalog.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/integrations/harness/providers/opencode/opencode.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/integrations/harness/providers/pi/piFamily.ts": {
+      "ts-void-promise-without-catch": 3
+    },
+    "src/integrations/harness/providers/pi/piProtocol.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/integrations/harness/providers/turnWriter.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/main.tsx": {
+      "oxlint/no-restricted-imports": 1,
+      "ts-void-promise-without-catch": 6
+    },
+    "src/shared/hooks/useAnimatedReorder.ts": {
+      "ts-text-truncate-utf16": 1
+    },
+    "src/shared/lib/drag.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/shared/lib/githubReadGate.ts": {
+      "ts-locale-format-outside-shared": 1
+    },
+    "src/shared/lib/openUrlSafely.ts": {
+      "oxlint/no-restricted-imports": 1
+    },
+    "src/shared/lib/queryClient.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/shared/model/appConfirm.ts": {
+      "oxlint/no-restricted-properties": 1
+    },
+    "src/shared/ui/BadgeList.tsx": {
+      "jsx-a11y/no-redundant-roles": 2
+    },
+    "src/shared/ui/Button.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/shared/ui/ColorPickerPopover.tsx": {
+      "jsx-a11y/role-supports-aria-props": 1
+    },
+    "src/shared/ui/ConfirmDialog.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/shared/ui/ControlSpecimen.tsx": {
+      "ts-date-toisostring-unguarded": 1
+    },
+    "src/shared/ui/FailureState.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1,
+      "ts-void-promise-without-catch": 2
+    },
+    "src/shared/ui/ImageAnnotationCanvas.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 1
+    },
+    "src/shared/ui/ImageLightbox.tsx": {
+      "jsx-a11y/click-events-have-key-events": 2,
+      "jsx-a11y/no-noninteractive-element-interactions": 2,
+      "jsx-a11y/no-noninteractive-tabindex": 1
+    },
+    "src/shared/ui/Modal.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 1,
+      "jsx-a11y/no-static-element-interactions": 1
+    },
+    "src/shared/ui/arc/activity-heatmap/activity-heatmap.tsx": {
+      "jsx-a11y/click-events-have-key-events": 1,
+      "jsx-a11y/no-noninteractive-element-interactions": 1,
+      "ts-date-toisostring-unguarded": 1
+    },
+    "src/shared/ui/arc/combobox/combobox.tsx": {
+      "jsx-a11y/click-events-have-key-events": 1,
+      "jsx-a11y/label-has-associated-control": 1
+    },
+    "src/shared/ui/arc/confirm-morph/confirm-morph.tsx": {
+      "jsx-a11y/no-static-element-interactions": 1,
+      "ts-void-promise-without-catch": 6
+    },
+    "src/shared/ui/arc/context-menu/context-menu.tsx": {
+      "jsx-a11y/no-noninteractive-tabindex": 1,
+      "jsx-a11y/no-static-element-interactions": 1
+    },
+    "src/shared/ui/arc/date-range-picker/date-range-picker.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 1
+    },
+    "src/shared/ui/arc/donut-chart/donut-chart.tsx": {
+      "jsx-a11y/no-static-element-interactions": 1
+    },
+    "src/shared/ui/arc/elastic-slider/elastic-slider.tsx": {
+      "jsx-a11y/click-events-have-key-events": 1,
+      "jsx-a11y/no-static-element-interactions": 2
+    },
+    "src/shared/ui/arc/expanding-button-group/expanding-button-group.tsx": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/shared/ui/arc/image-compare/image-compare.tsx": {
+      "jsx-a11y/no-static-element-interactions": 1
+    },
+    "src/shared/ui/arc/json-viewer/json-viewer.tsx": {
+      "ts-void-promise-without-catch": 2
+    },
+    "src/shared/ui/arc/morph-select/morph-select.tsx": {
+      "jsx-a11y/click-events-have-key-events": 1
+    },
+    "src/shared/ui/arc/slider/slider.tsx": {
+      "jsx-a11y/click-events-have-key-events": 1,
+      "jsx-a11y/no-static-element-interactions": 2
+    },
+    "src/shared/ui/arc/sortable-data-table/sortable-data-table.tsx": {
+      "jsx-a11y/no-redundant-roles": 10,
+      "jsx-a11y/no-static-element-interactions": 1
+    },
+    "src/shared/ui/arc/stepper/stepper.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 1
+    },
+    "src/shared/ui/arc/tag-input/tag-input.tsx": {
+      "jsx-a11y/click-events-have-key-events": 1,
+      "jsx-a11y/no-static-element-interactions": 1
+    },
+    "src/shared/ui/arc/timeline/timeline.tsx": {
+      "jsx-a11y/no-static-element-interactions": 1,
+      "ts-date-toisostring-unguarded": 1
+    },
+    "src/shared/ui/arc/usage-meter/usage-meter.tsx": {
+      "jsx-a11y/no-noninteractive-element-interactions": 1
+    },
+    "src/shared/ui/nativeActionMenu.ts": {
+      "ts-void-promise-without-catch": 1
+    },
+    "src/shared/ui/picker/PickerList.tsx": {
+      "jsx-a11y/no-static-element-interactions": 1
+    }
+  }
+}

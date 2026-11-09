@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n/core";
 import type { SocialPlatform } from "./social";
 export type XProfilePatch = {
   name?: string;
@@ -18,6 +19,47 @@ export type XProfileState = {
 
 export const SOCIAL_BROWSER_INTENTS = ["login", "signup", "inbox", "publish", "comments"] as const;
 export type SocialBrowserIntent = (typeof SOCIAL_BROWSER_INTENTS)[number];
+export type SocialRegistrationField =
+  | "email"
+  | "displayName"
+  | "username"
+  | "givenName"
+  | "familyName"
+  | "birthdate"
+  | "category";
+export type SocialRegistrationProfile = Partial<Record<SocialRegistrationField, string>> & {
+  accountKind?: "brand" | "person";
+};
+export type SocialRegistrationBlocker = "password" | "verification" | "terms" | "challenge";
+export type SocialRegistrationProgress = {
+  status: "ready" | "needs_fields" | "awaiting_owner" | "unsupported" | "changed";
+  step: "method" | "profile" | "birthdate" | SocialRegistrationBlocker | "admin_setup" | "unknown";
+  blockers: SocialRegistrationBlocker[];
+  requiredFields: SocialRegistrationField[];
+  filledFields: SocialRegistrationField[];
+  canAdvance: boolean;
+  message: string;
+};
+export type SocialRegistrationReview = {
+  reviewId: string;
+  workflowId: string;
+  accountId: string;
+  updatedAt: number;
+  expiresAt: number;
+  platform: "linkedin";
+  administrator: { id: string; name: string };
+  fields: {
+    displayName: string;
+    username: string;
+    industry: string;
+    organizationSize: string;
+    organizationType: string;
+  };
+  details: { label: string; value: string }[];
+  terms: { text: string; url: string };
+  submitLabel: string;
+  agreementChecked?: boolean;
+};
 export type SocialBrowserWorkflow = {
   id: string;
   accountId: string;
@@ -37,6 +79,18 @@ export type SocialBrowserWorkflow = {
   /** Page navigation/window closure is not evidence of authentication or delivery. */
   outcome: "unverified";
   error?: string;
+  registration?: SocialRegistrationProgress;
+  /** An attempt is persisted before any agreement/create action. Never automatically resubmit it. */
+  registrationSubmission?: {
+    id: string;
+    state: "attempting" | "unknown" | "created";
+    attemptedAt: number;
+    reviewDigest?: string;
+    /** Canonical administrator/name/slug hash for read-only recovery; never raw form values. */
+    expectedResourceDigest?: string;
+    resourceId?: string;
+    resourceUrl?: string;
+  };
 };
 export type SocialBrowserState = {
   available: boolean;
@@ -44,11 +98,21 @@ export type SocialBrowserState = {
   workflows: SocialBrowserWorkflow[];
 };
 export const SOCIAL_BROWSER_LABELS: Record<SocialBrowserIntent, string> = {
-  login: "Giriş yap",
-  signup: "Kayıt ol",
-  inbox: "Gelen kutusunu aç",
-  publish: "Paylaşım ekranını aç",
-  comments: "Yorumları aç",
+  get login() {
+    return t("Log in");
+  },
+  get signup() {
+    return t("Sign up");
+  },
+  get inbox() {
+    return t("Open inbox");
+  },
+  get publish() {
+    return t("Open publishing screen");
+  },
+  get comments() {
+    return t("Open comments");
+  },
 };
 
 type Site = {
@@ -97,7 +161,7 @@ export const SOCIAL_BROWSER_SITES: Record<SocialPlatform, Site> = {
     origins: ["https://www.youtube.com", "https://studio.youtube.com"],
     routes: {
       login: "https://www.youtube.com/",
-      signup: "https://accounts.google.com/signup",
+      signup: "https://www.youtube.com/channel_switcher",
       publish: "https://studio.youtube.com/",
     },
   },
@@ -126,6 +190,8 @@ export const SOCIAL_BROWSER_SITES: Record<SocialPlatform, Site> = {
     origins: ["https://web.telegram.org"],
     routes: { login: "https://web.telegram.org/", inbox: "https://web.telegram.org/" },
   },
+  // reddit: placeholder until 4E-reddit (no origin or route is allowed yet)
+  reddit: { origins: [], routes: {} },
 };
 
 export function socialBrowserUrl(

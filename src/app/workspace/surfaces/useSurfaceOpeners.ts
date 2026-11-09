@@ -2,6 +2,7 @@ import { startTransition, useCallback, useEffect, type Dispatch, type SetStateAc
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import { OPEN_NOTE_LIBRARY_EVENT } from "../../../features/notes/noteNavigation";
 import { OPEN_USAGE_GUIDE_EVENT } from "../../../features/onboarding/model/usageGuide";
+import { START_TOUR_EVENT } from "../../../features/onboarding/model/tourState";
 
 export interface SurfaceOpenersDeps {
   projectCwd: string;
@@ -128,7 +129,12 @@ export function useSurfaceOpeners({
       setServersViewOpen?.(false);
     };
     window.addEventListener(OPEN_USAGE_GUIDE_EVENT, revealWorkspace);
-    return () => window.removeEventListener(OPEN_USAGE_GUIDE_EVENT, revealWorkspace);
+    // A guided tour points at the workspace controls too.
+    window.addEventListener(START_TOUR_EVENT, revealWorkspace);
+    return () => {
+      window.removeEventListener(OPEN_USAGE_GUIDE_EVENT, revealWorkspace);
+      window.removeEventListener(START_TOUR_EVENT, revealWorkspace);
+    };
   }, []);
 
   return {

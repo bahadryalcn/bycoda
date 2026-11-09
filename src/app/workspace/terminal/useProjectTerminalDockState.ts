@@ -1,10 +1,4 @@
-import {
-  useRef,
-  useState,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import {
   findProjectTerminal,
   type DockSide,

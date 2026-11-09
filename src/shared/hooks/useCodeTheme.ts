@@ -10,5 +10,9 @@ function subscribe(listener: () => void) {
 }
 
 export function useCodeTheme() {
-  return useSyncExternalStore(subscribe, () => loadAppearancePreferences().codeTheme, () => "github" as const);
+  return useSyncExternalStore(
+    subscribe,
+    () => loadAppearancePreferences().codeTheme,
+    () => "github" as const,
+  );
 }

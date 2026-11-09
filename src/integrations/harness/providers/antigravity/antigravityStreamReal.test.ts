@@ -23,13 +23,19 @@ vi.mock("../../core/child", async () => {
   const readline = await import("node:readline");
   return {
     spawnChild: async (key: string, command: string, args: string[], cwd: string) => {
-      const child = spawn(command, args, { cwd });
+      const child = spawn(command, args, { cwd, windowsHide: true });
       live.children.set(key, child);
       live.spawned.push({ args, cwd });
+      // The native CLI may log progress on stderr; drain it so its pipe cannot
+      // fill while the test waits for stream-json on stdout.
+      child.stderr?.resume();
       readline
         .createInterface({ input: child.stdout })
         .on("line", (line) => live.lines.get(key)?.(line));
       child.on("exit", (code) => live.exits.get(key)?.(code));
+      // A missing/unlaunchable binary must settle readiness instead of leaving
+      // the real-provider check waiting for the startup timeout.
+      child.on("error", () => live.exits.get(key)?.(null));
     },
     watchChild: (
       key: string,

@@ -1,0 +1,108 @@
+import { useSyncExternalStore } from "react";
+import type { DeliverySettlement } from "../../../shared/lib/deliveryUnknown";
+import { createStore } from "../../../shared/lib/store";
+
+export type DeliveryReviewOutcome = "delivered" | "retry" | "keep" | "discard";
+
+/**
+ * Resume on a queue whose last delivery is unconfirmed cannot decide for the
+ * owner. It asks the inline delivered / send again / discard choice to take
+ * focus, so Resume always answers with something visible.
+ */
+const requests = new Map<string, number>();
+const store = createStore();
+const notify = () => store.notify();
+const subscribe = store.subscribe;
+
+export function requestDeliveryReview(sessionId: string): void {
+  requests.set(sessionId, (requests.get(sessionId) ?? 0) + 1);
+  notify();
+}
+
+/** Increments each time Resume asks for this conversation's delivery review. */
+export function useDeliveryReviewRequest(sessionId: string): number {
+  return useSyncExternalStore(subscribe, () => requests.get(sessionId) ?? 0);
+}
+
+/** Why the host holds each paused queue (`holdReason`), for the banner; cleared once it runs again. */
+const holdReasons = new Map<string, string>();
+export function setQueueHoldReason(sessionId: string, reason: string | undefined): void {
+  if (holdReasons.get(sessionId) === reason) return;
+  if (reason) holdReasons.set(sessionId, reason);
+  else holdReasons.delete(sessionId);
+  notify();
+}
+export const queueHoldReason = (sessionId: string): string | undefined =>
+  holdReasons.get(sessionId);
+export function useQueueHoldReason(sessionId: string): string | undefined {
+  return useSyncExternalStore(subscribe, () => holdReasons.get(sessionId));
+}
+
+/**
+ * Sends that were given up as unconfirmed but whose provider call is still open:
+ * it may yet deliver the message. While one is, sending the same message again
+ * could duplicate it, so the review warns and does not offer "Send again".
+ */
+const lateSettlements = new Map<string, Set<symbol>>();
+const openSettlements = (sessionId: string): number => lateSettlements.get(sessionId)?.size ?? 0;
+/**
+ * A provider call that never answers must not hold "Send again" and Continue
+ * until restart. After this long the send stops counting as possibly late.
+ */
+export const LATE_SETTLEMENT_TTL_MS = 10 * 60_000;
+
+/** Follows an unconfirmed send until its provider call finally answers, or until the TTL expires. */
+export function trackLateSettlement(
+  sessionId: string,
+  settlement: Promise<DeliverySettlement>,
+): void {
+  const token = Symbol(sessionId);
+  const pending = lateSettlements.get(sessionId) ?? new Set<symbol>();
+  pending.add(token);
+  lateSettlements.set(sessionId, pending);
+  notify();
+  let expiry: ReturnType<typeof setTimeout> | undefined;
+  const done = () => {
+    if (expiry !== undefined) clearTimeout(expiry);
+    const left = lateSettlements.get(sessionId);
+    if (!left?.delete(token)) return;
+    if (!left.size) lateSettlements.delete(sessionId);
+    notify();
+  };
+  expiry = setTimeout(done, LATE_SETTLEMENT_TTL_MS);
+  void settlement.then(done, done);
+}
+
+/** Whether an unconfirmed send of this conversation may still be answered by its provider. */
+export function lateSettlementPossible(sessionId: string): boolean {
+  return openSettlements(sessionId) > 0;
+}
+
+/** Forgets every tracked send (tests). */
+export function resetLateSettlementsForTests(): void {
+  lateSettlements.clear();
+}
+
+export function useLateSettlementPossible(sessionId: string): boolean {
+  return useSyncExternalStore(subscribe, () => lateSettlementPossible(sessionId));
+}
+
+/**
+ * Who settles an unconfirmed row of a conversation. The window's own sessions
+ * resolve it in the desktop store; a pane showing another computer's queue
+ * registers its resolver here, so the same inline choice decides through the
+ * shared queue instead of editing a store that does not own the row.
+ */
+export type DeliveryResolver = (rowId: string, outcome: DeliveryReviewOutcome) => Promise<void>;
+const resolvers = new Map<string, DeliveryResolver>();
+export function registerDeliveryResolver(
+  sessionId: string,
+  resolver: DeliveryResolver,
+): () => void {
+  resolvers.set(sessionId, resolver);
+  return () => {
+    if (resolvers.get(sessionId) === resolver) resolvers.delete(sessionId);
+  };
+}
+export const deliveryResolverFor = (sessionId: string): DeliveryResolver | undefined =>
+  resolvers.get(sessionId);

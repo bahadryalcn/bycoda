@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { flushSync } from "react-dom";
 import { message } from "@tauri-apps/plugin-dialog";
 import {
@@ -15,6 +10,10 @@ import {
 import { applyDetachPaneToTab } from "../../../features/workspace/model/workspaceTabGroups";
 import { t } from "../../../shared/i18n";
 import { type WindowMovePosition } from "../../model/windowTransferPopout";
+import {
+  publishWindowTransferNotice,
+  restoredSplitMessage,
+} from "../../model/windowTransferNotice";
 import { type MoveTabsOutcome } from "../windows/useMoveTabsToNewWindow";
 
 export interface PaneDetachActionDeps {
@@ -142,6 +141,7 @@ export function usePaneDetachActions({
         tabsRef.current = next;
         setTabs(next);
         activateTab(source.id, paneId);
+        publishWindowTransferNotice("info", restoredSplitMessage());
       });
     },
     [activateTab, onMoveTabsToNewWindow],

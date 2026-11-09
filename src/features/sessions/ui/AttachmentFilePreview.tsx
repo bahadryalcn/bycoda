@@ -1,20 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
-import { DocumentMessage } from "../../files/ui/DocumentMessage";
+import { useT } from "../../../shared/i18n";
+import { DocumentMessage } from "../../files/public/DocumentMessage";
 import type { Attachment } from "../model/session";
 import { isAttachmentFolder } from "../model/attachments";
 import { readBinaryFile } from "../../../platform/tauri/fs";
-import { canPreviewFile } from "../../files/model/filePreview";
-import { mediaKind } from "../../files/model/mediaPreview";
-import { documentKind, MAX_DOCUMENT_BYTES } from "../../files/model/documentViewer";
-import { DocumentView } from "../../files/ui/DocumentView";
+import { canPreviewFile } from "../../files/public/filePreviewMetadata";
+import { mediaKind } from "../../files/public/mediaPreview";
+import { documentKind, MAX_DOCUMENT_BYTES } from "../../files/public/documentViewer";
+import { DocumentView } from "../../files/public/DocumentView";
 import { Modal } from "../../../shared/ui/Modal";
 import { lazySurface } from "../../../shared/ui/lazySurface";
-import { parseRemotePath, remotePath } from "../../connections/model/remoteProjects";
+import { parseRemotePath, remotePath } from "../../connections/public/remoteProjects";
 
 const MediaView = lazySurface(async () => ({
-  default: (await import("../../files/ui/MediaView")).MediaView,
+  default: (await import("../../files").then((entry) => entry.loadMediaView())).MediaView,
 }));
 
 function isTextAttachment(attachment: Attachment): boolean {
@@ -38,7 +38,7 @@ export function canOpenFileAttachment(attachment: Attachment): boolean {
 
 /** Render attachment bytes as text, never as executable HTML or SVG. */
 function AttachmentTextPreview({ readBytes }: { readBytes: () => Promise<Uint8Array> }) {
-  useLocale();
+  const t = useT();
   const [state, setState] = useState<{ text: string } | { error: true } | null>(null);
   const [retry, setRetry] = useState(0);
   useEffect(() => {
@@ -73,7 +73,7 @@ function AttachmentTextPreview({ readBytes }: { readBytes: () => Promise<Uint8Ar
   return (
     <pre
       tabIndex={0}
-      className="h-full min-w-0 overflow-auto whitespace-pre-wrap break-words p-3 select-text font-mono text-(length:--ui-font-caption) text-content"
+      className="max-h-[min(620px,70dvh)] min-w-0 overflow-auto whitespace-pre-wrap break-words p-3 select-text font-mono text-ui-caption text-content"
     >
       {state.text}
     </pre>
@@ -129,15 +129,18 @@ export function AttachmentFilePreview({
   }, [attachment.size, attachment.loadPreview, attachment.data, path]);
   // Session-only remote attachments use their authorized reader; never send their raw host path to an OS opener.
   const externalPath = attachment.loadPreview ? null : (path ?? null);
+  const kind = documentKind(attachment.name);
+  const fitContent = !mediaKind(attachment.name) && (!kind || kind === "csv" || kind === "tsv");
   return (
     <Modal
+      padding="none"
       title={attachment.name}
       onClose={onClose}
       size="lg"
       fitViewport
-      className="h-[min(760px,85dvh)] bg-(--ui-surface)"
+      className={`${fitContent ? "" : "h-[min(760px,85dvh)] "}bg-(--ui-surface-floating)`}
     >
-      <div className="h-full min-h-0">
+      <div className={fitContent ? "min-h-0" : "h-full min-h-0"}>
         {mediaKind(attachment.name) ? (
           <MediaView
             path={externalPath ?? attachment.name}
@@ -151,6 +154,7 @@ export function AttachmentFilePreview({
             cwd=""
             readBytes={readBytes}
             externalPath={externalPath}
+            fitContent={fitContent}
           />
         ) : (
           <AttachmentTextPreview readBytes={readBytes} />

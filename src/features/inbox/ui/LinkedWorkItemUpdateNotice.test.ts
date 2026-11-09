@@ -107,7 +107,7 @@ describe("linked work item update notice", () => {
       );
     });
     expect(
-      document.body.querySelector('[aria-label^="New activity on"] > .linked-activity-notice'),
+      document.body.querySelector('[aria-label^="New activity on"] .linked-activity-notice'),
     ).not.toBeNull();
     expect(play).toHaveBeenCalledExactlyOnceWith("thread");
 
@@ -196,19 +196,15 @@ describe("linked work item update notice", () => {
     });
 
     const notice = document.body.querySelector<HTMLElement>(
-      'section[aria-label="New activity on Pull request 42"]',
+      '[aria-label="New activity on Pull request 42"]',
     );
     expect(notice?.parentElement).toBe(container);
     expect(notice?.classList.contains("absolute")).toBe(true);
     expect(notice?.classList.contains("fixed")).toBe(false);
-    expect(notice?.classList.contains("isolate")).toBe(true);
     expect(notice?.classList.contains("bg-content/10")).toBe(false);
     expect(notice?.classList.contains("bg-background-base/95")).toBe(false);
-    expect(notice?.querySelector(".popover-backdrop")).not.toBeNull();
     expect(document.body.textContent).toContain("1 new comment");
-    expect(
-      notice?.querySelector('button[aria-label="Dismiss updates for Pull request 42"]'),
-    ).not.toBeNull();
+    expect(notice?.querySelector('button[aria-label="Dismiss notice"]')).not.toBeNull();
     expect(button("Open PR").classList.contains("truncate")).toBe(true);
     act(() => button("Open PR").click());
     expect(onAcknowledge).toHaveBeenCalledTimes(1);

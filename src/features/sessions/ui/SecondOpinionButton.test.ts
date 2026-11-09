@@ -68,7 +68,7 @@ afterEach(() => {
 
 function hover(element: Element) {
   act(() => {
-    element.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    element.dispatchEvent(new Event("pointermove", { bubbles: true }));
   });
 }
 
@@ -85,13 +85,13 @@ describe("secondary model target picker", () => {
     );
 
     act(() => container.querySelector<HTMLButtonElement>('[aria-label="Second opinion"]')!.click());
-    const provider = [...document.querySelectorAll('[role="menuitem"]')].find((row) =>
+    const provider = [...document.querySelectorAll('[role^="menuitem"]')].find((row) =>
       row.textContent?.includes("Grok Build"),
     )!;
     hover(provider);
 
     const modelMenu = document.querySelector('[role="menu"][aria-label="Grok Build models"]')!;
-    const model = [...modelMenu.querySelectorAll('[role="menuitem"]')].find((row) =>
+    const model = [...modelMenu.querySelectorAll('[role^="menuitem"]')].find((row) =>
       row.textContent?.includes("Review Model"),
     )!;
     hover(model);
@@ -123,13 +123,13 @@ describe("secondary model target picker", () => {
     );
 
     act(() => container.querySelector<HTMLButtonElement>('[aria-label="Second opinion"]')!.click());
-    const provider = [...document.querySelectorAll('[role="menuitem"]')].find((row) =>
+    const provider = [...document.querySelectorAll('[role^="menuitem"]')].find((row) =>
       row.textContent?.includes("Grok Build"),
     )!;
     hover(provider);
     const quick = [
       ...document.querySelectorAll<HTMLButtonElement>(
-        '[role="menu"][aria-label="Grok Build models"] [role="menuitem"]',
+        '[role="menu"][aria-label="Grok Build models"] [role^="menuitem"]',
       ),
     ].find((row) => row.textContent?.includes("Quick Model"))!;
     act(() => quick.click());
@@ -156,14 +156,14 @@ describe("secondary model target picker", () => {
     );
 
     act(() => container.querySelector<HTMLButtonElement>('[aria-label="Second opinion"]')!.click());
-    const provider = [...document.querySelectorAll('[role="menuitem"]')].find((row) =>
+    const provider = [...document.querySelectorAll('[role^="menuitem"]')].find((row) =>
       row.textContent?.includes("Grok Build"),
     )!;
     hover(provider);
 
     const modelLabels = [
       ...document.querySelectorAll(
-        '[role="menu"][aria-label="Grok Build models"] [role="menuitem"]',
+        '[role="menu"][aria-label="Grok Build models"] [role^="menuitem"]',
       ),
     ].map((row) => row.textContent);
     expect(modelLabels.some((text) => text?.includes("Review Model"))).toBe(false);

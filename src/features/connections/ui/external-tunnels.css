@@ -8,12 +8,12 @@
   flex-direction: column;
   gap: 0.75rem;
   min-inline-size: 0;
-  font-size: 13px;
+  font-size: var(--ui-font-secondary);
   color: var(--color-content);
 }
 .external-tunnels-panel p,
 .external-tunnel-controls p {
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   line-height: 1.5;
   color: var(--ui-text-muted);
   overflow-wrap: anywhere;
@@ -27,7 +27,7 @@
 }
 .external-tunnel-form {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 0.75rem;
 }
@@ -44,16 +44,10 @@
 .external-tunnel-credentials form > label {
   flex: 1 1 12rem;
 }
-@media (hover: hover) and (pointer: fine) {
-}
-.external-tunnel-item {
-  border-block-start: 1px solid var(--color-stroke);
-  padding-block-start: 0.75rem;
-}
 .external-tunnel-item code,
 .external-tunnel-qr code {
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .external-tunnel-qr {
   display: flex;
@@ -65,5 +59,13 @@
 .external-tunnel-qr svg {
   inline-size: min(240px, 100%);
   block-size: auto;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-panel);
+}
+
+.external-tunnel-form > button {
+  justify-self: start;
+}
+.external-tunnel-form [role="radiogroup"] {
+  justify-self: start;
+  max-inline-size: 100%;
 }

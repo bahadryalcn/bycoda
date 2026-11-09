@@ -1,8 +1,9 @@
+import { withRoomPrivacyMutation } from "../../group-lock/public/roomPrivacy";
 import { parentPath, pathKey, slash } from "../../../shared/lib/paths";
 import { moveIdByStep, orderByIds, type MoveStep } from "../../../shared/lib/reorder";
 import { normalizeProjectMascotName } from "./projectMascots";
 import { TAB_GROUP_COLORS, tabGroupColor } from "../../workspace/model/tabGroups";
-import { notifyProjectPathsChanged } from "./recents";
+import { notifyProjectPathsChanged, type RecentProject } from "./recents";
 
 const GROUPS_KEY = "bycoda.projectGroups";
 const ASSIGNMENTS_KEY = "bycoda.projectGroupAssignments";
@@ -24,11 +25,97 @@ export type ProjectGroup = {
   workspaceFolders?: string[];
   /** Opening the group asks for the app lock password. See group-lock. */
   lockable?: boolean;
+  /** Pinned groups list before the others; projects inside a group are never pinned. */
+  pinned?: boolean;
+  /**
+   * Where nested workspaces sit among the group's projects, as member keys (see
+   * `orderProjectGroupMembers`). Projects keep the rail order among themselves.
+   */
+  memberOrder?: string[];
 };
+
+export type ProjectGroupMember = { kind: "project" | "group"; id: string };
+
+function memberKey(member: ProjectGroupMember): string {
+  return member.kind === "group" ? `group:${member.id}` : pathKey(member.id);
+}
+
+/**
+ * Interleaves a group's projects and nested workspaces. The saved order fixes which slots hold a
+ * workspace; projects fill the other slots in their own order, so moving projects elsewhere (rail
+ * order, bulk moves) still applies. Members the saved order does not know follow, projects first.
+ */
+export function orderProjectGroupMembers(
+  projectPaths: readonly string[],
+  groupIds: readonly string[],
+  memberOrder: readonly string[] = [],
+): ProjectGroupMember[] {
+  const projects: ProjectGroupMember[] = projectPaths.map((id) => ({
+    kind: "project",
+    id,
+  }));
+  const groups: ProjectGroupMember[] = groupIds.map((id) => ({
+    kind: "group",
+    id,
+  }));
+  const byKey = new Map([...projects, ...groups].map((member) => [memberKey(member), member]));
+  const known = memberOrder.flatMap((key) => {
+    const member = byKey.get(key);
+    if (!member) return [];
+    byKey.delete(key);
+    return [member];
+  });
+  const knownGroups = known.filter((member) => member.kind === "group");
+  const placedGroups = new Set(knownGroups.map((member) => member.id));
+  const nextProject = projects[Symbol.iterator]();
+  const ordered = known.map((member) =>
+    member.kind === "group" ? member : (nextProject.next().value as ProjectGroupMember),
+  );
+  return [...ordered, ...nextProject, ...groups.filter((member) => !placedGroups.has(member.id))];
+}
+
+/** Saves the interleaved order of a group's projects and nested workspaces. */
+export function saveProjectGroupMemberOrder(
+  id: string,
+  members: readonly ProjectGroupMember[],
+): Promise<boolean> {
+  return withRoomPrivacyMutation(() =>
+    updateProjectGroup(id, (group) => ({ ...group, memberOrder: members.map(memberKey) })),
+  );
+}
 
 /** A linked workspace opens the directory containing its workspace file as a project. */
 export function projectGroupWorkspaceRoot(group: ProjectGroup): string | null {
   return group.workspaceFile ? parentPath(slash(group.workspaceFile)) : null;
+}
+
+/** Roots represented by workspace headers rather than standalone rail rows. */
+export function projectGroupWorkspaceRootKeys(groups: readonly ProjectGroup[]): Set<string> {
+  return new Set(
+    groups.flatMap((group) => {
+      const root = projectGroupWorkspaceRoot(group);
+      return root ? [pathKey(root)] : [];
+    }),
+  );
+}
+
+/** Declared roots stay child rows even when assignments track workspace parents. */
+export function addListedWorkspaceRoots(
+  groups: readonly ProjectGroup[],
+  sections: { pinned: RecentProject[]; projects: RecentProject[] },
+  byGroup: Map<string, RecentProject[]>,
+  visible: (project: RecentProject, groupId: string) => boolean,
+): void {
+  const projects = [...sections.pinned, ...sections.projects];
+  for (const group of groups) {
+    const root = projectGroupWorkspaceRoot(group);
+    if (!root || !group.workspaceFolders?.some((path) => pathKey(path) === pathKey(root))) continue;
+    const project = projects.find((item) => pathKey(item.path) === pathKey(root)) ?? {
+      path: root,
+      openedAt: 0,
+    };
+    if (project && visible(project, group.id)) byGroup.get(group.id)?.unshift(project);
+  }
 }
 
 /** A workspace can sit inside an ordinary group without changing its linked folders. */
@@ -85,6 +172,14 @@ function normalizeGroup(value: unknown): ProjectGroup | null {
     ...(mascot ? { mascot } : {}),
     ...(workspaceFile ? { workspaceFile, workspaceFolders } : {}),
     ...(candidate.lockable === true ? { lockable: true } : {}),
+    ...(candidate.pinned === true ? { pinned: true } : {}),
+    ...(Array.isArray(candidate.memberOrder)
+      ? {
+          memberOrder: [
+            ...new Set(candidate.memberOrder.filter((key) => typeof key === "string" && key)),
+          ],
+        }
+      : {}),
   };
 }
 
@@ -114,7 +209,8 @@ export function loadProjectGroups(): ProjectGroup[] {
       seen.add(group.id);
       groups.push(group);
     }
-    return groups;
+    // Pinned groups come first everywhere, so every reorder and "Move up" sees the shown order.
+    return [...groups.filter((group) => group.pinned), ...groups.filter((group) => !group.pinned)];
   } catch {
     return [];
   }
@@ -179,7 +275,8 @@ export function setProjectGroupAssignment(
   else if (loadProjectGroups().some((group) => group.id === groupId)) {
     next[key] = groupId;
   }
-  saveProjectGroupAssignments(next);
+  if (!saveProjectGroupAssignments(next))
+    throw new Error("Could not save project group assignment.");
   return next;
 }
 
@@ -194,16 +291,18 @@ export function rebaseProjectGroupAssignment(from: string, to: string): void {
   if (oldKey === newKey || !(oldKey in next)) return;
   if (!(newKey in next)) next[newKey] = next[oldKey];
   delete next[oldKey];
-  saveProjectGroupAssignments(next);
+  if (!saveProjectGroupAssignments(next))
+    throw new Error("Could not save project group assignment.");
 }
 
+/** False when the group does not exist or the change could not be saved. */
 export function updateProjectGroup(
   id: string,
   update: (group: ProjectGroup) => ProjectGroup,
-): void {
+): boolean {
   const current = loadProjectGroups();
-  if (!current.some((group) => group.id === id)) return;
-  saveProjectGroups(current.map((group) => (group.id === id ? update(group) : group)));
+  if (!current.some((group) => group.id === id)) return false;
+  return saveProjectGroups(current.map((group) => (group.id === id ? update(group) : group)));
 }
 
 /**
@@ -215,6 +314,13 @@ export function reorderProjectGroups(ids: readonly string[]): boolean {
   const next = orderByIds(current, [...ids]);
   if (next.every((group, index) => group.id === current[index].id)) return true;
   return saveProjectGroups(next);
+}
+
+/** Pins or unpins a rail group; resolves false when the change could not be saved. */
+export function toggleProjectGroupPin(id: string): Promise<boolean> {
+  return withRoomPrivacyMutation(() =>
+    updateProjectGroup(id, (group) => ({ ...group, pinned: !group.pinned })),
+  );
 }
 
 /** Moves one group a step up or down the list, or to the top. */
@@ -229,8 +335,7 @@ export function moveProjectGroup(id: string, step: MoveStep): boolean {
 export function deleteProjectGroup(id: string): boolean {
   const nextGroups = loadProjectGroups().filter((group) => group.id !== id);
   if (!saveProjectGroups(nextGroups)) return false;
-  saveProjectGroupAssignments(loadProjectGroupAssignments(nextGroups));
-  return true;
+  return saveProjectGroupAssignments(loadProjectGroupAssignments(nextGroups));
 }
 
 export function projectGroupColor(group: ProjectGroup): string {
@@ -325,7 +430,8 @@ export function changeProjectGroupMembers(
     if (assignments[key] === id) delete assignments[key];
   }
   for (const path of add) assignments[pathKey(path)] = id;
-  saveProjectGroupAssignments(assignments);
+  if (!saveProjectGroupAssignments(assignments))
+    throw new Error("Could not save project group membership.");
 }
 
 /** Paths (as stored keys) currently assigned to the group. */

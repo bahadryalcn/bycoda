@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ComponentProps } from "react";
 import { readProjectImage } from "../../../platform/tauri/fs";
-import { sniffDocumentImageMime } from "../../files/model/filePreview";
+import { sniffDocumentImageMime } from "../../files/public/filePreviewMetadata";
 
 /** The presentational attributes a document's `<img>` keeps. */
 export type DocumentImageAttributes = {

@@ -7,6 +7,36 @@
 
 export const HIBERNATE_AFTER_MS = 10 * 60 * 1000;
 export const HIBERNATION_CHECK_MS = 60 * 1000;
+/**
+ * An unseen "finished" badge keeps a hidden tab awake only this long. After it
+ * the pane tree may be released; the badge itself is kept.
+ */
+export const UNSEEN_FINISHED_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * When each currently unseen session first became unseen. Sessions no longer
+ * unseen are dropped, so a session that finishes again starts a fresh TTL.
+ */
+export function trackUnseenSince(
+  since: ReadonlyMap<string, number>,
+  unseenIds: ReadonlySet<string>,
+  now: number,
+): Map<string, number> {
+  const next = new Map<string, number>();
+  for (const id of unseenIds) next.set(id, since.get(id) ?? now);
+  return next;
+}
+
+/** Unseen sessions whose badge is older than `ttlMs`. */
+export function expiredUnseenSessionIds(
+  since: ReadonlyMap<string, number>,
+  now: number,
+  ttlMs = UNSEEN_FINISHED_TTL_MS,
+): Set<string> {
+  const expired = new Set<string>();
+  for (const [id, at] of since) if (now - at >= ttlMs) expired.add(id);
+  return expired;
+}
 
 /**
  * Last time each tab was the active one. The active tab is stamped with `now`.

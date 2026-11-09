@@ -124,6 +124,7 @@ fn real_private_pty_keygen_encrypts_without_passphrase_echo_and_cleans_up() {
         master: Mutex::new(pair.master),
         pid: child.process_id().unwrap(),
         owner: Arc::new(Mutex::new("keygen-owner".into())),
+        output: Arc::default(),
     });
     drop(pair.slave);
     let host = PtyHost::new();

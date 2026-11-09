@@ -1,24 +1,60 @@
+/* Shared field/focus contract: the only definition of the --ui-field-* and --ui-focus-* tokens.
+   Density preferences remain authoritative.
+   - Outline focus (buttons, rows, tabs, menu items, sliders): --ui-focus-width solid
+     --ui-focus-ring-color at --ui-focus-offset. A quiet neutral tone, never the accent ink.
+   - Field focus (TextField, TextareaField, Select, SearchInput, pickers, inline edit, composites):
+     the frame's border steps up to --ui-field-border-focus, a neutral tone one level above hover.
+     --ui-focus-ring adds no halo; --ui-focus-ring-invalid keeps a soft danger ring. No inset outline.
+   - Composites: put data-ui-focus-group on the bordered frame and data-ui-focus="group" on the
+     inner editor/trigger; the frame shows the ring, the member draws nothing. Inputs inside a
+     FieldControl ([data-field-control]) are members automatically.
+   - data-ui-focus="input" marks a standalone editor that owns its frame; data-ui-focus="menu"
+     marks an editor inside an already framed menu (no ring).
+   - data-ui-focus-quiet on a focus group opts a writing surface out of the ring (the composer:
+     the caret and surface carry focus). Forced-colors outlines still apply. */
+html:root {
+  --ui-field-height-sm: var(--ui-control-height-compact);
+  --ui-field-height-md: calc(var(--ui-control-height) - 0.25rem);
+  --ui-field-radius: 0.5rem;
+  --ui-field-border: color-mix(in oklab, var(--color-content) 12%, var(--ui-surface-muted));
+  --ui-field-border-hover: color-mix(in oklab, var(--color-content) 22%, var(--ui-surface-muted));
+  /* Minimal focus: a neutral border step, no accent-colored frame or halo. Bright custom accents
+     (white) otherwise paint a glaring frame on every click. */
+  --ui-field-border-focus: color-mix(in oklab, var(--color-content) 32%, var(--ui-surface-muted));
+  --ui-field-border-invalid: var(--ui-tone-danger-fg);
+  --ui-focus-ring-color: color-mix(in oklab, var(--color-content) 34%, transparent);
+  --ui-focus-ring: 0 0 0 0 transparent;
+  --ui-focus-ring-invalid: 0 0 0 2px color-mix(in oklab, var(--ui-tone-danger-fg) 26%, transparent);
+  --ui-focus-width: 1px;
+  --ui-focus-offset: 2px;
+}
+html[data-control-density="touch"] {
+  --ui-field-height-md: var(--ui-control-height);
+}
+
 /* Arc roles are scoped to control roots. The global Arc foundation reset owns
    a separate theme/focus system and must not change the rest of the workbench. */
 .bycoda-arc {
   --background: var(--color-background-base);
   --foreground: var(--color-content);
   --surface: var(--ui-surface);
-  --surface-raised: var(--ui-surface-raised);
+  /* Arc consumes the raised role only for floating panels (menus, select and combobox lists, the open
+     date-range panel, chart tooltips), so it follows the shared floating container role. */
+  --surface-raised: var(--ui-surface-floating);
   --surface-muted: var(--ui-surface-muted);
   --text-secondary: var(--ui-text-secondary);
-  --text-muted: var(--ui-text-disabled);
+  --text-muted: var(--ui-text-muted);
   --border: var(--color-stroke);
   --border-subtle: color-mix(in oklch, var(--color-content) 5%, transparent);
   --border-strong: color-mix(in oklch, var(--color-content) 16%, transparent);
-  --accent: var(--user-accent-color, var(--color-accent));
+  --accent: var(--user-accent-solid, var(--user-accent-color, var(--color-accent)));
   --accent-strong: var(--accent);
-  --accent-subtle: var(--color-selection-subtle);
+  --accent-subtle: var(--ui-surface-selected);
   --accent-foreground: var(--user-accent-foreground, var(--ui-text-on-active));
-  --danger: var(--color-danger);
-  --info: var(--color-info);
-  --warning: var(--color-warning);
-  --success: var(--color-success);
+  --danger: var(--ui-tone-danger-fg);
+  --info: var(--ui-tone-info-fg);
+  --warning: var(--ui-tone-warning-fg);
+  --success: var(--ui-tone-success-fg);
   --control-on: var(--color-active);
   --control-fill: var(--color-active);
   --control-glyph: var(--color-on-solid);
@@ -52,14 +88,15 @@
   --font-display: var(--font-sans);
   --leading-body: 1.4;
   --tracking-body: normal;
-  --control-height-sm: var(--ui-control-height-sm);
-  --control-height-md: var(--ui-control-height-md);
+  --control-height-sm: var(--ui-field-height-sm);
+  --control-height-md: var(--ui-field-height-md);
   --control-height-lg: var(--ui-control-height-lg);
-  --duration-instant: 80ms;
-  --duration-fast: var(--motion-feedback-duration);
-  --duration-standard: var(--motion-reorder-duration);
-  --ease-standard: var(--motion-ease-out);
-  --ease-enter: var(--motion-ease-out);
+  --duration-instant: var(--motion-duration-instant);
+  --duration-fast: var(--motion-duration-fast);
+  --duration-standard: var(--motion-duration-standard);
+  --ease-standard: var(--motion-ease-standard);
+  --ease-enter: var(--motion-ease-enter);
+  --ease-exit: var(--motion-ease-exit);
   --focus-ring: transparent;
   --shadow-floating: none;
   font-family: var(--font-sans);
@@ -68,6 +105,8 @@
 /* The camera island stays black in both themes to join the physical cutout. */
 .bycoda-arc[data-ui-appearance="island"],
 .bycoda-arc[data-ui-appearance="island"] .bycoda-arc {
+  --ui-focus-ring-color: color-mix(in oklab, var(--ui-island-text) 34%, transparent);
+  --ui-field-border-focus: color-mix(in oklab, var(--ui-island-text) 32%, var(--ui-island-surface));
   --ui-tone-neutral-fg: var(--ui-island-text);
   --ui-tone-neutral-solid: var(--ui-island-text);
   --ui-tone-neutral-on-solid: var(--ui-island-surface);
@@ -92,11 +131,31 @@
   --surface-muted: var(--ui-island-surface);
 }
 
-/* Preserve bycoda keyboard focus even for upstream border-only controls. */
+/* Preserve bycoda keyboard focus even for upstream border-only controls. Focus-group members draw
+   nothing of their own: data-ui-focus="group"/"menu" editors, FieldControl editors and the InlineEdit
+   editor (their frame owns focus). :where keeps the exclusion specificity-free, so the owners' rules
+   no longer depend on stylesheet order. Containers that only take programmatic focus (tabindex="-1"
+   with no role, or a group/region/tabpanel) draw no ring. */
 :is(button, input, textarea, [tabindex]).bycoda-arc:focus-visible,
-.bycoda-arc :is(button, input, textarea, [tabindex]):focus-visible {
+.bycoda-arc
+  :is(button, input, textarea, [tabindex]):not(
+    :where(
+      [data-ui-focus="group"],
+      [data-ui-focus="menu"],
+      [data-field-control] :is(input, textarea),
+      .bycoda-arc-inline-edit :is(input, textarea),
+      [tabindex="-1"]:is(:not([role]), [role="group"], [role="region"], [role="tabpanel"]):not(
+          button,
+          input,
+          textarea,
+          select,
+          a
+        )
+    )
+  ):focus-visible {
   outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
   outline-offset: var(--ui-focus-offset);
+  box-shadow: var(--ui-focus-ring);
 }
 
 .bycoda-arc-switch,
@@ -104,15 +163,40 @@
   --control-height-md: var(--ui-control-height-compact);
 }
 
+/* A solid fill and its contrast ink must switch together when the theme or
+   custom accent changes. Interpolating them separately passes through gray-on-
+   gray frames; retain the control's opacity/press feedback instead. */
+.bycoda-arc[data-button-hierarchy="primary"] {
+  transition-property: opacity, transform;
+}
+
 .bycoda-arc-segmented {
+  /* Unselected options remain readable choices, rather than muted metadata. */
+  --text-muted: var(--ui-text-secondary);
   --control-height-sm: var(--ui-segment-height, 1.5rem);
   --surface: var(--color-selection);
   --surface-muted: transparent;
 }
 
 .bycoda-arc-field {
+  --surface: var(--ui-surface-muted);
+  --border-strong: var(--ui-field-border);
+  --radius-control: var(--ui-field-radius);
   min-inline-size: 0;
-  inline-size: 100%;
+}
+/* F3 contract: the default width is placement, layered below Tailwind utilities so a caller's `w-*` wins. */
+@layer components {
+  .bycoda-arc-field {
+    inline-size: 100%;
+  }
+}
+
+/* Disabled fields use a readable semantic pair instead of fading their text
+   and their already muted surface a second time. */
+.bycoda-arc.bycoda-arc-field :is(input, textarea):disabled {
+  color: var(--ui-control-disabled-fg);
+  border-color: var(--ui-control-disabled-border);
+  opacity: 1;
 }
 
 /* Generic choice presentation must also work outside the settings workbench. */
@@ -130,7 +214,7 @@
 }
 
 /* Membership inputs retain native state; their associated label owns the target. */
-html[data-control-density="touch"] label:has(.bycoda-arc-checkbox) {
+html[data-control-density="touch"] label:has(.bycoda-arc-checkbox):not([data-checkbox-row]) {
   display: inline-flex;
   align-items: center;
   min-block-size: var(--ui-control-height);
@@ -144,14 +228,23 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   min-inline-size: var(--ui-control-height);
 }
 
+/* F3 contract: the default width is placement, layered below Tailwind utilities so a caller's `w-*` wins. */
+@layer components {
+  .bycoda-arc.bycoda-arc-select {
+    inline-size: 100%;
+  }
+}
+
 .bycoda-arc.bycoda-arc-select {
+  --border: var(--ui-field-border);
+  --radius-control: var(--ui-field-radius);
+  --surface: var(--ui-surface-muted);
   display: inline-flex;
-  min-block-size: var(--ui-control-height-md);
-  inline-size: 100%;
+  min-block-size: var(--ui-field-height-md);
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding-block: var(--space-2);
+  padding-block: 0;
   padding-inline: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
@@ -167,11 +260,8 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   cursor: not-allowed;
 }
 
-.bycoda-arc.bycoda-arc-select:active:not(:disabled),
-.bycoda-arc.bycoda-arc-select[data-state="open"] {
-  background: var(--ui-surface-pressed);
-}
-
+/* The trigger is a field: hover, press and open answer with the frame only (select.module.css);
+   its fill keeps the neutral field tone. Options below keep their own row states. */
 .bycoda-arc-select-chevron {
   color: var(--ui-text-secondary);
 }
@@ -214,28 +304,44 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bycoda-arc.bycoda-arc-select:hover:not(:disabled),
   .bycoda-arc .bycoda-arc-select-option:hover:not([data-highlighted], [aria-selected="true"]) {
     background: var(--ui-surface-hover);
   }
 }
 
-/* Text controls match :focus-visible on pointer focus too. Keep their focus
-   indicator on the existing border instead of drawing a second outer frame.
+/* Text controls match :focus-visible on pointer focus too. Use the adjusted
+   interaction ink, which stays visible for white/black custom accents.
    Retain a real outline so forced-colors mode can still expose focus. */
-.bycoda-arc.bycoda-arc-field :is(input, textarea):focus-visible,
-[data-ui-focus="input"]:focus-visible,
-.bycoda-arc [data-ui-focus="input"]:focus-visible,
-[data-ui-focus-group]:has([data-ui-focus="group"]:focus-visible) {
-  outline: 1px solid var(--foreground, var(--color-content));
-  outline-offset: -1px;
-  box-shadow: none;
+@media (hover: hover) and (pointer: fine) {
+  .bycoda-arc.bycoda-arc-field
+    :is(input, textarea):hover:not(:disabled, :focus-visible, [aria-invalid="true"]) {
+    border-color: var(--ui-field-border-hover);
+  }
 }
 
-.bycoda-arc.bycoda-arc-field :is(input, textarea)[aria-invalid="true"]:focus-visible,
+.bycoda-arc.bycoda-arc-field :is(input, textarea):focus-visible:not([aria-invalid="true"]) {
+  border-color: var(--ui-field-border-focus);
+}
+
+/* [data-composer-box] is a legacy alias of data-ui-focus-quiet until Composer.tsx sets the
+   attribute itself; remove it from both selectors then. */
+.bycoda-arc.bycoda-arc-field :is(input, textarea):not(:where([data-field-control] *)):focus-visible,
+[data-ui-focus="input"]:focus-visible,
+.bycoda-arc [data-ui-focus="input"]:focus-visible,
+[data-ui-focus-group]:not(:where([data-ui-focus-quiet], [data-composer-box])):has(
+    [data-ui-focus="group"]:focus-visible
+  ) {
+  outline: none;
+  box-shadow: var(--ui-focus-ring);
+}
+
+.bycoda-arc.bycoda-arc-field
+  :is(input, textarea)[aria-invalid="true"]:not(:where([data-field-control] *)):focus-visible,
 [data-ui-focus="input"][aria-invalid="true"]:focus-visible,
-[data-ui-focus-group]:has([data-ui-focus="group"][aria-invalid="true"]:focus-visible) {
-  outline-color: var(--danger, var(--color-danger));
+[data-ui-focus-group]:not(:where([data-ui-focus-quiet], [data-composer-box])):has(
+    [data-ui-focus="group"][aria-invalid="true"]:focus-visible
+  ) {
+  box-shadow: var(--ui-focus-ring-invalid);
 }
 
 /* Focus is visible on the composite border or the already framed menu, never both. */
@@ -244,6 +350,40 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 [data-ui-focus="menu"]:focus-visible {
   outline: none;
   box-shadow: none;
+}
+
+/* Let Windows high contrast choose the palette, while keeping keyboard focus
+   and text ranges explicit even when the component uses border-only focus. */
+@media (forced-colors: active) {
+  :root {
+    --ui-focus-ring-color: Highlight !important;
+    --ui-field-border-focus: Highlight !important;
+    --ui-control-border: ButtonText !important;
+    --ui-text-selection-background: Highlight !important;
+    --ui-text-selection-foreground: HighlightText !important;
+  }
+
+  html :is(button, input, textarea, select, a[href], [tabindex]):focus-visible,
+  html [data-ui-focus-group]:has([data-ui-focus="group"]:focus-visible) {
+    outline: var(--ui-focus-width) solid Highlight !important;
+    outline-offset: var(--ui-focus-offset) !important;
+  }
+
+  html [data-ui-focus-group] [data-ui-focus="group"]:focus-visible,
+  html [data-field-control] :is(input, textarea):focus-visible {
+    outline: none !important;
+  }
+
+  html
+    :is([data-button-selected], .bycoda-arc-select-option[aria-selected="true"]):not(
+      :disabled,
+      [aria-disabled="true"]
+    ) {
+    color: HighlightText;
+    background: Highlight;
+    border-color: Highlight;
+    forced-color-adjust: none;
+  }
 }
 
 .bycoda-arc[data-select-variant="pill"],
@@ -284,7 +424,7 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 }
 
 .bycoda-arc.bycoda-arc-morph[data-open] {
-  z-index: 80;
+  z-index: var(--layer-popover);
 }
 
 /* MorphSelect expands its own surface rather than spawning a second portal. */
@@ -307,6 +447,8 @@ html[data-control-density="touch"] .bycoda-arc-switch {
     --duration-instant: 0ms;
     --duration-fast: 0ms;
     --duration-standard: 0ms;
+    --duration-spring: 0ms;
+    --duration-considered: 0ms;
   }
 }
 
@@ -332,6 +474,25 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   --focus-outline-width: 1px;
   min-inline-size: 0;
   max-inline-size: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Scoped rules above re-declare these roles; keep reduced motion last. */
+  .bycoda-arc.bycoda-arc-morph,
+  .bycoda-arc:is(
+    .bycoda-arc-json,
+    .bycoda-arc-filters,
+    .bycoda-arc-table,
+    .bycoda-arc-date-range,
+    .bycoda-arc-inline-edit,
+    .bycoda-arc-usage,
+    .bycoda-arc-shortcut,
+    .bycoda-arc-confirm,
+    .bycoda-arc-image-compare
+  ) {
+    --duration-spring: 0ms;
+    --duration-considered: 0ms;
+  }
 }
 .bycoda-arc-filters {
   padding: var(--space-2);
@@ -450,4 +611,20 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   .bycoda-image-compare-picker:hover {
     background: var(--color-selection-subtle);
   }
+}
+
+.bycoda-arc.bycoda-arc-select[data-field-size="sm"] {
+  min-block-size: var(--ui-field-height-sm);
+}
+.bycoda-arc .bycoda-arc-select-option {
+  border-radius: calc(var(--ui-field-radius) - 2px);
+}
+.bycoda-arc .bycoda-arc-select-option:is([data-highlighted], [aria-selected="true"]) {
+  box-shadow: inset 0 0 0 1px var(--ui-field-border);
+}
+/* Native select uses the same field focus; custom selects share the adapter rule. */
+select.bycoda-arc-select:focus-visible {
+  outline: none;
+  border-color: var(--ui-field-border-focus);
+  box-shadow: var(--ui-focus-ring);
 }

@@ -1,16 +1,14 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Popover } from "../../../shared/ui/Popover";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
+import { Badge } from "../../../shared/ui/Badge";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n";
-import {
-  CaseSensitive,
-  ListFilter,
-  ChevronLeft,
-  LoaderCircle,
-  Regex,
-  WholeWord,
-} from "../../../shared/ui/icons";
+import { CaseSensitive, ListFilter, ChevronLeft, Regex, WholeWord } from "../../../shared/ui/icons";
 import {
   useEffect,
   useMemo,
@@ -27,9 +25,11 @@ import {
   type ProjectSearchOptions,
   type ProjectSearchResult,
 } from "../../search/model/search";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
+import { isImeComposition } from "../../../shared/lib/keyboard";
+import { hasActiveOverlay } from "../../../shared/ui/overlay";
 
 type Props = {
   cwd: string;
@@ -50,6 +50,8 @@ type MatchGroup = {
   path: string;
   relative: string;
   name: string;
+  /** Parent folder of the file; empty at the project root. */
+  directory: string;
   matches: ProjectSearchMatch[];
 };
 
@@ -113,7 +115,15 @@ function ProjectSearchContent({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      // Child popups (filters, field menus) and IME composition own Escape first;
+      // Project Search closes only when nothing else claims the key.
+      if (
+        event.key !== "Escape" ||
+        isImeComposition(event) ||
+        event.defaultPrevented ||
+        hasActiveOverlay()
+      )
+        return;
       event.preventDefault();
       event.stopPropagation();
       onCloseRef.current();
@@ -173,39 +183,25 @@ function ProjectSearchContent({
   };
 
   const onQueryKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onClose();
-      return;
-    }
-    if (event.key === "Enter" && matches[0]) {
+    // Escape is owned by the window listener above, which yields to IME and overlays.
+    if (event.key === "Enter" && !isImeComposition(event.nativeEvent) && matches[0]) {
       event.preventDefault();
       openMatch(matches[0]);
     }
   };
 
   if (!cwd || cwd === "~") {
-    return (
-      <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">{t("No project folder")}</p>
-    );
+    return <EmptyState size="inline" className="px-3 py-2" description={t("No project folder")} />;
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {showHeader ? (
         <div className="flex shrink-0 items-center gap-1 border-b border-stroke px-1.5 py-1">
-          <Button
-            variant="ghost"
-            motion="none"
-            type="button"
-            onClick={onClose}
-            title={t("Back to files")}
-            aria-label={t("Back to files")}
-            className="grid size-7 shrink-0 place-items-center"
-          >
-            <ChevronLeft className="size-4" strokeWidth={1.75} />
+          <Button variant="ghost" iconOnly label={t("Back to files")} onClick={onClose}>
+            <ChevronLeft className="icon-md" strokeWidth={1.75} />
           </Button>
-          <span className="min-w-0 flex-1 truncate text-[12px] text-(--ui-text-secondary)">
+          <span className="min-w-0 flex-1 truncate text-ui-caption text-(--ui-text-secondary)">
             {t("Search in files")}
           </span>
         </div>
@@ -231,7 +227,7 @@ function ProjectSearchContent({
           aria-expanded={!!filtersAnchor}
           onClick={(event) => setFiltersAnchor(filtersAnchor ? null : event.currentTarget)}
         >
-          <ListFilter className="size-4" />
+          <ListFilter className="icon-md" />
         </Button>
       </div>
       {filtersAnchor ? (
@@ -250,21 +246,21 @@ function ProjectSearchContent({
               active={caseSensitive}
               onClick={() => setCaseSensitive((value) => !value)}
             >
-              <CaseSensitive className="size-3.5" strokeWidth={1.75} />
+              <CaseSensitive className="icon-sm" strokeWidth={1.75} />
             </Toggle>
             <Toggle
               label={t("Match whole word")}
               active={wholeWord}
               onClick={() => setWholeWord((value) => !value)}
             >
-              <WholeWord className="size-3.5" strokeWidth={1.75} />
+              <WholeWord className="icon-sm" strokeWidth={1.75} />
             </Toggle>
             <Toggle
               label={t("Use regular expression")}
               active={regex}
               onClick={() => setRegex((value) => !value)}
             >
-              <Regex className="size-3.5" strokeWidth={1.75} />
+              <Regex className="icon-sm" strokeWidth={1.75} />
             </Toggle>
           </div>
           <TextField
@@ -302,14 +298,11 @@ function ProjectSearchContent({
           </Button>
         </Popover>
       ) : null}
-      <div className="flex min-h-8 shrink-0 items-center gap-2 px-3 py-1.5 text-[11px] text-(--ui-text-secondary)">
+      <div className="flex min-h-8 shrink-0 items-center gap-2 px-3 py-1.5 text-ui-micro text-(--ui-text-secondary)">
         {loading ? (
-          <>
-            <LoaderCircle className="size-3 animate-spin" strokeWidth={1.75} />
-            <span>{t("Searching…")}</span>
-          </>
+          <LoadingText delay={false}>{t("Searching…")}</LoadingText>
         ) : error ? (
-          <span className="text-danger">{error}</span>
+          <InlineError>{error}</InlineError>
         ) : query.trim() ? (
           <span>
             {matchCount === 0
@@ -334,19 +327,21 @@ function ProjectSearchContent({
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">
         {groups.map((group) => (
           <section key={group.path} className="border-b border-stroke">
-            <div className="flex items-center gap-1.5 px-2 py-1.5">
-              <FileTypeIcon name={group.name} isDir={false} size={16} />
-              <span className="min-w-0 flex-1 truncate text-[12px] text-content">{group.name}</span>
-              <span className="rounded-full bg-[var(--ui-tone-accent-subtle)] px-1.5 py-0.5 text-(length:--ui-font-caption) tabular-nums text-accent">
-                {group.matches.length}
+            {/* One line per file: name, then its folder (full path on hover when it is cut). */}
+            <div className="flex min-w-0 items-center gap-1.5 px-2 py-1">
+              <FileTypeIcon name={group.name} isDir={false} size="md" />
+              <span className="min-w-0 max-w-[60%] shrink-0 truncate text-ui-caption text-content">
+                {group.name}
               </span>
+              <OverflowTooltip label={group.relative}>
+                <span className="min-w-0 flex-1 truncate text-ui-micro text-(--ui-text-muted)">
+                  {group.directory}
+                </span>
+              </OverflowTooltip>
+              <Badge variant="count" size="xs" tone="accent" max={Infinity}>
+                {group.matches.length}
+              </Badge>
             </div>
-            <p
-              className="truncate px-2 pb-1 text-(length:--ui-font-caption) text-(--ui-text-secondary)"
-              title={group.relative}
-            >
-              {group.relative}
-            </p>
             <ul>
               {group.matches.map((match) => (
                 <li key={`${match.path}:${match.line}:${match.column}`}>
@@ -358,10 +353,10 @@ function ProjectSearchContent({
                     onDoubleClick={() => openMatch(match, true)}
                     className="flex w-full items-start gap-2 text-left"
                   >
-                    <span className="w-7 shrink-0 pt-px text-right font-mono text-[11px] text-(--ui-text-secondary) tabular-nums">
+                    <span className="w-7 shrink-0 pt-px text-right font-mono text-ui-micro text-(--ui-text-secondary) tabular-nums">
                       {match.line}
                     </span>
-                    <span className="min-w-0 flex-1 truncate font-mono text-[11px] leading-5 text-[var(--color-content)]">
+                    <span className="min-w-0 flex-1 truncate font-mono text-ui-micro leading-5 text-content">
                       <MatchPreview
                         preview={match.preview.trimEnd()}
                         query={query.trim()}
@@ -395,16 +390,7 @@ function Toggle({
 }) {
   useLocale();
   return (
-    <Button
-      variant="ghost"
-      motion="none"
-      type="button"
-      title={label}
-      aria-label={label}
-      aria-pressed={active}
-      onClick={onClick}
-      className={` grid size-6 place-items-center  ${active ? "" : ""}  `}
-    >
+    <Button variant="ghost" iconOnly label={label} aria-pressed={active} onClick={onClick}>
       {children}
     </Button>
   );
@@ -418,10 +404,12 @@ function groupMatches(matches: ProjectSearchMatch[]): MatchGroup[] {
       existing.matches.push(match);
       continue;
     }
+    const slash = match.relative.lastIndexOf("/");
     byPath.set(match.path, {
       path: match.path,
       relative: match.relative,
-      name: match.relative.split("/").pop() ?? match.relative,
+      name: match.relative.slice(slash + 1),
+      directory: slash < 0 ? "" : match.relative.slice(0, slash),
       matches: [match],
     });
   }

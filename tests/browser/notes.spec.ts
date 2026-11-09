@@ -1,4 +1,34 @@
 import { expect, test, type Page } from "@playwright/test";
+import { dropAnnouncer, dropBadge, dropMarks, fileDrag, files, textDrag } from "./external-drop";
+
+test("image picker keeps progress on its button and note content readable", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/tests/browser/notes.html");
+  const image = page.getByRole("button", { name: "Insert image", exact: true });
+  await image.focus();
+  await image.press("Enter");
+  await expect(image).toHaveAttribute("aria-busy", "true");
+  await expect(image).toBeFocused();
+  await expect(page.getByText("Adding images…", { exact: true })).toHaveCount(0);
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    await page.screenshot({ path: testInfo.outputPath(`image-picker-390-${theme}.png`) });
+  }
+  await page.evaluate(() => (window as any).imagePickerControl.finish());
+  await expect(image).not.toHaveAttribute("aria-busy", "true");
+  expect(
+    await page.evaluate(() =>
+      (window as any).notesFixtureCalls.filter(
+        (call: { command: string }) => call.command === "notes_upsert",
+      ),
+    ),
+  ).toHaveLength(0);
+});
 
 test("fills the note workspace and exposes each pane's remaining content", async ({
   page,
@@ -6,6 +36,9 @@ test("fills the note workspace and exposes each pane's remaining content", async
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/notes.html?long");
   const panes = page.locator(".note-editor-pane");
+  // Document is the default view; Split shows both panes side by side.
+  await expect(panes).toHaveCount(1);
+  await page.getByRole("tab", { name: "Split", exact: true }).click();
   await expect(panes).toHaveCount(2);
   await expect(page.getByRole("button", { name: "More below", exact: true })).toHaveCount(2);
   for (const width of [1440, 1024, 768, 390]) {
@@ -36,11 +69,16 @@ test("fills the note workspace and exposes each pane's remaining content", async
   await preview.locator(".note-pane-scroll").evaluate((node) => {
     node.scrollTop = node.scrollHeight;
   });
-  await expect(preview.locator(".note-pane-footer")).toHaveText("End of note");
+  await expect(preview.getByRole("button", { name: "More below", exact: true })).toHaveCount(0);
+  expect(
+    await preview
+      .locator(".note-pane-scroll")
+      .evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
+  ).toBeLessThanOrEqual(2);
   await expect(preview.getByRole("button", { name: "Add text", exact: true })).toBeInViewport();
   await page.getByRole("tab", { name: "Source", exact: true }).click();
   await expect(panes).toHaveCount(1);
-  await page.getByRole("tab", { name: "Edit preview", exact: true }).click();
+  await page.getByRole("tab", { name: "Document", exact: true }).click();
   await expect(panes).toHaveCount(1);
   await expect(preview).toHaveCount(0);
   await page.getByRole("tab", { name: "Split", exact: true }).click();
@@ -126,7 +164,8 @@ test("bulk selection spans pages, confirms explicitly and deletes only selected 
   await page.getByRole("button", { name: "Select notes", exact: true }).click();
   await page.getByRole("checkbox", { name: "Select all filtered notes", exact: true }).check();
   await expect(page.getByText("42 selected", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Show more", exact: true }).click();
+  // The library is one continuous list; every filtered note row is selected.
+  await expect(page.locator('.note-selectable-row input[type="checkbox"]')).toHaveCount(42);
   for (const checkbox of await page.locator('.note-selectable-row input[type="checkbox"]').all()) {
     await expect(checkbox).toBeChecked();
   }
@@ -140,7 +179,6 @@ test("bulk selection spans pages, confirms explicitly and deletes only selected 
     ),
   ).toBe(42);
   await page.getByRole("checkbox", { name: "Select all filtered notes", exact: true }).uncheck();
-  await page.getByRole("button", { name: "Back", exact: true }).first().click();
   await page.getByRole("checkbox", { name: "Select note: Release planning", exact: true }).check();
   await page.getByRole("button", { name: "Delete selected", exact: true }).click();
   await page
@@ -160,8 +198,11 @@ test("bulk selection spans pages, confirms explicitly and deletes only selected 
 });
 
 test("narrow library and editor switch without losing a draft", async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/tests/browser/notes.html?theme=light");
+  // Retain Split as the desktop mode, then narrow the window to a single pane.
+  await page.getByRole("tab", { name: "Split", exact: true }).click();
+  await expect(page.locator(".note-editor-pane")).toHaveCount(2);
+  await page.setViewportSize({ width: 390, height: 844 });
   const title = page.getByRole("textbox", { name: "Note title", exact: true });
   await title.fill("Narrow layout draft");
   await expect(title).toBeInViewport();
@@ -181,14 +222,13 @@ test("narrow library and editor switch without losing a draft", async ({ page },
     "true",
   );
   await expect(page.locator(".note-editor-pane")).toHaveCount(1);
-  await page.locator(".note-detail-tags > summary").click();
   const tags = page.locator('.note-detail-tags [data-tag="release"]');
   await expect(tags).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({
     path: `temp/verification/2026-10-19-notes/${testInfo.project.name}-narrow-light.png`,
   });
-  await page.getByRole("tab", { name: "Edit preview", exact: true }).click();
+  await page.getByRole("tab", { name: "Document", exact: true }).click();
   await expect(page.locator(".note-editor-pane")).toHaveCount(1);
   await page.setViewportSize({ width: 1440, height: 950 });
   await expect(page.getByRole("tab", { name: "Split", exact: true })).toHaveAttribute(
@@ -204,8 +244,14 @@ test("shared tags, searchable filters and visible save preserve note drafts", as
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/notes.html?theme=light");
-  await page.locator(".note-detail-tags > summary").click();
   const tags = page.getByRole("textbox", { name: "Add note tag", exact: true });
+  // The tag shell measures its rows right after mount and re-renders once. WebKit can
+  // deliver the first input while that measured render is in flight and drops it, so
+  // wait for the measured height before typing, as a person would.
+  await expect(page.locator(".note-detail-tags [data-ui-focus-group]")).toHaveAttribute(
+    "style",
+    /height: \d+px/,
+  );
   await tags.fill("#NEWTAG,");
   await expect(page.locator('.note-detail-tags [data-tag="newtag"]')).toBeVisible();
   await tags.fill("日本語");
@@ -272,7 +318,8 @@ test("quotes selected note text from preview and source through the contextual m
       page.evaluate(() => (window as unknown as { selectedQuotes: unknown[] }).selectedQuotes),
     )
     .toEqual([{ text: "Write the launch summary here.", mode: "quote" }]);
-  const source = page.locator(".note-split > div:first-child .cm-content");
+  await page.getByRole("tab", { name: "Source", exact: true }).click();
+  const source = page.locator(".note-editor-pane .cm-content");
   await source.click();
   await page.keyboard.press("ControlOrMeta+Home");
   await page.keyboard.press("Shift+End");
@@ -297,19 +344,26 @@ test("keeps note controls compact and confirms deletion in a focused dialog", as
   const options = page.getByRole("dialog", { name: "Filters and options" });
   await expect(options).toBeVisible();
   await choose(page, "Filter by tag", "#ideas");
-  await expect(filters).toHaveAttribute("data-active", "true");
+  // The shared FilterTrigger shows how many filters narrow the library.
+  await expect(filters).toContainText("1");
   await page.keyboard.press("Escape");
   await expect(options).toHaveCount(0);
   await expect(filters).toBeFocused();
+  await page.getByRole("button", { name: "Reset project and tag filters", exact: true }).click();
+  await expect(filters).not.toContainText("1");
   await expect(page.getByLabel("Note title", { exact: true })).toBeVisible();
   const header = await page.locator(".note-detail-header").boundingBox();
   expect(header!.height).toBeLessThan(120);
   const title = await page.getByLabel("Note title", { exact: true }).boundingBox();
   const actions = await page.locator(".note-detail-actions").boundingBox();
   expect(actions!.x).toBeGreaterThan(title!.x + title!.width);
+  // Delete is not a primary header control: it lives behind the note actions menu.
+  await expect(page.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
+  const menu = page.getByRole("button", { name: "Note actions", exact: true });
   await page.screenshot({
     path: `temp/verification/2026-10-13-notes-controls/${testInfo.project.name}-wide.png`,
   });
+  await menu.click();
   const remove = page.getByRole("button", { name: "Delete", exact: true });
   await remove.click();
   const confirmation = page.getByRole("group", { name: "Delete note permanently?" });
@@ -320,10 +374,14 @@ test("keeps note controls compact and confirms deletion in a focused dialog", as
   });
   await page.keyboard.press("Escape");
   await expect(confirmation).toHaveCount(0);
+  // Escape answers the question only; the menu stays open until the next Escape.
   await expect(remove).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Note actions" })).toHaveCount(0);
+  await expect(menu).toBeFocused();
   await expect(page.getByLabel("Note title", { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 850, height: 700 });
-  await expect(remove).toBeVisible();
+  await expect(menu).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({
     path: `temp/verification/2026-10-13-notes-controls/${testInfo.project.name}-compact.png`,
@@ -332,10 +390,15 @@ test("keeps note controls compact and confirms deletion in a focused dialog", as
 
 test("groups and filters many notes, edits both panes, formats and saves preview changes", async ({
   page,
-}) => {
+}, info) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/tests/browser/notes.html");
+  await expect(page.getByRole("tab", { name: "Document", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.getByRole("tab", { name: "Split", exact: true }).click();
   await expect(page.getByRole("tab", { name: "Split", exact: true })).toHaveAttribute(
     "aria-selected",
     "true",
@@ -347,15 +410,15 @@ test("groups and filters many notes, edits both panes, formats and saves preview
   await page.keyboard.press("ControlOrMeta+End");
   await page.keyboard.type("\n\nSource input works.");
   await expect(page.locator("[data-note-preview]")).toContainText("Source input works.");
-  await page.getByRole("tab", { name: "Edit preview", exact: true }).click();
-  await page.locator(".note-edit-block").nth(1).click();
+  await page.getByRole("tab", { name: "Document", exact: true }).click();
+  await page.locator("[data-note-preview] .note-preview-content").nth(1).click();
   const block = page.locator(".note-active-block .cm-content");
   await block.click();
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Edited from preview");
   await page.keyboard.press("ControlOrMeta+A");
   await page.getByRole("button", { name: /^Bold/ }).click();
-  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await page.getByRole("button", { name: "Read document", exact: true }).click();
   await expect(page.locator('[data-note-preview] [data-streamdown="strong"]')).toHaveText(
     "Edited from preview",
   );
@@ -377,14 +440,42 @@ test("groups and filters many notes, edits both panes, formats and saves preview
     .toContain("const preserve = true;");
   await page.getByRole("button", { name: "Filters and options", exact: true }).click();
   await choose(page, "Filter by project", /mobile/i);
-  await expect(page.locator("[data-note-library] li")).toHaveCount(14);
+  // Each note also contains a semantic Tags list; count canonical note cards,
+  // not the nested tag listitems.
+  const cards = page.locator("[data-note-library] [data-note-id]");
+  await expect(cards).toHaveCount(14);
+  expect(
+    await cards.evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute("data-note-id")).sort(),
+    ),
+  ).toEqual(Array.from({ length: 14 }, (_, index) => `note-${index * 3 + 1}`).sort());
+  const capture = async (state: string) => {
+    for (const light of [false, true]) {
+      await page.evaluate(
+        (value) => document.documentElement.classList.toggle("theme-light", value),
+        light,
+      );
+      await page.screenshot({
+        animations: "disabled",
+        path: info.outputPath(`${state}-${light ? "light" : "dark"}.png`),
+      });
+    }
+  };
+  await capture("project-filter");
   await choose(page, "Filter by tag", "#ideas");
-  await expect(page.locator("[data-note-library] li")).toHaveCount(7);
+  await expect(cards).toHaveCount(7);
+  expect(
+    await cards.evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute("data-note-id")).sort(),
+    ),
+  ).toEqual(Array.from({ length: 7 }, (_, index) => `note-${index * 6 + 1}`).sort());
   await choose(page, "Group notes by", "Tags");
   await expect(page.locator(".note-group-heading")).toHaveCount(1);
+  await capture("project-tag-filter");
   await page.keyboard.press("Escape");
   await page.locator(".note-group-heading").click();
-  await expect(page.locator("[data-note-library] li")).toHaveCount(0);
+  await expect(cards).toHaveCount(0);
+  await capture("collapsed-group");
   expect(errors).toEqual([]);
 });
 
@@ -392,6 +483,7 @@ test("uses available width and keeps the toolbar usable in smaller windows", asy
   page,
 }, testInfo) => {
   await page.goto("/tests/browser/notes.html?lang=tr");
+  await page.getByRole("tab", { name: "Bölünmüş görünüm", exact: true }).click();
   await expect(page.locator(".note-split")).toBeVisible();
   const width = await page.locator(".note-detail-content").boundingBox();
   expect(width!.width).toBeGreaterThan(1150);
@@ -412,11 +504,17 @@ test("bounds a thousand large notes while fetching selected details and moving k
   page,
 }, testInfo) => {
   const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("pageerror", (error) => {
+    // WebKit reports the browser's benign ResizeObserver loop notice as an error event while the
+    // virtual library measures rows that scrolled into view; it is not an application exception.
+    if (!error.message.startsWith("ResizeObserver loop")) errors.push(error.message);
+  });
   await page.goto("/tests/browser/notes.html?count=1000");
   await expect(page.getByLabel("Note title", { exact: true })).toHaveValue("Release planning");
-  const cards = page.locator("[data-note-library] li button");
-  await expect.poll(() => cards.count()).toBeLessThanOrEqual(32);
+  // The library renders a bounded virtual window instead of 32-note pages.
+  const cards = page.locator("[data-note-library] button[data-note-id]");
+  const bounded = () => expect.poll(() => cards.count()).toBeLessThanOrEqual(64);
+  await bounded();
   const initialCalls = await page.evaluate(
     () =>
       (window as unknown as { notesFixtureCalls: { command: string; bytes?: number }[] })
@@ -430,12 +528,16 @@ test("bounds a thousand large notes while fetching selected details and moving k
   await page.getByRole("button", { name: "Filters and options", exact: true }).click();
   await choose(page, "Group notes by", "No grouping");
   await page.keyboard.press("Escape");
-  await expect(cards).toHaveCount(32);
+  await expect(page.locator('[data-note-library] [data-note-id="note-1"]')).toBeVisible();
+  await bounded();
+  // ArrowDown from the last rendered card moves past the window edge.
+  const lastId = await cards.last().getAttribute("data-note-id");
+  const nextIndex = Number(lastId!.replace("note-", "")) + 1;
   await cards.last().focus();
   await page.keyboard.press("ArrowDown");
-  await expect(page.locator('[data-note-id="note-32"]')).toBeFocused();
-  await expect(page.getByLabel("Note title", { exact: true })).toHaveValue("Note 32");
-  await expect(cards).toHaveCount(32);
+  await expect(page.locator(`[data-note-id="note-${nextIndex}"]`)).toBeFocused();
+  await expect(page.getByLabel("Note title", { exact: true })).toHaveValue(`Note ${nextIndex}`);
+  await bounded();
   await page.getByLabel("Filter notes", { exact: true }).fill("Search marker past preview 999");
   await expect(cards).toHaveCount(1);
   await cards.first().click();
@@ -446,14 +548,13 @@ test("bounds a thousand large notes while fetching selected details and moving k
   await page.getByRole("button", { name: "Clear filters", exact: true }).first().click();
   // The list uses a deferred query. Wait until its full-library result has
   // painted before navigating within that result, including on WebKit.
-  await expect(page.getByText("1000 of 1000 notes", { exact: true })).toBeVisible();
-  await expect(cards).toHaveCount(8);
-  await expect.poll(() => cards.count()).toBeLessThanOrEqual(32);
+  await expect(page.getByText("1000 notes", { exact: true })).toBeVisible();
+  await bounded();
   await expect(page.locator('[data-note-library] [aria-current="true"]')).toBeInViewport();
   await page.locator('[data-note-id="note-999"]').focus();
   await page.keyboard.press("Home");
   await expect(page.locator('[data-note-id="note-0"]')).toBeFocused();
-  await expect(cards).toHaveCount(32);
+  await bounded();
   const calls = await page.evaluate(
     () =>
       (
@@ -464,7 +565,7 @@ test("bounds a thousand large notes while fetching selected details and moving k
   );
   expect(calls.filter((call) => call.command === "notes_get").map((call) => call.id)).toEqual([
     "note-0",
-    "note-32",
+    `note-${nextIndex}`,
     "note-999",
   ]);
   expect(
@@ -477,3 +578,48 @@ test("bounds a thousand large notes while fetching selected details and moving k
     path: `temp/verification/2026-10-12-performance-fixes/notes/${testInfo.project.name}-large-library.png`,
   });
 });
+
+for (const theme of ["light", "dark"] as const) {
+  test(`external drop: the note editor shows Insert image, refuses other files and leaves text drops alone ${theme}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/tests/browser/notes.html?theme=${theme}`);
+    const zone = page.locator('[data-external-drop-owner="note-images"]');
+    await expect(zone).toBeVisible();
+    await page.getByRole("tab", { name: "Split", exact: true }).click();
+
+    // A text drag keeps the editor's own caret and text-drop behaviour: no mark, no badge.
+    await textDrag(zone, "dragover");
+    await expect(dropBadge(page)).toHaveCount(0);
+    await expect(dropMarks(page)).toHaveCount(0);
+
+    await fileDrag(zone, "dragover", files(1));
+    await expect(zone).toHaveAttribute("data-drop-indicator", "inside");
+    await expect(dropBadge(page)).toHaveText("Insert image");
+    await expect(dropAnnouncer(page)).toHaveText("Insert image");
+    await expect(dropMarks(page)).toHaveCount(1);
+    // The old in-editor overlay sentence is not drawn next to the badge.
+    await expect(zone.getByText("Drop images here")).toHaveCount(0);
+    await page.screenshot({ path: `temp/verification/vis-dnd-4/notes-insert-image-${theme}.png` });
+
+    await fileDrag(zone, "dragover", files(3));
+    await expect(dropBadge(page)).toHaveText("Insert 3 images");
+
+    await fileDrag(zone, "dragover", [{ name: "report.pdf", type: "application/pdf" }]);
+    await expect(zone).toHaveAttribute("data-drop-indicator", "blocked");
+    await expect(dropBadge(page)).toHaveText("Only images can be inserted here");
+    await expect(dropBadge(page)).toHaveAttribute("data-action", "blocked");
+    await page.screenshot({ path: `temp/verification/vis-dnd-4/notes-blocked-${theme}.png` });
+
+    await page.keyboard.press("Escape");
+    await expect(dropBadge(page)).toHaveCount(0);
+    await expect(dropMarks(page)).toHaveCount(0);
+    await fileDrag(zone, "dragover", files(1));
+    await fileDrag(zone, "dragleave", files(1), { x: 1, y: 1 });
+    await expect(dropMarks(page)).toHaveCount(0);
+    await fileDrag(zone, "dragover", files(1));
+    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await expect(dropBadge(page)).toHaveCount(0);
+  });
+}

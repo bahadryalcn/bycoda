@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { saveCrewTheme } from "../../settings/model/settings";
 import { PacingUncle } from "./PacingUncle";
 
 const state = vi.hoisted(() => ({ motion: true, paint: vi.fn() }));
@@ -11,16 +12,12 @@ vi.mock("../../settings/model/decorativeMotion", () => ({
 vi.mock("./pacingUncleArt", () => ({ drawPacingUncle: state.paint }));
 let root: Root;
 let container: HTMLDivElement;
-let raf: ReturnType<typeof vi.fn>;
-let cancel: ReturnType<typeof vi.fn>;
 beforeEach(() => {
+  localStorage.removeItem("bycoda.crewTheme");
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.motion = true;
   state.paint.mockClear();
-  raf = vi.fn(() => 42);
-  cancel = vi.fn();
-  vi.stubGlobal("requestAnimationFrame", raf);
-  vi.stubGlobal("cancelAnimationFrame", cancel);
   vi.stubGlobal("IntersectionObserver", undefined);
   vi.stubGlobal("ResizeObserver", undefined);
   vi.spyOn(document, "hidden", "get").mockReturnValue(false);
@@ -35,6 +32,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -44,34 +42,87 @@ describe("pacing uncle animation gate", () => {
     state.motion = false;
     render();
     expect(state.paint).toHaveBeenCalled();
-    expect(raf).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
   it("cancels the loop when its session becomes hidden", () => {
     render();
-    expect(raf).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(1);
     render(false);
-    expect(cancel).toHaveBeenCalledWith(42);
-    expect(raf).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
     render(true);
-    expect(raf).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(1);
   });
   it("suspends and resumes through the central motion gate", () => {
     render();
     state.motion = false;
     render();
-    expect(cancel).toHaveBeenCalledWith(42);
-    expect(raf).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
     state.motion = true;
     render();
-    expect(raf).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(1);
   });
   it("keeps the walk position when the session is hidden and shown again", () => {
     render();
-    raf.mock.calls[0][0](100);
-    raf.mock.calls[1][0](150);
+    act(() => vi.advanceTimersByTime(150));
+    const walked = state.paint.mock.lastCall?.[3] as number;
+    expect(walked).toBeGreaterThan(0);
     render(false);
-    expect(state.paint).toHaveBeenLastCalledWith(expect.anything(), 180, 32, 0.05);
+    expect(state.paint).toHaveBeenLastCalledWith(expect.anything(), 180, 32, walked, "classic");
     render(true);
-    expect(state.paint).toHaveBeenLastCalledWith(expect.anything(), 180, 32, 0.05);
+    expect(state.paint).toHaveBeenLastCalledWith(expect.anything(), 180, 32, walked, "classic");
+  });
+});
+
+describe("pacing character follows the crew theme", () => {
+  const theme = () => state.paint.mock.lastCall?.[4];
+  it("shows the classic rosary uncle when no appearance was ever chosen", () => {
+    expect(localStorage.getItem("bycoda.crewTheme")).toBeNull();
+    render();
+    expect(theme()).toBe("classic");
+  });
+  it.each(["banana", "", "Star-Wars", "null"])(
+    "falls back to the classic uncle for an invalid stored theme %j",
+    (value) => {
+      localStorage.setItem("bycoda.crewTheme", value);
+      render();
+      expect(theme()).toBe("classic");
+    },
+  );
+  it.each(["lotr", "star-wars", "matrix"] as const)(
+    "shows the %s character when it is chosen",
+    (value) => {
+      localStorage.setItem("bycoda.crewTheme", value);
+      render();
+      expect(theme()).toBe(value);
+    },
+  );
+  it("switches character on a theme change without a stale frame or extra timers", () => {
+    render();
+    expect(theme()).toBe("classic");
+    act(() => saveCrewTheme("lotr"));
+    expect(theme()).toBe("lotr");
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => saveCrewTheme("star-wars"));
+    expect(theme()).toBe("star-wars");
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => saveCrewTheme("classic"));
+    expect(theme()).toBe("classic");
+    expect(vi.getTimerCount()).toBe(1);
+  });
+  it("keeps the chosen character as a still frame without timers under reduced motion", () => {
+    localStorage.setItem("bycoda.crewTheme", "star-wars");
+    state.motion = false;
+    render();
+    expect(theme()).toBe("star-wars");
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => saveCrewTheme("lotr"));
+    expect(theme()).toBe("lotr");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("is decoration only: hidden from assistive technology and never takes pointer input", () => {
+    render();
+    const canvas = container.querySelector("canvas")!;
+    expect(canvas.getAttribute("aria-hidden")).toBe("true");
+    expect(canvas.className).toContain("pointer-events-none");
   });
 });

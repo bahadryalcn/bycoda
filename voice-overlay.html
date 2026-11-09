@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en" class="voice-overlay">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>bycoda</title>
+    <style>
+      /* The window is clear; the voice surface draws the only background. */
+      html.voice-overlay,
+      html.voice-overlay body,
+      html.voice-overlay #root {
+        margin: 0;
+        background: transparent !important;
+        overflow: clip;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/apps/desktop/src/voice-overlay.ts"></script>
+  </body>
+</html>

@@ -1,3 +1,9 @@
+import { processConstructions } from "../processConstruction.testSupport";
+import {
+  nativeOutputFrame,
+  captureNativeOutputEvent,
+  getNativeOutputEventOrigin,
+} from "../../core/nativeOutputDelivery.testSupport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { applyHarnessEvent } from "../../core/apply";
 import { newSession } from "../../../../features/sessions/model/session";
@@ -21,24 +27,27 @@ const writeChild = vi.fn(async (_id: string, line: string) => {
 });
 const readHarnessTaskOutput = vi.fn(async () => ({ text: "live output\n", truncated: false }));
 
-vi.mock("../../core/child", () => ({
-  resolveClaudeBinary: async () => ({ path: "/fake/claude" }),
-  spawnChild,
-  killChild: async () => undefined,
-  unwatchChild: () => undefined,
-  watchChild: (
-    _id: string,
-    line: (l: string) => void,
-    exit: (code?: number | null) => void,
-    stderr?: (line: string) => void,
-  ) => {
-    onLine = line;
-    onExit = exit;
-    onStderr = stderr;
-  },
-  writeChild,
-  readHarnessTaskOutput,
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    resolveClaudeBinary: async () => ({ path: "/fake/claude" }),
+    spawnChild,
+    killChild: async () => undefined,
+    unwatchChild: () => undefined,
+    watchChild: (
+      _id: string,
+      line: (l: string) => void,
+      exit: (code?: number | null) => void,
+      stderr?: (line: string) => void,
+    ) => {
+      onLine = line;
+      onExit = exit;
+      onStderr = stderr;
+    },
+    writeChild,
+    readHarnessTaskOutput,
+  }),
+);
 
 const {
   bindClaudeSession,
@@ -82,9 +91,12 @@ async function startTurn(
     intent?: TurnIntent;
     providerAccountId?: string;
     modelSettings?: Record<string, string>;
+    providerSessionId?: string;
   } = {},
 ) {
   const events: HarnessEvent[] = [];
+  const sentAtStart = sent.length;
+  const usersAtStart = parse().filter((message) => message.type === "user").length;
   const turn = sendClaudeTurn({
     sessionId,
     cwd: "/repo",
@@ -95,23 +107,37 @@ async function startTurn(
     providerAccountId: options.providerAccountId,
     text: "explore the codebase",
     attachments: [],
-    onEvent: (event) => events.push(event),
+    onEvent: (event) => {
+      captureNativeOutputEvent(sessionId, event);
+      events.push(event);
+    },
   });
 
   await waitFor(
     () =>
-      parse().some((m) => {
-        const request = m.request as Record<string, unknown> | undefined;
-        return request?.subtype === "initialize";
-      }),
+      parse()
+        .slice(sentAtStart)
+        .some((m) => {
+          const request = m.request as Record<string, unknown> | undefined;
+          return request?.subtype === "initialize";
+        }),
     "initialize",
   );
-  emit({ type: "system", subtype: "init", session_id: "sess_1" });
+  const initialize = parse()
+    .slice(sentAtStart)
+    .find(
+      (message) =>
+        (message.request as Record<string, unknown> | undefined)?.subtype === "initialize",
+    )!;
+  emit({ type: "system", subtype: "init", session_id: options.providerSessionId ?? "sess_1" });
   emit({
     type: "control_response",
-    response: { subtype: "success", request_id: "bycoda_1" },
+    response: { subtype: "success", request_id: initialize.request_id },
   });
-  await waitFor(() => parse().some((m) => m.type === "user"), "user prompt");
+  await waitFor(
+    () => parse().filter((message) => message.type === "user").length > usersAtStart,
+    "user prompt",
+  );
   return { events, turn };
 }
 
@@ -280,6 +306,107 @@ afterEach(async () => {
 });
 
 describe("claude streamed tool inputs", () => {
+  it("keeps A's callback and supervised approval policy while full-access B is queued and cancelled", async () => {
+    const a = await startTurn("s1");
+    const physical = processConstructions.created.at(-1)!;
+    const bEvents: HarnessEvent[] = [];
+    const bOperation = Object.freeze({});
+    let selected!: () => void;
+    const selection = new Promise<void>((resolve) => {
+      selected = resolve;
+    });
+    const b = sendClaudeTurn({
+      sessionId: "s1",
+      cwd: "/repo",
+      model: "claude:claude-sonnet-5",
+      modelSettings: {},
+      runtimeMode: "full-access",
+      text: "never B",
+      attachments: [],
+      operationContext: Object.freeze({ operation: bOperation }),
+      onOriginalProcess: () => selected(),
+      onEvent: (event) => bEvents.push(event),
+    });
+    const outcome = b.catch((error: unknown) => error);
+    await selection;
+    emit({
+      type: "control_request",
+      request_id: "queued-policy-permission",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "Bash",
+        tool_use_id: "queued-policy-tool",
+        input: { command: "git status" },
+      },
+    });
+    await waitFor(
+      () =>
+        [...a.events, ...bEvents].some((event) => event.type === "approval.requested") ||
+        parse().some(
+          (message) =>
+            (message.response as Record<string, unknown>)?.request_id ===
+            "queued-policy-permission",
+        ),
+      "active A permission policy",
+    );
+    const asked = a.events.find(
+      (event): event is Extract<HarnessEvent, { type: "approval.requested" }> =>
+        event.type === "approval.requested",
+    );
+    expect(asked).toBeDefined();
+    expect(bEvents).toEqual([]);
+    expect(
+      parse().some(
+        (message) =>
+          (message.response as Record<string, unknown>)?.request_id === "queued-policy-permission",
+      ),
+    ).toBe(false);
+    respondClaudeApproval("s1", asked!.requestId, "deny", asked!.occurrenceId);
+    await waitFor(
+      () =>
+        parse().some(
+          (message) =>
+            (message.response as Record<string, unknown>)?.request_id ===
+            "queued-policy-permission",
+        ),
+      "original A permission reply",
+    );
+    await cancelClaudeTurn(
+      "s1",
+      Object.freeze({ operation: bOperation, originalProcesses: Object.freeze([physical]) }),
+    );
+    emitFollowUpTurn("still original A");
+    await a.turn;
+    expect(String(await outcome)).toContain("cancelled");
+    expect(a.events).toContainEqual(
+      expect.objectContaining({ type: "message.delta", text: "still original A" }),
+    );
+    expect(bEvents).toEqual([]);
+    const cEvents: HarnessEvent[] = [];
+    const c = sendClaudeTurn({
+      sessionId: "s1",
+      cwd: "/repo",
+      model: "claude:claude-sonnet-5",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      text: "fresh C",
+      attachments: [],
+      onEvent: (event) => cEvents.push(event),
+    });
+    await waitFor(
+      () => parse().filter((message) => message.type === "user").length === 2,
+      "fresh C prompt",
+    );
+    emitFollowUpTurn("fresh C output");
+    await c;
+    expect(cEvents).toContainEqual(
+      expect.objectContaining({ type: "message.delta", text: "fresh C output" }),
+    );
+    expect(processConstructions.created.filter((handle) => handle.sessionId === "s1")).toEqual([
+      physical,
+    ]);
+  });
+
   it.each(["interrupt", "stop_task"])(
     "keeps a turn observable and retryable when Stop cannot deliver %s",
     async (request) => {
@@ -308,6 +435,31 @@ describe("claude streamed tool inputs", () => {
       expect(settled).toBe(true);
     },
   );
+  it("holds the next prompt until the stopped query's result drains", async () => {
+    const first = await startTurn("s1");
+    await cancelClaudeTurn("s1");
+    await first.turn;
+    const users = () => parse().filter((message) => message.type === "user").length;
+    const before = users();
+    const send = () =>
+      sendClaudeTurn({
+        sessionId: "s1",
+        cwd: "/repo",
+        model: "claude:claude-sonnet-5",
+        modelSettings: {},
+        runtimeMode: "supervised",
+        text: "next",
+        attachments: [],
+        onEvent: () => undefined,
+      });
+    await expect(send()).rejects.toThrow("still settling");
+    expect(users()).toBe(before);
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    const next = send();
+    await waitFor(() => users() === before + 1, "next admitted prompt");
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await next;
+  });
   it("launches the selected advisor and rebinds when it is disabled", async () => {
     const first = await startTurn("advisor-session", {
       modelSettings: { advisor: "opus", subagentModel: "haiku", subagentPolicy: "force" },
@@ -556,6 +708,10 @@ describe("claude task tools", () => {
     } = {},
   ) {
     const spawnCount = spawned.length;
+    const initializeCount = parse().filter(
+      (message) =>
+        (message.request as Record<string, unknown> | undefined)?.subtype === "initialize",
+    ).length;
     const userCount = parse().filter((message) => message.type === "user").length;
     const turn = sendClaudeTurn({
       sessionId: "s1",
@@ -569,7 +725,15 @@ describe("claude task tools", () => {
       attachments: [],
       onEvent: (event) => events.push(event),
     });
-    await waitFor(() => spawned.length === spawnCount + 1, "replacement Claude process");
+    await waitFor(
+      () =>
+        spawned.length === spawnCount + 1 &&
+        parse().filter(
+          (message) =>
+            (message.request as Record<string, unknown> | undefined)?.subtype === "initialize",
+        ).length > initializeCount,
+      "replacement Claude process initialization",
+    );
     emit({
       type: "system",
       subtype: "init",
@@ -941,6 +1105,28 @@ describe("claude model switching", () => {
 });
 
 describe("claude startup failures", () => {
+  it("rejects a typed OAuth failure even when the CLI follows it with a success result", async () => {
+    const { events, turn } = await startTurn("s1");
+    const failed = expect(turn).rejects.toThrow("OAuth session expired");
+    emit({
+      type: "assistant",
+      error: "authentication_failed",
+      message: {
+        content: [
+          {
+            type: "text",
+            text: "Failed to authenticate: OAuth session expired and could not be refreshed",
+          },
+        ],
+      },
+    });
+    emit({ type: "result", subtype: "success" });
+    await failed;
+    expect(events).toContainEqual({
+      type: "session.error",
+      message: "Failed to authenticate: OAuth session expired and could not be refreshed",
+    });
+  });
   function send(events: HarnessEvent[]) {
     return sendClaudeTurn({
       sessionId: "s1",
@@ -954,13 +1140,20 @@ describe("claude startup failures", () => {
     });
   }
 
-  it("yanıtsız Claude init reddedilir ve yeniden başlangıç temiz kalır", async () => {
+  it("an unanswered Claude init is rejected and a restart stays clean", async () => {
     vi.useFakeTimers();
     try {
       const events: HarnessEvent[] = [];
       const outcome = send(events).catch((error: Error) => error.message);
-      await vi.advanceTimersByTimeAsync(8_001);
+      await vi.advanceTimersByTimeAsync(30_001);
       expect(await outcome).toContain("initialize response timed out");
+      const startNotices = events.filter(
+        (event) => event.type === "status" && event.key === "provider-starting",
+      );
+      expect(startNotices.map((event) => (event as { text: string }).text)).toEqual([
+        "Starting Claude…",
+        "",
+      ]);
       expect(events.some((event) => event.type === "session.started")).toBe(false);
       expect(parse().some((message) => message.type === "user")).toBe(false);
     } finally {
@@ -989,22 +1182,28 @@ describe("claude startup failures", () => {
     await retry.turn;
   });
 
-  it("preserves the missing-conversation error and existing resume binding", async () => {
+  it("starts a fresh conversation with a warning when the resume session is missing", async () => {
     bindClaudeSession("s1", "missing-session", "/repo");
     const events: HarnessEvent[] = [];
     const turn = send(events);
-    const failed = expect(turn).rejects.toThrow(
-      "No conversation found with session ID: missing-session",
-    );
     await waitFor(() => sent.length > 0, "initialize");
     onStderr!("No conversation found with session ID: missing-session");
     onExit!(1);
-    await failed;
-    expect(events.some((e) => e.type === "session.started")).toBe(false);
-    const retry = await startTurn("s1");
-    expect(spawned[1]).toEqual(expect.arrayContaining(["--resume", "missing-session"]));
-    emit({ type: "result", subtype: "success", session_id: "sess_1" });
-    await retry.turn;
+    await waitFor(() => spawned.length === 2 && sent.length >= 2, "fresh initialize");
+    expect(spawned[1]).not.toContain("--resume");
+    const initialize = parse().at(-1)!;
+    emit({ type: "system", subtype: "init", session_id: "sess_fresh" });
+    emit({
+      type: "control_response",
+      response: { subtype: "success", request_id: initialize.request_id },
+    });
+    await waitFor(() => parse().some((message) => message.type === "user"), "fresh prompt");
+    expect(events).toContainEqual({
+      type: "status",
+      text: expect.stringContaining("Starting a new session"),
+    });
+    emit({ type: "result", subtype: "success", session_id: "sess_fresh" });
+    await turn;
   });
 
   it("handles an exit before spawn resolves", async () => {
@@ -1072,6 +1271,7 @@ describe("claude legacy account resume", () => {
     bindClaudeSession("s1", "legacy-session", "/repo");
     const { turn } = await startTurn("s1", {
       providerAccountId: "default",
+      providerSessionId: "legacy-session",
     });
     expect(spawned[0]).toEqual(expect.arrayContaining(["--resume", "legacy-session"]));
     expect(spawned[0]).not.toContain("--session-id");
@@ -1205,6 +1405,153 @@ describe("claude session replay", () => {
   });
 });
 
+it("keeps an actual held A control write on its original handle while B is active", async () => {
+  // This is a protocol callback lifetime check; the fake does not enforce Native IPC fencing.
+  const first = await startTurn("s1");
+  const original = processConstructions.created[0];
+  emit({
+    type: "control_request",
+    request_id: "held-original-question",
+    request: {
+      subtype: "can_use_tool",
+      tool_name: "AskUserQuestion",
+      input: { questions: [{ question: "Scope?", options: [{ label: "Local" }] }] },
+    },
+  });
+  const question = first.events.find((event) => event.type === "question.asked")!;
+  expect(question).toBeDefined();
+  let release!: () => void;
+  let entered = false;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  writeChild.mockImplementationOnce(async (_locator, line) => {
+    entered = true;
+    sent.push(line);
+    await gate;
+  });
+  respondClaudeQuestion("s1", question.requestId, {
+    kind: "answered",
+    answers: { "Scope?": ["Local"] },
+  });
+  try {
+    await waitFor(() => entered, "original control write entered");
+    const originalWrite = processConstructions.operations.find(
+      (operation) =>
+        operation.kind === "write" &&
+        JSON.parse(operation.args[0] as string).response?.request_id === "held-original-question",
+    )!;
+    expect(originalWrite).toBeDefined();
+    expect(originalWrite.handle).toBe(original);
+    await stopClaudeSession("s1");
+    await first.turn;
+    sent.length = 0;
+    const second = await startTurn("s1");
+    const replacement = processConstructions.created[1];
+    expect(replacement).toBeDefined();
+    expect(replacement).not.toBe(original);
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "spawn").at(-1)
+        ?.handle,
+    ).toBe(replacement);
+    release();
+    await Promise.resolve();
+    await Promise.resolve();
+    const replies = processConstructions.operations.filter(
+      (operation) =>
+        operation.kind === "write" &&
+        JSON.parse(operation.args[0] as string).response?.request_id === "held-original-question",
+    );
+    expect(replies).toHaveLength(1);
+    expect(replies[0].handle).toBe(original);
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await second.turn;
+  } finally {
+    release();
+    await stopClaudeSession("s1");
+    await first.turn;
+  }
+});
+
+it("does not let an earlier Live approval occurrence resolve a replacement with the same UI ID", async () => {
+  let previous: { requestId: number; occurrenceId?: string } | undefined;
+  for (let generation = 0; generation < 2; generation++) {
+    sent.length = 0;
+    const startupAt = processConstructions.operations.length;
+    const { events, turn } = await startTurn("s1");
+    const construction = processConstructions.created.filter((handle) => handle.sessionId === "s1")[
+      generation
+    ]!;
+    expect(construction).toBeDefined();
+    for (const kind of ["watch", "spawn", "write"] as const) {
+      const startup = processConstructions.operations
+        .slice(startupAt)
+        .filter((operation) => operation.kind === kind);
+      expect(startup.length).toBeGreaterThan(0);
+      expect(startup.every((operation) => operation.handle === construction)).toBe(true);
+    }
+    emit({
+      type: "control_request",
+      request_id: "approval-reused",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "Bash",
+        tool_use_id: "same-tool",
+        input: { command: "git status" },
+      },
+    });
+    await waitFor(
+      () => events.some((event) => event.type === "approval.requested"),
+      "approval occurrence",
+    );
+    const asked = events.find(
+      (event): event is Extract<HarnessEvent, { type: "approval.requested" }> =>
+        event.type === "approval.requested",
+    )!;
+    const replies = () =>
+      parse().filter(
+        (message) =>
+          (message.response as Record<string, unknown>)?.request_id === "approval-reused",
+      );
+    respondClaudeApproval("s1", asked.requestId, "allow");
+    if (previous) {
+      expect(asked.requestId).toBe(previous.requestId);
+      expect(asked.occurrenceId).not.toBe(previous.occurrenceId);
+      respondClaudeApproval("s1", asked.requestId, "allow", previous.occurrenceId);
+    }
+    await Promise.resolve();
+    expect(replies()).toHaveLength(0);
+    respondClaudeApproval("s1", asked.requestId, "deny", asked.occurrenceId);
+    await waitFor(() => replies().length === 1, "source-owned reply");
+    expect(
+      processConstructions.operations
+        .filter(
+          (operation) =>
+            operation.kind === "write" &&
+            JSON.parse(operation.args[0] as string).response?.request_id === "approval-reused",
+        )
+        .at(-1)?.handle,
+    ).toBe(construction);
+    expect(events).toContainEqual({
+      type: "approval.resolved",
+      requestId: asked.requestId,
+      occurrenceId: asked.occurrenceId,
+      decision: "deny",
+    });
+    respondClaudeApproval("s1", asked.requestId, "allow", asked.occurrenceId);
+    expect(replies()).toHaveLength(1);
+    previous = asked;
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+    await stopClaudeSession("s1");
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "kill").at(-1)
+        ?.handle,
+    ).toBe(construction);
+    __claudeTestReset();
+  }
+});
+
 describe("claude subagents", () => {
   it.each(["allow", "deny"] as const)(
     "routes a child permission decision: %s",
@@ -1224,7 +1571,7 @@ describe("claude subagents", () => {
       });
       const approval = events.find((event) => event.type === "approval.requested")!;
       expect(approval).toMatchObject({ callId: "child_read" });
-      respondClaudeApproval("s1", approval.requestId, decision);
+      respondClaudeApproval("s1", approval.requestId, decision, approval.occurrenceId);
       await waitFor(
         () =>
           parse().some(
@@ -1343,6 +1690,54 @@ describe("claude subagents", () => {
     await turn;
   });
 
+  it("acknowledges a question only after its control response write and ignores duplicate submission", async () => {
+    const { events, turn } = await startTurn("s1");
+    emit({
+      type: "control_request",
+      request_id: "question-delivery",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "AskUserQuestion",
+        input: { questions: [{ question: "Which scope?", options: [{ label: "Local" }] }] },
+      },
+    });
+    const question = events.find((event) => event.type === "question.asked")!;
+    expect(question).toMatchObject({ behavior: "blocking", dismissAction: "cancel" });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    writeChild.mockImplementationOnce(async (_id, line) => {
+      sent.push(line);
+      await gate;
+    });
+    const answer = { kind: "answered" as const, answers: { "Which scope?": ["Local"] } };
+    respondClaudeQuestion("s1", question.requestId, answer);
+    respondClaudeQuestion("s1", question.requestId, answer);
+    await waitFor(
+      () =>
+        parse().some(
+          (message) =>
+            (message.response as Record<string, unknown>)?.request_id === "question-delivery",
+        ),
+      "control response write",
+    );
+    expect(events.some((event) => event.type === "question.resolved")).toBe(false);
+    release();
+    await waitFor(
+      () => events.some((event) => event.type === "question.resolved"),
+      "control response acknowledged",
+    );
+    expect(
+      parse().filter(
+        (message) =>
+          (message.response as Record<string, unknown>)?.request_id === "question-delivery",
+      ),
+    ).toHaveLength(1);
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+  });
+
   it.each(["child_a", "child_b"])(
     "preserves the remaining question when %s is cancelled by the server",
     async (cancelled) => {
@@ -1407,7 +1802,7 @@ describe("claude subagents", () => {
       outcome = error;
     });
     writeChild.mockRejectedValueOnce(new Error("Broken pipe"));
-    respondClaudeApproval("s1", approval.requestId, "allow");
+    respondClaudeApproval("s1", approval.requestId, "allow", approval.occurrenceId);
     await waitFor(() => outcome instanceof Error, "failed permission delivery");
     expect(outcome).toMatchObject({ message: "Broken pipe" });
     expect(events).toContainEqual({
@@ -2181,6 +2576,40 @@ describe("claude background tasks", () => {
     expect(readHarnessTaskOutput).toHaveBeenCalledTimes(reads);
   });
 
+  it("says the output is unavailable when the final read keeps failing", async () => {
+    readHarnessTaskOutput.mockClear();
+    readHarnessTaskOutput.mockResolvedValue({ text: "first line\n", truncated: false });
+    const { events, turn } = await startTurn("s1");
+    emitBackgroundBash();
+    emit({
+      type: "user",
+      tool_use_result: { outputFile: "/tmp/claude/project/tasks/b1.output" },
+      message: {
+        content: [{ type: "tool_result", tool_use_id: "toolu_bash", content: "Running" }],
+      },
+    });
+    await waitFor(
+      () => events.some((e) => e.type === "tool.updated" && e.preview?.output === "first line\n"),
+      "live output",
+    );
+    readHarnessTaskOutput.mockRejectedValue(Object.assign(new Error("denied"), { code: "EACCES" }));
+    emitBashFinished();
+    await waitFor(
+      () =>
+        events.some(
+          (e) => e.type === "tool.updated" && e.preview?.output?.includes("Output unavailable"),
+        ),
+      "unavailable note",
+    );
+    const note = events.find(
+      (e) => e.type === "tool.updated" && e.preview?.output?.includes("Output unavailable"),
+    );
+    // The last good output stays above the note.
+    expect(note?.type === "tool.updated" && note.preview?.output).toContain("first line");
+    emitFollowUpTurn("Finished");
+    await turn;
+  });
+
   it("rejects unrelated output paths and ignores late reads after cancellation", async () => {
     readHarnessTaskOutput.mockClear();
     const { events } = await startTurn("s1");
@@ -2662,6 +3091,8 @@ describe("claude manual compaction", () => {
 
     expect(events).toContainEqual({
       type: "status",
+      key: "compaction",
+      running: false,
       text: "Compacted context",
     });
     expect(events.some((event) => event.type === "message.delta")).toBe(false);
@@ -2716,7 +3147,7 @@ describe("claude replay bindings", () => {
   });
 });
 
-it("Claude çıkışı bekleyen onay ve soruyu çözer", async () => {
+it("Claude exit resolves pending approvals and questions", async () => {
   const { events, turn } = await startTurn("s1");
   const outcome = turn.catch(() => undefined);
   emit({
@@ -2748,4 +3179,79 @@ it("Claude çıkışı bekleyen onay ve soruyu çözer", async () => {
       events.some((event) => event.type === "question.resolved"),
     "interaction cleanup",
   );
+});
+
+it("preserves the original control-request lineage after an asynchronous user decision", async () => {
+  const { events, turn } = await startTurn("claude-causal");
+  const frame = JSON.stringify({
+    type: "control_request",
+    request_id: "causal-permission",
+    request: {
+      subtype: "can_use_tool",
+      tool_name: "Read",
+      tool_use_id: "causal-read",
+      input: { file_path: "/tmp/causal" },
+    },
+  });
+  const inspect = nativeOutputFrame("claude-causal", frame, () => onLine!(frame));
+  const asked = events.find((e) => e.type === "approval.requested")!;
+  expect(asked).toBeDefined();
+  expect(inspect().pendingCausalWork).toBeGreaterThan(0);
+  const origin = getNativeOutputEventOrigin(asked);
+  expect(origin).not.toBeNull();
+  respondClaudeApproval("claude-causal", asked.requestId, "allow", asked.occurrenceId);
+  await waitFor(
+    () => events.some((e) => e.type === "approval.resolved"),
+    "causal approval settlement",
+  );
+  expect(getNativeOutputEventOrigin(events.find((e) => e.type === "approval.resolved")!)).toBe(
+    origin,
+  );
+  await vi.waitFor(() => expect(inspect().pendingCausalWork).toBe(0));
+  emit({ type: "result", subtype: "success", session_id: "sess_1" });
+  await turn;
+});
+
+it("parses a brace-heavy streamed Write input once on its original live tool", async () => {
+  const { events, turn } = await startTurn("s1");
+  emit({
+    type: "stream_event",
+    session_id: "sess_1",
+    event: {
+      type: "content_block_start",
+      index: 0,
+      content_block: { type: "tool_use", id: "toolu_large", name: "Write", input: {} },
+    },
+  });
+  const parse = vi.spyOn(JSON, "parse");
+  try {
+    const delta = (partial_json: string) =>
+      emit({
+        type: "stream_event",
+        session_id: "sess_1",
+        event: {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "input_json_delta", partial_json },
+        },
+      });
+    delta('{"file_path":"a.ts","content":"');
+    for (let index = 0; index < 500; index++) delta("}".repeat(20));
+    expect(
+      events.filter((event) => event.type === "tool.updated" && event.callId === "toolu_large"),
+    ).toHaveLength(0);
+    delta('"}');
+    expect(
+      events.filter((event) => event.type === "tool.updated" && event.callId === "toolu_large"),
+    ).toHaveLength(1);
+    expect(
+      parse.mock.calls.filter(([text]) =>
+        String(text).startsWith('{"file_path":"a.ts","content":"'),
+      ),
+    ).toHaveLength(1);
+  } finally {
+    parse.mockRestore();
+  }
+  emit({ type: "result", subtype: "success", session_id: "sess_1" });
+  await turn;
 });

@@ -1,10 +1,15 @@
 import { lazySurface } from "../../../shared/ui/lazySurface";
+import type { WorkspaceToolId } from "../../model/toolWindows";
 import type { ServersViewProps } from "../../../features/connections/ui/ServersView";
+import { SocialView } from "./SocialSurface";
 
-export const ServersView = lazySurface<ServersViewProps>(async () => {
-  const module = await import("../../../features/connections/ui/ServersWorkspaceView");
-  return { default: module.ServersWorkspaceView };
-}, { suspense: false });
+export const ServersView = lazySurface<ServersViewProps>(
+  async () => {
+    const module = await import("../../../features/connections/ui/ServersWorkspaceView");
+    return { default: module.ServersWorkspaceView };
+  },
+  { suspense: false },
+);
 export const SearchView = lazySurface(
   async () => {
     const module = await import("../../../features/search/ui/SearchView");
@@ -44,10 +49,7 @@ export const AutomationsView = lazySurface(
   },
   { suspense: false },
 );
-export const SocialView = lazySurface(async () => {
-  const module = await import("../../../features/social/ui/SocialView");
-  return { default: module.SocialView };
-});
+export { SocialView };
 export const TasksView = lazySurface(
   async () => {
     const module = await import("../../../features/tasks/ui/TasksView");
@@ -55,3 +57,26 @@ export const TasksView = lazySurface(
   },
   { suspense: false },
 );
+export const AssistantView = lazySurface(
+  async () => {
+    const module = await import("../../../features/assistant/ui/AssistantView");
+    return { default: module.AssistantView };
+  },
+  { suspense: false },
+);
+
+/** Warm a destination on pointer or keyboard intent; failures retry on open. */
+export function preloadToolSurface(tool: WorkspaceToolId): void {
+  const surface = {
+    servers: ServersView,
+    social: SocialView,
+    tasks: TasksView,
+    automations: AutomationsView,
+    inbox: InboxView,
+    notes: NotesView,
+    terminal: null,
+    assistant: AssistantView,
+    "conversation-tools": null,
+  }[tool];
+  void surface?.preload().catch(() => undefined);
+}

@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Composer Host compatibility fixture</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      localStorage.setItem("bycoda.language", "en");
+      const machine = {
+        id: "c1-local-host",
+        environmentId: "c1-environment",
+        name: "Fixture Host",
+        endpoint: "http://fixture.invalid",
+        localHost: true,
+      };
+      window.c1Host = { upgraded: false, calls: [] };
+      window.__TAURI_INTERNALS__ = {
+        metadata: { currentWebview: { label: "fixture" }, currentWindow: { label: "fixture" } },
+        transformCallback: () => 1,
+        unregisterCallback: () => {},
+        invoke: async (command, args = {}) => {
+          window.c1Host.calls.push({ command, method: args.method });
+          if (command === "plugin:event|listen") return 1;
+          if (command === "plugin:event|unlisten") return;
+          if (command === "local_host_connect") return machine;
+          if (command === "remote_machines") return [machine];
+          if (command === "local_host_bundle_status")
+            return {
+              state:
+                window.c1Host.upgraded ||
+                new URLSearchParams(location.search).get("bundle") === "current"
+                  ? "current"
+                  : "deferred",
+              message: "The host update waits until running sessions finish.",
+              installed: window.c1Host.upgraded ? "0.6.91" : "0.6.90",
+              bundled: "0.6.91",
+            };
+          if (command === "remote_request") {
+            if (args.method === "environment.describe")
+              return {
+                environmentId: machine.environmentId,
+                capabilities: window.c1Host.upgraded
+                  ? ["workspaces.managed.v1", "workspaces.policy.v1"]
+                  : [],
+              };
+            if (args.method === "projects.list")
+              return [{ id: "c1-project", cwd: "/fixture/c1-project", name: "C1 project" }];
+            if (args.method === "projects.workspacePolicy.get")
+              return {
+                resolved: {
+                  policy: { defaultMode: "worktree", integrationBranchRef: "refs/heads/main" },
+                },
+              };
+          }
+          if (command === "git_branches")
+            return { current: "main", branches: [{ name: "main", current: true, remote: false }] };
+          if (command === "git_worktrees")
+            return {
+              defaultRoot: "/fixture/worktrees",
+              worktrees: [
+                {
+                  path: "/fixture/c1-project",
+                  branch: "main",
+                  head: "0123456789abcdef",
+                  isMain: true,
+                },
+              ],
+            };
+          if (command === "git_diff_index")
+            return { head: "0123456789abcdef", branch: "main", files: [], conflicts: [] };
+          throw new Error(`No native service in C1 fixture: ${command} ${args.method ?? ""}`);
+        },
+      };
+    </script>
+    <script type="module" src="/tests/browser/composer-host-compatibility.tsx"></script>
+  </body>
+</html>

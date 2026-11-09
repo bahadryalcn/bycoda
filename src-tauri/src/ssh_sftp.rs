@@ -6,7 +6,7 @@ use tauri::Manager;
 #[path = "ssh_sftp_transfer.rs"]
 mod transfer;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::{self, OpenOptions},
     io::{Read, Write},
     path::Path,
@@ -42,6 +42,39 @@ impl Drop for ProcessIdGuard {
             }
         }
     }
+}
+
+static RECOVERY_CLAIMS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+/// Holds one recovery id for a resume or discard; a second claim is refused.
+struct RecoveryClaim(String);
+impl RecoveryClaim {
+    fn acquire(id: &str) -> Result<Self, String> {
+        let mut busy = RECOVERY_CLAIMS
+            .get_or_init(Default::default)
+            .lock()
+            .map_err(|_| "Recovery registry unavailable")?;
+        if !busy.insert(id.to_owned()) {
+            return Err("Recovery already in progress".into());
+        }
+        Ok(Self(id.to_owned()))
+    }
+}
+impl Drop for RecoveryClaim {
+    fn drop(&mut self) {
+        if let Ok(mut busy) = RECOVERY_CLAIMS.get_or_init(Default::default).lock() {
+            busy.remove(&self.0);
+        }
+    }
+}
+
+/// A saved remote staging file that was never created has nothing to remove.
+/// Only sftp's own answer for a missing path counts; ssh warnings such as an
+/// absent identity file also say "No such file" while the staging file exists.
+fn is_missing_remote(error: &str) -> bool {
+    error
+        .lines()
+        .any(|line| line.contains("Can't ls:") && line.contains("not found"))
 }
 
 struct Operation {
@@ -444,8 +477,12 @@ fn parse_listing(content: &str) -> Result<Vec<SftpEntry>, String> {
         if name == "." || name == ".." {
             continue;
         }
-        if name.is_empty() || name.chars().any(char::is_control) || name.contains('/') {
+        if name.is_empty() || name.contains('/') {
             return Err("Unsupported SFTP filename".into());
+        }
+        // One unlistable control-character name must not hide its siblings.
+        if name.chars().any(char::is_control) {
+            continue;
         }
         entries.push(SftpEntry {
             name: name.into(),
@@ -461,8 +498,8 @@ fn parse_listing(content: &str) -> Result<Vec<SftpEntry>, String> {
     Ok(entries)
 }
 
-#[tauri::command(async)]
-pub fn ssh_sftp_list(
+#[tauri::command]
+pub async fn ssh_sftp_list(
     app: tauri::AppHandle,
     window: tauri::Window,
     connection_id: String,
@@ -470,32 +507,35 @@ pub fn ssh_sftp_list(
     operation_id: String,
     http_proxy_ticket_id: Option<String>,
 ) -> Result<Vec<SftpEntry>, String> {
-    let owner_lease = crate::ssh_window_lifecycle::capture(window.label())?;
-    let endpoint = crate::server_inventory::resolve_ssh_endpoint(&app, &connection_id)?;
-    let request = crate::ssh_http_proxy_credentials::ProxyOperation::SftpList {
-        operation_id: operation_id.clone(),
-        path: path.clone(),
-    };
-    let mut operation = Operation::begin_for_window_with_lease(
-        operation_id,
-        window.label(),
-        &endpoint,
-        owner_lease,
-    )?;
-    operation.authorize_http_proxy(
-        &app,
-        window.label(),
-        &connection_id,
-        &endpoint,
-        &request,
-        http_proxy_ticket_id.as_deref(),
-    )?;
-    let output = run_batch(
-        &endpoint,
-        format!("ls -la {}\nbye\n", quote_path(&path)?),
-        &operation,
-    )?;
-    parse_listing(&output)
+    crate::harness::run_blocking("ssh_sftp_list", move || {
+        let owner_lease = crate::ssh_window_lifecycle::capture(window.label())?;
+        let endpoint = crate::server_inventory::resolve_ssh_endpoint(&app, &connection_id)?;
+        let request = crate::ssh_http_proxy_credentials::ProxyOperation::SftpList {
+            operation_id: operation_id.clone(),
+            path: path.clone(),
+        };
+        let mut operation = Operation::begin_for_window_with_lease(
+            operation_id,
+            window.label(),
+            &endpoint,
+            owner_lease,
+        )?;
+        operation.authorize_http_proxy(
+            &app,
+            window.label(),
+            &connection_id,
+            &endpoint,
+            &request,
+            http_proxy_ticket_id.as_deref(),
+        )?;
+        let output = run_batch(
+            &endpoint,
+            format!("ls -lan {}\nbye\n", quote_path(&path)?),
+            &operation,
+        )?;
+        parse_listing(&output)
+    })
+    .await
 }
 
 fn publish_download(temporary: &Path, destination: &Path) -> Result<(), String> {
@@ -505,8 +545,8 @@ fn publish_download(temporary: &Path, destination: &Path) -> Result<(), String> 
 /// Downloads never overwrite an existing local path. Data stays in a sibling
 /// temporary file until success; hard_link publishes it atomically without
 /// clobbering. A failed/cancelled transfer removes its own partial file.
-#[tauri::command(async)]
-pub fn ssh_sftp_download(
+#[tauri::command]
+pub async fn ssh_sftp_download(
     app: tauri::AppHandle,
     window: tauri::Window,
     connection_id: String,
@@ -515,20 +555,23 @@ pub fn ssh_sftp_download(
     operation_id: String,
     http_proxy_ticket_id: Option<String>,
 ) -> Result<(), String> {
-    transfer::download(
-        app,
-        window,
-        connection_id,
-        remote_path,
-        local_path,
-        operation_id,
-        http_proxy_ticket_id,
-    )
+    crate::harness::run_blocking("ssh_sftp_download", move || {
+        transfer::download(
+            app,
+            window,
+            connection_id,
+            remote_path,
+            local_path,
+            operation_id,
+            http_proxy_ticket_id,
+        )
+    })
+    .await
 }
 
-#[tauri::command(async)]
+#[tauri::command]
 #[allow(clippy::too_many_arguments)] // Preserve the reviewed IPC transfer contract.
-pub fn ssh_sftp_upload(
+pub async fn ssh_sftp_upload(
     app: tauri::AppHandle,
     window: tauri::Window,
     connection_id: String,
@@ -538,16 +581,19 @@ pub fn ssh_sftp_upload(
     operation_id: String,
     http_proxy_ticket_id: Option<String>,
 ) -> Result<u64, String> {
-    transfer::upload(
-        app,
-        window,
-        connection_id,
-        local_path,
-        remote_path,
-        overwrite_confirmed,
-        operation_id,
-        http_proxy_ticket_id,
-    )
+    crate::harness::run_blocking("ssh_sftp_upload", move || {
+        transfer::upload(
+            app,
+            window,
+            connection_id,
+            local_path,
+            remote_path,
+            overwrite_confirmed,
+            operation_id,
+            http_proxy_ticket_id,
+        )
+    })
+    .await
 }
 
 #[tauri::command(async)]
@@ -559,8 +605,8 @@ pub fn ssh_sftp_recoveries(
     transfer::list(&app, window.label(), &connection_id)
 }
 
-#[tauri::command(async)]
-pub fn ssh_sftp_resume(
+#[tauri::command]
+pub async fn ssh_sftp_resume(
     app: tauri::AppHandle,
     window: tauri::Window,
     connection_id: String,
@@ -569,19 +615,22 @@ pub fn ssh_sftp_resume(
     operation_id: String,
     http_proxy_ticket_id: Option<String>,
 ) -> Result<(), String> {
-    transfer::resume(
-        app,
-        window,
-        connection_id,
-        recovery_id,
-        overwrite_confirmed,
-        operation_id,
-        http_proxy_ticket_id,
-    )
+    crate::harness::run_blocking("ssh_sftp_resume", move || {
+        transfer::resume(
+            app,
+            window,
+            connection_id,
+            recovery_id,
+            overwrite_confirmed,
+            operation_id,
+            http_proxy_ticket_id,
+        )
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn ssh_sftp_discard(
+#[tauri::command]
+pub async fn ssh_sftp_discard(
     app: tauri::AppHandle,
     window: tauri::Window,
     connection_id: String,
@@ -589,14 +638,17 @@ pub fn ssh_sftp_discard(
     operation_id: String,
     http_proxy_ticket_id: Option<String>,
 ) -> Result<(), String> {
-    transfer::discard(
-        app,
-        window,
-        connection_id,
-        recovery_id,
-        operation_id,
-        http_proxy_ticket_id,
-    )
+    crate::harness::run_blocking("ssh_sftp_discard", move || {
+        transfer::discard(
+            app,
+            window,
+            connection_id,
+            recovery_id,
+            operation_id,
+            http_proxy_ticket_id,
+        )
+    })
+    .await
 }
 /// App shutdown cancels all registered operations; each worker owns and reaps
 /// its native child. Called before the application's final process teardown.
@@ -607,13 +659,17 @@ pub fn shutdown() {
             entry.cancelled.store(true, Ordering::Relaxed);
         }
     }
-    if let Some(processes) = PROCESS_IDS.get() {
-        if let Ok(entries) = processes.lock() {
-            for pid in entries.values() {
-                kill_process_tree(*pid);
-            }
-        }
-    }
+    // Copy the pids out so the registry lock is never held across taskkill.
+    let pids: Vec<u32> = PROCESS_IDS
+        .get()
+        .and_then(|processes| {
+            processes
+                .lock()
+                .ok()
+                .map(|entries| entries.values().copied().collect())
+        })
+        .unwrap_or_default();
+    crate::harness::terminate_all(&pids);
 }
 
 #[tauri::command]
@@ -654,13 +710,17 @@ pub fn kill_window(owner: &str) {
     } else {
         vec![]
     };
-    if let Ok(processes) = PROCESS_IDS.get_or_init(Default::default).lock() {
-        for id in ids {
-            if let Some(pid) = processes.get(&id) {
-                kill_process_tree(*pid);
-            }
-        }
-    }
+    // Copy the pids out so the registry lock is never held across taskkill.
+    let pids: Vec<u32> = PROCESS_IDS
+        .get_or_init(Default::default)
+        .lock()
+        .map(|processes| {
+            ids.iter()
+                .filter_map(|id| processes.get(id).copied())
+                .collect()
+        })
+        .unwrap_or_default();
+    crate::harness::terminate_all(&pids);
 }
 
 #[cfg(test)]
@@ -709,6 +769,23 @@ mod tests {
                 SftpEntry {
                     name: "link".into(),
                     kind: "symlink".into()
+                }
+            ]
+        );
+    }
+    #[test]
+    fn numeric_listing_keeps_names_and_skips_control_character_entries() {
+        let rows = parse_listing("sftp> ls -lan .\n-rw-r--r-- 1 1000 1000 3 Oct 18 2026 a b.txt\n-rw-r--r-- 1 1000 1000 3 Oct 18 2026 bad\u{7}name\n-rw-r--r-- 1 1000 1000 3 Oct 18 2026 ok.txt\n").unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                SftpEntry {
+                    name: "a b.txt".into(),
+                    kind: "file".into()
+                },
+                SftpEntry {
+                    name: "ok.txt".into(),
+                    kind: "file".into()
                 }
             ]
         );

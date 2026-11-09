@@ -1,4 +1,4 @@
-import { useRef, type MutableRefObject } from "react";
+import { useEffect, useRef, type MutableRefObject } from "react";
 import { sessionWorkCwd, type Session } from "../../../features/sessions/model/session";
 import {
   focusedFileTab,
@@ -6,10 +6,18 @@ import {
   type FilePaneTab,
   type WorkspaceTab,
 } from "../../../features/workspace/model/layout";
-import { isRemoteProjectPath, normalizeProjectPath } from "../../../features/projects/model/recents";
+import {
+  isRemoteProjectPath,
+  normalizeProjectPath,
+} from "../../../features/projects/model/recents";
+import { reportBootProjectState } from "../../model/bootDiagnostics";
 import { newTerminalCwd } from "../../../features/terminal/model/terminalTab";
 import { remoteTabCwd } from "../../../features/connections/model/connections";
-import { remotePath, remoteProjectFor, remoteSessionGitCwd } from "../../../features/connections/model/remoteProjects";
+import {
+  remotePath,
+  remoteProjectFor,
+  remoteSessionGitCwd,
+} from "../../../features/connections/model/remoteProjects";
 
 export interface ActiveWorkspaceContextDeps {
   tabs: WorkspaceTab[];
@@ -36,7 +44,8 @@ export interface ActiveWorkspaceContext {
 }
 
 /** Derives the active tab, active session and the cwd values that follow
- * from them. Pure derivation plus two render-synced refs; no effects. */
+ * from them. Pure derivation plus two render-synced refs; the only effect is
+ * the boot diagnostic that logs the active tab and project. */
 export function useActiveWorkspaceContext(
   deps: ActiveWorkspaceContextDeps,
 ): ActiveWorkspaceContext {
@@ -50,6 +59,10 @@ export function useActiveWorkspaceContext(
   const sidebarCwd = workspaceFile?.projectCwd ?? workspaceFile?.cwd ?? active?.cwd ?? projectCwd;
   const sidebarCwdRef = useRef(sidebarCwd);
   sidebarCwdRef.current = sidebarCwd;
+  const reportedTabId = activeTab?.id ?? activeTabId;
+  useEffect(() => {
+    reportBootProjectState({ activeTabId: reportedTabId, projectCwd, sidebarCwd });
+  }, [reportedTabId, projectCwd, sidebarCwd]);
   const sidebarCwdKey = sidebarCwd && sidebarCwd !== "~" ? normalizeProjectPath(sidebarCwd) : null;
   const historyFailed = sidebarCwdKey != null && historyErrorCwd === sidebarCwdKey;
   // True from the very first frame that shows a project we have never listed,
@@ -57,7 +70,11 @@ export function useActiveWorkspaceContext(
   const historyPending =
     sidebarCwdKey != null && !loadedProjects.has(sidebarCwdKey) && !historyFailed;
   const gitCwd = workspaceFile?.cwd ?? (active ? sessionWorkCwd(active) : sidebarCwd);
-  const terminalCwd = newTerminalCwd({ activeFile: workspaceFile, session: active, fallback: sidebarCwd });
+  const terminalCwd = newTerminalCwd({
+    activeFile: workspaceFile,
+    session: active,
+    fallback: sidebarCwd,
+  });
   const remoteFilesProject = remoteProjectFor(sidebarCwd);
   const remoteCheckout = remoteFilesProject ? remoteTabCwd(sidebarCwd, active?.id) : undefined;
   const filesCwd = remoteFilesProject
@@ -65,11 +82,12 @@ export function useActiveWorkspaceContext(
       ? gitCwd
       : remotePath(
           remoteFilesProject.environmentId,
-          remoteCheckout ??
-            (gitCwd && gitCwd !== sidebarCwd ? gitCwd : remoteFilesProject.cwd),
+          remoteCheckout ?? (gitCwd && gitCwd !== sidebarCwd ? gitCwd : remoteFilesProject.cwd),
         )
     : gitCwd;
-  const gitRootCwd = remoteFilesProject ? remoteSessionGitCwd(remoteFilesProject, gitCwd, sidebarCwd, remoteCheckout) : gitCwd;
+  const gitRootCwd = remoteFilesProject
+    ? remoteSessionGitCwd(remoteFilesProject, gitCwd, sidebarCwd, remoteCheckout)
+    : gitCwd;
   const gitCwdRef = useRef(gitRootCwd);
   gitCwdRef.current = gitRootCwd;
 

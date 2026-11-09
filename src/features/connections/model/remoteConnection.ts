@@ -1,4 +1,4 @@
-import { classifyRemoteError, remoteErrorText } from "./remoteFailure";
+import { classifyRemoteError, nativeConnectionFailureCode, remoteErrorText } from "./remoteFailure";
 import { classifySshFailure, parseSshStartFailure } from "./sshFailure";
 
 /** What this computer last learned about one remote machine, from the outcome
@@ -16,6 +16,8 @@ export type RemoteConnectionStatus =
   | "host-key"
   /** The saved bycoda Host identity changed; the machine must be added again. */
   | "identity-mismatch"
+  /** Native authentication or protocol admission needs an explicit reconnect. */
+  | "connection-blocked"
   /** SSH works, but Bycoda Host is not listening on the machine. */
   | "host-not-running"
   /** The host answered, but is too old for something the app asked. */
@@ -74,14 +76,26 @@ export function connectionReason(status: RemoteConnectionStatus, raw: string): s
 }
 
 /** Which status a failed request means. `connected` when the machine itself
- * answered, even if with an error of its own. `specific` is false for the bare
- * "did not answer" that every failed request ends in, which must not replace a
- * more precise reason that is already known. */
+ * answered, even if with an error of its own. `status` is undefined for a
+ * timeout or a bad answer, which says nothing about the machine's state. `specific`
+ * is false for the bare "did not answer" that every failed request ends in, which
+ * must not replace a more precise reason that is already known. */
 export function connectionOutcome(error: unknown): {
-  status: RemoteConnectionStatus;
+  status?: RemoteConnectionStatus;
   error?: string;
   specific?: boolean;
 } {
+  if (
+    ["RPC_WS_BLOCKED", "RPC_WS_SCHEMA", "RPC_WS_TLS"].includes(
+      nativeConnectionFailureCode(error) ?? "",
+    ) ||
+    /\[RPC_AUTHORIZATION\]/.test(remoteErrorText(error))
+  )
+    return {
+      status: "connection-blocked",
+      error: sanitizeConnectionError(remoteErrorText(error)),
+      specific: true,
+    };
   const failure = classifyRemoteError(error);
   if (failure.kind === "identity")
     return {
@@ -91,6 +105,7 @@ export function connectionOutcome(error: unknown): {
     };
   if (failure.kind === "outdated")
     return { status: "outdated-host", error: connectionReason("outdated-host", failure.message) };
+  if (failure.kind === "temporary") return {};
   if (failure.kind !== "unreachable") return { status: "connected" };
   const text = remoteErrorText(error);
   if (/Host is not running on the machine/i.test(text))
@@ -135,11 +150,23 @@ export function reduceConnection(
     case "ok":
       // An old host keeps answering what it knows, so only a reconnect or an
       // update clears that notice.
-      if (state.status === "outdated-host" || state.status === "identity-mismatch") return state;
+      if (
+        state.status === "outdated-host" ||
+        state.status === "identity-mismatch" ||
+        state.status === "connection-blocked"
+      )
+        return state;
       return { status: "connected", lastSeen: event.at };
     case "failure": {
       const outcome = connectionOutcome(event.error);
+      // A timeout or a bad answer proves nothing either way: keep what is known.
+      if (!outcome.status) return state;
       if (state.status === "identity-mismatch" && outcome.status !== "identity-mismatch")
+        return state;
+      if (
+        state.status === "connection-blocked" &&
+        !["identity-mismatch", "outdated-host", "connection-blocked"].includes(outcome.status)
+      )
         return state;
       if (outcome.status === "connected")
         return reduceConnection(state, { type: "ok", at: event.at });
@@ -158,14 +185,22 @@ export function reduceConnection(
   }
 }
 
-/** Delays between background reconnect attempts after a drop, then every minute. */
-export const AUTO_RETRY_DELAYS = [2_000, 5_000, 15_000, 30_000, 60_000];
+/** The first background attempt waits up to this long; each later one doubles it. */
+const AUTO_RETRY_BASE_MS = 2_000;
+/** Background attempts never wait longer: a machine that stays off is not dialed every minute all day. */
+export const AUTO_RETRY_MAX_MS = 5 * 60_000;
+/** The ladder starts again only after a connection stayed up this long, so a
+ * host that keeps dropping right after connecting still backs off. */
+export const AUTO_RETRY_STABLE_MS = 30_000;
 /** Background attempts stop once the window has been hidden this long. */
 export const HIDDEN_RETRY_LIMIT_MS = 10 * 60_000;
 
-/** The wait before background attempt number `attempt` (0 is the first). */
-export function autoRetryDelay(attempt: number): number {
-  return AUTO_RETRY_DELAYS[Math.min(Math.max(attempt, 0), AUTO_RETRY_DELAYS.length - 1)];
+/** The wait before background attempt number `attempt` (0 is the first):
+ * exponential up to five minutes, jittered between half and all of that, so
+ * several machines behind one restarted network do not all dial in the same second. */
+export function autoRetryDelay(attempt: number, random: () => number = Math.random): number {
+  const ceiling = Math.min(AUTO_RETRY_MAX_MS, AUTO_RETRY_BASE_MS * 2 ** Math.max(attempt, 0));
+  return Math.round(ceiling / 2 + (ceiling / 2) * random());
 }
 
 /** Whether to try again without asking the user: only a machine that did not
@@ -182,12 +217,30 @@ export function shouldAutoRetry(
   return hiddenSince === undefined || now - hiddenSince <= HIDDEN_RETRY_LIMIT_MS;
 }
 
+/** How many quiet attempts a machine whose admission was blocked gets before the
+ * user must press Reconnect. A Host that restarts can refuse one attempt. */
+export const BLOCKED_RETRY_LIMIT = 3;
+
+/** Whether to make another quiet attempt at a `connection-blocked` machine, given
+ * the attempts already made since it last answered. It stays within the same
+ * hidden-window and automatic-reconnecting rules as other retries. */
+export function shouldRetryBlocked(
+  attempts: number,
+  hiddenSince: number | undefined,
+  now: number,
+  enabled = true,
+): boolean {
+  if (!enabled || attempts >= BLOCKED_RETRY_LIMIT) return false;
+  return hiddenSince === undefined || now - hiddenSince <= HIDDEN_RETRY_LIMIT_MS;
+}
+
 /** Whether a message cannot reach the machine right now. */
 export const blocksSending = (status: RemoteConnectionStatus) =>
   status === "unreachable" ||
   status === "needs-auth" ||
   status === "host-key" ||
   status === "host-not-running" ||
+  status === "connection-blocked" ||
   status === "identity-mismatch";
 
 /** Whether only a sign-in, answered in Connections settings, can fix it. */
@@ -215,21 +268,35 @@ export function connectionIndicator(
 
 export type ReconnectOutcome = { ok: true } | { ok: false; error: string };
 
-/** Sends a message through a connection that may have dropped. A message
- * never leaves the composer for good unless `send` accepts it: when
- * reconnecting fails, nothing is sent and the reason comes back for display.
- * `ready` resolves once the view has caught up with the machine again. */
+/** Sends a message through a connection that may have dropped. The message is
+ * saved by `send` as soon as the view can start a turn (`ready`), so it never
+ * leaves the composer for good. When the machine is down, a reconnect runs in the
+ * background and the poll is woken when it answers; the saved request then goes
+ * out without the user acting again. Only a machine that needs the user (a
+ * sign-in, a changed identity) is awaited first: when that reconnect fails,
+ * nothing is sent and the reason comes back for display. */
 export async function sendAfterReconnect(options: {
   status: RemoteConnectionStatus;
   reconnect: () => Promise<ReconnectOutcome>;
-  ready: () => Promise<boolean>;
+  /** Resolves once the view can start a turn; not a time limit. */
+  ready?: () => Promise<boolean> | boolean;
   send: () => boolean;
-}): Promise<{ sent: boolean; failure?: "reconnect" | "offline"; error?: string }> {
-  if (blocksSending(options.status)) {
+  /** Starts the view's poll now, because the machine may just have answered. */
+  wake?: () => void;
+}): Promise<{ sent: boolean; failure?: "reconnect"; error?: string }> {
+  const { status } = options;
+  if (needsSignIn(status) || status === "identity-mismatch") {
     const result = await options.reconnect();
     if (!result.ok) return { sent: false, failure: "reconnect", error: result.error };
+    options.wake?.();
+  } else if (blocksSending(status)) {
+    options.reconnect().then(
+      (result) => {
+        if (result.ok) options.wake?.();
+      },
+      () => undefined,
+    );
   }
-  if (!(await options.ready()))
-    return { sent: false, failure: "offline", error: "The machine is still not answering." };
+  await options.ready?.();
   return { sent: options.send() };
 }

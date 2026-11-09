@@ -1,0 +1,55 @@
+.page {
+  padding: 24px 16px;
+}
+.page > .toolbar {
+  gap: 12px;
+  margin-block-end: 20px;
+}
+.page > .toolbar > h2 {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  margin: 0;
+  font-size: var(--ui-font-title);
+  font-weight: 500;
+}
+.toolbar h2 span {
+  margin-inline-start: 6px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-weight: 400;
+}
+.page > .toolbar > :nth-child(2) {
+  flex: 0 1 240px;
+  min-inline-size: 140px;
+}
+@media (max-width: 900px) {
+  .page > .toolbar > h2 {
+    flex-basis: 100%;
+  }
+  .page {
+    padding: 16px;
+  }
+}
+.quickFields {
+  display: grid;
+  gap: 12px;
+  grid-column: 1 / -1;
+  min-inline-size: 0;
+}
+.savedTitle {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
+  overflow-wrap: anywhere;
+}
+
+.editorForm {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-inline-size: 0;
+}
+.editorHint {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}

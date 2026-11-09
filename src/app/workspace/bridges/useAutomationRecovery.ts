@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { isLeadWindow } from "../../../platform/tauri/workspaceWindows";
 import {
   claimDueAutomations,
   recoverAutomationRuns,
@@ -45,9 +46,11 @@ export function useAutomationRecovery({ launchAutomation }: AutomationRecoveryDe
     const evaluate = async () => {
       if (disposed || evaluating) return;
       evaluating = true;
-      // Materialize review intents only. SSH execution always needs a new owner review.
-      void refreshSshRunbookQueue();
       try {
+        if (!(await isLeadWindow()) || disposed) return;
+        // Keep one background scheduler alive even with hidden workspaces.
+        // Explicit recovery callers still use their original admission path.
+        void refreshSshRunbookQueue().catch(() => undefined);
         await ensureAutomationRecovery();
         const due = await claimDueAutomations();
         for (const item of due) {

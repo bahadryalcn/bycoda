@@ -1,5 +1,18 @@
-import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
-import { newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
+import {
+  reserveSessionWindow,
+  remoteSessionOwnershipKey,
+} from "../../model/sessionWindowOwnership";
+import { message } from "@tauri-apps/plugin-dialog";
+import { appName } from "../../../shared/lib/appName";
+import {
+  useCallback,
+  useEffect,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
+import { NEW_LOCAL_HOST_SESSION } from "../../../features/connections/model/newLocalHostSession";
+import { leafIds, newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import {
   keepSessionTab,
   openSessionPreview,
@@ -11,7 +24,8 @@ import {
   rememberRemoteSession,
   remoteSessionFor,
 } from "../../../features/connections/model/connections";
-import { findRemoteSessionTab } from "../../../features/connections/model/remoteSessionNavigation";
+import { resolveRemoteSessionTarget } from "../../../features/connections/model/remoteSessionNavigation";
+import { remoteCreateShellFor } from "../../../features/connections/model/remoteCreateIntent";
 import {
   worktreeFocus,
   type WorktreeFocus,
@@ -19,9 +33,34 @@ import {
 import { inboxComposerCard, type InboxItem } from "../../../features/inbox/model/githubTasks";
 import { inboxTrackerDescription } from "../../../features/inbox/model/inboxContext";
 import { linkedWorkItemFromInboxItem } from "../../../features/sessions/model/sessionWorkItem";
-import { looksLikeProject } from "../../../features/projects/model/recents";
+import { looksLikeProject, sameProjectPath } from "../../../features/projects/model/recents";
 import { type NoteComposerCard } from "../../../features/notes";
 import { type SidebarTabId } from "../../../features/settings/model/appearance";
+import { isProjectLockedIn, type LockSnapshot } from "../../../features/group-lock/model/lockState";
+import { pathKey } from "../../../shared/lib/paths";
+
+export function canCreateListedSession(
+  project: string,
+  allowed: ReadonlySet<string>,
+  lock: LockSnapshot,
+): boolean {
+  // "~" is the projectless sentinel: it is not a listed project, so no
+  // project allow-list or lock applies to it.
+  if (project === "~") return true;
+  return allowed.has(pathKey(project)) && !isProjectLockedIn(lock, project);
+}
+
+/** A global row may identify an adopted local shell or an unopened remote session. */
+export function listedRemoteSessionId(
+  sessions: readonly Session[],
+  project: string,
+  listedId: string,
+): string {
+  const shell = sessions.find(
+    (session) => session.id === listedId && sameProjectPath(session.cwd, project),
+  );
+  return (shell && remoteSessionFor(shell.id)) || listedId;
+}
 
 export interface NewSessionActionDeps {
   setTabs: (update: WorkspaceTab[] | ((previous: WorkspaceTab[]) => WorkspaceTab[])) => void;
@@ -40,7 +79,10 @@ export interface NewSessionActionDeps {
   setSidebarTab: (tab: SidebarTabId, project?: string) => void;
   setActiveTabId: (id: string) => void;
   setComposerFocused: Dispatch<SetStateAction<boolean>>;
-  workspaceNavigation: { cancel: () => void };
+  workspaceNavigation: {
+    cancel: () => void;
+    captureRequest?: () => () => boolean;
+  };
   activateTab: (id: string, paneId?: string) => void;
   appendTab: (tab: WorkspaceTab, cwd?: string) => void;
   followProject: (cwd: string | null | undefined) => void;
@@ -50,6 +92,7 @@ export interface NewSessionActions {
   createWorkspaceTab: (cwd: string, focus?: WorktreeFocus) => string;
   onNewSession: (sourceSessionId?: string, options?: NewSessionOptions) => string;
   onNew: () => string;
+  onNewSessionForProject: (project: string) => string;
   onSelectRemoteSession: (
     project: string,
     remoteSessionId: string,
@@ -83,6 +126,27 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
     appendTab,
     followProject,
   } = deps;
+
+  useEffect(() => {
+    const open = (event: Event) => {
+      const session = (event as CustomEvent<Session>).detail;
+      if (!session?.hostBinding || sessionsRef.current.some((entry) => entry.id === session.id))
+        return;
+      const tab = newTab(session.id);
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setServersViewOpen?.(false);
+      setSessions((previous) => [...previous, session]);
+      appendTab(tab, session.cwd);
+      setActiveTabId(tab.id);
+      followProject(session.cwd);
+      setComposerFocused(true);
+    };
+    window.addEventListener(NEW_LOCAL_HOST_SESSION, open);
+    return () => window.removeEventListener(NEW_LOCAL_HOST_SESSION, open);
+  }, [appendTab, followProject, setActiveTabId, setSessions]);
 
   const createWorkspaceTab = useCallback(
     (cwd: string, focus?: WorktreeFocus) => {
@@ -123,20 +187,69 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
 
   const onNew = useCallback(() => onNewSession(), [onNewSession]);
 
+  const onNewSessionForProject = useCallback(
+    (project: string) => {
+      workspaceNavigation.cancel();
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setServersViewOpen?.(false);
+      const session = newWorkspaceSession(
+        project,
+        sessionDefaults?.runtimeMode,
+        worktreeFocus(project),
+      );
+      const tab = newTab(session.id);
+      setSessions((previous) => [...previous, session]);
+      appendTab(tab, project);
+      setActiveTabId(tab.id);
+      // A projectless session must not pin the home folder into the project rail.
+      if (project !== "~") followProject(project);
+      setComposerFocused(true);
+      return session.id;
+    },
+    [appendTab, followProject, sessionDefaults?.runtimeMode, workspaceNavigation.cancel],
+  );
+
   const onSelectRemoteSession = useCallback(
-    (project: string, remoteSessionId: string, options?: { preview?: boolean }) => {
+    async (project: string, remoteSessionId: string, options?: { preview?: boolean }) => {
       setSearchViewOpen(false);
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
       setServersViewOpen?.(false);
       workspaceNavigation.cancel();
-      const existing = findRemoteSessionTab(
+      // The same Host session has one owner even when listed under another project path.
+      const requestedKey = remoteSessionOwnershipKey(project, remoteSessionId);
+      const ownedTab = tabsRef.current
+        .flatMap((tab) => leafIds(tab.layout).map((id) => ({ tab, id })))
+        .find(({ id }) => {
+          const candidate = sessionsRef.current.find((session) => session.id === id);
+          const remoteId = remoteSessionFor(id);
+          if (!candidate || !remoteId) return false;
+          try {
+            return remoteSessionOwnershipKey(candidate.cwd, remoteId) === requestedKey;
+          } catch {
+            return false;
+          }
+        });
+      if (ownedTab) {
+        if (!options?.preview)
+          setTabs((tabs) =>
+            tabs.map((tab) => (tab.id === ownedTab.tab.id ? keepSessionTab(tab) : tab)),
+          );
+        activateTab(ownedTab.tab.id, ownedTab.id);
+        return;
+      }
+      // A session still being created by an open tab is that tab's, not a new one.
+      const existing = resolveRemoteSessionTarget(
         tabsRef.current,
         sessionsRef.current,
         project,
         remoteSessionId,
         remoteSessionFor,
+        remoteCreateShellFor,
       );
       if (existing) {
         if (!options?.preview)
@@ -146,23 +259,55 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
         activateTab(existing.tab.id, existing.shellId);
         return;
       }
-      // Never reuse a blank remote composer: it may hold a create/upload in flight.
-      const session = newDefaultSession(project, sessionDefaults?.runtimeMode);
-      const replacement = options?.preview
-        ? openSessionPreview(tabsRef.current, session, sessionsRef.current)
-        : undefined;
-      const tab = replacement?.tab ?? {
-        ...newTab(session.id),
-        ...(options?.preview ? { previewSessionId: session.id } : {}),
-      };
-      rememberRemoteSession(session.id, remoteSessionId);
-      setSessions((prev) => [...prev, session]);
-      if (replacement) {
-        tabsRef.current = replacement.tabs;
-        setTabs(replacement.tabs);
-      } else appendTab(tab, project);
-      setActiveTabId(tab.id);
-      followProject(project);
+      const current = workspaceNavigation.captureRequest?.() ?? (() => true);
+      let release: Awaited<ReturnType<typeof reserveSessionWindow>>;
+      try {
+        release = await reserveSessionWindow([requestedKey]);
+      } catch (error) {
+        await message(String(error), { title: appName(), kind: "warning" });
+        return;
+      }
+      if (!release) return;
+      let retained = false;
+      try {
+        if (!current()) return;
+        // Recheck after async ownership admission; another local open may have won.
+        const already = resolveRemoteSessionTarget(
+          tabsRef.current,
+          sessionsRef.current,
+          project,
+          remoteSessionId,
+          remoteSessionFor,
+          remoteCreateShellFor,
+        );
+        if (already) {
+          activateTab(already.tab.id, already.shellId);
+          retained = true;
+          return;
+        }
+        // Never reuse a blank remote composer: it may hold a create/upload in flight.
+        const session = newDefaultSession(project, sessionDefaults?.runtimeMode);
+        const replacement = options?.preview
+          ? openSessionPreview(tabsRef.current, session, sessionsRef.current)
+          : undefined;
+        const tab = replacement?.tab ?? {
+          ...newTab(session.id),
+          ...(options?.preview ? { previewSessionId: session.id } : {}),
+        };
+        rememberRemoteSession(session.id, remoteSessionId);
+        setSessions((prev) => [...prev, session]);
+        if (replacement) {
+          tabsRef.current = replacement.tabs;
+          setTabs(replacement.tabs);
+        } else appendTab(tab, project);
+        setActiveTabId(tab.id);
+        followProject(project);
+        retained = true;
+      } finally {
+        await release(retained).catch((error) =>
+          console.error("Conversation ownership release failed", error),
+        );
+      }
     },
     [
       activateTab,
@@ -171,6 +316,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
       sessionDefaults?.runtimeMode,
       setActiveTabId,
       workspaceNavigation.cancel,
+      workspaceNavigation.captureRequest,
     ],
   );
 
@@ -239,6 +385,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
     createWorkspaceTab,
     onNewSession,
     onNew,
+    onNewSessionForProject,
     onSelectRemoteSession,
     onStartInboxItem,
     onAddNoteToChat,

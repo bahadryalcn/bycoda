@@ -73,6 +73,10 @@ export function parseSocialPolicies(raw: unknown): SocialPolicies {
   }
   return { global: parsePolicy(value.global), platforms };
 }
+/**
+ * Precedence (B29): a rule's own agent beats the platform override, which beats the global value.
+ * Unset keys inherit; a platform override never silently replaces a rule's agent.
+ */
 export function effectiveSocialPolicy(
   policies: SocialPolicies,
   platform: SocialPlatform,
@@ -80,7 +84,7 @@ export function effectiveSocialPolicy(
 ): SocialPolicy {
   return {
     ...policies.global,
-    ...(agent ? { agent } : {}),
     ...policies.platforms[platform],
+    ...(agent ? { agent } : {}),
   };
 }

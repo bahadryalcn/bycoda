@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useId, useState, useRef, useEffect, useLayoutEffect } from "react";
 import type { SparseSheet } from "../model/spreadsheet";
@@ -15,7 +16,13 @@ const OVERSCAN = 10;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
 
-export function SheetGridView({ grid }: { grid: SparseSheet }) {
+export function SheetGridView({
+  grid,
+  fitContent = false,
+}: {
+  grid: SparseSheet;
+  fitContent?: boolean;
+}) {
   useLocale();
   const name = grid.name;
   const id = useId();
@@ -67,9 +74,16 @@ export function SheetGridView({ grid }: { grid: SparseSheet }) {
   const width = rowHeaderWidth + grid.columns.length * columnWidth;
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div
+      className={`relative flex min-h-0 flex-col ${fitContent ? "" : "flex-1"}`}
+      style={
+        fitContent
+          ? { height: headerHeight + grid.rowCount * rowHeight, maxHeight: "min(560px,60dvh)" }
+          : undefined
+      }
+    >
       {grid.truncated ? (
-        <div className="shrink-0 border-b border-stroke bg-content/[0.04] px-3 py-1 text-[11px] text-[var(--ui-text-secondary)]">
+        <div className="shrink-0 border-b border-stroke px-3 py-1 text-ui-micro text-[var(--ui-text-secondary)]">
           {t("Showing the first ")}
           {formatInteger(grid.rowCount)}
           {t(" of")} {formatInteger(grid.totalRows)}
@@ -128,7 +142,7 @@ export function SheetGridView({ grid }: { grid: SparseSheet }) {
         style={{ fontSize: FONT_SIZE * zoom }}
       >
         <div
-          className="relative"
+          className="relative isolate"
           style={{
             width,
             height: headerHeight + grid.rowCount * rowHeight,
@@ -137,7 +151,7 @@ export function SheetGridView({ grid }: { grid: SparseSheet }) {
           <div
             role="row"
             aria-rowindex={1}
-            className="sticky top-0 z-20 flex border-b border-stroke bg-[var(--ui-surface)] text-[var(--ui-text-secondary)]"
+            className="sticky top-0 z-2 flex border-b border-stroke bg-(--color-background-base) text-(--ui-text-secondary)"
             style={{
               height: headerHeight,
               width,
@@ -148,7 +162,7 @@ export function SheetGridView({ grid }: { grid: SparseSheet }) {
               role="columnheader"
               aria-colindex={1}
               aria-label={t("Row")}
-              className="sticky left-0 z-10 shrink-0 border-r border-stroke bg-[var(--ui-surface)]"
+              className="sticky left-0 z-1 shrink-0 border-r border-stroke bg-(--color-background-base)"
               style={{ width: rowHeaderWidth }}
             />
             {grid.columns.map((label, column) => (
@@ -176,7 +190,7 @@ export function SheetGridView({ grid }: { grid: SparseSheet }) {
                   key={index}
                   role="row"
                   aria-rowindex={index + 2}
-                  className="absolute left-0 flex border-b border-stroke/60"
+                  className="absolute left-0 flex border-b border-stroke"
                   style={{
                     top: headerHeight + index * rowHeight,
                     height: rowHeight,
@@ -186,7 +200,7 @@ export function SheetGridView({ grid }: { grid: SparseSheet }) {
                   <div
                     role="rowheader"
                     aria-colindex={1}
-                    className="sticky left-0 z-10 shrink-0 border-r border-stroke bg-[var(--ui-surface)] text-right text-[var(--ui-text-secondary)] tabular-nums"
+                    className="sticky left-0 z-1 shrink-0 border-r border-stroke bg-(--color-background-base) text-right text-(--ui-text-secondary) tabular-nums"
                     style={{
                       width: rowHeaderWidth,
                       lineHeight: `${rowHeight}px`,
@@ -209,8 +223,7 @@ export function SheetGridView({ grid }: { grid: SparseSheet }) {
                           setFocused({ row: index, column });
                           scrollRef.current?.focus();
                         }}
-                        title={cell}
-                        className="shrink-0 truncate border-r border-stroke/60 text-content"
+                        className="shrink-0 truncate border-r border-stroke text-content"
                         style={{
                           ...cellStyle,
                           outline:
@@ -220,7 +233,9 @@ export function SheetGridView({ grid }: { grid: SparseSheet }) {
                           outlineOffset: -2,
                         }}
                       >
-                        {cell}
+                        <OverflowTooltip label={cell}>
+                          <span className="block truncate">{cell}</span>
+                        </OverflowTooltip>
                       </div>
                     );
                   })}

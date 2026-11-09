@@ -1,0 +1,136 @@
+import { execFileSync } from "node:child_process";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, expect, it } from "vitest";
+import { hostGitSubmodules } from "./git-submodules";
+
+const roots: string[] = [];
+afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
+function fixture() {
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "bycoda-submodules-")));
+  roots.push(root);
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync("git", args, {
+      cwd,
+      windowsHide: true,
+      encoding: "utf8",
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    }).trim();
+  const repo = (name: string) => {
+    const cwd = join(root, name);
+    mkdirSync(cwd);
+    git(cwd, "init", "-q");
+    git(cwd, "config", "user.name", "Test");
+    git(cwd, "config", "user.email", "test@example.test");
+    git(cwd, "config", "commit.gpgsign", "false");
+    writeFileSync(join(cwd, "file.txt"), "original\n");
+    git(cwd, "add", "file.txt");
+    git(cwd, "commit", "-qm", "initial");
+    return cwd;
+  };
+  const add = (cwd: string, source: string, path: string) =>
+    git(cwd, "-c", "protocol.file.allow=always", "submodule", "add", "--", source, path);
+  return { root, git, repo, add };
+}
+
+it("discovers nested initialized repositories with spaces without changing their contents or index", async () => {
+  const f = fixture();
+  const nested = f.repo("nested-source");
+  const module = f.repo("module-source");
+  f.add(module, nested, "nested module");
+  f.git(module, "commit", "-qm", "nested");
+  const parent = f.repo("parent");
+  f.add(parent, module, "core pack");
+  f.git(parent, "-c", "protocol.file.allow=always", "submodule", "update", "--init", "--recursive");
+  const child = join(parent, "core pack");
+  writeFileSync(join(child, "file.txt"), "staged change\n");
+  f.git(child, "add", "file.txt");
+  writeFileSync(join(child, "file.txt"), "unstaged change\n");
+  const before = [
+    f.git(parent, "status", "--porcelain"),
+    f.git(child, "status", "--porcelain"),
+    f.git(child, "diff", "--cached"),
+  ];
+  expect(await hostGitSubmodules(parent)).toEqual(["core pack", "core pack/nested module"]);
+  expect(await hostGitSubmodules(child)).toEqual(["nested module"]);
+  expect([
+    f.git(parent, "status", "--porcelain"),
+    f.git(child, "status", "--porcelain"),
+    f.git(child, "diff", "--cached"),
+  ]).toEqual(before);
+  expect(readFileSync(join(child, "file.txt"), "utf8")).toBe("unstaged change\n");
+});
+
+it("skips an uninitialized submodule instead of treating it as its parent repository", async () => {
+  const f = fixture();
+  const source = f.repo("source");
+  const parent = f.repo("parent");
+  f.add(parent, source, "core-pack");
+  f.git(parent, "submodule", "deinit", "-f", "--", "core-pack");
+  expect(await hostGitSubmodules(parent)).toEqual([]);
+  expect(await hostGitSubmodules(source)).toEqual([]);
+});
+
+it("opts into ignored independent repositories and worktree gitfiles without following directory links", async () => {
+  const f = fixture();
+  const parent = f.repo("parent");
+  const mobile = f.repo("parent/mobile");
+  f.repo("parent/Türkçe proje");
+  const outside = f.repo("outside");
+  mkdirSync(join(parent, "node_modules"));
+  f.repo("parent/node_modules/dependency");
+  writeFileSync(join(parent, ".gitignore"), "mobile/\nnode_modules/\n");
+  writeFileSync(join(mobile, "file.txt"), "independent draft\n");
+  f.git(mobile, "add", "file.txt");
+  writeFileSync(join(mobile, "file.txt"), "independent unsaved change\n");
+  const linkedWorktree = join(parent, "review-copy");
+  f.git(outside, "worktree", "add", "-qb", "review", linkedWorktree);
+  symlinkSync(outside, join(parent, "external"), process.platform === "win32" ? "junction" : "dir");
+  const before = [f.git(parent, "status", "--porcelain"), f.git(mobile, "diff", "--cached")];
+  expect(await hostGitSubmodules(parent)).toEqual([]);
+  expect(await hostGitSubmodules(parent, true)).toEqual(["Türkçe proje", "mobile", "review-copy"]);
+  expect([f.git(parent, "status", "--porcelain"), f.git(mobile, "diff", "--cached")]).toEqual(
+    before,
+  );
+  expect(readFileSync(join(mobile, "file.txt"), "utf8")).toBe("independent unsaved change\n");
+});
+
+it("reports incomplete discovery when the physical folder depth limit is exceeded", async () => {
+  const f = fixture();
+  const parent = f.repo("parent");
+  mkdirSync(join(parent, ...Array.from({ length: 66 }, () => "d")), { recursive: true });
+  await expect(hostGitSubmodules(parent, true)).rejects.toThrow(
+    "Repository discovery depth limit exceeded",
+  );
+});
+
+it("deduplicates conflicted gitlink stages and preserves recursive discovery without index mutation", async () => {
+  const f = fixture();
+  const source = f.repo("source");
+  const parent = f.repo("parent");
+  f.add(parent, source, "core pack");
+  const child = join(parent, "core pack");
+  f.add(child, source, "nested");
+  const sha = f.git(child, "rev-parse", "HEAD");
+  execFileSync("git", ["update-index", "--index-info"], {
+    cwd: parent,
+    windowsHide: true,
+    input: `0 ${"0".repeat(40)}\tcore pack\n${[1, 2, 3].map((stage) => `160000 ${sha} ${stage}\tcore pack\n`).join("")}`,
+  });
+  const before = f.git(parent, "ls-files", "--stage");
+  expect(before).toContain(`160000 ${sha} 1\tcore pack`);
+  expect(before).not.toContain(`160000 ${sha} 0\tcore pack`);
+  expect(await hostGitSubmodules(parent)).toEqual(["core pack", "core pack/nested"]);
+  expect(f.git(parent, "ls-files", "--stage")).toBe(before);
+  f.git(child, "submodule", "deinit", "-f", "--", "nested");
+  expect(await hostGitSubmodules(parent)).toEqual(["core pack"]);
+});

@@ -1,11 +1,24 @@
 import { OverlayNav } from "../../shell/TitleBar";
+import { AssistantView } from "../surfaces/lazySurfaces";
+import { isProjectLocked } from "../../../features/group-lock/model/groupLock";
+import { invoke } from "@tauri-apps/api/core";
+import { remoteRequest } from "../../../features/connections/model/connections";
+import type { HostGoal } from "../../../features/tasks/model/hostGoals";
+import { AssistantResponseValidationSchema } from "../../../shared/model/host-contracts/assistant";
+import { HostAutomationSchema } from "../../../shared/model/host-contracts/automations";
+import {
+  assistantAutomationProject,
+  type AssistantAutomationReveal,
+} from "../../../features/assistant/model/assistantAutomationReveal";
+import { assistantJobTasksGoal } from "../../../features/assistant/model/assistantJobTasksReveal";
+import type { RemoteMachine, HostSession } from "../../../features/connections/model/protocol";
+import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { WindowControls } from "../../shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
-import { useState } from "react";
-import {
-  SessionHostTools,
-  type ConversationTools,
-} from "../../../features/host-tools/SessionHostTools";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { memo, useEffect, useMemo, useState } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
+import type { ConversationTools } from "../../../features/host-tools/SessionHostTools";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import { ToolNavigation } from "../../shell/ToolNavigation";
 import type { ComponentProps, Dispatch, SetStateAction } from "react";
@@ -20,6 +33,13 @@ import {
   TasksView,
   ServersView,
 } from "../surfaces/lazySurfaces";
+
+const SessionHostTools = lazySurface(
+  async () => ({
+    default: (await import("../../../features/host-tools/SessionHostTools")).SessionHostTools,
+  }),
+  { suspense: false },
+);
 
 const TerminalView = lazySurface(async () => ({
   default: (await import("../../../features/terminal/ui/TerminalView")).TerminalView,
@@ -66,6 +86,7 @@ export interface WorkspaceToolPanelsProps {
   compactRailActive: boolean;
   onToggleSidebar: InboxProps["onToggleSidebar"];
   pickProject: InboxProps["onOpenProject"];
+  onSelectAssistantProject?: (path: string) => void;
   // Inbox
   onLeaveInbox: InboxProps["onClose"];
   onStartInboxItem: InboxProps["onStart"];
@@ -91,7 +112,7 @@ export interface WorkspaceToolPanelsProps {
   ) => Promise<void>;
 }
 
-export function WorkspaceToolPanels({
+function WorkspaceToolPanelsComponent({
   auxiliaryTool,
   setAuxiliaryTool,
   conversationTools,
@@ -125,6 +146,7 @@ export function WorkspaceToolPanels({
   compactRailActive,
   onToggleSidebar,
   pickProject,
+  onSelectAssistantProject,
   onLeaveInbox: leaveInbox,
   onStartInboxItem,
   onAskInboxItem,
@@ -144,71 +166,360 @@ export function WorkspaceToolPanels({
   onLaunchAutomationAssistant,
 }: WorkspaceToolPanelsProps) {
   const [terminalId] = useState(() => `tools-terminal-${crypto.randomUUID()}`);
+  const [goalReveal, setGoalReveal] = useState<{
+    machineId: string;
+    goalId: string;
+    token: number;
+  }>();
+  const [automationReveal, setAutomationReveal] = useState<AssistantAutomationReveal>();
+  const canOpenAssistantProject = useStableCallback((path: string) => {
+    const key = (value: string) => value.replace(/\\/g, "/").replace(/\/$/, "").toLocaleLowerCase();
+    return (
+      !isProjectLocked(path) && visibleRecents.some((project) => key(project.path) === key(path))
+    );
+  });
+  const [assistantNavigation, setAssistantNavigation] = useState<{
+    tab: "today" | "memory" | "settings" | "history";
+    token: number;
+  }>({ tab: "today", token: 0 });
+  useEffect(() => {
+    const openAssistant = (event: Event) => {
+      const requested = (event as CustomEvent<{ tab?: string }>).detail?.tab;
+      const tab =
+        requested === "memory" || requested === "settings" || requested === "history"
+          ? requested
+          : "today";
+      setAssistantNavigation((previous) => ({ tab, token: previous.token + 1 }));
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setServersViewOpen(false);
+      setAutomationsViewOpen(true);
+      setSocialBoardShown(false);
+      setTaskBoardShown(false);
+      setAuxiliaryTool?.("assistant");
+    };
+    window.addEventListener("bycoda:open-assistant", openAssistant);
+    return () => window.removeEventListener("bycoda:open-assistant", openAssistant);
+  }, [
+    setInboxViewOpen,
+    setNotesViewOpen,
+    setServersViewOpen,
+    setAutomationsViewOpen,
+    setSocialBoardShown,
+    setTaskBoardShown,
+    setAuxiliaryTool,
+  ]);
   const onLeaveInbox = navigation?.onBack ?? leaveInbox;
   const onLeaveNotes = navigation?.onBack ?? leaveNotes;
   const onLeaveServers = navigation?.onBack ?? leaveServers;
   const onLeaveAutomations = navigation?.onBack ?? leaveAutomations;
   const auxiliaryHeader = (
-    <div
-      className="flex h-10 shrink-0 select-none items-center border-b border-stroke"
-      data-tauri-drag-region="deep"
+    <PaneHeader
+      dragRegion
+      chromeInset={detachedSessionWindow}
+      leading={detachedSessionWindow ? <OverlayNav onBack={onLeaveAutomations} /> : undefined}
+      trailing={IS_MAC ? null : <WindowControls />}
     >
-      {IS_MAC && detachedSessionWindow ? <div className="w-[78px] shrink-0" /> : null}
-      {detachedSessionWindow ? <OverlayNav onBack={onLeaveAutomations} /> : null}
       <ToolNavigation />
-      {IS_MAC ? null : <WindowControls />}
-    </div>
+    </PaneHeader>
+  );
+  // The provider value keeps its identity across workspace renders, so tool
+  // headers only re-render when navigation state changes.
+  const navigationBack = useStableCallback(navigation?.onBack);
+  const navigationForward = useStableCallback(navigation?.onForward);
+  const canBack = navigation?.canBack ?? false;
+  const canForward = navigation?.canForward ?? false;
+  const history = useMemo(
+    () =>
+      navigationBack && navigationForward
+        ? { canBack, canForward, onBack: navigationBack, onForward: navigationForward }
+        : undefined,
+    [canBack, canForward, navigationBack, navigationForward],
+  );
+  const activeTool: WorkspaceToolId | null =
+    automationsViewOpen && auxiliaryTool
+      ? auxiliaryTool
+      : serversViewOpen
+        ? "servers"
+        : inboxViewOpen
+          ? "inbox"
+          : notesViewOpen
+            ? "notes"
+            : automationsViewOpen
+              ? socialBoardShown
+                ? "social"
+                : taskBoardShown
+                  ? "tasks"
+                  : "automations"
+              : null;
+  const toolCwd =
+    automationsViewOpen && socialBoardShown && socialPanelCwd ? socialPanelCwd : projectCwd;
+  const includeServers = !toolWindow || toolWindow.grouped || toolWindow.active === "servers";
+  const includeAuxiliaryTools = !!setAuxiliaryTool;
+  const grouped = toolWindow?.grouped ?? true;
+  const onSelectTool = useStableCallback((tool: WorkspaceToolId) => {
+    setFilePickerOpen(false);
+    setSettingsOpen(false);
+    setSearchViewOpen(false);
+    setInboxViewOpen(tool === "inbox");
+    setPullRequestsOnly(false);
+    setNotesViewOpen(tool === "notes" && notesEnabled);
+    setServersViewOpen(tool === "servers");
+    setAutomationsViewOpen(
+      tool === "social" ||
+        tool === "tasks" ||
+        tool === "automations" ||
+        tool === "terminal" ||
+        tool === "conversation-tools" ||
+        tool === "assistant",
+    );
+    setAuxiliaryTool?.(
+      tool === "terminal" || tool === "conversation-tools" || tool === "assistant" ? tool : null,
+    );
+    setSocialBoardShown(tool === "social");
+    setTaskBoardShown(tool === "tasks");
+  });
+  const toolNavigation = useMemo(
+    () => ({
+      history,
+      active: activeTool,
+      cwd: toolCwd,
+      notesEnabled,
+      includeServers,
+      includeAuxiliaryTools,
+      grouped,
+      onSelect: onSelectTool,
+    }),
+    [
+      history,
+      activeTool,
+      toolCwd,
+      notesEnabled,
+      includeServers,
+      includeAuxiliaryTools,
+      grouped,
+      onSelectTool,
+    ],
   );
   return (
-    <ToolNavigationContext.Provider
-      value={{
-        history: navigation,
-        active:
-          automationsViewOpen && auxiliaryTool
-            ? auxiliaryTool
-            : serversViewOpen
-              ? "servers"
-              : inboxViewOpen
-                ? "inbox"
-                : notesViewOpen
-                  ? "notes"
-                  : automationsViewOpen
-                    ? socialBoardShown
-                      ? "social"
-                      : taskBoardShown
-                        ? "tasks"
-                        : "automations"
-                    : null,
-        cwd:
-          automationsViewOpen && socialBoardShown && socialPanelCwd ? socialPanelCwd : projectCwd,
-        notesEnabled,
-        includeServers: !toolWindow || toolWindow.grouped || toolWindow.active === "servers",
-        includeAuxiliaryTools: !!setAuxiliaryTool,
-        grouped: toolWindow?.grouped ?? true,
-        onSelect: (tool: WorkspaceToolId) => {
-          setFilePickerOpen(false);
-          setSettingsOpen(false);
-          setSearchViewOpen(false);
-          setInboxViewOpen(tool === "inbox");
-          setPullRequestsOnly(false);
-          setNotesViewOpen(tool === "notes" && notesEnabled);
-          setServersViewOpen(tool === "servers");
-          setAutomationsViewOpen(
-            tool === "social" ||
-              tool === "tasks" ||
-              tool === "automations" ||
-              tool === "terminal" ||
-              tool === "conversation-tools",
-          );
-          setAuxiliaryTool?.(tool === "terminal" || tool === "conversation-tools" ? tool : null);
-          setSocialBoardShown(tool === "social");
-          setTaskBoardShown(tool === "tasks");
-        },
-      }}
-    >
+    <ToolNavigationContext.Provider value={toolNavigation}>
+      <ToolPanel active={automationsViewOpen && auxiliaryTool === "assistant"}>
+        {auxiliaryHeader}
+        <AssistantView
+          projectPath={projectCwd}
+          visibleProjectPaths={visibleRecents.map((project) => project.path)}
+          initialTab={assistantNavigation.tab}
+          navigationToken={assistantNavigation.token}
+          onClose={onLeaveAutomations}
+          onOpenProject={
+            onSelectAssistantProject
+              ? (path) => {
+                  if (!canOpenAssistantProject(path))
+                    throw new Error("The linked project is unavailable.");
+                  onSelectAssistantProject(path);
+                }
+              : undefined
+          }
+          onOpenGoal={async (target) => {
+            const machine = await invoke<RemoteMachine | null>("local_host_connect");
+            if (!machine) throw new Error("The approval's original Host is unavailable.");
+            const [environment, projects, goals] = await Promise.all([
+              remoteRequest<{ environmentId: string }>(
+                machine.id,
+                "environment.describe",
+                {},
+                false,
+                false,
+                target.environmentId,
+              ),
+              remoteRequest(
+                machine.id,
+                "assistant.request",
+                { op: "projects.list" },
+                false,
+                false,
+                target.environmentId,
+              ).then((value) => AssistantResponseValidationSchema.parse(value)),
+              remoteRequest<HostGoal[]>(
+                machine.id,
+                "goals.list",
+                {},
+                false,
+                false,
+                target.environmentId,
+              ),
+            ]);
+            const project = projects.projects?.find((value) => value.id === target.projectId);
+            const goal = goals.find((value) => value.id === target.goalId);
+            const expectedProjects = [...new Set(target.projectIds ?? [target.projectId])].sort();
+            const actualProjects = [...new Set(goal?.projectIds ?? [])].sort();
+            const allVisible = actualProjects.every((id) => {
+              const value = projects.projects?.find((project) => project.id === id);
+              return !!value && canOpenAssistantProject(value.path);
+            });
+            if (
+              environment.environmentId !== target.environmentId ||
+              !project ||
+              !allVisible ||
+              !canOpenAssistantProject(project.path) ||
+              !goal ||
+              goal.status !== "awaiting-approval" ||
+              JSON.stringify(actualProjects) !== JSON.stringify(expectedProjects) ||
+              !goal.projectIds.includes(project.id) ||
+              goal.updatedAt !== target.updatedAt ||
+              JSON.stringify(goal.plan) !== target.planIdentity
+            )
+              throw new Error("The original goal approval changed or its project is unavailable.");
+            setGoalReveal({ machineId: machine.id, goalId: goal.id, token: Date.now() });
+            onSelectTool("tasks");
+          }}
+          onReviewJobTasks={async (target) => {
+            const machine = await invoke<RemoteMachine | null>("local_host_connect");
+            if (!machine || !target.environmentId)
+              throw new Error("The linked job's Host identity is unavailable.");
+            const [environment, projects, response, goals] = await Promise.all([
+              remoteRequest<{ environmentId: string }>(
+                machine.id,
+                "environment.describe",
+                {},
+                false,
+                false,
+                target.environmentId,
+              ),
+              remoteRequest(
+                machine.id,
+                "assistant.request",
+                { op: "projects.list" },
+                false,
+                false,
+                target.environmentId,
+              ).then((value) => AssistantResponseValidationSchema.parse(value)),
+              remoteRequest(
+                machine.id,
+                "assistant.request",
+                { op: "jobs.get", id: target.jobId },
+                false,
+                false,
+                target.environmentId,
+              ).then((value) => AssistantResponseValidationSchema.parse(value)),
+              remoteRequest<HostGoal[]>(
+                machine.id,
+                "goals.list",
+                {},
+                false,
+                false,
+                target.environmentId,
+              ),
+            ]);
+            const current = await invoke<RemoteMachine | null>("local_host_connect");
+            if (current?.id !== machine.id || current.environmentId !== target.environmentId)
+              throw new Error("The linked job's Host identity is unavailable.");
+            const goal = assistantJobTasksGoal(
+              target,
+              environment.environmentId,
+              response.job,
+              goals,
+              projects.projects ?? [],
+              canOpenAssistantProject,
+            );
+            setGoalReveal({ machineId: machine.id, goalId: goal.id, token: Date.now() });
+            onSelectTool("tasks");
+          }}
+          onOpenAutomation={async (target) => {
+            const machine = await invoke<RemoteMachine | null>("local_host_connect");
+            if (!machine) throw new Error("This computer's Host is unavailable.");
+            const expectedEnvironmentId = target.environmentId ?? machine.environmentId;
+            if (!expectedEnvironmentId)
+              throw new Error("The linked automation's Host identity is unavailable.");
+            const [environment, projects, automations] = await Promise.all([
+              remoteRequest<{ environmentId: string }>(
+                machine.id,
+                "environment.describe",
+                {},
+                false,
+                false,
+                expectedEnvironmentId,
+              ),
+              remoteRequest(
+                machine.id,
+                "assistant.request",
+                { op: "projects.list" },
+                false,
+                false,
+                expectedEnvironmentId,
+              ).then((value) => AssistantResponseValidationSchema.parse(value)),
+              remoteRequest(
+                machine.id,
+                "automations.list",
+                {},
+                false,
+                false,
+                expectedEnvironmentId,
+              ).then((value) => HostAutomationSchema.array().parse(value)),
+            ]);
+            const current = await invoke<RemoteMachine | null>("local_host_connect");
+            if (current?.id !== machine.id || current.environmentId !== expectedEnvironmentId)
+              throw new Error("The linked automation's Host identity is unavailable.");
+            assistantAutomationProject(
+              target,
+              expectedEnvironmentId,
+              environment.environmentId,
+              projects.projects ?? [],
+              automations,
+              canOpenAssistantProject,
+            );
+            setAutomationReveal({
+              id: target.id,
+              projectId: target.projectId,
+              environmentId: expectedEnvironmentId,
+              machineId: machine.id,
+              token: Date.now(),
+            });
+            onSelectTool("automations");
+          }}
+          onOpenSession={async (sessionId, sourceEnvironmentId?: string) => {
+            const machine = await invoke<RemoteMachine | null>("local_host_connect");
+            if (!machine) throw new Error("This computer's Host is unavailable.");
+            const expectedEnvironmentId = sourceEnvironmentId ?? machine.environmentId;
+            if (!expectedEnvironmentId)
+              throw new Error("The linked session's Host identity is unavailable.");
+            const [host, projects] = await Promise.all([
+              remoteRequest<HostSession | null>(
+                machine.id,
+                "sessions.get",
+                {
+                  sessionId,
+                  preview: true,
+                  summary: true,
+                },
+                false,
+                false,
+                expectedEnvironmentId,
+              ),
+              remoteRequest(
+                machine.id,
+                "assistant.request",
+                { op: "projects.list" },
+                false,
+                false,
+                expectedEnvironmentId,
+              ).then((value) => AssistantResponseValidationSchema.parse(value)),
+            ]);
+            const project = projects.projects?.find((value) => value.id === host?.projectId);
+            if (!host || !project || !canOpenAssistantProject(project.path))
+              throw new Error("The linked session is unavailable.");
+            await onOpenBackgroundSession({
+              machineId: machine.id,
+              projectId: host.projectId,
+              cwd: host.session.cwd,
+              sessionId,
+            });
+          }}
+        />
+      </ToolPanel>
       <ToolPanel active={automationsViewOpen && auxiliaryTool === "conversation-tools"}>
         <NavigationBoundary name="Conversation tools" onBack={onLeaveAutomations}>
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-(--ui-surface)">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {auxiliaryHeader}
             <SessionHostTools
               {...(conversationTools ?? { cwd: projectCwd, sessionId: "", title: "" })}
@@ -241,36 +552,40 @@ export function WorkspaceToolPanels({
         </NavigationBoundary>
       </ToolPanel>
       <ToolPanel active={inboxViewOpen}>
-        <InboxView
-          key={pullRequestsOnly ? "pullRequests" : "inbox"}
-          pullRequestsOnly={pullRequestsOnly}
-          onOpenProject={pickProject}
-          cwd={sidebarCwd}
-          recents={visibleRecents}
-          besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
-          compactRail={compactRailActive}
-          onClose={onLeaveInbox}
-          onToggleSidebar={toolWindow ? undefined : onToggleSidebar}
-          onStart={onStartInboxItem}
-          onAsk={onAskInboxItem}
-          onAskRestart={onRestartInboxAsk}
-          onAskMount={setInboxAskPortal}
-          sessions={inboxRelatedSessions}
-          repairSessions={repairSessions}
-          onRepairChecks={onRepairChecks}
-          onOpenSession={onOpenInboxSession}
-          onOpenIntegrations={onOpenInboxIntegrations}
-        />
+        <NavigationBoundary name="Inbox" onBack={onLeaveInbox ?? onLeaveAutomations}>
+          <InboxView
+            key={pullRequestsOnly ? "pullRequests" : "inbox"}
+            pullRequestsOnly={pullRequestsOnly}
+            onOpenProject={pickProject}
+            cwd={sidebarCwd}
+            recents={visibleRecents}
+            besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
+            compactRail={compactRailActive}
+            onClose={onLeaveInbox}
+            onToggleSidebar={toolWindow ? undefined : onToggleSidebar}
+            onStart={onStartInboxItem}
+            onAsk={onAskInboxItem}
+            onAskRestart={onRestartInboxAsk}
+            onAskMount={setInboxAskPortal}
+            sessions={inboxRelatedSessions}
+            repairSessions={repairSessions}
+            onRepairChecks={onRepairChecks}
+            onOpenSession={onOpenInboxSession}
+            onOpenIntegrations={onOpenInboxIntegrations}
+          />
+        </NavigationBoundary>
       </ToolPanel>
       <ToolPanel active={notesViewOpen}>
-        <NotesView
-          besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
-          compactRail={compactRailActive}
-          cwd={projectCwd}
-          recents={visibleRecents}
-          onClose={onLeaveNotes}
-          onToggleSidebar={toolWindow ? undefined : onToggleSidebar}
-        />
+        <NavigationBoundary name="Notes" onBack={onLeaveNotes}>
+          <NotesView
+            besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
+            compactRail={compactRailActive}
+            cwd={projectCwd}
+            recents={visibleRecents}
+            onClose={onLeaveNotes}
+            onToggleSidebar={toolWindow ? undefined : onToggleSidebar}
+          />
+        </NavigationBoundary>
       </ToolPanel>
       <ToolPanel active={automationsViewOpen && socialBoardShown}>
         <NavigationBoundary name="Social Media" onBack={onLeaveAutomations}>
@@ -286,6 +601,7 @@ export function WorkspaceToolPanels({
       <ToolPanel active={automationsViewOpen && taskBoardShown && !socialBoardShown}>
         <NavigationBoundary name="Tasks" onBack={onLeaveAutomations}>
           <TasksView
+            goalReveal={goalReveal}
             besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
             compactRail={compactRailActive}
             cwd={projectCwd}
@@ -299,19 +615,29 @@ export function WorkspaceToolPanels({
       <ToolPanel
         active={automationsViewOpen && !auxiliaryTool && !taskBoardShown && !socialBoardShown}
       >
-        <AutomationsView
-          besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
-          compactRail={compactRailActive}
-          cwd={projectCwd}
-          recents={visibleRecents}
-          onClose={onLeaveAutomations}
-          onToggleSidebar={toolWindow ? undefined : onToggleSidebar}
-          onLaunchAssistant={onLaunchAutomationAssistant}
-          onLaunch={(automation, run) => launchAutomation(automation, run, true)}
-          onOpenSession={onOpenAutomationSession}
-          onOpenBackgroundSession={onOpenBackgroundSession}
-        />
+        <NavigationBoundary name="Automations" onBack={onLeaveAutomations}>
+          <AutomationsView
+            revealAutomation={automationReveal}
+            besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
+            compactRail={compactRailActive}
+            cwd={projectCwd}
+            recents={visibleRecents}
+            onClose={onLeaveAutomations}
+            onToggleSidebar={toolWindow ? undefined : onToggleSidebar}
+            onLaunchAssistant={onLaunchAutomationAssistant}
+            onLaunch={(automation, run) => launchAutomation(automation, run, true)}
+            onOpenSession={onOpenAutomationSession}
+            onOpenBackgroundSession={onOpenBackgroundSession}
+          />
+        </NavigationBoundary>
       </ToolPanel>
     </ToolNavigationContext.Provider>
   );
+}
+
+const MemoWorkspaceToolPanels = memo(WorkspaceToolPanelsComponent);
+
+/** Workspace recreates most handlers per render; stable proxies let the memo hold. */
+export function WorkspaceToolPanels(props: WorkspaceToolPanelsProps) {
+  return <MemoWorkspaceToolPanels {...useStableHandlers(props)} />;
 }

@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { Button } from "../../../shared/ui/Button";
@@ -258,9 +259,9 @@ export function LocalTerminalSuggestions({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => accept(value)}
               >
-                <span className={styles.text} title={value}>
-                  {value}
-                </span>
+                <OverflowTooltip label={value}>
+                  <span className={styles.text}>{value}</span>
+                </OverflowTooltip>
               </Button>
             ))}
           </div>

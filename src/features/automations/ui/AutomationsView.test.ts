@@ -12,14 +12,325 @@ import {
 } from "../model/automations";
 import { SUPPORTED_INBOX_TRIGGER_EVENTS } from "../model/automationEvents";
 import * as hostAutomationClient from "../model/hostAutomationClient";
-import {
-  AutomationsView as RawAutomationsView,
-  EventTriggerSentence,
-  TRIGGER_EVENTS,
-} from "./AutomationsView";
+import { AutomationsView as RawAutomationsView } from "./AutomationsView";
+import { EventTriggerSentence } from "./TriggerEditor";
+import { TRIGGER_EVENTS } from "../model/automationTriggerCatalog";
 import { withQueryClient } from "../../../../tests/browser/queryTest";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
+import { focusManager } from "@tanstack/react-query";
 const AutomationsView = withQueryClient(RawAutomationsView);
+
+it("keeps an unfocused assistant reveal paused, then opens its exact Host row when normal focus loading resumes", async () => {
+  const row: Automation = {
+    ...newAutomationDraft("/work/controls", "codex", "model"),
+    id: "requested",
+    name: "Focused canonical automation",
+    prompt: "Do not run",
+    createdAt: 1,
+    updatedAt: 2,
+    nextRunAt: 0,
+    host: {
+      machineId: "machine",
+      machineName: "Host",
+      environmentId: "original",
+      projectId: "project",
+    },
+  };
+  const lists = vi
+    .spyOn(hostAutomationClient, "listHostAutomationResults")
+    .mockResolvedValue([
+      { machineId: "machine", machineName: "Host", status: "ok", stale: false, data: [row] },
+    ]);
+  const history = vi.spyOn(hostAutomationClient, "listHostAutomationRuns").mockResolvedValue([]);
+  invoke.mockResolvedValue([]);
+  focusManager.setFocused(false);
+  const props = {
+    recents: [{ path: row.cwd }] as any,
+    onClose: vi.fn(),
+    onLaunch: vi.fn(),
+    onOpenSession: vi.fn(),
+    onOpenBackgroundSession: vi.fn(),
+    revealAutomation: {
+      id: row.id,
+      projectId: "project",
+      environmentId: "original",
+      machineId: "machine",
+      token: 10,
+    },
+  };
+  try {
+    await act(async () => root.render(createElement(AutomationsView, props)));
+    expect(container.textContent).toContain("Focus this window to load automations.");
+    expect(container.textContent).not.toContain("Create your first automation");
+    expect(lists).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+    await act(async () => focusManager.setFocused(true));
+    await vi.waitFor(() =>
+      expect(
+        container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')?.value,
+      ).toBe(row.name),
+    );
+    expect(props.onLaunch).not.toHaveBeenCalled();
+    expect(
+      invoke.mock.calls.some(
+        ([command]) => command === "automation_run" || command === "automations_upsert",
+      ),
+    ).toBe(false);
+  } finally {
+    lists.mockRestore();
+    history.mockRestore();
+  }
+});
+
+it("retries the same reveal after refreshed rows arrive without selecting a same-id automation on another Host", async () => {
+  const row: Automation = {
+    ...newAutomationDraft("/work/controls", "codex", "model"),
+    id: "requested",
+    name: "Late canonical automation",
+    prompt: "Do not run",
+    createdAt: 1,
+    updatedAt: 2,
+    nextRunAt: 0,
+    host: {
+      machineId: "machine",
+      machineName: "Host",
+      environmentId: "original",
+      projectId: "project",
+    },
+  };
+  let finish!: (value: any) => void;
+  const late = new Promise<any>((resolve) => (finish = resolve));
+  const lists = vi
+    .spyOn(hostAutomationClient, "listHostAutomationResults")
+    .mockResolvedValueOnce([])
+    .mockReturnValueOnce(late);
+  const history = vi.spyOn(hostAutomationClient, "listHostAutomationRuns").mockResolvedValue([]);
+  invoke.mockResolvedValue([]);
+  const props = {
+    recents: [{ path: row.cwd }] as any,
+    onClose: vi.fn(),
+    onLaunch: vi.fn(),
+    onOpenSession: vi.fn(),
+    onOpenBackgroundSession: vi.fn(),
+    revealAutomation: {
+      id: row.id,
+      projectId: "project",
+      environmentId: "original",
+      machineId: "machine",
+      token: 11,
+    },
+  };
+  try {
+    await act(async () => root.render(createElement(AutomationsView, props)));
+    await vi.waitFor(() => expect(lists).toHaveBeenCalledTimes(2));
+    expect(container.textContent).toContain("unavailable on its original computer");
+    const decoy = {
+      ...row,
+      name: "Wrong Host",
+      host: { ...row.host!, machineId: "other", environmentId: "other" },
+    };
+    await act(async () =>
+      finish([
+        {
+          machineId: "machine",
+          machineName: "Host",
+          status: "ok",
+          stale: false,
+          data: [decoy, row],
+        },
+      ]),
+    );
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')?.value).toBe(
+      row.name,
+    );
+    expect(lists).toHaveBeenCalledTimes(2);
+    expect(props.onLaunch).not.toHaveBeenCalled();
+  } finally {
+    lists.mockRestore();
+    history.mockRestore();
+  }
+});
+
+it("keeps creation available when one remote machine is offline and retries without losing a draft", async () => {
+  invoke.mockResolvedValue([]);
+  const probe = vi.spyOn(hostAutomationClient, "probeMachines").mockResolvedValue({
+    capable: [],
+    outdated: [],
+    unreachable: ["tailm"],
+    unreachableMachines: [],
+  });
+  const lists = vi
+    .spyOn(hostAutomationClient, "listHostAutomationResults")
+    .mockResolvedValue([
+      { machineId: "offline", machineName: "tailm", status: "error", stale: false, data: [] },
+    ]);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(AutomationsView, {
+          cwd: "/work/project",
+          recents: [],
+          onClose: vi.fn(),
+          onLaunch: vi.fn(),
+          onOpenSession: vi.fn(),
+          onOpenBackgroundSession: vi.fn(),
+        }),
+      ),
+    );
+    await vi.waitFor(() => expect(container.textContent).toContain("tailm"));
+    expect(container.textContent).not.toContain("Automations unavailable");
+    expect(container.textContent).not.toContain("Create your first automation");
+    const blank = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent?.includes("Start from scratch"),
+    )!;
+    expect(blank).toBeDefined();
+    await act(async () => blank.click());
+    const name = container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;
+    await changeInput(name, "Offline-safe draft");
+    lists.mockResolvedValue([]);
+    const retry = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent === "Retry",
+    )!;
+    await act(async () => retry.click());
+    await vi.waitFor(() => expect(container.textContent).not.toContain("tailm"));
+    expect(probe).toHaveBeenLastCalledWith("automations", true);
+    expect(name.value).toBe("Offline-safe draft");
+    expect(
+      invoke.mock.calls.some(
+        ([command]) => command === "automations_upsert" || command === "automation_run",
+      ),
+    ).toBe(false);
+  } finally {
+    probe.mockRestore();
+    lists.mockRestore();
+  }
+});
+
+it("shows an initial Host-read failure instead of claiming there are no automations", async () => {
+  invoke.mockImplementation(async (command) => {
+    if (command === "remote_machines") throw new Error("Host read failed");
+    return [];
+  });
+  await act(async () =>
+    root.render(
+      createElement(AutomationsView, {
+        recents: [],
+        onClose: vi.fn(),
+        onLaunch: vi.fn(),
+        onOpenSession: vi.fn(),
+        onOpenBackgroundSession: vi.fn(),
+      }),
+    ),
+  );
+  await vi.waitFor(() => expect(container.textContent).toContain("Host read failed"));
+  expect(container.textContent).toContain("Automations unavailable");
+  expect(container.textContent).not.toContain("Create your first automation");
+});
+
+it("parks assistant navigation behind an unsaved draft and owner filters, then reveals the exact fresh Host row without saving or running", async () => {
+  const hostRow: Automation = {
+    ...newAutomationDraft("/work/controls", "codex", "model"),
+    id: "requested",
+    name: "Requested Host automation",
+    prompt: "Historical prompt",
+    createdAt: 1,
+    updatedAt: 2,
+    nextRunAt: 0,
+    host: {
+      machineId: "machine",
+      machineName: "Host",
+      environmentId: "original",
+      projectId: "project",
+    },
+  };
+  const lists = vi
+    .spyOn(hostAutomationClient, "listHostAutomationResults")
+    .mockResolvedValue([
+      { machineId: "machine", machineName: "Host", status: "ok", stale: false, data: [hostRow] },
+    ]);
+  const history = vi.spyOn(hostAutomationClient, "listHostAutomationRuns").mockResolvedValue([]);
+  const props = {
+    cwd: "/work/controls",
+    recents: [{ path: "/work/controls" }] as any,
+    onClose: vi.fn(),
+    onLaunch: vi.fn(),
+    onOpenSession: vi.fn(),
+    onOpenBackgroundSession: vi.fn(),
+  };
+  const target = {
+    id: hostRow.id,
+    projectId: "project",
+    environmentId: "original",
+    machineId: "machine",
+    token: 1,
+  };
+  try {
+    await renderControlEditor();
+    let name = container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;
+    await changeInput(name, "Owner unsaved draft");
+    await act(async () =>
+      root.render(createElement(AutomationsView, { ...props, revealAutomation: target })),
+    );
+    expect(name.value).toBe("Owner unsaved draft");
+    expect(container.textContent).toContain("Keep or close your current automation draft");
+    const retry = () =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+        (button) => button.textContent?.trim() === "Retry",
+      )!;
+    expect(retry().disabled).toBe(true);
+    await act(async () =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent?.trim() === "Reset")!
+        .click(),
+    );
+    await act(async () => retry().click());
+    name = container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;
+    expect(name.value).toBe("Requested Host automation");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Filter automations"]')!.click(),
+    );
+    const search = document.querySelector<HTMLInputElement>(
+      '[role="dialog"][aria-label="Filter automations"] input',
+    )!;
+    await changeInput(search, "owner-filter-kept");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Filter automations"]')!.click(),
+    );
+    await act(async () =>
+      root.render(
+        createElement(AutomationsView, { ...props, revealAutomation: { ...target, token: 2 } }),
+      ),
+    );
+    expect(container.textContent).toContain("requested automation is hidden by your filters");
+    expect(name.value).toBe("Requested Host automation");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Filter automations"]')!.click(),
+    );
+    expect(
+      document.querySelector<HTMLInputElement>(
+        '[role="dialog"][aria-label="Filter automations"] input',
+      )?.value,
+    ).toBe("owner-filter-kept");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Filter automations"]')!.click(),
+    );
+    await act(async () =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent?.trim() === "Reset filters")!
+        .click(),
+    );
+    expect(container.textContent).not.toContain("requested automation is hidden by your filters");
+    expect(
+      invoke.mock.calls.some(
+        ([command]) => command === "automations_upsert" || command === "automation_run",
+      ),
+    ).toBe(false);
+    expect(props.onLaunch).not.toHaveBeenCalled();
+  } finally {
+    lists.mockRestore();
+    history.mockRestore();
+  }
+});
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", async (original) => ({
@@ -103,6 +414,37 @@ it("shows the cached automation list immediately and refreshes it without a load
   await act(async () => finish([{ ...automation, name: "Updated review" }]));
   expect(container.querySelector('[aria-label="Open Updated review"]')).not.toBeNull();
   expect(container.querySelector('[aria-label="Open Daily review"]')).toBeNull();
+});
+
+it("reports an unreadable automation list as unavailable with a retry instead of first use", async () => {
+  invoke.mockRejectedValue(new Error("automations.json is locked"));
+  await act(async () =>
+    root.render(
+      createElement(AutomationsView, {
+        cwd: "/work/project",
+        recents: [],
+        onClose: vi.fn(),
+        onLaunch: vi.fn(),
+        onOpenSession: vi.fn(),
+      }),
+    ),
+  );
+  await act(async () => {});
+  const unavailable = container.querySelector('[data-kind="unavailable"]');
+  expect(unavailable?.textContent).toContain("Automations unavailable");
+  expect(unavailable?.textContent).toContain("automations.json is locked");
+  expect(container.textContent).not.toContain("Create your first automation");
+  // The detail is shown once, not again in a banner.
+  expect(container.textContent?.match(/automations\.json is locked/g)).toHaveLength(1);
+  invoke.mockReset();
+  invoke.mockResolvedValue([]);
+  const retry = Array.from(unavailable!.querySelectorAll("button")).find(
+    (node) => node.textContent?.trim() === "Retry",
+  )!;
+  await act(async () => retry.click());
+  await act(async () => {});
+  expect(container.querySelector('[data-kind="unavailable"]')).toBeNull();
+  expect(container.textContent).toContain("Create your first automation");
 });
 
 it("invalidates the cached list when an automation changes", async () => {
@@ -436,10 +778,7 @@ it("searches trigger events by provider while retaining readiness gates and save
 
 it("uses the shared action menu while preserving the native delete confirmation gate", async () => {
   await renderControlEditor();
-  const previousConfirmation = window.confirm;
-  const confirmation = vi.fn(() => false);
-  window.confirm = confirmation;
-  try {
+  {
     const actions = container.querySelector<HTMLButtonElement>(
       '[aria-label="Automation actions"]',
     )!;
@@ -447,12 +786,16 @@ it("uses the shared action menu while preserving the native delete confirmation 
     const item = document.querySelector<HTMLButtonElement>('[role="menuitem"]')!;
     expect(item.textContent).toContain("Delete automation");
     await act(async () => item.click());
-    expect(confirmation).toHaveBeenCalledOnce();
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog.textContent).toContain("and its run history?");
+    await act(async () =>
+      Array.from(dialog.querySelectorAll("button"))
+        .find((entry) => entry.textContent?.trim() === "Cancel")!
+        .click(),
+    );
     expect(invoke.mock.calls.some(([command]) => command === "automations_delete")).toBe(false);
     expect(document.querySelector('[role="menu"]')).toBeNull();
-    expect(document.activeElement).toBe(actions);
-  } finally {
-    window.confirm = previousConfirmation;
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   }
 });
 
@@ -470,7 +813,8 @@ it("blocks duplicate run actions and deletion while a manual run is pending", as
     (node) => node.textContent?.trim() === "Run now",
   )!;
   await act(async () => run.click());
-  expect(run.disabled).toBe(true);
+  expect(run.getAttribute("aria-busy")).toBe("true");
+  expect(run.getAttribute("aria-disabled")).toBe("true");
   await act(async () => run.click());
   expect(invoke.mock.calls.filter(([command]) => command === "automation_run_now")).toHaveLength(1);
   await act(async () =>
@@ -481,6 +825,35 @@ it("blocks duplicate run actions and deletion while a manual run is pending", as
     finish({ id: "run", automationId: "controls-automation", status: "running", createdAt: 1 }),
   );
   expect(run.disabled).toBe(false);
+});
+
+it("keeps toggle progress on its automation and allows retry after a failed change", async () => {
+  await renderControlEditor();
+  const previous = invoke.getMockImplementation()!;
+  let fail!: (reason: Error) => void;
+  const pending = new Promise((_resolve, reject) => {
+    fail = reject;
+  });
+  invoke.mockImplementation((command: string, args?: unknown) =>
+    command === "automations_upsert" ? pending : previous(command, args),
+  );
+  const toggle = container.querySelector<HTMLButtonElement>(
+    '[role="switch"][aria-label="Pause Controls review"]',
+  )!;
+  toggle.focus();
+  await act(async () => toggle.click());
+  expect(toggle.getAttribute("aria-busy")).toBe("true");
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  expect(document.activeElement).toBe(toggle);
+  await act(async () => toggle.click());
+  expect(invoke.mock.calls.filter(([command]) => command === "automations_upsert")).toHaveLength(1);
+  await act(async () => fail(new Error("Automation unavailable")));
+  expect(toggle.hasAttribute("aria-busy")).toBe(false);
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  expect(container.textContent).toContain("Automation unavailable");
+  invoke.mockImplementation(previous);
+  await act(async () => toggle.click());
+  expect(invoke.mock.calls.filter(([command]) => command === "automations_upsert")).toHaveLength(2);
 });
 
 it("keeps the twenty-trigger limit visible and unavailable", async () => {
@@ -494,7 +867,7 @@ it("keeps the twenty-trigger limit visible and unavailable", async () => {
 });
 
 it.each([false, true])(
-  "locks the entire editor and pending portal callbacks during a save (background=%s)",
+  "locks editable fields and portal callbacks while keeping save feedback focusable (background=%s)",
   async (background) => {
     await renderControlEditor({
       host: background
@@ -521,13 +894,19 @@ it.each([false, true])(
       const option = Array.from(
         document.querySelectorAll<HTMLButtonElement>('[role="option"]'),
       ).find((node) => !node.disabled && node.textContent?.includes("Daily"))!;
+      const save = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+      save.focus();
       await act(async () =>
         form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
       );
-      expect(form.hasAttribute("inert")).toBe(true);
+      expect(form.hasAttribute("inert")).toBe(false);
+      expect(form.querySelector('[role="tabpanel"]')?.hasAttribute("inert")).toBe(true);
+      expect(save.closest("[inert]")).toBeNull();
+      expect(save.getAttribute("aria-busy")).toBe("true");
+      expect(document.activeElement).toBe(save);
       expect(form.getAttribute("aria-busy")).toBe("true");
       expect(name.disabled).toBe(true);
-      // A portal already open before submission is outside the inert form.
+      // A portal already open before submission is outside the inert fields.
       await act(async () => option.click());
       expect(container.querySelectorAll('[aria-label="Remove trigger"]')).toHaveLength(triggers);
       const reset = Array.from(form.querySelectorAll<HTMLButtonElement>("button")).find(
@@ -563,7 +942,7 @@ it("locks new automation creation until its submitted snapshot finishes saving",
       (node) => node.textContent?.trim() === text,
     )!;
   await act(async () => findButton("New automation").click());
-  const template = container.querySelectorAll<HTMLButtonElement>(".automation-template")[1];
+  const template = container.querySelectorAll<HTMLButtonElement>(".automation-template")[0];
   await act(async () => template.click());
   const name = container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;
   await changeInput(name, "Created review");
@@ -577,7 +956,9 @@ it("locks new automation creation until its submitted snapshot finishes saving",
   );
   await act(async () => findButton("Create").click());
   const form = name.closest("form")!;
-  expect(form.hasAttribute("inert")).toBe(true);
+  expect(form.hasAttribute("inert")).toBe(false);
+  expect(findButton("Create").getAttribute("aria-busy")).toBe("true");
+  expect(findButton("Create").closest("[inert]")).toBeNull();
   expect(name.disabled).toBe(true);
   await act(async () => findButton("New automation").click());
   expect(container.querySelector('[aria-label="Automation name"]')).toBe(name);
@@ -633,8 +1014,6 @@ it("keeps same-ID local and host automations independent and preserves the host 
   const remove = vi
     .spyOn(hostAutomationClient, "deleteHostAutomation")
     .mockResolvedValue(undefined);
-  const previousConfirm = window.confirm;
-  window.confirm = vi.fn(() => true);
   try {
     await renderControlEditor();
     const open = async (name: string) =>
@@ -674,6 +1053,11 @@ it("keeps same-ID local and host automations independent and preserves the host 
       container.querySelector<HTMLButtonElement>('[aria-label="Automation actions"]')!.click(),
     );
     await act(async () => document.querySelector<HTMLButtonElement>('[role="menuitem"]')!.click());
+    await act(async () =>
+      Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
+        .find((entry) => entry.textContent?.trim() === "Delete")!
+        .click(),
+    );
     expect(remove).toHaveBeenCalledWith(expect.objectContaining({ host: other.host }));
     expect(container.querySelector('[aria-label="Open Host B review"]')).toBeNull();
     expect(container.querySelector('[aria-label="Open Edited host A"]')).not.toBeNull();
@@ -684,6 +1068,5 @@ it("keeps same-ID local and host automations independent and preserves the host 
     save.mockRestore();
     run.mockRestore();
     remove.mockRestore();
-    window.confirm = previousConfirm;
   }
 });

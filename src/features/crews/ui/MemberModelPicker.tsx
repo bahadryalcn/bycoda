@@ -11,10 +11,13 @@ export function MemberModelPicker({
   cwd,
   value,
   onChange,
+  presentation = "field",
 }: {
   cwd: string;
   value?: CrewCandidate;
   onChange: (candidate: CrewCandidate) => void;
+  /** `inline` is the compact trigger for list rows; `field` fills a form row. */
+  presentation?: "inline" | "field";
 }) {
   return (
     <ModelPicker
@@ -23,6 +26,7 @@ export function MemberModelPicker({
       values={value?.modelSettings ?? {}}
       project={cwd}
       allowedHarnesses={REMOTE_PROVIDERS}
+      presentation={presentation}
       onChange={(harness, model) => {
         if (!isRemoteProvider(harness)) return;
         const id = `${harness}/${model}`;

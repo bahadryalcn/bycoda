@@ -1,3 +1,4 @@
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import {
   knownRemoteMachine,
   recordRemoteCapabilities,
@@ -8,13 +9,15 @@ import {
 import {
   loadRemoteAutoReconnect,
   subscribeRemoteAutoReconnect,
-} from "../../settings/model/settings";
+} from "../../settings/public/settings";
 import {
+  AUTO_RETRY_STABLE_MS,
   autoRetryDelay,
   blocksSending,
   needsSignIn,
   sanitizeConnectionError,
   shouldAutoRetry,
+  shouldRetryBlocked,
   type ReconnectOutcome,
 } from "./remoteConnection";
 import { remoteErrorText } from "./remoteFailure";
@@ -50,9 +53,17 @@ const attempts = new Map<
   }
 >();
 const reconnecting = new Set<string>();
+/** When each machine's latest attempt began, for any reason. Focus re-checks wait on it. */
+const lastAttemptAt = new Map<string, number>();
+/** Machines whose reconnect the user asked for; background retries are not in it. */
+const requested = new Set<string>();
 const reconnectListeners = new Set<() => void>();
 
+/** Any attempt is under way, including a quiet background retry. */
 export const isReconnecting = (environmentId: string) => reconnecting.has(environmentId);
+/** A reconnect the user asked for is under way. Only this shows progress in
+ * project rows and recovery cards; background retries stay quiet there. */
+export const isReconnectRequested = (environmentId: string) => requested.has(environmentId);
 
 export function subscribeReconnecting(listener: () => void): () => void {
   reconnectListeners.add(listener);
@@ -62,7 +73,17 @@ export function subscribeReconnecting(listener: () => void): () => void {
 function setReconnecting(environmentId: string, value: boolean) {
   if (value === reconnecting.has(environmentId)) return;
   if (value) reconnecting.add(environmentId);
-  else reconnecting.delete(environmentId);
+  else {
+    reconnecting.delete(environmentId);
+    requested.delete(environmentId);
+  }
+  reconnectListeners.forEach((listener) => listener());
+}
+
+function setRequested(environmentId: string, value: boolean) {
+  if (value === requested.has(environmentId)) return;
+  if (value) requested.add(environmentId);
+  else requested.delete(environmentId);
   reconnectListeners.forEach((listener) => listener());
 }
 
@@ -72,6 +93,7 @@ function attempt(environmentId: string, fresh: boolean): Promise<ReconnectOutcom
   const running = attempts.get(environmentId);
   if (running && isCurrentConnectionAttempt(environmentId, running.token)) return running.promise;
   const token = beginConnectionAttempt(environmentId);
+  lastAttemptAt.set(environmentId, monotonicNow());
   setReconnecting(environmentId, true);
   const run = (async (): Promise<ReconnectOutcome> => {
     const machine = await remoteMachineFor(environmentId).catch(() => undefined);
@@ -80,7 +102,10 @@ function attempt(environmentId: string, fresh: boolean): Promise<ReconnectOutcom
     if (!machine) {
       recordRemoteConnection(environmentId, "Machine is no longer connected");
       setConnectionPhase(environmentId, "failed");
-      return { ok: false, error: "This machine is not connected on this computer." };
+      return {
+        ok: false,
+        error: "This machine is not connected on this computer.",
+      };
     }
     try {
       const host = await remoteRequest<{ capabilities?: unknown }>(
@@ -130,7 +155,12 @@ export async function reconnectRemoteMachine(
   options: { signIn?: boolean } = {},
 ): Promise<ReconnectOutcome> {
   paused.delete(environmentId);
-  const result = await attempt(environmentId, true);
+  setRequested(environmentId, true);
+  const pending = attempt(environmentId, true);
+  // An attempt that replaced this one keeps the mark until it ends too.
+  const result = await pending.finally(() => {
+    if (!attempts.has(environmentId)) setRequested(environmentId, false);
+  });
   if (
     !result.ok &&
     result.error !== SUPERSEDED_CONNECTION &&
@@ -159,26 +189,59 @@ export function cancelRemoteReconnect(environmentId: string) {
 
 const retries = new Map<string, ReturnType<typeof setTimeout>>();
 const retryCounts = new Map<string, number>();
+/** When each machine was last seen connecting; its ladder restarts only once that lasted. */
+const connectedAt = new Map<string, number>();
+/** Quiet attempts at a `connection-blocked` machine since it last answered. */
+const blockedRetryCounts = new Map<string, number>();
 const paused = new Set<string>();
 let hiddenSince: number | undefined;
+/** While the computer reports no network, timers wait for it to return instead
+ * of spending attempts on an unchanged condition. A Reconnect press still dials. */
+const offline = () => typeof navigator !== "undefined" && navigator.onLine === false;
 let stopRecovery: (() => void) | undefined;
+
+/** A blocked machine gets a few quiet attempts (fresh describes) before the user
+ * must press Reconnect. Other machines keep the open-ended schedule. */
+function blockedAttempts(environmentId: string, status: string) {
+  if (status !== "connection-blocked") blockedRetryCounts.delete(environmentId);
+  return status === "connection-blocked" ? (blockedRetryCounts.get(environmentId) ?? 0) : 0;
+}
+
+/** A connection that stayed up long enough starts the next drop at the bottom
+ * of the ladder; one that dropped again quickly keeps backing off. */
+function trackStability(environmentId: string, status: string) {
+  const since = connectedAt.get(environmentId);
+  if (status === "connected") {
+    if (since === undefined) connectedAt.set(environmentId, monotonicNow());
+    return;
+  }
+  if (since === undefined) return;
+  connectedAt.delete(environmentId);
+  if (elapsedSince(since) >= AUTO_RETRY_STABLE_MS) retryCounts.delete(environmentId);
+}
 
 function schedule() {
   const now = Date.now();
+  const enabled = loadRemoteAutoReconnect();
   for (const [environmentId, state] of listRemoteConnections()) {
+    trackStability(environmentId, state.status);
+    const blocked = blockedAttempts(environmentId, state.status);
     const wanted =
+      !offline() &&
       !paused.has(environmentId) &&
-      shouldAutoRetry(state.status, hiddenSince, now, loadRemoteAutoReconnect());
+      (state.status === "connection-blocked"
+        ? shouldRetryBlocked(blocked, hiddenSince, now, enabled)
+        : shouldAutoRetry(state.status, hiddenSince, now, enabled));
     const pending = retries.get(environmentId);
     if (!wanted) {
       if (pending) clearTimeout(pending);
       retries.delete(environmentId);
       setConnectionRetry(environmentId);
-      if (state.status === "connected") retryCounts.delete(environmentId);
       continue;
     }
     if (pending || attempts.has(environmentId)) continue;
-    const count = retryCounts.get(environmentId) ?? 0;
+    const count =
+      state.status === "connection-blocked" ? blocked : (retryCounts.get(environmentId) ?? 0);
     setConnectionRetry(environmentId, now + autoRetryDelay(count));
     retries.set(
       environmentId,
@@ -192,15 +255,23 @@ async function retry(environmentId: string, force: boolean) {
   retries.delete(environmentId);
   setConnectionRetry(environmentId);
   const status = readRemoteConnection(environmentId).status;
+  const blocked = status === "connection-blocked";
   // Focus and network changes also re-check a machine waiting for sign-in: the
   // key may have been fixed outside the app. They never open a prompt. With
-  // automatic reconnecting off, nothing here runs.
+  // automatic reconnecting off, nothing here runs. A blocked machine is limited
+  // to its quiet attempts, even when the window regains focus.
   const allowed =
+    !offline() &&
     !paused.has(environmentId) &&
     loadRemoteAutoReconnect() &&
     status !== "identity-mismatch" &&
-    (force ? blocksSending(status) : shouldAutoRetry(status, hiddenSince, Date.now()));
+    (blocked
+      ? shouldRetryBlocked(blockedAttempts(environmentId, status), hiddenSince, Date.now())
+      : force
+        ? blocksSending(status)
+        : shouldAutoRetry(status, hiddenSince, Date.now()));
   if (!allowed || attempts.has(environmentId)) return;
+  if (blocked) blockedRetryCounts.set(environmentId, blockedAttempts(environmentId, status) + 1);
   retryCounts.set(environmentId, (retryCounts.get(environmentId) ?? 0) + 1);
   // Only this coalesced coordinator bypasses the native failure cache. Ordinary
   // pollers retain that cache, so early scheduled retries actually dial once.
@@ -208,20 +279,49 @@ async function retry(environmentId: string, force: boolean) {
   schedule();
 }
 
-function retryNow() {
-  for (const [environmentId] of listRemoteConnections()) void retry(environmentId, true);
-}
+/** A focus, network or visibility re-check skips a machine attempted this recently,
+ * so switching windows cannot repeat SSH logins. A machine waiting for sign-in is
+ * re-checked at most this often. */
+const FORCED_RECHECK_MS = 15_000;
+const SIGN_IN_RECHECK_MS = 5 * 60_000;
 
-/** Starts retrying dropped machines in the background, once per app run: after
- * 2, 5, 15 and 30 seconds, then every minute, and at once when the window
- * regains focus or the network returns. Machines that need a password are left
+/** `recent` false: the network came back or the setting was turned on, so a
+ * recent failed attempt says nothing; only the sign-in wait still applies. */
+function retryNow(recent = true) {
+  for (const [environmentId, state] of listRemoteConnections()) {
+    // Skipped here, not in `retry`, so a pending scheduled retry keeps its timer.
+    const last = lastAttemptAt.get(environmentId);
+    const wait = needsSignIn(state.status) ? SIGN_IN_RECHECK_MS : recent ? FORCED_RECHECK_MS : 0;
+    if (last !== undefined && elapsedSince(last) < wait) continue;
+    void retry(environmentId, true);
+  }
+}
+const retryOnFocus = () => retryNow();
+/** The network returning or the window coming back after being hidden is new
+ * evidence, so the ladder starts again from its shortest wait. A plain focus
+ * change is not: it re-checks once but keeps the backoff. */
+function wake() {
+  retryCounts.clear();
+  retryNow(false);
+}
+const retryOnline = () => wake();
+const pauseOffline = () => schedule();
+
+/** Starts retrying dropped machines in the background, once per app run, with a
+ * jittered wait that doubles from about two seconds to at most five minutes,
+ * and at once when the window regains focus or the network returns. Nothing is
+ * dialed while the computer is offline. Machines that need a password are left
  * for the user to reconnect. Also starts listening for tunnels that drop. None
  * of the retrying happens while "Automatically reconnect" is off. */
 export function startRemoteAutoRecovery(): () => void {
   if (stopRecovery) return stopRecovery;
   const onVisibility = () => {
+    const wasHidden = hiddenSince !== undefined;
     hiddenSince = document.visibilityState === "hidden" ? Date.now() : undefined;
-    if (hiddenSince === undefined) retryNow();
+    if (hiddenSince === undefined) {
+      if (wasHidden) wake();
+      else retryNow();
+    }
     schedule();
   };
   const unsubscribe = subscribeChanges(schedule);
@@ -229,6 +329,9 @@ export function startRemoteAutoRecovery(): () => void {
     clearTimeout(retries.get(environmentId));
     retries.delete(environmentId);
     retryCounts.delete(environmentId);
+    connectedAt.delete(environmentId);
+    blockedRetryCounts.delete(environmentId);
+    lastAttemptAt.delete(environmentId);
     paused.delete(environmentId);
     attempts.delete(environmentId);
     setReconnecting(environmentId, false);
@@ -237,12 +340,13 @@ export function startRemoteAutoRecovery(): () => void {
   // Turning the setting on tries machines that are down at once; turning it off
   // cancels the timers that are waiting.
   const unsubscribeSetting = subscribeRemoteAutoReconnect(() => {
-    if (loadRemoteAutoReconnect()) retryNow();
+    if (loadRemoteAutoReconnect()) retryNow(false);
     schedule();
   });
   const stopTunnelWatch = watchTunnelExits();
-  window.addEventListener("focus", retryNow);
-  window.addEventListener("online", retryNow);
+  window.addEventListener("focus", retryOnFocus);
+  window.addEventListener("online", retryOnline);
+  window.addEventListener("offline", pauseOffline);
   document.addEventListener("visibilitychange", onVisibility);
   hiddenSince = document.visibilityState === "hidden" ? Date.now() : undefined;
   schedule();
@@ -251,16 +355,21 @@ export function startRemoteAutoRecovery(): () => void {
     stopInvalidation();
     unsubscribeSetting();
     stopTunnelWatch();
-    window.removeEventListener("focus", retryNow);
-    window.removeEventListener("online", retryNow);
+    window.removeEventListener("focus", retryOnFocus);
+    window.removeEventListener("online", retryOnline);
+    window.removeEventListener("offline", pauseOffline);
     document.removeEventListener("visibilitychange", onVisibility);
     retries.forEach((timer) => clearTimeout(timer));
     retries.clear();
     retryCounts.clear();
+    connectedAt.clear();
+    blockedRetryCounts.clear();
     paused.clear();
     for (const environmentId of attempts.keys()) invalidateConnection(environmentId);
     attempts.clear();
     reconnecting.clear();
+    requested.clear();
+    lastAttemptAt.clear();
     reconnectListeners.forEach((listener) => listener());
     stopRecovery = undefined;
   };

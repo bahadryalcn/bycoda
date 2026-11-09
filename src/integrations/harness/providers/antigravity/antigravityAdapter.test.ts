@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { processConstructions } from "../processConstruction.testSupport";
 import {
   harnessSupportsAttachments,
   setHarnessAttachmentsSupported,
@@ -11,13 +12,16 @@ const mock = vi.hoisted(() => ({
   stream: vi.fn(async () => undefined),
 }));
 
-vi.mock("../../core/child", () => ({
-  resolveAntigravityBinary: async () => ({
-    path: "/bin/agy",
-    args: [],
-    transport: mock.transport,
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    killChild: vi.fn(async () => undefined),
+    resolveAntigravityBinary: async () => ({
+      path: "/bin/agy",
+      args: [],
+      transport: mock.transport,
+    }),
   }),
-}));
+);
 vi.mock("./antigravity", () => ({
   sendAntigravityTurn: mock.acp,
   steerAntigravityTurn: vi.fn(),

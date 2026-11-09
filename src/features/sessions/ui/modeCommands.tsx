@@ -1,7 +1,9 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { useLocale, useT } from "../../../shared/i18n";
 import {
   AiIdea,
+  Bot,
+  CheckList,
   CircleDashed,
   CursorMagicSelection,
   MessageSquare,
@@ -10,6 +12,7 @@ import {
   X,
 } from "../../../shared/ui/icons";
 import { BTW_COMMAND } from "../model/btw";
+import { SUBAGENTS_COMMAND, TASK_COMMAND } from "../model/delegationCommands";
 import { DRAFT_COMMAND } from "../model/draftCommand";
 import { OPERATOR_COMMAND } from "../model/operatorCommand";
 import { ORCHESTRATOR_COMMAND } from "../model/orchestratorCommand";
@@ -19,117 +22,100 @@ type ModeCommandStyle = {
   Icon: typeof AiIdea;
   /** Text color of the command inside the prompt. */
   className: string;
-  /** Mode pill shown under the prompt while the mode is on. */
-  pill?: { label: string; title: string; className: string };
+  /** Shows a mode pill under the prompt while the mode is on. */
+  pill?: true;
   /** Rows that list the mode, such as a + menu or command list. */
-  menu?: { label: string; description: string; iconClassName: string };
+  menu?: { iconClassName: string };
 };
 
+/** Presentation only. Wording lives in `modeCommandText`, which takes the caller's
+ * `t` so compiled components re-render it after a language switch. */
 export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
   [PLAN_COMMAND.name]: {
     Icon: AiIdea,
-    className: "text-(--ui-tone-warning-fg) dark:text-(--ui-tone-warning-fg)",
-    pill: {
-      get label() {
-        return t("Plan");
-      },
-      get title() {
-        return t("Plan mode");
-      },
-      className:
-        "bg-(--ui-tone-warning-subtle) text-(--ui-tone-warning-fg) hover:bg-(--ui-tone-warning-subtle) dark:text-(--ui-tone-warning-fg)",
-    },
-    menu: {
-      get label() {
-        return t("Plan mode");
-      },
-      get description() {
-        return t("Review a plan before building");
-      },
-      iconClassName: "text-(--ui-tone-warning-fg)",
-    },
+    className: "text-(--ui-tone-warning-fg)",
+    pill: true,
+    menu: { iconClassName: "text-(--ui-tone-warning-fg)" },
   },
   [OPERATOR_COMMAND.name]: {
     Icon: CursorMagicSelection,
-    className: "text-(--ui-tone-info-fg) dark:text-(--ui-tone-info-fg)",
-    pill: {
-      get label() {
-        return t("Operator");
-      },
-      get title() {
-        return t("Operator");
-      },
-      className:
-        "bg-(--ui-tone-info-subtle) font-medium text-(--ui-tone-info-fg) hover:bg-(--ui-tone-info-subtle) dark:bg-(--ui-tone-info-subtle) dark:text-(--ui-tone-info-fg) dark:hover:bg-(--ui-tone-info-subtle)",
-    },
-    menu: {
-      get label() {
-        return t("Operator");
-      },
-      get description() {
-        return t("Give this thread access to bycoda");
-      },
-      iconClassName: "text-(--ui-tone-info-fg)",
-    },
+    className: "text-(--ui-tone-info-fg)",
+    pill: true,
+    menu: { iconClassName: "text-(--ui-tone-info-fg)" },
   },
   [ORCHESTRATOR_COMMAND.name]: {
     Icon: Share,
-    className: "text-orchestration dark:text-orchestration/90",
-    pill: {
-      get label() {
-        return t("Orchestrator");
-      },
-      get title() {
-        return t("Orchestrator mode");
-      },
-      className:
-        "bg-orchestration/15 font-medium text-orchestration hover:bg-orchestration/20 dark:bg-orchestration/10 dark:text-orchestration/90 dark:hover:bg-orchestration/15",
-    },
-    menu: {
-      get label() {
-        return t("Orchestrator");
-      },
-      get description() {
-        return t("Plan and coordinate agent work");
-      },
-      iconClassName: "text-orchestration/65",
-    },
+    className: "text-orchestration",
+    pill: true,
+    menu: { iconClassName: "text-(--ui-text-secondary)" },
   },
   [DRAFT_COMMAND.name]: {
     Icon: CircleDashed,
     className: "text-(--ui-text-secondary)",
-    pill: {
-      get label() {
-        return t("Draft");
-      },
-      get title() {
-        return t("Draft mode");
-      },
-      className:
-        "border border-dashed border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) text-(--ui-text-secondary) hover:bg-(--ui-surface-raised) hover:text-(--ui-tone-neutral-fg)",
-    },
-    menu: {
-      get label() {
-        return t("Draft");
-      },
-      get description() {
-        return t("Save this message without starting the agent");
-      },
-      iconClassName: "text-(--ui-text-secondary)",
-    },
+    pill: true,
+    menu: { iconClassName: "text-(--ui-text-secondary)" },
   },
   [BTW_COMMAND.name]: {
     Icon: MessageSquare,
-    className: "text-(--ui-tone-success-fg) dark:text-(--ui-tone-success-fg)",
+    className: "text-(--ui-tone-success-fg)",
+  },
+  [SUBAGENTS_COMMAND.name]: {
+    Icon: Bot,
+    className: "text-orchestration",
+  },
+  [TASK_COMMAND.name]: {
+    Icon: CheckList,
+    className: "text-(--ui-tone-info-fg)",
   },
 };
+
+type Translate = (message: string, values?: Record<string, unknown>) => string;
+
+/** A mode's pill and menu wording, translated with the caller's `t` (`useT()`). */
+export function modeCommandText(
+  name: string,
+  t: Translate,
+):
+  | {
+      pill: { label: string; title: string };
+      menu: { label: string; description: string };
+    }
+  | undefined {
+  switch (name) {
+    case PLAN_COMMAND.name:
+      return {
+        pill: { label: t("Plan"), title: t("Plan mode") },
+        menu: { label: t("Plan mode"), description: t("Review a plan before building") },
+      };
+    case OPERATOR_COMMAND.name:
+      return {
+        pill: { label: t("Operator"), title: t("Operator") },
+        menu: { label: t("Operator"), description: t("Give this thread access to bycoda") },
+      };
+    case ORCHESTRATOR_COMMAND.name:
+      return {
+        pill: { label: t("Orchestrator"), title: t("Orchestrator mode") },
+        menu: { label: t("Orchestrator"), description: t("Plan and coordinate agent work") },
+      };
+    case DRAFT_COMMAND.name:
+      return {
+        pill: { label: t("Draft"), title: t("Draft mode") },
+        menu: {
+          label: t("Draft"),
+          description: t("Save this message without starting the agent"),
+        },
+      };
+    default:
+      return undefined;
+  }
+}
 
 /** A leading `!` runs the line in the shell instead of sending a prompt. */
 export const SHELL_MODE_NAME = "shell";
 
 const SHELL_MODE_STYLE: ModeCommandStyle = {
   Icon: Terminal,
-  className: "text-(--ui-tone-danger-fg) dark:text-(--ui-tone-danger-fg)",
+  className: "text-(--ui-tone-warning-fg)",
 };
 
 /** First-line indent that, with the `/`, makes room for a mode icon. */
@@ -193,23 +179,24 @@ export function ModeCommandText({
 }
 
 export function ModeCommandPill({ name, onClear }: { name: string; onClear: () => void }) {
-  useLocale();
+  const t = useT();
   const style = MODE_COMMAND_STYLES[name];
-  if (!style?.pill) return null;
-  const { Icon, pill } = style;
+  const pill = modeCommandText(name, t)?.pill;
+  if (!style?.pill || !pill) return null;
+  const { Icon } = style;
   return (
     <Button
       className="shrink-0"
       variant="ghost"
       type="button"
-      title={t("Turn off {p0}", { p0: pill.title })}
+      tooltip={t("Turn off {p0}", { p0: pill.title })}
       aria-label={t("Turn off {p0}", { p0: pill.title })}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClear}
     >
       <Icon className="size-3.5" />
       <span className="composer-mode-shimmer">{pill.label}</span>
-      <X className="size-3" />
+      <X className="icon-xs" />
     </Button>
   );
 }

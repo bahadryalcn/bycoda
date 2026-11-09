@@ -28,10 +28,11 @@ vi.mock("./UsageOverview", () => ({
     limits: (filters: import("../model/usageAnalytics").UsageFilters) => import("react").ReactNode;
   }) => limits({ provider: [], account: [], project: [], model: [], group: [] }),
 }));
-vi.mock("../../settings/ui/ProviderUsageSettings", () => ({
-  ProviderUsageSettings: () => null,
+vi.mock("./UsageActiveTime", () => ({
+  UsageActiveTime: () => createElement("div", null, "Active time card"),
 }));
 import { UsagePage } from "./UsagePage";
+import { RevealedSetting } from "../../settings/ui/settingsControls";
 
 it("shows remaining quota and does not invent reset times", () => {
   const markup = renderToStaticMarkup(createElement(UsagePage));
@@ -51,6 +52,22 @@ it("keeps known quota visible when refresh fails", () => {
 it("uses account colors for limits and exposes usage preferences", () => {
   const markup = renderToStaticMarkup(createElement(UsagePage));
   expect(markup).toContain("hsl(330 70% 62%)");
-  expect(markup).toContain("Color for Default account: Pink");
+  expect(markup).toContain("Account actions");
+  expect(markup).not.toContain("Display preferences");
   expect(markup).toContain("Show remaining usage");
+  const revealed = renderToStaticMarkup(
+    createElement(
+      RevealedSetting.Provider,
+      { value: "show-remaining-usage" },
+      createElement(UsagePage),
+    ),
+  );
+  expect(revealed).toContain("Show remaining usage");
+});
+
+it("shows the active time card except on the limits-only page", () => {
+  expect(renderToStaticMarkup(createElement(UsagePage))).toContain("Active time card");
+  expect(renderToStaticMarkup(createElement(UsagePage, { limitsOnly: true }))).not.toContain(
+    "Active time card",
+  );
 });

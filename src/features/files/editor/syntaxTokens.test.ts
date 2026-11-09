@@ -95,7 +95,9 @@ describe("highlightDiffFile", () => {
     try {
       const tokens = await highlightDiffFile({ path: "de.json", blocks: diff.blocks }, "dark");
       const added = diff.lines.find((line) => line.kind === "add");
-      expect(added && token(tokens.get(added), '"Updated key 4599"')?.color).toBe("var(--syntax-property)");
+      expect(added && token(tokens.get(added), '"Updated key 4599"')?.color).toBe(
+        "var(--syntax-property)",
+      );
     } finally {
       clock.mockRestore();
     }
@@ -134,4 +136,19 @@ it("reuses token arrays for equivalent content, but invalidates content and them
       ?.map((token) => token.text)
       .join(""),
   ).toBe(editedLine.text);
+});
+
+it("does not rehash or rejoin the text of the same blocks on repeated highlights", async () => {
+  const file = {
+    path: "repeat-highlight.ts",
+    blocks: buildUnifiedFile("const repeated = 1;\n", "const repeated = 2;\n").blocks,
+  };
+  await highlightDiffFile(file, "dark");
+  const charCodeAt = vi.spyOn(String.prototype, "charCodeAt");
+  try {
+    await highlightDiffFile(file, "dark");
+    expect(charCodeAt).not.toHaveBeenCalled();
+  } finally {
+    charCodeAt.mockRestore();
+  }
 });

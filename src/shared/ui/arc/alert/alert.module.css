@@ -1,38 +1,91 @@
 /* Adapted official free Arc source; bycoda semantic theme owns presentation. */
-.presence {
-  min-inline-size: 0;
-}
-.alert {
-  display: flex;
-  align-items: start;
-  gap: var(--space-3);
-  min-inline-size: 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--ui-surface);
-  color: var(--foreground);
-  line-height: var(--leading-body);
-}
-.icon,
-.glyph {
-  position: relative;
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-}
-.icon {
-  inline-size: 1.125rem;
-  block-size: 1.125rem;
+@layer properties, theme, base, components, utilities;
+
+/* Box layout is layered so consumer utilities can size, align or hide an alert. */
+@layer components {
+  .presence {
+    min-inline-size: 0;
+  }
+  .alert {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-inline-size: 0;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-control);
+  }
+  /* A titled alert with details reads top-down, so the glyph sits on the title line. */
+  .alert:has(.title + .description) {
+    align-items: start;
+  }
+  .body {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    min-inline-size: 0;
+  }
+  .icon,
+  .glyph {
+    position: relative;
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+  }
+  .icon {
+    inline-size: 1rem;
+    block-size: 1rem;
+    /* Aligns the glyph with the first line of the title. */
+    margin-block-start: 0.0625rem;
+  }
+  .copy {
+    flex: 1 1 12rem;
+    min-inline-size: 0;
+  }
+  .action {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-inline-start: auto;
+  }
+  .inline {
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: 0;
+    border-radius: 0;
+  }
+  .inline .icon {
+    inline-size: 0.875rem;
+    block-size: 0.875rem;
+    margin-block-start: 0;
+  }
+  .inline .body {
+    gap: var(--space-2);
+  }
+  .inline .copy {
+    flex: 0 1 auto;
+  }
+  .inline .action {
+    margin-inline-start: var(--space-1);
+  }
 }
 .icon svg {
   display: block;
   inline-size: 100%;
   block-size: 100%;
 }
-.copy {
-  flex: 1;
-  min-inline-size: 0;
+.dismiss {
+  align-self: flex-start;
+}
+/* A tone is a pairing of glyph, border and subtle surface; the text keeps the neutral ink. */
+.alert {
+  border: 1px solid var(--alert-border, var(--border));
+  background: var(--alert-surface, var(--ui-surface));
+  color: var(--foreground);
+  line-height: var(--leading-body);
 }
 .content {
   position: relative;
@@ -40,8 +93,9 @@
 .title {
   position: relative;
   display: block;
-  font-size: var(--text-sm);
+  font-size: var(--ui-font-secondary);
   font-weight: 500;
+  line-height: var(--ui-leading-secondary);
 }
 .line {
   display: block;
@@ -51,11 +105,34 @@
   position: relative;
   margin: 0;
   color: var(--text-secondary);
-  font-size: var(--text-xs);
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
   overflow-wrap: anywhere;
 }
 .title + .description {
   margin-block-start: var(--space-1);
+}
+/* Without a title the copy is the message, so it takes the primary ink. */
+.copy > .content > .description:first-child {
+  color: var(--foreground);
+  font-size: var(--ui-font-secondary);
+  line-height: var(--ui-leading-secondary);
+}
+.info {
+  --alert-border: var(--ui-tone-info-border);
+  --alert-surface: var(--ui-tone-info-subtle);
+}
+.success {
+  --alert-border: var(--ui-tone-success-border);
+  --alert-surface: var(--ui-tone-success-subtle);
+}
+.warning {
+  --alert-border: var(--ui-tone-warning-border);
+  --alert-surface: var(--ui-tone-warning-subtle);
+}
+.danger {
+  --alert-border: var(--ui-tone-danger-border);
+  --alert-surface: var(--ui-tone-danger-subtle);
 }
 .info .icon {
   color: var(--ui-tone-info-fg);
@@ -68,4 +145,16 @@
 }
 .danger .icon {
   color: var(--ui-tone-danger-fg);
+}
+.inline {
+  border: 0;
+  background: transparent;
+  font-size: var(--ui-font-caption);
+}
+.inline .title {
+  font-size: var(--ui-font-caption);
+}
+.inline .copy > .content > .description:first-child {
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
 }

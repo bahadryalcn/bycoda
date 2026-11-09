@@ -2,7 +2,7 @@ import { syntaxHighlighting } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { cspStyleNonce } from "../../../shared/lib/csp";
-import type { ColorScheme } from "../../settings/model/appearance";
+import type { ColorScheme } from "../../settings";
 import { editorHighlightStyleFor } from "./editorLanguage";
 
 export { editorHighlightStyleFor, languageForPath } from "./editorLanguage";
@@ -40,8 +40,8 @@ function editorThemeStyles(dark: boolean) {
       },
       ".cm-gutters": {
         backgroundColor: "transparent",
-        color: "var(--ui-text-secondary)",
-        borderRight: "1px solid color-mix(in srgb, var(--color-content) 7%, transparent)",
+        color: "var(--ui-editor-gutter-text)",
+        borderRight: "1px solid var(--color-stroke)",
         paddingLeft: "4px",
       },
       ".cm-lineNumbers .cm-gutterElement": {
@@ -54,46 +54,59 @@ function editorThemeStyles(dark: boolean) {
       ".cm-foldGutter .cm-gutterElement": {
         padding: "0 2px",
         cursor: "pointer",
-        color: "color-mix(in srgb, var(--color-content) 45%, transparent)",
+        color: "var(--ui-editor-gutter-text)",
       },
       ".cm-foldPlaceholder": {
-        color: "color-mix(in srgb, var(--color-content) 40%, transparent)",
+        color: "var(--ui-text-muted)",
       },
       ".cm-activeLine": {
-        backgroundColor: "color-mix(in srgb, var(--color-content) 10%, transparent)",
+        backgroundColor: "var(--ui-editor-active-line)",
       },
       ".cm-activeLineGutter": {
-        backgroundColor: "color-mix(in srgb, var(--color-content) 10%, transparent)",
-        color: "color-mix(in srgb, var(--color-content) 70%, transparent)",
+        backgroundColor: "var(--ui-editor-active-line)",
+        color: "var(--ui-editor-gutter-active-text)",
       },
-      ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": {
-        backgroundColor: "color-mix(in srgb, var(--color-accent) 35%, transparent) !important",
+      // Code keeps its syntax colours under a selection, so the range is the shared overlay
+      // tint (as in other code editors), not the opaque prose fill whose paired ink CodeMirror's
+      // drawn selection layer cannot apply. Unfocused editors keep a quieter neutral range.
+      ".cm-selectionBackground, ::selection": {
+        backgroundColor: "var(--ui-selection-inactive) !important",
+      },
+      "&.cm-focused .cm-selectionBackground, &.cm-focused ::selection": {
+        backgroundColor: "var(--ui-overlay-selection-background) !important",
+      },
+      // The global prose rule recolours selected glyphs with the opaque fill's ink; code keeps
+      // each token's own colour under the tint.
+      ".cm-content ::selection, .cm-content::selection": {
+        color: "currentcolor",
+        WebkitTextFillColor: "currentcolor",
+        textDecorationColor: "currentcolor",
       },
       ".cm-cursor, .cm-dropCursor": {
         borderLeftColor: "var(--color-content)",
       },
       ".cm-matchingBracket": {
-        backgroundColor: "color-mix(in srgb, var(--color-content) 14%, transparent)",
-        outline: "1px solid color-mix(in srgb, var(--color-content) 28%, transparent)",
+        backgroundColor: "var(--ui-surface-hover)",
+        outline: "1px solid var(--ui-pane-border)",
       },
       ".cm-nonmatchingBracket": {
-        backgroundColor: "color-mix(in srgb, var(--color-danger) 32%, transparent)",
-        outline: "1px solid color-mix(in srgb, var(--color-danger) 55%, transparent)",
-      },
-      ".cm-panels, .cm-tooltip": {
-        backgroundColor: "var(--color-background-base)",
-        color: "var(--color-content)",
+        backgroundColor: "var(--ui-selection-inactive)",
+        outline: "1px solid var(--color-danger)",
       },
       ".cm-panels": {
-        borderColor: "color-mix(in srgb, var(--color-content) 10%, transparent)",
+        backgroundColor: "var(--color-background-base)",
+        color: "var(--color-content)",
+        borderColor: "var(--color-stroke)",
       },
       ".cm-tooltip": {
-        border: "1px solid color-mix(in srgb, var(--color-content) 12%, transparent)",
+        backgroundColor: "var(--ui-surface-floating)",
+        color: "var(--color-content)",
+        border: "1px solid var(--ui-pane-border)",
         borderRadius: "6px",
         overflow: "hidden",
       },
       ".cm-tooltip.cm-tooltip-autocomplete": {
-        backgroundColor: "var(--color-background-base)",
+        backgroundColor: "var(--ui-surface-floating)",
       },
       ".cm-tooltip-autocomplete > ul": {
         fontFamily: "var(--font-mono)",
@@ -104,13 +117,20 @@ function editorThemeStyles(dark: boolean) {
         padding: "2px 8px",
       },
       ".cm-tooltip-autocomplete > ul > li[aria-selected]": {
-        backgroundColor: "color-mix(in srgb, var(--color-accent) 25%, transparent)",
+        backgroundColor: "var(--ui-surface-selected)",
         color: "var(--color-content)",
       },
       ".cm-completionDetail": {
-        color: "color-mix(in srgb, var(--color-content) 50%, transparent)",
+        color: "var(--ui-text-secondary)",
         fontStyle: "normal",
         marginLeft: "8px",
+      },
+      "@media (forced-colors: active)": {
+        ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+          backgroundColor: "Highlight !important",
+          forcedColorAdjust: "auto",
+        },
+        "::selection": { backgroundColor: "Highlight !important", color: "HighlightText" },
       },
     },
     { dark },

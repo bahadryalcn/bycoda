@@ -1,12 +1,19 @@
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { useDelayedVisible } from "../../../shared/hooks/useDelayedVisible";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
-import { Check, Loader, RefreshCw } from "../../../shared/ui/icons";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import { Check, RefreshCw } from "../../../shared/ui/icons";
 import type { RemoteDataState } from "../model/remoteDataState";
+import { classifyRemoteError, isConnectionFailure } from "../model/remoteFailure";
+import { useQuietRetry } from "../model/useQuietRetry";
+import { useRemoteConnectionFeedback } from "./RemoteConnectionFeedback";
 
 /** Retained content stays visible; this strip explains whether it was verified. */
 export function RemoteDataStatus({
   state,
+  cwd,
   onRefresh,
   label,
   disabled = false,
@@ -14,6 +21,8 @@ export function RemoteDataStatus({
   presentation = "auto",
 }: {
   state: RemoteDataState;
+  /** The data's owning remote project, for the workspace connection notice. */
+  cwd?: string;
   onRefresh?: () => void;
   label?: string;
   disabled?: boolean;
@@ -23,12 +32,28 @@ export function RemoteDataStatus({
   presentation?: "auto" | "indicator" | "notice";
 }) {
   useLocale();
-  if (connectionIssueHandled) return null;
+  // A first load that ends quickly never shows its indicator; a background refresh only spins
+  // inside the refresh button.
+  const loadingShown = useDelayedVisible(state.phase === "loading");
+  const failure = state.error ? classifyRemoteError(state.error) : undefined;
+  const sharedConnectionIssue = useRemoteConnectionFeedback(cwd, failure);
+  // A busy machine is retried in the background; its failure is not an error yet.
+  const retrying = useQuietRetry(
+    state.phase === "error" ? state.error : undefined,
+    disabled ? undefined : onRefresh,
+  );
+  // A machine-level notice cannot explain a failed data/service operation.
+  if (
+    (connectionIssueHandled && !failure) ||
+    (failure && isConnectionFailure(failure) && (connectionIssueHandled || sharedConnectionIssue))
+  )
+    return null;
   const dataLabel = label ?? t("conversation");
-  const busy = state.phase === "loading" || state.phase === "refreshing";
-  const needsAttention = state.phase === "error" || state.phase === "stale";
-  const message =
-    state.phase === "loading"
+  const busy = retrying || state.phase === "loading" || state.phase === "refreshing";
+  const needsAttention = !retrying && (state.phase === "error" || state.phase === "stale");
+  const message = retrying
+    ? t("The machine is busy. Retrying…")
+    : state.phase === "loading"
       ? t("Loading {p0}…", { p0: dataLabel })
       : state.phase === "refreshing"
         ? t("Refreshing {p0}… Showing last loaded data.", { p0: dataLabel })
@@ -47,15 +72,13 @@ export function RemoteDataStatus({
         minute: "2-digit",
       })
     : undefined;
+  if (state.phase === "loading" && !loadingShown) return null;
   if (presentation === "notice" && !needsAttention) return null;
   if (presentation === "indicator" && needsAttention) return null;
   if (!needsAttention) {
     const detail = `${message}${time ? ` · ${t("Last verified {p0}", { p0: new Date(state.updatedAt!).toLocaleString(getLocale()) })}` : ""}`;
-    const icon = busy ? (
-      <Loader aria-hidden className="size-3.5 motion-safe:animate-spin" />
-    ) : (
-      <Check aria-hidden className="size-3.5" />
-    );
+    const spinning = retrying || state.phase === "loading" || (busy && onRefresh !== undefined);
+    const icon = spinning ? <Spinner /> : <Check aria-hidden className="icon-sm" />;
     return (
       <span
         data-remote-data-state={state.phase}
@@ -77,9 +100,11 @@ export function RemoteDataStatus({
             {icon}
           </Button>
         ) : (
-          <span title={detail} aria-label={detail} role="img">
-            {icon}
-          </span>
+          <Tooltip label={detail}>
+            <span aria-label={detail} role="img">
+              {icon}
+            </span>
+          </Tooltip>
         )}
       </span>
     );
@@ -89,22 +114,20 @@ export function RemoteDataStatus({
       data-remote-data-state={state.phase}
       aria-live="polite"
       aria-busy={busy}
-      role={state.phase === "error" ? "alert" : "group"}
-      tone={state.phase === "error" || state.phase === "stale" ? "warning" : "info"}
-      icon={busy ? <Loader aria-hidden className="size-3.5 motion-safe:animate-spin" /> : undefined}
+      tone={state.phase === "error" ? "danger" : "info"}
+      icon={busy ? <Spinner /> : undefined}
     >
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <span>{message}</span>
           {time ? (
-            <span
-              className="ml-1 text-(--ui-text-muted)"
-              title={t("Last verified {p0}", {
+            <Tooltip
+              label={t("Last verified {p0}", {
                 p0: new Date(state.updatedAt!).toLocaleString(getLocale()),
               })}
             >
-              · {time}
-            </span>
+              <span className="ml-1 text-(--ui-text-muted)">· {time}</span>
+            </Tooltip>
           ) : null}
           {state.error ? (
             <p className="mt-1 break-words text-(--ui-text-muted)">{state.error}</p>
@@ -122,16 +145,14 @@ export function RemoteDataStatus({
             }
             variant="ghost"
             iconOnly
+            loading={busy}
             label={
               state.phase === "error"
                 ? t("Retry loading {p0}", { p0: dataLabel })
                 : t("Refresh {p0}", { p0: dataLabel })
             }
           >
-            <RefreshCw
-              aria-hidden
-              className={`size-3.5 ${busy ? "motion-safe:animate-spin" : ""}`}
-            />
+            <RefreshCw aria-hidden className="icon-sm" />
           </Button>
         ) : null}
       </div>

@@ -1,0 +1,24 @@
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-inline-size: 0;
+}
+/* Each job is a padded card; its legend sits inside the card, not on its edge. */
+.job {
+  display: grid;
+  gap: 12px;
+  border: 0;
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-tone-neutral-hover);
+  padding: 0 12px 12px;
+  margin: 0;
+  min-inline-size: 0;
+}
+.job legend {
+  padding: 0;
+  margin: 12px 0 0;
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+  color: var(--ui-text-secondary);
+}

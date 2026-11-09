@@ -26,16 +26,35 @@ function offscreenObserver(): IntersectionObserver | null {
   return sharedObserver;
 }
 
+export type WorkingIndicatorSize = "xs" | "sm" | "md";
+
 /**
- * Decorative working signal. The enclosing status owns its accessible label.
+ * Working signal, decorative by default: the enclosing status owns its accessible
+ * label, so there is one live signal. Pass `label` only when nothing else near it
+ * announces the activity; it then becomes a polite status with hidden text.
+ * The component owns its color (`--color-active`) and its size (`size` follows the
+ * shared icon scale, so it swaps with `icon-xs|sm|md` status icons without shifting
+ * layout). Consumers pass only placement through `className`; text color, width
+ * and display utilities have no effect.
+ * Under reduced motion or with decorative motion off the bars stay visible and still.
  * Only the root animates (opacity): animated SVG children and per-bar
  * animations kept the main thread rendering every frame, see the CSS module.
  * The root pauses while it is outside the viewport (shared observer).
+ * @group feedback
+ * @use Compact "agent is working" signal beside a session, row or status line.
+ * @avoid Generic loading or a pending button: Spinner. Measurable progress: Progress. Unknown pane load: SurfaceLoading.
  */
 export function WorkingIndicator({
-  className = "inline-block w-3.5 shrink-0",
+  className = "",
+  label,
+  size = "xs",
 }: {
+  /** Placement only (margins, alignment). Toggle visibility on a wrapper; color and size belong to the component. */
   className?: string;
+  /** Announces the activity politely. Omit it when a nearby status already does. */
+  label?: string;
+  /** Matches the shared icon scale: xs 12px (default), sm 14px, md 16px. */
+  size?: WorkingIndicatorSize;
 }) {
   const root = useRef<HTMLSpanElement>(null);
   useEffect(() => {
@@ -49,8 +68,15 @@ export function WorkingIndicator({
     };
   }, []);
   return (
-    <span ref={root} aria-hidden="true" className={`${styles.indicator} ${className}`}>
-      <span className={styles.grid}>
+    <span
+      ref={root}
+      aria-hidden={label ? undefined : "true"}
+      role={label ? "status" : undefined}
+      data-size={size}
+      className={className ? `${styles.indicator} ${className}` : styles.indicator}
+    >
+      {label ? <span className="sr-only">{label}</span> : null}
+      <span className={styles.grid} aria-hidden={label ? "true" : undefined}>
         {BARS.map((x) => (
           <span key={x} className={styles.bar} style={{ left: `${((x - 1.3) / 24) * 100}%` }} />
         ))}

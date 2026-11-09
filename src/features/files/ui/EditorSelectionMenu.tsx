@@ -1,10 +1,11 @@
 import { Button } from "../../../shared/ui/Button";
+import { ShortcutKeys } from "../../../shared/ui/ShortcutKbd";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useEffect, useRef } from "react";
 import { MessageSquarePlus } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import { formatEditorSelectionReference, type EditorCodeSelection } from "../model/editorSelection";
-import { requestAddToChat } from "../../sessions/model/quoteDraft";
+import { requestAddToChat } from "../../sessions/public/quoteDraft";
 
 export type EditorSelectionTarget = EditorCodeSelection & {
   anchor: DOMRect;
@@ -35,7 +36,6 @@ export function EditorSelectionMenu({
   }, [selection]);
 
   if (!selection) return null;
-  const shortcut = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘L" : "Ctrl+L";
 
   return (
     <Popover
@@ -61,14 +61,9 @@ export function EditorSelectionMenu({
         }}
         className="flex items-center gap-1.5 whitespace-nowrap leading-none"
       >
-        <MessageSquarePlus aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
+        <MessageSquarePlus aria-hidden="true" className="icon-sm" strokeWidth={1.75} />
         {t("Add to chat")}
-        <kbd
-          aria-hidden="true"
-          className="rounded border border-(--ui-tone-neutral-border) px-1 py-0.5 font-sans text-(length:--ui-font-caption) text-(--ui-text-secondary)"
-        >
-          {shortcut}
-        </kbd>
+        <ShortcutKeys shortcut="mod+l" size="xs" />
       </Button>
     </Popover>
   );

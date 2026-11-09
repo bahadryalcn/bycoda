@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 test("session preview replaces browsing tabs and keeps drafts across themes and narrow layouts", async ({
   page,
@@ -12,7 +12,22 @@ test("session preview replaces browsing tabs and keeps drafts across themes and 
   await expect(page.getByLabel("Active discussion")).toHaveText("Discussion 10");
   await expect(tabs.locator(".italic")).toHaveCount(1);
   await page.getByLabel("Draft", { exact: true }).fill("Keep this draft");
+  // The open discussion shows its own composer, so it is not marked while typing.
+  await expect(discussions.nth(9)).not.toHaveAccessibleName(/\bDraft\b/);
   await discussions.nth(0).click();
+  // Leaving it marks the discussion that still holds unsent text.
+  await expect(discussions.nth(9)).toHaveAccessibleName(/\bDraft\b/);
+  await expect(discussions.nth(0)).not.toHaveAccessibleName(/\bDraft\b/);
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    await page.locator("aside").screenshot({
+      path: testInfo.outputPath(`session-draft-mark-${theme}.png`),
+    });
+  }
+  await page.evaluate(() => document.documentElement.classList.remove("theme-light"));
   await expect(tabs).toHaveCount(2);
   await discussions.nth(1).dblclick();
   await discussions.nth(2).click();
@@ -29,7 +44,9 @@ test("session preview replaces browsing tabs and keeps drafts across themes and 
     for (const width of [390, 1000]) {
       await page.setViewportSize({ width, height: 800 });
       await discussions.nth(9).click();
-      const activeTab = tabs.filter({ has: page.locator('button[data-button-selected="true"]') });
+      const activeTab = tabs.filter({
+        has: page.locator('button[data-button-selected="true"]'),
+      });
       await expect(activeTab).toBeInViewport();
       expect(
         await tabs.first().evaluate((node) => node.getBoundingClientRect().width),
@@ -37,7 +54,9 @@ test("session preview replaces browsing tabs and keeps drafts across themes and 
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      await page.screenshot({ path: testInfo.outputPath(`session-preview-${theme}-${width}.png`) });
+      await page.screenshot({
+        path: testInfo.outputPath(`session-preview-${theme}-${width}.png`),
+      });
     }
   }
 });
@@ -64,23 +83,37 @@ test("working sessions and usage meters stay contained in narrow and short works
       const lines = await firstCard.locator(":scope > span").evaluateAll((nodes) =>
         nodes.map((node) => {
           const rect = node.getBoundingClientRect();
-          return { x: rect.x, y: rect.y, width: rect.width, bottom: rect.bottom };
+          return {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            bottom: rect.bottom,
+          };
         }),
       );
       expect(lines).toHaveLength(2);
       expect(lines[1].y).toBeGreaterThanOrEqual(lines[0].bottom);
       expect(Math.abs(lines[0].x - lines[1].x)).toBeLessThan(1);
       await expect(rail.getByRole("button", { name: "Notes", exact: true })).toBeInViewport();
-      await expect(rail.getByRole("button", { name: /^Settings/ }).first()).toBeInViewport();
+      await expect(
+        rail
+          .getByRole("navigation", { name: "Settings", exact: true })
+          .getByRole("button", { name: "Settings", exact: true }),
+      ).toBeInViewport();
       const usage = page.locator("[data-provider-usage]");
       const chips = usage.getByRole("button", { name: /usage details/ });
       await expect(chips).toHaveCount(2);
       for (const chip of await chips.all()) {
-        const meter = chip.locator("[data-compact]");
-        expect((await meter.boundingBox())!.width).toBeCloseTo(32, 0);
+        // Each window shows its label, a fixed 44px meter and its reset time.
+        const meters = chip.locator("[data-compact]");
+        expect(await meters.count()).toBeGreaterThan(0);
+        for (const meter of await meters.all())
+          expect((await meter.boundingBox())!.width).toBeCloseTo(44, 0);
         const contained = await chip.evaluate((node) => {
           const outer = node.getBoundingClientRect();
           return [...node.querySelectorAll("span")].every((child) => {
+            // `display: contents` wrappers have no box of their own.
+            if (getComputedStyle(child).display === "contents") return true;
             const rect = child.getBoundingClientRect();
             return rect.left >= outer.left - 1 && rect.right <= outer.right + 1;
           });
@@ -98,7 +131,9 @@ test("working sessions and usage meters stay contained in narrow and short works
         true,
       );
       if (width === 390 || width === 1440)
-        await page.screenshot({ path: testInfo.outputPath(`shell-${width}-${theme}.png`) });
+        await page.screenshot({
+          path: testInfo.outputPath(`shell-${width}-${theme}.png`),
+        });
     }
   }
   const firstCard = rail.locator("[data-live-agent-card]").first();
@@ -133,7 +168,9 @@ test("working sessions and usage meters stay contained in narrow and short works
     const last = rail.locator("[data-live-agent-card]").last();
     await last.focus();
     await expect(last).toBeInViewport();
-    await page.screenshot({ path: testInfo.outputPath(`working-expanded-${height}.png`) });
+    await page.screenshot({
+      path: testInfo.outputPath(`working-expanded-${height}.png`),
+    });
   }
   const less = rail.getByRole("button", { name: "Show less", exact: true });
   await expect(less).toBeInViewport();
@@ -142,12 +179,19 @@ test("working sessions and usage meters stay contained in narrow and short works
   await firstCard.focus();
   await firstCard.press("Enter");
   await expect(page.getByLabel("Selected live session")).toHaveText("live-0");
-  const workingToggle = rail.getByRole("button", { name: "Working 8", exact: true });
+  // The headline counts only working agents; attention follows as separate text.
+  const workingToggle = rail.getByRole("button", {
+    name: "Working 5 · 1 needs attention",
+    exact: true,
+  });
   await workingToggle.click();
   await expect(firstCard).toBeHidden();
   await workingToggle.click();
   await expect(firstCard).toBeVisible();
-  const details = page.getByRole("button", { name: "Codex usage details", exact: true });
+  const details = page.getByRole("button", {
+    name: "Codex usage details",
+    exact: true,
+  });
   await details.focus();
   await details.press("Enter");
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -161,7 +205,10 @@ test("Inbox keeps long issue titles readable and list actions available", async 
   await page.goto("/tests/browser/project-workspace-navigation.html?inbox-layout=1");
   const card = page.getByRole("button", { name: /DESIGN-1:/ }).first();
   await expect(card).toBeVisible();
-  const divider = page.getByRole("separator", { name: "Resize inbox list", exact: true });
+  const divider = page.getByRole("separator", {
+    name: "Resize inbox list",
+    exact: true,
+  });
   for (const theme of ["dark", "light"]) {
     await page.evaluate(
       (light) => document.documentElement.classList.toggle("theme-light", light),
@@ -178,7 +225,9 @@ test("Inbox keeps long issue titles readable and list actions available", async 
         true,
       );
       if (width === 1440)
-        await page.screenshot({ path: testInfo.outputPath(`inbox-${theme}.png`) });
+        await page.screenshot({
+          path: testInfo.outputPath(`inbox-${theme}.png`),
+        });
     }
   }
   await expect(divider).toHaveAttribute("aria-valuenow", "320");
@@ -189,7 +238,10 @@ test("Inbox keeps long issue titles readable and list actions available", async 
   await expect(divider).toHaveAttribute("aria-valuenow", "195");
   await page.setViewportSize({ width: 1440, height: 800 });
   await expect(divider).toHaveAttribute("aria-valuenow", "330");
-  const search = page.getByRole("textbox", { name: "Filter inbox", exact: true });
+  const search = page.getByRole("textbox", {
+    name: "Filter loaded items",
+    exact: true,
+  });
   await search.fill("layouts 12");
   await expect(page.getByRole("button", { name: /DESIGN-12:/ })).toBeVisible();
   await expect(card).toBeHidden();
@@ -199,14 +251,34 @@ test("Inbox keeps long issue titles readable and list actions available", async 
   await expect(card).toHaveAttribute("aria-current", "true");
 });
 
+test("Inbox refresh keeps focus and shows progress only on the initiating action", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/project-workspace-navigation.html?inbox-layout=1");
+  await expect(page.getByRole("button", { name: /DESIGN-1:/ }).first()).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).inboxRefreshControl.hold = true;
+  });
+  const refresh = page.getByRole("button", { name: "Refresh", exact: true });
+  await refresh.focus();
+  await refresh.press("Enter");
+  await expect(refresh).toHaveAttribute("aria-busy", "true");
+  await expect(refresh).toBeFocused();
+  await page.keyboard.press("Enter");
+  expect(await page.evaluate(() => (window as any).inboxRefreshControl.calls)).toBe(1);
+  await page.evaluate(() => (window as any).inboxRefreshControl.release());
+  await expect(refresh).not.toHaveAttribute("aria-busy", "true");
+  await expect(page.getByRole("button", { name: /DESIGN-1:/ }).first()).toBeVisible();
+});
+
 test("Inbox review separates unread, draft, review and pending checks and restores filtered work", async ({
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/project-workspace-navigation.html?inbox-review=1");
-  const first = page.locator('button[title$="checks 1"]');
-  const draft = page.locator('button[title$="checks 2"]');
+  const first = page.getByRole("button", { name: /checks 1, / });
+  const draft = page.getByRole("button", { name: /checks 2, / });
   await expect(first.locator("[data-inbox-unread]")).toHaveCount(1);
   await first.click();
   await expect(first.locator("[data-inbox-unread]")).toHaveCount(0);
@@ -232,7 +304,9 @@ test("Inbox review separates unread, draft, review and pending checks and restor
   await expect(page.getByText("In progress", { exact: true }).first()).toBeVisible();
   for (const width of [768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
-    const heading = page.getByRole("heading", { name: /Review the shared interface keyboard/ });
+    const heading = page.getByRole("heading", {
+      name: /Review the shared interface keyboard/,
+    });
     expect(await heading.evaluate((node) => node.scrollHeight <= node.clientHeight + 1)).toBe(true);
     expect(
       await page
@@ -244,12 +318,18 @@ test("Inbox review separates unread, draft, review and pending checks and restor
       true,
     );
   }
-  await page.screenshot({ path: testInfo.outputPath("inbox-review-checks.png") });
-  const search = page.getByRole("textbox", { name: "Search pull requests", exact: true });
+  await page.screenshot({
+    path: testInfo.outputPath("inbox-review-checks.png"),
+  });
+  const search = page.getByRole("textbox", {
+    name: "Filter loaded items",
+    exact: true,
+  });
   await search.fill("checks 1");
-  const selected = page.locator('button[title$="checks 12"]');
+  const selected = page.getByRole("button", { name: /checks 12, / });
   await selected.click();
-  const scroller = selected.locator("xpath=ancestor::ul/parent::div");
+  // The Inbox list is a shared ContinuousList; its root is the scroll viewport.
+  const scroller = page.locator('[data-continuous-list^="inbox:"]');
   await scroller.evaluate((node) => {
     node.scrollTop = 200;
   });
@@ -271,7 +351,10 @@ test("compact rail centers group and social icons without wrapping labels", asyn
   page,
 }, testInfo) => {
   const rail = page.locator('[data-side-pane="rail"]');
-  const social = rail.getByRole("button", { name: "Social Media", exact: true });
+  const social = rail.getByRole("button", {
+    name: "Social Media",
+    exact: true,
+  });
   const label = social.getByText("Social Media", { exact: true }).first();
   const groupHeader = page.locator('[data-project-group="team"] > .project-reorder-item');
   for (const theme of ["dark", "light"]) {
@@ -359,15 +442,18 @@ test("rail appearance keeps two icon rows and applies independent translucent co
   for (let index = 0; index < 3; index++) await visibility.press("PageUp");
   for (let index = 0; index < 5; index++) await visibility.press("ArrowRight");
   await menu.getByRole("checkbox", { name: "Expanded contents", exact: true }).check();
-  await menu
-    .getByLabel("Expanded contents: Color", { exact: true })
-    .evaluate((node: HTMLInputElement) => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        node,
-        "#22c55e",
-      );
-      node.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+  await menu.getByRole("button", { name: "Expanded contents: Color", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Expanded contents: Color", exact: true });
+  // Using the nested colour picker keeps the group menu open.
+  await picker.getByRole("slider", { name: "Hue", exact: true }).click();
+  await picker.getByRole("textbox", { name: "Hex color", exact: true }).fill("#22c55e");
+  await expect(
+    page.getByRole("menu", { name: "Project group actions", exact: true }),
+  ).toBeVisible();
+  // Clicking elsewhere in the appearance popover closes only the colour picker.
+  await menu.getByText("Project icon", { exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  await expect(menu).toBeVisible();
   const group = page.locator('[data-project-group="wallet"]');
   await expect(group.locator(":scope > .project-reorder-item")).toHaveAttribute("style", /35%/);
   await expect(group.locator(":scope > .project-reorder-item")).toHaveCSS("opacity", "1");
@@ -401,7 +487,10 @@ test("project menu offers a separate disk folder rename", async ({ page }) => {
   await page.locator('[data-project-path="G:/wallet/api"]').click({ button: "right" });
   await page.getByRole("menuitem", { name: "Folders", exact: true }).click();
   await page.getByRole("menuitem", { name: "Rename folder…", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Rename folder", exact: true });
+  const dialog = page.getByRole("dialog", {
+    name: "Rename folder",
+    exact: true,
+  });
   await dialog.getByRole("textbox", { name: "Folder name", exact: true }).fill("payment-api");
   await dialog.getByRole("button", { name: "Rename folder", exact: true }).click();
   await expect(page.getByLabel("Renamed folder")).toHaveText("G:/wallet/api:payment-api");
@@ -415,10 +504,15 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.clear();
     localStorage.setItem("bycoda.language", "en");
+    const inboxRefreshControl = { hold: false, calls: 0, release: () => {} };
     Object.assign(window, {
+      inboxRefreshControl,
       __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
       __TAURI_INTERNALS__: {
-        metadata: { currentWebview: { label: "fixture" }, currentWindow: { label: "fixture" } },
+        metadata: {
+          currentWebview: { label: "fixture" },
+          currentWindow: { label: "fixture" },
+        },
         transformCallback: () => 1,
         invoke: async (command: string, args: Record<string, unknown> = {}) => {
           const cwd = String(args.cwd ?? "G:/wallet/api");
@@ -440,7 +534,10 @@ test.beforeEach(async ({ page }) => {
               assignees: [],
             });
             if (command.endsWith("_status"))
-              return { connected: command === "git_github_status", login: "fixture" };
+              return {
+                connected: command === "git_github_status",
+                login: "fixture",
+              };
             if (command === "git_github_repositories") return ["fixture/repository"];
             if (command === "git_github_work_items")
               return Array.from({ length: 40 }, (_, index) => item(index + 1));
@@ -514,7 +611,13 @@ test.beforeEach(async ({ page }) => {
           if (new URL(location.href).searchParams.has("inbox-layout")) {
             if (command.endsWith("_status"))
               return { connected: command === "jira_status", login: "fixture" };
-            if (command === "jira_list_issues")
+            if (command === "jira_list_issues") {
+              if (inboxRefreshControl.hold) {
+                inboxRefreshControl.calls += 1;
+                await new Promise<void>((resolve) => {
+                  inboxRefreshControl.release = resolve;
+                });
+              }
               return Array.from({ length: 12 }, (_, index) => ({
                 provider: "jira",
                 kind: "jira",
@@ -534,6 +637,7 @@ test.beforeEach(async ({ page }) => {
                 teamName: "Design workspace",
                 projectPath: "G:/wallet/api",
               }));
+            }
             if (command === "jira_issue_details")
               return { body: "Fixture issue description", author: "Fixture" };
             if (command === "jira_issue_thread")
@@ -560,7 +664,11 @@ test.beforeEach(async ({ page }) => {
               defaultRoot: "G:/wallet-worktrees",
               worktrees: [
                 { path: "G:/wallet/api", branch: "main", isMain: true },
-                { path: "G:/wallet-worktrees/task", branch: "mc/task", isMain: false },
+                {
+                  path: "G:/wallet-worktrees/task",
+                  branch: "mc/task",
+                  isMain: false,
+                },
               ].map((tree) => ({
                 ...tree,
                 head: "abc123",
@@ -625,9 +733,15 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-async function choose(panel: Locator, label: string, option: string) {
+async function choose(panel: Locator, label: string, option: string | RegExp) {
   await panel.getByRole("button", { name: new RegExp(`^${label}:`) }).click();
-  await panel.page().getByRole("option", { name: option, exact: true }).click();
+  await panel
+    .page()
+    .getByRole(
+      "option",
+      typeof option === "string" ? { name: option, exact: true } : { name: option },
+    )
+    .click();
 }
 
 test("main and worktrees remain separate and usable in narrow and wide Changes panels", async ({
@@ -638,11 +752,13 @@ test("main and worktrees remain separate and usable in narrow and wide Changes p
   await expect(panel).toBeVisible();
   // The picker opens on the session's own checkout; the overview lists every checkout.
   await expect(
-    panel.getByRole("button", { name: /^Working copy: main · api · This session/ }),
+    panel.getByRole("button", {
+      name: /^Working copy: main · api · This session/,
+    }),
   ).toBeVisible();
-  await expect(panel.locator("[data-checkout-list]")).toHaveCount(0);
+  await expect(panel.locator("[data-checkout-overview]")).toHaveCount(0);
   await choose(panel, "Working copy", "All checkouts");
-  const checkouts = panel.locator("[data-checkout-list] li");
+  const checkouts = panel.locator("[data-checkout-overview] [data-git-repository]");
   await expect(checkouts).toHaveCount(2);
   for (const width of [390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 800 });
@@ -651,16 +767,32 @@ test("main and worktrees remain separate and usable in narrow and wide Changes p
       .poll(() => panel.evaluate((node) => node.scrollWidth <= node.clientWidth))
       .toBe(true);
   }
-  await panel.locator('[data-checkout-list] button[title="G:/wallet-worktrees/task"]').click();
-  await panel.getByText("same.ts", { exact: true }).click();
+  const task = panel.locator(
+    '[data-checkout-overview] [data-git-repository="G:/wallet-worktrees/task"]',
+  );
+  const taskToggle = task.locator("header button[aria-expanded]").first();
+  await expect(taskToggle).toHaveAttribute("aria-expanded", "false");
+  await taskToggle.focus();
+  await page.keyboard.press("Enter");
+  await expect(taskToggle).toHaveAttribute("aria-expanded", "true");
+  await task.getByText("same.ts", { exact: true }).click();
   await expect(page.getByRole("status", { name: "Selected review" })).toHaveText(
     "diff:G:/wallet-worktrees/task:G:/wallet-worktrees/task/same.ts",
   );
+  await expect(
+    panel.getByRole("button", { name: "Working copy: All checkouts", exact: true }),
+  ).toBeVisible();
+  await choose(panel, "Working copy", /^mc\/task · task/);
+  await expect(panel.locator("[data-checkout-overview]")).toHaveCount(0);
   await expect(panel.getByRole("button", { name: /^Working copy: mc\/task · task/ })).toBeVisible();
   await choose(panel, "Working copy", "All checkouts");
   await expect(checkouts).toHaveCount(2);
+  await expect(taskToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(task.getByText("same.ts", { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 800 });
-  await page.screenshot({ path: testInfo.outputPath("source-control-worktrees.png") });
+  await page.screenshot({
+    path: testInfo.outputPath("source-control-worktrees.png"),
+  });
 });
 
 test("workspace Git stays in the main panel with compact repo rows and an expanded rebase", async ({
@@ -685,7 +817,9 @@ test("workspace Git stays in the main panel with compact repo rows and an expand
   await api.locator("header button[aria-expanded]").first().click();
   await expect(api.getByRole("textbox")).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.screenshot({ path: testInfo.outputPath("workspace-git-main-panel.png") });
+  await page.screenshot({
+    path: testInfo.outputPath("workspace-git-main-panel.png"),
+  });
   await panel.evaluate((element) => {
     element.parentElement!.style.width = "320px";
   });
@@ -693,11 +827,12 @@ test("workspace Git stays in the main panel with compact repo rows and an expand
   await panel.evaluate((element) => {
     element.parentElement!.style.width = "520px";
   });
-  await api.getByTitle("same.ts", { exact: true }).first().click();
+  await api.getByRole("button", { name: "same.ts", exact: true }).first().click();
   await expect(page.getByRole("status", { name: "Selected review" })).toHaveText(
     "diff:G:/wallet/api:G:/wallet/api/same.ts",
   );
-  await choose(panel, "Repository", "mobile");
+  // Repository options name the repository and show its path beneath.
+  await choose(panel, "Repository", /^mobile/);
   await expect(panel.locator("[data-git-repository]")).toHaveCount(0);
   await expect(mobile).toHaveCount(0);
   await expect(panel.getByRole("button", { name: "Continue", exact: true })).toBeVisible();
@@ -707,13 +842,18 @@ test("workspace Git stays in the main panel with compact repo rows and an expand
 test("workspace name opens its root without a modal, keeps one root entry and preserves child navigation", async ({
   page,
 }, testInfo) => {
-  const workspace = page.getByRole("button", { name: "Open wallet", exact: true });
+  const workspace = page.getByRole("button", {
+    name: "Open wallet",
+    exact: true,
+  });
   await workspace.click();
   await expect(page.getByRole("status", { name: "Selected project" })).toHaveText("G:/wallet");
   await expect(workspace).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.locator('[data-project-path="G:/wallet"]')).toHaveCount(0);
-  await page.screenshot({ path: testInfo.outputPath("workspace-root-selected.png") });
+  await page.screenshot({
+    path: testInfo.outputPath("workspace-root-selected.png"),
+  });
   await page.locator('[data-project-path="G:/wallet/mobile"] button').first().click();
   await expect(page.getByRole("status", { name: "Selected project" })).toHaveText(
     "G:/wallet/mobile",
@@ -730,10 +870,172 @@ test("ordinary group names are passive and the workspace arrow changes only expa
   await name.click();
   await expect(page.getByRole("status", { name: "Selected project" })).toHaveText("G:/wallet/api");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  const arrow = page.getByRole("button", { name: "wallet, 2 projects", exact: true });
+  const arrow = page.getByRole("button", {
+    name: "wallet, 2 projects",
+    exact: true,
+  });
   await arrow.click();
   await expect(arrow).toHaveAttribute("aria-expanded", "false");
   await page.getByRole("button", { name: "Open wallet", exact: true }).click();
   await expect(page.getByRole("status", { name: "Selected project" })).toHaveText("G:/wallet");
   await expect(arrow).toHaveAttribute("aria-expanded", "false");
+});
+
+/** Resolve a CSS length expression (for example `var(--ui-control-height-compact)`) to px. */
+async function resolvePx(page: Page, expression: string) {
+  return page.evaluate((value) => {
+    const probe = document.createElement("div");
+    probe.style.cssText = `position:absolute;visibility:hidden;height:${value}`;
+    document.body.append(probe);
+    const px = probe.getBoundingClientRect().height;
+    probe.remove();
+    return px;
+  }, expression);
+}
+
+test("rail headers, rows, title bar and session rows grow with the control density", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const expectedMinimum = { compact: 28, comfortable: 32, touch: 44 } as const;
+  const clipped = (locator: Locator) =>
+    locator.evaluateAll((nodes) =>
+      nodes
+        .filter((node) => {
+          const text = node.querySelector("span.truncate, [class*='truncate']") ?? node;
+          const box = node.getBoundingClientRect();
+          const textBox = text.getBoundingClientRect();
+          return textBox.height > box.height + 0.5 || node.scrollHeight > box.height + 1;
+        })
+        .map((node) => node.textContent?.trim().slice(0, 40)),
+    );
+  const setDensity = (density: string) =>
+    page.evaluate((value) => {
+      document.documentElement.dataset.controlDensity = value;
+    }, density);
+  const measure = async (locator: Locator, minimum: number, label: string) => {
+    const heights = await locator.evaluateAll((nodes) =>
+      nodes.map((node) => node.getBoundingClientRect().height),
+    );
+    expect(heights.length, `${label} must exist`).toBeGreaterThan(0);
+    for (const height of heights)
+      expect(height, `${label} height ${height}px < ${minimum}px`).toBeGreaterThanOrEqual(
+        minimum - 0.5,
+      );
+    return heights;
+  };
+
+  await page.goto("/tests/browser/project-workspace-navigation.html?layout=1");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const rail = page.locator('[data-side-pane="rail"]');
+  await rail.evaluate((element) => {
+    element.style.width = "260px";
+  });
+  await expect(rail.locator("[data-live-agent-card]").first()).toBeVisible();
+  const headers = rail.locator("[data-rail-section-actions]").locator("..");
+  const rows = rail.locator(".project-reorder-item");
+  const previous: Record<string, number> = {};
+  for (const density of ["compact", "comfortable", "touch"] as const) {
+    await setDensity(density);
+    const compact = await resolvePx(page, "var(--ui-control-height-compact)");
+    expect(compact).toBeGreaterThanOrEqual(expectedMinimum[density]);
+    const headerHeights = await measure(headers, compact, `${density} rail section header`);
+    const rowHeights = await measure(rows, compact, `${density} rail project row`);
+    expect(await clipped(headers), `${density} rail headers clip text`).toEqual([]);
+    expect(await clipped(rows), `${density} rail rows clip text`).toEqual([]);
+    const header = Math.min(...headerHeights);
+    const row = Math.min(...rowHeights);
+    if (previous.header !== undefined) {
+      expect(header).toBeGreaterThanOrEqual(previous.header);
+      expect(row).toBeGreaterThanOrEqual(previous.row);
+    }
+    previous.header = header;
+    previous.row = row;
+    // Rows must not overlap vertically in the ledger.
+    const boxes = await rows.evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const box = node.getBoundingClientRect();
+        return { top: box.top, bottom: box.bottom, visible: box.height > 0 };
+      }),
+    );
+    const sorted = boxes.filter((box) => box.visible).sort((a, b) => a.top - b.top);
+    for (let i = 1; i < sorted.length; i++)
+      expect(sorted[i].top).toBeGreaterThanOrEqual(sorted[i - 1].bottom - 0.5);
+  }
+
+  await page.goto("/tests/browser/project-workspace-navigation.html?session-preview=1");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const tabs = page.locator("[data-title-tab-id]");
+  const discussions = page.locator("aside").getByRole("button", { name: /^Discussion / });
+  await discussions.first().click();
+  await expect(tabs.first()).toBeVisible();
+  let titleBefore = 0;
+  for (const density of ["compact", "comfortable", "touch"] as const) {
+    await setDensity(density);
+    const compact = await resolvePx(page, "var(--ui-control-height-compact)");
+    await measure(tabs, compact, `${density} title tab`);
+    const bar = await tabs.first().evaluate((tab) => {
+      for (let el: HTMLElement | SVGElement | null = tab; el; el = el.parentElement)
+        if (el.style.height || el.style.minHeight) return el.getBoundingClientRect().height;
+      return 0;
+    });
+    expect(bar, `${density} title bar`).toBeGreaterThanOrEqual(compact + 8 - 0.5);
+    expect(bar).toBeGreaterThanOrEqual(titleBefore);
+    titleBefore = bar;
+    await measure(discussions, compact, `${density} session row`);
+    expect(await clipped(tabs), `${density} title tabs clip text`).toEqual([]);
+    expect(await clipped(discussions), `${density} session rows clip text`).toEqual([]);
+  }
+});
+
+test("a focused inline action shows one local focus cue and the host only tints", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/project-workspace-navigation.html?layout=1");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const rail = page.locator('[data-side-pane="rail"]');
+  await rail.evaluate((element) => {
+    element.style.width = "260px";
+  });
+  await expect(rail.locator("[data-live-agent-card]").first()).toBeVisible();
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    const slot = rail.locator("[data-rail-section-actions]").first();
+    const host = slot.locator("..");
+    const action = slot.locator("button").first();
+    await action.focus();
+    // Keyboard modality so :focus-visible applies to the focused control.
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
+    await expect(action).toBeFocused();
+    const cues = await page.evaluate(() => {
+      const active = document.activeElement as HTMLElement;
+      const hostElement = active.closest<HTMLElement>("[data-action-host]")!;
+      const cue = (element: HTMLElement) => {
+        const style = getComputedStyle(element);
+        return {
+          outline: style.outlineStyle !== "none" && parseFloat(style.outlineWidth) > 0,
+          shadow: style.boxShadow !== "none",
+          tint: style.backgroundImage !== "none",
+        };
+      };
+      return {
+        visible: document.querySelectorAll(":focus-visible").length,
+        host: cue(hostElement),
+        action: cue(active),
+      };
+    });
+    expect(cues.visible, `${theme} one :focus-visible owner`).toBe(1);
+    expect(cues.host.outline, `${theme} host draws no outline`).toBe(false);
+    expect(cues.host.shadow, `${theme} host draws no ring shadow`).toBe(false);
+    expect(cues.host.tint, `${theme} host tints while an inline action is focused`).toBe(true);
+    expect(cues.action.outline || cues.action.shadow, `${theme} action owns the focus ring`).toBe(
+      true,
+    );
+    await expect(host).toBeVisible();
+  }
 });

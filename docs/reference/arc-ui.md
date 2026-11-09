@@ -1,7 +1,8 @@
 # Arc UI integration
 
-The shared design policy is [bycoda UI design system](ui-design-system.md).
-Use [component selection](ui-component-catalog.md) to choose free Arc capabilities.
+Start with [bycoda design language](DESIGN.md) for the product direction.
+The detailed desktop policy is [bycoda UI design system](ui-design-system.md).
+Use the [generated component catalog](ui-components.md) to choose free Arc capabilities.
 This document describes current source contracts. A catalog decision is not a claim
 that an official registry item is installed, every consumer has migrated, or an
 installed desktop application has passed acceptance.
@@ -70,8 +71,7 @@ while improving the interaction. A shared import alone does not prove task fit.
 
 ### Buttons: one shared presentation contract
 
-`src/shared/ui/Button.tsx` is the application-facing action button. `SecondaryButton`
-already delegates to it. New application code must not import the registry Button
+`src/shared/ui/Button.tsx` is the application-facing action button. New application code must not import the registry Button
 directly or define another button's color, padding, border, focus and loading system.
 
 The shared API separates hierarchy from semantic intent. `primary`, `secondary`
@@ -89,26 +89,34 @@ hover, pressed, border and disabled roles live in the shared theme; info remains
 independent of the user's accent. Structural state and native props remain owned
 by their existing interactions.
 
-| Prop                       | Contract                                                                                                                                                                       |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `variant`                  | `primary`, `secondary` (default), `ghost`, `danger`, `link`, `item`, `tab`.                                                                                                    |
-| `size`                     | Existing Arc `sm` (default), `md`, `lg`; bycoda's shared control-height tokens remain authoritative.                                                                           |
-| `iconOnly` / `label`       | `iconOnly: true` requires a translated `label` at the type level. It creates a square control and supplies its accessible name and fallback native tooltip.                    |
-| `tooltip`                  | Translated hint; explicit native `title` takes precedence. Native hover titles remain. Keyboard focus on icon, shortcut or explicit-tooltip actions shows the same text through the existing Popover. |
-| `shortcut`                 | Optional display hint appended to the tooltip. Resolve configurable bindings with `useKeybindingShortcut`; disabled bindings return null. Does not register keyboard handlers. |
-| `shape`                    | `default` (existing control radius) or `pill`.                                                                                                                                 |
-| `selected`                 | Optional visual state; otherwise derived from the caller's `aria-selected`, `aria-pressed` or `aria-checked`. It does not invent or change ARIA roles/states.                  |
-| `loading` / `loadingLabel` | Controlled pending state and optional translated busy accessible name. Remains focusable and blocks duplicate activation and form submission.                                  |
-| `startIcon` / `endIcon`    | Decorative React nodes; their wrappers are hidden from assistive technology. Existing icon children continue to work.                                                          |
-| `fullWidth`                | Fill the available inline size. `item` is full width by default.                                                                                                               |
-| `motion`                   | `auto` (default) or `none`. Structural/text actions and native drag/animation handlers use the native renderer with the same Arc classes and tokens.                           |
-| Native props / `ref`       | Existing button props, form name/value, data attributes, keyboard/context/drag events and `HTMLButtonElement` ref remain supported. Default `type` is `button`.                |
+| Prop                           | Contract                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `variant`                      | `primary`, `secondary` (default), `ghost`, `danger`, `link`, `item`, `tab`.                                                                                                                                                                                                                                                                                             |
+| `size`                         | Existing Arc `sm` (default), `md`, `lg`; bycoda's shared control-height tokens remain authoritative.                                                                                                                                                                                                                                                                    |
+| `iconOnly` / `label`           | `iconOnly: true` requires a translated `label` at the type level. It creates a square control and supplies its accessible name and its shared tooltip.                                                                                                                                                                                                                  |
+| `tooltip`                      | Translated hint in the shared Tooltip (hover after 450 ms, keyboard focus at once, warm handoff). An explicit `title` takes precedence and is routed the same way; no native `title` attribute is rendered. `title=""` means no tooltip (for a Button an outer `Tooltip` describes). `aria-describedby` links the open hint unless it only repeats the accessible name. |
+| `shortcut`                     | Optional display hint rendered as key caps in the tooltip through the shared formatter (`Mod+K`, `Ctrl+Shift+P`, `⌘⇧P`, `Esc Esc`, `A / B`). Resolve configurable bindings with `useKeybindingShortcut`; disabled bindings return null. Does not register keyboard handlers.                                                                                            |
+| `tooltipDetails`               | Muted lines under the tooltip title (path, counts, state).                                                                                                                                                                                                                                                                                                              |
+| `tooltipSide` / `tooltipAlign` | Tooltip placement; default `bottom`.                                                                                                                                                                                                                                                                                                                                    |
+| `disabledReason`               | With `disabled`: the control stays focusable (`aria-disabled`, `data-disabled`, presses swallowed like `loading`), the reason shows in the tooltip and is exposed as `aria-description` while the hint is closed. Plain `disabled` keeps the native attribute; its tooltip still opens on hover.                                                                        |
+| `shape`                        | `default` (existing control radius) or `pill`.                                                                                                                                                                                                                                                                                                                          |
+| `selected`                     | Optional visual state; otherwise derived from the caller's `aria-selected`, `aria-pressed` or `aria-checked`. It does not invent or change ARIA roles/states.                                                                                                                                                                                                           |
+| `loading` / `loadingLabel`     | Controlled pending state and optional translated busy accessible name. Remains focusable and blocks duplicate activation and form submission.                                                                                                                                                                                                                           |
+| `startIcon` / `endIcon`        | Decorative React nodes; their wrappers are hidden from assistive technology. Existing icon children continue to work.                                                                                                                                                                                                                                                   |
+| `fullWidth`                    | Fill the available inline size. `item` is full width by default.                                                                                                                                                                                                                                                                                                        |
+| `align`                        | `center` (default), `start` or `end`. Aligns content in wide/full-width controls; replaces `text-left`/`justify-*` overrides. `justify-*` utilities still win.                                                                                                                                                                                                          |
+| `motion`                       | `auto` (default) or `none`. Structural/text actions and native drag/animation handlers use the native renderer with the same Arc classes and tokens.                                                                                                                                                                                                                    |
+| Native props / `ref`           | Existing button props, form name/value, data attributes, keyboard/context/drag events and `HTMLButtonElement` ref remain supported. Default `type` is `button`.                                                                                                                                                                                                         |
 
 `disabled`, boolean/string `aria-disabled`, and `loading` block click, popup activation,
 Enter/Space activation and drop actions in both renderers. Tab/navigation keys remain
 available for focusable aria-disabled/loading controls. Drag-end cleanup still runs.
 Async state is owned by the feature; Button never automatically executes or retries an
-action. SecondaryButton forwards the same API, selecting secondary/danger presentation.
+action.
+
+Press feedback is one layer: Arc-rendered buttons scale to 0.98 over the `fast` duration
+(none under reduced motion). Native-rendered buttons and popup anchors never scale and
+step their tone instead. Label width morph runs only when the label content changes.
 
 ```tsx
 <Button variant="primary" type="submit" loading={saving}>{t("Save")}</Button>
@@ -141,8 +149,7 @@ their role and preserve the existing native window and popup contracts.
   do not add a second page gutter or a dashboard shell around a workbench tool.
 - Open collection filters from an icon trigger using the existing Popover. Show an
   active-filter count/state on the trigger. Keep filter values and reset together in
-  the popover; an always-visible chip row is not the default. FilterToolbar can be
-  composed inside the popover without creating another filter-state owner.
+  the popover; an always-visible chip row is not the default.
 - Keep search compact and expandable on narrow surfaces. Preserve the query when
   the search control or filter popover closes.
 - Keep frequent actions visible and move infrequent actions into the existing
@@ -150,7 +157,7 @@ their role and preserve the existing native window and popup contracts.
   remain apparent; do not conceal them just to reduce visual density.
 - Use short visible labels and contextual information controls for optional help.
   Keep field names, destructive confirmation scope and actionable errors explicit.
-- Use disclosure for advanced fields and long supporting content without discarding
+- Use Disclosure for advanced fields and long supporting content without discarding
   hidden form values. Avoid nested decorative cards and repeated explanatory text.
 - Use Switch for independently applied on/off preferences; use Checkbox for choices
   submitted with a form. Use InlineEdit only for independently saved values; grouped
@@ -178,7 +185,6 @@ not a new product build or UI test suite.
   Prose references use `variant="link" layout="text"` to retain the surrounding
   text's baseline, wrapping and line height. This inline mode is for references
   inside sentences; toolbars and standalone actions retain normal control sizing.
-- `SecondaryButton` keeps its existing public API and delegates to `Button`.
 - `TextField` adds the scoped theme to Arc Input and forwards the input ref.
   Use `hideLabel` only when an existing visible label or surrounding context
   supplies the visual hierarchy. It omits the inner label to avoid nesting;
@@ -221,7 +227,9 @@ not a new product build or UI test suite.
   lifecycle remains the owner of mounted drafts and close/focus behavior.
 - `SearchableSelect` supports per-option descriptions/disabled metadata,
   locale-specific matching, native `triggerProps`/ref, optional selected values
-  and removal/reset/Done labels. SocialMultiSelect retains domain busy state
+  and removal/reset/Done labels. Its optional `side` prefers a popup edge and
+  flips to the opposite edge when space runs out; the default remains `bottom`.
+  SocialMultiSelect retains domain busy state
   and Turkish copy in its feature facade.
 - `ExpandingSearch` adapts official free width/radius choreography to controlled
   query and externally ranked results. SettingsSearch retains `searchSettings`
@@ -237,7 +245,7 @@ not a new product build or UI test suite.
 - `FloatingButtonGroup` supplies shared action rows and roving keyboard focus
   inside TranscriptSelectionMenu's existing Popover. Terminal delegates to that
   same menu. Selection preservation, dismissal and pending/error/retry remain
-  feature-owned. Button keyboard hints reuse Popover without another tooltip dependency.
+  feature-owned. Button hover and keyboard hints use the shared Tooltip (Popover-based) without another tooltip dependency.
   These passive hints preserve the active dialog/menu's Escape handling, never
   take focus and do not restore focus when the trigger blurs. Button refs,
   native events and loading/disabled guards remain with the existing owner.
@@ -245,8 +253,6 @@ not a new product build or UI test suite.
   the composite retains hold/countdown/arming, async retry, actual undo and focus.
 - `MorphSelect` handles small property lists and registers with the shared Escape
   overlay stack. General settings uses it for the stay-awake duration.
-- `ExpandableCard` displays Diagnostics measurement details. Closed content stays
-  mounted and inert, preserving input state; Escape returns focus to the trigger.
 - `Timeline` localizes day headings, counts and announcements. Task attempt history
   keeps worker/reviewer session actions visible outside collapsed review details.
 - `TextareaField` forwards native textarea props/ref and scopes the field theme.
@@ -277,6 +283,25 @@ not a new product build or UI test suite.
 - Public `MenuRow` delegates the existing private Arc ContextMenuRow and exports
   `menuRowClassName`. It forwards native button refs/events and disabled/submenu
   semantics to existing domain menu controllers; it does not create a menu stack.
+- DropdownMenu, the native ContextMenu path, MenuRow and the standalone Arc menu
+  share one row in `arc/context-menu/context-menu.module.css`: compact height is
+  the density's compact control height plus 4px (44px minimum on coarse pointers),
+  with icon, title/description and trailing shortcut/check/chevron slots. Hover,
+  pressed and danger consume `--ui-surface-hover`, `--ui-surface-pressed` and the
+  danger tone roles; keyboard highlight adds the shared focus ring; disabled rows
+  have no hover fill and are skipped by arrow keys. Do not restyle rows per menu.
+- `Popover` content flow is explicit: the default `flow="intrinsic"` keeps the
+  previous clipped, natural-height behavior; `flow="scroll"` gives the popover one
+  bounded scroll region with overscroll containment, and its own scrolling never
+  re-places or dismisses it. Do not add a second scroll rail inside a scroll flow.
+- `Modal` paints the shared raised popup surface. Compact dialogs (`size="sm"`)
+  and end sheets use the title type role, `md`/`lg` task dialogs the heading role;
+  `placement="end"` renders as a pane with an inline-start edge and header rule.
+- `EmptyState` accepts `context="page" | "panel" | "list"` (default `page`) for
+  page versus compact panel/list absence. `FailureState` keeps an 8,000-character
+  readable preview, states when it is cut, and copies the complete diagnostic;
+  after a copy failure it reveals and selects the full text for manual copying.
+  An `onRetry` promise keeps Retry pending and blocks a duplicate attempt.
 - Public `TreeRow` forwards native button props/ref to `arc/tree-view/tree-row.tsx`.
   Controlled `selected`, `cut`, `dropTarget` and finite depth clamped to 0..64
   drive shared density/token presentation. The default role is treeitem with
@@ -299,16 +324,36 @@ not a new product build or UI test suite.
   with projects uses the existing saved-conversation confirmation and keeps
   project folders on disk.
 
+Shared primitives added in the 2026-11-01 UI standards round (Tabs, PaneHeader, SectionLabel,
+Surface, Divider, Sash, Meter, ToastRegion, Sheet, InlineError, Spinner/LoadingText, ModalActions,
+PromptField, PopoverSearchHeader, the picker kit, HoverCard and the shared Tooltip) are Bycoda-owned
+compositions on top of these adapters. Their API, when-to-use and "replaces" notes live in
+`docs/reference/ui-components.md`; they are not Arc registry installs.
+
 ## Appearance and motion
 
-Text-field focus is owned by `src/styles/arc.css`: one 1px outline inset on the
-existing border, with the shared danger token for invalid fields. `SearchInput`
-owns this outline by default for `appearance="field"` or `standalone`; an
+Text-field focus is owned by `src/styles/arc.css` and follows the V3 field/focus contract
+in `docs/reference/ui-components.md`: a faint 1px
+boundary and 8px radius; focus turns the frame border to adjusted accent ink
+(`--ui-field-border-focus`) and adds `--ui-focus-ring`, a subtle 2px ring in the user's accent at
+low alpha (never a gray halo, never an inset outline); invalid fields use the danger border with
+`--ui-focus-ring-invalid`, and forced colors keep a real outline. Hover uses `--ui-field-border-hover`; neither state uses the text color as
+its border. One frame draws the focus: a field with leading/trailing actions uses
+`FieldControl` slots (`InlineAction`), never overlaid buttons, so a hover fill stays inside the
+frame. `SearchInput`
+owns this focus treatment by default for `appearance="field"` or `standalone`; an
 unframed bare input defaults to the menu owner. For a bordered composite, use `SearchInputGroup`
 and `focusOwner="group"`; for an already framed menu header, use
 `focusOwner="menu"`. Clear buttons retain their own keyboard focus indicator.
 Feature focus rules must exclude `[data-ui-focus]` instead of overriding this
 contract or drawing another outline on the container.
+
+Composites: `data-ui-focus-group` on the bordered frame, `data-ui-focus="group"` on the inner
+editor or trigger (the member draws nothing). Inputs inside `FieldControl` are members
+automatically. `data-ui-focus="input"` marks a standalone editor that owns its frame,
+`data-ui-focus="menu"` an editor inside a framed menu. `data-ui-focus-quiet` on a group opts a
+writing surface out of the ring (the chat composer); forced-colors outlines still apply. The
+tokens (`--ui-field-*`, `--ui-focus-*`) are defined once, at the top of `src/styles/arc.css`.
 
 Standalone search fields use `SearchInput appearance="field"`; bordered search
 compositions use `SearchInputGroup appearance="field"` with an inner
@@ -389,13 +434,16 @@ installed desktop acceptance.
 
 `node scripts/checks/check-ui-boundaries.mjs` compares source/style findings
 against explicit owner-reviewed fingerprint decisions. The baseline includes
-944 historical component decisions plus reviewed current additions and counted
-signal exceptions. It remains in the uncommitted owner review diff. Inventory
-counts alone are not approval; the check has no automatic refresh command.
-AST/CSS heuristics cannot prove event, permission, native editor or overlay
-correctness. Local immutable/conditional/template class recipes and static
-ARIA/feedback selectors are tracked; dynamic roles, indirect styles and imported
-recipes still need manual review.
+historical component decisions plus reviewed current additions and counted
+signal exceptions. Inventory counts alone are not approval; the check has no
+automatic refresh command and is not wired into staged checks or CI yet (about 263
+findings are unreviewed). AST/CSS heuristics cannot prove event, permission,
+native editor or overlay correctness. Local immutable/conditional/template class
+recipes and static ARIA/feedback selectors are tracked; dynamic roles, indirect
+styles and imported recipes still need manual review.
+`node scripts/checks/check-ui-drift.mjs` (`pnpm check:ui-drift`) is the separate
+per-file count ratchet for token, typography, icon, layer, motion, tooltip, error and
+overlay drift; it runs on staged `src` files (see `ui-design-system.md`, "UI drift ratchet").
 Source contracts, mocked browser fixtures, installed Windows/macOS applications
 and release acceptance are separate evidence.
 
@@ -407,7 +455,6 @@ scope appearance to `bycoda-arc`; registry copy is localized through the existin
 | Item                | Integration                                                                                                                                                                                                                                    |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | JSON viewer         | Complete saved JSON objects/arrays in Tool Inspection. Plain text, diffs, commands and truncated output retain their original presentation. Value/path copying uses the native clipboard bridge.                                               |
-| Filter toolbar      | Removable project/tag filters in the Notes library. Existing filter controls and preferences stay authoritative.                                                                                                                               |
 | Sortable data table | Usage time, category and session tables sort numeric metrics before pagination. Shared filters retain project/group membership, separate token categories and explicit missing-data/pricing coverage.                                          |
 | Date range picker   | DateRangePicker retains inclusive calendar days. DateTimeRangePicker composes it with start/end date-time fields for end-exclusive Usage timestamp ranges, validates min/max bounds before applying, and uses the shared Popover/Escape stack. |
 | Inline edit         | Session Notes titles save through the existing serialized queue, finalize pending slugs and roll back failed renames.                                                                                                                          |
@@ -438,17 +485,20 @@ Stepper completion and navigation remain feature-owned; ElasticSlider is opt-in
 for approximate visual adjustments; SplitButton method selection never runs the
 primary action. Native confirmation/approval stays with the feature.
 
+Confirmation rule: a row-level delete confirms in place with ConfirmMorph (danger).
+An action with several consequences (stash drop, remote branch delete, task or
+automation removal) uses `useConfirm` / `ConfirmDialog` from
+`src/shared/ui/ConfirmDialog.tsx`, which supports a danger tone, an async
+`onConfirm` and a pending state that blocks double submit. The Tauri `ask` dialog
+is only for places a web overlay cannot render. Optional help uses the shared
+`InfoPopover` (`src/shared/ui/InfoPopover.tsx`), not feature-local copies.
+
 `MorphSelect` now accepts exported `MorphSelectItem` option/group records,
 `searchable` (default false), `onClose` and native `triggerProps` including ref
 and pointer events. Disabled/group keyboard navigation and IME guards remain in
 the shared owner. Sessions use it for bounded independent scalar model settings;
 service tier, effort and other settings retain their own values and callbacks.
 Growing/custom model catalogs retain their search and free-entry controllers.
-
-`SlotText` animates existing formatted strings in Usage overview KPIs. It respects
-application motion preference and OS reduced motion, keeps the latest accessible
-value through rapid updates, and does not change numeric formatting, units,
-estimates or filtering. Streaming transcript values are not SlotText consumers.
 
 Pure placement classes (`absolute`, `fixed`, `sticky`, `static`, `relative`) on
 `Button` are honored through the shared components layer. Arc and adapter box

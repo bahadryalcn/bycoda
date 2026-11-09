@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from "react";
+import { subscribeUpdateChannel } from "../../features/settings/model/updateChannel";
 import { isUpdatePromptSnoozed } from "./updatePrompt";
 import {
   installPendingUpdate,
@@ -23,6 +24,7 @@ let checking = false;
 let installing = false;
 let consumers = 0;
 let timer: ReturnType<typeof setInterval> | undefined;
+let stopChannel: (() => void) | undefined;
 let generation = 0;
 const listeners = new Set<() => void>();
 const subscribe = (listener: () => void) => {
@@ -92,11 +94,17 @@ export function useAppUpdater() {
     if (consumers === 1) {
       void probe();
       timer = setInterval(() => void probe(), 30 * 60 * 1000);
+      // Switching the update channel answers right away instead of at the next interval.
+      // probe() never rejects; the handler keeps that true if it changes.
+      stopChannel = subscribeUpdateChannel(() => {
+        probe().catch(() => {});
+      });
     }
     return () => {
       consumers -= 1;
       if (!consumers) {
         clearInterval(timer);
+        stopChannel?.();
         generation += 1;
         checking = false;
       }

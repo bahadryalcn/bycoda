@@ -15,6 +15,9 @@ import type { OrchestrationProposal } from "./orchestrationPlan";
 import { normalizeOrchestrationRun } from "./orchestrationState";
 import { previewFromToolPart } from "../../../integrations/harness/providers/opencode/opencodeProtocol";
 
+const occurrenceA = "7e1c4dc0-6f53-4aa8-b8d8-000000000001";
+const occurrenceB = "7e1c4dc0-6f53-4aa8-b8d8-000000000002";
+
 function setup() {
   const saved = new Map<string, OrchestrationRun>();
   const store = {
@@ -24,6 +27,8 @@ function setup() {
     load: vi.fn(async (id: string) => saved.get(id) ?? null),
     enable: vi.fn(async () => "/Applications/Bycoda.app/Contents/MacOS/bycoda"),
     disable: vi.fn(async () => {}),
+    captureGrant: vi.fn(async () => "original-grant"),
+    disableCaptured: vi.fn(async () => {}),
     scopes: vi.fn(async (cwd: string, files: string[]) =>
       files.map((file) => (file === "." ? cwd : `${cwd}/${file}`)),
     ),
@@ -67,6 +72,12 @@ function setup() {
     stop: vi.fn(async (id) => {
       const session = sessions.find((entry) => entry.id === id);
       if (session) session.busy = false;
+    }),
+    captureStop: (id) => ({
+      current: () => !!sessions.find((session) => session.id === id),
+      stop: async () => {
+        await host.stop(id);
+      },
     }),
     steer: vi.fn(async () => {}),
     respondApproval: vi.fn(),
@@ -116,13 +127,138 @@ describe("worker assignment prompts", () => {
     expect(sent).toContain("<bycoda_assignment>");
     expect(sent).toContain("src/App.tsx");
     expect(sent).toContain("override any contradictory wording");
-    expect(sent).toContain("stage, commit, push");
-    expect(sent).toContain("Git finalization remains the lead's responsibility");
+    expect(sent).toContain("Commit your changes on your assigned branch");
+    expect(sent).toContain("owner-approved managed delivery");
+    expect(sent).not.toContain("stage, commit, push");
     expect(visibleUserPrompt(sent)).toBe("Review the branch.");
   });
 });
 
+it("preserves the no-commit identity of retained legacy shared workers", () => {
+  const prompt = workerTurnPrompt("Continue", ["src"], undefined, false);
+  expect(prompt).toContain("do not stage or commit until the owner explicitly migrates");
+  expect(prompt).not.toContain("Commit your changes on your assigned branch");
+});
+
 describe("local orchestration", () => {
+  it("observes abandoned and delayed grant capture failures while preserving rejection", async () => {
+    const f = setup();
+    await f.start();
+    f.store.captureGrant.mockRejectedValue(new Error("grant unavailable"));
+    const abandoned = f.manager.captureDesktopControl("lead")!;
+    const delayed = f.manager.captureDesktopControl("lead")!;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await expect(delayed.ready).rejects.toThrow("grant unavailable");
+    await expect(abandoned.ready).rejects.toThrow("grant unavailable");
+  });
+  it("stops only the captured lead and original active workers, using the captured grant", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["src"]);
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("running"));
+    await vi.waitFor(() =>
+      expect(f.sessions.some((entry) => entry.id === f.tasks()[0].sessionId)).toBe(true),
+    );
+    const worker = f.tasks()[0].sessionId;
+    vi.mocked(f.host.stop).mockClear();
+    const captured = f.manager.captureDesktopControl("lead")!;
+    await captured.ready;
+    await captured.stop();
+    expect(f.host.stop).toHaveBeenCalledTimes(2);
+    expect(f.host.stop).toHaveBeenCalledWith("lead");
+    expect(f.host.stop).toHaveBeenCalledWith(worker);
+    expect(f.store.disableCaptured).toHaveBeenCalledWith("lead", "original-grant");
+    expect(f.manager.run("lead")?.status).toBe("stopped");
+    expect(f.tasks()[0].status).toBe("cancelled");
+  });
+  it("does not stop a replacement worker after the guarded state commit awaits", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["src"]);
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("running"));
+    await vi.waitFor(() =>
+      expect(f.sessions.some((entry) => entry.id === f.tasks()[0].sessionId)).toBe(true),
+    );
+    vi.mocked(f.host.stop).mockClear();
+    const captured = f.manager.captureDesktopControl("lead")!;
+    await captured.ready;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    f.store.save.mockImplementationOnce(async () => {
+      await gate;
+    });
+    const stopping = captured.stop();
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("cancelling"));
+    f.tasks()[0].activeDispatchId = "replacement-dispatch";
+    release();
+    await expect(stopping).rejects.toThrow(/changed/);
+    expect(f.host.stop).not.toHaveBeenCalled();
+    expect(f.store.disableCaptured).not.toHaveBeenCalled();
+  });
+  it("cancels only the captured worker without disabling its lead", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["src"]);
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("running"));
+    await vi.waitFor(() =>
+      expect(f.sessions.some((entry) => entry.id === f.tasks()[0].sessionId)).toBe(true),
+    );
+    const worker = f.tasks()[0].sessionId;
+    vi.mocked(f.host.stop).mockClear();
+    const captured = f.manager.captureDesktopControl(worker)!;
+    await captured.ready;
+    await captured.stop();
+    expect(f.host.stop).toHaveBeenCalledExactlyOnceWith(worker);
+    expect(f.store.disableCaptured).not.toHaveBeenCalled();
+    expect(f.manager.run("lead")?.status).toBe("active");
+    expect(f.tasks()[0]).toMatchObject({ status: "cancelled", delivered: false });
+  });
+  it("holds a captured lead stop if another worker appears while the commit waits", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["src"]);
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("running"));
+    await vi.waitFor(() =>
+      expect(f.sessions.some((entry) => entry.id === f.tasks()[0].sessionId)).toBe(true),
+    );
+    vi.mocked(f.host.stop).mockClear();
+    const captured = f.manager.captureDesktopControl("lead")!;
+    await captured.ready;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    f.store.save.mockImplementationOnce(async () => {
+      await gate;
+    });
+    const stopping = captured.stop();
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("cancelling"));
+    f.tasks().push({
+      ...f.tasks()[0],
+      id: "new-task",
+      sessionId: "new-worker",
+      activeDispatchId: "new-dispatch",
+    });
+    release();
+    await expect(stopping).rejects.toThrow(/changed/);
+    expect(f.host.stop).not.toHaveBeenCalled();
+    expect(f.store.disableCaptured).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse a captured stop after the run restarts", async () => {
+    const f = setup();
+    await f.start();
+    const captured = f.manager.captureDesktopControl("lead")!;
+    await captured.ready;
+    await f.manager.stopRun("lead");
+    await f.start();
+    vi.mocked(f.host.stop).mockClear();
+    await expect(captured.stop()).rejects.toThrow(/changed/);
+    expect(f.host.stop).not.toHaveBeenCalled();
+    expect(f.store.disableCaptured).not.toHaveBeenCalled();
+  });
   it("deletes unrelated history while another run's control save is pending", async () => {
     const f = setup();
     await f.start();
@@ -1171,13 +1307,17 @@ describe("local orchestration", () => {
         id: "ask",
         role: "approval",
         text: "rm -rf build",
-        approval: { requestId: 7 },
+        approval: { requestId: 7, occurrenceId: occurrenceA },
       },
     ];
     const view = (await f.call("get", { taskId: f.tasks()[0].id })) as {
       needsInput?: { kind: string; requestId: number };
     };
-    expect(view.needsInput).toMatchObject({ kind: "approval", requestId: 7 });
+    expect(view.needsInput).toMatchObject({
+      kind: "approval",
+      requestId: 7,
+      approvalOccurrenceId: occurrenceA,
+    });
     // A stale or invented requestId must never decide a live prompt.
     await expect(
       f.call("respond", {
@@ -1191,14 +1331,183 @@ describe("local orchestration", () => {
         taskId: f.tasks()[0].id,
         requestId: 7,
         decision: "maybe",
+        approvalOccurrenceId: occurrenceA,
       }),
     ).rejects.toThrow('decision must be "allow" or "deny"');
     await f.call("respond", {
       taskId: f.tasks()[0].id,
       requestId: 7,
       decision: "deny",
+      approvalOccurrenceId: occurrenceA,
     });
-    expect(f.host.respondApproval).toHaveBeenCalledWith(worker.id, 7, "deny");
+    expect(f.host.respondApproval).toHaveBeenCalledWith(worker.id, 7, "deny", occurrenceA);
+  });
+
+  it("refuses missing or changed occurrence data before dispatch while retaining legacy request visibility", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["occurrence"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    const worker = f.sessions.find((entry) => entry.id === f.tasks()[0].sessionId)!;
+    worker.blocks = [
+      {
+        id: "original",
+        role: "approval",
+        text: "Original request",
+        approval: { requestId: 7, occurrenceId: occurrenceA },
+      },
+    ];
+    for (const nonce of [undefined, "latest", occurrenceB, occurrenceA + "\n"])
+      await expect(
+        f.call("respond", {
+          taskId: f.tasks()[0].id,
+          requestId: 7,
+          decision: "allow",
+          approvalOccurrenceId: nonce,
+        }),
+      ).rejects.toThrow("occurrence");
+    expect(f.host.respondApproval).not.toHaveBeenCalled();
+    worker.blocks[0].approval = { requestId: 7 };
+    expect(f.manager.pendingInput(f.tasks()[0])).toMatchObject({
+      kind: "approval",
+      requestId: 7,
+      approvalOccurrenceId: undefined,
+    });
+    await expect(
+      f.call("respond", {
+        taskId: f.tasks()[0].id,
+        requestId: 7,
+        decision: "allow",
+        approvalOccurrenceId: occurrenceA,
+      }),
+    ).rejects.toThrow("occurrence");
+    expect(f.host.respondApproval).not.toHaveBeenCalled();
+    worker.blocks[0].approval = { requestId: 7, occurrenceId: occurrenceA };
+    await f.call("respond", {
+      taskId: f.tasks()[0].id,
+      requestId: 7,
+      decision: "allow",
+      approvalOccurrenceId: occurrenceA,
+    });
+    expect(f.host.respondApproval).toHaveBeenCalledExactlyOnceWith(
+      worker.id,
+      7,
+      "allow",
+      occurrenceA,
+    );
+  });
+
+  it("pins the original caller nonce before its action queue and cannot upgrade it to a same-ID replacement", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["queued-occurrence"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    const worker = f.sessions.find((entry) => entry.id === f.tasks()[0].sessionId)!;
+    worker.blocks = [
+      {
+        id: "A",
+        role: "approval",
+        text: "A",
+        approval: { requestId: 7, occurrenceId: occurrenceA },
+      },
+    ];
+    const input = {
+      taskId: f.tasks()[0].id,
+      requestId: 7,
+      decision: "allow",
+      approvalOccurrenceId: occurrenceA,
+    };
+    const pending = f.call("respond", input).catch((error: Error) => error);
+    input.approvalOccurrenceId = occurrenceB;
+    worker.blocks = [
+      {
+        id: "B",
+        role: "approval",
+        text: "B",
+        approval: { requestId: 7, occurrenceId: occurrenceB },
+      },
+    ];
+    expect(await pending).toEqual(
+      expect.objectContaining({ message: expect.stringContaining("occurrence") }),
+    );
+    expect(f.host.respondApproval).not.toHaveBeenCalled();
+  });
+
+  it("retains exact retry identity and reports callback dispatch without claiming provider acknowledgment", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["retry-occurrence"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    const worker = f.sessions.find((entry) => entry.id === f.tasks()[0].sessionId)!;
+    worker.blocks = [
+      {
+        id: "A",
+        role: "approval",
+        text: "A",
+        approval: { requestId: 7, occurrenceId: occurrenceA },
+      },
+    ];
+    const a = {
+      taskId: f.tasks()[0].id,
+      requestId: 7,
+      decision: "deny",
+      approvalOccurrenceId: occurrenceA,
+    };
+    const first = await f.call("respond", a, "exact-original");
+    expect(first).toMatchObject({
+      decision: "deny",
+      approvalOccurrenceId: occurrenceA,
+      providerAck: "unproved",
+    });
+    worker.blocks = [
+      {
+        id: "B",
+        role: "approval",
+        text: "B",
+        approval: { requestId: 7, occurrenceId: occurrenceB },
+      },
+    ];
+    expect(await f.call("respond", a, "exact-original")).toEqual(first);
+    await expect(
+      f.call("respond", { ...a, approvalOccurrenceId: occurrenceB }, "exact-original"),
+    ).rejects.toThrow("different input");
+    await expect(f.call("respond", a, "late-A")).rejects.toThrow("occurrence");
+    expect(f.host.respondApproval).toHaveBeenCalledExactlyOnceWith(
+      worker.id,
+      7,
+      "deny",
+      occurrenceA,
+    );
+  });
+
+  it("does not record success when the actual approval callback refuses before dispatch", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["refused-occurrence"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    const worker = f.sessions.find((entry) => entry.id === f.tasks()[0].sessionId)!;
+    worker.blocks = [
+      {
+        id: "A",
+        role: "approval",
+        text: "A",
+        approval: { requestId: 7, occurrenceId: occurrenceA },
+      },
+    ];
+    vi.mocked(f.host.respondApproval).mockReturnValueOnce(false);
+    const input = {
+      taskId: f.tasks()[0].id,
+      requestId: 7,
+      decision: "allow",
+      approvalOccurrenceId: occurrenceA,
+    };
+    await expect(f.call("respond", input, "held-original")).rejects.toThrow("not dispatched");
+    expect(f.manager.run("lead")?.requests["held-original"]).toBeUndefined();
+    vi.mocked(f.host.respondApproval).mockReturnValueOnce(true);
+    expect(await f.call("respond", input, "released-original")).toMatchObject({
+      approvalOccurrenceId: occurrenceA,
+      providerAck: "unproved",
+    });
   });
   it("returns from wait immediately when a worker already needs input", async () => {
     vi.useFakeTimers();

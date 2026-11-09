@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { claudeAdvisorSetting } from "./claudeAdvisor";
+import { claudeAdvisorSetting, offeredDelegationSetting, withClaudeAdvisor } from "./claudeAdvisor";
+import { mergeModelSettings } from "./models";
+import type { AgentModel } from "./models";
 import {
   buildClaudeSpawnArgs,
   claudeAutoCompactSettings,
@@ -7,6 +9,73 @@ import {
 } from "../../../integrations/harness/providers/claude/claudeProtocol";
 
 describe("Claude advisor selection", () => {
+  const model = (nativeId: string, name: string, aliasTarget?: string): AgentModel => ({
+    id: `claude:${nativeId}`,
+    harness: "claude",
+    nativeId,
+    name,
+    aliasTarget,
+  });
+  it("builds versioned advisor choices from the offered catalog for a moving main alias", () => {
+    const main = model("opus", "Opus 5.5", "claude-opus-5-5");
+    const offered = [
+      main,
+      model("fable", "Fable 5.1", "claude-fable-5-1"),
+      model("claude-sonnet-4-6", "Sonnet 4.6"),
+      model("claude-opus-4-8", "Opus 4.8"),
+    ];
+    const setting = claudeAdvisorSetting("opus")!;
+    expect(offeredDelegationSetting(setting, offered, undefined, main).options).toEqual([
+      { value: "default", label: "Claude default" },
+      { value: "off", label: "Off" },
+      { value: "claude-opus-5-5", label: "Opus 5.5" },
+      { value: "claude-fable-5-1", label: "Fable 5.1" },
+    ]);
+  });
+  it("uses version-only catalogs and retains a saved advisor missing from offered models", () => {
+    const main = model("claude-fable-5-1", "Fable 5.1");
+    const offered = [
+      main,
+      model("claude-opus-5-5", "Opus 5.5"),
+      model("claude-fable-5", "Fable 5"),
+    ];
+    const setting = claudeAdvisorSetting(main.nativeId!)!;
+    expect(
+      offeredDelegationSetting(setting, offered, undefined, main).options.map((o) => o.label),
+    ).toEqual(["Claude default", "Off", "Fable 5.1"]);
+    expect(
+      offeredDelegationSetting(setting, [main], "claude-private-advisor", main).options.at(-1),
+    ).toEqual({ value: "claude-private-advisor", label: "claude-private-advisor" });
+  });
+  it("deduplicates resolved aliases, labels generic names and excludes unknown targets", () => {
+    const main = model("opus", "Opus", "claude-opus-5-5");
+    const offered = [
+      main,
+      model("claude-opus-5-5", "Opus 5.5"),
+      model("fable", "Fable", "claude-fable-5-1"),
+      model("claude-fable-99", "Fable 99"),
+    ];
+    const setting = claudeAdvisorSetting("opus")!;
+    expect(offeredDelegationSetting(setting, offered, undefined, main).options.slice(2)).toEqual([
+      { value: "claude-opus-5-5", label: "Opus 5.5" },
+      { value: "claude-fable-5-1", label: "Fable 5.1" },
+    ]);
+    expect(offeredDelegationSetting(setting, [main], "opus", main).options.at(-1)?.value).toBe(
+      "opus",
+    );
+  });
+  it("retains a versioned choice through settings normalization before launching", () => {
+    const main = model("opus", "Opus 5.5", "claude-opus-5-5");
+    const fable = model("fable", "Fable 5.1", "claude-fable-5-1");
+    const enriched = withClaudeAdvisor(main, [main, fable]);
+    expect(mergeModelSettings(enriched, { advisor: "claude-fable-5-1" }).advisor).toBe(
+      "claude-fable-5-1",
+    );
+    const unresolved = withClaudeAdvisor({ ...main, aliasTarget: undefined }, [main, fable]);
+    expect(mergeModelSettings(unresolved, { advisor: "claude-fable-5-1" }).advisor).toBe(
+      "claude-fable-5-1",
+    );
+  });
   it("preserves pinned advisor and subagent versions in CLI arguments", () => {
     const args = buildClaudeSpawnArgs({
       model: "claude-sonnet-5",
@@ -47,6 +116,16 @@ describe("Claude advisor selection", () => {
       subagentPolicy: "force",
     });
     expect(JSON.parse(defaults[defaults.indexOf("--settings") + 1]).env).toBeUndefined();
+  });
+  it("removes Claude's native subagent tool when the selection cannot run there", () => {
+    const args = buildClaudeSpawnArgs({
+      subagentModel: "off",
+      disabledSkills: ["good-css"],
+    });
+    const at = args.indexOf("--disallowedTools");
+    expect(args.filter((arg) => arg === "--disallowedTools")).toHaveLength(1);
+    expect(args.slice(at + 1, at + 4)).toEqual(["Skill(good-css)", "Agent", "Task"]);
+    expect(JSON.parse(args[args.indexOf("--settings") + 1]).env).toBeUndefined();
   });
   it("rebinds when the subagent model or policy changes", () => {
     const input = {

@@ -1,29 +1,51 @@
+import { OverflowTooltip } from "../../shared/ui/Tooltip";
 import { Alert } from "../../shared/ui/Alert";
+import { Progress } from "../../shared/ui/Progress";
+import { InlineError } from "../../shared/ui/InlineError";
 import { t, useLocale } from "../../shared/i18n/technical";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import type { RoomToolsUiContext } from "./toolsUiControl";
 import { hostFeatureRequest, hostToolRequest } from "../connections/model/hostFeatureClient";
 import { hostToolTargetKey, type HostToolTarget } from "../connections/model/hostToolTarget";
 import type {
   BrowserAnnotationCapture,
   BrowserElementTarget,
 } from "../../shared/lib/browserAnnotation";
-import { attachBrowserSelectionAcrossWindows } from "./browserComposer";
+import {
+  attachBrowserSelectionAcrossWindows,
+  BrowserDraftDeliveryUncertainError,
+} from "./browserComposer";
 import { BrowserAnnotationDetails } from "./BrowserAnnotationDetails";
+import { BrowserInspectorNavigation } from "./BrowserInspectorNavigation";
 import { Button } from "../../shared/ui/Button";
 import { TextField } from "../../shared/ui/TextField";
 import { TextareaField } from "../../shared/ui/TextareaField";
 import { Popover } from "../../shared/ui/Popover";
+import { InfoPopover } from "../../shared/ui/InfoPopover";
+import { toolsSessionKey } from "./toolsSessionRegistry";
 import {
-  ChevronDown,
-  ChevronUp,
-  CornerDownRight,
+  readBrowserDraftTransfer,
+  writeBrowserDraftTransfer,
+  subscribeBrowserDraftTransfer,
+} from "./browserDraftTransfer";
+import {
   CursorMagicSelection,
   RefreshCw,
   SlidersHorizontal,
   Globe,
   Maximize2,
+  Pause,
+  Play,
+  MessageSquarePlus,
+  X,
 } from "../../shared/ui/icons";
-import { Toggle } from "../settings/ui/settingsControls";
+import { BrowserControlToggle, BrowserControlsPopover } from "./ui/BrowserControls";
+import { BrowserStartPage } from "./ui/BrowserStartPage";
+import { rememberBrowserUrl } from "./model/browserRecents";
+import { browserStatusPresentation } from "./model/browserStatus";
+import { Disclosure } from "../../shared/ui/Disclosure";
+import "./BrowserPanel.css";
 
 type BrowserState = {
   open: boolean;
@@ -37,13 +59,20 @@ type BrowserState = {
   height?: number;
   viewport?: { width: number; height: number };
   navigationId?: string;
+  documentId?: string;
   annotationId?: string;
   selection?: BrowserAnnotationCapture;
   hover?: BrowserElementTarget;
   limitation?: string;
   runtime?: { installed: boolean; installing: boolean; version: string };
 };
-type Frame = { src: string; width: number; height: number; navigationId?: string };
+type Frame = {
+  src: string;
+  width: number;
+  height: number;
+  navigationId?: string;
+  documentId?: string;
+};
 type Props = {
   cwd: string;
   initialUrl?: string;
@@ -53,6 +82,9 @@ type Props = {
   hostTarget?: HostToolTarget;
   annotationsAllowed?: boolean;
   hostLabel?: string;
+  active?: boolean;
+  roomSubject?: RoomToolsUiContext;
+  onMounted?: () => void;
 };
 
 export function BrowserPanel(props: Props) {
@@ -62,6 +94,11 @@ export function BrowserPanel(props: Props) {
         props.cwd,
         props.initialUrl,
         props.sessionId,
+        props.roomSubject && [
+          props.roomSubject.environmentId,
+          props.roomSubject.projectId,
+          props.roomSubject.threadId,
+        ],
         props.composerSessionId,
         hostToolTargetKey(props.hostTarget ?? { kind: "project" }),
         props.annotationsAllowed ?? (!props.hostTarget || props.hostTarget.kind === "project"),
@@ -81,47 +118,148 @@ function ProjectBrowserPanel({
   hostTarget = { kind: "project" },
   annotationsAllowed = hostTarget.kind === "project",
   hostLabel,
+  active = true,
+  roomSubject,
+  onMounted,
 }: Props) {
+  useEffect(() => {
+    onMounted?.();
+  }, [onMounted]);
   useLocale();
   const [state, setState] = useState<BrowserState>();
   const [url, setUrl] = useState(initialUrl ?? "http://localhost:3000");
   const [text, setText] = useState("");
   const [frame, setFrame] = useState<Frame>();
-  const [busy, setBusy] = useState(false);
-  const [live, setLive] = useState(false);
+  // Mounting always starts with a status read; controls wait for it instead of
+  // accepting a submit that the pending read would drop.
+  const [busy, setBusy] = useState(true);
+  const [live, setLive] = useState(true);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const initialized = useRef(false);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [actualSize, setActualSize] = useState(false);
   const controlsTrigger = useRef<HTMLButtonElement>(null);
+  const statusTrigger = useRef<HTMLButtonElement>(null);
+  const [controlsFromStatus, setControlsFromStatus] = useState(false);
   const [error, setError] = useState("");
-  const [selecting, setSelecting] = useState(false);
+  const [inputBlocked, setInputBlocked] = useState(
+    () =>
+      readBrowserDraftTransfer(cwd, sessionId, hostToolTargetKey(hostTarget))?.inputBlocked ??
+      false,
+  );
+  const inputBlockedRef = useRef(inputBlocked);
+  const [uncertainDelivery, setUncertainDelivery] = useState(
+    () =>
+      readBrowserDraftTransfer(cwd, sessionId, hostToolTargetKey(hostTarget))?.uncertainDelivery ??
+      false,
+  );
+  const savedDraft = readBrowserDraftTransfer(cwd, sessionId, hostToolTargetKey(hostTarget));
+  const [selecting, setSelecting] = useState(Boolean(savedDraft?.annotation));
   const [selection, setSelection] = useState<BrowserAnnotationCapture>();
+  const [selectionOpen, setSelectionOpen] = useState(false);
+  const selectionTrigger = useRef<HTMLButtonElement>(null);
   const [hover, setHover] = useState<BrowserElementTarget>();
-  const [comment, setComment] = useState("");
+  const draftTarget = hostToolTargetKey(hostTarget);
+  const [comment, setComment] = useState(
+    () => readBrowserDraftTransfer(cwd, sessionId, draftTarget)?.comment ?? "",
+  );
+  const [captures, setCaptures] = useState<{ id: string; comment: string }[]>([
+    ...(savedDraft?.captures ?? []),
+    ...(savedDraft?.current ? [savedDraft.current] : []),
+  ]);
   const [limitation, setLimitation] = useState("");
   const [notice, setNotice] = useState("");
   const alive = useRef(false);
   const pending = useRef(false);
   const latest = useRef<BrowserState | undefined>(undefined);
   const generation = useRef(0);
+  const frameSequence = useRef(0);
   const serial = useRef<Promise<unknown>>(Promise.resolve());
-  const mode = useRef<{ id: string; navigationId: string } | undefined>(undefined);
+  const inputQueue = useRef<Promise<void>>(Promise.resolve());
+  const queuedInputs = useRef(0);
+  const inputFrameTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const lastInputFrameAt = useRef(0);
+  const coalescedInput = useRef<
+    | {
+        params: Record<string, unknown>;
+        document: string | undefined;
+        lease: string | undefined;
+        epoch: number;
+      }
+    | undefined
+  >(undefined);
+  const inputEpoch = useRef(0);
+  const pressedPointer = useRef<{ x: number; y: number; button: string } | undefined>(undefined);
+  const inputReceiver = useRef<HTMLTextAreaElement>(null);
+  const previewImage = useRef<HTMLImageElement>(null);
+  const wheelHandler = useRef<(event: WheelEvent) => void>(() => {});
+  const completedComposition = useRef("");
+  const suppressClick = useRef(false);
+  const scopePromise = useRef<Promise<string> | undefined>(undefined);
+  const mode = useRef<{ id: string; navigationId: string } | undefined>(savedDraft?.annotation);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const hoverReading = useRef(false);
   const hoverActive = useRef(false);
   const liveReading = useRef(false);
   const pointer = useRef({ x: 640, y: 360 });
   const hoverVersion = useRef(0);
+  const displayFrame = async (next: Frame) => {
+    const sequence = ++frameSequence.current;
+    const version = generation.current;
+    const image = new Image();
+    image.src = next.src;
+    if (typeof image.decode === "function") await image.decode();
+    if (alive.current && version === generation.current && sequence === frameSequence.current)
+      setFrame(next);
+  };
+  useEffect(
+    () =>
+      subscribeBrowserDraftTransfer(cwd, sessionId, draftTarget, (draft) => {
+        setComment(draft.comment);
+        setUncertainDelivery(draft.uncertainDelivery ?? false);
+        inputBlockedRef.current = draft.inputBlocked ?? false;
+        setInputBlocked(inputBlockedRef.current);
+        setCaptures([...(draft.captures ?? []), ...(draft.current ? [draft.current] : [])]);
+        if (draft.annotation) {
+          mode.current = draft.annotation;
+          setSelecting(true);
+        }
+      }),
+    [cwd, sessionId, draftTarget],
+  );
+  useEffect(() => {
+    writeBrowserDraftTransfer(cwd, sessionId, draftTarget, {
+      comment,
+      captures,
+      annotation: mode.current,
+      current: selection ? { id: selection.id, comment } : undefined,
+      uncertainDelivery,
+      inputBlocked,
+    });
+  }, [
+    cwd,
+    sessionId,
+    draftTarget,
+    comment,
+    captures,
+    selecting,
+    selection,
+    uncertainDelivery,
+    inputBlocked,
+  ]);
 
   const resetPick = () => {
     hoverActive.current = false;
     mode.current = undefined;
     setSelecting(false);
     setSelection(undefined);
+    setSelectionOpen(false);
     setHover(undefined);
-    setComment("");
     setLimitation("");
     hoverVersion.current++;
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = undefined;
   };
 
   const request = (
@@ -133,9 +271,15 @@ function ProjectBrowserPanel({
     const call = serial.current
       .catch(() => {})
       .then(async () => {
-        if (!alive.current || version !== generation.current) return;
+        if (
+          !alive.current ||
+          version !== generation.current ||
+          (!activeRef.current &&
+            method !== "browser.annotation.cancel" &&
+            !(method === "browser.input" && params.kind === "pointer" && params.action === "up"))
+        )
+          return;
         const annotationMethod = method.startsWith("browser.annotation.");
-        if (method === "browser.annotation.select") setSelection(undefined);
         if (annotationMethod && !annotationsAllowed)
           throw new Error(
             t("Browser selections can be attached only on this conversation's project host."),
@@ -144,20 +288,67 @@ function ProjectBrowserPanel({
           ? "browser.annotation"
           : method === "browser.setup"
             ? "browser.shared.setup"
-            : "browser.shared";
+            : sessionId && hostTarget.kind !== "project" && !annotationsAllowed
+              ? "browser.ownerPresentationScopes.v1"
+              : sessionId
+                ? "browser.sessionScopes.v1"
+                : "browser.shared";
+        if (
+          sessionId &&
+          hostTarget.kind !== "project" &&
+          !annotationsAllowed &&
+          !scopePromise.current
+        ) {
+          scopePromise.current = crypto.subtle
+            .digest("SHA-256", new TextEncoder().encode(toolsSessionKey({ cwd, sessionId })))
+            .then((bytes) =>
+              Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join(
+                "",
+              ),
+            );
+        }
+        const ownerPresentationScope = scopePromise.current
+          ? await scopePromise.current
+          : undefined;
         const parameters = {
           ...(annotationMethod
             ? { sessionId, annotationId: annotation?.id, navigationId: annotation?.navigationId }
-            : method === "browser.open" && hostTarget.kind === "project" && sessionId
+            : sessionId
               ? { sessionId }
               : {}),
           ...params,
-          leaseId: latest.current?.leaseId,
+          ...(method === "browser.annotation.select" && selection
+            ? { replaceCaptureId: selection.id }
+            : {}),
+          ...(ownerPresentationScope ? { ownerPresentationScope } : {}),
+          leaseId:
+            method === "browser.input"
+              ? (params.leaseId ?? latest.current?.leaseId)
+              : latest.current?.leaseId,
         };
-        const result =
-          annotationMethod || hostTarget.kind === "project"
+        if (
+          method === "browser.input" &&
+          params.leaseId &&
+          (latest.current?.leaseId !== params.leaseId ||
+            !latest.current.controlling ||
+            (params.documentId && latest.current.documentId !== params.documentId))
+        )
+          throw new Error(t("Browser input was not sent because the page or control changed."));
+        if (roomSubject && !roomSubject.valid())
+          throw new Error("Room browser source is unavailable.");
+        const result = roomSubject
+          ? await invoke<BrowserState>("control_room_browser_panel_request", {
+              environmentId: roomSubject.environmentId,
+              projectId: roomSubject.projectId,
+              threadId: roomSubject.threadId,
+              projectCwd: roomSubject.cwd,
+              action: method,
+              input: parameters,
+            })
+          : annotationMethod || hostTarget.kind === "project"
             ? await hostFeatureRequest<BrowserState>(cwd, capability, method, parameters)
             : await hostToolRequest<BrowserState>(cwd, capability, method, parameters, hostTarget);
+        if (roomSubject && !roomSubject.valid()) throw new Error("Room browser source changed.");
         if (!alive.current || version !== generation.current) {
           if (method === "browser.annotation.start" && result.annotationId)
             void hostFeatureRequest(cwd, "browser.annotation", "browser.annotation.cancel", {
@@ -184,8 +375,11 @@ function ProjectBrowserPanel({
           resetPick();
           setNotice(t("Selection expired. Refresh the frame and select the element again."));
         }
-        if (latest.current?.navigationId && result.navigationId !== latest.current.navigationId)
-          setFrame(undefined);
+        if (result.viewport)
+          pointer.current = {
+            x: Math.min(pointer.current.x, result.viewport.width - 1),
+            y: Math.min(pointer.current.y, result.viewport.height - 1),
+          };
         result.runtime ??= latest.current?.runtime;
         latest.current = result;
         setState(result);
@@ -198,24 +392,29 @@ function ProjectBrowserPanel({
             !mode.current
           )
             throw new Error(t("Browser selection belongs to another conversation"));
-          setSelection(result.selection);
-          setHover(undefined);
-          setLimitation("");
-          setFrame({
-            src: `data:${result.selection.screenshot.mimeType};base64,${result.selection.screenshot.data}`,
-            width: result.selection.screenshot.width,
-            height: result.selection.screenshot.height,
-            navigationId: result.navigationId,
-          });
+          if (method !== "browser.annotation.read") {
+            setSelection(result.selection);
+            setSelectionOpen(true);
+            setHover(undefined);
+            setLimitation("");
+            await displayFrame({
+              src: `data:${result.selection.screenshot.mimeType};base64,${result.selection.screenshot.data}`,
+              width: result.selection.screenshot.width,
+              height: result.selection.screenshot.height,
+              navigationId: result.navigationId,
+              documentId: result.documentId,
+            });
+          }
         }
         if (result.data)
-          setFrame({
+          await displayFrame({
             src: `data:${result.mimeType};base64,${result.data}`,
             width: result.width ?? result.viewport?.width ?? 1280,
             height: result.height ?? result.viewport?.height ?? 720,
             navigationId: result.navigationId,
+            documentId: result.documentId,
           });
-        else if (!result.open || method === "browser.open") setFrame(undefined);
+        else if (!result.open) setFrame(undefined);
         return result;
       });
     serial.current = call;
@@ -236,12 +435,18 @@ function ProjectBrowserPanel({
   const inspectHover = (point: { x: number; y: number }) => {
     hoverActive.current = true;
     pointer.current = point;
-    const version = ++hoverVersion.current;
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    ++hoverVersion.current;
+    if (hoverTimer.current || hoverReading.current) return;
     hoverTimer.current = setTimeout(() => {
-      if (!alive.current || !mode.current || pending.current || hoverReading.current) return;
+      hoverTimer.current = undefined;
+      if (!alive.current || !activeRef.current || !mode.current) return;
+      if (pending.current || hoverReading.current) {
+        inspectHover(pointer.current);
+        return;
+      }
+      const version = hoverVersion.current;
       hoverReading.current = true;
-      void request("browser.annotation.hover", point)
+      void request("browser.annotation.hover", pointer.current)
         .then((result) => {
           if (result && mode.current && hoverVersion.current === version) {
             setHover(result.hover);
@@ -262,10 +467,10 @@ function ProjectBrowserPanel({
           )
             inspectHover(pointer.current);
         });
-    }, 90);
+    }, 20);
   };
-  const action = async (work: () => Promise<unknown>) => {
-    if (pending.current || !alive.current) return;
+  const action = async (work: () => Promise<unknown>, _keepSelection?: { current: boolean }) => {
+    if (pending.current || !alive.current || !activeRef.current) return;
     pending.current = true;
     const version = generation.current;
     setBusy(true);
@@ -274,8 +479,13 @@ function ProjectBrowserPanel({
       await work();
     } catch (cause) {
       if (alive.current && version === generation.current) {
-        setError(cause instanceof Error ? cause.message : String(cause));
-        setSelection(undefined);
+        setError(
+          cause instanceof BrowserDraftDeliveryUncertainError
+            ? t(cause.message)
+            : cause instanceof Error
+              ? cause.message
+              : String(cause),
+        );
       }
     } finally {
       if (version === generation.current) {
@@ -286,6 +496,21 @@ function ProjectBrowserPanel({
   };
   useEffect(() => {
     alive.current = true;
+    return () => {
+      alive.current = false;
+      generation.current++;
+      pending.current = false;
+      if (hoverTimer.current) clearTimeout(hoverTimer.current);
+      if (inputFrameTimer.current) clearTimeout(inputFrameTimer.current);
+      // The annotation scope can be transferred to another tools window.
+      // Explicit cancel or lease expiry releases it.
+    };
+    // Scope is keyed by owner.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!active || initialized.current) return;
+    initialized.current = true;
     void action(async () => {
       const status = await request("browser.status");
       if (!status) return;
@@ -301,27 +526,16 @@ function ProjectBrowserPanel({
       if (status?.url) setUrl(status.url);
       if (status?.open) await request("browser.frame");
     });
-    return () => {
-      alive.current = false;
-      generation.current++;
-      pending.current = false;
-      if (hoverTimer.current) clearTimeout(hoverTimer.current);
-      const previous = mode.current;
-      mode.current = undefined;
-      if (previous)
-        void serial.current
-          .catch(() => {})
-          .then(() =>
-            hostFeatureRequest(cwd, "browser.annotation", "browser.annotation.cancel", {
-              sessionId,
-              annotationId: previous.id,
-            }),
-          )
-          .catch(() => {});
-    };
-    // This scope is keyed by cwd. Opening a different host creates a fresh panel.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [active]);
+  useEffect(() => {
+    if (active || !pressedPointer.current) return;
+    const pressed = pressedPointer.current;
+    pressedPointer.current = undefined;
+    queueInput({ kind: "pointer", action: "up", ...pressed }, true);
+    // Release a pressed remote pointer when presentation is hidden.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
   useEffect(() => {
     const expiresAt = state?.leaseExpiresAt;
     if (!state?.controlling || expiresAt == null) return;
@@ -347,7 +561,7 @@ function ProjectBrowserPanel({
     return () => window.clearTimeout(timer);
   }, [state?.controlling, state?.leaseExpiresAt]);
   useEffect(() => {
-    if (!selecting) return;
+    if (!active || !selecting) return;
     const timer = window.setInterval(() => {
       if (!pending.current && !hoverReading.current)
         void request("browser.status").catch(() => {
@@ -359,9 +573,9 @@ function ProjectBrowserPanel({
     return () => window.clearInterval(timer);
     // This scope is keyed by project and both conversation identities.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selecting]);
+  }, [active, selecting]);
   useEffect(() => {
-    if (!live || !state?.open || selecting) return;
+    if (!active || !live || !state?.open || selecting) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
@@ -369,6 +583,7 @@ function ProjectBrowserPanel({
       if (
         !document.hidden &&
         !pending.current &&
+        queuedInputs.current === 0 &&
         !hoverReading.current &&
         !liveReading.current &&
         !mode.current
@@ -378,6 +593,8 @@ function ProjectBrowserPanel({
           await request("browser.frame");
         } catch (cause) {
           if (!cancelled && alive.current) {
+            inputBlockedRef.current = true;
+            setInputBlocked(true);
             setError(cause instanceof Error ? cause.message : String(cause));
             setLive(false);
           }
@@ -387,30 +604,174 @@ function ProjectBrowserPanel({
       }
       if (!cancelled) timer = setTimeout(() => void poll(), 1000);
     };
-    void poll();
+    timer = setTimeout(() => void poll().catch(() => {}), 1000);
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
     // This component is keyed by the complete project and conversation scope.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, state?.open, selecting]);
+  }, [active, live, state?.open, selecting]);
 
   const input = async (params: Record<string, unknown>, onSuccess?: () => void) => {
     if (!latest.current?.open || !latest.current.controlling) return;
-    if (!(await request("browser.input", params))) return;
+    try {
+      if (!(await request("browser.input", params))) return;
+    } catch (cause) {
+      inputBlockedRef.current = true;
+      setInputBlocked(true);
+      throw cause;
+    }
     onSuccess?.();
-    setFrame(undefined);
     try {
       await request("browser.frame");
     } catch (cause) {
+      inputBlockedRef.current = true;
+      setInputBlocked(true);
       throw new Error(
         `${t("Action completed. Refresh the frame to see the result.")} ${cause instanceof Error ? cause.message : String(cause)}`,
       );
     }
   };
-  const canInput = !!state?.open && !!state.controlling && !busy;
+  const scheduleInputFrame = () => {
+    if (inputFrameTimer.current) return;
+    inputFrameTimer.current = setTimeout(() => {
+      inputFrameTimer.current = undefined;
+      if (!alive.current || !activeRef.current) return;
+      if (
+        liveReading.current ||
+        (queuedInputs.current && performance.now() - lastInputFrameAt.current < 300)
+      ) {
+        scheduleInputFrame();
+        return;
+      }
+      liveReading.current = true;
+      lastInputFrameAt.current = performance.now();
+      void request("browser.frame")
+        .catch((cause) => {
+          inputBlockedRef.current = true;
+          setInputBlocked(true);
+          if (alive.current)
+            setError(
+              `${t("Action completed. Refresh the frame to see the result.")} ${cause instanceof Error ? cause.message : String(cause)}`,
+            );
+        })
+        .finally(() => {
+          liveReading.current = false;
+        });
+    }, 50);
+  };
+  const queueInput = (params: Record<string, unknown>, allowHidden = false) => {
+    if (inputBlockedRef.current && !allowHidden) return;
+    const expectedDocument = latest.current?.documentId ?? latest.current?.navigationId;
+    const expectedLease = latest.current?.leaseId;
+    const coalescible =
+      params.kind === "scroll" || (params.kind === "pointer" && params.action === "move");
+    const previous = coalescedInput.current;
+    if (
+      coalescible &&
+      previous &&
+      previous.document === expectedDocument &&
+      previous.lease === expectedLease &&
+      previous.epoch === inputEpoch.current &&
+      previous.params.kind === params.kind &&
+      previous.params.action === params.action
+    ) {
+      if (params.kind === "scroll") {
+        previous.params.x = Math.max(
+          -2000,
+          Math.min(2000, Number(previous.params.x ?? 0) + Number(params.x ?? 0)),
+        );
+        previous.params.y = Math.max(
+          -2000,
+          Math.min(2000, Number(previous.params.y ?? 0) + Number(params.y ?? 0)),
+        );
+      } else previous.params = params;
+      return;
+    }
+    coalescedInput.current = undefined;
+    if (queuedInputs.current >= 32 && !(params.kind === "pointer" && params.action === "up")) {
+      setError(t("Browser input queue is full. Wait for pending actions, then try again."));
+      return;
+    }
+    const entry = {
+      params,
+      document: expectedDocument,
+      lease: expectedLease,
+      epoch: inputEpoch.current,
+    };
+    if (coalescible) coalescedInput.current = entry;
+    const documentId = latest.current?.documentId;
+    const requestId = crypto.randomUUID();
+    const epoch = inputEpoch.current;
+    queuedInputs.current++;
+    scheduleInputFrame();
+    inputQueue.current = inputQueue.current
+      .catch(() => {})
+      .then(async () => {
+        if (coalescedInput.current === entry) coalescedInput.current = undefined;
+        if (
+          (epoch !== inputEpoch.current && !allowHidden) ||
+          !alive.current ||
+          (!activeRef.current && !allowHidden) ||
+          !latest.current?.controlling ||
+          !expectedLease ||
+          latest.current.leaseId !== expectedLease ||
+          (latest.current.documentId ?? latest.current.navigationId) !== expectedDocument
+        ) {
+          if (alive.current)
+            setNotice(t("Browser input was not sent because the page or control changed."));
+          return;
+        }
+        try {
+          await request("browser.input", {
+            ...entry.params,
+            requestId,
+            leaseId: expectedLease,
+            ...(documentId ? { documentId } : {}),
+          });
+        } catch (cause) {
+          inputEpoch.current++;
+          inputBlockedRef.current = true;
+          if (alive.current) setInputBlocked(true);
+          if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
+        }
+      })
+      .finally(() => {
+        queuedInputs.current--;
+        if (!queuedInputs.current && activeRef.current) scheduleInputFrame();
+      });
+  };
+  const frameCurrent =
+    !frame ||
+    !state ||
+    (frame.documentId && state.documentId
+      ? frame.documentId === state.documentId
+      : frame.navigationId === state.navigationId);
+  const canInput =
+    active && !!state?.open && !!state.controlling && !busy && frameCurrent && !inputBlocked;
   const canPageInput = canInput && !selecting;
+  wheelHandler.current = (event) => {
+    if (
+      !canPageInput ||
+      (document.activeElement !== previewImage.current &&
+        document.activeElement !== inputReceiver.current)
+    )
+      return;
+    event.preventDefault();
+    queueInput({
+      kind: "scroll",
+      x: Math.max(-2000, Math.min(2000, event.deltaX)),
+      y: Math.max(-2000, Math.min(2000, event.deltaY)),
+    });
+  };
+  useEffect(() => {
+    const element = previewImage.current;
+    if (!element) return;
+    const handle = (event: WheelEvent) => wheelHandler.current(event);
+    element.addEventListener("wheel", handle, { passive: false });
+    return () => element.removeEventListener("wheel", handle);
+  }, [Boolean(frame)]);
   const setupRequired = state?.runtime?.installed === false;
   const validUrl = (() => {
     try {
@@ -421,8 +782,8 @@ function ProjectBrowserPanel({
     }
   })();
 
-  const openWebsite = async () => {
-    if (!validUrl || selecting) return;
+  const openWebsite = async (target = url.trim()) => {
+    if ((target === url.trim() && !validUrl) || selecting) return;
     const current = latest.current ?? (await request("browser.status"));
     if (!current) return;
     if (current.runtime?.installed === false)
@@ -437,21 +798,18 @@ function ProjectBrowserPanel({
           t("Browser control is unavailable. Try again when the other device releases it."),
         );
     }
-    if (await request("browser.open", { url: url.trim() })) await request("browser.frame");
+    if (await request("browser.open", { url: target })) {
+      rememberBrowserUrl(target);
+      const result = await request("browser.frame");
+      if (result?.data) {
+        inputBlockedRef.current = false;
+        setInputBlocked(false);
+      }
+    }
   };
 
-  const browserStatus = !state
-    ? error
-      ? t("Browser unavailable")
-      : t("Checking browser…")
-    : state.open
-      ? t("Browser open")
-      : t("Browser closed");
-  const controlStatus = state?.controlling
-    ? t("Control active · 30 seconds after each action")
-    : state?.open
-      ? t("View only · take control to interact")
-      : null;
+  const { browserStatus, errorSummary, statusTone, statusLabel, statusDetails } =
+    browserStatusPresentation({ state, error, notice, busy, setupRequired });
 
   return (
     <section
@@ -459,7 +817,11 @@ function ProjectBrowserPanel({
       aria-label={t("Shared host browser")}
       aria-busy={busy}
       onKeyDownCapture={(event) => {
-        if (event.key === "Escape" && selecting) {
+        if (
+          event.key === "Escape" &&
+          selecting &&
+          !(event.target instanceof Element && event.target.closest("[data-dialog-popover]"))
+        ) {
           event.preventDefault();
           event.stopPropagation();
           cancelSelection();
@@ -470,34 +832,56 @@ function ProjectBrowserPanel({
         {t("Shared host browser")}
         {hostLabel ? ` · ${hostLabel}` : ""}
       </h3>
-      <form
-        className="host-browser-toolbar"
-        aria-label={t("Open a website")}
-        onSubmit={(event) => {
-          event.preventDefault();
-          void action(openWebsite);
-        }}
-      >
-        <TextField
-          fieldClassName="host-browser-url"
-          label={t("Website address")}
-          hideLabel
-          value={url}
-          maxLength={4096}
-          disabled={busy || selecting}
-          onChange={(event) => setUrl(event.target.value)}
-          placeholder="http://localhost:3000"
-          required
-        />
-        <Button
-          motion="none"
-          type="submit"
-          variant="primary"
-          disabled={busy || selecting || setupRequired || !validUrl}
+      <div className="host-browser-bar">
+        <form
+          className="host-browser-toolbar"
+          aria-label={t("Open a website")}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void action(openWebsite);
+          }}
         >
-          {t("Open website")}
-        </Button>
-        <div className="host-tool-actions host-browser-view-actions">
+          <Button
+            ref={statusTrigger}
+            motion="none"
+            type="button"
+            variant="ghost"
+            iconOnly
+            className="host-browser-status"
+            label={statusLabel}
+            tooltip={statusLabel}
+            tooltipDetails={statusDetails}
+            aria-haspopup="dialog"
+            aria-expanded={controlsOpen && controlsFromStatus}
+            onClick={() => {
+              setSelectionOpen(false);
+              setControlsOpen((open) => !open || !controlsFromStatus);
+              setControlsFromStatus(true);
+            }}
+          >
+            <span className="host-browser-status-dot" data-tone={statusTone} aria-hidden />
+          </Button>
+          <TextField
+            fieldClassName="host-browser-url"
+            label={t("Website address")}
+            hideLabel
+            value={url}
+            maxLength={4096}
+            disabled={busy || selecting}
+            onChange={(event) => setUrl(event.target.value)}
+            placeholder="http://localhost:3000"
+            required
+          />
+          <Button
+            motion="none"
+            type="submit"
+            variant="ghost"
+            iconOnly
+            label={t("Open website")}
+            disabled={busy || selecting || setupRequired || !validUrl}
+          >
+            <Globe className="icon-sm" aria-hidden />
+          </Button>
           <Button
             motion="none"
             type="button"
@@ -505,19 +889,40 @@ function ProjectBrowserPanel({
             iconOnly
             label={t("Refresh frame")}
             disabled={busy || !state?.open}
-            onClick={() => void action(() => request("browser.frame"))}
+            onClick={() =>
+              void action(async () => {
+                const result = await request("browser.frame");
+                if (result?.data) {
+                  inputBlockedRef.current = false;
+                  setInputBlocked(false);
+                }
+              })
+            }
           >
-            <RefreshCw size={16} aria-hidden />
+            <RefreshCw className="icon-sm" aria-hidden />
           </Button>
-          <span className="host-tool-check">
-            <Toggle
-              label={t("Live view")}
-              disabled={busy || !state?.open || selecting}
-              on={live}
-              onChange={setLive}
-            />
-            {t("Live view")}
-          </span>
+        </form>
+        <div
+          className="host-browser-view-actions"
+          role="toolbar"
+          aria-label={t("Browser controls and setup")}
+        >
+          <Button
+            variant="ghost"
+            iconOnly
+            label={t("Live view")}
+            role="switch"
+            aria-checked={live}
+            selected={live}
+            disabled={busy || !state?.open || selecting}
+            onClick={() => setLive((value) => !value)}
+          >
+            {live ? (
+              <Pause className="icon-sm" aria-hidden />
+            ) : (
+              <Play className="icon-sm" aria-hidden />
+            )}
+          </Button>
           <Button
             variant="ghost"
             iconOnly
@@ -527,7 +932,7 @@ function ProjectBrowserPanel({
             disabled={!frame}
             onClick={() => setActualSize((value) => !value)}
           >
-            <Maximize2 size={16} aria-hidden />
+            <Maximize2 className="icon-sm" aria-hidden />
           </Button>
           <Button
             ref={controlsTrigger}
@@ -535,22 +940,27 @@ function ProjectBrowserPanel({
             iconOnly
             label={t("Browser controls and setup")}
             aria-haspopup="dialog"
-            aria-expanded={controlsOpen}
-            selected={controlsOpen}
-            onClick={() => setControlsOpen((open) => !open)}
+            aria-expanded={controlsOpen && !controlsFromStatus}
+            selected={controlsOpen && !controlsFromStatus}
+            onClick={() => {
+              setSelectionOpen(false);
+              setControlsOpen((open) => !open || controlsFromStatus);
+              setControlsFromStatus(false);
+            }}
           >
-            <SlidersHorizontal size={16} aria-hidden />
+            <SlidersHorizontal className="icon-sm" aria-hidden />
           </Button>
-          <span className="host-browser-toolbar-status" role="status">
-            {browserStatus}
-          </span>
-          <span className="host-browser-action-spacer" />
           <Button
             motion="none"
             type="button"
-            variant={selecting ? "primary" : "secondary"}
-            aria-label={t("Select element and add to composer")}
-            tooltip={t("Select element and add to composer")}
+            variant="ghost"
+            iconOnly
+            label={t("Select element and add to composer")}
+            tooltip={
+              !annotationsAllowed
+                ? t("Browser selections can be attached only on this conversation's project host.")
+                : t("Select element and add to composer")
+            }
             aria-pressed={selecting}
             selected={selecting}
             disabled={
@@ -558,66 +968,84 @@ function ProjectBrowserPanel({
             }
             onClick={() =>
               void action(async () => {
+                await inputQueue.current.catch(() => {});
+                if (inputFrameTimer.current) {
+                  clearTimeout(inputFrameTimer.current);
+                  inputFrameTimer.current = undefined;
+                }
+                const fresh = await request("browser.frame");
+                if (!fresh?.navigationId) return;
                 const result = await request("browser.annotation.start", {
-                  navigationId: frame?.navigationId,
+                  navigationId: fresh.navigationId,
                 });
                 if (!result?.annotationId || !result.navigationId) return;
                 mode.current = { id: result.annotationId, navigationId: result.navigationId };
                 setSelecting(true);
                 setNotice("");
                 setSelection(undefined);
-                setComment("");
+                setControlsOpen(false);
               })
             }
           >
-            <CursorMagicSelection size={16} aria-hidden />
-            {t("Select element")}
+            <CursorMagicSelection className="icon-sm" aria-hidden />
           </Button>
           {selecting ? (
-            <Button type="button" onClick={cancelSelection}>
-              {t("Cancel selection")}
-            </Button>
-          ) : null}
-          {state?.open && !state.controlling ? (
             <Button
-              motion="none"
               type="button"
-              disabled={busy}
-              onClick={() => void action(() => request("browser.claim", { takeover: true }))}
+              variant="ghost"
+              iconOnly
+              label={t("Cancel selection")}
+              onClick={cancelSelection}
             >
-              {t("Claim control")}
+              <X className="icon-sm" aria-hidden />
             </Button>
           ) : null}
-        </div>
-      </form>
-      {state?.url && state.url !== url.trim() ? (
-        <p className="host-tool-location" title={state.url}>
-          {state.url}
-        </p>
-      ) : null}
-      {error ? (
-        <div className="host-tool-actions">
-          <Alert tone="danger" role="alert">
-            {error}
-          </Alert>
-          {!state ? (
-            <Button disabled={busy} onClick={() => void action(() => request("browser.status"))}>
-              {t("Retry")}
+          {selection || captures.length ? (
+            <Button
+              ref={selectionTrigger}
+              type="button"
+              variant="ghost"
+              iconOnly
+              label={t("Selected browser element")}
+              aria-haspopup="dialog"
+              aria-expanded={selectionOpen}
+              selected={selectionOpen}
+              onClick={() => {
+                setControlsOpen(false);
+                setSelectionOpen((value) => !value);
+              }}
+            >
+              <MessageSquarePlus className="icon-sm" aria-hidden />
             </Button>
           ) : null}
+          {state?.open ? (
+            <BrowserControlToggle
+              controlling={state.controlling}
+              busy={busy}
+              action={action}
+              request={request}
+            />
+          ) : null}
         </div>
-      ) : null}
-      {notice ? (
-        <Alert tone="info" role="status">
-          {notice}
-        </Alert>
-      ) : null}
+        {busy ? (
+          <Progress
+            compact
+            tone="neutral"
+            className="host-browser-progress"
+            aria-label={t("Working on the host…")}
+          />
+        ) : null}
+      </div>
+      {/* State, failures and notices are shown by the status dot's tooltip and
+          the controls popover; screen readers still hear them here. */}
+      <span className="sr-only" role="status">
+        {statusLabel}
+        {notice ? ` · ${notice}` : ""}
+      </span>
+      {error && !selectionOpen ? <InlineError icon={null}>{errorSummary}</InlineError> : null}
       {setupRequired ? (
-        <section className="host-tool-card" aria-label={t("Browser setup required")}>
+        <section className="host-browser-setup" aria-label={t("Browser setup required")}>
           <strong>{t("Browser setup required")}</strong>
-          <p className="host-tool-muted">
-            {t("Download the browser runtime once on this computer. Then websites can open here.")}
-          </p>
           <Button
             motion="none"
             type="button"
@@ -632,21 +1060,20 @@ function ProjectBrowserPanel({
       <div className="host-browser-workspace" data-has-selection={Boolean(selection)}>
         <div className="host-browser-stage">
           {selecting ? (
-            <p className="host-tool-muted">
-              {t(
-                "Point at an element and click to select. Page actions are blocked. Use arrow keys and Enter on the preview; Escape cancels.",
-              )}
-            </p>
+            <div className="host-browser-selection-mode">
+              <span>{t("Select element")}</span>
+              <InfoPopover>
+                <p>
+                  {t(
+                    "Point at an element and click to select. Page actions are blocked. Use arrow keys and Enter on the preview; Escape cancels.",
+                  )}
+                </p>
+              </InfoPopover>
+            </div>
           ) : null}
-          {!annotationsAllowed ? (
-            <p className="host-tool-muted">
-              {t("Browser selections can be attached only on this conversation's project host.")}
-            </p>
-          ) : null}
-          {limitation ? (
-            <Alert tone="info" role="status">
-              {limitation}
-            </Alert>
+          {limitation ? <Alert tone="info">{limitation}</Alert> : null}
+          {!frameCurrent ? (
+            <Alert tone="info">{t("Action completed. Refresh the frame to see the result.")}</Alert>
           ) : null}
           {frame ? (
             <div
@@ -661,6 +1088,7 @@ function ProjectBrowserPanel({
             >
               <div className="host-browser-surface" data-selecting={selecting}>
                 <img
+                  ref={previewImage}
                   src={frame.src}
                   alt={t("Shared host browser screenshot; click to interact when controlling")}
                   className={
@@ -673,7 +1101,38 @@ function ProjectBrowserPanel({
                     selecting ? t("Select an element in the host browser preview") : undefined
                   }
                   onKeyDown={(event) => {
-                    if (!selecting || !canInput) return;
+                    if (!canInput) return;
+                    if (!selecting) {
+                      if (
+                        [
+                          "Enter",
+                          "Tab",
+                          "Escape",
+                          "Backspace",
+                          "ArrowUp",
+                          "ArrowDown",
+                          "ArrowLeft",
+                          "ArrowRight",
+                        ].includes(event.key) &&
+                        !event.ctrlKey &&
+                        !event.altKey &&
+                        !event.metaKey &&
+                        !event.shiftKey
+                      ) {
+                        event.preventDefault();
+                        queueInput({ kind: "key", key: event.key });
+                      } else if (
+                        event.key.length === 1 &&
+                        !event.ctrlKey &&
+                        !event.altKey &&
+                        !event.metaKey &&
+                        !event.nativeEvent.isComposing
+                      ) {
+                        event.preventDefault();
+                        queueInput({ kind: "text", text: event.key });
+                      }
+                      return;
+                    }
                     const delta = (
                       {
                         ArrowUp: [0, -10],
@@ -693,7 +1152,71 @@ function ProjectBrowserPanel({
                       void action(() => request("browser.annotation.select", pointer.current));
                     }
                   }}
+                  onPaste={(event) => {
+                    if (!canPageInput) return;
+                    const text = event.clipboardData.getData("text/plain");
+                    if (text && text.length <= 4096) {
+                      event.preventDefault();
+                      queueInput({ kind: "text", text });
+                    }
+                  }}
+                  onCompositionEnd={(event) => {
+                    if (canPageInput && event.data) queueInput({ kind: "text", text: event.data });
+                  }}
+                  onPointerDown={(event) => {
+                    if (!canPageInput || event.button > 2) return;
+                    const box = event.currentTarget.getBoundingClientRect();
+                    if (!box.width || !box.height) return;
+                    const x = Math.max(
+                      0,
+                      Math.min(
+                        frame.width - 1,
+                        ((event.clientX - box.left) * frame.width) / box.width,
+                      ),
+                    );
+                    const y = Math.max(
+                      0,
+                      Math.min(
+                        frame.height - 1,
+                        ((event.clientY - box.top) * frame.height) / box.height,
+                      ),
+                    );
+                    const button = ["left", "middle", "right"][event.button];
+                    event.currentTarget.focus();
+                    event.currentTarget.setPointerCapture?.(event.pointerId);
+                    pressedPointer.current = { x, y, button };
+                    suppressClick.current = true;
+                    queueInput({ kind: "pointer", action: "down", x, y, button });
+                  }}
                   onPointerMove={(event) => {
+                    if (
+                      !selecting &&
+                      canPageInput &&
+                      (pressedPointer.current ||
+                        document.activeElement === event.currentTarget ||
+                        document.activeElement === inputReceiver.current)
+                    ) {
+                      const box = event.currentTarget.getBoundingClientRect();
+                      if (!box.width || !box.height) return;
+                      const x = Math.max(
+                        0,
+                        Math.min(
+                          frame.width - 1,
+                          ((event.clientX - box.left) * frame.width) / box.width,
+                        ),
+                      );
+                      const y = Math.max(
+                        0,
+                        Math.min(
+                          frame.height - 1,
+                          ((event.clientY - box.top) * frame.height) / box.height,
+                        ),
+                      );
+                      if (pressedPointer.current)
+                        pressedPointer.current = { ...pressedPointer.current, x, y };
+                      queueInput({ kind: "pointer", action: "move", x, y });
+                      return;
+                    }
                     if (!selecting || !canInput) return;
                     const box = event.currentTarget.getBoundingClientRect();
                     if (box.width && box.height)
@@ -714,13 +1237,65 @@ function ProjectBrowserPanel({
                         ),
                       });
                   }}
+                  onPointerUp={(event) => {
+                    const pressed = pressedPointer.current;
+                    pressedPointer.current = undefined;
+                    if (pressed && canPageInput) {
+                      const box = event.currentTarget.getBoundingClientRect();
+                      const x = box.width
+                        ? Math.max(
+                            0,
+                            Math.min(
+                              frame.width - 1,
+                              ((event.clientX - box.left) * frame.width) / box.width,
+                            ),
+                          )
+                        : pressed.x;
+                      const y = box.height
+                        ? Math.max(
+                            0,
+                            Math.min(
+                              frame.height - 1,
+                              ((event.clientY - box.top) * frame.height) / box.height,
+                            ),
+                          )
+                        : pressed.y;
+                      queueInput({ kind: "pointer", action: "up", ...pressed, x, y });
+                      if (event.currentTarget.hasPointerCapture?.(event.pointerId))
+                        event.currentTarget.releasePointerCapture(event.pointerId);
+                      inputReceiver.current?.focus();
+                    }
+                  }}
+                  onPointerCancel={() => {
+                    const pressed = pressedPointer.current;
+                    pressedPointer.current = undefined;
+                    if (pressed) queueInput({ kind: "pointer", action: "up", ...pressed }, true);
+                  }}
+                  onLostPointerCapture={() => {
+                    const pressed = pressedPointer.current;
+                    pressedPointer.current = undefined;
+                    if (pressed) queueInput({ kind: "pointer", action: "up", ...pressed }, true);
+                  }}
+                  onBlur={() => {
+                    const pressed = pressedPointer.current;
+                    pressedPointer.current = undefined;
+                    if (pressed) queueInput({ kind: "pointer", action: "up", ...pressed }, true);
+                  }}
                   onPointerLeave={() => {
                     hoverActive.current = false;
                     hoverVersion.current++;
                     setHover(undefined);
                   }}
                   onClick={(event) => {
+                    if (suppressClick.current) {
+                      suppressClick.current = false;
+                      return;
+                    }
                     if (!canInput) return;
+                    if (selecting && captures.length >= 8) {
+                      setError(t("Remove a selection before capturing another element."));
+                      return;
+                    }
                     const box = event.currentTarget.getBoundingClientRect();
                     if (!box.width || !box.height) return;
                     const x = Math.max(
@@ -741,9 +1316,114 @@ function ProjectBrowserPanel({
                     pointer.current = { x, y };
                     if (selecting)
                       void action(() => request("browser.annotation.select", { x, y }));
-                    else void action(() => input({ kind: "click", x, y }));
+                    else queueInput({ kind: "click", x, y });
                   }}
                 />
+                <TextareaField
+                  ref={inputReceiver}
+                  fieldClassName="host-browser-input-receiver"
+                  label={t("Direct browser input")}
+                  hideLabel
+                  tabIndex={-1}
+                  onKeyDown={(event) => {
+                    if (!canPageInput || event.nativeEvent.isComposing) return;
+                    const modifierKey =
+                      (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a";
+                    if (
+                      ([
+                        "Enter",
+                        "Tab",
+                        "Escape",
+                        "Backspace",
+                        "ArrowUp",
+                        "ArrowDown",
+                        "ArrowLeft",
+                        "ArrowRight",
+                        "Delete",
+                        "Home",
+                        "End",
+                        "PageUp",
+                        "PageDown",
+                      ].includes(event.key) &&
+                        !event.altKey) ||
+                      modifierKey
+                    ) {
+                      event.preventDefault();
+                      queueInput({
+                        kind: "key",
+                        key: modifierKey ? event.key.toUpperCase() : event.key,
+                        modifiers: [
+                          event.ctrlKey ? "Control" : "",
+                          event.altKey ? "Alt" : "",
+                          event.shiftKey ? "Shift" : "",
+                          event.metaKey ? "Meta" : "",
+                        ].filter(Boolean),
+                      });
+                    }
+                  }}
+                  onInput={(event) => {
+                    const target = event.currentTarget;
+                    if (
+                      !canPageInput ||
+                      (event.nativeEvent as InputEvent).isComposing ||
+                      !target.value
+                    )
+                      return;
+                    if (completedComposition.current === target.value) {
+                      completedComposition.current = "";
+                      target.value = "";
+                      return;
+                    }
+                    if (target.value.length > 4096) {
+                      setError(t("Browser unavailable"));
+                      return;
+                    }
+                    queueInput({ kind: "text", text: target.value });
+                    target.value = "";
+                  }}
+                  onCompositionEnd={(event) => {
+                    if (canPageInput && event.data) {
+                      completedComposition.current = event.data;
+                      queueInput({ kind: "text", text: event.data });
+                      setTimeout(() => {
+                        completedComposition.current = "";
+                      }, 0);
+                    }
+                    event.currentTarget.value = "";
+                  }}
+                />
+                {selecting && (hover ?? selection?.element)?.boxModel
+                  ? Object.entries((hover ?? selection!.element).boxModel!).map(
+                      ([part, bounds]) => (
+                        <span
+                          key={part}
+                          className="host-browser-box-model"
+                          data-part={part}
+                          aria-hidden
+                          style={{
+                            insetInlineStart: `${(bounds.x / frame.width) * 100}%`,
+                            insetBlockStart: `${(bounds.y / frame.height) * 100}%`,
+                            inlineSize: `${(bounds.width / frame.width) * 100}%`,
+                            blockSize: `${(bounds.height / frame.height) * 100}%`,
+                          }}
+                        />
+                      ),
+                    )
+                  : null}
+                {selecting &&
+                  (hover ?? selection?.element)?.layout?.childBounds?.map((bounds, index) => (
+                    <span
+                      key={`child-${index}`}
+                      className="host-browser-box-model host-browser-child-bound"
+                      aria-hidden
+                      style={{
+                        insetInlineStart: `${(bounds.x / frame.width) * 100}%`,
+                        insetBlockStart: `${(bounds.y / frame.height) * 100}%`,
+                        inlineSize: `${(bounds.width / frame.width) * 100}%`,
+                        blockSize: `${(bounds.height / frame.height) * 100}%`,
+                      }}
+                    />
+                  ))}
                 {selecting
                   ? [selection?.element, hover].map((element, index) =>
                       element ? (
@@ -751,76 +1431,213 @@ function ProjectBrowserPanel({
                           key={index}
                           className="host-browser-highlight"
                           data-selected={index === 0}
-                          aria-hidden
                           style={{
                             insetInlineStart: `${(element.bounds.x / frame.width) * 100}%`,
                             insetBlockStart: `${(element.bounds.y / frame.height) * 100}%`,
                             inlineSize: `${(element.bounds.width / frame.width) * 100}%`,
                             blockSize: `${(element.bounds.height / frame.height) * 100}%`,
                           }}
-                        />
+                        >
+                          {index === 1 ? (
+                            <span
+                              className="host-browser-highlight-label"
+                              data-align={element.bounds.x > frame.width / 2 ? "end" : "start"}
+                            >
+                              {element.tag}
+                              {element.text ? ` · ${element.text}` : ""} ·{" "}
+                              {Math.round(element.bounds.width)} ×{" "}
+                              {Math.round(element.bounds.height)}
+                              {element.layout?.display === "flex" ||
+                              element.layout?.display === "grid"
+                                ? ` · ${element.layout.display}`
+                                : ""}
+                            </span>
+                          ) : null}
+                        </span>
                       ) : null,
                     )
                   : null}
               </div>
             </div>
           ) : (
-            <div className="host-browser-empty">
-              <Globe size={32} aria-hidden />
-              <h4>{t("Open a website")}</h4>
-              <p>
-                {state?.open
+            <BrowserStartPage
+              disabled={busy || selecting || setupRequired}
+              onOpen={(target) => {
+                setUrl(target);
+                void action(() => openWebsite(target));
+              }}
+              description={
+                state?.open
                   ? t("Refresh the frame to view this page.")
                   : setupRequired
                     ? t("Set up the browser above to start previewing websites.")
-                    : t("Open a website above to see its preview here.")}
-              </p>
-              <p>{t("Select an element, describe the change, and add it to your chat.")}</p>
-            </div>
+                    : t("Open a website above to see its preview here.")
+              }
+            />
           )}
         </div>
-        {selection ? (
-          <aside className="host-browser-side" aria-label={t("Selected browser element")}>
-            <section
-              className="host-browser-side-section host-browser-selection"
-              aria-label={t("Selected browser element")}
-            >
-              <h4>{t("Selected browser element")}</h4>
-              <p className="host-browser-target" title={selection.element.selector}>
-                {selection.element.selector}
-              </p>
-              <TextareaField
-                label={t("Explain the selected element")}
-                value={comment}
-                maxLength={4000}
-                onChange={(event) => setComment(event.target.value)}
-                disabled={busy}
-              />
-              <div className="host-tool-actions">
+      </div>
+      {(selection || captures.length > 0) && selectionOpen ? (
+        <Popover
+          anchor={selectionTrigger}
+          side="top"
+          align="end"
+          width={360}
+          role="dialog"
+          aria-label={t("Selected browser element")}
+          data-dialog-popover
+          autoFocus
+          solid
+          className="host-browser-selection-popover bycoda-arc"
+          onDismiss={() => setSelectionOpen(false)}
+        >
+          <section
+            className="host-browser-side-section host-browser-selection"
+            aria-label={t("Selected browser element")}
+          >
+            {selection ? (
+              <>
+                <OverflowTooltip
+                  label={`${selection.element.tag}${selection.element.text ? ` · ${selection.element.text}` : ""}`}
+                >
+                  <p className="host-browser-target">
+                    {selection.element.tag}
+                    {selection.element.text ? ` · ${selection.element.text}` : ""}
+                    {` · ${Math.round(selection.element.bounds.width)} × ${Math.round(selection.element.bounds.height)}`}
+                    {selection.element.role ? ` · ${selection.element.role}` : ""}
+                  </p>
+                </OverflowTooltip>
+                <TextareaField
+                  label={t("Explain the selected element")}
+                  value={comment}
+                  maxLength={4000}
+                  onChange={(event) => setComment(event.target.value)}
+                  disabled={busy}
+                />
+              </>
+            ) : null}
+            {captures.map((capture, index) => (
+              <div key={capture.id} className="host-tool-actions">
+                <TextareaField
+                  label={`${t("Selection")} ${index + 1}`}
+                  value={capture.comment}
+                  maxLength={4000}
+                  onChange={(event) =>
+                    setCaptures((items) =>
+                      items.map((item) =>
+                        item.id === capture.id ? { ...item, comment: event.target.value } : item,
+                      ),
+                    )
+                  }
+                />
                 <Button
-                  motion="none"
-                  type="button"
-                  variant="primary"
-                  disabled={!canInput}
+                  variant="ghost"
+                  disabled={busy}
                   onClick={() =>
-                    void action(async () => {
-                      const result = await request("browser.annotation.read");
-                      if (!result?.selection || !composerSessionId || !sessionId) return;
-                      await attachBrowserSelectionAcrossWindows(
-                        cwd,
-                        composerSessionId,
-                        sessionId,
-                        result.selection,
-                        comment,
-                        composerWindow,
-                      );
-                      cancelSelection();
-                      setNotice(t("Added to composer. Review the attachment and send when ready."));
-                    })
+                    void action(
+                      async () => {
+                        if (mode.current)
+                          await request("browser.annotation.clear", { captureId: capture.id });
+                        setCaptures((items) => items.filter((item) => item.id !== capture.id));
+                      },
+                      { current: true },
+                    ).catch(() => {})
                   }
                 >
-                  {t("Add selection to composer")}
+                  {t("Remove selection")}
                 </Button>
+              </div>
+            ))}
+            {selection ? (
+              <BrowserInspectorNavigation
+                element={selection.element}
+                disabled={!canInput}
+                onTraverse={(direction, ancestorIndex) =>
+                  void action(() =>
+                    request("browser.annotation.traverse", {
+                      nodeId: selection.element.nodeId,
+                      direction,
+                      ...(ancestorIndex === undefined ? {} : { ancestorIndex }),
+                      replaceCaptureId: selection.id,
+                    }),
+                  ).catch(() => {})
+                }
+              />
+            ) : null}
+            <div className="host-tool-actions">
+              {selection && captures.length < 8 ? (
+                <Button
+                  disabled={!canInput}
+                  onClick={() => {
+                    setCaptures((items) => [
+                      ...items.filter((item) => item.id !== selection.id),
+                      { id: selection.id, comment },
+                    ]);
+                    setSelection(undefined);
+                    setComment("");
+                    setSelectionOpen(false);
+                  }}
+                >
+                  {t("Keep selection and select another")}
+                </Button>
+              ) : null}
+              <Button
+                motion="none"
+                type="button"
+                variant="primary"
+                disabled={!canInput || uncertainDelivery}
+                onClick={() => {
+                  const deliveryFailed = { current: false };
+                  if (selection) {
+                    setCaptures((items) => [
+                      ...items.filter((item) => item.id !== selection.id),
+                      { id: selection.id, comment },
+                    ]);
+                    setSelection(undefined);
+                  }
+                  void action(async () => {
+                    if (!composerSessionId || !sessionId) return;
+                    const items = [
+                      ...captures,
+                      ...(selection ? [{ id: selection.id, comment }] : []),
+                    ];
+                    for (const item of items) {
+                      const result = await request("browser.annotation.read", {
+                        captureId: item.id,
+                      });
+                      if (!result?.selection || result.selection.id !== item.id)
+                        throw new Error(
+                          t("Selection expired. Refresh the frame and select the element again."),
+                        );
+                      try {
+                        await attachBrowserSelectionAcrossWindows(
+                          cwd,
+                          composerSessionId,
+                          sessionId,
+                          result.selection,
+                          item.comment,
+                          composerWindow,
+                        );
+                      } catch (cause) {
+                        deliveryFailed.current = true;
+                        if (cause instanceof BrowserDraftDeliveryUncertainError)
+                          setUncertainDelivery(true);
+                        throw cause;
+                      }
+                      setCaptures((current) => current.filter((capture) => capture.id !== item.id));
+                      if (selection?.id === item.id) {
+                        setSelection(undefined);
+                        setComment("");
+                      }
+                    }
+                    cancelSelection();
+                    setNotice(t("Added to composer. Review the attachment and send when ready."));
+                  }, deliveryFailed);
+                }}
+              >
+                {error ? t("Retry adding selection") : t("Add selection to composer")}
+              </Button>
+              {selection ? (
                 <Button
                   motion="none"
                   type="button"
@@ -828,8 +1645,9 @@ function ProjectBrowserPanel({
                   disabled={!canInput}
                   onClick={() =>
                     void action(async () => {
-                      await request("browser.annotation.clear");
+                      await request("browser.annotation.clear", { captureId: selection.id });
                       setSelection(undefined);
+                      setSelectionOpen(false);
                       setHover(undefined);
                       setComment("");
                     })
@@ -837,206 +1655,48 @@ function ProjectBrowserPanel({
                 >
                   {t("Remove selection")}
                 </Button>
-              </div>
-              <details className="host-browser-disclosure">
-                <summary>{t("Details")}</summary>
-                <BrowserAnnotationDetails annotation={selection} />
-              </details>
-            </section>
-          </aside>
-        ) : null}
-      </div>
-      {controlsOpen ? (
-        <Popover
-          anchor={controlsTrigger}
-          side="bottom"
-          align="end"
-          width={360}
-          role="dialog"
-          aria-label={t("Browser controls and setup")}
-          data-dialog-popover
-          className="host-browser-controls font-sans"
-          onDismiss={(reason) => {
-            setControlsOpen(false);
-            if (reason === "escape") controlsTrigger.current?.focus();
-          }}
-        >
-          <section
-            className="host-browser-side-section"
-            aria-label={t("Keyboard and scroll controls")}
-          >
-            <h4>{t("Keyboard and scroll controls")}</h4>
-            <form
-              className="host-browser-type"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (canPageInput && text)
-                  void action(() => input({ kind: "text", text }, () => setText("")));
-              }}
-            >
-              <TextField
-                fieldClassName="host-tool-grow"
-                label={t("Text to type into host browser")}
-                hideLabel
-                placeholder={t("Text to type into host browser")}
-                value={text}
-                maxLength={4096}
-                disabled={!canPageInput}
-                onChange={(event) => setText(event.target.value)}
-              />
-              <Button type="submit" disabled={!canPageInput || !text}>
-                {t("Type text")}
-              </Button>
-            </form>
-            <div className="host-tool-actions">
-              <Button
-                motion="none"
-                type="button"
-                variant="ghost"
-                iconOnly
-                label={t("Enter")}
-                disabled={!canPageInput}
-                onClick={() => void action(() => input({ kind: "key", key: "Enter" }))}
-              >
-                <CornerDownRight size={16} aria-hidden />
-              </Button>
-              <Button
-                motion="none"
-                type="button"
-                variant="ghost"
-                iconOnly
-                label={t("Scroll up")}
-                disabled={!canPageInput}
-                onClick={() => void action(() => input({ kind: "scroll", y: -500 }))}
-              >
-                <ChevronUp size={16} aria-hidden />
-              </Button>
-              <Button
-                motion="none"
-                type="button"
-                variant="ghost"
-                iconOnly
-                label={t("Scroll down")}
-                disabled={!canPageInput}
-                onClick={() => void action(() => input({ kind: "scroll", y: 500 }))}
-              >
-                <ChevronDown size={16} aria-hidden />
-              </Button>
+              ) : null}
             </div>
-            {canPageInput ? null : (
-              <p className="host-tool-muted">
-                {t(
-                  "Click a field in the preview first, then type below. These controls are available while you own browser control.",
-                )}
-              </p>
-            )}
-          </section>
-          <section
-            className="host-browser-side-section"
-            aria-label={t("Browser controls and setup")}
-          >
-            <h4>{t("Browser controls and setup")}</h4>
-            <div className="host-browser-state">
-              <span className="host-tool-status" role="status">
-                {browserStatus}
-              </span>
-              {controlStatus ? <span className="host-tool-muted">{controlStatus}</span> : null}
-            </div>
-            {busy ? (
-              <Alert tone="info" role="status">
-                {t("Working on the host…")}
-              </Alert>
+            {error ? <InlineError className="host-browser-target">{error}</InlineError> : null}
+            {uncertainDelivery ? (
+              <Button variant="ghost" onClick={() => setUncertainDelivery(false)}>
+                {t("I checked the target composer")}
+              </Button>
             ) : null}
-            <div className="host-tool-actions">
-              <Button
-                motion="none"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => void action(() => request("browser.status"))}
-              >
-                {t("Status")}
-              </Button>
-              {!(state?.open && !state.controlling) ? (
-                <Button
-                  motion="none"
-                  type="button"
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => void action(() => request("browser.claim", { takeover: true }))}
-                >
-                  {state?.controlling ? t("Renew control") : t("Claim control")}
-                </Button>
-              ) : null}
-              {state?.controlling ? (
-                <Button
-                  motion="none"
-                  type="button"
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => void action(() => request("browser.release"))}
-                >
-                  {t("Release")}
-                </Button>
-              ) : null}
-              {state?.open ? (
-                <Button
-                  motion="none"
-                  type="button"
-                  variant="ghost"
-                  disabled={!canInput}
-                  onClick={() => void action(() => request("browser.close"))}
-                >
-                  {t("Close browser")}
-                </Button>
-              ) : null}
-              {!setupRequired && !state?.runtime?.installed ? (
-                <Button
-                  motion="none"
-                  type="button"
-                  variant="ghost"
-                  disabled={busy || selecting || state?.runtime?.installing}
-                  onClick={() => void action(() => request("browser.setup"))}
-                >
-                  {t("Set up host browser")}
-                </Button>
-              ) : null}
-            </div>
-            <details className="host-browser-disclosure">
-              <summary>{t("Help")}</summary>
-              {state?.runtime ? (
-                <p>
-                  {state.runtime.installing
-                    ? t("Installing browser…")
-                    : state.runtime.installed
-                      ? t("Browser runtime ready")
-                      : t("Browser setup required")}
-                </p>
-              ) : null}
-              <p>
-                {t(
-                  "Enter a website address and open it on this computer. Click the preview to interact, or select an element to discuss with your agent.",
-                )}
-              </p>
-              {canPageInput ? (
-                <p>
-                  {t(
-                    "Click a field in the preview first, then type below. These controls are available while you own browser control.",
-                  )}
-                </p>
-              ) : null}
-              <p>
-                {t(
-                  "Opening a website takes control for 30 seconds. Another device's active control is respected.",
-                )}
-              </p>
-              <p>
-                {t(
-                  "Temporary Chromium runs on the selected machine. Authenticated devices share its view; one device controls it for 30 seconds. Setup runs only when requested.",
-                )}
-              </p>
-            </details>
+            {selection ? (
+              <Disclosure summary={t("Details")} size="sm">
+                <BrowserAnnotationDetails annotation={selection} />
+              </Disclosure>
+            ) : null}
           </section>
         </Popover>
+      ) : null}
+      {controlsOpen ? (
+        <BrowserControlsPopover
+          anchor={controlsFromStatus ? statusTrigger : controlsTrigger}
+          align={controlsFromStatus ? "start" : "end"}
+          onDismiss={(reason) => {
+            setControlsOpen(false);
+            if (reason === "escape")
+              (controlsFromStatus ? statusTrigger : controlsTrigger).current?.focus();
+          }}
+          state={state}
+          busy={busy}
+          selecting={selecting}
+          canInput={canInput}
+          canPageInput={canPageInput}
+          setupRequired={setupRequired}
+          annotationsAllowed={annotationsAllowed}
+          text={text}
+          setText={setText}
+          browserStatus={browserStatus}
+          notice={notice}
+          error={error}
+          errorSummary={errorSummary}
+          action={action}
+          request={request}
+          input={input}
+        />
       ) : null}
     </section>
   );

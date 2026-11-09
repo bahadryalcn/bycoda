@@ -1,0 +1,520 @@
+name: Desktop package
+on:
+  workflow_call:
+    inputs:
+      release-id:
+        type: string
+        default: ""
+      expected-sha:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      channel:
+        type: string
+        default: stable
+      candidate-artifact:
+        type: string
+        default: ""
+      tooling-sha:
+        type: string
+        default: ""
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+      # Optional macOS Developer ID signing and notarization. Absent values keep
+      # the ad-hoc identity so forks still build. See docs/reference/releases.md.
+      APPLE_CERTIFICATE:
+        required: false
+      APPLE_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_SIGNING_IDENTITY:
+        required: false
+      APPLE_ID:
+        required: false
+      APPLE_PASSWORD:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+      APPLE_API_KEY:
+        required: false
+      APPLE_API_ISSUER:
+        required: false
+      APPLE_API_PRIVATE_KEY:
+        required: false
+      # Messaging sign-in app registrations, compiled in via option_env! (public desktop clients).
+      BYCODA_GOOGLE_CLIENT_ID:
+        required: false
+      BYCODA_GOOGLE_CLIENT_SECRET:
+        required: false
+      BYCODA_SLACK_CLIENT_ID:
+        required: false
+      BYCODA_MICROSOFT_CLIENT_ID:
+        required: false
+permissions:
+  contents: read
+jobs:
+  windows-route:
+    # Planning stays hosted. Machine-owned admission independently protects the VM.
+    if: >-
+      (inputs.channel == 'stable' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (inputs.channel == 'preview' && github.event_name == 'workflow_run' && github.ref == 'refs/heads/main') ||
+      (inputs.channel != 'stable' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'))
+    runs-on: ubuntu-latest
+    outputs:
+      windows_runs_on: ${{ steps.route.outputs.windows_runs_on }}
+      windows_self_hosted: ${{ steps.route.outputs.windows_self_hosted }}
+      windows_concurrency_group: ${{ steps.route.outputs.windows_concurrency_group }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: "24"
+          install: "false"
+      - id: route
+        env:
+          WINDOWS_SELF_HOSTED_OPT_IN: ${{ vars.BYCODA_WINDOWS_SELF_HOSTED }}
+        run: node scripts/checks/windows-runner-policy.mjs --scope package --github-output "$GITHUB_OUTPUT"
+
+  common-build:
+    # Checkout LF bytes on every OS so the portable output and native compile
+    # share a verifiable source fingerprint, without changing Git's global config.
+    needs: windows-route
+    runs-on: ubuntu-latest
+    env:
+      BYCODA_BUILD_MANIFEST: ${{ github.workspace }}/build/build-info.json
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.expected-sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tooling-sha || github.workflow_sha }}
+          path: temp/release-tools
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ inputs.candidate-artifact || format('release-candidate-{0}', inputs.expected-sha) }}
+          path: temp/test-results/release-candidate
+      - uses: ./temp/release-tools/.github/actions/setup-deps
+        with:
+          node-version: "22"
+      - name: Prepare exact source before compiling shared outputs
+        run: node temp/release-tools/scripts/release/prepare-candidate.mjs temp/test-results/release-candidate/candidate.json
+      - name: Compile portable web and Host once
+        shell: bash
+        run: |
+          started=$SECONDS
+          pnpm run build
+          echo "Web compilation: $((SECONDS-started))s" >> "$GITHUB_STEP_SUMMARY"
+          started=$SECONDS
+          pnpm run host:build
+          echo "Host compilation: $((SECONDS-started))s" >> "$GITHUB_STEP_SUMMARY"
+          node temp/release-tools/scripts/release/prepare-candidate.mjs --verify
+          node temp/release-tools/scripts/build/release-common.mjs stage temp/test-results/release-candidate/candidate.json temp/build/release-common
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-common-${{ inputs.expected-sha }}
+          path: temp/build/release-common/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-launchers:
+    needs: [windows-route, common-build]
+    if: inputs.channel == 'stable'
+    runs-on: ${{ fromJSON(needs.windows-route.outputs.windows_runs_on) }}
+    concurrency:
+      group: ${{ needs.windows-route.outputs.windows_self_hosted == 'true' && needs.windows-route.outputs.windows_concurrency_group || format('host-launchers-{0}', github.run_id) }}
+      cancel-in-progress: false
+      queue: max
+    env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.expected-sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tooling-sha || github.workflow_sha }}
+          path: temp/release-tools
+          persist-credentials: false
+      - name: Verify isolated Windows runner before native launcher compilation
+        if: needs.windows-route.outputs.windows_self_hosted == 'true'
+        shell: pwsh
+        run: >-
+          & ./temp/release-tools/scripts/setup/windows-runner.ps1
+          -Mode Verify -Purpose package -ExportEnvironment
+      - uses: ./temp/release-tools/.github/actions/setup-deps
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c80933 # v4
+        with:
+          name: ${{ inputs.candidate-artifact || format('release-candidate-{0}', inputs.expected-sha) }}
+          path: temp/test-results/release-candidate
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
+      - name: Build source-bound Windows launchers for portable Host archives
+        shell: pwsh
+        env:
+          BYCODA_WINDOWS_SIGNING_CERT_SHA1: ${{ vars.BYCODA_WINDOWS_SIGNING_CERT_SHA1 }}
+          BYCODA_WINDOWS_SIGNING_STORE: ${{ vars.BYCODA_WINDOWS_SIGNING_STORE }}
+        run: |
+          node temp/release-tools/scripts/release/prepare-candidate.mjs temp/test-results/release-candidate/candidate.json
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate preparation failed.' }
+          foreach ($target in @('win32-x64', 'win32-arm64')) {
+            node scripts/build/host-service-launcher.mjs --target $target --output "build/host-launcher/$target"
+            if ($LASTEXITCODE -ne 0) { throw "Host launcher build failed: $target" }
+          }
+          node temp/release-tools/scripts/release/prepare-candidate.mjs --verify
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate verification failed.' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: host-service-launchers-${{ inputs.expected-sha }}
+          path: build/host-launcher/
+          if-no-files-found: error
+          retention-days: 14
+
+  host-packages:
+    needs: [common-build, windows-launchers]
+    if: inputs.channel == 'stable'
+    runs-on: ubuntu-latest
+    env:
+      BYCODA_BUILD_MANIFEST: ${{ github.workspace }}/build/build-info.json
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.expected-sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tooling-sha || github.workflow_sha }}
+          path: temp/release-tools
+          persist-credentials: false
+      - uses: ./temp/release-tools/.github/actions/setup-deps
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ inputs.candidate-artifact || format('release-candidate-{0}', inputs.expected-sha) }}
+          path: temp/test-results/release-candidate
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-common-${{ inputs.expected-sha }}
+          path: temp/build/release-common
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c80933 # v4
+        with:
+          name: host-service-launchers-${{ inputs.expected-sha }}
+          path: temp/build/host-launcher
+      - name: Restore verified portable outputs and package all six Host targets
+        shell: bash
+        run: |
+          started=$SECONDS
+          node temp/release-tools/scripts/release/prepare-candidate.mjs temp/test-results/release-candidate/candidate.json
+          node temp/release-tools/scripts/build/release-common.mjs restore temp/test-results/release-candidate/candidate.json temp/build/release-common
+          node host/package.mjs --all --host-launcher-dir temp/build/host-launcher
+          node temp/release-tools/scripts/release/prepare-candidate.mjs --verify
+          node temp/release-tools/scripts/release/host-manifest.mjs temp/test-results/release-candidate/candidate.json temp/build/standalone-host-packages
+          echo "Standalone Host packaging: $((SECONDS-started))s" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: standalone-host-packages
+          path: temp/build/standalone-host-packages/
+          if-no-files-found: error
+          retention-days: 14
+
+  package:
+    needs: [windows-route, common-build]
+    # Signed builds follow an owner-created stable tag or a preview run after main CI
+    # passed. Nightly candidates never receive signing keys or updater endpoints.
+    if: >-
+      (inputs.channel == 'stable' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (inputs.channel == 'preview' && github.event_name == 'workflow_run' && github.ref == 'refs/heads/main') ||
+      (inputs.channel != 'stable' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'))
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            platform: windows-x64
+            args: --bundles nsis --config src-tauri/tauri.fork.conf.json
+          - runner: macos-latest
+            platform: macos-arm64
+            args: --target aarch64-apple-darwin --bundles app,dmg --config src-tauri/tauri.fork.macos.conf.json
+    runs-on: ${{ matrix.platform == 'windows-x64' && fromJSON(needs.windows-route.outputs.windows_runs_on) || matrix.runner }}
+    concurrency:
+      group: ${{ matrix.platform == 'windows-x64' && needs.windows-route.outputs.windows_self_hosted == 'true' && needs.windows-route.outputs.windows_concurrency_group || format('desktop-package-{0}-{1}', github.run_id, matrix.platform) }}
+      cancel-in-progress: false
+      queue: max
+    env:
+      BYCODA_BUILD_MANIFEST: ${{ github.workspace }}/build/build-info.json
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.expected-sha }}
+          persist-credentials: false
+      - name: Load trusted release tooling separately from candidate sources
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tooling-sha || github.workflow_sha }}
+          path: temp/release-tools
+          persist-credentials: false
+      - name: Verify isolated interactive Windows package runner before any build or signing
+        if: matrix.platform == 'windows-x64' && needs.windows-route.outputs.windows_self_hosted == 'true'
+        shell: pwsh
+        run: >-
+          & ./temp/release-tools/scripts/setup/windows-runner.ps1
+          -Mode Verify -Purpose package -ExportEnvironment
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ inputs.candidate-artifact || format('release-candidate-{0}', inputs.expected-sha) }}
+          path: temp/test-results/release-candidate
+      - uses: ./temp/release-tools/.github/actions/setup-deps
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-common-${{ inputs.expected-sha }}
+          path: temp/build/release-common
+      - name: Prepare frozen candidate identity and metadata-only version overlay
+        env:
+          EXPECTED_SHA: ${{ inputs.expected-sha }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          EXPECTED_CHANNEL: ${{ inputs.channel }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          import {validateCandidate} from './temp/release-tools/scripts/release/release-candidate.mjs';
+          const candidate=validateCandidate(JSON.parse(readFileSync('temp/test-results/release-candidate/candidate.json','utf8')));
+          assert.equal(candidate.sha,process.env.EXPECTED_SHA);
+          assert.equal(candidate.version,process.env.EXPECTED_VERSION);
+          assert.equal(candidate.channel,process.env.EXPECTED_CHANNEL);
+          NODE
+          node temp/release-tools/scripts/release/prepare-candidate.mjs temp/test-results/release-candidate/candidate.json
+          node temp/release-tools/scripts/build/release-common.mjs restore temp/test-results/release-candidate/candidate.json temp/build/release-common
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const file='temp/release-channel.json', config=JSON.parse(readFileSync(file,'utf8'));
+          config.build={beforeBuildCommand:'node temp/release-tools/scripts/build/release-common.mjs verify temp/test-results/release-candidate/candidate.json temp/build/release-common'};
+          writeFileSync(file,JSON.stringify(config));
+          NODE
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: ${{ matrix.platform == 'macos-arm64' && 'aarch64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        if: matrix.platform != 'windows-x64' || needs.windows-route.outputs.windows_self_hosted != 'true'
+        id: rust-cache
+        with:
+          shared-key: desktop-release-${{ matrix.runner }}
+          save-if: false
+      - name: Configure optional macOS Developer ID signing and notarization
+        # Preview is signed too: an ad-hoc identity resets macOS privacy grants on every update.
+        if: matrix.platform == 'macos-arm64' && (inputs.channel == 'stable' || inputs.channel == 'preview')
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          # Only complete, non-empty groups reach the build: Tauri treats an empty
+          # variable as set and would try to notarize with it. Values stay in
+          # secrets-masked environment variables and are never printed.
+          export_secret() {
+            local delimiter="EOF_$(openssl rand -hex 12)"
+            printf '%s<<%s\n%s\n%s\n' "$1" "$delimiter" "$2" "$delimiter" >> "$GITHUB_ENV"
+          }
+          if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_CERTIFICATE_PASSWORD" ] || [ -z "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "macOS Developer ID signing is unconfigured; the app is ad-hoc signed and macOS resets its privacy grants on every update." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          export_secret APPLE_CERTIFICATE "$APPLE_CERTIFICATE"
+          export_secret APPLE_CERTIFICATE_PASSWORD "$APPLE_CERTIFICATE_PASSWORD"
+          export_secret APPLE_SIGNING_IDENTITY "$APPLE_SIGNING_IDENTITY"
+          notarization=none
+          if [ -n "$APPLE_API_KEY" ] && [ -n "$APPLE_API_ISSUER" ] && [ -n "$APPLE_API_PRIVATE_KEY" ]; then
+            key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
+            (umask 077; printf '%s\n' "$APPLE_API_PRIVATE_KEY" > "$key_path")
+            export_secret APPLE_API_KEY "$APPLE_API_KEY"
+            export_secret APPLE_API_ISSUER "$APPLE_API_ISSUER"
+            export_secret APPLE_API_KEY_PATH "$key_path"
+            notarization="App Store Connect API key"
+          elif [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            export_secret APPLE_ID "$APPLE_ID"
+            export_secret APPLE_PASSWORD "$APPLE_PASSWORD"
+            export_secret APPLE_TEAM_ID "$APPLE_TEAM_ID"
+            notarization="Apple ID app-specific password"
+          fi
+          # Tauri reads the identity from the environment, but the checked-in
+          # config pins the ad-hoc identity, so overlay it explicitly as well.
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const file='temp/release-channel.json', config=JSON.parse(readFileSync(file,'utf8'));
+          config.bundle={...config.bundle,macOS:{...config.bundle?.macOS,signingIdentity:process.env.APPLE_SIGNING_IDENTITY}};
+          writeFileSync(file,JSON.stringify(config));
+          NODE
+          # The bundled Host helper is signed by host/package.mjs before the app
+          # is built, so the certificate must already be in a keychain.
+          keychain="$RUNNER_TEMP/bycoda-helper-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          echo "::add-mask::$keychain_password"
+          certificate_path="$RUNNER_TEMP/bycoda-developer-id.p12"
+          (umask 077; printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$certificate_path")
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate_path" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security >/dev/null
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm -f "$certificate_path"
+          echo "macOS package and bundled Host desktop helper signed with a Developer ID identity; notarization: $notarization." >> "$GITHUB_STEP_SUMMARY"
+      - name: Prepare pinned desktop helper for this platform
+        shell: bash
+        run: node scripts/setup/agent-desktop.mjs --prepare
+      - name: Configure optional Windows application and installer Authenticode
+        if: matrix.platform == 'windows-x64' && inputs.channel == 'stable'
+        env:
+          BYCODA_WINDOWS_SIGNING_CERT_SHA1: ${{ vars.BYCODA_WINDOWS_SIGNING_CERT_SHA1 }}
+          BYCODA_WINDOWS_SIGNING_STORE: ${{ vars.BYCODA_WINDOWS_SIGNING_STORE }}
+        run: node scripts/release/windows-authenticode.mjs --config temp/release-channel.json
+      - name: Package the exact bundled Host
+        shell: bash
+        env:
+          RELEASE_CHANNEL: ${{ inputs.channel }}
+          BYCODA_WINDOWS_SIGNING_CERT_SHA1: ${{ inputs.channel == 'stable' && vars.BYCODA_WINDOWS_SIGNING_CERT_SHA1 || '' }}
+          BYCODA_WINDOWS_SIGNING_STORE: ${{ inputs.channel == 'stable' && vars.BYCODA_WINDOWS_SIGNING_STORE || '' }}
+        run: |
+          started=$SECONDS
+          package_args=(--desktop-helper)
+          if [ "$RUNNER_OS" = 'Windows' ] && [ "$RELEASE_CHANNEL" = 'stable' ]; then
+            if [ -n "$BYCODA_WINDOWS_SIGNING_CERT_SHA1" ]; then
+              package_args+=(--sign-desktop-helper)
+            else
+              echo "Desktop helper Authenticode signing is unconfigured; this package has no helper signing acceptance." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          node host/package.mjs "${package_args[@]}"
+          echo "Bundled Host packaging: $((SECONDS-started))s; Rust cache hit: ${{ steps.rust-cache.outputs.cache-hit || 'persistent-local' }}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Start native package timing
+        id: native-start
+        shell: bash
+        run: echo "epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+      - name: Build signed updater package
+        if: inputs.channel == 'stable' || inputs.channel == 'preview'
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          BYCODA_HOST_RELEASE_URL: https://github.com/${{ github.repository }}/releases/download/v${{ inputs.version }}
+          BYCODA_GOOGLE_CLIENT_ID: ${{ secrets.BYCODA_GOOGLE_CLIENT_ID }}
+          BYCODA_GOOGLE_CLIENT_SECRET: ${{ secrets.BYCODA_GOOGLE_CLIENT_SECRET }}
+          BYCODA_SLACK_CLIENT_ID: ${{ secrets.BYCODA_SLACK_CLIENT_ID }}
+          BYCODA_MICROSOFT_CLIENT_ID: ${{ secrets.BYCODA_MICROSOFT_CLIENT_ID }}
+          BYCODA_ACCOUNT_ENV: ${{ vars.BYCODA_ACCOUNT_ENV }}
+          BYCODA_CLERK_ISSUER: ${{ vars.BYCODA_CLERK_ISSUER }}
+          BYCODA_CLERK_CLIENT_ID: ${{ vars.BYCODA_CLERK_CLIENT_ID }}
+          BYCODA_ACCOUNT_API_URL: ${{ vars.BYCODA_ACCOUNT_API_URL }}
+          BYCODA_STAGING_CLERK_ISSUER: ${{ vars.BYCODA_STAGING_CLERK_ISSUER }}
+          BYCODA_STAGING_CLERK_CLIENT_ID: ${{ vars.BYCODA_STAGING_CLERK_CLIENT_ID }}
+          BYCODA_STAGING_ACCOUNT_API_URL: ${{ vars.BYCODA_STAGING_ACCOUNT_API_URL }}
+          VITE_BYCODA_ACCOUNT_PORTAL_URL: ${{ vars.VITE_BYCODA_ACCOUNT_PORTAL_URL }}
+        with:
+          args: ${{ matrix.args }} --config temp/release-channel.json
+      - name: Build unsigned nightly package
+        if: inputs.channel != 'stable' && inputs.channel != 'preview'
+        env:
+          BYCODA_GOOGLE_CLIENT_ID: ${{ secrets.BYCODA_GOOGLE_CLIENT_ID }}
+          BYCODA_GOOGLE_CLIENT_SECRET: ${{ secrets.BYCODA_GOOGLE_CLIENT_SECRET }}
+          BYCODA_SLACK_CLIENT_ID: ${{ secrets.BYCODA_SLACK_CLIENT_ID }}
+          BYCODA_MICROSOFT_CLIENT_ID: ${{ secrets.BYCODA_MICROSOFT_CLIENT_ID }}
+          BYCODA_ACCOUNT_ENV: ${{ vars.BYCODA_ACCOUNT_ENV }}
+          BYCODA_CLERK_ISSUER: ${{ vars.BYCODA_CLERK_ISSUER }}
+          BYCODA_CLERK_CLIENT_ID: ${{ vars.BYCODA_CLERK_CLIENT_ID }}
+          BYCODA_ACCOUNT_API_URL: ${{ vars.BYCODA_ACCOUNT_API_URL }}
+          BYCODA_STAGING_CLERK_ISSUER: ${{ vars.BYCODA_STAGING_CLERK_ISSUER }}
+          BYCODA_STAGING_CLERK_CLIENT_ID: ${{ vars.BYCODA_STAGING_CLERK_CLIENT_ID }}
+          BYCODA_STAGING_ACCOUNT_API_URL: ${{ vars.BYCODA_STAGING_ACCOUNT_API_URL }}
+          VITE_BYCODA_ACCOUNT_PORTAL_URL: ${{ vars.VITE_BYCODA_ACCOUNT_PORTAL_URL }}
+        run: pnpm exec tauri build ${{ matrix.args }} --config temp/release-channel.json
+      - name: Report native build and bundle duration
+        if: always() && steps.native-start.outcome == 'success'
+        shell: bash
+        env:
+          START_EPOCH: ${{ steps.native-start.outputs.epoch }}
+        run: |
+          echo "Native build and bundle (${{ matrix.platform }}): $(($(date +%s)-START_EPOCH))s" >> "$GITHUB_STEP_SUMMARY"
+      - name: Stage bounded immutable package bytes
+        env:
+          LOCAL_WINDOWS_PACKAGE: ${{ matrix.platform == 'windows-x64' && needs.windows-route.outputs.windows_self_hosted == 'true' }}
+        shell: bash
+        run: |
+          node temp/release-tools/scripts/release/prepare-candidate.mjs --verify
+          cargo_target=()
+          if [ "$LOCAL_WINDOWS_PACKAGE" = 'true' ]; then
+            : "${CARGO_TARGET_DIR:?The verified isolated runner must export its release target}"
+            cargo_target=(--cargo-target-dir "$CARGO_TARGET_DIR")
+          fi
+          node temp/release-tools/scripts/release/package-manifest.mjs create \
+            --candidate temp/test-results/release-candidate/candidate.json \
+            --platform ${{ matrix.platform }} --root . \
+            --output temp/build/release-package/${{ matrix.platform }} "${cargo_target[@]}"
+      - name: Exercise packaged application and isolated old database
+        shell: bash
+        run: |
+          started=$SECONDS
+          trap 'echo "Packaged smoke (${{ matrix.platform }}): $((SECONDS-started))s" >> "$GITHUB_STEP_SUMMARY"' EXIT
+          node temp/release-tools/scripts/build/package-smoke.mjs \
+            --manifest temp/build/release-package/${{ matrix.platform }}/manifest.json \
+            --root temp/build/release-package/${{ matrix.platform }} \
+            --output temp/test-results/packaged-smoke/${{ matrix.platform }}.json
+      - name: Require the receipt to match these exact bytes
+        run: >-
+          node temp/release-tools/scripts/release/package-manifest.mjs attach-smoke
+          --root temp/build/release-package/${{ matrix.platform }}
+          --receipt temp/test-results/packaged-smoke/${{ matrix.platform }}.json
+      - name: Retain package and failed smoke evidence for review
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-package-${{ matrix.platform }}
+          path: temp/build/release-package/${{ matrix.platform }}/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain isolated smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: packaged-smoke-${{ matrix.platform }}
+          path: |
+            temp/test-results/packaged-smoke/${{ matrix.platform }}.json
+            temp/test-results/packaged-smoke/${{ matrix.platform }}.json.evidence/**
+          if-no-files-found: warn
+          retention-days: 14

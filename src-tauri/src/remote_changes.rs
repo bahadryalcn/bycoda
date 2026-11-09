@@ -2,12 +2,23 @@
 //! Content and commands never wait on this lane. Registrations expire after a
 //! crashed window; an empty subscription explicitly releases a healthy window.
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 /// Git cursors a host answers per poll.
 const GIT_CURSOR_LIMIT: usize = 32;
+
+/// The IPC release shortcut and shared broker must agree on every demand family.
+/// Git-only watches still need an authenticated Host request.
+pub(super) fn is_empty_subscription(params: &Value) -> bool {
+    params.get("tasksKnown").is_none()
+        && ["sessions", "projects", "git"].iter().all(|key| {
+            params.get(key).map_or(*key == "git", |value| {
+                value.as_array().is_some_and(Vec::is_empty)
+            })
+        })
+}
 
 #[derive(Default)]
 pub(super) struct Changes {
@@ -79,6 +90,12 @@ struct Shared {
     running: bool,
     generation: u64,
     result: Option<Result<Value, String>>,
+    demand_generation: u64,
+    refresh_running: bool,
+    refresh_generation: Option<u64>,
+    refresh_result: Option<Result<Value, String>>,
+    instance: Option<String>,
+    instance_generation: u64,
 }
 
 impl Changes {
@@ -95,6 +112,7 @@ impl Changes {
             entries.retain(|_, entry| {
                 entry.state.lock().is_ok_and(|state| {
                     state.running
+                        || state.refresh_running
                         || state
                             .windows
                             .values()
@@ -110,19 +128,13 @@ impl Changes {
         state
             .windows
             .retain(|_, (_, at)| at.elapsed() < Duration::from_secs(45));
-        let empty = params.get("tasksKnown").is_none()
-            && ["sessions", "projects", "git"].iter().all(|key| {
-                params.get(key).map_or(*key == "git", |value| {
-                    value.as_array().is_some_and(Vec::is_empty)
-                })
-            });
-        if empty {
+        if is_empty_subscription(&params) {
             let release_id = params.get("subscriptionId");
             let matches = state.windows.get(window).is_none_or(|(registered, _)| {
                 release_id.is_none() || registered.get("subscriptionId") == release_id
             });
-            if matches {
-                state.windows.remove(window);
+            if matches && state.windows.remove(window).is_some() {
+                state.demand_generation += 1;
             }
             return Ok(
                 json!({"instanceId":params.get("instanceId").cloned().unwrap_or(Value::Null),
@@ -132,9 +144,81 @@ impl Changes {
         if !state.windows.contains_key(window) && state.windows.len() >= 32 {
             return Err("Too many remote window subscriptions".into());
         }
+        let window_instance = params
+            .get("instanceId")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let immediate = params.get("waitMs").and_then(Value::as_u64) == Some(0);
+        let interest = |value: &Value| {
+            let mut value = value.clone();
+            if let Some(object) = value.as_object_mut() {
+                object.remove("waitMs");
+            }
+            value
+        };
+        if state
+            .windows
+            .get(window)
+            .is_none_or(|(previous, _)| interest(previous) != interest(&params))
+        {
+            state.demand_generation += 1;
+        }
         state
             .windows
             .insert(window.to_owned(), (params, Instant::now()));
+        if state.running && immediate {
+            // A short refresh may coexist with the held poll, but only one short
+            // request runs across all windows. Later registrations join if covered.
+            let mut joined_refresh = false;
+            while state.refresh_running {
+                joined_refresh = true;
+                let (next, timeout) = entry
+                    .changed
+                    .wait_timeout_while(state, Duration::from_secs(35), |state| {
+                        state.refresh_running
+                    })
+                    .map_err(|_| "Control lane is locked")?;
+                if timeout.timed_out() {
+                    return Err("Remote demand refresh timed out".into());
+                }
+                state = next;
+            }
+            let demand_generation = state.demand_generation;
+            if joined_refresh && state.refresh_generation == Some(demand_generation) {
+                if let Some(result) = &state.refresh_result {
+                    return window_result(
+                        result.clone(),
+                        window_instance.as_deref(),
+                        state.instance.as_deref(),
+                    );
+                }
+            }
+            let mut request = scheduled_request(
+                union(state.windows.values().map(|(value, _)| value))?,
+                state.generation,
+            )?;
+            request["waitMs"] = json!(0);
+            request["demandChanged"] = json!(true);
+            if let Some(instance) = &state.instance {
+                request["instanceId"] = json!(instance);
+            }
+            let instance_generation = state.instance_generation;
+            state.refresh_running = true;
+            drop(state);
+            let result =
+                send(request.clone()).and_then(|response| checked_response(&request, response));
+            let mut state = entry.state.lock().map_err(|_| "Control lane is locked")?;
+            let result = accept_instance(&mut state, instance_generation, result);
+            state.refresh_running = false;
+            state.refresh_generation = Some(demand_generation);
+            state.refresh_result = Some(result.clone());
+            entry.changed.notify_all();
+            return window_result(
+                result,
+                window_instance.as_deref(),
+                state.instance.as_deref(),
+            );
+        }
         if state.running {
             let generation = state.generation;
             let (next, timeout) = entry
@@ -146,44 +230,94 @@ impl Changes {
             if timeout.timed_out() {
                 return Err("Remote control request timed out".into());
             }
-            return next
+            let result = next
                 .result
                 .clone()
                 .unwrap_or_else(|| Err("Remote control request ended".into()));
+            return window_result(result, window_instance.as_deref(), next.instance.as_deref());
         }
-        let request = scheduled_request(
+        let mut request = scheduled_request(
             union(state.windows.values().map(|(value, _)| value))?,
             state.generation,
         )?;
-        let checked_sessions = request["sessions"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|entry| entry["sessionId"].clone())
-            .collect::<Vec<_>>();
-        let checked_projects = request["projects"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|entry| entry["projectId"].clone())
-            .collect::<Vec<_>>();
+        if let Some(instance) = &state.instance {
+            request["instanceId"] = json!(instance);
+        }
+        let instance_generation = state.instance_generation;
         state.running = true;
         drop(state);
-        let result = send(request).and_then(|mut response| {
-            let object = response
-                .as_object_mut()
-                .ok_or("Invalid machine changes response")?;
-            object.insert("checkedSessions".into(), json!(checked_sessions));
-            object.insert("checkedProjects".into(), json!(checked_projects));
-            Ok(response)
-        });
+        let result =
+            send(request.clone()).and_then(|response| checked_response(&request, response));
         let mut state = entry.state.lock().map_err(|_| "Control lane is locked")?;
+        let result = accept_instance(&mut state, instance_generation, result);
         state.running = false;
         state.generation += 1;
         state.result = Some(result.clone());
         entry.changed.notify_all();
-        result
+        window_result(
+            result,
+            window_instance.as_deref(),
+            state.instance.as_deref(),
+        )
     }
+}
+
+fn accept_instance(
+    state: &mut Shared,
+    generation: u64,
+    result: Result<Value, String>,
+) -> Result<Value, String> {
+    let response = result?;
+    let instance = response
+        .get("instanceId")
+        .and_then(Value::as_str)
+        .ok_or("Invalid machine changes instance")?;
+    if generation != state.instance_generation && state.instance.as_deref() != Some(instance) {
+        return Err("Remote control response belongs to a retired instance".into());
+    }
+    if state.instance.as_deref() != Some(instance) {
+        state.instance = Some(instance.to_owned());
+        state.instance_generation += 1;
+    }
+    Ok(response)
+}
+
+fn window_result(
+    result: Result<Value, String>,
+    requested: Option<&str>,
+    current: Option<&str>,
+) -> Result<Value, String> {
+    let mut response = result?;
+    if current.is_some_and(|instance| {
+        response.get("instanceId").and_then(Value::as_str) != Some(instance)
+    }) {
+        return Err("Remote control response belongs to a retired instance".into());
+    }
+    if requested.is_some_and(|instance| {
+        response.get("instanceId").and_then(Value::as_str) != Some(instance)
+    }) {
+        response["reset"] = json!(true);
+    }
+    Ok(response)
+}
+
+fn checked_response(request: &Value, mut response: Value) -> Result<Value, String> {
+    let object = response
+        .as_object_mut()
+        .ok_or("Invalid machine changes response")?;
+    for (key, id, checked) in [
+        ("sessions", "sessionId", "checkedSessions"),
+        ("projects", "projectId", "checkedProjects"),
+    ] {
+        let values = request[key]
+            .as_array()
+            .ok_or("Invalid machine changes request")?;
+        object.insert(
+            checked.into(),
+            Value::Array(values.iter().map(|entry| entry[id].clone()).collect()),
+        );
+    }
+    Ok(response)
 }
 
 fn union<'a>(requests: impl Iterator<Item = &'a Value>) -> Result<Value, String> {
@@ -193,6 +327,7 @@ fn union<'a>(requests: impl Iterator<Item = &'a Value>) -> Result<Value, String>
     let mut instances = Vec::new();
     let mut tasks: Option<String> = None;
     let mut inline_sync = false;
+    let mut inline_sessions = HashSet::<String>::new();
     let mut active_projects: HashMap<String, u64> = HashMap::new();
     let mut active_sessions: HashMap<String, u64> = HashMap::new();
     for request in requests {
@@ -214,7 +349,8 @@ fn union<'a>(requests: impl Iterator<Item = &'a Value>) -> Result<Value, String>
                 }
             }
         }
-        inline_sync |= request.get("inlineSync").and_then(Value::as_bool) == Some(true);
+        let wants_inline = request.get("inlineSync").and_then(Value::as_bool) == Some(true);
+        inline_sync |= wants_inline;
         if let Some(known) = request.get("tasksKnown").and_then(Value::as_str) {
             match &mut tasks {
                 Some(previous) if previous != known => *previous = String::new(),
@@ -236,6 +372,14 @@ fn union<'a>(requests: impl Iterator<Item = &'a Value>) -> Result<Value, String>
                 .get("revision")
                 .and_then(Value::as_u64)
                 .ok_or("Invalid session revision")?;
+            let selected = match request.get("inlineSessionIds") {
+                None => true, // Legacy opt-in covers only that window's own subscriptions.
+                Some(Value::Array(ids)) => ids.iter().any(|value| value.as_str() == Some(id)),
+                _ => false,
+            };
+            if wants_inline && selected {
+                inline_sessions.insert(id.to_owned());
+            }
             sessions
                 .entry(id.to_owned())
                 .and_modify(|known| *known = (*known).min(revision))
@@ -320,6 +464,9 @@ fn union<'a>(requests: impl Iterator<Item = &'a Value>) -> Result<Value, String>
     }
     if inline_sync {
         result["inlineSync"] = Value::Bool(true);
+        let mut ids: Vec<_> = inline_sessions.into_iter().collect();
+        ids.sort();
+        result["inlineSessionIds"] = json!(ids);
     }
     if !git.is_empty() {
         result["git"] = Value::Array(
@@ -401,6 +548,20 @@ fn scheduled_request(mut request: Value, generation: u64) -> Result<Value, Strin
     if overflow {
         request["waitMs"] = json!(1000);
     }
+    if let Some(ids) = request.get("inlineSessionIds").and_then(Value::as_array) {
+        let sessions: HashSet<&str> = request["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|session| session["sessionId"].as_str())
+            .collect();
+        let selected: Vec<_> = ids
+            .iter()
+            .filter(|id| id.as_str().is_some_and(|id| sessions.contains(id)))
+            .cloned()
+            .collect();
+        request["inlineSessionIds"] = Value::Array(selected);
+    }
     Ok(request)
 }
 
@@ -469,17 +630,60 @@ mod tests {
         assert!(union([&b].into_iter()).unwrap().get("inlineSync").is_none());
     }
     #[test]
+    fn inline_selection_keeps_visible_peers_and_legacy_windows_without_hidden_payloads() {
+        let visible = json!({"sessions":[{"sessionId":"visible","revision":2},{"sessionId":"hidden","revision":2}],
+            "projects":[],"inlineSync":true,"inlineSessionIds":["visible"]});
+        let hidden = json!({"sessions":[{"sessionId":"hidden","revision":1}],"projects":[]});
+        let legacy = json!({"sessions":[{"sessionId":"legacy","revision":3}],"projects":[],"inlineSync":true});
+        let result = union([&visible, &hidden, &legacy].into_iter()).unwrap();
+        assert_eq!(result["inlineSessionIds"], json!(["legacy", "visible"]));
+        assert_eq!(result["sessions"].as_array().unwrap().len(), 3);
+        let duplicate_hidden =
+            json!({"sessions":[{"sessionId":"visible","revision":1}],"projects":[]});
+        let result = union([&visible, &duplicate_hidden].into_iter()).unwrap();
+        assert_eq!(result["inlineSessionIds"], json!(["visible"]));
+        assert!(union([&hidden].into_iter())
+            .unwrap()
+            .get("inlineSync")
+            .is_none());
+    }
+
+    #[test]
+    fn inline_selection_is_bounded_to_each_rotating_session_batch() {
+        let request = json!({"sessions":(0..130).map(|i| json!({"sessionId":format!("s{i}"),"revision":1})).collect::<Vec<_>>(),
+            "projects":[],"inlineSync":true,"inlineSessionIds":(0..130).map(|i| format!("s{i}")).collect::<Vec<_>>()});
+        for generation in 0..3 {
+            let batch = scheduled_request(request.clone(), generation).unwrap();
+            let sessions: HashSet<_> = batch["sessions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value["sessionId"].as_str().unwrap())
+                .collect();
+            let selected: HashSet<_> = batch["inlineSessionIds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap())
+                .collect();
+            assert_eq!(sessions.len(), 64);
+            assert_eq!(selected, sessions);
+        }
+    }
+    #[test]
     fn stale_release_keeps_the_new_registration_and_tasks_only_is_a_demand() {
         let changes = Changes::default();
         let request = |id| json!({"subscriptionId":id,"sessions":[],"projects":[],"tasksKnown":""});
         changes
             .request("m", "w", request("old"), |value| {
                 assert_eq!(value["tasksKnown"], "");
-                Ok(json!({}))
+                Ok(json!({"instanceId":"host.1"}))
             })
             .unwrap();
         changes
-            .request("m", "w", request("new"), |_| Ok(json!({})))
+            .request("m", "w", request("new"), |_| {
+                Ok(json!({"instanceId":"host.1"}))
+            })
             .unwrap();
         changes
             .request(
@@ -561,6 +765,31 @@ mod tests {
         );
     }
     #[test]
+    fn ipc_release_shortcut_preserves_all_demand_families() {
+        for request in [
+            json!({"sessions":[{"sessionId":"s","revision":1}],"projects":[]}),
+            json!({"sessions":[],"projects":[{"projectId":"p"}]}),
+            json!({"sessions":[],"projects":[],"git":[{"cwd":"/r"}]}),
+            json!({"sessions":[],"projects":[],"tasksKnown":""}),
+        ] {
+            assert!(!is_empty_subscription(&request), "{request}");
+        }
+        for request in [
+            json!({"sessions":[],"projects":[]}),
+            json!({"sessions":[],"projects":[],"git":[]}),
+        ] {
+            assert!(is_empty_subscription(&request), "{request}");
+        }
+        // Invalid fields must not be acknowledged as a successful local release.
+        for request in [
+            json!({"sessions":[],"projects":[],"git":null}),
+            json!({"sessions":[],"projects":null}),
+            json!({"projects":[]}),
+        ] {
+            assert!(!is_empty_subscription(&request), "{request}");
+        }
+    }
+    #[test]
     fn git_only_registration_is_a_demand() {
         let changes = Changes::default();
         let sent = std::cell::Cell::new(false);
@@ -572,7 +801,7 @@ mod tests {
                 |value| {
                     sent.set(true);
                     assert_eq!(value["git"][0]["cwd"], "/r");
-                    Ok(json!({}))
+                    Ok(json!({"instanceId":"host.1"}))
                 },
             )
             .unwrap();
@@ -587,6 +816,40 @@ mod tests {
             })
             .unwrap();
         assert_eq!(result["sessions"], json!([]));
+    }
+    #[test]
+    fn releasing_one_window_keeps_other_windows_git_demand() {
+        let changes = Changes::default();
+        let request =
+            |id, cwd| json!({"subscriptionId":id,"sessions":[],"projects":[],"git":[{"cwd":cwd}]});
+        changes
+            .request("m", "a", request("a", "/a"), |_| {
+                Ok(json!({"instanceId":"host.1"}))
+            })
+            .unwrap();
+        changes
+            .request("m", "b", request("b", "/b"), |_| {
+                Ok(json!({"instanceId":"host.1"}))
+            })
+            .unwrap();
+        changes
+            .request(
+                "m",
+                "a",
+                json!({"subscriptionId":"a","sessions":[],"projects":[],"git":[]}),
+                |_| panic!("release must not contact the Host"),
+            )
+            .unwrap();
+        changes
+            .request("m", "b", request("b", "/b"), |value| {
+                assert_eq!(value["git"], json!([{"cwd":"/b"}]));
+                Ok(json!({"instanceId":"host.1"}))
+            })
+            .unwrap();
+        let entries = changes.entries.lock().unwrap();
+        let state = entries["m"].state.lock().unwrap();
+        assert!(!state.windows.contains_key("a"));
+        assert_eq!(state.windows["b"].0["subscriptionId"], "b");
     }
     #[test]
     fn simultaneous_windows_share_one_request() {
@@ -606,5 +869,131 @@ mod tests {
         barrier.wait();
         let second = changes.request("m", "b", other_params, |_| panic!("duplicate request"));
         assert_eq!(worker.join().unwrap().unwrap(), second.unwrap());
+    }
+
+    #[test]
+    fn changed_window_demand_has_a_nonblocking_refresh_beside_the_held_poll() {
+        let changes = Arc::new(Changes::default());
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let (release, wait) = std::sync::mpsc::channel();
+        let first = changes.clone();
+        let entered = barrier.clone();
+        let worker = std::thread::spawn(move || {
+            first.request(
+                "m",
+                "a",
+                json!({"sessions":[{"sessionId":"old","revision":1}],"projects":[],"waitMs":20000}),
+                |_| {
+                    entered.wait();
+                    wait.recv_timeout(Duration::from_secs(2)).unwrap();
+                    Ok(json!({"instanceId":"boot"}))
+                },
+            )
+        });
+        barrier.wait();
+        let refreshed = changes
+            .request(
+                "m",
+                "b",
+                json!({"sessions":[{"sessionId":"new","revision":2}],"projects":[],"waitMs":0}),
+                |request| {
+                    assert_eq!(request["waitMs"], 0);
+                    assert_eq!(request["sessions"].as_array().unwrap().len(), 2);
+                    Ok(json!({"instanceId":"boot"}))
+                },
+            )
+            .unwrap();
+        assert!(refreshed["checkedSessions"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("new")));
+        release.send(()).unwrap();
+        worker.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn short_refreshes_are_serialized_across_windows_while_the_long_poll_is_held() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let changes = Arc::new(Changes::default());
+        let active = Arc::new(AtomicUsize::new(0));
+        let maximum = Arc::new(AtomicUsize::new(0));
+        let (long_entered, wait_long) = std::sync::mpsc::channel();
+        let (release_long, wait_release_long) = std::sync::mpsc::channel();
+        let a = changes.clone();
+        let a_active = active.clone();
+        let a_max = maximum.clone();
+        let long =
+            std::thread::spawn(move || {
+                a.request("m", "a",
+            json!({"sessions":[{"sessionId":"a","revision":1}],"projects":[],"waitMs":20000}), |_| {
+                a_max.fetch_max(a_active.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);
+                long_entered.send(()).unwrap();
+                wait_release_long.recv_timeout(Duration::from_secs(3)).unwrap();
+                a_active.fetch_sub(1, Ordering::SeqCst);
+                Ok(json!({"instanceId":"boot"}))
+            })
+            });
+        wait_long.recv_timeout(Duration::from_secs(3)).unwrap();
+        let (short_entered, wait_short) = std::sync::mpsc::channel();
+        let b = changes.clone();
+        let b_active = active.clone();
+        let b_max = maximum.clone();
+        let short = std::thread::spawn(move || {
+            b.request(
+                "m",
+                "b",
+                json!({"sessions":[{"sessionId":"b","revision":1}],"projects":[],"waitMs":0}),
+                |_| {
+                    b_max.fetch_max(
+                        b_active.fetch_add(1, Ordering::SeqCst) + 1,
+                        Ordering::SeqCst,
+                    );
+                    short_entered.send(()).unwrap();
+                    std::thread::sleep(Duration::from_millis(100));
+                    b_active.fetch_sub(1, Ordering::SeqCst);
+                    Ok(json!({"instanceId":"boot"}))
+                },
+            )
+        });
+        wait_short.recv_timeout(Duration::from_secs(3)).unwrap();
+        changes
+            .request(
+                "m",
+                "c",
+                json!({"sessions":[{"sessionId":"c","revision":1}],"projects":[],"waitMs":0}),
+                |_| {
+                    maximum.fetch_max(active.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    Ok(json!({"instanceId":"boot"}))
+                },
+            )
+            .unwrap();
+        assert_eq!(maximum.load(Ordering::SeqCst), 2);
+        short.join().unwrap().unwrap();
+        release_long.send(()).unwrap();
+        long.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn completed_short_refreshes_are_not_reused_by_later_reads() {
+        let changes = Changes::default();
+        let entry = Arc::new(Entry::default());
+        entry.state.lock().unwrap().running = true;
+        changes.entries.lock().unwrap().insert("m".into(), entry);
+        let calls = std::cell::Cell::new(0);
+        for _ in 0..2 {
+            changes
+                .request(
+                    "m",
+                    "w",
+                    json!({"sessions":[{"sessionId":"s","revision":1}],"projects":[],"waitMs":0}),
+                    |_| {
+                        calls.set(calls.get() + 1);
+                        Ok(json!({"instanceId":"boot"}))
+                    },
+                )
+                .unwrap();
+        }
+        assert_eq!(calls.get(), 2);
     }
 }

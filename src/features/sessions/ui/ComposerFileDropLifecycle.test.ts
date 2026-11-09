@@ -15,7 +15,7 @@ const { invoke, listen, platform } = vi.hoisted(() => ({
   platform: { isWin: false },
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke, isTauri: () => false }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({
     onDragDropEvent: listen,
@@ -109,6 +109,10 @@ function domDrag(
   return event;
 }
 
+function dropBadge() {
+  return document.querySelector(".pointer-drop-hint")?.textContent ?? null;
+}
+
 function attachmentCount() {
   return container.querySelectorAll('[aria-label^="Remove "]').length;
 }
@@ -167,7 +171,7 @@ describe("Composer Explorer file drops", () => {
         }),
       ),
     );
-    expect(container.textContent).toContain("Drop files to attach");
+    expect(dropBadge()).toBe("Attach 1 file");
 
     await act(async () => {
       window.dispatchEvent(
@@ -196,16 +200,17 @@ describe("Composer image drops", () => {
     await nativeDrop(["/Downloads/report.pdf"], 100, 100);
     expect(invoke).not.toHaveBeenCalledWith("inspect_paths", expect.anything());
     expect(attachmentCount()).toBe(0);
-    expect(container.textContent).not.toContain("Drop files to attach");
+    expect(dropBadge()).toBeNull();
   });
   it("accepts drops after a disabled composer becomes ready", async () => {
     await render({ disabled: true });
     const session = await render({ disabled: false });
 
     act(() => domDrag(session, "dragover"));
-    expect(container.textContent).toContain("Drop files to attach");
+    expect(dropBadge()).toBe("Attach files");
     await nativeDrop(["/project/image.png"]);
 
+    expect(dropBadge()).toBeNull();
     expect(attachmentCount()).toBe(1);
   });
 
@@ -216,7 +221,7 @@ describe("Composer image drops", () => {
     act(() => domDrag(session, "dragover"));
     await nativeDrop(["/project/image.png"]);
 
-    expect(container.textContent).not.toContain("Drop files to attach");
+    expect(dropBadge()).toBeNull();
     expect(attachmentCount()).toBe(0);
   });
 
@@ -233,10 +238,11 @@ describe("Composer image drops", () => {
     const session = await render();
     await render({ harness: "fx" });
     act(() => domDrag(session, "dragover"));
+    expect(dropBadge()).toBe("This provider does not support attachments");
     await nativeDrop(["/project/image.png"]);
 
     expect(listen).toHaveBeenCalledTimes(1);
-    expect(container.textContent).not.toContain("Drop files to attach");
+    expect(dropBadge()).toBeNull();
     expect(attachmentCount()).toBe(0);
 
     await render({ harness: "codex" });
@@ -445,5 +451,127 @@ describe("Composer image drops", () => {
 
     expect(invoke.mock.calls.filter(([command]) => command === "inspect_paths")).toHaveLength(1);
     expect(attachmentCount()).toBe(1);
+  });
+});
+
+describe("Composer drop feedback", () => {
+  const fileItems = (count: number, type = "image/png") =>
+    Array.from({ length: count }, () => ({ kind: "file", type, getAsFile: () => null }));
+  const box = () => container.querySelector<HTMLElement>("[data-composer-box]")!;
+
+  it("states the number of files and marks the box once", async () => {
+    const target = await render();
+    act(() => domDrag(target, "dragover", [], { items: fileItems(3) }));
+    expect(dropBadge()).toBe("Attach 3 files");
+    expect(target.dataset.dropIndicator).toBe("inside");
+    expect(document.querySelectorAll("[data-drop-indicator]")).toHaveLength(1);
+    expect(document.querySelectorAll(".pointer-drop-hint")).toHaveLength(1);
+    expect(document.querySelector("[data-drag-announcer]")?.textContent).toBe("Attach 3 files");
+  });
+
+  it("says how many files fit when the draft would overflow", async () => {
+    const target = await render();
+    act(() => domDrag(target, "dragover", [], { items: fileItems(25) }));
+    expect(dropBadge()).toBe("Attach 20 of 25 files");
+  });
+
+  it("names the provider limit instead of offering the drop", async () => {
+    const target = await render({ harness: "fx" });
+    const event = domDrag(target, "dragover", [], { items: fileItems(1) });
+    expect(dropBadge()).toBe("This provider does not support attachments");
+    expect(target.dataset.dropIndicator).toBe("blocked");
+    expect((event as unknown as { dataTransfer: DataTransfer }).dataTransfer.dropEffect).toBe(
+      "none",
+    );
+  });
+
+  it("counts files from the native enter event", async () => {
+    await render();
+    await act(async () => {
+      for (const handler of handlers)
+        handler({
+          payload: {
+            type: "enter",
+            paths: ["/a.png", "/b.png"],
+            position: { x: 100, y: 100 },
+          } as DragDropEvent,
+        });
+    });
+    expect(dropBadge()).toBe("Attach 2 files");
+    expect(box().dataset.dropIndicator).toBe("inside");
+    await act(async () => {
+      for (const handler of handlers) handler({ payload: { type: "leave" } as DragDropEvent });
+    });
+    expect(dropBadge()).toBeNull();
+    expect(box().dataset.dropIndicator).toBeUndefined();
+  });
+
+  it("hides the native badge when the pointer leaves the box", async () => {
+    await render();
+    await act(async () => {
+      for (const handler of handlers)
+        handler({
+          payload: {
+            type: "enter",
+            paths: ["/a.png"],
+            position: { x: 100, y: 100 },
+          } as DragDropEvent,
+        });
+    });
+    expect(dropBadge()).toBe("Attach 1 file");
+    await act(async () => {
+      for (const handler of handlers)
+        handler({ payload: { type: "over", position: { x: 900, y: 900 } } as DragDropEvent });
+    });
+    expect(dropBadge()).toBeNull();
+  });
+
+  it.each([
+    ["dragleave", () => window.dispatchEvent(new Event("blur"))],
+    ["Escape", () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))],
+    ["blur", () => window.dispatchEvent(new Event("blur"))],
+    ["dragend", () => window.dispatchEvent(new Event("dragend"))],
+  ])("cleans up on %s", async (name, end) => {
+    const target = await render();
+    act(() => domDrag(target, "dragover", [], { items: fileItems(1) }));
+    expect(dropBadge()).not.toBeNull();
+    if (name === "dragleave") act(() => domDrag(target, "dragleave"));
+    else act(end);
+    expect(dropBadge()).toBeNull();
+    expect(target.dataset.dropIndicator).toBeUndefined();
+  });
+
+  it("cleans up on drop and on unmount", async () => {
+    const target = await render();
+    act(() => domDrag(target, "dragover", [], { items: fileItems(1) }));
+    await act(async () => {
+      domDrag(target, "drop", [new File(["x"], "a.png", { type: "image/png" })]);
+    });
+    expect(dropBadge()).toBeNull();
+    expect(target.dataset.dropIndicator).toBeUndefined();
+
+    act(() => domDrag(target, "dragover", [], { items: fileItems(1) }));
+    expect(dropBadge()).not.toBeNull();
+    act(() => root.unmount());
+    expect(dropBadge()).toBeNull();
+    root = createRoot(container);
+  });
+
+  it("shows the badge for the Explorer pointer drag and hands it back on end", async () => {
+    await render();
+    act(() =>
+      window.dispatchEvent(
+        explorerDrag({
+          type: "move",
+          path: "/p/a.ts",
+          paths: ["/p/a.ts", "/p/b.ts"],
+          x: 100,
+          y: 100,
+        }),
+      ),
+    );
+    expect(dropBadge()).toBe("Attach 2 files");
+    act(() => window.dispatchEvent(explorerDrag({ type: "end", path: "/p/a.ts" })));
+    expect(dropBadge()).toBeNull();
   });
 });

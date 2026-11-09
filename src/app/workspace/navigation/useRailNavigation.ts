@@ -115,10 +115,14 @@ export function useRailNavigation(d: RailNavigationDeps) {
     d.setInboxViewOpen(visit.view === "inbox");
     d.setNotesViewOpen(visit.view === "notes");
     d.setAutomationsViewOpen(
-      ["social", "tasks", "automations", "terminal", "conversation-tools"].includes(visit.view),
+      ["social", "tasks", "automations", "terminal", "conversation-tools", "assistant"].includes(
+        visit.view,
+      ),
     );
     d.setAuxiliaryTool?.(
-      visit.view === "terminal" || visit.view === "conversation-tools" ? visit.view : null,
+      visit.view === "terminal" || visit.view === "conversation-tools" || visit.view === "assistant"
+        ? visit.view
+        : null,
     );
     d.setSocialBoardShown(visit.view === "social");
     d.setTaskBoardShown(visit.view === "tasks");

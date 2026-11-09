@@ -5,12 +5,12 @@ import { relativeDirname } from "./paths";
 import { isSpace } from "./text";
 import { asRecord, stringField, numberField } from "./records";
 
-describe("ortak servis yardımcıları", () => {
-  it("yalnız altı haneli renkleri kabul eder", () => {
+describe("shared service helpers", () => {
+  it("accepts only six-digit colors", () => {
     expect(labelColor(" #Aabb01 ")).toBe("#Aabb01");
     for (const input of ["red", "abc", "url(x)", "#aabb01ff"]) expect(labelColor(input)).toBeNull();
   });
-  it("servislerin kompakt adlarını korur", () => {
+  it("preserves compact service names", () => {
     expect(["linear", "jira", "gitlab", "azuredevops", "github"].map(providerLabel)).toEqual([
       "Linear",
       "Jira",
@@ -19,16 +19,16 @@ describe("ortak servis yardımcıları", () => {
       "GitHub",
     ]);
   });
-  it("Git göreli dizin etiketini çıkarır", () => {
+  it("extracts the Git relative directory label", () => {
     expect(relativeDirname("src/a.ts")).toBe("src");
     expect(relativeDirname("a.ts")).toBe("");
     expect(relativeDirname("/a.ts")).toBe("");
   });
-  it("token ayrıştırıcılarında ASCII boşluk sözleşmesini korur", () => {
+  it("preserves the ASCII whitespace contract in token parsers", () => {
     expect([" ", "\n", "\t", "\r"].every(isSpace)).toBe(true);
     expect(isSpace("\u00a0")).toBe(false);
   });
-  it("protokol alanlarını türlerine göre okur", () => {
+  it("reads protocol fields by type", () => {
     expect(asRecord(null)).toBeNull();
     expect(asRecord([])).toBeNull();
     expect(asRecord({ a: 1 })).toEqual({ a: 1 });

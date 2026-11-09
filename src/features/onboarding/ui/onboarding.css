@@ -1,15 +1,10 @@
+/* Quick setup. One fixed dialog size for every step: the header and footer stay put and only
+   the content region (`.onboarding-scroll`) scrolls, so titles are never clipped. */
 .onboarding-panel {
-  inline-size: min(100%, 760px);
-  block-size: min(660px, calc(100dvh - 32px));
+  inline-size: min(100%, 840px);
+  block-size: min(680px, calc(100dvh - 32px));
   margin-inline: auto;
-  font-size: 13px;
-}
-.onboarding-panel-agents {
-  block-size: auto;
-  max-block-size: min(660px, calc(100dvh - 32px));
-}
-.onboarding-panel-agents .onboarding-save-note {
-  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
 }
 .onboarding-panel .modal-panel > div:last-child {
   display: flex;
@@ -22,8 +17,11 @@
   min-inline-size: 0;
   min-block-size: 0;
 }
+
+/* Header and stepper */
 .onboarding-header {
-  padding-block: 22px 16px;
+  flex: none;
+  padding-block: 18px 14px;
   padding-inline: clamp(16px, 3vw, 28px);
   border-block-end: 1px solid var(--color-stroke);
 }
@@ -34,15 +32,20 @@
   flex-wrap: wrap;
   gap: 10px;
   padding-inline-end: 24px;
-  margin-block-end: 20px;
+  margin-block-end: 16px;
+}
+.onboarding-topline-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .onboarding-brand {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 9px;
-  font-size: 18px;
-  font-weight: 650;
+  font-size: var(--ui-font-title);
+  font-weight: 500;
   letter-spacing: -0.025em;
 }
 .onboarding-brand img {
@@ -53,11 +56,33 @@
 .onboarding-brand small {
   border-inline-start: 1px solid var(--color-stroke);
   padding-inline-start: 10px;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   font-weight: 400;
   letter-spacing: normal;
   color: var(--ui-text-muted);
 }
+.onboarding-stepper-wrap {
+  container: onboarding-stepper / inline-size;
+}
+/* The shared stepper names the current step under its markers when it folds; the caption below
+   ("Step 2 of 5 · Appearance") replaces it so the narrow state says where you are and how far. */
+.onboarding-header .onboarding-stepper > span[aria-hidden="true"] {
+  display: none;
+}
+.onboarding-step-caption {
+  display: none;
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+@container onboarding-stepper (max-width: 44rem) {
+  .onboarding-step-caption {
+    display: block;
+    margin-block-start: 10px;
+  }
+}
+
+/* Stage: heading and footer fixed, content scrolls */
 .onboarding-stage {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
@@ -68,22 +93,38 @@
   display: none;
 }
 .onboarding-body {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding-block: 18px;
-  padding-inline: clamp(16px, 3vw, 28px);
+  display: flex;
+  flex-direction: column;
   min-block-size: 0;
-  scrollbar-width: thin;
+  overflow: hidden;
+  padding-block-start: 18px;
+  padding-inline: clamp(16px, 3vw, 28px);
+}
+.onboarding-body > [role="alert"] {
+  flex: none;
+  margin-block-end: 12px;
 }
 .onboarding-heading {
-  margin-block-end: 16px;
+  flex: none;
+  margin-block-end: 14px;
 }
 .onboarding-heading h3 {
-  font-size: clamp(20px, 2.2vw, 24px);
-  font-weight: 600;
+  font-size: var(--ui-font-heading);
+  font-weight: 500;
   letter-spacing: -0.035em;
   line-height: 1.25;
   margin-block-end: 7px;
+}
+.onboarding-scroll {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Room for focus rings and the selected outline at the scroll edges. */
+  padding: 2px;
+  margin: -2px;
+  padding-block-end: 16px;
+  container: onboarding-scroll / inline-size;
 }
 .onboarding-body p {
   color: var(--ui-text-muted);
@@ -93,93 +134,156 @@
 .onboarding-heading p {
   margin: 0;
 }
-.onboarding-included,
-.onboarding-feature,
-.onboarding-card,
-.onboarding-connection-action {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid var(--color-stroke);
-  border-radius: 10px;
-  background: var(--ui-surface);
-}
-.onboarding-included {
-  margin-block-end: 10px;
-  padding: 10px;
-}
-.onboarding-included > div,
-.onboarding-feature > div,
-.onboarding-card > div,
-.onboarding-connection-action > div {
-  flex: 1;
-  min-inline-size: 0;
-}
-.onboarding-included > span {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--ui-text-muted);
-}
 .onboarding-body strong {
   display: block;
-  font-weight: 600;
+  font-weight: 500;
 }
 .onboarding-body small {
   display: block;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   color: var(--ui-text-muted);
   line-height: 1.45;
   margin-block-start: 3px;
 }
+
+/* Sections and setting rows */
+.onboarding-section {
+  margin-block-start: 18px;
+}
+.onboarding-section:first-child {
+  margin-block-start: 0;
+}
+.onboarding-section-title {
+  margin-block-end: 8px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+}
+.onboarding-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-block-size: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-stroke);
+  border-radius: var(--ui-radius-card);
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .onboarding-row:hover {
+    background: var(--ui-surface-hover);
+  }
+}
+
+/* Step 1: even grid, whole-card selection */
 .onboarding-feature-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
-  gap: 9px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.onboarding-feature,
+.onboarding-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-stroke);
+  border-radius: var(--ui-radius-card);
 }
 .onboarding-feature {
+  min-block-size: 64px;
   cursor: pointer;
-  background: transparent;
-  padding: 10px;
 }
-.onboarding-feature small,
-.onboarding-included small {
-  font-size: 11px;
-  line-height: 1.4;
+.onboarding-feature[data-fixed] {
+  cursor: default;
+}
+.onboarding-feature > div,
+.onboarding-card > div {
+  flex: 1;
+  min-inline-size: 0;
+}
+/* The box stays at the end of the card while the label content leads. */
+.onboarding-feature > input {
+  order: 1;
 }
 .onboarding-feature > svg {
   color: var(--ui-text-muted);
   flex: none;
 }
-.onboarding-check-row {
+.onboarding-feature small {
+  font-size: var(--ui-font-micro);
+  line-height: 1.4;
+}
+@media (hover: hover) and (pointer: fine) {
+  .onboarding-feature:not([data-fixed]):hover {
+    background: var(--ui-surface-hover);
+  }
+}
+.onboarding-feature:has(input:checked) {
+  border-color: var(--ui-tone-accent-border);
+  background: var(--ui-surface-selected);
+}
+.onboarding-feature:has(input:focus-visible) {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
+}
+.onboarding-included {
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-block-size: 38px;
-  margin-block-start: 10px;
-  cursor: pointer;
+  gap: 4px;
+  font-size: var(--ui-font-micro);
   color: var(--ui-text-muted);
-  font-size: 12px;
 }
-.onboarding-fieldset {
-  border: 0;
-  padding: 0;
-  margin-block-end: 16px;
+
+/* Step 2: visual choice cards (mode, crew) */
+.onboarding-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.onboarding-crew-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+/* Tiles are the shared RadioTiles item Buttons; the descendant selector outranks Button's own box. */
+.onboarding-panel .onboarding-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  block-size: auto;
+  min-block-size: 0;
   min-inline-size: 0;
+  padding: 8px;
+  border: 1px solid var(--color-stroke);
+  border-radius: var(--ui-radius-card);
+  text-align: start;
 }
-.onboarding-fieldset legend {
-  margin-block-end: 8px;
-  font-weight: 600;
+.onboarding-panel .onboarding-choice[aria-checked="true"] {
+  /* Selection is the accent border (the same role as the Settings tiles), not the focus ring. */
+  border-color: var(--ui-border-accent);
+  box-shadow: inset 0 0 0 1px var(--ui-border-accent);
 }
+.onboarding-choice-text strong {
+  font-size: var(--ui-font-secondary);
+}
+.onboarding-choice-text small {
+  font-size: var(--ui-font-micro);
+  margin-block-start: 2px;
+}
+/* Still frames only: previews keep their aspect ratio and never stretch or animate. */
 .onboarding-crew-preview {
   position: relative;
   display: grid;
   place-items: center;
+  inline-size: 100%;
   aspect-ratio: 2.8;
-  background: var(--palette-oklch_12pct_0_none);
-  color: var(--palette-oklch_80pct_0_none);
+  border-radius: var(--ui-control-radius);
+  /* The crew scene is always drawn on a dark stage, whatever the app theme. */
+  background: var(--palette-canvasPureDark);
+  color: var(--palette-solidInk);
   overflow: clip;
 }
 .onboarding-crew-preview canvas {
@@ -189,41 +293,30 @@
   block-size: 100%;
   object-fit: contain;
 }
-.onboarding-crew-label {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px;
+.onboarding-crew-none {
+  background: transparent;
+  border: 1px dashed var(--color-stroke);
+  color: var(--ui-text-muted);
 }
-.onboarding-appearance-toggles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 20px;
-  justify-content: space-between;
-}
-.onboarding-appearance-toggles .onboarding-check-row {
-  margin-block-start: 0;
-}
-.onboarding-crew-label > div {
-  flex: 1;
-}
-.onboarding-crew-label small {
-  font-size: 11px;
-}
+
+/* Step 3: agents. Name and status on the left; one fixed right column keeps rows aligned. */
 .onboarding-agent-list {
   display: grid;
-  gap: 0;
   border-block: 1px solid var(--color-stroke);
 }
 .onboarding-agent-list:empty {
   display: none;
 }
+.onboarding-agent-skeleton {
+  display: grid;
+  gap: 8px;
+}
 .onboarding-agent {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  flex-wrap: wrap;
   gap: 12px;
-  padding-block: 16px;
+  padding-block: 10px;
 }
 .onboarding-agent + .onboarding-agent {
   border-block-start: 1px solid var(--color-stroke);
@@ -231,7 +324,6 @@
 .onboarding-agent-identity {
   display: flex;
   align-items: center;
-  flex: 1 1 200px;
   min-inline-size: 0;
   gap: 12px;
 }
@@ -246,47 +338,67 @@
   font-size: var(--ui-font-secondary);
   font-weight: 500;
 }
-.onboarding-agent-identity small {
-  color: var(--ui-text-secondary);
-}
-.onboarding-provider-heading h3:focus {
-  outline: none;
-}
-.onboarding-agent-actions {
+.onboarding-body .onboarding-agent-status {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
+  gap: 6px;
+  min-block-size: 1.45em;
+  color: var(--ui-text-secondary);
+  white-space: nowrap;
+}
+.onboarding-agent-status > span:not([data-size]) {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.onboarding-agent-controls {
+  display: grid;
+  grid-template-columns: 8.5rem 2.75rem 1.75rem;
+  align-items: center;
   gap: 8px;
-  margin-inline-start: auto;
+}
+.onboarding-agent-primary,
+.onboarding-agent-visibility,
+.onboarding-agent-more {
+  display: flex;
+  align-items: center;
+}
+.onboarding-agent-primary {
+  justify-content: flex-end;
+}
+.onboarding-agent-visibility,
+.onboarding-agent-more {
+  justify-content: center;
+}
+.onboarding-agent-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 6px;
 }
 .onboarding-provider-heading {
   display: flex;
   align-items: start;
   justify-content: space-between;
   gap: 16px;
+  flex: none;
 }
 .onboarding-provider-heading > .onboarding-heading {
   min-inline-size: 0;
 }
 .onboarding-provider-footer {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  margin-block-start: 16px;
+  gap: 4px;
+  margin-block-start: 14px;
 }
-.onboarding-provider-footer p,
 .onboarding-provider-empty p,
 .onboarding-provider-add > p {
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
   line-height: 1.5;
   margin: 0;
-}
-.onboarding-provider-footer p {
-  flex: 1;
-  min-inline-size: min(100%, 240px);
 }
 .onboarding-provider-empty {
   padding-block: 20px;
@@ -298,7 +410,6 @@
   display: grid;
   gap: 16px;
   min-inline-size: 0;
-  padding: 16px 20px 20px;
 }
 .onboarding-provider-select > span {
   display: block;
@@ -306,6 +417,8 @@
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
 }
+
+/* Step 4: connections */
 .onboarding-card {
   margin-block-end: 8px;
 }
@@ -316,112 +429,169 @@
 }
 .onboarding-status {
   color: var(--ui-text-muted);
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
 }
-.onboarding-connection-action {
-  inline-size: 100%;
-  text-align: start;
-  margin-block-start: 15px;
-}
-.onboarding-hint {
-  font-size: 12px;
-  margin-block-start: 15px;
-}
-.onboarding-settings {
-  padding: 24px;
-}
-.onboarding-footer {
+.onboarding-actions {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
-  border-block-start: 1px solid var(--color-stroke);
-  padding-block: 14px;
-  padding-inline: clamp(16px, 3vw, 28px);
-  background: var(--color-background-base);
+  margin-block-start: 12px;
 }
-.onboarding-footer-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
+.onboarding-hint {
+  font-size: var(--ui-font-caption);
+  margin-block-start: 12px;
 }
-.onboarding-save-note {
-  color: var(--ui-text-muted);
-  font-size: 11px;
+/* Step 5: projects */
+.onboarding-scan {
+  display: grid;
+  gap: 8px;
+}
+.onboarding-scan > p {
+  margin: 0;
+}
+.onboarding-projects-frame {
+  border: 1px solid var(--color-stroke);
+  border-radius: var(--ui-radius-card);
+  overflow: clip;
 }
 .onboarding-selection {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--ui-text-muted);
-  font-size: 12px;
-  margin-block-end: 8px;
+  gap: 10px;
+  padding: 8px 12px;
+  border-block-end: 1px solid var(--color-stroke);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
 }
-.onboarding-selection > div {
-  display: flex;
-  gap: 15px;
-}
-.onboarding-projects {
-  max-block-size: 245px;
-  overflow-y: auto;
-  scrollbar-width: thin;
+.onboarding-body .onboarding-selection-note {
+  margin: 0 0 0 auto;
+  font-size: var(--ui-font-micro);
 }
 .onboarding-project {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-block: 10px;
-  padding-inline: 8px;
-  border-radius: 8px;
+  min-block-size: 36px;
+  padding: 6px 12px;
   cursor: pointer;
 }
-.onboarding-project > div {
-  flex: 1;
-  min-inline-size: 0;
+div.onboarding-project {
+  cursor: default;
 }
-.onboarding-project small {
+.onboarding-project + .onboarding-project {
+  border-block-start: 1px solid var(--color-stroke);
+}
+@media (hover: hover) and (pointer: fine) {
+  label.onboarding-project:hover {
+    background: var(--ui-surface-hover);
+  }
+}
+.onboarding-project > strong {
+  flex: none;
+  max-inline-size: 40%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.onboarding-project > span {
+.onboarding-project-icon {
+  flex: none;
   color: var(--ui-text-muted);
-  font-size: 12px;
+}
+.onboarding-project-path {
+  flex: 1;
+  min-inline-size: 0;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
+}
+.onboarding-project-count {
+  flex: none;
+  min-inline-size: 2.5rem;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
 }
 .onboarding-provider-icons {
   display: flex;
+  flex: none;
   gap: 5px;
-}
-.onboarding-project-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin-block-start: 10px;
 }
 .onboarding-error {
   overflow-wrap: anywhere;
 }
-@media (hover: hover) and (pointer: fine) {
+
+/* Footer: one rule for every step */
+.onboarding-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-block-size: 58px;
+  border-block-start: 1px solid var(--color-stroke);
+  padding-block: 12px;
+  padding-inline: clamp(16px, 3vw, 28px);
+  background: var(--color-background-base);
+}
+.onboarding-footer-start {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-inline-size: 0;
+}
+.onboarding-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+.onboarding-save-note {
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-micro);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .onboarding-feature,
+  .onboarding-choice,
+  .onboarding-row {
+    transition:
+      background-color var(--motion-duration-fast) var(--motion-ease-standard),
+      border-color var(--motion-duration-fast) var(--motion-ease-standard);
+  }
+}
+
+/* Grids follow the content region's width, not the viewport, so the dialog never jumps. */
+@container onboarding-scroll (max-width: 620px) {
+  .onboarding-crew-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container onboarding-scroll (max-width: 420px) {
+  .onboarding-feature-grid,
+  .onboarding-crew-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (width < 560px) {
+  .onboarding-agent {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 8px;
+  }
+  .onboarding-agent-controls {
+    justify-content: space-between;
+  }
 }
 @media (width < 520px) {
   .onboarding-save-note {
     display: none;
   }
   .onboarding-header {
-    padding-block: 16px 9px;
+    padding-block: 14px 10px;
   }
   .onboarding-topline {
     margin-block-end: 10px;
   }
   .onboarding-body {
-    padding-block: 18px;
-  }
-  .onboarding-heading {
-    margin-block-end: 16px;
+    padding-block-start: 14px;
   }
 }

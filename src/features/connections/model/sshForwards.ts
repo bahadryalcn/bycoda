@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { t } from "../../../shared/i18n";
 import type { ForwardRule } from "./serverInventory";
 
 export type ForwardStatus = {
@@ -8,7 +9,7 @@ export type ForwardStatus = {
   kind?: "local" | "dynamic";
   targetHost: string;
   targetPort: number;
-  state: "starting" | "running" | "failed" | "stopped";
+  state: "starting" | "running" | "stopping" | "unknown" | "failed" | "stopped";
   error?: string;
 };
 
@@ -23,10 +24,10 @@ export function validateForwardRule(input: {
   const targetPort = Number(input.targetPort);
   const targetHost = input.targetHost.trim();
   const kind = input.kind ?? "local";
-  if (kind !== "local" && kind !== "dynamic") throw new Error("Invalid forwarding type.");
+  if (kind !== "local" && kind !== "dynamic") throw new Error(t("Invalid forwarding type."));
   if (!Number.isInteger(localPort) || localPort < 1 || localPort > 65535)
-    throw new Error("Enter a port between 1 and 65535.");
-  if (input.name.trim().length > 100) throw new Error("Name must be at most 100 characters.");
+    throw new Error(t("Enter a port between 1 and 65535."));
+  if (input.name.trim().length > 100) throw new Error(t("Name must be at most 100 characters."));
   if (kind === "dynamic")
     return {
       kind,
@@ -36,14 +37,14 @@ export function validateForwardRule(input: {
       targetPort: 0,
     };
   if (!Number.isInteger(targetPort) || targetPort < 1 || targetPort > 65535)
-    throw new Error("Enter a port between 1 and 65535.");
+    throw new Error(t("Enter a port between 1 and 65535."));
   if (
     !targetHost ||
     targetHost.length > 253 ||
     targetHost.startsWith("-") ||
     !/^[\w.:-]+$/.test(targetHost)
   )
-    throw new Error("Enter a valid destination hostname or IP address.");
+    throw new Error(t("Enter a valid destination hostname or IP address."));
   return {
     kind,
     name: input.name.trim() || `${targetHost}:${targetPort}`,

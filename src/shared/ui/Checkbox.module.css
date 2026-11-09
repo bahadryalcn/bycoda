@@ -1,0 +1,183 @@
+/* Drawn box over the native input: the input keeps membership, validity, FormData,
+   label activation and the indeterminate property; only its presentation is owned here.
+   The input is the hit area (larger in touch density), the ::before box is the visible
+   control and ::after is the check or mixed dash. Fill and glyph come from the shared
+   choice roles (--control-on / --control-glyph), identical to Switch and Radio. */
+@layer properties, theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .checkbox {
+    margin: 0;
+  }
+  .row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    min-inline-size: 0;
+  }
+}
+.checkbox {
+  --checkbox-box: var(--ui-control-checkbox-size);
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  display: inline-grid;
+  place-content: center;
+  box-sizing: border-box;
+  border: 0;
+  background: transparent;
+  color: var(--control-glyph);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.checkbox::before,
+.checkbox::after {
+  content: "";
+  grid-area: 1 / 1;
+  place-self: center;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.checkbox::before {
+  inline-size: var(--checkbox-box);
+  block-size: var(--checkbox-box);
+  border: 1px solid var(--ui-control-border);
+  border-radius: calc(var(--ui-control-radius) - 2px);
+  background: var(--ui-surface-muted);
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+/* Check: two borders of a rotated box. Dimensions follow the box size. */
+.checkbox::after {
+  inline-size: calc(var(--checkbox-box) * 0.3);
+  block-size: calc(var(--checkbox-box) * 0.55);
+  border-style: solid;
+  border-color: currentColor;
+  border-width: 0 2px 2px 0;
+  /* The rotated L carries its mass low; lift it to the box centre. */
+  translate: 0 calc(var(--checkbox-box) * -0.1);
+  rotate: 45deg;
+  opacity: 0;
+  transition: opacity var(--duration-instant) var(--ease-standard);
+}
+
+.checkbox:is(:checked, :indeterminate)::before {
+  border-color: var(--control-on);
+  background: var(--control-on);
+}
+
+.checkbox:checked::after {
+  opacity: 1;
+}
+
+/* Mixed: a dash replaces the check. */
+.checkbox:indeterminate::after {
+  inline-size: calc(var(--checkbox-box) * 0.5);
+  block-size: 0;
+  border-width: 0 0 2px;
+  translate: none;
+  rotate: none;
+  opacity: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .checkbox:hover:not(:disabled, :checked, :indeterminate)::before {
+    border-color: var(--ui-field-border-hover);
+  }
+}
+
+.checkbox:active:not(:disabled, :checked, :indeterminate)::before {
+  background: var(--ui-surface-pressed);
+}
+
+.checkbox[aria-invalid="true"]:not(:checked, :indeterminate)::before {
+  border-color: var(--ui-tone-danger-border);
+}
+
+.checkbox:disabled {
+  cursor: not-allowed;
+}
+
+.checkbox:disabled::before {
+  border-color: var(--ui-control-disabled-border);
+  background: var(--ui-control-disabled-surface);
+}
+
+.checkbox:disabled:is(:checked, :indeterminate)::before {
+  border-color: var(--ui-control-disabled-fg);
+  background: var(--ui-control-disabled-fg);
+}
+
+.checkbox:disabled::after {
+  color: var(--ui-control-disabled-surface);
+}
+
+/* Labelled row: the native label is the hit area. The gap follows the density-scaled control height. */
+.row {
+  cursor: pointer;
+}
+.row[data-disabled] {
+  color: var(--ui-control-disabled-fg);
+  cursor: not-allowed;
+}
+/* Box centred on the first text line, whatever the density-scaled hit area is. */
+.control {
+  flex: none;
+  margin-block: calc((1lh - var(--ui-control-checkbox-size)) / 2);
+}
+html[data-control-density="touch"] .row {
+  align-items: center;
+  min-block-size: var(--ui-control-height);
+}
+html[data-control-density="touch"] .control {
+  margin-block: 0;
+}
+.text {
+  display: grid;
+  min-inline-size: 0;
+}
+.description {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.row[data-disabled] .description {
+  color: inherit;
+}
+
+/* The label is part of the control: it dims with it and shows the same cursor. */
+label:has(> .checkbox:disabled) {
+  color: var(--ui-control-disabled-fg);
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .checkbox::before,
+  .checkbox::after {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .checkbox:disabled {
+    color: GrayText;
+  }
+  .checkbox::before {
+    border-color: ButtonText;
+  }
+  .checkbox:is(:checked, :indeterminate)::before {
+    forced-color-adjust: none;
+    border-color: Highlight;
+    background: Highlight;
+  }
+  .checkbox:is(:checked, :indeterminate)::after {
+    forced-color-adjust: none;
+    color: HighlightText;
+  }
+}

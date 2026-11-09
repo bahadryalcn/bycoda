@@ -1,26 +1,13 @@
 import { Button } from "../../shared/ui/Button";
-import { t, useLocale } from "../../shared/i18n";
-import { EyeOff, GitPullRequest, RefreshCw } from "../../shared/ui/icons";
+import { useT } from "../../shared/i18n";
+import { EyeOff, GitPullRequest, RefreshCw, UsageIcon } from "../../shared/ui/icons";
 import { FullscreenButton } from "./FullscreenButton";
+import { SoundsButton } from "../../features/notifications/ui/SoundsButton";
 
 export const WORKSPACE_REFRESH_EVENT = "bycoda:refresh-workspace-view";
 
-export function UsageIcon({ className }: { className?: string }) {
-  useLocale();
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.65"
-      strokeLinecap="round"
-      className={className}
-      aria-hidden="true"
-    >
-      <path d="M5 20V12M12 20V4M19 20V8" />
-    </svg>
-  );
-}
+/** The Usage glyph lives with the shared icons; this re-export keeps existing imports working. */
+export { UsageIcon };
 
 export function WorkspaceControls({
   onHiddenGroups,
@@ -35,7 +22,7 @@ export function WorkspaceControls({
   onUsage: () => void;
   active?: "hiddenGroups" | "pullRequests" | "usage";
 }) {
-  useLocale();
+  const t = useT();
   const actions = [
     {
       id: "pullRequests",
@@ -48,7 +35,7 @@ export function WorkspaceControls({
     {
       id: "usage",
       get label() {
-        return t("Usage");
+        return t("Provider usage");
       },
       icon: UsageIcon,
       onClick: onUsage,
@@ -65,7 +52,7 @@ export function WorkspaceControls({
   return (
     <nav
       aria-label={t("Workspace controls")}
-      className="ml-auto flex h-7 shrink-0 items-center justify-end gap-1 px-2 text-(--ui-text-secondary)"
+      className="ml-auto flex shrink-0 items-center justify-end gap-1 px-2 text-(--ui-text-secondary)"
     >
       {actions.map(({ id, label, icon: Icon, onClick }) => (
         <Button
@@ -75,16 +62,15 @@ export function WorkspaceControls({
           motion="none"
           key={id}
           type="button"
-          title={label}
-          aria-label={label}
+          data-workspace-control={id}
           aria-pressed={active === id}
           onClick={onClick}
-          className="size-7"
         >
-          <Icon className="size-3.5" />
+          <Icon className="icon-sm" />
         </Button>
       ))}
       <span className="mx-1 h-3 border-l border-stroke" aria-hidden="true" />
+      <SoundsButton />
       <Button
         iconOnly
         label={t("Refresh current view")}
@@ -92,12 +78,9 @@ export function WorkspaceControls({
         motion="none"
         type="button"
         disabled={!canRefresh}
-        title={t("Refresh current view")}
-        aria-label={t("Refresh current view")}
         onClick={() => window.dispatchEvent(new Event(WORKSPACE_REFRESH_EVENT))}
-        className="size-7"
       >
-        <RefreshCw className="size-3.5" />
+        <RefreshCw className="icon-sm" />
       </Button>
       <FullscreenButton />
     </nav>

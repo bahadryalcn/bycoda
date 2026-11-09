@@ -4,6 +4,7 @@
 @import "./arc.css";
 @import "./theme-transition.css";
 @import "./surface-motion.css";
+@import "./working-row.css";
 
 /* Desktop UI classes come from product code; explicit Streamdown sources remain below. */
 @source not "../../host";
@@ -82,6 +83,20 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
 @theme {
   /* Preserve descenders in compact labels, including two 10px lines in a 30px tab. */
   --leading-label: 1.4;
+  /* Semantic type scale (compact desktop). Use text-ui-micro|caption|secondary|body|title|heading.
+     Sizes come from the --ui-font-* roles in :root; do not add text-[Npx]. */
+  --text-ui-micro: var(--ui-font-micro);
+  --text-ui-micro--line-height: var(--ui-leading-micro);
+  --text-ui-caption: var(--ui-font-caption);
+  --text-ui-caption--line-height: var(--ui-leading-caption);
+  --text-ui-secondary: var(--ui-font-secondary);
+  --text-ui-secondary--line-height: var(--ui-leading-secondary);
+  --text-ui-body: var(--ui-font-body);
+  --text-ui-body--line-height: var(--ui-leading-body);
+  --text-ui-title: var(--ui-font-title);
+  --text-ui-title--line-height: var(--ui-leading-title);
+  --text-ui-heading: var(--ui-font-heading);
+  --text-ui-heading--line-height: var(--ui-leading-heading);
   --color-background-base: hsl(
     var(--theme-hue) var(--theme-saturation) var(--background-lightness)
   );
@@ -89,7 +104,7 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   /* Structural separators: use border-stroke, divide-stroke, or bg-stroke. */
   --color-stroke: color-mix(
     in srgb,
-    var(--color-content) var(--appearance-stroke-strength, 7%),
+    var(--color-content) calc(var(--appearance-stroke-strength, 7%) * 1.5),
     transparent
   );
   /* Interactive fills keep their dark-theme contrast but use gentler ink in
@@ -119,7 +134,6 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
     var(--color-content) var(--selection-emphasis-strength),
     transparent
   );
-  --color-accent: var(--palette-accent);
   /* One hue for every "on / running / working" state (switches, Working labels, spinners). */
   --color-active: var(--palette-active);
   --color-skill: var(--palette-hexb0b8c4);
@@ -144,6 +158,44 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --color-diff-del-gutter: color-mix(in srgb, var(--color-diff-del) 25%, transparent);
 }
 
+/* Status and accent utilities resolve to the semantic roles, not the raw hues:
+   text-/border-/outline-/fill-/stroke-/ring-danger|warning|success|info|accent use the
+   status-ink-adjusted --ui-tone-<tone>-fg (readable on bright custom dark canvases and in light
+   mode; accent follows the user's accent and readability setting), and bg-<tone> uses the solid
+   fill role --ui-tone-<tone>-solid (paired with --ui-tone-<tone>-on-solid ink). Opacity modifiers
+   (bg-warning/15, text-danger/70) mix from the same roles.
+   `inline reference` keeps these keys out of the emitted theme, so the raw CSS variables
+   --color-danger|warning|success|info|accent below stay the plain palette hues that the tone
+   roles, editor themes and feature CSS derive from (no cycle). */
+@theme inline reference {
+  --color-danger: var(--ui-tone-danger-fg);
+  --color-warning: var(--ui-tone-warning-fg);
+  --color-success: var(--ui-tone-success-fg);
+  --color-info: var(--ui-tone-info-fg);
+  --color-accent: var(--ui-tone-accent-fg);
+  --background-color-danger: var(--ui-tone-danger-solid);
+  --background-color-warning: var(--ui-tone-warning-solid);
+  --background-color-success: var(--ui-tone-success-solid);
+  --background-color-info: var(--ui-tone-info-solid);
+  --background-color-accent: var(--ui-tone-accent-solid);
+}
+
+/* Raw status and accent hues. palette.css (generated) declares the status hues in @theme, but the
+   utility re-keying above suppresses that emission, so the dark values are declared here and
+   palette.css html.theme-light still overrides them. */
+:root {
+  --motion-duration-reveal: 320ms;
+  --motion-duration-ambient: 600ms;
+  --motion-duration-celebrate: 1100ms;
+  --motion-duration-scene: 2200ms;
+  --motion-ease-overshoot: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --color-danger: var(--palette-dangerDark);
+  --color-warning: var(--palette-warningDark);
+  --color-success: var(--palette-successDark);
+  --color-info: var(--palette-infoDark);
+  --color-accent: var(--palette-accent);
+}
+
 /* Shared action tones: hierarchy is selected by the adapter, intent by these roles.
    Keep the neutral primary contract and the user's persisted accent contrast pair. */
 :root {
@@ -165,8 +217,38 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
       transparent 75%,
       var(--ui-transparency-grid-ink) 75%
     );
+  /* Light checkerboard behind lightbox images: dark or transparent artwork
+     (black SVG logos) stays visible over the dark modal scrim. */
+  --ui-image-backdrop-ink: color-mix(in srgb, var(--palette-hex808080) 24%, transparent);
+  --ui-image-backdrop:
+    linear-gradient(
+        45deg,
+        var(--ui-image-backdrop-ink) 25%,
+        transparent 25%,
+        transparent 75%,
+        var(--ui-image-backdrop-ink) 75%
+      )
+      0 0 / 16px 16px,
+    linear-gradient(
+        45deg,
+        var(--ui-image-backdrop-ink) 25%,
+        transparent 25%,
+        transparent 75%,
+        var(--ui-image-backdrop-ink) 75%
+      )
+      8px 8px / 16px 16px,
+    var(--palette-hexfff);
   --ui-tone-status-on-solid: var(--palette-scrim);
   --ui-tone-status-interaction-ink: var(--palette-solidInk);
+  /* Brighter custom dark canvases need lighter status ink and a quieter chip
+     beneath it. Keep the status hue and solid-action palette independent. */
+  --ui-status-ink-strength: clamp(0%, calc((var(--theme-dark-lightness) - 4%) * 2.5), 50%);
+  --ui-status-shade-strength: clamp(0%, calc((var(--theme-dark-lightness) - 4%) * 3.5), 65%);
+  --ui-status-surface: color-mix(
+    in oklab,
+    var(--ui-surface) calc(100% - var(--ui-status-shade-strength)),
+    var(--palette-scrim)
+  );
   --ui-control-disabled-fg: var(--ui-text-disabled);
   --ui-control-disabled-surface: var(--ui-surface-muted);
   --ui-control-disabled-border: var(--color-stroke);
@@ -175,23 +257,34 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-tone-neutral-on-solid: var(--palette-scrim);
   --ui-tone-neutral-subtle: var(--color-selection-subtle);
   --ui-tone-neutral-border: var(--color-stroke);
-  --ui-tone-neutral-hover: var(--ui-surface-muted);
+  --ui-tone-neutral-hover: var(--ui-surface-hover);
   --ui-tone-neutral-pressed: var(--ui-surface-pressed);
   --ui-tone-neutral-solid-hover: var(--ui-primary-hover);
   --ui-tone-neutral-solid-pressed: var(--ui-primary-pressed);
   --ui-tone-neutral-disabled-fg: var(--ui-control-disabled-fg);
   --ui-tone-neutral-disabled-surface: var(--ui-control-disabled-surface);
   --ui-tone-neutral-disabled-border: var(--ui-control-disabled-border);
-  --ui-tone-accent-fg: color-mix(in srgb, var(--ui-tone-accent-solid) 35%, var(--color-content));
-  --ui-tone-accent-solid: var(--user-accent-color, var(--color-accent));
+  /* Bring extreme custom accents towards readable ink for focus and tinted states.
+     Solid actions retain the exact saved accent/foreground pair. */
+  --ui-interaction-accent: var(--user-accent-color, var(--color-accent));
+  --ui-accent-ink-strength: 35%;
+  --ui-interaction-ink: color-mix(
+    in srgb,
+    var(--ui-interaction-accent) var(--ui-accent-ink-strength),
+    var(--color-content)
+  );
+  --ui-tone-accent-fg: var(--ui-interaction-ink);
+  /* Solid role: the rendered fill and its ink are derived together from the saved accent
+     (appearance.ts / accentContrast.ts) so the pair always reaches the chosen contrast. */
+  --ui-tone-accent-solid: var(--user-accent-solid, var(--user-accent-color, var(--color-accent)));
   --ui-tone-accent-on-solid: var(--user-accent-foreground, var(--palette-scrim));
   --ui-tone-accent-subtle: color-mix(in srgb, var(--ui-tone-accent-fg) 9%, var(--ui-surface));
   --ui-tone-accent-border: color-mix(in srgb, var(--ui-tone-accent-fg) 60%, var(--color-stroke));
   --ui-tone-accent-hover: color-mix(in srgb, var(--ui-tone-accent-fg) 14%, var(--ui-surface));
   --ui-tone-accent-pressed: color-mix(in srgb, var(--ui-tone-accent-fg) 20%, var(--ui-surface));
-  /* Keep the runtime contrast pair exact, even near the black/white crossover. */
-  --ui-tone-accent-solid-hover: var(--ui-tone-accent-solid);
-  --ui-tone-accent-solid-pressed: var(--ui-tone-accent-solid);
+  /* Hover and pressed step away from the ink (appearance.ts), so contrast only rises. */
+  --ui-tone-accent-solid-hover: var(--user-accent-solid-hover, var(--ui-tone-accent-solid));
+  --ui-tone-accent-solid-pressed: var(--user-accent-solid-pressed, var(--ui-tone-accent-solid));
   --ui-tone-accent-disabled-fg: var(--ui-control-disabled-fg);
   --ui-tone-accent-disabled-surface: var(--ui-control-disabled-surface);
   --ui-tone-accent-disabled-border: var(--ui-control-disabled-border);
@@ -217,13 +310,17 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-code-log-warning: color-mix(in srgb, var(--color-warning) 7%, transparent);
   --ui-code-log-info: color-mix(in srgb, var(--color-info) 5%, transparent);
   --ui-code-log-success: color-mix(in srgb, var(--color-success) 7%, transparent);
-  --ui-tone-info-fg: var(--color-info);
+  --ui-tone-info-fg: color-mix(
+    in srgb,
+    var(--color-info) calc(100% - var(--ui-status-ink-strength)),
+    var(--color-content)
+  );
   --ui-tone-info-solid: var(--color-info);
   --ui-tone-info-on-solid: var(--ui-tone-status-on-solid);
-  --ui-tone-info-subtle: color-mix(in srgb, var(--ui-tone-info-fg) 9%, var(--ui-surface));
+  --ui-tone-info-subtle: color-mix(in srgb, var(--ui-tone-info-fg) 9%, var(--ui-status-surface));
   --ui-tone-info-border: color-mix(in srgb, var(--ui-tone-info-fg) 60%, var(--color-stroke));
-  --ui-tone-info-hover: color-mix(in srgb, var(--ui-tone-info-fg) 14%, var(--ui-surface));
-  --ui-tone-info-pressed: color-mix(in srgb, var(--ui-tone-info-fg) 20%, var(--ui-surface));
+  --ui-tone-info-hover: color-mix(in srgb, var(--ui-tone-info-fg) 14%, var(--ui-status-surface));
+  --ui-tone-info-pressed: color-mix(in srgb, var(--ui-tone-info-fg) 20%, var(--ui-status-surface));
   --ui-tone-info-solid-hover: color-mix(
     in srgb,
     var(--ui-tone-info-solid) 94%,
@@ -237,13 +334,55 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-tone-info-disabled-fg: var(--ui-control-disabled-fg);
   --ui-tone-info-disabled-surface: var(--ui-control-disabled-surface);
   --ui-tone-info-disabled-border: var(--ui-control-disabled-border);
-  --ui-tone-success-fg: var(--color-success);
+  /* A row whose agent is working: a translucent active tint over the row's own ground, and the brighter
+     band of light that sweeps across it. Translucent so custom row colours and states show through.
+     Unset, it follows the Appearance accent (palette or picker), else the working blue; Appearance >
+     Motion can override the colour and strength (workingIndicator.ts). */
+  --ui-working-row-color: var(--user-accent-color, var(--color-active));
+  --ui-working-row-strength: 1;
+  --ui-working-row-tint: color-mix(
+    in srgb,
+    var(--ui-working-row-color) calc(8% * var(--ui-working-row-strength)),
+    transparent
+  );
+  --ui-working-row-sweep: color-mix(
+    in srgb,
+    var(--ui-working-row-color) calc(20% * var(--ui-working-row-strength)),
+    transparent
+  );
+  --ui-working-row-tint-layer: linear-gradient(
+    var(--ui-working-row-tint),
+    var(--ui-working-row-tint)
+  );
+  --ui-working-row-sweep-layer: linear-gradient(
+    100deg,
+    transparent 30%,
+    var(--ui-working-row-sweep) 50%,
+    transparent 70%
+  );
+  --ui-tone-success-fg: color-mix(
+    in srgb,
+    var(--color-success) calc(100% - var(--ui-status-ink-strength)),
+    var(--color-content)
+  );
   --ui-tone-success-solid: var(--color-success);
   --ui-tone-success-on-solid: var(--ui-tone-status-on-solid);
-  --ui-tone-success-subtle: color-mix(in srgb, var(--ui-tone-success-fg) 9%, var(--ui-surface));
+  --ui-tone-success-subtle: color-mix(
+    in srgb,
+    var(--ui-tone-success-fg) 9%,
+    var(--ui-status-surface)
+  );
   --ui-tone-success-border: color-mix(in srgb, var(--ui-tone-success-fg) 60%, var(--color-stroke));
-  --ui-tone-success-hover: color-mix(in srgb, var(--ui-tone-success-fg) 14%, var(--ui-surface));
-  --ui-tone-success-pressed: color-mix(in srgb, var(--ui-tone-success-fg) 20%, var(--ui-surface));
+  --ui-tone-success-hover: color-mix(
+    in srgb,
+    var(--ui-tone-success-fg) 14%,
+    var(--ui-status-surface)
+  );
+  --ui-tone-success-pressed: color-mix(
+    in srgb,
+    var(--ui-tone-success-fg) 20%,
+    var(--ui-status-surface)
+  );
   --ui-tone-success-solid-hover: color-mix(
     in srgb,
     var(--ui-tone-success-solid) 94%,
@@ -257,13 +396,29 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-tone-success-disabled-fg: var(--ui-control-disabled-fg);
   --ui-tone-success-disabled-surface: var(--ui-control-disabled-surface);
   --ui-tone-success-disabled-border: var(--ui-control-disabled-border);
-  --ui-tone-warning-fg: var(--color-warning);
+  --ui-tone-warning-fg: color-mix(
+    in srgb,
+    var(--color-warning) calc(100% - var(--ui-status-ink-strength)),
+    var(--color-content)
+  );
   --ui-tone-warning-solid: var(--color-warning);
   --ui-tone-warning-on-solid: var(--ui-tone-status-on-solid);
-  --ui-tone-warning-subtle: color-mix(in srgb, var(--ui-tone-warning-fg) 9%, var(--ui-surface));
+  --ui-tone-warning-subtle: color-mix(
+    in srgb,
+    var(--ui-tone-warning-fg) 9%,
+    var(--ui-status-surface)
+  );
   --ui-tone-warning-border: color-mix(in srgb, var(--ui-tone-warning-fg) 60%, var(--color-stroke));
-  --ui-tone-warning-hover: color-mix(in srgb, var(--ui-tone-warning-fg) 14%, var(--ui-surface));
-  --ui-tone-warning-pressed: color-mix(in srgb, var(--ui-tone-warning-fg) 20%, var(--ui-surface));
+  --ui-tone-warning-hover: color-mix(
+    in srgb,
+    var(--ui-tone-warning-fg) 14%,
+    var(--ui-status-surface)
+  );
+  --ui-tone-warning-pressed: color-mix(
+    in srgb,
+    var(--ui-tone-warning-fg) 20%,
+    var(--ui-status-surface)
+  );
   --ui-tone-warning-solid-hover: color-mix(
     in srgb,
     var(--ui-tone-warning-solid) 94%,
@@ -277,13 +432,29 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-tone-warning-disabled-fg: var(--ui-control-disabled-fg);
   --ui-tone-warning-disabled-surface: var(--ui-control-disabled-surface);
   --ui-tone-warning-disabled-border: var(--ui-control-disabled-border);
-  --ui-tone-danger-fg: var(--color-danger);
+  --ui-tone-danger-fg: color-mix(
+    in srgb,
+    var(--color-danger) calc(100% - var(--ui-status-ink-strength)),
+    var(--color-content)
+  );
   --ui-tone-danger-solid: var(--color-danger);
   --ui-tone-danger-on-solid: var(--ui-tone-status-on-solid);
-  --ui-tone-danger-subtle: color-mix(in srgb, var(--ui-tone-danger-fg) 9%, var(--ui-surface));
+  --ui-tone-danger-subtle: color-mix(
+    in srgb,
+    var(--ui-tone-danger-fg) 9%,
+    var(--ui-status-surface)
+  );
   --ui-tone-danger-border: color-mix(in srgb, var(--ui-tone-danger-fg) 60%, var(--color-stroke));
-  --ui-tone-danger-hover: color-mix(in srgb, var(--ui-tone-danger-fg) 14%, var(--ui-surface));
-  --ui-tone-danger-pressed: color-mix(in srgb, var(--ui-tone-danger-fg) 20%, var(--ui-surface));
+  --ui-tone-danger-hover: color-mix(
+    in srgb,
+    var(--ui-tone-danger-fg) 14%,
+    var(--ui-status-surface)
+  );
+  --ui-tone-danger-pressed: color-mix(
+    in srgb,
+    var(--ui-tone-danger-fg) 20%,
+    var(--ui-status-surface)
+  );
   --ui-tone-danger-solid-hover: color-mix(
     in srgb,
     var(--ui-tone-danger-solid) 94%,
@@ -300,60 +471,240 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
 }
 
 html.theme-light {
+  --ui-status-ink-strength: 10%;
+  --ui-status-shade-strength: 0%;
+  --ui-elevation-floating:
+    0 8px 24px color-mix(in oklab, var(--color-scrim) 10%, transparent),
+    0 1px 2px color-mix(in oklab, var(--color-scrim) 8%, transparent);
   --ui-tone-neutral-on-solid: var(--palette-solidInk);
-  --ui-primary-pressed: color-mix(in oklab, var(--color-content) 90%, var(--color-background-base));
+  --ui-primary-pressed: color-mix(in oklab, var(--color-content) 90%, var(--ui-tint-base));
   --ui-tone-status-on-solid: var(--palette-solidInk);
   --ui-tone-status-interaction-ink: var(--palette-scrim);
 }
 
 :root {
-  --ui-font-secondary: 0.8125rem;
+  --ui-font-micro: 0.6875rem;
   --ui-font-caption: 0.75rem;
+  --ui-font-secondary: 0.8125rem;
+  --ui-font-body: 0.875rem;
+  --ui-font-title: 1rem;
+  --ui-font-heading: 1.25rem;
+  /* Illustration type scales with its container (cqi), not the density setting. */
+  --ui-font-scene-label: clamp(8px, 1.4cqi, 11px);
+  --ui-font-scene-label-small: clamp(7px, 1.2cqi, 9px);
+  --ui-font-scene-title: clamp(10px, 2.4cqi, 21px);
+  --ui-font-scene-subtitle: clamp(7px, 1.1cqi, 10px);
+  --ui-leading-micro: 1rem;
+  --ui-leading-caption: 1rem;
+  --ui-leading-secondary: 1.125rem;
+  --ui-leading-body: 1.25rem;
+  --ui-leading-title: 1.5rem;
+  --ui-leading-heading: 1.75rem;
+  /* Icon scale: pair with --ui-icon-stroke (set strokeWidth={1.75} on lucide-style icons). */
+  --ui-icon-xs: 0.75rem;
+  --ui-icon-sm: 0.875rem;
+  --ui-icon-md: 1rem;
+  --ui-icon-lg: 1.25rem;
+  --ui-icon-stroke: 1.75;
+  /* One floating family for Popover, Modal, Select, Menu and Combobox surfaces. */
+  --ui-radius-popup: 0.75rem;
+  --ui-elevation-floating:
+    0 8px 24px color-mix(in oklab, var(--color-scrim) 32%, transparent),
+    0 1px 3px color-mix(in oklab, var(--color-scrim) 24%, transparent);
   /* The pane owns the backdrop; growing history must not paint over it. */
   --ui-transcript-surface: transparent;
   --ui-text-on-active: var(--palette-oklch_0_29_0_066_243);
   --ui-text-secondary: color-mix(
     in srgb,
     var(--color-content) var(--appearance-secondary-strength, 85%),
-    var(--color-background-base)
+    var(--ui-tint-base)
   );
-  --ui-text-disabled: color-mix(in srgb, var(--color-content) 50%, var(--color-background-base));
-  --ui-text-muted: color-mix(in oklab, var(--ui-text-secondary) 72%, var(--color-background-base));
-  --ui-terminal-suggestion: color-mix(
-    in oklab,
-    var(--color-info) 55%,
-    var(--color-background-base)
+  --ui-text-disabled: color-mix(in srgb, var(--color-content) 60%, var(--ui-tint-base));
+  --ui-text-muted: color-mix(in oklab, var(--ui-text-secondary) 82%, var(--ui-tint-base));
+  --ui-terminal-suggestion: color-mix(in oklab, var(--color-info) 55%, var(--ui-tint-base));
+  /* Canvas = navigation panel < reading/form surface < floating surface.
+     Navigation shares the chat ground; existing borders separate panes (V3-033).
+     Derive every layer from the user's tint rather than a second gray palette. Layers mix with
+     --ui-tint-base (the palette ground), not the painted canvas, so they keep the same steps when
+     the Pure background paints the canvas pure black or white (V3-039). */
+  --ui-surface-panel: var(--ui-chat-canvas);
+  --ui-surface: color-mix(in oklab, var(--color-content) 10%, var(--ui-tint-base));
+  /* Workspace panes share the owning canvas's glass instead of stacking opaque
+     fills. Floating overlays and embedded document/media pixels keep their roles. */
+  --ui-workspace-canvas: var(--color-background-base);
+  --ui-workspace-panel: var(--ui-surface-panel);
+  --ui-workspace-reading: var(--ui-surface);
+  --ui-workspace-reading-base: var(--color-background-base);
+  --ui-workspace-reading-chat: var(--ui-chat-canvas);
+  --ui-workspace-reading-panel: var(--ui-surface-panel);
+  --ui-workspace-reading-muted: var(--ui-surface-muted);
+  --ui-workspace-canvas-muted: var(--ui-surface-muted);
+  --ui-workspace-canvas-chat: var(--ui-chat-canvas);
+  --ui-workspace-canvas-surface: var(--ui-surface);
+  /* Navigation has its own glass gate: sidebar-only glass must not depend on
+     the user's independent main-pane preference. Controls keep readable fills. */
+  --ui-navigation-panel: var(--ui-surface-panel);
+  --ui-navigation-chrome: var(--color-background-base);
+  --ui-navigation-quiet: var(--ui-surface-quiet);
+  --ui-navigation-control: var(--ui-surface);
+  --ui-navigation-selected: var(--ui-surface-selected);
+  --ui-navigation-selected-layer: linear-gradient(
+    var(--ui-navigation-selected),
+    var(--ui-navigation-selected)
   );
-  /* Cartesian mixing preserves the cool theme hue across light/dark surfaces. */
-  --ui-surface: color-mix(in oklab, var(--color-content) 3%, var(--color-background-base));
   /* Startup brand canvas stays dark so the white loading mark is legible in every theme. */
   --ui-startup-surface: var(--palette-scrim);
   --ui-startup-text: var(--palette-solidInk);
-  --ui-surface-raised: color-mix(in oklab, var(--color-content) 6%, var(--color-background-base));
+  --ui-surface-raised: color-mix(in oklab, var(--color-content) 16%, var(--ui-tint-base));
+  /* Container role for every floating surface: dialogs, sheets, popovers, menus, tooltips, toasts
+     and floating panels (V3-040). Tinted canvases keep the raised step; the Pure background maps it
+     near the pure ground below. Controls inside keep their own field, hover and selected steps. */
+  --ui-surface-floating: var(--ui-surface-raised);
   --ui-conflict-current-surface: color-mix(
     in oklab,
     var(--color-conflict-ours) 12%,
-    var(--color-background-base)
+    var(--ui-tint-base)
   );
   --ui-conflict-incoming-surface: color-mix(
     in oklab,
     var(--color-conflict-theirs) 12%,
-    var(--color-background-base)
+    var(--ui-tint-base)
   );
   /* Intra-conflict differences sit on top of the side's line tint. */
   --ui-conflict-current-word: color-mix(in oklab, var(--color-conflict-ours) 30%, transparent);
   --ui-conflict-incoming-word: color-mix(in oklab, var(--color-conflict-theirs) 30%, transparent);
-  --ui-surface-muted: color-mix(in oklab, var(--color-content) 8%, var(--color-background-base));
-  --ui-surface-hover: color-mix(in oklab, var(--color-content) 7%, var(--color-background-base));
-  --ui-surface-pressed: color-mix(in oklab, var(--color-content) 16%, var(--color-background-base));
+  /* Keep fields and muted controls at their existing tone independently of navigation. */
+  --ui-surface-muted: color-mix(in oklab, var(--color-content) 5%, var(--ui-tint-base));
+  /* Hover, selected and pressed share one base (the muted surface) so their steps are monotonic:
+     hover 7% < selected 15% < pressed 24%. Mirrored in model/interactionTint.ts. */
+  --ui-interaction-tint: var(--color-content);
+  --ui-interaction-strength: 1;
+  --ui-surface-hover: color-mix(
+    in oklab,
+    var(--ui-interaction-tint) calc(7% * var(--ui-interaction-strength)),
+    var(--ui-surface-muted)
+  );
+  --ui-surface-pressed: color-mix(
+    in oklab,
+    var(--ui-interaction-tint) calc(24% * var(--ui-interaction-strength)),
+    var(--ui-surface-muted)
+  );
   --ui-surface-selected: color-mix(
     in oklab,
-    var(--color-content) var(--selection-strength),
-    var(--bycoda-panel)
+    var(--ui-interaction-tint) calc(15% * var(--ui-interaction-strength)),
+    var(--ui-surface-muted)
   );
-  --ui-border-accent: color-mix(in oklab, var(--color-accent) 45%, var(--color-stroke));
-  --ui-primary-hover: color-mix(in oklab, var(--color-content) 85%, var(--color-background-base));
-  --ui-primary-pressed: color-mix(in oklab, var(--color-content) 75%, var(--color-background-base));
+  --ui-border-accent: var(--ui-interaction-ink);
+  /* Resize edges brighten quietly on hover/drag: a neutral step, never the accent ink. */
+  --ui-sash-active: color-mix(in oklab, var(--color-content) 24%, transparent);
+  /* One writing surface owner: identical at rest and while typing. */
+  /* The writing box is the reading surface one tier above the chat canvas, not the popup step:
+     distinct from the canvas (and from a background image behind it) without a hard jump.
+     Popups, menus and modals use --ui-surface-floating. */
+  --ui-chat-canvas: color-mix(in oklab, var(--color-content) 3%, var(--ui-tint-base));
+  /* Reading has one quiet neutral step above navigation; artwork/glass retains its owner. */
+  --ui-chat-pane-canvas: color-mix(in srgb, var(--color-content) 4%, var(--ui-chat-canvas));
+  --ui-composer-surface: var(--ui-surface);
+  /* Chat cards (changed files, plan, task list, tool output) share the composer's quiet step:
+     near black / near white on the pure canvas instead of a mid gray card (owner 2026-11-03). */
+  --ui-surface-quiet: var(--ui-composer-surface);
+  --ui-composer-border: color-mix(in oklab, var(--color-content) 14%, var(--ui-composer-surface));
+  --ui-composer-shadow: none;
+  /* Floating turn activity is frosted glass over the transcript while its labels stay crisp.
+     A thin canvas tint plus a dimmed, saturated blur keeps blurred text from turning into a
+     flat gray slab (owner 2026-11-03: "çok gri duruyor"); a hairline edge and top light
+     mark the pane. */
+  --ui-activity-dock-glass: color-mix(in oklab, var(--color-background-base) 28%, transparent);
+  --ui-activity-dock-blur: var(--glass-blur);
+  --ui-activity-dock-filter: blur(var(--ui-activity-dock-blur)) saturate(1.5) brightness(0.8);
+  --ui-activity-dock-edge:
+    inset 0 0 0 1px color-mix(in oklab, var(--color-content) 8%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--color-content) 7%, transparent);
+  /* Frosted hover cards (session details): a thin tint over a strong, saturated blur, so the
+     pane beneath shows through as color instead of a flat gray card (owner 2026-11-03,
+     translated: "I don't like this gray design ... blurred, glass effect"). Opaque fallback: .popover-frosted. */
+  --ui-frosted-glass: color-mix(in oklab, var(--color-background-base) 22%, transparent);
+  --ui-frosted-filter: blur(calc(var(--glass-blur) * 1.25)) saturate(1.8) brightness(0.82);
+  --ui-frosted-edge: inset 0 1px 0 color-mix(in oklab, var(--color-content) 10%, transparent);
+  --ui-frosted-divider: var(--ui-fill-subtle);
+  /* Large editable regions and boxed setting groups are identified by surface
+     and caret; their edge is quieter than a 3:1 small-field border. */
+  --ui-editor-border: color-mix(in oklab, var(--color-content) 14%, var(--ui-surface));
+  /* Settings groups and collections (owner decision 2026-10-31, V3-013): the group interior is the
+     page canvas itself, so there is no gray fill. A thin frame and hairline row dividers carry the
+     structure. Every role derives from the user's tint (--color-content / --color-background-base),
+     which the light, dark and custom themes already override, so one definition serves all. Inputs,
+     selected rows, focus rings and drag targets keep their own boundary roles. */
+  --ui-settings-group-surface: transparent;
+  --ui-settings-group-border: color-mix(in oklab, var(--color-content) 15%, var(--ui-tint-base));
+  --ui-settings-hairline: color-mix(in oklab, var(--color-content) 9%, var(--ui-tint-base));
+  --ui-settings-row-hover: color-mix(in oklab, var(--color-content) 4%, transparent);
+  --ui-radius-card: 0.5rem;
+  /* One scrollbar family for native bars, custom rails (editor, rulers) and the terminal.
+     Appearance > Interface sets the colour, size, strength and visibility (scrollbarStyle.ts). */
+  /* Follows the Appearance accent (palette or picker) when one is set, else the neutral content tone. */
+  --ui-scrollbar-color: var(--user-accent-color, var(--color-content));
+  --ui-scrollbar-size: 6px;
+  --ui-scrollbar-strength: 1;
+  --ui-scrollbar-thumb: color-mix(
+    in srgb,
+    var(--ui-scrollbar-color) calc(16% * var(--ui-scrollbar-strength)),
+    transparent
+  );
+  --ui-scrollbar-thumb-hover: color-mix(
+    in srgb,
+    var(--ui-scrollbar-color) calc(32% * var(--ui-scrollbar-strength)),
+    transparent
+  );
+  --ui-scrollbar-thumb-active: color-mix(
+    in srgb,
+    var(--ui-scrollbar-color) calc(42% * var(--ui-scrollbar-strength)),
+    transparent
+  );
+  /* Editor chrome: gutters, the active line, search hits and unfocused
+     selection. Status and diff hues stay with their semantic owners. */
+  --ui-editor-gutter-text: var(--ui-text-muted);
+  --ui-editor-gutter-active-text: var(--color-content);
+  --ui-editor-active-line: color-mix(in srgb, var(--color-content) 4%, transparent);
+  --ui-editor-search-match: color-mix(
+    in srgb,
+    var(--color-search, var(--color-warning)) 28%,
+    transparent
+  );
+  --ui-editor-search-match-current: color-mix(
+    in srgb,
+    var(--color-search, var(--color-warning)) 52%,
+    transparent
+  );
+  --ui-selection-inactive: color-mix(in srgb, var(--color-content) 12%, transparent);
+  /* Overview ruler marks follow the active diff palette. */
+  --ui-diff-ruler-add: var(--color-diff-add);
+  --ui-diff-ruler-del: var(--color-diff-del);
+  --ui-diff-ruler-mod: var(--color-info);
+  --ui-diff-ruler-conflict: var(--color-warning);
+  /* Merge conflict sides are tinted regions, not edge stripes. */
+  --ui-conflict-current-marker: color-mix(in oklab, var(--color-conflict-ours) 22%, transparent);
+  --ui-conflict-incoming-marker: color-mix(in oklab, var(--color-conflict-theirs) 22%, transparent);
+  --ui-pane-border: color-mix(
+    in oklab,
+    var(--color-content) calc(var(--appearance-stroke-strength, 7%) * 3),
+    var(--ui-surface-muted)
+  );
+  /* Lightest field edge that keeps 3:1 against its surface; light needs more ink. */
+  --ui-control-border: color-mix(in oklab, var(--color-content) 44%, var(--ui-surface-muted));
+  /* Ordinary ranges use the exact contrast pair on an opaque fill, including
+     content with its own inverse background. Overlay editors keep a tint. */
+  /* Before the derived pair is published the plain accent is paired with dark ink. */
+  --ui-text-selection-background: var(--ui-interaction-accent);
+  --ui-text-selection-foreground: var(--palette-scrim);
+  --ui-overlay-selection-strength: 32%;
+  --ui-overlay-selection-background: color-mix(
+    in srgb,
+    var(--ui-interaction-ink) var(--ui-overlay-selection-strength),
+    transparent
+  );
+  --ui-primary-hover: color-mix(in oklab, var(--color-content) 85%, var(--ui-tint-base));
+  --ui-primary-pressed: color-mix(in oklab, var(--color-content) 75%, var(--ui-tint-base));
   --ui-control-thumb: var(--color-on-solid);
   --ui-control-thumb-border: color-mix(in oklab, var(--color-scrim) 5%, transparent);
   --ui-control-thumb-shadow: 0 1px 4px color-mix(in oklab, var(--color-scrim) 20%, transparent);
@@ -365,20 +716,91 @@ html.theme-light {
   --ui-control-height-lg: 2.5rem;
   --ui-control-radius: 0.375rem;
   --ui-control-checkbox-size: 1rem;
+  /* Disabled model (one per control family, never both on one element):
+     - Fields, rows, list items and composite surfaces dim as a whole with --ui-disabled-opacity,
+       so their text, icons and frame keep their relative steps.
+     - Buttons, segmented options and other filled actions recolour with the tone roles
+       --ui-tone-<tone>-disabled-fg / -surface / -border (shared --ui-control-disabled-* below),
+       so a disabled primary never reads as a translucent enabled one.
+     Pair a disabled action with its reason through the shared Tooltip, not opacity alone. */
+  --ui-disabled-opacity: 0.5;
   --ui-overlay-backdrop: var(--palette-oklch_0_08_0_none_0_68);
-  --ui-focus-ring-color: var(--color-accent);
-  --ui-focus-width: 2px;
-  --ui-focus-offset: 2px;
-  --motion-reorder-duration: 160ms;
+  /* Modal focus layer. The blur softens the work beneath, so it carries a lighter dim than the
+     plain scrim (kept as the readable fallback). Light, dark and custom themes share these values:
+     the blur follows the theme glass budget (0 under the no-blur performance mode) and the dim
+     derives from the one scrim role. A dialog opened above another keeps only the nested tint. */
+  --ui-overlay-backdrop-blur: min(4px, var(--glass-blur));
+  --ui-overlay-backdrop-soft: color-mix(in oklab, var(--ui-overlay-backdrop) 60%, transparent);
+  --ui-overlay-backdrop-nested: color-mix(in oklab, var(--ui-overlay-backdrop) 24%, transparent);
+  /* Field and focus tokens (--ui-field-*, --ui-focus-*) have one owner: the contract at the top
+     of arc.css. Do not redeclare them here. */
+  /* Global motion scale. Arc's --duration-* / --ease-* (arc.css) point at these; use them in
+     feature CSS instead of literal milliseconds or curves. Reduced motion is handled per surface
+     (and globally for Tailwind animate-spin/pulse below), not by zeroing these roles. */
+  --motion-duration-instant: 80ms;
+  --motion-duration-fast: 120ms;
+  --motion-duration-standard: 160ms;
+  --motion-duration-slow: 260ms;
+  --motion-ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-ease-enter: var(--motion-ease-standard);
+  --motion-ease-exit: cubic-bezier(0.7, 0, 0.84, 0);
+  /* Purpose aliases read by motion.ts / useComposerDockMotion.ts; they follow the scale. */
+  --motion-reorder-duration: var(--motion-duration-standard);
   --motion-tab-close-duration: 200ms;
-  --motion-feedback-duration: 120ms;
-  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-feedback-duration: var(--motion-duration-fast);
+  --motion-ease-out: var(--motion-ease-standard);
   --motion-tab-ease-out: cubic-bezier(0.3333, 0.6667, 0.6667, 1);
+  /* Named curves of the one-off ambient and entrance animations below. */
+  --motion-ease-rise: cubic-bezier(0.3, 0.6, 0.4, 1);
+  --motion-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-sheen: cubic-bezier(0.4, 0, 0.2, 1);
+  /* Stacking layers. Keep in sync with LAYER in src/shared/lib/layers.ts (TS sets zIndex inline,
+     CSS uses these); values and names must match one to one. */
+  --layer-pane-sheet: 40;
+  --layer-hover-card: 60;
+  --layer-popover: 80;
+  --layer-submenu: 81;
+  --layer-dialog: 90;
+  --layer-dialog-popover: 91;
+  --layer-toast: 100;
+  --layer-toast-popover: 101;
+  --layer-drag: 2147483647;
+  /* Arc scale aliases for surfaces outside a .bycoda-arc root (inbox, host tools, onboarding,
+     chat controls). Same values as the .bycoda-arc block in arc.css, which still re-declares them
+     for Arc roots and their density/card overrides. Density- and scope-specific Arc roles
+     (--control-height-*, --surface*, --border*) are intentionally NOT global: outside Arc they
+     must use the --ui-* roles. */
+  --radius-control: var(--ui-control-radius);
+  --radius-panel: 0.75rem;
+  --radius-surface: 0.75rem;
+  --radius-pill: 9999px;
+  --space-1: 0.25rem;
+  --space-2: 0.375rem;
+  --space-3: 0.625rem;
+  --space-4: 0.875rem;
+  --space-5: 1rem;
+  --space-6: 1.25rem;
+  --space-8: 1.5rem;
+  --space-10: 2rem;
+  --space-12: 2.5rem;
+  --space-16: 3rem;
+  --accent: var(--user-accent-solid, var(--user-accent-color, var(--color-accent)));
+  /* Radius names used by features before the scale settled; aliases of the owned roles. */
+  --ui-radius-control: var(--ui-control-radius);
+  --ui-radius-panel: var(--ui-radius-card);
+  --control-radius: var(--ui-control-radius);
+  /* Neutral ink fills over whatever lies beneath (transparent base): hairlines, quiet wells,
+     inline chips and dividers that must stay translucent over images and glass. Opaque steps use
+     --ui-surface-*; text uses --ui-text-*. */
+  --ui-fill-faint: color-mix(in srgb, var(--color-content) 4%, transparent);
+  --ui-fill-subtle: color-mix(in srgb, var(--color-content) 8%, transparent);
+  --ui-fill-muted: color-mix(in srgb, var(--color-content) 10%, transparent);
+  --ui-fill-strong: color-mix(in srgb, var(--color-content) 12%, transparent);
   --theme-hue: 216;
   --theme-saturation: 24%;
   --theme-dark-lightness: 4%;
-  --sidebar-opacity: 0.85;
-  --main-opacity: 0.85;
+  --sidebar-opacity: 1;
+  --main-opacity: 1;
   --chat-background-empty-opacity: 0.24;
   --chat-background-session-opacity: 0.24;
   --chat-background-blur: 0px;
@@ -388,6 +810,9 @@ html.theme-light {
   --selection-hover-strength: 15%;
   --selection-emphasis-strength: 20%;
   --background-lightness: var(--theme-dark-lightness);
+  /* The palette ground every derived layer mixes from. The painted canvas
+     (--color-background-base) equals it unless the Pure background is active. */
+  --ui-tint-base: hsl(var(--theme-hue) var(--theme-saturation) var(--background-lightness));
   --content-lightness: 92%;
   --link-color: var(--palette-hex7dd3fc);
   --color-skill: var(--palette-hexe8c547);
@@ -438,9 +863,18 @@ html.theme-light {
 
 @layer base {
   /* A fallback only: component outline/ring utilities must take precedence.
-     Text fields can match :focus-visible even when focused with the mouse. */
-  :where(button, input, select, textarea, a[href], [tabindex]):focus-visible {
-    outline: var(--ui-focus-width) solid var(--color-accent);
+     Text fields can match :focus-visible even when focused with the mouse. Containers that only
+     take programmatic focus (tabindex="-1" with no role, or a group/region/tabpanel) draw no ring. */
+  :where(
+    button,
+    input,
+    select,
+    textarea,
+    a[href],
+    [tabindex]:not([tabindex="-1"]),
+    [tabindex="-1"][role]:not([role="group"], [role="region"], [role="tabpanel"])
+  ):focus-visible {
+    outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
     outline-offset: var(--ui-focus-offset);
   }
 }
@@ -465,8 +899,60 @@ html {
 
 html.theme-light {
   --ui-text-on-active: var(--palette-oklch_1_0_none);
-  --background-lightness: 94%;
-  --content-lightness: 18%;
+  /* Light is a white, neutral workspace rather than the dark theme painted grey.
+     The persisted tint keeps its hue but only a fifth of its saturation here, so
+     the default cool tint reads as paper while a custom tint stays recognisable.
+     Dark mode keeps the full tint through the shared @theme formula. */
+  --theme-light-saturation: calc(var(--theme-saturation) * 0.2);
+  --background-lightness: 98.6%;
+  --content-lightness: 13%;
+  --ui-tint-base: hsl(var(--theme-hue) var(--theme-light-saturation) var(--background-lightness));
+  --color-background-base: var(--ui-tint-base);
+  --color-content: hsl(
+    var(--theme-hue) calc(var(--theme-saturation) * 0.35) var(--content-lightness)
+  );
+  /* Navigation and chat share the near-white canvas, separated by existing borders;
+     editable and floating surfaces retain their paper-white roles. */
+  --ui-surface-panel: var(--ui-chat-canvas);
+  --ui-surface: color-mix(in oklab, var(--ui-tint-base) 35%, var(--palette-solidInk));
+  --ui-surface-raised: var(--palette-solidInk);
+  --ui-surface-muted: var(--ui-tint-base);
+  --ui-surface-hover: color-mix(
+    in oklab,
+    var(--ui-interaction-tint) calc(4% * var(--ui-interaction-strength)),
+    var(--ui-surface)
+  );
+  --ui-surface-pressed: color-mix(
+    in oklab,
+    var(--ui-interaction-tint) calc(16% * var(--ui-interaction-strength)),
+    var(--ui-surface)
+  );
+  /* Calm selected fill: a neutral step firmer than hover and under pressed. Hue comes only from
+     the user's tint, never from the accent, so selection reads the same for every accent. */
+  --ui-surface-selected: color-mix(
+    in oklab,
+    var(--ui-interaction-tint) calc(10% * var(--ui-interaction-strength)),
+    var(--ui-surface)
+  );
+
+  --ui-pane-border: color-mix(in oklab, var(--color-content) 9%, var(--ui-tint-base));
+  --ui-control-border: color-mix(in oklab, var(--color-content) 52%, var(--ui-surface-muted));
+  --ui-editor-border: color-mix(in oklab, var(--color-content) 12%, var(--ui-surface));
+  --ui-chat-canvas: var(--color-background-base);
+  --ui-composer-surface: var(--palette-solidInk);
+  --ui-composer-border: color-mix(in oklab, var(--color-content) 13%, var(--palette-solidInk));
+  --ui-composer-shadow: 0 1px 2px color-mix(in oklab, var(--color-content) 5%, transparent);
+  /* Light glass: a milky canvas veil that brightens the blur instead of dimming it. */
+  --ui-activity-dock-glass: color-mix(in oklab, var(--color-background-base) 45%, transparent);
+  --ui-activity-dock-filter: blur(var(--ui-activity-dock-blur)) saturate(1.4) brightness(1.06);
+  /* Light frosted cards: a milky veil that brightens what it blurs. */
+  --ui-frosted-glass: color-mix(in oklab, var(--color-background-base) 36%, transparent);
+  --ui-frosted-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(1.6) brightness(1.05);
+  --ui-frosted-edge: inset 0 1px 0
+    color-mix(in oklab, var(--color-background-base) 85%, transparent);
+  --ui-activity-dock-edge:
+    inset 0 0 0 1px color-mix(in oklab, var(--color-content) 8%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--color-background-base) 80%, transparent);
   --link-color: var(--palette-hsl_211_92pct_40pct);
   --color-skill: var(--palette-hexa07c10);
   --color-mention: var(--palette-hex0284c7);
@@ -479,6 +965,79 @@ html.theme-light {
   --color-diff-add-fg: var(--palette-hex047857);
   --color-diff-del-fg: var(--palette-hexbe123c);
   color-scheme: light;
+}
+
+/* Pure background (V3-039, owner decision 2026-10-31; default on): the canvas every pane shares
+   (window, project rail, session sidebar, chat, side panels, settings) is pure black in dark mode
+   and pure white in light mode for every palette and custom tint (owner 2026-11-09). Derived layers keep
+   mixing from --ui-tint-base, so cards, fields, composer, popovers, hover/selection and borders
+   keep their palette steps above the pure ground. Native glass keeps its opacity settings. */
+html[data-canvas-background="pure"] {
+  --color-background-base: var(--palette-canvasPureDark);
+  --ui-chat-canvas: var(--color-background-base);
+  /* Every floating container (dialogs, sheets, popovers, menus, tooltips, toasts, floating panels)
+     stays near the pure ground instead of a mid gray slab; the pane border and floating elevation
+     separate it, and controls inside keep their steps (fields stay one step lighter). */
+  --ui-surface-floating: color-mix(in oklab, var(--color-content) 6%, var(--color-background-base));
+  /* Keep the writing area visibly above the dark chat canvas while retaining the user's tint. */
+  --ui-composer-surface: color-mix(in srgb, var(--color-content) 9%, var(--color-background-base));
+  /* A canvas-tinted veil vanishes on pure black, so the activity/queue glass is a faint light
+     veil over an undimmed blur here: translucent, yet distinct from the transcript
+     (owner 2026-11-04, translated: "it was fully black ... it should be semi-transparent with a glass effect"). */
+  --ui-activity-dock-glass: color-mix(in oklab, var(--color-content) 8%, transparent);
+  --ui-activity-dock-filter: blur(var(--ui-activity-dock-blur)) saturate(1.6);
+}
+html.theme-light[data-canvas-background="pure"] {
+  --color-background-base: var(--palette-canvasPureLight);
+  --ui-chat-pane-canvas: var(--ui-chat-canvas);
+  --ui-surface-floating: var(--ui-surface-raised);
+  /* Mirror of the dark step: a faint off-white on the white ground. */
+  --ui-composer-surface: color-mix(in oklab, var(--color-content) 3%, var(--color-background-base));
+  /* Paper-white reading surfaces would vanish into the white canvas; one faint tint step keeps
+     bubbles, code and cards readable as surfaces. Hover/pressed/selected derive from it. */
+  --ui-surface: color-mix(in oklab, var(--color-content) 3%, var(--ui-tint-base));
+  /* Light mirror of the pure glass: a faint ink veil, so the pane still reads on white. */
+  --ui-activity-dock-glass: color-mix(in oklab, var(--color-content) 4%, transparent);
+  --ui-activity-dock-filter: blur(var(--ui-activity-dock-blur)) saturate(1.4) brightness(1.04);
+}
+
+/* Native ranges keep their text readable; transparent overlay editors below
+   retain their own glyph handling and PDF keeps its more specific rule. */
+::selection {
+  color: var(--ui-text-selection-foreground);
+  /* Syntax, link and gradient-clipped text paint through the fill colour as well. */
+  -webkit-text-fill-color: var(--ui-text-selection-foreground);
+  text-decoration-color: var(--ui-text-selection-foreground);
+  background: var(--ui-text-selection-background);
+}
+
+/* Once the accent roles are published, the fill and ink are a measured pair per scheme. */
+html.has-user-accent {
+  --ui-text-selection-background: var(--user-accent-selection-dark, var(--ui-interaction-accent));
+  --ui-text-selection-foreground: var(--user-accent-selection-dark-ink, var(--palette-solidInk));
+}
+
+html.has-user-accent.theme-light {
+  --ui-text-selection-background: var(--user-accent-selection-light, var(--ui-interaction-accent));
+  --ui-text-selection-foreground: var(--user-accent-selection-light-ink, var(--palette-scrim));
+}
+
+/* Content painted on a white page (PDF canvases) keeps its dark glyphs in both schemes, so its
+   selection fill is derived for that page with dark ink: it is multiplied onto the page. */
+:root {
+  --ui-paper-selection-background: var(--user-accent-selection-paper, var(--ui-interaction-accent));
+}
+
+@media (forced-colors: active) {
+  ::selection {
+    -webkit-text-fill-color: HighlightText;
+  }
+}
+
+/* Stronger accent readability: more ink in accent text, lighter overlay tint behind glyphs. */
+html[data-accent-readability="strong"] {
+  --ui-accent-ink-strength: 20%;
+  --ui-overlay-selection-strength: 24%;
 }
 
 /* Blue/orange stays distinguishable for protanopia, deuteranopia and
@@ -547,8 +1106,8 @@ html.theme-light {
 }
 
 html:not(.is-mac) ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: var(--ui-scrollbar-size);
+  height: var(--ui-scrollbar-size);
 }
 
 html:not(.is-mac) ::-webkit-scrollbar-track {
@@ -556,16 +1115,46 @@ html:not(.is-mac) ::-webkit-scrollbar-track {
 }
 
 html:not(.is-mac) ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--color-content) 16%, transparent);
+  background: transparent;
   border-radius: 9999px;
 }
 
+/* "Always" shows the resting thumb everywhere; the hover and pressed steps below still win. */
+html:not(.is-mac)[data-scrollbar-visibility="always"] ::-webkit-scrollbar-thumb {
+  background: var(--ui-scrollbar-thumb);
+}
+
+html:not(.is-mac) :hover::-webkit-scrollbar-thumb,
+html:not(.is-mac) :focus-within::-webkit-scrollbar-thumb {
+  background: var(--ui-scrollbar-thumb);
+}
+
 html:not(.is-mac) ::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--color-content) 32%, transparent);
+  background: var(--ui-scrollbar-thumb-hover);
+}
+
+html:not(.is-mac) ::-webkit-scrollbar-thumb:active {
+  background: var(--ui-scrollbar-thumb-active);
 }
 
 html:not(.is-mac) ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+@media (hover: none) {
+  html:not(.is-mac) ::-webkit-scrollbar-thumb {
+    background: var(--ui-scrollbar-thumb);
+  }
+}
+
+@media (forced-colors: active) {
+  html:not(.is-mac) ::-webkit-scrollbar-thumb,
+  html:not(.is-mac) :hover::-webkit-scrollbar-thumb,
+  html:not(.is-mac) :focus-within::-webkit-scrollbar-thumb,
+  html:not(.is-mac) ::-webkit-scrollbar-thumb:hover,
+  html:not(.is-mac) ::-webkit-scrollbar-thumb:active {
+    background: CanvasText;
+  }
 }
 
 /* Tint-less transparent rather than `transparent`, which browsers interpolate
@@ -574,6 +1163,33 @@ html.has-native-glass:not(.theme-light),
 html.has-native-glass:not(.theme-light) body,
 html.has-native-glass:not(.theme-light) #root {
   background: color-mix(in srgb, var(--color-background-base) 0%, transparent);
+}
+
+.app-canvas {
+  background: var(--color-background-base);
+}
+
+/* The root must not add another alpha layer above the native window. Sidebar
+   and main-pane settings each own exactly one canvas fill. */
+html.has-native-glass:not(.theme-light) .app-canvas {
+  background: transparent;
+}
+
+html.has-native-glass:not(.theme-light) {
+  --ui-navigation-panel: transparent;
+  --ui-navigation-chrome: color-mix(
+    in srgb,
+    var(--color-background-base) calc(var(--sidebar-opacity) * 100%),
+    transparent
+  );
+  --ui-navigation-quiet: color-mix(in srgb, var(--ui-surface) 72%, transparent);
+  --ui-navigation-control: var(--ui-navigation-quiet);
+  --ui-navigation-selected: color-mix(in srgb, var(--ui-surface-selected) 72%, transparent);
+}
+
+/* A header inside an already painted pane must not add another opacity layer. */
+html.has-native-glass:not(.theme-light) .body-glass .bycoda-titlebar {
+  background: transparent;
 }
 
 /* Layers are promoted only while moving. */
@@ -646,7 +1262,7 @@ html.has-native-glass:not(.theme-light) #root {
 .workspace-tab[data-dragging] > button:not([aria-selected="true"]),
 .project-reorder-item:not([data-reordering], [data-selected]):hover,
 .project-reorder-item[data-dragging]:not([data-selected]) {
-  background: color-mix(in srgb, var(--color-content) 5%, transparent);
+  background: var(--ui-fill-faint);
   color: var(--color-content);
 }
 
@@ -668,17 +1284,19 @@ html.has-native-glass:not(.theme-light) #root {
 }
 
 .sidebar-glass {
-  background: color-mix(in srgb, var(--color-background-base) 90%, var(--palette-scrim));
+  background: var(--ui-surface-panel);
   transition: background-color var(--motion-feedback-duration) var(--motion-ease-out);
 }
 
 html.theme-light .sidebar-glass {
-  background: var(--color-background-base);
+  background: var(--ui-surface-panel);
 }
 
 html.has-native-glass:not(.theme-light) .sidebar-glass {
-  background: hsl(
-    var(--theme-hue) var(--theme-saturation) var(--background-lightness) / var(--sidebar-opacity)
+  background: color-mix(
+    in srgb,
+    var(--color-background-base) calc(var(--sidebar-opacity) * 100%),
+    transparent
   );
 }
 
@@ -706,6 +1324,16 @@ html.has-native-glass:not(.theme-light) .sidebar-glass {
   .body-glass {
     transition: none;
   }
+}
+
+/* The calm canvas sits under the artwork layer, so images and scenes still cover it.
+   Native glass keeps the window translucent: the main pane's glass owns that fill. */
+.chat-pane-background {
+  background-color: var(--ui-chat-pane-canvas);
+}
+
+html.has-native-glass:not(.theme-light) .chat-pane-background {
+  background-color: transparent;
 }
 
 .chat-pane-background::before {
@@ -877,7 +1505,7 @@ html.has-chat-background.chat-background-effect-ready:not(.chat-background-gradi
  * out entirely when it only shows on empty sessions) alongside the composer.
  */
 .chat-pane-background[data-session-empty="false"]::before {
-  transition-duration: 600ms;
+  transition-duration: var(--motion-duration-ambient);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -905,7 +1533,7 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
 }
 
 .chat-pane-background[data-session-empty="false"] > .gradient-blur-background {
-  transition-duration: 600ms;
+  transition-duration: var(--motion-duration-ambient);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -920,8 +1548,23 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
   content-visibility: visible;
 }
 
+/* Settled turns cannot affect each other's layout or style invalidation, but
+   keep their real height (no size containment) so the scroll range is exact.
+   Everything floating inside a turn is portaled (Popover/Modal) or hangs inside
+   the row's own padding, and the live turn is excluded because it still grows. */
+.transcript-turn:not(.transcript-turn-live) {
+  contain: layout style;
+}
+
 ::highlight(bycoda-transcript-search-match) {
   background-color: color-mix(in srgb, var(--color-search) 46%, transparent);
+}
+
+::highlight(bycoda-chat-citation) {
+  background-color: var(--ui-text-selection-background);
+  color: var(--ui-text-selection-foreground);
+  text-decoration: underline;
+  text-decoration-color: var(--ui-focus-ring-color);
 }
 
 ::highlight(bycoda-transcript-search-current) {
@@ -940,20 +1583,6 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
   mask-image: var(--tab-label-mask);
 }
 
-/* Fade a stationary layer, leaving the scroll surface unmasked. */
-.sidebar-session-scroll::after {
-  content: "";
-  display: block;
-  block-size: 2.5rem;
-  pointer-events: none;
-  background: linear-gradient(to bottom, transparent, var(--scroll-fade-surface));
-  z-index: 4;
-}
-.sidebar-session-scroll::after {
-  position: sticky;
-  inset-block-end: 0;
-  margin-block-start: -2.5rem;
-}
 .agent-transcript [data-transcript-search-current="true"] .user-message-bubble pre.line-clamp-4 {
   display: block;
   overflow: visible;
@@ -987,7 +1616,14 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
     right: 0;
     z-index: 1;
     opacity: 0;
-    transition: opacity 120ms ease;
+    transition: opacity var(--motion-duration-fast) ease;
+  }
+
+  /* Answer rows have no turn gap: reserve the action tray's real height so it
+   * cannot cover the next question, even when text or controls wrap. */
+  [data-question-answer] .user-message-actions {
+    position: static;
+    align-self: flex-end;
   }
 
   .user-message-row:hover .user-message-actions,
@@ -1010,8 +1646,9 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
   background: var(--ui-transcript-surface);
 }
 
+/* Neutral reading surface: the accent never paints message bodies. */
 html.has-user-accent .user-message-bubble {
-  background: color-mix(in oklab, var(--ui-surface) 94%, var(--user-accent-color));
+  background: var(--ui-workspace-reading);
   border-color: var(--color-stroke);
 }
 
@@ -1028,7 +1665,8 @@ html.has-user-accent .user-message-bubble {
   overflow: hidden;
   border-radius: inherit;
   pointer-events: none;
-  animation: bycoda-halo 2400ms 150ms ease-out both;
+  animation: bycoda-halo var(--motion-duration-scene) var(--motion-duration-fast)
+    var(--motion-ease-out) both;
 }
 
 html.theme-light .bycoda-sparkles {
@@ -1048,7 +1686,8 @@ html.theme-light .bycoda-sparkles {
     transparent 70%
   );
   transform: translateX(-120%);
-  animation: bycoda-sheen 1100ms 300ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: bycoda-sheen var(--motion-duration-celebrate) var(--motion-duration-slow)
+    var(--motion-ease-sheen) both;
 }
 
 .bycoda-sparkles::after {
@@ -1060,7 +1699,8 @@ html.theme-light .bycoda-sparkles {
     var(--palette-rgb_251_191_36_0_35),
     transparent 70%
   );
-  animation: bycoda-ember-glow 2200ms 100ms ease-out both;
+  animation: bycoda-ember-glow var(--motion-duration-scene) var(--motion-duration-fast)
+    var(--motion-ease-out) both;
 }
 
 .bycoda-sparkle {
@@ -1070,7 +1710,7 @@ html.theme-light .bycoda-sparkles {
   left: var(--x);
   z-index: 1;
   width: 0;
-  animation: bycoda-rise var(--duration) var(--delay) cubic-bezier(0.3, 0.6, 0.4, 1) both;
+  animation: bycoda-rise var(--duration) var(--delay) var(--motion-ease-rise) both;
 }
 
 .bycoda-sparkle-glyph {
@@ -1175,7 +1815,8 @@ html.theme-light .bycoda-sparkles {
   overflow: hidden;
   border-radius: inherit;
   pointer-events: none;
-  animation: turn-mode-halo 2400ms 150ms ease-out both;
+  animation: turn-mode-halo var(--motion-duration-scene) var(--motion-duration-fast)
+    var(--motion-ease-out) both;
 }
 
 .plan-steps::before,
@@ -1203,7 +1844,8 @@ html.theme-light .bycoda-sparkles {
     color-mix(in srgb, var(--mode-glow) 35%, transparent),
     transparent 70%
   );
-  animation: bycoda-ember-glow 2200ms 100ms ease-out both;
+  animation: bycoda-ember-glow var(--motion-duration-scene) var(--motion-duration-fast)
+    var(--motion-ease-out) both;
 }
 
 @keyframes turn-mode-halo {
@@ -1243,7 +1885,8 @@ html.theme-light .plan-steps {
 }
 
 .plan-steps::before {
-  animation: turn-mode-sheen 1100ms 300ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: turn-mode-sheen var(--motion-duration-celebrate) var(--motion-duration-slow)
+    var(--motion-ease-sheen) both;
 }
 
 .plan-step {
@@ -1253,7 +1896,7 @@ html.theme-light .plan-steps {
   left: var(--x);
   z-index: 2;
   width: 0;
-  animation: bycoda-rise var(--duration) var(--delay) cubic-bezier(0.3, 0.6, 0.4, 1) both;
+  animation: bycoda-rise var(--duration) var(--delay) var(--motion-ease-rise) both;
 }
 
 .plan-step-dot {
@@ -1303,7 +1946,7 @@ html.theme-light .plan-steps {
   left: var(--x);
   z-index: 1;
   width: 0;
-  animation: bycoda-rise var(--duration) var(--delay) cubic-bezier(0.3, 0.6, 0.4, 1) both;
+  animation: bycoda-rise var(--duration) var(--delay) var(--motion-ease-rise) both;
 }
 
 .plan-step-ember-glyph {
@@ -1392,13 +2035,15 @@ html.theme-light .orchestrator-constellation {
 }
 
 .orchestrator-constellation::before {
-  animation: turn-mode-sheen 1100ms 300ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: turn-mode-sheen var(--motion-duration-celebrate) var(--motion-duration-slow)
+    var(--motion-ease-sheen) both;
 }
 
 .orchestrator-network {
   position: absolute;
   inset: 0;
-  animation: orchestrator-network-rise 2200ms 300ms cubic-bezier(0.3, 0.6, 0.4, 1) both;
+  animation: orchestrator-network-rise var(--motion-duration-scene) var(--motion-duration-slow)
+    var(--motion-ease-rise) both;
 }
 
 .orchestrator-edges {
@@ -1418,7 +2063,7 @@ html.theme-light .orchestrator-constellation {
   stroke: color-mix(in srgb, var(--mode-color) 60%, transparent);
   stroke-width: 1.25;
   stroke-dasharray: var(--length);
-  animation: orchestrator-edge-draw var(--draw) var(--delay) cubic-bezier(0.3, 0.6, 0.4, 1) both;
+  animation: orchestrator-edge-draw var(--draw) var(--delay) var(--motion-ease-rise) both;
 }
 
 /* A bright head rides the tip of each edge as it draws out. */
@@ -1427,7 +2072,7 @@ html.theme-light .orchestrator-constellation {
   stroke-width: 2.5;
   stroke-dasharray: 6 var(--length);
   filter: drop-shadow(0 0 3px var(--mode-glow));
-  animation: orchestrator-pulse var(--draw) var(--delay) cubic-bezier(0.3, 0.6, 0.4, 1) both;
+  animation: orchestrator-pulse var(--draw) var(--delay) var(--motion-ease-rise) both;
 }
 
 .orchestrator-hub,
@@ -1454,16 +2099,19 @@ html.theme-light .orchestrator-constellation {
 
 .orchestrator-hub {
   --size: 8px;
-  animation: orchestrator-hub 600ms 120ms ease-out both;
+  animation: orchestrator-hub var(--motion-duration-ambient) var(--motion-duration-fast)
+    var(--motion-ease-out) both;
 }
 
 .orchestrator-hub::after {
-  animation: orchestrator-ring 700ms 220ms ease-out both;
+  animation: orchestrator-ring var(--motion-duration-ambient) var(--motion-surface-duration)
+    var(--motion-ease-out) both;
 }
 
 .orchestrator-node {
   --size: 6px;
-  animation: orchestrator-node 600ms var(--delay) ease-out both;
+  animation: orchestrator-node var(--motion-duration-ambient) var(--delay) var(--motion-ease-out)
+    both;
 }
 
 .orchestrator-node[data-child="true"] {
@@ -1471,7 +2119,8 @@ html.theme-light .orchestrator-constellation {
 }
 
 .orchestrator-node::after {
-  animation: orchestrator-ring 500ms var(--delay) ease-out both;
+  animation: orchestrator-ring var(--motion-duration-ambient) var(--delay) var(--motion-ease-out)
+    both;
 }
 
 @keyframes orchestrator-edge-draw {
@@ -1576,7 +2225,7 @@ html.theme-light .orchestrator-constellation {
 }
 
 .user-message-bubble[data-draft="true"] {
-  background: color-mix(in srgb, var(--color-content) 4%, transparent);
+  background: var(--ui-fill-faint);
 }
 
 html.has-user-accent .user-message-bubble[data-draft="true"] {
@@ -1610,7 +2259,7 @@ html.has-user-accent .user-message-bubble[data-draft="true"] {
 }
 
 .transcript-turn[data-prompt-rise="revealing"] > :not(:has([data-prompt-anchor])) {
-  animation: prompt-turn-reveal 320ms var(--motion-ease-out) both;
+  animation: prompt-turn-reveal var(--motion-duration-reveal) var(--motion-ease-out) both;
 }
 
 @keyframes prompt-turn-reveal {
@@ -1632,6 +2281,20 @@ html.has-native-glass.glass-body:not(.theme-light) .body-glass {
   );
 }
 
+html.has-native-glass.glass-body:not(.theme-light) {
+  --ui-workspace-canvas: transparent;
+  --ui-workspace-panel: transparent;
+  --ui-workspace-reading: color-mix(in srgb, var(--ui-surface) 72%, transparent);
+  --ui-workspace-reading-base: var(--ui-workspace-reading);
+  --ui-workspace-reading-chat: var(--ui-workspace-reading);
+  --ui-workspace-reading-panel: var(--ui-workspace-reading);
+  --ui-workspace-reading-muted: var(--ui-workspace-reading);
+  --ui-workspace-canvas-muted: var(--ui-workspace-canvas);
+  --ui-workspace-canvas-chat: var(--ui-workspace-canvas);
+  --ui-workspace-canvas-surface: var(--ui-workspace-canvas);
+  --ui-composer-surface: var(--ui-workspace-reading);
+}
+
 /* The session sidebar keeps the main pane's opaque look, but its glass follows
    the sidebar setting and does not depend on the main pane glass toggle. */
 html.has-native-glass:not(.theme-light) .body-glass.sidebar-pane {
@@ -1640,6 +2303,168 @@ html.has-native-glass:not(.theme-light) .body-glass.sidebar-pane {
     var(--color-background-base) calc(var(--sidebar-opacity) * 100%),
     transparent
   );
+}
+
+/* Opt-out belongs to the whole workspace, including the native-transparent
+   root. Keep overlays, fields, selection and content colors independently owned. */
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  html.has-native-glass:not(.theme-light),
+  html.has-native-glass.glass-body:not(.theme-light) {
+    --ui-navigation-panel: var(--ui-surface-panel);
+    --ui-navigation-chrome: var(--color-background-base);
+    --ui-navigation-quiet: var(--ui-surface-quiet);
+    --ui-navigation-control: var(--ui-surface);
+    --ui-navigation-selected: var(--ui-surface-selected);
+    --ui-workspace-canvas: var(--color-background-base);
+    --ui-workspace-panel: var(--ui-surface-panel);
+    --ui-workspace-reading: var(--ui-surface);
+    --ui-workspace-reading-base: var(--color-background-base);
+    --ui-workspace-reading-chat: var(--ui-chat-canvas);
+    --ui-workspace-reading-panel: var(--ui-surface-panel);
+    --ui-workspace-reading-muted: var(--ui-surface-muted);
+    --ui-workspace-canvas-muted: var(--ui-surface-muted);
+    --ui-workspace-canvas-chat: var(--ui-chat-canvas);
+    --ui-workspace-canvas-surface: var(--ui-surface);
+    --ui-composer-surface: var(--ui-surface);
+  }
+
+  html.has-native-glass:not(.theme-light),
+  html.has-native-glass:not(.theme-light) body,
+  html.has-native-glass:not(.theme-light) #root,
+  html.has-native-glass:not(.theme-light) .app-canvas,
+  html.has-native-glass:not(.theme-light) .body-glass,
+  html.has-native-glass.glass-body:not(.theme-light) .body-glass,
+  html.has-native-glass:not(.theme-light) .body-glass.sidebar-pane,
+  html.has-native-glass:not(.theme-light) .sidebar-glass {
+    background: var(--color-background-base);
+  }
+}
+
+/* Workspace artwork is a single window-wide image behind the existing pane
+   hierarchy. The theme veil limits even a white/black stop to 32% contribution
+   so text remains readable; the user's strength scales that contribution. */
+.workspace-background-preview {
+  background-color: var(--color-background-base);
+}
+
+html.has-workspace-background,
+.workspace-background-preview {
+  --workspace-background-veil: color-mix(
+    in srgb,
+    var(--color-background-base)
+      calc(100% - clamp(0, var(--workspace-background-strength, 0), 1) * 32%),
+    transparent
+  );
+}
+
+.workspace-background-preview {
+  background-image:
+    linear-gradient(var(--workspace-background-veil), var(--workspace-background-veil)),
+    var(--workspace-background-image, none);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+html.has-workspace-background,
+html.has-workspace-background.has-native-glass:not(.theme-light),
+html.has-workspace-background.has-native-glass.glass-body:not(.theme-light) {
+  --ui-workspace-canvas: transparent;
+  --ui-workspace-panel: transparent;
+  --ui-workspace-reading: color-mix(in srgb, var(--ui-surface) 80%, transparent);
+  --ui-workspace-reading-base: var(--ui-workspace-reading);
+  --ui-workspace-reading-chat: var(--ui-workspace-reading);
+  --ui-workspace-reading-panel: var(--ui-workspace-reading);
+  --ui-workspace-reading-muted: var(--ui-workspace-reading);
+  --ui-workspace-canvas-muted: transparent;
+  --ui-workspace-canvas-chat: transparent;
+  --ui-workspace-canvas-surface: transparent;
+  --ui-navigation-panel: transparent;
+  --ui-navigation-chrome: transparent;
+  --ui-navigation-quiet: var(--ui-workspace-reading);
+  --ui-navigation-control: var(--ui-workspace-reading);
+  --ui-navigation-selected: color-mix(in srgb, var(--ui-surface-selected) 80%, transparent);
+  --ui-composer-surface: var(--ui-workspace-reading);
+  background-color: var(--color-background-base);
+  background-image:
+    linear-gradient(var(--workspace-background-veil), var(--workspace-background-veil)),
+    var(--workspace-background-image, none);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+html.has-workspace-background body,
+html.has-workspace-background #root,
+html.has-workspace-background .app-canvas,
+html.has-workspace-background.has-native-glass:not(.theme-light) body,
+html.has-workspace-background.has-native-glass:not(.theme-light) #root,
+html.has-workspace-background.has-native-glass:not(.theme-light) .app-canvas,
+html.has-workspace-background .sidebar-glass,
+html.has-workspace-background .body-glass,
+html.has-workspace-background .bycoda-sidebar.body-glass,
+html.has-workspace-background.has-native-glass:not(.theme-light) .sidebar-glass,
+html.has-workspace-background.has-native-glass:not(.theme-light) .body-glass.sidebar-pane,
+html.has-workspace-background.has-native-glass.glass-body:not(.theme-light) .body-glass {
+  background: transparent;
+}
+
+html.has-workspace-background .chat-pane-background,
+html.has-workspace-background.has-native-glass:not(.theme-light) .chat-pane-background {
+  background-color: transparent;
+}
+
+html.has-workspace-background .bycoda-sidebar [data-session-card][data-selected] {
+  --action-host-selected: var(--ui-navigation-selected-layer);
+}
+
+/* Unknown media features must not disable artwork; only explicit user opt-outs do. */
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  html.has-workspace-background,
+  html.has-workspace-background.has-native-glass:not(.theme-light),
+  html.has-workspace-background.has-native-glass.glass-body:not(.theme-light) {
+    --ui-workspace-canvas: var(--color-background-base);
+    --ui-workspace-panel: var(--ui-surface-panel);
+    --ui-workspace-reading: var(--ui-surface);
+    --ui-workspace-reading-base: var(--color-background-base);
+    --ui-workspace-reading-chat: var(--ui-chat-canvas);
+    --ui-workspace-reading-panel: var(--ui-surface-panel);
+    --ui-workspace-reading-muted: var(--ui-surface-muted);
+    --ui-workspace-canvas-muted: var(--ui-surface-muted);
+    --ui-workspace-canvas-chat: var(--ui-chat-canvas);
+    --ui-workspace-canvas-surface: var(--ui-surface);
+    --ui-navigation-panel: var(--ui-surface-panel);
+    --ui-navigation-chrome: var(--color-background-base);
+    --ui-navigation-quiet: var(--ui-surface-quiet);
+    --ui-navigation-control: var(--ui-surface);
+    --ui-navigation-selected: var(--ui-surface-selected);
+    --ui-composer-surface: var(--ui-surface);
+    background: var(--color-background-base);
+  }
+
+  .workspace-background-preview {
+    background-image: none;
+  }
+
+  html.has-workspace-background body,
+  html.has-workspace-background #root,
+  html.has-workspace-background .app-canvas,
+  html.has-workspace-background.has-native-glass:not(.theme-light) body,
+  html.has-workspace-background.has-native-glass:not(.theme-light) #root,
+  html.has-workspace-background.has-native-glass:not(.theme-light) .app-canvas,
+  html.has-workspace-background .sidebar-glass,
+  html.has-workspace-background .body-glass,
+  html.has-workspace-background .bycoda-sidebar.body-glass,
+  html.has-workspace-background.has-native-glass:not(.theme-light) .sidebar-glass,
+  html.has-workspace-background.has-native-glass:not(.theme-light) .body-glass.sidebar-pane,
+  html.has-workspace-background.has-native-glass.glass-body:not(.theme-light) .body-glass {
+    background: var(--color-background-base);
+  }
+
+  html.has-workspace-background .chat-pane-background,
+  html.has-workspace-background.has-native-glass:not(.theme-light) .chat-pane-background {
+    background-color: var(--ui-chat-pane-canvas);
+  }
 }
 
 textarea,
@@ -1685,11 +2510,11 @@ input,
 
 .cm-mergeView .cm-merge-revert .cm-split-hunk button:hover {
   color: var(--color-content);
-  background: color-mix(in srgb, var(--color-content) 12%, transparent);
+  background: var(--ui-fill-strong);
 }
 
 .cm-mergeView .cm-merge-revert .cm-split-hunk button:focus-visible {
-  outline: 1px solid var(--color-accent);
+  outline: 1px solid var(--ui-focus-ring-color);
   outline-offset: -1px;
 }
 
@@ -1763,7 +2588,7 @@ html.is-explorer-file-dragging {
 .explorer-file-drag-preview {
   position: fixed !important;
   inset: 0 auto auto 0 !important;
-  z-index: 2147483647;
+  z-index: var(--layer-drag);
   display: flex !important;
   width: max-content !important;
   max-width: min(280px, calc(100vw - 16px));
@@ -1774,7 +2599,7 @@ html.is-explorer-file-dragging {
   padding: 0 9px 0 7px !important;
   overflow: hidden;
   pointer-events: none !important;
-  border: 1px solid color-mix(in srgb, var(--color-content) 12%, transparent);
+  border: 1px solid var(--ui-fill-strong);
   border-radius: 5px;
   background: color-mix(
     in srgb,
@@ -1827,7 +2652,7 @@ html.is-resizing {
   container: composer-controls / inline-size;
 }
 @container composer-controls (width < 560px) {
-  [data-model-effort],
+  [data-model-account],
   [data-extras-summary] {
     display: none;
   }
@@ -1838,6 +2663,11 @@ html.is-resizing {
     display: none;
   }
 }
+@container composer-controls (width < 320px) {
+  [data-model-effort] {
+    display: none;
+  }
+}
 @container composer-controls (width < 400px) {
   [data-access-picker-trigger] > span,
   [data-access-picker-trigger] > svg:last-child {
@@ -1845,57 +2675,9 @@ html.is-resizing {
   }
 }
 
-html.theme-light [data-composer-box] {
-  background: var(--color-background-base);
-  box-shadow:
-    0 6px 24px color-mix(in srgb, var(--color-content) 9%, transparent),
-    0 2px 6px color-mix(in srgb, var(--color-content) 6%, transparent);
-}
-
-/* Solid primary actions share the composer submit treatment. */
-.primary-action:not(:disabled) {
-  background: var(--color-content);
-  color: var(--color-background-base);
-}
-
-.primary-action:not(:disabled):hover {
-  background: var(--ui-primary-hover);
-}
-
-.primary-action:disabled {
-  background: var(--color-selection);
-  color: var(--ui-text-disabled);
-}
-
-html.theme-light .primary-action:not(:disabled) {
-  background: var(--color-content);
-  color: var(--color-background-base);
-}
-
-html.theme-light .primary-action:not(:disabled):hover {
-  background: var(--ui-primary-hover);
-}
-
-html.theme-light .primary-action:disabled {
-  background: var(--color-selection);
-  color: var(--ui-text-disabled);
-}
-
-html.has-user-accent .primary-action:not(:disabled) {
-  background: var(--user-accent-color);
-  color: var(--user-accent-foreground);
-}
-
-html.has-user-accent .primary-action:not(:disabled):hover {
-  background: color-mix(in srgb, var(--user-accent-color) 88%, var(--color-content));
-}
-
-html.has-user-accent .primary-action:disabled {
-  background: color-mix(in srgb, var(--user-accent-color) 28%, transparent);
-  color: color-mix(in srgb, var(--color-content) 35%, transparent);
-}
-
 .composer-field {
+  /* Match the absolute highlight layer without an inline textarea baseline gap. */
+  display: block;
   color: transparent;
   caret-color: var(--color-content);
   -webkit-text-fill-color: transparent;
@@ -1906,7 +2688,7 @@ html.has-user-accent .primary-action:disabled {
 .composer-field::selection {
   color: transparent;
   -webkit-text-fill-color: transparent;
-  background: color-mix(in srgb, var(--user-accent-color, var(--color-accent)) 30%, transparent);
+  background: var(--ui-overlay-selection-background);
 }
 
 .composer-field[data-composer-plain="true"],
@@ -1915,9 +2697,10 @@ html.has-user-accent .primary-action:disabled {
   -webkit-text-fill-color: var(--color-content);
 }
 
+/* Placeholder is the shared muted text role (about 6:1 on the composer), not a 40% alpha of the ink. */
 .composer-field::placeholder {
-  color: color-mix(in srgb, var(--color-content) 40%, transparent);
-  -webkit-text-fill-color: color-mix(in srgb, var(--color-content) 40%, transparent);
+  color: var(--ui-text-muted);
+  -webkit-text-fill-color: var(--ui-text-muted);
 }
 
 .markdown-source-heading {
@@ -1930,9 +2713,15 @@ html.has-user-accent .primary-action:disabled {
   -webkit-text-fill-color: transparent;
 }
 
+.markdown-source-field::selection {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background: var(--ui-overlay-selection-background);
+}
+
 .markdown-source-field::placeholder {
-  color: color-mix(in srgb, var(--color-content) 35%, transparent);
-  -webkit-text-fill-color: color-mix(in srgb, var(--color-content) 35%, transparent);
+  color: var(--ui-text-muted);
+  -webkit-text-fill-color: var(--ui-text-muted);
 }
 
 .composer-toolbar::-webkit-scrollbar,
@@ -1976,23 +2765,185 @@ html.is-grabbing {
   --interaction-cursor: var(--workspace-drag-cursor, grabbing);
 }
 
+/* Drop-target roles. One vocabulary for every surface that moves, reorders, groups or splits:
+   a row, a tab, a pane edge and the cursor badge all draw from these, so "between", "into",
+   "group" and "split" read differently before the pointer is released. They are resolved on the
+   element that carries them, so a scoped accent or theme still applies. Set the mark through
+   setDropIndicator() in shared/lib/drag.ts. Nothing here animates, so reduced motion needs no
+   override. */
+:root,
+[data-drop-indicator],
+.pointer-drop-hint {
+  --ui-drop-line: var(--ui-interaction-ink);
+  --ui-drop-line-size: 2px;
+  --ui-drop-frame: var(--ui-interaction-ink);
+  --ui-drop-wash: color-mix(in oklab, var(--ui-interaction-ink) 14%, transparent);
+  --ui-drop-blocked: var(--ui-tone-neutral-border);
+}
+
+/* Positioned only when nothing else positions the element (zero specificity). */
+:where([data-drop-indicator]) {
+  position: relative;
+}
+
+[data-drop-indicator]::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* Between two items: an insertion line on the edge the item would land against. */
+[data-drop-indicator="before"]::after,
+[data-drop-indicator="after"]::after {
+  inset-inline: 0;
+  block-size: var(--ui-drop-line-size);
+  border-radius: var(--ui-drop-line-size);
+  background: var(--ui-drop-line);
+}
+[data-drop-indicator="before"]::after {
+  inset-block-start: 0;
+}
+[data-drop-indicator="after"]::after {
+  inset-block-end: 0;
+}
+[data-drop-indicator="before"][data-drop-axis="x"]::after,
+[data-drop-indicator="after"][data-drop-axis="x"]::after {
+  inset-block: 0;
+  inset-inline: auto;
+  block-size: auto;
+  inline-size: var(--ui-drop-line-size);
+}
+[data-drop-indicator="before"][data-drop-axis="x"]::after {
+  inset-inline-start: 0;
+}
+[data-drop-indicator="after"][data-drop-axis="x"]::after {
+  inset-inline-end: 0;
+}
+
+/* Into the item (a folder, a pane): solid frame and a wash. */
+[data-drop-indicator="inside"]::after {
+  inset: 0;
+  background: var(--ui-drop-wash);
+  box-shadow: inset 0 0 0 var(--ui-drop-line-size) var(--ui-drop-frame);
+}
+
+/* A new group is formed (dwell finished): dashed frame, so it differs from a plain move inside. */
+[data-drop-indicator="group"]::after {
+  inset: 0;
+  background: var(--ui-drop-wash);
+  border: var(--ui-drop-line-size) dashed var(--ui-drop-frame);
+}
+
+/* Dropping on an edge splits the target: the half that the new pane would take is washed. */
+[data-drop-indicator^="split-"]::after {
+  background: var(--ui-drop-wash);
+  border: 0 solid var(--ui-drop-frame);
+  border-radius: 0;
+}
+[data-drop-indicator="split-start"]::after {
+  inset: 0 50% 0 0;
+  border-inline-end-width: var(--ui-drop-line-size);
+}
+[data-drop-indicator="split-end"]::after {
+  inset: 0 0 0 50%;
+  border-inline-start-width: var(--ui-drop-line-size);
+}
+[data-drop-indicator="split-top"]::after {
+  inset: 0 0 50% 0;
+  border-block-end-width: var(--ui-drop-line-size);
+}
+[data-drop-indicator="split-bottom"]::after {
+  inset: 50% 0 0 0;
+  border-block-start-width: var(--ui-drop-line-size);
+}
+
+/* Refused target: neutral dashed frame, no wash and no accent. */
+[data-drop-indicator="blocked"]::after {
+  inset: 0;
+  border: var(--ui-drop-line-size) dashed var(--ui-drop-blocked);
+}
+
+/* The one cursor badge: what is moving and what releasing does. Targets never repeat it. */
 .pointer-drop-hint {
   position: fixed;
-  z-index: 2147483647;
+  z-index: var(--layer-drag);
   pointer-events: none;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  max-inline-size: min(320px, calc(100vw - 16px));
   padding: 6px 10px;
-  border: 1px solid var(--color-accent);
-  border-radius: 6px;
-  background: var(--color-background-base);
-  color: var(--color-content, var(--palette-hexfff));
-  box-shadow: 0 3px 12px var(--palette-hex0005);
-  font-size: 12px;
+  border: 1px solid var(--ui-drop-frame);
+  border-radius: 0.5rem;
+  background: var(--ui-surface-floating);
+  color: var(--color-content);
+  box-shadow: var(--ui-elevation-floating);
+  font-size: var(--ui-font-caption, 12px);
   white-space: nowrap;
 }
 
+.pointer-drop-hint-subject {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
 .pointer-drop-hint[data-action="blocked"] {
-  border-color: var(--color-stroke, var(--palette-hex666));
-  opacity: 0.85;
+  border-color: var(--ui-drop-blocked);
+  color: var(--ui-text-secondary);
+}
+
+/* The dragged item itself: a lifted copy that follows the pointer (createDragPreview). The list
+   shows where it will land by opening a gap, so only the states that need words carry a label,
+   attached to the copy. Attribute selectors keep these above the copied utility classes. */
+.pointer-drag-preview[data-drag-preview] {
+  z-index: var(--layer-drag);
+  pointer-events: none;
+  background: var(--ui-surface-raised);
+  border-color: var(--ui-drop-frame);
+  box-shadow: none;
+  scale: 1;
+  transition:
+    scale var(--motion-reorder-duration) var(--motion-ease-out),
+    box-shadow var(--motion-reorder-duration) var(--motion-ease-out);
+}
+.pointer-drag-preview[data-drag-preview][data-lifted] {
+  scale: 1.02;
+  box-shadow: var(--ui-elevation-floating);
+}
+.pointer-drag-preview[data-drag-preview][data-action="blocked"] {
+  border-color: var(--ui-drop-blocked);
+  border-style: dashed;
+}
+.pointer-drag-preview-label {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-end: 8px;
+  translate: 0 50%;
+  max-inline-size: calc(100% - 16px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border: 1px solid var(--ui-drop-frame);
+  border-radius: 0.375rem;
+  background: var(--ui-surface-floating);
+  color: var(--color-content);
+  box-shadow: var(--ui-elevation-floating);
+  font-size: var(--ui-font-caption, 12px);
+  line-height: 1.4;
+}
+[data-action="blocked"] > .pointer-drag-preview-label {
+  border-color: var(--ui-drop-blocked);
+  color: var(--ui-text-secondary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pointer-drag-preview[data-drag-preview] {
+    transition: none;
+  }
 }
 
 .material-icon svg {
@@ -2022,9 +2973,9 @@ html.is-grabbing {
 .agent-markdown [data-streamdown="table-wrapper"] {
   gap: 0;
   padding: 0;
-  border-color: color-mix(in srgb, var(--color-content) 10%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--color-content) 6%, transparent);
+  border-color: var(--color-stroke);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface-panel);
 }
 
 .agent-markdown [data-streamdown="code-block"] {
@@ -2052,7 +3003,7 @@ html.is-grabbing {
 
 .agent-markdown .markdown-code-shell [data-streamdown="code-block"] {
   margin-block: 0;
-  background: color-mix(in srgb, var(--color-background-base) 94%, var(--color-content) 6%);
+  background: var(--ui-surface-panel);
 }
 
 .agent-markdown .markdown-code-copy.is-failed {
@@ -2077,23 +3028,23 @@ html.is-grabbing {
   box-shadow: none;
   color: color-mix(in srgb, var(--color-content) 45%, transparent);
   transition:
-    color 160ms ease,
-    background-color 160ms ease;
+    color var(--motion-duration-standard) ease,
+    background-color var(--motion-duration-standard) ease;
 }
 
 .agent-markdown .markdown-code-copy:hover {
-  background: color-mix(in srgb, var(--color-content) 10%, transparent);
+  background: var(--ui-fill-muted);
   color: var(--color-content);
 }
 
 .sidebar-opacity-slider:focus-visible {
-  outline: var(--ui-focus-width) solid var(--color-accent);
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
   outline-offset: 3px;
 }
 
 .agent-markdown .markdown-code-copy:focus-visible {
-  outline-color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-content) 10%, transparent);
+  outline-color: var(--ui-focus-ring-color);
+  background: var(--ui-fill-muted);
   color: var(--color-content);
 }
 
@@ -2201,8 +3152,8 @@ html.is-grabbing {
 
 .agent-markdown .markdown-code-copy-pages {
   transition:
-    opacity 120ms ease 100ms,
-    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity var(--motion-duration-fast) var(--motion-ease-standard) var(--motion-duration-fast),
+    transform var(--motion-duration-slow) var(--motion-ease-standard);
 }
 
 .agent-markdown .markdown-code-copy-check {
@@ -2211,17 +3162,17 @@ html.is-grabbing {
   stroke-dashoffset: 16;
   transform: scale(0.65) rotate(-12deg);
   transition:
-    opacity 80ms ease 180ms,
-    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
-    stroke-dashoffset 260ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity var(--motion-duration-instant) var(--motion-ease-standard) var(--motion-notice-duration),
+    transform var(--motion-duration-slow) var(--motion-ease-standard),
+    stroke-dashoffset var(--motion-duration-slow) var(--motion-ease-standard);
 }
 
 .agent-markdown .markdown-code-copy.is-copied .markdown-code-copy-pages {
   opacity: 0;
   transform: scale(0.55) rotate(12deg);
   transition:
-    opacity 120ms ease,
-    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity var(--motion-duration-fast) ease,
+    transform var(--motion-duration-slow) var(--motion-ease-standard);
 }
 
 .agent-markdown .markdown-code-copy.is-copied .markdown-code-copy-check {
@@ -2229,9 +3180,9 @@ html.is-grabbing {
   stroke-dashoffset: 0;
   transform: scale(1) rotate(0);
   transition:
-    opacity 80ms ease,
-    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
-    stroke-dashoffset 260ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity var(--motion-duration-instant) ease,
+    transform var(--motion-duration-slow) var(--motion-ease-standard),
+    stroke-dashoffset var(--motion-duration-slow) var(--motion-ease-standard);
 }
 
 .agent-markdown .markdown-code-icon {
@@ -2245,6 +3196,8 @@ html.is-grabbing {
 }
 
 .agent-markdown .markdown-code-path {
+  display: flex;
+  align-items: center;
   position: absolute;
   z-index: 1;
   top: 10px;
@@ -2257,7 +3210,7 @@ html.is-grabbing {
   font-size: 12px;
   font-weight: 500;
   color: color-mix(in srgb, var(--color-content) 65%, transparent);
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .agent-markdown .markdown-code-shell:has(.markdown-code-copy) .markdown-code-path {
@@ -2265,6 +3218,9 @@ html.is-grabbing {
 }
 
 .agent-markdown .markdown-code-path-link {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   pointer-events: auto;
   max-width: 100%;
   padding: 0;
@@ -2396,7 +3352,7 @@ html.is-grabbing {
 .agent-markdown [data-streamdown="code-block-body"] {
   padding: 10px 8px 10px 0;
   border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--color-content) 10%, transparent);
+  border-top: 1px solid var(--ui-fill-muted);
   border-radius: 0;
   background: transparent;
   font-size: 12px;
@@ -2481,9 +3437,9 @@ html:not(.theme-light) .markdown-code-token {
   .agent-markdown .markdown-table-shell > .markdown-code-copy:not(.is-copied, .is-failed) {
     opacity: 0;
     transition:
-      opacity 120ms ease,
-      color 160ms ease,
-      background-color 160ms ease;
+      opacity var(--motion-duration-fast) ease,
+      color var(--motion-duration-standard) ease,
+      background-color var(--motion-duration-standard) ease;
   }
 
   .agent-markdown
@@ -2495,7 +3451,7 @@ html:not(.theme-light) .markdown-code-token {
 
 .agent-markdown [data-streamdown="table"] > :not(:last-child),
 .agent-markdown [data-streamdown="table-body"] > :not(:last-child) {
-  border-color: color-mix(in srgb, var(--color-content) 5%, transparent);
+  border-color: var(--ui-fill-faint);
 }
 
 .agent-markdown [data-streamdown="table-header-cell"],
@@ -2508,7 +3464,7 @@ html:not(.theme-light) .markdown-code-token {
 
 .agent-markdown [data-streamdown="horizontal-rule"] {
   border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--color-content) 10%, transparent);
+  border-top: 1px solid var(--ui-fill-muted);
 }
 
 .agent-markdown p,
@@ -2661,11 +3617,11 @@ html:not(.theme-light) .markdown-code-token {
 }
 
 .activity-dock-done {
-  animation: activity-dock-done 1200ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: activity-dock-done var(--motion-duration-celebrate) var(--motion-ease-standard);
 }
 
 .activity-dock-check {
-  animation: activity-dock-check 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: activity-dock-check var(--motion-duration-reveal) var(--motion-ease-overshoot) both;
 }
 
 .activity-dock-waiting {
@@ -2691,7 +3647,7 @@ html:not(.theme-light) .markdown-code-token {
 }
 
 .linked-panel-slide {
-  animation: linked-panel-slide 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: linked-panel-slide var(--motion-duration-slow) var(--motion-ease-standard);
 }
 
 /* New split panes; same motion as the linked panel's slide. */
@@ -2707,7 +3663,7 @@ html:not(.theme-light) .markdown-code-token {
 }
 
 [data-pane-enter] {
-  animation: pane-enter 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: pane-enter var(--motion-duration-slow) var(--motion-ease-standard);
 }
 
 [data-pane-enter="right"] {
@@ -2742,7 +3698,8 @@ html:not(.theme-light) .markdown-code-token {
 }
 
 .linked-panel-reveal {
-  animation: linked-panel-reveal 240ms cubic-bezier(0.22, 1, 0.36, 1) 90ms both;
+  animation: linked-panel-reveal var(--motion-sheet-duration) var(--motion-ease-standard)
+    var(--motion-duration-fast) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2781,7 +3738,7 @@ html:not(.theme-light) .markdown-code-token {
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: composer-mode-shimmer 900ms ease-out;
+  animation: composer-mode-shimmer var(--motion-duration-celebrate) var(--motion-ease-out);
 }
 
 @keyframes composer-mode-shimmer {
@@ -2847,7 +3804,7 @@ html:not(.theme-light) .markdown-code-token {
   grid-template-rows: 0fr;
   overflow: hidden;
   contain: layout paint;
-  transition: grid-template-rows 220ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  transition: grid-template-rows var(--motion-surface-duration) var(--motion-ease-standard);
 }
 .project-group-body[data-open="true"] {
   grid-template-rows: 1fr;
@@ -2890,8 +3847,8 @@ html:not(.theme-light) .markdown-code-token {
   display: grid;
   grid-template-rows: 1fr;
   transition:
-    grid-template-rows 320ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 220ms ease;
+    grid-template-rows var(--motion-duration-reveal) var(--motion-ease-standard),
+    opacity var(--motion-surface-duration) var(--motion-ease-standard);
 }
 
 .zen-phase-body[data-open="false"] {
@@ -2919,12 +3876,31 @@ html:not(.theme-light) .markdown-code-token {
   overflow: auto;
   overscroll-behavior: contain;
   overflow-anchor: none;
+  /*
+   * The window is pinned to the bottom, so the first visible step starts at an
+   * arbitrary offset. A short fade at the top edge (over reserved padding, so
+   * an unscrolled window is not dimmed) dissolves a clipped line instead of
+   * cutting it mid-glyph, and keeps it clear of the command line above.
+   */
+  scroll-padding-block-start: 0.625rem;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, var(--color-content) 0.625rem);
+  mask-image: linear-gradient(to bottom, transparent 0, var(--color-content) 0.625rem);
+}
+
+.zen-phase-body[data-open="true"] > .zen-phase-live > * {
+  padding-block-start: 0.625rem;
 }
 
 /* Explicit inspection is a reading view: keep the selected step and its copy
    header clear of the live window's automatic bottom pinning. */
 .zen-phase-body[data-open="true"] > .zen-phase-live:has([data-tool-inspection]) {
   max-height: none;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.zen-phase-body[data-open="true"] > .zen-phase-live:has([data-tool-inspection]) > * {
+  padding-block-start: 0;
 }
 
 /*
@@ -3075,8 +4051,8 @@ html:not(.theme-light) .markdown-code-token {
 
 .zen-fold-prose .agent-markdown [data-streamdown="code-block"],
 .zen-fold-prose .agent-markdown [data-streamdown="table-wrapper"] {
-  border-color: color-mix(in srgb, var(--color-content) 8%, transparent);
-  background: color-mix(in srgb, var(--color-content) 4%, transparent);
+  border-color: var(--ui-fill-subtle);
+  background: var(--ui-fill-faint);
 }
 
 .zen-fold-prose .agent-markdown [data-streamdown="table-header-cell"],
@@ -3112,13 +4088,13 @@ html:not(.theme-light) .markdown-code-token {
 }
 
 .zen-fold-item[data-fold-state="opening"] {
-  animation: zen-fold-open 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: zen-fold-open var(--motion-duration-reveal) var(--motion-ease-standard) both;
 }
 
 .zen-fold-item[data-fold-state="closing"] {
   pointer-events: none;
   user-select: none;
-  animation: zen-fold-close 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: zen-fold-close var(--motion-duration-reveal) var(--motion-ease-standard) both;
 }
 
 .zen-fold-item:is([data-fold-state="opening"], [data-fold-state="closing"]) > *,
@@ -3207,7 +4183,8 @@ html:not(.theme-light) .markdown-code-token {
  * own pace: steps next to each other in a burst are paced alike.
  */
 .zen-phase-step[data-live]::before {
-  transition: clip-path calc(var(--step-ms, 320ms) * 0.3) var(--motion-ease-out);
+  transition: clip-path calc(var(--step-ms, var(--motion-duration-reveal)) * 0.3)
+    var(--motion-ease-out);
   clip-path: inset(0);
 }
 
@@ -3227,7 +4204,7 @@ html:not(.theme-light) .markdown-code-token {
 .zen-phase-step[data-entering] {
   display: grid;
   overflow: clip;
-  animation: zen-step-open calc(var(--step-ms) * 0.4) cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: zen-step-open calc(var(--step-ms) * 0.4) var(--motion-ease-standard) both;
 }
 
 .zen-phase-step[data-entering]:is(:last-child, :has(+ .zen-phase-step[data-waiting]))::before {
@@ -3247,7 +4224,7 @@ html:not(.theme-light) .markdown-code-token {
   mask-size: 100% 300%;
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
-  animation: zen-step-in calc(var(--step-ms) * 0.5) cubic-bezier(0.16, 1, 0.3, 1)
+  animation: zen-step-in calc(var(--step-ms) * 0.5) var(--motion-ease-emphasized)
     calc(var(--step-ms) * 0.5) both;
 }
 
@@ -3265,7 +4242,7 @@ html:not(.theme-light) .markdown-code-token {
 }
 
 .agent-markdown.word-fading [data-word-fade]:where(:not([data-word-settled])) {
-  animation: word-fade-in 320ms ease-out both;
+  animation: word-fade-in var(--motion-duration-reveal) var(--motion-ease-out) both;
 }
 
 @keyframes zen-thinking-pulse {
@@ -3338,16 +4315,48 @@ html:not(.theme-light) .markdown-code-token {
 
 /* Menus need a stable surface above bright buttons and custom backgrounds. */
 .popover-backdrop {
-  background: color-mix(in srgb, var(--color-background-base) 95%, transparent);
+  background: color-mix(in srgb, var(--ui-surface-floating) 95%, transparent);
 }
 
 html.theme-light .popover-backdrop {
-  background: var(--color-background-base);
+  background: var(--ui-surface-floating);
 }
 
 /* Opaque popover surface for live canvases; no backdrop sampling. */
 .popover-solid {
-  background: var(--color-background-base);
+  background: var(--ui-surface-floating);
+}
+
+/* Frosted glass for non-interactive hover cards (Popover `frosted`). The doubled selector outranks
+   the shared .popover-backdrop rules below; without blur the opaque floating surface stays readable. */
+.popover-backdrop.popover-frosted,
+html.theme-light .popover-backdrop.popover-frosted {
+  background: var(--ui-frosted-glass);
+  box-shadow: var(--ui-frosted-edge);
+  -webkit-backdrop-filter: var(--ui-frosted-filter);
+  backdrop-filter: var(--ui-frosted-filter);
+}
+
+html[data-performance-no-blur] .popover-backdrop.popover-frosted {
+  background: var(--ui-surface-floating);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .popover-backdrop.popover-frosted,
+  html.theme-light .popover-backdrop.popover-frosted {
+    background: var(--ui-surface-floating);
+  }
+}
+
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  .popover-backdrop.popover-frosted,
+  html.theme-light .popover-backdrop.popover-frosted {
+    background: var(--ui-surface-floating);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 /* Animate content only; its sibling glass stays still. Finish at `none` and
@@ -3365,7 +4374,7 @@ html.theme-light .popover-backdrop {
 }
 
 .popover-open {
-  animation: popover-open 170ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation: popover-open var(--motion-duration-standard) var(--motion-ease-emphasized) backwards;
 }
 
 .popover-open[data-popover-side="bottom"] {
@@ -3400,35 +4409,6 @@ html.theme-light .popover-backdrop {
   opacity: 0;
 }
 
-/* Held on the first frame until the freshly mounted sheet has painted. */
-.btw-overlay[data-morph="pending"] .btw-sheet-body,
-.btw-overlay[data-morph="pending"] .btw-burst,
-.btw-overlay[data-morph="pending"] .btw-burst * {
-  animation-play-state: paused;
-}
-
-/* The composer's outline, carried between the session composer's box and
-   the side composer's box while their contents cross-fade inside it. */
-.btw-morph-frame {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 0;
-  height: 0;
-  opacity: 0;
-  pointer-events: none;
-  border: 1px solid color-mix(in srgb, var(--color-content) 12%, transparent);
-  border-radius: var(--radius-lg, 0.5rem);
-  background: color-mix(in srgb, var(--color-content) 3%, transparent);
-}
-
-html.theme-light .btw-morph-frame {
-  background: var(--color-background-base);
-  box-shadow:
-    0 6px 24px color-mix(in srgb, var(--color-content) 9%, transparent),
-    0 2px 6px color-mix(in srgb, var(--color-content) 6%, transparent);
-}
-
 /*
  * Opening a side question: question marks drift up out of the composer into
  * the panel, wobbling as they rise, while the composer box glows and a sheen
@@ -3444,7 +4424,8 @@ html.theme-light .btw-morph-frame {
   position: absolute;
   pointer-events: none;
   border-radius: var(--radius-lg, 0.5rem);
-  animation: btw-burst-halo 1100ms 60ms ease-out both;
+  animation: btw-burst-halo var(--motion-duration-celebrate) var(--motion-duration-instant)
+    var(--motion-ease-out) both;
 }
 
 html.theme-light .btw-burst {
@@ -3470,7 +4451,8 @@ html.theme-light .btw-burst {
     transparent 70%
   );
   transform: translateX(-120%);
-  animation: btw-burst-sheen 900ms 140ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: btw-burst-sheen var(--motion-duration-celebrate) var(--motion-duration-fast)
+    var(--motion-ease-sheen) both;
 }
 
 .btw-burst-mark {
@@ -3479,7 +4461,7 @@ html.theme-light .btw-burst {
   left: var(--x);
   width: 0;
   height: 0;
-  animation: btw-mark-rise var(--duration) var(--delay) cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  animation: btw-mark-rise var(--duration) var(--delay) var(--motion-ease-emphasized) both;
 }
 
 .btw-burst-glyph {
@@ -3570,72 +4552,6 @@ html.theme-light .btw-burst {
   top: clamp(2.5rem, 18%, 12rem);
 }
 
-/* Match the composer box it morphs out of. */
-.btw-sheet-glass {
-  border: 1px solid color-mix(in srgb, var(--color-content) 10%, transparent);
-  border-bottom: 0;
-  border-radius: var(--radius-lg, 0.5rem) var(--radius-lg, 0.5rem) 0 0;
-  box-shadow:
-    0 20px 25px -5px var(--palette-rgb_0_0_0_0_1),
-    0 8px 10px -6px var(--palette-rgb_0_0_0_0_1);
-}
-
-/* Tabs and messages enter with the panel; the composer is where the morph
-   starts, so it stays put. */
-.btw-sheet-body {
-  animation: btw-body-in var(--motion-sheet-duration) var(--motion-ease-out) backwards;
-}
-
-.btw-overlay[data-state="closed"] {
-  pointer-events: none;
-}
-
-/* On close the side composer gives way to the session composer beneath
-   right away, while the panel is still folding down. */
-.btw-overlay[data-state="closed"] .btw-sheet-body,
-.btw-overlay[data-state="closed"] .btw-sheet-composer {
-  animation: btw-fade-out 120ms ease-in both;
-}
-
-@keyframes btw-body-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes btw-fade-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .btw-sheet-body,
-  .btw-overlay[data-state="closed"] .btw-sheet-body,
-  .btw-overlay[data-state="closed"] .btw-sheet-composer {
-    animation: none;
-  }
-}
-
-.btw-error {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 11px;
-  border: 1px solid color-mix(in srgb, var(--palette-dangerDark) 24%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--palette-dangerDark) 7%, transparent);
-}
-
 /* The selected project mascot turns banked resets into a tiny status scene. */
 .reset-mascot-scene {
   position: absolute;
@@ -3668,7 +4584,7 @@ html.theme-light .btw-burst {
 }
 
 .reset-mascot-scene[data-reset-mascot-mood="happy"] .reset-mascot-sprite {
-  animation: reset-mascot-happy-in 720ms cubic-bezier(0.2, 0.9, 0.25, 1) both;
+  animation: reset-mascot-happy-in var(--motion-duration-ambient) var(--motion-ease-emphasized) both;
 }
 
 .reset-mascot-spark {
@@ -3678,7 +4594,8 @@ html.theme-light .btw-burst {
   background: currentColor;
   box-shadow: 0 0 8px currentColor;
   transform: rotate(45deg);
-  animation: reset-mascot-spark-in 620ms 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: reset-mascot-spark-in var(--motion-duration-ambient) var(--motion-duration-slow)
+    var(--motion-ease-emphasized) both;
 }
 
 .reset-mascot-spark-a {
@@ -3691,7 +4608,7 @@ html.theme-light .btw-burst {
   left: 3px;
   width: 3px;
   height: 3px;
-  animation-delay: 360ms;
+  animation-delay: var(--motion-duration-slow);
 }
 
 @keyframes reset-mascot-happy-in {
@@ -3758,8 +4675,54 @@ html.theme-light .btw-burst {
   }
 }
 
+/* The one modal scrim (Modal, sheets, GitGraphDialog, ImageLightbox). It is a sibling layer behind
+   the dialog, so only the background blurs; the dialog, its fields and the menus above stay sharp.
+   Without backdrop-filter support, or under forced colors, reduced transparency and the no-blur
+   performance mode, the full plain scrim remains as the readable dim. */
 .modal-backdrop {
+  background: var(--ui-overlay-backdrop);
   animation: modal-backdrop-in var(--motion-reorder-duration) var(--motion-ease-out) backwards;
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .modal-backdrop {
+    background: var(--ui-overlay-backdrop-soft);
+    -webkit-backdrop-filter: blur(var(--ui-overlay-backdrop-blur));
+    backdrop-filter: blur(var(--ui-overlay-backdrop-blur));
+  }
+}
+
+/* Dialogs stack in DOM order: only the lowest layer dims and blurs the work beneath; a dialog above
+   another adds a light tint over the one below. Media viewers keep the full dim for legibility. */
+[data-modal-layer] ~ [data-modal-layer] .modal-backdrop {
+  background: var(--ui-overlay-backdrop-nested);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+[data-modal-layer="media"] .modal-backdrop,
+[data-modal-layer] ~ [data-modal-layer="media"] .modal-backdrop {
+  background: var(--ui-overlay-backdrop);
+}
+
+html[data-performance-no-blur] .modal-backdrop {
+  background: var(--ui-overlay-backdrop);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  .modal-backdrop {
+    background: var(--ui-overlay-backdrop);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .modal-backdrop {
+    forced-color-adjust: none;
+  }
 }
 
 .modal-panel {
@@ -3893,45 +4856,14 @@ html.theme-light .btw-burst {
   }
 }
 
-/* Subagent panel: a right-hand sheet over the session pane, as the side
-   conversation sheet is a bottom one. */
-.subagent-sheet-glass {
-  border-left: 1px solid color-mix(in srgb, var(--color-content) 10%, transparent);
-  border-radius: var(--radius-lg, 0.5rem) 0 0 var(--radius-lg, 0.5rem);
-  box-shadow:
-    0 20px 25px -5px var(--palette-rgb_0_0_0_0_1),
-    0 8px 10px -6px var(--palette-rgb_0_0_0_0_1);
-}
-
-.subagent-sheet {
-  animation: subagent-sheet-in var(--motion-sheet-duration) var(--motion-ease-out) backwards;
-}
-
-@keyframes subagent-sheet-in {
-  from {
-    opacity: 0;
-    transform: translateX(16px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .subagent-sheet {
-    animation: none;
-  }
-}
-
 /* Hover card for the editor's blame gutter. It sits on <body>, outside the
    editor's own theme scope, because the gutter clips its children. */
 .cm-blameCard {
   position: fixed;
-  z-index: 60;
+  z-index: var(--layer-hover-card);
   max-width: 320px;
   padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--color-content) 12%, transparent);
+  border: 1px solid var(--ui-fill-strong);
   border-radius: 6px;
   background: var(--color-background-base);
   color: var(--color-content);
@@ -3968,7 +4900,7 @@ html.theme-light .btw-burst {
 }
 
 .rail-reorder-block[data-dragging] {
-  background: color-mix(in srgb, var(--color-content) 8%, transparent);
+  background: var(--ui-fill-subtle);
 }
 
 @keyframes linked-work-item-slide-in {
@@ -4017,8 +4949,18 @@ html.theme-light .btw-burst {
   }
 }
 
+/* Row status dots: no animation clock while motion is off or the window is not in front. */
+html:is([data-decorative-motion="off"], [data-window-focus="off"]) .working-dot {
+  animation-play-state: paused !important;
+}
 html[data-decorative-motion="off"]
-  :is(.activity-dock-waiting, .zen-thinking-pulse, .terminal-live-bar, .bycoda-sigil-active, .context-speed-bolt) {
+  :is(
+    .activity-dock-waiting,
+    .zen-thinking-pulse,
+    .terminal-live-bar,
+    .bycoda-sigil-active,
+    .context-speed-bolt
+  ) {
   animation-play-state: paused !important;
 }
 /* Inactive session panes keep their DOM (only the pane root's visibility flag
@@ -4030,6 +4972,17 @@ html[data-decorative-motion="off"]
 @media (prefers-reduced-motion: reduce) {
   :is(.activity-dock-waiting, .zen-thinking-pulse, .terminal-live-bar, .bycoda-sigil-active) {
     animation-play-state: paused !important;
+  }
+  /* Tailwind spinners and pulses: no rotation; the pending state stays visible as the same slow
+     opacity pulse Spinner.module.css uses. Elements that chose their own motion-reduce: variant
+     (motion-reduce:animate-none) keep it. Unlayered, so it outranks the utility itself. */
+  :is(.animate-spin, .animate-pulse):not([class*="motion-reduce:"]) {
+    animation: ui-reduced-pending 1.6s ease-in-out infinite;
+  }
+}
+@keyframes ui-reduced-pending {
+  50% {
+    opacity: 0.35;
   }
 }
 /* A terminal mark is live only inside its existing active terminal control. */
@@ -4115,4 +5068,22 @@ html:is(.is-reordering, .is-resizing)
   --syntax-comment: var(--palette-hex6e7781);
   --syntax-property: var(--palette-hex0550ae);
   --syntax-meta: var(--palette-hex8250df);
+}
+
+/* Icon sizes: icon-xs 12px, icon-sm 14px, icon-md 16px, icon-lg 20px. */
+@utility icon-xs {
+  width: var(--ui-icon-xs);
+  height: var(--ui-icon-xs);
+}
+@utility icon-sm {
+  width: var(--ui-icon-sm);
+  height: var(--ui-icon-sm);
+}
+@utility icon-md {
+  width: var(--ui-icon-md);
+  height: var(--ui-icon-md);
+}
+@utility icon-lg {
+  width: var(--ui-icon-lg);
+  height: var(--ui-icon-lg);
 }

@@ -1,5 +1,6 @@
 .env
 .env.*
+!.env.example
 *.key
 *.key.pub
 *.pem
@@ -100,3 +101,11 @@ __pycache__/
 
 # Machine-specific local update settings.
 scripts/local-update/local-update.local.json
+
+# Process ids and the unused npm lockfile (this repository uses pnpm).
+*.pid
+package-lock.json
+
+# Separate Expo repository, nested here when checked out.
+/mobile/
+/tests/browser/temp/*

@@ -1,0 +1,57 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+/* Root placement stays caller-adjustable (F3 style-ownership contract). */
+@layer components {
+  .surface {
+    display: block;
+    min-inline-size: 0;
+    border-radius: var(--ui-radius-card);
+  }
+}
+
+/* A static container. Every variant keeps a 1px frame (transparent unless outlined) so
+   switching variant never shifts content. */
+.surface {
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  color: inherit;
+}
+.surface[data-variant="plain"] {
+  background: var(--ui-surface);
+}
+.surface[data-variant="raised"] {
+  /* Light themes draw the raised step as paper white, so it keeps a frame to stay a surface. */
+  background: var(--ui-surface-raised);
+  border-color: var(--ui-pane-border);
+}
+.surface[data-variant="outline"] {
+  background: transparent;
+  border-color: var(--ui-pane-border);
+}
+.surface[data-variant="quiet"] {
+  background: var(--ui-surface-quiet);
+  border-color: var(--ui-pane-border);
+}
+.surface[data-variant="inset"] {
+  /* --ui-surface-inset is a requested theme role (a well below the canvas in light themes);
+     until it exists the muted field tone is used. */
+  background: var(--ui-surface-inset, var(--ui-surface-muted));
+}
+.surface[data-padding="none"] {
+  padding: 0;
+}
+.surface[data-padding="sm"] {
+  padding: 0.5rem;
+}
+.surface[data-padding="md"] {
+  padding: 0.75rem;
+}
+.surface[data-padding="lg"] {
+  padding: 1rem;
+}
+/* No card inside a card: a nested Surface keeps its fill and padding but drops its frame.
+   Separate nested groups with spacing or a Divider. */
+.surface .surface {
+  border-color: transparent;
+}

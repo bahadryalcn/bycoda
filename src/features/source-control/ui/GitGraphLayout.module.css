@@ -1,0 +1,19 @@
+/* The commit graph toolbar beside the dialog title: refresh, search and the history scope.
+   The search field gives way first when the dialog is narrow. */
+.toolbar {
+  display: flex;
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.search {
+  flex: 0 1 24rem;
+  min-inline-size: 7rem;
+}
+
+.scope {
+  flex: 0 0 auto;
+}

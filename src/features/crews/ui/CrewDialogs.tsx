@@ -2,23 +2,34 @@ import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
+import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Alert } from "../../../shared/ui/Alert";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { MessageSquare, Pencil, Play, Trash2 } from "../../../shared/ui/icons";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { AccessPicker } from "../../sessions/public/AccessPicker";
+import type { RuntimeMode } from "../../sessions/public/session";
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import type { CrewDefinition, CrewRun } from "../model/crew";
 import type { useProjectCrews } from "../model/crewClient";
 import { saveCrewAppearance } from "../model/crewAppearance";
 import { roleLabel } from "./CrewMemberForm";
+import { useCrewMachineScope } from "./CrewMachineScope";
+import { CrewRoleIcon } from "./CrewRoleIcon";
 
 export { CrewEditDialog } from "./CrewEditor";
 
 // The delivery being written survives editing the crew and reopening this dialog.
-const startDrafts = new Map<string, { definitionId: string; prompt: string }>();
+type StartAttempt = { signature: string; id: string; run?: CrewRun };
+const startDrafts = new Map<
+  string,
+  { definitionId: string; prompt: string; attempt?: StartAttempt }
+>();
 
 export function StartCrewDialog({
-  cwd,
-  state,
+  cwd: homeCwd,
+  state: homeState,
   definitionId: initialDefinition,
   onOpen,
   onEdit,
@@ -33,45 +44,85 @@ export function StartCrewDialog({
   onClose: () => void;
 }) {
   useLocale();
+  // New work can go to another project, or a new one, on any machine that runs crews.
+  const scope = useCrewMachineScope(homeCwd, homeState);
+  const { cwd, state } = scope;
   const data = state.data;
-  const draftKey = data ? `${data.machine.id}/${data.project.id}` : cwd;
+  const draftKey = data ? JSON.stringify([data.machine.id, data.project.id]) : cwd;
   const stored = startDrafts.get(draftKey);
   const [definitionId, setDefinitionIdState] = useState(
     initialDefinition ?? stored?.definitionId ?? data?.definitions[0]?.id ?? "",
   );
   const [prompt, setPromptState] = useState(stored?.prompt ?? "");
+  const [startedRun, setStartedRun] = useState<CrewRun | undefined>(() =>
+    stored?.attempt?.signature === JSON.stringify([definitionId, stored?.prompt ?? ""])
+      ? stored.attempt.run
+      : undefined,
+  );
   const remember = (next: { definitionId?: string; prompt?: string }) =>
-    startDrafts.set(draftKey, { definitionId, prompt, ...next });
+    startDrafts.set(draftKey, {
+      definitionId,
+      prompt,
+      attempt: startRequest.current ?? undefined,
+      ...next,
+    });
+  // The last attempt ended without a receipt; retrying reuses its request ID.
+  const [sameRequestRetry, setSameRequestRetry] = useState(false);
   const setDefinitionId = (value: string) => {
     setDefinitionIdState(value);
+    setAccessChoice(undefined);
+    setStartedRun(undefined);
+    setSameRequestRetry(false);
     remember({ definitionId: value });
   };
   const setPrompt = (value: string) => {
     setPromptState(value);
+    setStartedRun(undefined);
+    setSameRequestRetry(false);
     remember({ prompt: value });
   };
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const pendingGate = useRef(false);
-  const startRequest = useRef<{ signature: string; id: string } | null>(null);
+  const startRequest = useRef<StartAttempt | null>(stored?.attempt ?? null);
   const crew = data?.definitions.find((d) => d.id === definitionId);
+  // Access applies to every member; it is saved to the crew only when the owner changed it.
+  const [accessChoice, setAccessChoice] = useState<RuntimeMode>();
+  const savedAccess = crew?.policy.runtimeMode ?? "supervised";
+  const access = accessChoice ?? savedAccess;
   const start = async () => {
-    if (pendingGate.current) return;
+    if (pendingGate.current || (!startedRun && (!crew || !prompt.trim()))) return;
     pendingGate.current = true;
     setPending(true);
     setError("");
+    let dispatched = false;
     try {
       const signature = JSON.stringify([definitionId, prompt]);
-      if (startRequest.current?.signature !== signature)
+      if (startRequest.current?.signature !== signature) {
+        // A first attempt: an earlier attempt already saved the access it started with.
+        if (crew && data?.accessSupported && access !== savedAccess)
+          await state.call("crews.save", {
+            definition: { ...crew, policy: { ...crew.policy, runtimeMode: access } },
+            expectedUpdatedAt: crew.updatedAt,
+          });
         startRequest.current = { signature, id: crypto.randomUUID() };
-      const run = await state.call<CrewRun>("crews.start", {
-        definitionId,
-        prompt,
-        requestId: startRequest.current.id,
-      });
-      if (run.error) throw new Error(run.error);
-      startDrafts.delete(draftKey);
-      onClose();
+      }
+      // Retain the receipt identity before dispatch, including when the owner
+      // closes and reopens after an uncertain transport result.
+      remember({});
+      const existingRun = startRequest.current.run;
+      dispatched = !existingRun;
+      const run =
+        existingRun ??
+        (await state.call<CrewRun>("crews.start", {
+          definitionId,
+          prompt,
+          requestId: startRequest.current.id,
+        }));
+      startRequest.current.run = run;
+      setStartedRun(run);
+      remember({});
+      if (run.error && !existingRun) throw new Error(run.error);
       if (run.coordinatorSessionId && onOpen && data)
         await onOpen({
           cwd,
@@ -79,7 +130,11 @@ export function StartCrewDialog({
           projectId: data.project.id,
           sessionId: run.coordinatorSessionId,
         });
+      else if (run.error) throw new Error(run.error);
+      startDrafts.delete(draftKey);
+      onClose();
     } catch (reason) {
+      setSameRequestRetry(dispatched && !startRequest.current?.run);
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       pendingGate.current = false;
@@ -88,7 +143,7 @@ export function StartCrewDialog({
   };
   return (
     <Modal
-      title={t("Start crew work")}
+      title={t("New work")}
       onClose={() => {
         if (!pending) onClose();
       }}
@@ -96,24 +151,46 @@ export function StartCrewDialog({
       footer={
         <>
           <span className="min-w-0 flex-1" />
-          {onEdit && definitionId ? (
-            <Button variant="ghost" onClick={() => onEdit(definitionId)} disabled={pending}>
+          {onEdit && crew && !startedRun ? (
+            <Button
+              variant="ghost"
+              startIcon={<Pencil className="icon-sm" />}
+              onClick={() => onEdit(definitionId)}
+              disabled={pending}
+            >
               {t("Edit crew")}
             </Button>
           ) : null}
           <Button
             variant="primary"
-            disabled={!definitionId || !prompt.trim() || pending}
+            startIcon={
+              startedRun?.coordinatorSessionId && onOpen ? (
+                <MessageSquare className="icon-sm" />
+              ) : (
+                <Play className="icon-sm" />
+              )
+            }
+            disabled={pending || (!startedRun && (!crew || !prompt.trim()))}
             loading={pending}
             onClick={() => void start()}
           >
-            {t("Start work")}
+            {startedRun?.coordinatorSessionId && onOpen ? t("Open conversation") : t("Start")}
           </Button>
         </>
       }
     >
-      <div className="flex flex-col gap-3 p-4 pt-2">
-        {error && <Alert tone="danger">{error}</Alert>}
+      <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-wrap items-start gap-2">
+          {scope.picker(pending || !!startedRun)}
+          {scope.projectPicker(pending || !!startedRun, true)}
+        </div>
+        {definitionId && !crew && !startedRun ? (
+          <Alert tone="warning">
+            {cwd !== homeCwd && data
+              ? t("This crew is not available in this project. Choose another crew.")
+              : t("This crew is no longer available.")}
+          </Alert>
+        ) : null}
         <SearchableSelect
           label={t("Crew")}
           value={definitionId}
@@ -128,6 +205,22 @@ export function StartCrewDialog({
           disabled={pending}
         />
         {crew ? <CrewRosterSummary crew={crew} /> : null}
+        {crew && data?.accessSupported ? (
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-ui-caption font-medium text-content">
+              {t("Access for every member")}
+            </span>
+            <div className="min-w-0 rounded-md border border-(--ui-pane-border)">
+              <AccessPicker
+                value={access}
+                onChange={(mode) => {
+                  // After a dispatched attempt the access is fixed, so a retry cannot save again.
+                  if (!pending && !sameRequestRetry && !startedRun) setAccessChoice(mode);
+                }}
+              />
+            </div>
+          </div>
+        ) : null}
         <TextareaField
           label={t("What should the crew deliver?")}
           placeholder={t("e.g. Build the mobile sign-in screen with tests.")}
@@ -137,9 +230,24 @@ export function StartCrewDialog({
           disabled={pending}
           onChange={(e) => setPrompt(e.target.value)}
         />
-        <p className="text-xs text-(--ui-text-secondary)">
+        <p className="text-ui-caption text-(--ui-text-secondary)">
           {t("The first line becomes the work title. The coordinator plans and assigns the rest.")}
         </p>
+        {error ? (
+          // Beside the footer action that failed. A receipt or request ID is kept, so retrying is safe.
+          <Alert tone="danger">
+            <p className="break-words [overflow-wrap:anywhere]">{error}</p>
+            {startedRun?.coordinatorSessionId ? (
+              <p className="mt-1 text-ui-caption">
+                {t("The work was started. Retry opens its conversation.")}
+              </p>
+            ) : sameRequestRetry ? (
+              <p className="mt-1 text-ui-caption">
+                {t("Retry sends the same request, so the work is not started twice.")}
+              </p>
+            ) : null}
+          </Alert>
+        ) : null}
       </div>
     </Modal>
   );
@@ -164,19 +272,33 @@ function CrewRosterSummary({ crew }: { crew: CrewDefinition }) {
     return [{ role, label, names }];
   });
   return (
-    <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+    <DescriptionList size="sm">
       {groups.map((group) => (
-        <div key={group.role} className="flex min-w-0 gap-1">
-          <dt className="text-(--ui-text-secondary)">
-            {group.label}
-            {group.names.length ? ":" : ""}
-          </dt>
+        <DescriptionItem
+          key={group.role}
+          term={
+            <span className="flex items-center gap-1">
+              <CrewRoleIcon role={group.role} />
+              {group.label}
+              {group.names.length ? ":" : ""}
+            </span>
+          }
+        >
           {group.names.length ? (
-            <dd className="font-medium text-content">{group.names.join(", ")}</dd>
+            <BadgeList
+              label={group.label}
+              size="xs"
+              rows={2}
+              className="[--badge-list-item-max:16rem]"
+              items={group.names.map((name, index) => ({
+                id: `${index}:${name}`,
+                label: name,
+              }))}
+            />
           ) : null}
-        </div>
+        </DescriptionItem>
       ))}
-    </dl>
+    </DescriptionList>
   );
 }
 
@@ -210,6 +332,7 @@ export function CrewDeleteDialog({
           </Button>
           <Button
             variant="danger"
+            startIcon={<Trash2 className="icon-sm" />}
             loading={pending}
             disabled={pending || activeWork > 0}
             onClick={async () => {
@@ -237,12 +360,12 @@ export function CrewDeleteDialog({
         </>
       }
     >
-      <div className="flex flex-col gap-3 p-4 pt-2">
+      <div className="flex flex-col gap-3">
         {error ? <Alert tone="danger">{error}</Alert> : null}
         {activeWork > 0 ? (
           <Alert tone="warning">{t("Stop this crew's running work before deleting it.")}</Alert>
         ) : (
-          <p className="text-sm">
+          <p className="text-ui-body">
             {t("The crew definition is removed. Library members are kept.")}
           </p>
         )}

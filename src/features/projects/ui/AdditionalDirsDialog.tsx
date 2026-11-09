@@ -1,4 +1,5 @@
 import { SearchInput } from "../../../shared/ui/SearchInput";
+import { ActionHost } from "../../../shared/ui/ActionHost";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { t, useLocale } from "../../../shared/i18n";
@@ -33,6 +34,11 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
     (path, index, all) => all.findIndex((other) => pathKey(other) === pathKey(path)) === index,
   );
 
+  const needle = query.trim().toLocaleLowerCase();
+  const visible = candidates.filter((path) =>
+    `${basename(path)} ${path}`.toLocaleLowerCase().includes(needle),
+  );
+
   const toggle = (path: string) => {
     const next = selectedKeys.has(pathKey(path))
       ? selected.filter((dir) => pathKey(dir) !== pathKey(path))
@@ -43,6 +49,7 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
 
   return (
     <Modal
+      padding="none"
       title={t("Additional folders")}
       description={t(
         "Folders agents in {p0} can also read and edit. Applies to Claude Code and Codex, from the next message.",
@@ -66,30 +73,40 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
         <EmptyState
           description={t("Put this project in a group with other projects to offer them here.")}
         />
+      ) : visible.length === 0 ? (
+        <EmptyState
+          context="panel"
+          kind="filtered"
+          icon={null}
+          description={t("No folders match your search.")}
+          onReset={() => setQuery("")}
+          resetLabel={t("Clear search")}
+        />
       ) : (
         <ul className="min-h-0 overflow-y-auto p-2">
-          {candidates
-            .filter((path) =>
-              `${basename(path)} ${path}`
-                .toLocaleLowerCase()
-                .includes(query.trim().toLocaleLowerCase()),
-            )
-            .map((path) => (
-              <li key={pathKey(path)}>
-                <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-[var(--ui-surface-hover)]">
-                  <Checkbox
-                    checked={selectedKeys.has(pathKey(path))}
-                    onChange={() => toggle(path)}
-                  />
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate text-[13px] text-content">{basename(path)}</span>
-                    <span className="truncate text-[11px] text-[var(--ui-text-muted)]">
-                      {prettyCwd(path)}
-                    </span>
-                  </span>
-                </label>
-              </li>
-            ))}
+          {visible.map((path) => (
+            <li key={pathKey(path)}>
+              <ActionHost>
+                <Checkbox
+                  checked={selectedKeys.has(pathKey(path))}
+                  onChange={() => toggle(path)}
+                  label={
+                    <>
+                      <span className="flex min-w-0 flex-col">
+                        <span className="truncate text-ui-secondary text-content">
+                          {basename(path)}
+                        </span>
+                        <span className="truncate text-ui-micro text-(--ui-text-muted)">
+                          {prettyCwd(path)}
+                        </span>
+                      </span>
+                    </>
+                  }
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 px-2 py-1.5"
+                />
+              </ActionHost>
+            </li>
+          ))}
         </ul>
       )}
     </Modal>

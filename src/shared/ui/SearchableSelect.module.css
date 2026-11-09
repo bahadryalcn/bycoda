@@ -1,0 +1,86 @@
+/* Selected values render outside `.bycoda-arc` roots, so Arc spacing tokens carry fallbacks.
+   Selected values of a multiple choice read as the same removable chips as TagInput:
+   a quiet framed surface, a truncating label and an independent remove action. */
+:global(.bycoda-selection-values) > .value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 0.25rem);
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  padding-inline: var(--space-2, 0.375rem) 2px;
+  border: 1px solid var(--ui-tone-neutral-border);
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface-muted);
+  color: var(--ui-tone-neutral-fg);
+  font-size: var(--ui-font-secondary);
+}
+.valueLabel {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.values {
+  margin-block-start: var(--space-1, 0.25rem);
+}
+.valuesDisabled > .value {
+  color: var(--ui-control-disabled-fg);
+}
+
+/* Compact triggers (row, pill, panel) are not `.bycoda-arc-select` fields, so the Select frame's focus
+   treatment did not reach them: they drew the neutral border plus the base accent-ink outline, two
+   tones for one focus. They take the same single frame as the field variants: the border and a
+   contained outline on the one neutral focus role, danger when invalid. The fill never changes.
+   `button.bycoda-arc` outranks the shared Arc focus rule (`:is(button, ...).bycoda-arc:focus-visible`). */
+button:global(.bycoda-arc):is(
+    [data-select-variant="row"],
+    [data-select-variant="pill"],
+    [data-select-variant="panel"]
+  ):focus-visible {
+  border-color: var(--ui-field-border-focus);
+  outline: none;
+  box-shadow: var(--ui-focus-ring);
+}
+button:global(.bycoda-arc):is(
+    [data-select-variant="row"],
+    [data-select-variant="pill"],
+    [data-select-variant="panel"]
+  )[aria-invalid="true"] {
+  border-color: var(--ui-tone-danger-fg);
+}
+button:global(.bycoda-arc):is(
+    [data-select-variant="row"],
+    [data-select-variant="pill"],
+    [data-select-variant="panel"]
+  )[aria-invalid="true"]:focus-visible {
+  outline-color: var(--ui-tone-danger-fg);
+}
+
+/* Option slots: a leading icon, the Arc choice body, an end-aligned meta. Group headings label runs of options. */
+.triggerIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  inline-size: var(--ui-icon-md);
+  block-size: var(--ui-icon-md);
+  color: var(--ui-text-secondary);
+}
+.optionMeta {
+  flex: 0 1 auto;
+  max-inline-size: 45%;
+  overflow: hidden;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group + .group {
+  margin-block-start: 0.25rem;
+}
+.groupHeading {
+  padding: 0.375rem 0.5rem 0.125rem;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-micro);
+  font-weight: 500;
+  line-height: 1.35;
+}

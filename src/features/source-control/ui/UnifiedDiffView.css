@@ -1,7 +1,7 @@
-[data-pointer-hover="true"] > .diff-hover-comment,
-[data-pointer-row="true"] > .diff-hover-stage,
-.diff-hover-comment:focus-visible,
-.diff-hover-stage:focus-visible {
-  opacity: 1;
-  pointer-events: auto;
+/* Diff text scales with the user's diff zoom (useDiffZoom sets these two variables). */
+.diff-code-text {
+  font-size: var(--diff-code-font, var(--ui-font-caption));
+}
+.diff-meta-text {
+  font-size: var(--diff-meta-font, var(--ui-font-micro));
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatLiveElapsed,
+  formatLiveMinutes,
   liveAgentsFromSessions,
   shouldShowLiveAgents,
   workingProjectPaths,
@@ -69,13 +70,20 @@ describe("liveAgentsFromSessions", () => {
     });
     const agents = liveAgentsFromSessions([remote, adopted], new Set(["adopted"]));
     expect(agents.map((agent) => agent.id)).toEqual(["remote", "adopted"]);
-    expect(agents[1]).toMatchObject({ activity: "Working on host", done: false });
+    expect(agents[1]).toMatchObject({
+      activity: "Working on host",
+      done: false,
+    });
     expect(liveAgentsFromSessions([{ ...adopted, continuingElsewhere: undefined }])).toEqual([]);
   });
 
   it("keeps internal workers in their lead's agent panel", () => {
     const lead = chat("/repo", { id: "lead", busy: true });
-    const worker = chat("/repo", { id: "worker", busy: true, orchestrationLeadId: "lead" });
+    const worker = chat("/repo", {
+      id: "worker",
+      busy: true,
+      orchestrationLeadId: "lead",
+    });
     expect(liveAgentsFromSessions([lead, worker]).map((agent) => agent.id)).toEqual(["lead"]);
   });
   it("skips idle sessions", () => {
@@ -258,6 +266,17 @@ describe("shouldShowLiveAgents", () => {
   });
 });
 
+describe("formatLiveMinutes", () => {
+  it("shows whole minutes only", () => {
+    expect(formatLiveMinutes(0, 0)).toBe("<1m");
+    expect(formatLiveMinutes(5_000, 0)).toBe("<1m");
+    expect(formatLiveMinutes(0, 59_999)).toBe("<1m");
+    expect(formatLiveMinutes(0, 72_000)).toBe("1m");
+    expect(formatLiveMinutes(0, 3_600_000)).toBe("1h");
+    expect(formatLiveMinutes(0, 3_779_000)).toBe("1h 2m");
+  });
+});
+
 describe("formatLiveElapsed", () => {
   it("formats seconds, minutes, and hours", () => {
     expect(formatLiveElapsed(0, 1_000)).toBe("1s");
@@ -266,5 +285,100 @@ describe("formatLiveElapsed", () => {
     expect(formatLiveElapsed(0, 120_000)).toBe("2m");
     expect(formatLiveElapsed(0, 3_600_000)).toBe("1h");
     expect(formatLiveElapsed(0, 3_720_000)).toBe("1h 2m");
+  });
+});
+
+describe("delegated child sessions", () => {
+  const link = JSON.stringify({
+    parentSessionId: "lead",
+    runId: "run-1",
+    kind: "advisor",
+    model: "codex:gpt-a",
+    startedAt: 1_000,
+  });
+
+  it("keeps a running delegated child out of the rail; its parent shows instead", () => {
+    const parent = chat("/repo", { id: "lead", busy: true });
+    const delegated = chat("/repo", {
+      id: "child",
+      busy: true,
+      modelSettings: { delegationParent: link },
+    });
+    expect(liveAgentsFromSessions([parent, delegated]).map((agent) => agent.id)).toEqual(["lead"]);
+  });
+
+  it("keeps a failed or unseen-finished delegated child out of the rail too", () => {
+    const delegated = chat("/repo", {
+      id: "child",
+      modelSettings: { delegationParent: link },
+      usageLimit: {} as Session["usageLimit"],
+    });
+    expect(liveAgentsFromSessions([delegated], new Set(["child"]))).toEqual([]);
+  });
+
+  it("drops a malformed parent link, so the session stays an ordinary live agent", () => {
+    const session = chat("/repo", {
+      id: "odd",
+      busy: true,
+      modelSettings: { delegationParent: "{oops" },
+    });
+    expect(liveAgentsFromSessions([session]).map((agent) => agent.id)).toEqual(["odd"]);
+  });
+});
+
+describe("waiting agents", () => {
+  const link = JSON.stringify({
+    parentSessionId: "parent",
+    runId: "run-1",
+    kind: "subagent",
+    model: "codex:gpt-a",
+    startedAt: 5,
+  });
+
+  it("marks a busy session with background commands as waiting, not working", () => {
+    const waiting = chat("/repo", {
+      busy: true,
+      backgroundTasks: ["dev server"],
+      backgroundAgents: 0,
+    });
+    const [agent] = liveAgentsFromSessions([waiting]);
+    expect(agent.waiting).toEqual({
+      kind: "commands",
+      count: 1,
+      since: undefined,
+    });
+    expect(workingProjectPaths([agent])).toEqual([]);
+  });
+
+  it("keeps an idle parent with running delegated children in the rail", () => {
+    const parent = chat("/repo", { id: "parent" });
+    const child = chat("/repo", {
+      id: "child",
+      busy: true,
+      modelSettings: { delegationParent: link },
+    });
+    const agents = liveAgentsFromSessions([parent, child]);
+    expect(agents.map((agent) => agent.id)).toEqual(["parent"]);
+    expect(agents[0].waiting).toMatchObject({
+      kind: "delegated",
+      count: 1,
+      since: 5,
+    });
+    expect(liveAgentsFromSessions([parent])).toEqual([]);
+  });
+
+  it("orders waiting after working and before done, and never when input is needed", () => {
+    const waiting = chat("/a", {
+      id: "w",
+      busy: true,
+      backgroundTasks: ["x"],
+      backgroundAgents: 1,
+    });
+    const working = chat("/b", { id: "k", busy: true });
+    const finished = chat("/c", { id: "d" });
+    const agents = liveAgentsFromSessions([finished, waiting, working], new Set(["d"]));
+    expect(agents.map((agent) => agent.id)).toEqual(["k", "w", "d"]);
+    expect(agents[1].waiting?.kind).toBe("agents");
+    expect(agents[2].waiting).toBeUndefined();
   });
 });

@@ -36,6 +36,8 @@ export type TunnelProviderStatus = {
   installed: boolean;
   credential: "saved" | "missing" | "unavailable" | "not-required";
 };
+/** The Host quarantined damaged tunnel state and kept what it could salvage. */
+export type TunnelRepair = { repaired: true; dropped: number };
 export type TunnelOverview = {
   environmentId: string;
   hostLocalUrl: string;
@@ -43,6 +45,7 @@ export type TunnelOverview = {
   tunnels: ExternalTunnel[];
   /** An agent connection/printed URL does not prove external client reachability. */
   publicReachability: "unverified";
+  repair?: TunnelRepair;
 };
 
 export class TunnelError extends Error {

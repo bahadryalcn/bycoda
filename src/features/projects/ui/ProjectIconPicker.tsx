@@ -1,5 +1,8 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { Button } from "../../../shared/ui/Button";
+import { LiveText } from "../../../shared/ui/LiveText";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n";
 import { useState } from "react";
@@ -24,7 +27,7 @@ export function ProjectIconPicker({
   const selected = projectMascot(project, name);
   const icons = filterProjectMascots(query, category);
   return (
-    <div className="mb-2 px-0.5" data-project-icon-picker>
+    <div className="mb-3 px-0.5" data-project-icon-picker>
       <div className="mb-2 flex items-center gap-2">
         <ProjectMascot
           project={project}
@@ -33,10 +36,10 @@ export function ProjectIconPicker({
           className="size-7 shrink-0"
         />
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] text-(--ui-text-secondary)">{t("Project icon")}</p>
-          <p className="truncate text-xs text-[var(--color-content)]" title={selected.label}>
-            {selected.label}
-          </p>
+          <p className="text-ui-micro text-(--ui-text-secondary)">{t("Project icon")}</p>
+          <OverflowTooltip label={selected.label}>
+            <p className="truncate text-ui-caption text-[var(--color-content)]">{selected.label}</p>
+          </OverflowTooltip>
         </div>
         <Button
           variant="ghost"
@@ -72,7 +75,7 @@ export function ProjectIconPicker({
         </NativeSelect>
       </div>
       <div
-        className="h-[140px] overflow-y-auto overscroll-contain p-1"
+        className="h-35 overflow-y-auto overscroll-contain p-1"
         role="group"
         aria-label={t("Project icons")}
       >
@@ -84,32 +87,32 @@ export function ProjectIconPicker({
               layout="stacked"
               key={icon.name}
               type="button"
-              title={`${icon.label} · ${icon.category}`}
+              tooltip={`${icon.label} · ${icon.category}`}
               aria-label={t("Project icon: {p0}", { p0: icon.label })}
               aria-pressed={selected.name === icon.name}
               onClick={() => onPick(icon.name)}
-              className={` flex min-h-16 min-w-0 flex-col items-center justify-center gap-1    `}
+              className="flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 px-0.5"
             >
               <ProjectMascot project={project} name={icon.name} className="size-7 shrink-0" />
-              <span className="max-w-full truncate text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+              <span className="max-w-full truncate text-ui-caption text-(--ui-text-secondary)">
                 {icon.label.split(" / ")[0]}
               </span>
             </Button>
           ))}
         </div>
         {icons.length === 0 ? (
-          <p className="py-5 text-center text-xs text-(--ui-text-secondary)">
-            {t("No matching icons")}
-          </p>
+          <EmptyState
+            size="inline"
+            kind="filtered"
+            className="justify-center py-5"
+            description={t("No matching icons")}
+          />
         ) : null}
       </div>
-      <p
-        className="mt-1 text-(length:--ui-font-caption) text-(--ui-text-secondary)"
-        aria-live="polite"
-      >
-        {icons.length}
-        {t(" icons · ")}
-        {category === "All" ? t("All types") : category}
+      <p className="mt-1 text-ui-caption text-(--ui-text-secondary)">
+        <LiveText
+          text={`${icons.length}${t(" icons · ")}${category === "All" ? t("All types") : category}`}
+        />
       </p>
     </div>
   );

@@ -1,0 +1,2806 @@
+[
+  {
+    "name": "native-services-models.list-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "models.list",
+      "params": {
+        "projectId": "project-native",
+        "progressive": true,
+        "refresh": false
+      }
+    }
+  },
+  {
+    "name": "native-services-models.list-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "models.list",
+      "params": {
+        "projectId": "project-native",
+        "progressive": true,
+        "refresh": false,
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.runtimeLogs.bridge.describe-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.runtimeLogs.bridge.describe",
+      "params": {}
+    }
+  },
+  {
+    "name": "native-services-native.services.runtimeLogs.bridge.describe-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.runtimeLogs.bridge.describe",
+      "params": {
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.runtimeLogs.access.issue-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.runtimeLogs.access.issue",
+      "params": {
+        "sessionId": "session-native",
+        "expectedScope": {
+          "projectId": "project-native",
+          "provider": "codex",
+          "sessionId": "session-native",
+          "environmentId": "env-native"
+        }
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.runtimeLogs.access.issue-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.runtimeLogs.access.issue",
+      "params": {
+        "sessionId": "session-native",
+        "expectedScope": {
+          "projectId": "project-native",
+          "provider": "codex",
+          "sessionId": "session-native",
+          "environmentId": "env-native"
+        },
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.runtimeLogs.terminals.append-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.runtimeLogs.terminals.append",
+      "params": {
+        "cwd": "/fixture",
+        "terminalId": "terminal-a",
+        "sequence": 0,
+        "data": "e30=",
+        "interrupted": false,
+        "closed": false
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.runtimeLogs.terminals.append-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.runtimeLogs.terminals.append",
+      "params": {
+        "cwd": "/fixture",
+        "terminalId": "terminal-a",
+        "sequence": 0,
+        "data": "e30=",
+        "interrupted": false,
+        "closed": false,
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.conversation.bridge.describe-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.conversation.bridge.describe",
+      "params": {}
+    }
+  },
+  {
+    "name": "native-services-native.services.conversation.bridge.describe-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.conversation.bridge.describe",
+      "params": {
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.conversation.access.issue-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.conversation.access.issue",
+      "params": {
+        "sessionId": "session-native",
+        "expectedScope": {
+          "projectId": "project-native",
+          "provider": "codex",
+          "sessionId": "session-native",
+          "environmentId": "env-native"
+        }
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.conversation.access.issue-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.conversation.access.issue",
+      "params": {
+        "sessionId": "session-native",
+        "expectedScope": {
+          "projectId": "project-native",
+          "provider": "codex",
+          "sessionId": "session-native",
+          "environmentId": "env-native"
+        },
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.conversation.desktop.take-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.conversation.desktop.take",
+      "params": {}
+    }
+  },
+  {
+    "name": "native-services-native.services.conversation.desktop.take-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.conversation.desktop.take",
+      "params": {
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.conversation.desktop.finish-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.conversation.desktop.finish",
+      "params": {
+        "id": "original-request",
+        "result": {
+          "text": "Türkçe 😀"
+        }
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.conversation.desktop.finish-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.conversation.desktop.finish",
+      "params": {
+        "id": "original-request",
+        "result": {
+          "text": "Türkçe 😀"
+        },
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.conversation.desktop.authorize-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.conversation.desktop.authorize",
+      "params": {
+        "id": "original-request",
+        "action": "ptyMobile.write"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.conversation.desktop.authorize-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.conversation.desktop.authorize",
+      "params": {
+        "id": "original-request",
+        "action": "ptyMobile.write",
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.social.bridge.describe-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.social.bridge.describe",
+      "params": {}
+    }
+  },
+  {
+    "name": "native-services-native.services.social.bridge.describe-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.social.bridge.describe",
+      "params": {
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.social.access.issue-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.social.access.issue",
+      "params": {
+        "sessionId": "session-native",
+        "expectedScope": {
+          "projectId": "project-native",
+          "provider": "codex",
+          "sessionId": "session-native",
+          "environmentId": "env-native"
+        }
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.social.access.issue-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.social.access.issue",
+      "params": {
+        "sessionId": "session-native",
+        "expectedScope": {
+          "projectId": "project-native",
+          "provider": "codex",
+          "sessionId": "session-native",
+          "environmentId": "env-native"
+        },
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.social.native.status-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.social.native.status",
+      "params": {}
+    }
+  },
+  {
+    "name": "native-services-native.services.social.native.status-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.social.native.status",
+      "params": {
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.social.native.enroll-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.social.native.enroll",
+      "params": {
+        "environmentId": "env-peer"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.social.native.enroll-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.social.native.enroll",
+      "params": {
+        "environmentId": "env-peer",
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.social.native.register-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.social.native.register",
+      "params": {
+        "environmentId": "env-peer",
+        "endpoint": "http://127.0.0.1:12345",
+        "mapping": {
+          "project-a": "project-b"
+        },
+        "token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.social.native.register-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.social.native.register",
+      "params": {
+        "environmentId": "env-peer",
+        "endpoint": "http://127.0.0.1:12345",
+        "mapping": {
+          "project-a": "project-b"
+        },
+        "token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.social.native.authority-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.social.native.authority",
+      "params": {
+        "environmentId": "env-peer",
+        "endpoint": "http://127.0.0.1:12345",
+        "mapping": {
+          "project-a": "project-b"
+        }
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.social.native.authority-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.social.native.authority",
+      "params": {
+        "environmentId": "env-peer",
+        "endpoint": "http://127.0.0.1:12345",
+        "mapping": {
+          "project-a": "project-b"
+        },
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.social.native.reset-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.social.native.reset",
+      "params": {}
+    }
+  },
+  {
+    "name": "native-services-native.services.social.native.reset-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.social.native.reset",
+      "params": {
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.workspace.format-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.workspace.format",
+      "params": {
+        "command": "format_text_file",
+        "args": {
+          "path": "/fixture/source.ts",
+          "source": "const türkçe = 1;",
+          "cursorOffset": 3
+        }
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.workspace.format-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.workspace.format",
+      "params": {
+        "command": "format_text_file",
+        "args": {
+          "path": "/fixture/source.ts",
+          "source": "const türkçe = 1;",
+          "cursorOffset": 3
+        },
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.upload.begin-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.upload.begin",
+      "params": {
+        "uploadId": "upload-original",
+        "target": "native.services.workspace.format",
+        "byteLength": 100,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.upload.begin-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.upload.begin",
+      "params": {
+        "uploadId": "upload-original",
+        "target": "native.services.workspace.format",
+        "byteLength": 100,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.upload.append-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.upload.append",
+      "params": {
+        "uploadId": "upload-original",
+        "offset": 0,
+        "data": "e30="
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.upload.append-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.upload.append",
+      "params": {
+        "uploadId": "upload-original",
+        "offset": 0,
+        "data": "e30=",
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.upload.commit-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.upload.commit",
+      "params": {
+        "uploadId": "upload-original"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.upload.commit-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.upload.commit",
+      "params": {
+        "uploadId": "upload-original",
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.upload.status-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.upload.status",
+      "params": {
+        "uploadId": "upload-original"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.upload.status-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.upload.status",
+      "params": {
+        "uploadId": "upload-original",
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.upload.cancel-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.upload.cancel",
+      "params": {
+        "uploadId": "upload-original"
+      }
+    }
+  },
+  {
+    "name": "native-services-native.services.upload.cancel-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-services-vector",
+      "method": "native.services.upload.cancel",
+      "params": {
+        "uploadId": "upload-original",
+        "owner": "forged-principal"
+      }
+    }
+  },
+  {
+    "name": "atomic-create-draft-oversized-nested-placeholder",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "create",
+        "commandId": "atomic-a",
+        "projectId": "project-a",
+        "harness": "codex",
+        "model": "fixture",
+        "runtimeMode": "supervised",
+        "firstTurn": {
+          "type": "draft",
+          "commandId": "first",
+          "sessionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "text": "hello"
+        }
+      }
+    }
+  },
+  {
+    "name": "atomic-create-send-oversized-nested-placeholder",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "create",
+        "commandId": "atomic-a",
+        "projectId": "project-a",
+        "harness": "codex",
+        "model": "fixture",
+        "runtimeMode": "supervised",
+        "firstTurn": {
+          "type": "send",
+          "commandId": "first",
+          "sessionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "text": "hello"
+        }
+      }
+    }
+  },
+  {
+    "name": "atomic-create-send-inherits-host-allocation",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "create",
+        "commandId": "atomic-a",
+        "projectId": "project-a",
+        "harness": "codex",
+        "model": "fixture",
+        "runtimeMode": "supervised",
+        "firstTurn": {
+          "type": "send",
+          "commandId": "first-send",
+          "text": "hello"
+        }
+      }
+    }
+  },
+  {
+    "name": "atomic-create-send-inherits-requested-session",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "create",
+        "commandId": "atomic-a",
+        "projectId": "project-a",
+        "harness": "codex",
+        "model": "fixture",
+        "runtimeMode": "supervised",
+        "sessionId": "outer-session",
+        "firstTurn": {
+          "type": "send",
+          "commandId": "first-send",
+          "text": "hello"
+        }
+      }
+    }
+  },
+  {
+    "name": "atomic-create-send-matching-nested-placeholder",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "create",
+        "commandId": "atomic-a",
+        "projectId": "project-a",
+        "harness": "codex",
+        "model": "fixture",
+        "runtimeMode": "supervised",
+        "sessionId": "outer-session",
+        "firstTurn": {
+          "type": "send",
+          "commandId": "first-send",
+          "text": "hello",
+          "sessionId": "outer-session"
+        }
+      }
+    }
+  },
+  {
+    "name": "atomic-create-send-deprecated-nested-target-ignored",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "create",
+        "commandId": "atomic-a",
+        "projectId": "project-a",
+        "harness": "codex",
+        "model": "fixture",
+        "runtimeMode": "supervised",
+        "sessionId": "outer-session",
+        "firstTurn": {
+          "type": "send",
+          "commandId": "first-send",
+          "text": "hello",
+          "sessionId": "legacy-target"
+        }
+      }
+    }
+  },
+  {
+    "name": "atomic-create-send-empty-placeholder",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "create",
+        "commandId": "atomic-a",
+        "projectId": "project-a",
+        "harness": "codex",
+        "model": "fixture",
+        "runtimeMode": "supervised",
+        "firstTurn": {
+          "type": "send",
+          "commandId": "first-send",
+          "text": "hello",
+          "sessionId": ""
+        }
+      }
+    }
+  },
+  {
+    "name": "atomic-create-send-standalone-missing-session",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "send",
+        "commandId": "first-send",
+        "text": "hello"
+      }
+    }
+  },
+  {
+    "name": "atomic-create-send-null-is-not-omitted",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "create",
+        "commandId": "atomic-a",
+        "projectId": "project-a",
+        "harness": "codex",
+        "model": "fixture",
+        "runtimeMode": "supervised",
+        "firstTurn": {
+          "type": "send",
+          "commandId": "first-send",
+          "text": "hello",
+          "sessionId": null
+        }
+      }
+    }
+  },
+  {
+    "name": "atomic-create-send-closed-first-turn",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "create",
+        "commandId": "atomic-a",
+        "projectId": "project-a",
+        "harness": "codex",
+        "model": "fixture",
+        "runtimeMode": "supervised",
+        "firstTurn": {
+          "type": "send",
+          "commandId": "first-send",
+          "text": "hello",
+          "arbitrary": true
+        }
+      }
+    }
+  },
+  {
+    "name": "atomic-create-draft-inherits-host-allocation",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "create",
+        "commandId": "atomic-a",
+        "projectId": "project-a",
+        "harness": "codex",
+        "model": "fixture",
+        "runtimeMode": "supervised",
+        "firstTurn": {
+          "type": "draft",
+          "commandId": "first-draft",
+          "text": "hello"
+        }
+      }
+    }
+  },
+  {
+    "name": "atomic-create-draft-inherits-requested-session",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "create",
+        "commandId": "atomic-a",
+        "projectId": "project-a",
+        "harness": "codex",
+        "model": "fixture",
+        "runtimeMode": "supervised",
+        "sessionId": "outer-session",
+        "firstTurn": {
+          "type": "draft",
+          "commandId": "first-draft",
+          "text": "hello"
+        }
+      }
+    }
+  },
+  {
+    "name": "atomic-create-draft-matching-nested-placeholder",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "create",
+        "commandId": "atomic-a",
+        "projectId": "project-a",
+        "harness": "codex",
+        "model": "fixture",
+        "runtimeMode": "supervised",
+        "sessionId": "outer-session",
+        "firstTurn": {
+          "type": "draft",
+          "commandId": "first-draft",
+          "text": "hello",
+          "sessionId": "outer-session"
+        }
+      }
+    }
+  },
+  {
+    "name": "atomic-create-draft-deprecated-nested-target-ignored",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "create",
+        "commandId": "atomic-a",
+        "projectId": "project-a",
+        "harness": "codex",
+        "model": "fixture",
+        "runtimeMode": "supervised",
+        "sessionId": "outer-session",
+        "firstTurn": {
+          "type": "draft",
+          "commandId": "first-draft",
+          "text": "hello",
+          "sessionId": "legacy-target"
+        }
+      }
+    }
+  },
+  {
+    "name": "atomic-create-draft-empty-placeholder",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "create",
+        "commandId": "atomic-a",
+        "projectId": "project-a",
+        "harness": "codex",
+        "model": "fixture",
+        "runtimeMode": "supervised",
+        "firstTurn": {
+          "type": "draft",
+          "commandId": "first-draft",
+          "text": "hello",
+          "sessionId": ""
+        }
+      }
+    }
+  },
+  {
+    "name": "atomic-create-draft-standalone-missing-session",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "draft",
+        "commandId": "first-draft",
+        "text": "hello"
+      }
+    }
+  },
+  {
+    "name": "atomic-create-draft-null-is-not-omitted",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "create",
+        "commandId": "atomic-a",
+        "projectId": "project-a",
+        "harness": "codex",
+        "model": "fixture",
+        "runtimeMode": "supervised",
+        "firstTurn": {
+          "type": "draft",
+          "commandId": "first-draft",
+          "text": "hello",
+          "sessionId": null
+        }
+      }
+    }
+  },
+  {
+    "name": "atomic-create-draft-closed-first-turn",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "atomic-vector",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "create",
+        "commandId": "atomic-a",
+        "projectId": "project-a",
+        "harness": "codex",
+        "model": "fixture",
+        "runtimeMode": "supervised",
+        "firstTurn": {
+          "type": "draft",
+          "commandId": "first-draft",
+          "text": "hello",
+          "arbitrary": true
+        }
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.turn.begin-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.turn.begin",
+      "params": {
+        "workspaceId": "workspace-a",
+        "sessionId": "session-a",
+        "userBlockId": "user-a",
+        "runId": "run-a",
+        "conversationRevision": 1
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.turn.begin-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.turn.begin",
+      "params": {
+        "workspaceId": "workspace-a",
+        "sessionId": "session-a",
+        "userBlockId": "user-a",
+        "runId": "run-a",
+        "conversationRevision": 1,
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.turn.end-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.turn.end",
+      "params": {
+        "workspaceId": "workspace-a",
+        "sessionId": "session-a",
+        "userBlockId": "user-a",
+        "runId": "run-a",
+        "conversationRevision": 1
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.turn.end-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.turn.end",
+      "params": {
+        "workspaceId": "workspace-a",
+        "sessionId": "session-a",
+        "userBlockId": "user-a",
+        "runId": "run-a",
+        "conversationRevision": 1,
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.activity.start-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.activity.start",
+      "params": {
+        "activityId": "activity-a",
+        "cwd": "/fixture",
+        "kind": "provider",
+        "sessionId": "session-a"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.activity.start-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.activity.start",
+      "params": {
+        "activityId": "activity-a",
+        "cwd": "/fixture",
+        "kind": "provider",
+        "sessionId": "session-a",
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.activity.end-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.activity.end",
+      "params": {
+        "activityId": "activity-a"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.activity.end-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.activity.end",
+      "params": {
+        "activityId": "activity-a",
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.buffers.update-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.buffers.update",
+      "params": {
+        "clientId": "client-a",
+        "instanceId": "instance-a",
+        "processId": 1,
+        "owners": []
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.buffers.update-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.buffers.update",
+      "params": {
+        "clientId": "client-a",
+        "instanceId": "instance-a",
+        "processId": 1,
+        "owners": [],
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.buffers.retire-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.buffers.retire",
+      "params": {
+        "clientId": "client-a",
+        "instanceId": "instance-a",
+        "processId": 1
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.buffers.retire-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.buffers.retire",
+      "params": {
+        "clientId": "client-a",
+        "instanceId": "instance-a",
+        "processId": 1,
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.buffers.reconcile-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.buffers.reconcile",
+      "params": {
+        "clientId": "client-a",
+        "instanceId": "instance-b",
+        "predecessors": [
+          {
+            "instanceId": "instance-a",
+            "processId": 1
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.buffers.reconcile-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.buffers.reconcile",
+      "params": {
+        "clientId": "client-a",
+        "instanceId": "instance-b",
+        "predecessors": [
+          {
+            "instanceId": "instance-a",
+            "processId": 1
+          }
+        ],
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.rewind.plan-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.rewind.plan",
+      "params": {
+        "request": {
+          "workspaceId": "workspace-a",
+          "sessionId": "session-a",
+          "expectedRevision": 1,
+          "expectedConversationRevision": 2,
+          "direction": "rewind",
+          "userBlockId": "user-a"
+        },
+        "conversation": {
+          "revision": 2,
+          "userBlockIds": ["user-a"]
+        }
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.rewind.plan-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.rewind.plan",
+      "params": {
+        "request": {
+          "workspaceId": "workspace-a",
+          "sessionId": "session-a",
+          "expectedRevision": 1,
+          "expectedConversationRevision": 2,
+          "direction": "rewind",
+          "userBlockId": "user-a"
+        },
+        "conversation": {
+          "revision": 2,
+          "userBlockIds": ["user-a"]
+        },
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.rewind.prepare-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.rewind.prepare",
+      "params": {
+        "request": {
+          "workspaceId": "workspace-a",
+          "sessionId": "session-a",
+          "idempotencyKey": "native-key",
+          "expectedRevision": 1,
+          "expectedConversationRevision": 2,
+          "planToken": "plan-a"
+        },
+        "direction": "rewind",
+        "conversation": {
+          "revision": 2,
+          "userBlockIds": ["user-a"]
+        }
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.rewind.prepare-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.rewind.prepare",
+      "params": {
+        "request": {
+          "workspaceId": "workspace-a",
+          "sessionId": "session-a",
+          "idempotencyKey": "native-key",
+          "expectedRevision": 1,
+          "expectedConversationRevision": 2,
+          "planToken": "plan-a"
+        },
+        "direction": "rewind",
+        "conversation": {
+          "revision": 2,
+          "userBlockIds": ["user-a"]
+        },
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.rewind.apply-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.rewind.apply",
+      "params": {
+        "operationId": "operation-a",
+        "request": {
+          "workspaceId": "workspace-a",
+          "sessionId": "session-a",
+          "idempotencyKey": "native-key",
+          "expectedRevision": 1,
+          "expectedConversationRevision": 2,
+          "planToken": "plan-a"
+        },
+        "direction": "rewind",
+        "transcriptRescueId": "rescue-a"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.rewind.apply-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.rewind.apply",
+      "params": {
+        "operationId": "operation-a",
+        "request": {
+          "workspaceId": "workspace-a",
+          "sessionId": "session-a",
+          "idempotencyKey": "native-key",
+          "expectedRevision": 1,
+          "expectedConversationRevision": 2,
+          "planToken": "plan-a"
+        },
+        "direction": "rewind",
+        "transcriptRescueId": "rescue-a",
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.rewind.status-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.rewind.status",
+      "params": {
+        "operationId": "operation-a"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.rewind.status-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.rewind.status",
+      "params": {
+        "operationId": "operation-a",
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.rewind.lookup-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.rewind.lookup",
+      "params": {
+        "workspaceId": "workspace-a",
+        "sessionId": "session-a",
+        "idempotencyKey": "native-key"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.rewind.lookup-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.rewind.lookup",
+      "params": {
+        "workspaceId": "workspace-a",
+        "sessionId": "session-a",
+        "idempotencyKey": "native-key",
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.rewind.cancelPreparation-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.rewind.cancelPreparation",
+      "params": {
+        "workspaceId": "workspace-a",
+        "sessionId": "session-a",
+        "idempotencyKey": "native-key"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.rewind.cancelPreparation-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.rewind.cancelPreparation",
+      "params": {
+        "workspaceId": "workspace-a",
+        "sessionId": "session-a",
+        "idempotencyKey": "native-key",
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.rewind.ack-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.rewind.ack",
+      "params": {
+        "operationId": "operation-a",
+        "receipt": {
+          "revision": 3
+        }
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.rewind.ack-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.rewind.ack",
+      "params": {
+        "operationId": "operation-a",
+        "receipt": {
+          "revision": 3
+        },
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-workspaces.cleanup.plan-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "workspaces.cleanup.plan",
+      "params": {
+        "workspaceId": "workspace-a",
+        "expectedRevision": 1
+      }
+    }
+  },
+  {
+    "name": "native-workspace-workspaces.cleanup.plan-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "workspaces.cleanup.plan",
+      "params": {
+        "workspaceId": "workspace-a",
+        "expectedRevision": 1,
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-workspaces.cleanup.apply-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "workspaces.cleanup.apply",
+      "params": {
+        "workspaceId": "workspace-a",
+        "expectedRevision": 1,
+        "idempotencyKey": "cleanup-a",
+        "planToken": "plan-a"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-workspaces.cleanup.apply-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "workspaces.cleanup.apply",
+      "params": {
+        "workspaceId": "workspace-a",
+        "expectedRevision": 1,
+        "idempotencyKey": "cleanup-a",
+        "planToken": "plan-a",
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-workspaces.cleanup.status-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "workspaces.cleanup.status",
+      "params": {
+        "workspaceId": "workspace-a"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-workspaces.cleanup.status-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "workspaces.cleanup.status",
+      "params": {
+        "workspaceId": "workspace-a",
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.buffers.upload.start-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.buffers.upload.start",
+      "params": {
+        "uploadId": "upload-a",
+        "byteLength": 100,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.buffers.upload.start-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.buffers.upload.start",
+      "params": {
+        "uploadId": "upload-a",
+        "byteLength": 100,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.buffers.upload.write-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.buffers.upload.write",
+      "params": {
+        "uploadId": "upload-a",
+        "offset": 0,
+        "data": "e30="
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.buffers.upload.write-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.buffers.upload.write",
+      "params": {
+        "uploadId": "upload-a",
+        "offset": 0,
+        "data": "e30=",
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.buffers.upload.commit-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.buffers.upload.commit",
+      "params": {
+        "uploadId": "upload-a"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.buffers.upload.commit-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.buffers.upload.commit",
+      "params": {
+        "uploadId": "upload-a",
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.buffers.upload.status-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.buffers.upload.status",
+      "params": {
+        "uploadId": "upload-a"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.buffers.upload.status-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.buffers.upload.status",
+      "params": {
+        "uploadId": "upload-a",
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.buffers.upload.abort-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.buffers.upload.abort",
+      "params": {
+        "uploadId": "upload-a"
+      }
+    }
+  },
+  {
+    "name": "native-workspace-native.buffers.upload.abort-rejects-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-vector",
+      "method": "native.buffers.upload.abort",
+      "params": {
+        "uploadId": "upload-a",
+        "ownerId": "forged-capability"
+      }
+    }
+  },
+  {
+    "name": "configure-selects-host-provider-account",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:account",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "configure",
+        "commandId": "account-a",
+        "sessionId": "session-a",
+        "model": "codex:test",
+        "modelSettings": {},
+        "runtimeMode": "supervised",
+        "providerAccountId": "account-work"
+      }
+    }
+  },
+  {
+    "name": "configure-clears-host-provider-account",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:default",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "configure",
+        "commandId": "account-default",
+        "sessionId": "session-a",
+        "model": "codex:test",
+        "modelSettings": {},
+        "runtimeMode": "supervised",
+        "providerAccountId": null
+      }
+    }
+  },
+  {
+    "name": "configure-rejects-claimed-account-authority",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:forged-account",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "configure",
+        "commandId": "account-forged",
+        "sessionId": "session-a",
+        "model": "codex:test",
+        "modelSettings": {},
+        "runtimeMode": "supervised",
+        "providerAccountId": {
+          "id": "account-work",
+          "verified": true
+        }
+      }
+    }
+  },
+  {
+    "name": "protected-bulk-result-descriptor",
+    "schema": "bulkResult",
+    "valid": true,
+    "value": {
+      "$bulk": {
+        "kind": "bulk",
+        "transferId": "transfer-a",
+        "environmentId": "environment-a",
+        "totalBytes": 1000000,
+        "chunkBytes": 65536,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "expiresAt": 1800000000000
+      }
+    }
+  },
+  {
+    "name": "bulk-hash-final-newline-rejected",
+    "schema": "bulkDescriptor",
+    "valid": false,
+    "value": {
+      "kind": "bulk",
+      "transferId": "transfer-a",
+      "environmentId": "environment-a",
+      "totalBytes": 1000000,
+      "chunkBytes": 65536,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+      "expiresAt": 1800000000000
+    }
+  },
+  {
+    "name": "declared-project-query",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:1",
+      "method": "projects.list",
+      "params": {}
+    }
+  },
+  {
+    "name": "unknown-envelope-field",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:1",
+      "method": "projects.list",
+      "params": {},
+      "extra": true
+    }
+  },
+  {
+    "name": "unknown-method-param",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:1",
+      "method": "projects.list",
+      "params": {
+        "extra": true
+      }
+    }
+  },
+  {
+    "name": "incomplete-command-rejected",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:1",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "send"
+      }
+    }
+  },
+  {
+    "name": "run-bound-stop-is-cancel-command",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:2",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "cancel",
+        "commandId": "command-a",
+        "sessionId": "session-a",
+        "runId": "run-a"
+      }
+    }
+  },
+  {
+    "name": "steer-requires-run-identity",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:3",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "steer",
+        "commandId": "command-a",
+        "sessionId": "session-a",
+        "text": "Türkçe 😀"
+      }
+    }
+  },
+  {
+    "name": "send-preserves-unicode-body",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:4",
+      "method": "commands.dispatch",
+      "params": {
+        "type": "send",
+        "commandId": "command-a",
+        "sessionId": "session-a",
+        "text": "Türkçe 😀"
+      }
+    }
+  },
+  {
+    "name": "queue-finish-boolean-is-not-coerced",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:5",
+      "method": "sessions.queue.finish",
+      "params": {
+        "sessionId": "session-a",
+        "clientId": "desktop:window-a",
+        "token": "claim-a",
+        "accepted": "true"
+      }
+    }
+  },
+  {
+    "name": "request-id-final-newline",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:1\n",
+      "method": "projects.list",
+      "params": {}
+    }
+  },
+  {
+    "name": "unicode-body-preserved",
+    "schema": "response",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:1",
+      "result": {
+        "text": "Türkçe 中文 😀",
+        "missing": null
+      }
+    }
+  },
+  {
+    "name": "one-result-or-error",
+    "schema": "response",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "window-a:1",
+      "result": null,
+      "error": {
+        "code": -32603,
+        "message": "Internal error"
+      }
+    }
+  },
+  {
+    "name": "parse-error-has-null-correlation",
+    "schema": "response",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": null,
+      "error": {
+        "code": -32700,
+        "message": "Invalid JSON",
+        "data": {
+          "category": "validation"
+        }
+      }
+    }
+  },
+  {
+    "name": "safe-sequence-upper-bound",
+    "schema": "streamCursor",
+    "valid": true,
+    "value": {
+      "epoch": "epoch-a",
+      "sequence": 9007199254740991
+    }
+  },
+  {
+    "name": "unsafe-sequence-rejected",
+    "schema": "streamCursor",
+    "valid": false,
+    "value": {
+      "epoch": "epoch-a",
+      "sequence": 9007199254740992
+    }
+  },
+  {
+    "name": "fractional-sequence-rejected",
+    "schema": "streamCursor",
+    "valid": false,
+    "value": {
+      "epoch": "epoch-a",
+      "sequence": 0.5
+    }
+  },
+  {
+    "name": "authority-is-not-socket-generation",
+    "schema": "authorityReference",
+    "valid": false,
+    "value": {
+      "environmentId": "environment-a",
+      "sessionId": "session-a",
+      "connectionGeneration": 3
+    }
+  },
+  {
+    "name": "explicit-authority-generation",
+    "schema": "authorityReference",
+    "valid": true,
+    "value": {
+      "environmentId": "environment-a",
+      "sessionId": "session-a",
+      "authorityGeneration": 3
+    }
+  },
+  {
+    "name": "devices-status-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.status",
+      "params": {}
+    }
+  },
+  {
+    "name": "devices-status-reject-forged-authority",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.status",
+      "params": {
+        "ownerAuthority": "forged"
+      }
+    }
+  },
+  {
+    "name": "devices-preflight-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.preflight",
+      "params": {
+        "deviceId": "emulator-5554"
+      }
+    }
+  },
+  {
+    "name": "devices-preflight-reject-forged-authority",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.preflight",
+      "params": {
+        "deviceId": "emulator-5554",
+        "ownerAuthority": "forged"
+      }
+    }
+  },
+  {
+    "name": "devices-preview-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.preview",
+      "params": {
+        "requestId": "device-job",
+        "deviceId": "emulator-5554",
+        "url": "exp://127.0.0.1:8081",
+        "previewOwner": "environment:session",
+        "previewExpiresAt": 2000000000000
+      }
+    }
+  },
+  {
+    "name": "devices-preview-reject-forged-authority",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.preview",
+      "params": {
+        "requestId": "device-job",
+        "deviceId": "emulator-5554",
+        "url": "exp://127.0.0.1:8081",
+        "previewOwner": "environment:session",
+        "previewExpiresAt": 2000000000000,
+        "ownerAuthority": "forged"
+      }
+    }
+  },
+  {
+    "name": "devices-preview.status-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.preview.status",
+      "params": {
+        "id": "device-job",
+        "includeFrame": true
+      }
+    }
+  },
+  {
+    "name": "devices-preview.status-reject-forged-authority",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.preview.status",
+      "params": {
+        "id": "device-job",
+        "includeFrame": true,
+        "ownerAuthority": "forged"
+      }
+    }
+  },
+  {
+    "name": "devices-list-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.list",
+      "params": {}
+    }
+  },
+  {
+    "name": "devices-list-reject-forged-authority",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.list",
+      "params": {
+        "ownerAuthority": "forged"
+      }
+    }
+  },
+  {
+    "name": "devices-start-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.start",
+      "params": {}
+    }
+  },
+  {
+    "name": "devices-start-reject-forged-authority",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.start",
+      "params": {
+        "ownerAuthority": "forged"
+      }
+    }
+  },
+  {
+    "name": "devices-boot-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.boot",
+      "params": {
+        "deviceId": "emulator-5554"
+      }
+    }
+  },
+  {
+    "name": "devices-boot-reject-forged-authority",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.boot",
+      "params": {
+        "deviceId": "emulator-5554",
+        "ownerAuthority": "forged"
+      }
+    }
+  },
+  {
+    "name": "devices-capture-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.capture",
+      "params": {
+        "deviceId": "emulator-5554"
+      }
+    }
+  },
+  {
+    "name": "devices-capture-reject-forged-authority",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.capture",
+      "params": {
+        "deviceId": "emulator-5554",
+        "ownerAuthority": "forged"
+      }
+    }
+  },
+  {
+    "name": "devices-action-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.action",
+      "params": {
+        "deviceId": "emulator-5554",
+        "leaseId": "lease-id",
+        "requestId": "action-id",
+        "action": {
+          "type": "press",
+          "x": 1,
+          "y": 2
+        }
+      }
+    }
+  },
+  {
+    "name": "devices-action-reject-forged-authority",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-vector",
+      "method": "devices.action",
+      "params": {
+        "deviceId": "emulator-5554",
+        "leaseId": "lease-id",
+        "requestId": "action-id",
+        "action": {
+          "type": "press",
+          "x": 1,
+          "y": 2
+        },
+        "ownerAuthority": "forged"
+      }
+    }
+  },
+  {
+    "name": "devices.setup-canonical-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-lifecycle-vector",
+      "method": "devices.setup",
+      "params": {
+        "projectId": "project",
+        "agentAccess": false
+      }
+    }
+  },
+  {
+    "name": "devices.setup-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-lifecycle-vector",
+      "method": "devices.setup",
+      "params": {
+        "projectId": "project",
+        "agentAccess": false,
+        "ownerAuthority": "forged"
+      }
+    }
+  },
+  {
+    "name": "devices.stop-canonical-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-lifecycle-vector",
+      "method": "devices.stop",
+      "params": {
+        "projectId": "project"
+      }
+    }
+  },
+  {
+    "name": "devices.stop-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-lifecycle-vector",
+      "method": "devices.stop",
+      "params": {
+        "projectId": "project",
+        "ownerAuthority": "forged"
+      }
+    }
+  },
+  {
+    "name": "devices.preview.mobile.start-canonical-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-lifecycle-vector",
+      "method": "devices.preview.mobile.start",
+      "params": {
+        "projectId": "project",
+        "requestId": "request",
+        "deviceId": "emulator-5554",
+        "url": "exp://127.0.0.1:8081",
+        "installExpoGo": false
+      }
+    }
+  },
+  {
+    "name": "devices.preview.mobile.start-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-lifecycle-vector",
+      "method": "devices.preview.mobile.start",
+      "params": {
+        "projectId": "project",
+        "requestId": "request",
+        "deviceId": "emulator-5554",
+        "url": "exp://127.0.0.1:8081",
+        "installExpoGo": false,
+        "ownerAuthority": "forged"
+      }
+    }
+  },
+  {
+    "name": "devices.preview.mobile.status-canonical-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-lifecycle-vector",
+      "method": "devices.preview.mobile.status",
+      "params": {
+        "projectId": "project",
+        "requestId": "request",
+        "includeFrame": true
+      }
+    }
+  },
+  {
+    "name": "devices.preview.mobile.status-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-lifecycle-vector",
+      "method": "devices.preview.mobile.status",
+      "params": {
+        "projectId": "project",
+        "requestId": "request",
+        "includeFrame": true,
+        "ownerAuthority": "forged"
+      }
+    }
+  },
+  {
+    "name": "devices.preview.impact-canonical-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-lifecycle-vector",
+      "method": "devices.preview.impact",
+      "params": {
+        "projectId": "project"
+      }
+    }
+  },
+  {
+    "name": "devices.preview.impact-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-lifecycle-vector",
+      "method": "devices.preview.impact",
+      "params": {
+        "projectId": "project",
+        "ownerAuthority": "forged"
+      }
+    }
+  },
+  {
+    "name": "mobile-preview-status-requires-identity",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "device-lifecycle-vector",
+      "method": "devices.preview.mobile.status",
+      "params": {
+        "projectId": "project"
+      }
+    }
+  },
+  {
+    "name": "native.buffers.delivery.apply-canonical-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-delivery-vector",
+      "method": "native.buffers.delivery.apply",
+      "params": {
+        "originalId": "native-original",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byteLength": 2,
+        "paramsJson": "{}"
+      }
+    }
+  },
+  {
+    "name": "native.buffers.delivery.apply-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-delivery-vector",
+      "method": "native.buffers.delivery.apply",
+      "params": {
+        "originalId": "native-original",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byteLength": 2,
+        "paramsJson": "{}",
+        "owner": "forged"
+      }
+    }
+  },
+  {
+    "name": "native.buffers.delivery.status-canonical-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-delivery-vector",
+      "method": "native.buffers.delivery.status",
+      "params": {
+        "originalId": "native-original",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byteLength": 2
+      }
+    }
+  },
+  {
+    "name": "native.buffers.delivery.status-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-delivery-vector",
+      "method": "native.buffers.delivery.status",
+      "params": {
+        "originalId": "native-original",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byteLength": 2,
+        "owner": "forged"
+      }
+    }
+  },
+  {
+    "name": "native.services.delivery.apply-canonical-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-delivery-vector",
+      "method": "native.services.delivery.apply",
+      "params": {
+        "originalId": "native-original",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byteLength": 2,
+        "target": "native.services.workspace.format",
+        "paramsJson": "{}"
+      }
+    }
+  },
+  {
+    "name": "native.services.delivery.apply-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-delivery-vector",
+      "method": "native.services.delivery.apply",
+      "params": {
+        "originalId": "native-original",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byteLength": 2,
+        "target": "native.services.workspace.format",
+        "paramsJson": "{}",
+        "owner": "forged"
+      }
+    }
+  },
+  {
+    "name": "native.services.delivery.status-canonical-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-delivery-vector",
+      "method": "native.services.delivery.status",
+      "params": {
+        "originalId": "native-original",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byteLength": 2,
+        "target": "native.services.workspace.format"
+      }
+    }
+  },
+  {
+    "name": "native.services.delivery.status-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-delivery-vector",
+      "method": "native.services.delivery.status",
+      "params": {
+        "originalId": "native-original",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byteLength": 2,
+        "target": "native.services.workspace.format",
+        "owner": "forged"
+      }
+    }
+  },
+  {
+    "name": "native.services.delivery.result.read-canonical-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-delivery-vector",
+      "method": "native.services.delivery.result.read",
+      "params": {
+        "originalId": "native-original",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byteLength": 2,
+        "target": "native.services.workspace.format",
+        "resultSource": {
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byteLength": 33554432
+        },
+        "offset": 0,
+        "limit": 65536
+      }
+    }
+  },
+  {
+    "name": "native.services.delivery.result.read-reject-oversized-chunk",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-delivery-vector",
+      "method": "native.services.delivery.result.read",
+      "params": {
+        "originalId": "native-original",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byteLength": 2,
+        "target": "native.services.workspace.format",
+        "resultSource": {
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "byteLength": 33554432
+        },
+        "offset": 0,
+        "limit": 65537
+      }
+    }
+  },
+  {
+    "name": "native.buffers.delivery.ack-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-retirement-vector",
+      "method": "native.buffers.delivery.ack",
+      "params": {
+        "originalId": "native-original",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byteLength": 2,
+        "consumedResult": {
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "byteLength": 21
+        }
+      }
+    }
+  },
+  {
+    "name": "native.buffers.delivery.ack-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-retirement-vector",
+      "method": "native.buffers.delivery.ack",
+      "params": {
+        "originalId": "native-original",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byteLength": 2,
+        "consumedResult": {
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "byteLength": 21
+        },
+        "principalId": "forged"
+      }
+    }
+  },
+  {
+    "name": "native.services.delivery.ack-valid",
+    "schema": "request",
+    "valid": true,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-retirement-vector",
+      "method": "native.services.delivery.ack",
+      "params": {
+        "originalId": "native-original",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byteLength": 2,
+        "target": "native.services.workspace.format",
+        "consumedResult": {
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "byteLength": 4
+        }
+      }
+    }
+  },
+  {
+    "name": "native.services.delivery.ack-reject-owner-injection",
+    "schema": "request",
+    "valid": false,
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "native-retirement-vector",
+      "method": "native.services.delivery.ack",
+      "params": {
+        "originalId": "native-original",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "byteLength": 2,
+        "target": "native.services.workspace.format",
+        "consumedResult": {
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "byteLength": 4
+        },
+        "principalId": "forged"
+      }
+    }
+  }
+]

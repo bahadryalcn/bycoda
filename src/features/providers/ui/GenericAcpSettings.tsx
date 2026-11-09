@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Alert } from "../../../shared/ui/Alert";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { PasswordField } from "../../../shared/ui/PasswordField";
@@ -8,7 +9,8 @@ import { hostFeatureRequest } from "../../connections/model/hostFeatureClient";
 import { parseRemotePath } from "../../connections/model/remoteProjects";
 import { refreshGenericAcpCatalog } from "../../../integrations/harness/providers/generic-acp/genericAcpAdapter";
 import { probeHarnessAvailability } from "../../../integrations/harness/core/availability";
-import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import { Button } from "../../../shared/ui/Button";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { AdvancedSettings, Group, settingDomId } from "../../settings/ui/settingsControls";
@@ -27,12 +29,14 @@ function Field({
 }) {
   return (
     <div
-      className={`flex min-w-0 flex-col gap-1 text-[12px] font-medium text-content/80 ${wide ? "sm:col-span-2" : ""}`}
+      className={`flex min-w-0 flex-col gap-1 text-ui-caption font-medium text-(--ui-text-secondary) ${wide ? "sm:col-span-2" : ""}`}
     >
       <span>{label}</span>
       {children}
       {hint ? (
-        <span className="text-[11px] font-normal leading-snug text-(--ui-text-secondary)">{hint}</span>
+        <span className="text-ui-micro font-normal leading-snug text-(--ui-text-secondary)">
+          {hint}
+        </span>
       ) : null}
     </div>
   );
@@ -64,6 +68,7 @@ function AcpSettingsShell({
       <Group
         id="acp-agents"
         layout="full"
+        variant="box"
         title={t("ACP agents")}
         scope={scope}
         persistence={{ mode: "explicit" }}
@@ -78,13 +83,15 @@ function AcpSettingsShell({
     <section
       id={settingDomId("acp-agents")}
       data-setting-id="acp-agents"
-      className="min-w-0"
+      className="mt-7 min-w-0 overflow-hidden rounded-(--ui-radius-card) border border-(--ui-settings-group-border)"
       aria-label={t("ACP agents")}
     >
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
         <div className="min-w-0">
-          <p className="text-(length:--ui-font-caption) leading-snug text-(--ui-text-secondary)">{scope}</p>
-          <p className="text-(length:--ui-font-caption) text-(--ui-text-secondary)">{t("Changes require saving")}</p>
+          <p className="text-ui-caption leading-snug text-(--ui-text-secondary)">{scope}</p>
+          <p className="text-ui-caption text-(--ui-text-secondary)">
+            {t("Changes require saving")}
+          </p>
         </div>
         {action}
       </div>
@@ -143,14 +150,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
   useEffect(() => {
     let cancelled = false;
     activeRef.current = true;
-    setLoading(true);
-    setConfigs([]);
-    setRegistry([]);
-    setRegistryOpen(false);
-    setRegistryState("idle");
-    setError("");
-    setStatus("");
-    resetForm();
+    // The machine wrapper is keyed by cwd, so every field starts from its initial value.
     void request<GenericAcpSummary[]>("generic_acp_list")
       .then((result) => {
         if (cancelled) return;
@@ -171,14 +171,20 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
       activeRef.current = false;
     };
   }, [cwd]);
-  async function run(label: string, action: () => Promise<void>) {
-    if (!activeRef.current || busyRef.current || loading) return;
+  async function run(label: string, action: () => Promise<void>, confirm = false) {
+    if (!activeRef.current || busyRef.current || loading) {
+      if (confirm)
+        throw new Error("ACP operation is unavailable while another request is pending.");
+      return;
+    }
     busyRef.current = true;
     setError("");
     setStatus("");
     setBusy(label);
+    let completed = false;
     try {
       await action();
+      completed = true;
       if (!activeRef.current) return;
       await reload();
       if (!activeRef.current) return;
@@ -191,6 +197,9 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
       if (activeRef.current) {
         setError(reason instanceof Error ? reason.message : String(reason));
       }
+      // A confirmation owns its failure state. A refresh failure after the
+      // mutation completed remains a list error, not a failed deletion.
+      if (confirm && !completed) throw reason;
     } finally {
       busyRef.current = false;
       if (activeRef.current) setBusy("");
@@ -202,9 +211,15 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
   }
   const editing = configs.some((config) => config.id === form.id);
   const openAgentForm = () => {
-    // The shared settings group is always visible. Move keyboard focus to its
-    // first field instead of trying to open the retired native disclosure.
-    formDisclosureRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+    const root = formDisclosureRef.current;
+    const input = root?.querySelector<HTMLInputElement>("input");
+    if (input) input.focus();
+    else {
+      root?.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')?.click();
+      requestAnimationFrame(() => {
+        if (activeRef.current) root?.querySelector<HTMLInputElement>("input")?.focus();
+      });
+    }
   };
   const openRegistry = () => {
     if (!activeRef.current || busyRef.current) return;
@@ -258,24 +273,26 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
         scope={scope}
         action={
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <SecondaryButton
+            <Button
+              className="shrink-0"
               aria-controls="acp-agent-form-disclosure"
               disabled={loading || !!busy}
               onClick={openAgentForm}
             >
               {t("Add agent")}
-            </SecondaryButton>
-            <SecondaryButton
+            </Button>
+            <Button
+              className="shrink-0"
               disabled={loading || !!busy}
               onClick={() => void run("Loading agents…", async () => {})}
             >
               {t("Reload agents")}
-            </SecondaryButton>
+            </Button>
           </div>
         }
       >
         {loading || busy || status || (!configs.length && !error) ? (
-          <Alert tone="info" role="status">
+          <Alert tone="info">
             {loading
               ? t("Loading ACP agents…")
               : busy
@@ -285,27 +302,28 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                   : t("No ACP agents configured. Use Add agent or browse the registry.")}
           </Alert>
         ) : null}
-        {error && (
-          <Alert tone="danger" role="alert">
-            {error}
-          </Alert>
-        )}
+        {error && <Alert tone="danger">{error}</Alert>}
         {configs.map((config) => (
           <div
             key={config.id}
             className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-(--ui-tone-neutral-border) px-3 py-2 last:border-b-0"
           >
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[12px] font-medium text-content" title={config.name}>
-                {config.name}
-              </div>
-              <div className="truncate text-(length:--ui-font-caption) text-(--ui-text-secondary)" title={config.command}>
-                {config.command} · {config.envKeys.length}
-                {t(" environment values")}
-              </div>
+              <OverflowTooltip label={config.name}>
+                <div className="truncate text-ui-caption font-medium text-content">
+                  {config.name}
+                </div>
+              </OverflowTooltip>
+              <OverflowTooltip label={config.command}>
+                <div className="truncate text-ui-caption text-(--ui-text-secondary)">
+                  {config.command} · {config.envKeys.length}
+                  {t(" environment values")}
+                </div>
+              </OverflowTooltip>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
-              <SecondaryButton
+              <Button
+                className="shrink-0"
                 disabled={loading || !!busy}
                 onClick={() => {
                   if (draftDirty) {
@@ -318,23 +336,26 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 }}
               >
                 {t("Edit")}
-              </SecondaryButton>
-              <SecondaryButton
-                danger
-                disabled={loading || !!busy}
-                onClick={() =>
-                  void run("Removing", () => request("generic_acp_remove", { id: config.id }))
-                }
-              >
-                {t("Remove")}
-              </SecondaryButton>
+              </Button>
+              <span className="ms-1 shrink-0 border-s border-stroke ps-2">
+                <ConfirmMorph
+                  label={t("Remove")}
+                  tone="danger"
+                  confirmMode="press"
+                  pendingLabel={t("Removing…")}
+                  doneLabel={t("Removed")}
+                  disabled={loading || !!busy}
+                  onConfirm={() =>
+                    run("Removing", () => request("generic_acp_remove", { id: config.id }), true)
+                  }
+                />
+              </span>
             </div>
           </div>
         ))}
         <div id="acp-agent-form-disclosure" ref={formDisclosureRef}>
           <AdvancedSettings
             key={`${formRevision}:${editing ? form.id : "new"}`}
-            defaultOpen={editing}
             title={editing ? t("Edit agent") : t("Add agent")}
             settingIds={["acp-advanced"]}
           >
@@ -359,7 +380,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 });
               }}
             >
-              <p className="text-[11px] font-normal leading-snug text-(--ui-text-secondary) sm:col-span-2">
+              <p className="text-ui-micro font-normal leading-snug text-(--ui-text-secondary) sm:col-span-2">
                 {t(
                   "Configure an executable on the session's machine. Credentials and environment values stay on that machine. Arguments are a JSON array; commands are launched without a shell.",
                 )}
@@ -395,7 +416,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                   hideLabel
                   fieldClassName="w-full"
                   disabled={loading || !!busy}
-                  className="font-mono"
+                  monospace
                   value={form.command}
                   required
                   spellCheck={false}
@@ -405,7 +426,6 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
               <div className="sm:col-span-2">
                 <AdvancedSettings
                   key={editing ? form.id : "new"}
-                  defaultOpen={editing}
                   title={t("ACP arguments, environment and model context")}
                   settingIds={["acp-advanced"]}
                 >
@@ -420,10 +440,10 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                         hideLabel
                         disabled={loading || !!busy}
                         aria-label={t("Arguments (JSON array)")}
-                        className="min-h-20 font-mono"
+                        monospace
+                        minRows={3}
                         value={argsText}
                         spellCheck={false}
-                        rows={3}
                         onChange={(event) => setArgsText(event.target.value)}
                       />
                     </Field>
@@ -438,7 +458,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                         disabled={loading || !!busy}
 
                         autoComplete="off"
-                        className="font-mono"
+                        monospace
                         value={envText}
                         spellCheck={false}
                         onChange={(event) => setEnvText(event.target.value)}
@@ -480,10 +500,11 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 </AdvancedSettings>
               </div>
               <div className="flex items-center gap-2 sm:col-span-2">
-                <SecondaryButton disabled={loading || !!busy} type="submit">
+                <Button className="shrink-0" disabled={loading || !!busy} type="submit">
                   {busy === "Saving" ? t("Saving…") : t("Save agent")}
-                </SecondaryButton>
-                <SecondaryButton
+                </Button>
+                <Button
+                  className="shrink-0"
                   disabled={loading || !!busy}
                   onClick={() => {
                     resetForm();
@@ -491,7 +512,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                   }}
                 >
                   {t("Cancel")}
-                </SecondaryButton>
+                </Button>
               </div>
             </form>
           </AdvancedSettings>
@@ -502,48 +523,47 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
           className="border-t border-(--ui-tone-neutral-border)"
         >
           <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
-            <span className="text-[11px] text-(--ui-text-secondary)">
+            <span className="text-ui-micro text-(--ui-text-secondary)">
               {t("Install compatible ACP agents from the registry.")}
             </span>
-            <SecondaryButton
+            <Button
+              className="shrink-0"
               aria-expanded={registryOpen}
               aria-controls="setting-acp-registry-results"
               disabled={loading || !!busy}
               onClick={openRegistry}
             >
               {t("Browse ACP Registry")}
-            </SecondaryButton>
+            </Button>
           </div>
           <div
             id="setting-acp-registry-results"
             className="border-t border-(--ui-tone-neutral-border)"
             hidden={!registryOpen}
           >
-            <p className="px-3 py-2 text-(length:--ui-font-caption) leading-snug text-(--ui-text-secondary)">
+            <p className="px-3 py-2 text-ui-caption leading-snug text-(--ui-text-secondary)">
               {t(
                 "Install downloads an exact package version into isolated host storage and may run package installation scripts. Binary and Python distributions can be configured as local commands.",
               )}
             </p>
             {registryState === "loading" ? (
-              <Alert tone="info" role="status">
-                {t("Loading ACP registry…")}
-              </Alert>
+              <Alert tone="info">{t("Loading ACP registry…")}</Alert>
             ) : registryState === "error" ? null : registryState === "loaded" &&
               registry.length > 0 ? (
-              <div className="divide-y divide-content/5">
+              <div className="divide-y divide-stroke">
                 {registry.map((entry) => (
                   <div
                     key={`${entry.id}:${entry.version}`}
                     className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2"
                   >
                     <div className="min-w-0 flex-1">
-                      <div
-                        className="truncate text-[12px] font-medium text-content"
-                        title={`${entry.name} ${entry.version}`}
-                      >
-                        {entry.name} <span className="text-(--ui-text-secondary)">{entry.version}</span>
-                      </div>
-                      <p className="mt-0.5 text-(length:--ui-font-caption) leading-snug text-(--ui-text-secondary)">
+                      <OverflowTooltip label={`${entry.name} ${entry.version}`}>
+                        <div className="truncate text-ui-caption font-medium text-content">
+                          {entry.name}{" "}
+                          <span className="text-(--ui-text-secondary)">{entry.version}</span>
+                        </div>
+                      </OverflowTooltip>
+                      <p className="mt-0.5 text-ui-caption leading-snug text-(--ui-text-secondary)">
                         {entry.supported
                           ? entry.description
                           : `${entry.description} ${entry.unsupportedReason ?? ""}`.trim()}
@@ -551,7 +571,8 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
                       {entry.supported ? (
-                        <SecondaryButton
+                        <Button
+                          className="shrink-0"
                           disabled={loading || !!busy}
                           onClick={() =>
                             void run(t("Installing {p0}…", { p0: entry.id }), () =>
@@ -564,11 +585,12 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                         >
                           {t("Install ")}
                           {entry.package}
-                        </SecondaryButton>
+                        </Button>
                       ) : null}
                       {busy === t("Installing {p0}…", { p0: entry.id }) ? (
-                        <SecondaryButton
-                          danger
+                        <Button
+                          className="shrink-0"
+                          variant="danger"
                           disabled={cancelingInstallId === entry.id}
                           loading={cancelingInstallId === entry.id}
                           onClick={() => void cancelInstallation(entry.id)}
@@ -576,14 +598,14 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                           {cancelingInstallId === entry.id
                             ? t("Cancelling installation…")
                             : t("Cancel installation")}
-                        </SecondaryButton>
+                        </Button>
                       ) : null}
                     </div>
                   </div>
                 ))}
               </div>
             ) : registryState === "loaded" ? (
-              <p className="px-3 pb-2 text-[11px] text-(--ui-text-secondary)">
+              <p className="px-3 pb-2 text-ui-micro text-(--ui-text-secondary)">
                 {t("No ACP registry entries found.")}
               </p>
             ) : null}

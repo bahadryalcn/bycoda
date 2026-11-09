@@ -1,4 +1,4 @@
-import { useEffect, type MutableRefObject } from "react";
+import { useEffect, useRef, type MutableRefObject } from "react";
 import type { useHarnessEventQueue } from "../sessions/useHarnessEventQueue";
 import type { ProjectTerminalDockState } from "../terminal/useProjectTerminalDockState";
 import {
@@ -45,11 +45,14 @@ export function useHarnessLifecycle({
   keepWorkspaceTab,
   readProjectReturnMemory,
 }: HarnessLifecycleDeps): void {
+  const reaped = useRef(false);
   useEffect(() => {
     if (resumed?.sessions.length) bindResumedSessions(resumed.sessions);
     const stopBridge = startHarnessBridge();
     const reap = () => {
       if (isAppQuitting()) return;
+      if (reaped.current) return;
+      reaped.current = true;
       void persistQuitState(
         sessionsRef.current,
         tabsRef.current,
@@ -105,7 +108,9 @@ export function useHarnessLifecycle({
  * fresh session would otherwise show only the built-in fallback model
  * until the picker happened to be opened. Idempotent: refreshHarnessCatalogs
  * dedupes via hasLiveCatalog and its inflight map. */
-export function useActiveHarnessCatalogRefresh(activeHarness: Session["harness"] | undefined): void {
+export function useActiveHarnessCatalogRefresh(
+  activeHarness: Session["harness"] | undefined,
+): void {
   useEffect(() => {
     if (!activeHarness || !isLiveHarness(activeHarness)) return;
     void refreshHarnessCatalogs([activeHarness]);

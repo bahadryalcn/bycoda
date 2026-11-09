@@ -1,34 +1,16 @@
-export type DevicePlatform = "ios" | "android";
-export interface DeviceSummary {
-  id: string;
-  name: string;
-  platform: DevicePlatform;
-  version: string;
-  booted: boolean;
-  physical: boolean;
-}
-export interface DeviceHostStatus {
-  running: boolean;
-  installed: boolean;
-  agentInstalled: boolean;
-  platform: string;
-  platforms: { platform: DevicePlatform; available: boolean; reason?: string }[];
-  lastError?: string;
-}
-export interface DeviceFrame {
-  mime: "image/png" | "image/jpeg";
-  base64: string;
-  capturedAt: string;
-}
-export type DeviceAction =
-  | { type: "openApp"; app: string }
-  | { type: "press"; x: number; y: number }
-  | { type: "type"; text: string }
-  | { type: "swipe"; x: number; y: number; endX: number; endY: number }
-  | { type: "home" }
-  | { type: "snapshot" }
-  | { type: "pressElement"; label: string }
-  | { type: "waitForText"; text: string; timeoutMs?: number };
+import type {
+  DeviceAction,
+  DeviceFrame,
+  DeviceHostStatus,
+  DeviceSummary,
+} from "../../shared/model/host-contracts/native-devices";
+export type {
+  DevicePlatform,
+  DeviceAction,
+  DeviceFrame,
+  DeviceHostStatus,
+  DeviceSummary,
+} from "../../shared/model/host-contracts/native-devices";
 export interface DevicePanelApi {
   status: () => Promise<DeviceHostStatus>;
   setup: (agentAccess: boolean) => Promise<DeviceHostStatus>;
@@ -37,5 +19,38 @@ export interface DevicePanelApi {
   list: () => Promise<{ devices: DeviceSummary[]; errors: string[] }>;
   boot: (deviceId: string) => Promise<DeviceSummary>;
   capture: (deviceId: string) => Promise<DeviceFrame>;
-  action: (deviceId: string, action: DeviceAction) => Promise<string>;
+  action: (deviceId: string, action: DeviceAction, leaseId?: string) => Promise<string>;
+  controlStatus?: (deviceId: string) => Promise<DeviceControlStatus>;
+  claimControl?: (deviceId: string, requestId: string) => Promise<DeviceControlLease>;
+  releaseControl?: (deviceId: string, leaseId: string) => Promise<{ released: true }>;
+  renewControl?: (deviceId: string, leaseId: string) => Promise<DeviceControlLease>;
+  inspect?: (deviceId: string, leaseId: string) => Promise<DeviceInspection>;
+}
+
+export interface DeviceControlStatus {
+  deviceId: string;
+  busy: boolean;
+}
+export interface DeviceControlLease {
+  deviceId: string;
+  leaseId: string;
+  expiresAt: number;
+}
+export interface DeviceInspection {
+  inspectionId: string;
+  deviceId: string;
+  supported?: boolean;
+  raw: string;
+  frame: DeviceFrame;
+  inspectedAt: string;
+  coordinateSpace: "pixels" | "points";
+  viewport?: { width: number; height: number };
+  nodes: Array<{
+    id: string;
+    label: string;
+    role: string;
+    bounds: { x: number; y: number; width: number; height: number };
+    enabled: boolean;
+    clickable: boolean;
+  }>;
 }

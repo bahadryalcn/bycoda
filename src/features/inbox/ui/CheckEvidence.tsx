@@ -1,6 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
+import { Surface } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import { useEffect, useMemo, useState } from "react";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { AlertCircle, CircleX, ExternalLink } from "../../../shared/ui/icons";
@@ -110,40 +111,44 @@ function CheckAnnotation({
       : null;
   const location = `${annotation.path}${validLine ? `:${annotation.line}` : ""}`;
   const [messageTitle, ...messageLines] = annotation.message.split(/\r?\n/);
+  const levelLabel =
+    annotation.level === "failure"
+      ? t("Failed")
+      : annotation.level === "warning"
+        ? t("Warning")
+        : annotation.level;
   const Mark = annotation.level === "failure" ? CircleX : AlertCircle;
   return (
-    <div className="min-w-0 overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface)">
+    <Surface variant="outline" padding="none" className="overflow-hidden">
       {annotation.path ? (
-        <div className="flex min-w-0 items-center gap-1.5 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface-hover) px-3 py-2 text-[12px] text-(--ui-text-secondary)">
-          <FileTypeIcon name={annotation.path} isDir={false} size={13} />
-          <span title={location} className="min-w-0 flex-1 truncate">
-            {location}
-          </span>
+        <div className="flex min-w-0 items-center gap-1.5 border-b border-(--ui-tone-neutral-border) bg-(--ui-fill-subtle) px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
+          <FileTypeIcon name={annotation.path} isDir={false} />
+          <span className="min-w-0 flex-1 break-all">{location}</span>
           {fileUrl ? (
             <Button
               iconOnly
               label={t("View {p0} on GitHub", { p0: location })}
               variant="ghost"
               type="button"
-              title={t("View source at the checked commit")}
+              tooltip={t("View source at the checked commit")}
               aria-label={t("View {p0} on GitHub", { p0: location })}
-              onClick={() => void openUrl(fileUrl)}
+              onClick={() => openUrlSafely(fileUrl)}
               className="-my-1 -mr-1 shrink-0"
             >
-              <ExternalLink className="size-3" strokeWidth={1.75} />
+              <ExternalLink className="icon-xs" strokeWidth={1.75} />
             </Button>
           ) : null}
         </div>
       ) : null}
       {excerpt.length ? (
         <div
-          className="overflow-x-auto py-2 font-mono text-[11px] leading-5"
+          className="overflow-x-auto py-2 font-mono text-ui-micro leading-5"
           aria-label={t("Source at {p0}", { p0: headOid })}
         >
           {excerpt.map((line, index) => (
             <div
               key={index}
-              className={`flex min-w-max gap-4 border-l-2 pr-3 ${firstLine + index === annotation.line ? "border-(--ui-tone-danger-border) bg-(--ui-tone-danger-subtle)/[0.06] text-(--ui-text-secondary)" : "border-transparent text-(--ui-text-secondary)"}`}
+              className={`flex min-w-max gap-4 border-l-2 pr-3 ${firstLine + index === annotation.line ? "border-(--ui-tone-danger-border) bg-(--ui-tone-danger-subtle) text-(--ui-tone-neutral-fg)" : "border-transparent text-(--ui-text-secondary)"}`}
             >
               <span className="w-8 shrink-0 select-none text-right tabular-nums text-(--ui-text-secondary)">
                 {firstLine + index}
@@ -157,25 +162,31 @@ function CheckAnnotation({
         className={`flex min-w-0 items-start gap-2 px-3 py-3 ${excerpt.length ? "border-t border-(--ui-tone-neutral-border)" : ""}`}
       >
         <Mark
-          className={`mt-0.5 size-3 shrink-0 ${annotation.level === "failure" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-tone-warning-fg)"}`}
+          className={`mt-0.5 icon-xs shrink-0 ${annotation.level === "failure" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-tone-warning-fg)"}`}
           strokeWidth={1.75}
         />
         <div className="min-w-0 flex-1">
-          <p className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-[12px] text-(--ui-text-secondary)">
+          <p className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
+            {levelLabel ? (
+              <>
+                <span className="font-medium text-(--ui-tone-neutral-fg)">{levelLabel}</span>
+                {" · "}
+              </>
+            ) : null}
             {messageTitle}
           </p>
           {messageLines.length ? (
-            <pre className="mt-1.5 max-h-60 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-(--ui-text-secondary)">
+            <pre className="mt-1.5 max-h-60 overflow-auto whitespace-pre-wrap break-words font-mono text-ui-micro leading-relaxed text-(--ui-text-secondary)">
               {messageLines.join("\n")}
             </pre>
           ) : null}
           {canRead && source?.key === sourceKey && !excerpt.length ? (
-            <p className="mt-2 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+            <p className="mt-2 text-ui-caption text-(--ui-text-secondary)">
               {t("Source preview unavailable for this commit.")}
             </p>
           ) : null}
         </div>
       </div>
-    </div>
+    </Surface>
   );
 }

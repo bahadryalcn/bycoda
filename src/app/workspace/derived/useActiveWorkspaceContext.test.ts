@@ -10,6 +10,40 @@ import {
 import { useActiveWorkspaceContext } from "./useActiveWorkspaceContext";
 import { useWorktreeDeckTabs } from "../layout/useWorktreeDeckTabs";
 import { toTitleTab } from "../helpers/tabHelpers";
+import { newDefaultSession } from "../../../features/sessions/model/session";
+
+it("derives Explorer and Git from the selected session's own checkout across projects", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const first = { ...newDefaultSession("/project-a"), id: "a", worktreeCwd: "/worktrees/a" };
+  const second = { ...newDefaultSession("/project-b"), id: "b", worktreeCwd: "/worktrees/b" };
+  const tabs = [newTab(first.id), newTab(second.id)];
+  function Harness({ index }: { index: number }) {
+    const context = useActiveWorkspaceContext({
+      tabs,
+      activeTabId: tabs[index].id,
+      sessions: [first, second],
+      projectCwd: "/project-a",
+      historyErrorCwd: null,
+      loadedProjects: new Set(),
+    });
+    const selected = index === 0 ? first : second;
+    expect(context.sidebarCwd).toBe(selected.cwd);
+    expect(context.gitCwd).toBe(selected.worktreeCwd);
+    expect(context.filesCwd).toBe(selected.worktreeCwd);
+    return null;
+  }
+  try {
+    await act(async () => root.render(createElement(Harness, { index: 0 })));
+    await act(async () => root.render(createElement(Harness, { index: 1 })));
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
 
 describe("standalone document workspace context", () => {
   it.each(["/repo", "remote://mac/Users/owner/repo"])(

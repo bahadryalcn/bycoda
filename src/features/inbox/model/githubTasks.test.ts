@@ -296,7 +296,7 @@ describe("groupProjectsByRepo", () => {
     ]);
   });
 
-  it("aynı adlı farklı sahiplerin depolarını ayrı sorgular", () => {
+  it("queries same-named repositories of different owners separately", () => {
     expect(
       groupProjectsByRepo([
         { path: "/tmp/parent", repo: "bahadryalcn/bycoda" },

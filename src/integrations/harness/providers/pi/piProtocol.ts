@@ -1,6 +1,9 @@
 import { asRecord } from "../../../../shared/lib/records";
 import type { Attachment, TurnMetrics } from "../../../../features/sessions/model/session";
-import { attachmentPathText, promptText } from "../../../../features/sessions/model/attachments";
+import {
+  attachmentPathText,
+  promptText,
+} from "../../../../features/sessions/model/attachmentPrompt";
 import type { AgentModel, ModelSetting } from "../../../../features/sessions/model/models";
 import { isTaskListToolName } from "../../../../features/sessions/model/taskList";
 import type { PiFlavor } from "./piFlavor";

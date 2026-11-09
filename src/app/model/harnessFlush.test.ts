@@ -1,7 +1,12 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HarnessEvent } from "../../integrations/harness/core/types";
-import { cancelScheduledFlush, HarnessEventQueue, scheduleHarnessFlush } from "./harnessFlush";
+import {
+  cancelScheduledFlush,
+  FOREGROUND_FLUSH_MS,
+  HarnessEventQueue,
+  scheduleHarnessFlush,
+} from "./harnessFlush";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -72,7 +77,11 @@ describe("harness event queue", () => {
       paint();
       vi.advanceTimersByTime(16);
     }
-    expect(apply.mock.calls.filter(([batch]) => batch.has("front"))).toHaveLength(20);
+    paint();
+    // Frames arrive every 16 ms, so the 30 ms gate lets every other one flush.
+    const frontFlushes = apply.mock.calls.filter(([batch]) => batch.has("front")).length;
+    expect(frontFlushes).toBeGreaterThanOrEqual(10);
+    expect(frontFlushes).toBeLessThan(20);
     expect(apply.mock.calls.filter(([batch]) => batch.has("back1"))).toHaveLength(2);
     for (const [batch] of apply.mock.calls) {
       if (batch.has("front")) expect([...batch.keys()]).toEqual(["front"]);
@@ -87,6 +96,25 @@ describe("harness event queue", () => {
       );
     }
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("gates foreground flushes to the interval without dropping or reordering events", () => {
+    const { queue, apply, paint } = controlledQueue(new Set(["front"]));
+    queue.enqueue("front", { type: "message.delta", text: "a" });
+    paint();
+    expect(apply).toHaveBeenCalledTimes(1);
+    queue.enqueue("front", { type: "message.delta", text: "b" });
+    vi.advanceTimersByTime(FOREGROUND_FLUSH_MS / 2);
+    paint();
+    queue.enqueue("front", { type: "message.delta", text: "c" });
+    expect(apply).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(FOREGROUND_FLUSH_MS);
+    paint();
+    expect(apply).toHaveBeenCalledTimes(2);
+    expect(apply.mock.calls[1][0].get("front")).toEqual([
+      { type: "message.delta", text: "b" },
+      { type: "message.delta", text: "c" },
+    ]);
   });
 
   it("catches up a selected chat without flushing other chats or postponing their timer", () => {

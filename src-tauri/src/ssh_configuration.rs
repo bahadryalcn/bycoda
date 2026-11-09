@@ -5,6 +5,7 @@ use crate::{
 };
 use serde::Serialize;
 use serde_json::Value;
+use std::{path::PathBuf, sync::Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(Serialize)]
@@ -32,10 +33,17 @@ fn effective(
     record: &Value,
     inheritance: Option<&groups::Inheritance>,
 ) -> Result<groups::Effective, String> {
+    effective_with(&app.state::<SessionStore>(), record, inheritance)
+}
+
+fn effective_with(
+    store: &SessionStore,
+    record: &Value,
+    inheritance: Option<&groups::Inheritance>,
+) -> Result<groups::Effective, String> {
     let base = server_inventory::project(record)?
         .ssh_endpoint
         .ok_or("Group defaults require a personal SSH connection")?;
-    let store = app.state::<SessionStore>();
     let conn = store.lock_conn()?;
     let group = inheritance
         .map(|binding| groups::get(&conn, &binding.group_id))
@@ -103,35 +111,78 @@ pub(crate) fn ssh_group_defaults_list(
 #[tauri::command(async)]
 pub(crate) fn ssh_group_defaults_save(
     app: AppHandle,
+    window: tauri::Window,
     connections: State<'_, remote::RemoteConnections>,
     state: State<'_, SessionStore>,
     profile: groups::GroupDefaults,
     expected_revision: Option<u64>,
 ) -> Result<groups::GroupDefaults, String> {
-    let _guard = connections
-        .store
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        group_defaults_save_with(
+            connections.store.as_ref(),
+            &state,
+            profile,
+            expected_revision,
+            || {
+                let _ = app.emit("server-inventory-changed", ());
+            },
+        )
+    })
+}
+
+fn group_defaults_save_with(
+    connections: &Mutex<()>,
+    state: &SessionStore,
+    profile: groups::GroupDefaults,
+    expected_revision: Option<u64>,
+    notify: impl FnOnce(),
+) -> Result<groups::GroupDefaults, String> {
+    let guard = connections
         .lock()
         .map_err(|_| "Connection store is locked")?;
     let conn = state.lock_conn()?;
     let saved = groups::save_cas(&conn, &profile, expected_revision)?;
     drop(conn);
-    let _ = app.emit("server-inventory-changed", ());
+    drop(guard);
+    notify();
     Ok(saved)
 }
 
 #[tauri::command(async)]
 pub(crate) fn ssh_group_defaults_remove(
     app: AppHandle,
+    window: tauri::Window,
     connections: State<'_, remote::RemoteConnections>,
     state: State<'_, SessionStore>,
     id: String,
     expected_revision: u64,
 ) -> Result<(), String> {
-    let _guard = connections
-        .store
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        group_defaults_remove_with(
+            connections.store.as_ref(),
+            &state,
+            || remote::store_path(&app),
+            id,
+            expected_revision,
+            || {
+                let _ = app.emit("server-inventory-changed", ());
+            },
+        )
+    })
+}
+
+fn group_defaults_remove_with(
+    connections: &Mutex<()>,
+    state: &SessionStore,
+    path: impl FnOnce() -> Result<PathBuf, String>,
+    id: String,
+    expected_revision: u64,
+    notify: impl FnOnce(),
+) -> Result<(), String> {
+    let guard = connections
         .lock()
         .map_err(|_| "Connection store is locked")?;
-    let records = remote::read_store_values(&remote::store_path(&app)?)?;
+    let records = remote::read_store_values(&path()?)?;
     if records.iter().any(|record| {
         record
             .pointer("/metadata/sshInheritance/groupId")
@@ -143,7 +194,8 @@ pub(crate) fn ssh_group_defaults_remove(
     let conn = state.lock_conn()?;
     groups::delete_cas(&conn, &id, expected_revision)?;
     drop(conn);
-    let _ = app.emit("server-inventory-changed", ());
+    drop(guard);
+    notify();
     Ok(())
 }
 
@@ -180,32 +232,67 @@ pub(crate) fn server_ssh_configuration_preview(
 #[tauri::command(async)]
 pub(crate) fn server_ssh_inheritance_set(
     app: AppHandle,
+    window: tauri::Window,
     connections: State<'_, remote::RemoteConnections>,
     connection_id: String,
     inheritance: Option<groups::Inheritance>,
     expected_inheritance: Option<groups::Inheritance>,
     expected_configuration_digest: String,
 ) -> Result<(), String> {
-    let _guard = connections
-        .store
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        inheritance_set_with(
+            connections.store.as_ref(),
+            &app.state::<SessionStore>(),
+            || remote::store_path(&app),
+            ReviewedInheritanceChange {
+                connection_id,
+                inheritance,
+                expected_inheritance,
+                expected_configuration_digest,
+            },
+            || {
+                let _ = app.emit("server-inventory-changed", ());
+            },
+        )
+    })
+}
+
+struct ReviewedInheritanceChange {
+    connection_id: String,
+    inheritance: Option<groups::Inheritance>,
+    expected_inheritance: Option<groups::Inheritance>,
+    expected_configuration_digest: String,
+}
+
+fn inheritance_set_with(
+    connections: &Mutex<()>,
+    state: &SessionStore,
+    path: impl FnOnce() -> Result<PathBuf, String>,
+    change: ReviewedInheritanceChange,
+    notify: impl FnOnce(),
+) -> Result<(), String> {
+    let guard = connections
         .lock()
         .map_err(|_| "Connection store is locked")?;
-    let path = remote::store_path(&app)?;
+    let path = path()?;
     let mut records = remote::read_store_values(&path)?;
     let record = records
         .iter_mut()
-        .find(|record| record.get("id").and_then(Value::as_str) == Some(connection_id.as_str()))
+        .find(|record| {
+            record.get("id").and_then(Value::as_str) == Some(change.connection_id.as_str())
+        })
         .ok_or("Server no longer exists")?;
-    let configuration = effective(&app, record, inheritance.as_ref())?;
+    let configuration = effective_with(state, record, change.inheritance.as_ref())?;
     apply_reviewed_binding(
         record,
-        inheritance,
-        expected_inheritance.as_ref(),
-        &expected_configuration_digest,
+        change.inheritance,
+        change.expected_inheritance.as_ref(),
+        &change.expected_configuration_digest,
         &configuration.digest,
     )?;
     remote::write_store_values(&path, &records)?;
-    let _ = app.emit("server-inventory-changed", ());
+    drop(guard);
+    notify();
     Ok(())
 }
 
@@ -229,6 +316,9 @@ fn apply_reviewed_binding(
         serde_json::to_value(inheritance).map_err(|_| "Invalid SSH inheritance binding")?;
     Ok(())
 }
+
+#[cfg(test)]
+mod admission_tests;
 
 #[cfg(test)]
 mod tests {

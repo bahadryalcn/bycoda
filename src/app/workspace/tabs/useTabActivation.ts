@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import {
   leafIds,
   selectPaneTab,
@@ -15,29 +10,29 @@ import {
   looksLikeProject,
   normalizeProjectPath,
   rememberProject,
+  rememberProjectInMutation,
   sameProjectPath,
 } from "../../../features/projects/model/recents";
+import type { PrivacyMutationToken } from "../../../features/group-lock/model/roomPrivacyProjection";
 import { type Session } from "../../../features/sessions/model/session";
 import { projectName } from "../../../shared/lib/paths";
 
 export interface TabActivationDeps {
   projectCwdRef: MutableRefObject<string>;
   setProjectCwd: Dispatch<SetStateAction<string>>;
-  setRecents: Dispatch<SetStateAction<ReturnType<typeof rememberProject>>>;
+  setRecents: Dispatch<SetStateAction<Awaited<ReturnType<typeof rememberProject>>>>;
   tabsRef: MutableRefObject<WorkspaceTab[]>;
   sessionsRef: MutableRefObject<Session[]>;
   activeTabIdRef: MutableRefObject<string>;
   setActiveTabIdState: Dispatch<SetStateAction<string>>;
   setActiveTabId: (id: string) => void;
-  setTabs: (
-    update: WorkspaceTab[] | ((previous: WorkspaceTab[]) => WorkspaceTab[]),
-  ) => void;
+  setTabs: (update: WorkspaceTab[] | ((previous: WorkspaceTab[]) => WorkspaceTab[])) => void;
   setComposerFocused: Dispatch<SetStateAction<boolean>>;
   projectOfTab: (id: string) => string | undefined;
 }
 
 export interface TabActivation {
-  followProject: (cwd: string | null | undefined) => void;
+  followProject: (cwd: string | null | undefined, token?: PrivacyMutationToken) => void;
   activateTab: (id: string, paneId?: string, reason?: "session" | "workspace") => void;
   insertBeside: (
     prev: WorkspaceTab[],
@@ -68,13 +63,20 @@ export function useTabActivation(deps: TabActivationDeps): TabActivation {
   // The title tabs, explorer, changes and session list all follow
   // `projectCwd`, so anything that reveals a tab from another project has to
   // move it along with the active tab.
-  const followProject = useCallback((cwd: string | null | undefined) => {
-    if (!cwd || !looksLikeProject(cwd)) return;
-    const normalized = normalizeProjectPath(cwd);
-    if (sameProjectPath(normalized, projectCwdRef.current)) return;
-    setProjectCwd(normalized);
-    setRecents(rememberProject(normalized));
-  }, []);
+  const followProject = useCallback(
+    (cwd: string | null | undefined, token?: PrivacyMutationToken) => {
+      if (!cwd || !looksLikeProject(cwd)) return;
+      const normalized = normalizeProjectPath(cwd);
+      if (sameProjectPath(normalized, projectCwdRef.current)) return;
+      setProjectCwd(normalized);
+      if (token) setRecents(rememberProjectInMutation(normalized, token));
+      else
+        void rememberProject(normalized)
+          .then(setRecents)
+          .catch((error: unknown) => console.error("Could not remember project", error));
+    },
+    [],
+  );
 
   const activateTab = useCallback(
     (id: string, paneId?: string, reason: "session" | "workspace" = "session") => {

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { createWindowStore } from "../../../shared/lib/store";
 
 /** A shell this computer can open a terminal in (src-tauri terminal_profiles.rs). */
 export type ShellProfile = {
@@ -19,6 +20,7 @@ export type ShellProfiles = {
 
 const KEY = "bycoda.terminalProfile";
 const CHANGE = "bycoda:terminal-profile";
+const profileStore = createWindowStore({ event: CHANGE, storageKeys: [KEY] });
 
 /** The profile the user chose for new terminals and `!commands`; undefined
  * leaves the choice to the system default. */
@@ -30,7 +32,7 @@ export function loadTerminalProfile(): string | undefined {
   }
 }
 
-function remember(id: string | undefined): void {
+function remember(id: string | undefined): boolean {
   try {
     if (id) localStorage.setItem(KEY, id);
     else localStorage.removeItem(KEY);
@@ -38,43 +40,73 @@ function remember(id: string | undefined): void {
     // private mode / quota
   }
   if (typeof window !== "undefined") window.dispatchEvent(new Event(CHANGE));
+  return loadTerminalProfile() === id;
 }
+
+/** Result of a save: the machine's file is authoritative; `mirrored` says whether
+ * this window's cached copy now agrees with it. */
+export type TerminalProfileSave = { mirrored: boolean };
+
+/** Bumped when a save starts and when it settles, so a discovery that overlapped a
+ * save never rehydrates an older choice. */
+let saveEpoch = 0;
+/** Newest choice the machine's file confirmed from this window. */
+let confirmedChoice: { id: string | null } | undefined;
 
 /** Saves the shell for this computer. The Bycoda Host here reads the same
- * choice, so `!commands` sent from another machine run in it too. */
-export async function saveTerminalProfile(id: string | undefined): Promise<void> {
-  await invoke("set_terminal_profile", { id: id ?? null });
-  remember(id);
+ * choice, so `!commands` sent from another machine run in it too. The native
+ * write is authoritative; a cache failure afterwards is reported, not thrown, so
+ * the caller never retries a write that already succeeded. */
+export async function saveTerminalProfile(id: string | undefined): Promise<TerminalProfileSave> {
+  saveEpoch++;
+  try {
+    await invoke("set_terminal_profile", { id: id ?? null });
+  } catch (error) {
+    saveEpoch++;
+    throw error;
+  }
+  saveEpoch++;
+  confirmedChoice = { id: id ?? null };
+  // Cached discovery predates this choice.
+  listing = null;
+  return { mirrored: remember(id) };
 }
 
-function subscribe(listener: () => void): () => void {
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === KEY || event.key === null) listener();
-  };
-  window.addEventListener(CHANGE, listener);
-  window.addEventListener("storage", onStorage);
-  return () => {
-    window.removeEventListener(CHANGE, listener);
-    window.removeEventListener("storage", onStorage);
-  };
+/** Retries only this window's cached copy of an already saved choice. */
+export function syncTerminalProfileMirror(id: string | undefined): boolean {
+  return remember(id);
 }
+
+const subscribe = profileStore.subscribe;
 
 export function useTerminalProfile(): string | undefined {
   return useSyncExternalStore(subscribe, loadTerminalProfile, () => undefined);
 }
 
 let listing: Promise<ShellProfiles> | null = null;
+let discoveryEpoch = 0;
 
 /** Asks the system once per launch; `refresh` looks again (a shell installed since). */
 export function listTerminalProfiles(refresh = false): Promise<ShellProfiles> {
   if (!listing || refresh) {
-    listing = invoke<ShellProfiles | null>("terminal_profiles").then(
+    const discovery = ++discoveryEpoch;
+    const savesAtStart = saveEpoch;
+    const request: Promise<ShellProfiles> = invoke<ShellProfiles | null>("terminal_profiles").then(
       (value) => {
-        const listed = {
+        const listed: ShellProfiles = {
           profiles: Array.isArray(value?.profiles) ? value.profiles : [],
           defaultId: value?.defaultId ?? null,
           chosenId: value?.chosenId ?? null,
         };
+        // A newer discovery superseded this one, which must not rehydrate state.
+        if (discovery !== discoveryEpoch) return listed;
+        // A save overlapped this request, so its choice may predate the saved one:
+        // keep what this window confirmed and let the next call read again.
+        if (savesAtStart !== saveEpoch) {
+          if (confirmedChoice) listed.chosenId = confirmedChoice.id;
+          if (listing === request) listing = null;
+          return listed;
+        }
         // The machine's file is the record: it may have been changed from
         // another machine through this computer's host.
         if (value && (listed.chosenId ?? undefined) !== loadTerminalProfile())
@@ -82,10 +114,12 @@ export function listTerminalProfiles(refresh = false): Promise<ShellProfiles> {
         return listed;
       },
       (error) => {
-        listing = null;
+        // An older failure must not discard a newer discovery's cache.
+        if (listing === request) listing = null;
         throw error;
       },
     );
+    listing = request;
   }
   return listing;
 }

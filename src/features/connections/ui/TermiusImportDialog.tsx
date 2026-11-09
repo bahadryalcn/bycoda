@@ -1,11 +1,15 @@
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { Modal } from "../../../shared/ui/Modal";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { TextField } from "../../../shared/ui/TextField";
 import type { ServerRecord } from "../model/serverInventory";
@@ -141,8 +145,20 @@ export function TermiusImportDialog({
       onClose={() => {
         if (!pending.current) onClose();
       }}
+      footer={
+        <ModalActions>
+          <Button variant="ghost" disabled={busy} onClick={onClose}>
+            {outcome ? t("Done") : t("Cancel")}
+          </Button>
+          {preview && !outcome ? (
+            <Button loading={busy} disabled={busy || !selected.size} onClick={() => void apply()}>
+              {t("Import selected ({p0})", { p0: selected.size })}
+            </Button>
+          ) : null}
+        </ModalActions>
+      }
     >
-      <div className="flex min-h-0 flex-col gap-3 p-4">
+      <div className="flex min-h-0 flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="secondary"
@@ -179,17 +195,13 @@ export function TermiusImportDialog({
           </Button>
         </form>
         {!preview ? (
-          <p className="text-sm text-(--ui-text-muted)">
+          <p className="text-ui-body text-(--ui-text-muted)">
             {t("Read local Termius records without changing Termius data.")}
           </p>
         ) : null}
-        {error ? (
-          <Alert tone="danger" role="alert">
-            {t(error)}
-          </Alert>
-        ) : null}
+        {error ? <Alert tone="danger">{t(error)}</Alert> : null}
         {outcome ? (
-          <Alert tone="success" role="status">
+          <Alert tone="success">
             {t("Imported {p0} servers. Skipped {p1} existing records. Saved {p2} SSH keys.", {
               p0: outcome.imported,
               p1: outcome.skipped,
@@ -199,20 +211,19 @@ export function TermiusImportDialog({
         ) : preview ? (
           <>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={allSelected}
-                  indeterminate={selected.size > 0 && !allSelected}
-                  disabled={busy || !eligible.length}
-                  onChange={() =>
-                    setSelected(
-                      allSelected ? new Set() : new Set(eligible.map((host) => host.sourceId)),
-                    )
-                  }
-                />
-                {t("Select all")}
-              </label>
-              <span className="text-xs text-(--ui-text-muted)" role="status">
+              <Checkbox
+                checked={allSelected}
+                indeterminate={selected.size > 0 && !allSelected}
+                disabled={busy || !eligible.length}
+                onChange={() =>
+                  setSelected(
+                    allSelected ? new Set() : new Set(eligible.map((host) => host.sourceId)),
+                  )
+                }
+                label={t("Select all")}
+                className="flex items-center gap-2 text-ui-body"
+              />
+              <span className="text-ui-caption text-(--ui-text-muted)" role="status">
                 {t("{p0} of {p1} selected", { p0: selected.size, p1: preview.hosts.length })}
               </span>
             </div>
@@ -223,7 +234,7 @@ export function TermiusImportDialog({
               aria-label={t("Search servers")}
             />
             <div
-              className="max-h-[45dvh] min-h-0 overflow-y-auto divide-y divide-(--ui-border)"
+              className="max-h-[45dvh] min-h-0 overflow-y-auto divide-y divide-(--ui-pane-border)"
               aria-label={t("Termius records")}
             >
               {visible.map((host) => {
@@ -246,61 +257,71 @@ export function TermiusImportDialog({
                         });
                       }}
                     />
-                    <div className="min-w-0 flex-1 text-sm">
+                    <div className="min-w-0 flex-1 text-ui-body">
                       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                         <span className="break-words font-medium">{host.name}</span>
                         {duplicate ? (
-                          <span className="text-xs text-(--ui-text-muted)">
+                          <Badge size="sm" tone="info">
                             {t("Already in Servers")}
-                          </span>
+                          </Badge>
                         ) : host.hasKey ? (
-                          <span className="text-xs text-(--ui-text-muted)">
-                            {t("SSH key available")}
-                          </span>
+                          <Badge size="sm">{t("SSH key available")}</Badge>
                         ) : null}
                       </div>
-                      <p className="break-all text-xs text-(--ui-text-muted)">
+                      <p className="break-all text-ui-caption text-(--ui-text-muted)">
                         {host.endpoint.user ? `${host.endpoint.user}@` : ""}
                         {host.endpoint.host}:{host.endpoint.port}
                       </p>
-                      {host.group || host.tags.length ? (
-                        <p className="break-words text-xs text-(--ui-text-muted)">
-                          {[host.group, ...host.tags].filter(Boolean).join(" · ")}
-                        </p>
-                      ) : null}
+                      <BadgeList
+                        label={t("Tags")}
+                        size="xs"
+                        max={4}
+                        className="mt-1"
+                        items={[host.group ?? "", ...host.tags]
+                          .filter(Boolean)
+                          .map((label, index) => ({ id: `${index}:${label}`, label }))}
+                      />
                       {host.warnings.length ? (
-                        <details className="mt-1 text-xs text-(--ui-text-muted)">
-                          <summary>
-                            {review ? t("Review required") : t("Migration details")}
-                          </summary>
-                          <ul className="mt-1 list-inside list-disc">
+                        <Disclosure
+                          size="sm"
+                          className="mt-1 text-ui-caption text-(--ui-text-muted)"
+                          summary={review ? t("Review required") : t("Migration details")}
+                        >
+                          <ul className="list-inside list-disc">
                             {host.warnings.map((warning, i) => (
                               <li key={i}>{t(warning)}</li>
                             ))}
                           </ul>
-                        </details>
+                        </Disclosure>
                       ) : null}
                     </div>
                   </div>
                 );
               })}
               {!visible.length ? (
-                <p className="py-4 text-sm text-(--ui-text-muted)">{t("No matching servers")}</p>
+                <EmptyState
+                  size="inline"
+                  kind="filtered"
+                  description={t("No matching servers")}
+                  onReset={() => setQuery("")}
+                />
               ) : null}
             </div>
             {preview.hosts.some((host) => host.hasKey) ? (
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={importKeys}
-                  disabled={busy}
-                  onChange={(event) => setImportKeys(event.target.checked)}
-                />
-                {t("Import linked SSH keys into private local files")}
-              </label>
+              <Checkbox
+                checked={importKeys}
+                disabled={busy}
+                onChange={(event) => setImportKeys(event.target.checked)}
+                label={t("Import linked SSH keys into private local files")}
+                className="flex items-center gap-2 text-ui-body"
+              />
             ) : null}
-            <details className="text-xs text-(--ui-text-muted)">
-              <summary>{t("What gets imported")}</summary>
-              <p className="mt-1">
+            <Disclosure
+              size="sm"
+              className="text-ui-caption text-(--ui-text-muted)"
+              summary={t("What gets imported")}
+            >
+              <p>
                 {t(
                   "Names, addresses, users, ports, groups and tags. Existing records are preserved.",
                 )}
@@ -310,19 +331,9 @@ export function TermiusImportDialog({
                   {t(warning)}
                 </p>
               ))}
-            </details>
+            </Disclosure>
           </>
         ) : null}
-        <div className="flex flex-wrap justify-end gap-2 border-t border-(--ui-border) pt-3">
-          <Button variant="ghost" disabled={busy} onClick={onClose}>
-            {outcome ? t("Done") : t("Cancel")}
-          </Button>
-          {preview && !outcome ? (
-            <Button loading={busy} disabled={busy || !selected.size} onClick={() => void apply()}>
-              {t("Import selected ({p0})", { p0: selected.size })}
-            </Button>
-          ) : null}
-        </div>
       </div>
     </Modal>
   );

@@ -1,19 +1,37 @@
+import { captureHttpOperation } from "../turnWriter";
+import {
+  captureTextInput,
+  prepareTextProcess,
+  runTextOperation,
+  textControlRun,
+} from "../../core/textSource";
+import { killChild } from "../../core/child";
+import { nativeSessionCapability } from "../../core/controlTurn";
+import {
+  observeProviderProbeCleanup,
+  preserveProviderFailure,
+  withProviderRetirement,
+  createProviderRetirementLedger,
+  ProviderRetirementError,
+  settleProviderRetirements,
+} from "../../core/providerRetirement";
 import { continueAfterFailure, settledTail } from "../../../../shared/lib/promiseQueue";
 import { modelsFor } from "../../../../features/sessions/model/models";
 import type { TurnIntent } from "../../../../features/sessions/model/session";
 import {
+  createChildProcessHandle,
+  capturedChildRoute,
   execChild,
   freeHarnessPort,
-  killChild,
   resolveOpenCodeBinary,
   spawnChild,
-  unwatchChild,
   watchChild,
+  type ChildProcessHandle,
 } from "../../core/child";
 import { OpenCodeClient } from "./opencodeClient";
 import { abortTextPromptRace } from "../../core/abortTextPrompt";
 import { streamTextDelta } from "../../core/streamText";
-import type { HarnessEvent } from "../../core/types";
+import type { HarnessEvent, HarnessOperationContext } from "../../core/types";
 import {
   appendOpenCodeAssistantTextDelta,
   asRecord,
@@ -30,12 +48,23 @@ import {
 } from "./opencodeProtocol";
 import { resolveOpenCodeV2Service } from "./opencodeService";
 
+const retirements = createProviderRetirementLedger("opencode.text", killChild);
+const wireRetirements = new Map<LiveText | TextSetup, Promise<void>>();
+
 const TEXT_CHILD_ID = "bycoda-opencode-text";
 const SERVER_TIMEOUT_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 45_000;
+/** Bounded wait for text-session wire cleanup before its child is killed. */
+const WIRE_BEFORE_KILL_MS = 5_000;
 
 type LiveText = {
+  eventRoute: string;
+  child?: ChildProcessHandle;
+  closed: boolean;
+  stop?: Promise<void>;
   client: OpenCodeClient;
+  cleanupClient: OpenCodeClient;
+  hostScoped: boolean;
   sessionId: string;
   cwd: string;
   model: { providerID: string; modelID: string };
@@ -49,8 +78,16 @@ type LiveText = {
 };
 
 let live: LiveText | null = null;
+type TextSetup = {
+  child?: ChildProcessHandle;
+  cancelled: boolean;
+  serverUrl: string;
+  stop?: Promise<void>;
+  createWork?: Promise<{ base: OpenCodeClient; cleanupClient: OpenCodeClient; id: string }>;
+  transferred?: boolean;
+};
+let pendingSetup: TextSetup | null = null;
 let turns: Promise<void> = Promise.resolve();
-let serverUrl = "";
 
 export async function stopOpenCodeTextPrompt(): Promise<void> {
   await dropLive();
@@ -62,7 +99,7 @@ export function warmupOpenCodeText(cwd: string): Promise<void> {
     await ensureLive(cwd);
   });
   turns = settledTail(run);
-  return run.catch(() => undefined);
+  return observeProviderProbeCleanup(run);
 }
 
 export async function runOpenCodeTextPrompt(input: {
@@ -74,8 +111,14 @@ export async function runOpenCodeTextPrompt(input: {
   timeoutMs?: number;
   signal?: AbortSignal;
   onEvent?: (event: HarnessEvent) => void;
+  operationContext?: HarnessOperationContext;
 }): Promise<string> {
-  const run = turns.catch(() => undefined).then(() => promptOnLive(input));
+  input = captureTextInput(input);
+  // HTTP requests retain their own source view. SSE subscription/close remains
+  // an explicitly separate observation path, never a child stdin/run ACK.
+  const run = turns
+    .catch(() => undefined)
+    .then(() => runTextOperation(input.operationContext, () => promptOnLive(input)));
   turns = settledTail(run);
   return run;
 }
@@ -89,110 +132,210 @@ async function promptOnLive(input: {
   timeoutMs?: number;
   signal?: AbortSignal;
   onEvent?: (event: HarnessEvent) => void;
+  operationContext?: HarnessOperationContext;
 }): Promise<string> {
   input.signal?.throwIfAborted();
-  const session = await ensureLive(input.cwd, input.model, input.modelSettings);
-  input.signal?.throwIfAborted();
-  session.onEvent = input.onEvent;
-  const abort = abortTextPromptRace(input.signal, () =>
-    session.client.abortSession(session.sessionId),
+  const session = await ensureLive(
+    input.cwd,
+    input.model,
+    input.modelSettings,
+    input.operationContext,
   );
-  try {
-    const result = await Promise.race([
-      session.client.prompt({
-        sessionID: session.sessionId,
-        model: session.model,
-        agent: openCodeTextAgent(input.intent, session.modelSettings),
-        variant: session.modelSettings?.variant,
-        parts: [{ type: "text", text: input.prompt }],
-        timeoutMs: input.timeoutMs ?? REQUEST_TIMEOUT_MS,
-      }),
-      ...(abort.promise ? [abort.promise] : []),
-    ]);
-    const error = result.info?.error;
-    if (error) {
-      throw new Error(
-        typeof error === "object" && error && "message" in error
-          ? String((error as { message: unknown }).message)
-          : "OpenCode text generation failed",
-      );
-    }
-    const text = getOpenCodeTextResponse(result.parts);
-    if (!text) throw new Error("OpenCode returned empty output.");
-    return text;
-  } finally {
-    abort.detach();
-    session.onEvent = undefined;
-    await dropLive();
-  }
+  const writer = input.operationContext?.hostRun
+    ? session.client.withHostRun(input.operationContext.hostRun, session.sessionId)
+    : session.client;
+  const cleanup = input.operationContext?.hostRun
+    ? session.client.withHostRun(textControlRun(input.operationContext)!, session.sessionId)
+    : session.cleanupClient;
+  captureHttpOperation(session, input.operationContext).begin();
+  session.onEvent = input.onEvent;
+  const abort = abortTextPromptRace(input.signal, () => cleanup.abortSession(session.sessionId));
+  return withProviderRetirement(
+    async () => {
+      input.signal?.throwIfAborted();
+      const result = await Promise.race([
+        writer.prompt({
+          sessionID: session.sessionId,
+          model: session.model,
+          agent: openCodeTextAgent(input.intent, session.modelSettings),
+          variant: session.modelSettings?.variant,
+          parts: [{ type: "text", text: input.prompt }],
+          timeoutMs: input.timeoutMs ?? REQUEST_TIMEOUT_MS,
+        }),
+        ...(abort.promise ? [abort.promise] : []),
+      ]);
+      const error = result.info?.error;
+      if (error) {
+        throw new Error(
+          typeof error === "object" && error && "message" in error
+            ? String((error as { message: unknown }).message)
+            : "OpenCode text generation failed",
+        );
+      }
+      const text = getOpenCodeTextResponse(result.parts);
+      if (!text) throw new Error("OpenCode returned empty output.");
+      return text;
+    },
+    async () => {
+      abort.detach();
+      session.onEvent = undefined;
+      await dropLive(session, undefined, cleanup);
+    },
+  );
 }
 
 async function ensureLive(
   cwd: string,
   requestedModel?: string,
   modelSettings?: Record<string, string>,
+  operationContext?: HarnessOperationContext,
 ): Promise<LiveText> {
   const model = pickTextModel(requestedModel);
   const settingsKey = modelSettingsKey(modelSettings);
+  const current = live;
+  if (current && !current.closed && current.hostScoped && !operationContext?.hostRun)
+    throw new Error("Original Host run is required for this text HTTP operation");
   if (
-    live &&
-    live.cwd === cwd &&
-    sameModel(live.model, model) &&
-    live.modelSettingsKey === settingsKey
-  )
-    return live;
-  if (live) await dropLive();
-  return startLive(cwd, model, modelSettings);
+    current &&
+    !current.closed &&
+    current.cwd === cwd &&
+    sameModel(current.model, model) &&
+    current.modelSettingsKey === settingsKey
+  ) {
+    if (current.child) prepareTextProcess(current.child, operationContext);
+    return current;
+  }
+  return startLive(cwd, model, modelSettings, captureDrop(), operationContext);
 }
 
 async function startLive(
   cwd: string,
   model: { providerID: string; modelID: string },
-  modelSettings?: Record<string, string>,
+  modelSettings: Record<string, string> | undefined,
+  previous: ReturnType<typeof captureDrop>,
+  operationContext?: HarnessOperationContext,
 ): Promise<LiveText> {
-  const { path } = await resolveOpenCodeBinary();
-  const versionOut = await execChild(path, ["--version"], cwd, "opencode").catch(() => "");
-  const version = parseOpenCodeVersion(versionOut);
-  const generation = assertSupportedOpenCodeVersion(version);
-
-  const service = generation === "v2" ? await resolveOpenCodeV2Service(path, cwd) : undefined;
-  serverUrl = service?.url ?? "";
-  if (generation === "v1") {
-    watchChild(
-      TEXT_CHILD_ID,
-      (line) => {
-        const parsed = parseServerUrlFromOutput(line);
-        if (parsed) serverUrl = parsed;
-      },
-      () => {
-        if (live) live = null;
-      },
-      (line) => {
-        const parsed = parseServerUrlFromOutput(line);
-        if (parsed) serverUrl = parsed;
-      },
+  if (wireRetirements.size + (live ? 1 : 0) + (pendingSetup ? 1 : 0) >= 512)
+    throw new ProviderRetirementError(
+      "opencode.wire",
+      [],
+      "Original text cleanup capacity exhausted",
     );
-
-    const port = await freeHarnessPort();
-    await spawnChild(
-      TEXT_CHILD_ID,
-      path,
-      ["serve", `--hostname=127.0.0.1`, `--port=${port}`],
-      cwd,
-      undefined,
-      "opencode",
-    );
-  }
-
+  const setup: TextSetup = { cancelled: false, serverUrl: "" };
+  const source = captureHttpOperation(setup, operationContext, "starting");
+  source.begin();
+  pendingSetup = setup;
+  let session: LiveText | undefined;
+  let stopping = Promise.resolve();
+  const assertCurrent = () => {
+    if (setup.cancelled || (session ? session.closed : pendingSetup !== setup))
+      throw new Error("OpenCode text generator stopped");
+  };
   try {
+    const { path } = await resolveOpenCodeBinary();
+    assertCurrent();
+    const versionOut = await execChild(
+      path,
+      ["--version"],
+      cwd,
+      "opencode",
+      undefined,
+      "management",
+    ).catch(() => "");
+    assertCurrent();
+    const version = parseOpenCodeVersion(versionOut);
+    const generation = assertSupportedOpenCodeVersion(version);
+    // Reserve a physical B only after transport discovery, before any A
+    // teardown. v2 owns a logical pending HTTP request, never a fake child.
+    if (generation === "v1") {
+      const child = createChildProcessHandle(
+        TEXT_CHILD_ID,
+        operationContext?.nativeControlTurn,
+        operationContext?.nativeControlTurn ? undefined : "utility",
+      );
+      prepareTextProcess(child, operationContext, true);
+      setup.child = retirements.admitPending(child);
+    }
+    stopping = dropLive(undefined, previous);
+    await stopping;
+    assertCurrent();
+    const capability = operationContext?.nativeControlTurn
+      ? nativeSessionCapability(operationContext.nativeControlTurn)
+      : undefined;
+    const service =
+      generation === "v2"
+        ? await resolveOpenCodeV2Service(path, cwd, capability, "utility")
+        : undefined;
+    assertCurrent();
+    setup.serverUrl = service?.url ?? "";
+    if (generation === "v1") {
+      const child = setup.child!;
+      const observeUrl = (line: string) => {
+        const parsed = parseServerUrlFromOutput(line);
+        if (parsed && !setup.cancelled) setup.serverUrl = parsed;
+      };
+      watchChild(
+        child,
+        observeUrl,
+        () => {
+          setup.cancelled = true;
+          if (session) session.closed = true;
+          if (live === session) live = null;
+        },
+        observeUrl,
+      );
+      const port = await freeHarnessPort();
+      assertCurrent();
+      await spawnChild(
+        child,
+        path,
+        ["serve", `--hostname=127.0.0.1`, `--port=${port}`],
+        cwd,
+        undefined,
+        "opencode",
+      );
+      assertCurrent();
+    }
     const url =
-      generation === "v2" ? serverUrl : await waitForUrl(() => serverUrl, SERVER_TIMEOUT_MS);
-    const client = new OpenCodeClient(url, cwd, generation, service?.password);
-    const created = await client.createSession({
-      permission: [{ permission: "*", pattern: "*", action: "deny" }],
-    });
-    const session: LiveText = {
+      generation === "v2"
+        ? setup.serverUrl
+        : await waitForUrl(() => setup.serverUrl, SERVER_TIMEOUT_MS);
+    assertCurrent();
+    const eventRoute = setup.child ? capturedChildRoute(setup.child) : TEXT_CHILD_ID;
+    const base = new OpenCodeClient(
+      url,
+      cwd,
+      generation,
+      service?.password,
+      eventRoute,
+      undefined,
+      capability,
+      service?.nativeOwnedService,
+    );
+    const bootstrap = operationContext?.hostRun ? base.withHostRun(operationContext.hostRun) : base;
+    setup.createWork = bootstrap
+      .createSession({ permission: [{ permission: "*", pattern: "*", action: "deny" }] })
+      .then((created) => ({
+        // Late/cancelled creation needs only the original cleanup view. Never
+        // open a new normal binding just to retire this response.
+        base,
+        cleanupClient: operationContext?.hostRun
+          ? base.withHostRun(textControlRun(operationContext)!, created.id)
+          : base,
+        id: created.id,
+      }));
+    const created = await setup.createWork;
+    assertCurrent();
+    const client = operationContext?.hostRun
+      ? created.base.withHostRun(operationContext.hostRun, created.id)
+      : created.base;
+    const current: LiveText = {
+      eventRoute,
+      child: setup.child,
+      closed: false,
       client,
+      cleanupClient: created.cleanupClient,
+      hostScoped: operationContext?.hostRun !== undefined,
       sessionId: created.id,
       cwd,
       model,
@@ -204,16 +347,22 @@ async function startLive(
       pendingTextDeltaByPartId: new Map(),
       onEvent: undefined,
     };
-    live = session;
+    session = current;
+    setup.transferred = true;
+    if (pendingSetup === setup) pendingSetup = null;
+    live = current;
     await client.subscribeEvents(
-      TEXT_CHILD_ID,
-      (event) => handleTextEvent(session, event),
+      eventRoute,
+      (event) => handleTextEvent(current, event),
       () => undefined,
     );
-    return session;
+    assertCurrent();
+    return current;
   } catch (error) {
-    await dropLive();
-    throw error;
+    return preserveProviderFailure(
+      error,
+      settleProviderRetirements([stopping, session ? dropLive(session) : stopSetup(setup)]),
+    );
   }
 }
 
@@ -332,16 +481,121 @@ function mergeTextPart(previous: OpenCodePart | undefined, next: OpenCodePart): 
   };
 }
 
-async function dropLive(): Promise<void> {
-  const current = live;
-  live = null;
-  if (current) {
-    await current.client.abortSession(current.sessionId);
-    await current.client.deleteSession(current.sessionId);
-    await current.client.closeEvents(TEXT_CHILD_ID);
+function retainTextWireRetirement(owner: LiveText | TextSetup, work: Promise<void>): void {
+  wireRetirements.set(owner, work);
+  const clear = () => {
+    if (wireRetirements.get(owner) === work) wireRetirements.delete(owner);
+  };
+  void work.then(clear, clear);
+}
+
+function stopSetup(setup: TextSetup): Promise<void> {
+  setup.cancelled = true;
+  if (pendingSetup === setup) pendingSetup = null;
+  if (!setup.stop) {
+    const child = setup.child;
+    const createWork = setup.createWork;
+    setup.stop = settleProviderRetirements([
+      ...(child ? [retirements.retire([child])] : []),
+      ...(createWork
+        ? [
+            (async () => {
+              const created = await createWork;
+              if (setup.transferred) return;
+              const failures: unknown[] = [];
+              for (const effect of [
+                () => created.cleanupClient.abortSession(created.id),
+                () => created.cleanupClient.deleteSession(created.id),
+              ]) {
+                try {
+                  await effect();
+                } catch (error) {
+                  failures.push(error);
+                }
+              }
+              if (failures.length) throw new ProviderRetirementError("opencode.wire", failures);
+            })(),
+          ]
+        : []),
+    ]);
+    retainTextWireRetirement(setup, setup.stop);
   }
-  unwatchChild(TEXT_CHILD_ID);
-  await killChild(TEXT_CHILD_ID).catch(() => undefined);
+  return setup.stop;
+}
+
+function captureDrop() {
+  return {
+    current: live,
+    setup: pendingSetup,
+    wire: [...wireRetirements.values()],
+    cohort: retirements.cohort(TEXT_CHILD_ID),
+  };
+}
+async function dropLive(
+  expected?: LiveText,
+  captured?: ReturnType<typeof captureDrop>,
+  originalClient?: OpenCodeClient,
+): Promise<void> {
+  const snapshot = captured ?? captureDrop();
+  const current = expected ?? snapshot.current;
+  const setup = expected ? null : snapshot.setup;
+  // Capture physical ownership before any provider abort/deletion/event awaits.
+  const child = current?.child;
+  const client = originalClient ?? current?.cleanupClient;
+  if (current && !current.stop) {
+    current.stop = Promise.resolve().then(async () => {
+      const wire = async () => {
+        const failures: unknown[] = [];
+        for (const effect of [
+          () => client!.abortSession(current.sessionId),
+          () => client!.deleteSession(current.sessionId),
+          () => client!.closeEvents(current.eventRoute),
+        ]) {
+          try {
+            await effect();
+          } catch (error) {
+            failures.push(error);
+          }
+        }
+        if (failures.length)
+          throw new ProviderRetirementError(
+            "opencode.wire",
+            failures,
+            "Original OpenCode text cleanup failed",
+          );
+      };
+      // Abort/delete/close must reach the original server: killing the child first
+      // closes its HTTP origin and turns this cleanup into a refused request. A hung
+      // server cannot hold the kill past the grace; its failure still joins below.
+      const wired = wire();
+      let grace: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        wired.then(
+          () => {},
+          () => {},
+        ),
+        new Promise<void>((done) => {
+          grace = setTimeout(done, WIRE_BEFORE_KILL_MS);
+        }),
+      ]);
+      clearTimeout(grace);
+      await settleProviderRetirements([wired, ...(child ? [retirements.retire([child])] : [])]);
+    });
+    retainTextWireRetirement(current, current.stop);
+  }
+  if (live === current) live = null;
+  if (current) current.closed = true;
+  const stoppedSetup = setup ? stopSetup(setup) : Promise.resolve();
+  const originalWire = expected
+    ? current?.stop
+      ? [current.stop]
+      : []
+    : [...snapshot.wire, ...(current?.stop ? [current.stop] : [])];
+  await settleProviderRetirements([
+    stoppedSetup,
+    ...originalWire,
+    ...(expected ? [] : [snapshot.cohort.retire()]),
+  ]);
 }
 
 function pickTextModel(requested?: string): {

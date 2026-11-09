@@ -4,7 +4,7 @@ import { wasTurnInterrupted } from "./inFlight";
 /**
  * What became of a turn that was mid-flight when Bycoda went away.
  *
- * "Continue from where you left off." is only right for a turn that was cut
+ * CONTINUE_PROMPT is only right for a turn that was cut
  * off. A turn that is still running must be left alone, and one that finished
  * while the app was closed must just be shown. This module is the one place
  * that decides which, from facts the caller gathered; it does no I/O.

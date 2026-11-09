@@ -1,4 +1,6 @@
 import { markTurnInterrupted, type ResumedWorkspace } from "../../sessions/model/inFlight";
+import { isUserConversation } from "../../../shared/model/host-contracts/delegation";
+import { withoutInternalWorkspaceSessions } from "./delegatedWorkspace";
 import {
   closeLeaf,
   isAgentTab,
@@ -22,6 +24,7 @@ import {
 } from "../../projects/model/projectTerminal";
 import { normalizeProjectPath } from "../../projects/model/recents";
 import { pathKey } from "../../../shared/lib/paths";
+import { parseRecoveredEditorDraft } from "../../files/model/editorDraftRecovery";
 import type { ServerTerminalRestore } from "../../connections/model/serverTerminalRestore";
 import { serverTerminalRestoreState } from "../../connections/model/serverTerminalRestoreState";
 import { parseRemotePath, remotePath } from "../../connections/model/remoteProjects";
@@ -29,6 +32,7 @@ import {
   cachedRemoteSessionSummary,
   rememberRemoteSession,
   remoteSessionFor,
+  remoteShellBoundTo,
 } from "../../connections/model/connections";
 import {
   reconcileProjectReturn,
@@ -97,7 +101,7 @@ export function collectWorkspaceSnapshot(
       .flatMap((tab) => leafIds(tab.layout))
       .filter((id) => !keptIds.has(id)),
   );
-  const snapshot = withoutInboxSessions({
+  const snapshot = withoutInternalWorkspaceSessions({
     tabs: withoutAgentTabs(kept)
       .map(sanitizeTab)
       .filter((tab): tab is WorkspaceTab => tab != null),
@@ -184,30 +188,6 @@ function withoutAgentTabs(tabs: WorkspaceTab[]): WorkspaceTab[] {
   });
 }
 
-/** Also removes tabs saved by the earlier, persistent Inbox implementation. */
-function withoutInboxSessions(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
-  const inboxIds = snapshot.sessions
-    .filter((session) => session.inboxAsk)
-    .map((session) => session.id);
-  if (inboxIds.length === 0) return snapshot;
-  let tabs = snapshot.tabs;
-  for (const id of inboxIds) {
-    tabs = tabs.flatMap((tab) => {
-      if (!leafIds(tab.layout).includes(id)) return [tab];
-      const next = closeLeaf(tab, id);
-      return next ? [next] : [];
-    });
-  }
-  return {
-    ...snapshot,
-    tabs,
-    sessions: snapshot.sessions.filter((session) => !session.inboxAsk),
-    activeTabId: tabs.some((tab) => tab.id === snapshot.activeTabId)
-      ? snapshot.activeTabId
-      : (tabs[0]?.id ?? ""),
-  };
-}
-
 export function parseWorkspaceSnapshot(raw: unknown, allowEmpty = false): WorkspaceSnapshot | null {
   if (!raw || typeof raw !== "object") return null;
   const value = raw as {
@@ -238,7 +218,7 @@ export function parseWorkspaceSnapshot(raw: unknown, allowEmpty = false): Worksp
         .filter((dock): dock is ProjectTerminalDock => dock != null)
     : [];
   const lastDockSide = isDockSide(value.lastDockSide) ? value.lastDockSide : undefined;
-  const snapshot = withoutInboxSessions({
+  const snapshot = withoutInternalWorkspaceSessions({
     tabs,
     sessions,
     activeTabId,
@@ -263,6 +243,7 @@ export function hydrateWorkspaceSnapshot(
   snapshot: WorkspaceSnapshot,
   loaded: Map<string, Session>,
   interruptedIds: ReadonlySet<string> = new Set(),
+  deletedIds: ReadonlySet<string> = new Set(),
 ): ResumedWorkspace | null {
   const parsed = parseWorkspaceSnapshot(snapshot);
   if (!parsed) return null;
@@ -277,16 +258,38 @@ export function hydrateWorkspaceSnapshot(
   const stubs = new Map(parsed.sessions.map((stub) => [stub.id, stub]));
   const sessions = new Map<string, Session>();
 
+  // Host session id -> the shell that holds it in this snapshot. One host session is
+  // shown by one shell, so a second stub for the same id is a duplicate and is dropped.
+  const claimedHostIds = new Map<string, string>();
+  const excludedIds = new Set<string>();
+
   const take = (id: string): Session | null => {
+    if (deletedIds.has(id)) return null;
     const existing = sessions.get(id);
     if (existing) return existing;
+    if (excludedIds.has(id)) return null;
     const record = loaded.get(id);
     const stub = stubs.get(id);
-    if (stub?.remoteSessionId && parseRemotePath(stub.cwd) && !remoteSessionFor(id)) {
-      rememberRemoteSession(id, stub.remoteSessionId);
-    }
     const base = record ?? (stub ? sessionFromStub(stub) : null);
     if (!base || base.inboxAsk) return null;
+    if (!isUserConversation(base)) {
+      excludedIds.add(id);
+      return null;
+    }
+    if (stub?.remoteSessionId && parseRemotePath(stub.cwd)) {
+      const bound = remoteSessionFor(id);
+      if (!bound) {
+        // Decide before binding: binding takes the host id away from any other shell.
+        const owner =
+          remoteShellBoundTo(stub.remoteSessionId, id) ?? claimedHostIds.get(stub.remoteSessionId);
+        if (owner && owner !== id) {
+          excludedIds.add(id);
+          return null;
+        }
+        rememberRemoteSession(id, stub.remoteSessionId);
+      }
+      claimedHostIds.set(bound ?? stub.remoteSessionId, id);
+    }
     const next = interruptedIds.has(id) ? markTurnInterrupted(base) : { ...base, busy: false };
     sessions.set(id, next);
     return next;
@@ -295,9 +298,15 @@ export function hydrateWorkspaceSnapshot(
   for (const stub of parsed.sessions) take(stub.id);
 
   const tabs: WorkspaceTab[] = [];
-  for (const tab of parsed.tabs) {
-    for (const id of leafIds(tab.layout)) {
+  for (const parsedTab of parsed.tabs) {
+    let tab: WorkspaceTab | null = parsedTab;
+    for (const id of leafIds(parsedTab.layout)) {
       if (paneIds.has(id) || take(id)) continue;
+      if (excludedIds.has(id) || deletedIds.has(id)) {
+        // Internal or duplicate sessions stay out of this pane; preserve the tab's other panes.
+        tab = tab && closeLeaf(tab, id);
+        continue;
+      }
       sessions.set(
         id,
         sessionFromStub({
@@ -311,7 +320,7 @@ export function hydrateWorkspaceSnapshot(
         }),
       );
     }
-    tabs.push(tab);
+    if (tab) tabs.push(tab);
   }
 
   for (const id of interruptedIds) {
@@ -543,6 +552,12 @@ function sanitizeFile(raw: unknown): FilePaneTab | null {
   if (typeof value.id !== "string" || !value.id) return null;
   if (typeof value.path !== "string" || !value.path) return null;
   if (typeof value.cwd !== "string" || !value.cwd) return null;
+  const recoveredEditorDraft = parseRecoveredEditorDraft(value.recoveredEditorDraft);
+  if (
+    "recoveredEditorDraft" in value &&
+    (!recoveredEditorDraft || recoveredEditorDraft.documentId !== value.id)
+  )
+    return null;
   const plan = sanitizePlan(value.plan);
   const hasReleaseNotes = "releaseNotes" in value;
   const releaseNotes = sanitizeReleaseNotes(value.releaseNotes);
@@ -552,6 +567,17 @@ function sanitizeFile(raw: unknown): FilePaneTab | null {
   const sessionChanges = sanitizeSessionChanges(value.sessionChanges);
   const hasRemoteFile = "remoteFile" in value;
   const remoteFile = sanitizeRemoteFile(value.remoteFile);
+  if (
+    recoveredEditorDraft &&
+    (value.plan != null ||
+      hasReleaseNotes ||
+      hasCommit ||
+      hasSessionChanges ||
+      hasRemoteFile ||
+      value.terminal === true ||
+      value.agent != null)
+  )
+    return null;
   if (hasReleaseNotes && !releaseNotes) return null;
   if (hasCommit && !commit) return null;
   if (hasSessionChanges && !sessionChanges) return null;
@@ -599,6 +625,7 @@ function sanitizeFile(raw: unknown): FilePaneTab | null {
   }
   return {
     id: value.id,
+    ...(recoveredEditorDraft ? { recoveredEditorDraft } : {}),
     path: remoteOwner ? remotePath(remoteOwner.environmentId, value.path) : value.path,
     cwd: remoteOwner ? remotePath(remoteOwner.environmentId, value.cwd) : value.cwd,
     ...(value.external === true ? { external: true } : {}),

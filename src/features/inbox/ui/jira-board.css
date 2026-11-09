@@ -1,189 +1,58 @@
-.jira-board-view {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-inline-size: 0;
-  min-block-size: 0;
-  color: var(--ui-tone-neutral-fg);
-  font-size: 12px;
-}
-.jira-board-toolbar {
-  display: flex;
-  align-items: end;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 14px 18px;
-  border-block-end: 1px solid var(--ui-tone-neutral-border);
-}
-.jira-board-toolbar label {
-  display: grid;
-  gap: 6px;
-  min-inline-size: 0;
-  color: var(--ui-text-secondary);
-}
-.jira-board-toolbar select {
-  max-inline-size: min(350px, 70vw);
-}
-.jira-board-tabs {
-  display: flex;
-  gap: 4px;
-}
-
-.jira-board-toolbar .jira-board-search {
-  flex: 1;
-  min-inline-size: 140px;
-}
-.jira-board-status,
-.jira-board-hint {
-  padding-block: 8px;
-  padding-inline: 18px;
-  color: var(--ui-text-secondary);
-}
-.jira-board-hint {
-  margin: 0;
-}
-.jira-board-error {
-  margin-inline: 18px;
-  margin-block-end: 10px;
-  overflow-wrap: anywhere;
-}
-.jira-board-columns {
-  display: flex;
-  flex: 1;
-  align-items: stretch;
-  gap: 12px;
-  overflow: auto;
-  min-block-size: 0;
-  padding: 8px 18px 18px;
+/* Board gesture/scroll boundaries stay beside their interaction owner.
+   Ordinary layout and typography are composed with shared Tailwind roles. */
+.jira-board-columns,
+.jira-board-column,
+.jira-board-planning {
   overscroll-behavior: contain;
 }
 .jira-board-column {
-  flex: 1 0 260px;
-  min-inline-size: 260px;
-  border: 1px solid var(--ui-tone-neutral-border);
-  border-radius: 8px;
-  background: var(--ui-surface);
-  padding: 10px;
-  overflow-y: auto;
-}
-.jira-board-column header,
-.jira-board-sprint header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-block-end: 12px;
-}
-.jira-board-column h2,
-.jira-board-sprint h2 {
-  flex: 1;
-  font-size: 13px;
-  font-weight: 600;
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-.jira-board-column header span,
-.jira-board-sprint header span {
-  color: var(--ui-text-secondary);
-  font-variant-numeric: tabular-nums;
+  min-inline-size: 240px;
+  scroll-padding-block-start: 44px;
 }
 .jira-board-card {
-  border: 1px solid var(--ui-tone-neutral-border);
-  border-radius: 6px;
-  padding: 10px;
-  margin-block-end: 8px;
-  background: var(--ui-surface);
+  margin-block-end: 6px;
+  touch-action: auto;
+}
+.jira-board-card-open {
+  white-space: normal;
+}
+.jira-board-drag-handle {
   cursor: grab;
   touch-action: none;
   user-select: none;
 }
 .jira-board-card[data-dragging] {
   opacity: 0.45;
+  user-select: none;
 }
-.jira-board-view [data-drop] {
-  outline: 2px solid var(--ui-tone-accent-fg);
-  outline-offset: -2px;
-}
-.jira-board-card .jira-board-card-open {
-  display: grid;
-  gap: 6px;
-  inline-size: 100%;
-  text-align: start;
-}
-.jira-board-key {
-  color: var(--ui-tone-accent-fg);
-  font-size: 11px;
-}
-.jira-board-summary {
-  overflow-wrap: anywhere;
-  font-size: 13px;
-  line-height: 1.45;
-}
-.jira-board-card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 8px;
-  margin-block: 10px;
+.jira-board-status,
+.jira-board-hint {
+  padding-block: 6px;
+  padding-inline: 12px;
   color: var(--ui-text-secondary);
+}
+.jira-board-hint {
+  margin: 0;
+}
+.jira-board-error {
+  margin-inline: 12px;
+  margin-block-end: 8px;
   overflow-wrap: anywhere;
 }
-
-.jira-board-move-menu,
 .jira-board-transition {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
-  padding-block-start: 8px;
-}
-.jira-board-transition {
-  margin-inline: 18px;
-  margin-block-end: 12px;
-  padding: 12px;
-  border: 1px solid var(--ui-tone-neutral-border);
-  border-radius: 6px;
+  margin-inline: 12px;
+  margin-block-end: 8px;
+  padding: 8px;
+  border: 1px solid var(--ui-editor-border);
+  border-radius: var(--ui-radius-card);
 }
 .jira-board-transition strong {
   flex-basis: 100%;
-}
-.jira-board-empty {
-  padding-block: 20px;
-  color: var(--ui-text-secondary);
-  text-align: center;
-}
-.jira-board-planning {
-  flex: 1;
-  overflow: auto;
-  min-block-size: 0;
-  padding: 8px 18px 18px;
-  overscroll-behavior: contain;
-}
-.jira-board-sprint {
-  border: 1px solid var(--ui-tone-neutral-border);
-  border-radius: 8px;
-  padding: 12px;
-  margin-block-end: 16px;
-  min-block-size: 100px;
-}
-.jira-board-sprint .jira-board-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px 16px;
-}
-.jira-board-sprint .jira-board-card-meta {
-  grid-column: 1;
-  margin: 0;
-}
-.jira-board-sprint .jira-board-move {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  align-self: center;
-}
-.jira-board-sprint .jira-board-move-menu {
-  grid-column: 1 / -1;
-}
-.jira-board-load {
-  align-self: center;
-  margin-block-end: 10px;
+  font-weight: 500;
 }
 .jira-board-detail {
   display: flex;
@@ -191,18 +60,12 @@
   flex: 0 1 480px;
   min-inline-size: 260px;
   min-block-size: 0;
-  border-inline-start: 1px solid var(--ui-tone-neutral-border);
+  border-inline-start: 1px solid var(--ui-pane-border);
 }
 .jira-board-detail-close {
   align-self: end;
   margin: 8px;
 }
-@media (hover: hover) and (pointer: fine) {
-  .jira-board-card:hover {
-    border-color: var(--ui-border-accent);
-  }
-}
-
 .jira-board-mode {
   min-inline-size: 0;
   margin: 0;

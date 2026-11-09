@@ -77,7 +77,17 @@ fn read_policy(file: &Path) -> Result<SkillPolicy, String> {
             validate_policy(&policy)?;
             Ok(policy)
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(SkillPolicy::default()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && !policy_exists(file)? => {
+            Ok(SkillPolicy::default())
+        }
+        Err(_) => Err("Could not read bycoda skill restrictions".into()),
+    }
+}
+
+fn policy_exists(file: &Path) -> Result<bool, String> {
+    match std::fs::symlink_metadata(file) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(_) => Err("Could not read bycoda skill restrictions".into()),
     }
 }
@@ -119,13 +129,10 @@ fn write_policy(file: &Path, policy: &SkillPolicy) -> Result<(), String> {
     validate_policy(policy)?;
     let parent = file.parent().ok_or("Invalid skill policy location")?;
     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let temporary = parent.join(format!("skill-policy-{}.tmp", uuid::Uuid::new_v4()));
-    std::fs::write(
-        &temporary,
-        serde_json::to_vec(policy).map_err(|e| e.to_string())?,
+    crate::file_access::durable_write(
+        file,
+        &serde_json::to_vec(policy).map_err(|e| e.to_string())?,
     )
-    .map_err(|e| e.to_string())?;
-    std::fs::rename(&temporary, file).map_err(|e| e.to_string())
 }
 
 /// Owner UI only. Never expose mutation through conversation tools.
@@ -133,11 +140,11 @@ fn write_policy(file: &Path, policy: &SkillPolicy) -> Result<(), String> {
 pub fn skill_policy_get(legacy_disabled_paths: Option<Vec<String>>) -> Result<SkillPolicy, String> {
     let _guard = SKILL_POLICY_LOCK.lock().map_err(|e| e.to_string())?;
     let file = policy_file()?;
-    if file.exists() {
+    if policy_exists(&file)? {
         return read_policy(&file);
     }
     let _file_guard = lock_policy(&file)?;
-    if file.exists() {
+    if policy_exists(&file)? {
         return read_policy(&file);
     }
     let paths: Vec<String> = legacy_disabled_paths
@@ -186,6 +193,8 @@ pub fn skill_policy_set(name: String, enabled: bool) -> Result<SkillPolicy, Stri
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscoveredSkill {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_provider: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model_invocable: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -263,15 +272,17 @@ fn normalize_path_for_compare(path: &str) -> String {
 pub fn list_skills(
     cwd: String,
     disabled_paths: Option<Vec<String>>,
+    provider: Option<String>,
 ) -> Result<Vec<DiscoveredSkill>, String> {
     // No folder: this computer's own skills only, as for a project that
     // lives on another machine.
     let project = (!cwd.trim().is_empty()).then(|| expand_home(&cwd));
     let home = dirs_home().map(PathBuf::from);
-    Ok(list_skills_from(
+    Ok(list_skills_from_provider(
         project.as_deref(),
         home.as_deref(),
         disabled_paths.as_deref(),
+        provider.as_deref(),
     ))
 }
 
@@ -279,6 +290,15 @@ pub(crate) fn list_skills_from(
     project: Option<&Path>,
     home: Option<&Path>,
     disabled_paths: Option<&[String]>,
+) -> Vec<DiscoveredSkill> {
+    list_skills_from_provider(project, home, disabled_paths, None)
+}
+
+fn list_skills_from_provider(
+    project: Option<&Path>,
+    home: Option<&Path>,
+    disabled_paths: Option<&[String]>,
+    provider: Option<&str>,
 ) -> Vec<DiscoveredSkill> {
     let disabled_filter = DisabledFilter::new(disabled_paths);
     let mut by_name: HashMap<String, DiscoveredSkill> = HashMap::new();
@@ -293,6 +313,14 @@ pub(crate) fn list_skills_from(
             return;
         }
         for skill in scan_root(&root, scope, source) {
+            if provider.is_some_and(|provider| {
+                skill
+                    .install_provider
+                    .as_deref()
+                    .is_some_and(|target| target != "all" && target != provider)
+            }) {
+                continue;
+            }
             if disabled_filter
                 .as_ref()
                 .is_some_and(|f| f.is_disabled(&skill.path))
@@ -344,6 +372,13 @@ pub(crate) fn list_skills_from(
         add_root(home.join(".codex/skills/.system"), "user", "codex");
         // New-provider roots come after every pre-existing root so an
         // identically named skill can never shadow an established provider.
+        if let Some(project) = project {
+            add_root(
+                project.join(".gemini/antigravity/skills"),
+                "project",
+                "antigravity",
+            );
+        }
         let root = home.join(".gemini/antigravity/skills");
         if root.is_dir() {
             add_root(root, "user", "antigravity");
@@ -576,6 +611,9 @@ fn scan_root(root: &Path, scope: &str, source: &str) -> Vec<DiscoveredSkill> {
         if folder.starts_with('.') || folder == "skills-cursor" {
             continue;
         }
+        let Ok(install_provider) = installed_provider(&dir) else {
+            continue;
+        };
         let skill_md = skill_md_path(&dir);
         let Some(skill_md) = skill_md else { continue };
         let Ok(bytes) = read_prefix(&skill_md, MAX_FRONTMATTER_BYTES) else {
@@ -594,6 +632,7 @@ fn scan_root(root: &Path, scope: &str, source: &str) -> Vec<DiscoveredSkill> {
         }
         let (model_invocable, user_invocable) = skill_invocation_flags(&text);
         out.push(DiscoveredSkill {
+            install_provider,
             model_invocable,
             user_invocable,
             name,
@@ -604,6 +643,43 @@ fn scan_root(root: &Path, scope: &str, source: &str) -> Vec<DiscoveredSkill> {
         });
     }
     out
+}
+
+fn installed_provider(dir: &Path) -> Result<Option<String>, ()> {
+    let marker = dir.join(".bycoda-install.json");
+    let info = match std::fs::symlink_metadata(&marker) {
+        Ok(info) => info,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(()),
+    };
+    if !info.is_file() || info.len() > MAX_FRONTMATTER_BYTES as u64 {
+        return Err(());
+    }
+    let bytes = read_prefix(&marker, MAX_FRONTMATTER_BYTES).map_err(|_| ())?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| ())?;
+    let provider = value
+        .get("provider")
+        .and_then(|value| value.as_str())
+        .ok_or(())?;
+    if value.get("schemaVersion").and_then(|value| value.as_u64()) != Some(1)
+        || ![
+            "all",
+            "claude",
+            "codex",
+            "cursor",
+            "opencode",
+            "pi",
+            "omp",
+            "fx",
+            "grok",
+            "hermes",
+            "antigravity",
+        ]
+        .contains(&provider)
+    {
+        return Err(());
+    }
+    Ok(Some(provider.to_string()))
 }
 
 fn skill_md_path(dir: &Path) -> Option<PathBuf> {
@@ -797,7 +873,7 @@ fn slug_name(raw: &str) -> String {
 
 // ---- Copying a skill between machines -------------------------------------
 // `skill_export` / `skill_import` have the same names, arguments and results as
-// the host's workspace commands (host/skills.ts), so one UI call works on
+// the host's workspace commands (host/skills/skills.ts), so one UI call works on
 // either machine.
 
 const MAX_TRANSFER_FILES: usize = 200;
@@ -1030,7 +1106,7 @@ const WINDOWS_DEVICE_NAMES: [&str; 22] = [
 ];
 
 /// A relative, `/`-separated path that stays inside the skill folder on every
-/// platform (the same rules as host/skills.ts).
+/// platform (the same rules as host/skills/skills.ts).
 fn validate_transfer_path(path: &str) -> Result<(), String> {
     let bad = |why: &str| Err(format!("Cannot copy file \"{path}\": {why}."));
     if path.is_empty() || path.len() > MAX_TRANSFER_PATH_LEN {
@@ -1207,6 +1283,29 @@ mod tests {
     }
 
     #[test]
+    fn catalog_provider_filter_preserves_same_name_fallback_and_legacy_skills() {
+        let project = tmp("provider-project");
+        let home = tmp("provider-home");
+        write_skill(&project.0.join(".agents/skills"), "review", "# Codex copy");
+        write_skill(&home.0.join(".agents/skills"), "review", "# Legacy copy");
+        let marker = project.0.join(".agents/skills/review/.bycoda-install.json");
+        std::fs::write(&marker, r#"{"schemaVersion":1,"provider":"codex"}"#).unwrap();
+        let claude =
+            list_skills_from_provider(Some(&project.0), Some(&home.0), None, Some("claude"));
+        assert_eq!(claude.len(), 1);
+        assert!(claude[0].path.contains(&crate::fs::path_to_js(&home.0)));
+        let codex = list_skills_from_provider(Some(&project.0), Some(&home.0), None, Some("codex"));
+        assert_eq!(codex[0].install_provider.as_deref(), Some("codex"));
+        for invalid in ["broken", r#"{"schemaVersion":2,"provider":"all"}"#] {
+            std::fs::write(&marker, invalid).unwrap();
+            let listed =
+                list_skills_from_provider(Some(&project.0), Some(&home.0), None, Some("codex"));
+            assert_eq!(listed.len(), 1);
+            assert!(listed[0].path.contains(&crate::fs::path_to_js(&home.0)));
+        }
+    }
+
+    #[test]
     fn skill_policy_round_trips_and_replaces_existing_state() {
         let root = tmp("policy");
         let file = root.0.join("settings/skill-policy.json");
@@ -1224,6 +1323,8 @@ mod tests {
         assert!(read_policy(&file).unwrap().disabled_names.is_empty());
         std::fs::write(&file, "broken").unwrap();
         assert!(read_policy(&file).is_err());
+        assert!(read_policy(&file).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "broken");
         assert!(write_policy(
             &file,
             &SkillPolicy {
@@ -1232,6 +1333,32 @@ mod tests {
             }
         )
         .is_err());
+    }
+
+    #[test]
+    fn skill_policy_failed_replacement_preserves_existing_target() {
+        let root = tmp("policy-write-failure");
+        let file = root.0.join("skill-policy.json");
+        std::fs::create_dir(&file).unwrap();
+        let evidence = file.join("original");
+        std::fs::write(&evidence, "keep").unwrap();
+        assert!(write_policy(&file, &SkillPolicy::default()).is_err());
+        assert_eq!(std::fs::read_to_string(evidence).unwrap(), "keep");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_policy_symlink_is_not_treated_as_missing() {
+        use std::os::unix::fs::symlink;
+        let root = tmp("policy-dangling");
+        let file = root.0.join("skill-policy.json");
+        symlink(root.0.join("missing"), &file).unwrap();
+        assert!(policy_exists(&file).unwrap());
+        assert!(read_policy(&file).is_err());
+        assert!(std::fs::symlink_metadata(&file)
+            .unwrap()
+            .file_type()
+            .is_symlink());
     }
 
     #[test]

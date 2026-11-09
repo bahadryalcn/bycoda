@@ -2,33 +2,59 @@ import type { PreflightResult, SubmitDeps, SubmitInput } from "./submitTypes";
 
 import { composeNoteMessage } from "../../../../features/notes";
 import { orchestrator } from "../../../../features/orchestration/model/orchestration";
-import { providerAccountExists, sessionProviderAccountId, supportsProviderAccounts } from "../../../../features/providers/model/providerAccounts";
+import {
+  providerAccountExists,
+  sessionProviderAccountId,
+  supportsProviderAccounts,
+} from "../../../../features/providers/model/providerAccounts";
+import { repairStaleHandoff } from "../../../../features/sessions/model/activeSubmits";
 import { createEditedResendAttempt } from "../../../../features/sessions/model/editLastTurn";
-import { isPreparingHandoff } from "../../../../features/sessions/model/handoff";
-import { queuedMessageForSubmit } from "../../../../features/sessions/model/messageQueue";
+import {
+  isPreparingHandoff,
+  pendingHarnessSwitch,
+} from "../../../../features/sessions/model/handoff";
+import {
+  queuedMessageForSubmit,
+  queuedSteerRoute,
+  runningTargetOf,
+} from "../../../../features/sessions/model/messageQueue";
+import { steerAppliesModelSettings } from "../../../../integrations/harness";
 import { saveRecentModelChoice } from "../../../../features/sessions/model/models";
-import { consumeOperatorCommand, operatorEnabledInThread } from "../../../../features/sessions/model/operatorCommand";
+import { consumeDelegationCommand } from "../../../../features/sessions/model/delegationCommands";
+import {
+  consumeOperatorCommand,
+  operatorEnabledInThread,
+} from "../../../../features/sessions/model/operatorCommand";
 import { approvedPlanForMessage, isBuildablePlan } from "../../../../features/sessions/model/plan";
 import { sessionWorkCwd } from "../../../../features/sessions/model/session";
-import { sessionsRef } from "../../../../features/sessions/model/sessionsStore";
+import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
+import { repairSessionModelIdentity } from "../../../../features/sessions/model/sessionModelIdentity";
 import { pendingShellRuns, withShellContext } from "../../../../features/sessions/model/shellRun";
 import { isNativeCommandPrompt } from "../../../../features/skills/model/skills";
 import { isEqualOrInside } from "../../../../shared/lib/paths";
 import { withPlanBuildTarget } from "../../helpers/sessionHelpers";
+import { needsSessionWorkspace } from "../../../../features/workspaces/model/sessionWorkspace";
+import { t } from "../../../../shared/i18n";
+import { showSubmitNotice } from "./submitNotice";
 
 export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): PreflightResult {
-  const { workspaceNavigation, enqueueHarnessEvent, flushHarnessEvents, setProviderAccountRecovery } = ctx;
+  const { workspaceNavigation, setProviderAccountRecovery } = ctx;
   const { editedResends, removingSessionIds, switchingWorktrees, removingWorktreePaths } = ctx.refs;
   const { sessionId, text, attachments, options } = input;
-  if (editedResends.isActive(sessionId)) return { settled: true, value: false };
-  // Apply received output and terminal state before reading the next turn.
-  flushHarnessEvents();
-  const controlError = orchestrator.submissionError(sessionId, options?.managed);
-  if (controlError) {
-    enqueueHarnessEvent(sessionId, { type: "status", text: controlError });
-    flushHarnessEvents();
+  // A refusal says why, as a notice that stays in the transcript: a status line
+  // folds into the running turn's activity and is gone within seconds.
+  const refuse = (text: string): PreflightResult => {
+    showSubmitNotice(sessionId, text);
     return { settled: true, value: false };
-  }
+  };
+  if (editedResends.isActive(sessionId))
+    return refuse(t("This conversation is being changed. Send again in a moment."));
+  // Apply received output and terminal state before reading the next turn.
+  ctx.flushHarnessEvents();
+  // A handoff block no running submit owns would refuse every send below.
+  repairStaleHandoff(sessionId);
+  const controlError = orchestrator.submissionError(sessionId, options?.managed);
+  if (controlError) return refuse(controlError);
   if (options?.managed) {
     const target = sessionsRef.current.find((s) => s.id === sessionId);
     if (
@@ -52,8 +78,15 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
     switchingWorktrees.current.has(sessionId) ||
     workspaceNavigation.isSwitching(sessionId)
   )
-    return { settled: true, value: false };
-  const storedCurrent = sessionsRef.current.find((s) => s.id === sessionId);
+    return refuse(
+      "Message not sent: this conversation is being changed. Send it again in a moment.",
+    );
+  const foundCurrent = sessionsRef.current.find((s) => s.id === sessionId);
+  const storedCurrent = foundCurrent ? repairSessionModelIdentity(foundCurrent) : undefined;
+  if (storedCurrent && storedCurrent !== foundCurrent)
+    setSessions((previous) =>
+      previous.map((session) => (session === foundCurrent ? storedCurrent : session)),
+    );
   // Automated sends never start a local turn while the host runs this one.
   if (options?.appRequestId && (storedCurrent?.busy || storedCurrent?.continuingElsewhere))
     return { settled: true, value: false };
@@ -66,14 +99,16 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
       isPreparingHandoff(storedCurrent))
   )
     return { settled: true, value: false };
+  if (!storedCurrent) return { settled: true, value: false };
   if (
-    !storedCurrent ||
     storedCurrent.worktreeRemoved ||
     [...removingWorktreePaths.current].some((path) =>
       isEqualOrInside(sessionWorkCwd(storedCurrent), path),
     )
   )
-    return { settled: true, value: false };
+    return refuse(
+      "Message not sent: this conversation's checkout was removed or is being removed.",
+    );
   const draftBlock = options?.draftBlockId
     ? storedCurrent.blocks.find(
         (block) => block.id === options.draftBlockId && block.role === "user" && block.draft,
@@ -99,9 +134,25 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
   if (options?.queuedMessageId && !queuedMessage) return { settled: true, value: false };
   const submitTarget = queuedMessage?.modelTarget ?? options?.buildTarget;
   if (queuedMessage?.modelTarget) {
-    current =
+    // A steered row whose model the running turn already uses joins it; its
+    // saved settings (effort) travel with the message. A row for another
+    // provider arms a provider switch like the composer does. A row for
+    // another model of this provider is started only after Stop (see
+    // useQueuedMessageActions), so it never joins the turn on the wrong model.
+    const running = runningTargetOf(current);
+    const route =
       current.busy && options?.followUpBehavior === "steer"
-        ? { ...current, ...queuedMessage.modelTarget }
+        ? queuedSteerRoute(current, queuedMessage, steerAppliesModelSettings(running.harness))
+        : undefined;
+    if (route === "restart") return { settled: true, value: false };
+    current =
+      route === "join"
+        ? {
+            ...current,
+            harness: running.harness,
+            model: running.model,
+            modelSettings: queuedMessage.modelTarget.modelSettings,
+          }
         : withPlanBuildTarget(current, queuedMessage.modelTarget);
   }
   const editedResend = options?.resendEdited
@@ -112,33 +163,35 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
   if (editedResend) {
     current = { ...current, blocks: editedResend.blocks };
   }
-  const messagePlan = (options?.intent ?? "default") === "default" &&
-    !options?.managed && !options?.resendEdited && !options?.ciRepair &&
-    !current.inboxAsk && !orchestrator.forSession(sessionId) && attachments.length === 0
+  const messagePlan =
+    (options?.intent ?? "default") === "default" &&
+    !options?.managed &&
+    !options?.resendEdited &&
+    !options?.ciRepair &&
+    !current.inboxAsk &&
+    !orchestrator.forSession(sessionId) &&
+    attachments.length === 0
       ? approvedPlanForMessage(current, text)
       : undefined;
-  const intent = messagePlan ? "build" : options?.intent ?? "default";
+  const intent = messagePlan ? "build" : (options?.intent ?? "default");
   if (intent === "orchestrate") {
     try {
       const run = orchestrator.forSession(sessionId);
       if (run && ["active", "paused"].includes(run.status))
-        throw new Error(
-          "Stop the current orchestration run before preparing another proposal.",
-        );
+        throw new Error("Stop the current orchestration run before preparing another proposal.");
     } catch (error) {
-      enqueueHarnessEvent(sessionId, {
-        type: "status",
-        text: error instanceof Error ? error.message : String(error),
-      });
-      flushHarnessEvents();
-      return { settled: true, value: false };
+      return refuse(error instanceof Error ? error.message : String(error));
     }
   }
   const approvedPlan = options?.planBlockId
     ? current.blocks.find((block) => block.id === options.planBlockId && block.role === "plan")
     : messagePlan;
   if (intent === "build" && (!approvedPlan || current.busy || !isBuildablePlan(approvedPlan)))
-    return { settled: true, value: false };
+    return refuse(
+      current.busy
+        ? t("Wait for the current turn to finish before building the plan.")
+        : t("This plan can no longer be built."),
+    );
   if (options?.queuedMessageId) {
     const mode = options.followUpBehavior === "steer" ? "steer" : "dispatch";
     if (!queuedMessageForSubmit(current, options.queuedMessageId, mode)) {
@@ -151,13 +204,12 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
   if (!text.trim() && attachments.length === 0 && !noteCard && !handoffCard) {
     return { settled: true, value: false };
   }
-  if (isPreparingHandoff(current)) return { settled: true, value: false };
+  // A handoff in progress is not a reason to refuse: the caller queues the
+  // message behind it (see `isPreparingHandoff(pre.current)` in useSubmitSession).
   saveRecentModelChoice(current.harness, current.model);
   const initialWorkCwd = sessionWorkCwd(current);
-  const createDraftWorktree = !current.worktreeCwd && current.workspaceMode === "worktree";
-  const accountProvider = supportsProviderAccounts(current.harness)
-    ? current.harness
-    : undefined;
+  const createDraftWorktree = needsSessionWorkspace(current);
+  const accountProvider = supportsProviderAccounts(current.harness) ? current.harness : undefined;
   const providerAccountId = accountProvider
     ? sessionProviderAccountId(accountProvider, current)
     : undefined;
@@ -178,19 +230,31 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
       current.inboxAsk ||
       orchestrator.run(sessionId))
   ) {
-    enqueueHarnessEvent(sessionId, {
-      type: "status",
-      text: "Use /operator from a regular session turn, outside an orchestration run.",
-    });
-    flushHarnessEvents();
-    return { settled: true, value: false };
+    return refuse("Use /operator from a regular session turn, outside an orchestration run.");
   }
   const operatorAccess = operatorCommand.matched || operatorEnabledInThread(current.blocks);
+  const delegation =
+    !operatorCommand.matched &&
+    (intent === "default" || intent === "plan") &&
+    !options?.managed &&
+    !options?.ciRepair
+      ? consumeDelegationCommand(submittedText)
+      : null;
+  const delegationError = !delegation
+    ? undefined
+    : delegation.name === "task" && intent === "plan"
+      ? "Use /task outside Plan mode."
+      : !delegation.request
+        ? `Add a request after /${delegation.name}.`
+        : undefined;
+  if (delegationError) return refuse(delegationError);
   const promptText = operatorCommand.matched
     ? operatorCommand.text.trim() || "Explain what you can do in bycoda with the app CLI."
-    : submittedText;
+    : (delegation?.prompt ?? submittedText);
   const rawCommand =
-    !operatorCommand.matched && isNativeCommandPrompt(submittedText, current.harness);
+    !operatorCommand.matched &&
+    !delegation &&
+    isNativeCommandPrompt(submittedText, current.harness);
   const ciContext = options?.ciRepair?.prompt ?? options?.ciContext;
   // The `!commands` run since the last message go with this one, to the
   // harness only; a native command has to arrive exactly as typed.
@@ -203,18 +267,32 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
           composeNoteMessage(noteCard, promptText),
         ));
 
-  const pendingSwitch =
-    current.pendingSwitch && current.pendingSwitch.from !== current.harness
-      ? current.pendingSwitch
-      : null;
+  const switchSource = pendingHarnessSwitch(current);
+  const pendingSwitch = switchSource && switchSource.from !== current.harness ? switchSource : null;
   return {
     settled: false,
     pre: {
-      storedCurrent, draftBlock, current, submitTarget, editedResend, editedProviderTurnId, intent,
-      approvedPlan, noteCard, handoffCard, providerAccountId, initialWorkCwd, createDraftWorktree,
-      submittedText, operatorCommand, operatorAccess, promptText, rawCommand, ciContext, harnessText,
+      storedCurrent,
+      draftBlock,
+      current,
+      submitTarget,
+      editedResend,
+      editedProviderTurnId,
+      intent,
+      approvedPlan,
+      noteCard,
+      handoffCard,
+      providerAccountId,
+      initialWorkCwd,
+      createDraftWorktree,
+      submittedText,
+      operatorCommand,
+      operatorAccess,
+      promptText,
+      rawCommand,
+      ciContext,
+      harnessText,
       pendingSwitch,
     },
   };
 }
-

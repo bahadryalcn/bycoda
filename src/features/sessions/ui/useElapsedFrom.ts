@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+export { formatElapsed } from "../../../shared/i18n/format";
 import { usePresentationVisible } from "./presentationVisibility";
 
 /**
@@ -41,13 +42,4 @@ export function useElapsedFrom(startedAt: number | undefined, paused: boolean): 
   }, [startedAt, paused, visible]);
 
   return elapsedMs;
-}
-
-export function formatElapsed(elapsedMs: number | null): string | null {
-  if (elapsedMs == null) return null;
-  const totalSec = Math.max(1, Math.round(elapsedMs / 1000));
-  if (totalSec < 60) return `${totalSec}s`;
-  const minutes = Math.floor(totalSec / 60);
-  const seconds = totalSec % 60;
-  return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }

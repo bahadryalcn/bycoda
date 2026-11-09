@@ -1,11 +1,13 @@
 import { useState, type ComponentProps } from "react";
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
+import { flushHostSessionBindings } from "../../src/features/connections/public/sessionExecutionBinding";
 import { ApprovalToasts } from "../../src/features/sessions/ui/ApprovalToasts";
 import { NOTIFICATION_HISTORY_KEY } from "../../src/features/notifications/model/notificationHistory";
 import { rememberNotificationProjects } from "../../src/features/notifications/model/notificationProjects";
 import { applyThemePreference } from "../../src/features/settings/model/appearance";
 import { setLanguagePreference } from "../../src/shared/i18n";
+import { createApprovalOccurrenceId } from "../../src/shared/model/approvalOccurrence";
 import "../../src/styles/index.css";
 
 // Synthetic requests only; native actions cannot reach the owner's host.
@@ -39,7 +41,18 @@ const notices: Notice[] = titles.map((title, index) => ({
     model: "",
     modelSettings: {},
     runtimeMode: "supervised",
-    blocks: [],
+    // Decisions bind to the open approval occurrence in the session, as in the real app.
+    blocks:
+      index === 1
+        ? [
+            {
+              id: `approval-${index}`,
+              role: "approval",
+              text: label,
+              approval: { requestId: 1, occurrenceId: createApprovalOccurrenceId() },
+            },
+          ]
+        : [],
   },
 }));
 if (!localStorage.getItem(NOTIFICATION_HISTORY_KEY)) {
@@ -76,4 +89,7 @@ function Fixture() {
     </>
   );
 }
+// The app resolves durable session owners at boot before any approval can bind;
+// the fixture mounts the toasts directly, so it hydrates the same store first.
+await flushHostSessionBindings();
 createRoot(document.getElementById("root")!).render(<Fixture />);

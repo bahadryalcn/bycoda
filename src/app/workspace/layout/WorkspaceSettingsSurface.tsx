@@ -1,15 +1,33 @@
+import { Suspense, memo, useCallback, useMemo, useState } from "react";
+import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import type { ComponentProps, Dispatch, SetStateAction } from "react";
 import { QuickDeleteWorktreeDialog } from "../../../features/source-control/ui/QuickDeleteWorktreeDialog";
 import { WorktreesPage } from "../../../features/source-control/ui/WorktreesPage";
 import { Modal } from "../../../shared/ui/Modal";
+import { Button } from "../../../shared/ui/Button";
+import { Eye } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n/git";
 import type { WorktreeManagementRequest } from "../../../features/source-control/model/worktreeManagement";
 import { SettingsView } from "../surfaces/lazySurfaces";
+import "./WorkspaceSettingsSurface.css";
+import { NavigationBoundary } from "../../shell/NavigationBoundary";
+import { RecoveryBoundary } from "../../../shared/ui/RecoveryBoundary";
+import { SettingsLoadingSurface } from "../../../features/settings/ui/SettingsLoadingSurface";
 
 type SettingsProps = ComponentProps<typeof SettingsView>;
 type QuickDeleteProps = ComponentProps<typeof QuickDeleteWorktreeDialog>;
+let sessionPeek = false;
+
+/**
+ * `page` replaces the workspace area with Settings (the owner of that area hides the workspace).
+ * `dialog` shows Settings in the shared Modal over the visible work context at one fixed size for
+ * every page (never resized by page or content), with an optional maximize/restore.
+ */
+export type SettingsPresentationMode = "page" | "dialog";
 
 export interface WorkspaceSettingsSurfaceProps {
+  /** Defaults to `page` until the workspace keeps its chrome mounted behind the overlay. */
+  presentation?: SettingsPresentationMode;
   // Worktree management dialog
   worktreeManagementRequest: QuickDeleteProps["request"] | null;
   worktreeManagementRevision: number;
@@ -24,12 +42,17 @@ export interface WorkspaceSettingsSurfaceProps {
   visibleRecents: SettingsProps["recents"];
   sidebarCwd: SettingsProps["cwd"];
   sidebarHistory: SettingsProps["sessions"];
+  /** The history loader's first-load failure/pending flags for `sidebarCwd`; Archive must not read either as an empty archive. */
+  historyFailed?: boolean;
+  historyPending?: boolean;
+  onRetryHistory?: () => void;
   sessions: SettingsProps["liveSessions"];
   onCheckWorktreeRemoval: SettingsProps["onCheckWorktreeRemoval"];
   onDeleteWorktreeSessions: SettingsProps["onDeleteWorktreeSessions"];
   onCloseSettings: SettingsProps["onClose"];
   onSelectSettingsSection: SettingsProps["onSelectSection"];
   onOpenArchivedSession: SettingsProps["onOpenSession"];
+  onOpenBackgroundSession?: SettingsProps["onOpenBackgroundSession"];
   onArchiveHistorySession: SettingsProps["onArchiveSession"];
   onDeleteHistorySession: SettingsProps["onDeleteSession"];
   onRestoreProject: SettingsProps["onRestoreProject"];
@@ -39,7 +62,8 @@ export interface WorkspaceSettingsSurfaceProps {
   setCollapsedProjectRailMode: SettingsProps["onCollapsedProjectRailModeChange"];
 }
 
-export function WorkspaceSettingsSurface({
+function WorkspaceSettingsSurfaceComponent({
+  presentation = "page",
   worktreeManagementRequest,
   worktreeManagementRevision,
   setWorktreeManagementRequest,
@@ -52,12 +76,16 @@ export function WorkspaceSettingsSurface({
   visibleRecents,
   sidebarCwd,
   sidebarHistory,
+  historyFailed,
+  historyPending,
+  onRetryHistory,
   sessions,
   onCheckWorktreeRemoval,
   onDeleteWorktreeSessions,
   onCloseSettings,
   onSelectSettingsSection,
   onOpenArchivedSession,
+  onOpenBackgroundSession,
   onArchiveHistorySession,
   onDeleteHistorySession,
   onRestoreProject,
@@ -67,6 +95,76 @@ export function WorkspaceSettingsSurface({
   setCollapsedProjectRailMode,
 }: WorkspaceSettingsSurfaceProps) {
   useLocale();
+  // Geometry state only: toggling it restyles the open dialog and never remounts Settings, so
+  // drafts, selection, search and reveal state survive and closing returns to the same view.
+  const [maximized, setMaximized] = useState(false);
+  const [peek, setPeek] = useState(() => sessionPeek);
+  const peeking = peek && settingsSection === "appearance";
+  const togglePeek = useCallback(() => {
+    setPeek((value) => (sessionPeek = !value));
+  }, []);
+  const exitPeek = useCallback(() => {
+    sessionPeek = false;
+    setPeek(false);
+    document.querySelector<HTMLButtonElement>("[data-appearance-peek]")?.focus();
+  }, []);
+  const toggleMaximize = useCallback(() => setMaximized((value) => !value), []);
+  const settingsView = (embedded: boolean) => (
+    <SettingsView
+      section={settingsSection}
+      anchor={settingsAnchor}
+      notificationProjectPath={notificationProjectPath}
+      notificationSettingsRequest={notificationSettingsRequest}
+      recents={visibleRecents}
+      cwd={sidebarCwd}
+      sessions={sidebarHistory}
+      sessionsStatus={sessionsStatus}
+      liveSessions={sessions}
+      onRemoveWorktree={onRemoveWorktree}
+      onCheckWorktreeRemoval={onCheckWorktreeRemoval}
+      onDeleteWorktreeSessions={onDeleteWorktreeSessions}
+      embedded={embedded}
+      maximized={embedded ? maximized : undefined}
+      onToggleMaximize={embedded ? toggleMaximize : undefined}
+      headerAction={
+        embedded && settingsSection === "appearance" ? (
+          <Button
+            type="button"
+            iconOnly
+            size="sm"
+            variant="ghost"
+            label={t("Preview in app")}
+            tooltip={t("Preview in app")}
+            aria-pressed={peeking}
+            data-appearance-peek
+            onClick={togglePeek}
+          >
+            <Eye className="icon-sm" aria-hidden />
+          </Button>
+        ) : undefined
+      }
+      onClose={onCloseSettings}
+      onSelectSection={onSelectSettingsSection}
+      onOpenSession={onOpenArchivedSession}
+      onOpenBackgroundSession={onOpenBackgroundSession}
+      onArchiveSession={onArchiveHistorySession}
+      onDeleteSession={onDeleteHistorySession}
+      onRestoreProject={onRestoreProject}
+      onDeleteProject={(path) => onRemoveProject(path, { purgeData: true })}
+      onOpenWhatsNew={onOpenWhatsNew}
+      collapsedProjectRailMode={collapsedProjectRailMode}
+      onCollapsedProjectRailModeChange={setCollapsedProjectRailMode}
+    />
+  );
+  // Only claim a status when the loader reported one; otherwise Archive keeps
+  // its plain "ready" behaviour.
+  const sessionsStatus = useMemo<SettingsProps["sessionsStatus"]>(() => {
+    if (historyFailed)
+      return { state: "unavailable", ...(onRetryHistory ? { onRetry: onRetryHistory } : {}) };
+    if (historyPending) return { state: "loading" };
+    if (historyFailed === undefined && historyPending === undefined) return undefined;
+    return { state: "ready" };
+  }, [historyFailed, historyPending, onRetryHistory]);
   return (
     <>
       {worktreeManagementRequest?.deletePath ? (
@@ -83,7 +181,7 @@ export function WorkspaceSettingsSurface({
           size="lg"
           onClose={() => setWorktreeManagementRequest(null)}
         >
-          <div className="p-4">
+          <div>
             <WorktreesPage
               cwd={worktreeManagementRequest.cwd}
               recents={visibleRecents}
@@ -95,31 +193,45 @@ export function WorkspaceSettingsSurface({
           </div>
         </Modal>
       ) : null}
-      {settingsOpen ? (
-        <SettingsView
-          section={settingsSection}
-          anchor={settingsAnchor}
-          notificationProjectPath={notificationProjectPath}
-          notificationSettingsRequest={notificationSettingsRequest}
-          recents={visibleRecents}
-          cwd={sidebarCwd}
-          sessions={sidebarHistory}
-          liveSessions={sessions}
-          onRemoveWorktree={onRemoveWorktree}
-          onCheckWorktreeRemoval={onCheckWorktreeRemoval}
-          onDeleteWorktreeSessions={onDeleteWorktreeSessions}
+      {settingsOpen && presentation === "dialog" ? (
+        <Modal
+          padding="none"
+          title={t("Settings")}
+          minimalHeader
+          size="lg"
+          scroll="none"
+          className="bycoda-settings-dialog"
+          placement={peeking ? "end" : "center"}
+          panelStyle={peeking ? { inlineSize: "min(380px, 100vw)" } : undefined}
+          backdrop={!peeking}
+          onEscape={peeking ? exitPeek : undefined}
           onClose={onCloseSettings}
-          onSelectSection={onSelectSettingsSection}
-          onOpenSession={onOpenArchivedSession}
-          onArchiveSession={onArchiveHistorySession}
-          onDeleteSession={onDeleteHistorySession}
-          onRestoreProject={onRestoreProject}
-          onDeleteProject={(path) => onRemoveProject(path, { purgeData: true })}
-          onOpenWhatsNew={onOpenWhatsNew}
-          collapsedProjectRailMode={collapsedProjectRailMode}
-          onCollapsedProjectRailModeChange={setCollapsedProjectRailMode}
-        />
+        >
+          <div
+            className="bycoda-settings-dialog-body"
+            data-settings-dialog-mode={peeking ? "peek" : maximized ? "maximized" : "standard"}
+          >
+            {/* Loading and failure stay inside the dialog; the window chrome is not repeated and the
+                known section title stays visible while the view loads. */}
+            <RecoveryBoundary onBack={onCloseSettings}>
+              <Suspense fallback={<SettingsLoadingSurface section={settingsSection} />}>
+                {settingsView(true)}
+              </Suspense>
+            </RecoveryBoundary>
+          </div>
+        </Modal>
+      ) : settingsOpen ? (
+        <NavigationBoundary name="Settings" onBack={onCloseSettings}>
+          {settingsView(false)}
+        </NavigationBoundary>
       ) : null}
     </>
   );
+}
+
+const MemoWorkspaceSettingsSurface = memo(WorkspaceSettingsSurfaceComponent);
+
+/** Workspace recreates most handlers per render; stable proxies let the memo hold. */
+export function WorkspaceSettingsSurface(props: WorkspaceSettingsSurfaceProps) {
+  return <MemoWorkspaceSettingsSurface {...useStableHandlers(props)} />;
 }

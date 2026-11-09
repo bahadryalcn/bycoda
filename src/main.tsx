@@ -1,6 +1,7 @@
 import { QueryProvider } from "./app/QueryProvider";
 // First: later modules read storage while they load.
 import "./app/model/legacyStorageMigration";
+import "./app/model/fileUiAdapters";
 import { readToolWindow } from "./app/model/toolWindows";
 import { loadWindowSurface, readHostToolsWindow } from "./app/model/hostToolsWindow";
 import { t, languageReady } from "./shared/i18n";
@@ -11,15 +12,20 @@ import { listen } from "@tauri-apps/api/event";
 import { restoreTransferredDrafts } from "./app/model/windowTransfer";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { activateWindowAppearance, initAppearance } from "./features/settings/model/appearance";
+import { initInteractionTint } from "./features/settings/model/interactionTint";
+import { initWorkingIndicator } from "./features/settings/model/workingIndicator";
+import { initScrollbarStyle } from "./features/settings/model/scrollbarStyle";
 import { initSounds } from "./features/settings/model/sounds";
 import {
   abortQuit,
   askQuitConfirmation,
+  workspaceSnapshotWriteBlocked,
   commitQuit,
   loadBootWorkspace,
   reportQuitPoll,
 } from "./app/model/appLifecycle";
 import { hydrateComposerDrafts } from "./features/sessions/data/composerDraftStore";
+import { installNativeProjectionCheckpointReceiver } from "./features/sessions/data/nativeProjectionCheckpoint";
 import { homeDir, pathEnvironment } from "./platform/tauri/fs";
 import { setHomeDir, setPathEnvironment } from "./shared/lib/paths";
 import { consumeInstalledUpdate } from "./app/model/updateNotice";
@@ -32,6 +38,12 @@ import { installNativeContextMenuGuard } from "./shared/lib/nativeContextMenu";
 
 const removeContextMenuGuard = installNativeContextMenuGuard();
 if (import.meta.hot) import.meta.hot.dispose(removeContextMenuGuard);
+const nativeProjectionReceiver = installNativeProjectionCheckpointReceiver();
+void nativeProjectionReceiver.ready.catch(() => undefined);
+if (import.meta.hot)
+  import.meta.hot.dispose(() => {
+    void nativeProjectionReceiver.dispose();
+  });
 import { bootstrap } from "./app/model/bootstrap";
 import { BootFailure } from "./app/shell/BootFailure";
 import { RecoveryBoundary } from "./shared/ui/RecoveryBoundary";
@@ -42,6 +54,18 @@ import { PrivacyLaunchGate } from "./features/group-lock/ui/PrivacyLaunchGate";
 
 import { startPerformanceSpan, recordPerformanceEvent } from "./shared/lib/performanceTrace";
 import { initPerformanceTracing } from "./shared/lib/performanceTraceSettings";
+import { withTimeout } from "./shared/lib/withTimeout";
+
+/** Non-data boot reads (home dir, language) must not hold the splash forever; data reads never use this. */
+const BOOT_STEP_TIMEOUT_MS = 10_000;
+function bootStep<T>(promise: Promise<T>, fallback: T, label: string): Promise<T> {
+  return withTimeout(promise, BOOT_STEP_TIMEOUT_MS, label).catch((error: unknown) => {
+    // Only a timeout falls back; a real failure keeps its existing recovery path.
+    if (!(error instanceof Error) || error.name !== "TimeoutError") throw error;
+    console.warn(`[bycoda] ${label} is slow; continuing without it`, error);
+    return fallback;
+  });
+}
 
 // Opt in with VITE_REACT_SCAN=1 when starting Vite. The outer DEV guard lets
 // production builds remove both this branch and the diagnostic dependency.
@@ -68,6 +92,9 @@ const surfaceLoaded = loadWindowSurface(
 );
 
 initAppearance();
+initInteractionTint();
+initWorkingIndicator();
+initScrollbarStyle();
 initSounds();
 // Prime the real home directory before the first render so every `~/` file
 // reference resolves consistently. The IPC call is local and failures remain
@@ -158,22 +185,35 @@ recordPerformanceEvent("startup", { items: 1 });
 void bootstrap(
   () =>
     Promise.all([
-      homeDirPrimed,
+      bootStep<unknown>(homeDirPrimed, undefined, "home directory"),
       // Provider discovery is best-effort and may finish after UI hydration.
       Promise.resolve(),
       hostToolsWindow
         ? Promise.resolve({ windowTransfer: null, resumed: null, history: [], historyCwd: null })
-        : loadBootWorkspace(),
-      // Saved drafts are in the cache before the first composer mounts.
+        : // Data-bearing read: never replaced by an empty fallback, because the
+          // snapshot sync would then persist the empty workspace over the saved one.
+          // The splash stays up with its retry control while this is slow.
+          loadBootWorkspace(),
+      // Saved drafts are in the cache before the first composer mounts. An empty
+      // fallback here would let a blank draft write replace the saved draft.
       hydrateComposerDrafts(),
       surfaceLoaded,
-      languageReady,
+      bootStep(languageReady, undefined, "language load"),
     ]),
   ([, , { windowTransfer, resumed, history, historyCwd }, , surface]) => {
     performance.mark("bycoda:workspace-ready");
     performance.mark("bycoda:input-ready");
     finishStartup();
     const toolWindow = readToolWindow();
+    // One line that says what this window restored from, for the next report of
+    // "it opened on the wrong project".
+    console.info("[boot] opening workspace", {
+      source: windowTransfer ? "window-transfer" : resumed ? "snapshot" : "fallback",
+      activeTabId: resumed?.activeTabId ?? null,
+      projectCwd: resumed?.projectCwd ?? windowTransfer?.projectCwd ?? null,
+      tabs: resumed?.tabs.length ?? null,
+      saveBlocked: workspaceSnapshotWriteBlocked(),
+    });
     const installedUpdate =
       windowTransfer || toolWindow || hostToolsWindow ? null : consumeInstalledUpdate();
     if (windowTransfer) restoreTransferredDrafts(windowTransfer);

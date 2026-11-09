@@ -1,82 +1,228 @@
+/* Appearance is one page: topics are landmark sections, each holding framed groups from the shared
+   settings frame (Group/Row own geometry, hairlines and corner radii). This file only sequences the
+   topics and styles the few Appearance-specific controls: mode and theme cards, the one-row accent
+   picker, font + size pairs and the background thumbnail slot. One content width, no side column. */
 .appearance-settings {
-  container: appearance / inline-size;
+  position: relative;
   display: grid;
-  gap: 32px;
+  /* The same rhythm as the groups inside a topic, so topics do not read as separate pages. */
+  gap: var(--settings-group-gap, 28px);
   min-inline-size: 0;
 }
-.appearance-save-note {
-  margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
+/* Theme generation edits every topic, so it stays in view above the tabs while they switch and
+   scroll. It adds no box of its own: it uses the page background (opaque, so scrolling content never
+   shows through) and the page content edges, and shows a hairline only while stuck. The tab panels
+   form their own stacking context so a slider thumb or preview can never paint over it. */
+.appearance-generator {
+  position: sticky;
+  inset-block-start: calc(var(--ui-control-height-compact) + 20px);
+  z-index: 1;
+  padding-block: 4px 8px;
+  /* Pulls the tabs up over the grid gap, leaving one even space below the divider. */
+  margin-block-end: calc(-1 * var(--settings-group-gap, 28px) + 8px);
+  border-block-end: 1px solid transparent;
+  background: var(--color-background-base);
+  /* Covers the few pixels between the page bar and the stuck generator. */
+  box-shadow: 0 -4px 0 0 var(--color-background-base);
+  min-inline-size: 0;
+}
+.appearance-generator-sentinel {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  pointer-events: none;
+}
+.appearance-generator[data-stuck] {
+  border-block-end-color: var(--ui-pane-border);
+}
+.appearance-settings [data-appearance-section] {
+  position: relative;
+  z-index: 0;
 }
 .appearance-section {
   min-inline-size: 0;
-}
-.appearance-section-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 16px;
-  margin-block-end: 16px;
-  padding-block-end: 12px;
-  border-block-end: 1px solid var(--color-stroke);
-}
-.appearance-section-heading h2 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--color-content);
-}
-.appearance-section-heading p {
-  margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
-  overflow-wrap: anywhere;
+  scroll-margin-block-start: 16px;
 }
 .appearance-section-body {
-  display: grid;
-  gap: 20px;
   min-inline-size: 0;
 }
-.appearance-settings .settings-advanced {
-  margin: 0;
+/* Slider value chips share one width so 216°, 0%, 700 ms and 24px line up on every row. */
+.appearance-settings .settings-row-control span.tabular-nums {
+  min-inline-size: 6ch;
 }
-.appearance-settings .settings-subheading {
-  padding-block: 0 10px;
+
+/* Mode and theme cards: a sample of the option, its name and a selected frame in the accent
+   interaction role. Selection never relies on the sample's own colors. Both grids span the group
+   (V3-039) and share one column rhythm: three modes, and palettes in six, three or two columns as
+   the group narrows, so a mode card lines up with two palette cards. The sample art grows with the
+   group width (cqi of the settings-group container) between a compact and a capped height. */
+.appearance-modes,
+.appearance-palettes {
+  display: grid;
+  gap: 8px;
+  inline-size: 100%;
+  max-inline-size: 72rem;
 }
-.bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-group {
+.appearance-modes {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.appearance-palettes {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@container (width >= 44rem) {
+  .appearance-palettes {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+@container (width < 26rem) {
+  .appearance-palettes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.appearance-settings .appearance-mode-card,
+.appearance-settings .appearance-palette {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  block-size: auto;
+  min-block-size: 0;
+  min-inline-size: 0;
+  padding: 6px;
+  border: 1px solid var(--ui-settings-hairline);
+  border-radius: var(--ui-radius-card);
+}
+.appearance-settings .appearance-mode-card[aria-checked="true"],
+.appearance-settings .appearance-palette[aria-pressed="true"] {
+  /* Selection is its own role (accent border), not the keyboard focus ring colour. */
+  border-color: var(--ui-border-accent);
+  box-shadow: inset 0 0 0 1px var(--ui-border-accent);
+}
+.appearance-mode-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  block-size: clamp(3.25rem, 8cqi, 5.5rem);
+  overflow: hidden;
+  border-radius: var(--ui-control-radius);
+  box-shadow: inset 0 0 0 1px var(--color-stroke);
+}
+.appearance-mode-preview[data-split] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+/* A tone shows one option's surface, a raised card and the accent; values come from the option.
+   Offsets are proportional so the sample scales with its card. */
+.appearance-tone {
+  position: relative;
   display: block;
   min-inline-size: 0;
-  padding: 0;
-  border: 0;
+  background: var(--palette-base);
 }
-.bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-group-heading {
-  flex-direction: row;
-  gap: 8px;
-  padding-block: 0 10px;
+.appearance-tone > i {
+  position: absolute;
+  inset-block-start: 16%;
+  inset-inline: 14%;
+  block-size: 36%;
+  border-radius: var(--ui-control-radius);
+  background: var(--palette-raised);
 }
-.bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-group-heading h2 {
+.appearance-tone::after {
+  content: "";
+  position: absolute;
+  inset-block-end: 16%;
+  inset-inline-start: 14%;
+  inline-size: 40%;
+  block-size: max(5px, 9%);
+  border-radius: var(--ui-control-radius);
+  background: var(--palette-raised);
+}
+.appearance-tone > b {
+  position: absolute;
+  inset-block-end: 14%;
+  inset-inline-end: 14%;
+  /* Sized from the sample height so wide mode cards keep a small dot. */
+  block-size: max(8px, 15%);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--palette-accent);
+}
+.appearance-card-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-inline-size: 0;
+  padding-inline: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--ui-font-secondary);
   font-weight: 500;
 }
-.bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-row {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 20px;
-  padding: 14px 16px;
+
+/* Accent: every swatch, the palette default first and the custom picker last, on one row at every
+   density. The row widens the control column only as far as the swatches need, and a narrow group
+   folds them into two even rows of four instead of leaving one swatch alone on a second line. */
+.settings-row:has(.appearance-accent) > .settings-row-control {
+  max-inline-size: none;
 }
-.bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-row-label {
-  flex: 1 1 180px;
-}
-.bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-row-control {
+.appearance-accent {
   max-inline-size: 100%;
-  align-self: center;
-  justify-content: flex-start;
 }
-.appearance-background-empty {
+.appearance-accent-swatches {
   display: grid;
-  min-block-size: 9rem;
-  place-content: center;
-  padding: 16px;
+  grid-auto-flow: column;
+  grid-auto-columns: var(--ui-color-swatch-target);
+  justify-content: end;
+  gap: 4px;
+}
+@container (width < 560px) {
+  .appearance-accent-swatches {
+    justify-content: start;
+  }
+}
+@container (width < 22rem) {
+  .appearance-accent-swatches {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(4, var(--ui-color-swatch-target));
+  }
+}
+
+/* Font + size: one pattern for interface-adjacent, monospace and terminal rows. The control column
+   widens just enough for a font control and a compact size select side by side. */
+.settings-row:has(.appearance-font-pair) > .settings-row-control {
+  flex: 0 1 24rem;
+  max-inline-size: 24rem;
+}
+.appearance-font-pair {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+.appearance-font {
+  display: flex;
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+.appearance-font > :first-child {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+.appearance-size {
+  flex: none;
+  inline-size: 6.25rem;
+}
+.settings-row:not([data-stacked]) > .settings-row-control .appearance-size .bycoda-arc-select {
+  min-inline-size: 0;
+  inline-size: 100%;
+}
+
+/* Section tabs keep full labels; a narrow surface (Preview in app) scrolls them instead of
+   truncating every label. */
+.appearance-settings [role="tablist"] {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.appearance-settings [role="tablist"] > [role="tab"] {
+  flex: none;
 }

@@ -1,9 +1,9 @@
 import { Button } from "../../../shared/ui/Button";
 import { valueHash } from "../../../shared/lib/valueHash";
-import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { t, useT } from "../../../shared/i18n";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { shouldRunLoop } from "../../../shared/lib/animationGate";
-import { useDecorativeMotionEnabled } from "../../settings/model/decorativeMotion";
+import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
 import {
   createCodeArtPainter,
   loadCrewSignLogo,
@@ -17,7 +17,7 @@ import {
   subscribeCrewGrowthEnabled,
   loadCrewTheme,
   subscribeCrewTheme,
-} from "../../settings/model/settings";
+} from "../../settings/public/settings";
 import { crewCharge } from "./starWarsCrew";
 import { riggedCrewTheme } from "./crewThemes";
 import "./CrewScene.css";
@@ -61,6 +61,8 @@ type SceneProps = {
   sessionId?: string;
   /** The pane's own copy; remote panes are not in the shell store. */
   session?: Session;
+  /** A reply is streaming in the pane: keep the last pose and run no paint timer. */
+  paused?: boolean;
   /** Previews and tests: this many seats work (lead, advisor, then subagents). */
   workingCount?: number;
   /** Previews and tests: an explicit crew. */
@@ -95,21 +97,27 @@ function CrewStage({
   variant = "hero",
   sessionId,
   session,
+  paused = false,
   workingCount: previewCount,
   crew: previewCrew,
 }: SceneProps) {
-  useLocale();
+  const t = useT();
   const theme = useSyncExternalStore(subscribeCrewTheme, loadCrewTheme, loadCrewTheme);
   const rigged = riggedCrewTheme(theme);
   const sessions = useShellSessions();
-  const crew =
-    previewCrew ??
-    (previewCount !== undefined
-      ? previewCrewSeats(previewCount)
-      : crewSeats(
-          sessionId,
-          session ? [session, ...sessions.filter((item) => item.id !== session.id)] : sessions,
-        ));
+  // The shell list changes with every non-text update of any session; the seats only
+  // need recomputing when one of these inputs does.
+  const crew = useMemo(
+    () =>
+      previewCrew ??
+      (previewCount !== undefined
+        ? previewCrewSeats(previewCount)
+        : crewSeats(
+            sessionId,
+            session ? [session, ...sessions.filter((item) => item.id !== session.id)] : sessions,
+          )),
+    [previewCrew, previewCount, sessionId, session, sessions],
+  );
   // Off: everyone is an uncle, whatever their context.
   const growthEnabled = useSyncExternalStore(
     subscribeCrewGrowthEnabled,
@@ -214,11 +222,14 @@ function CrewStage({
     let previous: number | undefined;
     let previousLabels: number | undefined;
     let lastFrame = performance.now();
-    const paint = (elapsed: number) => {
+    /** Draws one frame; `live` false draws the still pose. Returns whether every
+     * standing, arrival and growth transition has reached its target. */
+    const paint = (elapsed: number, live = running): boolean => {
       const seats = crewRef.current;
       const seatWorking = (id: number) => seats[id]?.working === true;
       const now = performance.now();
-      const step = running ? Math.min(1, (now - lastFrame) / 600) : 1;
+      const step = live ? Math.min(1, (now - lastFrame) / 600) : 1;
+      let settled = true;
       lastFrame = now;
       // Cached SVG joints run at 20/10 Hz; the heavier code art stays at 8/5 Hz.
       // Both use this shared clock and skip unchanged frames.
@@ -230,7 +241,7 @@ function CrewStage({
         standing.current[id] =
           target > current ? Math.min(target, current + step) : Math.max(target, current - step);
         const arrival = arrivals.current[id] ?? 0;
-        const arrivalStep = running ? step * 0.65 : 1;
+        const arrivalStep = live ? step * 0.65 : 1;
         arrivals.current[id] =
           id < 6
             ? 1
@@ -243,9 +254,15 @@ function CrewStage({
         else if (record.stage !== goal.stage)
           record = ages.current[id] = { stage: goal.stage, from: record.stage, changedAt: now };
         // Quantized to the expression clock, like every other motion value.
-        const change = running
+        const change = live
           ? Math.min(1, (Math.floor((now - record.changedAt) / frame) * frame) / AGE_CHANGE_MS)
           : 1;
+        if (
+          standing.current[id] !== target ||
+          (id >= 6 && arrivals.current[id] !== target) ||
+          change < 1
+        )
+          settled = false;
         const age: CrewAgeState =
           change < 1 && record.from !== undefined
             ? {
@@ -260,7 +277,7 @@ function CrewStage({
             id,
             expressionTime,
             id >= 6 ? 1 : standing.current[id],
-            running && !!target && arrivals.current[id] > 0.95,
+            live && !!target && arrivals.current[id] > 0.95,
           ),
           arrival: arrivals.current[id],
           role: seats[id]?.role ?? ("subagent" as CrewRole),
@@ -276,16 +293,16 @@ function CrewStage({
         displayedCount.current--;
       activity.length = displayedCount.current;
       const layout = (rigged ? starWarsLayout : crewLayout)(displayedCount.current, viewportWidth);
-      if (running)
+      if (live)
         converseWithNeighbours(
           activity,
           layout.filter((place) => seatWorking(place.id)),
           expressionTime,
         );
       activity.forEach((state, id) => {
-        applyConversationMood(state, id, expressionTime, running && seatWorking(id));
-        if (!rigged) applySmokingBreak(state, id, expressionTime, running);
-        applyIdleLife(state, id, expressionTime, running);
+        applyConversationMood(state, id, expressionTime, live && seatWorking(id));
+        if (!rigged) applySmokingBreak(state, id, expressionTime, live);
+        applyIdleLife(state, id, expressionTime, live);
       });
       // A working uncle stands and never sips; a seated one only sips tea or smokes.
       const actions = Array.from({ length: displayedCount.current }, (_, id) =>
@@ -322,11 +339,12 @@ function CrewStage({
         previousLabels = labelSignature;
         setLabels(shown);
       }
-      const steamTime = running ? expressionTime : 0;
+      const steamTime = live ? expressionTime : 0;
       const signature = valueHash([actions, activity, steamTime]);
-      if (signature === previous) return;
+      if (signature === previous) return settled;
       previous = signature;
       draw(actions, activity, viewportWidth, steamTime);
+      return settled;
     };
     if (!running) {
       paint(0);
@@ -334,18 +352,26 @@ function CrewStage({
     }
     startedAt.current ??= performance.now();
     const start = startedAt.current;
-    paint(performance.now() - start);
-    let timer: ReturnType<typeof setTimeout>;
+    // Behind a conversation, idle life only plays while someone works: an idle crew
+    // finishes sitting down, draws its still pose and keeps no timer until the crew
+    // changes (crewKey). The hero on an empty session keeps its idle life.
+    const idle = variant === "background" && !crewRef.current.some((seat) => seat.working);
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = () => {
-      paint(performance.now() - start);
-      timer = setTimeout(tick, frame / 2);
+      timer = undefined;
+      const settled = paint(performance.now() - start);
+      // While a reply streams the pane repaints constantly: draw one pose, then hold it.
+      if (paused) return;
+      if (idle && settled && !draw.busy?.()) paint(0, false);
+      // Expressions are quantized to `frame`; behind a conversation one tick per frame is enough.
+      else timer = setTimeout(tick, variant === "background" ? frame : frame / 2);
     };
-    timer = setTimeout(tick, frame / 2);
+    tick();
     return () => {
-      clearTimeout(timer);
+      if (timer !== undefined) clearTimeout(timer);
       draw.dispose?.();
     };
-  }, [running, crewKey, viewportWidth, frame, artStatus, rigged, growthEnabled]);
+  }, [running, crewKey, viewportWidth, frame, artStatus, rigged, growthEnabled, variant, paused]);
   return (
     <div
       ref={container}
@@ -368,10 +394,15 @@ function CrewStage({
                   "Lord of the Rings crew: Gandalf leads and Sauron advises. {p0} crew members, {p1} working. Color and meters show context usage, not task progress.",
                   { p0: crew.length, p1: workingCount },
                 )
-              : t(
-                  "{p0} crew members beneath the bycoda sign: the main agent, the advisor and subagents; {p1} working and standing. Monochrome binary code art.",
-                  { p0: crew.length, p1: workingCount },
-                )
+              : theme === "matrix"
+                ? t(
+                    "Matrix crew: Neo leads and Morpheus advises. {p0} crew members, {p1} working. Meters show context usage, not task progress.",
+                    { p0: crew.length, p1: workingCount },
+                  )
+                : t(
+                    "{p0} crew members beneath the bycoda sign: the main agent, the advisor and subagents; {p1} working and standing. Monochrome binary code art.",
+                    { p0: crew.length, p1: workingCount },
+                  )
           : undefined
       }
       aria-hidden={variant === "background" ? true : undefined}

@@ -1,8 +1,8 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
 import { Folder, FolderTree } from "../../../shared/ui/icons";
 import { notifyGitChanged } from "../../../platform/tauri/fs";
 import { GitPickerTrigger } from "../../source-control/ui/GitPickerTrigger";
@@ -13,18 +13,27 @@ import {
   type QuickGitRequest,
   type QuickGitResult,
 } from "../model/quickGitPopup";
+import type { WorkspaceMode } from "../../sessions/model/session";
 import type { QuickWorkspace } from "../model/quickWorkspace";
 
 export function QuickWorkspaceControls({
   value,
+  resolvedMode = value.mode ?? "current",
+  resolvedBase,
   enabled,
+  canOpen,
+  prepare,
   onChange,
   onOpenChange,
   onClose,
   onError,
 }: {
   value: QuickWorkspace;
+  resolvedMode?: WorkspaceMode;
+  resolvedBase?: string;
   enabled: boolean;
+  canOpen?: () => boolean;
+  prepare?: (operation: () => Promise<unknown>) => Promise<unknown>;
   onChange: (choice: QuickWorkspace) => void;
   onOpenChange: (open: boolean) => void;
   onClose: () => void;
@@ -37,11 +46,13 @@ export function QuickWorkspaceControls({
   const toggleIntent = useRef<QuickGitKind | null>(null);
   const closedByTrigger = useRef<QuickGitKind | null>(null);
   const active = useRef<string | null>(null);
-  const props = useRef({ value, onChange, onOpenChange, onClose, onError });
-  props.current = { value, onChange, onOpenChange, onClose, onError };
+  const props = useRef({ value, onChange, onOpenChange, onClose, onError, canOpen });
+  useLayoutEffect(() => {
+    props.current = { value, onChange, onOpenChange, onClose, onError, canOpen };
+  });
   const cwd = value.tree?.path ?? value.cwd ?? "";
   const { branches, settled } = useProjectBranchesState(cwd, enabled && !!cwd);
-  const base = value.base || branches?.current || "HEAD";
+  const base = value.base || resolvedBase || branches?.current || "HEAD";
 
   const cancel = () => {
     const id = active.current;
@@ -61,14 +72,18 @@ export function QuickWorkspaceControls({
   useEffect(() => {
     let disposed = false;
     let stop: (() => void) | undefined;
-    void listen<QuickGitResult>(QUICK_GIT_RESULT, ({ payload }) => {
-      if (payload.id !== active.current) return;
+    void listenWindowAsync<QuickGitResult>(QUICK_GIT_RESULT, ({ payload }) => {
+      if (disposed || payload.id !== active.current) return;
       closedByTrigger.current = payload.triggerKind ?? null;
       active.current = null;
       activeKind.current = null;
       setOpen(null);
       props.current.onOpenChange(false);
-      if (payload.choice && payload.choice.cwd === props.current.value.cwd)
+      if (
+        payload.choice &&
+        payload.choice.cwd === props.current.value.cwd &&
+        (props.current.canOpen?.() ?? true)
+      )
         props.current.onChange(payload.choice);
       notifyGitChanged();
       if (payload.restoreFocus) props.current.onClose();
@@ -115,12 +130,13 @@ export function QuickWorkspaceControls({
       cancel();
       return;
     }
+    if (!enabled || (canOpen && !canOpen())) return;
     const id = crypto.randomUUID();
     const bounds = button.getBoundingClientRect();
     const request: QuickGitRequest = {
       id,
       kind,
-      choice: { ...value, base: value.mode === "worktree" ? base : undefined },
+      choice: { ...value, resolvedMode, base: resolvedMode === "worktree" ? base : undefined },
       branches: branches ?? undefined,
       anchor: {
         x: bounds.x,
@@ -133,8 +149,10 @@ export function QuickWorkspaceControls({
     activeKind.current = kind;
     setOpen(kind);
     onOpenChange(true);
+    let actual: Promise<unknown> | undefined;
+    const open = () => (actual ??= invoke("quick_git_open", { request }));
     try {
-      await invoke("quick_git_open", { request });
+      await (prepare ? prepare(open) : open());
     } catch (error) {
       if (active.current !== id) return;
       active.current = null;
@@ -145,8 +163,8 @@ export function QuickWorkspaceControls({
     }
   };
   const disabled = !enabled || !ready || !branches?.current;
-  const Icon = value.mode === "worktree" ? FolderTree : Folder;
-  const label = value.mode === "worktree" ? "New worktree" : "Current checkout";
+  const Icon = resolvedMode === "worktree" ? FolderTree : Folder;
+  const label = resolvedMode === "worktree" ? "New worktree" : "Current checkout";
   return (
     <div className="flex min-w-0 items-center gap-2 pl-1.5">
       <Button
@@ -169,12 +187,12 @@ export function QuickWorkspaceControls({
       </Button>
       <GitPickerTrigger
         label={
-          value.mode === "worktree"
+          resolvedMode === "worktree"
             ? t("From {p0}", { p0: base })
             : branches?.current || (settled ? t("No repo") : t("Loading…"))
         }
         aria-label={
-          value.mode === "worktree"
+          resolvedMode === "worktree"
             ? t("Create worktree from {p0}", { p0: base })
             : t("Choose branch")
         }
@@ -185,10 +203,10 @@ export function QuickWorkspaceControls({
         worktree={!!value.tree && !value.tree.isMain}
         onMouseDown={(event) => {
           event.preventDefault();
-          beginClick(value.mode === "worktree" ? "base" : "branch");
+          beginClick(resolvedMode === "worktree" ? "base" : "branch");
         }}
         onClick={(event) =>
-          void show(value.mode === "worktree" ? "base" : "branch", event.currentTarget)
+          void show(resolvedMode === "worktree" ? "base" : "branch", event.currentTarget)
         }
       />
     </div>

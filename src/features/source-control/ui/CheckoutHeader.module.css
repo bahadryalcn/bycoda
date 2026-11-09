@@ -1,36 +1,43 @@
 .header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
   gap: 4px;
+  min-block-size: 36px;
   padding: 2px 6px;
   color: var(--color-content);
 }
 
-.header[data-current-checkout] {
-  background: var(--ui-surface-selected);
+.commitSection {
+  border-block-end: 1px solid var(--color-stroke);
+}
+
+.repository .commitSection {
+  border-block-end: 0;
 }
 
 .disclosure {
   display: flex;
-  flex: 1 1 12rem;
+  /* Keep a readable folder name while the branch control yields space first. */
+  flex: 1 1 40%;
   align-items: center;
   gap: 4px;
-  min-inline-size: 0;
-  min-block-size: var(--control-height-sm);
+  min-inline-size: 4rem;
+  min-block-size: var(--ui-control-height-compact);
   text-align: start;
 }
 
 .identity {
   display: flex;
   flex: 1;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
   min-inline-size: 0;
 }
 
 .name,
 .path {
+  max-inline-size: 100%;
   overflow: clip;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -52,61 +59,37 @@
 .current {
   flex-shrink: 0;
   font-size: var(--ui-font-caption);
-  color: var(--color-accent);
+  color: var(--ui-tone-accent-fg);
 }
 
+/* The branch label shrinks before the folder identity; numeric counts and actions remain. */
 .actions {
   display: flex;
-  flex-wrap: wrap;
+  flex: 0 1 auto;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 6px;
   min-inline-size: 0;
-  max-inline-size: 100%;
+  max-inline-size: 60%;
   margin-inline-start: auto;
-}
-
-.header:has(.disclosure[aria-expanded="true"]) .actions {
-  grid-column: 1 / -1;
-  inline-size: 100%;
-  flex-wrap: nowrap;
 }
 
 .messageField {
   min-inline-size: 0;
 }
 
-.generationActions {
-  position: absolute;
-  inset-block-start: 2px;
-  inset-inline-end: 2px;
-  display: flex;
-  align-items: center;
-}
-
+/* Size, row bounds and autosize come from TextareaField (fieldSize/minRows/maxRows/autosize).
+   Only the caption type size has no shared prop. */
 .messageField textarea.message {
-  display: block;
-  inline-size: 100%;
-  min-block-size: 32px;
-  max-block-size: 160px;
-  padding-block: 4px;
-  padding-inline: 8px 52px;
-  resize: none;
-  overflow-y: auto;
   font-size: var(--ui-font-caption);
-  line-height: 20px;
-}
-
-.syncActions {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
-  gap: 6px;
-  margin-block-start: 6px;
+  line-height: var(--ui-leading-caption);
 }
 
 .summary {
   display: flex;
-  flex-wrap: wrap;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 4px;
   font-size: var(--ui-font-caption);
@@ -115,5 +98,53 @@
 }
 
 .conflicts {
-  color: var(--color-warning);
+  color: var(--ui-tone-warning-fg);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-inline: 6px;
+  min-block-size: 28px;
+}
+.actionSlots {
+  display: grid;
+  grid-template-columns: repeat(4, var(--ui-control-height-compact));
+  gap: 4px;
+  align-items: center;
+  margin-inline-start: auto;
+  flex-shrink: 0;
+}
+.actionSlot {
+  display: flex;
+  justify-content: flex-end;
+  min-inline-size: 0;
+}
+
+.branchHeader {
+  display: flex;
+  min-block-size: 36px;
+  align-items: center;
+  gap: 4px;
+  padding-inline: 6px;
+}
+.branchSlots {
+  display: grid;
+  grid-template-columns: repeat(3, var(--ui-control-height-compact));
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.branchSlot {
+  display: flex;
+  justify-content: center;
+  min-inline-size: 0;
+}
+
+@container changes (max-width: 340px) {
+  .conflicts {
+    display: none;
+  }
 }

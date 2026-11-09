@@ -70,7 +70,7 @@ describe("shouldHideNativeContextMenu", () => {
       <div contenteditable="true"><span id="rich">text</span></div>
       <div contenteditable=""><span id="bare">text</span></div>
       <div class="cm-editor"><div class="cm-scroller"><div class="cm-content" contenteditable="true"><div class="cm-line">code</div></div><div class="cm-gutters"></div></div></div>
-      <div class="upstream-terminal"><div class="xterm"><div class="xterm-screen"></div></div></div>
+      <div class="bycoda-terminal"><div class="xterm"><div class="xterm-screen"></div></div></div>
     `);
     for (const selector of [
       "textarea",
@@ -81,6 +81,7 @@ describe("shouldHideNativeContextMenu", () => {
       "#bare",
       ".cm-line",
       ".cm-gutters",
+      ".bycoda-terminal",
       ".xterm-screen",
     ]) {
       expect(

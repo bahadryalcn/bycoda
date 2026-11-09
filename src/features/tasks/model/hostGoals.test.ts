@@ -170,6 +170,41 @@ describe("parseGoalPlan", () => {
 });
 
 describe("parseHostGoal", () => {
+  it("persists optional planner identity separately and rejects permission/lifecycle overrides", () => {
+    const input = {
+      id: "role-goal",
+      title: "Role goal",
+      prompt: "Scoped",
+      projectIds: ["one"],
+      leadProjectId: "one",
+      harness: "claude",
+      model: "worker-saved",
+      modelSettings: { effort: "high" },
+      runtimeMode: "supervised",
+    };
+    const plannerExecution = {
+      harness: "codex",
+      model: "planner-saved",
+      modelSettings: { effort: "low" },
+      providerAccountId: "planner-account",
+    };
+    const parsed = parseHostGoal({ ...input, plannerExecution });
+    expect(parsed).toMatchObject({ ...input, plannerExecution });
+    expect(parseHostGoal(input).plannerExecution).toBeUndefined();
+    plannerExecution.modelSettings.effort = "mutated";
+    expect(parsed.plannerExecution!.modelSettings.effort).toBe("low");
+    for (const override of [
+      { runtimeMode: "full-access" },
+      { maxRunMinutes: 0 },
+      { projectIds: ["outside"] },
+      { harness: "unknown" },
+      { model: "" },
+      { modelSettings: { effort: 1 } },
+    ])
+      expect(() =>
+        parseHostGoal({ ...input, plannerExecution: { ...plannerExecution, ...override } }),
+      ).toThrow("planner execution");
+  });
   it("validates and preserves continuous execution without changing legacy defaults", () => {
     const input = {
       id: "goal",
@@ -216,6 +251,35 @@ describe("parseHostGoal", () => {
       verifyDefaults: { review: true },
       approvePlan: false,
     });
+  });
+
+  it("retains the accepted plan approval policy and rejects unknown policies", () => {
+    for (const policy of ["always", "large", "never"] as const)
+      expect(parseHostGoal(goal({ planApprovalPolicy: policy })).planApprovalPolicy).toBe(policy);
+    expect(parseHostGoal(goal()).planApprovalPolicy).toBeUndefined();
+    expect(() => parseHostGoal(goal({ planApprovalPolicy: "guess" }))).toThrow(
+      "Invalid goal plan approval policy",
+    );
+  });
+
+  it("opts new goals into final review without trusting caller-supplied results", () => {
+    const parsed = parseHostGoal(
+      goal({
+        finalReview: true,
+        finalAcceptance: { status: "passed", taskFingerprint: "forged" },
+      }),
+    );
+    expect(parsed.finalReview).toBe(true);
+    expect(parsed).not.toHaveProperty("finalAcceptance");
+    expect(parseHostGoal(goal()).finalReview).toBeUndefined();
+    expect(() => parseHostGoal(goal({ finalReview: "yes" }))).toThrow("Invalid goal options");
+    expect(parseHostGoal(goal({ budget: { maxAttempts: 3 } })).budget).toEqual({
+      maxAttempts: 3,
+      warningPercent: 80,
+    });
+    expect(() => parseHostGoal(goal({ budget: { maxTokens: -1 } }))).toThrow(
+      "Invalid run budget limit",
+    );
   });
 
   it("keeps check commands for the goal's projects only", () => {
@@ -266,7 +330,10 @@ describe("goal progress", () => {
     ];
     const goal = { taskIds: ["blocked", "own", "deleted"] };
     const index = new Map(all.map((task) => [task.id, task]));
-    expect(goalStateFromTasks(goal, all)).toEqual({ status: "blocked", error: "1 of 2 tasks blocked: Blocked" });
+    expect(goalStateFromTasks(goal, all)).toEqual({
+      status: "blocked",
+      error: "1 of 2 tasks blocked: Blocked",
+    });
     expect(goalStateFromTasks(goal, index)).toEqual(goalStateFromTasks(goal, all));
     index.delete("external");
     expect(goalStateFromTasks(goal, index)).toEqual({ status: "running" });

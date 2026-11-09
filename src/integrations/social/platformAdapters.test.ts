@@ -8,7 +8,16 @@ const account = (platform: SocialAccount["platform"]): SocialAccount => ({
   platform,
   platformId: platform === "linkedin" ? "urn:li:organization:123" : "123",
   name: "Account",
-  accountType: platform === "linkedin" ? "organization" : "member",
+  accountType:
+    platform === "linkedin"
+      ? "organization"
+      : platform === "instagram"
+        ? "professional"
+        : platform === "facebook"
+          ? "page"
+          : platform === "youtube"
+            ? "channel"
+            : "member",
   scopes: [],
   accessApproved: true,
   connected: true,
@@ -32,7 +41,269 @@ const job = (kind: SocialJob["kind"] = "publish"): SocialJob => ({
   attempts: 1,
   createdAt: 1,
 });
-describe("Resmi sosyal API adaptör sözleşmeleri", () => {
+describe("Official social API adapter contracts", () => {
+  it("routes Telegram channel publishing independently of bot DM polling and consent", async () => {
+    const channel: SocialAccount = {
+      ...account("telegram"),
+      platformId: "-1001234567890",
+      telegramBotId: "123",
+      accountType: "channel",
+      connection: "token",
+      scopes: ["channel.publish"],
+    };
+    const publish = job();
+    const fetcher = vi.fn(async (raw: string | URL | Request) => {
+      const method = String(raw).split("/").at(-1);
+      const result =
+        method === "getMe"
+          ? { id: 123, is_bot: true }
+          : method === "getChat"
+            ? { id: -1001234567890, type: "channel" }
+            : method === "getChatMember"
+              ? {
+                  user: { id: 123, is_bot: true },
+                  status: "administrator",
+                  can_post_messages: true,
+                }
+              : {
+                  message_id: 1,
+                  chat: { id: -1001234567890, type: "channel" },
+                  text: "Public text",
+                };
+      return Response.json({ ok: true, result });
+    });
+    const telegram = createSocialAdapters(new SocialHttp(fetcher)).telegram;
+    expect(contentSupport(channel, publish)).toBeUndefined();
+    await expect(
+      telegram.send(channel, publish, "123:synthetic", async () => new Uint8Array()),
+    ).resolves.toEqual({ platformId: "-1001234567890:1" });
+    const previous = fetcher.mock.calls.length;
+    await expect(telegram.poll(channel, "123:synthetic", [])).rejects.toMatchObject({
+      code: "unsupported",
+    });
+    expect(fetcher.mock.calls).toHaveLength(previous);
+    expect(contentSupport(channel, job("message"))).toContain("publishing only");
+    expect(contentSupport({ ...channel, accountType: "bot" }, publish)).toContain(
+      "existing Telegram bot chats",
+    );
+  });
+  it.each([
+    ["instagram", "image"],
+    ["instagram", "video"],
+    ["facebook", "image"],
+  ] as const)(
+    "routes %s extended %s publication through prepared media and final authority",
+    async (platform, kind) => {
+      let nextId = 0;
+      const fetcher = vi.fn(async (raw: string | URL | Request) => {
+        const url = new URL(String(raw));
+        if (url.searchParams.get("fields") === "status_code")
+          return Response.json({ status_code: "FINISHED" });
+        if (url.searchParams.get("fields") === "permalink")
+          return Response.json({ permalink: "https://www.instagram.com/p/published/" });
+        if (url.pathname.endsWith("/media_publish") || url.pathname.endsWith("/feed"))
+          return Response.json({ id: "published" });
+        return Response.json({ id: `prepared${++nextId}` });
+      });
+      const publish = job();
+      publish.payload.media =
+        kind === "video"
+          ? [{ kind, url: "https://cdn.test/video.mp4" }]
+          : [1, 2].map((n) => ({ kind, url: `https://cdn.test/${n}.jpg`, alt: `Image ${n}` }));
+      expect(contentSupport(account(platform), publish)).toBeUndefined();
+      const authority = vi.fn(async () => {
+        expect(publish.preparation?.metaMedia?.actorId).toBe(account(platform).platformId);
+        expect(
+          publish.preparation?.containerId ?? publish.preparation?.mediaIds?.length,
+        ).toBeTruthy();
+      });
+      const save = vi.fn((state: NonNullable<SocialJob["preparation"]>) => {
+        publish.preparation = state;
+      });
+      const adapter = createSocialAdapters(new SocialHttp(fetcher))[platform];
+      expect(
+        await adapter.send(
+          account(platform),
+          publish,
+          "synthetic-token",
+          async () => new Uint8Array(),
+          save,
+          authority,
+        ),
+      ).toMatchObject({ platformId: "published" });
+      expect(authority).toHaveBeenCalledTimes(1);
+      const posts = () =>
+        fetcher.mock.calls.filter(([raw]) =>
+          /\/(media_publish|feed)$/.test(new URL(String(raw)).pathname),
+        );
+      expect(posts()).toHaveLength(1);
+      await adapter.send(
+        account(platform),
+        publish,
+        "synthetic-token",
+        async () => new Uint8Array(),
+        save,
+        authority,
+      );
+      expect(posts()).toHaveLength(1);
+    },
+  );
+  it.each(["whatsapp", "telegram"] as const)(
+    "advertises %s API attachments only with current message permissions",
+    (platform) => {
+      const value = {
+        ...account(platform),
+        accountType: platform === "telegram" ? ("bot" as const) : ("business" as const),
+        connection: "token" as const,
+        scopes:
+          platform === "telegram"
+            ? ["bot.send"]
+            : ["whatsapp_business_messaging", "bycoda.webhook"],
+      };
+      expect(
+        accountCapabilities(value, Date.now()).find((item) => item.operation === "media")?.status,
+      ).toBe("available");
+      expect(
+        accountCapabilities({ ...value, scopes: [] }, Date.now()).find(
+          (item) => item.operation === "media",
+        )?.status,
+      ).not.toBe("available");
+      const reply = job("reply");
+      reply.payload.recipientId = "1234567";
+      reply.payload.media = [{ kind: "image", uploadId: "owner-upload" }];
+      expect(contentSupport(value, reply)).toBeUndefined();
+      reply.payload.text = "x".repeat(1025);
+      expect(contentSupport(value, reply)).toContain("1024");
+    },
+  );
+  it.each(["x", "instagram", "linkedin"] as const)(
+    "%s waits for durable media preparation and rechecks authorization before publication",
+    async (platform) => {
+      const publish = job();
+      publish.payload.media = [
+        platform === "instagram"
+          ? { kind: "image", url: "https://cdn.test/image.png" }
+          : { kind: "image", uploadId: "local" },
+      ];
+      const fetcher = vi.fn(async (raw: string | URL | Request, _options?: RequestInit) => {
+        const url = String(raw);
+        if (url === "https://api.x.com/2/media/upload")
+          return Response.json({ data: { id: "500" } });
+        if (url.endsWith("/tweets")) return Response.json({ data: { id: "posted" } });
+        if (url.includes("graph.instagram.com")) {
+          const path = new URL(url).pathname;
+          if (path.endsWith("/media")) return Response.json({ id: "container" });
+          if (path.endsWith("/media_publish")) return Response.json({ id: "published" });
+          if (path.endsWith("/published"))
+            return Response.json({ permalink: "https://www.instagram.com/p/published/" });
+          return Response.json({ status_code: "FINISHED" });
+        }
+        if (url.includes("initializeUpload"))
+          return Response.json({
+            value: {
+              image: "urn:li:image:123",
+              uploadUrl: "https://www.linkedin.com/dms-uploads/123",
+            },
+          });
+        if (url.includes("dms-uploads")) return new Response(null, { status: 201 });
+        if (url.includes("/rest/images/"))
+          return Response.json({ status: "AVAILABLE", owner: "urn:li:organization:123" });
+        return new Response(null, { status: 201, headers: { "x-restli-id": "urn:li:share:123" } });
+      });
+      let persist!: () => void;
+      let entered!: () => void;
+      const saving = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const held = new Promise<void>((resolve) => {
+        persist = resolve;
+      });
+      const checkpoint = vi.fn(async (state: NonNullable<SocialJob["preparation"]>) => {
+        entered();
+        await held;
+        publish.preparation = state;
+      });
+      const guard = vi.fn(async () => {
+        throw new SocialPlatformError("denied");
+      });
+      const adapter = createSocialAdapters(new SocialHttp(fetcher))[platform];
+      const read = vi.fn(async () => new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]));
+      const result = adapter
+        .send(account(platform), publish, "synthetic", read, checkpoint, guard)
+        .catch((error) => error);
+      await saving;
+      expect(guard).not.toHaveBeenCalled();
+      persist();
+      await expect(result).resolves.toMatchObject({ code: "denied" });
+      expect(guard).toHaveBeenCalledOnce();
+      const isFinal = (url: unknown) => /\/(?:tweets|media_publish|rest\/posts)$/.test(String(url));
+      expect(fetcher.mock.calls.some(([url]) => isFinal(url))).toBe(false);
+      expect(publish.preparation).toMatchObject(
+        platform === "instagram"
+          ? { containerId: "container" }
+          : { mediaIds: [platform === "x" ? "500" : "urn:li:image:123"] },
+      );
+      await adapter.send(account(platform), publish, "synthetic", read, checkpoint, async () => {});
+      expect(fetcher.mock.calls.filter(([url]) => isFinal(url))).toHaveLength(1);
+      expect(
+        fetcher.mock.calls.filter(([url]) =>
+          platform === "x"
+            ? String(url) === "https://api.x.com/2/media/upload"
+            : platform === "instagram"
+              ? new URL(String(url)).pathname.endsWith("/media")
+              : String(url).includes("initializeUpload"),
+        ),
+      ).toHaveLength(1);
+    },
+  );
+  it.each([
+    ["facebook", "publish"],
+    ["facebook", "message"],
+    ["linkedin", "comment"],
+    ["x", "message"],
+  ] as const)(
+    "%s %s checks current send authority before its final request",
+    async (platform, kind) => {
+      const fetcher = vi.fn();
+      const current = job(kind);
+      current.payload.recipientId = "456";
+      current.payload.postId =
+        kind === "comment" ? (platform === "linkedin" ? "urn:li:share:123" : "123") : undefined;
+      const guard = vi.fn(async () => {
+        throw new SocialPlatformError("denied");
+      });
+      await expect(
+        createSocialAdapters(new SocialHttp(fetcher))[platform].send(
+          account(platform),
+          current,
+          "synthetic",
+          async () => new Uint8Array(),
+          undefined,
+          guard,
+        ),
+      ).rejects.toMatchObject({ code: "denied" });
+      expect(guard).toHaveBeenCalledOnce();
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
+  it("Instagram API refuses top-level comments on arbitrary media before any request", async () => {
+    const fetcher = vi.fn();
+    const comment = job("comment");
+    comment.payload.postId = "123";
+    const guard = vi.fn(async () => {});
+    await expect(
+      createSocialAdapters(new SocialHttp(fetcher)).instagram.send(
+        account("instagram"),
+        comment,
+        "synthetic",
+        async () => new Uint8Array(),
+        undefined,
+        guard,
+      ),
+    ).rejects.toMatchObject({ code: "unsupported" });
+    expect(guard).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it("X API messages attach one uploaded image using the DM media category", async () => {
     const fetcher = vi.fn(async (raw: string | URL | Request) =>
       Response.json(
@@ -94,6 +365,112 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
       expect(accountCapabilities(a).find((c) => c.operation === "poll")?.status).toBe("pending");
     },
   );
+  it.each(["facebook", "linkedin"] as const)(
+    "%s drains discovery batches before fetching more and rotates exact owned posts",
+    async (platform) => {
+      const visited: string[] = [];
+      const discovery: URL[] = [];
+      const fetcher = vi.fn(async (raw: string | URL | Request) => {
+        const url = new URL(String(raw));
+        if (url.pathname.endsWith("published_posts") || url.pathname.endsWith("/posts")) {
+          discovery.push(url);
+          const page = discovery.length;
+          const items = Array.from({ length: 25 }, (_, index) => ({
+            id: `remote-${page}-${index}`,
+          }));
+          return platform === "facebook"
+            ? Response.json({
+                data: items,
+                paging: { next: "ignored", cursors: { after: `page-${page}` } },
+              })
+            : Response.json({ elements: items, paging: { total: 1000 } });
+        }
+        visited.push(decodeURIComponent(url.pathname));
+        return Response.json(platform === "facebook" ? { data: [] } : { elements: [] });
+      });
+      const acct = account(platform);
+      acct.scopes =
+        platform === "facebook"
+          ? ["pages_read_engagement", "pages_read_user_content"]
+          : ["r_organization_social"];
+      const adapter = createSocialAdapters(new SocialHttp(fetcher))[platform];
+      const owned = Array.from({ length: 1000 }, (_, index) => `owned-${index}`);
+      let cursor: string | undefined;
+      for (let poll = 0; poll < 8; poll++) {
+        const result = await adapter.poll(acct, "token", owned, cursor);
+        cursor = result.cursor;
+        expect(JSON.parse(cursor!).posts.length).toBeLessThanOrEqual(27);
+        if (poll < 7) expect(discovery).toHaveLength(1);
+      }
+      expect(discovery).toHaveLength(2);
+      expect(visited.some((path) => path.includes("owned-2"))).toBe(true);
+      expect(visited.some((path) => path.includes("remote-1-24"))).toBe(true);
+      expect(discovery[1].searchParams.get(platform === "facebook" ? "after" : "start")).toBe(
+        platform === "facebook" ? "page-1" : "25",
+      );
+    },
+  );
+  it("fetches the next bounded owned page only after original comment pagination drains", async () => {
+    let first = true;
+    const fetcher = vi.fn(async (raw: string | URL | Request) => {
+      const url = new URL(String(raw));
+      if (url.pathname.endsWith("/known-0/comments") && first) {
+        first = false;
+        return Response.json({
+          data: [],
+          paging: { next: "ignored", cursors: { after: "comments-next" } },
+        });
+      }
+      return Response.json({ data: [] });
+    });
+    const acct = account("facebook");
+    acct.scopes = ["pages_read_engagement", "pages_read_user_content"];
+    const adapter = createSocialAdapters(new SocialHttp(fetcher)).facebook;
+    const source = vi.fn(async (after?: string) => ({
+      posts: after ? ["known-2"] : ["known-0", "known-1"],
+      next: after ? undefined : "job-1",
+    }));
+    const initial = await adapter.poll(acct, "token", [], undefined, source);
+    expect(source.mock.calls).toEqual([[undefined]]);
+    // The bounded first poll drains known-0 including its second comment page;
+    // known-1 still owns the remaining original batch.
+    expect(JSON.parse(initial.cursor!).posts).toEqual(["known-1"]);
+    const drained = await adapter.poll(acct, "token", [], initial.cursor, source);
+    expect(source).toHaveBeenCalledOnce();
+    expect(JSON.parse(drained.cursor!).posts).toEqual([]);
+    await adapter.poll(acct, "token", [], drained.cursor, source);
+    expect(source.mock.calls).toEqual([[undefined], ["job-1"]]);
+    expect(fetcher.mock.calls.some(([raw]) => String(raw).includes("after=comments-next"))).toBe(
+      true,
+    );
+  });
+  it("drains legacy cursor-only IDs without replacing them with new discovery", async () => {
+    const visited: string[] = [];
+    const fetcher = vi.fn(async (raw: string | URL | Request) => {
+      visited.push(new URL(String(raw)).pathname);
+      return Response.json({ data: [] });
+    });
+    const acct = account("facebook");
+    acct.scopes = ["pages_read_engagement", "pages_read_user_content"];
+    const adapter = createSocialAdapters(new SocialHttp(fetcher)).facebook;
+    const legacy = Array.from({ length: 50 }, (_, index) => `legacy-${index}`);
+    const result = await adapter.poll(
+      acct,
+      "token",
+      ["new-owned"],
+      JSON.stringify({
+        posts: legacy,
+        index: 0,
+        after: { "legacy-0": "pending" },
+        starts: {},
+      }),
+    );
+    const saved = JSON.parse(result.cursor!);
+    expect(saved.posts).toEqual(legacy.slice(4));
+    expect(visited).toHaveLength(4);
+    expect(visited.every((path) => path.endsWith("/comments"))).toBe(true);
+    expect(saved.after).toEqual({});
+  });
   it("Facebook message-only polling does not call comment discovery requiring extra permissions", async () => {
     const fetcher = vi.fn(async (_url: unknown) => Response.json({ data: [] }));
     const a = account("facebook");
@@ -102,7 +479,7 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(String(fetcher.mock.calls[0][0])).toContain("/conversations?");
   });
-  it("Meta yorum ve mesaj sayfalarını kalıcı cursor ile okur; next URL içindeki token'ı kullanmaz", async () => {
+  it("Meta reads comment and message pages with a persistent cursor and does not use the token in the next URL", async () => {
     const fetcher = vi.fn(async (raw: string | URL | Request) => {
       const url = new URL(String(raw));
       if (url.pathname.endsWith("published_posts"))
@@ -177,7 +554,7 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
       "message-page-2",
     );
   });
-  it("LinkedIn yorum taraması 100 olaydan sonra start alanını saklar", async () => {
+  it("LinkedIn comment scan keeps the start field after 100 events", async () => {
     const fetcher = vi.fn(async (raw: string | URL | Request) => {
       const start = Number(new URL(String(raw)).searchParams.get("start"));
       return Response.json({
@@ -199,7 +576,45 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
     expect(second.events[0].eventId).toBe("urn:li:comment:100");
     expect(JSON.parse(second.cursor!).starts).toEqual({});
   });
-  it("Meta HTTP 400 içindeki token, izin ve limit kodları sırları yansıtmadan ayrılır", async () => {
+  it("does not report a legacy feed-only LinkedIn connection as an empty successful poll without known posts", async () => {
+    const acct = account("linkedin");
+    acct.scopes = ["r_organization_social_feed"];
+    const fetcher = vi.fn();
+    const adapter = createSocialAdapters(new SocialHttp(fetcher)).linkedin;
+    expect(accountCapabilities(acct).find((entry) => entry.operation === "poll")?.status).toBe(
+      "pending",
+    );
+    await expect(adapter.poll(acct, "synthetic-token", [])).rejects.toMatchObject({
+      code: "unsupported",
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it("keeps LinkedIn known-post reads available without broadening into the author finder", async () => {
+    const acct = account("linkedin");
+    acct.scopes = ["r_organization_social_feed"];
+    const fetcher = vi.fn(async (raw: string | URL | Request) => {
+      expect(new URL(String(raw)).pathname).toContain("/socialActions/");
+      return Response.json({ elements: [] });
+    });
+    await expect(
+      createSocialAdapters(new SocialHttp(fetcher)).linkedin.poll(acct, "synthetic-token", [
+        "urn:li:share:123",
+      ]),
+    ).resolves.toMatchObject({ events: [] });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+  it("distinguishes a genuine empty LinkedIn discovery page from an unrecognized response", async () => {
+    const acct = account("linkedin");
+    acct.scopes = ["r_organization_social_feed", "r_organization_social"];
+    const fetcher = vi.fn(async () => Response.json({ elements: [] }));
+    const adapter = createSocialAdapters(new SocialHttp(fetcher)).linkedin;
+    await expect(adapter.poll(acct, "synthetic-token", [])).resolves.toMatchObject({ events: [] });
+    fetcher.mockResolvedValue(Response.json({ unexpected: [] }));
+    await expect(adapter.poll(acct, "synthetic-token", [])).rejects.toMatchObject({
+      code: "unsupported",
+    });
+  });
+  it("Meta HTTP 400 token, permission and limit codes are distinguished without reflecting secrets", async () => {
     for (const [code, expected] of [
       [190, "expired"],
       [200, "denied"],
@@ -227,7 +642,7 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
       accountCapabilities(account("x")).find((capability) => capability.operation === "search"),
     ).toMatchObject({ status: "unsupported" });
   });
-  it("X çok sayfalı gelen kutusu cursor'ı eski sayfalar bitmeden ilerlemez", async () => {
+  it("X multi-page inbox cursor does not advance before older pages finish", async () => {
     const fetcher = vi.fn(async (raw: string | URL | Request) => {
       const url = new URL(String(raw));
       const second = url.searchParams.has("pagination_token");
@@ -260,7 +675,7 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
       "next-page",
     );
   });
-  it("LinkedIn kuruluş görseli hazırlanırken yükleme checkpoint'i korunur ve kötü upload URL reddedilir", async () => {
+  it("LinkedIn organization image preparation keeps the upload checkpoint and rejects a bad upload URL", async () => {
     let ready = false;
     const fetcher = vi.fn(async (raw: string | URL | Request) => {
       const url = String(raw);
@@ -273,7 +688,10 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
         });
       if (url.includes("dms-uploads")) return new Response(null, { status: 201 });
       if (url.includes("/rest/images/"))
-        return Response.json({ status: ready ? "AVAILABLE" : "PROCESSING" });
+        return Response.json({
+          status: ready ? "AVAILABLE" : "PROCESSING",
+          owner: "urn:li:organization:123",
+        });
       return new Response(null, {
         status: 201,
         headers: { "x-restli-id": "urn:li:share:123" },
@@ -289,8 +707,14 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
       publish.preparation = state;
     };
     await expect(
-      adapter.send(acct, publish, "synthetic-token", async () => new Uint8Array([137, 80]), save),
-    ).rejects.toMatchObject({ code: "rate_limit" });
+      adapter.send(
+        acct,
+        publish,
+        "synthetic-token",
+        async () => new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+        save,
+      ),
+    ).rejects.toMatchObject({ code: "processing" });
     ready = true;
     expect(
       await adapter.send(
@@ -316,7 +740,7 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
     ).rejects.toMatchObject({ code: "denied" });
     expect(evil).not.toHaveBeenCalled();
   });
-  it("X yeni DM ve mevcut konuşma farklı resmi endpoint kullanır", async () => {
+  it("X new DM and existing conversation use different official endpoints", async () => {
     const fetcher = vi.fn(async () => Response.json({ data: { dm_event_id: "456" } }));
     const adapters = createSocialAdapters(new SocialHttp(fetcher));
     const message = job("message");
@@ -329,7 +753,7 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
     await adapters.x.send(account("x"), message, "synthetic-token", async () => new Uint8Array());
     expect(fetcher.mock.calls[1][0]).toContain("dm_conversations/conversation/messages");
   });
-  it("X görsel MIME doğru gider ve başarılı yükleme checkpoint'i sonraki denemede tekrar yüklenmez", async () => {
+  it("X image MIME is sent correctly and a successful upload checkpoint is not uploaded again on the next attempt", async () => {
     const fetcher = vi.fn(async (raw: string | URL | Request) =>
       Response.json(
         String(raw).includes("media/upload")
@@ -366,7 +790,7 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
       fetcher.mock.calls.filter((call) => String(call[0]).includes("media/upload")),
     ).toHaveLength(1);
   });
-  it("Instagram hazırlık sürerken aynı kapsayıcı saklanır; hazır olunca tek publish yapılır", async () => {
+  it("Instagram keeps the same container while preparing and publishes once when ready", async () => {
     let ready = false;
     const fetcher = vi.fn(async (raw: string | URL | Request) => {
       const path = new URL(String(raw)).pathname;
@@ -412,7 +836,7 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
       ),
     ).toHaveLength(1);
   });
-  it("LinkedIn yorum yanıtı doğru composite URN ve parentComment alanını taşır", async () => {
+  it("LinkedIn comment reply carries the correct composite URN and parentComment field", async () => {
     const fetcher = vi.fn(async () => Response.json({ id: "reply" }));
     const adapters = createSocialAdapters(new SocialHttp(fetcher));
     const reply = job("reply");
@@ -437,7 +861,7 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
       ),
     ).rejects.toMatchObject({ code: "unsupported" });
   });
-  it("HTTP hata gövdeleri token içerdiğinde bile araç hatası sırları yansıtmaz", async () => {
+  it("tool errors do not reflect secrets even when HTTP error bodies contain tokens", async () => {
     for (const [status, code] of [
       [401, "expired"],
       [403, "denied"],
@@ -472,13 +896,31 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
       60000,
     );
   });
-  it("uygulanmamış video ve yanlış medya şekli önizlemede gerekçesiyle reddedilir", () => {
+  it("unimplemented video and wrong media shapes are rejected in preview with a reason", () => {
     const publish = job();
     publish.payload.media = [{ kind: "video", url: "https://cdn.test/video.mp4" }];
     expect(contentSupport(account("x"), publish)).toContain("host-uploaded");
     publish.payload.media = [{ kind: "video", uploadId: "local" }];
     expect(contentSupport(account("x"), publish)).toBeUndefined();
     publish.payload.media = [];
-    expect(contentSupport(account("instagram"), publish)).toContain("exactly one");
+    expect(contentSupport(account("instagram"), publish)).toContain("one to four");
+  });
+  it("rejects forbidden YouTube description characters in both text and appended links", () => {
+    const publish = job();
+    publish.payload.media = [{ kind: "video", uploadId: "local" }];
+    publish.payload.youtube = {
+      title: "Valid title",
+      privacy: "private",
+      madeForKids: false,
+      containsSyntheticMedia: false,
+    };
+    expect(contentSupport(account("youtube"), publish)).toBeUndefined();
+    publish.payload.text = "Description with <tag>";
+    expect(contentSupport(account("youtube"), publish)).toContain("cannot contain");
+    publish.payload.text = "Description";
+    publish.payload.link = "https://example.com/?value=<tag>";
+    expect(contentSupport(account("youtube"), publish)).toContain("cannot contain");
+    publish.payload.link = "https://example.com/?value=%3Ctag%3E";
+    expect(contentSupport(account("youtube"), publish)).toBeUndefined();
   });
 });

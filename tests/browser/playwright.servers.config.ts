@@ -2,6 +2,7 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
   testMatch: [
+    "servers-management.spec.ts",
     "servers.spec.ts",
     "ssh-key-binding.spec.ts",
     "servers-workspace.spec.ts",

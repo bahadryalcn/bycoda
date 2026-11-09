@@ -1,0 +1,75 @@
+/* Doubled class so the grid beats SettingsCollection.css whatever the stylesheet order. */
+.row.row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 10px;
+  min-block-size: 46px;
+  padding: 8px 10px 8px 14px;
+}
+
+.dot {
+  justify-self: center;
+}
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}
+
+.line > * {
+  flex: none;
+}
+
+.title {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+}
+
+.caption {
+  display: block;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--ui-font-caption);
+}
+
+.row .actions {
+  justify-self: end;
+  gap: 4px;
+  opacity: 0.6;
+}
+
+.row:hover .actions,
+.row:focus-within .actions,
+.row[data-open] .actions {
+  opacity: 1;
+}
+
+.details {
+  grid-column: 2 / -1;
+  min-inline-size: 0;
+}
+
+@media (hover: none) {
+  .row .actions {
+    opacity: 1;
+  }
+}

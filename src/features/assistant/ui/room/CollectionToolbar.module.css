@@ -1,0 +1,19 @@
+/* Filter popover: labelled fields stacked, then one footer row with Reset under a hairline. */
+.panel {
+  display: grid;
+  gap: 12px;
+  inline-size: min(20rem, calc(100vw - 32px));
+  padding: 12px;
+}
+.fields {
+  display: grid;
+  gap: 12px;
+  min-inline-size: 0;
+}
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-block-start: 8px;
+  border-block-start: 1px solid var(--ui-pane-border);
+}
