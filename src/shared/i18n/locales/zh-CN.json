@@ -3965,6 +3965,7 @@
   "Remotes": "远程仓库",
   "Create Branch…": "创建分支…",
   "Fetch": "获取",
+  "Auto Fetch": "自动获取",
   "Pull": "拉取",
   "Push": "推送",
   "Stash": "贮藏",

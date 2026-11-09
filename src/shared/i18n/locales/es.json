@@ -3965,6 +3965,7 @@
   "Remotes": "Remotos",
   "Create Branch…": "Crear rama…",
   "Fetch": "Obtener",
+  "Auto Fetch": "Obtener automáticamente",
   "Pull": "Traer",
   "Push": "Enviar",
   "Stash": "Guardar en stash",

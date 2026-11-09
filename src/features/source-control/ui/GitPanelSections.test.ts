@@ -36,10 +36,12 @@ function Panel({ repository = false }: { repository?: boolean }) {
   });
   return createElement(
     "div",
+    // oxlint-disable-next-line react-hooks-js/refs -- the test passes the pane ref object down; nothing reads .current during render
     { ref: pane, onContextMenu: preferences.onContextMenu },
     preferences.menu,
     createElement("header", null, "api"),
     createElement("textarea"),
+    // oxlint-disable-next-line react-hooks-js/refs -- the test passes the pane ref object down; nothing reads .current during render
     createElement(GitPanelSections, {
       cwd: "/repo",
       enabled: true,

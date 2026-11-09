@@ -3965,6 +3965,7 @@
   "Remotes": "リモート",
   "Create Branch…": "ブランチを作成…",
   "Fetch": "フェッチ",
+  "Auto Fetch": "自動フェッチ",
   "Pull": "プル",
   "Push": "プッシュ",
   "Stash": "スタッシュ",

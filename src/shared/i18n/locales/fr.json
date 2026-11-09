@@ -3965,6 +3965,7 @@
   "Remotes": "Dépôts distants",
   "Create Branch…": "Créer une branche…",
   "Fetch": "Récupérer",
+  "Auto Fetch": "Récupération automatique",
   "Pull": "Tirer",
   "Push": "Pousser",
   "Stash": "Remiser",

@@ -4237,6 +4237,7 @@
   "Remotes": "Uzak depolar",
   "Create Branch…": "Branch oluştur…",
   "Fetch": "Fetch",
+  "Auto Fetch": "Otomatik Fetch",
   "Pull": "Pull",
   "Push": "Push",
   "Stash": "Stash",
