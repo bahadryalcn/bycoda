@@ -700,7 +700,10 @@ impl OutputSource {
     pub(crate) fn check_target_before_start(&self, explicit: bool) -> Result<(), String> {
         match self.assert_explicit_target_current(explicit) {
             Err(error) if explicit => {
-                log::warn!("{}: {error}; continuing without persisted output", self.session);
+                log::warn!(
+                    "{}: {error}; continuing without persisted output",
+                    self.session
+                );
                 Ok(())
             }
             result => result,

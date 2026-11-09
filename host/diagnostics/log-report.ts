@@ -1,4 +1,4 @@
-import { open, stat } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import { cpus, arch, freemem, homedir, platform, release, totalmem, uptime } from "node:os";
 import { join, resolve } from "node:path";
 import { redactDiagnosticText } from "@bycoda/account-contracts";

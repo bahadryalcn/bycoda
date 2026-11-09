@@ -2315,16 +2315,12 @@ function drawSign(c: CanvasRenderingContext2D, time: number) {
   c.lineTo(x0 + w - 6, top + h - 3);
   c.stroke();
   c.fillStyle = themePalette.hexeeeeee;
-  for (const [x, y] of [
-    [x0 + 4, top + 4],
-    [x0 + w - 4, top + 4],
-    [x0 + 4, top + h - 4],
-    [x0 + w - 4, top + h - 4],
-  ]) {
-    c.beginPath();
-    c.arc(x, y, 1.5, 0, Math.PI * 2);
-    c.fill();
-  }
+  for (const x of [x0 + 4, x0 + w - 4])
+    for (const y of [top + 4, top + h - 4]) {
+      c.beginPath();
+      c.arc(x, y, 1.5, 0, Math.PI * 2);
+      c.fill();
+    }
   if (signLogo?.naturalWidth) {
     const lw = 184,
       lh = (lw * signLogo.naturalHeight) / signLogo.naturalWidth;

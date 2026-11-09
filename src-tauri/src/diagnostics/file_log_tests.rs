@@ -50,7 +50,8 @@ fn rotation_keeps_two_older_files() {
     let base = dir.path().join("bycoda.log");
     let mut file = RotatingFile::new(base.clone(), 40);
     for index in 0..8 {
-        file.write_line(&format!("line number {index} padding")).unwrap();
+        file.write_line(&format!("line number {index} padding"))
+            .unwrap();
     }
     assert!(base.exists());
     assert!(rotated_path(&base, 1).exists());
@@ -109,5 +110,14 @@ fn sections_follow_the_documented_order_and_skip_missing() {
     let (sections, _, host_crash) = collect_from(&sources);
     assert!(host_crash.is_none());
     let names: Vec<_> = sections.iter().map(|s| s.name.as_str()).collect();
-    assert_eq!(names, ["environment", "native", "app", "app-previous", "host-stdout"]);
+    assert_eq!(
+        names,
+        [
+            "environment",
+            "native",
+            "app",
+            "app-previous",
+            "host-stdout"
+        ]
+    );
 }
