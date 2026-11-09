@@ -12,8 +12,9 @@ machines, or run paid providers.
 `scripts/checks/ci-changes.mjs` owns the shared local/CI decision. Git merge-base
 and a NUL-delimited diff include deleted paths and both sides of renames. Local
 selection also includes untracked, nonignored source. Unknown inputs or unavailable
-history select full coverage. Main/manual CI always select full coverage. Only
-explicitly irrelevant PR jobs may skip. New PR commits cancel older PR runs;
+history select full coverage. A main push diffs against the fetched tip before the
+push (a new branch or force push has none and selects full coverage); manual CI
+always selects full coverage. Only explicitly irrelevant jobs may skip. New PR commits cancel older PR runs;
 distinct main SHAs retain independent runs for exact-source release prerequisites.
 
 | Job                | Scope and evidence                                                                                                       | Selection                                                     |

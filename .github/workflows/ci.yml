@@ -42,10 +42,14 @@ jobs:
         with:
           node-version: 24
           install: "false"
+      - name: Fetch the branch tip before this push (missing tip means full coverage)
+        if: github.event_name == 'push'
+        continue-on-error: true
+        run: git fetch --no-tags --depth=1 origin "${{ github.event.before }}"
       - id: detect
         name: Select dependent checks (full coverage if diff is unavailable)
         env:
-          CI_BASE: ${{ github.event.pull_request.base.sha || 'HEAD^' }}
+          CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
         run: node scripts/checks/ci-changes.mjs --ci --base "$CI_BASE" --github-output "$GITHUB_OUTPUT"
       - id: windows-runner
         name: Route trusted Windows work (PRs and disabled opt-in stay hosted)
@@ -105,7 +109,7 @@ jobs:
 
   host:
     needs: [changes, preflight]
-    if: github.event_name != 'pull_request' || needs.changes.outputs.host == 'true'
+    if: needs.changes.outputs.host == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -114,7 +118,10 @@ jobs:
         include:
           # Reviewed portable graphs run once inside Linux's full scope. Any
           # source drift returns them to integration on every OS automatically.
-          - { os: ubuntu-latest, scope: all, shard: 1, shard-count: 1 }
+          - { os: ubuntu-latest, scope: all, shard: 1, shard-count: 4 }
+          - { os: ubuntu-latest, scope: all, shard: 2, shard-count: 4 }
+          - { os: ubuntu-latest, scope: all, shard: 3, shard-count: 4 }
+          - { os: ubuntu-latest, scope: all, shard: 4, shard-count: 4 }
           - { os: macos-latest, scope: integration, shard: 1, shard-count: 2 }
           - { os: macos-latest, scope: integration, shard: 2, shard-count: 2 }
           - { os: windows-latest, scope: integration, shard: 1, shard-count: 6 }
@@ -189,7 +196,7 @@ jobs:
 
   web:
     needs: [changes, preflight]
-    if: github.event_name != 'pull_request' || needs.changes.outputs.web == 'true'
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -241,7 +248,7 @@ jobs:
 
   check:
     needs: [changes, preflight]
-    if: github.event_name != 'pull_request' || needs.changes.outputs.native == 'true'
+    if: needs.changes.outputs.native == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -293,7 +300,7 @@ jobs:
 
   rpm:
     needs: [changes, preflight]
-    if: github.event_name != 'pull_request' || needs.changes.outputs.rpm == 'true'
+    if: needs.changes.outputs.rpm == 'true'
     name: RPM build (${{ matrix.image }})
     runs-on: ubuntu-latest
     container: ${{ matrix.image }}

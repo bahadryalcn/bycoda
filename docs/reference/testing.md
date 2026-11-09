@@ -139,7 +139,9 @@ discovery; inspect that delta rather than silently refreshing the baseline.
 
 Pull requests require the classified Chromium smoke. Main pushes and manual CI
 runs execute the full collection instead: six Chromium and four WebKit partitions,
-with at most six full-browser VMs running together. Both named projects retain
+with at most six full-browser VMs running together. A push classifies its diff
+against the branch tip before the push, so a push that touches no browser input
+skips the collection; a manual run, a new branch or a force push keeps every gate. Both named projects retain
 their existing per-feature setup. Each suite/project pair belongs to one
 partition; full CI deliberately includes all three alternate-fixture variants.
 The 2026-11-01 discovery snapshot has 2009 default browser cases and 2115

@@ -6,7 +6,7 @@ import { gates, repositoryRoot } from "./ci-changes.mjs";
 import { browserCiVariants, expectedCiSelection, validateBrowserReceipt } from "./browser-ci.mjs";
 
 const hostVariants = [
-  "ubuntu-latest-1-of-1",
+  ...[1, 2, 3, 4].map((n) => `ubuntu-latest-${n}-of-4`),
   ...[1, 2].map((n) => `macos-latest-${n}-of-2`),
   ...[1, 2, 3, 4, 5, 6].map((n) => `windows-latest-${n}-of-6`),
 ];

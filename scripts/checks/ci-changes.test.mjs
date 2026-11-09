@@ -114,10 +114,16 @@ test("Git detection includes renamed old/new paths, deleted files, staged and un
   assert.equal(result.gates.host, true);
   assert.equal(result.sourceSha, base);
   const failedDiff = detectChanges({ root, base: "missing-reference" });
-  const main = detectChanges({ root, ci: true, event: "push" });
-  const manual = detectChanges({ root, ci: true, event: "workflow_dispatch" });
+  git("commit", "-qm", "fixture push");
+  const pushed = detectChanges({ root, ci: true, event: "push", base });
+  const newBranch = detectChanges({ root, ci: true, event: "push", base: "0".repeat(40) });
+  const manual = detectChanges({ root, ci: true, event: "workflow_dispatch", base });
   assert(gates.every((gate) => failedDiff.gates[gate]));
-  assert(gates.every((gate) => main.gates[gate]));
+  assert.equal(pushed.full, false);
+  assert.equal(pushed.gates.host, true);
+  assert.equal(pushed.gates.rpm, false);
+  assert.deepEqual(pushed.files, ["docs/before name.md", "host/after name.ts", "host/deleted.ts"]);
+  assert(gates.every((gate) => newBranch.gates[gate]));
   assert(gates.every((gate) => manual.gates[gate]));
 });
 

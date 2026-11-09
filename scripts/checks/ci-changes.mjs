@@ -123,13 +123,19 @@ export function detectChanges({
   let sourceSha;
   try {
     sourceSha = git("rev-parse", "HEAD").trim();
-    if (full || (ci && event !== "pull_request")) {
+    if (full || (ci && !["pull_request", "push"].includes(event))) {
       return {
-        ...classifyChanges([], { full: true, reason: "Main/manual CI retains full coverage" }),
+        ...classifyChanges([], { full: true, reason: "Manual CI retains full coverage" }),
         sourceSha,
       };
     }
-    const baseSha = git("merge-base", "HEAD", base).trim();
+    // A push diffs against the branch tip before the push. That commit is
+    // fetched shallowly beside HEAD, so no merge base exists; an unknown or
+    // all-zero (new branch, force push) tip falls through to full coverage.
+    const baseSha =
+      ci && event === "push"
+        ? git("rev-parse", "--verify", `${base}^{commit}`).trim()
+        : git("merge-base", "HEAD", base).trim();
     // --no-renames emits both paths of renames, including removals. NUL
     // delimiters preserve spaces and prevent quoted filenames hiding inputs.
     const files = git("diff", "--name-only", "--no-renames", "-z", baseSha, "--")
