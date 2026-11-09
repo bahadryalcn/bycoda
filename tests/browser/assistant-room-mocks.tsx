@@ -96,6 +96,8 @@ export const snapshot: AssistantSnapshot = {
     autonomy: "jobs",
     allowRoutineQuestions: false,
     planApproval: "large",
+    // Review before start is opt-in in the product; the Room specs exercise the review dialog.
+    confirmJobs: true,
     dailyTokenBudget: 2000000,
     perWakeTokenCap: 8000,
     enabled: true,

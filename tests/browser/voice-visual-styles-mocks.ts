@@ -237,6 +237,9 @@ export const fixtureAssistant = {
 };
 if (new URLSearchParams(location.search).has("availability-away"))
   fixtureAssistant.presence.state = "away";
+// Job review before starting is opt-in through the profile; scenarios ask with ?confirm-jobs.
+if (new URLSearchParams(location.search).has("confirm-jobs"))
+  Object.assign(fixtureAssistant.profile, { confirmJobs: true });
 export const useAssistantSnapshot = () => ({
   snapshot: fixtureAssistant,
   error: "",

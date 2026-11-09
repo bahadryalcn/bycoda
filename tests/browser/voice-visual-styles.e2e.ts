@@ -39,7 +39,8 @@ for (const theme of ["light", "dark"])
       expect(selected.runtime.submits).toBe(0);
       expect(selected.runtime.turnPolicies.at(-1)).toMatchObject({ manualTurnEnd: true });
       await panel.screenshot({ path: join(output, `${theme}-${width}-full-manual.png`) });
-      await panel.getByRole("button", { name: "Turn ending", exact: true }).click();
+      // Expanded, the turn mode button is named after the current mode.
+      await panel.getByRole("button", { name: "I'll finish when ready", exact: true }).click();
       await expect(
         page.getByRole("menuitemradio", { name: "I'll finish when ready", exact: true }),
       ).toBeChecked();
@@ -56,9 +57,11 @@ for (const theme of ["light", "dark"])
       });
       await page.getByRole("menuitemradio", { name: "Reply when I pause", exact: true }).click();
       await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
-      await expect(panel.getByRole("button", { name: "Turn ending", exact: true })).toBeVisible();
+      // The compact pill keeps turn ending and Finish turn in its More menu.
+      const more = panel.getByRole("button", { name: "More voice options", exact: true });
+      await expect(more).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-compact-automatic.png`) });
-      await panel.getByRole("button", { name: "Turn ending", exact: true }).click();
+      await more.click();
       await expect(
         page.getByRole("menuitemradio", { name: "Reply when I pause", exact: true }),
       ).toBeChecked();
@@ -69,7 +72,7 @@ for (const theme of ["light", "dark"])
       await page
         .getByRole("menuitemradio", { name: "I'll finish when ready", exact: true })
         .click();
-      await panel.getByRole("button", { name: "Turn ending", exact: true }).click();
+      await more.click();
       await expect(
         page.getByRole("menuitemradio", { name: "I'll finish when ready", exact: true }),
       ).toBeChecked();
@@ -77,10 +80,7 @@ for (const theme of ["light", "dark"])
         path: join(menuOutput, `${theme}-${width}-in-app-compact-manual-menu.png`),
         animations: "disabled",
       });
-      await page
-        .getByRole("menuitemradio", { name: "I'll finish when ready", exact: true })
-        .press("Escape");
-      await panel.getByRole("button", { name: "Finish turn", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Finish turn", exact: true }).click();
       expect(await page.evaluate(() => (window as any).fixtureVoice.finishes)).toBe(1);
       expect(await panel.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       await panel.screenshot({ path: join(output, `${theme}-${width}-compact-manual.png`) });

@@ -84,8 +84,7 @@ for (const lang of ["en", "tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
           page.getByRole("radio", { name: themeLabels.theme, exact: true }),
         ).toBeChecked();
         await expect(page.locator("details.settings-advanced")).toHaveCount(0);
-        // Dark lightness lives in the closed "Custom surface colors" toggle row.
-        await page.getByRole("button", { name: themeLabels.surfaceColors, exact: true }).click();
+        // Dark-mode depth is an always-visible slider in the Tone group of the Theme tab.
         const brightness = page.locator('[data-setting-id="dark-lightness"]').getByRole("slider");
         if (theme === "light") await expect(brightness).toHaveAttribute("aria-disabled", "true");
         else await expect(brightness).not.toHaveAttribute("aria-disabled", "true");

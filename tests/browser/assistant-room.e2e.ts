@@ -496,9 +496,9 @@ for (const theme of ["light", "dark"])
       await page
         .getByRole("menuitem", { name: "Refresh conversation summary", exact: true })
         .click();
-      await expect(
-        page.getByRole("alert").filter({ hasText: "Summary refresh was not confirmed." }),
-      ).toBeVisible();
+      // A lost ACK shows a quiet header badge whose title carries the reason.
+      const unconfirmed = page.getByTitle("Summary refresh was not confirmed.", { exact: true });
+      await expect(unconfirmed).toContainText("Summary unavailable");
       await page.getByRole("button", { name: "Conversation actions", exact: true }).click();
       await expect(
         page.getByRole("menuitem", { name: "Retry summary refresh", exact: true }),
@@ -508,9 +508,10 @@ for (const theme of ["light", "dark"])
         path: join(output, `summary-lost-ack-menu-${theme}-${width}.png`),
       });
       await page.getByRole("menuitem", { name: "Retry summary refresh", exact: true }).click();
-      await expect(
-        page.getByRole("alert").filter({ hasText: "Summary refresh was not confirmed." }),
-      ).toHaveCount(0);
+      await expect
+        .poll(() => page.evaluate(() => (window as any).__summaryRefreshRequests.length))
+        .toBe(2);
+      await expect(unconfirmed).toHaveCount(0);
       const replay = await page.evaluate(() => (window as any).__summaryRefreshRequests);
       expect(replay).toHaveLength(2);
       expect(replay[0]).toEqual(replay[1]);
@@ -519,11 +520,8 @@ for (const theme of ["light", "dark"])
       await page
         .getByRole("menuitem", { name: "Refresh conversation summary", exact: true })
         .click();
-      await expect(
-        page.getByRole("paragraph").filter({
-          hasText: /^Conversation summary is waiting\. Check its settings or refresh it\.$/,
-        }),
-      ).toBeVisible();
+      // The header badge comes first; a screen-reader-only live region mirrors its text.
+      await expect(page.getByText("Summary waiting", { exact: true }).first()).toBeVisible();
       await page.screenshot({
         animations: "disabled",
         path: join(output, `summary-blocked-${theme}-${width}.png`),
@@ -532,11 +530,14 @@ for (const theme of ["light", "dark"])
       await page
         .getByRole("menuitem", { name: "Refresh conversation summary", exact: true })
         .click();
+      await expect
+        .poll(() => page.evaluate(() => (window as any).__summaryRefreshMutations))
+        .toBe(3);
+      // A ready summary needs no status: the header drops both the waiting and updating notes.
+      await expect(page.getByText("Summary waiting", { exact: true })).toHaveCount(0);
       await expect(
-        page
-          .getByRole("paragraph")
-          .filter({ hasText: /^A verified conversation summary is available\.$/ }),
-      ).toBeVisible();
+        page.getByRole("paragraph").filter({ hasText: /^Updating conversation summary$/ }),
+      ).toHaveCount(0);
       await page.screenshot({
         animations: "disabled",
         path: join(output, `summary-ready-${theme}-${width}.png`),
@@ -609,9 +610,9 @@ for (const theme of ["light", "dark"])
         path: join(output, `policy-presence-${theme}-${width}.png`),
       });
       const cost = await openSettingsGroup(page, "Cost and context");
-      await expect(
-        cost.getByRole("spinbutton", { name: "Follow-ups before worker recovery", exact: true }),
-      ).toHaveValue("0");
+      await expect(cost.getByRole("spinbutton", { name: "Follow-ups", exact: true })).toHaveValue(
+        "0",
+      );
       await cost.screenshot({
         animations: "disabled",
         path: join(output, `policy-cost-${theme}-${width}.png`),
@@ -911,16 +912,12 @@ for (const theme of ["light", "dark"])
       await cost
         .getByRole("button", { name: "Advanced worker context limits", exact: true })
         .click();
-      const soft = cost.getByRole("spinbutton", {
-        name: "Compact worker context at (tokens)",
-        exact: true,
-      });
+      // Token and percentage limits share a label; the unit beside each field tells them apart,
+      // and the token fields come first.
+      const soft = cost.getByRole("spinbutton", { name: "Worker compact at", exact: true }).first();
       await expect(soft).toHaveValue("150000");
       await expect(
-        cost.getByRole("spinbutton", {
-          name: "Continue workers in a fresh session at (%)",
-          exact: true,
-        }),
+        cost.getByRole("spinbutton", { name: "Worker fresh session at", exact: true }).nth(1),
       ).toHaveValue("80");
       await soft.fill("160000");
       await soft.blur();
@@ -936,11 +933,11 @@ for (const theme of ["light", "dark"])
         .getByRole("button", { name: "Advanced worker context limits", exact: true })
         .click();
       await expect(
-        dialog.getByRole("spinbutton", { name: "Compact worker context at (tokens)", exact: true }),
+        dialog.getByRole("spinbutton", { name: "Worker compact at", exact: true }).first(),
       ).toHaveValue("160000");
-      await expect(
-        dialog.getByRole("spinbutton", { name: "Compact context at", exact: true }),
-      ).toHaveValue("150000");
+      await expect(dialog.getByRole("spinbutton", { name: "Compact at", exact: true })).toHaveValue(
+        "150000",
+      );
     });
 
 for (const theme of ["light", "dark"])
@@ -1072,7 +1069,7 @@ for (const theme of ["light", "dark"])
       await page.getByRole("tab", { name: "Conversations", exact: true }).click();
       const search = page.getByRole("searchbox", { name: "Search this section", exact: true });
       await search.fill("Secret");
-      await expect(page.getByText("No messages to display", { exact: true })).toBeVisible();
+      await expect(page.getByText("No results", { exact: true })).toBeVisible();
       await expect(page.locator("body")).not.toContainText("Secret transcript source");
       await expect(page.locator("body")).not.toContainText("Secret linked global source");
       await page.screenshot({
@@ -1134,23 +1131,17 @@ for (const theme of ["light", "dark"])
         .getByRole("button", { name: "Choose projects in Settings", exact: true })
         .click();
       const dialog = page.getByRole("dialog");
-      await openSettingsGroup(page, "Manual session supervision");
-      const manual = dialog.getByRole("region", {
-        name: "Manual session supervision",
+      const manual = await openSettingsGroup(page, "Manual session supervision");
+      const supervise = manual.getByRole("switch", {
+        name: "Supervise my conversations",
         exact: true,
       });
-      await manual
-        .getByRole("switch", { name: "Allow manual session supervision", exact: true })
-        .scrollIntoViewIfNeeded();
+      await supervise.scrollIntoViewIfNeeded();
+      await expect(supervise).not.toBeChecked();
+      // Turning supervision off keeps the saved scope; the picker stays locked until it is on.
       await expect(
-        manual.getByRole("switch", { name: "Allow manual session supervision", exact: true }),
-      ).toHaveAttribute("aria-checked", "false");
-      await manual.getByRole("button", { name: /^Selected projects:/ }).click();
-      await expect(page.getByRole("option", { name: /Upstream/ })).toHaveAttribute(
-        "aria-selected",
-        "true",
-      );
-      await page.keyboard.press("Escape");
+        manual.getByRole("button", { name: "Selected projects: Upstream", exact: true }),
+      ).toBeDisabled();
       await expect(dialog.getByText("Secret project", { exact: true })).toHaveCount(0);
       await page.screenshot({
         animations: "disabled",
@@ -1458,9 +1449,13 @@ for (const theme of ["light", "dark"] as const)
       });
       await openSettingsGroup(page, "Computer use");
       await page
-        .getByRole("button", { name: "Stop computer use", exact: true })
+        .getByRole("switch", { name: "Enable computer use", exact: true })
         .scrollIntoViewIfNeeded();
       await expect(page.getByText("Not installed", { exact: true })).toBeVisible();
+      // The emergency stop appears only while computer use is on.
+      await expect(
+        page.getByRole("button", { name: "Stop computer use", exact: true }),
+      ).toHaveCount(0);
       await page.screenshot({
         animations: "disabled",
         path: join(output, `${theme}-${width}-computer-settings.png`),
@@ -1555,10 +1550,15 @@ for (const theme of ["light", "dark"])
         animations: "disabled",
         path: join(output, `roles-compact-${theme}-${width}.png`),
       });
-      // Role models are visible rows; a row with an override offers a reset to the workers model.
+      // Role models are visible rows that inherit the workers model. Picking one makes an
+      // override that offers a reset; Replies keeps its own model to prove the roles are independent.
       for (const label of ["Supervisor", "Replies", "Planner"]) {
         const field = autonomy.getByRole("group", { name: label, exact: true });
-        await field.getByRole("button", { name: "Use same as workers", exact: true }).click();
+        await expect(field.getByText("Same as workers", { exact: true })).toBeVisible();
+        await field.getByRole("button").first().click();
+        await expect(field.getByText("Same as workers", { exact: true })).toHaveCount(0);
+        if (label !== "Replies")
+          await field.getByRole("button", { name: "Use same as workers", exact: true }).click();
       }
       await autonomy.screenshot({
         animations: "disabled",
@@ -1574,6 +1574,11 @@ for (const theme of ["light", "dark"])
             .getByRole("group", { name: label, exact: true })
             .getByText("Same as workers", { exact: true }),
         ).toBeVisible();
+      await expect(
+        dialog
+          .getByRole("group", { name: "Replies", exact: true })
+          .getByRole("button", { name: "Use same as workers", exact: true }),
+      ).toBeVisible();
     });
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
@@ -1697,7 +1702,7 @@ for (const theme of ["light", "dark"])
       });
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await openSettingsGroup(page, "Retention and usage");
-      await page.getByRole("group", { name: "Worker cache usage", exact: true }).screenshot({
+      await page.getByRole("group", { name: "Today's usage", exact: true }).screenshot({
         animations: "disabled",
         path: join(output, `worker-cache-${theme}-${width}.png`),
       });
