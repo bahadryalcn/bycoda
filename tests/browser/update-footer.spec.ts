@@ -24,7 +24,7 @@ test.beforeEach(async ({ page }) => {
           invoke: async (command: string, args?: { url?: string }) => {
             if (command === "plugin:app|version") return currentVersion;
             if (command === "plugin:app|identifier") return "com.bycoda.desktop";
-            if (command === "plugin:updater|check")
+            if (command === "app_update_check")
               return {
                 rid: 1,
                 currentVersion,

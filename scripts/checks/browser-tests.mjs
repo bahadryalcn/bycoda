@@ -210,10 +210,8 @@ export async function main(args = process.argv.slice(2)) {
     }
     report.suites.push(outcome);
     writeFileSync(join(directory, "run.json"), JSON.stringify(report, null, 2));
-    if (result.code !== 0) {
-      code = result.code;
-      break;
-    }
+    // Keep running later suites so one CI round reports every failing suite.
+    if (result.code !== 0 && code === 0) code = result.code;
   }
   if (!values.list && report.suites.every((suite) => suite.filteredOut)) {
     console.error("No browser cases matched the requested filters.");

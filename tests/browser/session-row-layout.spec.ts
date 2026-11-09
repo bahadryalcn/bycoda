@@ -38,17 +38,32 @@ for (const light of [false, true]) {
 test("sidebar glass retains selection and focus without main glass", async ({ page }) => {
   // The GitHub prompt group no longer lives in this sidebar (the footer owns feedback; the
   // joined-action glass and focus are covered by update-footer.spec.ts).
+  // Reduced motion removes the pane's background transition, so computed colors are final
+  // instead of the transition's start value on a slow runner.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/session-row-layout.html", { waitUntil: "domcontentloaded" });
   const row = page.locator('[data-session-card="row-multi"]');
   const sidebar = page.getByRole("complementary").first();
   await expect(row).toBeVisible();
+  const alpha = (color: string) =>
+    page.evaluate((value) => {
+      const probe = document.createElement("canvas").getContext("2d")!;
+      probe.fillStyle = value;
+      probe.clearRect(0, 0, 1, 1);
+      probe.fillRect(0, 0, 1, 1);
+      return probe.getImageData(0, 0, 1, 1).data[3] / 255;
+    }, color);
   const normal = await sidebar.evaluate((element) => getComputedStyle(element).backgroundColor);
+  expect(await alpha(normal)).toBe(1);
+  // The default sidebar opacity (1) makes glass visually opaque; use a translucent setting so
+  // the sidebar's own glass fill is observable on every platform.
   await page.evaluate(() => {
     document.documentElement.classList.remove("glass-body", "theme-light");
     document.documentElement.classList.add("has-native-glass");
+    document.documentElement.style.setProperty("--sidebar-opacity", "0.6");
   });
   const glass = await sidebar.evaluate((element) => getComputedStyle(element).backgroundColor);
-  expect(glass).not.toBe(normal);
+  expect(await alpha(glass)).toBeCloseTo(0.6, 1);
   const selected = await row.evaluate((element) => getComputedStyle(element).backgroundImage);
   expect(selected).not.toBe("none");
   const main = page.getByRole("main");

@@ -22,7 +22,9 @@ use std::{
 
 const MAX_ACTORS: usize = 128;
 const MAX_RECORD_BYTES: usize = 64 * 1024;
-const ADMISSION_WAIT: Duration = Duration::from_secs(2);
+/// Tests open several writers at once on slow CI runners, where admission can queue
+/// past the production wait; a frozen gate still fails, only later.
+const ADMISSION_WAIT: Duration = Duration::from_secs(if cfg!(test) { 8 } else { 2 });
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]

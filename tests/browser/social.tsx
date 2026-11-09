@@ -6,8 +6,10 @@ import {
   type ModelSource,
 } from "../../src/features/sessions/ui/modelSource";
 import { useState } from "react";
+import { useLocale } from "../../src/shared/i18n";
 import { ToolPanel } from "../../src/app/shell/ToolNavigation";
-import { SocialView } from "../../src/features/social/ui/SocialView";
+// The app surface supplies the header chrome the Social shell requires.
+import { SocialView } from "../../src/app/workspace/surfaces/SocialSurface";
 import { ContentMediaField } from "../../src/features/social/ui/content/ContentMediaField";
 import type { ContentMedia } from "../../src/features/social/ui/content/contentDraft";
 import { useSocialMediaEditor } from "../../src/features/social/hooks/useSocialMediaEditor";
@@ -36,6 +38,8 @@ import {
   type SocialWorkspaceQuery,
   type SocialWorkspaceResponse,
 } from "../../src/features/social/model/social";
+import { DEFAULT_AUTONOMY, type AiAction } from "../../src/features/social/model/autonomy";
+import type { SocialList } from "../../src/features/social/model/audience";
 import "../../src/styles/index.css";
 import type { SocialProgram } from "../../src/features/social/model/socialProgram";
 const programFixture = new URLSearchParams(location.search).has("programs");
@@ -96,20 +100,12 @@ const snapshot: SocialSnapshot = {
   jobs: [],
   drafts: [],
   profiles: [],
-  capabilities: {
-    x: [
-      {
-        operation: "publish",
-        status: "pending",
-        reason: "Authorization is required.",
-        scopes: [],
-        source: "https://docs.x.com",
-      },
-    ],
-  },
+  capabilities: {},
   publishingPlans: [],
   approvedCampaignIds: [],
 };
+// Capabilities come from the shared capability map, so every entry carries its reason code.
+snapshot.capabilities = { x: accountCapabilities(snapshot.accounts[0]) };
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 let heldAction: string | undefined;
 let releaseAction: ((reject: boolean) => void) | undefined;
@@ -295,6 +291,92 @@ function fixtureCampaignState(campaign: SocialSnapshot["campaigns"][number]) {
     return jobs.every((job) => job.status === "succeeded") ? "succeeded" : "partial";
   return jobs.length ? "cancelled" : "draft";
 }
+// Deterministic AI activity for the Command screen; nothing here is a live Host action.
+const aiActions: AiAction[] = [
+  {
+    id: "fixture-ai-action",
+    at: Date.now() - 60000,
+    actor: "ai",
+    accountId: "x",
+    action: "drafts.create",
+    summary: "Fixture draft prepared for review",
+    status: "done",
+    undo: { action: "drafts.delete", input: { id: "fixture-draft" } },
+  },
+];
+const audienceLists: SocialList[] = [];
+// Owner writes of the redesigned shell. None reaches a platform; each only changes fixture state.
+const shellWrites: Record<string, (input: Record<string, unknown>) => unknown> = {
+  "ai.command": (input) => ({
+    planId: "fixture-plan",
+    steps: [
+      {
+        id: "fixture-step-read",
+        action: "inbox.unified",
+        input: {},
+        summary: `Find questions for: ${String(input.text)}`,
+        needsApproval: false,
+      },
+      {
+        id: "fixture-step-reply",
+        action: "replies.send",
+        input: {},
+        summary: "Reply to two pricing questions",
+        needsApproval: true,
+      },
+    ],
+  }),
+  "ai.stop": () => ({ aiStopped: true }),
+  "ai.resume": () => ({ aiStopped: false }),
+  "lists.save": (input) => {
+    const list: SocialList = {
+      id: `fixture-list-${audienceLists.length + 1}`,
+      name: String(input.name),
+      kind: "static",
+      projectIds: [],
+      createdAt: Date.now(),
+    };
+    audienceLists.push(list);
+    return structuredClone(list);
+  },
+  "inbox.settings": (input) => {
+    snapshot.pollingEnabled = input.autoRefresh === true;
+    return { autoRefresh: snapshot.pollingEnabled, intervals: {} };
+  },
+};
+// Read-only actions of the redesigned shell. Lists start empty unless a test seeds them.
+const shellReads: Record<string, (input: Record<string, unknown>) => unknown> = {
+  "ai.summary": () => ({
+    sentToday: 3,
+    pending: 1,
+    newPeople: 2,
+    replyRate: 0.25,
+    waitingForYou: 0,
+  }),
+  "ai.actions.list": () => ({ items: structuredClone(aiActions) }),
+  "browser.needsHuman.list": () => ({ items: [] }),
+  "browser.recipeSuggestions.list": () => ({ items: [] }),
+  "browser.settings.get": (input) => ({
+    accountId: input.accountId,
+    visibility: "hidden",
+    desktopControl: { allowed: false },
+  }),
+  "people.list": () => ({ items: [] }),
+  "lists.list": () => ({ items: structuredClone(audienceLists) }),
+  "captureRules.list": () => ({ items: [] }),
+  "sequences.list": () => ({ items: [] }),
+  "sequences.stats": () => ({ sent: 0, replied: 0, positive: 0, optedOut: 0, failed: 0 }),
+  "enrollments.list": () => ({ items: [] }),
+  "email.accounts.list": () => ({ items: [] }),
+  "suppressions.list": () => ({ items: [] }),
+  "inbox.unified": () => ({ items: [], unreadable: [] }),
+  "autonomy.get": (input) => ({
+    ...DEFAULT_AUTONOMY,
+    accountId: input.accountId,
+    updatedAt: 1,
+    updatedBy: "owner",
+  }),
+};
 function fixtureWorkspace(input: SocialWorkspaceQuery): SocialWorkspaceResponse {
   const { cursor: previous, ...query } = input;
   let signature = 2166136261;
@@ -1756,6 +1838,18 @@ Object.assign(window, {
             if (params.action === "programs.preview-schedule")
               return { dates: [Date.now() + 86400000] };
           }
+          const shellRead = shellReads[params.action];
+          if (shellRead) return shellRead(params.input ?? {});
+          const shellWrite = shellWrites[params.action];
+          if (shellWrite) return shellWrite(params.input ?? {});
+          if (params.action === "programs.list") return structuredClone(programRecords);
+          if (params.action === "ai.actions.undo") {
+            const action = aiActions.find((item) => item.id === params.input?.actionId);
+            if (!action || action.status !== "done")
+              throw new Error("Fixture action not undoable.");
+            action.status = "undone";
+            return structuredClone(action);
+          }
           if (params.action === "snapshot") return structuredClone(snapshot);
           if (params.action === "workspace.snapshot")
             return fixtureWorkspace((params.input as SocialWorkspaceQuery) ?? {});
@@ -2117,11 +2211,13 @@ function SocialFixture() {
   );
 }
 function XMediaFixture() {
+  // Re-render once the Turkish catalog finishes loading; the field reads t() at render.
+  useLocale();
   const [media, setMedia] = useState<ContentMedia[]>([]);
   const client = {
     upload: async () => ({ uploadId: `synthetic-image-${crypto.randomUUID()}` }),
-    uploadVideo: async (_file: File, progress: (percent: number) => void) => {
-      progress(100);
+    uploadVideo: async (_file: File, progress?: (percent: number) => void) => {
+      progress?.(100);
       return { uploadId: `synthetic-video-${crypto.randomUUID()}` };
     },
   } as unknown as SocialClient;

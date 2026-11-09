@@ -67,7 +67,7 @@ test("explicitly approves pushing a branch and creating one PR from the same dia
   await dialog.getByRole("button", { name: "Review publication", exact: true }).click();
   await dialog.getByRole("button", { name: "Push branch and create PR", exact: true }).click();
   await expect(dialog).toContainText("Pull request created.");
-  await expect(dialog.getByRole("link", { name: "#42" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "#42", exact: true })).toBeVisible();
 });
 
 test("overlapping target paths block merge", async ({ page }) => {
