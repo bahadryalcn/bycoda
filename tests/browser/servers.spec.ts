@@ -1061,6 +1061,8 @@ for (const theme of ["light", "dark"]) {
       );
     const count = async () =>
       (await requests()).filter((r) => r.command === "ssh_terminal_suggestions_request").length;
+    // Pane tools appear on pointer hover (not terminal focus, and not right after typing).
+    await page.locator(".bycoda-terminal").first().hover();
     await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
     await page.locator("summary").filter({ hasText: "Suggestion settings" }).click();
     const automatic = page.getByRole("switch", { name: "Show suggestions while typing" });
@@ -1072,6 +1074,7 @@ for (const theme of ["light", "dark"]) {
     await page.keyboard.type("doc");
     await page.waitForTimeout(350);
     expect(await count()).toBe(0);
+    await page.locator(".bycoda-terminal").first().hover();
     await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
     await page.locator("summary").filter({ hasText: "Suggestion settings" }).click();
     await automatic.click();
