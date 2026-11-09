@@ -10,6 +10,8 @@ for (const theme of ["light", "dark"] as const) {
       await page.goto(`/tests/browser/question-flow.html?theme=${theme}&variant=choices`);
       const form = page.locator("[data-question-form]");
       await form.getByRole("radio", { name: /Windows and macOS/ }).check();
+      // The note field stays closed until the reader asks for it.
+      await form.getByRole("button", { name: "Add a note", exact: true }).click();
       const note = form.getByRole("textbox", { name: "Additional note (optional)", exact: true });
       const text =
         "Keep existing drafts.\nTürkçe not: seçenek aynı kalsın; klavye desteği korunsun.";
@@ -157,7 +159,7 @@ for (const theme of ["light", "dark"] as const) {
       const card = page.locator("[data-question-answer]");
       await expect(card).toContainText("Answered");
       await expect(card).toContainText("Windows and macOS");
-      await expect(card.locator(".user-message-bubble")).toHaveCount(0);
+      await expect(card.locator(".user-message-bubble")).toHaveCount(1);
       const answerRows = card.locator(".user-message-row");
       for (const row of await answerRows.all()) {
         await row.hover();
@@ -479,9 +481,7 @@ for (const theme of ["light", "dark"] as const) {
       });
       expect(original.original.session.id).toBe("fixture-decision-approval-session");
       await notices.click();
-      await expect(
-        sheet.locator('.approval-toast [role="status"][aria-live="polite"]'),
-      ).toBeVisible();
+      await expect(sheet.locator('.approval-toast [role="status"]')).toBeVisible();
       await expect(sheet.getByRole("alert")).toHaveCount(0);
       await expect(allow).toBeDisabled();
       await decisionCapture(
@@ -547,9 +547,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.getByRole("button", { name: "Complete new callback", exact: true }).click();
       await expect(settlements).toHaveText("2");
       await notices.click();
-      await expect(
-        sheet.locator('.approval-toast [role="status"][aria-live="polite"]'),
-      ).toBeVisible();
+      await expect(sheet.locator('.approval-toast [role="status"]')).toBeVisible();
       await expect(sheet.getByRole("alert")).toHaveCount(0);
       await expect(allow).toBeDisabled();
       await expect(page.getByLabel("Approval callback identities", { exact: true })).toHaveText(

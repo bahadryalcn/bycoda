@@ -1,17 +1,18 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { dropAnnouncer, dropBadge, dropMarks, fileDrag, files, textDrag } from "./external-drop";
 
-/** Hover hints are the shared Tooltip (no native title): a label line plus shortcut key caps. */
+/** Hover hints are the shared Tooltip (no native title): a label line plus shortcut key caps.
+ *  A `null` label means the control already shows it in full, so the hint keeps only the key caps. */
 async function expectHint(
   page: Page,
   target: Locator,
-  label: string | RegExp,
+  label: string | RegExp | null,
   keys: (string | RegExp)[] | RegExp | null,
 ) {
   await target.hover();
   const hint = page.getByRole("tooltip");
   await expect(hint).toBeVisible();
-  await expect(hint).toContainText(label);
+  if (label !== null) await expect(hint).toContainText(label);
   if (keys === null) await expect(hint.locator("kbd")).toHaveCount(0);
   else if (Array.isArray(keys)) await expect(hint.locator("kbd")).toHaveText(keys);
   else await expect(hint).toContainText(keys);
@@ -520,7 +521,7 @@ test("busy composer keeps Send, Queue and Stop visible with shortcut hints", asy
     exact: true,
   });
   const stop = page.getByRole("button", { name: "Stop", exact: true });
-  await expectHint(page, send, "Steer", ["Enter"]);
+  await expectHint(page, send, null, ["Enter"]);
   await expectHint(page, queue, "Queue message", ["Shift", "Tab"]);
   await expectHint(page, stop, "Stop", ["Esc", "Ctrl", "C"]);
   for (const theme of ["light", "dark"]) {
@@ -819,7 +820,7 @@ test("chat busy actions explain steering and queuing without losing the draft", 
   await expect(send).toContainText("Queue message");
   await input.fill("Keep my work");
   await expect(send).toContainText("Steer");
-  await expectHint(page, send, "Steer", ["Enter"]);
+  await expectHint(page, send, null, ["Enter"]);
   await expectHint(
     page,
     page.getByRole("button", { name: "Queue message", exact: true }),
@@ -1161,9 +1162,32 @@ test("chat edits model settings from one panel at narrow and wide sizes", async 
   await expect(main).toHaveAttribute("aria-haspopup", "dialog");
   await expect(page.getByRole("button", { name: "Extras", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
-  const opusAdvisor = /^Claude Code · Claude Opus 5\.5\b/;
-  await choose("Advisor", opusAdvisor, "agents");
-  await choose("Subagents", /^Claude Code · Claude Haiku 4\.5\b/);
+  const advisorField = settingsColumn.getByRole("button", { name: /^Advisor\b/ });
+  // Advisor and Subagents open a picker in the settings column; the provider heading carries
+  // the "Claude Code · " prefix, so options are named by model alone.
+  const delegate = async (name: "Advisor" | "Subagents", label: RegExp) => {
+    await openPanel("agents");
+    const picker = settingsColumn.locator("[data-model-setting-picker]");
+    if (name === "Advisor") await advisorField.click();
+    else {
+      // Pointer hover swaps the help strip's height, so the clipped Add row shifts under the
+      // cursor; keyboard activation does not depend on a stable hit target.
+      const add = setting(name).getByRole("button", { name: "Add", exact: true });
+      await add.focus();
+      await add.press("Enter");
+    }
+    await expect(picker).toBeVisible();
+    const choice = picker
+      .getByRole("radio", { name: label })
+      .or(picker.getByRole("checkbox", { name: label }));
+    await choice.click();
+    if (name === "Subagents")
+      await picker.getByRole("button", { name: "Done", exact: true }).click();
+    await expect(picker).toHaveCount(0);
+  };
+  await delegate("Advisor", /^Claude Opus 5\.5\b/);
+  await expect(advisorField).toContainText("Claude Opus 5.5");
+  await delegate("Subagents", /^Claude Haiku 4\.5\b/);
   await expect(page.getByTestId("choice")).toContainText('"model":"claude:sonnet-5"');
   await expect
     .poll(delegation)
@@ -1183,7 +1207,7 @@ test("chat edits model settings from one panel at narrow and wide sizes", async 
   await page.getByRole("button", { name: "Toggle busy", exact: true }).click();
   await openPanel("agents");
   // Settings can be queued for the next turn while an agent is running.
-  await expect(option("Advisor", opusAdvisor)).toBeEnabled();
+  await expect(advisorField).toBeEnabled();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Toggle busy", exact: true }).click();
   await page.getByRole("button", { name: "Toggle disabled", exact: true }).click();
@@ -1205,7 +1229,11 @@ test("chat edits model settings from one panel at narrow and wide sizes", async 
     await page.keyboard.press("Tab");
     expect(
       await page.evaluate(() =>
-        Boolean(document.activeElement?.closest("[data-model-settings] [data-setting-id]")),
+        // The scrollable chip list is a browser-focusable scroller, not a locked control.
+        Boolean(
+          document.activeElement?.matches("button, input, select, [role=radio], [role=checkbox]") &&
+          document.activeElement.closest("[data-model-settings] [data-setting-id]"),
+        ),
       ),
     ).toBe(false);
   }
@@ -1234,7 +1262,7 @@ test("chat edits model settings from one panel at narrow and wide sizes", async 
     animations: "disabled",
   });
   await agentsTab.click();
-  await expect(setting("Advisor")).toBeVisible();
+  await expect(advisorField).toBeVisible();
   await expect(setting("Subagent model policy")).toHaveCount(0);
   await panel.getByRole("tab", { name: "Settings", exact: true }).click();
   await choose("Reasoning", "High");

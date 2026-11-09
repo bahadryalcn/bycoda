@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /** Save state of a Markdown file sits beside Save in the view shell, not in the footer (plain files use the footer). */
-const saveStatus = (page: Page) => page.locator('[role=status][aria-live="polite"]');
+const saveStatus = (page: Page) => page.locator("[role=status]:not([aria-label])");
 
 test("Ctrl+S distinguishes a saved source from a failed format without claiming failed disk writes were saved", async ({
   page,

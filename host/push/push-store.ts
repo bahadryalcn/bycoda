@@ -64,7 +64,8 @@ export class PushDeviceStore {
 
   constructor(private readonly db: StoreDatabase) {}
 
-  private init(): Promise<void> {
+  /** Creates the table; the server runs it at startup so a later read never writes. */
+  prepare(): Promise<void> {
     this.ready ??= this.db.exec(
       `CREATE TABLE IF NOT EXISTS push_devices (
         device_hash TEXT PRIMARY KEY,
@@ -77,7 +78,7 @@ export class PushDeviceStore {
   }
 
   async register(deviceHash: string, registration: PushRegistration): Promise<void> {
-    await this.init();
+    await this.prepare();
     const { pushToken, ...settings } = registration;
     // A phone paired again keeps its push token; the old credential's row would double-send.
     await this.db
@@ -93,7 +94,7 @@ export class PushDeviceStore {
   }
 
   async unregister(deviceHash: string): Promise<boolean> {
-    await this.init();
+    await this.prepare();
     const result = await this.db
       .prepare("DELETE FROM push_devices WHERE device_hash=?")
       .run(deviceHash);
@@ -102,12 +103,12 @@ export class PushDeviceStore {
 
   /** Expo reported the app uninstalled or the token rotated. */
   async forgetToken(pushToken: string): Promise<void> {
-    await this.init();
+    await this.prepare();
     await this.db.prepare("DELETE FROM push_devices WHERE push_token=?").run(pushToken);
   }
 
   async recipients(deviceHash?: string): Promise<PushRecipient[]> {
-    await this.init();
+    await this.prepare();
     const rows = await this.db
       .prepare(
         `SELECT p.device_hash, p.push_token, p.settings FROM push_devices p

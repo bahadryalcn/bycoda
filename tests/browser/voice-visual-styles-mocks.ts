@@ -426,6 +426,7 @@ export async function assistantRequest(input: any, expectedEnvironmentId?: strin
     job.status = "cancelled";
     return { job };
   }
+  if (input.op === "profile.get") return { profile: fixtureAssistant.profile };
   if (input.op === "memory.search") return { entries: fixtureVoice.memories };
   if (input.op === "memory.save") {
     const memory = { ...input, id: "owner-rule", version: 1, createdAt: 1, updatedAt: 1 };
@@ -433,6 +434,11 @@ export async function assistantRequest(input: any, expectedEnvironmentId?: strin
     if (fixtureVoice.ruleAckLost) throw new Error("Synthetic lost acknowledgement");
     return { memory };
   }
-  if (input.op === "voice.language.record" || input.op === "pauseAll") return { ok: true };
-  throw new Error("This fixture does not mutate assistant state.");
+  if (
+    input.op === "voice.language.record" ||
+    input.op === "voice.runtime.register" ||
+    input.op === "pauseAll"
+  )
+    return { ok: true };
+  throw new Error(`This fixture does not mutate assistant state (${String(input.op)}).`);
 }

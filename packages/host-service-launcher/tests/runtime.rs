@@ -14,6 +14,9 @@ impl Fixture {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(&path).unwrap();
+        // macOS temp dirs sit behind a /var -> /private/var symlink and the child reports the real path.
+        #[cfg(unix)]
+        let path = fs::canonicalize(&path).unwrap();
         fs::write(path.join("host.cjs"), script).unwrap();
         Self(path)
     }

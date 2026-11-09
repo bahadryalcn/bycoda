@@ -38,3 +38,33 @@ export function syncTranscriptViewport(el: HTMLElement | null, refreshPadding = 
   if (el.style.getPropertyValue("--transcript-viewport") === next) return;
   el.style.setProperty("--transcript-viewport", next);
 }
+
+/**
+ * A scroll event that moved up while following the end, with no reader input
+ * behind it, is a replayed offset rather than the reader leaving. WebKit replays
+ * an offset the transcript passed through earlier: one it followed, or one a
+ * downward wheel animation crossed on its way to the end (those were never
+ * followed, so only the recent downward gesture identifies them).
+ */
+export function isStaleFollowReplay(input: {
+  following: boolean;
+  scrolledUp: boolean;
+  held: boolean;
+  now: number;
+  /** Until when a key, wheel up or released gesture still counts as the reader's. */
+  inputUntil: number;
+  /** Until when a downward wheel gesture is still settling toward the end. */
+  downUntil: number;
+  top: number;
+  followedTops: readonly { top: number; at: number }[];
+}): boolean {
+  if (!input.following || !input.scrolledUp || input.held || input.now <= input.inputUntil)
+    return false;
+  if (input.now < input.downUntil) return true;
+  const latest = input.followedTops[input.followedTops.length - 1];
+  return (
+    !!latest &&
+    input.now - latest.at < READER_INPUT_MS &&
+    input.followedTops.some((entry) => entry.top <= input.top + 1)
+  );
+}

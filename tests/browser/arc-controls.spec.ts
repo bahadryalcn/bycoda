@@ -2566,12 +2566,13 @@ test.describe("control reference state matrix", () => {
     }
   });
 
-  test("keyboard Tab visits controls in order with exactly one focus ring owner per stop", async ({
-    page,
-  }) => {
-    // Two themes, one evaluate and one Tab per stop: WebKit needs about 40 s for the full walk.
-    test.setTimeout(120_000);
-    for (const theme of ["dark", "light"] as const) {
+  // One walk per theme, each with its own deadline: one evaluate and one Tab per stop make a
+  // single WebKit walk take 40-80 s, so both walks in one test exceeded 120 s on a slow runner.
+  for (const theme of ["dark", "light"] as const) {
+    test(`keyboard Tab visits controls in order with exactly one focus ring owner per stop (${theme})`, async ({
+      page,
+    }) => {
+      test.setTimeout(120_000);
       await openReference(page, theme);
       await page.locator("[data-specimen-family] button:not([disabled])").first().focus();
       const doubled: string[] = [];
@@ -2615,8 +2616,8 @@ test.describe("control reference state matrix", () => {
       }
       expect(stops, `${theme} tab stops`).toBeGreaterThan(30);
       expect(doubled, `${theme} stops drawing more than one focus ring`).toEqual([]);
-    }
-  });
+    });
+  }
 
   test("keyboard operates the selection families", async ({ page }) => {
     await openReference(page);

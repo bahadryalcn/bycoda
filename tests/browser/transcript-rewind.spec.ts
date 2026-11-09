@@ -22,6 +22,17 @@ for (const width of [1280, 800])
         await page.mouse.wheel(0, -1200);
         await expect(jump).toBeVisible();
         await expect.poll(distance).toBeGreaterThan(100);
+        // WebKit keeps animating a wheel scroll after its first event. Press the button only
+        // once the reader's scroll has stopped, so a late wheel frame cannot undo the jump.
+        let previous = -1;
+        await expect
+          .poll(async () => {
+            const now = await distance();
+            const settled = now === previous;
+            previous = now;
+            return settled;
+          })
+          .toBe(true);
       };
       await scrollUp();
       await expect(jump).toHaveCSS("pointer-events", "auto");

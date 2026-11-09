@@ -39,7 +39,17 @@ for (const mode of ["file", "inline", "split"]) {
     await page.addInitScript(() => {
       Object.defineProperty(window, "__TAURI_INTERNALS__", {
         value: {
-          invoke: async () => null,
+          // Formatting runs in the project's formatter on the owning machine: stand in for it.
+          invoke: async (command: string, args?: { source?: string }) =>
+            command === "format_text_file" && typeof args?.source === "string"
+              ? {
+                  formatted: args.source.replace(
+                    "const value={x:1,y:2}",
+                    "const value = { x: 1, y: 2 };",
+                  ),
+                  cursorOffset: 0,
+                }
+              : null,
           transformCallback: () => 0,
         },
         configurable: true,

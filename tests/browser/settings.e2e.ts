@@ -1,4 +1,16 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+
+/** Appearance is tabbed; every tab stays mounted but only the selected one is visible. */
+async function openAppearanceTab(page: Page, name: string) {
+  await page.getByRole("tab", { name, exact: true }).click();
+}
+
+/** Background layers are cards whose editors stay hidden until the card is opened. */
+async function openBackgroundLayer(page: Page, description: RegExp) {
+  await openAppearanceTab(page, "Background");
+  const disclosure = page.getByRole("button", { name: description });
+  if ((await disclosure.getAttribute("aria-expanded")) !== "true") await disclosure.click();
+}
 
 for (const theme of ["dark", "light"])
   for (const width of [1280, 800]) {
@@ -13,31 +25,37 @@ for (const theme of ["dark", "light"])
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(url);
       const group = page.locator('[data-setting-id="workspace-background"]');
-      await expect(group).toBeAttached();
-      await group.scrollIntoViewIfNeeded();
+      // The Color layer's editor stays closed until its row is opened.
+      const openColorLayer = async () => {
+        await openBackgroundLayer(page, /Gradient or solid color behind the workspace/);
+        await expect(group).toBeVisible();
+      };
+      await openColorLayer();
       const stored = () =>
         page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? "null"), key);
       const previousGlass = await page.evaluate(() =>
         ["bycoda.bodyGlass", "bycoda.windowGlass"].map((key) => localStorage.getItem(key)),
       );
-      await group.getByRole("radio", { name: "Ocean", exact: true }).click();
+      await group.getByRole("button", { name: "Ocean", exact: true }).click();
       await expect.poll(stored).toMatchObject({ enabled: true });
-      await group.getByRole("button", { name: "Customize background", exact: true }).click();
-      await group.getByText("Soft blend", { exact: true }).click();
-      await group.getByRole("slider", { name: "Gradient angle", exact: true }).press("ArrowRight");
+      const type = group.getByRole("radiogroup", { name: "Gradient type", exact: true });
+      await type.getByRole("radio", { name: "Linear", exact: true }).click();
+      const dial = group.getByRole("slider", { name: "Gradient angle", exact: true });
+      const initial = (await stored()).angle;
+      await dial.press("ArrowRight");
+      // Edits are applied on the next animation frame.
+      await expect.poll(async () => (await stored()).angle).not.toBe(initial);
       const angle = (await stored()).angle;
-      await group.getByText("Radial", { exact: true }).click();
-      await expect(
-        group.getByRole("slider", { name: "Gradient angle", exact: true }),
-      ).toHaveAttribute("aria-disabled", "true");
+      await type.getByRole("radio", { name: "Radial", exact: true }).click();
+      await expect(dial).toHaveAttribute("aria-disabled", "true");
       expect((await stored()).angle).toBe(angle);
-      await group.getByText("Soft blend", { exact: true }).click();
+      await type.getByRole("radio", { name: "Linear", exact: true }).click();
       await group.getByRole("button", { name: "Color 1", exact: true }).click();
       await page.getByRole("textbox", { name: "Hex color", exact: true }).fill("#2244aa");
       await expect.poll(async () => (await stored()).colors[0]).toBe("#2244aa");
       await page.keyboard.press("Escape");
       const design = await stored();
-      const toggle = group.getByRole("switch", { name: "Show workspace background", exact: true });
+      const toggle = page.getByRole("switch", { name: "Color", exact: true });
       await toggle.click();
       await expect(page.locator("html")).not.toHaveClass(/has-workspace-background/);
       expect((await stored()).colors).toEqual(design.colors);
@@ -54,10 +72,11 @@ for (const theme of ["dark", "light"])
       try {
         await sibling.goto(url);
         await expect(sibling.locator("html")).toHaveClass(/has-workspace-background/);
-        await group.getByRole("button", { name: "Customize background", exact: true }).click();
-        await group
-          .getByRole("slider", { name: "Gradient angle", exact: true })
-          .press("ArrowRight");
+        await openColorLayer();
+        const before = (await stored()).angle;
+        await dial.press("ArrowRight");
+        // Edits are applied on the next animation frame.
+        await expect.poll(async () => (await stored()).angle).not.toBe(before);
         const changed = await stored();
         await expect
           .poll(() =>
@@ -102,16 +121,19 @@ for (const theme of ["light", "dark"]) {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/settings.html?section=appearance&theme=${theme}&lang=tr`);
+      await openAppearanceTab(page, "Tipografi");
       // Terminal text follows the code font until the owner picks a separate terminal font.
-      await page.getByRole("radio", { name: "Ayrı seç", exact: true }).click();
-      // The editable combobox commits a suggested or custom font on Enter/blur.
-      const font = page.getByRole("combobox", { name: "Terminal fontu", exact: true });
-      await font.fill("JetBrains Mono");
-      await font.press("Enter");
-      const size = page.locator('[data-setting-id="terminal-font-size"] button');
-      await size.click();
-      await page.getByRole("option", { name: /^14/ }).click();
-      await expect(size).toHaveAccessibleName(/14/);
+      const font = page
+        .locator('[data-setting-id="terminal-font"]')
+        .getByRole("button", { name: /^Terminal yazı tipi:/ });
+      await expect(font).toContainText("Kod fontuyla aynı");
+      await font.click();
+      await page.getByRole("combobox", { name: /Yazı tiplerinde ara/ }).fill("JetBrains Mono");
+      await page.getByRole("option", { name: /^JetBrains Mono/ }).click();
+      const size = page.getByRole("spinbutton", { name: "Terminal yazı boyutu", exact: true });
+      await size.fill("14");
+      await size.blur();
+      await expect(size).toHaveValue("14");
       await page
         .locator('[data-setting-id="terminal-font-weight"]')
         .getByRole("radio", { name: "Kalın", exact: true })
@@ -133,8 +155,9 @@ for (const theme of ["light", "dark"]) {
         codeSize: 13,
       });
       await page.reload();
-      await expect(font).toHaveValue("JetBrains Mono");
-      await expect(size).toHaveAccessibleName(/14/);
+      await openAppearanceTab(page, "Tipografi");
+      await expect(font).toContainText("JetBrains Mono");
+      await expect(size).toHaveValue("14");
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
       ).toBe(true);
@@ -149,6 +172,7 @@ for (const theme of ["dark", "light"]) {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/tests/browser/settings.html?section=appearance&theme=${theme}&lang=tr`);
     const row = page.locator('[data-setting-id="code-theme"]');
+    await openAppearanceTab(page, "Tipografi");
     await row.scrollIntoViewIfNeeded();
     await row.getByRole("radio", { name: "Dracula", exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("data-code-theme", "dracula");
@@ -158,9 +182,10 @@ for (const theme of ["dark", "light"]) {
       theme === "dark" ? "rgb(255, 121, 198)" : "rgb(207, 34, 46)",
     );
     await page.reload();
-    await expect(trigger).toContainText("Dracula");
     await expect(page.locator("html")).toHaveAttribute("data-code-theme", "dracula");
-    await trigger.scrollIntoViewIfNeeded();
+    await openAppearanceTab(page, "Tipografi");
+    await expect(row.getByRole("radio", { name: "Dracula", exact: true })).toBeChecked();
+    await row.scrollIntoViewIfNeeded();
     await page.setViewportSize({ width: 390, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
@@ -188,7 +213,7 @@ for (const theme of ["light", "dark"])
       const screen = general.getByRole("switch", { name: "Keep the screen on", exact: true });
       const duration = general
         .locator('[data-setting-id="keep-awake-duration"]')
-        .getByRole("combobox");
+        .getByRole("button", { name: /^Stay awake after an agent ends:/ });
       await expect(screen).toBeDisabled();
       await expect(duration).toBeDisabled();
       await awake.focus();
@@ -250,12 +275,13 @@ test("appearance topics stay visible and support search into nested controls", a
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/settings.html?section=appearance&theme=dark&lang=en");
-  const topics = page.locator(".appearance-settings > .appearance-section");
-  await expect(topics).toHaveCount(6);
+  const topics = page.getByRole("tablist", { name: "Appearance", exact: true }).getByRole("tab");
+  await expect(topics).toHaveCount(5);
   await page.screenshot({ path: testInfo.outputPath("appearance-overview-dark.png") });
   await page.getByRole("button", { name: "About this page", exact: true }).click();
   await expect(page.getByText("Changes save automatically", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
+  await openAppearanceTab(page, "Typography");
   await expect(page.locator('[data-setting-id="code-font-size"]')).toBeVisible();
   await expect(
     page.locator(".appearance-settings details, .appearance-settings summary"),
@@ -286,7 +312,9 @@ test("appearance topics stay visible and support search into nested controls", a
   }
   await page.screenshot({ path: testInfo.outputPath("appearance-expanded.png") });
   await page.goto("/tests/browser/settings.html?section=appearance&theme=light&lang=tr");
-  await expect(page.locator(".appearance-settings > .appearance-section")).toHaveCount(6);
+  await expect(
+    page.getByRole("tablist", { name: "Görünüm", exact: true }).getByRole("tab"),
+  ).toHaveCount(5);
   await page.screenshot({ path: testInfo.outputPath("appearance-overview-light-tr.png") });
 });
 
@@ -302,20 +330,22 @@ test("control density persists shared control targets and resets without changin
   });
   await page.setViewportSize({ width: 390, height: 900 });
   await page.goto("/tests/browser/settings.html?section=appearance&theme=light&lang=en");
+  await openAppearanceTab(page, "Interface");
   const row = page.locator('[data-setting-id="control-density"]');
-  const trigger = row.getByRole("button", { name: /^Control density:/ });
-  await expect(trigger).toHaveAccessibleName("Control density: Compact");
-  await trigger.click();
-  await page.getByRole("option", { name: "Touch", exact: true }).click();
+  const density = row.getByRole("radiogroup", { name: "Control density", exact: true });
+  const radio = (name: string) => density.getByRole("radio", { name, exact: true });
+  await expect(radio("Compact")).toBeChecked();
+  await radio("Touch").click();
   await expect(page.locator("html")).toHaveAttribute("data-control-density", "touch");
-  expect((await trigger.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await radio("Touch").boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await page.reload();
-  await expect(trigger).toHaveAccessibleName("Control density: Touch");
+  await openAppearanceTab(page, "Interface");
+  await expect(radio("Touch")).toBeChecked();
   await expect(page.locator("html")).toHaveAttribute("data-control-density", "touch");
   await row.getByRole("button", { name: "Restore default", exact: true }).click();
-  await expect(trigger).toHaveAccessibleName("Control density: Compact");
+  await expect(radio("Compact")).toBeChecked();
   await expect(page.locator("html")).toHaveAttribute("data-control-density", "compact");
-  expect((await trigger.boundingBox())!.height).toBeLessThan(44);
+  expect((await radio("Compact").boundingBox())!.height).toBeLessThan(44);
   expect(
     await page
       .locator("html")
@@ -332,7 +362,11 @@ test("elastic appearance adjustments retain bounds, persistence and light-mode g
     Object.defineProperty(navigator, "platform", { get: () => "MacIntel" });
   });
   await page.goto("/tests/browser/settings.html?section=appearance&theme=dark&lang=en");
-  await page.getByRole("button", { name: /^Olive/ }).click();
+  await page.getByRole("radio", { name: /^Olive/ }).click();
+  await openBackgroundLayer(page, /Transparency of the sidebar and main pane/);
+  // Glass is off by default off Linux; the sliders only act while it is on.
+  const glass = page.getByRole("switch", { name: "Glass", exact: true });
+  if (!(await glass.isChecked())) await glass.click();
   await expect(page.locator("details.settings-advanced")).toHaveCount(0);
   const opacity = page
     .locator('[data-setting-id="sidebar-opacity"]')
@@ -349,6 +383,7 @@ test("elastic appearance adjustments retain bounds, persistence and light-mode g
     path: "temp/verification/2026-10-16-ui-system/W5a-SETTINGS-elastic-custom-dark.png",
   });
   await page.reload();
+  await openBackgroundLayer(page, /Transparency of the sidebar and main pane/);
   await expect(page.locator("details.settings-advanced")).toHaveCount(0);
   await expect(opacity).toHaveAttribute("aria-valuenow", "99");
   const blur = page
@@ -360,6 +395,7 @@ test("elastic appearance adjustments retain bounds, persistence and light-mode g
     (await blur.getAttribute("aria-valuemin")) ?? "",
   );
   await page.goto("/tests/browser/settings.html?section=appearance&theme=light&lang=en");
+  await openBackgroundLayer(page, /Transparency of the sidebar and main pane/);
   await expect(page.locator("details.settings-advanced")).toHaveCount(0);
   await expect(opacity).toHaveAttribute("aria-disabled", "true");
   await expect(blur).toHaveAttribute("aria-disabled", "true");
@@ -532,23 +568,20 @@ test("shared appearance controls preserve palette persistence and provide color 
         studio.getByRole("radiogroup", { name: "Color scheme", exact: true }).getByRole("radio"),
       ).toHaveCount(3);
       await expect(studio.locator("details, summary")).toHaveCount(0);
-      const olive = studio.getByRole("button", { name: /^Olive/ });
-      const palettes = studio.getByRole("group", { name: "Theme palettes", exact: true });
-      await expect(palettes.getByRole("button")).toHaveCount(6);
+      const olive = studio.getByRole("radio", { name: /^Olive/ });
+      const palettes = studio.getByRole("radiogroup", { name: "Theme palettes", exact: true });
+      await expect(palettes.getByRole("radio")).toHaveCount(6);
       for (const name of ["bycoda", "Olive", "Tide", "Kiln", "Dusk", "Ink"]) {
-        const palette = palettes.getByRole("button", { name: new RegExp(`^${name}`) });
+        const palette = palettes.getByRole("radio", { name: new RegExp(`^${name}`) });
         await palette.scrollIntoViewIfNeeded();
         await expect(palette).toBeInViewport();
       }
       await olive.click();
-      await expect(olive).toHaveAttribute("aria-pressed", "true");
+      await expect(olive).toBeChecked();
       await page.reload();
-      await expect(olive).toHaveAttribute("aria-pressed", "true");
+      await expect(olive).toBeChecked();
       await studio.getByRole("button", { name: "Reset colors", exact: true }).click();
-      await expect(studio.getByRole("button", { name: /^bycoda/ })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
+      await expect(studio.getByRole("radio", { name: /^bycoda/ })).toBeChecked();
       await studio
         .getByRole("radiogroup", { name: "Color scheme", exact: true })
         .getByRole("radio", { name: theme === "light" ? "Light" : "Dark", exact: true })
@@ -556,12 +589,14 @@ test("shared appearance controls preserve palette persistence and provide color 
       await expect(page.locator("html")).toHaveClass(
         theme === "light" ? /theme-light/ : /^(?!.*theme-light)/,
       );
-      await studio.getByRole("heading", { name: "Color scheme", exact: true }).evaluate((node) => {
-        const scroller = node.closest<HTMLElement>("[data-settings-scroller]")!;
-        scroller.scrollTop +=
-          node.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-        window.scrollTo(0, 0);
-      });
+      await studio
+        .getByRole("radiogroup", { name: "Color scheme", exact: true })
+        .evaluate((node) => {
+          const scroller = node.closest<HTMLElement>("[data-settings-scroller]")!;
+          scroller.scrollTop +=
+            node.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+          window.scrollTo(0, 0);
+        });
       await page.screenshot({
         path: testInfo.outputPath(`appearance-${width}-${theme}.png`),
       });
@@ -649,9 +684,10 @@ test("explicit template validation, save status and persistence preserve the las
     .getByRole("textbox", { name: "Template text", exact: true })
     .fill("Find bugs and explain their impact.");
   await page.getByRole("button", { name: "Save templates", exact: true }).click();
-  await expect(page.locator('[data-setting-id="prompt-templates"] [role="status"]')).toContainText(
-    "Saved",
-  );
+  // The result count is its own live region (filter announcements); the save state is separate.
+  await expect(
+    page.locator('[data-setting-id="prompt-templates"] .template-manager-state[role="status"]'),
+  ).toContainText("Saved");
   await page.getByRole("textbox", { name: "Template text", exact: true }).fill("Unsaved revision");
   await page.getByRole("button", { name: "Back to workspace" }).click();
   await page.getByRole("button", { name: "Reopen settings" }).click();

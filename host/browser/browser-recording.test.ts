@@ -101,9 +101,13 @@ async function harness(overrides: HarnessOptions = {}) {
   return { root, clock, state, browser, service, ffmpegCalls, setFfmpeg };
 }
 
-/** Lets the fake-clock loop run until the condition holds (no real timers involved). */
+/**
+ * Lets the fake-clock loop run until the condition holds. Frames are written to the real disk, so the
+ * bound is wall-clock time: a fixed turn count finished before a slow runner's writes did.
+ */
 async function waitFor(condition: () => boolean) {
-  for (let turn = 0; turn < 10_000 && !condition(); turn += 1)
+  const deadline = Date.now() + 30_000;
+  while (!condition() && Date.now() < deadline)
     await new Promise((resolve) => setImmediate(resolve));
   expect(condition()).toBe(true);
 }

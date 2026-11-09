@@ -108,7 +108,10 @@ export function BackgroundSection({ appearance }: { appearance: AppearanceSettin
               "main-pane-opacity",
               "blur",
             ],
-            anchorIds: ["window-glass", ...(appearance.bodyGlass ? [] : ["main-pane-opacity"])],
+            anchorIds: [
+              ...(IS_LINUX ? [] : ["window-glass"]),
+              ...(appearance.bodyGlass ? [] : ["main-pane-opacity"]),
+            ],
             content: <GlassControl appearance={appearance} light={light} covered={covered} />,
           },
           {

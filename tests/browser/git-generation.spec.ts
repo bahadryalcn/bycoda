@@ -63,11 +63,39 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
   await modelButton.click();
   await expect(panel).toBeVisible();
   await expect(panel).toHaveAttribute("data-model-panel");
-  await choose("Advisor", /^Claude Code · Claude Opus 5\.5\b/);
-  await expect(setting("Advisor")).toBeVisible();
-  await expect(setting("Advisor")).toHaveCSS("color-scheme", "dark");
-  await choose("Subagents", /^Claude Code · Claude Haiku 4\.5\b/);
-  await choose("Subagent model policy", "Apply to all subagents");
+  const advisorField = panel.locator("[data-model-settings]").getByRole("button", {
+    name: /^Advisor\b/,
+  });
+  // Advisor and Subagents open a picker in the settings column; options are named by model
+  // alone because the provider heading carries the "Claude Code · " prefix.
+  const delegate = async (name: "Advisor" | "Subagents", option: RegExp) => {
+    if (!(await panel.isVisible())) await modelButton.click();
+    const agents = panel.getByRole("tab", { name: /^Agents/ });
+    if ((await agents.count()) > 0 && (await agents.getAttribute("aria-selected")) !== "true")
+      await agents.click();
+    const picker = panel.locator("[data-model-setting-picker]");
+    if (name === "Advisor") await advisorField.click();
+    else {
+      // Pointer hover swaps the help strip's height, so the clipped Add row shifts under the
+      // cursor; keyboard activation does not depend on a stable hit target.
+      const add = setting(name).getByRole("button", { name: "Add", exact: true });
+      await add.focus();
+      await add.press("Enter");
+    }
+    await expect(picker).toBeVisible();
+    await picker
+      .getByRole("radio", { name: option })
+      .or(picker.getByRole("checkbox", { name: option }))
+      .click();
+    if (name === "Subagents")
+      await picker.getByRole("button", { name: "Done", exact: true }).click();
+    await expect(picker).toHaveCount(0);
+  };
+  await delegate("Advisor", /^Claude Opus 5\.5\b/);
+  await expect(advisorField).toContainText("Claude Opus 5.5");
+  await expect(panel.locator("[data-model-settings]")).toHaveCSS("color-scheme", "dark");
+  await delegate("Subagents", /^Claude Haiku 4\.5\b/);
+  await choose("Subagent model policy", "Apply to all");
   await expect.poll(saved).toEqual({
     model: "claude:haiku-4.5",
     advisor: "claude:opus-5-5",

@@ -244,7 +244,7 @@
 }
 .onboarding-crew-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
 /* Tiles are the shared RadioTiles item Buttons; the descendant selector outranks Button's own box. */
@@ -561,6 +561,11 @@ div.onboarding-project {
 }
 
 /* Grids follow the content region's width, not the viewport, so the dialog never jumps. */
+@container onboarding-scroll (max-width: 720px) {
+  .onboarding-crew-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
 @container onboarding-scroll (max-width: 620px) {
   .onboarding-crew-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

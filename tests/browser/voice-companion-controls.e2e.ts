@@ -47,16 +47,21 @@ for (const theme of ["light", "dark"])
         .getByRole("menuitemradio", { name: "I'll finish when ready", exact: true })
         .click();
       await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
-      const finish = panel.getByRole("button", { name: "Finish turn", exact: true });
-      await expect(finish).toHaveText("");
+      // Finish turn and the speaker switch live in the More menu of the compact companion.
+      const more = panel.getByRole("button", { name: "More voice options", exact: true });
+      const finish = page.getByRole("menuitem", { name: "Finish turn", exact: true });
       await expect(
         panel.getByRole("button", { name: "Disconnect voice", exact: true }),
       ).toBeVisible();
       await capture("compact-hearing");
-      await panel.getByRole("button", { name: "Mute speaker", exact: true }).click();
+      await more.click();
+      await expect(finish).toBeEnabled();
+      await page.getByRole("menuitemcheckbox", { name: "Mute speaker", exact: true }).click();
       expect(await page.evaluate(() => (window as any).fixtureVoice.speakerMuted)).toBe(true);
       await panel.getByRole("button", { name: "Pause mic", exact: true }).click();
+      await more.click();
       await expect(finish).toBeDisabled();
+      await page.keyboard.press("Escape");
       await capture("compact-muted");
       expect(await page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(1);
       expect(await panel.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
@@ -115,7 +120,10 @@ for (const theme of ["light", "dark"])
           ],
         }),
       );
-      await expect(frame.getByText("Waiting for result", { exact: true })).toBeVisible();
+      // Running voice actions collapse into one trigger that opens the activity list.
+      await frame.getByRole("button", { name: /Taking action/ }).click();
+      await expect(frame.getByRole("dialog", { name: "Voice actions" })).toBeVisible();
+      await expect(frame.getByText("Running", { exact: true })).toBeVisible();
       await proof.screenshot({ path: join(output, `${theme}-${width}-floating-activity.png`) });
       await frame.getByRole("button", { name: "Stop waiting", exact: true }).click();
       expect(
@@ -152,17 +160,21 @@ for (const theme of ["light", "dark"])
       expect(await page.evaluate(() => (window as any).fixtureVoice.pushToTalkEnds)).toBe(1);
       await expect(panel.getByRole("button", { name: "Resume", exact: true })).toBeVisible();
       await page.evaluate(() => (window as any).fixtureVoice.speech("List projects"));
-      await expect(panel.getByText("Waiting for result", { exact: true })).toBeVisible();
+      // Running voice actions collapse into one trigger that opens the activity list.
+      await panel.getByRole("button", { name: /Taking action/ }).click();
+      const actions = page.getByRole("dialog", { name: "Voice actions" });
+      await expect(actions.getByText("Running", { exact: true })).toBeVisible();
       await capture("activity-running");
-      await panel.getByRole("button", { name: "Stop waiting", exact: true }).click();
+      await actions.getByRole("button", { name: "Stop waiting", exact: true }).click();
       await expect(
-        panel.getByText("Result unknown. Check before retrying.", { exact: true }),
+        page.getByText("Result unknown. Check before retrying.", { exact: true }),
       ).toBeVisible();
       await capture("activity-uncertain");
       await page.evaluate(() =>
         (window as any).fixtureVoice.finishTool({ status: "completed", projects: [] }),
       );
-      await panel.getByText("Voice actions", { exact: true }).click();
-      await expect(panel.getByText(/Result received/)).toBeVisible();
+      if (!(await actions.isVisible()))
+        await panel.getByRole("button", { name: /Voice actions/ }).click();
+      await expect(actions.getByText("Done", { exact: true })).toBeVisible();
       await capture("activity-returned");
     });

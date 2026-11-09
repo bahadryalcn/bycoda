@@ -5,6 +5,7 @@ import {
   isNearBottom,
   NEAR_BOTTOM_PX,
   pinToBottom,
+  isStaleFollowReplay,
   READER_INPUT_MS,
   scrollClampedToBottom,
   syncTranscriptViewport,
@@ -68,7 +69,7 @@ export function useTranscriptFollow({
   const wheelHold = useRef(0);
   // Reader input that can scroll the transcript: a held pointer or touch
   // (scrollbar drag, swipe), or a recent key, wheel or released gesture.
-  const readerInput = useRef({ held: false, until: 0 });
+  const readerInput = useRef({ held: false, until: 0, downUntil: 0 });
   // Recent offsets the transcript was pinned to while following the end.
   const followedTops = useRef<{ top: number; at: number }[]>([]);
   const scrollGeometry = useRef<{
@@ -183,18 +184,19 @@ export function useTranscriptFollow({
         (previous.height !== el.scrollHeight || previous.viewport !== el.clientHeight);
       const now = performance.now();
       followedTops.current = followedTops.current.filter((entry) => now - entry.at < 30_000);
-      const latestFollow = followedTops.current[followedTops.current.length - 1];
       // WebKit can replay an older offset from the range the transcript just
       // followed through, after newer pins and with no reader input behind it.
       // That is not the reader leaving; a jump further up still is.
-      const staleFollowOffset =
-        stickToBottom.current &&
-        scrolledUp &&
-        !readerInput.current.held &&
-        now > readerInput.current.until &&
-        !!latestFollow &&
-        now - latestFollow.at < READER_INPUT_MS &&
-        followedTops.current.some((entry) => entry.top <= el.scrollTop + 1);
+      const staleFollowOffset = isStaleFollowReplay({
+        following: stickToBottom.current,
+        scrolledUp,
+        held: readerInput.current.held,
+        now,
+        inputUntil: readerInput.current.until,
+        downUntil: readerInput.current.downUntil,
+        top: el.scrollTop,
+        followedTops: followedTops.current,
+      });
       if (staleFollowOffset) {
         pinToBottom(el);
         distanceFromBottom.current = 0;
@@ -279,6 +281,7 @@ export function useTranscriptFollow({
     const input = readerInput.current;
     const recentInput = () => {
       input.until = performance.now() + READER_INPUT_MS;
+      input.downUntil = 0;
     };
     const holdInput = () => {
       input.held = true;
@@ -301,6 +304,7 @@ export function useTranscriptFollow({
         // While away, following stays paused until a scroll actually reaches
         // the end. Once there, an old programmatic offset is not a new retreat.
         input.until = 0;
+        input.downUntil = performance.now() + READER_INPUT_MS;
         // Already at the very end, there is no scroll event to say the reader
         // came back (a compact composer can leave the position clamped there).
         if (

@@ -51,7 +51,7 @@ export function ModelSettingHelp({ setting }: { setting: ModelSetting | null }) 
       className="flex shrink-0 items-start gap-2 border-t border-(--ui-frosted-divider) px-3 py-1.5 ui-caption-text"
     >
       <CircleHelp className="icon-xs mt-0.5 shrink-0" aria-hidden />
-      <p className="line-clamp-3 min-w-0 leading-4">
+      <p className="line-clamp-3 min-h-12 min-w-0 leading-4">
         {setting && help ? (
           <>
             <span className="font-medium text-(--ui-tone-neutral-fg)">
