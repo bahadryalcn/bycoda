@@ -1030,6 +1030,8 @@ for (const theme of ["light", "dark"]) {
   test(`Automatic remote suggestions insert one line without running it ${theme} 390px`, async ({
     page,
   }) => {
+    // The terminal may take up to 30 s to attach on a cold WebKit runner; the steps need room after it.
+    test.setTimeout(60_000);
     await page.setViewportSize({ width: 390, height: 780 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/tests/browser/servers.html?autocompleteFixture&theme=${theme}`);
