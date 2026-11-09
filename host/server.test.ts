@@ -639,16 +639,11 @@ it("requires a dedicated owner confirmation and derives project identity for Jir
       (await s.call("inbox.provider.request", { ...input, confirm: "CHANGE_JIRA_BOARD" })).value
         .result,
     ).toEqual({ id: "job", state: "queued" });
+    const transition = { action: "jira-board-transition", key: "ENG-7", transitionId: "9" };
     expect(request).toHaveBeenCalledWith(
       expect.stringMatching(/^[a-f0-9]{64}$/),
       "jira-rpc",
-      {
-        action: "jira-board-transition",
-        cwd: s.project.cwd,
-        snapshotId: input.snapshotId,
-        key: "ENG-7",
-        transitionId: "9",
-      },
+      { ...transition, cwd: s.project.cwd, snapshotId: input.snapshotId },
       "Laptop",
     );
     expect(
