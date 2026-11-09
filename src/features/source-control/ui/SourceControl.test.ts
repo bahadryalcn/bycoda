@@ -129,7 +129,7 @@ it("opens the session checkout, lists others in the overview, and scopes diffs a
   expect(container.querySelectorAll("section")).toHaveLength(1);
   expect(container.querySelector("section")?.dataset.cwd).toBe("/trees/task");
   const options = [...container.querySelectorAll("option")].map((option) => option.textContent);
-  expect(options).toEqual(["All checkouts", "main · repo", "mc/task · task · This session"]);
+  expect(options).toEqual(["All checkouts", "repo", "task · This session"]);
   const buttons = container.querySelector("section")!.querySelectorAll("button");
   await act(async () => buttons[1].click());
   expect(opened).toHaveBeenLastCalledWith({

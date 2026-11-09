@@ -44,14 +44,6 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import {
-  GitHistoryGraph,
-  GraphResizeSash,
-  GRAPH_PANEL_DEFAULT,
-  GRAPH_PANEL_MIN,
-  loadGraphPanelHeight,
-  saveGraphPanelHeight,
-} from "./GitHistoryGraph";
 // Loaded on demand: it brings the diff view and CodeMirror with it.
 const GitConflictCompare = lazy(() =>
   import("./GitConflictCompare").then((module) => ({
@@ -60,7 +52,7 @@ const GitConflictCompare = lazy(() =>
 );
 import { GitConflictRows } from "./GitConflictRows";
 import { GitOperationBanner } from "./GitOperationBanner";
-import { GitStashSection } from "./GitStashSection";
+import { GitPanelSections, usePanelPreferencesMenu } from "./GitPanelSections";
 import { GitActionsMenu, type ChangesActions } from "./GitActionsMenu";
 import { BranchPicker } from "./BranchPicker";
 import { applyCommit, applyIndexAction, type IndexAction } from "../model/optimisticIndex";
@@ -156,7 +148,6 @@ export const GIT_POLL_MS = ACTIVE_PROJECT_REFRESH_MS;
 let stagedOpen = true;
 let changesOpen = true;
 let conflictsOpen = true;
-let graphOpen = true;
 let changesView: ChangesView = loadChangesView();
 
 const ACTION_LABEL: Record<IndexAction, string> = {
@@ -266,11 +257,6 @@ export function GitChangesPanel({
     (busy === "commit" || busy === "pr" || (busy === "sync" && Boolean(index?.remote)));
   const [feedback] = useGitPanelState(cwd, "feedback");
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [graphHeight, setGraphHeight] = useState(loadGraphPanelHeight);
-  const [graphExpanded, setGraphExpanded] = useState(graphOpen);
-  // A drag paints the graph box directly; re-rendering the whole panel every
-  // frame made the sash lag behind the pointer. State updates once, on release.
-  const graphBoxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!status) return;
@@ -288,6 +274,15 @@ export function GitChangesPanel({
 
   const canFetch = gitActions && Boolean(index?.remote);
   const [autoFetch, setAutoFetch] = useState(loadAutoFetch);
+  const toggleAutoFetch = () => {
+    saveAutoFetch(!autoFetch);
+    setAutoFetch(!autoFetch);
+  };
+  const preferences = usePanelPreferencesMenu({
+    autoFetch,
+    canFetch,
+    onToggleAutoFetch: toggleAutoFetch,
+  });
 
   const deferInvalidation = useOwnedTimeout();
   const onMutated = (paths?: string[], scope: GitChangeScope = "refs") => {
@@ -326,17 +321,6 @@ export function GitChangesPanel({
     };
   }, [autoFetch, canFetch, cwd, detailsOpen, enabled, reload]);
 
-  useLayoutEffect(() => {
-    if (embedded || repository) return;
-    const pane = paneRef.current;
-    if (!pane || pane.clientHeight < GRAPH_PANEL_MIN + 160) return;
-    const max = pane.clientHeight - 160;
-    if (graphHeight > max) {
-      setGraphHeight(max);
-      saveGraphPanelHeight(max);
-    }
-  }, [graphHeight, embedded, repository]);
-
   if (!cwd || cwd === "~") {
     return (
       <p className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
@@ -350,7 +334,7 @@ export function GitChangesPanel({
   const branchControl =
     detailsOpen && index?.repository !== false && (index?.branch || repository) ? (
       <span
-        className={`flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary) ${repository ? "max-w-[min(12rem,35cqi)]" : "-ms-1.5 max-w-[65%] shrink-0"}`}
+        className={`flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary) ${repository ? "max-w-48 shrink-4" : "-ms-1.5 max-w-[65%] shrink-0"}`}
       >
         <BranchPicker
           key={cwd}
@@ -424,7 +408,9 @@ export function GitChangesPanel({
       ref={paneRef}
       data-git-repository={repository ? cwd : undefined}
       className={`@container/changes flex min-h-0 flex-col ${repository ? `shrink-0 ${styles.repository}` : "h-full flex-1 overflow-hidden"}`}
+      onContextMenu={embedded ? undefined : preferences.onContextMenu}
     >
+      {preferences.menu}
       <header
         className={repository ? styles.header : styles.branchHeader}
         data-current-checkout={repository?.current || undefined}
@@ -566,10 +552,7 @@ export function GitChangesPanel({
                   busy={busy}
                   setBusy={setBusy}
                   autoFetch={autoFetch}
-                  onToggleAutoFetch={() => {
-                    saveAutoFetch(!autoFetch);
-                    setAutoFetch(!autoFetch);
-                  }}
+                  onToggleAutoFetch={toggleAutoFetch}
                   changes={changesRef}
                   onStatus={setStatus}
                   onPending={setPending}
@@ -661,55 +644,16 @@ export function GitChangesPanel({
           notices={notices}
         />
       </div>
-      {!embedded ? (
-        <GitStashSection
+      {!embedded && detailsOpen ? (
+        <GitPanelSections
           cwd={cwd}
           enabled={enabled}
           hasChanges={files.length > 0 || conflicts.length > 0}
+          selectedSha={selectedSha}
           onOpenCommit={onOpenCommit}
+          paneRef={paneRef}
+          repository={!!repository}
         />
-      ) : null}
-      {!embedded && graphExpanded ? (
-        <GraphResizeSash
-          height={graphHeight}
-          onHeightPaint={(next) => {
-            if (graphBoxRef.current) graphBoxRef.current.style.height = `${next}px`;
-          }}
-          onHeightCommit={(next) => {
-            setGraphHeight(next);
-            saveGraphPanelHeight(next);
-          }}
-          maxHeight={() => {
-            const pane = paneRef.current;
-            if (!pane) return GRAPH_PANEL_DEFAULT * 2;
-            return Math.max(GRAPH_PANEL_MIN, pane.clientHeight - 160);
-          }}
-        />
-      ) : null}
-      {!embedded ? (
-        <div
-          ref={graphBoxRef}
-          className={`shrink-0 overflow-hidden border-t border-stroke ${
-            graphExpanded ? "min-h-0" : "h-7"
-          }`}
-          // Cap the shown height, not the saved one, so a shorter window keeps the
-          // file list visible and the chosen height returns when it grows again.
-          style={
-            graphExpanded ? { height: graphHeight, maxHeight: "calc(100% - 160px)" } : undefined
-          }
-        >
-          <GitHistoryGraph
-            cwd={cwd}
-            enabled={enabled}
-            expanded={graphExpanded}
-            selectedSha={selectedSha}
-            onToggleExpanded={() => {
-              graphOpen = !graphExpanded;
-              setGraphExpanded(graphOpen);
-            }}
-            onOpenCommit={onOpenCommit}
-          />
-        </div>
       ) : null}
     </div>
   );

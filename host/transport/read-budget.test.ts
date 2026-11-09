@@ -14,6 +14,30 @@ function deferred<T>() {
 }
 
 describe("Host backend read admission", () => {
+  it("lets a burst of one device's authorization checks share one control slot", async () => {
+    const budget = new HostReadWorkBudget({ ...WS_LIMITS, maxControlJobsPerDevice: 8 });
+    const check = deferred<boolean>();
+    const action = vi.fn(() => check.promise);
+    const burst = Array.from({ length: 20 }, () => budget.runShared("phone", action));
+    check.resolve(true);
+    await expect(Promise.all(burst)).resolves.toEqual(Array(20).fill(true));
+    expect(action).toHaveBeenCalledOnce();
+    // A later request runs a fresh check instead of reusing the settled one.
+    await expect(budget.runShared("phone", async () => false)).resolves.toBe(false);
+  });
+  it("does not let an old stalled check answer for new requests", async () => {
+    const budget = new HostReadWorkBudget({ ...WS_LIMITS, maxControlJobsPerDevice: 2 });
+    const stalled = deferred<boolean>();
+    void budget.runShared("phone", () => stalled.promise);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 2_000);
+    try {
+      await expect(budget.runShared("phone", async () => false)).resolves.toBe(false);
+    } finally {
+      clock.mockRestore();
+      stalled.resolve(true);
+    }
+  });
+
   it("holds detached work per principal and globally until backend settlement", async () => {
     const budget = new HostReadWorkBudget({
       ...WS_LIMITS,

@@ -12,6 +12,7 @@ export type HostReadBudgetLimits = {
 export class HostReadWorkBudget {
   private readonly counts = { read: 0, control: 0 };
   private readonly principals = new Map<string, { read: number; control: number }>();
+  private readonly inFlight = new Map<string, { work: Promise<unknown>; started: number }>();
 
   constructor(private readonly limits: HostReadBudgetLimits = WS_LIMITS) {
     for (const value of Object.values(limits))
@@ -58,6 +59,26 @@ export class HostReadWorkBudget {
       },
       kind,
     );
+  }
+
+  /**
+   * Concurrent callers for one principal join the check already in flight and share its
+   * single slot. Per-request device authorization uses this: a burst of reads (a phone
+   * opening a session) otherwise exhausts the per-device control slots and fails as busy.
+   * Only a check younger than `maxAgeMs` is joined (the store's own auth cache TTL), so a
+   * stalled check never answers for requests that arrive long after it started.
+   */
+  runShared<T>(principal: string, action: () => Promise<T>, maxAgeMs = 1_500): Promise<T> {
+    const current = this.inFlight.get(principal);
+    if (current && Date.now() - current.started < maxAgeMs) return current.work as Promise<T>;
+    const work = this.run(principal, action, "control");
+    const entry = { work, started: Date.now() };
+    this.inFlight.set(principal, entry);
+    const clear = () => {
+      if (this.inFlight.get(principal) === entry) this.inFlight.delete(principal);
+    };
+    work.then(clear, clear);
+    return work;
   }
 
   run<T>(principal: string, action: () => Promise<T>, kind: Class = "read"): Promise<T> {

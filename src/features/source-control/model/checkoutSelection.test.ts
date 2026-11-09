@@ -90,13 +90,9 @@ it("orders session, main, active, then idle checkouts", () => {
   expect(groups.idle.map((item) => item.path)).toEqual(["/t/idle"]);
 });
 
-it("labels options with branch and folder, never the full path", () => {
-  expect(checkoutOptionLabel(tree("/t/a", { branch: "mc/x" }), true)).toBe(
-    "mc/x · a · This session",
-  );
-  expect(checkoutOptionLabel(tree("/t/a", { branch: null }), false)).toBe(
-    "Detached · 7 · a".replace("7", "abcdef1"),
-  );
+it("labels options by folder without repeating the branch shown below, never the full path", () => {
+  expect(checkoutOptionLabel(tree("/t/a", { branch: "mc/x" }), true)).toBe("a · This session");
+  expect(checkoutOptionLabel(tree("/t/a", { branch: null }), false)).toBe("a");
 });
 
 it("drops folder names that only repeat the branch and leads detached rows with the folder", () => {

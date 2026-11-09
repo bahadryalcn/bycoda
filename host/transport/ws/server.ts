@@ -222,11 +222,11 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
 
   async function executionAuthorized(peer: Peer, heartbeat = false): Promise<boolean> {
     try {
-      return await (heartbeat ? heartbeatBudget : authBudget).run(
-        peer.principal.id,
-        async () => await peer.principal.authorized(),
-        "control",
-      );
+      const check = async () => await peer.principal.authorized();
+      // Concurrent requests of one device share one in-flight check (and slot).
+      return await (heartbeat
+        ? heartbeatBudget.run(peer.principal.id, check, "control")
+        : authBudget.runShared(peer.principal.id, check));
     } catch (error) {
       if (error instanceof HostDispatchError && error.code === "overloaded") throw error;
       throw new HostDispatchError(

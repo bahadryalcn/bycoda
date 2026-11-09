@@ -49,7 +49,6 @@ vi.mock("../../../shared/ui/SearchableSelect", () => ({
 vi.mock("./GitChangesPanel", () => ({
   GitChangesPanel: (props: {
     cwd: string;
-    embedded?: boolean;
     repository?: {
       name: string;
       expanded?: boolean;
@@ -62,7 +61,7 @@ vi.mock("./GitChangesPanel", () => ({
   }) =>
     createElement(
       "section",
-      { "data-cwd": props.cwd, "data-compact": !!props.embedded },
+      { "data-cwd": props.cwd, "data-compact": !!props.repository },
       createElement(
         "button",
         {
@@ -248,11 +247,20 @@ it("supports single-repo review, root-repo review and refreshing only the visibl
   expect(host.querySelectorAll("section")).toHaveLength(2);
 });
 it("falls back to all rows when the selected repository leaves the workspace", async () => {
-  await render();
+  await render(["/wallet/api", "/wallet/mobile", "/wallet/web"]);
   await choose("/wallet/mobile");
-  await render(["/wallet/api"]);
+  await render(["/wallet/api", "/wallet/web"]);
   expect(host.querySelector("select")!.value).toBe("");
+  expect(host.querySelectorAll('[data-compact="true"]')).toHaveLength(2);
+});
+
+it("shows a sole repository as the full panel named in the selector, without a row to collapse", async () => {
+  await render(["/wallet/api"]);
+  expect(host.querySelector("select")!.value).toBe("/wallet/api");
+  expect(host.querySelector('[data-compact="true"]')).toBeNull();
   expect(host.querySelector('[data-cwd="/wallet/api"]')).not.toBeNull();
+  await choose("");
+  expect(host.querySelector('[data-compact="true"]')).toBeNull();
 });
 
 it("deduplicates submodules already in a workspace and preserves their own action targets", async () => {

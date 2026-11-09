@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { TimeoutError } from "../../../shared/lib/withTimeout";
 import { classifyRemoteError, isConnectionFailure, unreachablePollDelay } from "./remoteFailure";
+import { delegatedDiscoveryFailure } from "./useDelegatedRunDiscovery";
 
 describe("classifyRemoteError", () => {
   it.each([
@@ -65,6 +67,15 @@ describe("classifyRemoteError", () => {
     expect(classifyRemoteError(text).kind).toBe("temporary");
     expect(classifyRemoteError(new Error(text)).kind).toBe("temporary");
     expect(isConnectionFailure(classifyRemoteError(text))).toBe(false);
+  });
+
+  it("classifies a bounded wait that elapsed (Host discovery) as temporary", () => {
+    const error = new TimeoutError("Host discovery", 20_000);
+    expect(classifyRemoteError(error)).toEqual({
+      kind: "temporary",
+      message: "Host discovery timed out after 20000ms",
+    });
+    expect(delegatedDiscoveryFailure(error)).toBeUndefined();
   });
 
   it("recognises a host that does not know the command", () => {

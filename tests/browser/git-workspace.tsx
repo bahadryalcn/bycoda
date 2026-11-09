@@ -3,6 +3,7 @@ import { GitHistoryGraph } from "../../src/features/source-control/ui/GitHistory
 import { GitGraphWorkspace } from "../../src/features/source-control/ui/GitGraphWorkspace";
 import { WorkspaceSourceControl } from "../../src/features/source-control/ui/WorkspaceSourceControl";
 import { SourceControl } from "../../src/features/source-control/ui/SourceControl";
+import { checkoutOptionLabel } from "../../src/features/source-control/model/checkoutSelection";
 import { GitChangesPanel } from "../../src/features/source-control/ui/GitChangesPanel";
 import { AppConfirmHost } from "../../src/app/shell/AppConfirmHost";
 import type { Worktree } from "../../src/features/source-control/model/worktrees";
@@ -395,7 +396,7 @@ const renderFixture = () =>
                 : Object.fromEntries(
                     Object.values(checkoutTrees).map((tree) => [
                       tree.path,
-                      `${tree.branch ?? "Detached"} · ${tree.path}`,
+                      checkoutOptionLabel(tree, tree.path === "/fixture"),
                     ]),
                   )
             }

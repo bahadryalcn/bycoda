@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { WebSocket, type ClientOptions } from "ws";
@@ -1017,6 +1017,10 @@ describe("WS framing and orderly disposal", () => {
     await started.promise;
     expect(await pending).toMatchObject({ error: { code: RPC_ERROR_CODES.deadlineExceeded } });
     block = false;
+    // Only a fresh in-flight check is shared; this stalled one is too old to answer for new work.
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now + 2_000);
+    onTestFinished(() => clock.mockRestore());
     const second = host.connect();
     await second.opened;
     expect(await second.hello("hello-overload")).toMatchObject({

@@ -11,16 +11,19 @@ When checkout discovery fails, the current panel remains available with local
 **Retry** and diagnostic details; a failed read does not establish an empty list.
 
 **All checkouts** shows the current checkout, other worktrees and discovered child
-repositories as expandable changes panels. Folder names lead, branches remain
-visible, and child repositories are indented beneath their checkout. The current
+repositories as expandable changes panels. Folder names lead with the branch on
+the same line; when the panel narrows the branch label shortens before the name.
+Child repositories are indented beneath their checkout. A workspace with only one
+repository shows its full panel, named in the picker, instead of a single row. The current
 session's checkout starts expanded; each panel keeps its own expanded state and
 commit draft when collapsed or when you review another target. Selecting a review
 target does not change where the agent executes.
 
 Each panel's staging, unstaging, commit and sync actions apply only to that exact
 repository. A file with the same relative name in another checkout is a separate
-target. Select one repository in the picker for its full history graph and stash
-controls. The Changes tab totals include discovered child repositories in All
+target. An expanded panel includes its own Stashes and Graph sections; a panel row
+starts with its graph folded. Right-click an empty part of the Git panel to show or
+hide Stashes and Graph in every panel, or to switch Auto Fetch. The Changes tab totals include discovered child repositories in All
 checkouts and wait for every target's reading before showing a complete total.
 
 Repository discovery includes initialized submodules and independent repositories

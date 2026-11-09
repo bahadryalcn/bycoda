@@ -162,7 +162,7 @@ test("repository overview collapses with keyboard and preserves open panels and 
   const panel = page.locator('[data-git-repository="/fixture/core-pack"]');
   const row = panel.locator("header button[aria-expanded]").first();
   await expect(row).toHaveAttribute("aria-expanded", "false");
-  // Folder and branch occupy two compact lines; the full path remains discoverable.
+  // Folder and branch share one compact line; the full path remains discoverable.
   await row.hover();
   await expect(page.getByRole("tooltip")).toHaveText(/core-pack.*\/fixture\/core-pack/);
   await page.mouse.move(0, 0);
@@ -562,7 +562,9 @@ test("checkout panels preserve identity, keyboard expansion and searchable selec
     .filter({ hasText: "/trees/audit/very-long-worktree-folder-name" })
     .click();
   await expect(list).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /^Working copy: audit\// })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /^Working copy: very-long-worktree-folder-name/ }),
+  ).toBeVisible();
 });
 
 for (const theme of ["light", "dark"])

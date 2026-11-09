@@ -154,9 +154,13 @@ export function checkoutRowLabels(tree: Worktree): { title: string; detail?: str
   return { title: tree.branch, detail: redundant ? undefined : folder };
 }
 
-/** Selector label: `branch · folder`, marking the session's checkout. */
+/**
+ * Selector label: the folder, marking the session's checkout. The branch is the
+ * option's secondary text; the panel's branch control right below the selector
+ * already names it, so the trigger does not repeat it.
+ */
 export function checkoutOptionLabel(tree: Worktree, isSession: boolean): string {
-  const parts = [checkoutTitle(tree), folderName(tree.path)];
+  const parts = [folderName(tree.path)];
   if (isSession) parts.push(t("This session"));
   return parts.join(" · ");
 }

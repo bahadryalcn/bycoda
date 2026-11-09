@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import {
+  checkoutTitle,
   checkoutSelectionScope,
   checkoutRepositoryPaths,
   loadCheckoutSelection,
@@ -104,8 +105,10 @@ export function WorkspaceSourceControl({
       ? cwd
       : (repositories.find((path) => projectKey(path) === projectKey(selected ?? "")) ??
         pendingSelection);
+  // One repository needs no overview row to expand: show its panel, named in the selector.
+  const target = active || (repositories.length === 1 && !pendingSelection ? repositories[0] : "");
   const overviewScrollRef = useRetainedScroll<HTMLDivElement>(`${stateKey}:overview`, {
-    ready: enabled && !active,
+    ready: enabled && !target,
   });
   const own = (path: string) => {
     const session = checkouts ? sessionCheckout(cwd, paths) : undefined;
@@ -129,7 +132,7 @@ export function WorkspaceSourceControl({
   const refreshAll = () => {
     onRefresh?.();
     refresh();
-    (active ? [active, ...(modules[active] ?? [])] : repositories).forEach((path) =>
+    (target ? [target, ...(modules[target] ?? [])] : repositories).forEach((path) =>
       notifyGitChanged(path, "checkout"),
     );
   };
@@ -137,8 +140,8 @@ export function WorkspaceSourceControl({
   const showHeader = !plain || !!error;
   // Checkout, path and session ownership are stated once, in the target selector
   // (visible label plus this tooltip), instead of a second "Reviewing" row.
-  const targetTitle = active
-    ? [name(active), !checkouts && own(active) ? t("This session") : "", active]
+  const targetTitle = target
+    ? [name(target), !checkouts && own(target) ? t("This session") : "", target]
         .filter(Boolean)
         .join(" · ")
     : `${checkouts ? t("Working copy") : t("Repository")} · ${
@@ -172,7 +175,7 @@ export function WorkspaceSourceControl({
             <SearchableSelect
               hideLabel
               label={checkouts ? t("Working copy") : t("Repository")}
-              value={active}
+              value={target}
               onChange={choose}
               variant="row"
               options={[
@@ -180,12 +183,16 @@ export function WorkspaceSourceControl({
                   value: "",
                   label: checkouts ? t("All checkouts") : t("All repositories"),
                 },
-                ...repositories.map((path) => ({
-                  value: path,
-                  label: optionName(path),
-                  keywords: path,
-                  description: path,
-                })),
+                ...repositories.map((path) => {
+                  const branch = worktrees[path] ? checkoutTitle(worktrees[path]) : undefined;
+                  return {
+                    value: path,
+                    label: optionName(path),
+                    keywords: branch ? `${path} ${branch}` : path,
+                    // The branch leads the second line; a side column squeezed long paths.
+                    description: branch ? `${branch} · ${path}` : path,
+                  };
+                }),
                 ...(pendingSelection &&
                 !repositories.some((path) => projectKey(path) === projectKey(pendingSelection))
                   ? [
@@ -209,7 +216,7 @@ export function WorkspaceSourceControl({
               iconOnly
               label={t("Manage worktrees…")}
               disabled={!enabled}
-              onClick={() => requestWorktreeManagement(active || cwd)}
+              onClick={() => requestWorktreeManagement(target || cwd)}
             >
               <FolderTree aria-hidden className="icon-sm" />
             </Button>
@@ -240,18 +247,18 @@ export function WorkspaceSourceControl({
         id={repositoryListId}
         className={!plain && !checkouts && !listOpen ? "hidden" : "flex min-h-0 flex-1 flex-col"}
       >
-        {active || plain ? (
+        {target || plain ? (
           <GitChangesPanel
-            key={active || cwd}
-            cwd={active || cwd}
+            key={target || cwd}
+            cwd={target || cwd}
             enabled={enabled}
             textHarness={textHarness}
-            selectedPath={own(active || cwd) ? selectedPath : undefined}
-            selectedKind={own(active || cwd) ? selectedKind : undefined}
-            selectedSha={own(active || cwd) ? selectedSha : undefined}
+            selectedPath={own(target || cwd) ? selectedPath : undefined}
+            selectedKind={own(target || cwd) ? selectedKind : undefined}
+            selectedSha={own(target || cwd) ? selectedSha : undefined}
             refreshInTarget={showHeader}
             worktreesInTarget={checkouts && showHeader}
-            {...callbacks(active || cwd)}
+            {...callbacks(target || cwd)}
           />
         ) : (
           <div
@@ -271,7 +278,6 @@ export function WorkspaceSourceControl({
                   selectedPath={own(path) ? selectedPath : undefined}
                   selectedKind={own(path) ? selectedKind : undefined}
                   selectedSha={own(path) ? selectedSha : undefined}
-                  embedded
                   repository={{
                     name: name(path),
                     checkout: worktrees[path],

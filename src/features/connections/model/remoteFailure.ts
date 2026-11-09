@@ -1,3 +1,5 @@
+import { TimeoutError } from "../../../shared/lib/withTimeout";
+
 /** Why a request to a connected machine failed, as far as the user can act on it. */
 export type RemoteFailureKind =
   /** The machine or its SSH tunnel is down, or this computer is not connected to it. */
@@ -47,6 +49,8 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
   if (code === "RPC_WS_UNSUPPORTED") return { kind: "outdated", message };
   if (code && ["RPC_WS_DEADLINE", "RPC_WS_OVERLOAD", "RPC_WS_DETACHED"].includes(code))
     return { kind: "temporary", message };
+  // A local bounded wait (e.g. Host discovery) elapsed; the same request can be sent again.
+  if (error instanceof TimeoutError) return { kind: "temporary", message };
   if (
     code &&
     [
