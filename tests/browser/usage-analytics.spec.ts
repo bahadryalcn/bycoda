@@ -27,8 +27,10 @@ test("keeps primary usage visible before optional detail at narrow widths", asyn
       await page.setViewportSize({ width, height: 900 });
       await expect(page.locator(".usage-metrics > div")).toHaveCount(3);
       const trend = page.locator('[data-usage-chart="trend"]');
-      // The trend starts inside the first screen (two thirds of the height) under the KPI stack.
-      expect((await trend.boundingBox())!.y).toBeLessThan(600);
+      // The trend starts within two thirds of a screen below the analytics header, under the KPI
+      // stack; the account's Active time card above the analytics is not part of this budget.
+      const analytics = (await page.locator(".usage-analytics").boundingBox())!;
+      expect((await trend.boundingBox())!.y - analytics.y).toBeLessThan(600);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
