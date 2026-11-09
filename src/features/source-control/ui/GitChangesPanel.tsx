@@ -34,7 +34,6 @@ import {
 import {
   Suspense,
   lazy,
-  useCallback,
   useDeferredValue,
   useEffect,
   useLayoutEffect,
@@ -55,7 +54,8 @@ import { GitOperationBanner } from "./GitOperationBanner";
 import { GitPanelSections, usePanelPreferencesMenu } from "./GitPanelSections";
 import { GitActionsMenu, type ChangesActions } from "./GitActionsMenu";
 import { BranchPicker } from "./BranchPicker";
-import { applyCommit, applyIndexAction, type IndexAction } from "../model/optimisticIndex";
+import { applyCommit, applyIndexAction } from "../model/optimisticIndex";
+import { ACTION_LABEL, busyLabel } from "../model/gitBusyLabel";
 import { AUTO_FETCH_MS, loadAutoFetch, saveAutoFetch } from "../model/autoFetch";
 import {
   basename,
@@ -123,8 +123,8 @@ import { confirmNative, confirmDiscardFile } from "../model/gitConfirmation";
 import { invalidateGitIndex } from "../model/gitIndexStore";
 
 import { GitFeedback } from "./GitFeedback";
-import { useGitResource } from "../hooks/useGitResource";
-import { ACTIVE_PROJECT_REFRESH_MS, GITHUB_PR_FRESH_MS } from "../model/gitRefreshPolicy";
+import { usePrStatus } from "../hooks/usePrStatus";
+import { ACTIVE_PROJECT_REFRESH_MS } from "../model/gitRefreshPolicy";
 import { GitGenerationSettings } from "./GitGenerationSettings";
 import { Button } from "../../../shared/ui/Button";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -140,6 +140,7 @@ import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { ChangeList } from "./GitChangesList";
 import { useDiffIndex, announceGitChange } from "../hooks/useDiffIndex";
 import { useCommitDraft } from "../hooks/useCommitDraft";
+import { useSubmodulePointers, type SubmoduleListing } from "../hooks/useSubmodulePointers";
 
 export { ChangeList };
 
@@ -149,28 +150,6 @@ let stagedOpen = true;
 let changesOpen = true;
 let conflictsOpen = true;
 let changesView: ChangesView = loadChangesView();
-
-const ACTION_LABEL: Record<IndexAction, string> = {
-  get stage() {
-    return t("Staging…");
-  },
-  get unstage() {
-    return t("Unstaging…");
-  },
-  get discard() {
-    return t("Discarding…");
-  },
-};
-
-/** What the header says while `busy` is held and no step named itself. */
-function busyLabel(busy: string): string {
-  if (busy === "commit") return t("Committing…");
-  if (busy === "pr") return t("Creating pull request…");
-  if (busy === "sync") return t("Syncing…");
-  if (busy === "generate") return t("Generating message…");
-  if (busy in ACTION_LABEL) return ACTION_LABEL[busy as IndexAction];
-  return t("Working…");
-}
 
 type Props = {
   /** Embedded in the graph workspace; its own history and stash rail stay outside. */
@@ -182,7 +161,11 @@ type Props = {
     current?: boolean;
     expanded?: boolean;
     onToggle: (expanded: boolean) => void;
+    /** This repository's gitlink change in its parent, shown beside its name. */
+    pointer?: ReactNode;
   };
+  /** Repositories listed below this one: their gitlinks leave this list. */
+  submodules?: SubmoduleListing;
   cwd: string;
   enabled: boolean;
   textHarness?: HarnessId;
@@ -203,6 +186,7 @@ type Props = {
 export function GitChangesPanel({
   embedded = false,
   repository,
+  submodules,
   cwd,
   enabled,
   textHarness,
@@ -458,6 +442,7 @@ export function GitChangesPanel({
             ) : null}
           </>
         )}
+        {repository?.pointer}
         {busy && !localProgressVisible ? (
           <span
             role="status"
@@ -625,6 +610,7 @@ export function GitChangesPanel({
           loading={loading}
           checking={checking}
           files={files}
+          submodules={submodules}
           conflicts={conflicts}
           selected={selectedPath}
           selectedKind={selectedKind}
@@ -667,6 +653,7 @@ function ChangedFiles({
   loading,
   checking,
   files,
+  submodules,
   conflicts,
   selected,
   selectedKind,
@@ -692,6 +679,7 @@ function ChangedFiles({
   /** The entry read is still running; an empty cached list may not be final. */
   checking: boolean;
   files: GitChangedFile[];
+  submodules?: SubmoduleListing;
   /** Unmerged files, listed first and never as ordinary changes. */
   conflicts: ConflictRow[];
   selected?: string;
@@ -742,8 +730,10 @@ function ChangedFiles({
     loading: prLoading,
     error: prError,
   } = usePrStatus(cwd, index?.branch, active && !!index?.remote);
-  const staged = useMemo(() => files.filter((file) => file.staged), [files]);
-  const unstaged = useMemo(() => files.filter((file) => file.unstaged), [files]);
+  // Gitlinks of submodules listed below show on their own rows, not twice.
+  const [listed, pointers] = useSubmodulePointers(files, submodules, (...args) => run(...args));
+  const staged = useMemo(() => listed.filter((file) => file.staged), [listed]);
+  const unstaged = useMemo(() => listed.filter((file) => file.unstaged), [listed]);
   const collisionNames = useMemo(() => {
     const counts = new Map<string, number>();
     for (const file of files)
@@ -1625,6 +1615,13 @@ function ChangedFiles({
                 />
               </FileSection>
             ) : null}
+            {pointers.length > 0 ? (
+              <p className="px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
+                {t("Submodule pointer changes: {p0}, shown on their submodule rows.", {
+                  p0: pointers.length,
+                })}
+              </p>
+            ) : null}
             {deferredFileQuery ? (
               <p role="status" className="px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
                 {visibleStaged.length + visibleUnstaged.length} / {staged.length + unstaged.length}{" "}
@@ -1648,25 +1645,6 @@ function ChangedFiles({
       ) : null}
     </aside>
   );
-}
-
-function usePrStatus(cwd: string, branch: string | null | undefined, enabled: boolean) {
-  const read = useCallback(() => gitPrStatus(cwd), [cwd, branch]);
-  const resource = useGitResource(
-    cwd,
-    `pr:${cwd}:${branch ?? ""}`,
-    enabled && !!cwd && cwd !== "~" && !!branch,
-    read,
-    true,
-    GITHUB_PR_FRESH_MS,
-    true,
-  );
-  return {
-    pr: resource.data,
-    loading: resource.loading,
-    error: resource.error,
-    reload: resource.refresh,
-  };
 }
 
 type CommitPrimary = "commit" | "sync" | "create-pr" | "view-pr";

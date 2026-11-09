@@ -476,7 +476,7 @@ type Props = {
   onFileMoved?: (from: string, to: string) => void;
   onFileDeleted?: (path: string) => void;
   tab: SidebarTabId;
-  onTabChange: (tab: SidebarTabId) => void;
+  onTabChange: (tab: SidebarTabId, project?: string) => void;
   filesSearchOpen: boolean;
   onFilesSearchOpenChange: (open: boolean) => void;
   onOpenFilesSearch?: () => void;
@@ -2547,6 +2547,9 @@ function SidebarComponent({
     // Opening reads the conversation first (from disk, or over SSH for a
     // remote one); the card says so until it is the open session.
     if (sessionId !== activeListedSessionId) setOpeningSessionId(sessionId);
+    // Following another project restores its remembered tab; keep this list in view.
+    const target = tab === "sessions" ? summaryById.get(sessionId) : undefined;
+    if (target) onTabChange("sessions", target.cwd);
     onSelectSession(sessionId, { keepOpen: (event.detail ?? 0) > 1 });
   };
 
@@ -5955,11 +5958,13 @@ const SessionCard = memo(function SessionCard({
         </span>
       </span>
     ) : null;
+  // The Pinned section names the state, so its cards keep their project mark at rest.
+  const markPinned = session.pinned && !compact && !inPinnedSection;
   const pinAction = (className?: string) =>
     onPin ? (
       <InlineAction
         className={className}
-        reveal={session.pinned && !compact ? "always" : "interaction"}
+        reveal={markPinned ? "always" : "interaction"}
         label={t(session.pinned ? "Unpin" : "Pin")}
         tooltip={t(session.pinned ? "Unpin" : "Pin")}
         aria-pressed={!!session.pinned}
@@ -6144,7 +6149,7 @@ const SessionCard = memo(function SessionCard({
           >
             <span
               data-session-project-slot
-              data-pinned={session.pinned ? "true" : undefined}
+              data-pinned={markPinned ? "true" : undefined}
               className="session-project-slot relative grid size-5 shrink-0 place-items-center"
             >
               <span data-session-project-mark className="col-start-1 row-start-1">

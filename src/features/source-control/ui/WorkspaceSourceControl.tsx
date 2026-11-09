@@ -30,6 +30,8 @@ import { Button } from "../../../shared/ui/Button";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { useGitSubmodules } from "../hooks/useGitSubmodules";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
+import type { SubmodulePointers } from "../model/submodulePointers";
+import { SubmodulePointer } from "./SubmodulePointer";
 import styles from "./WorkspaceSourceControl.module.css";
 
 export function WorkspaceSourceControl({
@@ -110,6 +112,46 @@ export function WorkspaceSourceControl({
   const overviewScrollRef = useRetainedScroll<HTMLDivElement>(`${stateKey}:overview`, {
     ready: enabled && !target,
   });
+  // Each parent's gitlink rows, shown on the submodule rows listed below it.
+  const [pointers, setPointers] = useState<Record<string, SubmodulePointers>>({});
+  const submodulesOf = (parent: string) => {
+    const children = repositories.filter(
+      (path) => path !== parent && isEqualOrInside(path, parent),
+    );
+    if (children.length === 0) return undefined;
+    return {
+      paths: children.map((path) => path.slice(parent.replace(/[\\/]+$/, "").length + 1)),
+      onPointers: (value: SubmodulePointers) =>
+        setPointers((current) =>
+          current[parent]?.files === value.files ||
+          (!current[parent]?.files.length && !value.files.length)
+            ? current
+            : { ...current, [parent]: value },
+        ),
+    };
+  };
+  const pointerOf = (path: string) => {
+    for (const [parent, entry] of Object.entries(pointers)) {
+      const file = entry.files.find((item) => projectKey(item.path) === projectKey(path));
+      if (file)
+        return (
+          <SubmodulePointer
+            parent={name(parent)}
+            file={file}
+            onOpen={() =>
+              onOpen({
+                type: "diff",
+                cwd: parent,
+                path: file.relative,
+                kind: file.unstaged ? "unstaged" : "staged",
+              })
+            }
+            onAct={(action) => entry.act(file, action)}
+          />
+        );
+    }
+    return undefined;
+  };
   const own = (path: string) => {
     const session = checkouts ? sessionCheckout(cwd, paths) : undefined;
     return session
@@ -273,6 +315,7 @@ export function WorkspaceSourceControl({
               >
                 <GitChangesPanel
                   cwd={path}
+                  submodules={submodulesOf(path)}
                   enabled={enabled}
                   textHarness={textHarness}
                   selectedPath={own(path) ? selectedPath : undefined}
@@ -282,9 +325,13 @@ export function WorkspaceSourceControl({
                     name: name(path),
                     checkout: worktrees[path],
                     current: checkouts && own(path),
+                    pointer: pointerOf(path),
                     expanded: expanded[projectKey(path)] ?? (checkouts ? own(path) : undefined),
                     onToggle: (value) =>
-                      setExpanded((current) => ({ ...current, [projectKey(path)]: value })),
+                      setExpanded((current) => ({
+                        ...current,
+                        [projectKey(path)]: value,
+                      })),
                   }}
                   {...callbacks(path)}
                 />

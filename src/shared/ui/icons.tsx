@@ -64,6 +64,7 @@ import {
   Gauge as LucideGauge,
   ChartNoAxesCombined as LucideChartBreakoutSquare,
   GitBranch as LucideGitBranch,
+  GitCommitVertical as LucideGitCommitVertical,
   GitCompare as LucideGitCompare,
   GitMerge as LucideGitMerge,
   GitPullRequest as LucideGitPullRequest,
@@ -307,6 +308,7 @@ export const FolderTree = wrap(LucideFolderTree, "FolderTree");
 export const Gauge = wrap(LucideGauge, "Gauge");
 export const ChartBreakoutSquare = wrap(LucideChartBreakoutSquare, "ChartBreakoutSquare");
 export const GitBranch = wrap(LucideGitBranch, "GitBranch");
+export const GitCommitVertical = wrap(LucideGitCommitVertical, "GitCommitVertical");
 export const GitCompare = wrap(LucideGitCompare, "GitCompare");
 export const GitMerge = wrap(LucideGitMerge, "GitMerge");
 export const GitPullRequest = wrap(LucideGitPullRequest, "GitPullRequest");

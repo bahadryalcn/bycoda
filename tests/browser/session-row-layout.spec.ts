@@ -75,6 +75,28 @@ test("sidebar glass retains selection and focus without main glass", async ({ pa
   await page.emulateMedia({ forcedColors: "active" });
   await expect(row).toHaveCSS("outline-style", "solid");
 });
+test("selected and Pinned-section cards keep their project mark at rest", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/session-row-layout.html?virtual-folders", {
+    waitUntil: "domcontentloaded",
+  });
+  const mark = (id: string) =>
+    page.locator(`[data-session-card="${id}"] [data-session-project-mark]`);
+  const pinned = page.locator('[data-session-card="virtual-5"]');
+  await expect(pinned).toBeVisible();
+  await page.mouse.move(5, 5);
+  await expect(mark("virtual-5")).toHaveCSS("visibility", "visible");
+  await pinned.locator("[data-session-select]").click();
+  await expect(pinned).toHaveAttribute("data-selected", "true");
+  await page.mouse.move(5, 5);
+  await expect(mark("virtual-5")).toHaveCSS("visibility", "visible");
+  await pinned.hover();
+  await expect(mark("virtual-5")).toHaveCSS("visibility", "hidden");
+  await expect(pinned.getByRole("button", { name: "Unpin", exact: true })).toHaveCSS(
+    "opacity",
+    "1",
+  );
+});
 for (const density of ["compact", "detailed"]) {
   for (const light of [false, true]) {
     test(`inline title rename density ${density} in ${light ? "light" : "dark"}`, async ({

@@ -70,6 +70,9 @@ if (diffUsability) files = [{ ...file(diffRelative), path: `${diffRepository}/${
 if (large)
   files.push(...Array.from({ length: 597 }, (_, n) => file(`src/features/feature-${n}/index.ts`)));
 const submodules = new URLSearchParams(location.search).has("submodules");
+// The parent also records a moved `core-pack` gitlink, listed once on its submodule row.
+if (submodules && new URLSearchParams(location.search).has("pointer"))
+  files.push(file("core-pack"));
 const repositoryFiles = new Map<string, typeof files>();
 const filesFor = (cwd: string) => {
   if (!repositoryFiles.has(cwd))

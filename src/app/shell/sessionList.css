@@ -89,8 +89,9 @@ html.has-native-glass:not(.theme-light) .bycoda-sidebar [data-session-card][data
   }
 }
 
-/* The pin replaces the project mark in one stable slot, using shared action reveal states. */
-[data-session-card]:is(:hover, :focus-within, [data-selected])
+/* The pin replaces the project mark in one stable slot, on the card's hover-reveal states
+   (hover, keyboard focus): selection alone keeps the mark, since it does not show the pin. */
+[data-session-card]:is(:hover, :has(:focus-visible))
   .session-project-slot:has([data-action-inline])
   [data-session-project-mark],
 .session-project-slot[data-pinned="true"]:has([data-action-inline]) [data-session-project-mark] {

@@ -2998,6 +2998,7 @@ function Workspace({
       setServersViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      if (sidebarTab === "sessions") setSidebarTab("sessions", cwd);
       if (isRemoteProjectPath(cwd)) {
         onSelectRemoteSession(cwd, listedRemoteSessionId(sessionsRef.current, cwd, sessionId), {
           preview: !options?.keepOpen,

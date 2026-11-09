@@ -245,6 +245,37 @@ test("repository choice survives sidebar remount and reload before delayed submo
     .toBe("/fixture/core-pack");
 });
 
+test("a submodule pointer change shows once, on the submodule row", async ({ page }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
+  await page.goto("/tests/browser/git-workspace.html?submodules&pointer");
+  const parent = page.locator('[data-git-repository="/fixture"]');
+  const module = page.locator('[data-git-repository="/fixture/core-pack"]');
+  await parent.locator("header button[aria-expanded]").first().click();
+  await expect(parent.getByText("README.md")).toBeVisible();
+  await expect(parent.getByText("Submodule pointer changes: 1", { exact: false })).toBeVisible();
+  await expect(parent.locator("li").filter({ hasText: /^core-pack/ })).toHaveCount(0);
+  await expect(module.getByRole("button", { name: "Pointer changed" })).toBeVisible();
+  await module.getByRole("button", { name: "Stage the pointer in fixture" }).click();
+  await expect(module.getByRole("button", { name: "Pointer staged" })).toBeVisible();
+  for (const width of [320, 520]) {
+    await page.locator("#root > div.border-r").evaluate((element, size) => {
+      (element as HTMLElement).style.width = `${size}px`;
+    }, width);
+    // The name stays readable beside the badge and its action at every width.
+    const name = module.locator("header button[aria-expanded]").first();
+    expect((await name.boundingBox())!.width).toBeGreaterThan(80);
+    for (const light of [false, true]) {
+      await page.evaluate(
+        (value) => document.documentElement.classList.toggle("theme-light", value),
+        light,
+      );
+      await page.screenshot({
+        path: testInfo.outputPath(`submodule-pointer-${width}-${light ? "light" : "dark"}.png`),
+      });
+    }
+  }
+});
+
 test("submodules keep independent drafts, staging, commits and pushes", async ({
   page,
 }, testInfo) => {

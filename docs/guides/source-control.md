@@ -32,6 +32,12 @@ inside the selected checkout, including ignored source folders such as a separat
 Discovery is bounded; an access or limit error keeps the previous inventory and
 offers Refresh rather than presenting an incomplete scan as an empty result.
 
+When All repositories lists a submodule as its own row, the parent's change list
+leaves out that submodule's pointer (gitlink) change and the submodule row shows it
+instead, as Pointer changed or Pointer staged with a button to stage or unstage it in
+the parent. The parent's change count and Commit still include the pointer. Choosing
+only the parent repository lists the pointer as an ordinary change again.
+
 Changes retain staged and unstaged sections and the saved list/tree presentation.
 File rows expose the exact relative path and emphasize parent directories when
 basenames repeat. A partially staged path can appear in both sections, so filter
