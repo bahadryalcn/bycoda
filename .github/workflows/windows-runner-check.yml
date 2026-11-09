@@ -39,6 +39,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Rust is unavailable' }
           cargo --version
           if ($LASTEXITCODE -ne 0) { throw 'Cargo is unavailable' }
+          # The Rust and Host suites spawn these OS components by name.
+          powershell.exe -NoProfile -NonInteractive -Command '$PSVersionTable.PSVersion.ToString()'
+          if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell 5.1 is unavailable on PATH' }
+          ssh -V
+          if ($LASTEXITCODE -ne 0) { throw 'OpenSSH client is unavailable on PATH' }
       - name: Record exact source and runner preflight
         shell: pwsh
         env:

@@ -403,7 +403,9 @@ function New-SanitizedProcess([string[]]$Arguments, $Facts) {
         ProgramData = [Environment]::GetFolderPath('CommonApplicationData'); ALLUSERSPROFILE = [Environment]::GetFolderPath('CommonApplicationData'); PUBLIC = 'C:\Users\Public'
     }
     foreach ($pair in $base.GetEnumerator()) { $info.Environment[$pair.Key] = $pair.Value }
-    $info.Environment['PATH'] = "$Control\shell;$Control;$WindowsRoot\System32;$WindowsRoot;C:\Program Files\Git\cmd;C:\Program Files\Git\bin;C:\Program Files\Python314;C:\Program Files\nodejs;$Cache\pnpm-home;$Cache\cargo-home\bin"
+    # Windows PowerShell 5.1 and OpenSSH are OS components the Rust and Host
+    # suites spawn by name (powershell.exe, ssh, sftp), like cmd.exe from System32.
+    $info.Environment['PATH'] = "$Control\shell;$Control;$WindowsRoot\System32;$WindowsRoot;$WindowsRoot\System32\WindowsPowerShell\v1.0;$WindowsRoot\System32\OpenSSH;C:\Program Files\Git\cmd;C:\Program Files\Git\bin;C:\Program Files\Python314;C:\Program Files\nodejs;$Cache\pnpm-home;$Cache\cargo-home\bin"
     $info.Environment['PSModulePath'] = "C:\Program Files\PowerShell\7\Modules;$WindowsRoot\System32\WindowsPowerShell\v1.0\Modules"
     $info.Environment['ACTIONS_RUNNER_HOOK_JOB_STARTED'] = "$Control\pre-job.ps1"
     $info.Environment['ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT'] = '0'
