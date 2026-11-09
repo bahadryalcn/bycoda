@@ -202,3 +202,23 @@ it("reports its run with the session and whether its message box is on screen", 
   spy.mockRestore();
   vi.unstubAllGlobals();
 });
+
+it("chooses the dictation language from the composer and disables options while listening", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true, dictationEngine: "xai" });
+  await render();
+  const options = () =>
+    element.querySelector<HTMLButtonElement>('button[aria-label="Dictation options"]')!;
+  const item = (name: string) =>
+    [...document.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find((row) =>
+      row.textContent?.includes(name),
+    );
+  await act(async () => options().click());
+  await act(async () => item("Dictation language")!.click());
+  await act(async () => item("Türkçe")!.click());
+  expect(loadVoiceSettings().dictationLanguage).toBe("tr");
+  expect(item("Türkçe")).toBeUndefined();
+  await act(async () => element.querySelector("button")!.click());
+  await act(async () => mock.callbacks.state("listening"));
+  expect(mock.args[0]).toBe("tr");
+  expect(options().disabled).toBe(true);
+});

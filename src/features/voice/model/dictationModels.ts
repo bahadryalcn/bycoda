@@ -5,6 +5,23 @@ export const CLOUD_DICTATION_PROVIDERS: readonly CloudDictationProvider[] = [
   "xai",
   "openrouter",
 ];
+export const DICTATION_PROVIDER_NAMES: Record<CloudDictationProvider, string> = {
+  openai: "OpenAI",
+  xai: "Grok",
+  openrouter: "OpenRouter",
+};
+
+/** Dictation languages by native name, so each speaker finds their own whatever the interface language. */
+export const DICTATION_LANGUAGES = [
+  ["tr", "Türkçe"],
+  ["en", "English"],
+  ["de", "Deutsch"],
+  ["fr", "Français"],
+  ["es", "Español"],
+  ["pt", "Português"],
+  ["zh", "简体中文"],
+  ["ja", "日本語"],
+] as const;
 
 /**
  * Transcription models the owner can choose per provider; the first is the default.

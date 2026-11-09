@@ -39,6 +39,7 @@ import {
 import type { VoiceWorkspaceSession } from "../../../features/voice/model/voiceWorkspaceActions";
 import { pathKey } from "../../../shared/lib/paths";
 import { createPath, homeDir } from "../../../platform/tauri/fs";
+import { readProjectActionCatalog } from "../../../features/projects/model/projectActionCatalog";
 import {
   newProjectFolderSetting,
   newProjectParent,
@@ -252,6 +253,7 @@ export function useVoiceAppBridge(deps: Deps) {
     onCreate,
     onCreateProject,
     onSelectProject: deps.onSelectProject,
+    listProjectActions: readProjectActionCatalog,
     onOpen: async (id, workspaceRequestId) => {
       const remote = listedSessions.current.get(id);
       if (remote && isRemoteProjectPath(remote.cwd) && latest.current.onOpenRemote) {

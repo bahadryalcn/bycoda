@@ -104,7 +104,8 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
             {token && onInsertToken ? (
               <Button
                 motion="none"
-                className="absolute bottom-0.5 left-0.5 shrink-0"
+                className={`absolute bottom-1 left-1 ${styles.action}`}
+                size="sm"
                 iconOnly
                 label={t("Insert {p0} into the message", { p0: token })}
                 variant="secondary"
@@ -181,8 +182,9 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                 motion="none"
                 variant="ghost"
                 iconOnly
+                size="sm"
                 label={t("Insert {p0} into the message", { p0: token })}
-                className="shrink-0"
+                className={`shrink-0 ${styles.action}`}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -202,7 +204,8 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
         {onRemove && image ? (
           <Button
             motion="none"
-            className="absolute right-0.5 top-0.5 shrink-0"
+            className={`absolute right-1 top-1 ${styles.action}`}
+            size="sm"
             iconOnly
             label={t("Remove {p0}", { p0: attachment.name })}
             variant="secondary"
@@ -221,7 +224,7 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
         {onRemove && !image ? (
           <InlineAction
             reveal="always"
-            className="shrink-0"
+            className={`shrink-0 ${styles.action}`}
             label={t("Remove {p0}", { p0: attachment.name })}
             type="button"
             onClick={onRemove}

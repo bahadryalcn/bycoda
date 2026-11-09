@@ -266,6 +266,7 @@ import {
   filterSessionsByStatus,
   filterSessionsByTime,
   harnessesInSessions,
+  filterSettledSessions,
   hasActiveSessionFilters,
   DEFAULT_SESSION_SIDEBAR_FILTERS,
   loadSessionSidebarFilters,
@@ -330,6 +331,7 @@ import { useKeybindingShortcut } from "../../features/settings/model/useKeybindi
 import { Popover } from "../../shared/ui/Popover";
 import { useProjectMenu } from "./useProjectMenu";
 import { SessionFiltersMenu } from "../../features/sessions/ui/SessionFiltersMenu";
+import { SessionSettleAction } from "../../features/sessions/ui/SessionSettleAction";
 import { LinkSessionWorkItemDialog } from "../../features/sessions/ui/LinkSessionWorkItemDialog";
 import { sessionReminderPresets } from "../../features/sessions/ui/sessionReminderPresets";
 import {
@@ -987,8 +989,11 @@ function SidebarComponent({
   const [reminderSessionsCollapsed, setReminderSessionsCollapsed] = useState(() =>
     loadReminderSessionsCollapsed(cwd),
   );
-  const { shelve: shelveSettled, setCollapsed: setSettledCollapsed } =
-    useSettledShelf(!remoteProject);
+  const {
+    shelve: shelveSettled,
+    isSettled,
+    setCollapsed: setSettledCollapsed,
+  } = useSettledShelf(!remoteProject);
   const [sessionDrop, setSessionDrop] = useState<SessionListDropTarget | null>(null);
   const [sessionFilters, setSessionFilters] = useState(loadSessionSidebarFilters);
   const [globalSessionFilters, setGlobalSessionFilters] =
@@ -1066,7 +1071,11 @@ function SidebarComponent({
       filterSessionsByTime(
         filterSessionsByHarness(
           filterAssistantManagedSessions(
-            filterSessionsByArchive(listedSessions, sessionFilters.showArchived),
+            filterSettledSessions(
+              filterSessionsByArchive(listedSessions, sessionFilters.showArchived),
+              sessionFilters.showSettled,
+              isSettled,
+            ),
             sessionFilters.assistantManaged,
           ),
           sessionFilters.hiddenHarnesses,
@@ -1104,6 +1113,7 @@ function SidebarComponent({
     sessionFolders,
     focusedWorktree,
     sessionFilters,
+    isSettled,
     now,
     listedBusySessionIds,
     listedApprovalSessionIds,
@@ -1138,6 +1148,7 @@ function SidebarComponent({
       ? "all-machines"
       : (remote.machine?.environmentId ?? (remoteProject ? "remote-offline" : "local")),
     listFilters.showArchived,
+    listFilters.showSettled,
     listFilters.assistantManaged,
     listFilters.time,
     listFilters.hiddenHarnesses,
@@ -1167,16 +1178,16 @@ function SidebarComponent({
     });
     // Status leads within each group; pins keep their saved order, loose rows stay by recency.
     const ungroupedVisible = orderLooseRows(ungroupedFiltered, sessionOrder.pinned, compareStatus);
-    const sessionListEntries = shelveSettled(
-      buildSessionList(
-        visibleSessions,
-        sessionFolders,
-        ungroupedVisible,
-        pinnedSessionsCollapsed,
-        reminderGroup,
-        compareStatus,
-      ),
+    const builtList = buildSessionList(
+      visibleSessions,
+      sessionFolders,
+      ungroupedVisible,
+      pinnedSessionsCollapsed,
+      reminderGroup,
+      compareStatus,
     );
+    // The Settled filter lists settled sessions in place instead of on the shelf.
+    const sessionListEntries = sessionFilters.showSettled ? builtList : shelveSettled(builtList);
     const sessionNavigationIds = sessionListNavigationIds(sessionListEntries, searchNarrowed);
     return {
       reminderIds,
@@ -1201,6 +1212,7 @@ function SidebarComponent({
     activeListedSessionId,
     pinnedSessionsCollapsed,
     shelveSettled,
+    sessionFilters.showSettled,
     searchNarrowed,
   ]);
   const flatSessionRows = useMemo(
@@ -2702,6 +2714,7 @@ function SidebarComponent({
       onListDrop={reminderIds.has(session.id) || searchNarrowed ? undefined : cardActions.listDrop}
       onListDropTargetChange={setSessionDrop}
       onContextMenu={cardActions.contextMenu}
+      settleable={!remoteProject}
       onArchive={onArchiveSession ? cardActions.archive : undefined}
       onRename={
         onRenameSession && !titleActions[session.id]?.pending ? cardActions.rename : undefined
@@ -2939,10 +2952,8 @@ function SidebarComponent({
     const rect = event.currentTarget.getBoundingClientRect();
     setSessionMenu(null);
     setFolderMenu(null);
-    setFilterMenu({
-      x: rect.right - 228,
-      y: rect.bottom + 2,
-    });
+    // The menu aligns its end edge to this point, under the button's end edge.
+    setFilterMenu({ x: rect.right, y: rect.bottom + 2 });
   };
 
   // The session list's own tools sit in the Workspace header row: an inline filter that opens from
@@ -4016,6 +4027,7 @@ function SidebarComponent({
           y={filterMenu.y}
           harnesses={sessionHarnesses}
           local={!remoteProject}
+          settled={!remoteProject && !lastSessionsOpen}
           filters={lastSessionsOpen ? globalSessionFilters : sessionFilters}
           allowedTimeFilters={lastSessionsOpen ? GLOBAL_SESSION_TIME_FILTERS : undefined}
           defaultFilters={lastSessionsOpen ? GLOBAL_SESSION_FILTERS : undefined}
@@ -5290,6 +5302,7 @@ const SessionCard = memo(function SessionCard({
   onListDrop,
   onListDropTargetChange,
   onContextMenu,
+  settleable = false,
   onArchive,
   onRename,
   onDelete,
@@ -5340,6 +5353,8 @@ const SessionCard = memo(function SessionCard({
   onListDrop?: (draggedId: string, target: SessionListDropTarget) => void;
   onListDropTargetChange?: (target: SessionListDropTarget | null) => void;
   onContextMenu?: (sessionId: string, e: ReactMouseEvent<HTMLDivElement>) => void;
+  /** A session of this computer's Host: offers Settle / Un-settle. */
+  settleable?: boolean;
   onArchive?: (sessionId: string, archived: boolean) => void;
   onRename?: (sessionId: string) => void;
   onDelete?: (sessionId: string) => void;
@@ -5956,7 +5971,9 @@ const SessionCard = memo(function SessionCard({
       </InlineAction>
     ) : null;
   // Compact idle rows let hover actions sit over the time instead of reserving a gutter.
-  const compactActionCount = compact ? [onPin, onArchive, onDelete].filter(Boolean).length : 0;
+  const compactActionCount = compact
+    ? [onPin, settleable, onArchive, onDelete].filter(Boolean).length
+    : 0;
   const timeYields =
     compactActionCount && idle && !linkedWorkItem && !session.automationId && !orchestration;
   const rowCommands = (
@@ -5966,6 +5983,7 @@ const SessionCard = memo(function SessionCard({
       className={`relative flex shrink-0 items-center ${compact ? "" : "gap-px"}`}
     >
       {compact ? pinAction() : null}
+      {settleable ? <SessionSettleAction session={session} title={title} /> : null}
       {onArchive ? (
         <InlineAction
           label={`${archiveLabel} ${title}`}

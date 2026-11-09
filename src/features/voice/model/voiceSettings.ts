@@ -8,6 +8,7 @@ import type {
 } from "./localVoiceClient";
 import { DEFAULT_SPEAKERS, SPEAKER_IDS, type SpeakerEngine } from "./voiceSpeakers";
 import { CLOUD_DICTATION_PROVIDERS, DICTATION_MODELS } from "./dictationModels";
+import { SPOKEN_LANGUAGES } from "./voiceSpokenLanguage";
 
 export type VoiceVisual = "mark" | "wave" | "dots" | "orb";
 /** Who runs the conversation: local recognition + the session's provider, or a
@@ -38,6 +39,8 @@ export type VoiceSettings = {
   dictationEngine: DictationEngine;
   /** Chosen transcription model per cloud provider; missing uses the provider default. */
   dictationModels: Partial<Record<CloudDictationProvider, string>>;
+  /** "auto" lets the recognizer detect the spoken language; a code forces it. */
+  dictationLanguage: "auto" | keyof typeof SPOKEN_LANGUAGES;
   /** Zero disables idle sleep; otherwise minutes without owner input. */
   idleSleepMinutes: number;
   natural: boolean;
@@ -62,6 +65,7 @@ const defaults: VoiceSettings = {
   dictationEnabled: false,
   dictationEngine: "local",
   dictationModels: {},
+  dictationLanguage: "auto",
   idleSleepMinutes: 10,
   natural: true,
   mode: "local",
@@ -103,6 +107,12 @@ const preference = createStoredSetting<VoiceSettings>({
             : [];
         }),
       ),
+      dictationLanguage: Object.prototype.hasOwnProperty.call(
+        SPOKEN_LANGUAGES,
+        value?.dictationLanguage,
+      )
+        ? (value.dictationLanguage as keyof typeof SPOKEN_LANGUAGES)
+        : "auto",
       ...(typeof value?.manualTurnEnd === "boolean" ? { manualTurnEnd: value.manualTurnEnd } : {}),
       ...(Number.isSafeInteger(value?.manualTurnEndRevision) && value.manualTurnEndRevision >= 0
         ? { manualTurnEndRevision: value.manualTurnEndRevision }
@@ -173,4 +183,14 @@ export function voiceRuntimeSettings(value: VoiceSettings): VoiceRuntimeConfig {
     ...(value.whisperPath.trim() ? { whisperPath: value.whisperPath.trim() } : {}),
     ...(value.ttsPath.trim() ? { ttsPath: value.ttsPath.trim() } : {}),
   };
+}
+
+/**
+ * Language sent with each dictation phrase. Cloud APIs treat it as the output
+ * language and translate other speech into it, so Automatic sends none there;
+ * local Whisper only uses the interface language as a hint when unsure.
+ */
+export function dictationLanguage(value: VoiceSettings, locale: string): string {
+  if (value.dictationLanguage !== "auto") return value.dictationLanguage;
+  return value.dictationEngine === "local" ? locale.split("-")[0] : "";
 }

@@ -29,6 +29,8 @@ type Props = {
   onChange: (filters: SessionSidebarFilters) => void;
   onClose: () => void;
   local?: boolean;
+  /** Offers the Settled row; only this computer's Host keeps settled records. */
+  settled?: boolean;
   allowedTimeFilters?: readonly SessionTimeFilter[];
   defaultFilters?: SessionSidebarFilters;
 };
@@ -89,6 +91,7 @@ export function SessionFiltersMenu({
   onChange,
   onClose,
   local = true,
+  settled = false,
   allowedTimeFilters,
   defaultFilters = DEFAULT_SESSION_SIDEBAR_FILTERS,
 }: Props) {
@@ -142,6 +145,17 @@ export function SessionFiltersMenu({
       check("archived", t("Archived"), filters.showArchived, { closeOnSelect: true }),
       toggleArchived,
     ),
+    ...(settled
+      ? [
+          toggle(
+            check("settled", t("Settled"), filters.showSettled, { closeOnSelect: true }),
+            () => {
+              onChange({ ...filters, showSettled: !filters.showSettled });
+              onClose();
+            },
+          ),
+        ]
+      : []),
     toggle(check("managed", managedName, filters.assistantManaged), () =>
       onChange({ ...filters, assistantManaged: !filters.assistantManaged }),
     ),

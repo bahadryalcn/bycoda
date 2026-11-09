@@ -75,3 +75,22 @@
   font-size: var(--text-ui-caption);
   line-height: 1rem;
 }
+/* Insert and remove stay out of the way until the card is hovered or holds focus;
+   touch input has no hover, so it always shows them. */
+.action {
+  opacity: 0;
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.card:is(:hover, :focus-within) .action {
+  opacity: 1;
+}
+@media (hover: none), (pointer: coarse) {
+  .action {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .action {
+    transition: none;
+  }
+}

@@ -16,8 +16,9 @@ and releases the microphone and local engines without stopping coding work.
 
 Use the assistant button at the bottom of the sidebar, beside Settings, to set up
 voice and later open the companion. After setup it shows the assistant's avatar
-and name (the narrow rail shows the avatar alone); the dot on the avatar is grey
-while voice is off and pulses green while the assistant listens or speaks. When
+and name (the narrow rail shows the avatar alone). The avatar has no dot while
+voice is off; the dot pulses green while the assistant listens or speaks, turns
+yellow while connecting, red on an error and grey while the microphone is paused. When
 no sidebar is visible the button floats at the bottom right of the window. Before the first conversation,
 complete the assistant setup: choose its name, spoken language, provider and
 voice, verify playback and a microphone sentence, and review the autonomy budget.
@@ -141,6 +142,13 @@ even before you have spoken; rejected candidates must never start a reply.
 Project scope is the default; **Global** switches to the cross-project thread.
 A selected session remains the captured focus for each accepted spoken turn.
 Transcript text is stored in Host threads; microphone recordings are not stored.
+When you start talking again ten minutes or more after the last message, the
+assistant treats it as a new conversation: it knows when the previous one ended
+and the current time, answers a greeting with a short greeting and asks what you
+want, offering the unfinished topic as a question instead of continuing it. After
+six hours or on a new day it greets for the time of day and offers, without
+reading it, a summary of the day. Shorter pauses and automatic reconnects simply
+continue.
 Assistant speech enters voice history after playback completes. When a reply is
 cut off and word-level playback alignment is unavailable, its unconfirmed text
 is omitted from voice history; verified operation results remain intact. Generated
@@ -222,13 +230,25 @@ the full panel and its controls. Drag the pill's visual, or focus that move
 control and use arrow keys, to reposition it. Both sizes stay within the viewport
 when moved, resized or expanded; position is saved independently of visual style.
 
+To make the expanded panel larger, drag the resize grip in its header up and
+away from the nearer window edge, or focus it and use the arrow keys. The size is
+saved; double-click the grip to return to the automatic size.
+
+An open question or job review slides out in its own panel beside the
+companion, on the side with room (above it when neither side fits), so the
+whole conversation stays visible while you answer. The panel follows the
+companion when you move or resize it and scrolls to its answer actions when it
+opens. In a window too small for that, it appears above the controls instead.
+
 ### Floating outside the app
 
 In the desktop app on Windows, macOS and Linux, choose **Float outside the app**
 from the **Voice options** menu in the companion header, or drag the visual/grip past the edge of the bycoda
 window and release it there. The companion continues as a small always-on-top
 window that you can drag anywhere on any screen, so you can keep talking and
-control voice while bycoda is in the background, minimized or hidden. While it
+control voice while bycoda is in the background, minimized or hidden. A
+question opens beside the floating window too, toward the side of the screen
+with room; when it is answered the window returns to its size and place. While it
 floats, the app shows a **Return voice companion to this window** button in the
 same place.
 
@@ -592,6 +612,14 @@ project rail and shows it; it never reuses an existing folder. The folder goes i
 the folder most of your projects already share, otherwise `Projects` in your home
 folder. Creating the folder outside an approved location asks for file access
 first. The assistant can then start a session, task or crew for the new project.
+
+To run a project locally ("start localhost", "ayağa kaldır"), the assistant reads
+the project's saved top-bar actions and the scripts in its `package.json` or
+`Cargo.toml`. A saved action wins over a detected script. It picks the action
+that starts a dev server even when **Manage as development server** is off: for
+example, a saved `dev · pnpm run dev`. It checks whether that server already runs,
+then starts it as a managed dev server whose status and logs it can read. It asks
+only when several servers fit.
 
 Supported project tools use the verified assistant thread without creating a coding
 session. Working-copy operations still require an actual selected session.

@@ -7,7 +7,7 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Select } from "../../../shared/ui/Select";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { readTextFile, statFiles } from "../../../platform/tauri/fs";
+import { projectActionPresetIO } from "../model/projectActionCatalog";
 import { Alert } from "../../../shared/ui/Alert";
 import { Field } from "../../../shared/ui/Field";
 import { LiveText } from "../../../shared/ui/LiveText";
@@ -59,11 +59,6 @@ const examples = [
     url: "",
   },
 ];
-const presetIO = {
-  read: readTextFile,
-  exists: (paths: string[]) =>
-    statFiles(paths).then((entries) => entries.map((entry) => entry.mtimeMs !== null)),
-};
 const CHIP_LIMIT = 4;
 
 export function ProjectActionDialog({
@@ -97,7 +92,7 @@ export function ProjectActionDialog({
   useEffect(() => {
     if (editing) return;
     let live = true;
-    detectProjectActionPresets(cwd, presetIO)
+    detectProjectActionPresets(cwd, projectActionPresetIO)
       .then((found) => {
         if (live) setDetected(found);
       })

@@ -40,6 +40,14 @@ it("drops the recognizer's echoed vocabulary hint but keeps commands using those
     ),
   ).toBe("");
   expect(speechTranscript("Bycoda. Crews, Tasks, Projects, Sessions, MCP.")).toBe("");
+  // Recognizers reshape the echo: a colon, singular forms, different casing.
+  expect(
+    speechTranscript(
+      "Bycoda: Ekipler, Takımlar, Görevler, Projeler, Oturumlar, Otomasyonlar, Notlar, Gelen Kutusu, Yetenekler, Cihazlar, Tarayıcı. Crew, Tasks, Projects, Sessions, MCP.",
+    ),
+  ).toBe("");
+  expect(speechTranscript("Crew, task, project, session.")).toBe("");
   expect(speechTranscript("Projeler")).toBe("Projeler");
+  expect(speechTranscript("Proje görev not ekle.")).toBe("Proje görev not ekle.");
   expect(speechTranscript("Ekipleri ve görevleri listele.")).toBe("Ekipleri ve görevleri listele.");
 });

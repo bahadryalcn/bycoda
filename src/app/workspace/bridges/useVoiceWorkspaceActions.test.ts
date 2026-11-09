@@ -50,6 +50,22 @@ describe("voice workspace owner actions", () => {
       await execute("workspace.projects.create", { name: "x", requestId: "create-2" }),
     ).toMatchObject({ status: "completed" });
   });
+  it("lists a visible project's run actions without running anything", async () => {
+    const listProjectActions = vi.fn(async () => ({
+      actions: [
+        { name: "dev", command: "pnpm run dev", devServer: true, source: "saved" as const },
+      ],
+    }));
+    const { execute } = setup({ listProjectActions });
+    expect(
+      await execute("workspace.projects.actions.list", { projectPath: "/project" }),
+    ).toMatchObject({ status: "completed", projectPath: "/project", actions: [{ name: "dev" }] });
+    // Hidden or locked projects are never read.
+    expect(
+      await execute("workspace.projects.actions.list", { projectPath: "/hidden" }),
+    ).toMatchObject({ status: "rejected" });
+    expect(listProjectActions).toHaveBeenCalledTimes(1);
+  });
   it("reports project creation as unavailable without a window owner", async () => {
     const { execute } = setup();
     expect(

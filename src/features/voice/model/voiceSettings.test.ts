@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 import {
+  dictationLanguage,
   loadVoiceSettings,
   saveVoiceSettings,
   subscribeVoiceSettings,
@@ -80,4 +81,18 @@ it("keeps a valid speaker per engine and sends only a non-default Supertonic spe
   ).not.toHaveProperty("voiceId");
   expect(voiceRuntimeSettings({ ...settings, engine: "voxcpm2" })).not.toHaveProperty("voiceId");
   localStorage.removeItem("bycoda.voice");
+});
+
+it("never forces the interface language on cloud dictation, which would translate speech", () => {
+  localStorage.setItem("bycoda.voice", JSON.stringify({ dictationLanguage: "xx" }));
+  const settings = loadVoiceSettings();
+  expect(settings.dictationLanguage).toBe("auto");
+  // Automatic: cloud providers detect the language; local Whisper keeps the hint.
+  expect(dictationLanguage({ ...settings, dictationEngine: "xai" }, "en-US")).toBe("");
+  expect(dictationLanguage({ ...settings, dictationEngine: "local" }, "en-US")).toBe("en");
+  // A chosen language is sent to every recognizer.
+  localStorage.setItem("bycoda.voice", JSON.stringify({ dictationLanguage: "tr" }));
+  const chosen = loadVoiceSettings();
+  expect(dictationLanguage({ ...chosen, dictationEngine: "xai" }, "en-US")).toBe("tr");
+  expect(dictationLanguage({ ...chosen, dictationEngine: "local" }, "en-US")).toBe("tr");
 });

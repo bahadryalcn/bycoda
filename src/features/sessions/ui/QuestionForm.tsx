@@ -372,14 +372,26 @@ function QuestionFormContent({
           continueCurrent();
         }}
       >
-        <div className={styles.context}>
+        {/* Without a separate heading the question itself sits beside the icon; the field
+            legend still names the group for assistive technology. */}
+        <div className={styles.context} data-prompt={title ? undefined : ""}>
           <MessageSquare className="icon-sm shrink-0" aria-hidden />
-          <span className={styles.contextTitle}>{title ?? t("Question")}</span>
+          {title ? (
+            <span className={styles.contextTitle}>{title}</span>
+          ) : (
+            <span className={styles.contextPrompt} aria-hidden>
+              {question.prompt}
+            </span>
+          )}
           {total > 1 ? (
             <LiveText className={styles.progress} text={`${index + 1} / ${total}`} />
           ) : null}
         </div>
-        <fieldset className={styles.body} disabled={sending}>
+        <fieldset
+          className={styles.body}
+          data-inline-prompt={title ? undefined : ""}
+          disabled={sending}
+        >
           <QuestionFields
             key={question.id}
             question={question}

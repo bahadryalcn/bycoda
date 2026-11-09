@@ -3,7 +3,12 @@ import { t, useLocale } from "../../../shared/i18n";
 import { useAssistantSnapshot, assistantIdentity } from "../../assistant/model/assistantClient";
 import { Group, Row, Segmented, Select, Toggle } from "../../settings/public/settingsControls";
 import { VoiceActivityRow } from "./VoiceActivityRow";
-import { DICTATION_MODELS, dictationModel } from "../model/dictationModels";
+import {
+  DICTATION_LANGUAGES,
+  DICTATION_MODELS,
+  DICTATION_PROVIDER_NAMES,
+  dictationModel,
+} from "../model/dictationModels";
 import { VoiceCloudKey } from "./VoiceCloudKey";
 import { MicrophonePermissionSettings } from "./MicrophonePermissionSettings";
 import { VoiceSetupRow } from "./VoiceSetupRow";
@@ -22,7 +27,6 @@ import {
 } from "../model/voiceSettings";
 
 type Change = (patch: Partial<Preferences>) => void;
-const DICTATION_ENGINE_NAMES = { openai: "OpenAI", xai: "Grok", openrouter: "OpenRouter" };
 
 /** The Voice assistant settings page: dictation, companion, engine, conversation style and look. */
 export function VoiceSettings() {
@@ -76,7 +80,7 @@ export function VoiceSettings() {
               settings.dictationEngine === "local"
                 ? t("Speech is recognized on this computer.")
                 : t("Dictation audio is sent to {p1}. No transcription model is installed.", {
-                    p1: DICTATION_ENGINE_NAMES[settings.dictationEngine],
+                    p1: DICTATION_PROVIDER_NAMES[settings.dictationEngine],
                   })
             }
           >
@@ -87,9 +91,9 @@ export function VoiceSettings() {
               options={[
                 { value: "local", label: t("This computer") },
                 // OpenAI and Grok use the Codex / Grok Build sign-in, like voice.
-                { value: "openai", label: DICTATION_ENGINE_NAMES.openai },
-                { value: "xai", label: DICTATION_ENGINE_NAMES.xai },
-                { value: "openrouter", label: DICTATION_ENGINE_NAMES.openrouter },
+                { value: "openai", label: DICTATION_PROVIDER_NAMES.openai },
+                { value: "xai", label: DICTATION_PROVIDER_NAMES.xai },
+                { value: "openrouter", label: DICTATION_PROVIDER_NAMES.openrouter },
               ]}
               onChange={(value) => change({ dictationEngine: value as DictationEngine })}
             />
@@ -119,6 +123,28 @@ export function VoiceSettings() {
                     [settings.dictationEngine]: value,
                   },
                 })
+              }
+            />
+          </Row>
+        ) : null}
+        {settings.dictationEnabled ? (
+          <Row
+            id="dictation-language"
+            label={t("Dictation language")}
+            description={t(
+              "Automatic detects the language you speak. Choose one if dictation translates your speech.",
+            )}
+          >
+            <Select
+              hideLabel
+              label={t("Dictation language")}
+              value={settings.dictationLanguage}
+              options={[
+                { value: "auto", label: t("Automatic") },
+                ...DICTATION_LANGUAGES.map(([value, label]) => ({ value, label })),
+              ]}
+              onChange={(value) =>
+                change({ dictationLanguage: value as Preferences["dictationLanguage"] })
               }
             />
           </Row>

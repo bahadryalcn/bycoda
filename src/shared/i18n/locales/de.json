@@ -12429,6 +12429,10 @@
   "Dictation": "Diktat",
   "Dictation model": "Diktatmodell",
   "Used for every dictation with this provider.": "Wird für jedes Diktat mit diesem Anbieter verwendet.",
+  "Dictation language": "Diktatsprache",
+  "Dictation options": "Diktatoptionen",
+  "Recognition, model and language": "Erkennung, Modell und Sprache",
+  "Automatic detects the language you speak. Choose one if dictation translates your speech.": "Automatisch erkennt die gesprochene Sprache. Wählen Sie eine, wenn das Diktat Ihre Sprache übersetzt.",
   "Sign in to sync your stats across devices": "Melde dich an, um deine Statistiken auf allen Geräten zu synchronisieren",
   "An account is optional. Your sessions, projects and settings stay on this computer either way.": "Ein Konto ist optional. Deine Sitzungen, Projekte und Einstellungen bleiben in jedem Fall auf diesem Computer.",
   "Signed in as {p0}. Your stats now sync across your devices.": "Angemeldet als {p0}. Deine Statistiken werden jetzt auf allen Geräten synchronisiert.",
@@ -12733,5 +12737,7 @@
   "{p0} could not be completed.": "{p0} konnten nicht abgeschlossen werden.",
   "{p0} changed 1 worktree in this project.": "{p0} hat 1 Worktree in diesem Projekt geändert.",
   "{p0} changed {p1} worktrees in this project.": "{p0} hat {p1} Worktrees in diesem Projekt geändert.",
-  "{p0} changed this project's workspace settings.": "{p0} hat die Arbeitsbereichseinstellungen dieses Projekts geändert."
+  "{p0} changed this project's workspace settings.": "{p0} hat die Arbeitsbereichseinstellungen dieses Projekts geändert.",
+  "Resize voice companion": "Sprachbegleiter skalieren",
+  "Drag to resize. Double-click for the automatic size.": "Zum Skalieren ziehen. Doppelklick für die automatische Größe."
 }

@@ -67,6 +67,25 @@ describe("voice tool discovery", () => {
     expect(selectVoiceTools(catalog, { query: "missing words" }).total).toBe(0);
   });
 
+  it("finds the dev server start tool for spoken run-locally requests", () => {
+    // Global voice once told the owner it had no run tool because these searches found nothing.
+    const catalog = readVoiceToolCatalog({ tools: voiceToolCatalog() });
+    for (const query of [
+      "dev sunucusu",
+      "dev server",
+      "localhost",
+      "localhost başlat",
+      "lokal sunucu",
+      "dev sunucusunu başlat",
+      "sunucuyu çalıştır",
+      "ayağa kaldır",
+    ])
+      expect(
+        selectVoiceTools(catalog, { query }).tools.map((entry) => entry.action),
+        query,
+      ).toContain("devServers.start");
+  });
+
   it("does not disguise incomplete or malformed catalogs as an empty available set", () => {
     expect(() => readVoiceToolCatalog({ unavailable: true })).toThrow("catalog is invalid");
     expect(() => readVoiceToolCatalog({ tools: [tool("notes.list"), tool("notes.list")] })).toThrow(

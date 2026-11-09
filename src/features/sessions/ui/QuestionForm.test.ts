@@ -127,8 +127,13 @@ describe("QuestionForm keyboard navigation", () => {
     typed.questions[0].options = [];
     typed.questions[0].allowCustom = true;
     act(() => root.render(createElement(QuestionForm, { prompt: typed, onReply: vi.fn() })));
-    expect(container.textContent?.match(/Pick a colour/g)).toHaveLength(1);
-    expect(container.querySelector("legend")?.textContent).toBe("Pick a colour");
+    // Shown once beside the icon; the legend keeps naming the group for screen readers only.
+    const legend = container.querySelector("legend");
+    expect(legend?.textContent).toBe("Pick a colour");
+    expect(legend?.closest("[data-inline-prompt]")).not.toBeNull();
+    const visible = container.textContent?.replace(legend?.textContent ?? "", "");
+    expect(visible?.match(/Pick a colour/g)).toHaveLength(1);
+    expect(container.querySelector("[data-prompt]")?.textContent).toBe("Pick a colour");
     expect(container.querySelector("textarea")?.getAttribute("aria-label")).toBe(
       "Type your answer",
     );

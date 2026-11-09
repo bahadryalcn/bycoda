@@ -1164,6 +1164,7 @@ pub fn run() {
             voice_overlay::voice_overlay_open,
             voice_overlay::voice_overlay_fit,
             voice_overlay::voice_overlay_nudge,
+            voice_overlay::voice_overlay_room,
             voice_overlay::voice_overlay_close,
             voice_overlay::voice_overlay_show_owner,
             #[cfg(target_os = "macos")]

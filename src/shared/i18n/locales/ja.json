@@ -12429,6 +12429,10 @@
   "Dictation": "音声入力",
   "Dictation model": "音声入力モデル",
   "Used for every dictation with this provider.": "このプロバイダーでのすべての音声入力に使用されます。",
+  "Dictation language": "音声入力の言語",
+  "Dictation options": "音声入力オプション",
+  "Recognition, model and language": "認識、モデル、言語",
+  "Automatic detects the language you speak. Choose one if dictation translates your speech.": "自動では話している言語を検出します。音声入力が翻訳されてしまう場合は言語を選択してください。",
   "Sign in to sync your stats across devices": "サインインすると、統計情報をデバイス間で同期できます",
   "An account is optional. Your sessions, projects and settings stay on this computer either way.": "アカウントは任意です。セッション、プロジェクト、設定は、いずれの場合もこのコンピューターに保存されます。",
   "Signed in as {p0}. Your stats now sync across your devices.": "{p0} としてサインインしました。統計情報がデバイス間で同期されるようになりました。",
@@ -12733,5 +12737,7 @@
   "{p0} could not be completed.": "{p0} 件を完了できませんでした。",
   "{p0} changed 1 worktree in this project.": "{p0} がこのプロジェクトの 1 件のワークツリーを変更しました。",
   "{p0} changed {p1} worktrees in this project.": "{p0} がこのプロジェクトの {p1} 件のワークツリーを変更しました。",
-  "{p0} changed this project's workspace settings.": "{p0} がこのプロジェクトのワークスペース設定を変更しました。"
+  "{p0} changed this project's workspace settings.": "{p0} がこのプロジェクトのワークスペース設定を変更しました。",
+  "Resize voice companion": "音声コンパニオンのサイズを変更",
+  "Drag to resize. Double-click for the automatic size.": "ドラッグしてサイズを変更します。ダブルクリックで自動サイズに戻ります。"
 }

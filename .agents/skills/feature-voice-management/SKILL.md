@@ -41,7 +41,10 @@ Source paths below are repository-relative.
   project. Global discovery also lists project tools (Room marks them
   `requiresProject`); calling one still needs an explicit visible target.
   `workspace.projects.create` makes a new folder through native file access and
-  adds it to the rail; it never reuses an existing folder. Project work retains
+  adds it to the rail; it never reuses an existing folder.
+  `workspace.projects.actions.list` only reads saved project actions and manifest
+  scripts (`projectActionCatalog`); starting one stays on `devServers.start` or
+  terminal tools and their gates. Project work retains
   explicit target grants. A local thread is not a
   remote Host principal; never substitute another source after a failed route.
 - Crew thread writes retain exact native review, snapshot revision and operation

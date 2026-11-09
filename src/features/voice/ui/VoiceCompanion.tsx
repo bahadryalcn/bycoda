@@ -95,6 +95,8 @@ import {
 } from "../../assistant/model/assistantClient";
 import { voiceLanguageCode } from "../model/voiceLanguage";
 import { VoiceThreadTranscript, voiceThreadSeed, voiceThreadSummary } from "../model/voiceThreads";
+import { withVoiceSessionBoundary } from "../model/voiceSessionGap";
+import { VoicePanelResize } from "./companion/VoicePanelResize";
 import { VoiceCausalGeneration, VoiceContextScopeUnavailable } from "../model/voiceCausalContext";
 import {
   VoiceHistoryBindings,
@@ -1809,8 +1811,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
                 historyAvailable: false,
               };
         // These are the exact canonical records actually sent to this isolated call.
-        promptExchanges = voiceThreadSeed(
-          summary && stored.thread ? stored.thread : { summary: "" },
+        promptExchanges = withVoiceSessionBoundary(
+          voiceThreadSeed(summary && stored.thread ? stored.thread : { summary: "" }, seed),
           seed,
         ).map(({ role, text }) => ({ role, text }));
       } catch (cause) {
@@ -2540,10 +2542,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         if (generation.current === epoch) historyLoadFailed(cause);
       }
       if (generation.current !== epoch || capturedHistory?.current?.() === false) return;
-      const safeTurns = voiceThreadSeed({ summary: "" }, seed).map(({ role, text }) => ({
-        role,
-        text,
-      }));
+      const safeTurns = withVoiceSessionBoundary(voiceThreadSeed({ summary: "" }, seed), seed).map(
+        ({ role, text }) => ({ role, text }),
+      );
       const causal = new VoiceCausalGeneration(
         seed.map((message) => message.id),
         !!seededSummary,
@@ -3190,6 +3191,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         compact={compact}
         status={status}
         handle={handle}
+        resize={<VoicePanelResize panel={panel} position={position} onPosition={setPosition} />}
+        panel={panel}
+        sideKey={choice?.id ?? jobReview?.id}
         visual={settings.visual}
         visualState={visualState}
         working={Boolean(target?.busy)}

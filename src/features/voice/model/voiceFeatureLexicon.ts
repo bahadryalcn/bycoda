@@ -86,6 +86,21 @@ const features: Record<string, string[]> = {
     "サーバー",
     "服务器",
   ],
+  devservers: [
+    "dev server",
+    "dev servers",
+    "development server",
+    "local server",
+    "localhost",
+    "local host",
+    "dev sunucu",
+    "dev sunucusu",
+    "geliştirme sunucusu",
+    "lokal sunucu",
+    "yerel sunucu",
+    "lokal host",
+    "ayağa kaldır",
+  ],
   search: ["search", "ara", "suchen", "buscar", "recherche", "pesquisa", "検索", "搜索"],
   sessions: [
     "sessions",
@@ -239,11 +254,16 @@ export function voiceTranscriptionHint(language: string): string {
   return `Bycoda. ${hintLabels[code] ?? hintLabels.en}. ${hintSuffix}`;
 }
 
+/** A hint word, or its singular as recognizers reshape it ("crew" for "crews", "ekip" for "ekipler"). */
+const isHintWord = (word: string) =>
+  hintVocabulary.has(word) ||
+  (word.length >= 3 && [...hintVocabulary].some((hint) => hint.startsWith(word)));
+
 /** Recognizers can return their vocabulary prompt for silence or noise. A turn
  * made only of four or more hint words is that echo, not something the owner said. */
 export function isVoiceTranscriptionHintEcho(text: string): boolean {
   const words = hintWords(text);
-  return words.length >= 4 && words.every((word) => hintVocabulary.has(word));
+  return words.length >= 4 && words.every(isHintWord);
 }
 
 export const VOICE_FEATURE_CONTEXT =
@@ -297,7 +317,17 @@ const actions: Record<string, string[]> = {
     "更新",
   ],
   delete: ["delete", "sil", "löschen", "eliminar", "supprimer", "削除", "excluir", "删除"],
-  start: ["start", "başlat", "inicio", "démarrer", "スタート", "iniciar", "开始"],
+  start: [
+    "start",
+    "başlat",
+    "çalıştır",
+    "run",
+    "inicio",
+    "démarrer",
+    "スタート",
+    "iniciar",
+    "开始",
+  ],
   stop: ["stop", "durdur", "stopp", "detener", "arrêter", "停止", "parar"],
   pause: ["pause", "duraklat", "pausa", "一時停止", "暂停"],
   resume: [
@@ -322,7 +352,7 @@ function normalize(value: string): string {
 function matches(word: string, alias: string): boolean {
   if (word === alias) return true;
   if (alias.length < 3 || !word.startsWith(alias)) return false;
-  return /^(?:ler|lar|leri|lari|lerim|larim|lerimiz|larimiz|im|imden|imiz|in|iniz|de|da|te|ta|den|dan|ten|tan|deki|daki|teki|taki|e|a|i|yi|ya|ye|ni|nin|nun|nunki|lerindeki|lerdeki)$/.test(
+  return /^(?:ler|lar|leri|lari|lerim|larim|lerimiz|larimiz|im|imden|imiz|in|iniz|de|da|te|ta|den|dan|ten|tan|deki|daki|teki|taki|e|a|i|u|yi|ya|ye|yu|ni|su|sunu|nin|nun|nunki|lerindeki|lerdeki)$/.test(
     word.slice(alias.length),
   );
 }

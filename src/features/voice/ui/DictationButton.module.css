@@ -1,3 +1,16 @@
+/* Microphone and its options chevron read as one control. */
+.group {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Placement only: a narrow chevron beside the microphone. */
+.options {
+  inline-size: 16px;
+  min-inline-size: 16px;
+  padding-inline: 0;
+}
+
 /* Icon content only: the shared Button owns geometry, tones and interaction. */
 .visual {
   display: grid;

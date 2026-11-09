@@ -33,9 +33,11 @@
 
 .chat {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 6px;
   min-inline-size: 0;
+  min-block-size: 4.5rem;
   max-block-size: min(42dvh, 300px);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -86,4 +88,78 @@
 .spacer {
   flex: 1 1 0;
   min-inline-size: 0;
+}
+
+/* A resized panel gives the transcript all the height it has. */
+[data-sized] .chat {
+  max-block-size: none;
+}
+
+/* Open question or job review in its own panel beside the companion (VoiceSidePanel). Fixed to
+   the viewport, so the companion's clipping does not cut it; it slides in from the companion. */
+.side {
+  position: fixed;
+  z-index: 1;
+  min-inline-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px;
+  border: 1px solid var(--ui-tone-neutral-border);
+  border-radius: var(--radius-panel);
+  background: var(--ui-surface-floating);
+  box-shadow: var(--ui-elevation-floating);
+  animation: voice-side-in var(--motion-duration-standard) var(--motion-ease-standard);
+  --voice-side-from: -12px 0;
+}
+.side[data-side="left"] {
+  --voice-side-from: 12px 0;
+}
+.side[data-side="top"] {
+  --voice-side-from: 0 12px;
+}
+@keyframes voice-side-in {
+  from {
+    opacity: 0;
+    translate: var(--voice-side-from);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .side {
+    animation: none;
+  }
+}
+
+/* In a window too small for a side panel: docked above the controls with its own scroll. */
+.dock {
+  min-inline-size: 0;
+  max-block-size: min(55dvh, 440px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 10px;
+  border-block-start: 1px solid var(--ui-tone-neutral-border);
+}
+
+/* Resize grip in the header: drag outward and up; the icon points the way it resizes. */
+.resize {
+  cursor: nesw-resize;
+}
+.resize[data-side="left"] {
+  cursor: nwse-resize;
+}
+.resizeIcon {
+  rotate: 45deg;
+}
+.resize[data-side="left"] .resizeIcon {
+  rotate: -45deg;
+}
+/* The side panel is the question's surface; drop the card frame inside it. */
+.side:has([data-question-form]) {
+  padding: 0;
+}
+.side :where([data-question-form]) {
+  padding: 0;
+}
+.side :where([data-question-form] > form) {
+  border: 0;
+  border-radius: 0;
 }

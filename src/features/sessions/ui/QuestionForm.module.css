@@ -22,6 +22,27 @@
   letter-spacing: 0.01em;
   overflow-wrap: anywhere;
 }
+/* The question beside the icon, when the prompt has no separate heading. */
+.context[data-prompt] {
+  align-items: flex-start;
+  color: var(--ui-tone-neutral-fg);
+}
+.context[data-prompt] > svg {
+  margin-block-start: 0.2em;
+  color: var(--ui-text-secondary);
+}
+.contextPrompt {
+  flex: 1;
+  min-inline-size: 0;
+  font-size: var(--ui-font-body);
+  font-weight: 500;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.context[data-prompt] .progress {
+  margin-block-start: 0.2em;
+  color: var(--ui-text-secondary);
+}
 .progress {
   flex: none;
   margin-inline-start: auto;
@@ -149,4 +170,17 @@
   margin-block-start: var(--space-1);
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
+}
+
+/* Shown beside the icon instead; kept for screen readers as the group's name. */
+.body[data-inline-prompt] .fields > legend,
+.body[data-inline-prompt] .fields .radio > legend {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

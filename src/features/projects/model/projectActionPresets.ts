@@ -30,6 +30,8 @@ const TOOL_PORTS: [RegExp, number][] = [
   [/\bsvelte-kit\b/, 5173],
 ];
 const SERVER_SCRIPTS = /^(dev|start|serve|preview)(:|$)/;
+/** Script names that start a long-running local server; `preview` serves a build instead. */
+export const isServerScriptName = (name: string) => SERVER_SCRIPTS.test(name) && name !== "preview";
 const RANK = ["dev", "start", "test", "build", "lint", "typecheck", "preview", "serve"];
 const MAX_SCRIPTS = 200;
 
@@ -63,7 +65,7 @@ function scriptPreset(pm: string, name: string, script: string): ProjectActionPr
           ? "code"
           : "terminal",
     url: server ? serverUrl(script) : "",
-    devServer: server && name !== "preview" ? true : undefined,
+    devServer: isServerScriptName(name) ? true : undefined,
     source: "package.json",
   };
 }

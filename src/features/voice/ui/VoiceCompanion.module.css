@@ -83,12 +83,16 @@
 }
 .panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* header, transcript, question dock, controls */
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   position: fixed;
   right: 20px;
   bottom: 36px;
   z-index: var(--layer-pane-sheet);
-  width: min(360px, calc(100vw - 16px));
+  /* The resize grip (VoicePanelResize) sets both sizes; otherwise the panel fits its content. */
+  width: var(--voice-panel-width, min(360px, calc(100vw - 16px)));
+  height: var(--voice-panel-height, auto);
+  max-width: calc(100vw - 16px);
   max-height: calc(100dvh - 16px);
   overflow: hidden;
   border: 1px solid var(--ui-tone-neutral-border);
@@ -128,6 +132,10 @@
   overflow-x: hidden;
   min-height: 0;
   overscroll-behavior: contain;
+}
+/* Only the transcript shrinks when space runs out; everything else keeps its height. */
+:where(.body > *) {
+  flex-shrink: 0;
 }
 .body[hidden] {
   display: none;
@@ -189,6 +197,7 @@
 }
 .panel[data-compact] {
   inline-size: min(380px, calc(100vw - 16px));
+  block-size: auto;
   grid-template-rows: auto;
   border-radius: var(--radius-pill);
 }

@@ -25,6 +25,17 @@ export function validActionUrl(value: string): boolean {
   }
 }
 
+/** The explicit port of an action's web address, used to identify its dev server. */
+export function actionExpectedPort(url: string): number | undefined {
+  try {
+    const parsed = new URL(url.trim());
+    if (["http:", "https:"].includes(parsed.protocol) && parsed.port) return Number(parsed.port);
+  } catch {
+    /* A URL is optional for managed commands. */
+  }
+  return undefined;
+}
+
 export function projectActionShortcutError(
   shortcut: string,
   actions: ProjectAction[],

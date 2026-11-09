@@ -4,7 +4,8 @@ import { Mic } from "../../../shared/ui/icons";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Dictation, type DictationState } from "../model/dictation";
 import { reportDictation } from "../model/dictationActivity";
-import { useVoiceSettings, voiceRuntimeSettings } from "../model/voiceSettings";
+import { dictationLanguage, useVoiceSettings, voiceRuntimeSettings } from "../model/voiceSettings";
+import { DictationOptions } from "./DictationOptions";
 import styles from "./DictationButton.module.css";
 
 /**
@@ -95,7 +96,7 @@ export function DictationButton({
           );
         },
       },
-      locale.split("-")[0],
+      dictationLanguage(settings, locale),
       voiceRuntimeSettings(settings),
       settings.microphoneId,
       settings.dictationEngine,
@@ -117,42 +118,46 @@ export function DictationButton({
           ? t("Stop dictation")
           : t("Dictate");
   return (
-    <Button
-      variant="ghost"
-      motion="none"
-      iconOnly
-      label={label}
-      tooltip={state === "idle" ? t("Dictate: speak and the text appears here") : label}
-      data-dictation-state={state}
-      aria-busy={state === "starting" || state === "finishing" || undefined}
-      aria-disabled={state === "finishing" || undefined}
-      pressed={listening || state === "starting"}
-      tone={listening ? "danger" : undefined}
-      // Preparing can take a while; the button stays clickable so it can be cancelled.
-      disabled={disabled}
-      // Keep the caret in the message box while the microphone toggles.
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={toggle}
-    >
-      <span ref={visual} className={styles.visual} data-state={state} aria-hidden="true">
-        {state === "idle" ? (
-          <Mic className="icon-sm" strokeWidth={2} />
-        ) : state === "starting" ? (
-          <span className={styles.ring} />
-        ) : state === "listening" ? (
-          <span className={styles.wave}>
-            {[0, 1, 2, 3, 4].map((index) => (
-              <i key={index} />
-            ))}
-          </span>
-        ) : (
-          <span className={styles.dots}>
-            <i />
-            <i />
-            <i />
-          </span>
-        )}
-      </span>
-    </Button>
+    <span className={styles.group}>
+      <Button
+        variant="ghost"
+        motion="none"
+        iconOnly
+        label={label}
+        tooltip={state === "idle" ? t("Dictate: speak and the text appears here") : label}
+        data-dictation-state={state}
+        aria-busy={state === "starting" || state === "finishing" || undefined}
+        aria-disabled={state === "finishing" || undefined}
+        pressed={listening || state === "starting"}
+        tone={listening ? "danger" : undefined}
+        // Preparing can take a while; the button stays clickable so it can be cancelled.
+        disabled={disabled}
+        // Keep the caret in the message box while the microphone toggles.
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={toggle}
+      >
+        <span ref={visual} className={styles.visual} data-state={state} aria-hidden="true">
+          {state === "idle" ? (
+            <Mic className="icon-sm" strokeWidth={2} />
+          ) : state === "starting" ? (
+            <span className={styles.ring} />
+          ) : state === "listening" ? (
+            <span className={styles.wave}>
+              {[0, 1, 2, 3, 4].map((index) => (
+                <i key={index} />
+              ))}
+            </span>
+          ) : (
+            <span className={styles.dots}>
+              <i />
+              <i />
+              <i />
+            </span>
+          )}
+        </span>
+      </Button>
+      {/* Options apply to the next run, so they wait until this one ends. */}
+      <DictationOptions settings={settings} disabled={disabled || state !== "idle"} />
+    </span>
   );
 }

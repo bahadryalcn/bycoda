@@ -76,6 +76,11 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
         status: "completed",
         ...resolveVoiceProjects(read().getProjects(), clean(args.query, "query")),
       };
+    if (action === "workspace.projects.actions.list") {
+      const path = project(clean(args.projectPath, "projectPath"));
+      const fn = read().listProjectActions ?? unsupported;
+      return { action, status: "completed", projectPath: path, ...(await fn(path)) };
+    }
     if (action === "workspace.projects.create") {
       const fn = read().onCreateProject ?? unsupported;
       const parentPath =

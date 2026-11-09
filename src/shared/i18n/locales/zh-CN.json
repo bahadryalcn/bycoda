@@ -12429,6 +12429,10 @@
   "Dictation": "听写",
   "Dictation model": "听写模型",
   "Used for every dictation with this provider.": "用于此提供商的所有听写。",
+  "Dictation language": "听写语言",
+  "Dictation options": "听写选项",
+  "Recognition, model and language": "识别、模型和语言",
+  "Automatic detects the language you speak. Choose one if dictation translates your speech.": "自动会检测你说的语言。如果听写把你的话翻译了，请选择一种语言。",
   "Sign in to sync your stats across devices": "登录后即可在多台设备间同步你的统计数据",
   "An account is optional. Your sessions, projects and settings stay on this computer either way.": "账户是可选的。无论是否登录，你的会话、项目和设置都保存在这台电脑上。",
   "Signed in as {p0}. Your stats now sync across your devices.": "已以 {p0} 登录。你的统计数据现在会在各设备间同步。",
@@ -12733,5 +12737,7 @@
   "{p0} could not be completed.": "{p0} 项无法完成。",
   "{p0} changed 1 worktree in this project.": "{p0} 更改了此项目中的 1 个工作树。",
   "{p0} changed {p1} worktrees in this project.": "{p0} 更改了此项目中的 {p1} 个工作树。",
-  "{p0} changed this project's workspace settings.": "{p0} 更改了此项目的工作区设置。"
+  "{p0} changed this project's workspace settings.": "{p0} 更改了此项目的工作区设置。",
+  "Resize voice companion": "调整语音助手大小",
+  "Drag to resize. Double-click for the automatic size.": "拖动以调整大小。双击恢复自动大小。"
 }

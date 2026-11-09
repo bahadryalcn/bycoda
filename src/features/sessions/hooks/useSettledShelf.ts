@@ -16,21 +16,19 @@ import { useSessionLifecycleList } from "./useSessionLifecycle";
 export function useSettledShelf(enabled: boolean) {
   const { views } = useSessionLifecycleList(enabled);
   const [collapsed, setCollapsedState] = useState(loadSettledSessionsCollapsed);
+  const isSettled = useCallback(
+    (session: SessionSummary) =>
+      enabled && isSettledSession(views.get(session.id), session.lastActivityAt),
+    [enabled, views],
+  );
   const shelve = useCallback(
     (entries: SessionListEntry[]) =>
-      enabled
-        ? shelveSettledSessions(
-            entries,
-            (session: SessionSummary) =>
-              isSettledSession(views.get(session.id), session.lastActivityAt),
-            collapsed,
-          )
-        : entries,
-    [enabled, views, collapsed],
+      enabled ? shelveSettledSessions(entries, isSettled, collapsed) : entries,
+    [enabled, isSettled, collapsed],
   );
   const setCollapsed = useCallback((next: boolean) => {
     setCollapsedState(next);
     saveSettledSessionsCollapsed(next);
   }, []);
-  return { shelve, setCollapsed };
+  return { shelve, isSettled, setCollapsed };
 }

@@ -76,3 +76,8 @@ export function useSessionLifecycleView(sessionId: string): SessionLifecycleView
 export function useSessionLifecycleSnapshot(): Snapshot {
   return useSyncExternalStore(subscribe, () => snapshot);
 }
+
+/** The Host answered a lifecycle list, so it supports settling. */
+export function useSessionLifecycleSupported(): boolean {
+  return useSyncExternalStore(subscribe, () => snapshot.autoSettle !== undefined);
+}

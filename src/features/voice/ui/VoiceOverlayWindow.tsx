@@ -31,6 +31,12 @@ import {
   type VoiceOverlayState,
 } from "../model/voiceOverlay";
 import { loadVoiceSettings, saveVoiceSettings, useVoiceSettings } from "../model/voiceSettings";
+import {
+  VOICE_SIDE_PANEL_GAP,
+  VOICE_SIDE_PANEL_WIDTH,
+  voiceOverlaySide,
+  type VoiceOverlaySide,
+} from "../model/voiceSidePanel";
 import { VoiceTurnControl } from "./VoiceTurnControl";
 import { VoiceVisualizer } from "./VoiceVisualizer";
 import styles from "./VoiceOverlayWindow.module.css";
@@ -74,7 +80,36 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
     state?.error ===
       t("Current computer presence could not be verified. Mark yourself here before talking.");
   const level = useRef(0);
-  const root = useRef<HTMLElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const sideScroller = useRef<HTMLElement>(null);
+  const openKey = state?.choice?.id ?? state?.jobReview?.id ?? "";
+  // Which way the window grows for the open question, decided once per question.
+  const [sideFor, setSideFor] = useState<{ key: string; side: VoiceOverlaySide }>();
+  const side = openKey && sideFor?.key === openKey ? sideFor.side : undefined;
+  const beside = side === "left" || side === "right" ? side : undefined;
+  useEffect(() => {
+    if (!openKey) return;
+    let current = true;
+    invoke<{ left: number; right: number }>("voice_overlay_room")
+      .then((room) => voiceOverlaySide(room))
+      .catch((): VoiceOverlaySide => "inline")
+      .then((next) => {
+        if (current) setSideFor({ key: openKey, side: next });
+      });
+    return () => {
+      current = false;
+    };
+  }, [openKey]);
+  useEffect(() => {
+    if (!beside) return;
+    // After the card focuses its first option, bring the answer actions into view.
+    const frame = requestAnimationFrame(() => {
+      const node = sideScroller.current;
+      if (node) node.scrollTop = node.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [openKey, beside]);
+  const grownLeft = useRef(false);
 
   useEffect(() => {
     let disposed = false;
@@ -121,21 +156,33 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
     const element = root.current;
     if (!element) return;
     let last = "";
+    // Opening on the left moves the window's left edge out, and back when it closes, so the
+    // companion itself stays where it was.
+    const extra = VOICE_SIDE_PANEL_WIDTH + VOICE_SIDE_PANEL_GAP;
+    const left = beside === "left" && !compact;
+    let shift = (grownLeft.current ? extra : 0) - (left ? extra : 0);
+    grownLeft.current = left;
     const fit = () => {
-      const width = compact ? VOICE_OVERLAY_COMPACT_SIZE.width : VOICE_OVERLAY_EXPANDED_WIDTH;
+      const width =
+        (compact ? VOICE_OVERLAY_COMPACT_SIZE.width : VOICE_OVERLAY_EXPANDED_WIDTH) +
+        (beside && !compact ? extra : 0);
       const height = compact
         ? VOICE_OVERLAY_COMPACT_SIZE.height
         : Math.ceil(element.getBoundingClientRect().height);
       const key = `${width}x${height}`;
-      if (key === last) return;
+      if (key === last && !shift) return;
       last = key;
-      void invoke("voice_overlay_fit", { width, height }).catch(() => undefined);
+      const shiftX = shift;
+      shift = 0;
+      void invoke("voice_overlay_fit", { width, height, ...(shiftX ? { shiftX } : {}) }).catch(
+        () => undefined,
+      );
     };
     fit();
     const observer = new ResizeObserver(fit);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [compact]);
+  }, [compact, beside]);
 
   function send(command: VoiceOverlayCommand) {
     void emitTo(owner, VOICE_OVERLAY_COMMAND_EVENT, command).catch(() => undefined);
@@ -194,6 +241,55 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
   }
   const sizeLabel = t(compact ? "Expand voice companion" : "Compact voice companion");
 
+  // Questions and job review open in a panel beside the companion when the screen has room.
+  const questions = (
+    <>
+      {state?.choice ? (
+        <VoiceChoiceCard
+          choice={state.choice}
+          onRetry={() => {
+            void emitTo(owner, VOICE_OVERLAY_CHOICE_EVENT, {
+              id: state.choice!.id,
+              action: "retry",
+            }).catch(() => undefined);
+          }}
+          onReply={(reply) => {
+            void emitTo(owner, VOICE_OVERLAY_CHOICE_EVENT, {
+              id: state.choice!.id,
+              reply,
+            }).catch(() => undefined);
+          }}
+        />
+      ) : null}
+      {state?.jobReview ? (
+        <VoiceJobReview
+          key={state.jobReview.id}
+          review={state.jobReview}
+          onChange={(rows) => {
+            void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
+              id: state.jobReview!.id,
+              action: "change",
+              rows,
+            }).catch(() => undefined);
+          }}
+          onStart={(rows) => {
+            void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
+              id: state.jobReview!.id,
+              action: "start",
+              rows,
+            }).catch(() => undefined);
+          }}
+          onCancel={() => {
+            void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
+              id: state.jobReview!.id,
+              action: "cancel",
+            }).catch(() => undefined);
+          }}
+        />
+      ) : null}
+    </>
+  );
+
   const handle = (
     <Button
       iconOnly
@@ -220,243 +316,213 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
   );
 
   return (
-    <main
-      ref={root}
-      className={styles.panel}
-      aria-label={t("Voice companion")}
-      data-compact={compact || undefined}
-      data-voice-state={state?.visualState}
-      // Empty surface drags too; controls keep their own pointer behavior.
-      onPointerDown={(event) => {
-        if (event.button !== 0 || event.target !== event.currentTarget) return;
-        void getCurrentWebviewWindow()
-          .startDragging()
-          .catch(() => undefined);
-      }}
-    >
-      <header className={styles.header}>
-        {handle}
-        <div className={styles.heading}>
-          <OverflowTooltip label={state?.title}>
-            <h1 className={styles.title}>{state?.title ?? t("Voice companion")}</h1>
-          </OverflowTooltip>
-          {compact && (
-            <OverflowTooltip label={summary}>
-              <span className={styles.summary} aria-hidden="true">
-                {summary}
-              </span>
+    <div ref={root} className={styles.window} data-side={compact ? undefined : beside}>
+      <main
+        className={styles.panel}
+        aria-label={t("Voice companion")}
+        data-compact={compact || undefined}
+        data-voice-state={state?.visualState}
+        // Empty surface drags too; controls keep their own pointer behavior.
+        onPointerDown={(event) => {
+          if (event.button !== 0 || event.target !== event.currentTarget) return;
+          void getCurrentWebviewWindow()
+            .startDragging()
+            .catch(() => undefined);
+        }}
+      >
+        <header className={styles.header}>
+          {handle}
+          <div className={styles.heading}>
+            <OverflowTooltip label={state?.title}>
+              <h1 className={styles.title}>{state?.title ?? t("Voice companion")}</h1>
             </OverflowTooltip>
+            {compact && (
+              <OverflowTooltip label={summary}>
+                <span className={styles.summary} aria-hidden="true">
+                  {summary}
+                </span>
+              </OverflowTooltip>
+            )}
+          </div>
+          {compact && status === "live" && (
+            <VoiceTurnControl
+              compact
+              menuSurface="native"
+              onMenuError={menuFailed}
+              manual={state?.manualTurnEnd === true}
+              muted={muted}
+              onManualChange={changeTurnMode}
+              onFinish={() => send("finishTurn")}
+            />
           )}
-        </div>
-        {compact && status === "live" && (
-          <VoiceTurnControl
-            compact
-            menuSurface="native"
-            onMenuError={menuFailed}
-            manual={state?.manualTurnEnd === true}
-            muted={muted}
-            onManualChange={changeTurnMode}
-            onFinish={() => send("finishTurn")}
-          />
-        )}
-        {compact && status !== "idle" && (
-          <Button iconOnly label={t("Disconnect voice")} onClick={() => send("disconnect")}>
-            <Square className="icon-sm" />
-          </Button>
-        )}
-        {compact && speakerButton}
-        {compact && (
+          {compact && status !== "idle" && (
+            <Button iconOnly label={t("Disconnect voice")} onClick={() => send("disconnect")}>
+              <Square className="icon-sm" />
+            </Button>
+          )}
+          {compact && speakerButton}
+          {compact && (
+            <Button
+              iconOnly
+              variant={canTalk || (status === "live" && !muted) ? "primary" : "secondary"}
+              tone={muted ? "danger" : undefined}
+              label={micLabel}
+              loading={status === "connecting" || status === "reconnecting"}
+              disabled={!state || (canTalk ? !state.canStart : status !== "live")}
+              selected={status === "live" && muted}
+              aria-pressed={canTalk ? undefined : muted}
+              onClick={() => send(canTalk ? "start" : "toggleMute")}
+            >
+              {muted || status === "ready" || status === "sleeping" ? (
+                <MicOff className="icon-sm" />
+              ) : (
+                <Mic className="icon-sm" />
+              )}
+            </Button>
+          )}
           <Button
             iconOnly
-            variant={canTalk || (status === "live" && !muted) ? "primary" : "secondary"}
-            tone={muted ? "danger" : undefined}
-            label={micLabel}
-            loading={status === "connecting" || status === "reconnecting"}
-            disabled={!state || (canTalk ? !state.canStart : status !== "live")}
-            selected={status === "live" && muted}
-            aria-pressed={canTalk ? undefined : muted}
-            onClick={() => send(canTalk ? "start" : "toggleMute")}
+            label={sizeLabel}
+            aria-expanded={!compact}
+            onClick={() => setCompact(!compact)}
           >
-            {muted || status === "ready" || status === "sleeping" ? (
-              <MicOff className="icon-sm" />
-            ) : (
-              <Mic className="icon-sm" />
-            )}
+            {compact ? <Maximize2 className="icon-sm" /> : <Minimize2 className="icon-sm" />}
           </Button>
-        )}
-        <Button
-          iconOnly
-          label={sizeLabel}
-          aria-expanded={!compact}
-          onClick={() => setCompact(!compact)}
-        >
-          {compact ? <Maximize2 className="icon-sm" /> : <Minimize2 className="icon-sm" />}
-        </Button>
-        <Button iconOnly label={backLabel} onClick={returnToApp}>
-          <X className="icon-sm" />
-        </Button>
-      </header>
-      <LiveText
-        className={compact ? styles.srOnly : styles.status}
-        text={`${compact && state?.error ? t("Voice needs attention") : statusText}${state?.working ? ` | ${state.workingStatus || t("Session working")}` : ""}`}
-      />
-      {!compact && (
-        <>
-          <div className={styles.body}>
-            <VoiceToolActivityPanel
-              entries={state?.activity ?? []}
-              onStopWaiting={(id) => {
-                void emitTo(owner, VOICE_OVERLAY_ACTIVITY_EVENT, id).catch(() =>
-                  setMenuError(t("Voice window could not connect. Return to the app and retry.")),
-                );
-              }}
-            />
-            {menuError && (
-              <InlineError
-                className={styles.feedback}
-                action={<Button onClick={() => setMenuError("")}>{t("Dismiss")}</Button>}
-              >
-                {menuError}
-              </InlineError>
-            )}
-            {state?.choice ? (
-              <VoiceChoiceCard
-                choice={state.choice}
-                onRetry={() => {
-                  void emitTo(owner, VOICE_OVERLAY_CHOICE_EVENT, {
-                    id: state.choice!.id,
-                    action: "retry",
-                  }).catch(() => undefined);
-                }}
-                onReply={(reply) => {
-                  void emitTo(owner, VOICE_OVERLAY_CHOICE_EVENT, {
-                    id: state.choice!.id,
-                    reply,
-                  }).catch(() => undefined);
+          <Button iconOnly label={backLabel} onClick={returnToApp}>
+            <X className="icon-sm" />
+          </Button>
+        </header>
+        <LiveText
+          className={compact ? styles.srOnly : styles.status}
+          text={`${compact && state?.error ? t("Voice needs attention") : statusText}${state?.working ? ` | ${state.workingStatus || t("Session working")}` : ""}`}
+        />
+        {!compact && (
+          <>
+            <div className={styles.body}>
+              <VoiceToolActivityPanel
+                entries={state?.activity ?? []}
+                onStopWaiting={(id) => {
+                  void emitTo(owner, VOICE_OVERLAY_ACTIVITY_EVENT, id).catch(() =>
+                    setMenuError(t("Voice window could not connect. Return to the app and retry.")),
+                  );
                 }}
               />
-            ) : null}
-            {state?.jobReview ? (
-              <VoiceJobReview
-                key={state.jobReview.id}
-                review={state.jobReview}
-                onChange={(rows) => {
-                  void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
-                    id: state.jobReview!.id,
-                    action: "change",
-                    rows,
-                  }).catch(() => undefined);
-                }}
-                onStart={(rows) => {
-                  void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
-                    id: state.jobReview!.id,
-                    action: "start",
-                    rows,
-                  }).catch(() => undefined);
-                }}
-                onCancel={() => {
-                  void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
-                    id: state.jobReview!.id,
-                    action: "cancel",
-                  }).catch(() => undefined);
-                }}
-              />
-            ) : null}
+              {menuError && (
+                <InlineError
+                  className={styles.feedback}
+                  action={<Button onClick={() => setMenuError("")}>{t("Dismiss")}</Button>}
+                >
+                  {menuError}
+                </InlineError>
+              )}
+              {side === "inline" ? questions : null}
 
-            {status === "idle" && state?.privacy && (
-              <p className={styles.caption}>{state.privacy}</p>
-            )}
-            {state?.transcript && (
-              <div className={`${styles.turn} ${styles.heard}`}>
-                <span className="sr-only">{t("You")}: </span>
-                <p className={styles.message}>{state.transcript}</p>
-              </div>
-            )}
-            {/* Always mounted so each reply is announced when it arrives. */}
-            <LiveText
-              className="sr-only"
-              text={state?.message ? `${t("Reply")}: ${state.message}` : ""}
-            />
-            {state?.message && (
-              <div className={styles.turn}>
-                <span className="sr-only">{t("Reply")}: </span>
-                <p className={styles.message}>{state.message}</p>
-              </div>
-            )}
-            {state?.error &&
-              (actionableError ? (
-                <InlineError className={styles.caption}>{state.error}</InlineError>
+              {status === "idle" && state?.privacy && (
+                <p className={styles.caption}>{state.privacy}</p>
+              )}
+              {state?.transcript && (
+                <div className={`${styles.turn} ${styles.heard}`}>
+                  <span className="sr-only">{t("You")}: </span>
+                  <p className={styles.message}>{state.transcript}</p>
+                </div>
+              )}
+              {/* Always mounted so each reply is announced when it arrives. */}
+              <LiveText
+                className="sr-only"
+                text={state?.message ? `${t("Reply")}: ${state.message}` : ""}
+              />
+              {state?.message && (
+                <div className={styles.turn}>
+                  <span className="sr-only">{t("Reply")}: </span>
+                  <p className={styles.message}>{state.message}</p>
+                </div>
+              )}
+              {state?.error &&
+                (actionableError ? (
+                  <InlineError className={styles.caption}>{state.error}</InlineError>
+                ) : (
+                  <>
+                    <InlineError className={styles.caption}>
+                      {t("Voice needs attention")}
+                    </InlineError>
+                    <Disclosure size="sm" className={styles.feedback} summary={t("Error details")}>
+                      <p>{state.error}</p>
+                    </Disclosure>
+                  </>
+                ))}
+              <LiveText className={styles.caption} text={state?.notice ?? ""} />
+            </div>
+            <div className={styles.actions}>
+              {status === "live" && (
+                <VoiceTurnControl
+                  menuSurface="native"
+                  onMenuError={menuFailed}
+                  manual={state?.manualTurnEnd === true}
+                  muted={muted}
+                  onManualChange={changeTurnMode}
+                  onFinish={() => send("finishTurn")}
+                />
+              )}
+              {canTalk ? (
+                <>
+                  <Button
+                    variant="primary"
+                    disabled={!state?.canStart}
+                    onClick={() => send("start")}
+                    startIcon={<Mic className="icon-sm" />}
+                  >
+                    {t(status === "idle" ? "Start voice" : "Talk")}
+                  </Button>
+                  {status !== "idle" && (
+                    <Button
+                      iconOnly
+                      label={t("Disconnect voice")}
+                      onClick={() => send("disconnect")}
+                    >
+                      <Square className="icon-sm" />
+                    </Button>
+                  )}
+                </>
+              ) : status === "connecting" || status === "reconnecting" ? (
+                <Button
+                  label={t("Cancel")}
+                  startIcon={<X className="icon-sm" />}
+                  onClick={() => send("disconnect")}
+                >
+                  {t("Cancel")}
+                </Button>
               ) : (
                 <>
-                  <InlineError className={styles.caption}>{t("Voice needs attention")}</InlineError>
-                  <Disclosure size="sm" className={styles.feedback} summary={t("Error details")}>
-                    <p>{state.error}</p>
-                  </Disclosure>
-                </>
-              ))}
-            <LiveText className={styles.caption} text={state?.notice ?? ""} />
-          </div>
-          <div className={styles.actions}>
-            {status === "live" && (
-              <VoiceTurnControl
-                menuSurface="native"
-                onMenuError={menuFailed}
-                manual={state?.manualTurnEnd === true}
-                muted={muted}
-                onManualChange={changeTurnMode}
-                onFinish={() => send("finishTurn")}
-              />
-            )}
-            {canTalk ? (
-              <>
-                <Button
-                  variant="primary"
-                  disabled={!state?.canStart}
-                  onClick={() => send("start")}
-                  startIcon={<Mic className="icon-sm" />}
-                >
-                  {t(status === "idle" ? "Start voice" : "Talk")}
-                </Button>
-                {status !== "idle" && (
+                  <Button
+                    iconOnly
+                    label={t(muted ? "Resume" : "Pause mic")}
+                    tooltip={t(muted ? "Resume" : "Pause mic")}
+                    variant={muted ? "secondary" : "primary"}
+                    tone={muted ? "danger" : undefined}
+                    selected={muted}
+                    aria-pressed={muted}
+                    onClick={() => send("toggleMute")}
+                  >
+                    {muted ? <MicOff className="icon-sm" /> : <Mic className="icon-sm" />}
+                  </Button>
+                  <Button iconOnly label={t("Silence")} onClick={() => send("silence")}>
+                    <Pause className="icon-sm" />
+                  </Button>
+                  {speakerButton}
                   <Button iconOnly label={t("Disconnect voice")} onClick={() => send("disconnect")}>
                     <Square className="icon-sm" />
                   </Button>
-                )}
-              </>
-            ) : status === "connecting" || status === "reconnecting" ? (
-              <Button
-                label={t("Cancel")}
-                startIcon={<X className="icon-sm" />}
-                onClick={() => send("disconnect")}
-              >
-                {t("Cancel")}
-              </Button>
-            ) : (
-              <>
-                <Button
-                  iconOnly
-                  label={t(muted ? "Resume" : "Pause mic")}
-                  tooltip={t(muted ? "Resume" : "Pause mic")}
-                  variant={muted ? "secondary" : "primary"}
-                  tone={muted ? "danger" : undefined}
-                  selected={muted}
-                  aria-pressed={muted}
-                  onClick={() => send("toggleMute")}
-                >
-                  {muted ? <MicOff className="icon-sm" /> : <Mic className="icon-sm" />}
-                </Button>
-                <Button iconOnly label={t("Silence")} onClick={() => send("silence")}>
-                  <Pause className="icon-sm" />
-                </Button>
-                {speakerButton}
-                <Button iconOnly label={t("Disconnect voice")} onClick={() => send("disconnect")}>
-                  <Square className="icon-sm" />
-                </Button>
-              </>
-            )}
-          </div>
-        </>
-      )}
-    </main>
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </main>
+      {beside && !compact ? (
+        <aside ref={sideScroller} aria-label={t("Question")} className={styles.side}>
+          {questions}
+        </aside>
+      ) : null}
+    </div>
   );
 }

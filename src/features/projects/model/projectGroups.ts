@@ -36,7 +36,8 @@ export type ProjectGroup = {
 
 export type ProjectGroupMember = { kind: "project" | "group"; id: string };
 
-function memberKey(member: ProjectGroupMember): string {
+/** The key a member is saved under in `ProjectGroup.memberOrder`. */
+export function memberKey(member: ProjectGroupMember): string {
   return member.kind === "group" ? `group:${member.id}` : pathKey(member.id);
 }
 

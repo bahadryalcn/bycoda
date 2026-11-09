@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { WS_LIMITS } from "../../src/shared/model/host-contracts";
 import { createHostReadDispatcher, HostDispatchError } from "./dispatch";
 import { HostReadWorkBudget } from "./read-budget";
+import { authorizeWith } from "./ws/server-helpers";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -24,6 +25,17 @@ describe("Host backend read admission", () => {
     expect(action).toHaveBeenCalledOnce();
     // A later request runs a fresh check instead of reusing the settled one.
     await expect(budget.runShared("phone", async () => false)).resolves.toBe(false);
+  });
+  it("never makes a check inside a transaction wait on a boundary check queued behind it", async () => {
+    const budget = new HostReadWorkBudget({ ...WS_LIMITS, maxControlJobsPerDevice: 8 });
+    const queued = deferred<boolean>(); // a boundary check waiting for the store scope
+    const principal = { id: "phone", authorized: () => queued.promise };
+    const boundary = authorizeWith(budget, "shared", principal);
+    // The transaction's own check must not join the queued one (that deadlocked the Host).
+    const inside = { id: "phone", authorized: async () => true };
+    await expect(authorizeWith(budget, "own", inside)).resolves.toBe(true);
+    queued.resolve(true);
+    await expect(boundary).resolves.toBe(true);
   });
   it("does not let an old stalled check answer for new requests", async () => {
     const budget = new HostReadWorkBudget({ ...WS_LIMITS, maxControlJobsPerDevice: 2 });

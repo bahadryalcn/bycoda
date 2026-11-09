@@ -46,7 +46,7 @@ function TokenPill({ token, label, attachment }: PillProps) {
   const body = (
     <span className={styles.token} title={attachment.name}>
       <span className={styles.icon} aria-hidden="true">
-        <AttachmentIdentity attachment={attachment} />
+        <AttachmentIdentity attachment={attachment} size="pill" />
       </span>
       <span className="sr-only">[</span>
       {label}

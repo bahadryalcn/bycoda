@@ -8,7 +8,10 @@ import {
 } from "../model/sessionFilters";
 import { SessionFiltersMenu } from "./SessionFiltersMenu";
 
-vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => false, invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => false,
+  invoke: vi.fn(),
+}));
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -20,7 +23,10 @@ it("limits global time choices and clears back to seven days", async () => {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  const defaults: SessionSidebarFilters = { ...DEFAULT_SESSION_SIDEBAR_FILTERS, time: "7d" };
+  const defaults: SessionSidebarFilters = {
+    ...DEFAULT_SESSION_SIDEBAR_FILTERS,
+    time: "7d",
+  };
   function Fixture() {
     const [filters, setFilters] = useState(defaults);
     return createElement(SessionFiltersMenu, {
@@ -49,5 +55,39 @@ it("limits global time choices and clears back to seven days", async () => {
   await act(async () => button("Clear filters")!.click());
   expect(button("Last 7 days")?.getAttribute("aria-checked")).toBe("true");
   expect(button("Clear filters")).toBeUndefined();
+  await act(async () => root.unmount());
+});
+
+it("offers the Settled filter only for this computer's sessions", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onChange = vi.fn();
+  const render = (settled: boolean) =>
+    root.render(
+      createElement(SessionFiltersMenu, {
+        x: 0,
+        y: 0,
+        harnesses: [],
+        local: false,
+        settled,
+        filters: DEFAULT_SESSION_SIDEBAR_FILTERS,
+        onChange,
+        onClose: () => {},
+      }),
+    );
+  const button = (label: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (item) => item.textContent?.trim() === label,
+    );
+  await act(async () => render(false));
+  expect(button("Settled")).toBeUndefined();
+  await act(async () => render(true));
+  await act(async () => button("Settled")!.click());
+  expect(onChange).toHaveBeenCalledWith({
+    ...DEFAULT_SESSION_SIDEBAR_FILTERS,
+    showSettled: true,
+  });
   await act(async () => root.unmount());
 });

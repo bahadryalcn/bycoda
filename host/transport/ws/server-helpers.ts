@@ -1,6 +1,7 @@
 import type { Duplex } from "node:stream";
 import { RPC_ERROR_CODES } from "../../../src/shared/model/host-contracts";
 import type { HostDispatchError } from "../dispatch";
+import type { HostReadWorkBudget } from "../read-budget";
 import type { HostWsPrincipal } from "./server";
 
 const DISPATCH_ERROR_CODES: Record<HostDispatchError["code"], number> = {
@@ -60,4 +61,22 @@ export function principalCapabilities(principal: HostWsPrincipal) {
     nativeDevices: principal.nativeDevices,
     nativeDelivery: principal.nativeDelivery,
   };
+}
+
+export type AuthMode = "own" | "shared" | "heartbeat";
+
+/**
+ * Request-boundary checks (outside any store scope) share one in-flight check per device. A check
+ * made inside a domain transaction runs on its own: joining one that is queued behind that same
+ * transaction deadlocks the Host's serialized store scope.
+ */
+export function authorizeWith(
+  budget: HostReadWorkBudget,
+  mode: AuthMode,
+  principal: HostWsPrincipal,
+): Promise<boolean> {
+  const check = async () => await principal.authorized();
+  return mode === "shared"
+    ? budget.runShared(principal.id, check)
+    : budget.run(principal.id, check, "control");
 }

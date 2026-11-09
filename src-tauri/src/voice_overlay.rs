@@ -6,7 +6,7 @@
 //! applications while the workspace is hidden, minimized or in the background.
 //! One overlay belongs to one workspace window and closes with it.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, Monitor, PhysicalPosition, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder,
@@ -20,7 +20,8 @@ pub const VOICE_OVERLAY_PREFIX: &str = "voice-overlay-";
 const CLOSED_EVENT: &str = "voice_overlay_closed";
 
 const MIN_WIDTH: f64 = 160.0;
-const MAX_WIDTH: f64 = 720.0;
+/// Room for the companion plus its question panel beside it.
+const MAX_WIDTH: f64 = 760.0;
 const MIN_HEIGHT: f64 = 40.0;
 const MAX_HEIGHT: f64 = 640.0;
 /// Keep this much of the window on screen so it can always be dragged back.
@@ -211,26 +212,71 @@ fn overlay_only(window: &WebviewWindow) -> Result<(), String> {
     }
 }
 
+/// Logical horizontal move of the origin, bounded so a page cannot fling the window.
+fn bounded_shift(shift_x: Option<f64>) -> Result<f64, String> {
+    match shift_x {
+        None => Ok(0.0),
+        Some(shift) if shift.is_finite() => Ok(shift.clamp(-MAX_WIDTH, MAX_WIDTH)),
+        Some(_) => Err("Invalid voice window movement.".into()),
+    }
+}
+
 /// The overlay grows when it expands; keep the top-left anchored but stay on
-/// the current screen.
+/// the current screen. `shift_x` moves the left edge, in logical pixels, when a
+/// panel opens or closes on the left so the companion itself stays in place.
 #[tauri::command]
 pub fn voice_overlay_fit(
     app: AppHandle,
     window: WebviewWindow,
     width: f64,
     height: f64,
+    shift_x: Option<f64>,
 ) -> Result<(), String> {
     overlay_only(&window)?;
     let (width, height) = clamp_size(width, height)?;
+    let shift = bounded_shift(shift_x)?;
+    let scale = window.scale_factor().map_err(|error| error.to_string())?;
     let origin = window.outer_position().map_err(|error| error.to_string())?;
     place(
         &app,
         &window,
-        origin.x as f64,
+        origin.x as f64 + shift * scale,
         origin.y as f64,
         width,
         height,
     )
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct OverlayRoom {
+    left: f64,
+    right: f64,
+}
+
+/// Free logical space between a window and the sides of its work area.
+fn room_in(x: i32, width: i32, area: Area, scale: f64) -> OverlayRoom {
+    OverlayRoom {
+        left: ((x - area.x).max(0) as f64 / scale).floor(),
+        right: ((area.x + area.width - x - width).max(0) as f64 / scale).floor(),
+    }
+}
+
+/// How much room the overlay has on each side of its screen, so a question
+/// panel can open toward the free side.
+#[tauri::command]
+pub fn voice_overlay_room(app: AppHandle, window: WebviewWindow) -> Result<OverlayRoom, String> {
+    overlay_only(&window)?;
+    let scale = window.scale_factor().map_err(|error| error.to_string())?;
+    let origin = window.outer_position().map_err(|error| error.to_string())?;
+    let size = window.outer_size().map_err(|error| error.to_string())?;
+    let monitor = monitor_at(&app, &window, origin.x as f64 + 1.0, origin.y as f64 + 1.0)
+        .ok_or("The voice window screen is unavailable.")?;
+    Ok(room_in(
+        origin.x,
+        size.width as i32,
+        area_of(&monitor),
+        scale,
+    ))
 }
 
 /// Keyboard movement for the drag handle, in logical pixels.
@@ -343,6 +389,32 @@ mod tests {
             height: 1024,
         };
         assert_eq!(clamp_into(-1500.0, 10.0, 320, 48, left), (-1272, 10));
+    }
+
+    #[test]
+    fn room_is_measured_in_logical_pixels_on_each_side() {
+        assert_eq!(
+            room_in(200, 760, AREA, 2.0),
+            OverlayRoom {
+                left: 100.0,
+                right: 480.0
+            }
+        );
+        assert_eq!(
+            room_in(-50, 380, AREA, 1.0),
+            OverlayRoom {
+                left: 0.0,
+                right: 1590.0
+            }
+        );
+    }
+
+    #[test]
+    fn shifts_are_bounded_and_finite() {
+        assert_eq!(bounded_shift(None).unwrap(), 0.0);
+        assert_eq!(bounded_shift(Some(-348.0)).unwrap(), -348.0);
+        assert_eq!(bounded_shift(Some(-10_000.0)).unwrap(), -MAX_WIDTH);
+        assert!(bounded_shift(Some(f64::NAN)).is_err());
     }
 
     #[test]

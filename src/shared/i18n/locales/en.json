@@ -12447,6 +12447,10 @@
   "Dictation": "Dictation",
   "Dictation model": "Dictation model",
   "Used for every dictation with this provider.": "Used for every dictation with this provider.",
+  "Dictation language": "Dictation language",
+  "Dictation options": "Dictation options",
+  "Recognition, model and language": "Recognition, model and language",
+  "Automatic detects the language you speak. Choose one if dictation translates your speech.": "Automatic detects the language you speak. Choose one if dictation translates your speech.",
   "Sign in to sync your stats across devices": "Sign in to sync your stats across devices",
   "An account is optional. Your sessions, projects and settings stay on this computer either way.": "An account is optional. Your sessions, projects and settings stay on this computer either way.",
   "Signed in as {p0}. Your stats now sync across your devices.": "Signed in as {p0}. Your stats now sync across your devices.",
@@ -12733,5 +12737,7 @@
   "{p0} could not be completed.": "{p0} could not be completed.",
   "{p0} changed 1 worktree in this project.": "{p0} changed 1 worktree in this project.",
   "{p0} changed {p1} worktrees in this project.": "{p0} changed {p1} worktrees in this project.",
-  "{p0} changed this project's workspace settings.": "{p0} changed this project's workspace settings."
+  "{p0} changed this project's workspace settings.": "{p0} changed this project's workspace settings.",
+  "Resize voice companion": "Resize voice companion",
+  "Drag to resize. Double-click for the automatic size.": "Drag to resize. Double-click for the automatic size."
 }

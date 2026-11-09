@@ -16,6 +16,7 @@ import { VoiceChatTranscript } from "./VoiceChatTranscript";
 import { VoiceCompanionControls } from "./VoiceCompanionControls";
 import { VoiceCompanionMoreMenu } from "./VoiceCompanionMoreMenu";
 import { VoiceCompanionStatus } from "./VoiceCompanionStatus";
+import { VoiceSidePanel } from "./VoiceSidePanel";
 import type { VoiceChatTurn, VoiceCompanionStatus as Status } from "./voiceCompanionTypes";
 import parts from "./VoiceCompanionParts.module.css";
 
@@ -53,6 +54,12 @@ export type VoiceCompanionViewProps = {
   choice: ReactNode;
   jobReview: ReactNode;
   recovery: ReactNode;
+  /** The companion element; questions open in a panel placed beside it. */
+  panel?: RefObject<HTMLElement | null>;
+  /** Id of the open question or review, so a new one scrolls to its actions. */
+  sideKey?: string;
+  /** Resize grip of the expanded panel, in the header beside the size toggle. */
+  resize?: ReactNode;
   onScopeChange: (global: boolean) => void;
   onFloat: () => void;
   onStopWaiting: (id: string) => void;
@@ -70,7 +77,7 @@ export type VoiceCompanionViewProps = {
 
 /**
  * The companion's panel content. Expanded: header with actions and options, the live status
- * line, a chat transcript, and a footer of icon controls. Compact: a pill with the live line,
+ * line, a chat transcript and a footer of icon controls; open questions get a panel beside it. Compact: a pill with the live line,
  * mic, end and an overflow menu.
  */
 export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompanionViewProps) {
@@ -150,6 +157,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
           <>
             <VoiceToolActivityPanel entries={p.toolActivities} onStopWaiting={p.onStopWaiting} />
             <VoiceOptionsMenu onFloat={p.canDetach ? p.onFloat : undefined} />
+            {p.resize}
           </>
         )}
         <Button
@@ -193,8 +201,6 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               onScopeChange={p.onScopeChange}
               onStopWork={p.onStopWork}
             />
-            {p.choice}
-            {p.jobReview}
             <VoiceChatTranscript turns={p.chatTurns} />
             {p.error ? (
               p.actionableError ? (
@@ -211,6 +217,14 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
             {p.recovery}
             {p.pushHint ? <p className={parts.caption}>{p.pushHint}</p> : null}
           </div>
+          {/* Questions and job review open in their own panel beside the companion, so the
+              conversation stays readable while they are answered. */}
+          {(p.choice || p.jobReview) && p.panel ? (
+            <VoiceSidePanel panel={p.panel} openKey={p.sideKey ?? ""}>
+              {p.choice}
+              {p.jobReview}
+            </VoiceSidePanel>
+          ) : null}
           <div className={styles.actions}>
             <VoiceCompanionControls
               status={p.status}

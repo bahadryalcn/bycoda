@@ -12429,6 +12429,10 @@
   "Dictation": "Dictée",
   "Dictation model": "Modèle de dictée",
   "Used for every dictation with this provider.": "Utilisé pour chaque dictée avec ce fournisseur.",
+  "Dictation language": "Langue de la dictée",
+  "Dictation options": "Options de dictée",
+  "Recognition, model and language": "Reconnaissance, modèle et langue",
+  "Automatic detects the language you speak. Choose one if dictation translates your speech.": "Automatique détecte la langue parlée. Choisissez-en une si la dictée traduit vos propos.",
   "Sign in to sync your stats across devices": "Connectez-vous pour synchroniser vos statistiques entre appareils",
   "An account is optional. Your sessions, projects and settings stay on this computer either way.": "Un compte est facultatif. Vos sessions, projets et réglages restent sur cet ordinateur dans tous les cas.",
   "Signed in as {p0}. Your stats now sync across your devices.": "Connecté en tant que {p0}. Vos statistiques sont désormais synchronisées entre vos appareils.",
@@ -12733,5 +12737,7 @@
   "{p0} could not be completed.": "{p0} n’ont pas pu être terminées.",
   "{p0} changed 1 worktree in this project.": "{p0} a modifié 1 worktree dans ce projet.",
   "{p0} changed {p1} worktrees in this project.": "{p0} a modifié {p1} worktrees dans ce projet.",
-  "{p0} changed this project's workspace settings.": "{p0} a modifié les paramètres d’espace de travail de ce projet."
+  "{p0} changed this project's workspace settings.": "{p0} a modifié les paramètres d’espace de travail de ce projet.",
+  "Resize voice companion": "Redimensionner le compagnon vocal",
+  "Drag to resize. Double-click for the automatic size.": "Faites glisser pour redimensionner. Double-cliquez pour la taille automatique."
 }

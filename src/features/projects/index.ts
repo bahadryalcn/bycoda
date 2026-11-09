@@ -1,5 +1,6 @@
 /** Public types and optional surface loaders. Runtime contracts are declared below. */
 export type { ProjectAction } from "./model/projectActions";
+export type { ProjectActionCatalog, ProjectActionEntry } from "./model/projectActionCatalog";
 export type { ProjectGroup } from "./model/projectGroups";
 export type { ProjectReturnMemory } from "./model/projectReturn";
 export type { DockSide, ProjectTerminalDock } from "./model/projectTerminal";

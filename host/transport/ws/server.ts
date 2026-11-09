@@ -36,6 +36,7 @@ import { HostReadWorkBudget } from "../read-budget";
 import { HostBulkError, hostBulkDependencies, type HostBulkTransfers } from "../http/bulk";
 import { HostStreamError, type HostSubscriptionHub } from "./subscriptions";
 import { dispatchErrorCode, principalCapabilities, rejectUpgrade, waitFor } from "./server-helpers";
+import { authorizeWith, type AuthMode } from "./server-helpers";
 
 export const HOST_WS_READ_CAPABILITY = "transport.ws.read.v2";
 const READ_METHODS = ["environment.describe", "projects.list"] as const;
@@ -216,17 +217,14 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
     send(peer, { jsonrpc: "2.0", id, error: { code, message, ...(data ? { data } : {}) } });
   }
 
-  async function authorized(peer: Peer, heartbeat = false): Promise<boolean> {
-    return !peer.closed && (await executionAuthorized(peer, heartbeat));
+  async function authorized(peer: Peer, mode: AuthMode = "own"): Promise<boolean> {
+    return !peer.closed && (await executionAuthorized(peer, mode));
   }
 
-  async function executionAuthorized(peer: Peer, heartbeat = false): Promise<boolean> {
+  async function executionAuthorized(peer: Peer, mode: AuthMode = "own"): Promise<boolean> {
     try {
-      const check = async () => await peer.principal.authorized();
-      // Concurrent requests of one device share one in-flight check (and slot).
-      return await (heartbeat
-        ? heartbeatBudget.run(peer.principal.id, check, "control")
-        : authBudget.runShared(peer.principal.id, check));
+      const budget = mode === "heartbeat" ? heartbeatBudget : authBudget;
+      return await authorizeWith(budget, mode, peer.principal);
     } catch (error) {
       if (error instanceof HostDispatchError && error.code === "overloaded") throw error;
       throw new HostDispatchError(
@@ -263,7 +261,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       }
       let permitted: boolean;
       try {
-        permitted = await authorized(peer);
+        permitted = await authorized(peer, "shared");
       } catch (error) {
         if (
           !(error instanceof HostDispatchError) ||
@@ -343,7 +341,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
     deadline.unref();
     let dispatchStarted = false;
     try {
-      if (!(await waitFor(authorized(peer), controller.signal))) {
+      if (!(await waitFor(authorized(peer, "shared"), controller.signal))) {
         failure(
           peer,
           request.id,
@@ -465,7 +463,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         workBudget.runScoped(peer.principal.id, action, control ? "control" : "read"),
         controller.signal,
       );
-      if (!(await waitFor(authorized(peer), controller.signal))) {
+      if (!(await waitFor(authorized(peer, "shared"), controller.signal))) {
         failure(
           peer,
           request.id,
@@ -850,7 +848,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         limits.heartbeatResponseTimeoutMs,
       );
       authDeadline.unref();
-      void waitFor(authorized(peer, true), controller.signal)
+      void waitFor(authorized(peer, "heartbeat"), controller.signal)
         .then((permitted) => {
           if (!permitted) {
             closePeer(peer);

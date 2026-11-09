@@ -205,9 +205,10 @@ The sessions filter menu can show only conversations managed by your named
 assistant. It uses the Host's management record and combines with provider,
 time, archive and status filters. Clear filters restores the full list.
 
-**Settle** (the check mark in a conversation's header) moves a finished
-conversation to the collapsed **Settled** group at the end of the project's
-list. It does not lock anything: the conversation stays writable, and its next
+**Settle** (the check mark in a conversation's header, or on its sidebar row
+when you hover it) moves a finished conversation to the collapsed **Settled**
+group at the end of the project's list. The **Settled** filter lists only
+settled conversations. It does not lock anything: the conversation stays writable, and its next
 message moves it back to the active list. Settling while a turn runs waits for
 the turn; a failed turn or a queued message leaves it active. **Un-settle**
 brings it back and keeps it out of automatic settling until its next message.

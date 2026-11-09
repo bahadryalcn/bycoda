@@ -166,7 +166,14 @@ export function planProjectReturn({
   }
 
   const current = active?.focusedId && sessions.find((session) => session.id === active.focusedId);
-  return current && !hostSessionBinding(current) && isBlankSession(current)
+  // A refused first send keeps its message queued with an error notice and no
+  // user block. Switching projects must leave it in its own project, not carry
+  // it along; the composer's folder picker can still move it on purpose.
+  return current &&
+    !hostSessionBinding(current) &&
+    isBlankSession(current) &&
+    !current.queuedMessages?.length &&
+    !current.blocks.some((block) => block.notice === "error")
     ? { action: "reuse-blank", sessionId: current.id }
     : { action: "create" };
 }

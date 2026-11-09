@@ -323,6 +323,20 @@ describe("project selection", () => {
     expect(current.worktreeCwd).toBe("/beta-worktree");
   });
 
+  it("never carries a session holding an unsent message or an error notice to another project", () => {
+    const queued = workspace();
+    queued.sessions[3].blocks = [];
+    queued.sessions[3].queuedMessages = [{ id: "q1", text: "retained", attachments: [] }];
+    queued.sessions[3].queueStatus = "paused";
+    expect(planProjectReturn({ ...queued, projectPath: "/gamma" })).toEqual({ action: "create" });
+
+    const failed = workspace();
+    failed.sessions[3].blocks = [
+      { id: "n1", role: "system", notice: "error", text: "Message not sent" },
+    ];
+    expect(planProjectReturn({ ...failed, projectPath: "/gamma" })).toEqual({ action: "create" });
+  });
+
   it("never reuses a busy session even when it has no user blocks", () => {
     const state = workspace();
     state.sessions[3].blocks = [];

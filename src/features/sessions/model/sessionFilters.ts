@@ -12,6 +12,8 @@ export type SessionStatusFilter = {
 
 export type SessionSidebarFilters = {
   showArchived: boolean;
+  /** Lists only the sessions on the Settled shelf of this computer's Host. */
+  showSettled: boolean;
   assistantManaged: boolean;
   hiddenHarnesses: HarnessId[];
   time: SessionTimeFilter;
@@ -26,6 +28,7 @@ export const DEFAULT_SESSION_STATUS_FILTER: SessionStatusFilter = {
 
 export const DEFAULT_SESSION_SIDEBAR_FILTERS: SessionSidebarFilters = {
   showArchived: false,
+  showSettled: false,
   assistantManaged: false,
   hiddenHarnesses: [],
   time: "all",
@@ -52,6 +55,7 @@ export function loadSessionSidebarFilters(): SessionSidebarFilters {
     const parsed = JSON.parse(raw) as Partial<SessionSidebarFilters>;
     return {
       showArchived: parsed.showArchived === true,
+      showSettled: parsed.showSettled === true,
       assistantManaged: parsed.assistantManaged === true,
       hiddenHarnesses: Array.isArray(parsed.hiddenHarnesses)
         ? parsed.hiddenHarnesses.filter(isHarnessId)
@@ -82,6 +86,7 @@ export function hasActiveSessionFilters(
 ): boolean {
   return (
     filters.showArchived ||
+    filters.showSettled ||
     filters.assistantManaged ||
     filters.hiddenHarnesses.length > 0 ||
     filters.time !== defaultTime ||
@@ -98,6 +103,14 @@ export function filterSessionsByHarness(
   const hidden = new Set(hiddenHarnesses);
   if (hidden.size === 0) return rows;
   return rows.filter((row) => !hidden.has(row.harness));
+}
+
+export function filterSettledSessions(
+  rows: SessionSummary[],
+  settledOnly: boolean,
+  isSettled: (session: SessionSummary) => boolean,
+): SessionSummary[] {
+  return settledOnly ? rows.filter(isSettled) : rows;
 }
 
 /** Management is read from the Host stamp, never inferred from titles/authors. */

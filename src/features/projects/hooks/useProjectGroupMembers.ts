@@ -1,5 +1,7 @@
+import { useRef, useState } from "react";
 import { useAnimatedReorder } from "../../../shared/hooks/useAnimatedReorder";
 import {
+  memberKey,
   orderProjectGroupMembers,
   saveProjectGroupMemberOrder,
   type ProjectGroup,
@@ -17,15 +19,28 @@ export function useProjectGroupMembers(
   onReorderProjects: (paths: string[]) => void,
   projectLabel: (path: string) => string,
 ) {
-  const members = orderProjectGroupMembers(projectPaths, workspaceIds, group.memberOrder);
+  // The slot save waits on the privacy Host round-trip while the project order commits at once,
+  // so the dropped order shows until the save settles instead of snapping back for that wait.
+  const [pendingOrder, setPendingOrder] = useState<string[] | null>(null);
+  const latestSave = useRef(0);
+  const members = orderProjectGroupMembers(
+    projectPaths,
+    workspaceIds,
+    pendingOrder ?? group.memberOrder,
+  );
   const byId = new Map(members.map((member) => [member.id, member]));
   const sortable = useAnimatedReorder(
     members.map((member) => member.id),
     (ids) => {
       const next = ids.flatMap((id) => byId.get(id) ?? []);
+      const save = ++latestSave.current;
+      const settle = () => {
+        if (save === latestSave.current) setPendingOrder(null);
+      };
+      setPendingOrder(next.map(memberKey));
       onReorderProjects(next.filter((member) => member.kind === "project").map((m) => m.id));
-      // A refused save (locked room) leaves the workspaces where they were.
-      saveProjectGroupMemberOrder(group.id, next).catch(() => undefined);
+      // A refused save (locked room) returns the workspaces to their saved slots.
+      saveProjectGroupMemberOrder(group.id, next).then(settle, settle);
     },
     "y",
     undefined,

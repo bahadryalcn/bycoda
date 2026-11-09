@@ -12429,6 +12429,10 @@
   "Dictation": "Dikte",
   "Dictation model": "Dikte modeli",
   "Used for every dictation with this provider.": "Bu sağlayıcıyla yapılan tüm diktelerde kullanılır.",
+  "Dictation language": "Dikte dili",
+  "Dictation options": "Dikte seçenekleri",
+  "Recognition, model and language": "Tanıma, model ve dil",
+  "Automatic detects the language you speak. Choose one if dictation translates your speech.": "Otomatik, konuştuğunuz dili algılar. Dikte konuşmanızı çeviriyorsa bir dil seçin.",
   "Sign in to sync your stats across devices": "İstatistiklerini cihazlar arasında eşitlemek için giriş yap",
   "An account is optional. Your sessions, projects and settings stay on this computer either way.": "Hesap isteğe bağlıdır. Oturumların, projelerin ve ayarların her iki durumda da bu bilgisayarda kalır.",
   "Signed in as {p0}. Your stats now sync across your devices.": "{p0} olarak giriş yapıldı. İstatistiklerin artık cihazların arasında eşitleniyor.",
@@ -12733,5 +12737,7 @@
   "{p0} could not be completed.": "{p0} işlem tamamlanamadı.",
   "{p0} changed 1 worktree in this project.": "{p0} bu projede 1 worktree'yi değiştirdi.",
   "{p0} changed {p1} worktrees in this project.": "{p0} bu projede {p1} worktree'yi değiştirdi.",
-  "{p0} changed this project's workspace settings.": "{p0} bu projenin çalışma alanı ayarlarını değiştirdi."
+  "{p0} changed this project's workspace settings.": "{p0} bu projenin çalışma alanı ayarlarını değiştirdi.",
+  "Resize voice companion": "Sesli yardımcıyı yeniden boyutlandır",
+  "Drag to resize. Double-click for the automatic size.": "Boyutlandırmak için sürükleyin. Otomatik boyut için çift tıklayın."
 }

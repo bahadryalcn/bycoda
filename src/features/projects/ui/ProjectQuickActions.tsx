@@ -37,6 +37,7 @@ import {
   Wrench,
 } from "../../../shared/ui/icons";
 import {
+  actionExpectedPort,
   loadProjectActions,
   saveProjectActions,
   projectActionShortcutError,
@@ -156,14 +157,7 @@ function ProjectQuickActionsFor({
         if (pendingLaunch.current) return;
         pendingLaunch.current = true;
         const revision = launchGeneration.current;
-        let expectedPort: number | undefined;
-        try {
-          const url = new URL(action.url.trim());
-          if (["http:", "https:"].includes(url.protocol) && url.port)
-            expectedPort = Number(url.port);
-        } catch {
-          /* A URL is optional for managed commands. */
-        }
+        const expectedPort = actionExpectedPort(action.url);
         const input = {
           name: action.name,
           command: action.command.trim(),
