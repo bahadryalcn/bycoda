@@ -264,7 +264,9 @@ it("preserves full owner catalog/settings over HTTP+WS and denies account invent
   timeout.mockRestore();
   expect(wire).toEqual(http);
   expect(wire.models.codex[0].settings[0].options[0].label).toBe("Yüksek");
-  expect(wire.accounts).toEqual({ codex: [{ id: "default", label: "Host default" }] });
+  expect(wire.accounts).toEqual({
+    codex: [{ id: "default", label: "Host default", color: expect.any(String) }],
+  });
   expect((await ws.request("models.list", { progressive: "true" })).error.code).toBe(
     RPC_ERROR_CODES.invalidParams,
   );

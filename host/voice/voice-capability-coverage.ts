@@ -140,6 +140,11 @@ export const VOICE_CAPABILITY_COVERAGE: Record<string, { tools: string[]; remain
     remaining:
       "Connected desktop; cached status is not sign-in, credential changes remain owner-only.",
   },
+  pullRequests: {
+    tools: [],
+    remaining:
+      "Linking a session to a pull request is an owner action in the Git panel, not a voice action.",
+  },
   push: {
     tools: [],
     remaining:
