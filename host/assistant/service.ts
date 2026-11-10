@@ -149,7 +149,7 @@ export type AssistantGoalStatus = {
   usageTurns?: AssistantUsageTurn[];
   usageIncomplete?: boolean;
   lastActivityAt?: number;
-  waitingReason?: "error" | "planApproval" | "owner";
+  waitingReason?: "error" | "planApproval" | "owner" | "limits";
   runningChildren?: boolean;
   sessionQuestions?: AssistantQuestionStatus[];
 };

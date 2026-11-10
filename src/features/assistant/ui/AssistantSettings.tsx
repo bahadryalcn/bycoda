@@ -25,6 +25,7 @@ import { AssistantRetentionField } from "./settings/AssistantUsageSettings";
 import { AssistantScheduleInfo } from "./settings/AssistantScheduleFields";
 import { AssistantCostInfo } from "./settings/AssistantCostFields";
 import { settingsProfilePatch } from "./settings/settingsPatch";
+import { ModelPoolEditor } from "./settings/pool/ModelPoolEditor";
 import settingsStyles from "./AssistantSettings.module.css";
 
 type OwnerRequest = typeof assistantRequest;
@@ -90,6 +91,7 @@ export function AssistantSettings({
   const [savedDraft, setSavedDraft] = useState(() => JSON.stringify(snapshot.profile));
   const [projectState, setProjectState] = useState({ dirty: false, pending: false });
   const [computerState, setComputerState] = useState({ dirty: false, pending: false });
+  const [poolState, setPoolState] = useState({ dirty: false, pending: false });
   const [leave, setLeave] = useState<"close" | "setup" | null>(null);
   const [retention, setRetention] = useState(snapshot.conversationRetentionDays ?? 0);
   const [savedRetention, setSavedRetention] = useState(snapshot.conversationRetentionDays ?? 0);
@@ -103,12 +105,13 @@ export function AssistantSettings({
   /** Each embedded section registers its own save routine; the footer runs them in order. */
   const projectSave: SectionSave = useRef<(() => Promise<void>) | null>(null);
   const computerSave: SectionSave = useRef<(() => Promise<void>) | null>(null);
+  const poolSave: SectionSave = useRef<(() => Promise<void>) | null>(null);
   /** The computer section status refresh, shown in its title row by this shell. */
   const computerRefresh = useRef<(() => void) | null>(null);
   const currentPage = pages.find(([id]) => id === page)!;
   const profileDirty = JSON.stringify(draft) !== savedDraft || retention !== savedRetention;
-  const anyDirty = profileDirty || projectState.dirty || computerState.dirty;
-  const busy = pending || projectState.pending || computerState.pending;
+  const anyDirty = profileDirty || projectState.dirty || computerState.dirty || poolState.dirty;
+  const busy = pending || projectState.pending || computerState.pending || poolState.pending;
   const saved = savedNotice && !anyDirty;
   const changeProjectState = useCallback((state: { dirty: boolean; pending: boolean }) => {
     setProjectState(state);
@@ -116,6 +119,10 @@ export function AssistantSettings({
   }, []);
   const changeComputerState = useCallback((state: { dirty: boolean; pending: boolean }) => {
     setComputerState(state);
+    if (state.dirty) setSavedNotice(false);
+  }, []);
+  const changePoolState = useCallback((state: { dirty: boolean; pending: boolean }) => {
+    setPoolState(state);
     if (state.dirty) setSavedNotice(false);
   }, []);
   function requestLeave(target: "close" | "setup") {
@@ -144,7 +151,7 @@ export function AssistantSettings({
       setSavedRetention(retention);
     }
   }
-  /** Profile, then project scope, then computer use. The first failure stops the chain. */
+  /** Profile, then the model list, then project scope, then computer use. The first failure stops the chain. */
   async function save() {
     if (busy) return;
     setPending(true);
@@ -152,6 +159,7 @@ export function AssistantSettings({
     setSavedNotice(false);
     try {
       if (profileDirty) await saveProfile();
+      if (poolState.dirty) await poolSave.current?.();
       if (projectState.dirty) await projectSave.current?.();
       if (computerState.dirty) await computerSave.current?.();
       setSavedNotice(true);
@@ -326,7 +334,13 @@ export function AssistantSettings({
               "work",
               <>
                 <Group title={t("Jobs")}>{profile("autonomy")}</Group>
-                <Group title={t("Models")}>{profile("models")}</Group>
+                <Group title={t("Models")}>
+                  <ModelPoolEditor
+                    request={assistantRequest}
+                    saveRef={poolSave}
+                    onDraftStateChange={changePoolState}
+                  />
+                </Group>
               </>,
             )}
             {tab(

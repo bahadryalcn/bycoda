@@ -1,1 +1,6 @@
-export { getAllRateLimits, subscribeRateLimits } from "../model/rateLimitsCache";
+export {
+  getAllRateLimits,
+  loadRateLimits,
+  subscribeRateLimits,
+  useCachedRateLimits,
+} from "../model/rateLimitsCache";

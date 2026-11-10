@@ -527,8 +527,7 @@ export function assistantExecutionPorts(
         ...(waitingReason
           ? { waitingReason }
           : limitWait
-            ? // shortcut: the union lives in service.ts; add "limits" there and drop this cast.
-              { waitingReason: "limits" as AssistantGoalStatus["waitingReason"] }
+            ? { waitingReason: "limits" as const }
             : {}),
         ...(limitWait
           ? {

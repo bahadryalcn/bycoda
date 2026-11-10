@@ -7,6 +7,10 @@ import { saveOwnerQuestionPresentation } from "../../src/features/assistant/mode
 import { DEFAULT_ASSISTANT_POLICY } from "../../src/shared/model/assistantPolicy";
 import { ModelPicker as ActualModelPicker } from "../../src/features/sessions/ui/ModelPicker.tsx";
 import { VoiceSetupSteps as ActualVoiceSetupSteps } from "../../src/features/voice/ui/VoiceSetupSteps.tsx";
+import {
+  setCachedRateLimits,
+  type ProviderRateLimits,
+} from "../../src/features/providers/model/rateLimitsCache";
 const realControls = new URLSearchParams(location.search).has("real-controls");
 const desktopParams = new URLSearchParams(location.search);
 const globalRoomFixture = desktopParams.has("global-room");
@@ -79,6 +83,66 @@ function desktopFixtureRequest(input: any) {
   };
 }
 const now = Date.now();
+// Model pool fixture: three accounts with different live limits (usage-limits reader port).
+const poolRow = (id: string, account: string, roles: string[], extra: object = {}) => ({
+  id,
+  harness: "codex" as const,
+  providerAccountId: account,
+  model: "codex:fixture-worker",
+  modelSettings: { reasoningEffort: "low" },
+  runtimeMode: "supervised" as const,
+  maxRunMinutes: 60,
+  roles,
+  unknownLimit: "use" as const,
+  ...extra,
+});
+let modelPool = {
+  rows: [
+    poolRow("pool-a", "default", ["worker", "reply"], { minRemainingPercent: 15 }),
+    poolRow("pool-b", "work", ["worker", "planning"], {
+      minRemainingPercent: 20,
+      modelSettings: { reasoningEffort: "high" },
+    }),
+    poolRow("pool-c", "spare", ["chief"], { unknownLimit: "skip" }),
+  ],
+  version: 0,
+  updatedAt: now,
+  derived: true,
+};
+if (realControls) {
+  try {
+    localStorage.setItem(
+      "bycoda.providerAccounts.v2",
+      JSON.stringify({
+        codex: [
+          { id: "default", label: "Personal account", isDefault: true },
+          { id: "work", label: "Work account" },
+          { id: "spare", label: "Spare account" },
+        ],
+      }),
+    );
+  } catch {
+    // Storage is optional in the fixture.
+  }
+  const limits = (used: number, weekly: number): ProviderRateLimits => ({
+    provider: "codex",
+    session: { usedPercent: used, windowMinutes: 300, resetsAt: now + 95 * 60_000 },
+    weekly: { usedPercent: weekly, windowMinutes: 10080, resetsAt: now + 3 * 86_400_000 },
+    monthly: null,
+    resetCredits: null,
+    updatedAt: now,
+    error: null,
+    status: "ok",
+  });
+  setCachedRateLimits("codex", "default", limits(35, 52));
+  setCachedRateLimits("codex", "work", limits(88, 40));
+  setCachedRateLimits("codex", "spare", {
+    ...limits(0, 0),
+    session: null,
+    weekly: null,
+    status: "unavailable",
+  });
+}
 let questionAckLost = false;
 let questionMutationCount = 0;
 const summaryFixture = new URLSearchParams(location.search).has("summary-refresh");
@@ -1175,6 +1239,18 @@ export async function hostToolRequest(
     case "resumeAll":
       snapshot.paused = false;
       return { ok: true };
+    case "models.pool.get":
+      return { modelPool: structuredClone(modelPool) };
+    case "models.pool.set":
+      if (input.expectedVersion !== modelPool.version)
+        throw new Error("Model pool changed; reload before saving.");
+      modelPool = {
+        rows: structuredClone(input.rows),
+        version: modelPool.version + 1,
+        updatedAt: Date.now(),
+        derived: false,
+      };
+      return { modelPool: structuredClone(modelPool) };
     case "profile.update":
       Object.assign(snapshot.profile, input.patch, {
         version: snapshot.profile.version + 1,

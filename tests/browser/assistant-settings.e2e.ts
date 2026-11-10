@@ -87,7 +87,7 @@ for (const theme of ["light", "dark"])
       await tab("Personal").focus();
       await page.keyboard.press("ArrowRight");
       await expect(tab("Work")).toHaveAttribute("aria-selected", "true");
-      const worker = dialog.getByRole("group", { name: tr("Workers"), exact: true });
+      const worker = dialog.locator("[data-settings-page=work] fieldset").first();
       await expect(worker).toContainText("Fixture worker");
       await worker.getByRole("button").first().click();
       // Reasoning is an inline radio row in the model panel's settings column.
@@ -191,8 +191,11 @@ for (const theme of ["light", "dark"])
         activeEnd: 6,
         perWakeTokenCap: 9000,
         summaryRefreshMessages: 25,
-        execution: { model: "codex:fixture-worker", modelSettings: { reasoningEffort: "high" } },
       });
+      // The footer Save also applies the model list draft, with its own version.
+      const poolSave = (await requests(page)).find((r) => r.input.op === "models.pool.set");
+      expect(poolSave?.input.expectedVersion).toBe(0);
+      expect((poolSave?.input.rows as any[])[0].modelSettings.reasoningEffort).toBe("high");
       await tab("Personal").click();
       const unsavedAddress = dialog.getByRole("textbox", {
         name: tr("How should I address you?"),
@@ -208,4 +211,35 @@ for (const theme of ["light", "dark"])
       await dialog.getByRole("button", { name: tr("Close"), exact: true }).click();
       await dialog.getByRole("button", { name: tr("Discard"), exact: true }).click();
       await expect(dialog).toHaveCount(0);
+    });
+
+// Model pool editor captures (English copy; synthetic Host and usage-limits ports).
+const poolOutput = "temp/verification/2026-11-10-voice-operator";
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`assistant model pool editor ${theme} ${width}`, async ({ page }) => {
+      await mkdir(poolOutput, { recursive: true });
+      await page.setViewportSize({ width, height: 1100 });
+      await page.goto(
+        `/tests/browser/assistant-room.html?real-controls&desktop&manual&theme=${theme}`,
+      );
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      const dialog = page.getByRole("dialog").first();
+      await dialog.getByRole("tab", { name: "Work", exact: true }).click();
+      const models = dialog
+        .locator("section")
+        .filter({ has: page.getByRole("heading", { name: "Models", exact: true }) })
+        .first();
+      await expect(models.locator("fieldset")).toHaveCount(3);
+      await expect(models).toContainText("Limit unknown");
+      await expect(models).toContainText("48% left");
+      await expect(models).toContainText("12% left");
+      await models.scrollIntoViewIfNeeded();
+      await models.screenshot({
+        path: join(poolOutput, `pool-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
     });

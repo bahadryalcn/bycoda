@@ -70,13 +70,14 @@ const WAITING: Record<string, string> = {
   planApproval: "Plan approval needed.",
   owner: "Needs your input.",
   error: "Stopped with an error.",
+  limits: "Waiting for a model limit to reset.",
 };
 
 /** Notification text for a job that just moved to waiting or stalled. */
 export function assistantJobNotificationBody(
   status: string,
   summary: string,
-  waitingReason: "error" | "planApproval" | "owner" | undefined,
+  waitingReason: "error" | "planApproval" | "owner" | "limits" | undefined,
   stallMinutes: number,
 ): string {
   if (status === "stalled")

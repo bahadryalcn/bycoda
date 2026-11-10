@@ -109,6 +109,7 @@ export async function assistantRequest(
       "conversations.search",
       "notes.get",
       "questions.get",
+      "models.pool.get",
     ].includes(request.op)
   ) {
     await refreshAssistant();
