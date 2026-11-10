@@ -12,20 +12,22 @@ import { CrewDialogHost, type OpenCrewSession } from "../CrewDialogHost";
 import type { CrewDialog } from "../crewMenuItems";
 import { CrewLibrary } from "../CrewLibrary";
 import { CrewsActive } from "./CrewsActive";
+import { CrewsModelPools } from "./CrewsModelPools";
 import { CrewsLoadState } from "./CrewsLoadState";
 import { CrewsTeams } from "./CrewsTeams";
 import { CrewsWork } from "./CrewsWork";
 
-type CrewsTab = "active" | "teams" | "members" | "work";
+type CrewsTab = "active" | "teams" | "members" | "models" | "work";
 
 /** The page's tabs in order; a new tab is one entry here plus its branch in `CrewsPage`. */
-function crewsTabs(activeCount: number | null): TabItem<CrewsTab>[] {
+function crewsTabs(activeCount: number | null, models: boolean): TabItem<CrewsTab>[] {
   return [
     ...(activeCount === null
       ? []
       : [{ value: "active" as const, label: t("Active"), count: activeCount }]),
     { value: "teams", label: t("Teams") },
     { value: "members", label: t("Members") },
+    ...(models ? [{ value: "models" as const, label: t("Models") }] : []),
     { value: "work", label: t("Work") },
   ];
 }
@@ -36,6 +38,8 @@ export type CrewsPageProps = {
   chromeInset?: PaneHeaderProps["chromeInset"];
   leading?: ReactNode;
   trailing?: ReactNode;
+  /** The workspace tool tabs; they take the title's place, as in the other tools. */
+  navigation?: ReactNode;
   onOpenSession?: OpenCrewSession;
 };
 
@@ -113,7 +117,10 @@ export function CrewsPage({ cwd, chromeInset, leading, trailing, onOpenSession }
         <div className="border-b border-stroke px-3 py-1.5">
           <TabList
             label={t("Crews sections")}
-            items={crewsTabs(supported ? (activeItems?.length ?? 0) : null)}
+            items={crewsTabs(
+              supported ? (activeItems?.length ?? 0) : null,
+              state.data?.modelPoolsSupported === true,
+            )}
           />
         </div>
         <TabPanel className="min-h-0 flex-1 overflow-y-auto">
@@ -153,6 +160,8 @@ export function CrewsPage({ cwd, chromeInset, leading, trailing, onOpenSession }
                   <div className="settings-topics p-4">
                     <CrewLibrary cwd={cwd} state={state} data={data} />
                   </div>
+                ) : tab === "models" ? (
+                  <CrewsModelPools data={data} />
                 ) : (
                   <CrewsWork
                     key={workTarget.nonce}

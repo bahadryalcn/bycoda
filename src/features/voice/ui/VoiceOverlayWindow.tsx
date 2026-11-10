@@ -10,6 +10,7 @@ import {
   Mic,
   MicOff,
   Square,
+  TriangleAlert,
   VolumeX,
   Volume2,
   Pause,
@@ -46,6 +47,7 @@ import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { VoiceToolActivityPanel } from "./VoiceToolActivityPanel";
+import { isActionableVoiceError, voiceErrorTitle } from "./companion/VoiceErrorNotice";
 import { monotonicNow } from "../../../shared/lib/time/timestamps";
 import { useVoicePushToTalk } from "./useVoicePushToTalk";
 
@@ -75,10 +77,6 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
     setMenuError("");
     send(manual ? "manualTurnEnd" : "automaticTurnEnd");
   }
-  const actionableError =
-    state?.error === t("Conversation was not saved. Retry.") ||
-    state?.error ===
-      t("Current computer presence could not be verified. Mark yourself here before talking.");
   const level = useRef(0);
   const root = useRef<HTMLDivElement>(null);
   const sideScroller = useRef<HTMLElement>(null);
@@ -332,6 +330,19 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
       >
         <header className={styles.header}>
           {handle}
+          {/* Popovers are clipped by this small window, so the mark expands it to the message. */}
+          {state?.error && (
+            <Button
+              iconOnly
+              variant="ghost"
+              tone="danger"
+              data-voice-error=""
+              label={voiceErrorTitle(state.error)}
+              onClick={() => setCompact(false)}
+            >
+              <TriangleAlert className="icon-sm" />
+            </Button>
+          )}
           <div className={styles.heading}>
             <OverflowTooltip label={state?.title}>
               <h1 className={styles.title}>{state?.title ?? t("Voice companion")}</h1>
@@ -437,19 +448,21 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                   <p className={styles.message}>{state.message}</p>
                 </div>
               )}
-              {state?.error &&
-                (actionableError ? (
-                  <InlineError className={styles.caption}>{state.error}</InlineError>
-                ) : (
-                  <>
-                    <InlineError className={styles.caption}>
-                      {t("Voice needs attention")}
-                    </InlineError>
+              {state?.error && (
+                <>
+                  <InlineError
+                    className={styles.caption}
+                    action={<Button onClick={() => send("dismissError")}>{t("Dismiss")}</Button>}
+                  >
+                    {voiceErrorTitle(state.error)}
+                  </InlineError>
+                  {!isActionableVoiceError(state.error) && (
                     <Disclosure size="sm" className={styles.feedback} summary={t("Error details")}>
                       <p>{state.error}</p>
                     </Disclosure>
-                  </>
-                ))}
+                  )}
+                </>
+              )}
               <LiveText className={styles.caption} text={state?.notice ?? ""} />
             </div>
             <div className={styles.actions}>

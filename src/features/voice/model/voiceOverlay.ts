@@ -45,6 +45,7 @@ export const VOICE_OVERLAY_COMMANDS = [
   "manualTurnEnd",
   "automaticTurnEnd",
   "silence",
+  "dismissError",
   "disconnect",
   "dock",
   "close",

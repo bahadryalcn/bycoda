@@ -53,7 +53,7 @@ describe("voice reconnection admission", () => {
     expect(events.every((event) => event.type === "conversation.item.create")).toBe(true);
     expect(recentVoiceContext([{ role: "assistant", text: "Done" }])[0].item).toMatchObject({
       role: "assistant",
-      content: [{ type: "text", text: "Done" }],
+      content: [{ type: "output_text", text: "Done" }],
     });
   });
 });

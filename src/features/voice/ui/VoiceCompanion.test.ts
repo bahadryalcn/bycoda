@@ -1195,16 +1195,16 @@ it("keeps the panel in the app when the floating window cannot open", async () =
     await setup();
     await floatOut();
     expect(container.querySelector("section")).not.toBeNull();
-    const feedback = container.querySelector<HTMLDetailsElement>("details")!;
-    expect(feedback.open).toBe(false);
-    expect(feedback.hasAttribute("role")).toBe(false);
-    expect(feedback.querySelector("summary")?.textContent).toBe("Error details");
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Voice needs attention");
-    await act(() => {
-      feedback.querySelector("summary")!.click();
-    });
-    expect(feedback.open).toBe(true);
-    expect(feedback.querySelector("p")?.textContent).toBe("Window creation failed");
+    // The error is a header mark that tints the card; its message opens on demand.
+    const mark = container.querySelector<HTMLButtonElement>("[data-voice-error]")!;
+    const alert = "Voice needs attention: Window creation failed";
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(alert);
+    await act(() => mark.click());
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Window creation");
+    const ok = [...document.querySelectorAll("button")].find((b) => b.textContent === "Dismiss")!;
+    await act(() => ok.click());
+    expect(container.querySelector("[data-voice-error]")).toBeNull();
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("");
     expect(mock.close).not.toHaveBeenCalled();
   } finally {
     overlay.native = false;

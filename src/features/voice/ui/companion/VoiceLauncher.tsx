@@ -62,7 +62,7 @@ export function VoiceReturnButton({
 }
 
 /** Corner dot on the avatar: none while voice is off, grey when muted, live states pulse green. */
-function launcherTone(state: VoiceVisualState) {
+export function voiceStatusTone(state: VoiceVisualState) {
   if (state === "off") return undefined;
   if (state === "muted") return "neutral";
   if (state === "connecting") return "warning";
@@ -108,7 +108,7 @@ export function VoiceLauncher({
   const slot = useVoiceLauncherSlot();
   const compact = slot?.hasAttribute("data-compact") === true;
   const label = name ? t("Talk to {p0}", { p0: name }) : t("Voice companion");
-  const tone = launcherTone(state);
+  const tone = voiceStatusTone(state);
   const icon = name ? (
     <span className={styles.launcherAvatar} data-state={state}>
       <AssistantAvatarMark className={styles.launcherMark} value={avatar} name={name} />

@@ -29,9 +29,6 @@ import { crewCwdOn, orderCrewMachines } from "../model/crewMachineScope";
 
 type CrewState = ReturnType<typeof useProjectCrews>;
 
-// Not a path, so it never collides with a project.
-const NEW_PROJECT = "\u0000new";
-
 /** Which machine and project the dialog shows work for and starts new work in. It opens
  * on the opened project's own machine (this computer for a local project); other
  * connected machines, any project registered there, or a new project folder are the
@@ -135,20 +132,24 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
           <SearchableSelect
             label={t("Project")}
             value={scopeCwd}
-            options={[
-              ...options,
-              {
-                value: NEW_PROJECT,
-                label: t("New project…"),
-                icon: <FolderPlus className="icon-sm" />,
-              },
-            ]}
+            options={options}
             disabled={disabled || creating}
-            onChange={(value) => {
-              setCreateError("");
-              if (value === NEW_PROJECT) setNewName("");
-              else setScopeCwd(value);
-            }}
+            onChange={setScopeCwd}
+            // Pinned below the list, so it stays visible however many projects there are.
+            footer={({ close }) => (
+              <Button
+                variant="ghost"
+                size="sm"
+                startIcon={<FolderPlus className="icon-sm" />}
+                onClick={() => {
+                  close();
+                  setCreateError("");
+                  setNewName("");
+                }}
+              >
+                {t("New project…")}
+              </Button>
+            )}
           />
         ) : (
           // Takes the picker's place, so choosing New project… does not grow the dialog.

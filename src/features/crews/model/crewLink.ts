@@ -11,6 +11,7 @@ const SYNCED = [
   "groups",
   "avatar",
   "handle",
+  "pool",
 ] as const;
 
 /** The member's link to its library profile; none for a crew-only member or a profile this crew cannot see. */
@@ -34,6 +35,7 @@ export function libraryVersionPatch(profile: SavedCrewAgent): Partial<CrewAgent>
     groups: copy.groups,
     avatar: copy.avatar,
     handle: copy.handle,
+    pool: copy.pool,
     source: { id: profile.id, updatedAt: profile.updatedAt },
     customized: undefined,
   };

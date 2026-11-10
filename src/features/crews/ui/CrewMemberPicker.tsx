@@ -238,6 +238,8 @@ export function CrewMemberPicker({
             groups={data.groupsSupported}
             identity={data.identitySupported}
             tools={data.toolsSupported}
+            machineId={data.machine.id}
+            modelPoolsSupported={data.modelPoolsSupported}
             groupSuggestions={groups}
             nameError={nameError}
             modelError={modelError}

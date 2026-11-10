@@ -55,6 +55,15 @@
   flex: 1 1 auto;
   min-inline-size: 0;
 }
+/* labelAction: the chevron button shrinks to its mark and the label button takes the row. */
+.toggle[data-split] {
+  flex: none;
+}
+.labelButton {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  justify-content: flex-start;
+}
 .mark {
   display: inline-flex;
   flex: none;
@@ -120,6 +129,9 @@
   .root[data-compact-rail] .toggle {
     flex: 0 1 auto;
     justify-content: center;
+  }
+  .root[data-compact-rail] .labelButton {
+    display: none;
   }
   .root[data-compact-rail] .toggle:not(:has(.icon)) {
     display: none;

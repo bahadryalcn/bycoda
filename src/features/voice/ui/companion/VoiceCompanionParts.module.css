@@ -1,24 +1,34 @@
 /* Status line, chat transcript and footer controls of the companion panel. */
-.status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+/* The stage: a status row that never wraps, then the scope row. Both keep their place in every
+   state, so connecting or speaking never moves a control. */
+.stage {
+  display: grid;
+  gap: 10px;
   min-inline-size: 0;
   margin-block-end: 10px;
 }
-/* A narrow panel moves the scope control to its own row instead of
-   squeezing the status into one character per line. */
+.status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-inline-size: 0;
+  min-block-size: 44px;
+}
 .statusText {
   display: grid;
-  flex: 1 1 5rem;
+  flex: 1 1 0;
   min-inline-size: 0;
+}
+.statusLine,
+.status .caption {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .statusLine {
   font-size: var(--ui-font-secondary);
   font-weight: 500;
   line-height: 1.4;
-  overflow-wrap: break-word;
 }
 .caption {
   color: var(--ui-text-secondary);
@@ -27,8 +37,67 @@
   overflow-wrap: break-word;
 }
 .scope {
-  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.scopeEnd {
   margin-inline-start: auto;
+}
+
+/* Assistant avatar. The ring says who has the floor: info while you speak, accent while the
+   assistant does; the corner dot repeats the launcher's connection state. */
+.avatar {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  border-radius: var(--radius-pill);
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color var(--motion-duration-standard) var(--motion-ease-standard);
+}
+.avatar:is([data-state="listening"], [data-state="thinking"]) {
+  outline-color: var(--ui-tone-neutral-border);
+}
+.avatar[data-state="user"] {
+  outline-color: var(--ui-tone-info-fg);
+}
+.avatar[data-state="assistant"] {
+  outline-color: var(--ui-tone-accent-fg);
+}
+.avatar[data-state="error"] {
+  outline-color: var(--ui-tone-danger-border);
+}
+.avatar:is([data-state="off"], [data-state="muted"]) .avatarMark {
+  opacity: 0.6;
+}
+.avatarMark {
+  display: grid;
+  place-items: center;
+  inline-size: 40px;
+  block-size: 40px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--ui-fill-subtle);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+  line-height: 1;
+}
+.avatarMark:empty::before {
+  content: attr(data-initial);
+}
+.avatarDot {
+  position: absolute;
+  inset-inline-end: 0;
+  inset-block-end: 0;
+  box-shadow: 0 0 0 2px var(--ui-surface-floating);
+}
+@media (prefers-reduced-motion: reduce) {
+  .avatar {
+    transition: none;
+  }
 }
 
 .chat {
@@ -64,14 +133,6 @@
 }
 .row[data-role="assistant"] .bubble {
   background: var(--ui-tone-neutral-hover);
-}
-
-.errorRow {
-  display: grid;
-  gap: 4px;
-  min-inline-size: 0;
-  margin-block-end: 8px;
-  overflow-wrap: anywhere;
 }
 
 /* Footer: a single row that wraps only when the panel is narrower than its controls. */

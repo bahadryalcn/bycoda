@@ -8800,6 +8800,12 @@
                   "id": { "type": "string" },
                   "instructions": { "type": "string" },
                   "name": { "type": "string" },
+                  "pool": {
+                    "additionalProperties": false,
+                    "properties": { "id": { "type": "string" } },
+                    "required": ["id"],
+                    "type": "object"
+                  },
                   "projectId": { "type": "string" },
                   "role": {
                     "enum": ["coordinator", "specialist", "reviewer", "advisor"],
@@ -8818,6 +8824,11 @@
                       "conversationTools": {
                         "items": { "maxLength": 100, "type": "string" },
                         "maxItems": 120,
+                        "type": "array"
+                      },
+                      "extras": {
+                        "items": { "enum": ["design", "browser"], "type": "string" },
+                        "maxItems": 8,
                         "type": "array"
                       },
                       "mcpServers": {
@@ -9057,6 +9068,12 @@
                   "id": { "type": "string" },
                   "instructions": { "type": "string" },
                   "name": { "type": "string" },
+                  "pool": {
+                    "additionalProperties": false,
+                    "properties": { "id": { "type": "string" } },
+                    "required": ["id"],
+                    "type": "object"
+                  },
                   "projectId": { "type": "string" },
                   "role": {
                     "enum": ["coordinator", "specialist", "reviewer", "advisor"],
@@ -9075,6 +9092,11 @@
                       "conversationTools": {
                         "items": { "maxLength": 100, "type": "string" },
                         "maxItems": 120,
+                        "type": "array"
+                      },
+                      "extras": {
+                        "items": { "enum": ["design", "browser"], "type": "string" },
+                        "maxItems": 8,
                         "type": "array"
                       },
                       "mcpServers": {
@@ -9313,6 +9335,12 @@
           "id": { "type": "string" },
           "instructions": { "type": "string" },
           "name": { "type": "string" },
+          "pool": {
+            "additionalProperties": false,
+            "properties": { "id": { "type": "string" } },
+            "required": ["id"],
+            "type": "object"
+          },
           "projectId": { "type": "string" },
           "role": {
             "enum": ["coordinator", "specialist", "reviewer", "advisor"],
@@ -9331,6 +9359,11 @@
               "conversationTools": {
                 "items": { "maxLength": 100, "type": "string" },
                 "maxItems": 120,
+                "type": "array"
+              },
+              "extras": {
+                "items": { "enum": ["design", "browser"], "type": "string" },
+                "maxItems": 8,
                 "type": "array"
               },
               "mcpServers": {
@@ -10160,6 +10193,12 @@
                     "id": { "type": "string" },
                     "instructions": { "type": "string" },
                     "name": { "type": "string" },
+                    "pool": {
+                      "additionalProperties": false,
+                      "properties": { "id": { "type": "string" } },
+                      "required": ["id"],
+                      "type": "object"
+                    },
                     "role": {
                       "enum": ["coordinator", "specialist", "reviewer", "advisor"],
                       "type": "string"
@@ -10180,6 +10219,11 @@
                         "conversationTools": {
                           "items": { "maxLength": 100, "type": "string" },
                           "maxItems": 120,
+                          "type": "array"
+                        },
+                        "extras": {
+                          "items": { "enum": ["design", "browser"], "type": "string" },
+                          "maxItems": 8,
                           "type": "array"
                         },
                         "mcpServers": {
@@ -11011,6 +11055,12 @@
                     "id": { "type": "string" },
                     "instructions": { "const": "", "type": "string" },
                     "name": { "type": "string" },
+                    "pool": {
+                      "additionalProperties": false,
+                      "properties": { "id": { "type": "string" } },
+                      "required": ["id"],
+                      "type": "object"
+                    },
                     "role": {
                       "enum": ["coordinator", "specialist", "reviewer", "advisor"],
                       "type": "string"
@@ -11031,6 +11081,11 @@
                         "conversationTools": {
                           "items": { "maxLength": 100, "type": "string" },
                           "maxItems": 120,
+                          "type": "array"
+                        },
+                        "extras": {
+                          "items": { "enum": ["design", "browser"], "type": "string" },
+                          "maxItems": 8,
                           "type": "array"
                         },
                         "mcpServers": {
@@ -12921,6 +12976,12 @@
                   "id": { "type": "string" },
                   "instructions": { "type": "string" },
                   "name": { "type": "string" },
+                  "pool": {
+                    "additionalProperties": false,
+                    "properties": { "id": { "type": "string" } },
+                    "required": ["id"],
+                    "type": "object"
+                  },
                   "role": {
                     "enum": ["coordinator", "specialist", "reviewer", "advisor"],
                     "type": "string"
@@ -12938,6 +12999,11 @@
                       "conversationTools": {
                         "items": { "maxLength": 100, "type": "string" },
                         "maxItems": 120,
+                        "type": "array"
+                      },
+                      "extras": {
+                        "items": { "enum": ["design", "browser"], "type": "string" },
+                        "maxItems": 8,
                         "type": "array"
                       },
                       "mcpServers": {
@@ -14271,6 +14337,12 @@
                 "id": { "type": "string" },
                 "instructions": { "type": "string" },
                 "name": { "type": "string" },
+                "pool": {
+                  "additionalProperties": false,
+                  "properties": { "id": { "type": "string" } },
+                  "required": ["id"],
+                  "type": "object"
+                },
                 "projectId": { "type": "string" },
                 "role": {
                   "enum": ["coordinator", "specialist", "reviewer", "advisor"],
@@ -14289,6 +14361,11 @@
                     "conversationTools": {
                       "items": { "maxLength": 100, "type": "string" },
                       "maxItems": 120,
+                      "type": "array"
+                    },
+                    "extras": {
+                      "items": { "enum": ["design", "browser"], "type": "string" },
+                      "maxItems": 8,
                       "type": "array"
                     },
                     "mcpServers": {
@@ -14537,6 +14614,12 @@
                       "id": { "type": "string" },
                       "instructions": { "type": "string" },
                       "name": { "type": "string" },
+                      "pool": {
+                        "additionalProperties": false,
+                        "properties": { "id": { "type": "string" } },
+                        "required": ["id"],
+                        "type": "object"
+                      },
                       "role": {
                         "enum": ["coordinator", "specialist", "reviewer", "advisor"],
                         "type": "string"
@@ -14557,6 +14640,11 @@
                           "conversationTools": {
                             "items": { "maxLength": 100, "type": "string" },
                             "maxItems": 120,
+                            "type": "array"
+                          },
+                          "extras": {
+                            "items": { "enum": ["design", "browser"], "type": "string" },
+                            "maxItems": 8,
                             "type": "array"
                           },
                           "mcpServers": {
@@ -15209,6 +15297,12 @@
                           "id": { "type": "string" },
                           "instructions": { "const": "", "type": "string" },
                           "name": { "type": "string" },
+                          "pool": {
+                            "additionalProperties": false,
+                            "properties": { "id": { "type": "string" } },
+                            "required": ["id"],
+                            "type": "object"
+                          },
                           "role": {
                             "enum": ["coordinator", "specialist", "reviewer", "advisor"],
                             "type": "string"
@@ -15229,6 +15323,11 @@
                               "conversationTools": {
                                 "items": { "maxLength": 100, "type": "string" },
                                 "maxItems": 120,
+                                "type": "array"
+                              },
+                              "extras": {
+                                "items": { "enum": ["design", "browser"], "type": "string" },
+                                "maxItems": 8,
                                 "type": "array"
                               },
                               "mcpServers": {
@@ -16540,6 +16639,12 @@
                     "id": { "type": "string" },
                     "instructions": { "type": "string" },
                     "name": { "type": "string" },
+                    "pool": {
+                      "additionalProperties": false,
+                      "properties": { "id": { "type": "string" } },
+                      "required": ["id"],
+                      "type": "object"
+                    },
                     "role": {
                       "enum": ["coordinator", "specialist", "reviewer", "advisor"],
                       "type": "string"
@@ -16560,6 +16665,11 @@
                         "conversationTools": {
                           "items": { "maxLength": 100, "type": "string" },
                           "maxItems": 120,
+                          "type": "array"
+                        },
+                        "extras": {
+                          "items": { "enum": ["design", "browser"], "type": "string" },
+                          "maxItems": 8,
                           "type": "array"
                         },
                         "mcpServers": {
@@ -16861,6 +16971,607 @@
           "createdAt",
           "updatedAt"
         ],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "crews.pools.delete": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "expectedUpdatedAt": { "type": "number" },
+          "poolId": { "type": "string" },
+          "projectId": { "type": "string" }
+        },
+        "required": ["poolId"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.crews.v2",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "deleted": { "const": true, "type": "boolean" } },
+        "required": ["deleted"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "crews.pools.list": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "projectId": { "type": "string" } },
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.crews.v2",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "pools": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "candidates": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "capabilities": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "browser": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "observedAt": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "source": { "type": "string" },
+                              "state": {
+                                "enum": ["available", "unavailable", "unknown"],
+                                "type": "string"
+                              }
+                            },
+                            "required": ["state", "observedAt", "source"],
+                            "type": "object"
+                          },
+                          "code": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "observedAt": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "source": { "type": "string" },
+                              "state": {
+                                "enum": ["available", "unavailable", "unknown"],
+                                "type": "string"
+                              }
+                            },
+                            "required": ["state", "observedAt", "source"],
+                            "type": "object"
+                          },
+                          "image-generation": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "observedAt": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "source": { "type": "string" },
+                              "state": {
+                                "enum": ["available", "unavailable", "unknown"],
+                                "type": "string"
+                              }
+                            },
+                            "required": ["state", "observedAt", "source"],
+                            "type": "object"
+                          },
+                          "review": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "observedAt": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "source": { "type": "string" },
+                              "state": {
+                                "enum": ["available", "unavailable", "unknown"],
+                                "type": "string"
+                              }
+                            },
+                            "required": ["state", "observedAt", "source"],
+                            "type": "object"
+                          },
+                          "subagents": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "observedAt": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "source": { "type": "string" },
+                              "state": {
+                                "enum": ["available", "unavailable", "unknown"],
+                                "type": "string"
+                              }
+                            },
+                            "required": ["state", "observedAt", "source"],
+                            "type": "object"
+                          },
+                          "terminal": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "observedAt": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "source": { "type": "string" },
+                              "state": {
+                                "enum": ["available", "unavailable", "unknown"],
+                                "type": "string"
+                              }
+                            },
+                            "required": ["state", "observedAt", "source"],
+                            "type": "object"
+                          },
+                          "vision": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "observedAt": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "source": { "type": "string" },
+                              "state": {
+                                "enum": ["available", "unavailable", "unknown"],
+                                "type": "string"
+                              }
+                            },
+                            "required": ["state", "observedAt", "source"],
+                            "type": "object"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "cost": { "type": "number" },
+                      "harness": {
+                        "enum": [
+                          "codex",
+                          "claude",
+                          "cursor",
+                          "grok",
+                          "opencode",
+                          "pi",
+                          "omp",
+                          "fx",
+                          "hermes",
+                          "antigravity",
+                          "acp"
+                        ],
+                        "type": "string"
+                      },
+                      "id": { "type": "string" },
+                      "model": { "type": "string" },
+                      "modelSettings": {
+                        "additionalProperties": { "type": "string" },
+                        "propertyNames": { "type": "string" },
+                        "type": "object"
+                      },
+                      "quality": { "type": "number" },
+                      "qualitySource": {
+                        "enum": ["owner-estimate", "review-history"],
+                        "type": "string"
+                      },
+                      "samples": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                    },
+                    "required": ["id", "harness", "model", "modelSettings", "capabilities"],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "updatedAt": { "type": "number" }
+              },
+              "required": ["id", "name", "candidates", "updatedAt"],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": ["pools"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
+    "crews.pools.save": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "expectedUpdatedAt": { "type": "number" },
+          "pool": {
+            "additionalProperties": false,
+            "properties": {
+              "candidates": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "capabilities": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "browser": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "observedAt": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "number"
+                            },
+                            "source": { "type": "string" },
+                            "state": {
+                              "enum": ["available", "unavailable", "unknown"],
+                              "type": "string"
+                            }
+                          },
+                          "required": ["state", "observedAt", "source"],
+                          "type": "object"
+                        },
+                        "code": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "observedAt": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "number"
+                            },
+                            "source": { "type": "string" },
+                            "state": {
+                              "enum": ["available", "unavailable", "unknown"],
+                              "type": "string"
+                            }
+                          },
+                          "required": ["state", "observedAt", "source"],
+                          "type": "object"
+                        },
+                        "image-generation": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "observedAt": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "number"
+                            },
+                            "source": { "type": "string" },
+                            "state": {
+                              "enum": ["available", "unavailable", "unknown"],
+                              "type": "string"
+                            }
+                          },
+                          "required": ["state", "observedAt", "source"],
+                          "type": "object"
+                        },
+                        "review": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "observedAt": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "number"
+                            },
+                            "source": { "type": "string" },
+                            "state": {
+                              "enum": ["available", "unavailable", "unknown"],
+                              "type": "string"
+                            }
+                          },
+                          "required": ["state", "observedAt", "source"],
+                          "type": "object"
+                        },
+                        "subagents": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "observedAt": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "number"
+                            },
+                            "source": { "type": "string" },
+                            "state": {
+                              "enum": ["available", "unavailable", "unknown"],
+                              "type": "string"
+                            }
+                          },
+                          "required": ["state", "observedAt", "source"],
+                          "type": "object"
+                        },
+                        "terminal": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "observedAt": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "number"
+                            },
+                            "source": { "type": "string" },
+                            "state": {
+                              "enum": ["available", "unavailable", "unknown"],
+                              "type": "string"
+                            }
+                          },
+                          "required": ["state", "observedAt", "source"],
+                          "type": "object"
+                        },
+                        "vision": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "observedAt": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "number"
+                            },
+                            "source": { "type": "string" },
+                            "state": {
+                              "enum": ["available", "unavailable", "unknown"],
+                              "type": "string"
+                            }
+                          },
+                          "required": ["state", "observedAt", "source"],
+                          "type": "object"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "cost": { "type": "number" },
+                    "harness": {
+                      "enum": [
+                        "codex",
+                        "claude",
+                        "cursor",
+                        "grok",
+                        "opencode",
+                        "pi",
+                        "omp",
+                        "fx",
+                        "hermes",
+                        "antigravity",
+                        "acp"
+                      ],
+                      "type": "string"
+                    },
+                    "id": { "type": "string" },
+                    "model": { "type": "string" },
+                    "modelSettings": {
+                      "additionalProperties": { "type": "string" },
+                      "propertyNames": { "type": "string" },
+                      "type": "object"
+                    },
+                    "quality": { "type": "number" },
+                    "qualitySource": {
+                      "enum": ["owner-estimate", "review-history"],
+                      "type": "string"
+                    },
+                    "samples": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                  },
+                  "required": ["id", "harness", "model", "modelSettings", "capabilities"],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "updatedAt": { "type": "number" }
+            },
+            "required": ["id", "name", "candidates"],
+            "type": "object"
+          },
+          "projectId": { "type": "string" }
+        },
+        "required": ["pool"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.crews.v2",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "capabilities": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "browser": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "observedAt": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "source": { "type": "string" },
+                        "state": {
+                          "enum": ["available", "unavailable", "unknown"],
+                          "type": "string"
+                        }
+                      },
+                      "required": ["state", "observedAt", "source"],
+                      "type": "object"
+                    },
+                    "code": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "observedAt": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "source": { "type": "string" },
+                        "state": {
+                          "enum": ["available", "unavailable", "unknown"],
+                          "type": "string"
+                        }
+                      },
+                      "required": ["state", "observedAt", "source"],
+                      "type": "object"
+                    },
+                    "image-generation": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "observedAt": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "source": { "type": "string" },
+                        "state": {
+                          "enum": ["available", "unavailable", "unknown"],
+                          "type": "string"
+                        }
+                      },
+                      "required": ["state", "observedAt", "source"],
+                      "type": "object"
+                    },
+                    "review": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "observedAt": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "source": { "type": "string" },
+                        "state": {
+                          "enum": ["available", "unavailable", "unknown"],
+                          "type": "string"
+                        }
+                      },
+                      "required": ["state", "observedAt", "source"],
+                      "type": "object"
+                    },
+                    "subagents": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "observedAt": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "source": { "type": "string" },
+                        "state": {
+                          "enum": ["available", "unavailable", "unknown"],
+                          "type": "string"
+                        }
+                      },
+                      "required": ["state", "observedAt", "source"],
+                      "type": "object"
+                    },
+                    "terminal": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "observedAt": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "source": { "type": "string" },
+                        "state": {
+                          "enum": ["available", "unavailable", "unknown"],
+                          "type": "string"
+                        }
+                      },
+                      "required": ["state", "observedAt", "source"],
+                      "type": "object"
+                    },
+                    "vision": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "observedAt": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "source": { "type": "string" },
+                        "state": {
+                          "enum": ["available", "unavailable", "unknown"],
+                          "type": "string"
+                        }
+                      },
+                      "required": ["state", "observedAt", "source"],
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                "cost": { "type": "number" },
+                "harness": {
+                  "enum": [
+                    "codex",
+                    "claude",
+                    "cursor",
+                    "grok",
+                    "opencode",
+                    "pi",
+                    "omp",
+                    "fx",
+                    "hermes",
+                    "antigravity",
+                    "acp"
+                  ],
+                  "type": "string"
+                },
+                "id": { "type": "string" },
+                "model": { "type": "string" },
+                "modelSettings": {
+                  "additionalProperties": { "type": "string" },
+                  "propertyNames": { "type": "string" },
+                  "type": "object"
+                },
+                "quality": { "type": "number" },
+                "qualitySource": { "enum": ["owner-estimate", "review-history"], "type": "string" },
+                "samples": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+              },
+              "required": ["id", "harness", "model", "modelSettings", "capabilities"],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "updatedAt": { "type": "number" }
+        },
+        "required": ["id", "name", "candidates", "updatedAt"],
         "type": "object"
       },
       "retry": "never",
@@ -17523,6 +18234,12 @@
                     "id": { "type": "string" },
                     "instructions": { "type": "string" },
                     "name": { "type": "string" },
+                    "pool": {
+                      "additionalProperties": false,
+                      "properties": { "id": { "type": "string" } },
+                      "required": ["id"],
+                      "type": "object"
+                    },
                     "role": {
                       "enum": ["coordinator", "specialist", "reviewer", "advisor"],
                       "type": "string"
@@ -17543,6 +18260,11 @@
                         "conversationTools": {
                           "items": { "maxLength": 100, "type": "string" },
                           "maxItems": 120,
+                          "type": "array"
+                        },
+                        "extras": {
+                          "items": { "enum": ["design", "browser"], "type": "string" },
+                          "maxItems": 8,
                           "type": "array"
                         },
                         "mcpServers": {
@@ -18073,6 +18795,12 @@
                         "id": { "type": "string" },
                         "instructions": { "type": "string" },
                         "name": { "type": "string" },
+                        "pool": {
+                          "additionalProperties": false,
+                          "properties": { "id": { "type": "string" } },
+                          "required": ["id"],
+                          "type": "object"
+                        },
                         "role": {
                           "enum": ["coordinator", "specialist", "reviewer", "advisor"],
                           "type": "string"
@@ -18093,6 +18821,11 @@
                             "conversationTools": {
                               "items": { "maxLength": 100, "type": "string" },
                               "maxItems": 120,
+                              "type": "array"
+                            },
+                            "extras": {
+                              "items": { "enum": ["design", "browser"], "type": "string" },
+                              "maxItems": 8,
                               "type": "array"
                             },
                             "mcpServers": {
@@ -18386,6 +19119,12 @@
                         "id": { "type": "string" },
                         "instructions": { "type": "string" },
                         "name": { "type": "string" },
+                        "pool": {
+                          "additionalProperties": false,
+                          "properties": { "id": { "type": "string" } },
+                          "required": ["id"],
+                          "type": "object"
+                        },
                         "role": {
                           "enum": ["coordinator", "specialist", "reviewer", "advisor"],
                           "type": "string"
@@ -18406,6 +19145,11 @@
                             "conversationTools": {
                               "items": { "maxLength": 100, "type": "string" },
                               "maxItems": 120,
+                              "type": "array"
+                            },
+                            "extras": {
+                              "items": { "enum": ["design", "browser"], "type": "string" },
+                              "maxItems": 8,
                               "type": "array"
                             },
                             "mcpServers": {
@@ -18697,6 +19441,12 @@
                 "id": { "type": "string" },
                 "instructions": { "type": "string" },
                 "name": { "type": "string" },
+                "pool": {
+                  "additionalProperties": false,
+                  "properties": { "id": { "type": "string" } },
+                  "required": ["id"],
+                  "type": "object"
+                },
                 "role": {
                   "enum": ["coordinator", "specialist", "reviewer", "advisor"],
                   "type": "string"
@@ -18714,6 +19464,11 @@
                     "conversationTools": {
                       "items": { "maxLength": 100, "type": "string" },
                       "maxItems": 120,
+                      "type": "array"
+                    },
+                    "extras": {
+                      "items": { "enum": ["design", "browser"], "type": "string" },
+                      "maxItems": 8,
                       "type": "array"
                     },
                     "mcpServers": {
@@ -19034,6 +19789,12 @@
                     "id": { "type": "string" },
                     "instructions": { "type": "string" },
                     "name": { "type": "string" },
+                    "pool": {
+                      "additionalProperties": false,
+                      "properties": { "id": { "type": "string" } },
+                      "required": ["id"],
+                      "type": "object"
+                    },
                     "role": {
                       "enum": ["coordinator", "specialist", "reviewer", "advisor"],
                       "type": "string"
@@ -19054,6 +19815,11 @@
                         "conversationTools": {
                           "items": { "maxLength": 100, "type": "string" },
                           "maxItems": 120,
+                          "type": "array"
+                        },
+                        "extras": {
+                          "items": { "enum": ["design", "browser"], "type": "string" },
+                          "maxItems": 8,
                           "type": "array"
                         },
                         "mcpServers": {
@@ -19663,6 +20429,12 @@
                     "id": { "type": "string" },
                     "instructions": { "type": "string" },
                     "name": { "type": "string" },
+                    "pool": {
+                      "additionalProperties": false,
+                      "properties": { "id": { "type": "string" } },
+                      "required": ["id"],
+                      "type": "object"
+                    },
                     "role": {
                       "enum": ["coordinator", "specialist", "reviewer", "advisor"],
                       "type": "string"
@@ -19683,6 +20455,11 @@
                         "conversationTools": {
                           "items": { "maxLength": 100, "type": "string" },
                           "maxItems": 120,
+                          "type": "array"
+                        },
+                        "extras": {
+                          "items": { "enum": ["design", "browser"], "type": "string" },
+                          "maxItems": 8,
                           "type": "array"
                         },
                         "mcpServers": {
@@ -20513,6 +21290,12 @@
                     "id": { "type": "string" },
                     "instructions": { "type": "string" },
                     "name": { "type": "string" },
+                    "pool": {
+                      "additionalProperties": false,
+                      "properties": { "id": { "type": "string" } },
+                      "required": ["id"],
+                      "type": "object"
+                    },
                     "role": {
                       "enum": ["coordinator", "specialist", "reviewer", "advisor"],
                       "type": "string"
@@ -20533,6 +21316,11 @@
                         "conversationTools": {
                           "items": { "maxLength": 100, "type": "string" },
                           "maxItems": 120,
+                          "type": "array"
+                        },
+                        "extras": {
+                          "items": { "enum": ["design", "browser"], "type": "string" },
+                          "maxItems": 8,
                           "type": "array"
                         },
                         "mcpServers": {
@@ -58711,6 +59499,12 @@
                               "id": { "type": "string" },
                               "instructions": { "type": "string" },
                               "name": { "type": "string" },
+                              "pool": {
+                                "additionalProperties": false,
+                                "properties": { "id": { "type": "string" } },
+                                "required": ["id"],
+                                "type": "object"
+                              },
                               "role": {
                                 "enum": ["coordinator", "specialist", "reviewer", "advisor"],
                                 "type": "string"
@@ -58731,6 +59525,11 @@
                                   "conversationTools": {
                                     "items": { "maxLength": 100, "type": "string" },
                                     "maxItems": 120,
+                                    "type": "array"
+                                  },
+                                  "extras": {
+                                    "items": { "enum": ["design", "browser"], "type": "string" },
+                                    "maxItems": 8,
                                     "type": "array"
                                   },
                                   "mcpServers": {
@@ -59053,6 +59852,12 @@
                               "id": { "type": "string" },
                               "instructions": { "type": "string" },
                               "name": { "type": "string" },
+                              "pool": {
+                                "additionalProperties": false,
+                                "properties": { "id": { "type": "string" } },
+                                "required": ["id"],
+                                "type": "object"
+                              },
                               "role": {
                                 "enum": ["coordinator", "specialist", "reviewer", "advisor"],
                                 "type": "string"
@@ -59073,6 +59878,11 @@
                                   "conversationTools": {
                                     "items": { "maxLength": 100, "type": "string" },
                                     "maxItems": 120,
+                                    "type": "array"
+                                  },
+                                  "extras": {
+                                    "items": { "enum": ["design", "browser"], "type": "string" },
+                                    "maxItems": 8,
                                     "type": "array"
                                   },
                                   "mcpServers": {
@@ -59439,6 +60249,12 @@
                         "id": { "type": "string" },
                         "instructions": { "type": "string" },
                         "name": { "type": "string" },
+                        "pool": {
+                          "additionalProperties": false,
+                          "properties": { "id": { "type": "string" } },
+                          "required": ["id"],
+                          "type": "object"
+                        },
                         "projectId": { "type": "string" },
                         "role": {
                           "enum": ["coordinator", "specialist", "reviewer", "advisor"],
@@ -59460,6 +60276,11 @@
                             "conversationTools": {
                               "items": { "maxLength": 100, "type": "string" },
                               "maxItems": 120,
+                              "type": "array"
+                            },
+                            "extras": {
+                              "items": { "enum": ["design", "browser"], "type": "string" },
+                              "maxItems": 8,
                               "type": "array"
                             },
                             "mcpServers": {
@@ -59703,6 +60524,12 @@
                         "id": { "type": "string" },
                         "instructions": { "type": "string" },
                         "name": { "type": "string" },
+                        "pool": {
+                          "additionalProperties": false,
+                          "properties": { "id": { "type": "string" } },
+                          "required": ["id"],
+                          "type": "object"
+                        },
                         "projectId": { "type": "string" },
                         "role": {
                           "enum": ["coordinator", "specialist", "reviewer", "advisor"],
@@ -59724,6 +60551,11 @@
                             "conversationTools": {
                               "items": { "maxLength": 100, "type": "string" },
                               "maxItems": 120,
+                              "type": "array"
+                            },
+                            "extras": {
+                              "items": { "enum": ["design", "browser"], "type": "string" },
+                              "maxItems": 8,
                               "type": "array"
                             },
                             "mcpServers": {
@@ -59775,6 +60607,248 @@
               "additionalProperties": false,
               "properties": { "agentId": { "type": "string" }, "projectId": { "type": "string" } },
               "required": ["projectId", "agentId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "crews.pools.list", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": { "projectId": { "type": "string" } },
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "crews.pools.save", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "expectedUpdatedAt": { "type": "number" },
+                "pool": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "candidates": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "capabilities": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "browser": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "observedAt": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "number"
+                                  },
+                                  "source": { "type": "string" },
+                                  "state": {
+                                    "enum": ["available", "unavailable", "unknown"],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["state", "observedAt", "source"],
+                                "type": "object"
+                              },
+                              "code": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "observedAt": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "number"
+                                  },
+                                  "source": { "type": "string" },
+                                  "state": {
+                                    "enum": ["available", "unavailable", "unknown"],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["state", "observedAt", "source"],
+                                "type": "object"
+                              },
+                              "image-generation": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "observedAt": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "number"
+                                  },
+                                  "source": { "type": "string" },
+                                  "state": {
+                                    "enum": ["available", "unavailable", "unknown"],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["state", "observedAt", "source"],
+                                "type": "object"
+                              },
+                              "review": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "observedAt": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "number"
+                                  },
+                                  "source": { "type": "string" },
+                                  "state": {
+                                    "enum": ["available", "unavailable", "unknown"],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["state", "observedAt", "source"],
+                                "type": "object"
+                              },
+                              "subagents": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "observedAt": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "number"
+                                  },
+                                  "source": { "type": "string" },
+                                  "state": {
+                                    "enum": ["available", "unavailable", "unknown"],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["state", "observedAt", "source"],
+                                "type": "object"
+                              },
+                              "terminal": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "observedAt": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "number"
+                                  },
+                                  "source": { "type": "string" },
+                                  "state": {
+                                    "enum": ["available", "unavailable", "unknown"],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["state", "observedAt", "source"],
+                                "type": "object"
+                              },
+                              "vision": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "observedAt": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "number"
+                                  },
+                                  "source": { "type": "string" },
+                                  "state": {
+                                    "enum": ["available", "unavailable", "unknown"],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["state", "observedAt", "source"],
+                                "type": "object"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "cost": { "type": "number" },
+                          "harness": {
+                            "enum": [
+                              "codex",
+                              "claude",
+                              "cursor",
+                              "grok",
+                              "opencode",
+                              "pi",
+                              "omp",
+                              "fx",
+                              "hermes",
+                              "antigravity",
+                              "acp"
+                            ],
+                            "type": "string"
+                          },
+                          "id": { "type": "string" },
+                          "model": { "type": "string" },
+                          "modelSettings": {
+                            "additionalProperties": { "type": "string" },
+                            "propertyNames": { "type": "string" },
+                            "type": "object"
+                          },
+                          "quality": { "type": "number" },
+                          "qualitySource": {
+                            "enum": ["owner-estimate", "review-history"],
+                            "type": "string"
+                          },
+                          "samples": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": ["id", "harness", "model", "modelSettings", "capabilities"],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "id": { "type": "string" },
+                    "name": { "type": "string" },
+                    "updatedAt": { "type": "number" }
+                  },
+                  "required": ["id", "name", "candidates"],
+                  "type": "object"
+                },
+                "projectId": { "type": "string" }
+              },
+              "required": ["pool"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "crews.pools.delete", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "expectedUpdatedAt": { "type": "number" },
+                "poolId": { "type": "string" },
+                "projectId": { "type": "string" }
+              },
+              "required": ["poolId"],
               "type": "object"
             }
           },
@@ -69545,5 +70619,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "be926490ec330852fab949e7c04dc5894d8f700ca9fa02ad37ba1878c5b1ad2a"
+  "schemaHash": "eed14a45993be2373e6032f935600b06c8ae77feca8cc414ef7837512b112bf5"
 }

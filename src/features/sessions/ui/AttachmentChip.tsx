@@ -1,5 +1,4 @@
 import { InlineMessage } from "../../../shared/ui/InlineError";
-import { InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useT } from "../../../shared/i18n";
@@ -52,9 +51,28 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
   // A gone image has no picture worth showing; it reads as a marked file chip.
   const image = attachment.kind === "image" && canOpen;
   const label = token ? tokenLabel(token) : null;
-  const labelNode = label ? <span className={styles.label}>{label}</span> : null;
   // An image card is only its thumbnail; the message text names it as `image1 113 KB`.
   const imageDetails = [label, attachment.name, size].filter(Boolean).join(" · ");
+
+  const fileDetails = [attachment.name, t(presentation.label), size].filter(Boolean).join(" · ");
+  const fileBody = (
+    <span className={styles.fileBody}>
+      <span className={styles.fileIcon}>
+        <AttachmentIdentity attachment={attachment} />
+      </span>
+      <span className={styles.name}>{loading ? t("Loading…") : attachment.name}</span>
+      <span className={styles.metadata}>
+        {attachment.missing ? (
+          <span className="text-(--ui-tone-warning-fg)">{t("missing")}</span>
+        ) : (
+          <>
+            {t(presentation.label)}
+            {size ? ` · ${size}` : ""}
+          </>
+        )}
+      </span>
+    </span>
+  );
 
   const chip = (
     <>
@@ -126,65 +144,46 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
           </span>
         ) : (
           <>
-            <span className={styles.fileBody}>
-              {canOpen || canOpenFile ? (
-                <Button
-                  motion="none"
-                  variant="ghost"
-                  className="min-w-0 max-w-full"
-                  type="button"
-                  disabled={loading}
-                  loading={loading}
-                  aria-busy={loading}
-                  aria-haspopup="dialog"
-                  aria-label={t("Open {p0} full screen", {
-                    p0: attachment.name,
-                  })}
-                  tooltip={t("Open {p0} full screen", { p0: attachment.name })}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (canOpenFile) {
-                      event.currentTarget.focus({ preventScroll: true });
-                      setOpenedFile(attachment);
-                    } else void show();
-                  }}
-                >
-                  {labelNode}
-                  <span className={styles.fileIcon}>
-                    <AttachmentIdentity attachment={attachment} />
-                  </span>
-                  <span className={styles.fileDetails}>
-                    <span className={styles.name}>{loading ? t("Loading…") : attachment.name}</span>
-                    <span className={styles.metadata}>
-                      {t(presentation.label)}
-                      {size ? ` · ${size}` : ""}
-                    </span>
-                  </span>
-                </Button>
-              ) : (
-                <span className="flex min-w-0 items-center gap-1.5">
-                  {labelNode}
-                  <span className={styles.fileIcon}>
-                    <AttachmentIdentity attachment={attachment} />
-                  </span>
-                  <span className={styles.fileDetails}>
-                    <span className={styles.name}>{attachment.name}</span>
-                    <span className={styles.metadata}>
-                      {t(presentation.label)}
-                      {size ? ` · ${size}` : ""}
-                    </span>
-                  </span>
-                </span>
-              )}
-            </span>
+            {canOpen || canOpenFile ? (
+              <Button
+                motion="none"
+                layout="media"
+                variant="ghost"
+                className={styles.thumbnail}
+                type="button"
+                disabled={loading}
+                loading={loading}
+                aria-busy={loading}
+                aria-haspopup="dialog"
+                aria-label={t("Open {p0} full screen", {
+                  p0: attachment.name,
+                })}
+                tooltip={fileDetails}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (canOpenFile) {
+                    event.currentTarget.focus({ preventScroll: true });
+                    setOpenedFile(attachment);
+                  } else void show();
+                }}
+              >
+                {fileBody}
+              </Button>
+            ) : (
+              <span className={styles.thumbnail}>{fileBody}</span>
+            )}
             {token && onInsertToken ? (
               <Button
                 motion="none"
-                variant="ghost"
-                iconOnly
+                className={`absolute left-1 top-1 ${styles.action}`}
                 size="sm"
+                iconOnly
                 label={t("Insert {p0} into the message", { p0: token })}
-                className={`shrink-0 ${styles.action}`}
+                variant="secondary"
+                shape="pill"
+                type="button"
+                tooltip={t("Insert {p0} into the message", { p0: token })}
+                aria-label={t("Insert {p0} into the message", { p0: token })}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -194,14 +193,9 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                 <Link className="icon-xs" />
               </Button>
             ) : null}
-            {attachment.missing ? (
-              <span className="shrink-0 text-ui-caption leading-4 text-(--ui-tone-warning-fg)">
-                {t("missing")}
-              </span>
-            ) : null}
           </>
         )}
-        {onRemove && image ? (
+        {onRemove ? (
           <Button
             motion="none"
             className={`absolute right-1 top-1 ${styles.action}`}
@@ -220,17 +214,6 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
           >
             <X className="icon-xs" strokeWidth={2} />
           </Button>
-        ) : null}
-        {onRemove && !image ? (
-          <InlineAction
-            reveal="always"
-            className={`shrink-0 ${styles.action}`}
-            label={t("Remove {p0}", { p0: attachment.name })}
-            type="button"
-            onClick={onRemove}
-          >
-            <X className="icon-xs" strokeWidth={2} />
-          </InlineAction>
         ) : null}
       </div>
       {previewError ? (

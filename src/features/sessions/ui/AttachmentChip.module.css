@@ -19,14 +19,40 @@
   padding: 0;
   overflow: clip;
 }
+/* Same tile as the image; the name and kind sit under the icon. */
 .file {
-  width: 272px;
-  align-self: center;
+  width: 88px;
+  height: 64px;
+  padding: 0;
+  overflow: clip;
 }
 .thumbnail {
   width: 100%;
   height: 100%;
   overflow: clip;
+}
+.file .thumbnail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fileBody {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding-inline: 6px;
+  text-align: center;
+}
+.fileIcon {
+  display: flex;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
 }
 .name {
   display: block;
@@ -37,43 +63,18 @@
   white-space: nowrap;
   font-size: var(--text-ui-caption);
   font-weight: 500;
+  line-height: 1rem;
   color: var(--ui-tone-accent-fg);
 }
 .metadata {
   display: block;
-  font-size: var(--text-ui-caption);
-  color: var(--ui-text-secondary);
-  white-space: nowrap;
-}
-.fileBody {
-  flex: 1;
-  min-width: 0;
-}
-.fileIcon {
-  display: flex;
-  width: 32px;
-  height: 40px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  color: var(--ui-tone-accent-fg);
-}
-.fileDetails {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
-  text-align: start;
-}
-.label {
-  flex-shrink: 0;
-  padding-inline: 4px;
-  border-radius: var(--ui-radius-control);
-  background: var(--ui-tone-accent-subtle);
-  color: var(--ui-tone-accent-fg);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--text-ui-caption);
   line-height: 1rem;
+  color: var(--ui-text-secondary);
+  white-space: nowrap;
 }
 /* Insert and remove stay out of the way until the card is hovered or holds focus;
    touch input has no hover, so it always shows them. */

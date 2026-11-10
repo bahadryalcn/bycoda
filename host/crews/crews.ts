@@ -14,6 +14,7 @@ import * as ask from "./crew-member-ask";
 import { THREAD_CREW_WRITES } from "../conversation/conversation-thread-crew-tools";
 import { candidateObservations } from "./crew-observations";
 import * as membership from "./crew-membership";
+import * as modelPools from "./crew-model-pools";
 import {
   initializeCrewSchedulerProjection,
   readCrewSchedulerRuns,
@@ -532,18 +533,8 @@ export class HostCrews {
         throw new Error("Agents may only save project crew definitions");
       if (definition.projectId) await this.store.project(definition.projectId);
       const state = await this.read();
-      const previous = state.definitions.find((d) => d.id === definition.id);
-      // An editor holding a deleted crew must not silently recreate it.
-      if (!previous && expectedUpdatedAt !== undefined) throw new Error("This crew was deleted");
-      if (principal && definition.policy.delegateApprovals && !previous?.policy.delegateApprovals)
-        throw new Error("Only the owner may grant delegated approvals");
-      if (previous && principal && previous.projectId !== principal.projectId)
-        throw new Error("Cannot modify a global or foreign crew");
-      if (
-        previous &&
-        (previous.updatedAt !== expectedUpdatedAt || previous.projectId !== definition.projectId)
-      )
-        throw new Error("Crew changed. Reload before saving");
+      const previous = membership.checkSave(state, definition, expectedUpdatedAt, principal);
+      modelPools.applyModelPools(state, definition.agents);
       membership.prepareDefinitionMembers(state, definition);
       definition.updatedAt = Math.max(this.now(), (previous?.updatedAt ?? 0) + 1);
       state.definitions = [...state.definitions.filter((d) => d.id !== definition.id), definition];
@@ -1237,6 +1228,7 @@ export class HostCrews {
         if (principal && scope !== principal.projectId)
           throw new Error("Agents may only save project agent definitions");
         const state = await this.read();
+        modelPools.applyModelPools(state, [agent]);
         const previous = state.agents?.find((a) => a.id === agent.id);
         if (
           previous &&
@@ -1324,17 +1316,24 @@ export class HostCrews {
         input.expectedUpdatedAt as number | undefined,
         principal,
       );
+    if (action.startsWith("crews.pools."))
+      return modelPools.callModelPools(action, input, {
+        scope: (run) => this.store.db.scope(run),
+        read: () => this.read(),
+        write: (state) => this.write(state),
+        now: this.now,
+        owner: !principal,
+      });
     if (action === "crews.agent.delete") {
       return this.store.db.scope(async () => {
         if (principal) throw new Error("Only the owner may delete a library agent");
         const state = await this.read();
-        const id = message(input.agentId, 200);
-        const agent = state.agents?.find(
-          (a) => a.id === id && (!a.projectId || a.projectId === projectId),
+        const agent = membership.deleteLibraryAgent(
+          state,
+          message(input.agentId, 200),
+          projectId,
+          this.now,
         );
-        if (!agent) throw new Error("Unknown agent");
-        state.agents = (state.agents ?? []).filter((a) => a !== agent);
-        membership.detachLinkedMembers(state, agent, this.now);
         await this.write(state);
         this.store.afterCommit(() =>
           this.onAgentDeleted?.({

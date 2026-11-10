@@ -1,4 +1,8 @@
-import { parseCrewTools, type CrewToolProfile } from "../../src/features/crews/model/crewTools";
+import {
+  crewToolExtras,
+  parseCrewTools,
+  type CrewToolProfile,
+} from "../../src/features/crews/model/crewTools";
 import {
   CREW_TOOLS_KEY,
   DELEGATION_LIMITS,
@@ -40,8 +44,9 @@ const entryMatches = (entry: string, action: string) =>
 function presetAllows(profile: CrewToolProfile, action: string): boolean {
   if (profile.preset === "code" || profile.preset === "custom") return true;
   if (CONVERSATION_READ_ACTIONS.has(action)) return true;
-  if (profile.preset === "read-only") return false;
-  return PRESET_EXTRA[profile.preset].some((entry) => entryMatches(entry, action));
+  return crewToolExtras(profile).some((extra) =>
+    PRESET_EXTRA[extra].some((entry) => entryMatches(entry, action)),
+  );
 }
 
 export function crewToolAllowed(profile: CrewToolProfile | undefined, action: string): boolean {

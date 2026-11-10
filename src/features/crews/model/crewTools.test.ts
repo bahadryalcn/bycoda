@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseCrewAgent } from "./crew";
-import { crewToolPreset, parseCrewTools } from "./crewTools";
+import { crewToolExtras, crewToolPreset, parseCrewTools } from "./crewTools";
 
 const member = (tools?: unknown) => ({
   id: "a",
@@ -26,6 +26,26 @@ describe("parseCrewTools", () => {
       conversationTools: ["files.read", "browser.*", "browser"],
       mcpServers: ["github"],
     });
+  });
+
+  it("combines extras with a non-writing preset and drops them elsewhere", () => {
+    expect(
+      parseCrewTools({ preset: "read-only", extras: ["browser", "design", "browser"] }),
+    ).toEqual({
+      preset: "read-only",
+      extras: ["browser", "design"],
+    });
+    expect(parseCrewTools({ preset: "design", extras: ["browser"] })).toEqual({
+      preset: "design",
+      extras: ["browser"],
+    });
+    expect(parseCrewTools({ preset: "read-only", extras: [] })).toEqual({ preset: "read-only" });
+    expect(parseCrewTools({ preset: "code", extras: ["design"] })).toBeUndefined();
+    expect(crewToolExtras({ preset: "design", extras: ["browser"] })).toEqual([
+      "design",
+      "browser",
+    ]);
+    expect(() => parseCrewTools({ preset: "read-only", extras: ["code"] })).toThrow();
   });
 
   it("treats plain code as no profile", () => {

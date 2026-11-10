@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
@@ -15,7 +14,6 @@ import {
   type CrewRole,
 } from "../model/crew";
 import { useProjectCrews, type ProjectCrews } from "../model/crewClient";
-import { applyCandidate, commonCandidate } from "../model/crewBulk";
 import { handleErrorsFromHost } from "../model/crewLink";
 import { teamTraits } from "../model/memberAvatars";
 import {
@@ -37,7 +35,7 @@ import {
 } from "../model/crewRoster";
 import { CrewAccessRow } from "./CrewAccessRow";
 import { CrewAppearancePicker } from "./CrewAppearancePicker";
-import { CrewBulkModelBar } from "./CrewBulkModelBar";
+import { CrewEditorBulkBar } from "./CrewEditorBulkBar";
 import { CrewEditorAddFooter, CrewEditorAddPage, liveAdditions } from "./CrewEditorAdd";
 import { CrewEditorFooter } from "./CrewEditorFooter";
 import { CrewEditorBanners, CrewEditorHeader, CrewMaintenance } from "./CrewEditorParts";
@@ -340,7 +338,6 @@ function ConnectedCrewEditor({
   ].join(" · ");
 
   const liveSelected = selected.filter((id) => draft.agents.some((agent) => agent.id === id));
-  const allSelected = draft.agents.length > 0 && liveSelected.length === draft.agents.length;
 
   const roster = (
     <>
@@ -366,26 +363,14 @@ function ConnectedCrewEditor({
         ) : null}
       </div>
       {draft.agents.length ? (
-        <CrewBulkModelBar
+        <CrewEditorBulkBar
           cwd={cwd}
-          catalog={data.catalog}
-          noun="members"
-          suggested={commonCandidate(draft.agents, liveSelected)}
-          targetCount={liveSelected.length || draft.agents.length}
+          data={data}
+          agents={draft.agents}
+          selected={liveSelected}
+          onSelectedChange={setSelected}
+          onAgentsChange={(agents) => update({ agents })}
           disabled={pending}
-          leading={
-            <Checkbox
-              aria-label={t("Select all")}
-              checked={allSelected}
-              indeterminate={liveSelected.length > 0 && !allSelected}
-              onChange={(event) =>
-                setSelected(event.target.checked ? draft.agents.map((agent) => agent.id) : [])
-              }
-            />
-          }
-          onApply={(candidate) =>
-            update({ agents: applyCandidate(draft.agents, liveSelected, candidate) })
-          }
         />
       ) : null}
       <CrewMemberTable

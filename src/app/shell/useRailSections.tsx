@@ -65,6 +65,8 @@ export function RailSectionHeader({
   icon,
   count,
   actions,
+  onLabelClick,
+  labelClickLabel,
 }: {
   label: string;
   /** Present when the section can be reordered; adds the drag handle, shortcuts and options menu. */
@@ -77,6 +79,10 @@ export function RailSectionHeader({
   icon?: ReactNode;
   count?: ReactNode;
   actions?: ReactNode;
+  /** Makes the label text open the section's page; the chevron still collapses. Needs `onToggleCollapsed`. */
+  onLabelClick?: () => void;
+  /** Accessible name of the label button, for example "Open Crews". */
+  labelClickLabel?: string;
 }) {
   const t = useT();
   const collapsible = onToggleCollapsed != null;
@@ -88,6 +94,11 @@ export function RailSectionHeader({
       expanded={!collapsed}
       onExpandedChange={onToggleCollapsed}
       controls={controlsId}
+      labelAction={
+        collapsible && onLabelClick
+          ? { label: labelClickLabel ?? label, toggleLabel: label, onClick: onLabelClick }
+          : undefined
+      }
       icon={icon}
       chevron="hover"
       // SectionLabel types `count` as a number; it renders any node, and LiveAgentsPreview passes one.

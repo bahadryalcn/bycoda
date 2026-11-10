@@ -59,6 +59,11 @@
   font-size: var(--ui-font-caption);
   user-select: none;
 }
+/* An undismissed error (the header mark) tints the whole card. */
+.panel:has([data-voice-error]) {
+  border-color: var(--ui-tone-danger-border);
+  background: color-mix(in srgb, var(--ui-tone-danger-subtle) 45%, var(--ui-surface));
+}
 .panel[data-compact] {
   block-size: 100vh;
   align-content: center;

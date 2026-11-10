@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Surface } from "../../../shared/ui/Surface";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import type { CrewAgent, CrewPolicy } from "../model/crew";
+import type { CrewAgent, CrewPolicy, CrewRole } from "../model/crew";
 import type { ProjectCrews, useProjectCrews } from "../model/crewClient";
 import { libraryVersionPatch, memberLink } from "../model/crewLink";
 import type { MemberAvatarTraits } from "../model/memberAvatarTraits";
 import { libraryUpdate, memberFromLibrary } from "../model/crewRoster";
 import { CrewLibraryProfileDialog } from "./CrewLibraryProfileDialog";
-import { CrewMemberForm } from "./CrewMemberForm";
+import { CrewMemberForm, roleLabel } from "./CrewMemberForm";
 import { MemberPerformance } from "./MemberPerformance";
 
 export type CrewInspection = {
@@ -23,8 +23,8 @@ export type CrewInspection = {
 export type CrewBusyAction = "save" | "start" | "add" | "inspect" | "library" | "delete" | null;
 
 /**
- * The open member row: name, instructions, groups, automatic candidates and the library
- * actions, edited in place. Role and the pinned model are edited in the row itself.
+ * The open member row: role, name, instructions, groups, automatic candidates and one
+ * library line, edited in place. The pinned model is edited in the row itself.
  */
 export function CrewMemberDetail({
   cwd,
@@ -79,33 +79,74 @@ export function CrewMemberDetail({
   const updatesProfile = !!source && source.projectId === projectId;
   return (
     <Surface variant="outline" padding="md" className="mt-1 mb-3 flex min-w-0 flex-col gap-4">
-      {link ? (
-        <Alert tone="info">
-          <p className="flex flex-wrap items-center gap-2">
-            <Badge size="sm" tone={link.state === "linked" ? "info" : "neutral"}>
-              {link.state === "linked" ? t("Linked to library") : t("Customized for this crew")}
-            </Badge>
-            <span>{t("Library profile: {p0}", { p0: link.profile.name })}</span>
-          </p>
-          <p>
-            {link.state === "linked"
-              ? t(
-                  "Changes to the name, instructions, model, groups, avatar or handle here customize this member for this crew only.",
-                )
-              : t("This member differs from its library profile and no longer follows it.")}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {link.state === "customized" ? (
-              <Button onClick={() => onChange(libraryVersionPatch(link.profile))}>
-                {t("Use library version")}
-              </Button>
+      <section
+        aria-label={t("Member library")}
+        className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5"
+      >
+        <span className="flex min-w-0 flex-1 basis-56 flex-wrap items-center gap-x-2 text-ui-caption text-(--ui-text-secondary)">
+          <span className="inline-flex items-center gap-1">
+            {link
+              ? link.state === "customized"
+                ? t("Library: {p0} · customized", { p0: link.profile.name })
+                : t("Library: {p0}", { p0: link.profile.name })
+              : source
+                ? t("From library: {p0}", { p0: source.name })
+                : t("Member library")}
+            {link?.state === "linked" ? (
+              <InfoPopover label={t("About the library profile")}>
+                <p>
+                  {t(
+                    "Changes to the name, instructions, model, groups, avatar or handle here customize this member for this crew only.",
+                  )}
+                </p>
+              </InfoPopover>
             ) : null}
-            <Button variant="secondary" onClick={() => setEditingProfile(true)}>
+          </span>
+          {link?.state === "customized" ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onChange(libraryVersionPatch(link.profile))}
+            >
+              {t("Use library version")}
+            </Button>
+          ) : null}
+          {link ? (
+            <Button variant="ghost" size="sm" onClick={() => setEditingProfile(true)}>
               {t("Edit library profile")}
             </Button>
-          </div>
-        </Alert>
-      ) : null}
+          ) : null}
+        </span>
+        <SegmentedControl
+          label={t("Library availability")}
+          value={scope}
+          options={[
+            { value: "project", label: t("This project") },
+            { value: "global", label: t("All projects") },
+          ]}
+          onValueChange={(value) => onScopeChange(value === "global" ? "global" : "project")}
+        />
+        <Button
+          variant="secondary"
+          loading={pendingAction === "library"}
+          disabled={pending || !agent.candidates.length || !agent.name.trim()}
+          onClick={onSaveToLibrary}
+        >
+          {updatesProfile ? t("Update library profile") : t("Save to library")}
+        </Button>
+      </section>
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="text-ui-body font-medium">{t("Responsibility in the crew")}</span>
+        <SegmentedControl
+          label={t("Responsibility in the crew")}
+          value={agent.role}
+          options={(["coordinator", "specialist", "reviewer", "advisor"] as const).map((role) => ({
+            value: role,
+            label: roleLabel(role),
+          }))}
+          onValueChange={(role) => onChange({ role: role as CrewRole })}
+        />
+      </div>
       {link && editingProfile ? (
         <CrewLibraryProfileDialog
           cwd={cwd}
@@ -143,6 +184,8 @@ export function CrewMemberDetail({
         groups={data.groupsSupported}
         identity={identity}
         tools={data.toolsSupported}
+        machineId={data.machine.id}
+        modelPoolsSupported={data.modelPoolsSupported}
         handleError={handleError}
         traits={traits}
         groupSuggestions={groupNames}
@@ -181,36 +224,6 @@ export function CrewMemberDetail({
           ) : null
         }
       />
-      <section
-        aria-label={t("Member library")}
-        className="flex min-w-0 flex-wrap items-center gap-2"
-      >
-        <span className="min-w-0 flex-1 text-ui-body">
-          <span className="block font-medium">{t("Member library")}</span>
-          <span className="block text-ui-caption text-(--ui-text-secondary)">
-            {source
-              ? t("From library: {p0}", { p0: source.name })
-              : t("Reuse this member in other crews.")}
-          </span>
-        </span>
-        <SegmentedControl
-          label={t("Library availability")}
-          value={scope}
-          options={[
-            { value: "project", label: t("This project") },
-            { value: "global", label: t("All projects") },
-          ]}
-          onValueChange={(value) => onScopeChange(value === "global" ? "global" : "project")}
-        />
-        <Button
-          variant="secondary"
-          loading={pendingAction === "library"}
-          disabled={pending || !agent.candidates.length || !agent.name.trim()}
-          onClick={onSaveToLibrary}
-        >
-          {updatesProfile ? t("Update library profile") : t("Save to library")}
-        </Button>
-      </section>
     </Surface>
   );
 }

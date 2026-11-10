@@ -1,5 +1,7 @@
 /* A web link in the draft: boxed in the info tone, apart from attachment tokens. */
 .link {
+  /* Block padding on an inline box changes no line height; it matches the token chips. */
+  padding-block: 1px;
   border-radius: var(--ui-radius-control);
   background: var(--ui-tone-info-subtle);
   box-shadow: inset 0 0 0 1px var(--ui-tone-info-border);

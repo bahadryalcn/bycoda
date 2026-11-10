@@ -191,6 +191,14 @@
   white-space: nowrap;
   border: 0;
 }
+/* An undismissed error (VoiceErrorNotice in the header) tints the whole card. */
+.panel:has([data-voice-error]) {
+  border-color: var(--ui-tone-danger-border);
+  background: color-mix(in srgb, var(--ui-tone-danger-subtle) 45%, var(--ui-surface-floating));
+}
+.panel:has([data-voice-error]) .header {
+  border-bottom-color: var(--ui-tone-danger-border);
+}
 /* Released here, the panel continues as a floating window outside the app. */
 .panel[data-detaching] {
   border-color: var(--ui-focus-ring-color);

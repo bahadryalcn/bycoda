@@ -1,30 +1,21 @@
+/* The chip is painted by ::before, not by the token's own box, so neighbouring chips keep
+   a gap without any change in advance width: the textarea underneath keeps every
+   character where it is. The hidden brackets are the chip's inline padding. */
 .token {
+  position: relative;
+  z-index: 0;
+  color: var(--ui-tone-accent-fg);
+}
+.token::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -1px 1px;
   border-radius: var(--ui-radius-control);
   background: var(--ui-tone-accent-subtle);
   box-shadow: inset 0 0 0 1px var(--ui-tone-accent-border);
-  color: var(--ui-tone-accent-fg);
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
 }
 
 .bracket {
-  position: relative;
   color: transparent;
-}
-
-.icon {
-  /* The bracket under it is transparent; the icon needs the token's own color. */
-  color: var(--ui-tone-accent-fg);
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  display: flex;
-  transform: translate(-50%, -50%);
-  text-indent: 0;
-}
-
-/* Same size as the attachment token icon (AttachmentIdentity `size="token"`). */
-.quoteIcon {
-  width: 9px;
-  height: 9px;
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { startProviderAccountHostSync } from "../../../features/providers/public/providerAccountHostSync";
+import { startModelEnabledHostSync } from "../../../features/sessions/model/modelEnabledHostSync";
 import {
   sessionsRef,
   setSessions,
@@ -38,6 +39,7 @@ export function useRemoteHostSync(): RemoteHostSync {
   const loadRunningOnHostRef = useRef<(ids: string[]) => void>(undefined);
   const refreshAdoptedSessionRef = useRef<RefreshAdoptedSession>(undefined);
   useEffect(() => startProviderAccountHostSync(), []);
+  useEffect(() => startModelEnabledHostSync(), []);
   const localHostReachable = useAdoptedSessions(
     sessionsRef,
     setSessions,

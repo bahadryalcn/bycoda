@@ -64,6 +64,19 @@ describe("presets", () => {
     ).toEqual([]);
   });
 
+  it("combines design and browser extras as a union on read-only", () => {
+    const readOnly = new Set(allowed({ preset: "read-only" }));
+    const both = allowed({ preset: "read-only", extras: ["design", "browser"] });
+    expect(both).toEqual(expect.arrayContaining(["images.generate", "browser.open"]));
+    expect(both).not.toContain("files.write");
+    expect(both.filter((a) => !readOnly.has(a) && !a.startsWith("browser."))).toEqual([
+      "images.generate",
+    ]);
+    const mixed = allowed({ preset: "design", extras: ["browser"] });
+    expect(mixed).toEqual(both);
+    expect(allowed({ preset: "read-only", extras: ["browser"] })).not.toContain("images.generate");
+  });
+
   it("custom allows only the listed actions and groups, plus discovery", () => {
     const names = allowed({
       preset: "custom",

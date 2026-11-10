@@ -33,12 +33,20 @@ const profile = (agent: CrewAgent) => ({
   avatar: agent.avatar ?? null,
   handle: agent.handle ?? null,
   tools: agent.tools ?? null,
+  pool: agent.pool ?? null,
 });
 const matches = (member: CrewAgent, library: SavedCrewAgent) =>
   isDeepStrictEqual(profile(member), profile(library));
 
 function followLibrary(member: CrewAgent, library: SavedCrewAgent): CrewAgent {
-  const { groups: _groups, avatar: _avatar, handle: _handle, tools: _tools, ...rest } = member;
+  const {
+    groups: _groups,
+    avatar: _avatar,
+    handle: _handle,
+    tools: _tools,
+    pool: _pool,
+    ...rest
+  } = member;
   const evidence = new Map(member.candidates.map((c) => [c.id, c.capabilities]));
   const candidates = structuredClone(library.candidates).map((c): CrewCandidate => ({
     ...c,
@@ -54,6 +62,7 @@ function followLibrary(member: CrewAgent, library: SavedCrewAgent): CrewAgent {
     ...(library.avatar ? { avatar: structuredClone(library.avatar) } : {}),
     ...(library.handle ? { handle: library.handle } : {}),
     ...(library.tools ? { tools: structuredClone(library.tools) } : {}),
+    ...(library.pool ? { pool: { ...library.pool } } : {}),
     source: { id: library.id, updatedAt: library.updatedAt },
   };
 }
@@ -103,6 +112,44 @@ export function syncLinkedMembers(state: CrewDefaultsState, agent: SavedCrewAgen
       return isDeepStrictEqual(next, member) ? member : next;
     },
   );
+}
+
+/** Refuses a definition save the caller may not make or that races an edit; returns the stored version. */
+export function checkSave(
+  state: CrewDefaultsState,
+  definition: CrewDefinition,
+  expectedUpdatedAt: number | undefined,
+  principal?: { projectId: string },
+): CrewDefinition | undefined {
+  const previous = state.definitions.find((d) => d.id === definition.id);
+  // An editor holding a deleted crew must not silently recreate it.
+  if (!previous && expectedUpdatedAt !== undefined) throw new Error("This crew was deleted");
+  if (principal && definition.policy.delegateApprovals && !previous?.policy.delegateApprovals)
+    throw new Error("Only the owner may grant delegated approvals");
+  if (previous && principal && previous.projectId !== principal.projectId)
+    throw new Error("Cannot modify a global or foreign crew");
+  if (
+    previous &&
+    (previous.updatedAt !== expectedUpdatedAt || previous.projectId !== definition.projectId)
+  )
+    throw new Error("Crew changed. Reload before saving");
+  return previous;
+}
+
+/** Owner delete of one library profile visible to `projectId`: removes it and detaches linked members. */
+export function deleteLibraryAgent(
+  state: CrewDefaultsState,
+  agentId: string,
+  projectId: string,
+  now: () => number,
+): SavedCrewAgent {
+  const agent = state.agents?.find(
+    (a) => a.id === agentId && (!a.projectId || a.projectId === projectId),
+  );
+  if (!agent) throw new Error("Unknown agent");
+  state.agents = (state.agents ?? []).filter((a) => a !== agent);
+  detachLinkedMembers(state, agent, now);
+  return agent;
 }
 
 /** After `crews.agent.delete`: linked members keep their current copy and lose the link. */

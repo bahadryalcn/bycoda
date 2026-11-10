@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
-import { Shimmer } from "../../../shared/ui/Shimmer";
+import { Wrench } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 import { formatDuration } from "../../../shared/i18n/format";
 import { elapsedSince } from "../../../shared/lib/time/timestamps";
@@ -21,7 +21,8 @@ export function voiceActionLabel(name: string) {
   return name.replace(/^(?:workspace|app|conversation)[._]/, "").replace(/[._]+/g, " ");
 }
 
-/** "Voice actions N": a compact header button; its list opens in a popover, out of the body. */
+/** Voice actions: an icon button with a count badge, so the header title keeps its width; the
+ * list opens in a popover. The icon breathes while an action runs. */
 export function VoiceToolActivityPanel({
   entries,
   onStopWaiting,
@@ -40,18 +41,24 @@ export function VoiceToolActivityPanel({
     return () => clearInterval(timer);
   }, [running]);
   if (!entries.length) return null;
+  const label = t(running ? "Taking action…" : "Voice actions");
   return (
     <>
       <Button
-        size="sm"
+        iconOnly
         variant="ghost"
         className={styles.trigger}
+        data-running={running || undefined}
+        label={`${label} (${entries.length})`}
+        tooltip={label}
         aria-haspopup="dialog"
         aria-expanded={Boolean(anchor)}
         onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}
       >
-        {running ? <Shimmer duration={1.6}>{t("Taking action…")}</Shimmer> : t("Voice actions")}
-        <span className={styles.count}>{entries.length}</span>
+        <Wrench className="icon-sm" />
+        <span className={styles.count} aria-hidden="true">
+          {entries.length > 99 ? "99+" : entries.length}
+        </span>
       </Button>
       {anchor && (
         <Popover

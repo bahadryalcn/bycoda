@@ -1,4 +1,4 @@
-import type { CrewAgent, CrewCandidate, CrewDefinition } from "./crew";
+import type { CrewAgent, CrewCandidate, CrewDefinition, CrewModelPool } from "./crew";
 
 /**
  * Bulk model assignment: every target member becomes a fixed member pinned to the
@@ -14,6 +14,28 @@ export function applyCandidate<T extends Pick<CrewAgent, "id" | "selection" | "c
   return agents.map((agent) =>
     !targets || targets.has(agent.id)
       ? { ...agent, selection: "fixed" as const, candidates: [structuredClone(candidate)] }
+      : agent,
+  );
+}
+
+/**
+ * Bulk pool assignment: every target member becomes an automatic member that takes its
+ * candidates from the pool (the Host refreshes the copy on save). An empty `ids` list targets everyone.
+ */
+export function applyPool<T extends Pick<CrewAgent, "id" | "selection" | "candidates" | "pool">>(
+  agents: readonly T[],
+  ids: readonly string[],
+  pool: Pick<CrewModelPool, "id" | "candidates">,
+): T[] {
+  const targets = ids.length ? new Set(ids) : undefined;
+  return agents.map((agent) =>
+    !targets || targets.has(agent.id)
+      ? {
+          ...agent,
+          selection: "automatic" as const,
+          pool: { id: pool.id },
+          candidates: structuredClone(pool.candidates),
+        }
       : agent,
   );
 }

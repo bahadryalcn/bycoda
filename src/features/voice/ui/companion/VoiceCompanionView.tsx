@@ -1,7 +1,5 @@
 import type { ReactNode, RefObject } from "react";
 import { Button } from "../../../../shared/ui/Button";
-import { Disclosure } from "../../../../shared/ui/Disclosure";
-import { InlineError } from "../../../../shared/ui/InlineError";
 import { LiveText } from "../../../../shared/ui/LiveText";
 import { OverflowTooltip, Tooltip } from "../../../../shared/ui/Tooltip";
 import { Maximize2, Mic, MicOff, Minimize2, Square, X } from "../../../../shared/ui/icons";
@@ -16,6 +14,7 @@ import { VoiceChatTranscript } from "./VoiceChatTranscript";
 import { VoiceCompanionControls } from "./VoiceCompanionControls";
 import { VoiceCompanionMoreMenu } from "./VoiceCompanionMoreMenu";
 import { VoiceCompanionStatus } from "./VoiceCompanionStatus";
+import { VoiceErrorNotice, voiceErrorTitle } from "./VoiceErrorNotice";
 import { VoiceSidePanel } from "./VoiceSidePanel";
 import type { VoiceChatTurn, VoiceCompanionStatus as Status } from "./voiceCompanionTypes";
 import parts from "./VoiceCompanionParts.module.css";
@@ -30,6 +29,9 @@ export type VoiceCompanionViewProps = {
   working: boolean;
   audioLevel: { readonly current: number };
   title: string;
+  /** Assistant name and avatar for the stage; the name is empty before setup. */
+  name: string;
+  avatar: string | undefined;
   scopeTitle: string;
   targetTitle?: string;
   summary: string;
@@ -47,7 +49,8 @@ export type VoiceCompanionViewProps = {
   toolActivities: VoiceToolActivityEntry[];
   chatTurns: readonly VoiceChatTurn[];
   error: string;
-  actionableError: boolean;
+  /** The owner acknowledged the error: clear it. */
+  onDismissError: () => void;
   liveText: string;
   toggleRef: RefObject<HTMLButtonElement | null>;
   sessionPicker: ReactNode;
@@ -92,6 +95,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
     <>
       <header className={styles.header}>
         {p.handle}
+        {p.error ? <VoiceErrorNotice error={p.error} onDismiss={p.onDismissError} /> : null}
         {p.compact ? (
           <div className={styles.heading}>
             <Tooltip
@@ -186,7 +190,6 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
       {!p.compact && (
         <>
           <div className={styles.body}>
-            {p.sessionPicker}
             <VoiceCompanionStatus
               visual={p.visual}
               visualState={p.visualState}
@@ -198,22 +201,19 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               privacy={p.privacy}
               workspace={p.workspace}
               globalScope={p.globalScope}
+              name={p.name}
+              avatar={p.avatar}
               onScopeChange={p.onScopeChange}
               onStopWork={p.onStopWork}
             />
+            {p.sessionPicker}
             <VoiceChatTranscript turns={p.chatTurns} />
-            {p.error ? (
-              p.actionableError ? (
-                <InlineError className={parts.errorRow}>{p.error}</InlineError>
-              ) : (
-                <div className={parts.errorRow}>
-                  <InlineError>{t("Voice needs attention")}</InlineError>
-                  <Disclosure size="sm" className={styles.feedback} summary={t("Error details")}>
-                    <p>{p.error}</p>
-                  </Disclosure>
-                </div>
-              )
-            ) : null}
+            {/* The error itself lives in the header mark; this only announces it. */}
+            <LiveText
+              mode="assertive"
+              className={styles.srOnly}
+              text={[...new Set(p.error ? [voiceErrorTitle(p.error), p.error] : [])].join(": ")}
+            />
             {p.recovery}
             {p.pushHint ? <p className={parts.caption}>{p.pushHint}</p> : null}
           </div>

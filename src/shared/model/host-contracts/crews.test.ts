@@ -201,6 +201,18 @@ const params = {
     expectedUpdatedAt: 2.5,
   },
   "crews.agent.delete": { projectId: "project", agentId: "profile" },
+  "crews.pools.list": { projectId: "project" },
+  "crews.pools.save": {
+    projectId: "project",
+    pool: {
+      id: "pool",
+      name: "Pool",
+      candidates: [{ ...candidate, id: "pool-candidate" }],
+      updatedAt: 2.5,
+    },
+    expectedUpdatedAt: 2.5,
+  },
+  "crews.pools.delete": { projectId: "project", poolId: "pool", expectedUpdatedAt: 2.5 },
   "crews.start": {
     projectId: "project",
     definitionId: "crew",
@@ -336,10 +348,11 @@ it("roundtrips all20 complete params without defaults, coercions or request-fing
   for (const [method, schema] of Object.entries(dto.CREWS_RPC_SCHEMAS)) {
     const value: Record<string, unknown> = params[method as keyof typeof params];
     expect(schema.params.parse(value)).toStrictEqual(value);
-    // Host-wide owner read: no project scope to strip.
-    if (method === "crews.active.list") continue;
+    // Host-wide methods have no project scope to strip.
+    const hostWide = method === "crews.active.list" || method.startsWith("crews.pools.");
     const { projectId: _scope, ...unscoped } = value;
-    expect(schema.params.safeParse(unscoped).success).toBe(false);
+    if (method === "crews.active.list") continue;
+    expect(schema.params.safeParse(unscoped).success).toBe(hostWide);
     expect(schema.params.safeParse({ ...value, principal: { sessionId: "forged" } }).success).toBe(
       false,
     );
@@ -737,6 +750,11 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
     runId: started.id,
     expectedUpdatedAt: finished!.updatedAt,
   });
+  const pool = await call("crews.pools.save", {
+    pool: { id: "pool", name: "Pool", candidates: [{ ...candidate, id: "pool-candidate" }] },
+  });
+  expect((await call("crews.pools.list")).pools).toHaveLength(1);
+  await call("crews.pools.delete", { poolId: pool.id, expectedUpdatedAt: pool.updatedAt });
   await call("crews.agent.delete", { agentId: savedAgent.id });
   // The first list normalized the dangling member link, which moved the crew revision.
   const current = (await call("crews.list")).definitions.find((d) => d.id === saved.id);

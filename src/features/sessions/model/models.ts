@@ -462,6 +462,11 @@ function disabledModels(): Set<string> {
   return (disabledCache = new Set(ids));
 }
 
+/** Ids turned off in Settings, for publishing to the Host. */
+export function disabledModelIds(): string[] {
+  return [...disabledModels()].sort();
+}
+
 function modelPreferenceKey(value: string): string {
   return value.startsWith("claude:")
     ? value.replace(/^claude:claude-/, "claude:").replace(/\./g, "-")

@@ -23,6 +23,7 @@ import {
   HOST_CREW_ACCESS,
   HOST_CREW_IDENTITY,
   HOST_CREW_TOOLS,
+  HOST_CREW_MODEL_POOLS,
   type CrewDefinition,
   type CrewRun,
   type SavedCrewAgent,
@@ -51,6 +52,8 @@ export type ProjectCrews = {
   identitySupported?: boolean;
   /** Older hosts drop member tool profiles, so the Tools section stays hidden. */
   toolsSupported?: boolean;
+  /** Older hosts have no model pools, so the Models tab and pool pickers stay hidden. */
+  modelPoolsSupported?: boolean;
   machine: RemoteMachine;
   project: HostProject;
   definitions: CrewDefinition[];
@@ -131,6 +134,7 @@ export function useProjectCrews(cwd: string, enabled = true) {
         accessSupported: capabilities.includes(HOST_CREW_ACCESS),
         identitySupported: capabilities.includes(HOST_CREW_IDENTITY),
         toolsSupported: capabilities.includes(HOST_CREW_TOOLS),
+        modelPoolsSupported: capabilities.includes(HOST_CREW_MODEL_POOLS),
       };
     },
     staleTime: 3000,

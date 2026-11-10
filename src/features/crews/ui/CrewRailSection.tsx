@@ -129,6 +129,8 @@ export function CrewRailSection({
         drag={drag}
         collapsed={collapsed}
         onToggleCollapsed={onToggleCollapsed}
+        onLabelClick={() => openCrewsPageAt({})}
+        labelClickLabel={t("Open Crews")}
         actions={
           <InlineAction
             reveal="always"

@@ -79,6 +79,7 @@ export function preloadToolSurface(tool: WorkspaceToolId): void {
     social: SocialView,
     tasks: TasksView,
     automations: AutomationsView,
+    crews: CrewsView,
     inbox: InboxView,
     notes: NotesView,
     terminal: null,

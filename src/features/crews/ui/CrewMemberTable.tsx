@@ -1,12 +1,11 @@
 import { useMemo, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { Select } from "../../../shared/ui/Select";
-import { ChevronDown, ChevronRight, Plus, Trash2 } from "../../../shared/ui/icons";
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import { ChevronDown, ChevronRight, GitBranch, Plus, Trash2 } from "../../../shared/ui/icons";
 import type { CrewAgent, CrewRole } from "../model/crew";
 import type { ProjectCrews } from "../model/crewClient";
 import {
@@ -16,24 +15,29 @@ import {
   type CrewRosterIssues,
 } from "../model/crewRoster";
 import { memberLink } from "../model/crewLink";
+import { useCrewModelPools } from "../model/crewModelPools";
 import { matchesMemberQuery, memberSearchHaystack } from "./CrewLibrarySearch";
 import { roleLabel } from "./CrewMemberForm";
 import { teamTraits } from "../model/memberAvatars";
 import { MemberAvatar } from "./MemberAvatar";
 import { MemberModelPicker } from "./MemberModelPicker";
 
-/** Short link state in a roster row; the open row says it in full. */
-function MemberLinkBadge({ link }: { link?: "linked" | "customized" }) {
+/** A customized member shows one muted glyph; a member that follows its library profile shows nothing. */
+function MemberLinkMark({ link }: { link?: "linked" | "customized" }) {
   useLocale();
-  if (!link) return null;
+  if (link !== "customized") return null;
   return (
-    <Badge size="xs" tone={link === "linked" ? "info" : "neutral"} className="shrink-0">
-      {link === "linked" ? t("Library") : t("Customized")}
-    </Badge>
+    <Tooltip label={t("Not following library profile")} asChild>
+      <span
+        role="img"
+        aria-label={t("Not following library profile")}
+        className="inline-flex shrink-0 text-(--ui-text-secondary)"
+      >
+        <GitBranch className="icon-xs" aria-hidden />
+      </span>
+    </Tooltip>
   );
 }
-
-const ROLES: CrewRole[] = ["coordinator", "specialist", "reviewer", "advisor"];
 
 /** The roster filter earns its place only for a long roster. */
 export function rosterSearchable(count: number, queryActive: boolean) {
@@ -98,9 +102,9 @@ export function crewIssueSummary(
 }
 
 /**
- * The roster: one compact row per member under its role. Selection, role and the pinned
- * model (with its effort) are edited in the row; the chevron opens the rest of the member
- * in place through `renderDetail`.
+ * The roster: one calm row per member under its role. Selection and the pinned model (with
+ * its effort) are edited in the row, removal appears on hover or focus; the row opens the
+ * rest of the member, including its role, in place through `renderDetail`.
  */
 export function CrewMemberTable({
   cwd,
@@ -158,6 +162,11 @@ export function CrewMemberTable({
     );
   const matchCount = agents.filter(matches).length;
   const looks = useMemo(() => teamTraits(agents), [agents]);
+  const hostPools = useCrewModelPools(data.machine.id, data.modelPoolsSupported === true);
+  const poolNames = useMemo(
+    () => new Map(hostPools.pools.map((pool) => [pool.id, pool.name])),
+    [hostPools.pools],
+  );
   const toggle = (id: string, on: boolean) =>
     onSelectedChange(on ? [...selected, id] : selected.filter((item) => item !== id));
 
@@ -248,7 +257,8 @@ export function CrewMemberTable({
                   return (
                     <li key={agent.id} className="min-w-0">
                       <ActionHost
-                        className="grid! grid-cols-[auto_minmax(0,1fr)_7rem_9rem_auto] items-center gap-x-2"
+                        hoverReveal
+                        className="grid! grid-cols-[auto_minmax(0,1fr)_minmax(8rem,14rem)_auto] items-center gap-x-2"
                         data-member-row={agent.id}
                       >
                         <Checkbox
@@ -282,7 +292,7 @@ export function CrewMemberTable({
                               </span>
                             ) : null}
                             {data.identitySupported ? (
-                              <MemberLinkBadge link={memberLink(agent, data.agents)?.state} />
+                              <MemberLinkMark link={memberLink(agent, data.agents)?.state} />
                             ) : null}
                             {problem ? (
                               <span className="shrink-0 text-ui-caption text-danger">
@@ -295,45 +305,36 @@ export function CrewMemberTable({
                             ) : null}
                           </span>
                         </Button>
-                        <Select
-                          hideLabel
-                          fieldVariant="compact"
-                          label={t("Responsibility of {p0}", { p0: name })}
-                          value={agent.role}
-                          options={ROLES.map((role) => ({
-                            value: role,
-                            label: roleLabel(role),
-                          }))}
-                          onValueChange={(role) => onChange(agent.id, { role: role as CrewRole })}
-                        />
-                        {agent.selection === "fixed" ? (
-                          <MemberModelPicker
-                            cwd={cwd}
-                            presentation="inline"
-                            value={agent.candidates[0]}
-                            onChange={(next) =>
-                              onChange(agent.id, {
-                                candidates: [
-                                  next,
-                                  ...agent.candidates.slice(1).filter((c) => c.id !== next.id),
-                                ],
-                              })
-                            }
-                          />
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="max-w-44 min-w-0"
-                            onClick={() => onExpandedChange(agent.id)}
-                          >
-                            <span className="truncate">
-                              {memberModelSummary(data.catalog, agent)}
-                            </span>
-                          </Button>
-                        )}
+                        <div className="flex min-w-0 justify-end">
+                          {agent.selection === "fixed" ? (
+                            <MemberModelPicker
+                              cwd={cwd}
+                              presentation="inline"
+                              value={agent.candidates[0]}
+                              onChange={(next) =>
+                                onChange(agent.id, {
+                                  candidates: [
+                                    next,
+                                    ...agent.candidates.slice(1).filter((c) => c.id !== next.id),
+                                  ],
+                                })
+                              }
+                            />
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="min-w-0 justify-start"
+                              onClick={() => onExpandedChange(agent.id)}
+                            >
+                              <span className="truncate">
+                                {(agent.pool && poolNames.get(agent.pool.id)) ||
+                                  memberModelSummary(data.catalog, agent)}
+                              </span>
+                            </Button>
+                          )}
+                        </div>
                         <InlineAction
-                          reveal="always"
                           label={t("Remove {p0} from crew", {
                             p0: agent.name || t("member"),
                           })}

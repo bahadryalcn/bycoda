@@ -8,10 +8,10 @@ export function AttachmentIdentity({
   size = 24,
 }: {
   attachment: Attachment;
-  /** `token` fits the composer's text overlay; `pill` fits a message's attachment pill. */
-  size?: number | "token" | "pill";
+  /** `pill` fits a message's attachment pill. */
+  size?: number | "pill";
 }) {
-  const iconSize = size === "token" ? 9 : size === "pill" ? 13 : size;
+  const iconSize = size === "pill" ? 13 : size;
   const { kind, extension } = attachmentPresentation(attachment);
   const Icon =
     kind === "audio" ? AudioLines : kind === "video" ? Play : kind === "image" ? ImagePlus : null;

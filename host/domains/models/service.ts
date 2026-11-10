@@ -1,4 +1,5 @@
 import { ModelsListParamsSchema } from "../../../src/shared/model/host-contracts/models";
+import { applyDisabledModels } from "../../providers/disabled-models";
 import { assertDomainAuthority, type HostDomainContext } from "../context";
 
 export interface ModelsPorts {
@@ -7,6 +8,8 @@ export interface ModelsPorts {
     Partial<Record<"codex" | "claude", Array<{ id: string; label: string; color?: string }>>>
   >;
   providers: readonly string[];
+  /** Model ids the owner turned off in the desktop; undefined when never published. */
+  disabledModels?(): Promise<readonly string[] | undefined>;
 }
 
 /** Owner catalog decoration is separate from the cache used by scoped tools.
@@ -27,9 +30,10 @@ export function createModelsService(ports: ModelsPorts) {
         params.progressive === true,
         params.refresh === true,
       );
+      const disabled = await ports.disabledModels?.().catch(() => undefined);
       await assertDomainAuthority(context);
       return {
-        ...catalog,
+        ...applyDisabledModels(catalog, disabled),
         accounts: Object.fromEntries(
           Object.entries(accounts).filter(([provider]) => ports.providers.includes(provider)),
         ),

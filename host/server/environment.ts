@@ -159,6 +159,7 @@ export function createEnvironmentRuntime(
         "crews.active.v1",
         "crews.member.ask.v1",
         "crews.tools.v1",
+        "crews.model-pools.v1",
         "approvals",
         "questions",
         "diff",

@@ -11,6 +11,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import {
   AppWindow,
+  Bot,
   DashboardSquare,
   Globe,
   Inbox,
@@ -56,6 +57,7 @@ export const ToolNavigationContext = createContext<{
   notesEnabled: boolean;
   grouped?: boolean;
   includeServers?: boolean;
+  includeCrews?: boolean;
   includeAuxiliaryTools?: boolean;
   onSelect: (tool: WorkspaceToolId) => void;
 } | null>(null);
@@ -70,6 +72,7 @@ const labels = {
   social: "Social Media",
   tasks: "Tasks",
   automations: "Automations",
+  crews: "Crews",
   inbox: "Inbox",
   notes: "Notes",
   "conversation-tools": "Conversation tools",
@@ -81,6 +84,7 @@ const icons = {
   social: Globe,
   tasks: DashboardSquare,
   automations: Zap,
+  crews: Bot,
   inbox: Inbox,
   notes: StickyNote,
   "conversation-tools": Wrench,
@@ -149,9 +153,11 @@ export function ToolNavigation() {
             ? navigation.notesEnabled
             : id === "servers"
               ? navigation.includeServers || navigation.active === "servers"
-              : id === "terminal" || id === "conversation-tools" || id === "assistant"
-                ? navigation.includeAuxiliaryTools
-                : true,
+              : id === "crews"
+                ? navigation.includeCrews || navigation.active === "crews"
+                : id === "terminal" || id === "conversation-tools" || id === "assistant"
+                  ? navigation.includeAuxiliaryTools
+                  : true,
         );
   const open = async (grouped: boolean) => {
     if (openingRef.current) return;
@@ -242,34 +248,36 @@ export function ToolNavigation() {
           })}
         </TabList>
       </Tabs>
-      <div className="tool-window-actions">
-        <Button
-          variant="ghost"
-          motion="none"
-          iconOnly
-          label={t("Open in new window")}
-          data-tauri-drag-region="false"
-          disabled={opening !== null}
-          loading={opening === "single"}
-          onClick={() => void open(false)}
-        >
-          <AppWindow className="icon-sm" aria-hidden />
-        </Button>
-        <Button
-          variant="ghost"
-          motion="none"
-          data-tauri-drag-region="false"
-          disabled={opening !== null}
-          loading={opening === "grouped"}
-          startIcon={<DashboardSquare className="icon-sm" aria-hidden />}
-          onClick={() => void open(true)}
-          aria-label={t("Open all tools in one window")}
-          tooltip={t("All tools in one window")}
-          tooltipWhen="overflow"
-        >
-          <span className="tool-action-label">{t("All tools in one window")}</span>
-        </Button>
-      </div>
+      {navigation.active === "crews" ? null : (
+        <div className="tool-window-actions">
+          <Button
+            variant="ghost"
+            motion="none"
+            iconOnly
+            label={t("Open in new window")}
+            data-tauri-drag-region="false"
+            disabled={opening !== null}
+            loading={opening === "single"}
+            onClick={() => void open(false)}
+          >
+            <AppWindow className="icon-sm" aria-hidden />
+          </Button>
+          <Button
+            variant="ghost"
+            motion="none"
+            data-tauri-drag-region="false"
+            disabled={opening !== null}
+            loading={opening === "grouped"}
+            startIcon={<DashboardSquare className="icon-sm" aria-hidden />}
+            onClick={() => void open(true)}
+            aria-label={t("Open all tools in one window")}
+            tooltip={t("All tools in one window")}
+            tooltipWhen="overflow"
+          >
+            <span className="tool-action-label">{t("All tools in one window")}</span>
+          </Button>
+        </div>
+      )}
       {error ? (
         <Alert tone="danger" data-tauri-drag-region="false">
           <span>

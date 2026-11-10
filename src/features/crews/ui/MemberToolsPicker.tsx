@@ -1,12 +1,13 @@
 import { t, useLocale } from "../../../shared/i18n";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { TagInput } from "../../../shared/ui/TagInput";
 import {
   CREW_TOOL_LIMITS,
-  CREW_TOOL_PRESETS,
-  crewToolPreset,
+  crewToolExtras,
   parseCrewTools,
   validCrewToolAction,
+  type CrewToolExtra,
   type CrewToolPreset,
   type CrewToolProfile,
 } from "../model/crewTools";
@@ -20,30 +21,24 @@ export const crewToolPresetLabel = (preset: CrewToolPreset) =>
     custom: t("Custom"),
   })[preset];
 
-function presetHint(preset: CrewToolPreset) {
-  return {
-    "read-only": t("Reads and inspects. Host tools that write or start things are blocked."),
-    code: t("Every Host tool the run's access mode allows. This is the default."),
-    design: t("Read-only plus image generation and visual previews."),
-    browser: t("Read-only plus the browser tools."),
-    custom: t("Only the Host tools you list, within the run's access mode."),
-  }[preset];
-}
+const extraLabel = (extra: CrewToolExtra) =>
+  extra === "design" ? t("Image generation") : t("Browser");
 
-/** What a preset does to the provider's own tools (file edits, shell); `code` changes nothing. */
-function nativeNote(preset: CrewToolPreset) {
-  if (preset === "code") return undefined;
-  return preset === "custom"
-    ? t("Provider tools (file edits, shell) stay as the run's access mode allows.")
-    : t(
-        "Provider tools: Claude and Codex lose file edits and shell; other providers cannot run this member.",
-      );
+/** One line naming everything the profile allows, for the picker and library rows. */
+export function crewToolsSummary(profile: CrewToolProfile | undefined): string {
+  if (!profile || (profile.preset === "code" && !profile.conversationTools))
+    return t("Write code and use every Host tool");
+  if (profile.preset === "code" || profile.preset === "custom")
+    return t("Write code, Host tools limited to a list");
+  const extras = crewToolExtras(profile).map(extraLabel);
+  return [t("Read-only"), ...extras].join(" + ");
 }
 
 /**
- * The member's tool profile. It only narrows what the member's sessions may use; the run's
- * access mode and owner approvals still apply. Host tools, provider file-edit and shell
- * tools (Claude, Codex), MCP servers and skills are enforced by the Host.
+ * The member's tool profile as combinable capabilities. It only narrows what the member's
+ * sessions may use; the run's access mode and owner approvals still apply. Nothing selected is
+ * read-only. Host tools, provider file-edit and shell tools (Claude, Codex), MCP servers and
+ * skills are enforced by the Host.
  */
 export function MemberToolsPicker({
   value,
@@ -53,66 +48,138 @@ export function MemberToolsPicker({
   onChange: (tools: CrewToolProfile | undefined) => void;
 }) {
   useLocale();
-  const preset = crewToolPreset(value);
-  const emit = (next: CrewToolProfile) => onChange(parseCrewTools(next));
+  const code = !value || value.preset === "code" || value.preset === "custom";
+  const limited = value?.preset === "custom" || value?.conversationTools !== undefined;
+  const extras = value && !code ? crewToolExtras(value) : [];
+  const emit = (next: {
+    code: boolean;
+    limited: boolean;
+    extras: CrewToolExtra[];
+    conversationTools?: string[];
+    mcpServers?: string[];
+    skills?: string[];
+  }) => {
+    const lists = {
+      conversationTools: next.limited || !next.code ? next.conversationTools : undefined,
+      mcpServers: next.mcpServers,
+      skills: next.skills,
+    };
+    onChange(
+      parseCrewTools(
+        next.code
+          ? { preset: next.limited ? "custom" : "code", ...lists }
+          : { preset: "read-only", extras: next.extras, ...lists },
+      ),
+    );
+  };
+  const current = {
+    code,
+    limited,
+    extras,
+    conversationTools: value?.conversationTools,
+    mcpServers: value?.mcpServers,
+    skills: value?.skills,
+  };
   const names = (values: string[]) => [
     ...new Set(
       values.map((entry) => entry.trim().slice(0, CREW_TOOL_LIMITS.nameChars)).filter(Boolean),
     ),
   ];
+  const toggleExtra = (extra: CrewToolExtra, on: boolean) =>
+    emit({
+      ...current,
+      extras: on ? [...extras, extra] : extras.filter((entry) => entry !== extra),
+    });
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <span className="text-ui-body font-medium">{t("Tools")}</span>
-      <SegmentedControl
-        label={t("Tools")}
-        value={preset}
-        options={CREW_TOOL_PRESETS.map((option) => ({
-          value: option,
-          label: crewToolPresetLabel(option),
-        }))}
-        onValueChange={(next) =>
-          emit(next === "custom" ? { ...value, preset: next } : { preset: next as CrewToolPreset })
-        }
+      <div className="flex items-center gap-1">
+        <span className="text-ui-body font-medium">{t("Tools")}</span>
+        <InfoPopover label={t("About member tools")}>
+          <div className="flex flex-col gap-2 text-ui-caption">
+            <p>
+              {t(
+                "Nothing selected means read-only: Host tools that write or start things are blocked. Choices combine and only narrow what the run's access mode allows.",
+              )}
+            </p>
+            <p>
+              {t(
+                "Without Write code, Claude and Codex lose file edits and shell; other providers cannot run the member.",
+              )}
+            </p>
+            <p>
+              {t(
+                "MCP servers and skills: leave empty for no restriction. Listed servers are the only ones loaded (Claude, Codex, OpenCode); other skills are disabled for the member.",
+              )}
+            </p>
+          </div>
+        </InfoPopover>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Checkbox
+          label={t("Write code")}
+          checked={code}
+          onChange={(event) =>
+            emit({
+              ...current,
+              code: event.target.checked,
+              limited: false,
+              conversationTools: undefined,
+            })
+          }
+        />
+        <Checkbox
+          label={t("Image generation")}
+          checked={code || extras.includes("design")}
+          disabled={code}
+          onChange={(event) => toggleExtra("design", event.target.checked)}
+        />
+        <Checkbox
+          label={t("Browser")}
+          checked={code || extras.includes("browser")}
+          disabled={code}
+          onChange={(event) => toggleExtra("browser", event.target.checked)}
+        />
+        {code ? (
+          <Checkbox
+            label={t("Limit Host tools to a list")}
+            checked={limited}
+            onChange={(event) =>
+              emit({
+                ...current,
+                limited: event.target.checked,
+                conversationTools: event.target.checked ? [] : undefined,
+              })
+            }
+          />
+        ) : null}
+      </div>
+      <p className="text-ui-caption text-(--ui-text-secondary)">{crewToolsSummary(value)}</p>
+      {limited ? (
+        <TagInput
+          label={t("Host tools")}
+          placeholder={t("files.read, browser…")}
+          value={value?.conversationTools ?? []}
+          normalize={(values) => [
+            ...new Set(values.map((entry) => entry.trim()).filter(validCrewToolAction)),
+          ]}
+          maxTags={CREW_TOOL_LIMITS.actions}
+          onValueChange={(next) => emit({ ...current, conversationTools: next })}
+        />
+      ) : null}
+      <TagInput
+        label={t("MCP servers")}
+        value={value?.mcpServers ?? []}
+        normalize={names}
+        maxTags={CREW_TOOL_LIMITS.names}
+        onValueChange={(next) => emit({ ...current, mcpServers: next })}
       />
-      <p className="text-ui-caption text-(--ui-text-secondary)">{presetHint(preset)}</p>
-      {nativeNote(preset) ? (
-        <p className="text-ui-caption text-(--ui-text-secondary)">{nativeNote(preset)}</p>
-      ) : null}
-      {preset === "custom" ? (
-        <>
-          <TagInput
-            label={t("Host tools")}
-            placeholder={t("files.read, browser…")}
-            value={value?.conversationTools ?? []}
-            normalize={(values) => [
-              ...new Set(values.map((entry) => entry.trim()).filter(validCrewToolAction)),
-            ]}
-            maxTags={CREW_TOOL_LIMITS.actions}
-            description={t("Action ids or groups such as files or browser.*. Others are blocked.")}
-            onValueChange={(next) => emit({ preset, ...value, conversationTools: next })}
-          />
-          <TagInput
-            label={t("MCP servers")}
-            value={value?.mcpServers ?? []}
-            normalize={names}
-            maxTags={CREW_TOOL_LIMITS.names}
-            description={t(
-              "Only these servers load for this member (Claude, Codex, OpenCode); other providers refuse it.",
-            )}
-            onValueChange={(next) => emit({ preset, ...value, mcpServers: next })}
-          />
-          <TagInput
-            label={t("Skills")}
-            value={value?.skills ?? []}
-            normalize={names}
-            maxTags={CREW_TOOL_LIMITS.names}
-            description={t(
-              "Other skills are disabled for this member. Claude blocks them at launch; other providers are told not to use them.",
-            )}
-            onValueChange={(next) => emit({ preset, ...value, skills: next })}
-          />
-        </>
-      ) : null}
+      <TagInput
+        label={t("Skills")}
+        value={value?.skills ?? []}
+        normalize={names}
+        maxTags={CREW_TOOL_LIMITS.names}
+        onValueChange={(next) => emit({ ...current, skills: next })}
+      />
     </div>
   );
 }

@@ -121,7 +121,6 @@ export type HostRpcMethodDefinition = {
   readonly paramsSchema: z.ZodType;
   readonly resultSchema: z.ZodType;
 };
-
 const read = (
   paramsSchema: z.ZodType,
   resultSchema: z.ZodType = JsonValueSchema,
@@ -220,7 +219,6 @@ const projectOperation = (
   responseTimeoutMs: SLOW_READ_RESPONSE_TIMEOUT_MS,
   requiredCapability: "transport.ws.read.v2",
 });
-
 const taskOperation = (
   params: z.ZodType,
   result: z.ZodType,
@@ -230,7 +228,6 @@ const taskOperation = (
   cost: "read",
   requiredCapability: "transport.ws.tasks.v2",
 });
-
 const goalOperation = (params: z.ZodType, result: z.ZodType): HostRpcMethodDefinition => ({
   ...control(params, result),
   cost: "read",
@@ -262,7 +259,7 @@ const crewOperation = (method: keyof typeof CREWS_RPC_SCHEMAS): HostRpcMethodDef
     "transport.ws.crews.v2",
     CREWS_RPC_SCHEMAS[method].params,
     CREWS_RPC_SCHEMAS[method].result,
-    /^crews\.(schema|inspect|get|active\.list)$/.test(method),
+    /^crews\.(schema|inspect|get|active\.list|pools\.list)$/.test(method),
   ),
   cost: method === "crews.stop" ? "control" : "read",
 });
@@ -572,6 +569,9 @@ export const HOST_RPC_METHODS = Object.freeze({
   "crews.deleteRun": crewOperation("crews.deleteRun"),
   "crews.agent.save": crewOperation("crews.agent.save"),
   "crews.agent.delete": crewOperation("crews.agent.delete"),
+  "crews.pools.list": crewOperation("crews.pools.list"),
+  "crews.pools.save": crewOperation("crews.pools.save"),
+  "crews.pools.delete": crewOperation("crews.pools.delete"),
   "crews.start": crewOperation("crews.start"),
   "crews.get": crewOperation("crews.get"),
   "crews.assign": crewOperation("crews.assign"),

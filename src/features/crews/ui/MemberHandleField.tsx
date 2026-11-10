@@ -30,7 +30,6 @@ export function MemberHandleField({
   return (
     <TextField
       label={t("Handle")}
-      description={t("Optional. Lowercase letters, digits and hyphens, up to 24 characters.")}
       placeholder={t("e.g. ada")}
       value={text}
       maxLength={40}

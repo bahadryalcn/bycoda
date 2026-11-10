@@ -18,7 +18,8 @@ import { IS_MAC } from "../../../platform/tauri/platform";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { memo, useMemo, useState } from "react";
 import { useAssistantRoomRequests } from "./useAssistantRoomRequests";
-import { useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
+import { workspaceActiveTool } from "./workspaceActiveTool";
+import { setCrewsPageOpen, useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import type { ConversationTools } from "../../../features/host-tools/SessionHostTools";
 import { lazySurface } from "../../../shared/ui/lazySurface";
@@ -218,24 +219,19 @@ function WorkspaceToolPanelsComponent({
         : undefined,
     [canBack, canForward, navigationBack, navigationForward],
   );
-  const activeTool: WorkspaceToolId | null =
-    automationsViewOpen && auxiliaryTool
-      ? auxiliaryTool
-      : serversViewOpen && !crewsOpen
-        ? "servers"
-        : inboxViewOpen
-          ? "inbox"
-          : notesViewOpen
-            ? "notes"
-            : automationsViewOpen
-              ? socialBoardShown
-                ? "social"
-                : taskBoardShown
-                  ? "tasks"
-                  : "automations"
-              : null;
+  const activeTool = workspaceActiveTool({
+    crewsOpen,
+    auxiliaryTool,
+    automationsViewOpen,
+    serversViewOpen,
+    inboxViewOpen,
+    notesViewOpen,
+    socialBoardShown,
+    taskBoardShown,
+  });
   const toolCwd =
     automationsViewOpen && socialBoardShown && socialPanelCwd ? socialPanelCwd : projectCwd;
+  const includeCrews = !toolWindow;
   const includeServers = !toolWindow || toolWindow.grouped || toolWindow.active === "servers";
   const includeAuxiliaryTools = !!setAuxiliaryTool;
   const grouped = toolWindow?.grouped ?? true;
@@ -258,6 +254,8 @@ function WorkspaceToolPanelsComponent({
     setAuxiliaryTool?.(
       tool === "terminal" || tool === "conversation-tools" || tool === "assistant" ? tool : null,
     );
+    // Leaving Servers above closed Crews; open it last.
+    if (tool === "crews") setCrewsPageOpen(true);
     setSocialBoardShown(tool === "social");
     setTaskBoardShown(tool === "tasks");
   });
@@ -268,6 +266,7 @@ function WorkspaceToolPanelsComponent({
       cwd: toolCwd,
       notesEnabled,
       includeServers,
+      includeCrews,
       includeAuxiliaryTools,
       grouped,
       onSelect: onSelectTool,
@@ -278,6 +277,7 @@ function WorkspaceToolPanelsComponent({
       toolCwd,
       notesEnabled,
       includeServers,
+      includeCrews,
       includeAuxiliaryTools,
       grouped,
       onSelectTool,

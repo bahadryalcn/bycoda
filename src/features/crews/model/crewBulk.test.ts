@@ -3,6 +3,7 @@ import { defaultCrewPolicy, type CrewAgent, type CrewCandidate, type CrewDefinit
 import {
   adoptSaved,
   applyCandidate,
+  applyPool,
   commonCandidate,
   crewFingerprint,
   shouldAutosave,
@@ -104,5 +105,22 @@ describe("commonCandidate", () => {
     expect(commonCandidate([agents[1]!, agents[0]!])).toEqual(low);
     expect(commonCandidate([])).toBeUndefined();
     expect(commonCandidate(agents, ["b"])).toEqual(low);
+  });
+});
+
+describe("applyPool", () => {
+  const pool = { id: "p1", candidates: [candidate("m1"), candidate("m2")] };
+  it("makes the targets automatic members of the pool", () => {
+    const [a, b] = applyPool([agent("a"), agent("b")], ["a"], pool);
+    expect(a).toMatchObject({ selection: "automatic", pool: { id: "p1" } });
+    expect(a!.candidates.map((c) => c.id)).toEqual(["m1", "m2"]);
+    expect(a!.candidates[0]).not.toBe(pool.candidates[0]);
+    expect(b).toMatchObject({ selection: "fixed" });
+    expect(b!.pool).toBeUndefined();
+  });
+  it("targets everyone when no ids are given", () => {
+    expect(applyPool([agent("a"), agent("b")], [], pool).every((x) => x.pool?.id === "p1")).toBe(
+      true,
+    );
   });
 });

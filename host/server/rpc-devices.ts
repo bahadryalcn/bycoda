@@ -14,6 +14,7 @@ import { RemoteChanges } from "../workspaces/remoteChanges";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 import { WATCH_STAMP_MS } from "./support";
+import { saveDisabledModels } from "../providers/disabled-models";
 import { saveProviderAccountStyles } from "../providers/provider-account-styles";
 export async function handleDevicesRpc(
   dependencies: Pick<
@@ -81,6 +82,8 @@ export async function handleDevicesRpc(
           dependencies.engine.store,
           request.params.providerAccountStyles,
         );
+      if (request.params.disabledModels !== undefined)
+        await saveDisabledModels(dependencies.engine.store, request.params.disabledModels);
       if (request.params.settings !== undefined)
         await dependencies.tasks.limits.save(request.params.settings);
       request.result = await dependencies.tasks.limits.state();

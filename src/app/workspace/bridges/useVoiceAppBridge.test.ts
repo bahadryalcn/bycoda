@@ -35,6 +35,24 @@ describe("voice management source ownership", () => {
     expect(voiceRailProjects(recents, "~", NOTHING_LOCKED)).toEqual(recents);
     expect(recents).toEqual([{ path: "/project", openedAt: 1 }]);
   });
+  it("keeps an unremembered folder listed after navigating away, until it is remembered, forgotten or locked", () => {
+    const recents = [{ path: "/project", openedAt: 1 }];
+    const visited = new Map();
+    const paths = (list: typeof recents, current: string, locks = NOTHING_LOCKED) =>
+      voiceRailProjects(list, current, locks, visited).map((item) => item.path);
+    expect(paths(recents, "/worktree")).toEqual(["/project", "/worktree"]);
+    // Navigation alone: voice would read a missing project as scope loss and close capture.
+    expect(paths(recents, "/project")).toEqual(["/project", "/worktree"]);
+    const locked = {
+      lockedGroupIds: new Set(["private"]),
+      lockedProjectKeys: new Set([pathKey("/worktree")]),
+    };
+    expect(paths(recents, "/project", locked)).toEqual(["/project"]);
+    // Once remembered, the recents own it: forgetting it removes it from voice too.
+    const remembered = [...recents, { path: "/worktree", openedAt: 2 }];
+    expect(paths(remembered, "/project")).toEqual(["/project", "/worktree"]);
+    expect(paths(recents, "/project")).toEqual(["/project"]);
+  });
   it("publishes renamed display metadata to live context and workspace listing without creating a session", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     localStorage.clear();

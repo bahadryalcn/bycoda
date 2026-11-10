@@ -64,6 +64,21 @@ it("preserves full discovery/custom settings and decorates only configured owner
   });
   expect(f.ports.read).toHaveBeenCalledExactlyOnceWith("project", true, true);
 });
+it("serves the catalog without models the desktop turned off", async () => {
+  const f = fixture();
+  const service = createModelsService({ ...f.ports, disabledModels: async () => ["codex:özgün"] });
+  // The only model stays: a provider never loses its whole list.
+  const result = (await service.list({}, f.context)) as typeof f.catalog;
+  expect(result.models.codex).toHaveLength(1);
+  const two = { ...f.catalog, models: { codex: [...f.catalog.models.codex, { ...f.catalog.models.codex[0], id: "codex:b" }] } };
+  const filtered = createModelsService({
+    ...f.ports,
+    read: vi.fn(async () => two),
+    disabledModels: async () => ["codex:özgün"],
+  });
+  const out = (await filtered.list({}, f.context)) as typeof f.catalog;
+  expect(out.models.codex.map((model) => model.id)).toEqual(["codex:b"]);
+});
 it("retains legacy non-string project and literal-true flags without weakening canonical params", async () => {
   const f = fixture(),
     raw = { projectId: 123, progressive: "true", refresh: true, unused: true };

@@ -66,12 +66,18 @@ export type SectionLabelProps = Omit<ComponentPropsWithRef<"div">, "children"> &
   onExpandedChange?: (expanded: boolean) => void;
   /** Id of the region the disclosure shows and hides. */
   controls?: string;
+  /** Collapsible only: makes the label text a second button that runs `onClick` (open the
+   *  section's page) while the chevron button keeps collapsing. `label` names the label button
+   *  ("Open Crews"); `toggleLabel` names the chevron button ("Crews"), since it no longer
+   *  contains the text. */
+  labelAction?: { label: string; toggleLabel: string; onClick: () => void };
 };
 
 /**
  * Section caption over a list or group: caption size, medium weight, secondary colour, sentence case, never uppercase.
  * Optional `count`, trailing `actions` (always visible) and `collapsible` (heading wraps the button; actions stay outside).
  * `variant="menu"` is a compact standalone menu caption.
+ * `labelAction` (collapsible) splits the row: the chevron collapses, the label text opens the section's page.
  * @group text
  * @use Caption for a group of rows, or a collapsible group heading over a list (Pinned, Groups).
  * @avoid Showing or hiding detail content: Disclosure. Pane or panel titles: PanelHeader / PaneHeader.
@@ -105,6 +111,7 @@ export function SectionLabel({
   expanded = false,
   onExpandedChange,
   controls,
+  labelAction,
   className,
   ...props
 }: SectionLabelProps) {
@@ -165,6 +172,7 @@ export function SectionLabel({
       ) : null}
     </>
   );
+  const split = collapsible && labelAction != null;
   const Row = host ? ActionHost : "div";
   return (
     <Row
@@ -177,18 +185,34 @@ export function SectionLabel({
       {leading}
       <Heading className={[styles.heading, classNames?.heading].filter(Boolean).join(" ")}>
         {collapsible ? (
-          <Button
-            variant="item"
-            size="sm"
-            motion="none"
-            aria-expanded={expanded}
-            aria-controls={controls}
-            className={[styles.toggle, classNames?.toggle].filter(Boolean).join(" ")}
-            onClick={() => onExpandedChange?.(!expanded)}
-          >
-            {mark()}
-            {label}
-          </Button>
+          <>
+            <Button
+              variant="item"
+              size="sm"
+              motion="none"
+              aria-expanded={expanded}
+              aria-controls={controls}
+              aria-label={split ? labelAction.toggleLabel : undefined}
+              data-split={split || undefined}
+              className={[styles.toggle, classNames?.toggle].filter(Boolean).join(" ")}
+              onClick={() => onExpandedChange?.(!expanded)}
+            >
+              {mark()}
+              {split ? null : label}
+            </Button>
+            {split ? (
+              <Button
+                variant="item"
+                size="sm"
+                motion="none"
+                aria-label={labelAction.label}
+                className={styles.labelButton}
+                onClick={labelAction.onClick}
+              >
+                {label}
+              </Button>
+            ) : null}
+          </>
         ) : (
           <>
             {icon != null ? mark() : null}

@@ -27,7 +27,11 @@ export function recentVoiceContext(turns: readonly VoiceRecentTurn[]) {
         type: "message",
         role: turn.role,
         content: [
-          { type: turn.role === "user" ? "input_text" : "text", text: turn.text.slice(0, 4_000) },
+          // The realtime API rejects any other content type on an assistant message.
+          {
+            type: turn.role === "user" ? "input_text" : "output_text",
+            text: turn.text.slice(0, 4_000),
+          },
         ],
       },
     }));

@@ -47,22 +47,26 @@ function Section({
   children,
 }: {
   title: string;
-  description?: string;
+  /** Explanation behind an info icon, one paragraph per entry. */
+  description?: string | string[];
   info?: ReactNode;
   children: ReactNode;
 }) {
   const headingId = useId();
+  const paragraphs = description ? [description].flat() : [];
   return (
     <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2">
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <div className="flex min-w-0 items-center gap-1">
-          <h3 id={headingId} className="text-ui-caption font-medium text-(--ui-text-secondary)">
-            {title}
-          </h3>
-          {info}
-        </div>
-        {description ? (
-          <p className="text-ui-caption text-(--ui-text-secondary)">{description}</p>
+      <div className="flex min-w-0 items-center gap-1">
+        <h3 id={headingId} className="text-ui-caption font-medium text-(--ui-text-secondary)">
+          {title}
+        </h3>
+        {info}
+        {paragraphs.length ? (
+          <InfoPopover label={t("About {p0}", { p0: title })}>
+            {paragraphs.map((text) => (
+              <p key={text}>{text}</p>
+            ))}
+          </InfoPopover>
         ) : null}
       </div>
       <div className="flex min-w-0 flex-col gap-2.5">{children}</div>
@@ -89,7 +93,6 @@ function Line({
   children: ReactNode;
 }) {
   const labelId = useId();
-  const descriptionId = useId();
   return (
     <div
       className={`flex min-w-0 gap-x-3 gap-y-1.5 ${stacked ? "flex-col" : "flex-wrap items-center justify-between"}`}
@@ -100,17 +103,16 @@ function Line({
             {label}
           </span>
           {info}
+          {description ? (
+            <InfoPopover label={t("About {p0}", { p0: label })}>
+              <p>{description}</p>
+            </InfoPopover>
+          ) : null}
         </div>
-        {description ? (
-          <p id={descriptionId} className="text-ui-caption text-(--ui-text-secondary)">
-            {description}
-          </p>
-        ) : null}
       </div>
       <div
         role="group"
         aria-labelledby={labelId}
-        aria-describedby={description ? descriptionId : undefined}
         className={`flex min-w-0 items-center gap-2 [&_.bycoda-arc-select]:min-h-(--ui-control-height-compact) [&_.bycoda-arc-select]:py-0 [&_.bycoda-arc]:[--control-height-md:var(--ui-control-height-compact)] ${stacked ? "" : "min-w-28 shrink-0 justify-end"}`}
       >
         {children}
@@ -251,17 +253,17 @@ export function CrewWorkingSettings({
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <p className="text-ui-caption text-(--ui-text-secondary)">
-        {t(
-          "These settings belong to the crew. They apply to work you start afterwards; work already started keeps its own.",
-        )}
-      </p>
       <div className="grid min-w-0 gap-x-10 gap-y-5 @min-[48rem]/crew-editor:grid-cols-2">
         <Section
           title={t("Models")}
-          description={t(
-            "Rules apply first, to every member including fixed models. A fixed model that fails a rule is not used.",
-          )}
+          description={[
+            t(
+              "These settings belong to the crew. They apply to work you start afterwards; work already started keeps its own.",
+            ),
+            t(
+              "Rules apply first, to every member including fixed models. A fixed model that fails a rule is not used.",
+            ),
+          ]}
         >
           {eligibilityFeedback}
           <Line

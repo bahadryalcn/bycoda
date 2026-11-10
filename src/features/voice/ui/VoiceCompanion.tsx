@@ -2898,6 +2898,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     else if (command === "endPushToTalk") endPushToTalk();
     else if (command === "cancelPushToTalk") cancelPushToTalk();
     else if (command === "silence") client.current?.silence();
+    else if (command === "dismissError") setError("");
     else if (command === "disconnect") close();
     else if (command === "dock") dock();
     else if (command === "close") {
@@ -2932,10 +2933,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     shownMessage = bodyVisible ? message : "",
     shownError = bodyVisible ? error : "";
   const chatTurns = useVoiceChatTurns(shownTranscript, shownMessage, bodyVisible);
-  const actionableError =
-    shownError === t("Conversation was not saved. Retry.") ||
-    shownError ===
-      t("Current computer presence could not be verified. Mark yourself here before talking.");
   const scopeTitle =
     props.workspace && globalScope
       ? t("Global")
@@ -3193,6 +3190,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         working={Boolean(target?.busy)}
         audioLevel={audioLevel}
         title={identity.title}
+        name={identity.name}
+        avatar={assistantSnapshot?.profile.avatar}
         scopeTitle={scopeTitle}
         targetTitle={target?.title}
         summary={summary}
@@ -3222,7 +3221,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         toolActivities={visibleToolActivities}
         chatTurns={chatTurns}
         error={shownError}
-        actionableError={actionableError}
+        onDismissError={() => setError("")}
         liveText={
           compact
             ? `${shownError || statusText}${target?.busy ? ` | ${sessionStatusText}` : ""}`

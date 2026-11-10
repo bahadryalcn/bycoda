@@ -38,6 +38,7 @@ async function mount(
   active: WorkspaceToolId = "tasks",
   includeServers = false,
   includeAuxiliaryTools = false,
+  includeCrews = false,
 ) {
   const container = document.createElement("div");
   document.body.append(container);
@@ -57,6 +58,7 @@ async function mount(
             onSelect,
             includeServers,
             includeAuxiliaryTools,
+            includeCrews,
           },
         },
         h(ToolHeader, null, "Title"),
@@ -286,4 +288,21 @@ it("includes and selects all added tools in a grouped window", async () => {
     "terminal",
     "assistant",
   ]);
+});
+
+it("lists Crews after Automations and offers no separate window while Crews shows", async () => {
+  const { container, onSelect } = await mount(true, true, "automations", false, false, true);
+  const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+  const names = tabs.map((tab) => tab.textContent);
+  expect(names.indexOf("Crews")).toBe(names.indexOf("Automations") + 1);
+  expect(container.querySelector('[aria-label="Open in new window"]')).not.toBeNull();
+  await act(() => tabs[names.indexOf("Crews")]!.click());
+  expect(onSelect).toHaveBeenCalledWith("crews");
+});
+
+it("marks Crews active and hides the window actions on the Crews page", async () => {
+  const { container } = await mount(true, true, "crews");
+  expect(container.querySelector('[aria-selected="true"]')!.textContent).toBe("Crews");
+  expect(container.querySelector('[aria-label="Open in new window"]')).toBeNull();
+  expect(container.querySelector('[aria-label="Open all tools in one window"]')).toBeNull();
 });

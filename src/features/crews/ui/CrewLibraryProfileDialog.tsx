@@ -2,6 +2,7 @@ import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Modal } from "../../../shared/ui/Modal";
 import type { CrewAgent, SavedCrewAgent } from "../model/crew";
 import type { ProjectCrews, useProjectCrews } from "../model/crewClient";
@@ -59,7 +60,13 @@ export function CrewLibraryProfileDialog({
       }}
       footer={
         <>
-          <span className="min-w-0 flex-1" />
+          <span className="min-w-0 flex-1">
+            <InfoPopover>
+              {t(
+                "Crews that use this profile unchanged follow it; customized members keep their own edits.",
+              )}
+            </InfoPopover>
+          </span>
           <Button variant="ghost" disabled={pending} onClick={onClose}>
             {t("Cancel")}
           </Button>
@@ -82,13 +89,10 @@ export function CrewLibraryProfileDialog({
           groups={data.groupsSupported}
           groupSuggestions={groupNames}
           nameError={showIssues && !agent.name.trim() ? t("Add a name") : undefined}
+          machineId={data.machine.id}
+          modelPoolsSupported={data.modelPoolsSupported}
           modelError={showIssues && !agent.candidates.length ? t("Choose a model") : undefined}
         />
-        <p className="text-ui-caption text-(--ui-text-secondary)">
-          {t(
-            "Crews that use this profile unchanged follow it; customized members keep their own edits.",
-          )}
-        </p>
       </fieldset>
     </Modal>
   );

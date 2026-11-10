@@ -19,6 +19,9 @@ export const HOST_CREW_ACTIVE = "crews.active.v1";
 export const HOST_CREW_MEMBER_ASK = "crews.member.ask.v1";
 /** Members carry a tool profile the Host enforces on their Conversation Tool calls. */
 export const HOST_CREW_TOOLS = "crews.tools.v1";
+/** Host-wide named model pools (`crews.pools.list|save|delete`); members reference one by id. */
+export const HOST_CREW_MODEL_POOLS = "crews.model-pools.v1";
+export const CREW_MODEL_POOL_LIMIT = 50;
 export const CREW_CAPABILITIES = [
   "code",
   "review",
@@ -66,6 +69,15 @@ export type CrewAgent = {
   handle?: string;
   /** Narrows the member's session tools; absent means unchanged. */
   tools?: CrewToolProfile;
+  /** An automatic member that takes its candidates from this model pool; `candidates` is the Host's copy. */
+  pool?: { id: string };
+};
+/** An owner-defined set of automatic candidates shared by every member that references it. */
+export type CrewModelPool = {
+  id: string;
+  name: string;
+  candidates: CrewCandidate[];
+  updatedAt: number;
 };
 export type CrewPolicy = {
   preset: "economy" | "balanced" | "quality";
@@ -171,6 +183,37 @@ const number = (value: unknown, min: number, max: number): number => {
     throw new Error("Invalid crew number");
   return value;
 };
+export function parseCrewCandidate(value: unknown): CrewCandidate {
+  const c = record(value);
+  if (!isRemoteProvider(c.harness)) throw new Error("Invalid crew provider");
+  const settings = record(c.modelSettings ?? {});
+  if (
+    Object.keys(settings).length > 32 ||
+    Object.values(settings).some((v) => typeof v !== "string" || v.length > 256)
+  )
+    throw new Error("Invalid model settings");
+  const capabilities: CrewCandidate["capabilities"] = {};
+  for (const [key, value] of Object.entries(record(c.capabilities ?? {}))) {
+    if (!CREW_CAPABILITIES.includes(key as CrewCapability)) throw new Error("Unknown capability");
+    const evidence = record(value);
+    if (!["available", "unavailable", "unknown"].includes(String(evidence.state)))
+      throw new Error("Invalid capability evidence");
+    capabilities[key as CrewCapability] = {
+      state: evidence.state as "available",
+      observedAt: number(evidence.observedAt, 0, Number.MAX_SAFE_INTEGER),
+      source: text(evidence.source, 500),
+    };
+  }
+  return {
+    id: text(c.id),
+    harness: c.harness,
+    model: text(c.model),
+    modelSettings: settings as Record<string, string>,
+    capabilities,
+    ...(c.cost === undefined ? {} : { cost: number(c.cost, 0, 1_000_000) }),
+    ...(c.quality === undefined ? {} : { quality: number(c.quality, 0, 100) }),
+  };
+}
 export function parseCrewAgent(value: unknown): CrewAgent {
   const a = record(value);
   if (!["coordinator", "specialist", "reviewer", "advisor"].includes(String(a.role)))
@@ -179,37 +222,7 @@ export function parseCrewAgent(value: unknown): CrewAgent {
     throw new Error("Invalid member selection");
   if (!Array.isArray(a.candidates) || !a.candidates.length || a.candidates.length > 20)
     throw new Error("Choose at least one model per member");
-  const candidates = a.candidates.map((value): CrewCandidate => {
-    const c = record(value);
-    if (!isRemoteProvider(c.harness)) throw new Error("Invalid crew provider");
-    const settings = record(c.modelSettings ?? {});
-    if (
-      Object.keys(settings).length > 32 ||
-      Object.values(settings).some((v) => typeof v !== "string" || v.length > 256)
-    )
-      throw new Error("Invalid model settings");
-    const capabilities: CrewCandidate["capabilities"] = {};
-    for (const [key, value] of Object.entries(record(c.capabilities ?? {}))) {
-      if (!CREW_CAPABILITIES.includes(key as CrewCapability)) throw new Error("Unknown capability");
-      const evidence = record(value);
-      if (!["available", "unavailable", "unknown"].includes(String(evidence.state)))
-        throw new Error("Invalid capability evidence");
-      capabilities[key as CrewCapability] = {
-        state: evidence.state as "available",
-        observedAt: number(evidence.observedAt, 0, Number.MAX_SAFE_INTEGER),
-        source: text(evidence.source, 500),
-      };
-    }
-    return {
-      id: text(c.id),
-      harness: c.harness,
-      model: text(c.model),
-      modelSettings: settings as Record<string, string>,
-      capabilities,
-      ...(c.cost === undefined ? {} : { cost: number(c.cost, 0, 1_000_000) }),
-      ...(c.quality === undefined ? {} : { quality: number(c.quality, 0, 100) }),
-    };
-  });
+  const candidates = a.candidates.map(parseCrewCandidate);
   if (new Set(candidates.map((c) => c.id)).size !== candidates.length)
     throw new Error("Duplicate candidate IDs");
   let groups: string[] | undefined;
@@ -225,6 +238,7 @@ export function parseCrewAgent(value: unknown): CrewAgent {
   const avatar = a.avatar === undefined ? undefined : parseAvatar(a.avatar);
   const handle = a.handle === undefined ? undefined : parseHandle(a.handle);
   const tools = a.tools === undefined ? undefined : parseCrewTools(a.tools);
+  const pool = a.pool === undefined ? undefined : { id: text(record(a.pool).id) };
   return {
     id: text(a.id),
     name: text(a.name),
@@ -238,6 +252,23 @@ export function parseCrewAgent(value: unknown): CrewAgent {
     ...(avatar ? { avatar } : {}),
     ...(handle ? { handle } : {}),
     ...(tools ? { tools } : {}),
+    ...(pool && a.selection === "automatic" ? { pool } : {}),
+  };
+}
+
+/** Validates a model pool at the trust boundary; `updatedAt` is the Host's, never the caller's. */
+export function parseCrewModelPool(value: unknown): CrewModelPool {
+  const p = record(value);
+  if (!Array.isArray(p.candidates) || !p.candidates.length || p.candidates.length > 20)
+    throw new Error("Choose 1 to 20 models for a pool");
+  const candidates = p.candidates.map(parseCrewCandidate);
+  if (new Set(candidates.map((c) => c.id)).size !== candidates.length)
+    throw new Error("Duplicate candidate IDs");
+  return {
+    id: text(p.id),
+    name: text(p.name, 80),
+    candidates,
+    updatedAt: typeof p.updatedAt === "number" ? p.updatedAt : 0,
   };
 }
 

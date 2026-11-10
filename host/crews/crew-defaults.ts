@@ -4,6 +4,7 @@ import {
   parseCrewDefinition,
   type CrewAgent,
   type CrewDefinition,
+  type CrewModelPool,
   type SavedCrewAgent,
 } from "../../src/features/crews/model/crew";
 import {
@@ -20,6 +21,8 @@ export type CrewDefaultsState = {
   defaultInstructionHashes?: Record<string, string>;
   /** Set once `migrateLinkedMembers` normalized member links to the library. */
   membershipLinked?: boolean;
+  /** Host-wide owner-defined model pools (`crew-model-pools.ts`). */
+  pools?: CrewModelPool[];
 };
 
 /** Immutable fingerprints of the original seed, before revision tracking existed. */

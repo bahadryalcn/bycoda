@@ -15,7 +15,7 @@ import {
 } from "../features/connections/ui/RemoteConnectionFeedback";
 import { AssistantNotifications } from "../features/assistant/ui/AssistantNotifications";
 import { AssistantBackgroundRoom } from "../features/assistant/model/AssistantBackgroundRoom";
-import { useVoiceAppBridge, voiceRailProjects } from "./workspace/bridges/useVoiceAppBridge";
+import { useVoiceAppBridge, useVoiceRailProjects } from "./workspace/bridges/useVoiceAppBridge";
 import { useAppUiControl } from "./workspace/control/useAppUiControl";
 import {
   createConversationTerminalControl,
@@ -2002,10 +2002,7 @@ function Workspace({
     setRecents,
   });
   useQuickComposerLaunches(launchQuickSession);
-  const voiceProjects = useMemo(
-    () => voiceRailProjects(recents, projectCwd, lockSnapshot),
-    [recents, projectCwd, lockSnapshot],
-  );
+  const voiceProjects = useVoiceRailProjects(recents, projectCwd, lockSnapshot);
   const voiceApp = useVoiceAppBridge({
     projects: voiceProjects,
     sessions,

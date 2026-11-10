@@ -1,4 +1,4 @@
-import { useMemo, useRef, useSyncExternalStore } from "react";
+import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   loadTabGroupLabels,
   subscribeTabGroupLabels,
@@ -71,12 +71,40 @@ type Deps = {
   | "onStopForRoom"
 >;
 
-/** Match the rail's project directory, including a not-yet-remembered current folder. */
-export function voiceRailProjects(recents: RecentProject[], current: string, locks: LockSnapshot) {
-  return visibleProjects(
-    locks,
-    [...collectRailProjects(recents, current).values()],
-    (item) => item.path,
+/**
+ * Match the rail's project directory, including a not-yet-remembered current folder.
+ *
+ * `visited` keeps such a folder listed after the owner navigates away. Voice treats a project
+ * leaving this list as scope loss and closes capture, and navigation must not be one. A folder
+ * leaves `visited` once it is remembered, so forgetting or locking it still hides it.
+ */
+export function voiceRailProjects(
+  recents: RecentProject[],
+  current: string,
+  locks: LockSnapshot,
+  visited: Map<string, RecentProject> = new Map(),
+) {
+  const rail = collectRailProjects(recents, current);
+  const remembered = collectRailProjects(recents, "");
+  for (const [key, project] of rail) {
+    if (remembered.has(key)) visited.delete(key);
+    else visited.set(key, project);
+  }
+  for (const key of remembered.keys()) visited.delete(key);
+  const kept = [...visited].filter(([key]) => !rail.has(key)).map(([, project]) => project);
+  return visibleProjects(locks, [...rail.values(), ...kept], (item) => item.path);
+}
+
+/** The voice project list for one window; see {@link voiceRailProjects} for `visited`. */
+export function useVoiceRailProjects(
+  recents: RecentProject[],
+  current: string,
+  locks: LockSnapshot,
+) {
+  const [visited] = useState(() => new Map<string, RecentProject>());
+  return useMemo(
+    () => voiceRailProjects(recents, current, locks, visited),
+    [recents, current, locks, visited],
   );
 }
 

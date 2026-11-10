@@ -255,6 +255,9 @@ export function StartCrewDialog({
   );
 }
 
+/** Chips shown per role before the "+N" trigger. */
+const ROSTER_CHIP_LIMIT = 6;
+
 /** Members grouped by responsibility; a member named like its responsibility is not repeated. */
 function CrewRosterSummary({ crew }: { crew: CrewDefinition }) {
   const looks = teamTraits(crew.agents);
@@ -290,11 +293,13 @@ function CrewRosterSummary({ crew }: { crew: CrewDefinition }) {
           }
         >
           {group.names.length ? (
+            // A fixed cap, not measured packing: chips wrap onto as many lines as they need and
+            // the "+N" trigger always shows, instead of measuring widths in a narrow dialog.
             <BadgeList
               label={group.label}
               size="xs"
-              rows={2}
-              className="[--badge-list-item-max:16rem]"
+              max={ROSTER_CHIP_LIMIT}
+              className="min-w-0 [--badge-list-item-max:16rem]"
               items={group.names.map((member) => ({
                 id: member.id,
                 label: member.name,

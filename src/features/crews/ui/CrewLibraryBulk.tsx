@@ -70,7 +70,7 @@ export function CrewLibraryBulkBar({
   const chosen = visible.filter((agent) => selected.has(agent.id)).length;
   const targets = bulkTargets(visible, selected);
   const apply = async (candidate: CrewCandidate) => {
-    if (gate.current || !targets.length) return;
+    if (gate.current || !targets.length) return false;
     gate.current = true;
     setApplying(true);
     setDone(null);
@@ -83,6 +83,7 @@ export function CrewLibraryBulkBar({
       );
       setDone(result.updated);
       setFailures(result.failures);
+      return result.failures.length === 0;
     } finally {
       gate.current = false;
       setApplying(false);
@@ -90,29 +91,34 @@ export function CrewLibraryBulkBar({
   };
   return (
     <div className="flex min-w-0 flex-col gap-2 px-3 py-2">
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <div className="flex items-center gap-2 text-ui-body">
-          <Checkbox
-            aria-label={t("Select all")}
-            checked={visible.length > 0 && chosen === visible.length}
-            indeterminate={chosen > 0 && chosen < visible.length}
-            disabled={applying || !visible.length}
-            onChange={(event) =>
-              onSelectedChange(event.target.checked ? new Set(visible.map((a) => a.id)) : new Set())
-            }
-          />
-          <span aria-hidden>{t("Select all")}</span>
-        </div>
+      {/* Select all leads the model bar's row so checkbox, picker and Apply share one line.
+          The bar's own inline confirmation sits below that row and cannot shift the controls.
+          Success is confirmed once, by that inline message; only failures get a banner. */}
+      <div className="flex min-w-0 flex-wrap items-start gap-2">
         <CrewBulkModelBar
           cwd={cwd}
           catalog={data.catalog}
           targetCount={targets.length}
-          onApply={(candidate) => {
-            apply(candidate).catch(() => {});
-          }}
+          onApply={(candidate) => apply(candidate).catch(() => false)}
           disabled={applying || !targets.length}
           noun="profiles"
           suggested={commonCandidate(targets)}
+          leading={
+            <div className="flex items-center gap-2 text-ui-body">
+              <Checkbox
+                aria-label={t("Select all")}
+                checked={visible.length > 0 && chosen === visible.length}
+                indeterminate={chosen > 0 && chosen < visible.length}
+                disabled={applying || !visible.length}
+                onChange={(event) =>
+                  onSelectedChange(
+                    event.target.checked ? new Set(visible.map((a) => a.id)) : new Set(),
+                  )
+                }
+              />
+              <span aria-hidden>{t("Select all")}</span>
+            </div>
+          }
         />
         {assignment.supported ? (
           <CrewBulkTeamAdd
@@ -122,9 +128,6 @@ export function CrewLibraryBulkBar({
           />
         ) : null}
       </div>
-      {done !== null && !failures.length ? (
-        <Alert tone="success">{t("Updated {p0} profiles", { p0: done })}</Alert>
-      ) : null}
       {failures.length ? (
         <Alert tone="danger">
           <p>{t("Updated {p0} profiles, {p1} failed:", { p0: done ?? 0, p1: failures.length })}</p>

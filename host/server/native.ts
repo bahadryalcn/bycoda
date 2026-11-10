@@ -29,6 +29,7 @@ import {
   applyProviderAccountStyles,
   readProviderAccountStyles,
 } from "../providers/provider-account-styles";
+import { readDisabledModels } from "../providers/disabled-models";
 import type { ServerBindings } from "./bindings";
 export function createNativeRuntime(
   dependencies: Pick<
@@ -99,6 +100,7 @@ export function createNativeRuntime(
         await readProviderAccountStyles(dependencies.engine.store).catch(() => ({})),
       ),
     providers: dependencies.providers,
+    disabledModels: () => readDisabledModels(dependencies.engine.store),
   });
   const nativeDevicesService = createNativeDevicesService();
   const nativeDevicesOwner = (token: string) =>

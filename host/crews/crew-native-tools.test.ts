@@ -40,6 +40,13 @@ describe("native tools per provider", () => {
     },
   );
 
+  it("combined extras stay non-writing for Claude and Codex and fail closed elsewhere", () => {
+    const combined = input({ preset: "read-only", extras: ["design", "browser"] });
+    expect(nativeReadOnly(crewNativeInput("claude", combined).modelSettings)).toBe(true);
+    expect(nativeReadOnly(crewNativeInput("codex", combined).modelSettings)).toBe(true);
+    expect(() => crewNativeInput("cursor", combined)).toThrow(/cannot run read-only members/);
+  });
+
   it.each(["cursor", "grok", "opencode", "pi", "omp", "fx", "hermes", "antigravity", "acp"])(
     "%s cannot run read-only members and fails closed",
     (provider) => {

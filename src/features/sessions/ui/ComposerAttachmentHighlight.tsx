@@ -3,11 +3,12 @@ import type { Attachment } from "../model/session";
 import { splitAttachmentTokens, tokenLabel } from "../model/attachmentTokens";
 import { attachmentPresentation } from "../model/attachmentPresentation";
 import { splitCitationTokens } from "../model/citationTokens";
-import { BlockQuote } from "../../../shared/ui/icons";
-import { AttachmentIdentity } from "./AttachmentIdentity";
 import styles from "./ComposerAttachmentHighlight.module.css";
 
-/** Decoration only: every character retains its native textarea width. */
+/**
+ * Decoration only: every character retains its native textarea width. The hidden brackets
+ * are the chip's padding; the label already names the kind, so the chip carries no icon.
+ */
 export function ComposerAttachmentHighlight({
   text,
   attachments,
@@ -24,12 +25,7 @@ export function ComposerAttachmentHighlight({
     splitCitationTokens(plain, citations).map((part, index) =>
       "token" in part ? (
         <span key={index} className={styles.token} data-composer-citation-token="">
-          <span className={styles.bracket}>
-            {"["}
-            <span className={styles.icon} aria-hidden>
-              <BlockQuote className={styles.quoteIcon} />
-            </span>
-          </span>
+          <span className={styles.bracket}>{"["}</span>
           {tokenLabel(part.token)}
           <span className={styles.bracket}>{"]"}</span>
         </span>
@@ -42,12 +38,7 @@ export function ComposerAttachmentHighlight({
     const presentation = attachmentPresentation(part.attachment);
     return (
       <span key={index} className={styles.token} data-composer-attachment-kind={presentation.kind}>
-        <span className={styles.bracket}>
-          {"["}
-          <span className={styles.icon} aria-hidden>
-            <AttachmentIdentity attachment={part.attachment} size="token" />
-          </span>
-        </span>
+        <span className={styles.bracket}>{"["}</span>
         {part.label}
         <span className={styles.bracket}>{"]"}</span>
       </span>

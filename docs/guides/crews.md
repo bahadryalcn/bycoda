@@ -216,6 +216,11 @@ quality ratings. Groups help find library members and require a host that
 supports member groups. Inspecting capabilities does not establish verified
 runtime access.
 
+The **Models** tab (hosts with model pools) defines named **model pools**: one
+set of automatic candidates with cost, quality, effort and mode, shared by every
+library profile and crew member that uses the pool. Saving a pool updates those
+members; deleting it leaves them with their last models and no pool.
+
 **Advanced** holds model eligibility (highest cost and lowest quality allowed,
 unrated cost), automatic ranking (**Economy**, **Balanced**, **Quality**),
 execution limits (**Members working at once** 1–4, **Assignments per work** 1–20,
@@ -265,16 +270,21 @@ longer linked. Work that is already running keeps its team snapshot. On hosts
 without linked members, crews hold independent copies and a library edit reaches a
 crew only through an explicit update there.
 
-A member can have **Tools**: Read-only, Code (the default), Design, Browser or Custom. A profile only
+A member can have **Tools**, chosen as combinable options: **Write code**, **Image generation** and
+**Browser**. Nothing selected means read-only; Image generation and Browser add to it and can be
+combined. Write code allows every Host tool and can be narrowed with **Limit Host tools to a list**.
+MCP servers and Skills are independent lists and can be set with any combination. A profile only
 narrows what that member's sessions can use; it never goes beyond the run's access mode or the
 owner approvals, and work already running keeps the profile it started with. The Host blocks Host
-tools outside the profile with a clear error. Read-only, Design and Browser also remove the
-provider's own file-edit and shell tools: Claude loses them and Codex runs in a read-only sandbox;
-any other provider refuses to start the member ("<provider> cannot run read-only members") instead
-of running it with write tools. Custom leaves provider tools as the run's access mode allows. On
-Custom, the MCP server list keeps only those servers for Claude, Codex and OpenCode (other providers
-refuse the member), and the skill list disables every other skill (Claude blocks them at launch;
-other providers are told not to use them). The control needs a host that supports tool profiles.
+tools outside the profile with a clear error. Without Write code the provider's own file-edit and
+shell tools are removed too: Claude loses them and Codex runs in a read-only sandbox; any other
+provider refuses to start the member ("<provider> cannot run read-only members") instead of
+running it with write tools. With Write code, provider tools stay as the run's access mode
+allows. The MCP server list keeps only those servers for Claude, Codex and OpenCode (other
+providers refuse the member), and the skill list disables every other skill (Claude blocks them at
+launch; other providers are told not to use them). Profiles saved with the earlier single choice
+(Read-only, Code, Design, Browser, Custom) keep their meaning. The control needs a host that
+supports tool profiles.
 
 Group rename/delete updates the
 profiles, not the members' existence; deleting a group keeps the members. These

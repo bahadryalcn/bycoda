@@ -9,6 +9,7 @@ import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Modal } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -132,11 +133,12 @@ export function CrewLibrary({
                 onSelectedChange={setSelected}
               />
             ) : null}
+            {/* The shared collection list caps its height and scrolls inside; the library
+                grows with its rows and scrolls with the page instead. */}
             <div
-              className="settings-collection-list"
+              className="settings-collection-list max-h-none! overflow-visible!"
               role="region"
               aria-label={t("Member library")}
-              tabIndex={0}
             >
               {!agents.length ? (
                 <EmptyState
@@ -408,6 +410,8 @@ function LibraryMemberDialog({
           agent={agent}
           identity={data.identitySupported}
           tools={data.toolsSupported}
+          machineId={data.machine.id}
+          modelPoolsSupported={data.modelPoolsSupported}
           handleError={/handle/i.test(error) ? error : undefined}
           onChange={(patch) => setAgent((current) => ({ ...current, ...patch }))}
           groups={data.groupsSupported}
@@ -417,7 +421,14 @@ function LibraryMemberDialog({
           autoFocus={!saved}
         />
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <span className="text-ui-body font-medium">{t("Available in")}</span>
+          <span className="flex items-center gap-1 text-ui-body font-medium">
+            {t("Available in")}
+            <InfoPopover>
+              {t(
+                "Crews that use this profile unchanged follow it; customized members keep their own edits.",
+              )}
+            </InfoPopover>
+          </span>
           {saved ? (
             <Badge size="md">
               {saved.projectId ? t("This project") : t("All projects on this host")}
@@ -434,9 +445,6 @@ function LibraryMemberDialog({
             />
           )}
         </div>
-        <p className="text-ui-caption text-(--ui-text-secondary)">
-          {t("Crews keep their own copy. Changes here reach a crew only when you update it there.")}
-        </p>
         {confirmDialog}
       </fieldset>
     </Modal>

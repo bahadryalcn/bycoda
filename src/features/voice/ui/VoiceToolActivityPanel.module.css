@@ -1,18 +1,25 @@
 .trigger {
+  position: relative;
   flex-shrink: 0;
-  gap: 6px;
-  color: var(--ui-text-secondary);
-  font-variant-numeric: tabular-nums;
 }
+/* Count on the icon's corner. */
 .count {
-  min-inline-size: 18px;
-  padding-inline: 5px;
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  min-inline-size: 14px;
+  padding-inline: 3px;
   border-radius: var(--radius-pill);
-  background: var(--ui-tone-neutral-hover);
-  color: var(--ui-tone-neutral-fg);
+  background: var(--ui-tone-neutral-solid, var(--ui-tone-neutral-fg));
+  color: var(--ui-surface-floating);
   font-size: var(--ui-font-micro);
-  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
   text-align: center;
+  pointer-events: none;
+}
+.trigger[data-running] .count {
+  background: var(--ui-tone-info-fg);
 }
 .popover {
   padding: 8px 10px;
@@ -62,8 +69,8 @@
   grid-column: 1 / -1;
   justify-self: start;
 }
-/* The single live signal while voice actions run: the label breathes. */
-.trigger :global(.shimmer-text) {
+/* The single live signal while voice actions run: the icon breathes. */
+.trigger[data-running] :global(svg) {
   animation: voice-action-working 1.6s var(--motion-ease-standard) infinite;
 }
 @keyframes voice-action-working {
@@ -72,7 +79,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .trigger :global(.shimmer-text) {
+  .trigger[data-running] :global(svg) {
     animation: none;
   }
 }

@@ -4,8 +4,14 @@
  */
 export const CREW_TOOL_PRESETS = ["read-only", "code", "design", "browser", "custom"] as const;
 export type CrewToolPreset = (typeof CREW_TOOL_PRESETS)[number];
+/** Capabilities a read-only member can add; combinable (`design` and `browser` presets are the single-extra forms). */
+export const CREW_TOOL_EXTRAS = ["design", "browser"] as const;
+export type CrewToolExtra = (typeof CREW_TOOL_EXTRAS)[number];
 export type CrewToolProfile = {
+  /** Base allowance. `read-only`, `design` and `browser` are non-writing; `code` and `custom` allow every Host tool. */
   preset: CrewToolPreset;
+  /** Added to a non-writing preset (union with the preset's own extra); ignored and dropped for `code`/`custom`. */
+  extras?: CrewToolExtra[];
   /** Host action ids (`files.read`) or groups (`browser`, `browser.*`); narrows the preset. */
   conversationTools?: string[];
   /** Outgoing MCP server names the member may use; the Host hides the rest at launch. */
@@ -33,6 +39,24 @@ const list = (
   return unique.length ? unique : undefined;
 };
 
+const extrasOf = (value: unknown): CrewToolExtra[] => {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 8) throw new Error("Invalid member tools");
+  return value.map((entry) => {
+    const extra = CREW_TOOL_EXTRAS.find((candidate) => candidate === entry);
+    if (!extra) throw new Error("Invalid member tools");
+    return extra;
+  });
+};
+
+/** Effective extras of a non-writing profile: the preset's own extra plus `extras`, deduplicated. */
+export const crewToolExtras = (
+  profile: Pick<CrewToolProfile, "preset" | "extras">,
+): CrewToolExtra[] =>
+  CREW_TOOL_EXTRAS.filter(
+    (extra) => profile.preset === extra || profile.extras?.includes(extra) === true,
+  );
+
 /** Plain `code` without lists is the default, so it normalizes to no profile. */
 export function parseCrewTools(value: unknown): CrewToolProfile | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -40,7 +64,7 @@ export function parseCrewTools(value: unknown): CrewToolProfile | undefined {
   const t = value as Record<string, unknown>;
   if (
     Object.keys(t).some(
-      (key) => !["preset", "conversationTools", "mcpServers", "skills"].includes(key),
+      (key) => !["preset", "extras", "conversationTools", "mcpServers", "skills"].includes(key),
     )
   )
     throw new Error("Invalid member tools");
@@ -52,9 +76,14 @@ export function parseCrewTools(value: unknown): CrewToolProfile | undefined {
   );
   const mcpServers = list(t.mcpServers, CREW_TOOL_LIMITS.names, name);
   const skills = list(t.skills, CREW_TOOL_LIMITS.names, name);
+  const writes = preset === "code" || preset === "custom";
+  const extras = writes
+    ? undefined
+    : [...new Set(extrasOf(t.extras))].filter((extra) => extra !== preset);
   if (preset === "code" && !conversationTools && !mcpServers && !skills) return undefined;
   return {
     preset,
+    ...(extras?.length ? { extras } : {}),
     ...(conversationTools ? { conversationTools } : {}),
     ...(mcpServers ? { mcpServers } : {}),
     ...(skills ? { skills } : {}),
