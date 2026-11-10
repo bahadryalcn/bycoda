@@ -140,6 +140,38 @@ it("clamps the full physical width inside the viewport at 125 percent zoom", asy
   expect((Number.parseFloat(surface.style.left) + 200) * 1.25).toBe(990);
 });
 
+it("remeasures intrinsic width when an open picker receives different options", async () => {
+  vi.stubGlobal("innerWidth", 800);
+  let contentWidth = 280;
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.style.width === "max-content"
+      ? contentWidth
+      : Number.parseFloat(this.style.width) || contentWidth;
+  });
+  await act(async () => root.render(createElement(Popover, { anchor, minWidth: 240 }, "Loading…")));
+  const placed = document.querySelector<HTMLElement>(
+    "[data-popover-side]:not([data-popover-flow])",
+  )!;
+  await frame();
+  expect(placed.style.width).toBe("280px");
+  contentWidth = 620;
+  await act(async () =>
+    root.render(createElement(Popover, { anchor, minWidth: 240 }, "Long fetched project path")),
+  );
+  await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
+  await frame();
+  expect(placed.style.width).toBe("620px");
+  contentWidth = 120;
+  await act(async () =>
+    root.render(createElement(Popover, { anchor, minWidth: 240 }, "Filtered project")),
+  );
+  await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
+  await frame();
+  expect(placed.style.width).toBe("240px");
+});
+
 it("bounds the default content so it scrolls instead of clipping, and owns one strict region when asked", async () => {
   await act(async () => root.render(createElement(Popover, { anchor, solid: true }, "Menu")));
   let content = document.querySelector<HTMLElement>("[data-popover-flow]")!;

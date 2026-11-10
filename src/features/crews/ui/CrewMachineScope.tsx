@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { pathKey } from "../../../shared/lib/paths";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { TextField } from "../../../shared/ui/TextField";
 import { Folder, FolderPlus } from "../../../shared/ui/icons";
@@ -34,6 +35,7 @@ type CrewState = ReturnType<typeof useProjectCrews>;
  * connected machines, any project registered there, or a new project folder are the
  * alternatives. */
 export function useCrewMachineScope(cwd: string, state: CrewState) {
+  const createFormId = useId();
   const machines = useQuery({
     queryKey: [HOST_CREWS, "machines"],
     queryFn: async () => orderCrewMachines(await backgroundMachines(HOST_CREWS)),
@@ -126,44 +128,67 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
     };
     return (
       <div
-        className={`flex min-w-0 flex-col gap-1 ${wide || newName !== null ? "flex-1 basis-48" : "w-full max-w-64 @min-[36rem]/crew-management:w-64"}`}
+        className={`flex min-w-0 flex-col gap-1 ${wide ? "flex-1 basis-48" : "w-full max-w-64 @min-[36rem]/crew-management:w-64"}`}
       >
-        {newName === null ? (
-          <SearchableSelect
-            label={t("Project")}
-            value={scopeCwd}
-            options={options}
-            disabled={disabled || creating}
-            onChange={setScopeCwd}
-            // Pinned below the list, so it stays visible however many projects there are.
-            footer={({ close }) => (
-              <Button
-                variant="ghost"
-                size="sm"
-                startIcon={<FolderPlus className="icon-sm" />}
-                onClick={() => {
-                  close();
-                  setCreateError("");
-                  setNewName("");
-                }}
-              >
-                {t("New project…")}
-              </Button>
-            )}
-          />
-        ) : (
-          // Takes the picker's place, so choosing New project… does not grow the dialog.
-          <form
-            className="flex min-w-0 flex-wrap items-end gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              create().catch(() => {});
+        <SearchableSelect
+          label={t("Project")}
+          value={scopeCwd}
+          options={options}
+          disabled={disabled || creating}
+          onChange={setScopeCwd}
+          // Pinned below the list, so it stays visible however many projects there are.
+          footer={({ close }) => (
+            <Button
+              variant="ghost"
+              size="sm"
+              startIcon={<FolderPlus className="icon-sm" />}
+              onClick={() => {
+                close();
+                setCreateError("");
+                setNewName("");
+              }}
+            >
+              {t("New project…")}
+            </Button>
+          )}
+        />
+        {newName !== null ? (
+          <Modal
+            title={t("Create project")}
+            context={crewMachineLabel(machine)}
+            size="sm"
+            initialFocus="input"
+            onClose={() => {
+              if (!creating) cancel();
             }}
+            footer={
+              <ModalActions>
+                <Button variant="ghost" disabled={creating} onClick={cancel}>
+                  {t("Cancel")}
+                </Button>
+                <Button
+                  type="submit"
+                  form={createFormId}
+                  variant="primary"
+                  startIcon={<FolderPlus className="icon-sm" />}
+                  loading={creating}
+                  disabled={disabled || !newName.trim()}
+                >
+                  {t("Create project")}
+                </Button>
+              </ModalActions>
+            }
           >
-            <div className="min-w-0 flex-1 basis-48">
+            <form
+              id={createFormId}
+              className="flex min-w-0 flex-col gap-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                create().catch(() => {});
+              }}
+            >
               <TextField
-                // Keeps the field's "Project" label, so the form reads as that field's new value.
-                label={t("Project")}
+                label={t("Project name")}
                 placeholder={t("New project folder")}
                 value={newName}
                 autoFocus
@@ -171,25 +196,11 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
                 error={createError || undefined}
                 onChange={(event) => setNewName(event.target.value)}
               />
-            </div>
-            <Button
-              type="submit"
-              variant="secondary"
-              startIcon={<FolderPlus className="icon-sm" />}
-              loading={creating}
-              disabled={disabled || !newName.trim()}
-            >
-              {t("Create project")}
-            </Button>
-            <Button variant="ghost" disabled={creating} onClick={cancel}>
-              {t("Cancel")}
-            </Button>
-          </form>
-        )}
-        {newName !== null ? (
-          <p className="text-ui-caption text-(--ui-text-secondary)">
-            {t("Created in {p0}", { p0: parent })}
-          </p>
+              <p className="min-w-0 break-words text-ui-caption text-(--ui-text-secondary)">
+                {t("Created in {p0}", { p0: parent })}
+              </p>
+            </form>
+          </Modal>
         ) : null}
         {projects.error ? (
           <InlineMessage tone="warning">

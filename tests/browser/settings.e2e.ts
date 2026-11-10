@@ -684,10 +684,7 @@ test("explicit template validation, save status and persistence preserve the las
     .getByRole("textbox", { name: "Template text", exact: true })
     .fill("Find bugs and explain their impact.");
   await page.getByRole("button", { name: "Save templates", exact: true }).click();
-  // The result count is its own live region (filter announcements); the save state is separate.
-  await expect(
-    page.locator('[data-setting-id="prompt-templates"] .template-manager-state[role="status"]'),
-  ).toContainText("Saved");
+  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeDisabled();
   await page.getByRole("textbox", { name: "Template text", exact: true }).fill("Unsaved revision");
   await page.getByRole("button", { name: "Back to workspace" }).click();
   await page.getByRole("button", { name: "Reopen settings" }).click();

@@ -27,9 +27,15 @@ import type {
   LocalStatus,
 } from "./decision-types";
 import * as discovery from "./discovery";
+import { assertLoopback, probeRequest } from "./contract-probe";
 import { readHardware } from "./hardware";
 import { type InstallPlan, createLocalInstaller, type LocalInstaller } from "./local-install";
-import { verifyEndpoint, verifyInstallationFolder, verifyModelFile } from "./manual-verify";
+import {
+  verifyEndpoint,
+  verifyInstallationFolder,
+  verifyModelFile,
+  verifyModelInstallation,
+} from "./manual-verify";
 
 const CONFIG_FILE = "config.json";
 const LOCAL_FOLDER = "local";
@@ -112,6 +118,7 @@ export class DecisionModelsService implements DecisionService {
   private readonly installer: LocalInstaller;
   private queue: Promise<unknown> = Promise.resolve();
   private lastScan: DiscoveryResult = { found: [] };
+  private activeScan?: { controller: AbortController; promise: Promise<DiscoveryResult> };
 
   constructor(options: DecisionModelsServiceOptions) {
     this.directory = options.directory;
@@ -218,9 +225,33 @@ export class DecisionModelsService implements DecisionService {
   }
 
   async scanDiscovery(): Promise<DiscoveryResult> {
-    const config = await this.load();
-    this.lastScan = await discovery.scan(config, AbortSignal.timeout(SCAN_TIMEOUT_MS));
-    return this.lastScan;
+    if (this.activeScan) return this.activeScan.promise;
+    const controller = new AbortController();
+    const promise = this.load()
+      .then((config) =>
+        discovery.scan(
+          config,
+          AbortSignal.any([controller.signal, AbortSignal.timeout(SCAN_TIMEOUT_MS)]),
+        ),
+      )
+      .then((result) => {
+        this.lastScan =
+          result.incomplete && result.found.length === 0
+            ? { ...result, found: this.lastScan.found }
+            : result;
+        return this.lastScan;
+      })
+      .finally(() => {
+        if (this.activeScan?.controller === controller) this.activeScan = undefined;
+      });
+    this.activeScan = { controller, promise };
+    return promise;
+  }
+
+  cancelDiscovery(): { cancelled: boolean } {
+    const cancelled = !!this.activeScan && !this.activeScan.controller.signal.aborted;
+    this.activeScan?.controller.abort();
+    return { cancelled };
   }
 
   discoveryResults(): DiscoveryResult {
@@ -260,6 +291,11 @@ export class DecisionModelsService implements DecisionService {
       return { kind: input.kind, ...(await verifyModelFile(input.path, loadCatalog())) };
     if (input.kind === "installation_folder")
       return { kind: input.kind, ...(await verifyInstallationFolder(input.path, loadCatalog())) };
+    if (input.kind === "model_installation")
+      return {
+        kind: "installation_folder",
+        ...(await verifyModelInstallation(input.path, loadCatalog())),
+      };
     return { kind: input.kind, ...(await verifyEndpoint(input.url, { fetchImpl: fetch })) };
   }
 
@@ -338,6 +374,18 @@ export class DecisionModelsService implements DecisionService {
 
   /** Loopback address of a local source. An installed source whose runtime is stopped is started on demand. */
   private async localAddress(source: DecisionSource): Promise<string | undefined> {
+    if (!this.installer.endpoint(source.id) && source.endpoint) {
+      assertLoopback(source.endpoint);
+      const endpoint = new URL(source.endpoint);
+      if (endpoint.username || endpoint.password)
+        throw new Error("The endpoint must not contain credentials.");
+      const health = await probeRequest(`${endpoint.origin}/health`, {
+        method: "GET",
+        timeoutMs: 1_000,
+        fetchImpl: (input, init) => fetch(input, init),
+      });
+      if (health?.status === 200) return source.endpoint;
+    }
     if (!this.installer.endpoint(source.id)) await this.installer.start(source);
     const base = this.installer.endpoint(source.id);
     const path = LOCAL_PATHS[source.adapter];

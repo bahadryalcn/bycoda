@@ -5,7 +5,7 @@ import { DropdownMenu, type DropdownMenuAction } from "../../../shared/ui/Dropdo
 import { Plus } from "../../../shared/ui/icons";
 
 /** The four ways to add a source; the dialogs for each live beside this menu. */
-export type AddPath = "manual" | "local" | "api" | "custom";
+export type AddPath = "folder" | "manual" | "local" | "api" | "custom";
 
 /** One primary action; the four paths sit in this menu. */
 export function AddMenu({
@@ -17,6 +17,12 @@ export function AddMenu({
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const items: DropdownMenuAction[] = [
+    {
+      kind: "item",
+      id: "folder",
+      label: t("Add from folder"),
+      description: t("Find a model and its runtime inside a folder."),
+    },
     {
       kind: "item",
       id: "manual",
@@ -45,7 +51,7 @@ export function AddMenu({
   return (
     <>
       <Button
-        variant="primary"
+        variant="secondary"
         size="sm"
         disabled={disabled}
         aria-haspopup="menu"

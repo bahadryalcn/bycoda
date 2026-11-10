@@ -105,7 +105,6 @@ export function VoiceSetupRow({
               size="sm"
               iconOnly
               label={t("More voice setup actions")}
-              tooltip={t("More voice setup actions")}
               aria-haspopup="menu"
               aria-expanded={moreOpen}
               onClick={() => setMoreOpen((open) => !open)}

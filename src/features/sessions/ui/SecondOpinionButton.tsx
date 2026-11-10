@@ -310,7 +310,6 @@ export function SecondOpinionButton({
           variant={triggerVariant}
           ref={setButton}
           type="button"
-          tooltip={label}
           aria-label={label}
           aria-haspopup="menu"
           aria-expanded={open}

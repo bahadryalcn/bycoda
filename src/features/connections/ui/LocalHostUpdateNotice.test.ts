@@ -8,6 +8,7 @@ const status = vi.hoisted(() => ({
   machines: [] as unknown[],
   descriptor: { capabilities: [] as string[] },
   requests: vi.fn(),
+  updates: vi.fn(),
 }));
 vi.mock("../model/connections", () => ({
   remoteRequest: async () => {
@@ -21,7 +22,9 @@ vi.mock("@tauri-apps/api/core", () => ({
       ? status.value
       : command === "remote_machines"
         ? status.machines
-        : null,
+        : command === "local_host_bundle_update"
+          ? status.updates()
+          : null,
 }));
 
 import { LocalHostUpdateNotice } from "./LocalHostUpdateNotice";
@@ -61,6 +64,37 @@ it("explains a deferred host update with both versions and the reason", async ()
 });
 
 const BUSY = "Could not check whether the host is busy.";
+
+const button = (label: string) =>
+  [...document.querySelectorAll("button")].find((entry) => entry.textContent?.includes(label));
+
+it("updates a busy host only after the owner confirms the interruption", async () => {
+  status.value = { state: "deferred", message: BUSY, bundled: "0.7.8", installed: "0.7.7" };
+  status.updates.mockReset();
+  await render();
+  await act(async () => button("Update host now")?.click());
+  expect(document.body.textContent).toContain("Running sessions and shells");
+  expect(status.updates).not.toHaveBeenCalled();
+  await act(async () => button("Cancel")?.click());
+  expect(status.updates).not.toHaveBeenCalled();
+
+  await act(async () => button("Update host now")?.click());
+  status.value = { state: "upgraded", bundled: "0.7.8", installed: "0.7.8" };
+  await act(async () => button("Stop and update")?.click());
+  expect(status.updates).toHaveBeenCalledTimes(1);
+  expect(document.body.textContent).not.toContain("A host update is waiting.");
+});
+
+it("offers no second installer while another update is being installed", async () => {
+  status.value = {
+    state: "deferred",
+    message: "Another host update is being installed.",
+    bundled: "0.7.8",
+    installed: "0.7.7",
+  };
+  await render();
+  expect(button("Update host now")).toBeUndefined();
+});
 
 it("renders nothing for equal versions once the serving host is verified", async () => {
   status.value = { state: "deferred", message: BUSY, bundled: "0.7.7", installed: "0.7.7" };

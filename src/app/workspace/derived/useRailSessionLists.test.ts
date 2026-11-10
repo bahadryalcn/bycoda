@@ -40,7 +40,6 @@ it("rebuilds only what changed when sessions or unrelated App state update", asy
     unseenFinishedIds: new Set<string>(),
     unopenedRemote: [],
     history: [],
-    onPinHistorySession: async () => {},
     deckProjectTabs: [tab],
     dirtyFiles: new Set<string>(),
     pendingWindowMoves: {},

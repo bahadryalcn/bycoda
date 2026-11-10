@@ -46,11 +46,6 @@ function hostMethods(): Set<string> {
 // (agent-app) and a social authorization scope.
 const NOT_REMOTE_CALLS = new Set(["notes.list", "inbox.list"]);
 
-// Decision-model source methods that may carry an API key. The host accepts a key only
-// from a local caller without a browser origin (assertLocalKeyCaller in
-// host/server/rpc-decision-models.ts), so the remote bridge must not forward them.
-const LOCAL_KEY_CALLS = new Set(["decisionModels.sources.add", "decisionModels.sources.update"]);
-
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory).flatMap((name) => {
     const path = join(directory, name);
@@ -61,6 +56,17 @@ function sourceFiles(directory: string): string[] {
 }
 
 describe("remote method allowlist", () => {
+  it("forwards decision source creation and edits while native transport checks credential locality", () => {
+    for (const method of ["decisionModels.sources.add", "decisionModels.sources.update"]) {
+      expect(allowlist().has(method), method).toBe(true);
+      expect(hostMethods().has(method), method).toBe(true);
+    }
+    const native = readFileSync(join(root, "src-tauri", "src", "remote.rs"), "utf8");
+    const start = native.indexOf("fn remote_request_blocking(");
+    const keyGuard = native.indexOf("decision_model_key_allowed(", start);
+    expect(keyGuard).toBeGreaterThan(start);
+    expect(keyGuard).toBeLessThan(native.indexOf("machine_rpc_for_consumer(", start));
+  });
   it("distinguishes canonical RPC calls from nested operation and schema data", () => {
     const source = `
       assistantRequest({ op: "notes.delete" });
@@ -130,12 +136,7 @@ describe("remote method allowlist", () => {
     for (const file of sourceFiles(join(root, "src"))) {
       const source = readFileSync(file, "utf8");
       for (const method of rpcCallLiterals(source, file)) {
-        if (
-          served.has(method) &&
-          !allowed.has(method) &&
-          !NOT_REMOTE_CALLS.has(method) &&
-          !LOCAL_KEY_CALLS.has(method)
-        )
+        if (served.has(method) && !allowed.has(method) && !NOT_REMOTE_CALLS.has(method))
           missing.add(method);
       }
       // Actual transport calls are checked even when the canonical WS registry
@@ -188,11 +189,14 @@ describe("remote method allowlist", () => {
     expect(allowed.has("tasks.events.delete")).toBe(false);
   });
 
-  it("keeps decision-model API key methods off the remote bridge", () => {
+  it("keeps decision-model API keys local through a parameter-aware native guard", () => {
     const allowed = allowlist();
-    for (const method of LOCAL_KEY_CALLS) {
-      expect(allowed.has(method), `${method} must stay local-only`).toBe(false);
+    for (const method of ["decisionModels.sources.add", "decisionModels.sources.update"]) {
+      expect(allowed.has(method), `${method} must forward keyless source edits`).toBe(true);
     }
+    const native = readFileSync(join(root, "src-tauri", "src", "remote.rs"), "utf8");
+    expect(native).toContain('params.get("apiKey").is_some()');
+    expect(native).toContain('machine.local_host && is_local_sync(&machine, "")');
     const gateway = readFileSync(join(root, "host", "server", "rpc-decision-models.ts"), "utf8");
     expect(gateway).toContain("assertLocalKeyCaller(request)");
   });

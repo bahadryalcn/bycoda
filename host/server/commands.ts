@@ -4,6 +4,7 @@ import { sameQueuedModelTarget } from "../../src/features/sessions/model/message
 import { isClearSessionCommand } from "../../src/features/sessions/model/newSessionCommand";
 import { LeaseHeldError } from "../../src/features/sync/model/runLease";
 import { parseRemoteAttachments, resolveQuestionAttachments } from "../attachments/attachments";
+import { CREW_MANAGED_SESSION_MESSAGE, crewManagedSession } from "../crews/crew-managed-session";
 import { createCommandService } from "../domains/commands/service";
 import { HostDomainAuthorizationError } from "../domains/context";
 import { parseCommand } from "../engine";
@@ -162,7 +163,13 @@ export function createCommandsRuntime(
       trackDesktop: (prepared) => dependencies.desktop.live.trackDesktop(prepared),
       withRetiredWriters: dependencies.withRetiredDesktopWriters,
     },
-    crews: { ownerDirective: (command) => dependencies.crews.ownerDirective(command) },
+    crews: {
+      ownerDirective: (command) => dependencies.crews.ownerDirective(command),
+      managedSessionRefusal: async (id) =>
+        (await crewManagedSession(dependencies.engine.store, id))
+          ? CREW_MANAGED_SESSION_MESSAGE
+          : undefined,
+    },
   });
   return { commandService };
 }

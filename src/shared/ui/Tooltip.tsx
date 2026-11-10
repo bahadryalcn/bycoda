@@ -121,8 +121,8 @@ export type TooltipContent = {
   /** `overflow` reveals clipped/hidden labels or missing shortcuts, never a fully visible copy.
    * Additional detail lines remain available. Layout is measured only on interaction. */
   when?: "always" | "overflow";
-  /** Title line. Falsy (and no details or shortcut) leaves the control without a tooltip. A
-   * string the control already shows in full is not repeated: only key caps and details open. */
+  /** Explicit title line. Omit it when the control already shows the label.
+   * Falsy (and no details or shortcut) leaves the control without a tooltip. */
   label?: ReactNode;
   /** Muted lines under the title (project, branch, counts, a disabled reason...). */
   details?: readonly ReactNode[];
@@ -246,19 +246,13 @@ export function useTooltip({
             .join(" / "),
         }
       : undefined;
-  // A label the control already shows in full is never repeated under it: the hint keeps only
-  // what adds information (key caps, detail lines) and stays closed when nothing remains.
-  const labelShown = (element: HTMLElement) =>
-    typeof label === "string" && !needsOverflowTooltip(element, label);
   const eligible = (element: HTMLElement) => {
     // A containing control already owns full-value recovery and its extra context.
     if (when === "overflow" && element.parentElement?.closest("[data-tooltip-owner]")) return false;
-    if (when === "overflow")
-      return lines.length > 0 || needsOverflowTooltip(element, label, shortcutInfo);
-    return lines.length > 0 || !!shortcut || !labelShown(element);
+    if (when === "overflow") return lines.length > 0 || needsOverflowTooltip(element, shortcutInfo);
+    return true;
   };
   const open = !!anchor && !empty && eligible(anchor);
-  const bodyLabel = anchor && labelShown(anchor) ? undefined : label;
   const hide = intent.close;
 
   // Recheck an active hint as its pane, text or responsive mode changes. No idle row observers.
@@ -344,7 +338,7 @@ export function useTooltip({
           wide ? "max-w-80" : "max-w-60"
         }`}
       >
-        <TooltipBody label={bodyLabel} lines={lines} shortcut={shortcut} />
+        <TooltipBody label={label} lines={lines} shortcut={shortcut} />
       </Popover>
     ) : null,
   };

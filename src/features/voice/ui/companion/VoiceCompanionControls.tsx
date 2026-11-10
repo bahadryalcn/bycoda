@@ -66,13 +66,7 @@ export function VoiceCompanionControls({
           {t(status === "idle" ? "Start voice" : "Talk")}
         </Button>
         {status !== "idle" && (
-          <Button
-            iconOnly
-            variant="danger"
-            label={t("Disconnect voice")}
-            tooltip={t("Disconnect voice")}
-            onClick={onClose}
-          >
+          <Button iconOnly variant="danger" label={t("Disconnect voice")} onClick={onClose}>
             <Square className="icon-sm" />
           </Button>
         )}
@@ -92,7 +86,6 @@ export function VoiceCompanionControls({
       <Button
         iconOnly
         label={t(muted ? "Resume" : "Pause mic")}
-        tooltip={t(muted ? "Resume" : "Pause mic")}
         variant={muted ? "secondary" : "primary"}
         tone={muted ? "danger" : undefined}
         disabled={status !== "live"}
@@ -102,26 +95,19 @@ export function VoiceCompanionControls({
       >
         {muted ? <MicOff className="icon-sm" /> : <Mic className="icon-sm" />}
       </Button>
-      <Button iconOnly label={t("Silence")} tooltip={t("Silence")} onClick={onSilence}>
+      <Button iconOnly label={t("Silence")} onClick={onSilence}>
         <Pause className="icon-sm" />
       </Button>
       <Button
         iconOnly
         label={speakerLabel}
-        tooltip={speakerLabel}
         selected={speakerMuted}
         aria-pressed={speakerMuted}
         onClick={onToggleSpeaker}
       >
         {speakerMuted ? <VolumeX className="icon-sm" /> : <Volume2 className="icon-sm" />}
       </Button>
-      <Button
-        iconOnly
-        variant="danger"
-        label={t("Disconnect voice")}
-        tooltip={t("Disconnect voice")}
-        onClick={onClose}
-      >
+      <Button iconOnly variant="danger" label={t("Disconnect voice")} onClick={onClose}>
         <Square className="icon-sm" />
       </Button>
     </div>

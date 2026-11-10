@@ -248,6 +248,10 @@ it("keeps expired requests in history without approval controls and can clear th
   expect(document.querySelector('[role="tabpanel"]')?.textContent).toContain("Request work");
   expect(button("Allow")).toBeUndefined();
   expect(button("Deny")).toBeUndefined();
+  expect(
+    button("Clear all").closest(".notification-history-toolbar")?.querySelector('[role="tablist"]'),
+  ).not.toBeNull();
+  expect(document.body.textContent).not.toContain("What this app announced");
   expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toHaveLength(1);
   let now = 1000;
   vi.spyOn(performance, "now").mockImplementation(() => now);
@@ -271,6 +275,32 @@ const logEntry = (patch: Partial<NotificationHistoryEntry>): NotificationHistory
   kind: "background",
   occurredAt: Date.now(),
   ...patch,
+});
+
+it("distinguishes every history kind with a semantic badge tone", () => {
+  const kinds = [
+    "failed",
+    "finished",
+    "question",
+    "approval",
+    "reminder",
+    "assistant",
+    "background",
+    "account",
+  ] as const;
+  localStorage.setItem(
+    NOTIFICATION_HISTORY_KEY,
+    JSON.stringify(
+      kinds.map((kind, index) => logEntry({ key: kind, kind, occurredAt: kinds.length - index })),
+    ),
+  );
+  act(() => renderWith([]));
+  openHistory();
+  expect(
+    historyRows().map((row) =>
+      row.querySelector(".notification-history-kind")?.getAttribute("data-tone"),
+    ),
+  ).toEqual(["danger", "success", "warning", "warning", "warning", "accent", "info", "neutral"]);
 });
 
 it("lists every kind of the common log with its label and opens a background target", async () => {

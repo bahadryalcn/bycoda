@@ -36,23 +36,37 @@ const healthRequests = new Map<string, Promise<void>>();
 const codexRequests = new Map<string, Promise<void>>();
 const listeners = new Map<string, ReturnType<typeof createStore<[McpSettingsSnapshot]>>>();
 
-export function getCachedMcpSettings(cwd: string) {
-  return snapshots.get(cwd);
+const settingsKey = (cwd: string, globalOnly: boolean) =>
+  globalOnly ? JSON.stringify(["global", cwd]) : cwd;
+
+/** Keep last-good rows, but reread both views after a configuration change. */
+export function invalidateMcpSettings(cwd: string) {
+  for (const key of [settingsKey(cwd, false), settingsKey(cwd, true)]) {
+    requests.delete(key);
+    healthRequests.delete(key);
+    codexRequests.delete(key);
+  }
+}
+
+export function getCachedMcpSettings(cwd: string, globalOnly = false) {
+  return snapshots.get(settingsKey(cwd, globalOnly));
 }
 
 export function subscribeMcpSettings(
   cwd: string,
   listener: (snapshot: McpSettingsSnapshot) => void,
+  globalOnly = false,
 ) {
-  let subscribers = listeners.get(cwd);
+  const key = settingsKey(cwd, globalOnly);
+  let subscribers = listeners.get(key);
   if (!subscribers) {
     subscribers = createStore<[McpSettingsSnapshot]>();
-    listeners.set(cwd, subscribers);
+    listeners.set(key, subscribers);
   }
   const unsubscribe = subscribers.subscribe(listener);
   return () => {
     unsubscribe();
-    if (subscribers.size === 0) listeners.delete(cwd);
+    if (subscribers.size === 0) listeners.delete(key);
   };
 }
 
@@ -65,46 +79,58 @@ function publish(cwd: string, snapshot: McpSettingsSnapshot) {
 export function loadMcpSettings(
   cwd: string,
   force = false,
-  options: { claudeHealth?: boolean } = {},
+  options: { claudeHealth?: boolean; globalOnly?: boolean } = {},
 ) {
   if (cwd.startsWith("remote://")) {
     return Promise.resolve({ servers: [], error: MCP_LOCAL_ONLY_ERROR, claudeError: "" });
   }
-  let request = requests.get(cwd);
+  const globalOnly = options.globalOnly === true;
+  const key = settingsKey(cwd, globalOnly);
+  let request = requests.get(key);
   if (!request || force) {
-    const discovery = fetchMcpSettings(cwd).then((snapshot) => {
-      if (requests.get(cwd) === discovery) {
-        healthRequests.delete(cwd);
-        codexRequests.delete(cwd);
-        publish(cwd, snapshot);
+    const discovery = fetchMcpSettings(cwd, key, globalOnly).then((snapshot) => {
+      if (requests.get(key) === discovery) {
+        healthRequests.delete(key);
+        codexRequests.delete(key);
+        publish(key, snapshot);
       }
       return snapshot;
     });
-    requests.set(cwd, discovery);
+    requests.set(key, discovery);
     request = discovery;
   }
   const discovery = request;
   return discovery.then((snapshot) => {
-    if (!snapshot.error && requests.get(cwd) === discovery) {
-      if (options.claudeHealth !== false) loadClaudeHealth(cwd, discovery);
+    if (!snapshot.error && requests.get(key) === discovery) {
+      // Claude CLI health is project-scoped and cannot describe a global-only view.
+      if (!globalOnly && options.claudeHealth !== false) loadClaudeHealth(cwd, discovery);
       // Codex reads stored credentials without starting servers, so every open gets sign-in state.
       if (snapshot.servers.some((server) => server.provider === "codex"))
-        loadCodexAuth(cwd, discovery);
+        loadCodexAuth(cwd, discovery, key);
     }
-    return snapshots.get(cwd) ?? snapshot;
+    return snapshots.get(key) ?? snapshot;
   });
 }
 
-async function fetchMcpSettings(cwd: string): Promise<McpSettingsSnapshot> {
+async function fetchMcpSettings(
+  cwd: string,
+  key: string,
+  globalOnly: boolean,
+): Promise<McpSettingsSnapshot> {
   try {
-    const configured = await invoke<McpConnection[]>("mcp_discover", { cwd });
-    const servers = configured.map((server) => ({
-      ...server,
-      status: server.enabled === false ? "Disabled" : "Configured",
-    }));
+    const configured = await invoke<McpConnection[]>(
+      "mcp_discover",
+      globalOnly ? { cwd, globalOnly: true } : { cwd },
+    );
+    const servers = configured
+      .filter((server) => !globalOnly || server.scope === "user")
+      .map((server) => ({
+        ...server,
+        status: server.enabled === false ? "Disabled" : "Configured",
+      }));
     return { servers, error: "", claudeError: "" };
   } catch (cause) {
-    const previous = snapshots.get(cwd);
+    const previous = snapshots.get(key);
     return {
       servers: (previous?.servers ?? []).map(({ auth: _auth, ...server }) => ({
         ...server,
@@ -178,14 +204,14 @@ function loadClaudeHealth(cwd: string, discovery: Promise<McpSettingsSnapshot>) 
 }
 
 /** Codex knows which of its servers hold OAuth credentials; other rows stay as configured. */
-function loadCodexAuth(cwd: string, discovery: Promise<McpSettingsSnapshot>) {
-  if (codexRequests.has(cwd)) return;
+function loadCodexAuth(cwd: string, discovery: Promise<McpSettingsSnapshot>, key: string) {
+  if (codexRequests.has(key)) return;
   const request = invoke<CodexAuthStatus[]>("codex_mcp_list", { cwd })
     .then((list) => {
-      if (requests.get(cwd) !== discovery || !Array.isArray(list)) return;
+      if (requests.get(key) !== discovery || !Array.isArray(list)) return;
       const auth = new Map(list.map((entry) => [entry.name, CODEX_AUTH[entry.authStatus]]));
-      const snapshot = snapshots.get(cwd)!;
-      publish(cwd, {
+      const snapshot = snapshots.get(key)!;
+      publish(key, {
         ...snapshot,
         servers: snapshot.servers.map((server) => {
           const known =
@@ -198,7 +224,7 @@ function loadCodexAuth(cwd: string, discovery: Promise<McpSettingsSnapshot>) {
     })
     // Without Codex status the rows keep their configured state and Sign in stays available.
     .catch(() => undefined);
-  codexRequests.set(cwd, request);
+  codexRequests.set(key, request);
 }
 
 export function clearMcpSettingsCache() {

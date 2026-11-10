@@ -3,7 +3,7 @@ import { formatResetDuration } from "../../../shared/i18n/format";
 export { formatResetDuration } from "../../../shared/i18n/format";
 import { asRecord } from "../../../integrations/harness/providers/codex/codexProtocol";
 
-export type RateLimitProvider = "claude" | "codex" | "opencode";
+export type RateLimitProvider = "claude" | "codex" | "opencode" | "grok";
 
 export type RateLimitStatus = "idle" | "fetching" | "ok" | "error" | "unavailable";
 

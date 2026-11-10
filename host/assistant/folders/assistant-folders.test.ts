@@ -25,24 +25,17 @@ const posix = { platform: "linux" as const, home: "/home/me", env: {} };
 
 describe("assertAssistantFolderAllowed", () => {
   it.each([
-    [win, "C:\\"],
-    [win, "D:\\"],
     [win, "C:\\Windows"],
     [win, "C:\\Windows\\System32"],
     [win, "c:\\program files\\app"],
     [win, "C:\\ProgramData"],
-    [win, "C:\\Users\\me"],
-    [win, "C:\\Users"],
     [win, "C:\\Users\\me\\.ssh"],
     [win, "C:\\Users\\me\\.ssh\\keys"],
     [win, "\\\\server\\share\\folder"],
-    [posix, "/"],
     [posix, "/etc"],
     [posix, "/etc/ssh"],
     [posix, "/usr/local"],
     [posix, "/var"],
-    [posix, "/home"],
-    [posix, "/home/me"],
     [posix, "/home/me/.gnupg"],
     [{ ...posix, platform: "darwin" as const }, "/system/library"],
   ])("rejects %j %s", (context, path) => {
@@ -55,6 +48,15 @@ describe("assertAssistantFolderAllowed", () => {
     [posix, "/home/me/projects"],
     [posix, "/srv/data"],
     [posix, "/var/www/site"],
+    // A whole drive, the home folder and its parents may be chosen; the tools refuse
+    // protected folders inside them per path.
+    [win, "C:\\"],
+    [win, "D:\\"],
+    [win, "C:\\Users"],
+    [win, "C:\\Users\\me"],
+    [posix, "/"],
+    [posix, "/home"],
+    [posix, "/home/me"],
   ])("accepts %j %s", (context, path) => {
     expect(() => assertAssistantFolderAllowed(path, context)).not.toThrow();
   });
@@ -78,7 +80,8 @@ describe("canonicalAssistantFolder", () => {
     expect(real.toLowerCase()).toContain("work");
   });
 
-  it("rejects a missing path, a file, a relative path and the home folder", async () => {
+  it("rejects a missing path, a file, a relative path and a credential folder", async () => {
+    await mkdir(join(base, "home", ".ssh"));
     await writeFile(join(base, "home", "file.txt"), "x");
     await expect(canonicalAssistantFolder(join(base, "nope"), context())).rejects.toThrow(
       /does not exist/,
@@ -87,7 +90,9 @@ describe("canonicalAssistantFolder", () => {
       canonicalAssistantFolder(join(base, "home", "file.txt"), context()),
     ).rejects.toThrow(/folder, not a file/);
     await expect(canonicalAssistantFolder("work", context())).rejects.toThrow(/absolute/);
-    await expect(canonicalAssistantFolder(join(base, "home"), context())).rejects.toThrow(/home/);
+    await expect(canonicalAssistantFolder(join(base, "home", ".ssh"), context())).rejects.toThrow(
+      /credential/,
+    );
   });
 
   it("resolves a link to its target and applies the rules to the target", async () => {
@@ -99,10 +104,11 @@ describe("canonicalAssistantFolder", () => {
     }
     const real = await canonicalAssistantFolder(link, context());
     expect(real.toLowerCase().endsWith("work")).toBe(true);
-    // A link that points at the home folder is the home folder.
+    // A link that points at a credential folder is that credential folder.
+    await mkdir(join(base, "home", ".ssh"));
     const escape = join(base, "escape");
-    await symlink(join(base, "home"), escape, "junction");
-    await expect(canonicalAssistantFolder(escape, context())).rejects.toThrow(/home/);
+    await symlink(join(base, "home", ".ssh"), escape, "junction");
+    await expect(canonicalAssistantFolder(escape, context())).rejects.toThrow(/credential/);
   });
 });
 
@@ -161,9 +167,16 @@ describe("Assistant folder settings", () => {
 
   it("rejects one bad path without saving anything", async () => {
     const d = deps();
+    await mkdir(join(base, "home", ".ssh"));
     await expect(
-      setAssistantFolders(d, 0, [join(base, "home", "a"), join(base, "home")], false, context()),
-    ).rejects.toThrow(/home/);
+      setAssistantFolders(
+        d,
+        0,
+        [join(base, "home", "a"), join(base, "home", ".ssh")],
+        false,
+        context(),
+      ),
+    ).rejects.toThrow(/credential/);
     expect((await getAssistantFolders(d)).folders).toEqual([]);
   });
 

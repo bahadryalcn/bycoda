@@ -175,7 +175,8 @@ listed with its reason.
 
 **Work** shows the same work management as the **Crew work** dialog, inline on the
 page. The project rail lists the same crews with overlapping member faces and the
-same options menu. **Settings > Agents > Crews** keeps **Show crews** for the rail
+same options menu. The **Crews** heading opens the page; its separate chevron
+collapses or expands the list. **Settings > Agents > Crews** keeps **Show crews** for the rail
 and an **Open Crews** button.
 
 The editor is one page. Give the crew a name, and choose **This project** or
@@ -240,7 +241,8 @@ latest**. Work already started keeps its own team snapshot and access mode.
 To launch, choose **New work**, check the **Project** (the open project by
 default), select the crew, check **Access for every member**, fill **What should
 the crew deliver?** and choose **Start**. **Project** lists the projects registered
-on that machine; **New project…** creates a folder next to the current project,
+on that machine; **New project…** opens a compact dialog with the machine, project
+name and destination folder. Creating it makes a folder next to the current project,
 registers it as a project and adds it to the project list, so the work runs
 there. Changing access saves it to the crew before the work starts. The first non-empty line becomes the work
 title. Editing the crew from
@@ -270,21 +272,24 @@ longer linked. Work that is already running keeps its team snapshot. On hosts
 without linked members, crews hold independent copies and a library edit reaches a
 crew only through an explicit update there.
 
-A member can have **Tools**, chosen as combinable options: **Write code**, **Image generation** and
-**Browser**. Nothing selected means read-only; Image generation and Browser add to it and can be
-combined. Write code allows every Host tool and can be narrowed with **Limit Host tools to a list**.
-MCP servers and Skills are independent lists and can be set with any combination. A profile only
-narrows what that member's sessions can use; it never goes beyond the run's access mode or the
-owner approvals, and work already running keeps the profile it started with. The Host blocks Host
-tools outside the profile with a clear error. Without Write code the provider's own file-edit and
-shell tools are removed too: Claude loses them and Codex runs in a read-only sandbox; any other
-provider refuses to start the member ("<provider> cannot run read-only members") instead of
-running it with write tools. With Write code, provider tools stay as the run's access mode
-allows. The MCP server list keeps only those servers for Claude, Codex and OpenCode (other
-providers refuse the member), and the skill list disables every other skill (Claude blocks them at
-launch; other providers are told not to use them). Profiles saved with the earlier single choice
-(Read-only, Code, Design, Browser, Custom) keep their meaning. The control needs a host that
-supports tool profiles.
+A member's **Tools** is one choice of profile. **Full access** is the default and needs no
+setup: the member uses every tool the run allows. **Developer**, **Designer** and **Tester** are
+ready-made profiles; each can still write code and only chooses which Host tool groups the member
+sees (Developer: files, Git, terminals, dev servers, browser, tasks and pull requests; Designer:
+image generation, visual previews, browser and dev servers; Tester: dev servers, browser,
+simulators and desktop apps). **Custom** opens three lists picked, not typed: Host tools from the
+Host's own catalog (a whole group such as `files`, or single tools marked as reading or writing),
+and the MCP servers and skills installed on this computer. Empty lists mean no limit. Where a list
+is not available (an older Host, or a project on another machine) the field takes typed names.
+A member saved as read-only by an earlier version shows as Custom until another profile is chosen.
+A profile only narrows what that member's sessions can use; it never goes beyond the run's access
+mode or the owner approvals, and work already running keeps the profile it started with. The Host
+blocks Host tools outside the profile with a clear error. Every profile keeps the provider's own
+file-edit and shell tools as the run's access mode allows; an older read-only member loses them
+(Claude) or runs in a read-only sandbox (Codex). The MCP server list keeps only those servers for
+Claude, Codex and OpenCode (other providers refuse the member), and the skill list disables every
+other skill (Claude blocks them at launch; other providers are told not to use them). The control
+needs a host that supports tool profiles.
 
 Group rename/delete updates the
 profiles, not the members' existence; deleting a group keeps the members. These
@@ -302,18 +307,22 @@ tasks and conversations remain available.
 Open **Crew work** from Settings or the rail. The management dialog has a crew
 selector, **Ongoing** and **Finished** views, a search over the loaded work and a
 selectable work list with update times. The search and selection survive refreshes;
-switching crews clears the search. Each item shows its execution state (working,
-paused, active or finished) and, separately, whether it needs you (**Needs
-decision**, **Needs review** or **Blocked**); a paused run can still need a
-decision and stays answerable. A selected work item shows progress, decisions
-needed, blocked assignments, and coordinator, worker and reviewer conversations
-with member names and models from that run. **This work's team** is the team
-fixed when the work started; editing the saved crew only changes future work. When
-the host provides only the request's first line, the detail says so. Select a
-conversation to open it. The session sidebar keeps managed conversations grouped
+switching crews clears the search. Each item shows a live or paused state only when it says something, and,
+separately, whether it needs you (**Needs decision**, **Needs review** or
+**Blocked**); a paused run can still need a decision and stays answerable. A
+selected work item has one row of controls next to its title: **Pause** and
+**Stop**, or **Resume** and **Stop** while paused (the Resume button is the
+paused signal). Below it are progress, decisions needed, blocked assignments,
+the conversations with member names and models from that run (view only), the
+team, one message box and the latest timeline events (**Show all** for the
+rest). The team is a strip of member faces fixed when the work started; hover a
+face for its role, model and spend, or select it to address that member. The
+message box sends a note to the lead by default; for a specialist or advisor it
+also offers **Assign**, which uses the first line of the message as the task
+title. Select a conversation to open it. The session sidebar keeps managed conversations grouped
 instead of duplicating them in the ordinary Sessions list.
 
-**Pause** holds new assignments while active work continues; **Resume work**
+**Pause** holds new assignments while active work continues; **Resume**
 allows scheduling again. **Stop work** asks for confirmation, pauses the run and
 cancels active assignments; it is not offered again for that work while the
 coordinator's cancellation settles (**Stopping…**). Stopped assignments remain in Tasks; resuming does

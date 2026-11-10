@@ -6,6 +6,7 @@ import { SAVED_THEMES_MAX, useSavedThemes } from "../../../model/savedThemes";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { saveCurrentLook } from "./savedThemeActions";
 import { ThemeNameDialog } from "./ThemeNameDialog";
+import { useGeneratorState } from "./themeGeneratorSession";
 
 /**
  * Saves the whole current look (every Appearance setting and the chat background image) under a
@@ -23,6 +24,7 @@ export function SaveLookButton({
 }) {
   useLocale();
   const [asking, setAsking] = useState(false);
+  const [selectedLookName, setSelectedLookName] = useGeneratorState("selectedLookName", "");
   const full = useSavedThemes().length >= SAVED_THEMES_MAX;
   const label = t("Save current look");
   const blocked = full ? t("Delete a saved theme to save another.") : undefined;
@@ -66,10 +68,12 @@ export function SaveLookButton({
         <ThemeNameDialog
           title={label}
           confirmLabel={t("Save")}
+          initialName={selectedLookName}
           onClose={() => setAsking(false)}
           onSubmit={async (name) => {
             if (!(await saveCurrentLook(appearance, name)))
               throw new Error(t("Could not save the theme."));
+            setSelectedLookName(name);
           }}
         />
       ) : null}

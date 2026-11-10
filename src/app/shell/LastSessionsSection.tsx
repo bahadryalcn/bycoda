@@ -2,19 +2,11 @@ import { AssistantManagedBadge } from "../../features/sessions/ui/AssistantManag
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Button } from "../../shared/ui/Button";
 import { ContinuousList } from "../../shared/ui/ContinuousList";
-import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
+import { ActionHost } from "../../shared/ui/ActionHost";
 import { useMinuteNow } from "../../shared/hooks/useMinuteNow";
 import { getLocale, useT } from "../../shared/i18n";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import {
-  ChevronDown,
-  CircleAlert,
-  FolderOpen,
-  Internet,
-  PenLine,
-  Pin,
-  PinOff,
-} from "../../shared/ui/icons";
+import { ChevronDown, CircleAlert, FolderOpen, Internet, PenLine } from "../../shared/ui/icons";
 import { basename } from "../../platform/tauri/fs";
 import { projectKey, projectName } from "../../shared/lib/paths";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
@@ -60,7 +52,6 @@ export type RecentSessionsSource = {
   history: SessionSummary[];
   /** Sessions held in memory: running state, and remote sessions the store never sees. */
   live: LiveSessionInfo[];
-  onPin: (row: RecentSessionRow, pinned: boolean) => Promise<unknown>;
 };
 
 export type Appearance = {
@@ -98,15 +89,7 @@ export function useLastSessionsRows({
     setPrefs(next);
     saveRecentSessionsPrefs(next);
   };
-  const togglePin = (row: RecentSessionRow) => {
-    void source
-      .onPin(row, !row.pinned)
-      .then(refresh)
-      .catch((error: unknown) => {
-        console.error("Could not refresh pinned session:", error);
-      });
-  };
-  return { prefs, update, rows, hasRows: rows.length > 0, togglePin, refresh };
+  return { prefs, update, rows, hasRows: rows.length > 0, refresh };
 }
 
 const STATUS_LABEL: Record<RecentSessionStatus, string> = {
@@ -160,7 +143,7 @@ export function LastSessionsSection({
   listScopeKey?: string;
 } & Appearance) {
   const t = useT();
-  const { prefs, update, rows, hasRows, togglePin } = useLastSessionsRows({
+  const { prefs, update, rows, hasRows } = useLastSessionsRows({
     source,
     projectKeys,
     enabled,
@@ -224,7 +207,6 @@ export function LastSessionsSection({
           searchActive={searchActive}
           onOpenSession={onOpenSession}
           onOpenProject={onOpenProject}
-          onTogglePin={togglePin}
           className={drag?.folded ? "hidden" : "flex"}
           listScopeKey={listScopeKey}
           {...appearance}
@@ -241,7 +223,6 @@ export function LastSessionsRows({
   searchActive,
   onOpenSession,
   onOpenProject,
-  onTogglePin,
   className,
   listScopeKey,
   ...appearance
@@ -251,7 +232,6 @@ export function LastSessionsRows({
   searchActive: boolean;
   onOpenSession?: (sessionId: string, cwd: string, options?: { keepOpen?: boolean }) => void;
   onOpenProject: (path: string) => void;
-  onTogglePin: (row: RecentSessionRow) => void;
   className?: string;
   listScopeKey?: string;
 } & Appearance) {
@@ -284,7 +264,6 @@ export function LastSessionsRows({
               selected={!searchActive && row.id === activeSessionId}
               onOpen={() => onOpenSession?.(row.id, row.cwd)}
               onKeepOpen={() => onOpenSession?.(row.id, row.cwd, { keepOpen: true })}
-              onTogglePin={() => onTogglePin(row)}
               onOpenMenu={(x, y) => setMenu({ x, y, row })}
               {...appearance}
             />
@@ -304,15 +283,6 @@ export function LastSessionsRows({
                 return t("Open");
               },
             },
-            ...(menuRow.pinnable
-              ? [
-                  {
-                    kind: "item" as const,
-                    id: "pin",
-                    label: menuRow.pinned ? "Unpin" : "Pin",
-                  },
-                ]
-              : []),
             ...(isProjectlessCwd(menuRow.cwd)
               ? []
               : [
@@ -328,7 +298,6 @@ export function LastSessionsRows({
           onPick={(id) => {
             setMenu(null);
             if (id === "open") onOpenSession?.(menuRow.id, menuRow.cwd);
-            else if (id === "pin") onTogglePin(menuRow);
             else if (id === "project") onOpenProject(menuRow.cwd);
           }}
           onClose={() => setMenu(null)}
@@ -395,7 +364,6 @@ function SessionRow({
   selected,
   onOpen,
   onKeepOpen,
-  onTogglePin,
   onOpenMenu,
   groupLabels,
   groupColors,
@@ -408,7 +376,6 @@ function SessionRow({
   selected: boolean;
   onOpen: () => void;
   onKeepOpen: () => void;
-  onTogglePin: () => void;
   onOpenMenu: (x: number, y: number) => void;
 } & Appearance) {
   const t = useT();
@@ -508,13 +475,6 @@ function SessionRow({
             strokeWidth={1.75}
           />
         ) : null}
-        {row.pinned ? (
-          <Pin
-            aria-label={t("Pinned")}
-            className="icon-xs shrink-0 text-(--ui-text-secondary)"
-            strokeWidth={1.75}
-          />
-        ) : null}
         {row.remote ? (
           <Internet
             aria-label={t("On another machine")}
@@ -544,28 +504,6 @@ function SessionRow({
           </span>
         ) : null}
       </Button>
-      {row.pinnable ? (
-        // Keep a separate action column so revealing the pin cannot cover age or title text.
-        <div data-session-pin-slot="" className="flex shrink-0 items-center">
-          <InlineAction
-            motion="none"
-            type="button"
-            label={row.pinned ? t("Unpin session") : t("Pin session")}
-            aria-label={row.pinned ? t("Unpin session") : t("Pin session")}
-            onClick={(event) => {
-              event.stopPropagation();
-              onTogglePin();
-            }}
-            className="me-1"
-          >
-            {row.pinned ? (
-              <PinOff className="icon-sm" strokeWidth={1.75} />
-            ) : (
-              <Pin className="icon-sm" strokeWidth={1.75} />
-            )}
-          </InlineAction>
-        </div>
-      ) : null}
     </ActionHost>
   );
 }

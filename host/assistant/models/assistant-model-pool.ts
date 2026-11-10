@@ -13,6 +13,11 @@ import type {
 import { hostProviderAccounts } from "../../providers/provider-accounts";
 import type { HostProviderAccountCatalog } from "../../providers/provider-accounts";
 import type { AssistantRepository } from "../repository";
+import {
+  defaultPoolAccount,
+  valueAwareAssistantPool,
+  type CatalogModels,
+} from "./assistant-model-default-pool";
 
 const POOL_RECORD = "model-pool";
 type StoredPool = {
@@ -27,7 +32,7 @@ export type AssistantModelPoolPorts = {
   /** Known provider accounts; defaults to the Host inventory. */
   accounts: () => Promise<HostProviderAccountCatalog>;
   /** Model ids the Host knows per harness; undefined or an unlisted harness skips the model check. */
-  catalog?: () => Promise<{ models: Partial<Record<string, { id: string }[]>> } | undefined>;
+  catalog?: () => Promise<{ models: CatalogModels } | undefined>;
 };
 let ports: AssistantModelPoolPorts = { accounts: () => hostProviderAccounts() };
 /** Host wiring hook (shortcut: module-level, set once at server start; move into service ports if a second owner appears). */
@@ -77,7 +82,7 @@ export function deriveAssistantModelPool(
   return [...groups.values()].map(({ execution, roles }, index) => ({
     id: `derived-${index + 1}`,
     harness: execution.harness,
-    providerAccountId: "default",
+    ...defaultPoolAccount(execution.harness),
     model: execution.model,
     modelSettings: { ...execution.modelSettings },
     runtimeMode: execution.runtimeMode,
@@ -118,6 +123,19 @@ async function stored(deps: PoolDeps): Promise<StoredPool | undefined> {
   return deps.repository.get<StoredPool>("runtime", POOL_RECORD);
 }
 
+const CATALOG_WAIT_MS = 4000;
+/** Value-aware default when the catalog allows it, otherwise the profile mirror. */
+async function derivedPoolRows(profile: Awaited<ReturnType<PoolDeps["profile"]>>) {
+  let timer: unknown;
+  const catalog = await Promise.race([
+    ports.catalog?.().catch(() => undefined),
+    new Promise<undefined>((resolve) => {
+      timer = setTimeout(resolve, CATALOG_WAIT_MS);
+    }),
+  ]).finally(() => clearTimeout(timer as never));
+  return valueAwareAssistantPool(profile, catalog?.models) ?? deriveAssistantModelPool(profile);
+}
+
 export async function getAssistantModelPool(deps: PoolDeps): Promise<AssistantModelPoolResponse> {
   const row = await stored(deps);
   const parsed = AssistantModelPoolRowSchema.array().safeParse(row?.value.rows);
@@ -125,8 +143,9 @@ export async function getAssistantModelPool(deps: PoolDeps): Promise<AssistantMo
   const updatedAt = row?.updatedAt ?? 0;
   if (parsed.success && parsed.data.length)
     return { rows: parsed.data, version, updatedAt, derived: false };
+  const profile = await deps.profile();
   return {
-    rows: deriveAssistantModelPool(await deps.profile()),
+    rows: await derivedPoolRows(profile),
     version,
     updatedAt,
     derived: true,

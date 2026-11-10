@@ -22,10 +22,13 @@ export function useDecisionModels(client: DecisionModelsClient) {
   const [found, setFound] = useState<DiscoveryCandidate[] | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<unknown>(null);
+  const [scanIncomplete, setScanIncomplete] = useState(false);
   const [catalog, setCatalog] = useState<DecisionCatalogEntry[] | null>(null);
   const [catalogError, setCatalogError] = useState<unknown>(null);
   const [pending, setPending] = useState<Record<string, true>>({});
   const alive = useRef(true);
+  const scanFlight = useRef<Promise<void> | null>(null);
+  const scanGeneration = useRef(0);
 
   useEffect(() => {
     alive.current = true;
@@ -65,20 +68,42 @@ export function useDecisionModels(client: DecisionModelsClient) {
     [client],
   );
 
-  const scan = useCallback(async () => {
+  const scan = useCallback(() => {
+    if (scanFlight.current) return scanFlight.current;
+    scanGeneration.current++;
     setScanning(true);
     setScanError(null);
-    try {
-      const result = await client.discovery.scan({});
-      if (alive.current) setFound(result.found);
-    } catch (error: unknown) {
-      if (alive.current) setScanError(error);
-    } finally {
-      if (alive.current) setScanning(false);
-    }
+    const operation = (async () => {
+      try {
+        const result = await client.discovery.scan({});
+        if (alive.current) {
+          setFound((previous) =>
+            result.incomplete && result.found.length === 0 ? previous : result.found,
+          );
+          setScanIncomplete(result.incomplete ?? false);
+        }
+      } catch (error: unknown) {
+        if (alive.current) setScanError(error);
+      } finally {
+        scanFlight.current = null;
+        if (alive.current) setScanning(false);
+      }
+    })();
+    scanFlight.current = operation;
+    return operation;
   }, [client]);
 
+  const cancelScan = useCallback(async () => {
+    if (!scanFlight.current) return;
+    try {
+      await track("scan-cancel", () => client.discovery.cancel({}));
+    } catch (error: unknown) {
+      if (alive.current) setScanError(error);
+    }
+  }, [client, track]);
+
   useEffect(() => {
+    const cachedGeneration = scanGeneration.current;
     void reloadSources().catch(() => undefined);
     void client.routing.get({}).then(
       (result) => {
@@ -92,13 +117,14 @@ export function useDecisionModels(client: DecisionModelsClient) {
     );
     void client.discovery.results({}).then(
       (result) => {
-        if (!alive.current) return;
+        if (!alive.current || scanGeneration.current !== cachedGeneration) return;
         setFound(result.found);
+        setScanIncomplete(result.incomplete ?? false);
         // First open with nothing cached: look once, in the background.
         if (result.found.length === 0) void scan().catch(() => undefined);
       },
       (error: unknown) => {
-        if (alive.current) setScanError(error);
+        if (alive.current && scanGeneration.current === cachedGeneration) setScanError(error);
       },
     );
     void client.catalog.get({}).then(
@@ -210,12 +236,14 @@ export function useDecisionModels(client: DecisionModelsClient) {
     found,
     scanning,
     scanError,
+    scanIncomplete,
     catalog,
     catalogError,
     isPending,
     actions: {
       reloadSources,
       scan,
+      cancelScan,
       addSource,
       updateSource,
       removeSource,

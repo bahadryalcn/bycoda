@@ -94,6 +94,8 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   gap?: number;
   padding?: number;
   width?: number;
+  /** Intrinsic-width floor, still clamped to the viewport. Unlike `width`, content can grow wider. */
+  minWidth?: number;
   minHeight?: number;
   maxHeight?: number;
   /** Defaults to true. Disable for intrinsic-height surfaces like context menus. */
@@ -280,6 +282,7 @@ function NativePopover({
     gap: _gap,
     padding: _padding,
     width: _width,
+    minWidth: _minWidth,
     minHeight: _minHeight,
     constrainHeight: _constrainHeight,
     layer: _layer,
@@ -319,6 +322,7 @@ function WebPopover({
   gap,
   padding,
   width,
+  minWidth,
   minHeight,
   maxHeight,
   constrainHeight = true,
@@ -383,20 +387,37 @@ function WebPopover({
     };
     // offsetWidth rounds a fractional width down; pinning that width wraps the
     // last word of shrink-to-fit content (tooltips), so round the box up.
-    const naturalWidth = Math.max(
-      el.offsetWidth,
-      Math.ceil(el.getBoundingClientRect().width / zoom - 0.05),
-    );
+    const pinnedWidth = el.style.width;
+    let naturalWidth: number;
+    try {
+      // A positioned picker has a pinned width. Measure its new content before
+      // reusing that width, including same-height lists loaded after opening.
+      if (width == null && minWidth != null) el.style.width = "max-content";
+      naturalWidth = Math.max(
+        el.offsetWidth,
+        Math.ceil(el.getBoundingClientRect().width / zoom - 0.05),
+      );
+    } finally {
+      el.style.width = pinnedWidth;
+    }
     const next = placePopover(
       logicalAnchor,
       { width: naturalWidth, height: el.offsetHeight },
       { width: window.innerWidth / zoom, height: window.innerHeight / zoom },
-      { side, align, gap, padding, width, minHeight, maxHeight },
+      {
+        side,
+        align,
+        gap,
+        padding,
+        width: width ?? Math.max(minWidth ?? 0, naturalWidth),
+        minHeight,
+        maxHeight,
+      },
     );
     setPosition((prev) => (samePosition(prev, next) ? prev : next));
     // `key` stands in for the anchor, which is read through a ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, side, align, gap, padding, width, minHeight, maxHeight]);
+  }, [key, side, align, gap, padding, width, minWidth, minHeight, maxHeight]);
 
   useLayoutEffect(() => {
     place();
@@ -416,6 +437,13 @@ function WebPopover({
     // above its trigger rather than drift over it.
     const observer = new ResizeObserver(updatePlacement);
     if (frame.current) observer.observe(frame.current);
+    const contentObserver = new MutationObserver(updatePlacement);
+    if (minWidth != null && surface.current)
+      contentObserver.observe(surface.current, {
+        childList: true,
+        characterData: true,
+        subtree: true,
+      });
     const trigger = anchorElement(anchorRef.current);
     if (trigger) observer.observe(trigger);
     // Moving a parent frame does not resize its menu row.
@@ -432,12 +460,13 @@ function WebPopover({
     window.addEventListener("scroll", onScroll, true);
     return () => {
       observer.disconnect();
+      contentObserver.disconnect();
       parentObserver.disconnect();
       cancelAnimationFrame(placementFrame);
       window.removeEventListener("resize", updatePlacement);
       window.removeEventListener("scroll", onScroll, true);
     };
-  }, [place]);
+  }, [place, minWidth]);
 
   const positioned = position != null;
   useEffect(() => {

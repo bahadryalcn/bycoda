@@ -15,6 +15,7 @@ import {
 import { EditorSelection, Prec, type Extension, type SelectionRange } from "@codemirror/state";
 import {
   EditorView,
+  ViewPlugin,
   keymap,
   runScopeHandlers,
   type KeyBinding,
@@ -29,6 +30,22 @@ import { nativeButtonPresentation } from "../../../shared/ui/Button";
 
 const MATCH_CAP = 999;
 const panels = new WeakMap<EditorView, FindPanel>();
+let lastFocusedEditor: EditorView | null = null;
+
+const findFocus = ViewPlugin.define(
+  (view) => ({
+    destroy() {
+      if (lastFocusedEditor === view) lastFocusedEditor = null;
+    },
+  }),
+  {
+    eventHandlers: {
+      focusin(_event, view) {
+        lastFocusedEditor = view;
+      },
+    },
+  },
+);
 
 type SearchMatchRange = { from: number; to: number };
 
@@ -138,6 +155,9 @@ export function isHiddenEditorHost(node: {
 function editorElementForFind(): HTMLElement | null {
   const focused = focusedEditorElement();
   if (focused && isUsableEditorElement(focused)) return focused;
+  if (lastFocusedEditor?.dom.isConnected && isUsableEditorElement(lastFocusedEditor.dom)) {
+    return lastFocusedEditor.dom;
+  }
   for (const node of document.querySelectorAll(".cm-editor")) {
     if (node instanceof HTMLElement && isUsableEditorElement(node)) return node;
   }
@@ -312,7 +332,13 @@ class FindPanel implements Panel {
         elt(
           "div",
           { class: "cm-find-row" },
-          elt("div", { class: "cm-find-query cm-find-search" }, this.searchField, this.clearButton),
+          elt(
+            "div",
+            { class: "cm-find-query cm-find-search" },
+            svgIcon("M10.5 10.5l3 3M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0"),
+            this.searchField,
+            this.clearButton,
+          ),
           elt(
             "div",
             { class: "cm-find-controls" },
@@ -331,6 +357,9 @@ class FindPanel implements Panel {
       ),
     );
 
+    this.dom.addEventListener("focusin", () => {
+      lastFocusedEditor = this.view;
+    });
     this.searchField.addEventListener("compositionstart", () => {
       this.composing = true;
     });
@@ -357,6 +386,7 @@ class FindPanel implements Panel {
   }
 
   mount() {
+    this.searchField.focus();
     this.searchField.select();
     this.reveal();
   }
@@ -741,10 +771,15 @@ const findTheme = EditorView.theme(
       minInlineSize: "min(100%, 150px)",
       flex: "1 1 170px",
       height: "26px",
-      padding: "0 8px",
+      padding: "0 6px",
+      gap: "6px",
       border: "1px solid var(--color-stroke)",
       borderRadius: "6px",
       backgroundColor: "var(--ui-surface-raised)",
+    },
+    ".cm-find-query > svg": {
+      flexShrink: "0",
+      color: "var(--ui-text-secondary)",
     },
     ".cm-find-query:focus-within": {
       borderColor: "var(--ui-border-accent)",
@@ -853,6 +888,7 @@ function scrollToSearchMatch(range: SelectionRange, view: EditorView) {
 }
 
 export const editorSearch: Extension = [
+  findFocus,
   search({
     top: true,
     literal: true,

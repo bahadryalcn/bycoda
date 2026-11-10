@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DecisionModelsClient } from "../model/decisionModelsClient";
-import type { DecisionSource, DiscoveryCandidate } from "../model/decisionTypes";
+import type { DecisionRouting, DecisionSource, DiscoveryCandidate } from "../model/decisionTypes";
 import { DecisionModelsSettings } from "./DecisionModelsSettings";
 import {
   bodyText,
@@ -31,6 +31,10 @@ function createClient(options: {
   sources?: DecisionSource[];
   sourcesError?: Error;
   found?: DiscoveryCandidate[];
+  routing?: DecisionRouting;
+  scan?: DecisionModelsClient["discovery"]["scan"];
+  cancel?: DecisionModelsClient["discovery"]["cancel"];
+  results?: DecisionModelsClient["discovery"]["results"];
 }) {
   const mocks = {
     list: vi.fn(async () => {
@@ -41,9 +45,28 @@ function createClient(options: {
       source({ id: "new", name: params.source.name }),
     ),
     test: vi.fn(async () => ({ sourceId: "s1", ok: true, durationMs: 12 })),
-    scan: vi.fn(async () => ({ found: [] as DiscoveryCandidate[] })),
-    results: vi.fn(async () => ({ found: options.found ?? [] })),
-    routingGet: vi.fn(async () => ({ routing: {}, localOnlyPersonalData: false })),
+    verify: vi.fn(async () => ({
+      kind: "installation_folder" as const,
+      folder: "C:\\Models",
+      modelPath: "C:\\Models\\clef.gguf",
+      runtimePath: "C:\\Models\\runtime\\llama-server.exe",
+      verified: false,
+      models: [
+        {
+          name: "Clef",
+          modelPath: "C:\\Models\\clef.gguf",
+          runtimePath: "C:\\Models\\runtime\\llama-server.exe",
+          verified: false,
+        },
+      ],
+    })),
+    scan: vi.fn(options.scan ?? (async () => ({ found: [] as DiscoveryCandidate[] }))),
+    cancel: vi.fn(options.cancel ?? (async () => ({ cancelled: true }))),
+    results: vi.fn(options.results ?? (async () => ({ found: options.found ?? [] }))),
+    routingGet: vi.fn(async () => ({
+      routing: options.routing ?? {},
+      localOnlyPersonalData: false,
+    })),
     routingSet: vi.fn(async (params: { localOnlyPersonalData?: boolean }) => ({
       routing: {},
       localOnlyPersonalData: params.localOnlyPersonalData ?? false,
@@ -75,6 +98,7 @@ function createClient(options: {
     },
     discovery: {
       scan: mocks.scan,
+      cancel: mocks.cancel,
       results: mocks.results,
       settings: { get: mocks.settingsGet, set: mocks.settingsSet },
     },
@@ -88,6 +112,7 @@ function createClient(options: {
       status: vi.fn(),
     },
     routing: { get: mocks.routingGet, set: mocks.routingSet },
+    manual: { verify: mocks.verify },
     catalog: { get: mocks.catalog },
     decide: vi.fn(),
   } as unknown as DecisionModelsClient;
@@ -124,6 +149,9 @@ describe("DecisionModelsSettings sources", () => {
   it("shows the empty state when no decision model is connected", async () => {
     await renderSettings({ sources: [] });
     expect(bodyText()).toContain("No decision model is connected yet.");
+    expect(bodyText()).toContain("Connect a model before customizing task routing.");
+    expect(document.querySelector('[role="combobox"]')).toBeNull();
+    expect(buttonByText("Add from folder")).toBeDefined();
   });
 
   it("lists connected sources with their status", async () => {
@@ -143,27 +171,40 @@ describe("DecisionModelsSettings sources", () => {
 });
 
 describe("DecisionModelsSettings found on this computer", () => {
-  it("adds a model file from the found list with one click", async () => {
+  it("inspects a discovered model without adding it until runtime-equipped confirmation", async () => {
     const { mocks } = await renderSettings({
       found: [
         {
-          id: "c1",
+          id: "model:C:\\Models\\clef.gguf",
           label: "clef.gguf",
           kind: "model_file",
-          detail: "C:\\Models\\clef.gguf",
+          detail: "C:\\Models\\clef.gguf (not verified)",
         },
       ],
     });
     clickInList("Found on this computer", "Add");
     await settleDecisionUi();
+    expect(mocks.add).not.toHaveBeenCalled();
+    expect(mocks.test).not.toHaveBeenCalled();
+    expect(mocks.verify).toHaveBeenCalledWith({
+      kind: "model_installation",
+      path: "C:\\Models\\clef.gguf",
+    });
+    expect(bodyText()).toContain("Add from folder");
+    clickButton("Test and add");
+    await settleDecisionUi();
     expect(mocks.add).toHaveBeenCalledWith({
       source: {
-        name: "clef.gguf",
+        name: "Clef",
         kind: "local",
         adapter: "systemone",
-        local: { modelPath: "C:\\Models\\clef.gguf" },
+        local: {
+          modelPath: "C:\\Models\\clef.gguf",
+          runtimePath: "C:\\Models\\runtime\\llama-server.exe",
+        },
       },
     });
+    expect(mocks.test).toHaveBeenCalledWith({ id: "new" });
   });
 
   it("opens a dialog instead of adding a candidate that needs a path", async () => {
@@ -195,6 +236,78 @@ describe("DecisionModelsSettings found on this computer", () => {
       ],
     });
     expect(mocks.scan).not.toHaveBeenCalled();
+  });
+
+  it("keeps earlier results visible until cancellation settles the original scan", async () => {
+    let finish!: (result: { found: DiscoveryCandidate[]; incomplete: boolean }) => void;
+    const waiting = new Promise<{ found: DiscoveryCandidate[]; incomplete: boolean }>((resolve) => {
+      finish = resolve;
+    });
+    const { mocks } = await renderSettings({
+      found: [
+        {
+          id: "cached",
+          label: "Existing model",
+          kind: "model_file",
+          detail: "D:\\Models\\clef.gguf",
+        },
+      ],
+      scan: async () => waiting,
+    });
+    clickButton("Scan again");
+    await settleDecisionUi();
+    expect(bodyText()).toContain("Existing model");
+    clickButton("Cancel scan");
+    await settleDecisionUi();
+    expect(mocks.cancel).toHaveBeenCalledTimes(1);
+    expect(buttonByText("Scan again")).toBeUndefined();
+    act(() => finish({ found: [], incomplete: true }));
+    await settleDecisionUi();
+    expect(bodyText()).toContain("Existing model");
+    expect(buttonByText("Scan again")).toBeDefined();
+  });
+
+  it("shows cancellation failure while the original scan remains active", async () => {
+    let finish!: (result: { found: DiscoveryCandidate[] }) => void;
+    const waiting = new Promise<{ found: DiscoveryCandidate[] }>((resolve) => {
+      finish = resolve;
+    });
+    await renderSettings({
+      scan: async () => waiting,
+      cancel: async () => {
+        throw new Error("cancel unavailable");
+      },
+    });
+    clickButton("Cancel scan");
+    await settleDecisionUi();
+    expect(bodyText()).toContain("This did not work. Try again.");
+    expect(bodyText()).toContain("Scanning this computer");
+    act(() => finish({ found: [] }));
+    await settleDecisionUi();
+  });
+
+  it("does not replace a completed scan with a late cached result", async () => {
+    let finish!: (result: { found: DiscoveryCandidate[] }) => void;
+    const cached = new Promise<{ found: DiscoveryCandidate[] }>((resolve) => {
+      finish = resolve;
+    });
+    await renderSettings({
+      results: async () => cached,
+      scan: async () => ({
+        found: [{ id: "new", label: "Fresh model", kind: "model_file", detail: "D:\\fresh.gguf" }],
+      }),
+    });
+    clickButton("Scan again");
+    await settleDecisionUi();
+    expect(bodyText()).toContain("Fresh model");
+    act(() =>
+      finish({
+        found: [{ id: "old", label: "Stale model", kind: "model_file", detail: "D:\\old.gguf" }],
+      }),
+    );
+    await settleDecisionUi();
+    expect(bodyText()).toContain("Fresh model");
+    expect(bodyText()).not.toContain("Stale model");
   });
 });
 
@@ -234,6 +347,23 @@ describe("DecisionModelsSettings privacy and routing", () => {
   it("keeps routing save disabled until a route changes", async () => {
     await renderSettings({ sources: [source()] });
     expect(buttonByText("Save routing")?.disabled).toBe(true);
+    const thresholds = document.querySelectorAll<HTMLInputElement>('input[type="number"]');
+    expect(thresholds.length).toBeGreaterThan(0);
+    expect(Array.from(thresholds).every((field) => field.disabled)).toBe(true);
+  });
+
+  it("opens existing custom routes and keeps their threshold editable", async () => {
+    await renderSettings({
+      sources: [source()],
+      routing: { screen_state: { sourceIds: ["s1"], threshold: 0.9 } },
+    });
+    const disclosure = Array.from(document.querySelectorAll("details")).find((item) =>
+      item.querySelector("summary")?.textContent?.includes("Customize task routing"),
+    );
+    expect(disclosure?.open).toBe(true);
+    const threshold = document.querySelector<HTMLInputElement>('input[type="number"]');
+    expect(threshold?.disabled).toBe(false);
+    expect(threshold?.value).toBe("0.9");
   });
 });
 
@@ -282,6 +412,13 @@ describe("DecisionModelsSettings source row actions", () => {
 });
 
 describe("DecisionModelsSettings scan settings", () => {
+  it("rescans unchanged settings without rewriting them", async () => {
+    const { mocks } = await renderSettings();
+    clickButton("Scan with these settings");
+    await settleDecisionUi();
+    expect(mocks.settingsSet).not.toHaveBeenCalled();
+    expect(mocks.scan).toHaveBeenCalledTimes(2);
+  });
   it("loads the saved ports and folders and saves a valid change through the RPC", async () => {
     const { mocks } = await renderSettings();
     expect(mocks.settingsGet).toHaveBeenCalledTimes(1);
@@ -289,12 +426,13 @@ describe("DecisionModelsSettings scan settings", () => {
     expect(ports?.value).toBe("8080");
     if (!ports) throw new Error("ports field not found");
     setInputValue(ports, "8080, 9000");
-    clickButton("Save");
+    clickButton("Save and scan");
     await settleDecisionUi();
     expect(mocks.settingsSet).toHaveBeenCalledWith({
       extraPorts: [8080, 9000],
       extraFolders: ["D:\\Models"],
     });
+    expect(mocks.scan).toHaveBeenCalledTimes(2);
     expect(bodyText()).not.toContain("Changing scan settings is not available yet.");
   });
 
@@ -303,7 +441,7 @@ describe("DecisionModelsSettings scan settings", () => {
     const ports = document.querySelector<HTMLInputElement>('input[placeholder="8080, 9000"]');
     if (!ports) throw new Error("ports field not found");
     setInputValue(ports, "70000");
-    clickButton("Save");
+    clickButton("Save and scan");
     await settleDecisionUi();
     expect(mocks.settingsSet).not.toHaveBeenCalled();
     expect(bodyText()).toContain("Enter ports from 1 to 65535, separated by commas.");

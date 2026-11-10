@@ -204,7 +204,6 @@ export function NotificationAlerts() {
         variant="ghost"
         iconOnly
         label={t("Refresh permission status")}
-        tooltip={t("Refresh permission status")}
         loading={permissionPending === "probe"}
         disabled={permissionPending !== null}
         onClick={() => void checkPermission()}

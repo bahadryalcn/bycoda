@@ -1,5 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { StatusDot } from "../../../shared/ui/StatusDot";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { t } from "../../../shared/i18n";
 import styles from "./VoiceWakeIndicator.module.css";
 
@@ -34,9 +35,9 @@ export function VoiceWakeIndicator({
         appearance="solid"
         size="sm"
       />
-      <span className={styles.text} title={text}>
-        {text}
-      </span>
+      <OverflowTooltip label={text}>
+        <span className={styles.text}>{text}</span>
+      </OverflowTooltip>
       {state.kind === "pack" ? (
         <Button size="sm" variant="ghost" onClick={onSetup}>
           {t("Set up voice")}

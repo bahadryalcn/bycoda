@@ -464,7 +464,6 @@ function AgentMore({ label, children }: { label: string; children: ReactNode }) 
         ref={anchor}
         iconOnly
         label={label}
-        tooltip={label}
         variant="ghost"
         aria-haspopup="dialog"
         aria-expanded={open}

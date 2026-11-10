@@ -116,3 +116,37 @@ for (const theme of ["light", "dark"]) {
     await page.screenshot({ path: info.outputPath("general-compact-card.png") });
   });
 }
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`MCP compact scope and add form ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/settings.html?section=mcp&mcp=1&theme=${theme}&lang=en`);
+      const connections = page.locator("#setting-mcp-servers");
+      await expect(connections.getByRole("radio", { name: "Global", exact: true })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+      await expect(connections.getByRole("button", { name: /^Switch project/ })).toHaveCount(0);
+      await expect(connections.getByText("arc", { exact: true })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/2026-11-10-mcp/global-${theme}-${width}.png`,
+      });
+      await connections.getByRole("radio", { name: "Project", exact: true }).click();
+      await expect(connections.getByRole("button", { name: /^Switch project/ })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/2026-11-10-mcp/project-${theme}-${width}.png`,
+      });
+      await connections.getByRole("button", { name: "Add MCP server", exact: true }).click();
+      const modal = page.getByRole("dialog", { name: "Add MCP server", exact: true });
+      await expect(modal).toBeVisible();
+      await expect(modal.getByText(/Advanced/)).toHaveCount(0);
+      await expect(modal.getByText(/Selected project:/)).toHaveCount(0);
+      await expect(modal.getByRole("button", { name: "Add server", exact: true })).toBeVisible();
+      await page.screenshot({ path: `temp/verification/2026-11-10-mcp/add-${theme}-${width}.png` });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    });
+  }
+}

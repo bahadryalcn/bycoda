@@ -220,6 +220,36 @@ it("closes a stale active record before retiring its missing folder", async () =
   expect(close).toHaveBeenCalledOnce();
 });
 
+it("skips filesystem cleanup when closing already retired the missing record", async () => {
+  const retired = { ...workspace, state: "abandoned", directoryState: "removed" };
+  vi.mocked(workspaceRequest).mockImplementation(async (method) => {
+    if (method === "workspaces.get") return workspace as never;
+    if (method === "workspaces.close") return retired as never;
+    throw new Error(method);
+  });
+  const close = vi.fn();
+  const changed = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(WorkspaceDirectoryRemoval, {
+        workspace,
+        context: { cwd: "/repo" },
+        closeFirst: true,
+        missing: true,
+        onClose: close,
+        onWorkspaceChange: changed,
+      }),
+    ),
+  );
+  await act(async () => button("Remove record").click());
+  expect(close).toHaveBeenCalledOnce();
+  expect(changed).toHaveBeenCalledWith(retired);
+  expect(vi.mocked(workspaceRequest).mock.calls.map(([method]) => method)).toEqual([
+    "workspaces.get",
+    "workspaces.close",
+  ]);
+});
+
 it("keeps the dialog open with the Host's reasons when closing still leaves a blocker", async () => {
   vi.mocked(workspaceRequest).mockImplementation(async (method) => {
     if (method === "workspaces.get") return workspace as never;

@@ -143,8 +143,22 @@ export async function materializeManagedWorkspace(
     (tree) => workspacePathKey(tree.path) === workspacePathKey(path),
   );
   if (registered) {
-    if (registered.isMain || registered.branch !== branch || registered.missing || !info)
+    if (registered.isMain || registered.branch !== branch || registered.locked)
       throw new Error("Managed worktree registration changed");
+    if (!creating && !info && workspace.directoryState === "removed") {
+      if (listed.worktrees.some((tree) => tree !== registered && tree.branch === branch))
+        throw new Error("Managed branch is checked out elsewhere");
+      // Restore only this absent, owned registration. Git refuses an existing path;
+      // never prune other missing worktrees or bypass a locked registration.
+      try {
+        await exec("git", ["worktree", "add", "--force", "--", path, branch], options(cwd, true));
+        await verify();
+        return;
+      } finally {
+        invalidateHostWorktrees();
+      }
+    }
+    if (registered.missing || !info) throw new Error("Managed worktree registration changed");
     await verify();
     return;
   }

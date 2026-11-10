@@ -546,7 +546,6 @@ export function MessageQueue({
                     disabled={queueClosed || !!pendingAction || pendingDelivery}
                     variant="ghost"
                     type="button"
-                    tooltip={t("Edit queued message")}
                     aria-label={t("Edit queued message")}
                     onClick={() => startEdit(message)}
                     className="shrink-0"

@@ -4,7 +4,7 @@ import { useT } from "../../../shared/i18n";
 import { pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
 import { ActionHost, InlineAction, InlineTextAction } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
-import { Badge } from "../../../shared/ui/Badge";
+import { Badge, StatusBadge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import {
   CheckCircle,
@@ -50,24 +50,24 @@ function historyTitle(entry: NotificationHistoryEntry): string {
 export function historyKindMeta(
   kind: NotificationHistoryKind,
   t: (text: string) => string,
-): { label: string; Icon: typeof Shield } {
+): { label: string; Icon: typeof Shield; tone: BadgeTone } {
   switch (kind) {
     case "question":
-      return { label: t("Question"), Icon: MessageSquare };
+      return { label: t("Question"), Icon: MessageSquare, tone: "warning" };
     case "finished":
-      return { label: t("Finished"), Icon: CheckCircle };
+      return { label: t("Finished"), Icon: CheckCircle, tone: "success" };
     case "failed":
-      return { label: t("Failed"), Icon: CircleX };
+      return { label: t("Failed"), Icon: CircleX, tone: "danger" };
     case "reminder":
-      return { label: t("Reminder"), Icon: Clock };
+      return { label: t("Reminder"), Icon: Clock, tone: "warning" };
     case "assistant":
-      return { label: t("Assistant"), Icon: Sparkles };
+      return { label: t("Assistant"), Icon: Sparkles, tone: "accent" };
     case "background":
-      return { label: t("Background"), Icon: CheckList };
+      return { label: t("Background"), Icon: CheckList, tone: "info" };
     case "account":
-      return { label: t("Account"), Icon: UserRound };
+      return { label: t("Account"), Icon: UserRound, tone: "neutral" };
     default:
-      return { label: t("Approval"), Icon: Shield };
+      return { label: t("Approval"), Icon: Shield, tone: "warning" };
   }
 }
 
@@ -158,10 +158,24 @@ export function HistoryItem({
         ) : (
           <span className="notification-project" />
         )}
-        <span className="notification-history-kind">
-          <kind.Icon className="icon-sm" strokeWidth={1.75} aria-hidden />
-          {kind.label}
-        </span>
+        {entry.kind === "failed" || entry.kind === "finished" ? (
+          <StatusBadge
+            className="notification-history-kind"
+            size="xs"
+            status={entry.kind === "failed" ? "failed" : "done"}
+          >
+            {kind.label}
+          </StatusBadge>
+        ) : (
+          <Badge
+            className="notification-history-kind"
+            size="xs"
+            tone={kind.tone}
+            icon={<kind.Icon className="icon-sm" strokeWidth={1.75} aria-hidden />}
+          >
+            {kind.label}
+          </Badge>
+        )}
         {pending ? <Badge tone="warning">{t("Waiting for you")}</Badge> : null}
         <span className="notification-history-actions">
           {long ? (

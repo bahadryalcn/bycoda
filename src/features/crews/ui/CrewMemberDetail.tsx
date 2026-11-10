@@ -191,6 +191,7 @@ export function CrewMemberDetail({
         identity={identity}
         tools={data.toolsSupported}
         machineId={data.machine.id}
+        projectId={data.project.id}
         modelPoolsSupported={data.modelPoolsSupported}
         handleError={handleError}
         traits={traits}

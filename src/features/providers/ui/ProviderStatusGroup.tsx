@@ -240,7 +240,6 @@ export function ProviderStatusGroup({
             variant="ghost"
             iconOnly
             label={t("Check for updates")}
-            tooltip={t("Check for updates")}
             loading={checking}
             disabled={checking}
             onClick={onCheck}

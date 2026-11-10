@@ -74,6 +74,13 @@ button:global(.bycoda-arc):is(
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A picker option keeps one name line and one detail line. Full text remains
+   available through ComboboxChoice's overflow tooltip and accessible description. */
+.option :global(.bycoda-select-description) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .group + .group {
   margin-block-start: 0.25rem;
 }

@@ -32,6 +32,9 @@ import type { WorkspaceRpcRequest } from "../workspaces/workspace-rpc-contracts"
 
 type Options = {
   isActive?: (workspace: ManagedWorkspace) => Promise<boolean>;
+  /** Close may retire an absent directory's record while retaining editor recovery.
+   * Must reject every non-editor activity; this never authorizes filesystem cleanup. */
+  canRetireMissing?: (workspace: ManagedWorkspace) => Promise<boolean>;
   /** S4 may pause new materialization when safe disk reclamation is insufficient. */
   beforeMaterialize?: (workspace: ManagedWorkspace) => Promise<void>;
   /** S4 verifies this against the exclusive execution-activity reservation gate. */
@@ -686,7 +689,18 @@ export function createManagedWorkspaceRegistry(
       await settled(current.id);
       await store.db.checkAuthorization();
       if (
-        active ||
+        (await store.workspaceActivityPersistence().load()).reservations.some(
+          (reservation) => reservation.workspaceId === current.id,
+        )
+      )
+        throw new Error("Workspace is reserved before this lifecycle transition");
+      const retireMissing =
+        state === "abandoned" &&
+        !!options.canRetireMissing &&
+        (await entryMissing(current.path)) &&
+        (await options.canRetireMissing(current));
+      if (
+        (active && !retireMissing) ||
         (current.state === "active" && !options.isActive) ||
         current.state === "merged" ||
         ["removing", "pendingRemoval"].includes(current.directoryState)
@@ -695,6 +709,8 @@ export function createManagedWorkspaceRegistry(
       const result = {
         ...current,
         state,
+        // Metadata only: retain Git registration, branch, buffers and recovery history.
+        ...(retireMissing ? { directoryState: "removed" as const } : {}),
         revision: current.revision + 1,
         ...(state === "finished" ? { finishedAt: Date.now() } : { closedAt: Date.now() }),
       };

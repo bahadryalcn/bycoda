@@ -1,7 +1,8 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
-const { limits } = vi.hoisted(() => ({
+const { limits, filters } = vi.hoisted(() => ({
+  filters: { provider: [] as string[], account: [] as string[], project: [], model: [], group: [] },
   limits: {
     status: "ready",
     error: null as string | null,
@@ -26,7 +27,10 @@ vi.mock("./UsageOverview", () => ({
     limits,
   }: {
     limits: (filters: import("../model/usageAnalytics").UsageFilters) => import("react").ReactNode;
-  }) => limits({ provider: [], account: [], project: [], model: [], group: [] }),
+  }) => limits(filters),
+}));
+vi.mock("./GrokLimits", () => ({
+  GrokLimits: () => createElement("div", null, "Grok quota"),
 }));
 vi.mock("./UsageActiveTime", () => ({
   UsageActiveTime: () => createElement("div", null, "Active time card"),
@@ -46,7 +50,17 @@ it("keeps known quota visible when refresh fails", () => {
   const markup = renderToStaticMarkup(createElement(UsagePage));
   expect(markup).toContain("58%");
   expect(markup).toContain("Could not refresh limits");
+  expect(markup).toMatch(/role="alert"[^>]*class="[^"]*usage-account-error/);
+  expect(markup).toContain("Retry: Default account");
   limits.error = null;
+});
+
+it("keeps every provider account in the comparison with its own quota", () => {
+  const markup = renderToStaticMarkup(createElement(UsagePage, { limitsOnly: true }));
+  expect(markup).toContain('aria-label="Codex · Default account"');
+  expect(markup).toContain('aria-label="Claude · Default account"');
+  expect(markup.match(/class="usage-account-identity"/g)).toHaveLength(2);
+  expect(markup.match(/aria-valuenow="58"/g)).toHaveLength(2);
 });
 
 it("uses account colors for limits and exposes usage preferences", () => {
@@ -70,4 +84,21 @@ it("shows the active time card except on the limits-only page", () => {
   expect(renderToStaticMarkup(createElement(UsagePage, { limitsOnly: true }))).not.toContain(
     "Active time card",
   );
+});
+
+it("shows Grok limits only within its provider and account filters", () => {
+  const markup = () => renderToStaticMarkup(createElement(UsagePage));
+  try {
+    expect(markup()).toContain("Grok quota");
+    filters.provider = ["codex"];
+    expect(markup()).not.toContain("Grok quota");
+    filters.provider = ["grok"];
+    filters.account = ["codex:default"];
+    expect(markup()).not.toContain("Grok quota");
+    filters.account = ["grok:default"];
+    expect(markup()).toContain("Grok quota");
+  } finally {
+    filters.provider = [];
+    filters.account = [];
+  }
 });

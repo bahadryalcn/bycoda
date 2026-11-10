@@ -509,7 +509,6 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                   <Button
                     iconOnly
                     label={t(muted ? "Resume" : "Pause mic")}
-                    tooltip={t(muted ? "Resume" : "Pause mic")}
                     variant={muted ? "secondary" : "primary"}
                     tone={muted ? "danger" : undefined}
                     selected={muted}

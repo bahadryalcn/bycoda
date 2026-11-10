@@ -202,7 +202,6 @@ export function ApprovalToasts({
         className="relative"
         ref={trigger}
         type="button"
-        tooltip={t("Notifications")}
         aria-label={t("Notifications")}
         aria-describedby={count > 0 ? `${panelId}-count` : undefined}
         aria-expanded={expanded}
@@ -242,7 +241,6 @@ export function ApprovalToasts({
               iconOnly
               size="sm"
               label={t("Notification options")}
-              tooltip={t("Notification options")}
               variant="ghost"
               aria-expanded={Boolean(optionsAnchor)}
               aria-controls={optionsAnchor ? `${panelId}-options` : undefined}
@@ -253,17 +251,28 @@ export function ApprovalToasts({
           }
           headerBelow={
             // Counts live on the tabs, once; the title stays a plain title.
-            <TabStrip
-              id={panelId}
-              label={t("Notifications")}
-              value={view}
-              onValueChange={setView}
-              controls={`${panelId}-list`}
-              items={[
-                { value: "pending", label: t("Pending"), count },
-                { value: "history", label: t("Recent"), count: visibleHistory.length },
-              ]}
-            />
+            <div className="notification-history-toolbar">
+              <TabStrip
+                id={panelId}
+                label={t("Notifications")}
+                value={view}
+                onValueChange={setView}
+                controls={`${panelId}-list`}
+                items={[
+                  { value: "pending", label: t("Pending"), count },
+                  { value: "history", label: t("Recent"), count: visibleHistory.length },
+                ]}
+              />
+              {view === "history" ? (
+                <ConfirmMorph
+                  label={t("Clear all")}
+                  prompt={t("Clear history?")}
+                  confirmLabel={t("Clear")}
+                  disabled={history.length === 0}
+                  onConfirm={clearHistory}
+                />
+              ) : null}
+            </div>
           }
         >
           {optionsAnchor ? (
@@ -326,23 +335,6 @@ export function ApprovalToasts({
             aria-labelledby={`${panelId}-tab-${view}`}
             className="notification-sheet-list"
           >
-            {view === "history" ? (
-              <div className="notification-history-toolbar">
-                <p className="notification-history-note">
-                  {t(
-                    "What this app announced, newest first: questions, approvals, finished and failed turns, reminders, background work and account notices.",
-                  )}
-                </p>
-                {/* Where the list is, not behind the options menu: the confirmation needs the row's width. */}
-                <ConfirmMorph
-                  label={t("Clear all")}
-                  prompt={t("Clear history?")}
-                  confirmLabel={t("Clear")}
-                  disabled={history.length === 0}
-                  onConfirm={clearHistory}
-                />
-              </div>
-            ) : null}
             {view === "history" && historyUnavailable ? (
               <div className="notification-history-status">
                 <Alert tone="warning">
@@ -473,7 +465,6 @@ function LockedNotice({ onDismiss }: { onDismiss?: () => void }) {
           variant="ghost"
           type="button"
           onClick={onDismiss}
-          tooltip={t("Dismiss notice")}
           aria-label={t("Dismiss notice")}
         >
           <X className="icon-sm" />

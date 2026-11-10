@@ -8,7 +8,7 @@ import {
 import { Button } from "../../../../../shared/ui/Button";
 import { InlineError, InlineMessage } from "../../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../../shared/ui/LoadingText";
-import { Check, Plus } from "../../../../../shared/ui/icons";
+import { Plus } from "../../../../../shared/ui/icons";
 import { useModelSource } from "../../../../sessions/public/modelSource";
 import { defaultModelSettings } from "../../../../sessions/public/models";
 import type { assistantRequest } from "../../../model/assistantClient";
@@ -131,12 +131,6 @@ export function ModelPoolEditor({
           {t("Add model")}
         </Button>
         <div className={styles.saveBar}>
-          {state.saved && (
-            <span className={styles.saved}>
-              <Check className="icon-xs" aria-hidden />
-              {t("Models saved")}
-            </span>
-          )}
           <Button
             type="button"
             size="sm"
@@ -150,6 +144,9 @@ export function ModelPoolEditor({
             size="sm"
             variant="primary"
             loading={state.pending}
+            loadingLabel={t("Saving…")}
+            success={state.saved}
+            successLabel={t("Models saved")}
             disabled={!state.dirty || state.conflict}
             onClick={() => void state.save()}
           >

@@ -15,6 +15,27 @@ function fakeChild() {
 const healthy = async () => new Response("{}", { status: 200 });
 
 describe("local runtime", () => {
+  it("passes a vision projector and model alias as separate arguments", async () => {
+    const spawnImpl = vi.fn(() => fakeChild()) as unknown as typeof spawn;
+    const runtime = new LocalRuntime({
+      spawnImpl,
+      fetchImpl: healthy as unknown as typeof fetch,
+      allocatePort: async () => 45115,
+    });
+    await runtime.start({
+      sourceId: "vision",
+      executable: "llama-server",
+      modelPath: "/m.gguf",
+      projectorPath: "/mmproj.gguf",
+      model: "clef-flash",
+    });
+    expect(spawnImpl).toHaveBeenCalledWith(
+      "llama-server",
+      expect.arrayContaining(["--mmproj", "/mmproj.gguf", "--alias", "clef-flash"]),
+      expect.anything(),
+    );
+    await runtime.stopAll();
+  });
   it("binds the server to 127.0.0.1 and reports a loopback endpoint", async () => {
     const child = fakeChild();
     const spawnImpl = vi.fn(() => child) as unknown as typeof spawn;

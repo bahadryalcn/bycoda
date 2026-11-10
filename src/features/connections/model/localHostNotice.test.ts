@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { localHostNotice } from "./localHostNotice";
+import { localHostNotice, localHostVersionMismatch } from "./localHostNotice";
 
 const BUSY = "Could not check whether the host is busy.";
 const deferred = (installed: string | null, bundled: string | null, message = BUSY) => ({
@@ -33,6 +33,7 @@ it("reports a waiting update with both versions and the mapped reason", () => {
       },
       { text: "It continues when the host can be restarted safely." },
     ],
+    canUpdateNow: true,
   });
   const unknown = localHostNotice(
     deferred(null, "0.5.54", "Another host update is being installed."),
@@ -40,11 +41,14 @@ it("reports a waiting update with both versions and the mapped reason", () => {
   );
   expect(unknown?.title).toBe("A host update is waiting.");
   expect(unknown?.details).toEqual([{ text: "Another host update is being installed." }]);
+  // Another installer owns the Host: a second one must not be offered.
+  expect(unknown?.canUpdateNow).toBe(false);
 });
 
 it("warns when the update failed and shows versions only when they differ", () => {
   const failed = { state: "failed", installed: "1", bundled: "2", message: "Disk full" };
   expect(localHostNotice(failed, "ok")).toMatchObject({
+    canUpdateNow: true,
     tone: "warning",
     title: "The host on this computer could not be updated.",
     details: [{ params: { p0: "1", p1: "2" } }, { text: "Disk full" }],
@@ -66,4 +70,25 @@ it("keeps the mismatch warnings ahead of update state", () => {
 it("is silent for settled states", () => {
   expect(localHostNotice(null, "pending")).toBeNull();
   expect(localHostNotice({ state: "current" }, "ok")).toBeNull();
+});
+
+it("names the side that must be updated when the versions differ", () => {
+  expect(localHostVersionMismatch(deferred("0.7.7", "0.7.8"))).toEqual({
+    installed: "0.7.7",
+    bundled: "0.7.8",
+    update: "host",
+  });
+  // Numeric, not lexical: 0.7.10 is newer than 0.7.9, and only a newer app can match it.
+  expect(
+    localHostVersionMismatch({ state: "current", installed: "0.7.10", bundled: "0.7.9" }),
+  ).toMatchObject({ update: "app" });
+  expect(localHostVersionMismatch(deferred("0.7.8", "0.7.8"))).toBeNull();
+  expect(localHostVersionMismatch(deferred(null, "0.7.8"))).toBeNull();
+  // An older Host that is not waiting on the installer is being handled already.
+  expect(
+    localHostVersionMismatch({ state: "upgraded", installed: "0.7.7", bundled: "0.7.8" }),
+  ).toBeNull();
+  expect(
+    localHostVersionMismatch(deferred("0.7.7", "0.7.8", "Another host update is being installed.")),
+  ).toBeNull();
 });

@@ -43,10 +43,11 @@ const percent = (range: { min: number; max: number }, floor = 0, cap = 1) =>
 
 /** Limits a generated theme keeps tighter than the sliders, so no theme makes the app unreadable. */
 export const THEME_SUGGESTION_GUARDS = {
-  contrastMin: 90,
+  contrastMin: 100,
   paneOpacityMin: 0.7,
   uiScaleMin: 0.8,
   uiScaleMax: 1.5,
+  terminalSizeGap: 2,
 } as const;
 
 export const THEME_FIELD_SPECS = {
@@ -54,7 +55,7 @@ export const THEME_FIELD_SPECS = {
     codeSize: number(RANGES.codeSize.min, RANGES.codeSize.max),
     ligatures: flag,
     terminalFont: font,
-    terminalSize: number(RANGES.terminalSize.min, RANGES.terminalSize.max),
+    terminalSize: number(RANGES.codeSize.min, RANGES.codeSize.max),
     terminalWeight: choice(CHOICES.terminalWeight),
     terminalLineHeight: choice(CHOICES.terminalLineHeight),
   },
@@ -93,9 +94,9 @@ export const THEME_FIELD_SPECS = {
   },
   image: {
     scope: choice(CHOICES.chatBackgroundScope),
-    emptyOpacity: percent(RANGES.chatBackgroundOpacity),
-    sessionOpacity: percent(RANGES.chatBackgroundOpacity),
-    blur: number(RANGES.chatBackgroundBlur.min, RANGES.chatBackgroundBlur.max),
+    emptyOpacity: percent(RANGES.chatBackgroundOpacity, 0.3),
+    sessionOpacity: percent(RANGES.chatBackgroundOpacity, 0.15),
+    blur: number(RANGES.chatBackgroundBlur.min, Math.min(12, RANGES.chatBackgroundBlur.max)),
   },
   motion: {
     crewTheme: choice(CHOICES.crewTheme),
@@ -113,6 +114,20 @@ export type ThemeInterface = GroupValues<typeof THEME_FIELD_SPECS.interface>;
 export type ThemeBackground = GroupValues<typeof THEME_FIELD_SPECS.background>;
 export type ThemeImage = GroupValues<typeof THEME_FIELD_SPECS.image>;
 export type ThemeMotion = GroupValues<typeof THEME_FIELD_SPECS.motion>;
+
+/** Generated code and terminal text share one scale; manual preferences keep their full range. */
+export function resolveThemeTypography(
+  typography: ThemeTypography,
+  currentCodeSize: number,
+): ThemeTypography {
+  if (typography.terminalSize === undefined) return typography;
+  const reference = typography.codeSize ?? currentCodeSize;
+  const gap = THEME_SUGGESTION_GUARDS.terminalSizeGap;
+  return {
+    ...typography,
+    terminalSize: Math.min(reference + gap, Math.max(reference - gap, typography.terminalSize)),
+  };
+}
 
 function sanitizeField(spec: FieldSpec, value: unknown): string | number | boolean | undefined {
   switch (spec.kind) {
@@ -183,5 +198,5 @@ export const THEME_IMAGE_DEFAULTS = {
 } as const satisfies Required<ThemeImage>;
 
 export function resolveImageTuning(image: ThemeImage | undefined): Required<ThemeImage> {
-  return { ...THEME_IMAGE_DEFAULTS, ...image };
+  return { ...THEME_IMAGE_DEFAULTS, ...sanitizeThemeGroup("image", image) };
 }

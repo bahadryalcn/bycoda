@@ -89,25 +89,46 @@ async function render() {
   await act(async () => {});
 }
 
-it("keeps Servers reachable through compact rail Tools before opening a project", async () => {
+it("keeps Servers directly reachable in the compact rail before opening a project", async () => {
   props.cwd = "";
   props.projectRailOpen = false;
   props.compactProjectRail = true;
   props.onOpenServers = vi.fn();
   props.serversActive = true;
   await render();
-  const tools = container.querySelector<HTMLButtonElement>('button[aria-label="Tools"]')!;
-  expect(tools.getAttribute("aria-expanded")).toBe("false");
-  await act(async () => tools.click());
-  const dialog = document.querySelector('[role="dialog"][aria-label="Tools"]')!;
-  const button = dialog.querySelector<HTMLButtonElement>('button[aria-label="Servers"]')!;
+  const button = container.querySelector<HTMLButtonElement>(
+    '[data-compact-project-rail] button[aria-label="Servers"]',
+  )!;
   expect(button).not.toBeNull();
   await act(async () => button.click());
   expect(props.onOpenServers).toHaveBeenCalledOnce();
   expect(props.onSelectProject).not.toHaveBeenCalled();
-  expect(tools.getAttribute("aria-expanded")).toBe("false");
   expect(document.querySelector('[role="dialog"][aria-label="Tools"]')).toBeNull();
 });
+
+it.each([
+  ["Last sessions", { lastSessionsOpen: true }],
+  ["a tool page", { inboxActive: true }],
+] as const)(
+  "opens the workspace from %s in the compact rail without going back",
+  async (_, state) => {
+    props.projectRailOpen = false;
+    props.compactProjectRail = true;
+    props.onOpenLastSessions = vi.fn();
+    props.onOpenInbox = vi.fn();
+    props.onGoBack = vi.fn();
+    props.onShowWorkspace = vi.fn();
+    Object.assign(props, state);
+    await render();
+    const button = container.querySelector<HTMLButtonElement>(
+      '[data-compact-project-rail] button[aria-label="Workspace"]',
+    )!;
+    expect(button).not.toBeNull();
+    await act(async () => button.click());
+    expect(props.onShowWorkspace).toHaveBeenCalledOnce();
+    expect(props.onGoBack).not.toHaveBeenCalled();
+  },
+);
 
 it("keeps Explorer and Changes reachable from the workspace beside a compact rail", async () => {
   props.projectRailOpen = false;

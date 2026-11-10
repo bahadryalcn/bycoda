@@ -38,15 +38,15 @@ async function hover(content: TooltipContent, text: string) {
   return document.querySelector<HTMLElement>('[role="tooltip"]');
 }
 
-it("keeps only the key caps when the control already shows the label", async () => {
+it("preserves explicitly supplied content when the anchor text matches", async () => {
   const tooltip = await hover({ label: "Notes", shortcut: "Ctrl+Shift+L" }, "Notes");
   expect(tooltip).not.toBeNull();
-  expect(tooltip!.textContent).not.toContain("Notes");
+  expect(tooltip!.textContent).toContain("Notes");
   expect(tooltip!.querySelector('[role="img"]')).not.toBeNull();
 });
 
-it("does not open an always tooltip that would only repeat the visible label", async () => {
-  expect(await hover({ label: "Notes" }, "Notes")).toBeNull();
+it("leaves explicit tooltip content to its owner instead of suppressing it", async () => {
+  expect((await hover({ label: "Notes" }, "Notes"))!.textContent).toBe("Notes");
 });
 
 it("still shows a label the control does not display, with its key caps", async () => {
@@ -56,5 +56,9 @@ it("still shows a label the control does not display, with its key caps", async 
 
 it("keeps detail lines for a visible label", async () => {
   const tooltip = await hover({ label: "Notes", details: ["3 unread"] }, "Notes");
-  expect(tooltip!.textContent).toBe("3 unread");
+  expect(tooltip!.textContent).toBe("Notes3 unread");
+});
+
+it("does not infer overflow from different tooltip and anchor wording", async () => {
+  expect(await hover({ when: "overflow", label: "Full notes title" }, "Notes")).toBeNull();
 });

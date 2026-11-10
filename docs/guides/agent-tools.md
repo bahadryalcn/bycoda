@@ -209,6 +209,12 @@ member when a Host provider works, and for Antigravity members through Nano Bana
 ## Cross-provider advisor and subagents
 
 Provider Settings also sets advisor and subagent defaults for new conversations.
+The **Apply to** picker lists workspaces and groups before projects. Use its
+category filters or search by project name, group name or project path. While
+searching, PageUp and PageDown switch categories. Project rows show their group;
+empty groups cannot be selected. Selecting a target does not save changes.
+Saving defaults confirms with **Saved** on the save button. Hover or focus the
+button for the saved target; unsaved counts and save errors remain beside it.
 Project defaults can override the global choices, including turning delegation off;
 reset a project field to follow the global setting again. Existing conversations
 keep their own settings.

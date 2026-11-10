@@ -1,0 +1,25 @@
+.usage-provider-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.usage-provider-legend [aria-pressed="false"] {
+  color: var(--ui-text-secondary);
+  text-decoration: line-through;
+}
+.usage-provider-shares {
+  display: grid;
+  gap: var(--space-1);
+}
+.usage-provider-shares > button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--space-3);
+  text-align: start;
+  font-variant-numeric: tabular-nums;
+}
+.usage-hour-detail {
+  display: grid;
+  gap: var(--space-1);
+  padding-block: var(--space-1);
+}

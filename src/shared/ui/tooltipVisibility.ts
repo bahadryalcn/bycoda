@@ -54,16 +54,13 @@ export function inspectTooltipAnchor(anchor: HTMLElement): {
 
 const compact = (value: string) => value.normalize("NFC").replace(/\s+/g, "").trim();
 
-/** Missing labels include responsive icon-only controls; different labels add information. */
+/** Overflow hints recover clipped text, responsive icon labels and hidden shortcuts. */
 export function needsOverflowTooltip(
   anchor: HTMLElement,
-  label: unknown,
   shortcut?: { raw: string; spoken: string; keys: string },
 ): boolean {
   const visible = inspectTooltipAnchor(anchor);
-  if (visible.clipped) return true;
-  const shown = compact(visible.text);
-  if (label != null && (typeof label !== "string" || !shown.includes(compact(label)))) return true;
+  if (visible.clipped || visible.text.trim() === "") return true;
   if (!shortcut) return false;
   const matchesKeys = (text: string) => {
     const keys = compact(text).replace(/\+/g, "");

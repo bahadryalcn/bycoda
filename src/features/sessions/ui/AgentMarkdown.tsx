@@ -577,8 +577,6 @@ function MarkdownCodeShell({
         label={label}
         variant="ghost"
         type="button"
-
-        tooltip={label}
         aria-label={label}
         className="markdown-code-copy markdown-code-toggle"
         aria-expanded={!collapsed}

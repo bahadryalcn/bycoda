@@ -77,11 +77,46 @@ describe("derived pool", () => {
     });
     expect(rows[1]).toMatchObject({ harness: "claude", roles: ["reply"] });
   });
+  it("leaves the account unset for a harness without provider accounts, so it saves unchanged", async () => {
+    const rows = deriveAssistantModelPool({
+      execution: { ...execution("gpt-5"), harness: "grok", model: "grok-4" },
+      replyExecution: execution("fast", "claude"),
+    } as never);
+    expect(rows[0]).not.toHaveProperty("providerAccountId");
+    expect(rows[1]).toMatchObject({ harness: "claude", providerAccountId: "default" });
+    await expect(setAssistantModelPool(deps(), 0, rows)).resolves.toBeDefined();
+  });
   it("is empty without any execution", () => {
     expect(deriveAssistantModelPool({ execution: null } as never)).toEqual([]);
   });
   it("is returned as derived at version 0 until a pool is saved", async () => {
     expect(await getAssistantModelPool(deps())).toMatchObject({ derived: true, version: 0 });
+  });
+});
+
+describe("derived pool with a catalog", () => {
+  const same = {
+    ...(profile as object),
+    replyExecution: execution("gpt-5"),
+    planningExecution: undefined,
+  } as never;
+  it("uses the value-aware default only for the derived view", async () => {
+    setAssistantModelPoolPorts({
+      catalog: async () => ({
+        models: {
+          codex: [
+            { id: "gpt-5", name: "GPT-5" },
+            { id: "mini", name: "GPT-5 Mini" },
+          ],
+        },
+      }),
+    });
+    const d = { ...deps(), profile: async () => same };
+    const derived = await getAssistantModelPool(d);
+    expect(derived.derived).toBe(true);
+    expect(derived.rows.map((r) => r.model)).toEqual(["gpt-5", "mini"]);
+    await setAssistantModelPool(d, 0, [row("a")]);
+    expect((await getAssistantModelPool(d)).rows.map((r) => r.id)).toEqual(["a"]);
   });
 });
 

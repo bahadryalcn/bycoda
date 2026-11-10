@@ -3,7 +3,12 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { getSearchQuery, openSearchPanel, SearchQuery, setSearchQuery } from "@codemirror/search";
 import { afterEach, expect, it } from "vitest";
-import { editorSearch, handleEditorFindKey, openReplacePanel } from "./editorSearch";
+import {
+  editorSearch,
+  handleEditorFindKey,
+  openFindInActiveEditor,
+  openReplacePanel,
+} from "./editorSearch";
 import { saveKeybindingOverride } from "../../settings/model/settings";
 
 let view: EditorView | undefined;
@@ -80,4 +85,32 @@ it("shows the editor clear control when the search is set programmatically", () 
   openSearchPanel(view);
   view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: "alpha" })) });
   expect(host.querySelector<HTMLButtonElement>(".cm-find-clear")!.hidden).toBe(false);
+});
+
+it("keeps the last focused pane for menu Find after focus leaves the editor", async () => {
+  host = document.createElement("div");
+  document.body.append(host);
+  const first = new EditorView({ parent: host, doc: "first", extensions: [editorSearch] });
+  view = new EditorView({ parent: host, doc: "second", extensions: [editorSearch] });
+  const outside = document.createElement("button");
+  host.append(outside);
+  try {
+    view.focus();
+    // Let CodeMirror finish focus/blur updates before testing retained focus.
+    await expect.poll(() => view!.dom.classList.contains("cm-focused")).toBe(true);
+    outside.focus();
+    await expect.poll(() => host!.querySelector(".cm-focused")).toBeNull();
+    expect(openFindInActiveEditor()).toBe(true);
+    expect(first.dom.querySelector(".cm-find")).toBeNull();
+    await expect
+      .poll(() => document.activeElement)
+      .toBe(view.dom.querySelector('input[name="search"]'));
+    view.destroy();
+    view = undefined;
+    outside.focus();
+    expect(openFindInActiveEditor()).toBe(true);
+    expect(first.dom.querySelector(".cm-find")).not.toBeNull();
+  } finally {
+    first.destroy();
+  }
 });

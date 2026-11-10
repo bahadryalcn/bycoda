@@ -17,6 +17,8 @@ pub const LABEL: &str = "desktop-control-indicator";
 const EVENT: &str = "desktop_control_indicator_state";
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 const CHANGE_WAIT: Duration = Duration::from_secs(25);
+/// Enabled-but-idle control is not work: the indicator stays until activity settles this long.
+const LINGER: Duration = Duration::from_secs(20);
 const DEADLINE: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -71,18 +73,25 @@ struct Core {
     view: View,
     generation: u64,
     dismissed: bool,
+    last_active: Option<Instant>,
 }
 impl Core {
-    fn poll(&mut self, generation: u64, result: Result<Status, String>) -> bool {
+    fn poll(&mut self, generation: u64, result: Result<Status, String>, now: Instant) -> bool {
         if generation != self.generation || self.view.stopping {
             return false;
         }
         let previous = self.view.clone();
         match result {
             Ok(status) => {
-                if status.enabled || status.active {
+                if status.active {
                     self.dismissed = false;
                     self.view.visible = true;
+                    self.last_active = Some(now);
+                } else if self
+                    .last_active
+                    .is_none_or(|at| now.saturating_duration_since(at) >= LINGER)
+                {
+                    self.view.visible = false;
                 }
                 if status.stopped && status.inactive() {
                     self.view.stop_error = false;
@@ -128,6 +137,8 @@ impl Core {
             status.active = false;
             status.stopped = true;
             status.current_action = None;
+            // Keep confirmed Stop feedback on screen for the linger period.
+            self.last_active = Some(Instant::now());
             self.view.status_error = false;
             self.view.stop_error = false;
         } else {
@@ -381,7 +392,7 @@ pub(crate) fn init(app: &AppHandle) -> Result<(), String> {
                     let changed = {
                         let state = app.state::<State>();
                         let result = match state.core.lock() {
-                            Ok(mut core) => core.poll(generation, result),
+                            Ok(mut core) => core.poll(generation, result, Instant::now()),
                             Err(_) => false,
                         };
                         result
@@ -429,7 +440,7 @@ pub(crate) fn init(app: &AppHandle) -> Result<(), String> {
                         let state = app.state::<State>();
                         if let Ok(mut core) = state.core.lock() {
                             let generation = core.generation;
-                            core.poll(generation, Err(error));
+                            core.poll(generation, Err(error), Instant::now());
                         }
                         if let Ok(mut captured) = state.source.lock() {
                             if source.as_ref().is_some_and(|old| {
@@ -592,24 +603,40 @@ mod tests {
         let mut idle = active();
         idle.enabled = false;
         idle.active = false;
-        core.poll(0, Ok(idle));
+        core.poll(0, Ok(idle), Instant::now());
         assert!(!core.view.visible);
-        core.poll(0, Ok(active()));
+        core.poll(0, Ok(active()), Instant::now());
         assert!(core.view.visible);
         assert!(core.dismiss().is_err());
-        core.poll(0, Err("unavailable".into()));
+        core.poll(0, Err("unavailable".into()), Instant::now());
         assert!(core.view.visible);
         assert!(core.view.status_error);
         assert!(core.view.status.is_none());
         assert!(core.dismiss().is_err());
     }
     #[test]
+    fn enabled_idle_control_stays_hidden_and_hides_after_activity_settles() {
+        let mut core = Core::default();
+        let start = Instant::now();
+        let mut idle = active();
+        idle.active = false;
+        idle.current_action = None;
+        core.poll(0, Ok(idle.clone()), start);
+        assert!(!core.view.visible);
+        core.poll(0, Ok(active()), start);
+        assert!(core.view.visible);
+        core.poll(0, Ok(idle.clone()), start + Duration::from_secs(5));
+        assert!(core.view.visible);
+        core.poll(0, Ok(idle), start + LINGER);
+        assert!(!core.view.visible);
+    }
+    #[test]
     fn stop_fences_old_poll_and_requires_actual_ack_before_hiding() {
         let mut core = Core::default();
-        core.poll(0, Ok(active()));
+        core.poll(0, Ok(active()), Instant::now());
         let stop = core.begin_stop().unwrap();
         assert!(core.begin_stop().is_none());
-        assert!(!core.poll(0, Ok(active())));
+        assert!(!core.poll(0, Ok(active()), Instant::now()));
         core.finish_stop(stop, false);
         assert!(core.view.stop_error);
         assert!(core.dismiss().is_err());
@@ -620,7 +647,7 @@ mod tests {
         assert!(core.view.visible);
         core.dismiss().unwrap();
         assert!(!core.view.visible);
-        assert!(!core.poll(stop, Ok(active())));
+        assert!(!core.poll(stop, Ok(active()), Instant::now()));
         assert!(!core.view.visible);
     }
     #[test]

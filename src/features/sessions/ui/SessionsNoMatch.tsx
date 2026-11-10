@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Search, X } from "../../../shared/ui/icons";
 import { ShortcutKeys } from "../../../shared/ui/ShortcutKbd";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useT } from "../../../shared/i18n";
 
 /**
@@ -31,9 +32,9 @@ export function SessionsNoMatch({
         />
         <div className="min-w-0">
           <p className="text-ui-body font-medium">{t("No matching sessions")}</p>
-          <p className="truncate text-ui-caption text-(--ui-text-secondary)" title={query}>
-            “{query}”
-          </p>
+          <OverflowTooltip label={query}>
+            <p className="truncate text-ui-caption text-(--ui-text-secondary)">“{query}”</p>
+          </OverflowTooltip>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-1 ps-6">

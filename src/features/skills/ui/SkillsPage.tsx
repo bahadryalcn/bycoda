@@ -173,6 +173,9 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     {},
   );
   const [saving, setSaving] = useState(false);
+  const [savedDocument, setSavedDocument] = useState<{ path: string; content: string } | null>(
+    null,
+  );
   const savePending = useRef(false);
   const editorView = useRef<EditorView | null>(null);
   const editable = previewSkill !== null && !previewMachine && canDeleteSkill(previewSkill);
@@ -205,7 +208,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
       });
       invalidateSkills();
       window.dispatchEvent(new Event(SKILLS_CHANGE_EVENT));
-      setActionResult(t("Skill saved."));
+      setSavedDocument({ path, content });
       requestRefresh("local");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -1068,6 +1071,13 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                     <Button
                       variant="primary"
                       loading={saving}
+                      loadingLabel={t("Saving…")}
+                      success={
+                        !dirty &&
+                        savedDocument?.path === previewSkill.path &&
+                        savedDocument.content === draft
+                      }
+                      successLabel={t("Saved")}
                       disabled={!dirty || previewText === null}
                       onClick={() => void onSave()}
                     >
@@ -1175,7 +1185,9 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                           ? t("Saving…")
                           : dirty
                             ? t("Unsaved changes")
-                            : t("Saved")}
+                            : editable
+                              ? ""
+                              : t("Saved")}
                   </span>
                   <span>
                     {editingSource || (split && editable) ? t("Ctrl/Cmd+S to save") : t("Markdown")}

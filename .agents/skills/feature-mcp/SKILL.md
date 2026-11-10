@@ -20,6 +20,7 @@ Use for Settings MCP list/discovery/add/login/remove/config and External MCP acc
 ## Preserve
 
 - Keep outgoing provider configurations separate from incoming local-Host access grants; a token-management RPC does not imply outgoing remote configuration support.
+- Global discovery uses `globalOnly` and bypasses project paths and Claude project opt-outs; keep its cache separate from Project. Claude enablement remains project-only; Global Codex/OpenCode writes retain exact config identity.
 - Preserve exact provider/scope/name/config identity and applicable local-only picker restrictions. Same-name Claude health is not independently verified per-scope health.
 - Configured/Disabled are configuration evidence; do not relabel them Connected from a saved file or unsupported health probe.
 - Continuous rendering reveals cached full-array matches, preserving search, focus, expanded rows and scroll; it must not add network pages or repeat discovery/health per batch.

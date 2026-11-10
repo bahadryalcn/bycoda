@@ -246,6 +246,44 @@ it("uses explicit Turkish case folding and option descriptions for search withou
   expect(document.body.querySelectorAll('[role="option"]')).toHaveLength(1);
 });
 
+it("shows selected names in value order with a count beside the chevron", async () => {
+  await act(async () =>
+    root.render(
+      createElement(SearchableSelect, {
+        multiple: true,
+        label: "Sources",
+        value: ["b", "a", "missing"],
+        options: [
+          { value: "a", label: "Alpha" },
+          { value: "b", label: "Beta" },
+        ],
+        onChange: vi.fn(),
+      }),
+    ),
+  );
+  const trigger = container.querySelector("button")!;
+  expect(trigger.textContent).toContain("Beta, Alpha, missing");
+  const badge = trigger.querySelector('[data-size="xs"]')!;
+  expect(badge.textContent).toBe("3");
+  expect(badge.nextElementSibling?.tagName.toLowerCase()).toBe("svg");
+});
+
+it("keeps the placeholder for an empty single selection", async () => {
+  await act(async () =>
+    root.render(
+      createElement(SearchableSelect, {
+        label: "Source",
+        value: "",
+        options: [],
+        placeholder: "Automatic",
+        onChange: vi.fn(),
+      }),
+    ),
+  );
+  expect(container.querySelector("button")?.textContent).toBe("Automatic");
+  expect(container.querySelector('[data-size="xs"]')).toBeNull();
+});
+
 it("counts unavailable selected values and clears them only through an explicit action", async () => {
   const onChange = vi.fn();
 
@@ -444,7 +482,11 @@ it("announces a failed load, offers retry and keeps choosable stale options", as
   expect(onChange).not.toHaveBeenCalled();
   await act(async () =>
     input.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true }),
+      new KeyboardEvent("keydown", {
+        key: "Tab",
+        shiftKey: true,
+        bubbles: true,
+      }),
     ),
   );
   expect(document.body.querySelector('[role="listbox"]')).toBeNull();
@@ -573,4 +615,94 @@ it("closes on Tab and returns focus to the trigger", async () => {
   const input = document.body.querySelector<HTMLInputElement>('[role="combobox"]')!;
   await act(async () => dispatchKey(input, "Tab"));
   expect(document.body.querySelector('[role="option"]')).toBeNull();
+});
+
+const groupedOptions = [
+  { value: "global", label: "Global" },
+  { value: "w", label: "Mono", group: "Workspaces" },
+  { value: "p1", label: "Alpha", group: "Projects" },
+  { value: "p2", label: "Beta", group: "Projects" },
+];
+const filterButtons = () =>
+  Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).filter(
+    (button) => /^(All|Workspaces|Projects)/.test(button.textContent ?? ""),
+  );
+const renderGrouped = (extra: Record<string, unknown> = {}) =>
+  act(async () =>
+    root.render(
+      createElement(SearchableSelect, {
+        label: "Target",
+        value: "",
+        options: groupedOptions,
+        onChange: vi.fn(),
+        ...extra,
+      }),
+    ),
+  );
+
+it("filters by group, keeps focus and arrows on the filtered list, and resets on close", async () => {
+  await renderGrouped({ groupFilter: true });
+  await openMenu();
+  expect(filterButtons().map((button) => button.textContent)).toEqual([
+    "All4",
+    "Workspaces1",
+    "Projects2",
+  ]);
+  const input = document.body.querySelector<HTMLInputElement>('[role="combobox"]')!;
+  input.focus();
+  const projects = filterButtons()[2]!;
+  const press = new MouseEvent("mousedown", {
+    bubbles: true,
+    cancelable: true,
+  });
+  projects.dispatchEvent(press);
+  expect(press.defaultPrevented).toBe(true);
+  await act(async () => projects.click());
+  expect(optionLabels()).toEqual(["Alpha", "Beta"]);
+  expect(activeOption()?.textContent).toContain("Alpha");
+  expect(document.body.querySelector('[role="listbox"]')).not.toBeNull();
+  await act(async () => dispatchKey(input, "ArrowDown"));
+  expect(input.getAttribute("aria-activedescendant")).toBe(activeOption()!.id);
+  expect(activeOption()?.textContent).toContain("Beta");
+  await search("alp");
+  expect(optionLabels()).toEqual(["Alpha"]);
+  await act(async () => dispatchKey(input, "Escape"));
+  await openMenu();
+  expect(optionLabels()).toEqual(["Global", "Mono", "Alpha", "Beta"]);
+});
+
+it("cycles the group filter with PageDown and PageUp from the search field", async () => {
+  await renderGrouped({ groupFilter: true });
+  await openMenu();
+  const input = document.body.querySelector<HTMLInputElement>('[role="combobox"]')!;
+  await act(async () => dispatchKey(input, "PageDown"));
+  expect(optionLabels()).toEqual(["Mono"]);
+  await act(async () => dispatchKey(input, "PageDown"));
+  expect(optionLabels()).toEqual(["Alpha", "Beta"]);
+  await act(async () => dispatchKey(input, "PageDown"));
+  expect(optionLabels()).toEqual(["Global", "Mono", "Alpha", "Beta"]);
+  await act(async () => dispatchKey(input, "PageUp"));
+  expect(optionLabels()).toEqual(["Alpha", "Beta"]);
+});
+
+it("shows no group filter unless asked for and two groups exist", async () => {
+  await renderGrouped();
+  await openMenu();
+  expect(filterButtons()).toHaveLength(0);
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await renderGrouped({ groupFilter: true, options: groupedOptions.slice(2) });
+  await openMenu();
+  expect(filterButtons()).toHaveLength(0);
+});
+
+it("sizes the menu from menuMinWidth and menuMaxHeight, defaulting to 240", async () => {
+  await renderGrouped();
+  await openMenu();
+  const menu = () => document.body.querySelector<HTMLElement>('[role="dialog"][aria-label]')!;
+  expect(menu().parentElement!.style.width || menu().style.width).toBe("240px");
+  await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+  await renderGrouped({ menuMinWidth: 380, menuMaxHeight: 420 });
+  await openMenu();
+  expect(menu().parentElement!.style.width || menu().style.width).toBe("380px");
 });

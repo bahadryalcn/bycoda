@@ -12,18 +12,23 @@ pub async fn mcp_set_enabled(
     config_path: String,
     enabled: bool,
     expected_enabled: bool,
+    global_only: Option<bool>,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let home = PathBuf::from(dirs_home().ok_or("Home directory not found")?);
         let project = expand_home(&cwd);
-        if !project.is_dir() {
+        let global_only = global_only.unwrap_or(false);
+        if global_only && (provider == "claude" || scope != "user") {
+            return Err("This MCP enablement change requires a project".into());
+        }
+        if !global_only && !project.is_dir() {
             return Err("Project directory does not exist".into());
         }
         let codex_home = std::env::var_os("CODEX_HOME").map(PathBuf::from);
         let opencode = std::env::var_os("OPENCODE_CONFIG").map(PathBuf::from);
         let connections = discover(
             &home,
-            &project,
+            (!global_only).then_some(project.as_path()),
             codex_home.as_deref(),
             &super::claude_desktop_config(&home),
             opencode.as_deref(),

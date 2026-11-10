@@ -1,5 +1,79 @@
 import { expect, test, type Page } from "@playwright/test";
 
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`compact limits contain account content ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/usage-budgets.html?page=1&limits=1&stress=1&theme=${theme}`);
+      const accounts = page.locator(".usage-account");
+      await expect(accounts).toHaveCount(5);
+      await expect(accounts.nth(4)).toHaveAccessibleName("Grok");
+      await expect(accounts.nth(4).getByText("81%", { exact: true })).toBeVisible();
+      await expect(accounts.nth(2).getByRole("alert")).toContainText(
+        "Previous limits remain visible.",
+      );
+      await expect(accounts.nth(2).getByRole("meter")).toHaveCount(2);
+      await expect(accounts.nth(2).getByText("39%", { exact: true })).toBeVisible();
+      await expect(accounts.nth(2).getByText("85%", { exact: true })).toBeVisible();
+      await expect(accounts.nth(3).getByText("0%", { exact: true })).toBeVisible();
+      const legend = page.locator(".usage-quota-legend-item");
+      await expect(legend).toHaveCount(4);
+      for (const account of ["codex:default", "claude:default", "claude:work", "claude:shared"])
+        await expect(
+          page.locator(`.usage-quota-legend-item[data-account="${account}"]`),
+        ).toBeVisible();
+      const overflow = await accounts.evaluateAll((nodes) =>
+        nodes.flatMap((node, index) => {
+          const outer = node.getBoundingClientRect();
+          return Array.from(node.querySelectorAll("h3, h4, [role=alert], [role=meter]"))
+            .filter((child) => {
+              const box = child.getBoundingClientRect();
+              return (
+                box.left < outer.left - 1 ||
+                box.right > outer.right + 1 ||
+                box.bottom > outer.bottom + 1
+              );
+            })
+            .map((child) => `${index}: ${child.tagName}`);
+        }),
+      );
+      expect(overflow).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await page.screenshot({
+        path: `temp/verification/2026-11-10-usage-compact/limits-${theme}-${width}.png`,
+        fullPage: true,
+        animations: "disabled",
+      });
+      const history = page.locator(".usage-panel").filter({
+        has: page.getByRole("heading", { name: "Limit history", exact: true }),
+      });
+      await history.scrollIntoViewIfNeeded();
+      await history.screenshot({
+        path: `temp/verification/2026-11-10-usage-compact/history-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+}
+
+test("account retry refreshes only the failed account", async ({ page }) => {
+  await page.goto("/tests/browser/usage-budgets.html?page=1&limits=1&stress=1");
+  const failed = page.locator(".usage-account").nth(2);
+  await failed.getByRole("button", { name: /Retry/ }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { usageQuotaFetches: string[] }).usageQuotaFetches),
+    )
+    .toEqual(["work"]);
+  await expect(page.locator(".usage-account").first().getByRole("meter").first()).toHaveAttribute(
+    "aria-valuenow",
+    "68",
+  );
+});
+
 for (const [theme, width] of [
   ["dark", 1280],
   ["light", 390],
@@ -11,7 +85,7 @@ for (const [theme, width] of [
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(`/tests/browser/usage-budgets.html?page=1&theme=${theme}`);
     const accounts = page.locator(".usage-account");
-    await expect(accounts).toHaveCount(3);
+    await expect(accounts).toHaveCount(4);
     await page.getByRole("radio", { name: "Limits", exact: true }).click();
     await expect(accounts.first().getByRole("meter").first()).toHaveAttribute(
       "aria-valuenow",

@@ -18,7 +18,15 @@ import { ErrorNotice } from "./ErrorNotice";
 type FieldErrors = { ports?: string; folders?: string };
 
 /** Extra ports and folders for the scan, saved through the discovery settings RPC. */
-export function ScanSettings({ client }: { client: DecisionModelsClient }) {
+export function ScanSettings({
+  client,
+  onScan,
+  scanning = false,
+}: {
+  client: DecisionModelsClient;
+  onScan: () => Promise<void>;
+  scanning?: boolean;
+}) {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
@@ -60,6 +68,11 @@ export function ScanSettings({ client }: { client: DecisionModelsClient }) {
   const dirty = ports !== saved.ports || folders !== saved.folders;
 
   const save = () => {
+    if (!dirty) {
+      setSaveError(null);
+      void onScan().catch((error: unknown) => setSaveError(error));
+      return;
+    }
     const portResult = parsePorts(ports);
     const folderResult = parseFolders(folders);
     const nextErrors: FieldErrors = {};
@@ -93,6 +106,7 @@ export function ScanSettings({ client }: { client: DecisionModelsClient }) {
           setFolders(next.folders);
           setSaved(next);
           setSaving(false);
+          void onScan().catch((error: unknown) => setSaveError(error));
         },
         (error: unknown) => {
           if (!alive.current) return;
@@ -139,11 +153,11 @@ export function ScanSettings({ client }: { client: DecisionModelsClient }) {
           <Button
             variant="primary"
             size="sm"
-            loading={saving}
-            disabled={!loaded || !dirty || saving}
+            loading={saving || scanning}
+            disabled={!loaded || saving || scanning}
             onClick={save}
           >
-            {t("Save")}
+            {dirty ? t("Save and scan") : t("Scan with these settings")}
           </Button>
         </div>
       </div>

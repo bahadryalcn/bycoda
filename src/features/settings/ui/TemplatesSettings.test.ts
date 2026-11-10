@@ -44,13 +44,15 @@ it("retains saved data and the draft on storage failure, then reports successful
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Could not save templates",
   );
-  expect(statusText()).toContain("Could not save templates");
+  expect(statusText()).not.toContain("Could not save templates");
   expect(loadPromptTemplates()[0].name).toBe("Review");
   expect(input.value).toBe("Updated draft");
   write.mockRestore();
   await act(async () => button("Save templates").click());
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(statusText()).toContain("Saved");
+  expect(button("Saved")).toBeDefined();
+  expect(container.querySelector(".template-manager-state")).toBeNull();
   expect(loadPromptTemplates()[0].name).toBe("Updated draft");
 });
 

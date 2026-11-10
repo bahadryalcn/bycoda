@@ -10,12 +10,18 @@ health can confirm readiness; a failed refresh clears the old health observation
 Activity stays unknown where the provider does not expose a live operation feed.
 Opening this page only reads configuration and status; it does not enable a server.
 
-Open Settings > MCP for the selected local project. Each row belongs to a specific
+Settings > MCP opens in **Global** view. Use the **Global / Project** buttons to switch;
+Project reveals the local project picker and includes its inherited global entries.
+Global reads only machine-wide provider configuration, independently of project-path
+errors. Claude Code permissions are project-specific: select Project to change them.
+Global refresh does not run Claude's project-based health check. Each row belongs to a specific
 provider and scope, shown as a tag next to its name: **Global** applies to every
 project for that provider, **Project** is saved in the selected project's provider
 configuration, and **Local project** applies only to the selected project in your
 personal Claude configuration. Filters can narrow the list by provider and scope.
-**Add MCP server** starts with the Global scope. Credentials saved by one provider are not evidence that another
+**Add MCP server** starts with the Global scope. Choose provider and scope, then paste
+an `mcpServers` block or a named server object. The project path appears only for
+project scopes. Saving adds configuration; Refresh checks available status. Credentials saved by one provider are not evidence that another
 provider is signed in; complete that provider's authorization when needed.
 
 Use a connection's action menu to **Enable** a disabled server or **Disable** an

@@ -1095,6 +1095,7 @@ export function ProjectRail({
                               label: t("Inbox"),
                               active: inboxActive,
                               shortcut: inboxShortcut,
+                              tooltip: inboxUnseen ? t("New items") : undefined,
                               ariaLabel: inboxUnseen
                                 ? `${t("Inbox")}, ${t("New items")}`
                                 : t("Inbox"),

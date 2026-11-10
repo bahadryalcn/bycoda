@@ -64,7 +64,7 @@ describe("applyAppearanceSnapshot", () => {
         windowGlass: false,
       },
       uiScale: 1.25,
-      scrollbar: { ...loadScrollbarStyle(), size: "wide" as const },
+      scrollbar: { ...loadScrollbarStyle(), size: "large" as const },
       sessionList: { density: "compact" as const, showModel: false, showBranch: false },
     };
     // Change the live state, then restore it from the snapshot.
@@ -87,7 +87,7 @@ describe("applyAppearanceSnapshot", () => {
     expect(loadLiveBackgroundIntensity()).toBe(0.5);
     expect(loadCrewTheme()).toBe("matrix");
     expect(loadInteractionTint().source).toBe("accent");
-    expect(loadScrollbarStyle().size).toBe("wide");
+    expect(loadScrollbarStyle().size).toBe("large");
     expect(loadSessionListDisplay()).toMatchObject({
       density: "compact",
       showModel: false,

@@ -130,7 +130,11 @@ it("reorders with the buttons and saves rows in order with the expected version"
   expect(save.expectedVersion).toBe(4);
   expect(save.rows.map((saved: any) => saved.id)).toEqual(["b", "a", "c"]);
   expect(container.textContent).toContain("Models saved");
-  expect(button("Save models").disabled).toBe(true);
+  expect(button("Models saved").disabled).toBe(true);
+  expect(button("Save models")).toBeUndefined();
+  await click("Move model 1 down");
+  expect(button("Save models").disabled).toBe(false);
+  expect(button("Models saved")).toBeUndefined();
 });
 
 it("shows the version conflict and keeps the draft", async () => {
@@ -149,7 +153,7 @@ it("blocks a pool without a Worker row and names the fallback for uncovered role
     ...initial(false),
     rows: [row("a", ["worker"])],
   });
-  expect(container.textContent).toContain("No model is set for Planning, Chief, Reply");
+  expect(container.textContent).toContain("No model is set for Planner, Supervisor, Replies");
   await click("Add model");
   expect(order()).toHaveLength(2);
   await click("Remove model 1");

@@ -547,23 +547,11 @@ export function SearchView({
           }
           actions={
             presentation === "dialog" ? (
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Full screen")}
-                tooltip={t("Full screen")}
-                onClick={onExpand}
-              >
+              <Button variant="ghost" iconOnly label={t("Full screen")} onClick={onExpand}>
                 <Maximize2 className="icon-sm" />
               </Button>
             ) : onCompact ? (
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Restore")}
-                tooltip={t("Restore")}
-                onClick={onCompact}
-              >
+              <Button variant="ghost" iconOnly label={t("Restore")} onClick={onCompact}>
                 <Minimize2 className="icon-sm" />
               </Button>
             ) : null

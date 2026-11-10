@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Catalog } from "./catalog";
-import { verifyEndpoint, verifyInstallationFolder, verifyModelFile } from "./manual-verify";
+import {
+  verifyEndpoint,
+  verifyInstallationFolder,
+  verifyModelFile,
+  verifyModelInstallation,
+} from "./manual-verify";
 import { readGgufHeader, sha256File } from "./gguf";
 
 const GGUF_HEADER = Buffer.concat([
@@ -74,6 +79,45 @@ describe("manual model file check", () => {
 });
 
 describe("installation folder check", () => {
+  it("finds models without a manifest and excludes vision projectors", async () => {
+    mkdirSync(join(dir, "models"));
+    mkdirSync(join(dir, "runtime"));
+    writeFileSync(join(dir, "models", "custom.gguf"), GGUF_HEADER);
+    writeFileSync(join(dir, "models", "mmproj-custom.gguf"), GGUF_HEADER);
+    writeFileSync(join(dir, "runtime", "llama-server.exe"), "runtime");
+    const result = await verifyInstallationFolder(dir, EMPTY_CATALOG);
+    expect(result.models).toEqual([
+      expect.objectContaining({
+        name: "custom",
+        modelPath: join(dir, "models", "custom.gguf"),
+        runtimePath: join(dir, "runtime", "llama-server.exe"),
+        verified: false,
+      }),
+    ]);
+  });
+
+  it("recognizes the Clef vision runtime and projector from the installation record", async () => {
+    mkdirSync(join(dir, "models"));
+    mkdirSync(join(dir, "runtime-vision-b11429"));
+    const modelPath = join(dir, "models", "Clef-Flash-vision.gguf");
+    const projectorPath = join(dir, "models", "mmproj-Clef-Flash.gguf");
+    writeFileSync(modelPath, GGUF_HEADER);
+    writeFileSync(projectorPath, GGUF_HEADER);
+    writeFileSync(join(dir, "runtime-vision-b11429", "llama-server.exe"), "runtime");
+    writeFileSync(
+      join(dir, "installation.json"),
+      JSON.stringify({
+        model: "clef-flash",
+        modelPath: "models/Clef-Flash-vision.gguf",
+        visionProjector: "mmproj-Clef-Flash.gguf",
+      }),
+    );
+    const result = await verifyInstallationFolder(dir, EMPTY_CATALOG);
+    expect(result.runtimePath).toBe(join(dir, "runtime-vision-b11429", "llama-server.exe"));
+    expect(result.projectorPath).toBe(projectorPath);
+    expect(result.models).toHaveLength(1);
+  });
+
   it("reads installation.json and verifies the recorded model", async () => {
     const folder = join(dir, "clef");
     mkdirSync(join(folder, "models"), { recursive: true });
@@ -115,6 +159,92 @@ describe("installation folder check", () => {
       JSON.stringify({ modelPath: "m.gguf", sha256: "f".repeat(64) }),
     );
     await expect(verifyInstallationFolder(folder, EMPTY_CATALOG)).rejects.toThrow("does not match");
+  });
+});
+
+describe("model installation check", () => {
+  it("resolves a discovered nested Clef model to its installation and runtime", async () => {
+    mkdirSync(join(dir, "models"));
+    mkdirSync(join(dir, "runtime-vision-b11429"));
+    const modelPath = join(dir, "models", "Clef-Flash-vision.gguf");
+    const projectorPath = join(dir, "models", "mmproj-Clef-Flash.gguf");
+    writeFileSync(modelPath, GGUF_HEADER);
+    writeFileSync(projectorPath, GGUF_HEADER);
+    writeFileSync(join(dir, "runtime-vision-b11429", "llama-server.exe"), "runtime");
+    writeFileSync(
+      join(dir, "installation.json"),
+      JSON.stringify({
+        model: "clef-flash",
+        modelPath: "models/Clef-Flash-vision.gguf",
+        visionProjector: "mmproj-Clef-Flash.gguf",
+        endpoint: "http://127.0.0.1:8767/v1/systemone",
+      }),
+    );
+    const result = await verifyModelInstallation(modelPath, EMPTY_CATALOG);
+    expect(result).toMatchObject({
+      folder: dir,
+      modelPath,
+      model: "clef-flash",
+      projectorPath,
+      runtimePath: join(dir, "runtime-vision-b11429", "llama-server.exe"),
+      endpoint: "http://127.0.0.1:8767/v1/systemone",
+    });
+  });
+
+  it("preserves a nonpreferred selected file without applying the preferred model's alias or projector", async () => {
+    mkdirSync(join(dir, "models"));
+    const preferred = join(dir, "models", "preferred.gguf");
+    const modelPath = join(dir, "models", "other.gguf");
+    writeFileSync(preferred, GGUF_HEADER);
+    writeFileSync(modelPath, GGUF_HEADER);
+    writeFileSync(
+      join(dir, "installation.json"),
+      JSON.stringify({
+        model: "clef-flash",
+        modelPath: "models/preferred.gguf",
+        endpoint: "http://127.0.0.1:8767/v1/systemone",
+      }),
+    );
+    const result = await verifyModelInstallation(modelPath, EMPTY_CATALOG);
+    expect(result.modelPath).toBe(modelPath);
+    expect(result.models).toHaveLength(2);
+    expect(result.model).toBeUndefined();
+    expect(result.projectorPath).toBeUndefined();
+    expect(result.endpoint).toBeUndefined();
+  });
+
+  it("falls back to the model's own folder without an installation record", async () => {
+    mkdirSync(join(dir, "runtime"));
+    writeFileSync(join(dir, "runtime", "llama-server.exe"), "runtime");
+    const modelPath = join(dir, "custom.gguf");
+    writeFileSync(modelPath, GGUF_HEADER);
+    expect(await verifyModelInstallation(modelPath, EMPTY_CATALOG)).toMatchObject({
+      folder: dir,
+      modelPath,
+      runtimePath: join(dir, "runtime", "llama-server.exe"),
+      verified: false,
+    });
+  });
+
+  it("rejects invalid paths, non-GGUF bodies, directories and projector files", async () => {
+    await expect(verifyModelInstallation("relative.gguf", EMPTY_CATALOG)).rejects.toThrow(
+      "absolute",
+    );
+    await expect(verifyModelInstallation(join(dir, "missing.gguf"), EMPTY_CATALOG)).rejects.toThrow(
+      "not found",
+    );
+    writeFileSync(join(dir, "fake.gguf"), "invalid");
+    await expect(verifyModelInstallation(join(dir, "fake.gguf"), EMPTY_CATALOG)).rejects.toThrow(
+      "GGUF",
+    );
+    mkdirSync(join(dir, "folder.gguf"));
+    await expect(verifyModelInstallation(join(dir, "folder.gguf"), EMPTY_CATALOG)).rejects.toThrow(
+      "not a folder",
+    );
+    writeFileSync(join(dir, "mmproj-test.gguf"), GGUF_HEADER);
+    await expect(
+      verifyModelInstallation(join(dir, "mmproj-test.gguf"), EMPTY_CATALOG),
+    ).rejects.toThrow("projector");
   });
 });
 

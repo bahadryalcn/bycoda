@@ -30,7 +30,6 @@ export function InterfaceReadabilityGroup({ appearance: a }: { appearance: Appea
         id="diff-colors"
         label={t("Diff colors")}
         info={t("Choose how added (+) and removed (−) lines are highlighted.")}
-        stacked
         modified={a.diffPalette !== DIFF_PALETTE_DEFAULT}
         onReset={() => a.onDiffPalette(DIFF_PALETTE_DEFAULT)}
       >

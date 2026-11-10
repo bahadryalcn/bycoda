@@ -30,14 +30,14 @@ describe("appearance snapshot", () => {
     saveLiveBackground("silk");
     saveLiveBackgroundIntensity(0.5);
     saveCrewTheme("matrix");
-    saveScrollbarStyle({ ...captureAppearanceSnapshot().scrollbar!, size: "wide" });
+    saveScrollbarStyle({ ...captureAppearanceSnapshot().scrollbar!, size: "large" });
     saveWorkingIndicator({ ...captureAppearanceSnapshot().working!, style: "steady" });
     saveInteractionTint({ ...captureAppearanceSnapshot().tint!, source: "accent" });
     const look = captureAppearanceSnapshot();
     expect(normalizeAppearanceSnapshot(JSON.parse(JSON.stringify(look)))).toEqual(look);
     expect(look.live).toEqual({ scene: "silk", intensity: 0.5 });
     expect(look.motion?.crewTheme).toBe("matrix");
-    expect(look.scrollbar?.size).toBe("wide");
+    expect(look.scrollbar?.size).toBe("large");
     expect(look.working?.style).toBe("steady");
     expect(look.tint?.source).toBe("accent");
   });

@@ -1,7 +1,8 @@
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useMemo, useState } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { formatDate, formatNumber, t, useLocale } from "../../../shared/i18n";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Select } from "../../../shared/ui/Select";
 import { SortableDataTable } from "../../../shared/ui/SortableDataTable";
@@ -11,6 +12,24 @@ import {
 } from "../../providers/model/providerAccounts";
 import { useRateLimitHistory } from "../../providers/model/rateLimitHistory";
 import type { UsageFilters, UsageWindow } from "../model/usageAnalytics";
+import { usageLabel } from "./UsageVisualizations";
+import { UsageProviderIdentity, usageProviderLabel } from "./UsageProviderIdentity";
+import { HarnessIcon } from "../../../shared/ui/identity/HarnessIcon";
+
+const accountKey = (account: ProviderAccount) => `${account.provider}:${account.id}`;
+const accountLabel = (account: ProviderAccount) =>
+  `${usageProviderLabel(account.provider)} · ${usageLabel(account.label)}`;
+const observationTime = (value: number) =>
+  formatDate(value, {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+  });
+const percent = (value: number) =>
+  `${formatNumber(value, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
 export function QuotaHistory({
   window,
@@ -21,7 +40,7 @@ export function QuotaHistory({
   filters: UsageFilters;
   accounts: ProviderAccount[];
 }) {
-  const locale = useLocale();
+  useLocale();
   const history = useRateLimitHistory();
   const [selectedKind, setKind] = useState<string | null>(null);
   const [account, setAccount] = useState("");
@@ -34,27 +53,19 @@ export function QuotaHistory({
       ),
     [accounts, filters],
   );
-  const selected =
-    knownAccounts.find((a) => `${a.provider}:${a.id}` === account) ??
-    knownAccounts.find((a) =>
-      history.some(
-        (sample) =>
-          sample.account === `${a.provider}:${a.id}` &&
-          sample.at >= window.start &&
-          sample.at < window.end,
-      ),
-    ) ??
-    knownAccounts[0];
-  const key = selected ? `${selected.provider}:${selected.id}` : "";
-  const kind =
-    selectedKind ??
-    history.find(
-      (sample) => sample.account === key && sample.at >= window.start && sample.at < window.end,
-    )?.kind ??
-    "session";
-  const rows = history.filter(
-    (s) => s.account === key && s.kind === kind && s.at >= window.start && s.at < window.end,
+  const key = knownAccounts.some((a) => accountKey(a) === account) ? account : "";
+  const visibleAccounts = knownAccounts.filter((a) => !key || accountKey(a) === key);
+  const accountMap = new Map(visibleAccounts.map((a) => [accountKey(a), a]));
+  const samples = history.filter(
+    (sample) =>
+      accountMap.has(sample.account) && sample.at >= window.start && sample.at < window.end,
   );
+  const kind = selectedKind ?? samples[0]?.kind ?? "session";
+  const rows = samples.filter((s) => s.kind === kind);
+  const latest = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) {
+    if (row.at >= (latest.get(row.account)?.at ?? -Infinity)) latest.set(row.account, row);
+  }
   const width = window.end - window.start;
   return (
     <section className="usage-panel">
@@ -73,10 +84,14 @@ export function QuotaHistory({
             label={t("Account")}
             value={key}
             onChange={setAccount}
-            options={knownAccounts.map((a) => ({
-              value: `${a.provider}:${a.id}`,
-              label: `${a.provider} · ${a.label}`,
-            }))}
+            options={[
+              { value: "", label: t("All accounts") },
+              ...knownAccounts.map((a) => ({
+                value: accountKey(a),
+                label: accountLabel(a),
+                icon: <HarnessIcon harness={a.provider} size="sm" />,
+              })),
+            ]}
           />
           <Select
             hideLabel
@@ -91,6 +106,31 @@ export function QuotaHistory({
           />
         </div>
       </div>
+      <div className="usage-quota-legend">
+        {visibleAccounts.map((a) => {
+          const sample = latest.get(accountKey(a));
+          return (
+            <div
+              className="usage-quota-legend-item"
+              key={accountKey(a)}
+              data-account={accountKey(a)}
+            >
+              <span
+                aria-hidden
+                className="usage-quota-legend-dot"
+                style={{ background: providerAccountColorValue(a) }}
+              />
+              <UsageProviderIdentity provider={a.provider} label={accountLabel(a)} />
+              <span
+                className="usage-quota-legend-value"
+                title={sample ? observationTime(sample.at) : undefined}
+              >
+                {sample ? percent(sample.used) : t("No records")}
+              </span>
+            </div>
+          );
+        })}
+      </div>
       {rows.length ? (
         <>
           <div
@@ -103,10 +143,10 @@ export function QuotaHistory({
             {rows.map((row) => (
               <span
                 className="usage-quota-point"
-                key={row.at}
-                title={`${new Date(row.at).toLocaleString(locale)}: ${row.used.toFixed(1)}%`}
+                key={`${row.account}:${row.kind}:${row.at}`}
+                title={`${accountLabel(accountMap.get(row.account)!)} · ${observationTime(row.at)}: ${percent(row.used)}`}
                 style={{
-                  background: selected ? providerAccountColorValue(selected) : undefined,
+                  background: providerAccountColorValue(accountMap.get(row.account)!),
                   insetInlineStart: `${((row.at - window.start) / width) * 100}%`,
                   insetBlockEnd: `${row.used}%`,
                 }}
@@ -114,9 +154,9 @@ export function QuotaHistory({
             ))}
           </div>
           <p className="usage-quota-axis usage-muted">
-            <span>{new Date(window.start).toLocaleString(locale)}</span>
+            <span>{observationTime(window.start)}</span>
             <span>
-              {t("Used (%)")} · {new Date(window.end).toLocaleString(locale)}
+              {t("Used (%)")} · {observationTime(window.end)}
             </span>
           </p>
           <Disclosure size="sm" summary={t("Show as table")}>
@@ -133,7 +173,8 @@ export function QuotaHistory({
                   .slice(-100)
                   .reverse()
                   .map((s) => ({
-                    key: String(s.at),
+                    key: `${s.account}:${s.kind}:${s.at}`,
+                    account: accountLabel(accountMap.get(s.account)!),
                     at: s.at,
                     time: s.at,
                     used: s.used,
@@ -141,16 +182,17 @@ export function QuotaHistory({
                     reset: s.resetsAt ?? null,
                   }))}
                 columns={[
+                  { key: "account", label: t("Account") },
                   {
                     key: "time",
                     label: t("Time"),
-                    render: (v) => new Date(Number(v)).toLocaleString(locale),
+                    render: (v) => observationTime(Number(v)),
                   },
                   {
                     key: "used",
                     label: t("Used (%)"),
                     numeric: true,
-                    render: (v) => `${Number(v).toFixed(1)}%`,
+                    render: (v) => percent(Number(v)),
                   },
                   {
                     key: "minutes",
@@ -163,9 +205,7 @@ export function QuotaHistory({
                     key: "reset",
                     label: t("Reset"),
                     render: (v) =>
-                      v == null
-                        ? t("Reset time unavailable")
-                        : new Date(Number(v)).toLocaleString(locale),
+                      v == null ? t("Reset time unavailable") : observationTime(Number(v)),
                   },
                 ]}
               />
@@ -174,9 +214,11 @@ export function QuotaHistory({
           </Disclosure>
         </>
       ) : (
-        <p className="usage-empty">
-          {t("No recorded limit history for this account and interval yet.")}
-        </p>
+        <EmptyState
+          size="inline"
+          title={t("No recorded limit history for this account and interval yet.")}
+          description=""
+        />
       )}
     </section>
   );

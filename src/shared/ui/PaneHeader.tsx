@@ -124,7 +124,7 @@ export function PaneHeader({
         </div>
       ) : null}
       {title != null || icon != null || meta != null ? (
-        <div className={styles.heading}>
+        <div className={styles.heading} data-pane-header-heading>
           {icon != null ? (
             <span className={styles.icon} aria-hidden="true">
               {icon}
@@ -138,9 +138,13 @@ export function PaneHeader({
           {meta != null ? <span className={styles.meta}>{meta}</span> : null}
         </div>
       ) : null}
-      {children != null ? <div className={styles.body}>{children}</div> : null}
+      {children != null ? (
+        <div className={styles.body} data-pane-header-body>
+          {children}
+        </div>
+      ) : null}
       {actions != null ? (
-        <div className={styles.actions} data-tauri-drag-region={noDrag}>
+        <div className={styles.actions} data-pane-header-actions data-tauri-drag-region={noDrag}>
           {actions}
         </div>
       ) : null}

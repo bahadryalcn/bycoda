@@ -111,11 +111,8 @@ export function ServerOrganization({
           className="flex items-center gap-2"
         />
         {error ? <InlineError>{error}</InlineError> : null}
-        <div className="flex items-center justify-between gap-2">
-          <span role="status" className="text-(--ui-text-muted)">
-            {saved ? t("Saved") : ""}
-          </span>
-          <Button type="submit" loading={saving}>
+        <div className="flex justify-end gap-2">
+          <Button type="submit" loading={saving} success={saved} successLabel={t("Saved")}>
             {t("Save")}
           </Button>
         </div>

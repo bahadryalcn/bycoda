@@ -33,7 +33,9 @@ spacing, focus, states and accessibility.
 - Actions use `Button` (or ActionHost inline actions); no screen-specific button styling.
 - Semantic tokens only; no literal colors, font sizes, radii or z-index; preserve density settings.
 - One overlay stack: Popover, Modal, Sheet, Tooltip and the menus; no own focus trap or Escape handler.
-- Tooltips never repeat a visible label; they add a shortcut, detail or reason.
+- Tooltips never repeat a visible label; omit redundant content at its source. They add a
+  shortcut, detail or reason. Shared Tooltip renders explicit content unchanged; use
+  OverflowTooltip only to recover clipped or responsively hidden text.
 - Bespoke product surfaces (chat composer editor, transcript, terminal, code editor, appearance
   scene previews) may keep a custom element when no shared component can carry the behavior.
   Mark that one line with `// ui-drift-ignore: <rule> -- <why>` on the line above (in JSX

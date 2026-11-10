@@ -56,109 +56,120 @@ export function ScrollbarGroup() {
       resetLabel={t("Reset scrollbars")}
       onReset={() => saveScrollbarStyle(SCROLLBAR_STYLE_DEFAULT)}
     >
-      <Row
-        id="scrollbar-color"
-        label={t("Scrollbar color")}
-        description={t("Automatic follows the accent color of your theme.")}
-      >
-        <div ref={anchor} className="state-ladder-source">
-          <Segmented<ScrollbarColor>
+      <div className="interface-scrollbar-layout">
+        <div className="interface-scrollbar-controls">
+          <Row
+            id="scrollbar-color"
             label={t("Scrollbar color")}
-            value={value.color}
-            options={[
-              { value: "auto", label: t("Automatic") },
-              { value: "neutral", label: t("Neutral") },
-              { value: "theme", label: t("Theme") },
-              { value: "custom", label: t("Custom") },
-            ]}
-            onChange={(color) => {
-              update({ color, customColor: color === "custom" ? customColor : value.customColor });
-              setOpen(color === "custom");
-            }}
-          />
-          {value.color === "custom" && (
-            <Button
-              variant="secondary"
-              size="sm"
-              inset="icon"
-              aria-label={t("Custom color")}
-              onClick={() => setOpen(true)}
-            >
-              <span className="state-custom-dot" style={{ background: customColor }} />
-            </Button>
-          )}
-          {open && (
-            <Popover
-              anchor={anchor}
-              side="bottom"
-              align="end"
-              width={248}
-              flow="scroll"
-              onDismiss={() => setOpen(false)}
-            >
-              <ColorPickerPopover
-                value={customColor}
-                onChange={(next) => update({ color: "custom", customColor: next })}
+            description={t("Automatic follows the accent color of your theme.")}
+          >
+            <div ref={anchor} className="state-ladder-source">
+              <Segmented<ScrollbarColor>
+                label={t("Scrollbar color")}
+                value={value.color}
+                options={[
+                  { value: "auto", label: t("Automatic") },
+                  { value: "neutral", label: t("Neutral") },
+                  { value: "theme", label: t("Theme") },
+                  { value: "custom", label: t("Custom") },
+                ]}
+                onChange={(color) => {
+                  update({
+                    color,
+                    customColor: color === "custom" ? customColor : value.customColor,
+                  });
+                  setOpen(color === "custom");
+                }}
               />
-            </Popover>
-          )}
-        </div>
-      </Row>
-      <Row
-        id="scrollbar-size"
-        label={t("Scrollbar size")}
-        disabled={IS_MAC}
-        disabledReason={systemBars}
-      >
-        <Segmented<ScrollbarSize>
-          label={t("Scrollbar size")}
-          value={value.size}
-          options={[
-            { value: "thin", label: t("Thin") },
-            { value: "medium", label: t("Medium") },
-            { value: "wide", label: t("Wide") },
-          ]}
-          onChange={(size) => update({ size })}
-        />
-      </Row>
-      <Row
-        id="scrollbar-visibility"
-        label={t("Show scrollbars")}
-        description={t("On hover shows a scrollbar while the pointer is over its area.")}
-        disabled={IS_MAC}
-        disabledReason={systemBars}
-      >
-        <Segmented<ScrollbarVisibility>
-          label={t("Show scrollbars")}
-          value={value.visibility}
-          options={[
-            { value: "hover", label: t("On hover") },
-            { value: "always", label: t("Always") },
-          ]}
-          onChange={(visibility) => update({ visibility })}
-        />
-      </Row>
-      <Row id="scrollbar-strength" label={t("Scrollbar strength")}>
-        <Slider
-          label={t("Scrollbar strength")}
-          value={value.strength}
-          display={`${value.strength}%`}
-          min={SCROLLBAR_STRENGTH_MIN}
-          max={SCROLLBAR_STRENGTH_MAX}
-          step={10}
-          onChange={(strength) => update({ strength })}
-        />
-      </Row>
-      <Row stacked label={t("Preview")}>
-        <div data-scrollbar-preview aria-hidden="true" className="scrollbar-preview">
-          {PREVIEW_ROWS.map((row, index) => (
-            <div key={row} className="scrollbar-preview-row">
-              <span className="scrollbar-preview-gutter">{formatNumber(index + 1)}</span>
-              <span>{row}</span>
+              {value.color === "custom" && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  inset="icon"
+                  aria-label={t("Custom color")}
+                  onClick={() => setOpen(true)}
+                >
+                  <span className="state-custom-dot" style={{ background: customColor }} />
+                </Button>
+              )}
+              {open && (
+                <Popover
+                  anchor={anchor}
+                  side="bottom"
+                  align="end"
+                  width={248}
+                  flow="scroll"
+                  onDismiss={() => setOpen(false)}
+                >
+                  <ColorPickerPopover
+                    value={customColor}
+                    onChange={(next) => update({ color: "custom", customColor: next })}
+                  />
+                </Popover>
+              )}
             </div>
-          ))}
+          </Row>
+          <Row
+            id="scrollbar-size"
+            label={t("Scrollbar size")}
+            disabled={IS_MAC}
+            disabledReason={systemBars}
+          >
+            <Segmented<ScrollbarSize>
+              label={t("Scrollbar size")}
+              value={value.size}
+              options={[
+                { value: "extra-thin", label: t("Extra thin") },
+                { value: "thin", label: t("Thin") },
+                { value: "medium", label: t("Medium") },
+                { value: "large", label: t("Large") },
+                { value: "xlarge", label: t("XLarge") },
+              ]}
+              onChange={(size) => update({ size })}
+            />
+          </Row>
+          <Row
+            id="scrollbar-visibility"
+            label={t("Show scrollbars")}
+            description={t("On hover shows a scrollbar while the pointer is over its area.")}
+            disabled={IS_MAC}
+            disabledReason={systemBars}
+          >
+            <Segmented<ScrollbarVisibility>
+              label={t("Show scrollbars")}
+              value={value.visibility}
+              options={[
+                { value: "hover", label: t("On hover") },
+                { value: "always", label: t("Always") },
+              ]}
+              onChange={(visibility) => update({ visibility })}
+            />
+          </Row>
+          <Row id="scrollbar-strength" label={t("Scrollbar strength")}>
+            <Slider
+              label={t("Scrollbar strength")}
+              value={value.strength}
+              display={`${value.strength}%`}
+              min={SCROLLBAR_STRENGTH_MIN}
+              max={SCROLLBAR_STRENGTH_MAX}
+              step={10}
+              onChange={(strength) => update({ strength })}
+            />
+          </Row>
         </div>
-      </Row>
+        <div className="interface-scrollbar-sample">
+          <Row stacked label={t("Preview")}>
+            <div data-scrollbar-preview aria-hidden="true" className="scrollbar-preview">
+              {PREVIEW_ROWS.map((row, index) => (
+                <div key={row} className="scrollbar-preview-row">
+                  <span className="scrollbar-preview-gutter">{formatNumber(index + 1)}</span>
+                  <span>{row}</span>
+                </div>
+              ))}
+            </div>
+          </Row>
+        </div>
+      </div>
     </Group>
   );
 }

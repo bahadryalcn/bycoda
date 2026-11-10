@@ -14,9 +14,12 @@ export function AssistantPresetNumber({
   max,
   presets,
   unit,
+  description,
   onChange,
 }: {
   label: string;
+  /** One line under the settings row label. */
+  description?: string;
   value: unknown;
   min: number;
   max: number;
@@ -77,6 +80,11 @@ export function AssistantPresetNumber({
     </div>
   );
   // The settings dialog's row owns the visible label; the setup form keeps the field label.
-  if (useProfileRows()) return <ProfileRow label={label}>{() => body()}</ProfileRow>;
+  if (useProfileRows())
+    return (
+      <ProfileRow label={label} description={description}>
+        {() => body()}
+      </ProfileRow>
+    );
   return <Field label={label}>{(control) => body(control)}</Field>;
 }

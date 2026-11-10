@@ -1,4 +1,6 @@
 import type { Duplex } from "node:stream";
+import { ZodError } from "zod";
+import { truncateGraphemes } from "../../../src/shared/lib/text/truncate";
 import { RPC_ERROR_CODES } from "../../../src/shared/model/host-contracts";
 import type { HostDispatchError } from "../dispatch";
 import type { HostReadWorkBudget } from "../read-budget";
@@ -23,6 +25,26 @@ export function dispatchErrorCode(error: HostDispatchError): number {
   if (error.code === "invalid-params" && error.details?.category === "conflict")
     return RPC_ERROR_CODES.conflict;
   return DISPATCH_ERROR_CODES[error.code];
+}
+
+/**
+ * Names the rejected method and the fields that failed its schema, so a client
+ * built against another contract version can be diagnosed. Field names and
+ * issue kinds only: a submitted value is never echoed.
+ */
+export function invalidRequestMessage(method: unknown, error: unknown): string {
+  const base = "Invalid Host RPC request";
+  if (!(error instanceof ZodError) || error.issues.length === 0) return `${base}.`;
+  const shown = error.issues.slice(0, 4).map((issue) => {
+    const path = issue.path.map(String).join(".") || "request";
+    return issue.code === "unrecognized_keys"
+      ? `${path}: unrecognized ${issue.keys.join(", ")}`
+      : `${path}: ${issue.code}`;
+  });
+  const more = error.issues.length - shown.length;
+  const detail = `${shown.join("; ")}${more > 0 ? `; +${more} more` : ""}`;
+  const name = typeof method === "string" ? ` ${method}` : "";
+  return truncateGraphemes(`${base}:${name} (${detail})`, 400);
 }
 
 export function rejectUpgrade(socket: Duplex, status: number): void {

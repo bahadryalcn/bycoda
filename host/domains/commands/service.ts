@@ -12,6 +12,18 @@ import {
 } from "../context";
 import { isApprovalOccurrenceId } from "../../../src/shared/model/approvalOccurrence";
 
+/** Commands that act on a conversation; approvals and answers stay with the prompt's owner. */
+const CREW_OWNED_COMMANDS: ReadonlySet<string> = new Set([
+  "send",
+  "steer",
+  "cancel",
+  "stopItem",
+  "compact",
+  "shell",
+  "contextual",
+  "rewind",
+]);
+
 export type DesktopCommandAcceptance = {
   commandId: string;
   sessionId: string;
@@ -116,7 +128,11 @@ export interface CommandServicePorts<View> {
     trackDesktop(prepared: PreparedDesktop): void;
     withRetiredWriters<T>(sessionId: string, operation: () => Promise<T>): Promise<T>;
   };
-  crews: { ownerDirective(command: SessionCommand): Promise<unknown> };
+  crews: {
+    ownerDirective(command: SessionCommand): Promise<unknown>;
+    /** Refusal message when an unfinished crew run owns this conversation, otherwise undefined. */
+    managedSessionRefusal(sessionId: string): Promise<string | undefined>;
+  };
 }
 
 /**
@@ -165,6 +181,13 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
           "Approval request identity is missing or invalid. Refresh this request before responding.",
         );
       const sessionId = command.sessionId ?? "";
+      // Crew-owned conversations are steered only from Crews, whose service dispatches as `crew:<run>`.
+      const crewRefusal =
+        CREW_OWNED_COMMANDS.has(command.type) && !context.principalId?.startsWith("crew:")
+          ? await ports.crews.managedSessionRefusal(sessionId)
+          : undefined;
+      if (crewRefusal)
+        throw new HostDomainRefusalError("COMMAND_INVALID", "validation", false, crewRefusal);
       const signature = ports.execution.commandSignature(command);
       const desktopReceipt = await ports.repository.desktopCommandStatus(
         command.commandId,

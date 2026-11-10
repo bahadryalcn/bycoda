@@ -1,11 +1,12 @@
+import { useState } from "react";
 import { formatNumber, t, useLocale } from "../../../shared/i18n";
 import { formatDuration, formatUsageTokens } from "../../../shared/i18n/format";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
-import { Disclosure } from "../../../shared/ui/Disclosure";
+import { Button } from "../../../shared/ui/Button";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import type { CrewRunView } from "../model/crewClient";
 import { crewRunTimeline, type CrewTimelineEvent } from "../model/crewTimeline";
-import { crewRunUsage, type CrewUsage } from "../model/crewUsage";
+import type { CrewUsage } from "../model/crewUsage";
 import { teamTraits } from "../model/memberAvatars";
 import { MemberAvatar } from "./MemberAvatar";
 
@@ -57,39 +58,29 @@ export function crewUsageText(usage: CrewUsage): string {
   return parts.join(" · ");
 }
 
-/** What happened in this work, oldest first, and what each member spent. */
+const RECENT = 5;
+
+/** What happened in this work, oldest first: the latest few events, the rest on request. */
 export function CrewWorkTimeline({ run }: { run: CrewRunView }) {
   useLocale();
+  const [all, setAll] = useState(false);
   const events = crewRunTimeline(run);
   const looks = teamTraits(run.definition.agents);
   const names = new Map(run.definition.agents.map((agent) => [agent.id, agent.name]));
-  const usage = crewRunUsage(run);
-  const members = run.definition.agents.filter((agent) => usage.perMember[agent.id]);
+  const shown = all ? events : events.slice(-RECENT);
+  if (!events.length) return null;
   return (
-    <Disclosure className="mt-4" size="sm" summary={t("Timeline")} count={events.length}>
-      {members.length ? (
-        <ul aria-label={t("Time and usage by member")} className="mt-2 flex flex-col">
-          {members.map((agent) => {
-            const line = crewUsageText(usage.perMember[agent.id]!);
-            return (
-              <li
-                key={agent.id}
-                className="flex min-h-(--ui-control-height-compact) min-w-0 items-center gap-2"
-              >
-                <MemberAvatar traits={looks.get(agent.id)!} size={20} className="shrink-0" />
-                <span className="min-w-0 flex-1 truncate text-ui-secondary font-medium">
-                  {agent.name}
-                </span>
-                <span className="shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary)">
-                  {line || t("No usage recorded")}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-      <ol aria-label={t("Timeline")} className="mt-2 flex flex-col gap-1.5">
-        {events.map((event) => {
+    <div className="mt-4">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-ui-caption font-medium text-(--ui-text-secondary)">{t("Timeline")}</h4>
+        {events.length > RECENT ? (
+          <Button variant="link" size="sm" onClick={() => setAll((value) => !value)}>
+            {all ? t("Show less") : t("Show all ({p0})", { p0: events.length })}
+          </Button>
+        ) : null}
+      </div>
+      <ol aria-label={t("Timeline")} className="mt-1.5 flex flex-col gap-1.5">
+        {shown.map((event) => {
           const traits = event.memberId ? looks.get(event.memberId) : undefined;
           const who = event.memberId ? names.get(event.memberId) : undefined;
           return (
@@ -110,6 +101,6 @@ export function CrewWorkTimeline({ run }: { run: CrewRunView }) {
           );
         })}
       </ol>
-    </Disclosure>
+    </div>
   );
 }

@@ -1,6 +1,8 @@
 import { PRODUCT_IDENTITY } from "../../../../../shared/lib/productIdentity";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
+import { chatBackgroundSrc } from "../../../model/appearance";
+import type { AppearanceSettings } from "../../useAppearanceSettings";
 import "./ThemeControls.css";
 
 /**
@@ -8,8 +10,12 @@ import "./ThemeControls.css";
  * interaction state with the real `--ui-surface-*` roles, so the preview follows palette, tint,
  * strength, mode and accent as they change. It is a picture: inert and hidden from assistive tech.
  */
-export function ThemePreview() {
+export function ThemePreview({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
+  const image =
+    appearance.chatBackgroundScope === "empty"
+      ? null
+      : chatBackgroundSrc(appearance.chatBackgroundPath);
   const rows: { state: "rest" | "hover" | "selected" | "pressed"; label: string }[] = [
     { state: "rest", label: t("Rest") },
     { state: "hover", label: t("Hover") },
@@ -26,7 +32,18 @@ export function ThemePreview() {
           </span>
         ))}
       </div>
-      <div className="theme-preview-main" inert>
+      <div className="theme-preview-main" data-image={Boolean(image) || undefined} inert>
+        {image ? (
+          <img
+            className="theme-preview-background"
+            src={image}
+            alt=""
+            style={{
+              opacity: appearance.chatBackgroundSessionOpacity,
+              filter: `blur(${appearance.chatBackgroundBlur}px)`,
+            }}
+          />
+        ) : null}
         <p className="theme-preview-user">{t("Message")}</p>
         <p className="theme-preview-reply">
           {PRODUCT_IDENTITY.displayName} <mark>{t("Selection")}</mark>{" "}

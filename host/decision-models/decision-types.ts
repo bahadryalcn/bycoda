@@ -49,7 +49,7 @@ export type DecisionSource = {
   endpoint?: string;
   model?: string;
   secretRef?: string;
-  local?: { modelPath: string; runtimePath?: string; port?: number };
+  local?: { modelPath: string; runtimePath?: string; projectorPath?: string; port?: number };
   catalogId?: string;
   harness?: string;
   authHeader?: string;
@@ -116,7 +116,7 @@ export type DiscoveryCandidate = {
   detail?: string;
 };
 
-export type DiscoveryResult = { found: DiscoveryCandidate[] };
+export type DiscoveryResult = { found: DiscoveryCandidate[]; incomplete?: boolean };
 
 export type LocalTier = "strong" | "medium" | "cpu" | "insufficient";
 

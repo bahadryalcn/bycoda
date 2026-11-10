@@ -19,6 +19,7 @@ import { readSessionUsage } from "../usage/usage-report";
 import type { WorkspaceRpcRequest } from "../workspaces/workspace-rpc-contracts";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
+import { assertNotCrewManaged } from "../crews/crew-managed-session";
 import { requestingDeviceName } from "../desktop/remoteActivity";
 import { recordRemoteActivity } from "./remote-activity-record";
 export async function handleSessionsRpc(
@@ -249,6 +250,8 @@ export async function handleSessionsRpc(
     }
     case "sessions.update": {
       const sessionId = String(request.params.sessionId ?? "");
+      if (request.params.archived === true)
+        await assertNotCrewManaged(dependencies.engine.store, sessionId);
       const authorityGeneration =
         request.params.authorityGeneration === undefined
           ? undefined
@@ -309,6 +312,7 @@ export async function handleSessionsRpc(
     }
     case "sessions.delete": {
       const sessionId = String(request.params.sessionId ?? "");
+      await assertNotCrewManaged(dependencies.engine.store, sessionId);
       const requestedGeneration =
         request.params.authorityGeneration === undefined
           ? undefined

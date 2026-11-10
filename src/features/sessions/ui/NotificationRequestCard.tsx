@@ -67,7 +67,6 @@ export function NotificationRequestCard({
           variant="ghost"
           type="button"
           onClick={onDismiss}
-          tooltip={t("Dismiss notice")}
           aria-label={t("Dismiss notice")}
           className="notification-popup-dismiss"
           data-no-drag=""

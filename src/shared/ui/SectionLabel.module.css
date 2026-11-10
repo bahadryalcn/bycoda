@@ -58,6 +58,7 @@
 /* labelAction: the chevron button shrinks to its mark and the label button takes the row. */
 .toggle[data-split] {
   flex: none;
+  inline-size: auto;
 }
 .labelButton {
   flex: 1 1 auto;

@@ -10,13 +10,31 @@ import {
   type SessionDeletionStatus,
 } from "../model/sessionDeletionStatus";
 import { RemoteActivityNotices } from "./RemoteActivityNotices";
+import {
+  SessionBulkDeletionNotice,
+  type SessionBulkDeletionFeedback,
+} from "./SessionBulkDeletionNotice";
 
-export function SessionDeletionNotice({ cwd }: { cwd: string }) {
+export function SessionDeletionNotice({
+  cwd,
+  bulk,
+}: {
+  cwd: string;
+  bulk?: SessionBulkDeletionFeedback;
+}) {
   const statuses = useSyncExternalStore(subscribeSessionDeletionStatus, getSessionDeletionStatus);
+  const current = statuses.find(
+    (status) =>
+      sameProjectPath(status.cwd, cwd) &&
+      !status.outcome &&
+      bulk?.progress?.sessionIds.includes(status.sessionId),
+  );
   return (
     <>
+      {bulk ? <SessionBulkDeletionNotice feedback={bulk} title={current?.title} /> : null}
       {statuses
         .filter((status) => sameProjectPath(status.cwd, cwd))
+        .filter((status) => !bulk?.progress?.sessionIds.includes(status.sessionId))
         .map((status) => (
           <DeletionNotice key={status.sessionId} status={status} />
         ))}

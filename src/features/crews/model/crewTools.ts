@@ -93,3 +93,62 @@ export function parseCrewTools(value: unknown): CrewToolProfile | undefined {
 /** Preset shown for a member; no profile is the unrestricted `code` default. */
 export const crewToolPreset = (tools: CrewToolProfile | undefined): CrewToolPreset =>
   tools?.preset ?? "code";
+
+/** Host tool groups every ready-made profile keeps: project files, Git, terminals, logs and context. */
+const PROFILE_BASE = [
+  "files",
+  "git",
+  "terminals",
+  "logs",
+  "skills",
+  "attachments",
+  "notes",
+  "resources",
+  "checkpoints",
+  "environment",
+  "models",
+  "providers",
+] as const;
+
+/**
+ * Ready-made member profiles. Each one can write code; it only chooses which Host tool groups
+ * the member sees. `full` (no profile) is everything the run allows; `custom` is anything else.
+ */
+export const CREW_TOOL_PROFILES = {
+  developer: [...PROFILE_BASE, "devServers", "browser", "tasks", "workspaces", "pullRequests"],
+  designer: [...PROFILE_BASE, "images", "visuals", "browser", "devServers"],
+  tester: [...PROFILE_BASE, "devServers", "browser", "devices", "desktop"],
+} as const satisfies Record<string, readonly string[]>;
+export type CrewToolProfileChoice = "full" | keyof typeof CREW_TOOL_PROFILES | "custom";
+export const CREW_TOOL_PROFILE_CHOICES: readonly CrewToolProfileChoice[] = [
+  "full",
+  "developer",
+  "designer",
+  "tester",
+  "custom",
+];
+
+/** The ready-made profile a saved value is, or `custom`. */
+export function crewToolProfileChoice(tools: CrewToolProfile | undefined): CrewToolProfileChoice {
+  if (!tools) return "full";
+  if (tools.preset !== "custom" || tools.mcpServers || tools.skills || !tools.conversationTools)
+    return "custom";
+  const listed = new Set(tools.conversationTools);
+  const match = (Object.keys(CREW_TOOL_PROFILES) as (keyof typeof CREW_TOOL_PROFILES)[]).find(
+    (name) =>
+      CREW_TOOL_PROFILES[name].length === listed.size &&
+      CREW_TOOL_PROFILES[name].every((group) => listed.has(group)),
+  );
+  return match ?? "custom";
+}
+
+/** The saved value for a choice; `custom` starts from what the member has now. */
+export function crewToolProfileFor(
+  choice: CrewToolProfileChoice,
+  current: CrewToolProfile | undefined,
+): CrewToolProfile | undefined {
+  if (choice === "full") return undefined;
+  if (choice === "custom")
+    return current?.preset === "custom" ? current : { ...current, preset: "custom" };
+  return { preset: "custom", conversationTools: [...CREW_TOOL_PROFILES[choice]] };
+}

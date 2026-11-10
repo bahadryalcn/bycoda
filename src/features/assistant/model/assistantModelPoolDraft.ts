@@ -7,9 +7,9 @@ import {
 
 export const POOL_ROLE_LABELS: Record<AssistantModelPoolRole, string> = {
   worker: "Worker",
-  planning: "Planning",
-  chief: "Chief",
-  reply: "Reply",
+  planning: "Planner",
+  chief: "Supervisor",
+  reply: "Replies",
 };
 
 export type PoolIssues = {

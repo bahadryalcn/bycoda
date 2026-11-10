@@ -18,6 +18,7 @@ import {
 } from "./savedThemeActions";
 import { ThemeNameDialog } from "./ThemeNameDialog";
 import "./ThemeControls.css";
+import { writeGeneratorValue } from "./themeGeneratorSession";
 
 /**
  * Saved looks as a wrapping grid of compact cards (two rows, then a toggle), ending in a dashed
@@ -61,7 +62,9 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
     setBusy(true);
     setNotice(null);
     try {
-      if ((await applySavedTheme(appearance, theme)) === "image-missing")
+      const outcome = await applySavedTheme(appearance, theme);
+      writeGeneratorValue("selectedLookName", theme.name, "");
+      if (outcome === "image-missing")
         setNotice(
           t("This theme's image is no longer in the library. The rest of the look was applied."),
         );
@@ -179,6 +182,11 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
           onClose={() => setRenaming(null)}
           onSubmit={(name) => {
             if (!renameTheme(renaming.id, name)) throw new Error(t("Could not save the theme."));
+            writeGeneratorValue<string>(
+              "selectedLookName",
+              (current) => (current === renaming.name ? name : current),
+              "",
+            );
           }}
         />
       ) : null}

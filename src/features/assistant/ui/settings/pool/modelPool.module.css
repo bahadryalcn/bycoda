@@ -4,6 +4,8 @@
   gap: 10px;
   grid-column: 1 / -1;
   min-inline-size: 0;
+  /* Same inset as a settings row, so the intro and cards line up with the groups above. */
+  padding: 10px 16px;
 }
 .intro {
   margin: 0;
@@ -53,9 +55,14 @@
 }
 .controls {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   min-inline-size: 0;
+}
+@media (max-width: 720px) {
+  .controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .footer {
   display: flex;
@@ -68,8 +75,11 @@
 .roles {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
+  gap: 4px 16px;
   min-inline-size: 0;
+  /* Checkbox labels inherit the ambient size; match the settings rows. */
+  font-size: var(--ui-font-secondary);
+  line-height: 1.5;
 }
 .quota {
   display: flex;
@@ -77,6 +87,7 @@
   align-items: baseline;
   gap: 2px 8px;
   margin: 0;
+  margin-inline-start: auto;
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
 }
@@ -98,11 +109,4 @@
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.saved {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--ui-tone-success-fg);
-  font-size: var(--ui-font-caption);
 }

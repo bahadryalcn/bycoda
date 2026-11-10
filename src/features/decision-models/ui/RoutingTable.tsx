@@ -1,9 +1,7 @@
 import { useState } from "react";
 import { DECISION_TASK_TYPES } from "../../../shared/model/host-contracts/decision-models";
 import { t } from "../../../shared/i18n";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { InlineMessage } from "../../../shared/ui/InlineError";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import type { DecisionRouting, DecisionSource, DecisionTaskType } from "../model/decisionTypes";
@@ -93,7 +91,7 @@ export function RoutingTable({
     <>
       <p className="text-ui-caption px-4 py-2.5 text-(--ui-text-secondary)">
         {t(
-          "Answers below the threshold are not used. The next source in the list is tried. Without a source, the built-in order applies.",
+          "Automatic uses connected models only: local models first, then API, gateway and LLM sources. Customize a task to set its source order and minimum confidence.",
         )}
       </p>
       <div
@@ -102,7 +100,7 @@ export function RoutingTable({
       >
         <span>{t("Task")}</span>
         <span>{t("Sources, in order")}</span>
-        <span>{t("Threshold")}</span>
+        <span>{t("Minimum confidence")}</span>
       </div>
       {DECISION_TASK_TYPES.map((task) => {
         const route = draft[task];
@@ -124,36 +122,26 @@ export function RoutingTable({
                 multiple
                 value={route?.sourceIds ?? []}
                 options={options}
-                placeholder={t("Built-in order")}
+                placeholder={t("Automatic")}
+                selectionLabels={{
+                  summary: () =>
+                    orderedNames.map((name, index) => `${index + 1} ${name}`).join(", "),
+                }}
                 searchPlaceholder={t("Search sources")}
                 emptyLabel={t("No sources connected")}
                 disabled={busy || sources === null}
                 onChange={(next) => changeSources(task, next)}
               />
-              {orderedNames.length > 1 ? (
-                <ol
-                  aria-label={t("Order of use")}
-                  className="flex min-w-0 flex-wrap items-center gap-1.5"
-                >
-                  {orderedNames.map((name, index) => (
-                    <li key={`${index}:${name}`}>
-                      <Badge tone="neutral" size="xs">
-                        <span className="tabular-nums">{index + 1}</span> {name}
-                      </Badge>
-                    </li>
-                  ))}
-                </ol>
-              ) : null}
             </div>
             <div className="w-full sm:w-auto">
               <NumberField
-                label={t("Threshold")}
+                label={t("Minimum confidence")}
                 hideLabel
                 min={0}
                 max={1}
                 step={0.01}
                 value={text}
-                disabled={busy}
+                disabled={busy || !route?.sourceIds.length}
                 error={thresholdInvalid ? t("Enter a number from 0 to 1.") : undefined}
                 onChange={(event) => changeThreshold(task, event.target.value)}
               />
@@ -166,14 +154,13 @@ export function RoutingTable({
           <ErrorNotice error={saveError} onRetry={save} />
         </div>
       ) : null}
-      <div className="flex min-w-0 items-center justify-between gap-3 border-t border-(--ui-settings-hairline) px-4 py-2.5">
-        <div className="min-w-0">
-          {saved && !dirty ? <InlineMessage tone="success">{t("Saved.")}</InlineMessage> : null}
-        </div>
+      <div className="flex min-w-0 items-center justify-end gap-3 border-t border-(--ui-settings-hairline) px-4 py-2.5">
         <Button
           variant="primary"
           size="sm"
           loading={busy}
+          success={saved && !dirty && saveError === null}
+          successLabel={t("Saved")}
           disabled={!dirty || invalid || busy}
           onClick={save}
         >

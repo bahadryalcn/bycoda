@@ -21883,6 +21883,30 @@
       "retry": "never",
       "scope": "device"
     },
+    "decisionModels.discovery.cancel": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "requiredCapability": "decisionModels.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "cancelled": { "type": "boolean" } },
+        "required": ["cancelled"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
     "decisionModels.discovery.results": {
       "admissionTimeoutMs": 5000,
       "cancellation": "query",
@@ -21921,7 +21945,8 @@
             },
             "maxItems": 200,
             "type": "array"
-          }
+          },
+          "incomplete": { "type": "boolean" }
         },
         "required": ["found"],
         "type": "object"
@@ -21967,7 +21992,8 @@
             },
             "maxItems": 200,
             "type": "array"
-          }
+          },
+          "incomplete": { "type": "boolean" }
         },
         "required": ["found"],
         "type": "object"
@@ -22298,7 +22324,7 @@
         "type": "object"
       },
       "requiredCapability": "decisionModels.v1",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 95000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -22447,6 +22473,15 @@
           {
             "additionalProperties": false,
             "properties": {
+              "kind": { "const": "model_installation", "type": "string" },
+              "path": { "maxLength": 4096, "minLength": 1, "type": "string" }
+            },
+            "required": ["kind", "path"],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
               "kind": { "const": "installation_folder", "type": "string" },
               "path": { "maxLength": 4096, "minLength": 1, "type": "string" }
             },
@@ -22465,7 +22500,7 @@
         ]
       },
       "requiredCapability": "decisionModels.v1",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 45000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "oneOf": [
@@ -22491,9 +22526,29 @@
             "properties": {
               "endpoint": { "maxLength": 2048, "minLength": 1, "type": "string" },
               "folder": { "maxLength": 4096, "minLength": 1, "type": "string" },
+              "incomplete": { "type": "boolean" },
               "kind": { "const": "installation_folder", "type": "string" },
               "model": { "maxLength": 200, "minLength": 1, "type": "string" },
               "modelPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
+              "models": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "endpoint": { "maxLength": 2048, "minLength": 1, "type": "string" },
+                    "model": { "maxLength": 200, "minLength": 1, "type": "string" },
+                    "modelPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
+                    "name": { "maxLength": 200, "minLength": 1, "type": "string" },
+                    "projectorPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
+                    "runtimePath": { "maxLength": 4096, "minLength": 1, "type": "string" },
+                    "verified": { "type": "boolean" }
+                  },
+                  "required": ["name", "modelPath", "verified"],
+                  "type": "object"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              "projectorPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
               "runtimePath": { "maxLength": 4096, "minLength": 1, "type": "string" },
               "verified": { "type": "boolean" }
             },
@@ -23007,6 +23062,7 @@
                 "properties": {
                   "modelPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
                   "port": { "maximum": 65535, "minimum": 1, "type": "integer" },
+                  "projectorPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
                   "runtimePath": { "maxLength": 4096, "minLength": 1, "type": "string" }
                 },
                 "required": ["modelPath"],
@@ -23049,6 +23105,7 @@
             "properties": {
               "modelPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
               "port": { "maximum": 65535, "minimum": 1, "type": "integer" },
+              "projectorPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
               "runtimePath": { "maxLength": 4096, "minLength": 1, "type": "string" }
             },
             "required": ["modelPath"],
@@ -23156,6 +23213,7 @@
                   "properties": {
                     "modelPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
                     "port": { "maximum": 65535, "minimum": 1, "type": "integer" },
+                    "projectorPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
                     "runtimePath": { "maxLength": 4096, "minLength": 1, "type": "string" }
                   },
                   "required": ["modelPath"],
@@ -23225,7 +23283,7 @@
         "type": "object"
       },
       "requiredCapability": "decisionModels.v1",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 95000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -23276,6 +23334,7 @@
                 "properties": {
                   "modelPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
                   "port": { "maximum": 65535, "minimum": 1, "type": "integer" },
+                  "projectorPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
                   "runtimePath": { "maxLength": 4096, "minLength": 1, "type": "string" }
                 },
                 "required": ["modelPath"],
@@ -23317,6 +23376,7 @@
             "properties": {
               "modelPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
               "port": { "maximum": 65535, "minimum": 1, "type": "integer" },
+              "projectorPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
               "runtimePath": { "maxLength": 4096, "minLength": 1, "type": "string" }
             },
             "required": ["modelPath"],
@@ -54745,6 +54805,7 @@
                       "properties": {
                         "modelPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
                         "port": { "maximum": 65535, "minimum": 1, "type": "integer" },
+                        "projectorPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
                         "runtimePath": { "maxLength": 4096, "minLength": 1, "type": "string" }
                       },
                       "required": ["modelPath"],
@@ -54807,6 +54868,7 @@
                       "properties": {
                         "modelPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
                         "port": { "maximum": 65535, "minimum": 1, "type": "integer" },
+                        "projectorPath": { "maxLength": 4096, "minLength": 1, "type": "string" },
                         "runtimePath": { "maxLength": 4096, "minLength": 1, "type": "string" }
                       },
                       "required": ["modelPath"],
@@ -54919,6 +54981,20 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "decisionModels.discovery.cancel", "type": "string" },
+            "params": { "additionalProperties": false, "properties": {}, "type": "object" }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "decisionModels.discovery.results", "type": "string" },
             "params": { "additionalProperties": false, "properties": {}, "type": "object" }
           },
@@ -54983,6 +55059,15 @@
                   "additionalProperties": false,
                   "properties": {
                     "kind": { "const": "model_file", "type": "string" },
+                    "path": { "maxLength": 4096, "minLength": 1, "type": "string" }
+                  },
+                  "required": ["kind", "path"],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": { "const": "model_installation", "type": "string" },
                     "path": { "maxLength": 4096, "minLength": 1, "type": "string" }
                   },
                   "required": ["kind", "path"],
@@ -70677,5 +70762,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "3790cae35d8e298f5aff6cf5962e5eb689478c91c4ed7bb541ddccba5fcc953f"
+  "schemaHash": "75dcadf4cf1f9499b3d77e20ccdc8d2f9ef532c7b4fa0ed72067d398fa1a39bc"
 }

@@ -7,6 +7,47 @@ import { expect, it, vi } from "vitest";
 import { Button, type ButtonProps } from "./Button";
 import { ButtonGroup } from "./ButtonGroup";
 
+it("swaps confirmed success in place, gives pending priority and resets when edited", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const render = (success: boolean, loading = false) =>
+    createElement(
+      Button,
+      {
+        success,
+        successLabel: "Saved",
+        loading,
+        loadingLabel: "Saving…",
+        motion: "none",
+        "aria-label": "Save profile settings",
+      },
+      "Save",
+    );
+  try {
+    await act(async () => root.render(render(false)));
+    const button = container.querySelector("button")!;
+    expect(button.textContent).toBe("Save");
+    await act(async () => root.render(render(true)));
+    expect(container.querySelector("button")).toBe(button);
+    expect(button.textContent).toBe("Saved");
+    expect(button.getAttribute("aria-label")).toBe("Saved");
+    expect(button.querySelector("svg")).not.toBeNull();
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Saved");
+    expect(container.querySelector('[role="status"]')?.className).toBe("sr-only");
+    await act(async () => root.render(render(true, true)));
+    expect(button.textContent).toBe("Save");
+    expect(button.getAttribute("aria-label")).toBe("Saving…");
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("");
+    await act(async () => root.render(render(false)));
+    expect(button.textContent).toBe("Save");
+    expect(button.getAttribute("aria-label")).toBe("Save profile settings");
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
 it("preserves legacy danger and error aliases while letting explicit intent win", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");

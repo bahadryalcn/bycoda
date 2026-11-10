@@ -67,90 +67,96 @@ export function StateLadder() {
       resetLabel={t("Reset interaction states")}
       onReset={() => saveInteractionTint(INTERACTION_TINT_DEFAULT)}
     >
-      <Row
-        id="interaction-tint"
-        label={t("Interaction color")}
-        description={t("The color that hover, selected and pressed surfaces mix in.")}
-      >
-        <div ref={anchor} className="state-ladder-source">
-          <Segmented<InteractionTintSource>
+      <div className="theme-detail-split">
+        <div className="theme-detail-controls">
+          <Row
+            id="interaction-tint"
             label={t("Interaction color")}
-            value={value.source}
-            options={[
-              { value: "neutral", label: t("Neutral") },
-              { value: "theme", label: t("Theme") },
-              { value: "accent", label: t("Accent") },
-              { value: "custom", label: t("Custom") },
-            ]}
-            onChange={(source) => {
-              update({ source });
-              setOpen(source === "custom");
-            }}
-          />
-          {value.source === "custom" && (
-            <Button
-              variant="secondary"
-              size="sm"
-              inset="icon"
-              aria-label={t("Custom color")}
-              tooltip={t("Custom color")}
-              onClick={() => setOpen(true)}
-            >
-              <span
-                className="state-custom-dot"
-                style={{ background: value.customColor ?? themePalette.hexA3ACB8 }}
+            description={t("The color that hover, selected and pressed surfaces mix in.")}
+          >
+            <div ref={anchor} className="state-ladder-source">
+              <Segmented<InteractionTintSource>
+                label={t("Interaction color")}
+                value={value.source}
+                options={[
+                  { value: "neutral", label: t("Neutral") },
+                  { value: "theme", label: t("Theme") },
+                  { value: "accent", label: t("Accent") },
+                  { value: "custom", label: t("Custom") },
+                ]}
+                onChange={(source) => {
+                  update({ source });
+                  setOpen(source === "custom");
+                }}
               />
-            </Button>
-          )}
-          {open && (
-            <Popover
-              anchor={anchor}
-              side="bottom"
-              align="end"
-              width={248}
-              flow="scroll"
-              onDismiss={() => setOpen(false)}
-            >
-              <ColorPickerPopover
-                value={value.customColor ?? themePalette.hexA3ACB8}
-                onChange={(customColor) => update({ source: "custom", customColor })}
-              />
-            </Popover>
-          )}
+              {value.source === "custom" && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  inset="icon"
+                  aria-label={t("Custom color")}
+                  tooltip={t("Custom color")}
+                  onClick={() => setOpen(true)}
+                >
+                  <span
+                    className="state-custom-dot"
+                    style={{ background: value.customColor ?? themePalette.hexA3ACB8 }}
+                  />
+                </Button>
+              )}
+              {open && (
+                <Popover
+                  anchor={anchor}
+                  side="bottom"
+                  align="end"
+                  width={248}
+                  flow="scroll"
+                  onDismiss={() => setOpen(false)}
+                >
+                  <ColorPickerPopover
+                    value={value.customColor ?? themePalette.hexA3ACB8}
+                    onChange={(customColor) => update({ source: "custom", customColor })}
+                  />
+                </Popover>
+              )}
+            </div>
+          </Row>
+          <Row
+            id="interaction-strength"
+            label={t("Strength")}
+            description={t("How far each state moves away from rest.")}
+          >
+            <Slider
+              label={t("Interaction strength")}
+              value={value.strength}
+              display={`${value.strength}%`}
+              min={STRENGTH_MIN}
+              max={STRENGTH_MAX}
+              onChange={(strength) => update({ strength })}
+            />
+          </Row>
         </div>
-      </Row>
-      <Row
-        id="interaction-strength"
-        label={t("Strength")}
-        description={t("How far each state moves away from rest.")}
-      >
-        <Slider
-          label={t("Interaction strength")}
-          value={value.strength}
-          display={`${value.strength}%`}
-          min={STRENGTH_MIN}
-          max={STRENGTH_MAX}
-          onChange={(strength) => update({ strength })}
-        />
-      </Row>
-      <Row
-        stacked
-        label={t("Preview")}
-        description={t("Each row is pinned to one state. Hover or press any row to feel it.")}
-      >
-        <ul className="state-preview" aria-label={t("Interaction states")}>
-          {rows.map((row) => (
-            <li key={row.state} className="state-preview-row" data-state={row.state}>
-              <row.Icon size={14} aria-hidden="true" />
-              <span className="state-preview-name">{row.item}</span>
-              <small className="state-preview-badge">
-                {row.label}
-                {row.mix ? ` ${row.mix}` : ""}
-              </small>
-            </li>
-          ))}
-        </ul>
-      </Row>
+        <div className="theme-detail-preview">
+          <Row
+            stacked
+            label={t("Preview")}
+            description={t("Each row is pinned to one state. Hover or press any row to feel it.")}
+          >
+            <ul className="state-preview" aria-label={t("Interaction states")}>
+              {rows.map((row) => (
+                <li key={row.state} className="state-preview-row" data-state={row.state}>
+                  <row.Icon size={14} aria-hidden="true" />
+                  <span className="state-preview-name">{row.item}</span>
+                  <small className="state-preview-badge">
+                    {row.label}
+                    {row.mix ? ` ${row.mix}` : ""}
+                  </small>
+                </li>
+              ))}
+            </ul>
+          </Row>
+        </div>
+      </div>
     </Group>
   );
 }

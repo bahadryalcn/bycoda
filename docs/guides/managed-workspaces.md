@@ -71,7 +71,9 @@ usage, check access to the reported workspace root rather than raising the budge
 
 If the bundled local Host update is waiting for active sessions, the composer
 explains that it will install automatically after those sessions finish. You can
-wait for the update, or choose **Use current checkout** for this draft. An explicit
+wait for the update, install it at once with **Update host now** in Settings →
+Connections (after confirming that running sessions and shells are interrupted), or
+choose **Use current checkout** for this draft. An explicit
 **Current checkout** choice works with older local and remote Hosts through the
 existing creation path. A choice or project policy resolving to **Worktree** keeps
 the update requirement and never silently switches to the project checkout. After
@@ -168,9 +170,12 @@ measured, new worktrees also pause until a refresh succeeds.
 
 A managed folder deleted outside bycoda counts as 0 bytes and is listed as
 **Missing folder** in **Settings → Source control**. Its **Remove record** action
-prunes only the stale Git registration; the branch and conversation stay. A
+retires the missing directory; the branch and conversation stay. A
 record still marked active whose folder is gone is closed first, after you
-confirm. A workspace whose creation was paused before Git ran (no folder, branch
+confirm. The Host can retire that record without filesystem cleanup even when
+old editor reports remain held. Editor drafts, recovery data and the Git
+registration stay intact; running providers, shells and other execution still
+block retirement. A workspace whose creation was paused before Git ran (no folder, branch
 or registration) is retired the same way instead of retrying on every Host start.
 
 Each worktree row shows its actions inline: Review changes, Reveal folder, Pin,

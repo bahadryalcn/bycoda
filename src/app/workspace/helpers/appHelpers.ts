@@ -53,7 +53,7 @@ export function currentWorkspace(project: string): string {
 
 /** How often a running session's stored copy follows it, for a local host. */
 export const LIVE_PERSIST_MS = 1_500;
-export const USAGE_PROVIDERS: RateLimitProvider[] = ["claude", "codex", "opencode"];
+export const USAGE_PROVIDERS: RateLimitProvider[] = ["claude", "codex", "opencode", "grok"];
 
 export async function revealExistingTool(tool: ToolId, cwd: string): Promise<boolean> {
   try {

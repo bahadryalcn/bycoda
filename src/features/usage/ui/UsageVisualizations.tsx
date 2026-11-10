@@ -1,6 +1,6 @@
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useMemo, useState } from "react";
-import { getLocale, t, useLocale } from "../../../shared/i18n";
+import { formatNumber, getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ActivityHeatmap, BarChart, DonutChart, LineChart } from "../../../shared/ui/Charts";
 import { ChevronLeft, ChevronRight } from "../../../shared/ui/icons";
@@ -19,6 +19,8 @@ import {
   type UsageWindow,
 } from "../model/usageAnalytics";
 import { usageChartColor } from "../model/usageColors";
+import { UsageProviderIdentity, usageProviderLabel } from "./UsageProviderIdentity";
+import "./UsageVisualizations.css";
 import {
   formatBucket,
   formatMetric,
@@ -55,6 +57,7 @@ export function UsageTrend({
   useLocale();
   const [active, setActive] = useState<string | null>(null);
   const [singleSeries, setSingleSeries] = useState<ReadonlySet<string> | null>(null);
+  const [hiddenSeries, setHiddenSeries] = useState<string[]>([]);
   // Series without any value in the interval only add flat lines and $0 tooltip rows.
   const series = useMemo(() => allSeries.filter((entry) => entry[metric] > 0), [allSeries, metric]);
   const point = buckets.find((bucket) => bucket.key === active);
@@ -119,7 +122,12 @@ export function UsageTrend({
             <p key={item.key}>
               <Checkbox
                 className="min-w-0 items-center"
-                label={usageLabel(item.label)}
+                label={
+                  <UsageProviderIdentity
+                    provider={item.key}
+                    label={usageProviderLabel(usageLabel(item.label))}
+                  />
+                }
                 checked={singleSeries === null || singleSeries.has(item.key)}
                 onChange={(event) => {
                   const checked = event.currentTarget.checked;
@@ -138,27 +146,54 @@ export function UsageTrend({
           ))}
         </div>
       ) : (
-        <LineChart
-          label={t("Usage over time")}
-          data={series.length ? data : []}
-          emptyLabel={t("No usage recorded in this period.")}
-          selectSeriesLabel={t("Choose a series to show")}
-          series={series.map((s, index) => ({
-            key: s.key,
-            label: usageLabel(s.label),
-            color: usageChartColor(colors, s.key),
-            area: false,
-            // Series differ by stroke pattern as well as colour (solid, dash, dot).
-            pattern: (["solid", "dash", "dot"] as const)[index % 3],
-          }))}
-          height={250}
-          curve="linear"
-          formatValue={format}
-          formatTick={percent ? formatUsagePercent : (value) => formatMetricTick(value, metric)}
-          onActiveChange={(_, datum) => {
-            if (datum) setActive(datum.key);
-          }}
-        />
+        <>
+          <div className="usage-provider-legend">
+            {series.map((item) => (
+              <Button
+                key={item.key}
+                variant="ghost"
+                size="sm"
+                aria-pressed={!hiddenSeries.includes(item.key)}
+                onClick={() =>
+                  setHiddenSeries((hidden) =>
+                    hidden.includes(item.key)
+                      ? hidden.filter((key) => key !== item.key)
+                      : [...hidden, item.key],
+                  )
+                }
+              >
+                <UsageProviderIdentity
+                  provider={item.key}
+                  label={usageProviderLabel(usageLabel(item.label))}
+                />
+              </Button>
+            ))}
+          </div>
+          <LineChart
+            label={t("Usage over time")}
+            data={series.length ? data : []}
+            emptyLabel={t("No usage recorded in this period.")}
+            selectSeriesLabel={t("Choose a series to show")}
+            series={series.map((s, index) => ({
+              key: s.key,
+              label: usageProviderLabel(usageLabel(s.label)),
+              color: usageChartColor(colors, s.key),
+              area: false,
+              // Series differ by stroke pattern as well as colour (solid, dash, dot).
+              pattern: (["solid", "dash", "dot"] as const)[index % 3],
+            }))}
+            height={250}
+            curve="linear"
+            legend={false}
+            hiddenSeries={hiddenSeries}
+            onHiddenSeriesChange={setHiddenSeries}
+            formatValue={format}
+            formatTick={percent ? formatUsagePercent : (value) => formatMetricTick(value, metric)}
+            onActiveChange={(_, datum) => {
+              if (datum) setActive(datum.key);
+            }}
+          />
+        </>
       )}
       <Disclosure size="sm" summary={t("Show as table")}>
         <ContinuousUsageTable
@@ -187,7 +222,6 @@ export function UsageShare({
     <section className="usage-panel usage-share" data-usage-chart="share">
       <div className="usage-section-heading">
         <h3>{t("By provider")}</h3>
-        <span>{t("Share of selected usage")}</span>
       </div>
       <DonutChart
         label={t("By provider")}
@@ -195,7 +229,7 @@ export function UsageShare({
           .filter((row) => row[metric] > 0)
           .map((row) => ({
             key: row.key,
-            label: usageLabel(row.label),
+            label: usageProviderLabel(usageLabel(row.label)),
             value: row[metric],
             color: usageChartColor(colors, row.key),
           }))}
@@ -204,10 +238,22 @@ export function UsageShare({
         formatValue={(value) => formatMetric(value, metric)}
         groupBelow={0}
         legendAction="select"
+        legend={false}
         onActiveChange={(key) => {
           if (key !== null) onSelect(key);
         }}
       />
+      <div className="usage-provider-shares">
+        {rows
+          .filter((row) => row[metric] > 0)
+          .map((row) => (
+            <Button key={row.key} variant="ghost" onClick={() => onSelect(row.key)}>
+              <UsageProviderIdentity provider={row.key} />
+              <strong>{formatMetric(row[metric], metric)}</strong>
+              <span>{formatUsagePercent((row[metric] / usageTotals(rows)[metric]) * 100)}</span>
+            </Button>
+          ))}
+      </div>
     </section>
   );
 }
@@ -219,7 +265,7 @@ export function Contribution({
   onSelect,
   colors,
 }: {
-  rows: UsageBreakdown[];
+  rows: (UsageBreakdown & { providers?: string[] })[];
   metric: UsageMetric;
   title: string;
   onSelect: (key: string) => void;
@@ -237,6 +283,9 @@ export function Contribution({
         {rows.slice(0, 5).map((row) => (
           <div className="usage-contribution" key={row.key}>
             <Button variant="link" onClick={() => onSelect(row.key)}>
+              {row.providers?.map((provider) => (
+                <UsageProviderIdentity key={provider} provider={provider} label="" />
+              ))}
               {usageLabel(row.label)}
             </Button>
             <span>
@@ -295,7 +344,7 @@ export function TimeDistribution({
   const dates = Array.from({ length: 7 }, (_, day) => addDays(from, day)).filter(
     (at) => at <= endDay && (page === weekStarts.length - 1 || at < weekStarts[page + 1]),
   );
-  const { hours, cells, daily } = useMemo(() => {
+  const { hours, cells, daily, details } = useMemo(() => {
     const hours = Array.from({ length: 24 }, (_, hour) => ({
       key: String(hour),
       label: `${String(hour).padStart(2, "0")}:00`,
@@ -304,14 +353,28 @@ export function TimeDistribution({
     }));
     const cells = new Map<string, number>();
     const daily = new Map<string, number>();
+    const details = new Map<string, Map<string, { sample: UsageSample; value: number }>>();
     for (const sample of samples) {
       const hour = new Date(sample.at).getHours();
       const day = dayKey(sample.at);
       hours[hour].value += sample[metric];
       cells.set(`${day}:${hour}`, (cells.get(`${day}:${hour}`) ?? 0) + sample[metric]);
       daily.set(day, (daily.get(day) ?? 0) + sample[metric]);
+      if (sample[metric] > 0 || (metric === "cost" && !sample.priced && sample.tokens > 0)) {
+        const key = `${day}:${hour}`;
+        const entries = details.get(key) ?? new Map();
+        const identity = JSON.stringify([
+          sample.provider,
+          sample.model,
+          sample.project,
+          sample.priced,
+        ]);
+        const entry = entries.get(identity);
+        entries.set(identity, { sample, value: (entry?.value ?? 0) + sample[metric] });
+        details.set(key, entries);
+      }
     }
-    return { hours, cells, daily };
+    return { hours, cells, daily, details };
   }, [samples, metric]);
   const maximum = Math.max(0, ...cells.values());
   const chronologicalResolution = effectiveResolution(
@@ -440,14 +503,10 @@ export function TimeDistribution({
         </div>
         <div
           className="usage-week-grid"
-          data-single-day={dates.length === 1 || undefined}
           role="grid"
           aria-label={t("Day and hour activity")}
           style={{
-            gridTemplateColumns:
-              dates.length === 1
-                ? "repeat(2, minmax(0, 1fr))"
-                : `3.5rem repeat(${dates.length}, minmax(0, 1fr))`,
+            gridTemplateColumns: `3.5rem repeat(${dates.length}, minmax(0, 1fr))`,
           }}
         >
           <div role="row" className="usage-week-row">
@@ -492,6 +551,40 @@ export function TimeDistribution({
                     }
                     aria-label={`${formatBucket(start.getTime(), "hour")}: ${formatMetric(amount, metric)}`}
                     tooltip={`${formatBucket(start.getTime(), "hour")}: ${formatMetric(amount, metric)}`}
+                    tooltipWide
+                    tooltipDetails={(() => {
+                      const entries = [
+                        ...(details.get(`${dayKey(day)}:${rowIndex}`)?.values() ?? []),
+                      ].sort((a, b) => b.value - a.value);
+                      return entries.length
+                        ? [
+                            ...entries.slice(0, 6).map(({ sample, value }) => (
+                              <span
+                                key={JSON.stringify([
+                                  sample.provider,
+                                  sample.model,
+                                  sample.project,
+                                  sample.priced,
+                                ])}
+                                className="usage-hour-detail"
+                              >
+                                <UsageProviderIdentity provider={sample.provider} />
+                                <span>
+                                  {sample.model} · {usageLabel(sample.projectLabel)}
+                                </span>
+                                <strong>
+                                  {metric === "cost" && !sample.priced
+                                    ? t("Unavailable")
+                                    : formatMetric(value, metric)}
+                                </strong>
+                              </span>
+                            )),
+                            ...(entries.length > 6
+                              ? [`+${formatNumber(entries.length - 6)} ${t("records")}`]
+                              : []),
+                          ]
+                        : [t("No usage recorded in this period.")];
+                    })()}
                     onFocus={() => setFocus(key)}
                     onClick={() =>
                       onSelect({
@@ -500,20 +593,12 @@ export function TimeDistribution({
                       })
                     }
                     onKeyDown={(event) => {
-                      const delta =
-                        dates.length === 1
-                          ? {
-                              ArrowLeft: [-1, 0],
-                              ArrowRight: [1, 0],
-                              ArrowUp: [-2, 0],
-                              ArrowDown: [2, 0],
-                            }[event.key]
-                          : {
-                              ArrowLeft: [0, -1],
-                              ArrowRight: [0, 1],
-                              ArrowUp: [-1, 0],
-                              ArrowDown: [1, 0],
-                            }[event.key];
+                      const delta = {
+                        ArrowLeft: [0, -1],
+                        ArrowRight: [0, 1],
+                        ArrowUp: [-1, 0],
+                        ArrowDown: [1, 0],
+                      }[event.key];
                       if (!delta) return;
                       event.preventDefault();
                       const row = Math.max(0, Math.min(23, rowIndex + delta[0]));
@@ -542,7 +627,6 @@ export function TimeDistribution({
             <i key={level} data-level={level} />
           ))}
           <span>{t("More")}</span>
-          <span>{t("Select an hour to inspect")}</span>
         </div>
       </section>
     </div>

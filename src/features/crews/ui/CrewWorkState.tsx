@@ -10,6 +10,7 @@ import {
   crewExecutionState,
   crewHasRunningWork,
   crewOpenAttention,
+  crewProgressLabel,
   type CrewAttention,
   type CrewExecutionState,
 } from "../model/crewPresentation";
@@ -22,10 +23,15 @@ export function attentionTone(attention: CrewAttention): BadgeTone {
   return attention === "blocked" ? "danger" : "warning";
 }
 
+/** Idle and finished states are implied by the controls and the list tab; only live ones are named. */
+function namedState(state: CrewExecutionState, forList: boolean) {
+  return state === "working" || (forList && state === "paused");
+}
+
 /**
- * Execution state and, separately, what needs the owner (CR-W04). A paused run
- * with an open decision shows both, e.g. "Paused" and "Needs decision".
- * Running work shows the shared working signal even while new assignments are paused.
+ * What needs the owner (CR-W04), plus the working signal while work runs. A paused or idle
+ * run shows no state badge: its Resume or Start control already says so, and the state stays
+ * available to assistive technology.
  */
 export function CrewWorkBadges({ run, size = "sm" }: { run: CrewRunView; size?: BadgeSize }) {
   useLocale();
@@ -34,13 +40,17 @@ export function CrewWorkBadges({ run, size = "sm" }: { run: CrewRunView; size?: 
   const running = run.status !== "finished" && crewHasRunningWork(run);
   return (
     <>
-      <Badge
-        tone={executionTone(state)}
-        size={size}
-        icon={running ? <WorkingIndicator size="xs" /> : undefined}
-      >
-        {crewExecutionLabel(state)}
-      </Badge>
+      {namedState(state, false) || state === "finished" ? (
+        <Badge
+          tone={executionTone(state)}
+          size={size}
+          icon={running ? <WorkingIndicator size="xs" /> : undefined}
+        >
+          {crewExecutionLabel(state)}
+        </Badge>
+      ) : (
+        <span className="sr-only">{crewExecutionLabel(state)}</span>
+      )}
       {attention ? (
         <Badge tone={attentionTone(attention)} size={size}>
           {crewAttentionLabel(attention)}
@@ -50,26 +60,33 @@ export function CrewWorkBadges({ run, size = "sm" }: { run: CrewRunView; size?: 
   );
 }
 
-/** Plain-text form for the sidebar: "Paused · Needs decision", attention in its tone ink. */
+/** Plain-text form for lists and the rail: "Paused · Needs decision"; idle work says nothing. */
 export function CrewWorkStatusText({ run }: { run: CrewRunView }) {
   useLocale();
   const state = crewExecutionState(run);
   const attention = crewOpenAttention(run);
   const running = run.status !== "finished" && crewHasRunningWork(run);
+  const named = namedState(state, true);
+  if (!named && !attention) return null;
   return (
     <span className="inline-flex min-w-0 shrink-0 items-center gap-1">
       {running ? <WorkingIndicator size="xs" /> : null}
-      <span>{crewExecutionLabel(state)}</span>
+      {named ? <span>{crewExecutionLabel(state)}</span> : null}
+      {named && attention ? <span aria-hidden="true">·</span> : null}
       {attention ? (
-        <>
-          <span aria-hidden="true">·</span>
-          <Badge tone={attentionTone(attention)} size="xs">
-            {crewAttentionLabel(attention)}
-          </Badge>
-        </>
+        <Badge tone={attentionTone(attention)} size="xs">
+          {crewAttentionLabel(attention)}
+        </Badge>
       ) : null}
     </span>
   );
+}
+
+/** Progress for lists: tasks done, or planning; "no assignments yet" is left out as filler. */
+export function crewQuietProgress(run: CrewRunView) {
+  return run.tasks.length || (run.status === "active" && run.coordinatorStatus === "running")
+    ? crewProgressLabel(run)
+    : "";
 }
 
 /** Last change of the work record; the full date stays in the tooltip. */

@@ -576,10 +576,10 @@ describe("durable assistant ownership and supervision", () => {
         taskIds: [],
         sessionIds: [],
         progress: { done: 0, total: 1 },
-        tokens: 8500,
+        tokens: 17000,
       }),
     });
-    await f.configure("jobs", 10000);
+    await f.configure("jobs", 20000);
     const input = {
       op: "jobs.create",
       title: "First",
@@ -592,7 +592,7 @@ describe("durable assistant ownership and supervision", () => {
     await f.request({ ...input, title: "Second", idempotencyKey: "two" });
     expect(launches).toBe(1);
     const usage = (await f.request({ op: "snapshot" })).snapshot!.usage;
-    expect(usage.total).toBe(8500);
+    expect(usage.total).toBe(17000);
     expect(usage.mode).toBe("report");
   });
   it("preempts an in-flight provider immediately when the owner stops everything", async () => {

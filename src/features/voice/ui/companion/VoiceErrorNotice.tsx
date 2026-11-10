@@ -38,7 +38,6 @@ export function VoiceErrorNotice({ error, onDismiss }: { error: string; onDismis
         tone="danger"
         data-voice-error=""
         label={title}
-        tooltip={title}
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-controls={open ? contentId : undefined}

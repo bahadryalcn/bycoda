@@ -48,13 +48,13 @@ describe("assistant builder interview", () => {
         quietStart: 22,
         activeStart: 9,
         activeEnd: 17,
-        dailyTokenBudget: 5000,
+        dailyTokenBudget: 20000,
       }),
     );
     expect(result).toEqual({
       kind: "proposal",
       summary: "A calm helper.",
-      profile: { name: "Ada", activeStart: 9, activeEnd: 17, dailyTokenBudget: 5000 },
+      profile: { name: "Ada", activeStart: 9, activeEnd: 17, dailyTokenBudget: 20000 },
       avatarPrompt: "A fox",
     });
   });

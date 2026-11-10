@@ -3,6 +3,7 @@ import { RadioGroup } from "../../../../../shared/ui/RadioGroup";
 import { THEME_PALETTE_PRESETS, matchThemePalette } from "../../../model/themePalettes";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import "./ThemeControls.css";
+import { writeGeneratorValue } from "./themeGeneratorSession";
 
 /** The four colours a palette stands for: canvas, surface, line and its accent. */
 export function paletteSwatches(
@@ -29,6 +30,7 @@ export function PaletteCards({ appearance }: { appearance: AppearanceSettings })
     appearance.onTint(palette.hue, palette.saturation);
     appearance.onDarkLightness(palette.lightness);
     appearance.onAccentColor(palette.accent);
+    writeGeneratorValue("selectedLookName", palette.name, "");
   };
   return (
     <RadioGroup

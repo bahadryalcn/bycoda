@@ -1,6 +1,65 @@
 import { expect, test } from "@playwright/test";
 
 for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`bulk deletion stays in one compact row at ${width} ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/session-deletion.html?theme=${theme}&bulk`);
+      const row = page.locator("[data-session-delete-status]");
+      await expect(row).toHaveCount(1);
+      await expect(page.locator("[data-session-deletion-detail]")).toHaveCount(0);
+      const title = row.locator(".truncate");
+      const counter = row.getByText("8/10", { exact: true });
+      await expect(counter).toBeVisible();
+      const trash = row.locator("svg").last();
+      const geometry = await row.evaluate((element) => {
+        const title = element.querySelector<HTMLElement>(".truncate")!;
+        return {
+          overflow: element.scrollWidth > element.clientWidth,
+          clippedTitle: title.scrollWidth > title.clientWidth,
+          whiteSpace: getComputedStyle(title).whiteSpace,
+          height: element.getBoundingClientRect().height,
+        };
+      });
+      expect(geometry.overflow).toBe(false);
+      expect(geometry.clippedTitle).toBe(true);
+      expect(geometry.whiteSpace).toBe("nowrap");
+      const titleBox = (await title.boundingBox())!;
+      const counterBox = (await counter.boundingBox())!;
+      const trashBox = (await trash.boundingBox())!;
+      expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(counterBox.x);
+      expect(counterBox.x + counterBox.width).toBeLessThanOrEqual(trashBox.x);
+      expect(
+        Math.abs(titleBox.y + titleBox.height / 2 - trashBox.y - trashBox.height / 2),
+      ).toBeLessThan(2);
+      const pendingBox = (await row.boundingBox())!;
+      await page.screenshot({
+        path: `temp/verification/session-delete-row/pending-${theme}-${width}.png`,
+      });
+      await page.getByRole("button", { name: "Complete", exact: true }).click();
+      await expect(row).toHaveCount(1);
+      await expect(row).toContainText("10 conversations deleted.");
+      await expect(page.locator("[data-session-deletion-detail]")).toHaveCount(0);
+      expect((await row.boundingBox())!.y).toBe(pendingBox.y);
+      await page.screenshot({
+        path: `temp/verification/session-delete-row/completed-${theme}-${width}.png`,
+      });
+      await row.getByRole("button", { name: "Dismiss notice", exact: true }).click();
+      await expect(row).toHaveCount(0);
+      await page.getByRole("button", { name: "Bulk failure", exact: true }).click();
+      await expect(row).toContainText("Storage unavailable");
+      await expect(row).toHaveAttribute("role", "alert");
+      expect(await row.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
+      await row.getByRole("button", { name: "Dismiss notice", exact: true }).click();
+      await expect(row).toHaveCount(0);
+    });
+  }
+}
+
+for (const theme of ["light", "dark"]) {
   test(`deletion clears success and preserves actionable outcomes in ${theme}`, async ({
     page,
   }) => {

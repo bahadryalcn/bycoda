@@ -1,5 +1,5 @@
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
@@ -20,7 +20,7 @@ import {
   formatResetCountdown,
   type RateLimitProvider,
 } from "../../providers/model/rateLimits";
-import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import { UsageProviderIdentity } from "./UsageProviderIdentity";
 import { UsageOverview } from "./UsageOverview";
 import { usageLabel } from "./UsageVisualizations";
 import { UsageDisplaySettings } from "./UsageDisplaySettings";
@@ -36,6 +36,7 @@ import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Button } from "../../../shared/ui/Button";
 import { UsageBudgets } from "./UsageBudgets";
 import { UsageActiveTime } from "./UsageActiveTime";
+import { GrokLimits } from "./GrokLimits";
 
 export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
   useLocale();
@@ -70,7 +71,6 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
                 variant="ghost"
                 iconOnly
                 label={t("Refresh usage")}
-                tooltip={t("Refresh usage")}
                 onClick={() => setRefresh((v) => v + 1)}
               >
                 <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
@@ -93,6 +93,10 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
                     identity={identities[identityKey(account)]}
                   />
                 ))}
+              {(!filters.provider.length || filters.provider.includes("grok")) &&
+              (!filters.account.length || filters.account.includes("grok:default")) ? (
+                <GrokLimits refresh={refresh} />
+              ) : null}
               {!accounts.length ? (
                 <p className="text-ui-caption text-(--ui-text-secondary)">
                   {t("No accounts on this machine. Add an account in Providers settings.")}
@@ -144,11 +148,12 @@ function AccountLimits({
       aria-busy={limits.status === "fetching" || limits.status === "idle"}
     >
       <div className="usage-account-heading">
-        <div className="min-w-0">
+        <div className="usage-account-identity">
           <h3>
-            <HarnessIcon harness={provider} className="icon-sm shrink-0" />
-            <span className="sr-only">{provider === "codex" ? t("Codex") : t("Claude")}</span>
-            <span className="min-w-0 truncate">{label}</span>
+            <span className="usage-account-provider">
+              <UsageProviderIdentity provider={provider} />
+            </span>
+            <span className="usage-account-name">{label}</span>
             {account.isDefault && label !== t("Default account") ? (
               <span className="usage-account-default">{t("Default account")}</span>
             ) : null}
@@ -160,7 +165,7 @@ function AccountLimits({
                 ? t("Loading account identity…")
                 : t("Account identity unavailable")
             }
-            className="text-ui-caption text-(--ui-text-secondary)"
+            className="usage-account-subtitle text-ui-caption text-(--ui-text-secondary)"
           />
         </div>
         {limits.updatedAt > 0 ? (
@@ -179,7 +184,6 @@ function AccountLimits({
           variant="ghost"
           iconOnly
           label={t("Account actions")}
-          tooltip={t("Account actions")}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen(!menuOpen)}
@@ -264,20 +268,16 @@ function AccountLimits({
         })}
       </div>
       {limits.error ? (
-        <div className="usage-account-error">
-          <Alert inline tone="danger">
-            {limits.error}
-          </Alert>
-          <Button
-            size="sm"
-            variant="ghost"
-            label={`${t("Retry")}: ${label}`}
-            loading={limits.status === "fetching"}
-            onClick={() => void loadRateLimits(provider, accountId, true)}
-          >
-            {t("Retry")}
-          </Button>
-        </div>
+        <InlineError
+          className="usage-account-error"
+          retry={{
+            label: `${t("Retry")}: ${label}`,
+            pending: limits.status === "fetching",
+            onRetry: () => void loadRateLimits(provider, accountId, true),
+          }}
+        >
+          {limits.error}
+        </InlineError>
       ) : null}
       {windows.length > 0 && (limits.status === "fetching" || limits.status === "idle") ? (
         <LoadingText presentation="text" className="text-ui-caption text-(--ui-text-secondary)">

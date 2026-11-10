@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { clearUsageLoadCache } from "../model/usageLoadCache";
+import type { UsageFilters } from "../model/usageAnalytics";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -64,8 +65,22 @@ vi.mock("../../../shared/ui/DateTimeRangePicker", () => ({
     ),
 }));
 vi.mock("../../../shared/ui/SearchableSelect", () => ({
-  SearchableSelect: ({ label, onChange }: any) =>
-    createElement("button", { onClick: () => onChange(["missing"]) }, `Exclude ${label}`),
+  SearchableSelect: ({ label, onChange, options }: any) =>
+    createElement(
+      "div",
+      {},
+      createElement("button", { onClick: () => onChange(["missing"]) }, `Exclude ${label}`),
+      options.map((option: any) =>
+        createElement(
+          "button",
+          {
+            key: option.value,
+            onClick: () => onChange([option.value]),
+          },
+          `Select ${label} ${option.label}`,
+        ),
+      ),
+    ),
 }));
 import { UsageOverview } from "./UsageOverview";
 let root: Root, host: HTMLDivElement;
@@ -134,6 +149,12 @@ it("advances workspace refresh across a bucket and midnight, keeping charts and 
   );
   const exportButton = host.querySelector<HTMLButtonElement>('button[aria-label="Export CSV"]')!;
   expect(exportButton).toBeTruthy();
+  expect(exportButton.textContent).toContain("Export CSV");
+  const tableDetails = [...host.querySelectorAll("details")].find((el) =>
+    el.querySelector("summary")?.textContent?.includes("Show as table"),
+  );
+  expect(tableDetails).toBeTruthy();
+  expect(tableDetails!.open).toBe(false);
   await act(async () => exportButton.click());
   expect(JSON.stringify(exportCsv.mock.lastCall)).toContain('"input":10');
   await act(async () =>
@@ -235,4 +256,30 @@ it("names an empty filtered result and offers a filter reset", async () => {
   expect(host.textContent).toContain("No usage matches these filters.");
   expect(document.body.textContent).toContain("Reset filters");
   expect(host.querySelector('[aria-label="Filters (1)"]')).toBeTruthy();
+});
+
+it("preserves independent Grok provider and account filters for limits", async () => {
+  const limits = vi.fn<(filters: UsageFilters) => null>(() => null);
+  await act(async () => root.render(createElement(UsageOverview, { limitsOnly: true, limits })));
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Filters"]')!.click());
+  const choose = (label: string) =>
+    act(async () => {
+      const button = [...document.querySelectorAll("button")].find(
+        (el) => el.textContent === label,
+      );
+      expect(button).toBeTruthy();
+      button!.click();
+    });
+  await choose("Select Provider Grok");
+  expect(limits.mock.lastCall?.[0]).toMatchObject({ provider: ["grok"], account: [] });
+  await choose("Select Account Grok");
+  expect(limits.mock.lastCall?.[0]).toMatchObject({
+    provider: ["grok"],
+    account: ["grok:default"],
+  });
+  await choose("Select Provider Codex");
+  expect(limits.mock.lastCall?.[0]).toMatchObject({
+    provider: ["codex"],
+    account: ["grok:default"],
+  });
 });

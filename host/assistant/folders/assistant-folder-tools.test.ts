@@ -93,6 +93,30 @@ describe("Assistant folder tools", () => {
       expect(approvals).toEqual([]);
     });
 
+    it("keeps credential folders closed inside a folder that holds the home folder", async () => {
+      vi.stubEnv("USERPROFILE", path);
+      vi.stubEnv("HOME", path);
+      try {
+        await mkdir(join(path, ".ssh"));
+        await writeFile(join(path, ".ssh", "id"), "hello key");
+        const tools = make();
+        const call = (action: string, input: Record<string, unknown>) =>
+          tools.call(action, { root: id(), requestId: "r-1", ...input }, global, yes);
+        await expect(call("files.read", { path: ".ssh/id" })).rejects.toThrow(/credential/);
+        await expect(call("files.list", { path: ".ssh" })).rejects.toThrow(/credential/);
+        await expect(
+          call("files.create", { parent: ".", name: ".ssh", isDir: true }),
+        ).rejects.toThrow(/credential/);
+        const found = (await call("files.searchContent", { query: "hello" })) as {
+          items: { path: string }[];
+        };
+        expect(found.items.some((item) => item.path.startsWith(".ssh"))).toBe(false);
+        expect(found.items.length).toBeGreaterThan(0);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
     it("rejects an unknown root, a missing root and path traversal", async () => {
       const tools = make();
       await expect(

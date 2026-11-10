@@ -58,6 +58,26 @@ describe("theme suggestion Host command", () => {
     );
   });
 
+  it("returns coherent typography and visible image tuning even for extreme model values", async () => {
+    const reply = JSON.stringify([
+      {
+        name: "Night",
+        hue: 220,
+        saturation: 12,
+        accent: "#2299ee",
+        typography: { codeSize: 13, terminalSize: 40 },
+        interface: { contrast: 75 },
+        image: { emptyOpacity: 0, sessionOpacity: 0, blur: 40 },
+      },
+    ]);
+    const { suggestions } = await generateThemeSuggestions(params, async () => reply);
+    expect(suggestions[0]).toMatchObject({
+      typography: { codeSize: 13, terminalSize: 15 },
+      interface: { contrast: 100 },
+      image: { emptyOpacity: 30, sessionOpacity: 15, blur: 12 },
+    });
+  });
+
   it("fails clearly when no valid entry comes back", async () => {
     await expect(generateThemeSuggestions(params, async () => '[{"name":"x"}]')).rejects.toThrow(
       /missing required fields/,

@@ -36,7 +36,7 @@ import { HostReadWorkBudget } from "../read-budget";
 import { HostBulkError, hostBulkDependencies, type HostBulkTransfers } from "../http/bulk";
 import { HostStreamError, type HostSubscriptionHub } from "./subscriptions";
 import { dispatchErrorCode, principalCapabilities, rejectUpgrade, waitFor } from "./server-helpers";
-import { authorizeWith, type AuthMode } from "./server-helpers";
+import { authorizeWith, invalidRequestMessage, type AuthMode } from "./server-helpers";
 
 export const HOST_WS_READ_CAPABILITY = "transport.ws.read.v2";
 const READ_METHODS = ["environment.describe", "projects.list"] as const;
@@ -668,7 +668,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           peer,
           id.success ? id.data : null,
           invalidParams ? RPC_ERROR_CODES.invalidParams : RPC_ERROR_CODES.invalidRequest,
-          "Invalid Host RPC request.",
+          invalidRequestMessage(raw?.method, error),
         );
         return;
       }

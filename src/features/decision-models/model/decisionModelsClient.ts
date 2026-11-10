@@ -39,6 +39,8 @@ export function decisionModelsClient(machineId: string) {
         call("decisionModels.sources.evaluate", params),
     },
     discovery: {
+      cancel: (params: DecisionParams<"decisionModels.discovery.cancel">) =>
+        call("decisionModels.discovery.cancel", params),
       scan: (params: DecisionParams<"decisionModels.discovery.scan">) =>
         call("decisionModels.discovery.scan", params),
       results: (params: DecisionParams<"decisionModels.discovery.results">) =>

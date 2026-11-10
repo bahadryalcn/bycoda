@@ -159,6 +159,11 @@ it("never migrates a legacy display label and creates profiles only after explic
   );
   expect(native.apply).not.toHaveBeenCalled();
   expect(native.preview).toHaveBeenCalledTimes(1);
+  expect(button("Saved")).toBeTruthy();
+  expect(document.body.textContent).not.toContain("Group defaults saved.");
+  await input("Group name", "Changed defaults");
+  expect(button("Save group")).toBeTruthy();
+  expect(button("Saved")).toBeUndefined();
 });
 it("ignores initial read replies after unmount without applying or losing retained drafts", async () => {
   let finish!: (value: SshGroupDefaults[]) => void;

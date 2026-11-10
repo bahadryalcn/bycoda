@@ -1,5 +1,30 @@
 # Usage budgets
 
+**Projects** starts with ranked usage and provider shares. Expand **Show as table**
+for sortable exact values and further drilldown. **Export CSV** downloads the current
+filtered breakdown.
+
+In **Time analysis**, hover or focus an hour to inspect its provider, model and
+project breakdown. Clicking narrows the selected interval. A single day keeps the
+same time-and-date columns as a full week. Measurement notes are available from
+the information controls; missing prices and unavailable readings remain explicit.
+
+The **Limits & budgets** view compares provider accounts in compact rows. Each row
+keeps its account identity, observation time, available quota windows, reset times,
+color menu and retry together. Failed refreshes keep the last known limits visible.
+
+Grok shows the signed-in Grok Build CLI's plan quota in this view and the workspace
+footer. The used/remaining preference applies to its provider-reported credit usage
+percentage; the quota window and reset come from its current billing period.
+Grok uses its single CLI login rather than Bycoda's isolated account profiles.
+Missing credentials, unsupported CLI versions and failed reads remain explicit;
+local token costs are not treated as plan quota. Reads do not start a conversation.
+
+**Limit history** shows all filtered accounts together by default. Use the account
+selector to focus one account and the window selector to compare the same quota
+period. Colors identify accounts; percentages remain separate, never pooled.
+The expandable table retains exact observations and account names.
+
 Usage detail tables scroll through all loaded records without numbered pages.
 Sorting, drilldown and exact measurement availability remain available while the
 table recycles offscreen rows.

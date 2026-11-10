@@ -237,8 +237,11 @@ describe("Settings skill preview", () => {
     expect(invoke.mock.calls.filter(([command]) => command === "write_text_file")).toHaveLength(1);
     await act(async () => pending.resolve());
     expect(disk).toBe("---\nname: guide\n---\n\n# Updated instructions\n");
-    expect(container.textContent).toContain("Skill saved.");
-    expect(button("Save").disabled).toBe(true);
+    expect(container.textContent).not.toContain("Skill saved.");
+    expect(button("Saved").disabled).toBe(true);
+    expect(container.querySelector("footer")?.textContent).not.toContain("Saved");
+    edit("# Another draft");
+    expect(button("Save").disabled).toBe(false);
   });
 
   it.each(["disk changed", "write failed"])("keeps the draft when %s", async (failure) => {

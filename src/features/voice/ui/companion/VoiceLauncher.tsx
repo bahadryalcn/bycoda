@@ -52,7 +52,6 @@ export function VoiceReturnButton({
         iconOnly
         selected
         label={t("Return voice companion to this window")}
-        tooltip={t("Return voice companion to this window")}
         onClick={onReturn}
       >
         <AppWindow className="icon-md" />

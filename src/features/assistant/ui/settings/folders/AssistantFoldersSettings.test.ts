@@ -118,16 +118,14 @@ it("keeps the draft and offers a reload on a version conflict", async () => {
 });
 
 it("surfaces a rejected folder without losing the draft", async () => {
-  pick.mockResolvedValue(["C:\\"]);
+  pick.mockResolvedValue(["C:\\Windows"]);
   const { saveRef } = await setup(async () => {
-    throw new Error("A drive or filesystem root cannot be an Assistant folder.");
+    throw new Error("A system folder cannot be an Assistant folder.");
   });
   await click("Add folder…");
   await act(async () => {
     await saveRef.current!().catch(() => undefined);
   });
-  expect(container.textContent).toContain(
-    "A drive or filesystem root cannot be an Assistant folder.",
-  );
-  expect(container.textContent).toContain("C:\\");
+  expect(container.textContent).toContain("A system folder cannot be an Assistant folder.");
+  expect(container.textContent).toContain("C:\\Windows");
 });

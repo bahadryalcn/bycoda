@@ -15,7 +15,7 @@ active lease checks. Optional `leaseId` accepts existing capture clients without
 
 Owner request, 2026-11-10, original Turkish:
 
-> I can't manage the Host browser comfortably, I should be able to use it like a browser but it isn't so. Can you look at how t3code does it, let's do similar if necessary (translated)
+> I can't manage the Host browser comfortably, I should be able to use it like a browser but it isn't so. (translated; comparison omitted)
 
 Implementation decision: live viewing long-polls `browser.frame` with the last frame
 sequence and is served from Chromium's screencast outside the one-operation gate; it

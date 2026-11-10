@@ -258,6 +258,7 @@ export function useSessionSelection({
     bulkNotice: bulk.bulkNotice,
     deleteProgress: bulk.deleteProgress,
     deleteNoticeError: bulk.deleteNoticeError,
+    deleteNoticeSuccess: bulk.deleteNoticeSuccess,
     deleteNoticeCwd: bulk.deleteNoticeCwd,
     deleting: bulk.deleting,
     dismissBulkNotice: bulk.dismissBulkNotice,

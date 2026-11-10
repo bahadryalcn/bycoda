@@ -50,7 +50,7 @@ export const APPEARANCE_CHOICES = {
   terminalWeight: [300, 400, 500, 600, 700],
   terminalLineHeight: [1, 1.15, 1.35, 1.5],
   scrollbarColor: ["auto", "neutral", "theme"],
-  scrollbarSize: ["thin", "medium", "wide"],
+  scrollbarSize: ["extra-thin", "thin", "medium", "large", "xlarge"],
   scrollbarVisibility: ["hover", "always"],
   tintSource: ["neutral", "theme", "accent"],
   workingColor: ["auto", "theme"],

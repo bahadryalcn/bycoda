@@ -6,6 +6,22 @@ a benchmark score. Search by name, purpose or category. Each entry links to the
 publisher's original repository and lists additional requirements. Open **Before you
 install** for the replacement, permission and prerequisite notes.
 
+The catalog covers interface design, React composition and performance, Expo native
+development, PostgreSQL, Cloudflare Workers and Durable Objects, Stripe integrations,
+Hugging Face tooling, property-based testing, MCP servers and PDF workflows. New
+recommendations come from the original Vercel, Expo, Supabase, Cloudflare, Stripe,
+Hugging Face, Trail of Bits and Anthropic repositories. Publisher links let you
+inspect the current source before installation.
+Expo's native UI workflows also use its companion `expo-ui` skill. Install the
+relevant companion skills when the publisher's workflow calls for them.
+
+Service workflows also include Firebase setup, Authentication, Firestore and its
+Security Rules, Hosting, App Hosting, SQL Connect and AI Logic; Stripe Connect,
+account verification, API/SDK upgrades, Stripe Apps, Metronome and documentation;
+Neon platform/PostgreSQL and Better Auth. These entries use the service publishers'
+own repositories. Additional CLIs, SDKs, accounts and billing plans are listed in
+each entry. Installing a skill does not connect an account or provision services.
+
 The list opens on **Not installed**: a recommendation whose skill name already exists
 on the selected computer moves to **Installed**, where its button stays disabled. A
 recommendation installed only on another connected computer names that computer.

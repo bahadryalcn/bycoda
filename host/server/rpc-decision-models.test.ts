@@ -60,6 +60,11 @@ const source = {
 };
 
 describe("decision model owner RPC", () => {
+  it("handles cancellation when no scan is active", async () => {
+    const request = rpc("decisionModels.discovery.cancel", {});
+    await handleDecisionModelsRpc(dependencies, request);
+    expect(request.result).toEqual({ cancelled: false });
+  });
   it("accepts an API key only from this computer", async () => {
     const remote: Caller = { address: "192.168.1.20" };
     const browser: Caller = { address: "127.0.0.1", origin: "https://example.test" };

@@ -65,7 +65,6 @@ export function VoiceTurnControl({
       iconOnly
       variant="secondary"
       label={t("Finish turn")}
-      tooltip={t("Finish turn")}
       disabled={muted}
       onClick={onFinish}
     >
@@ -110,7 +109,6 @@ export function VoiceTurnControl({
         <Button
           iconOnly
           label={t("Turn ending")}
-          tooltip={t("Turn ending")}
           aria-haspopup="menu"
           aria-expanded={Boolean(anchor)}
           onClick={(event) => open(event.currentTarget)}

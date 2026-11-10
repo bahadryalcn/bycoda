@@ -45,6 +45,13 @@ The language selector applies immediately. Reopen the flow from Settings → Gen
   or a custom color with an adjustable strength. Preview in app turns Settings
   into a side panel without dimming, so live backgrounds, the crew and glass can
   be judged on the real workspace; Escape returns to the full dialog.
+  The image button in the theme generator opens a menu for None, Codex or Gemini;
+  its icon reflects the selected image provider. Selecting a suggested or saved
+  theme pre-fills its editable name when saving the current look. Palette and
+  saved-theme cards share one grid rhythm. Tone, interaction and scrollbar
+  settings place previews beside their controls when space allows.
+  AI suggestions keep code and terminal text sizes close, preserve readable
+  borders and keep generated artwork visible. Manual controls retain their ranges.
 - Appearance → Background stacks the layers back to front: Glass, Color, Image and
   Live. Each row shows a thumbnail and summary and opens its editor in place.
   Sidebar and main pane opacity are independent; light mode remains opaque.

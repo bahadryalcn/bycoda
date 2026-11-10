@@ -2,6 +2,7 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Progress } from "../../../shared/ui/Progress";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import type { DiscoveryCandidate } from "../model/decisionTypes";
 import { candidateKindLabel } from "../model/decisionView";
 import { ErrorNotice } from "./ErrorNotice";
@@ -15,6 +16,7 @@ export function FoundList({
   found,
   scanning,
   scanError,
+  incomplete = false,
   busy,
   onScan,
   onAdd,
@@ -22,22 +24,31 @@ export function FoundList({
   found: DiscoveryCandidate[] | null;
   scanning: boolean;
   scanError: unknown;
+  incomplete?: boolean;
   busy: boolean;
   onScan: () => void;
   onAdd: (candidate: DiscoveryCandidate) => void;
 }) {
   const items = found ?? [];
-  const empty = found !== null && items.length === 0 && !scanning && scanError === null;
+  const empty =
+    found !== null && items.length === 0 && !scanning && scanError === null && !incomplete;
   return (
     <>
+      {incomplete && !scanning ? (
+        <div className="px-4 py-2.5">
+          <InlineMessage tone="info">
+            {t("The scan is incomplete. Choose a smaller model folder or scan again.")}
+          </InlineMessage>
+        </div>
+      ) : null}
       {scanning ? (
         <div className="px-4 py-2.5">
           <Progress label={t("Scanning this computer…")} />
         </div>
       ) : null}
-      {scanError !== null && !scanning ? (
+      {scanError !== null ? (
         <div className="px-4 py-2.5">
-          <ErrorNotice error={scanError} onRetry={onScan} retrying={scanning} />
+          <ErrorNotice error={scanError} onRetry={scanning ? undefined : onScan} />
         </div>
       ) : null}
       {items.length > 0 ? (

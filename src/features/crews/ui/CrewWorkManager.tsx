@@ -262,11 +262,9 @@ export function CrewWorkManager({
             ) : null}
           </div>
         </div>
-        {crew ? (
+        {crew && !savedCrew ? (
           <p className="-mt-1 px-4 pb-2 text-ui-caption text-(--ui-text-secondary)">
-            {savedCrew
-              ? `${t("{p0} members", { p0: crew.agents.length })} · ${t("Saved team for future work")}`
-              : t("This crew was deleted. Its work and conversations are kept.")}
+            {t("This crew was deleted. Its work and conversations are kept.")}
           </p>
         ) : null}
         {!data ? (

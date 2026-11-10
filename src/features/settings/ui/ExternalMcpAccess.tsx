@@ -423,49 +423,51 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
       {loading && !data && (
         <SettingsFeedback state="loading">{t("Loading tokens…")}</SettingsFeedback>
       )}
-      <div className={styles.toolbar}>
-        <div className={styles.search}>
-          <SearchInput
-            appearance="field"
-            aria-label={t("Search tokens")}
-            placeholder={t("Search tokens")}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
-        <div className={styles.toolbarSlot}>
-          <Button
-            ref={filterAnchor}
-            variant="ghost"
-            iconOnly
-            label={t("Filters")}
-            selected={filter !== "all"}
-            aria-expanded={filtersOpen}
-            aria-haspopup="dialog"
-            onClick={() => setFiltersOpen(!filtersOpen)}
-          >
-            <ListFilter />
-          </Button>
-          {filter !== "all" || query ? (
+      {data?.tokens.length || query || filter !== "all" ? (
+        <div className={styles.toolbar}>
+          <div className={styles.search}>
+            <SearchInput
+              appearance="field"
+              aria-label={t("Search tokens")}
+              placeholder={t("Search tokens")}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+          <div className={styles.toolbarSlot}>
             <Button
+              ref={filterAnchor}
               variant="ghost"
               iconOnly
-              label={t("Reset filters")}
-              onClick={() => {
-                setFilter("all");
-                setQuery("");
-              }}
+              label={t("Filters")}
+              selected={filter !== "all"}
+              aria-expanded={filtersOpen}
+              aria-haspopup="dialog"
+              onClick={() => setFiltersOpen(!filtersOpen)}
             >
-              <RotateCcw className="icon-sm" strokeWidth={1.75} />
+              <ListFilter />
             </Button>
-          ) : null}
-          {data ? (
-            <span className={`${styles.metadata} ${styles.count}`} role="status">
-              {t("{p0} of {p1} tokens", { p0: shownTokens.length, p1: data.tokens.length })}
-            </span>
-          ) : null}
+            {filter !== "all" || query ? (
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Reset filters")}
+                onClick={() => {
+                  setFilter("all");
+                  setQuery("");
+                }}
+              >
+                <RotateCcw className="icon-sm" strokeWidth={1.75} />
+              </Button>
+            ) : null}
+            {data ? (
+              <span className={`${styles.metadata} ${styles.count}`} role="status">
+                {t("{p0} of {p1} tokens", { p0: shownTokens.length, p1: data.tokens.length })}
+              </span>
+            ) : null}
+          </div>
         </div>
-      </div>
+      ) : null}
       {filtersOpen ? (
         <Popover
           anchor={filterAnchor}

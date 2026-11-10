@@ -77,7 +77,7 @@ describe("buildRecentSessions", () => {
         }),
       ],
     );
-    expect(rows[0]).toMatchObject({
+    expect(rows.find((row) => row.id === "saved")).toMatchObject({
       id: "saved",
       pinned: true,
       managedBy: management,
@@ -103,7 +103,7 @@ describe("buildRecentSessions", () => {
     expect(rows[0].title).toBe("new");
   });
 
-  it("keeps pinned sessions first within the total row limit", () => {
+  it("orders recent sessions by activity regardless of project pins", () => {
     const rows = build(
       [
         stored("p-old", 1, { pinned: true }),
@@ -115,8 +115,7 @@ describe("buildRecentSessions", () => {
       [],
       3,
     );
-    expect(rows.map((row) => row.id)).toEqual(["p-new", "p-old", "a"]);
-    expect(rows.slice(0, 2).every((row) => row.pinned)).toBe(true);
+    expect(rows.map((row) => row.id)).toEqual(["a", "b", "c"]);
   });
 
   it("caps the list even when pinned sessions exceed the limit", () => {

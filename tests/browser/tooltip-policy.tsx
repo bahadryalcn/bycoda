@@ -81,7 +81,6 @@ function Fixture() {
             </Button>
             <Button
               data-testid="details"
-              tooltip="Details"
               tooltipWhen="overflow"
               tooltipDetails={["Includes nested folders"]}
             >
@@ -103,39 +102,19 @@ function Fixture() {
             >
               Open palette
             </Button>
-            <Button
-              data-testid="inline-shortcut"
-              tooltip="Save"
-              shortcut="Ctrl+S"
-              tooltipWhen="overflow"
-            >
+            <Button data-testid="inline-shortcut" shortcut="Ctrl+S" tooltipWhen="overflow">
               Save <span data-tooltip-shortcut="">Ctrl+S</span>
             </Button>
-            <Button
-              data-testid="hidden-shortcut"
-              tooltip="Hidden shortcut"
-              shortcut="Ctrl+H"
-              tooltipWhen="overflow"
-            >
+            <Button data-testid="hidden-shortcut" shortcut="Ctrl+H" tooltipWhen="overflow">
               Hidden shortcut{" "}
               <span style={{ display: "none" }}>
                 <ShortcutKeys shortcut="Ctrl+H" />
               </span>
             </Button>
-            <Button
-              data-testid="single-letter-shortcut"
-              tooltip="Sessions"
-              shortcut="S"
-              tooltipWhen="overflow"
-            >
+            <Button data-testid="single-letter-shortcut" shortcut="S" tooltipWhen="overflow">
               Sessions
             </Button>
-            <Button
-              data-testid="keycap-shortcut"
-              tooltip="Keycap shortcut"
-              shortcut="Ctrl+L"
-              tooltipWhen="overflow"
-            >
+            <Button data-testid="keycap-shortcut" shortcut="Ctrl+L" tooltipWhen="overflow">
               Keycap shortcut <ShortcutKeys shortcut="Ctrl+L" />
             </Button>
           </div>
@@ -206,6 +185,18 @@ function Fixture() {
             <ExpandingButtonGroup
               label="Expanding actions"
               items={[{ id: "expand", label: "Copy expanded fixture", icon: <Copy /> }]}
+            />
+            <ExpandingButtonGroup
+              label="Project shortcut actions"
+              items={[
+                { id: "notes", label: "Notes", icon: <Copy />, shortcut: "Ctrl+Shift+L" },
+                {
+                  id: "automations",
+                  label: "Automations",
+                  icon: <Search />,
+                  shortcut: "Ctrl+Shift+U",
+                },
+              ]}
             />
           </div>
         </section>

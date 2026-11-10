@@ -5,6 +5,9 @@ import {
   ModelSettingsSchema,
 } from "./session-commands";
 
+/** Smallest daily budget the assistant accepts: below it even one supervisor review cannot run. */
+export const ASSISTANT_MIN_DAILY_TOKEN_BUDGET = 20_000;
+
 /** Assistant profile settings: the owner-editable patch and the execution profile it embeds. */
 export const AssistantExecutionSchema = z.strictObject({
   harness: SessionProviderSchema,
@@ -29,7 +32,12 @@ export const AssistantProfilePatchSchema = z.strictObject({
   autonomy: z.enum(["report", "jobs", "chief"]).optional(),
   allowRoutineQuestions: z.boolean().optional(),
   planApproval: z.enum(["always", "large", "never"]).optional(),
-  dailyTokenBudget: z.number().int().min(1).max(1_000_000_000).optional(),
+  dailyTokenBudget: z
+    .number()
+    .int()
+    .min(ASSISTANT_MIN_DAILY_TOKEN_BUDGET)
+    .max(1_000_000_000)
+    .optional(),
   perWakeTokenCap: z.number().int().min(1000).max(1_000_000).optional(),
   enabled: z.boolean().optional(),
   keepAwakeWhileWorking: z.boolean().optional(),

@@ -391,7 +391,6 @@ export function FloatingButtonGroup({
     const disabled = !!item.disabled || !!trigger?.disabled;
     const iconOnly = !!icon && (item.iconOnly ?? groupIconOnly);
     const name = trigger?.ariaLabel ?? itemLabel;
-    const hint = tooltip ?? itemLabel;
     return (
       <Button
         key={id}
@@ -403,8 +402,7 @@ export function FloatingButtonGroup({
         selected={pressed}
         iconOnly={iconOnly}
         label={name}
-        tooltip={hint}
-        tooltipWhen="overflow"
+        tooltip={tooltip}
         shortcut={shortcut}
         onMouseDown={preserveSelection ? (event) => event.preventDefault() : undefined}
         ref={(node) => setNode(id, node, trigger?.ref)}

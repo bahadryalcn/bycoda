@@ -22,9 +22,9 @@ const STATE: Record<AlwaysOnState, { label: string; tone: BadgeTone }> = {
   review: { label: "Review", tone: "info" },
 };
 const WHERE: Record<AlwaysOnTarget, string> = {
-  setup: "Run setup again",
+  setup: "Quick setup",
   work: "Work",
-  schedule: "Schedule",
+  schedule: "Work",
 };
 
 /**
@@ -96,7 +96,7 @@ export function AlwaysOnChecklist({
           </Badge>
           {item.target && onOpen && item.state !== "done" && (
             <Button type="button" size="sm" onClick={() => onOpen(item.target!)}>
-              {t(item.target === "setup" ? "Run setup again" : "Open settings")}
+              {t(item.target === "setup" ? "Quick setup" : "Open settings")}
             </Button>
           )}
         </Row>

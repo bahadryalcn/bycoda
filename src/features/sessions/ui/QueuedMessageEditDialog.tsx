@@ -487,7 +487,6 @@ function QueueEditContent({
                 label={t("Add files or images")}
                 variant="ghost"
                 type="button"
-                tooltip={t("Add files or images")}
                 aria-label={t("Add files or images")}
                 disabled={parentClosed}
                 onClick={() => void collect(pickAttachments)}

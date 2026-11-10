@@ -19,12 +19,12 @@ import { CanvasBackgroundRow } from "../controls/CanvasBackgroundRow";
 import { PaletteCards } from "../controls/PaletteCards";
 import { SavedThemes } from "../controls/SavedThemes";
 import { StateLadder } from "../controls/StateLadder";
-import { ThemePreview } from "../controls/ThemePreview";
 import { ToneSliders } from "../controls/ToneSliders";
 import { AppearanceSection } from "./AppearanceSection";
+import "./ThemeSection.css";
 
 /**
- * Theme tab order: a live preview first, then the colour choices (mode and palettes, tone, accent,
+ * Theme tab order: colour choices (mode and palettes, tone with a live preview, accent,
  * interaction). Generation sits under the tabs because it changes every Appearance topic. Every control writes through the existing setters.
  */
 export function ThemeSection({ appearance }: { appearance: AppearanceSettings }) {
@@ -49,9 +49,6 @@ export function ThemeSection({ appearance }: { appearance: AppearanceSettings })
   };
   return (
     <AppearanceSection id="colors" title={t("Theme and colors")}>
-      <Group title={t("Preview")}>
-        <ThemePreview />
-      </Group>
       <Group
         title={t("Themes")}
         modified={colorsModified || appearance.themePreference !== THEME_PREFERENCE_DEFAULT}

@@ -1,3 +1,4 @@
+import { CrewManagedBar, useCrewManagedSession } from "../../crews/public/managed";
 import { AssistantManagedBadge } from "./AssistantManagedBadge";
 import { AssistantSessionControl } from "./AssistantSessionControl";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
@@ -1222,7 +1223,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
       continueInterruptedTurn,
     ],
   );
-  const composer = (
+  const crewManaged = useCrewManagedSession(session.id);
+  const ownerComposer = (
     <Composer
       key={session.id}
       disabled={
@@ -1381,6 +1383,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
       {composerChildren}
     </Composer>
   );
+  // A live crew runs this conversation: it is read here and managed from Crews.
+  const composer = crewManaged ? <CrewManagedBar managed={crewManaged} /> : ownerComposer;
 
   // A lone chat is named by its title-bar tab, so its pane carries no header of
   // its own; only a real split needs per-pane identity, focus and a drag handle.
@@ -1588,9 +1592,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
               }}
               onAddToChat={(text) => addSelectionToChat(text, "plain")}
               onArchiveSession={
-                onArchiveSession ? () => onArchiveSession(session.id, true) : undefined
+                onArchiveSession && !crewManaged
+                  ? () => onArchiveSession(session.id, true)
+                  : undefined
               }
-              onDeleteSession={onDeleteSession ? () => onDeleteSession(session.id) : undefined}
+              onDeleteSession={
+                onDeleteSession && !crewManaged ? () => onDeleteSession(session.id) : undefined
+              }
             />
           ) : null}
           {session.retryMessage && (session.busy || session.continuingElsewhere) ? (

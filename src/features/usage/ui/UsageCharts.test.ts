@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ContinuousUsageTable } from "./UsageCharts";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
+import { HARNESS_ICONS } from "../../../shared/ui/identity/HarnessIcon";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -69,4 +70,32 @@ it("preserves table identity and scroll when rows append and sort changes", asyn
   await act(async () => nameHeader.click());
   expect(container.querySelector("table")).toBe(table);
   expect(container.querySelector("th[aria-sort]")?.getAttribute("aria-sort")).toBeDefined();
+});
+
+it("keeps provider marks separate from session titles", async () => {
+  await act(async () =>
+    root.render(
+      createElement(ContinuousUsageTable, {
+        caption: "Recorded sessions",
+        metric: "tokens",
+        rows: [{ key: "session", label: "Review changes", provider: "claude", tokens: 10 }],
+      }),
+    ),
+  );
+  expect(container.querySelector("tbody")?.textContent).toContain("Review changes");
+  expect(container.querySelector("tbody img")?.getAttribute("src")).toBe(HARNESS_ICONS.claude);
+});
+
+it("displays canonical provider names without duplicating their marks", async () => {
+  await act(async () =>
+    root.render(
+      createElement(ContinuousUsageTable, {
+        caption: "Providers",
+        metric: "tokens",
+        rows: [{ key: "codex", label: "codex", providers: ["codex"], tokens: 10 }],
+      }),
+    ),
+  );
+  expect(container.querySelector("tbody")?.textContent).toContain("Codex");
+  expect(container.querySelectorAll("tbody img")).toHaveLength(1);
 });

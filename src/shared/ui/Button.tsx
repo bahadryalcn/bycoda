@@ -12,6 +12,8 @@ import {
   type SyntheticEvent,
 } from "react";
 import type { PopoverAlign, PopoverSide } from "../lib/popover";
+import { Check } from "./icons";
+import { LiveText } from "./LiveText";
 import { useTooltip } from "./Tooltip";
 import {
   Button as ArcButton,
@@ -36,6 +38,10 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   selected?: boolean;
   loading?: boolean;
   loadingLabel?: string;
+  /** Confirmed by the operation owner; clear when the draft or target changes. Pending wins. */
+  success?: boolean;
+  /** Translated completion label, shown and announced inside the action instead of a sibling notice. */
+  successLabel?: string;
   /** Retain the widest measured text label across async state changes. Defaults on with loading. */
   stableWidth?: boolean;
   /** Other text labels this button will show (pending, retry, done). Their widths are reserved
@@ -128,6 +134,7 @@ const isTrue = (value: unknown) => value === true || value === "true";
 /**
  * The one action control: variants `primary`, `secondary` (default), `ghost`, `link`, `item` and `tab`, with tone, size, icons, `loading` and `pressed` toggle state. It owns focus ring, hit area, tooltip (`tooltip`, `shortcut`, `disabledReason`), stable width across label changes and long-press.
  * Icon-only buttons need `iconOnly` and a `label`.
+ * For confirmed async results, set `success` and translated `successLabel`; the action owns its check, label and announcement. Clear success when its draft or target changes.
  * @group actions
  * @use Any click that runs an action, opens something or navigates.
  * @avoid Choosing between modes: SegmentedControl or RadioGroup. Navigation to an external page: Button variant="link" with openExternal. Icon action inside a row/tab host: InlineAction. Joined related actions: ButtonGroup.
@@ -141,6 +148,8 @@ export function Button({
   selected,
   loading: loadingProp,
   loadingLabel,
+  success = false,
+  successLabel,
   stableWidth,
   reserveLabels,
   iconOnly = false,
@@ -181,9 +190,20 @@ export function Button({
   ...props
 }: ButtonProps) {
   const loading = loadingProp ?? false;
+  const confirmed = success && !!successLabel && !loading;
+  const contentLabel = confirmed ? successLabel : children;
+  // Reserve the result icon from idle too, so completion never shifts neighbouring actions.
+  const leadingIcon = confirmed ? (
+    <Check className="icon-sm" />
+  ) : (
+    (startIcon ?? (successLabel ? <Check className="icon-sm invisible" /> : undefined))
+  );
+  const [announcerMounted, setAnnouncerMounted] = useState(false);
+  if (confirmed && !announcerMounted) setAnnouncerMounted(true);
+  const reservedLabels = successLabel ? [...(reserveLabels ?? []), successLabel] : reserveLabels;
   const labelMeasure = useRef<HTMLSpanElement>(null);
   const [labelWidth, setLabelWidth] = useState(0);
-  const reserveLabel = stableWidth ?? (loadingProp !== undefined || !!reserveLabels?.length);
+  const reserveLabel = stableWidth ?? (loadingProp !== undefined || !!reservedLabels?.length);
   // The current label is always the rendered (and accessible) text. Width stays stable by
   // retaining the widest measured label, so idle/pending/retry texts never shrink the control.
   useLayoutEffect(() => {
@@ -198,7 +218,7 @@ export function Button({
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [children, reserveLabel]);
+  }, [contentLabel, reserveLabel]);
   const longPress = useRef<{
     timer: number;
     x: number;
@@ -222,7 +242,7 @@ export function Button({
   // label keeps its width and accessible name under a centered spinner instead.
   const inlineProgress =
     loadingProp !== undefined &&
-    startIcon != null &&
+    leadingIcon != null &&
     !iconOnly &&
     !structural &&
     layout !== "media";
@@ -281,7 +301,7 @@ export function Button({
   const suppressed = props.title === "";
   const tooltipText = suppressed
     ? undefined
-    : props.title || tooltip || (iconOnly || shortcut ? label : undefined);
+    : props.title || tooltip || (iconOnly ? label : undefined);
   const reason = explained && !suppressed ? disabledReason : undefined;
   const hintLabel = tooltipText ?? reason;
   const hintDetails = suppressed
@@ -300,7 +320,12 @@ export function Button({
     wide: tooltipWide,
     describe: false,
   });
-  const accessibleName = loading && loadingLabel ? loadingLabel : (props["aria-label"] ?? label);
+  const accessibleName =
+    loading && loadingLabel
+      ? loadingLabel
+      : confirmed
+        ? successLabel
+        : (props["aria-label"] ?? label);
   // Do not describe a control with a hint that only repeats its accessible name.
   const describes =
     hint.open && !(hintLabel === accessibleName && !hintShortcut && !hintDetails?.length);
@@ -458,25 +483,25 @@ export function Button({
           data-pending={loading || undefined}
           aria-hidden="true"
         >
-          {startIcon != null ? <span className={styles.icon}>{startIcon}</span> : null}
+          {leadingIcon != null ? <span className={styles.icon}>{leadingIcon}</span> : null}
           <span hidden={!loading} className={`${arcStyles.spinner} ${styles.progressSpinner}`} />
         </span>
-      ) : startIcon != null ? (
+      ) : leadingIcon != null ? (
         <span className={styles.icon} aria-hidden="true">
-          {startIcon}
+          {leadingIcon}
         </span>
       ) : null}
-      {typeof children === "string" || typeof children === "number" ? (
+      {typeof contentLabel === "string" || typeof contentLabel === "number" ? (
         <span
           className={styles.label}
           data-label-reserved={reserveLabel || undefined}
-          data-label-ghosts={reserveLabels?.length ? "" : undefined}
+          data-label-ghosts={reservedLabels?.length ? "" : undefined}
           style={reserveLabel ? { minInlineSize: labelWidth } : undefined}
         >
           <span ref={labelMeasure} className={styles.stableLabel}>
-            {children}
+            {contentLabel}
           </span>
-          {reserveLabels?.map((text, index) => (
+          {reservedLabels?.map((text, index) => (
             <span
               key={index}
               className={styles.labelGhost}
@@ -486,7 +511,7 @@ export function Button({
           ))}
         </span>
       ) : (
-        children
+        contentLabel
       )}
       {endIcon != null ? (
         <span className={styles.icon} aria-hidden="true">
@@ -499,6 +524,9 @@ export function Button({
     <>
       {control}
       {hint.tooltip}
+      {announcerMounted ? (
+        <LiveText text={confirmed ? successLabel! : ""} className="sr-only" />
+      ) : null}
     </>
   );
   if (native) {

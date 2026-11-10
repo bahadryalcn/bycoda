@@ -578,7 +578,6 @@ export function BtwSheet({
             label={t("Back to the conversation")}
             variant="ghost"
             type="button"
-            tooltip={t("Back to the conversation")}
             shortcut="Esc"
             onClick={btw.close}
             className="shrink-0"

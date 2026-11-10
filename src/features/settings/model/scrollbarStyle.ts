@@ -12,7 +12,7 @@ import {
  * palette or the accent picker sets `--user-accent-color`), else the neutral content tone; 6px, on hover.
  */
 export type ScrollbarColor = "auto" | "neutral" | "theme" | "custom";
-export type ScrollbarSize = "thin" | "medium" | "wide";
+export type ScrollbarSize = "extra-thin" | "thin" | "medium" | "large" | "xlarge";
 export type ScrollbarVisibility = "hover" | "always";
 export type ScrollbarStyle = {
   color: ScrollbarColor;
@@ -32,12 +32,18 @@ export const SCROLLBAR_STYLE_KEY = "bycoda.scrollbarStyle.v1";
 export const SCROLLBAR_STRENGTH_MIN = 50;
 export const SCROLLBAR_STRENGTH_MAX = 200;
 /** Thickness in CSS pixels; "thin" matches `--ui-scrollbar-size` in src/styles/index.css. */
-export const SCROLLBAR_SIZE_PX: Record<ScrollbarSize, number> = { thin: 6, medium: 10, wide: 14 };
+export const SCROLLBAR_SIZE_PX: Record<ScrollbarSize, number> = {
+  "extra-thin": 3,
+  thin: 6,
+  medium: 10,
+  large: 14,
+  xlarge: 18,
+};
 const listeners = createStore();
 let watching = false;
 
 export function normalizeScrollbarStyle(value: unknown): ScrollbarStyle {
-  const input = value && typeof value === "object" ? (value as Partial<ScrollbarStyle>) : {};
+  const input = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   const color =
     input.color === "neutral" || input.color === "theme" || input.color === "custom"
       ? input.color
@@ -46,7 +52,15 @@ export function normalizeScrollbarStyle(value: unknown): ScrollbarStyle {
     typeof input.customColor === "string" && /^#[0-9a-f]{6}$/i.test(input.customColor)
       ? input.customColor.toLowerCase()
       : null;
-  const size = input.size === "medium" || input.size === "wide" ? input.size : "thin";
+  const size: ScrollbarSize =
+    input.size === "wide"
+      ? "large"
+      : input.size === "extra-thin" ||
+          input.size === "medium" ||
+          input.size === "large" ||
+          input.size === "xlarge"
+        ? input.size
+        : "thin";
   const visibility = input.visibility === "always" ? "always" : "hover";
   const strength =
     typeof input.strength === "number" && Number.isFinite(input.strength)

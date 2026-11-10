@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   refreshRemoteProjectSessions,
   sessionAccessForMachine,
@@ -17,6 +17,7 @@ import { t } from "../../shared/i18n";
 
 export type SessionBulkDeleteOptions = {
   cwd: string;
+  sessions?: readonly { id: string; title?: string }[];
   remoteProject: boolean;
   remote: ReturnType<typeof useRemoteProjectSessions>;
   hostProject: ReturnType<typeof remoteProjectFor>;
@@ -29,7 +30,13 @@ export type SessionBulkDeleteOptions = {
   onDeleted: (deletedIds: ReadonlySet<string>) => void;
 };
 
-type DeleteProgress = { cwd: string; completed: number; total: number };
+type DeleteProgress = {
+  cwd: string;
+  completed: number;
+  total: number;
+  sessionIds: readonly string[];
+  title: string;
+};
 
 /** A machine's desktop takes queued deletions on its next heartbeat; sending
  * several at once lets one heartbeat carry them instead of one per conversation. */
@@ -42,6 +49,7 @@ const REMOTE_DELETE_CONCURRENCY = 8;
  */
 export function useSessionBulkDelete({
   cwd,
+  sessions,
   remoteProject,
   remote,
   hostProject,
@@ -54,6 +62,7 @@ export function useSessionBulkDelete({
   const [bulkNotice, setBulkNotice] = useState<string | null>(null);
   const [deleteProgress, setDeleteProgress] = useState<DeleteProgress | null>(null);
   const [deleteNoticeError, setDeleteNoticeError] = useState(false);
+  const [deleteNoticeSuccess, setDeleteNoticeSuccess] = useState(false);
   const [deleteNoticeCwd, setDeleteNoticeCwd] = useState(cwd);
   const bulkDeleteActive = useRef(false);
   const runningRef = useRef(runningSessionIds);
@@ -61,6 +70,11 @@ export function useSessionBulkDelete({
     runningRef.current = runningSessionIds;
   });
   const dismissBulkNotice = useCallback(() => setBulkNotice(null), []);
+  useEffect(() => {
+    if (!bulkNotice || !deleteNoticeSuccess || deleteProgress) return;
+    const timer = window.setTimeout(dismissBulkNotice, 10_000);
+    return () => window.clearTimeout(timer);
+  }, [bulkNotice, deleteNoticeSuccess, deleteProgress, dismissBulkNotice]);
 
   const bulkDeleteSessions = async (sessionIds: readonly string[]) => {
     if (bulkDeleteActive.current || sessionIds.length === 0) return;
@@ -69,6 +83,7 @@ export function useSessionBulkDelete({
     );
     const machine = remote.machine;
     if (remoteProject && (!machine || !hostProject)) {
+      setDeleteNoticeSuccess(false);
       setDeleteNoticeCwd(cwd);
       setDeleteNoticeError(true);
       setBulkNotice(t("Connect this project's machine to delete its sessions."));
@@ -98,6 +113,7 @@ export function useSessionBulkDelete({
     }
     const { deletable, running } = splitRunningSessions(sessionIds, runningRef.current);
     if (deletable.length === 0) {
+      setDeleteNoticeSuccess(false);
       setDeleteNoticeCwd(cwd);
       setDeleteNoticeError(false);
       setBulkNotice(bulkDeleteSummary({ skipped: running, failed: [] }));
@@ -118,14 +134,36 @@ export function useSessionBulkDelete({
         return;
       setBulkNotice(null);
       setDeleteNoticeCwd(cwd);
-      setDeleteProgress({ cwd, completed: 0, total: deletable.length });
+      setDeleteProgress({
+        cwd,
+        completed: 0,
+        total: deletable.length,
+        sessionIds: deletable,
+        title: sessions?.find((entry) => entry.id === deletable[0])?.title || t("Deleting…"),
+      });
       const result = await deleteSessionsInBulk(deletable, {
         isRunning: (id) => runningRef.current.has(id),
-        deleteOne,
-        onProgress: (completed, total) => setDeleteProgress({ cwd, completed, total }),
+        deleteOne: (id) => {
+          setDeleteProgress(
+            (progress) =>
+              progress && {
+                ...progress,
+                title: sessions?.find((entry) => entry.id === id)?.title || t("Deleting…"),
+              },
+          );
+          return deleteOne(id);
+        },
+        onProgress: (completed, total) =>
+          setDeleteProgress((progress) => progress && { ...progress, completed, total }),
         concurrency: remoteProject ? REMOTE_DELETE_CONCURRENCY : 1,
       });
       setDeleteNoticeError(result.failed.length > 0);
+      setDeleteNoticeSuccess(
+        result.deleted.length > 0 &&
+          result.failed.length === 0 &&
+          running.length === 0 &&
+          result.skipped.length === 0,
+      );
       setBulkNotice(
         bulkDeleteOutcome({
           ...result,
@@ -134,6 +172,7 @@ export function useSessionBulkDelete({
       );
       onDeleted(new Set(result.deleted));
     } catch (error) {
+      setDeleteNoticeSuccess(false);
       setDeleteNoticeCwd(cwd);
       setDeleteNoticeError(true);
       setBulkNotice(
@@ -152,6 +191,7 @@ export function useSessionBulkDelete({
     bulkNotice,
     deleteProgress,
     deleteNoticeError,
+    deleteNoticeSuccess,
     deleteNoticeCwd,
     deleting: deleteProgress !== null,
     dismissBulkNotice,

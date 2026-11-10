@@ -23,6 +23,35 @@ function cssLang(): Extension {
 }
 
 describe("syntaxDiagnostics", () => {
+  it.each([{}, { jsx: true }, { typescript: true }, { typescript: true, jsx: true }])(
+    "accepts defaulted destructuring arrow parameters in %j",
+    (options) => {
+      const state = stateWith(
+        `const resolveQuickButtonDate = (
+  { beginDate, endDate } = {},
+  { isFuture = false, startOfDay = false, endOfDay = false } = {}
+) => {
+  const date = isFuture ? endDate : beginDate;
+  if (!date) return null;
+  if (endOfDay) return dayjs(date).endOf('day').toDate();
+  if (startOfDay) return dayjs(date).startOf('day').toDate();
+  return date;
+};`,
+        javascript(options),
+      );
+      expect(syntaxDiagnostics(state)).toEqual([]);
+    },
+  );
+
+  it.each([
+    "const f = (a + b) => b;",
+    "const f = ({ a } = {}, { b = false } = {}) => { const x = ; };",
+    "const f = ({ a } = {}, { b = false } = {})\n=> b;",
+    "const f = ({ a } = {}, ...rest, b) => b;",
+  ])("still reports invalid arrow syntax: %s", (doc) => {
+    expect(syntaxDiagnostics(stateWith(doc, javascript())).length).toBeGreaterThan(0);
+  });
+
   it("flags an unclosed brace", () => {
     const state = stateWith("function go() {\n  return 1;\n", javascript());
     const diagnostics = syntaxDiagnostics(state);

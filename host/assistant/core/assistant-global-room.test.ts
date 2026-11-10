@@ -17,7 +17,7 @@ it("creates one canonical projectless Room when enabled and retains it across Ho
       {
         op: "profile.update",
         expectedVersion: before.snapshot!.profile.version,
-        patch: { enabled: true, setupComplete: true, name: "Assistant", dailyTokenBudget: 10000 },
+        patch: { enabled: true, setupComplete: true, name: "Assistant", dailyTokenBudget: 20000 },
       },
       "owner",
     );

@@ -48,7 +48,7 @@ vi.mock("./AssistantProfileFields", async () => {
             { type: "button", onClick: () => onChange({ name: "Ada" }) },
             "Rename assistant",
           )
-        : null,
+        : createElement("i", { "data-profile-section": section }),
   };
 });
 vi.mock("./AssistantPresenceStatus", () => ({ AssistantPresenceStatus: () => null }));
@@ -97,6 +97,33 @@ vi.mock("../../host-tools/DesktopControlSettings", async () => {
         "button",
         { type: "button", onClick: () => setDirty(true) },
         "Change computer controls",
+      );
+    },
+  };
+});
+
+vi.mock("./settings/folders/AssistantFoldersSettings", async () => {
+  const { createElement, useEffect, useState } = await import("react");
+  return {
+    // Like the real section, it shows its own save error inline and rethrows it.
+    AssistantFoldersSettings: ({ saveRef, onDraftStateChange }: any) => {
+      const [dirty, setDirty] = useState(false);
+      const [error, setError] = useState("");
+      useEffect(() => {
+        onDraftStateChange?.({ dirty, pending: false });
+      }, [dirty, onDraftStateChange]);
+      useEffect(() => {
+        saveRef.current = async () => {
+          mock.calls.push("folders");
+          setError("Folder rejected");
+          throw new Error("Folder rejected");
+        };
+      });
+      return createElement(
+        "div",
+        null,
+        createElement("button", { type: "button", onClick: () => setDirty(true) }, "Add folder"),
+        error ? createElement("p", null, error) : null,
       );
     },
   };
@@ -181,7 +208,7 @@ it("keeps one footer row with a disabled Save until any section is dirty", async
   const save = control("Save profile settings")!;
   expect(save.disabled).toBe(true);
   expect(save.textContent).toBe("Save");
-  expect(footerText()).toContain("Run setup again");
+  expect(footerText()).toContain("Quick setup");
   expect(footerText()).not.toContain("Saved");
   await press("Change project scope");
   expect(control("Save profile settings")!.disabled).toBe(false);
@@ -197,8 +224,13 @@ it("saves profile, then project scope, then computer use, and shows Saved only a
   await press("Save profile settings");
   expect(mock.calls).toEqual(["profile", "project", "computer"]);
   expect(footerText()).toContain("Saved");
+  expect(control("Saved")!.textContent).toBe("Saved");
+  expect(document.querySelector("footer")!.querySelectorAll("button")).toHaveLength(2);
+  expect(
+    document.querySelector("footer")!.querySelectorAll("[role=status]:not(.sr-only)"),
+  ).toHaveLength(0);
   expect(footerText()).not.toContain("Discard unsaved changes?");
-  expect(control("Save profile settings")!.disabled).toBe(true);
+  expect(control("Saved")!.disabled).toBe(true);
 });
 
 it("stops at the first failing section, shows its error and leaves the later sections unsaved", async () => {
@@ -214,19 +246,48 @@ it("stops at the first failing section, shows its error and leaves the later sec
   expect(control("Save profile settings")!.disabled).toBe(false);
 });
 
+it("shows a folder save error once, in its section, not again in the footer", async () => {
+  await render();
+  await press("Add folder");
+  await press("Save profile settings");
+  expect(mock.calls).toEqual(["folders"]);
+  expect(document.body.textContent!.split("Folder rejected")).toHaveLength(2);
+  expect(footerText()).not.toContain("Folder rejected");
+  expect(footerText()).not.toContain("Saved");
+});
+
+it("keeps the save action busy until the Host confirms and never reports an unconfirmed save", async () => {
+  let finish!: (value: unknown) => void;
+  mock.request.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await render();
+  await press("Rename assistant");
+  await press("Save profile settings");
+  expect(control("Saving…")!.getAttribute("aria-busy")).toBe("true");
+  expect(footerText()).not.toContain("Saved");
+  await act(async () => finish({}));
+  expect(footerText()).toContain("The settings save was not confirmed.");
+  expect(footerText()).not.toContain("Saved");
+  expect(control("Save profile settings")!.disabled).toBe(false);
+});
+
 it("replaces the footer row with the discard confirmation and never shows Save or Saved beside it", async () => {
   const { onSetup } = await render();
   await press("Change project scope");
-  await press("Run setup again");
+  await press("Quick setup");
   expect(footerText()).toContain("Discard unsaved changes?");
   expect(control("Save profile settings")).toBeUndefined();
   expect(footerText()).not.toContain("Saved");
-  expect(footerText()).not.toContain("Run setup again");
+  expect(footerText()).not.toContain("Quick setup");
   await press("Keep editing");
-  expect(footerText()).toContain("Run setup again");
+  expect(footerText()).toContain("Quick setup");
   expect(control("Save profile settings")).toBeDefined();
   expect(onSetup).not.toHaveBeenCalled();
-  await press("Run setup again");
+  await press("Quick setup");
   await press("Discard");
   expect(onSetup).toHaveBeenCalledTimes(1);
 });
@@ -239,4 +300,48 @@ it("clears the saved notice as soon as another section becomes dirty", async () 
   await press("Change computer controls");
   expect(footerText()).not.toContain("Saved");
   expect(control("Save profile settings")!.disabled).toBe(false);
+});
+
+function page(id: string) {
+  return document.querySelector<HTMLElement>(`[data-settings-page="${id}"]`)!;
+}
+function sections(id: string) {
+  return [...page(id).querySelectorAll("[data-profile-section]")].map((node) =>
+    node.getAttribute("data-profile-section"),
+  );
+}
+function titles(id: string) {
+  return [...page(id).querySelectorAll("h2")].map((node) => node.textContent);
+}
+
+it("offers four tabs: Personal, Work, Access and Advanced", async () => {
+  await render();
+  const tabs = [...document.querySelectorAll('[role="tab"]')].map((node) => node.textContent);
+  expect(tabs).toEqual(["Personal", "Work", "Access", "Advanced"]);
+  expect(document.querySelectorAll("[data-settings-page]")).toHaveLength(4);
+});
+
+it("groups every setting under the tab that answers its question", async () => {
+  await render();
+  expect(titles("personal")).toEqual(["Identity", "Language"]);
+  expect(sections("personal")).toEqual(["language", "personality", "behavior"]);
+  expect(titles("work")).toEqual(["Work mode", "Models", "Presence and hours"]);
+  expect(sections("work")).toEqual(["workmode", "budget", "jobs", "presence", "notifications"]);
+  expect(titles("access")).toEqual([
+    "Job permissions",
+    "Folders and commands",
+    "Computer use",
+    "Manual session supervision",
+    "Ready for 24/7",
+  ]);
+  expect(titles("advanced")).toEqual(["Cost and context", "Retention and usage"]);
+  // Collapsed disclosures keep their sections mounted, so drafts survive.
+  expect(page("work").textContent).toContain("Customize");
+  expect(page("personal").textContent).toContain("Personality and conversation");
+});
+
+it("shows the permission picker only once a worker execution exists", async () => {
+  await render();
+  expect(sections("access")).toEqual([]);
+  expect(page("access").textContent).toContain("Pick a work mode first.");
 });

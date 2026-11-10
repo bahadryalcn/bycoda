@@ -61,17 +61,12 @@ const defaults = (): FolderRuleContext => ({
   env: process.env,
 });
 
-/** Pure rule check on an already canonical absolute path. Throws the owner-facing reason. */
-export function assertAssistantFolderAllowed(canonical: string, context = defaults()) {
+/** Which protected folder kind holds a canonical path, or undefined. Applies to a chosen folder and to every path
+ * the tools touch inside one, so a whole drive can be chosen without exposing system or
+ * credential folders. */
+export function assistantPathRefusal(canonical: string, context = defaults()) {
   const { platform, home, env } = context;
   const p = flavor(platform);
-  if (!p.isAbsolute(canonical) || canonical.includes("\0"))
-    throw new Error("Choose an absolute local folder.");
-  if (platform === "win32" && canonical.startsWith("\\\\") && !/^\\\\\?\\[a-z]:\\/i.test(canonical))
-    throw new Error("Network and device paths cannot be Assistant folders.");
-  const root = p.parse(canonical).root;
-  if (root === canonical || root === `${canonical}${p.sep}`)
-    throw new Error("A drive or filesystem root cannot be an Assistant folder.");
   const system =
     platform === "win32"
       ? [
@@ -85,11 +80,32 @@ export function assertAssistantFolderAllowed(canonical: string, context = defaul
     system.some((dir) => inside(p, platform, dir, canonical)) ||
     (platform !== "win32" && fold(platform, canonical) === "/var")
   )
-    throw new Error("A system folder cannot be an Assistant folder.");
-  if (home && inside(p, platform, canonical, home))
-    throw new Error("Choose a folder inside your home folder, not the home folder itself.");
+    return "system" as const;
   if (home && HOME_SECRET_DIRS.some((name) => inside(p, platform, p.join(home, name), canonical)))
-    throw new Error("A credential folder cannot be an Assistant folder.");
+    return "credential" as const;
+  return undefined;
+}
+
+/** Pure rule check on an already canonical absolute path. Throws the owner-facing reason.
+ * A drive or the home folder may be chosen; system and credential folders inside stay refused. */
+export function assertAssistantFolderAllowed(canonical: string, context = defaults()) {
+  const { platform } = context;
+  const p = flavor(platform);
+  if (!p.isAbsolute(canonical) || canonical.includes("\0"))
+    throw new Error("Choose an absolute local folder.");
+  if (platform === "win32" && canonical.startsWith("\\\\") && !/^\\\\\?\\[a-z]:\\/i.test(canonical))
+    throw new Error("Network and device paths cannot be Assistant folders.");
+  const refusal = assistantPathRefusal(canonical, context);
+  if (refusal) throw new Error(`A ${refusal} folder cannot be an Assistant folder.`);
+}
+
+/** Refuses a path inside an Assistant folder that falls in a system or credential folder.
+ * Links are resolved first; a path that does not exist yet is judged by its own location. */
+export async function assertAssistantPathAllowed(path: string, context = defaults()) {
+  const real = await realpath(path).catch(() => path);
+  const home = await realpath(context.home).catch(() => context.home);
+  const refusal = assistantPathRefusal(real, { ...context, home });
+  if (refusal) throw new Error(`The assistant cannot use paths inside a ${refusal} folder.`);
 }
 
 /** Resolves links (so the stored path is the physical one), then applies the rules. */

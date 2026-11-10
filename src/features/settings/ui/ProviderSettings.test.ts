@@ -120,9 +120,20 @@ describe("providers scope inheritance", () => {
         runtimeMode: "full-access",
         extras: productExtras,
       });
-      expect(container.querySelector(".provider-save-bar")?.textContent).toContain(
-        "Saved to Global",
-      );
+      const savedButton = container.querySelector<HTMLButtonElement>(
+        '.provider-save-bar button[aria-label="Saved"]',
+      )!;
+      expect(savedButton.textContent).toBe("Saved");
+      expect(savedButton.getAttribute("aria-disabled")).toBe("true");
+      expect(container.querySelector(".provider-save-bar-status")).toBeNull();
+      const matches = savedButton.matches.bind(savedButton);
+      const focusVisible = vi
+        .spyOn(savedButton, "matches")
+        .mockImplementation((selector) => selector === ":focus-visible" || matches(selector));
+      await act(async () => savedButton.focus());
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toContain("Saved to Global");
+      await act(async () => savedButton.blur());
+      focusVisible.mockRestore();
       await selectScope("repo");
       await pick("Codex default permissions", "Supervised");
       await clickButton("Save");
@@ -189,9 +200,13 @@ describe("providers scope inheritance", () => {
       "1 unsaved change",
     );
     await clickButton("Discard");
-    expect(container.querySelector(".provider-save-bar")?.textContent).toContain(
-      "All changes saved",
-    );
+    expect(container.querySelector(".provider-save-bar-status")).toBeNull();
+    expect(container.querySelector('.provider-save-bar button[aria-label="Saved"]')).toBeNull();
+    expect(
+      [...container.querySelectorAll<HTMLButtonElement>(".provider-save-bar button")].find(
+        (button) => button.textContent === "Save",
+      )?.disabled,
+    ).toBe(true);
     expect(providerSessionDefaults("claude").runtimeMode).not.toBe("full-access");
   });
 

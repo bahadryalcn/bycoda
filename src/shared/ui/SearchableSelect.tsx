@@ -24,6 +24,7 @@ import {
 } from "react";
 import { ChevronDown, X } from "./icons";
 import { Spinner } from "./Spinner";
+import { Badge } from "./Badge";
 import { Field, fieldDescribedBy, type FieldVariant } from "./Field";
 import { MatchText, matchPositions } from "./MatchText";
 import styles from "./SearchableSelect.module.css";
@@ -43,6 +44,12 @@ import {
 } from "./arc/combobox/combobox";
 import { PopoverSearchHeader } from "./PopoverSearchHeader";
 import { PickerFooter } from "./picker/PickerList";
+import {
+  ALL_GROUPS,
+  filterByGroup,
+  groupFilterSegments,
+  SearchableSelectGroupFilter,
+} from "./SearchableSelectGroupFilter";
 
 export type SearchableSelectOption = {
   value: string;
@@ -177,6 +184,8 @@ type SelectionOptions = AsyncOptions &
  * Options take `icon`, `meta`, `group`; `renderTrigger` swaps the trigger, `footer` adds actions, `fieldVariant`/`description` add field chrome.
  * Shows its label above the trigger like Select; `hideLabel` keeps it for assistive tech only (toolbars, compact filters).
  * The caller owns value, fetching and retry; the picker keeps the committed value visible while loading.
+ * Menus fit their content within the viewport; long labels and descriptions truncate with full text on hover/focus.
+ * `groupFilter` adds a one-row filter by option `group` (needs two or more groups; PageUp/PageDown switch it from the search field); `menuMinWidth` and `menuMaxHeight` enlarge the menu.
  * @group choice
  * @use Long or growing list filtered by typing, one or many values, no free entry (branches, projects, models).
  * @avoid Short stable list: Select. Free text or custom values: Combobox. Commands without a selection: DropdownMenu. `hideLabel` only where context is supplied.
@@ -195,6 +204,12 @@ export function SearchableSelect(
     /** Preferred opening side; Popover flips to the opposite edge when needed. */
     side?: PopoverSide;
     align?: PopoverAlign;
+    /** Menu width floor in px (never narrower than the trigger). Default 240. */
+    menuMinWidth?: number;
+    /** Menu height cap in px for searchable or long lists. Default 240. */
+    menuMaxHeight?: number;
+    /** Show an "All" plus per-group filter above the list when options have two or more distinct groups. */
+    groupFilter?: boolean;
   } & SelectionOptions &
     (SingleSelectProps | MultiSelectProps),
 ) {
@@ -271,7 +286,7 @@ const OptionRow = memo(function OptionRow({
         if (!option.disabled) onHover(index);
       }}
       onClick={() => onPick(option.value)}
-      className={`bycoda-arc-select-option ${
+      className={`${styles.option} bycoda-arc-select-option ${
         option.description ? "min-h-8 py-1.5" : compact ? "h-7" : "h-8"
       }`}
     >
@@ -327,6 +342,9 @@ function SearchableSelectMenu({
   searchable = true,
   side = "bottom",
   align = "start",
+  menuMinWidth = 240,
+  menuMaxHeight = 240,
+  groupFilter = false,
   searchLocale,
   triggerProps,
   tooltip: tooltipProp,
@@ -363,16 +381,21 @@ function SearchableSelectMenu({
   searchable?: boolean;
   side?: PopoverSide;
   align?: PopoverAlign;
+  menuMinWidth?: number;
+  menuMaxHeight?: number;
+  groupFilter?: boolean;
 } & SelectionOptions) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  const [groupKey, setGroupKey] = useState(ALL_GROUPS);
   const [menuWidth, setMenuWidth] = useState<number>();
   // A disabled picker cannot stay open: close during render so re-enabling does not reopen it.
   if (disabled && (open || query)) {
     setOpen(false);
     setQuery("");
+    setGroupKey(ALL_GROUPS);
   }
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -394,19 +417,31 @@ function SearchableSelectMenu({
     values.length && selectionLabels?.summary
       ? selectionLabels.summary(values.length)
       : values.length > 1
-        ? t("{p0} selected", { p0: values.length })
+        ? values.map((item) => optionLookup.get(item)?.label ?? item).join(", ")
         : (optionLookup.get(values[0])?.label ?? (values[0] || undefined));
   const normalizedQuery = query.trim().toLocaleLowerCase(searchLocale);
+  const groupSegments = useMemo(
+    () => (groupFilter ? groupFilterSegments(options) : []),
+    [groupFilter, options],
+  );
+  // A group that vanished from the options falls back to "All".
+  const scoped = useMemo(
+    () =>
+      groupSegments.some((segment) => segment.value === groupKey)
+        ? filterByGroup(options, groupKey)
+        : options,
+    [groupSegments, options, groupKey],
+  );
   const filtered = useMemo(
     () =>
       normalizedQuery
-        ? options.filter((option) =>
+        ? scoped.filter((option) =>
             `${option.label}\n${option.description ?? ""}\n${option.keywords ?? ""}\n${typeof option.meta === "string" ? option.meta : ""}\n${option.group ?? ""}`
               .toLocaleLowerCase(searchLocale)
               .includes(normalizedQuery),
           )
-        : [...options],
-    [normalizedQuery, options, searchLocale],
+        : [...scoped],
+    [normalizedQuery, scoped, searchLocale],
   );
   // Disabled options are shown but never active: the stored index falls through to the first choosable row.
   const firstChoosable = filtered.findIndex((option) => !option.disabled);
@@ -419,13 +454,15 @@ function SearchableSelectMenu({
   const close = (restoreFocus = false) => {
     setOpen(false);
     setQuery("");
+    setGroupKey(ALL_GROUPS);
     if (restoreFocus) trigger.current?.focus({ preventScroll: true });
   };
 
   const openMenu = () => {
     if (disabled || trigger.current?.matches(":disabled")) return;
-    setMenuWidth(Math.max(240, root.current?.getBoundingClientRect().width ?? 0));
+    setMenuWidth(Math.max(menuMinWidth, root.current?.getBoundingClientRect().width ?? 0));
     setQuery("");
+    setGroupKey(ALL_GROUPS);
     const committed = options.findIndex(
       (option) => values.includes(option.value) && !option.disabled,
     );
@@ -494,6 +531,21 @@ function SearchableSelectMenu({
         event.preventDefault();
         retry.current.focus({ preventScroll: true });
       } else close(true);
+      return;
+    }
+    // PageUp/PageDown cycle the category filter without leaving the search field.
+    if ((event.key === "PageUp" || event.key === "PageDown") && groupSegments.length > 0) {
+      event.preventDefault();
+      const at = Math.max(
+        0,
+        groupSegments.findIndex((segment) => segment.value === groupKey),
+      );
+      const next =
+        groupSegments[
+          (at + (event.key === "PageDown" ? 1 : -1) + groupSegments.length) % groupSegments.length
+        ]!;
+      setGroupKey(next.value);
+      setActive(0);
       return;
     }
     if ((event.key === "Home" || event.key === "End") && event.target instanceof HTMLInputElement)
@@ -656,6 +708,11 @@ function SearchableSelectMenu({
           >
             <SelectValue value={value} label={selectedLabel ?? placeholder} />
           </span>
+          {multiple && values.length > 0 ? (
+            <Badge tone="neutral" size="xs" className="shrink-0 tabular-nums" aria-hidden>
+              {values.length}
+            </Badge>
+          ) : null}
           {/* A closed picker still shows that its options are loading; the open list has its own status row. */}
           {loading && !open && !failed ? (
             <Spinner
@@ -707,8 +764,8 @@ function SearchableSelectMenu({
           side={side}
           align={align}
           gap={4}
-          width={menuWidth}
-          maxHeight={longMenu ? 240 : undefined}
+          minWidth={menuWidth}
+          maxHeight={longMenu ? menuMaxHeight : undefined}
           constrainHeight
           layer={popoverLayer}
           role="dialog"
@@ -733,6 +790,16 @@ function SearchableSelectMenu({
                 setActive(0);
               }}
               onKeyDown={onSearchKeyDown}
+            />
+          ) : null}
+          {groupFilter ? (
+            <SearchableSelectGroupFilter
+              options={options}
+              value={groupKey}
+              onChange={(next) => {
+                setGroupKey(next);
+                setActive(0);
+              }}
             />
           ) : null}
           {failed ? (

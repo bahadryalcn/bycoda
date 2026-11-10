@@ -336,6 +336,31 @@
   margin-block: 12px 8px;
   margin-inline: 36px 8px;
 }
+.usage-quota-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-block-start: 12px;
+  font-size: var(--ui-font-caption);
+}
+.usage-quota-legend-item {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.usage-quota-legend-dot {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: var(--radius-pill);
+  flex-shrink: 0;
+}
+.usage-quota-legend-value {
+  color: var(--ui-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
 .usage-quota-point {
   position: absolute;
   inline-size: 5px;
@@ -410,19 +435,6 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
-}
-.usage-week-grid[data-single-day] {
-  max-inline-size: 40rem;
-  gap: 6px 20px;
-}
-.usage-week-grid[data-single-day] .usage-week-row {
-  display: grid;
-  grid-template-columns: 3.5rem minmax(0, 1fr);
-  align-items: center;
-  gap: 6px;
-}
-.usage-week-grid[data-single-day] .usage-week-row:first-child {
-  grid-column: 1 / -1;
 }
 .usage-history-table {
   max-block-size: 26rem;

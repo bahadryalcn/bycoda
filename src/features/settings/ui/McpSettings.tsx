@@ -41,6 +41,7 @@ import {
 } from "../model/mcp";
 import {
   getCachedMcpSettings,
+  invalidateMcpSettings,
   loadMcpSettings,
   subscribeMcpSettings,
   MCP_LOCAL_ONLY_ERROR,
@@ -111,42 +112,71 @@ function ExpandableWarning({ children }: { children: ReactNode }) {
 
 export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: RecentProject[] }) {
   useLocale();
+  const [view, setView] = useRetainedState<"global" | "project">("mcp:view", "global");
+  const globalOnly = view === "global";
   const [selection, setSelection] = useState({ initialCwd: cwd, project: cwd });
   const project = selection.initialCwd === cwd ? selection.project : cwd;
-  const projectPicker = (
-    <SearchableProjectPicker
-      cwd={project}
-      railCwd={cwd}
-      recents={recents}
-      localOnly
-      className="w-fit max-w-full shrink-0"
-      buttonClassName="max-w-full"
-      onSelectProject={(path) => {
-        if (!path.startsWith("remote://")) setSelection({ initialCwd: cwd, project: path });
-      }}
-    />
+  const projectPicker = (disabled = false) => (
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <SegmentedControl
+        label={t("Scope")}
+        value={view}
+        onValueChange={(value) => setView(value as "global" | "project")}
+        options={[
+          { value: "global", label: t("Global"), disabled, icon: <Globe className="icon-sm" /> },
+          { value: "project", label: t("Project"), disabled },
+        ]}
+      />
+      {!globalOnly ? (
+        <SearchableProjectPicker
+          cwd={project}
+          railCwd={cwd}
+          recents={recents}
+          localOnly
+          disabled={disabled}
+          className="w-fit max-w-full shrink-0"
+          buttonClassName="max-w-full"
+          onSelectProject={(path) => {
+            if (!path.startsWith("remote://")) setSelection({ initialCwd: cwd, project: path });
+          }}
+        />
+      ) : null}
+    </div>
   );
   if (project.startsWith("remote://")) {
     return (
       <div className="grid min-w-0 gap-7">
-        {projectPicker}
+        {projectPicker()}
         <SettingsFeedback state="warning">{t(MCP_LOCAL_ONLY_ERROR)}</SettingsFeedback>
       </div>
     );
   }
   return (
     <div className="grid min-w-0 gap-7">
-      <McpConnections key={project} cwd={project} projectPicker={projectPicker} />
+      <McpConnections
+        key={`${project}:${view}`}
+        cwd={project}
+        globalOnly={globalOnly}
+        projectPicker={projectPicker}
+      />
       <ExternalMcpAccess cwd={project} />
     </div>
   );
 }
 
-function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: ReactNode }) {
+function McpConnections({
+  cwd,
+  globalOnly,
+  projectPicker,
+}: {
+  cwd: string;
+  globalOnly: boolean;
+  projectPicker: (disabled?: boolean) => ReactNode;
+}) {
   useLocale();
-  const cached = getCachedMcpSettings(cwd);
+  const cached = getCachedMcpSettings(cwd, globalOnly);
   const [servers, setServers] = useState<ServerRow[]>(cached?.servers ?? []);
-  const stateKey = `mcp-connections:${pathKey(cwd)}`;
+  const stateKey = `mcp-connections:${pathKey(cwd)}:${globalOnly ? "global" : "project"}`;
   const [filter, setFilter] = useRetainedState<Filter>(`${stateKey}:filter`, "all");
   const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
   const [scopeFilter, setScopeFilter] = useRetainedState<ScopeFilter>(`${stateKey}:scope`, "all");
@@ -186,12 +216,15 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
     setLoading(false);
   }, []);
 
-  useEffect(() => subscribeMcpSettings(cwd, applySnapshot), [cwd, applySnapshot]);
+  useEffect(
+    () => subscribeMcpSettings(cwd, applySnapshot, globalOnly),
+    [cwd, applySnapshot, globalOnly],
+  );
 
   const refresh = useCallback(
     async (force = true) => {
       const generation = ++refreshGeneration.current;
-      const previous = getCachedMcpSettings(cwd);
+      const previous = getCachedMcpSettings(cwd, globalOnly);
       if (!force) {
         setServers(previous?.servers ?? []);
         setError(previous?.error ?? "");
@@ -199,13 +232,14 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
         setClaudeChecking(previous?.claudeChecking ?? false);
         setClaudePartial(previous?.claudePartial ?? false);
       }
+      if (force) invalidateMcpSettings(cwd);
       setLoading(force || !previous);
-      const snapshot = await loadMcpSettings(cwd, force, { claudeHealth: force });
+      const snapshot = await loadMcpSettings(cwd, force, { claudeHealth: force, globalOnly });
       if (generation === refreshGeneration.current) {
-        applySnapshot(getCachedMcpSettings(cwd) ?? snapshot);
+        applySnapshot(getCachedMcpSettings(cwd, globalOnly) ?? snapshot);
       }
     },
-    [cwd, applySnapshot],
+    [cwd, applySnapshot, globalOnly],
   );
 
   useEffect(() => {
@@ -268,8 +302,11 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
     }
   }
 
+  const canToggle = (server: ServerRow) =>
+    canToggleMcp(server) && !(globalOnly && server.provider === "claude");
+
   async function setEnabled(server: ServerRow) {
-    if (busyRef.current || !canToggleMcp(server)) return;
+    if (busyRef.current || !canToggle(server)) return;
     busyRef.current = true;
     const enabled = server.enabled === false;
     setBusy({ server: serverRowKey(server), action: enabled ? "enable" : "disable" });
@@ -283,6 +320,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
         configPath: server.configPath,
         enabled,
         expectedEnabled: server.enabled !== false,
+        ...(globalOnly ? { globalOnly: true } : {}),
       });
       await refresh();
     } catch (cause) {
@@ -365,7 +403,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                 </p>
               </InfoPopover>
             </span>
-            {projectPicker}
+            {projectPicker(busy !== null)}
           </div>
         </div>
         <div className={styles.actions}>
@@ -540,7 +578,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
               ? t("No MCP servers configured. Add a server or choose another project.")
               : t("No MCP servers configured for this provider.")}
         </SettingsFeedback>
-      ) : (
+      ) : visible.length > 0 ? (
         <div role="region" aria-label={t("MCP connections")}>
           <ContinuousList
             className={styles.list}
@@ -588,8 +626,10 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                   ) : null}
                   <Tooltip
                     label={
-                      !canToggleMcp(server)
-                        ? t("Edit in provider config")
+                      !canToggle(server)
+                        ? globalOnly && server.provider === "claude"
+                          ? t("Select a project to change Claude Code permissions.")
+                          : t("Edit in provider config")
                         : server.provider === "claude"
                           ? t("Applies to this project for Claude Code.")
                           : undefined
@@ -599,7 +639,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                       <Toggle
                         label={`${server.name} · ${MCP_PROVIDER_LABELS[server.provider]} · ${scopeLabel(server.scope)}`}
                         on={server.enabled !== false}
-                        disabled={loading || busy !== null || !canToggleMcp(server)}
+                        disabled={loading || busy !== null || !canToggle(server)}
                         onChange={() => void setEnabled(server)}
                       />
                     </span>
@@ -610,7 +650,6 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                     variant="ghost"
                     iconOnly
                     label={t("Actions for {p0}", { p0: server.name })}
-                    tooltip={t("Actions for {p0}", { p0: server.name })}
                     aria-haspopup="menu"
                     aria-expanded={menu?.server === server}
                     disabled={loading || busy !== null}
@@ -624,7 +663,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
             }}
           />
         </div>
-      )}
+      ) : null}
       <CollectionFooter loading={loading && servers.length > 0} />
       {error ? (
         <SettingsFeedback

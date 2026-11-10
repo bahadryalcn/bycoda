@@ -71,14 +71,7 @@ export function VoiceCompanionStatus({
           ) : null}
         </div>
         {working && (
-          <Button
-            iconOnly
-            size="sm"
-            variant="ghost"
-            label={t("Stop work")}
-            tooltip={t("Stop work")}
-            onClick={onStopWork}
-          >
+          <Button iconOnly size="sm" variant="ghost" label={t("Stop work")} onClick={onStopWork}>
             <Square className="icon-sm" />
           </Button>
         )}

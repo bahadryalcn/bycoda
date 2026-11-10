@@ -6,6 +6,7 @@ import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { TextField } from "../../../shared/ui/TextField";
 import { SshIdentityField } from "./SshIdentityField";
@@ -57,7 +58,7 @@ export function SshGroupSettings({
   const [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
-    [notice, setNotice] = useState("");
+    [notice, setNotice] = useState<"" | "saved" | "applied">("");
   const [draft, setDraft] = useRetainedState<{
     value: SshGroupDraft;
     expectedRevision: number | null;
@@ -165,6 +166,7 @@ export function SshGroupSettings({
   };
   const editDraft = (patch: Partial<SshGroupDraft>) => {
     if (draft) setDraft({ ...draft, value: { ...draft.value, ...patch } });
+    setNotice("");
   };
   return (
     <Modal
@@ -206,7 +208,7 @@ export function SshGroupSettings({
                 if (!mounted.current) return;
                 setExpected(inheritance);
                 setPreview(undefined);
-                setNotice(t("SSH inheritance updated."));
+                setNotice("applied");
               })
             }
           >
@@ -231,11 +233,10 @@ export function SshGroupSettings({
           </p>
         </Disclosure>
         {error ? <Alert tone="danger">{error}</Alert> : null}
-        {notice ? (
-          <p role="status" className="text-ui-caption text-(--ui-text-muted)">
-            {notice}
-          </p>
-        ) : null}
+        <LiveText
+          text={notice === "applied" ? t("SSH inheritance updated.") : ""}
+          className="text-ui-caption text-(--ui-text-muted)"
+        />
         <div className="flex min-w-0 flex-wrap items-end gap-2">
           <div className="min-w-48 flex-1">
             <SearchableSelect
@@ -254,13 +255,17 @@ export function SshGroupSettings({
           </Button>
           <Button
             disabled={busy}
-            onClick={() => setDraft({ value: sshGroupDraft(), expectedRevision: null })}
+            onClick={() => {
+              setDraft({ value: sshGroupDraft(), expectedRevision: null });
+              setNotice("");
+            }}
           >
             {t("New group")}
           </Button>
           <Button
             disabled={busy || !selectedGroup}
             onClick={() => {
+              setNotice("");
               if (selectedGroup)
                 setDraft({
                   value: sshGroupDraft(selectedGroup),
@@ -498,6 +503,8 @@ export function SshGroupSettings({
               ) : null}
               <Button
                 disabled={busy || !profile}
+                success={notice === "saved"}
+                successLabel={t("Saved")}
                 onClick={() =>
                   void operation(async () => {
                     if (!profile) return;
@@ -509,7 +516,7 @@ export function SshGroupSettings({
                     ]);
                     setDraft({ value: sshGroupDraft(saved), expectedRevision: saved.revision });
                     setPreview(undefined);
-                    setNotice(t("Group defaults saved."));
+                    setNotice("saved");
                   })
                 }
               >

@@ -310,7 +310,6 @@ export function TaskToolbar(props: TaskToolbarProps) {
             variant="ghost"
             iconOnly
             label={status.retryable ? t("Retry") : t("Refresh")}
-            tooltip={status.retryable ? t("Retry") : t("Refresh")}
             loading={status.refreshing}
             onClick={status.onRefresh}
           >

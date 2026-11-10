@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatSessionTitle } from "../../features/sessions/model/session";
 import { formatReminderTime } from "../../features/sessions/model/sessionReminders";
 import { Sidebar } from "./Sidebar";
+import { setSessionDeletionStatus } from "../../features/sessions/model/sessionDeletionStatus";
 import { OPEN_CREWS_PAGE_EVENT } from "../../features/crews/model/crewsPage";
 import { loadSessionFolders } from "../../features/sessions/model/sessionFolders";
 import { useProjectDiffStats } from "../../features/source-control/hooks/useProjectDiffStats";
@@ -15,6 +16,13 @@ import {
   saveSessionListDisplay,
   type SessionListDensity,
 } from "../../features/sessions/model/sessionListDisplay";
+
+import { useLocalLifecycleMachine } from "../../features/sessions/hooks/useLocalLifecycleMachine";
+import * as lifecycleClient from "../../features/sessions/model/sessionLifecycleClient";
+import { setSessionLifecycleList } from "../../features/sessions/model/sessionLifecycleClient";
+vi.mock("../../features/sessions/hooks/useLocalLifecycleMachine", () => ({
+  useLocalLifecycleMachine: vi.fn(() => undefined),
+}));
 
 // Keep native services out of these menu/input interaction tests.
 vi.mock("../../features/source-control/hooks/useProjectDiffStats", () => ({
@@ -684,13 +692,19 @@ describe("sidebar session bulk actions", () => {
     );
     expect(vi.mocked(props.onDeleteSessionNow).mock.calls).toEqual([["session-2"], ["session-3"]]);
     expect(props.onDeleteSession).not.toHaveBeenCalled();
-    expect(container.querySelector("[data-session-delete-status]")?.getAttribute("role")).toBe(
-      "alert",
-    );
-    expect(container.querySelector("[data-session-delete-status]")?.textContent).toContain(
+    expect(
+      document
+        .querySelector("[data-session-delete-status]")
+        ?.closest("[role]")
+        ?.getAttribute("role"),
+    ).toBe("alert");
+    expect(document.querySelector("[data-session-delete-status]")?.textContent).toContain(
       "1 conversation deleted. 1 running conversation was skipped. 1 conversation could not be deleted: disk full.",
     );
     expect(selectedIds()).toEqual(["session-1", "session-2"]);
+    vi.useFakeTimers();
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(document.querySelector("[data-session-delete-status]")).not.toBeNull();
   });
 
   it("shows progress for a slow deletion, prevents repeats, then confirms success and empty state", async () => {
@@ -705,7 +719,18 @@ describe("sidebar session bulk actions", () => {
       finish = resolve;
     });
     props.onDeleteSessionNow = vi.fn(async (id: string) => {
-      if (id === "session-1") await delayed;
+      if (id === "session-1") {
+        const status = {
+          sessionId: id,
+          cwd: props.cwd,
+          title: "Original conversation",
+          stage: "deleting" as const,
+          startedAt: Date.now(),
+        };
+        setSessionDeletionStatus(status);
+        await delayed;
+        setSessionDeletionStatus({ ...status, outcome: "deleted" });
+      }
       props = {
         ...props,
         sessions: props.sessions.filter((session) => session.id !== id),
@@ -717,22 +742,76 @@ describe("sidebar session bulk actions", () => {
     clickCard("session-1", { ctrlKey: true });
     clickCard("session-3", { shiftKey: true });
     await act(async () => barButton("Delete selected").click());
-    expect(container.textContent).toContain("Deleting conversations… 0/3 completed");
+    expect(container.querySelectorAll("[data-session-delete-status]")).toHaveLength(1);
+    expect(container.querySelector("[data-session-deletion-detail]")).toBeNull();
+    const notice = container.querySelector("[data-session-delete-status]");
+    expect(notice?.textContent).toContain("Original conversation");
+    expect(notice?.textContent).toContain("0/3");
     expect(barButton("Deleting… selected").disabled).toBe(true);
     await act(async () => {
       pressKey(document.body, "Delete");
     });
     expect(props.onDeleteSessionNow).toHaveBeenCalledTimes(1);
+    vi.useFakeTimers();
     await act(async () => {
       finish(true);
     });
     expect(container.textContent).not.toContain("Deleting conversations…");
-    // Success is reported too, so this machine says what happened like the other one does.
-    expect(container.querySelector("[data-session-delete-status]")?.textContent).toContain(
+    expect(document.querySelector("[data-session-delete-status]")?.textContent).toContain(
       "3 conversations deleted.",
     );
     expect(container.textContent).toContain("Sessions you start will show up here");
     expect(selectedIds()).toEqual([]);
+    act(() => vi.advanceTimersByTime(9_999));
+    expect(document.querySelector("[data-session-delete-status]")).not.toBeNull();
+    act(() => vi.advanceTimersByTime(1));
+    expect(document.querySelector("[data-session-delete-status]")).toBeNull();
+  });
+
+  it("restarts the ten-second timer for an identical result and supports manual dismissal", async () => {
+    props.onDeleteSession = vi.fn();
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
+    props.busySessionIds = new Set();
+    props.onDeleteSessionNow = vi.fn(async () => true);
+    act(() => render());
+    clickCard("session-2", { ctrlKey: true });
+    await act(async () => barButton("Delete selected").click());
+    act(() => vi.advanceTimersByTime(9_000));
+    clickCard("session-3", { ctrlKey: true });
+    await act(async () => barButton("Delete selected").click());
+    act(() => vi.advanceTimersByTime(1_000));
+    const notice = document.querySelector("[data-session-delete-status]");
+    expect(notice?.textContent).toBe("1 conversation deleted.");
+    const close = notice
+      ?.closest("[role]")
+      ?.querySelector<HTMLButtonElement>('button[aria-label="Dismiss notice"]');
+    expect(close).not.toBeNull();
+    act(() => close!.click());
+    expect(document.querySelector("[data-session-delete-status]")).toBeNull();
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(document.querySelector("[data-session-delete-status]")).toBeNull();
+  });
+
+  it("keeps skipped conversations visible after ten seconds even without failures", async () => {
+    props.onDeleteSession = vi.fn();
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
+    props.onDeleteSessionNow = vi.fn(async () => true);
+    act(() => render());
+    clickCard("session-1", { ctrlKey: true });
+    clickCard("session-2", { ctrlKey: true });
+    await act(async () => barButton("Delete selected").click());
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(document.querySelector("[data-session-delete-status]")?.textContent).toContain(
+      "1 conversation deleted. 1 running conversation was skipped.",
+    );
   });
 
   it("shows local loading and load failure before empty state", async () => {
@@ -1783,17 +1862,16 @@ describe("collapsed rail Inbox actions", () => {
     expect(props.onTabChange).not.toHaveBeenCalled();
   });
 
-  it("opens the Crews page from the grouped tools menu", async () => {
+  it("opens the Crews page directly from the compact rail", async () => {
     const openCrewsPage = vi.fn();
     window.addEventListener(OPEN_CREWS_PAGE_EVENT, openCrewsPage, { once: true });
     props.projectRailOpen = false;
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();
     await act(async () => render());
-    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Tools"]')!.click());
     act(() =>
       document
-        .querySelector<HTMLButtonElement>('[data-compact-tools-flyout] button[aria-label="Crews"]')!
+        .querySelector<HTMLButtonElement>('[data-compact-project-rail] button[aria-label="Crews"]')!
         .click(),
     );
     expect(openCrewsPage).toHaveBeenCalledOnce();
@@ -1851,7 +1929,7 @@ describe("collapsed rail Inbox actions", () => {
     expect(document.activeElement).toBe(trigger);
   });
 
-  it("keeps new Inbox items visible while Tools is closed", async () => {
+  it("keeps new Inbox items visible beside direct tool shortcuts", async () => {
     props.projectRailOpen = false;
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();
@@ -1906,6 +1984,44 @@ describe("collapsed rail Inbox actions", () => {
     expect(container.querySelector('button[aria-label^="Back"]')).toBeNull();
   });
 
+  it("keeps the location title before history, project expansion and session search", async () => {
+    props.projectRailOpen = false;
+    props.lastSessionsOpen = true;
+    props.onSelectProject = vi.fn();
+    props.onOpenProject = vi.fn();
+    props.canGoBack = true;
+    props.canGoForward = true;
+    props.onGoBack = vi.fn();
+    props.onGoForward = vi.fn();
+    props.onToggleProjectRail = vi.fn();
+    await act(async () => render());
+    const header = container.querySelector("[data-workspace-header]")!;
+    const title = header.querySelector("h2")!;
+    expect(title.textContent).toBe("Last sessions");
+    expect(title.closest("[data-pane-header-heading]")).not.toBeNull();
+    const labels = Array.from(header.querySelectorAll("button"), (button) =>
+      button.getAttribute("aria-label"),
+    );
+    expect(labels.indexOf("Back")).toBeLessThan(labels.indexOf("Forward"));
+    expect(labels.indexOf("Forward")).toBeLessThan(labels.indexOf("Expand projects"));
+    expect(labels.indexOf("Expand projects")).toBeLessThan(labels.indexOf("Search conversations"));
+    const back = header.querySelector<HTMLButtonElement>('button[aria-label="Back"]')!;
+    expect(title.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(back.closest("[data-pane-header-body]")).not.toBeNull();
+    expect(container.querySelectorAll('button[aria-label="Expand projects"]')).toHaveLength(1);
+    expect(
+      container.querySelector('[data-compact-project-rail] button[aria-label="Expand projects"]'),
+    ).toBeNull();
+    act(() => back.click());
+    act(() => header.querySelector<HTMLButtonElement>('button[aria-label="Forward"]')!.click());
+    act(() =>
+      header.querySelector<HTMLButtonElement>('button[aria-label="Expand projects"]')!.click(),
+    );
+    expect(props.onGoBack).toHaveBeenCalledOnce();
+    expect(props.onGoForward).toHaveBeenCalledOnce();
+    expect(props.onToggleProjectRail).toHaveBeenCalledOnce();
+  });
+
   it("keeps global actions in the rail and workspace tabs in their horizontal row", async () => {
     props.projectRailOpen = false;
     props.onSelectProject = vi.fn();
@@ -1929,10 +2045,14 @@ describe("collapsed rail Inbox actions", () => {
         button.getAttribute("aria-label")?.replace(/ \(.+\)$/, ""),
       ),
     ).toEqual([
-      "Expand projects",
       "Search",
       "Inbox",
-      "Tools",
+      "Crews",
+      "Notes",
+      "Automations",
+      "Social Media",
+      "Tasks",
+      "Assistant",
       "Projects and groups",
       "Account: Guest. Unknown",
       "Settings",
@@ -1958,14 +2078,11 @@ describe("collapsed rail Inbox actions", () => {
     act(() => workspaceTabs.querySelector<HTMLButtonElement>('[aria-label="Explorer"]')!.click());
     expect(props.onTabChange).toHaveBeenCalledWith("files");
 
-    act(() => rail.querySelector<HTMLButtonElement>('button[aria-label="Tools"]')!.click());
-    const tools = document.querySelector("[data-compact-tools-flyout]")!;
-    expect(tools.textContent).toContain("Notes");
-    expect(tools.querySelector('button[aria-label="Inbox"]')).toBeNull();
-    expect(
-      tools.querySelector<HTMLButtonElement>('button[aria-label="Social Media"]')?.textContent,
-    ).toContain("Social Media");
-    pressKey(document.body, "Escape");
+    expect(rail.querySelector('button[aria-label="Tools"]')).toBeNull();
+    expect(rail.querySelector('button[aria-label="Notes"]')).not.toBeNull();
+    for (const label of ["Crews", "Notes", "Automations", "Social Media", "Tasks", "Assistant"]) {
+      expect(rail.querySelector(`button[aria-label="${label}"]`)?.textContent).toBe("");
+    }
     // The Projects flyout searches its own list; it never opens a second project picker.
     await openProjectsFlyout();
     expect(projectSearchInput()).not.toBeNull();
@@ -1975,7 +2092,11 @@ describe("collapsed rail Inbox actions", () => {
     ).toBe("");
     pressKey(document.body, "Escape");
     act(() =>
-      rail.querySelector<HTMLButtonElement>('button[aria-label="Expand projects"]')!.click(),
+      container
+        .querySelector<HTMLButtonElement>(
+          '[data-workspace-header] button[aria-label="Expand projects"]',
+        )!
+        .click(),
     );
     expect(props.onToggleProjectRail).toHaveBeenCalledOnce();
   });
@@ -2824,3 +2945,55 @@ it("opens a project selector for an explicit global New request without creating
   await act(async () => render());
   expect(document.querySelector('[role="dialog"]')).toBeNull();
 });
+
+it.each(["standard", "compact", "detailed"] as const)(
+  "offers owning-session actions without pin in %s Last sessions rows",
+  async (density) => {
+    saveSessionListDisplay({ ...DEFAULT_SESSION_LIST_DISPLAY, density });
+    vi.mocked(useLocalLifecycleMachine).mockReturnValue("local");
+    setSessionLifecycleList({ records: [], autoSettle: { afterDays: 3 } });
+    const client = lifecycleClient.sessionLifecycleClient("local");
+    const settle = vi.spyOn(client, "settle").mockResolvedValue({
+      sessionId: "foreign-session",
+      state: "settled",
+      participants: [],
+      settledAt: Date.now(),
+    });
+    vi.spyOn(lifecycleClient, "sessionLifecycleClient").mockReturnValue(client);
+    const foreign = {
+      ...props.sessions[0],
+      id: "foreign-session",
+      pinned: true,
+      cwd: "/workspace/other",
+      title: "Other conversation",
+    };
+    props.lastSessionsOpen = true;
+    props.lastSessionsData = { rows: [foreign], loading: false, error: null, refresh: vi.fn() };
+    props.onArchiveSession = vi.fn(async () => {});
+    props.onDeleteSession = vi.fn(async () => {});
+    props.onPinSession = vi.fn();
+    try {
+      await act(async () => render());
+      const row = container.querySelector('[data-session-card="foreign-session"]')!;
+      expect(row.querySelector('button[aria-label="Pin"]')).toBeNull();
+      expect(row.querySelector('[data-session-project-slot][data-pinned="true"]')).toBeNull();
+      expect(row.querySelector('button[aria-label^="Settle"]')).not.toBeNull();
+      await act(async () =>
+        row.querySelector<HTMLButtonElement>('button[aria-label^="Settle"]')!.click(),
+      );
+      expect(settle).toHaveBeenCalledExactlyOnceWith(foreign.id);
+      await act(async () =>
+        row.querySelector<HTMLButtonElement>('button[aria-label^="Archive"]')!.click(),
+      );
+      expect(props.onArchiveSession).toHaveBeenCalledWith(foreign.id, true, foreign);
+      await act(async () =>
+        row.querySelector<HTMLButtonElement>('button[aria-label^="Delete"]')!.click(),
+      );
+      expect(props.onDeleteSession).toHaveBeenCalledWith(foreign.id, foreign);
+      expect(props.lastSessionsData.refresh).toHaveBeenCalledTimes(2);
+      expect(props.onPinSession).not.toHaveBeenCalled();
+    } finally {
+      vi.mocked(useLocalLifecycleMachine).mockReturnValue(undefined);
+    }
+  },
+);

@@ -154,14 +154,14 @@ test("session detail closes on ancestor scroll and cancels a pending hover", asy
   }
 });
 
-test("compact navigation keeps workspace tabs in place and groups project and app navigation", async ({
+test("compact navigation keeps workspace tabs in place and stacks app tool shortcuts", async ({
   page,
 }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await installNavigationFixture(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/tests/browser/compact-navigation.html", {
+  await page.goto("/tests/browser/compact-navigation.html?badgeCount=8", {
     waitUntil: "domcontentloaded",
   });
   const rail = page.locator("[data-compact-project-rail]");
@@ -170,26 +170,51 @@ test("compact navigation keeps workspace tabs in place and groups project and ap
     name: "Projects and groups",
     exact: true,
   });
-  const tools = rail.getByRole("button", { name: "Tools", exact: true });
+  const toolNames = [
+    "Crews",
+    "Servers",
+    "Notes",
+    "Automations",
+    "Social Media",
+    "Tasks",
+    "Assistant",
+  ];
   const tabs = page.locator('aside [role="tablist"][aria-label="Workspace"]');
-  // A tab keeps its caption first; Sessions appends its working count ("Sessions, 6 working sessions").
+  // A tab keeps its caption first; Sessions appends its working count.
   const tabNamed = (label: string) =>
     tabs.getByRole("tab", { name: new RegExp("^" + label + "(,|$)") });
   await expect(rail.getByRole("tab")).toHaveCount(0);
   await expect(projects).toHaveCount(1);
   await expect(rail.locator('button[aria-label^="Switch project"]')).toHaveCount(0);
   await expect(tabNamed("Sessions")).toBeVisible();
-  await expect(tabs.locator("[data-workspace-working-count]")).toHaveText("6");
+  await expect(tabs.locator("[data-workspace-working-count]")).toHaveText("8");
+  await expect(rail.getByRole("button", { name: "Tools", exact: true })).toHaveCount(0);
+  await expect(page.locator("[data-compact-tools-flyout]")).toHaveCount(0);
 
   for (const theme of ["dark", "light"]) {
     await page.evaluate(
       (light) => document.documentElement.classList.toggle("theme-light", light),
       theme === "light",
     );
-    for (const width of [1000, 390]) {
+    for (const width of [1280, 800, 390]) {
       await page.setViewportSize({ width, height: 800 });
       await expect(projects).toBeInViewport();
-      await expect(tools).toBeInViewport();
+      let previousBottom = 0;
+      for (const name of toolNames) {
+        const tool = rail.getByRole("button", { name, exact: true });
+        await expect(tool).toBeInViewport();
+        expect((await tool.innerText()).trim()).toBe("");
+        const bounds = (await tool.boundingBox())!;
+        expect(bounds.y).toBeGreaterThanOrEqual(previousBottom);
+        previousBottom = bounds.y + bounds.height;
+      }
+      const recovery = rail.getByRole("button", { name: "Recovered sessions (8)", exact: true });
+      const recent = rail.getByRole("button", { name: "Last sessions", exact: true });
+      await expect(recovery).toBeInViewport();
+      await expect(recent).toBeInViewport();
+      expect(await recovery.locator("svg").innerHTML()).not.toBe(
+        await recent.locator("svg").innerHTML(),
+      );
       // The collapsed rail is icon-only: the name lives in the accessible name and tooltip.
       expect((await projects.textContent())?.trim()).toBe("");
       await expect(projects).toHaveAttribute("aria-label", "Projects and groups");
@@ -238,19 +263,23 @@ test("compact navigation keeps workspace tabs in place and groups project and ap
       });
       await page.keyboard.press("Escape");
       await expect(projects).toBeFocused();
-      await tools.click();
-      await expect(
-        page
-          .locator("[data-compact-tools-flyout]")
-          .getByRole("button", { name: "Notes", exact: true }),
-      ).toBeVisible();
-      await page.screenshot({
-        path: testInfo.outputPath(`tools-${theme}-${width}.png`),
-      });
-      await page.keyboard.press("Escape");
-      await expect(tools).toBeFocused();
+      for (const name of ["Notes", "Servers", "Automations", "Tasks"]) {
+        await rail.getByRole("button", { name, exact: true }).click();
+        await expect(page.getByLabel("Selected action")).toHaveText(name);
+      }
     }
   }
+  await page.setViewportSize({ width: 800, height: 360 });
+  const actions = rail.locator("[data-compact-rail-actions]");
+  expect(await actions.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(
+    true,
+  );
+  const settings = rail.getByRole("button", { name: "Settings", exact: true });
+  await expect(settings).toBeInViewport();
+  await rail.getByRole("button", { name: "Last sessions", exact: true }).scrollIntoViewIfNeeded();
+  await expect(rail.getByRole("button", { name: "Last sessions", exact: true })).toBeInViewport();
+  await expect(settings).toBeInViewport();
+  await page.screenshot({ path: testInfo.outputPath("navigation-light-800-short.png") });
   await page.setViewportSize({ width: 1000, height: 800 });
   await rail.getByRole("button", { name: "Inbox", exact: true }).click();
   await expect(page.getByLabel("Selected action")).toHaveText("Inbox");
@@ -299,6 +328,115 @@ test("compact navigation keeps workspace tabs in place and groups project and ap
     path: testInfo.outputPath("shared-conversation-search.png"),
   });
   expect(errors).toEqual([]);
+});
+
+test("workspace header keeps location before history and project controls", async ({
+  page,
+}, testInfo) => {
+  await installNavigationFixture(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const project of [false, true]) {
+    await page.goto(
+      `/tests/browser/compact-navigation.html?headerNavigation${project ? "&projectHeader" : ""}`,
+      { waitUntil: "domcontentloaded" },
+    );
+    const header = page.locator("[data-workspace-header]");
+    await expect(header).toBeVisible({ timeout: 90_000 });
+    const title = header.getByText(project ? "Workspace" : "Last sessions", { exact: true });
+    const toggle = page.getByRole("button", { name: "Expand projects", exact: true });
+    await expect(toggle).toHaveCount(1);
+    await expect(header.getByRole("button", { name: "Expand projects", exact: true })).toHaveCount(
+      1,
+    );
+    await expect(
+      page
+        .locator("[data-compact-project-rail]")
+        .getByRole("button", { name: "Expand projects", exact: true }),
+    ).toHaveCount(0);
+    const titleFrame = header.locator("[data-pane-header-heading]");
+    const workspacePane = page.locator('[data-side-pane="workspace"]');
+    const resize = page.getByRole("separator", { name: "Resize sidebar", exact: true });
+    for (const pane of ["default", "wide"]) {
+      await resize.press("Enter");
+      if (pane === "wide") {
+        for (let step = 0; step < 3; step++) await resize.press("Shift+ArrowRight");
+      }
+      await resize.blur();
+      for (const theme of ["dark", "light"]) {
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        for (const width of [1280, 800]) {
+          await page.setViewportSize({ width, height: 800 });
+          await expect(title).toBeVisible();
+          const titleStyle = await title.evaluate((element) => ({
+            weight: Number(getComputedStyle(element).fontWeight),
+            size: parseFloat(getComputedStyle(element).fontSize),
+          }));
+          if (!project) {
+            expect(titleStyle.weight).toBeGreaterThanOrEqual(500);
+            expect(titleStyle.size).toBe(16);
+          }
+          await page.screenshot({
+            path: testInfo.outputPath(
+              `header-${project ? "project" : "last-sessions"}-${theme}-${width}-${pane}.png`,
+            ),
+          });
+          await header.screenshot({
+            path: testInfo.outputPath(
+              `header-detail-${project ? "project" : "last-sessions"}-${theme}-${width}-${pane}.png`,
+            ),
+          });
+          const frame = (await titleFrame.boundingBox())!;
+          const constrained = await workspacePane.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return (
+              element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) <
+              340
+            );
+          });
+          const back = (await header
+            .getByRole("button", { name: "Back", exact: true })
+            .boundingBox())!;
+          if (constrained) expect(frame.y + frame.height).toBeLessThanOrEqual(back.y + 0.5);
+          let previousRight = constrained ? (await header.boundingBox())!.x : frame.x + frame.width;
+          expect((await title.boundingBox())!.width).toBeLessThanOrEqual(frame.width);
+          if (project) {
+            const titleWidth = await title.evaluate((element) => ({
+              available: element.clientWidth,
+              content: element.scrollWidth,
+            }));
+            expect(titleWidth.content).toBeLessThanOrEqual(titleWidth.available);
+          }
+          for (const name of ["Back", "Forward", "Expand projects", "Search conversations"]) {
+            const control = header.getByRole("button", { name, exact: true });
+            await expect(control).toBeInViewport();
+            const bounds = (await control.boundingBox())!;
+            expect(
+              bounds.x,
+              `${name} must follow the title and prior controls`,
+            ).toBeGreaterThanOrEqual(previousRight);
+            previousRight = bounds.x + bounds.width;
+          }
+          const paneBounds = (await workspacePane.boundingBox())!;
+          for (const control of await header.getByRole("button").all()) {
+            const bounds = (await control.boundingBox())!;
+            expect(
+              bounds.x + bounds.width,
+              `${await control.getAttribute("aria-label")} must remain inside the workspace pane`,
+            ).toBeLessThanOrEqual(paneBounds.x + paneBounds.width + 0.5);
+          }
+        }
+      }
+    }
+    await header.getByRole("button", { name: "Back", exact: true }).click();
+    await expect(page.getByLabel("Selected action")).toHaveText("Back");
+    await header.getByRole("button", { name: "Forward", exact: true }).click();
+    await expect(page.getByLabel("Selected action")).toHaveText("Forward");
+    await toggle.click();
+    await expect(page.getByLabel("Project panel toggle count")).toHaveText("1");
+  }
 });
 
 test("navigation chrome and session rows grow with comfortable and touch density", async ({

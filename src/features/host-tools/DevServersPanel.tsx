@@ -1,5 +1,6 @@
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Surface } from "../../shared/ui/Surface";
+import { OverflowTooltip } from "../../shared/ui/Tooltip";
 import { Badge } from "../../shared/ui/Badge";
 import { BadgeList } from "../../shared/ui/BadgeList";
 import { Alert } from "../../shared/ui/Alert";
@@ -970,9 +971,9 @@ function ProjectDevServersPanel({
             {t("Paused")}
           </span>
         )}
-        <span className="host-tool-location dev-servers-location" title={cwd}>
-          {cwd}
-        </span>
+        <OverflowTooltip label={cwd}>
+          <span className="host-tool-location dev-servers-location">{cwd}</span>
+        </OverflowTooltip>
       </div>
       {scanError ? (
         <Alert tone="danger">

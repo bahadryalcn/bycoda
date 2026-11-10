@@ -101,7 +101,7 @@ test("single save writes the profile and the computer draft together", async ({ 
   await page.evaluate(() => {
     (window as any).__desktopHoldConfigure = true;
   });
-  const save = dialog.getByRole("button", { name: tr("Save profile settings"), exact: true });
+  const save = dialog.locator("footer button[type=submit]");
   await save.click();
   await expect(save).toBeDisabled();
   await dialog.getByRole("button", { name: tr("Close"), exact: true }).click();

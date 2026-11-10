@@ -91,6 +91,11 @@ configure a formatter but have not installed it, and files the formatter
 reports unsupported, skip formatting; Save still writes the file.
 Actual syntax and execution failures still appear as format errors.
 
+Inline syntax diagnostics use the editor's highlighting grammar, not the project's
+type checker. Defaulted destructuring parameters in arrow functions are checked
+with function-parameter grammar to avoid false `Unexpected "=>"` errors; invalid
+parameters and syntax errors in the function body still receive diagnostics.
+
 Editors open on the same file, such as its own tab and its Working Tree review tab,
 share one document, like a file and its diff view in VS Code. An edit appears in
 every one of them at once, and Undo/Redo (Ctrl/Cmd+Z, Ctrl+Y or Cmd+Shift+Z) in
@@ -109,3 +114,11 @@ must not paint a competing ruler or receive input. PDF text layers keep their
 glyphs transparent over the rendered page while selection uses the shared theme
 roles. Native scrollbar, zoom, keyboard and selection behavior still depend on
 the platform; this source change does not establish native acceptance.
+
+### Search in split diffs
+
+Ctrl/Cmd+F opens the compact search toolbar at the top of the focused pane. Both
+panes keep their own query, match count and case, whole-word and regular-expression
+options. Use the arrow buttons or Enter/Shift+Enter to navigate; Escape closes only
+that pane’s search. Find from the application menu returns to the last focused visible
+editor. The original pane remains read-only.

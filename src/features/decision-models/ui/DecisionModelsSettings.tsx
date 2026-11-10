@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { Switch } from "../../../shared/ui/Switch";
@@ -15,6 +16,7 @@ import { CustomEndpointDialog, type CustomPrefill } from "./CustomEndpointDialog
 import { EditSourceDialog } from "./EditSourceDialog";
 import { ErrorNotice } from "./ErrorNotice";
 import { FoundList } from "./FoundList";
+import { FolderModelDialog } from "./FolderModelDialog";
 import { LocalInstallWizard } from "./LocalInstallWizard";
 import { ManualPathDialog, type ManualPrefill } from "./ManualPathDialog";
 import { RoutingTable } from "./RoutingTable";
@@ -22,6 +24,7 @@ import { ScanSettings } from "./ScanSettings";
 import { SourcesList } from "./SourcesList";
 
 type Dialog =
+  | { kind: "folder"; modelPath?: string }
   | { kind: "manual"; prefill?: ManualPrefill }
   | { kind: "custom"; prefill?: CustomPrefill }
   | { kind: "api"; preselectId?: string }
@@ -43,7 +46,8 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
 
   const pick = (path: AddPath) => {
     setTopError(null);
-    if (path === "manual") setDialog({ kind: "manual" });
+    if (path === "folder") setDialog({ kind: "folder" });
+    else if (path === "manual") setDialog({ kind: "manual" });
     else if (path === "local") setDialog({ kind: "local" });
     else if (path === "api") setDialog({ kind: "api" });
     else setDialog({ kind: "custom" });
@@ -53,7 +57,7 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
     const input = candidateSourceInput(candidate);
     if (input) {
       setTopError(null);
-      actions.addSource(input).catch((error: unknown) => setTopError(error));
+      setDialog({ kind: "folder", modelPath: input.local?.modelPath });
       return;
     }
     if (candidate.kind === "api_key") setDialog({ kind: "api", preselectId: candidate.id });
@@ -95,15 +99,46 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
   };
 
   const closeDialog = () => setDialog(null);
+  const scanAction = model.scanning ? (
+    <Button
+      variant="ghost"
+      size="sm"
+      loading={model.isPending("scan-cancel")}
+      onClick={() => void actions.cancelScan().catch(() => undefined)}
+    >
+      {t("Cancel scan")}
+    </Button>
+  ) : (
+    <Button
+      variant="ghost"
+      size="sm"
+      startIcon={<RefreshCw aria-hidden="true" />}
+      onClick={() => void actions.scan().catch(() => undefined)}
+    >
+      {t("Scan again")}
+    </Button>
+  );
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-7">
+      <p className="text-ui-body text-(--ui-text-secondary)">
+        {t(
+          "Decision models answer small questions, such as choosing a button or classifying a message. Add your local model folder to get started.",
+        )}
+      </p>
       {topError !== null ? <ErrorNotice error={topError} /> : null}
 
       <Group
-        title={t("Connected sources")}
+        title={t("Connected models")}
         description={t("Models and services the app can ask. Test a source before you rely on it.")}
-        action={<AddMenu onPick={pick} />}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="primary" size="sm" onClick={() => pick("folder")}>
+              {t("Add from folder")}
+            </Button>
+            <AddMenu onPick={pick} />
+          </div>
+        }
       >
         <SourcesList
           sources={model.sources}
@@ -119,45 +154,57 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
         />
       </Group>
 
-      <Group
-        title={t("Found on this computer")}
-        description={t("Found by the scan. Nothing is connected until you press Add.")}
-        action={
-          <Button
-            variant="ghost"
-            size="sm"
-            loading={model.scanning}
-            startIcon={<RefreshCw aria-hidden="true" />}
-            onClick={() => void actions.scan().catch(() => undefined)}
-          >
-            {t("Scan again")}
-          </Button>
-        }
-      >
-        <FoundList
-          found={model.found}
-          scanning={model.scanning}
-          scanError={model.scanError}
-          busy={busy}
-          onScan={() => void actions.scan().catch(() => undefined)}
-          onAdd={addCandidate}
-        />
-      </Group>
+      <Disclosure summary={t("Advanced discovery")} summaryActions={scanAction} variant="card">
+        <Group
+          title={t("Found on this computer")}
+          description={t("Found by the scan. Nothing is connected until you press Add.")}
+        >
+          <FoundList
+            found={model.found}
+            scanning={model.scanning}
+            scanError={model.scanError}
+            incomplete={model.scanIncomplete}
+            busy={busy}
+            onScan={() => void actions.scan().catch(() => undefined)}
+            onAdd={addCandidate}
+          />
+        </Group>
 
-      <Group title={t("Scan settings")}>
-        <ScanSettings client={client} />
-      </Group>
+        <Group title={t("Scan settings")}>
+          <ScanSettings client={client} onScan={actions.scan} scanning={model.scanning} />
+        </Group>
+      </Disclosure>
 
       <Group
         title={t("Task routing")}
         description={t("Which source answers each kind of question, in order.")}
       >
-        <RoutingTable
-          routing={model.routing}
-          sources={model.sources}
-          busy={model.isPending("routing")}
-          onSave={(next) => actions.saveRouting(next)}
-        />
+        {model.sources?.length ? (
+          <>
+            <p className="text-ui-body px-4 py-2.5 text-(--ui-text-secondary)">
+              {Object.keys(model.routing).length > 0
+                ? t("Custom routing is active. Tasks without a custom route use Automatic.")
+                : t(
+                    "Automatic: connected local models are tried first. Customize only when a task needs a different model.",
+                  )}
+            </p>
+            <Disclosure
+              summary={t("Customize task routing")}
+              defaultOpen={Object.keys(model.routing).length > 0}
+            >
+              <RoutingTable
+                routing={model.routing}
+                sources={model.sources}
+                busy={model.isPending("routing")}
+                onSave={(next) => actions.saveRouting(next)}
+              />
+            </Disclosure>
+          </>
+        ) : model.sources !== null ? (
+          <p className="text-ui-body px-4 py-2.5 text-(--ui-text-secondary)">
+            {t("Connect a model before customizing task routing.")}
+          </p>
+        ) : null}
         {model.routingError !== null ? (
           <div className="px-4 py-2.5">
             <ErrorNotice error={model.routingError} />
@@ -181,6 +228,15 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
         </Row>
       </Group>
 
+      {dialog?.kind === "folder" ? (
+        <FolderModelDialog
+          client={client}
+          modelPath={dialog.modelPath}
+          onAdd={(input) => actions.addSource(input)}
+          onTest={(id) => actions.testSource(id)}
+          onClose={closeDialog}
+        />
+      ) : null}
       {dialog?.kind === "manual" ? (
         <ManualPathDialog
           prefill={dialog.prefill}

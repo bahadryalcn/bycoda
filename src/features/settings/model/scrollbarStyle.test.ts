@@ -31,20 +31,39 @@ describe("scrollbar style", () => {
       normalizeScrollbarStyle({
         color: "custom",
         customColor: "#AABBCC",
-        size: "wide",
+        size: "large",
         visibility: "always",
         strength: 900,
       }),
     ).toEqual({
       color: "custom",
       customColor: "#aabbcc",
-      size: "wide",
+      size: "large",
       visibility: "always",
       strength: 200,
     });
     expect(
       normalizeScrollbarStyle({ color: "red", size: "huge", visibility: "never", strength: 1 }),
     ).toEqual({ ...SCROLLBAR_STYLE_DEFAULT, strength: 50 });
+  });
+
+  it.each([
+    ["extra-thin", 3],
+    ["thin", 6],
+    ["medium", 10],
+    ["large", 14],
+    ["xlarge", 18],
+  ] as const)("persists and applies %s at %ipx", (size, pixels) => {
+    expect(saveScrollbarStyle({ ...SCROLLBAR_STYLE_DEFAULT, size })).toBe(true);
+    expect(loadScrollbarStyle().size).toBe(size);
+    expect(read("--ui-scrollbar-size")).toBe(size === "thin" ? "" : `${pixels}px`);
+  });
+
+  it("keeps the width of legacy wide preferences", () => {
+    localStorage.setItem(SCROLLBAR_STYLE_KEY, JSON.stringify({ size: "wide" }));
+    expect(loadScrollbarStyle().size).toBe("large");
+    applyScrollbarStyle(loadScrollbarStyle());
+    expect(read("--ui-scrollbar-size")).toBe("14px");
   });
 
   it("applies color, size, strength and visibility, and clears overrides at the default", () => {
@@ -73,11 +92,11 @@ describe("scrollbar style", () => {
   it("saves, notifies, applies and resets", () => {
     const listener = vi.fn();
     const unsubscribe = subscribeScrollbarStyle(listener);
-    expect(saveScrollbarStyle({ ...SCROLLBAR_STYLE_DEFAULT, size: "wide", color: "theme" })).toBe(
+    expect(saveScrollbarStyle({ ...SCROLLBAR_STYLE_DEFAULT, size: "large", color: "theme" })).toBe(
       true,
     );
     expect(JSON.parse(localStorage.getItem(SCROLLBAR_STYLE_KEY)!)).toMatchObject({
-      size: "wide",
+      size: "large",
       color: "theme",
     });
     expect(read("--ui-scrollbar-size")).toBe("14px");

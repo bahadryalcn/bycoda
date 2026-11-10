@@ -65,6 +65,7 @@ export function CrewMemberForm({
   policy,
   compact = false,
   machineId,
+  projectId,
   modelPoolsSupported = false,
 }: {
   cwd: string;
@@ -94,6 +95,8 @@ export function CrewMemberForm({
   compact?: boolean;
   /** The machine whose Host keeps model pools (`data.machine.id`); without it automatic members list their own models. */
   machineId?: string;
+  /** The Host's project (`data.project.id`); with `machineId` it lists the Host tools a member can be limited to. */
+  projectId?: string;
   /** `data.modelPoolsSupported`. */
   modelPoolsSupported?: boolean;
 }) {
@@ -202,7 +205,13 @@ export function CrewMemberForm({
         ) : null}
       </section>
       {tools ? (
-        <MemberToolsPicker value={agent.tools} onChange={(next) => onChange({ tools: next })} />
+        <MemberToolsPicker
+          value={agent.tools}
+          onChange={(next) => onChange({ tools: next })}
+          cwd={cwd}
+          machineId={machineId}
+          projectId={projectId}
+        />
       ) : null}
       <MemberModelSection
         cwd={cwd}

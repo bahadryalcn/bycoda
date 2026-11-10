@@ -11,14 +11,13 @@ import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
 import { TabStrip } from "../../../shared/ui/Tabs";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { LiveText } from "../../../shared/ui/LiveText";
-import { Check, RefreshCw, Sparkles } from "../../../shared/ui/icons";
+import { RefreshCw, Sparkles } from "../../../shared/ui/icons";
 import { AssistantProfileFields, type ProfileSection } from "./AssistantProfileFields";
 import { AssistantPresenceStatus } from "./AssistantPresenceStatus";
 import { AssistantKeepAwakeStatus } from "./AssistantKeepAwakeStatus";
 import { ManualSessionSupervision } from "./ManualSessionSupervision";
 import { DesktopControlSettings } from "../../host-tools/DesktopControlSettings";
-import { Group } from "../../settings/public/settingsControls";
+import { AdvancedSettings, Group, Row } from "../../settings/public/settingsControls";
 import { AssistantBuilderDialog } from "./builder/AssistantBuilderDialog";
 import { ProfileRowsProvider } from "./settings/SettingsProfileRow";
 import { AssistantRetentionField } from "./settings/AssistantUsageSettings";
@@ -32,15 +31,13 @@ import settingsStyles from "./AssistantSettings.module.css";
 
 type OwnerRequest = typeof assistantRequest;
 type Project = { id?: string; path: string; name: string };
-type SettingsPage = "personal" | "work" | "schedule" | "projects" | "computer" | "advanced";
+type SettingsPage = "personal" | "work" | "access" | "advanced";
 type SectionSave = MutableRefObject<(() => Promise<void>) | null>;
 
 const pages = [
   ["personal", "Personal"],
   ["work", "Work"],
-  ["schedule", "Schedule"],
-  ["projects", "Projects"],
-  ["computer", "Computer use"],
+  ["access", "Access"],
   ["advanced", "Advanced"],
 ] as const satisfies readonly (readonly [SettingsPage, string])[];
 
@@ -175,15 +172,20 @@ export function AssistantSettings({
     setPending(true);
     setError("");
     setSavedNotice(false);
+    // The model list and folders show their own save error inline; the footer would repeat it.
+    let shownInline = false;
     try {
       if (profileDirty) await saveProfile();
+      shownInline = true;
       if (poolState.dirty) await poolSave.current?.();
+      shownInline = false;
       if (projectState.dirty) await projectSave.current?.();
       if (computerState.dirty) await computerSave.current?.();
+      shownInline = true;
       if (foldersState.dirty) await foldersSave.current?.();
       setSavedNotice(true);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (!shownInline) setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setPending(false);
     }
@@ -205,10 +207,7 @@ export function AssistantSettings({
   const tab = (id: SettingsPage, children: ReactNode) => (
     <div
       key={id}
-      className={[
-        settingsStyles.page,
-        id === "projects" || id === "computer" ? "" : settingsStyles.ownRows,
-      ]
+      className={[settingsStyles.page, id === "access" ? "" : settingsStyles.ownRows]
         .filter(Boolean)
         .join(" ")}
       data-settings-page={id}
@@ -256,23 +255,18 @@ export function AssistantSettings({
             ) : (
               <>
                 <Button variant="secondary" disabled={busy} onClick={() => requestLeave("setup")}>
-                  {t("Run setup again")}
+                  {t("Quick setup")}
                 </Button>
                 <div className={settingsStyles.footerActions}>
-                  {/* Always mounted so the saved notice is announced on each save. */}
-                  <LiveText text={saved ? t("Profile settings saved.") : ""} />
-                  {saved && (
-                    <span className={settingsStyles.saved}>
-                      <Check className="icon-xs" aria-hidden />
-                      {t("Saved")}
-                    </span>
-                  )}
                   <Button
                     type="submit"
                     form={formId}
                     variant="primary"
-                    aria-label={t("Save profile settings")}
+                    aria-label={saved ? t("Saved") : t("Save profile settings")}
                     loading={pending}
+                    loadingLabel={t("Saving…")}
+                    success={saved}
+                    successLabel={t("Saved")}
                     disabled={busy || !anyDirty || (profileDirty && !draft.name?.trim())}
                   >
                     {t("Save")}
@@ -344,15 +338,25 @@ export function AssistantSettings({
                 >
                   {profile("identity")}
                 </Group>
-                <Group title={t("Language")}>{profile("language")}</Group>
-                <Group title={t("Personality")}>{profile("personality")}</Group>
-                <Group title={t("Conversation")}>{profile("behavior")}</Group>
+                <Group title={t("Language")}>
+                  {profile("language")}
+                  <AdvancedSettings title={t("Personality and conversation")} keepMounted>
+                    {profile("personality")}
+                    {profile("behavior")}
+                  </AdvancedSettings>
+                </Group>
               </>,
             )}
             {tab(
               "work",
               <>
-                <Group title={t("Jobs")}>{profile("autonomy")}</Group>
+                <Group title={t("Work mode")}>
+                  {profile("workmode")}
+                  {profile("budget")}
+                  <AdvancedSettings title={t("Customize")} keepMounted>
+                    {profile("jobs")}
+                  </AdvancedSettings>
+                </Group>
                 <Group title={t("Models")}>
                   <ModelPoolEditor
                     request={assistantRequest}
@@ -360,69 +364,53 @@ export function AssistantSettings({
                     onDraftStateChange={changePoolState}
                   />
                 </Group>
-              </>,
-            )}
-            {tab(
-              "schedule",
-              <>
                 <Group title={t("Presence and hours")} info={<AssistantScheduleInfo />}>
                   {profile("presence")}
-                </Group>
-                <div className={settingsStyles.statusLine}>
-                  <AssistantPresenceStatus snapshot={snapshot} details />
-                  <AssistantKeepAwakeStatus state={snapshot.keepAwake} />
-                </div>
-                <Group
-                  title={t("Notifications")}
-                  action={
-                    snapshot.capabilities.observationTasks === true ? undefined : (
-                      <Badge tone="warning" size="xs">
-                        {t("Readiness not confirmed")}
-                      </Badge>
-                    )
-                  }
-                >
-                  {profile("notifications")}
+                  <div className={settingsStyles.statusLine}>
+                    <AssistantPresenceStatus snapshot={snapshot} details />
+                    <AssistantKeepAwakeStatus state={snapshot.keepAwake} />
+                  </div>
+                  <AdvancedSettings
+                    title={
+                      <>
+                        {t("Notifications")}
+                        {snapshot.capabilities.observationTasks === true ? null : (
+                          <Badge tone="warning" size="xs">
+                            {t("Readiness not confirmed")}
+                          </Badge>
+                        )}
+                      </>
+                    }
+                    keepMounted
+                  >
+                    {profile("notifications")}
+                  </AdvancedSettings>
                 </Group>
               </>,
             )}
             {tab(
-              "projects",
-              <Group
-                title={t("Manual session supervision")}
-                action={
-                  <RefreshButton
-                    onClick={() => void manual.refresh()}
-                    loading={manual.pending === "list"}
-                    disabled={!!manual.pending || manual.stopping}
-                  />
-                }
-              >
-                <ManualSessionSupervision
-                  key={environmentId ?? "unknown"}
-                  controller={manual}
-                  projects={projects}
-                  environmentId={environmentId}
-                  settings
-                  saveRef={projectSave}
-                  onDraftStateChange={changeProjectState}
-                />
-              </Group>,
-            )}
-            {tab(
-              "computer",
+              "access",
               <>
-                <Group title={t("Ready for 24/7")}>
-                  <AlwaysOnChecklist
+                {/* Contents-only wrapper: gives the permission rows the profile rows' control width. */}
+                <div className={`${settingsStyles.ownRows} ${settingsStyles.rowsScope}`}>
+                  <Group title={t("Job permissions")}>
+                    {draft.execution ? (
+                      profile("permissions")
+                    ) : (
+                      <Row
+                        label={t("Execution permissions")}
+                        description={t(
+                          "Applies once the assistant has a worker. Pick a work mode first.",
+                        )}
+                      />
+                    )}
+                  </Group>
+                </div>
+                <Group title={t("Folders and commands")}>
+                  <AssistantFoldersSettings
                     request={assistantRequest}
-                    snapshot={snapshot}
-                    onOpen={(target) => {
-                      if (target === "setup") requestLeave("setup");
-                      else {
-                        setPage(target);
-                        if (contentRef.current) contentRef.current.scrollTop = 0;
-                      }
-                    }}
+                    saveRef={foldersSave}
+                    onDraftStateChange={changeFoldersState}
                   />
                 </Group>
                 <Group
@@ -435,11 +423,38 @@ export function AssistantSettings({
                     onDraftStateChange={changeComputerState}
                   />
                 </Group>
-                <Group title={t("Folders and commands")}>
-                  <AssistantFoldersSettings
+                <Group
+                  title={t("Manual session supervision")}
+                  action={
+                    <RefreshButton
+                      onClick={() => void manual.refresh()}
+                      loading={manual.pending === "list"}
+                      disabled={!!manual.pending || manual.stopping}
+                    />
+                  }
+                >
+                  <ManualSessionSupervision
+                    key={environmentId ?? "unknown"}
+                    controller={manual}
+                    projects={projects}
+                    environmentId={environmentId}
+                    settings
+                    saveRef={projectSave}
+                    onDraftStateChange={changeProjectState}
+                  />
+                </Group>
+                <Group title={t("Ready for 24/7")}>
+                  <AlwaysOnChecklist
                     request={assistantRequest}
-                    saveRef={foldersSave}
-                    onDraftStateChange={changeFoldersState}
+                    snapshot={snapshot}
+                    onOpen={(target) => {
+                      if (target === "setup") requestLeave("setup");
+                      else {
+                        // Schedule settings now live on the Work tab.
+                        setPage("work");
+                        if (contentRef.current) contentRef.current.scrollTop = 0;
+                      }
+                    }}
                   />
                 </Group>
               </>,

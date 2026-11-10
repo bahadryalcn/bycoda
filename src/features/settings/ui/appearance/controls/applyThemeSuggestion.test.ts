@@ -49,6 +49,12 @@ const suggest = (extra: Record<string, unknown>) =>
 beforeEach(() => localStorage.clear());
 
 describe("applyThemeSuggestion", () => {
+  it("keeps generated terminal text close to the effective code size", () => {
+    const { appearance, fns } = mockAppearance();
+    applyThemeSuggestion(appearance, suggest({ typography: { terminalSize: 40 } }));
+    expect(fns.onPreferences.mock.calls[0]![0].terminalSize).toBe(15);
+  });
+
   it("applies only tint and accent when nothing else is set", () => {
     const { appearance, fns } = mockAppearance();
     applyThemeSuggestion(appearance, suggest({}));
@@ -101,7 +107,7 @@ describe("applyThemeSuggestion", () => {
           diffPalette: "colorblind",
           rowDensity: "detailed",
           showModel: false,
-          scrollbarSize: "wide",
+          scrollbarSize: "large",
           scrollbarVisibility: "always",
           tintSource: "accent",
           workingColor: "theme",
@@ -116,7 +122,7 @@ describe("applyThemeSuggestion", () => {
       showModel: false,
     });
     expect(loadScrollbarStyle()).toMatchObject({
-      size: "wide",
+      size: "large",
       visibility: "always",
     });
     expect(loadInteractionTint().source).toBe("accent");
@@ -171,7 +177,7 @@ describe("applyThemeSuggestion", () => {
     );
     expect(fns.onChatBackgroundScope).toHaveBeenCalledWith("empty");
     expect(fns.onChatBackgroundEmptyOpacity).toHaveBeenCalledWith(50);
-    expect(fns.onChatBackgroundSessionOpacity).toHaveBeenCalledWith(10);
+    expect(fns.onChatBackgroundSessionOpacity).toHaveBeenCalledWith(15);
     expect(fns.onChatBackgroundBlur).toHaveBeenCalledWith(8);
     expect(loadCrewTheme()).toBe("lotr");
     expect(loadCrewSceneEnabled()).toBe(false);
@@ -180,6 +186,17 @@ describe("applyThemeSuggestion", () => {
 });
 
 describe("applyDrawnImageTuning", () => {
+  it("keeps a generated image visible when the model asks for faint, heavily blurred art", () => {
+    const { appearance, fns } = mockAppearance();
+    applyDrawnImageTuning(
+      appearance,
+      suggest({ image: { emptyOpacity: 5, sessionOpacity: 5, blur: 40 } }),
+    );
+    expect(fns.onChatBackgroundEmptyOpacity).toHaveBeenCalledWith(30);
+    expect(fns.onChatBackgroundSessionOpacity).toHaveBeenCalledWith(15);
+    expect(fns.onChatBackgroundBlur).toHaveBeenCalledWith(12);
+  });
+
   it("shows a drawn image in every thread with readable defaults", () => {
     const { appearance, fns } = mockAppearance();
     applyDrawnImageTuning(appearance, suggest({}));

@@ -2,7 +2,7 @@
 import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
+import { useRetainedState, resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { McpSettings } from "./McpSettings";
 import { clearMcpSettingsCache } from "../model/mcpSettingsCache";
 
@@ -30,7 +30,7 @@ vi.mock("../../../shared/model/appConfirm", () => ({
 let container: HTMLDivElement;
 let root: Root;
 
-beforeEach(() => {
+beforeEach(async () => {
   resetRetainedState();
   clearMcpSettingsCache();
   const storage = new Map<string, string>();
@@ -43,6 +43,11 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+  function ProjectView() {
+    useRetainedState("mcp:view", "project");
+    return null;
+  }
+  await act(async () => root.render(createElement(ProjectView)));
   invoke.mockReset();
   invoke.mockImplementation(async (command: string) =>
     command === "mcp_discover"
@@ -852,4 +857,42 @@ it("dismisses the displayed login error without retrying or hiding a later failu
   await act(async () => signIn().click());
   expect(container.textContent).toContain("failure 2:");
   expect(invoke.mock.calls.filter(([command]) => command === "mcp_provider_login")).toHaveLength(2);
+});
+
+it("opens Global independently of ambiguous project settings", async () => {
+  resetRetainedState();
+  invoke.mockImplementation(async (command: string, args: { globalOnly?: boolean }) => {
+    if (command === "mcp_discover") {
+      if (!args.globalOnly)
+        throw new Error(
+          "Claude has ambiguous project settings; resolve duplicate project paths first",
+        );
+      return [
+        {
+          provider: "codex",
+          name: "global-docs",
+          scope: "user",
+          configPath: "/config",
+          transport: "stdio",
+        },
+      ];
+    }
+    return "";
+  });
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  expect(invoke).toHaveBeenCalledWith("mcp_discover", { cwd: "/repo", globalOnly: true });
+  expect(container.textContent).toContain("global-docs");
+  expect(container.textContent).not.toContain("ambiguous project settings");
+  const project = [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
+    (button) => button.textContent === "Project",
+  )!;
+  await act(async () => project.click());
+  expect(container.textContent).toContain("ambiguous project settings");
+  expect(container.textContent).not.toContain("No records");
+  const global = [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
+    (button) => button.textContent === "Global",
+  )!;
+  await act(async () => global.click());
+  expect(container.textContent).toContain("global-docs");
+  expect(container.textContent).not.toContain("ambiguous project settings");
 });

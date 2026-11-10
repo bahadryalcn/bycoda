@@ -4,6 +4,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { TextField } from "../../../shared/ui/TextField";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import {
   ChevronDown,
   ChevronUp,
@@ -137,9 +138,9 @@ export function BrowserControlsPopover({
             .join(" · ")}
         </span>
         {state?.url ? (
-          <span className="host-browser-location" title={state.url}>
-            {state.url}
-          </span>
+          <OverflowTooltip label={state.url}>
+            <span className="host-browser-location">{state.url}</span>
+          </OverflowTooltip>
         ) : null}
         {notice ? <span className="host-tool-muted">{notice}</span> : null}
       </div>

@@ -80,7 +80,7 @@ export function withProjectlessKey(keys: Iterable<string>): Set<string> {
 export const RECENT_SESSION_COUNTS = [3, 5, 10, 20, 50] as const;
 export type RecentSessionCount = (typeof RECENT_SESSION_COUNTS)[number];
 export const DEFAULT_RECENT_SESSION_COUNT: RecentSessionCount = 10;
-/** Rows the store query returns; pinned sessions come on top of it. */
+/** Rows returned by the recent-session store query. */
 export const RECENT_SESSION_FETCH_LIMIT = 100;
 
 export function recentCountLabel(count: RecentSessionCount): string {
@@ -184,16 +184,14 @@ export function sameLiveSessionInfos(
   );
 }
 
-function comparePinnedThenRecent(a: RecentSessionRow, b: RecentSessionRow) {
-  return (
-    Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)
-  );
+function compareRecent(a: RecentSessionRow, b: RecentSessionRow) {
+  return b.updatedAt - a.updatedAt || a.id.localeCompare(b.id);
 }
 
 /**
  * Stored rows overlaid with what is running now, restricted to the projects on
- * the rail, plus projectless sessions. Pinned sessions come first (most recent first), within the same
- * total row limit as the remaining recent sessions.
+ * the rail, plus projectless sessions. Order by activity within the total row limit;
+ * project pins do not change this cross-project list.
  */
 export function buildRecentSessions({
   stored,
@@ -265,6 +263,6 @@ export function buildRecentSessions({
       managedBy: info.managedBy,
     });
   }
-  const sorted = [...rows.values()].sort(comparePinnedThenRecent);
+  const sorted = [...rows.values()].sort(compareRecent);
   return sorted.slice(0, limit);
 }

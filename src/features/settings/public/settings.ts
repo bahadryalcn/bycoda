@@ -1,4 +1,5 @@
 /** Public settings contract; exports stay explicit to preserve load isolation. */
+export { useShowRemainingUsage } from "../model/displayPrefs";
 export {
   DIFF_LAYOUT_CHANGE_EVENT,
   keybindingPressed,

@@ -1,9 +1,10 @@
 import { t } from "../../../shared/i18n";
 import type { AssistantAlwaysOn } from "../../../shared/model/assistantAlwaysOn";
 import type { AssistantModelPoolRow } from "../../../shared/model/assistantModelPool";
-import type {
-  AssistantKeepAwakeStatus,
-  AssistantProfile,
+import {
+  ASSISTANT_MIN_DAILY_TOKEN_BUDGET,
+  type AssistantKeepAwakeStatus,
+  type AssistantProfile,
 } from "../../../shared/model/host-contracts/assistant";
 
 /** Where the owner changes the item: a Room settings page, or the setup wizard. */
@@ -87,7 +88,7 @@ export function deriveAlwaysOnItems(input: AlwaysOnInput): AlwaysOnItem[] {
   add({
     id: "budget",
     label: t("Daily token budget is set"),
-    state: profile.dailyTokenBudget > 0 ? "done" : "todo",
+    state: profile.dailyTokenBudget >= ASSISTANT_MIN_DAILY_TOKEN_BUDGET ? "done" : "todo",
     detail: t("With no budget the assistant cannot run jobs."),
     target: "work",
   });

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { errorRateLimits, idleRateLimits, type ProviderRateLimits } from "./rateLimits";
 import { fetchClaudeRateLimits } from "./rateLimitsFetch";
+import { fetchGrokRateLimits } from "./grokRateLimitsFetch";
 import {
   clearCachedRateLimits,
   getCachedRateLimits,
@@ -17,6 +18,20 @@ vi.mock("./rateLimitsFetch", () => ({
 }));
 
 const fetchClaude = vi.mocked(fetchClaudeRateLimits);
+
+vi.mock("./grokRateLimitsFetch", () => ({ fetchGrokRateLimits: vi.fn() }));
+
+it("loads Grok quotas separately and retains last known windows after failure", async () => {
+  const previous = { ...usage(25), provider: "grok" as const };
+  vi.mocked(fetchGrokRateLimits).mockResolvedValueOnce(previous);
+  expect(await loadRateLimits("grok")).toEqual(previous);
+  vi.mocked(fetchGrokRateLimits).mockResolvedValueOnce(errorRateLimits("grok", "Offline"));
+  const result = await loadRateLimits("grok", "default", true);
+  expect(result.status).toBe("error");
+  expect(result.session?.usedPercent).toBe(25);
+  expect(result.updatedAt).toBe(previous.updatedAt);
+  expect(getCachedRateLimits("claude").session).toBeNull();
+});
 
 it("explicit refresh shares a pending request, never queues replay or retries, and retains the old observation time on failure", async () => {
   fetchClaude.mockResolvedValueOnce(usage(40));

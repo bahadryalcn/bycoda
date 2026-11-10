@@ -78,6 +78,49 @@ describe("routing helpers", () => {
 });
 
 describe("candidateSourceInput", () => {
+  it.each([" (not verified)", " (SHA256 matches the catalog)"])(
+    "removes the known legacy display suffix %s from Windows model paths",
+    (suffix) => {
+      expect(
+        candidateSourceInput({
+          id: "legacy",
+          label: "Clef",
+          kind: "model_file",
+          detail: `G:\\Projects\\my_projects\\clef\\models\\clef.gguf${suffix}`,
+        })?.local?.modelPath,
+      ).toBe("G:\\Projects\\my_projects\\clef\\models\\clef.gguf");
+    },
+  );
+
+  it("uses the canonical model id instead of decorated or stale display detail", () => {
+    expect(
+      candidateSourceInput({
+        id: "model:G:\\Models (local)\\clef.gguf",
+        label: "Clef",
+        kind: "model_file",
+        detail: "C:\\Old\\clef.gguf (not verified)",
+      })?.local?.modelPath,
+    ).toBe("G:\\Models (local)\\clef.gguf");
+  });
+
+  it("uses a canonical model id even when display detail is absent", () => {
+    expect(
+      candidateSourceInput({ id: "model:G:\\Models\\clef.gguf", label: "Clef", kind: "model_file" })
+        ?.local?.modelPath,
+    ).toBe("G:\\Models\\clef.gguf");
+  });
+
+  it("preserves arbitrary path suffixes", () => {
+    expect(
+      candidateSourceInput({
+        id: "legacy",
+        label: "Clef",
+        kind: "model_file",
+        detail: "G:\\Models\\clef.gguf (custom)",
+      })?.local?.modelPath,
+    ).toBe("G:\\Models\\clef.gguf (custom)");
+  });
+
   it("maps a model file with its path to a local source", () => {
     expect(
       candidateSourceInput({

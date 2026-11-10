@@ -1,14 +1,38 @@
-/* Two columns on wide panels, one below ~56rem of content. */
+/* Full-width topics keep controls aligned, rather than stacking them in two
+   narrow columns with unrelated section heights. */
 .interface-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 27rem), 1fr));
-  gap: var(--space-4, 1rem);
-  align-items: start;
-}
-.interface-column {
   display: grid;
   gap: var(--space-4, 1rem);
   min-inline-size: 0;
+}
+.interface-grid > .settings-group {
+  padding-block-start: 0;
+}
+.interface-scrollbar-layout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+.interface-scrollbar-controls {
+  container-type: inline-size;
+  flex: 2 1 32rem;
+  min-inline-size: 0;
+}
+.interface-scrollbar-controls > .settings-row + .settings-row {
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+.interface-scrollbar-sample {
+  display: grid;
+  align-items: center;
+  flex: 1 1 18rem;
+  min-inline-size: 0;
+  border-inline-start: 1px solid var(--ui-settings-hairline);
+}
+.interface-scrollbar-sample .settings-row {
+  inline-size: 100%;
+}
+.interface-scrollbar-sample .scrollbar-preview {
+  block-size: 12rem;
 }
 
 /* Interface scale: a fixed-width track with the readout beside it. */
@@ -70,6 +94,11 @@
 .sidebar-row-preview-model {
   color: var(--ui-text-muted);
   font-size: 0.6875rem;
+}
+
+.interface-grid .settings-row-control:has(> .diff-swatches) {
+  flex: 0 1 36rem;
+  max-inline-size: 36rem;
 }
 
 /* Diff color swatch cards: each option sets --swatch-add/--swatch-del (bycoda.css). */

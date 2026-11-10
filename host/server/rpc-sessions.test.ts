@@ -65,3 +65,34 @@ it("starts the independent desktop heartbeat parts together and keeps the result
     activity: { seq: 0, events: [], reset: true },
   });
 });
+
+it("refuses to delete or archive a crew-managed session with the crew message", async () => {
+  const store = {
+    db: {
+      prepare: () => ({
+        get: async (...args: unknown[]) =>
+          args[0] === "lead-session" ? { run_id: "run" } : undefined,
+      }),
+    },
+  };
+  const dependencies = { engine: { store } };
+  const message = "This conversation is managed by a crew. Stop or delete the work from Crews.";
+  await expect(
+    handleSessionsRpc(
+      dependencies as never,
+      {
+        input: { method: "sessions.delete" },
+        params: { sessionId: "lead-session", projectId: "p1" },
+      } as never,
+    ),
+  ).rejects.toThrow(message);
+  await expect(
+    handleSessionsRpc(
+      dependencies as never,
+      {
+        input: { method: "sessions.update" },
+        params: { sessionId: "lead-session", projectId: "p1", archived: true },
+      } as never,
+    ),
+  ).rejects.toMatchObject({ code: "crew_managed_session" });
+});

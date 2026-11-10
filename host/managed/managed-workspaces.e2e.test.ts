@@ -267,3 +267,84 @@ it("runs isolated host sessions through commits, rewind/Undo, owner delivery and
   expect(readFileSync(join(target, "owner.txt"), "utf8")).toBe("unrelated owner draft preserved\n");
   expect((await registry.getOperation(receipt.operationId))?.phase).toBe("complete");
 });
+
+it("retires missing metadata with editor holds while preserving execution gates", async () => {
+  const root = mkdtempSync(join(tmpdir(), "bycoda-managed-e2e-"));
+  const target = join(root, "repo");
+  mkdirSync(target);
+  git(target, "init", "-q", "-b", "main");
+  git(target, "config", "user.name", "Managed E2E");
+  git(target, "config", "user.email", "managed-e2e@example.test");
+  git(target, "config", "commit.gpgsign", "false");
+  writeFileSync(join(target, "source.txt"), "base");
+  git(target, "add", ".");
+  git(target, "commit", "-qm", "baseline");
+  const store = new HostStore(join(root, "host.db"));
+  await store.ready;
+  const engine = new HostEngine(store, {});
+  await engine.ready;
+  cleanups.push(async () => {
+    await engine.close();
+    await store.close();
+    if (!root.startsWith(join(tmpdir(), "bycoda-managed-e2e-")))
+      throw new Error("Unsafe test cleanup");
+    rmSync(root, { recursive: true, force: true, maxRetries: 5 });
+  });
+  const project = await store.addProject(target, "Missing record");
+  let kind: import("../workspaces/workspace-contracts").WorkspaceActivity["kind"] = "editor";
+  const runtime = createManagedWorkspaceRuntime(store, engine, {
+    probe: async (workspace) => [
+      {
+        id: "held",
+        workspaceId: workspace.id,
+        kind,
+        ownerId: "unknown-editor",
+        startedAt: 1,
+        dirtyBuffer: true,
+      },
+    ],
+  });
+  await runtime.recover();
+  await runtime.withOwner("owner", (owner) =>
+    runtime.policy.update(
+      {
+        projectId: project.id,
+        environmentId: store.environmentId,
+        expectedRevision: 0,
+        idempotencyKey: "policy",
+        policy: {
+          defaultMode: "worktree",
+          root: join(root, "worktrees"),
+          disk: { budgetBytes: 1024 ** 3, warningRatio: 0.8, minimumFreeBytes: 1 },
+        },
+      },
+      owner,
+    ),
+  );
+  const { workspace } = await runtime.registry.prepare({
+    projectId: project.id,
+    environmentId: store.environmentId,
+    owner: { kind: "session", id: "missing-owner" },
+    slug: "missing",
+    idempotencyKey: "create",
+  });
+  const request = {
+    workspaceId: workspace.id,
+    expectedRevision: workspace.revision,
+    idempotencyKey: "close",
+  };
+  await expect(runtime.registry.close(request)).rejects.toThrow("idle");
+  rmSync(workspace.path, { recursive: true, force: true });
+  for (const held of ["provider", "shell", "mutation", "operation", "devServer"] as const) {
+    kind = held;
+    await expect(runtime.registry.close(request)).rejects.toThrow("idle");
+  }
+  kind = "editor";
+  const retired = await runtime.registry.close(request);
+  expect(retired).toMatchObject({ state: "abandoned", directoryState: "removed" });
+  expect(await runtime.activity.list(workspace.id)).toMatchObject([
+    { kind: "editor", dirtyBuffer: true },
+  ]);
+  expect(git(target, "rev-parse", workspace.branchRef)).toBe(workspace.baseCommit);
+  expect(git(target, "worktree", "list", "--porcelain")).toContain(workspace.branchRef);
+});

@@ -62,6 +62,8 @@ export class LocalRuntime {
     sourceId: string;
     executable: string;
     modelPath: string;
+    projectorPath?: string;
+    model?: string;
   }): Promise<{ port: number }> {
     const pending = this.starting.get(request.sourceId);
     if (pending) return pending;
@@ -74,6 +76,8 @@ export class LocalRuntime {
     sourceId: string;
     executable: string;
     modelPath: string;
+    projectorPath?: string;
+    model?: string;
   }): Promise<{ port: number }> {
     const current = this.running.get(request.sourceId);
     if (current?.alive) {
@@ -92,6 +96,8 @@ export class LocalRuntime {
         String(port),
         "-c",
         String(CONTEXT_TOKENS),
+        ...(request.projectorPath ? ["--mmproj", request.projectorPath] : []),
+        ...(request.model ? ["--alias", request.model] : []),
       ],
       { windowsHide: true, stdio: "ignore" },
     );

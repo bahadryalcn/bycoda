@@ -6,9 +6,8 @@ import { Search } from "../../../shared/ui/icons";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import type { CrewRunView } from "../model/crewClient";
-import { crewProgressLabel } from "../model/crewPresentation";
 import { crewRunTitle } from "../model/crewRoster";
-import { CrewWorkStatusText, CrewWorkUpdated } from "./CrewWorkState";
+import { CrewWorkStatusText, CrewWorkUpdated, crewQuietProgress } from "./CrewWorkState";
 
 export type CrewWorkView = "ongoing" | "finished";
 
@@ -118,13 +117,11 @@ export function CrewWorkList({
                 <span className="block line-clamp-2 break-words font-medium">
                   {crewRunTitle(run)}
                 </span>
-                {/* Status first, then the quiet metadata: progress and last change. */}
                 <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-ui-caption text-(--ui-text-secondary)">
                   <CrewWorkStatusText run={run} />
-                  <span aria-hidden="true">·</span>
-                  <span className="tabular-nums">{crewProgressLabel(run)}</span>
-                </span>
-                <span className="mt-0.5 block">
+                  {crewQuietProgress(run) ? (
+                    <span className="tabular-nums">{crewQuietProgress(run)}</span>
+                  ) : null}
                   <CrewWorkUpdated value={run.updatedAt} />
                 </span>
               </span>

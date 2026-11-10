@@ -1,4 +1,4 @@
-import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
+import { ensureSyntaxTree, language, syntaxTree } from "@codemirror/language";
 import { diagnosticCount, linter, type Diagnostic } from "@codemirror/lint";
 import type { EditorState, Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
@@ -9,7 +9,7 @@ import { basename } from "../../../platform/tauri/fs";
  *
  * The parser already runs for syntax highlighting, and its error recovery
  * leaves error nodes in the tree wherever it could not proceed. Reading those
- * back out costs one tree walk and no new parsing, so this catches the typo
+ * back out normally costs one tree walk, so this catches the typo
  * class of mistakes — unclosed brackets, stray quotes, malformed statements —
  * without any of the weight of a real type checker or language server.
  *
@@ -17,7 +17,8 @@ import { basename } from "../../../platform/tauri/fs";
  * predicates, typed `catch`, Tailwind `@source`, …) are filtered so they
  * don't light up as errors. Rust is highlighted but not linted: `@lezer/rust`
  * still misses `let`-`else` and attributes on statements, and those holes
- * cascade through the rest of the file.
+ * cascade through the rest of the file. Ambiguous arrow parameters are checked
+ * again using the same parser's unambiguous function-parameter grammar.
  */
 
 /** Mirrors `MAX_FORMAT_CHARS` in lib/format: past this, a file is a viewer. */
@@ -110,6 +111,7 @@ export function syntaxDiagnostics(state: EditorState): Diagnostic[] {
     enter: (node) => {
       if (!node.type.isError) return true;
       if (incomplete && node.from >= tree.length) return false;
+      if (isArrowParameterGap(state, node.node)) return false;
       if (isGrammarGap(state, node.node.parent, node.from)) return false;
       if (diagnostics.length < MAX_DIAGNOSTICS) {
         diagnostics.push(errorDiagnostic(state, node.from, node.to));
@@ -120,6 +122,37 @@ export function syntaxDiagnostics(state: EditorState): Diagnostic[] {
     },
   });
   return diagnostics;
+}
+
+/** Lezer can read defaulted destructuring parameters as an expression, then reject `=>`. */
+function isArrowParameterGap(
+  state: EditorState,
+  node: {
+    from: number;
+    to: number;
+    prevSibling: { name: string; from: number; to: number } | null;
+  },
+): boolean {
+  if (state.doc.sliceString(node.from, node.to) !== "=>") return false;
+  const parameters = node.prevSibling;
+  if (parameters?.name !== "ParenthesizedExpression") return false;
+  // A line break before the arrow is a real syntax error.
+  if (/[\r\n\u2028\u2029]/.test(state.doc.sliceString(parameters.to, node.from))) return false;
+  const parser = state.facet(language)?.parser;
+  if (!parser) return false;
+
+  // Function declarations have unambiguous parameter grammar. Reparse only
+  // this list; never hide errors in the arrow body or elsewhere in the file.
+  const tree = parser.parse(
+    `function lintParameters${state.doc.sliceString(parameters.from, parameters.to)} {}`,
+  );
+  let valid = true;
+  tree.iterate({
+    enter: (part) => {
+      if (part.type.isError) valid = false;
+    },
+  });
+  return valid;
 }
 
 /** Arrow `(x): x is T =>`, including tuple predicates like `x is [K, V]`. */

@@ -363,6 +363,8 @@ export function TemplatesSettings() {
             <Button
               variant="primary"
               disabled={!available || !dirty || changedElsewhere}
+              success={savedMessage && !dirty && !error}
+              successLabel={t("Saved")}
               onClick={save}
             >
               {t("Save templates")}
@@ -370,15 +372,15 @@ export function TemplatesSettings() {
             {dirty || changedElsewhere ? (
               <Button onClick={reload}>{t("Discard changes and reload")}</Button>
             ) : null}
-            {error || dirty || savedMessage ? (
+            {dirty && !error ? (
               <Badge
                 className="template-manager-state"
                 role="status"
                 aria-live="polite"
                 aria-atomic="true"
-                tone={error ? "danger" : dirty ? "warning" : "success"}
+                tone="warning"
               >
-                {error ? error : dirty ? t("Unsaved changes") : t("Saved")}
+                {t("Unsaved changes")}
               </Badge>
             ) : null}
           </div>

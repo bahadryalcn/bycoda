@@ -4,7 +4,7 @@ export default defineConfig({
   testMatch: "tooltip-policy.spec.ts",
   workers: 1,
   timeout: 90000,
-  outputDir: "../../temp/verification/2026-11-01-tooltip-cleanup/browser-results",
+  outputDir: "../../temp/verification/2026-11-11-tooltip-fix/browser-results",
   use: { baseURL: "http://127.0.0.1:1459", headless: true, trace: "retain-on-failure" },
   projects: [{ name: "chromium", use: { browserName: "chromium" } }],
   webServer: {

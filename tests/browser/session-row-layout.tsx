@@ -230,14 +230,6 @@ function Fixture() {
               activeSessionId={selected}
               onOpenSession={(id) => setSelected(id)}
               onOpenProject={() => {}}
-              onTogglePin={(row) => {
-                setPinCount((value) => value + 1);
-                setHistory((rows) =>
-                  rows.map((item) =>
-                    item.id === row.id ? { ...item, pinned: !item.pinned } : item,
-                  ),
-                );
-              }}
               groupLabels={{}}
               groupColors={{}}
               groupCustomColors={{}}
@@ -269,12 +261,6 @@ function Fixture() {
             setCreateCount((count) => count + 1);
             setProjectCwd(path);
             setGitCwd(path);
-          }}
-          onPinListedSession={(id, path, pinned) => {
-            setPinCount((value) => value + 1);
-            setHistory((rows) =>
-              rows.map((row) => (row.id === id && row.cwd === path ? { ...row, pinned } : row)),
-            );
           }}
           lastSessionsData={{
             rows: params.has("empty") || params.has("loading") ? [] : lastSessionsRows,
@@ -319,7 +305,7 @@ function Fixture() {
           onTabChange={setTab}
           filesSearchOpen={false}
           onFilesSearchOpenChange={() => {}}
-          recentSessions={{ history, live: [], onPin: async () => {} }}
+          recentSessions={{ history, live: [] }}
           recents={[
             { path: cwd, openedAt: now },
             { path: demoCwd, openedAt: now },

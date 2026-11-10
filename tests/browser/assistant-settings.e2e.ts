@@ -184,7 +184,7 @@ for (const theme of ["light", "dark"])
       expect((await requests(page)).filter((r) => r.input.op === "profile.update")).toHaveLength(0);
       await reservation.fill("9000");
       await dialog.getByRole("button", { name: tr("Save profile settings"), exact: true }).click();
-      await expect(dialog.getByText(tr("Saved"), { exact: true })).toBeVisible();
+      await expect(dialog.getByRole("button", { name: tr("Saved"), exact: true })).toBeVisible();
       expect(await page.evaluate(() => (window as any).__setupProfile)).toMatchObject({
         name: "Settings fixture",
         activeStart: 22,
@@ -211,6 +211,48 @@ for (const theme of ["light", "dark"])
       await dialog.getByRole("button", { name: tr("Close"), exact: true }).click();
       await dialog.getByRole("button", { name: tr("Discard"), exact: true }).click();
       await expect(dialog).toHaveCount(0);
+    });
+
+// Production settings and shared Button; synthetic Host receipts, no installed-app acceptance.
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`assistant save feedback ${theme} ${width}`, async ({ page }) => {
+      const captureOutput = "temp/verification/action-feedback";
+      await mkdir(captureOutput, { recursive: true });
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/assistant-room.html?real-controls&desktop&manual&theme=${theme}`,
+      );
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      const dialog = page.getByRole("dialog").first();
+      await dialog
+        .getByRole("textbox", { name: "Assistant name", exact: true })
+        .fill("Arif updated");
+      await dialog.getByRole("tab", { name: "Schedule", exact: true }).click();
+      await dialog.getByRole("button", { name: "Save profile settings", exact: true }).click();
+      const saved = dialog.getByRole("button", { name: "Saved", exact: true });
+      await expect(saved).toBeVisible();
+      await expect(saved).toBeDisabled();
+      await expect(saved).toHaveText("Saved");
+      await expect(dialog.getByText("Profile settings saved.", { exact: true })).toHaveCount(0);
+      await expect(
+        dialog.getByRole("button", { name: "Save profile settings", exact: true }),
+      ).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await page.screenshot({
+        path: join(captureOutput, `assistant-saved-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      await dialog.getByRole("tab", { name: "Personal", exact: true }).click();
+      await dialog
+        .getByRole("textbox", { name: "Assistant name", exact: true })
+        .fill("Updated Arif");
+      await expect(
+        dialog.getByRole("button", { name: "Save profile settings", exact: true }),
+      ).toBeEnabled();
+      await expect(saved).toHaveCount(0);
     });
 
 // Model pool editor captures (English copy; synthetic Host and usage-limits ports).

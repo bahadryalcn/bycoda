@@ -51,6 +51,7 @@ export const DecisionSourceInputSchema = z.strictObject({
     .strictObject({
       modelPath: text(4096),
       runtimePath: text(4096).optional(),
+      projectorPath: text(4096).optional(),
       port: z.number().int().min(1).max(65535).optional(),
     })
     .optional(),
@@ -149,6 +150,7 @@ export const DiscoveryCandidateSchema = z.strictObject({
 
 export const DiscoveryResultSchema = z.strictObject({
   found: z.array(DiscoveryCandidateSchema).max(200),
+  incomplete: z.boolean().optional(),
 });
 
 export const HardwareInfoSchema = z.strictObject({
@@ -242,8 +244,18 @@ export const DecisionLocalPlanSchema = z.strictObject({
 });
 
 const Sha256Schema = z.string().regex(WIRE_SHA256_PATTERN);
+const FolderModelSchema = z.strictObject({
+  name: text(200),
+  modelPath: text(4096),
+  runtimePath: text(4096).optional(),
+  projectorPath: text(4096).optional(),
+  endpoint: text(2048).optional(),
+  model: text(200).optional(),
+  verified: z.boolean(),
+});
 export const DecisionManualVerifyParamsSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("model_file"), path: text(4096) }),
+  z.strictObject({ kind: z.literal("model_installation"), path: text(4096) }),
   z.strictObject({ kind: z.literal("installation_folder"), path: text(4096) }),
   z.strictObject({ kind: z.literal("endpoint"), url: text(2048) }),
 ]);
@@ -263,8 +275,11 @@ export const DecisionManualVerifyResultSchema = z.discriminatedUnion("kind", [
     model: text(200).optional(),
     modelPath: text(4096),
     runtimePath: text(4096).optional(),
+    projectorPath: text(4096).optional(),
     endpoint: text(2048).optional(),
     verified: z.boolean(),
+    models: z.array(FolderModelSchema).max(200).optional(),
+    incomplete: z.boolean().optional(),
   }),
   z.strictObject({
     kind: z.literal("endpoint"),
@@ -322,6 +337,11 @@ export const DECISION_MODELS_RPC = {
   "decisionModels.discovery.scan": {
     params: EmptyParamsSchema,
     result: DiscoveryResultSchema,
+    query: false,
+  },
+  "decisionModels.discovery.cancel": {
+    params: EmptyParamsSchema,
+    result: z.strictObject({ cancelled: z.boolean() }),
     query: false,
   },
   "decisionModels.discovery.results": {
@@ -432,7 +452,14 @@ export function decisionModelsMethods(
 ) {
   const operation = (method: DecisionModelsMethod): HostRpcMethodDefinition => {
     const schema = DECISION_MODELS_RPC[method];
-    return workflow("decisionModels.v1", schema.params, schema.result, schema.query);
+    const definition = workflow("decisionModels.v1", schema.params, schema.result, schema.query);
+    // A cold local runtime can need a minute before its first connection test.
+    if (method === "decisionModels.sources.test" || method === "decisionModels.local.start")
+      return { ...definition, responseTimeoutMs: 95_000 };
+    // Folder verification may hash a large model inside its 30-second scan budget.
+    return method === "decisionModels.manual.verify"
+      ? { ...definition, responseTimeoutMs: 45_000 }
+      : definition;
   };
   return {
     "decisionModels.sources.list": operation("decisionModels.sources.list"),
@@ -442,6 +469,7 @@ export function decisionModelsMethods(
     "decisionModels.sources.test": operation("decisionModels.sources.test"),
     "decisionModels.sources.evaluate": operation("decisionModels.sources.evaluate"),
     "decisionModels.discovery.scan": operation("decisionModels.discovery.scan"),
+    "decisionModels.discovery.cancel": operation("decisionModels.discovery.cancel"),
     "decisionModels.discovery.results": operation("decisionModels.discovery.results"),
     "decisionModels.discovery.settings.get": operation("decisionModels.discovery.settings.get"),
     "decisionModels.discovery.settings.set": operation("decisionModels.discovery.settings.set"),

@@ -1171,12 +1171,11 @@ function RunRow({
           {formatAutomationRunDuration(run)}
         </span>
         {run.error && (run.status === "failed" || run.status === "skipped") ? (
-          <span
-            title={run.error}
-            className="col-span-full line-clamp-2 break-words text-start text-ui-micro text-(--ui-tone-danger-fg)"
-          >
-            {run.error}
-          </span>
+          <OverflowTooltip label={run.error}>
+            <span className="col-span-full line-clamp-2 break-words text-start text-ui-micro text-(--ui-tone-danger-fg)">
+              {run.error}
+            </span>
+          </OverflowTooltip>
         ) : null}
       </Button>
     </li>

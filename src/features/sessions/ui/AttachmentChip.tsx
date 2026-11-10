@@ -129,7 +129,6 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                 variant="secondary"
                 shape="pill"
                 type="button"
-                tooltip={t("Insert {p0} into the message", { p0: token })}
                 aria-label={t("Insert {p0} into the message", { p0: token })}
                 // Keeps focus, and so the caret, in the message box.
                 onMouseDown={(event) => event.preventDefault()}
@@ -182,7 +181,6 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                 variant="secondary"
                 shape="pill"
                 type="button"
-                tooltip={t("Insert {p0} into the message", { p0: token })}
                 aria-label={t("Insert {p0} into the message", { p0: token })}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={(event) => {

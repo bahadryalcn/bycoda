@@ -125,6 +125,7 @@ function setup() {
       ownerDirective: vi.fn(async () => {
         events.push("directive");
       }),
+      managedSessionRefusal: vi.fn(async (): Promise<string | undefined> => undefined),
     },
   };
   const auth = { principalId: "principal", authorized: async () => allowed };
@@ -162,6 +163,18 @@ function queuedSetup() {
 type Row = CommandQueueSnapshot["messages"][number];
 
 describe("command domain admission", () => {
+  it("refuses conversation commands on a crew-managed session except from the crew service", async () => {
+    const { service, ports, auth } = setup();
+    vi.mocked(ports.crews.managedSessionRefusal).mockResolvedValue("managed by a crew");
+    for (const command of [
+      send,
+      { type: "cancel" as const, sessionId: "s", commandId: "c2", runId: "r" },
+    ])
+      await expect(service.dispatch(command, auth)).rejects.toThrow("managed by a crew");
+    expect(ports.execution.command).not.toHaveBeenCalled();
+    await service.dispatch(send, { ...auth, principalId: "crew:run" });
+    expect(ports.execution.command).toHaveBeenCalledTimes(1);
+  });
   it("rejects desktop control without a principal before preparing an offer", async () => {
     const { service, ports } = setup();
     vi.mocked(ports.nativeProjection.watch).mockResolvedValue({ revision: 8, running: true });

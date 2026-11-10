@@ -1,3 +1,4 @@
+import { useCrewManagedIndex } from "../../features/crews/public/managed";
 import { folderCandidates, projectSessionCollection } from "./sidebarSessionCollections";
 import { isUserConversation } from "../../shared/model/host-contracts/delegation";
 import { snapshotSessionList } from "../../features/sessions/ui/sessionListDropZones";
@@ -326,7 +327,6 @@ import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { Spinner } from "../../shared/ui/Spinner";
-import { InlineMessage } from "../../shared/ui/InlineError";
 import { PaneHeader } from "../../shared/ui/PaneHeader";
 import { Sash } from "../../shared/ui/Sash";
 import { DevModeIndicator, IconButton, TabVisitNav } from "./TitleBar";
@@ -407,12 +407,13 @@ type Props = {
   onNewListedSession?: (projectPath: string) => void | Promise<void>;
   onOpenLastSessions?: () => void;
   onCloseLastSessions?: () => void;
+  /** Leaves Last sessions and any tool page and shows the workspace of the current tab. */
+  onShowWorkspace?: () => void;
   onSelectListedSession?: (
     sessionId: string,
     cwd: string,
     options?: { keepOpen?: boolean },
   ) => void;
-  onPinListedSession?: (sessionId: string, cwd: string, pinned: boolean) => void;
   recoveryControl?: ReactNode;
   cwd: string;
   /** Working copy for Changes / explorer git. Falls back to `cwd`. */
@@ -561,7 +562,6 @@ function SidebarComponent({
   newListedSessionRequest = 0,
   onOpenLastSessions,
   onSelectListedSession,
-  onPinListedSession,
   recoveryControl,
   cwd,
   gitCwd,
@@ -615,6 +615,7 @@ function SidebarComponent({
   canGoBack = false,
   canGoForward = false,
   onGoBack,
+  onShowWorkspace,
   onGoForward,
   onOpenDiff,
   onOpenAllChanges,
@@ -1239,6 +1240,7 @@ function SidebarComponent({
     onDismissMenu: () => setSessionMenu(null),
     bulkDelete: {
       cwd,
+      sessions: projectSessions,
       remoteProject,
       remote,
       hostProject,
@@ -1257,6 +1259,7 @@ function SidebarComponent({
     deleting,
     deleteProgress,
     deleteNoticeError,
+    deleteNoticeSuccess,
     deleteNoticeCwd,
     bulkNotice,
     dismissBulkNotice,
@@ -1666,6 +1669,10 @@ function SidebarComponent({
     return session ? [session] : [];
   });
   const multipleMenuSessions = menuSessionIds.length > 1;
+  // Conversations a live crew runs are archived, deleted and stopped from Crews only.
+  const crewManagedIndex = useCrewManagedIndex();
+  const menuCrewManaged = menuSessionIds.some((id) => crewManagedIndex.has(id));
+  const selectedCrewManaged = [...selectedSessionIds].some((id) => crewManagedIndex.has(id));
   const menuReminderTimes = [
     ...new Set(
       reminders
@@ -1942,6 +1949,8 @@ function SidebarComponent({
                       kind: "item" as const,
                       id: "archive",
                       label: allMenuSessionsArchived ? t("Unarchive") : t("Archive"),
+                      disabled: menuCrewManaged,
+                      title: menuCrewManaged ? t("Managed from Crews") : undefined,
                     },
                   ]
                 : []),
@@ -1955,6 +1964,8 @@ function SidebarComponent({
                       },
                       shortcut: "⌫",
                       danger: true,
+                      disabled: menuCrewManaged,
+                      title: menuCrewManaged ? t("Managed from Crews") : undefined,
                     },
                   ]
                 : []),
@@ -2727,11 +2738,15 @@ function SidebarComponent({
       onListDropTargetChange={setSessionDrop}
       onContextMenu={cardActions.contextMenu}
       settleable={!remoteProject}
-      onArchive={onArchiveSession ? cardActions.archive : undefined}
+      onArchive={
+        onArchiveSession && !crewManagedIndex.has(session.id) ? cardActions.archive : undefined
+      }
       onRename={
         onRenameSession && !titleActions[session.id]?.pending ? cardActions.rename : undefined
       }
-      onDelete={onDeleteSession ? cardActions.delete : undefined}
+      onDelete={
+        onDeleteSession && !crewManagedIndex.has(session.id) ? cardActions.delete : undefined
+      }
     />
   );
 
@@ -3250,18 +3265,24 @@ function SidebarComponent({
       <PaneHeader
         dragRegion
         chromeInset={withVisitNav}
-        leading={
-          withVisitNav ? (
-            <TabVisitNav
-              canGoBack={canGoBack}
-              canGoForward={canGoForward}
-              onGoBack={onGoBack}
-              onGoForward={onGoForward}
+        data-workspace-header
+        className={styles.workspaceHeader}
+        titleAs={switcher ? "div" : "h2"}
+        title={
+          switcher ? (
+            <SidebarWorktreeSwitcher
+              cwd={cwd}
+              tabStats={worktreeTabStats}
+              onSelect={onSelectWorkspace}
+              pending={workspaceSwitchPending}
+              switchError={workspaceSwitchError}
             />
-          ) : undefined
+          ) : (
+            <span className="text-ui-title font-medium">
+              {t(lastSessionsOpen ? "Last sessions" : "Workspace")}
+            </span>
+          )
         }
-        title={switcher ? undefined : t(lastSessionsOpen ? "Last sessions" : "Workspace")}
-        titleAs="div"
         actions={
           <>
             <WorkspaceTitleActions
@@ -3276,14 +3297,22 @@ function SidebarComponent({
           </>
         }
       >
-        {switcher ? (
-          <SidebarWorktreeSwitcher
-            cwd={cwd}
-            tabStats={worktreeTabStats}
-            onSelect={onSelectWorkspace}
-            pending={workspaceSwitchPending}
-            switchError={workspaceSwitchError}
+        {withVisitNav ? (
+          <TabVisitNav
+            canGoBack={canGoBack}
+            canGoForward={canGoForward}
+            onGoBack={onGoBack}
+            onGoForward={onGoForward}
           />
+        ) : null}
+        {compactRailVisible && onToggleProjectRail ? (
+          <IconButton
+            label={t("Expand projects")}
+            command="App: Toggle Sidebar"
+            onClick={onToggleProjectRail}
+          >
+            <PanelLeft className="icon-sm" strokeWidth={1.75} />
+          </IconButton>
         ) : null}
         {sessionToolbar}
       </PaneHeader>
@@ -3494,7 +3523,7 @@ function SidebarComponent({
                 {onArchiveSession || onArchiveSessions ? (
                   <BulkBarAction
                     label={allSelectedArchived ? t("Unarchive") : t("Archive")}
-                    disabled={deleting}
+                    disabled={deleting || selectedCrewManaged}
                     onClick={() => archiveSessions(selectedOrderedIds, !allSelectedArchived)}
                   >
                     <Archive className="icon-xs" strokeWidth={1.75} />
@@ -3503,7 +3532,7 @@ function SidebarComponent({
                 {onDeleteSession || onDeleteSessions ? (
                   <BulkBarAction
                     label={deleting ? t("Deleting…") : t("Delete")}
-                    disabled={deleting}
+                    disabled={deleting || selectedCrewManaged}
                     danger
                     onClick={() => void bulkDeleteSessions(selectedOrderedIds)}
                   >
@@ -3518,44 +3547,20 @@ function SidebarComponent({
             ) : null}
           </div>
         ) : null}
-        <SessionDeletionNotice cwd={cwd} />
-        {tab === "sessions" &&
-        (deleteProgress?.cwd === cwd || (bulkNotice && deleteNoticeCwd === cwd)) ? (
-          <InlineMessage
-            tone={deleteNoticeError && !deleteProgress ? "danger" : "neutral"}
-            live={deleteNoticeError && !deleteProgress ? "assertive" : "polite"}
-            icon={
-              deleteProgress ? (
-                <Spinner />
-              ) : deleteNoticeError ? undefined : (
-                <Check className="icon-xs" aria-hidden />
-              )
-            }
-            action={
-              deleteProgress ? undefined : (
-                <Button
-                  variant="ghost"
-                  motion="none"
-                  type="button"
-                  onClick={dismissBulkNotice}
-                  aria-label={t("Dismiss deletion result")}
-                  className="shrink-0"
-                >
-                  {t("Dismiss")}
-                </Button>
-              )
-            }
-            data-session-delete-status
-            className="shrink-0 border-b border-(--ui-pane-border) px-3 py-2"
-          >
-            {deleteProgress
-              ? t("Deleting conversations… {p0}/{p1} completed", {
-                  p0: deleteProgress.completed,
-                  p1: deleteProgress.total,
-                })
-              : bulkNotice}
-          </InlineMessage>
-        ) : null}
+        <SessionDeletionNotice
+          cwd={cwd}
+          bulk={
+            tab === "sessions" && deleteNoticeCwd === cwd
+              ? {
+                  progress: deleteProgress?.cwd === cwd ? deleteProgress : null,
+                  message: bulkNotice,
+                  error: deleteNoticeError,
+                  success: deleteNoticeSuccess,
+                  onDismiss: dismissBulkNotice,
+                }
+              : undefined
+          }
+        />
         {tab === "sessions" && remoteProject && !lastSessionsOpen ? (
           !remote.machine && remote.dataState.error && remoteConnectionIssue ? (
             <RemoteLoadError cwd={cwd} failure={classifyRemoteError(remote.dataState.error)} />
@@ -3662,21 +3667,19 @@ function SidebarComponent({
                           showModel={listDisplay.showModel}
                           showBranch={listDisplay.showBranch}
                           showProjectAppearance
-                          onPin={
-                            !isRemoteProjectPath(session.cwd) &&
-                            session.cwd !== "~" &&
-                            onPinListedSession
-                              ? (id, pinned) => onPinListedSession(id, session.cwd, pinned)
-                              : undefined
-                          }
+                          settleable={!isRemoteProjectPath(session.cwd)}
                           onArchive={
-                            !isRemoteProjectPath(session.cwd) && onArchiveLocalSession
+                            !isRemoteProjectPath(session.cwd) &&
+                            onArchiveLocalSession &&
+                            !crewManagedIndex.has(session.id)
                               ? (id, archived) =>
                                   afterListedChange(onArchiveLocalSession(id, archived, session))
                               : undefined
                           }
                           onDelete={
-                            !isRemoteProjectPath(session.cwd) && onDeleteLocalSession
+                            !isRemoteProjectPath(session.cwd) &&
+                            onDeleteLocalSession &&
+                            !crewManagedIndex.has(session.id)
                               ? (id) => afterListedChange(onDeleteLocalSession(id, session))
                               : undefined
                           }
@@ -4130,7 +4133,7 @@ function SidebarComponent({
           }
           projectNavigationOpen={Boolean(projectNavigationAnchor)}
           onOpenWorkspace={() => {
-            if (!sidebarAvailable) onGoBack?.();
+            if (!sidebarAvailable || lastSessionsOpen) onShowWorkspace?.();
             if (!open) setDrawerOpen(!drawerVisible);
           }}
           onSearch={onSearch}
@@ -4151,7 +4154,6 @@ function SidebarComponent({
           onOpenSettings={onOpenSettings}
           onOpenAccountSettings={openAccountSettings}
           onOpenCrews={requestOpenCrewsPage}
-          onTogglePanel={onToggleProjectRail}
           onLeaveActive={onGoBack}
           titleBarAbove={titleBarAbove}
           recentSessions={recentSessions}
@@ -4630,7 +4632,6 @@ function CompactProjectRail({
   onOpenSettings,
   onOpenAccountSettings,
   onOpenCrews,
-  onTogglePanel,
   onLeaveActive,
   titleBarAbove,
 }: {
@@ -4664,7 +4665,6 @@ function CompactProjectRail({
   onOpenSettings?: () => void;
   onOpenAccountSettings?: () => void;
   onOpenCrews?: () => void;
-  onTogglePanel?: () => void;
   onLeaveActive?: () => void;
   titleBarAbove: boolean;
   recentSessions?: RecentSessionsSource;
@@ -4673,7 +4673,6 @@ function CompactProjectRail({
   onPreviewSession?: (sessionId: string, options?: { keepOpen?: boolean }) => void;
 }) {
   const t = useT();
-  const toggleShortcut = useKeybindingShortcut("App: Toggle Sidebar");
   const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number } | null>(null);
   const inboxTrigger = useRef<HTMLElement | null>(null);
   const action = (active: boolean, open?: () => void) =>
@@ -4714,17 +4713,6 @@ function CompactProjectRail({
         className="flex min-h-0 w-full flex-col items-center gap-1.5 overflow-y-auto px-1 py-1.5"
       >
         {titleBarAbove ? <CompactRailLogo /> : null}
-        <Button
-          variant="ghost"
-          motion="none"
-          iconOnly
-          label={t("Expand projects")}
-          shortcut={toggleShortcut || undefined}
-          tooltipSide="right"
-          onClick={onTogglePanel}
-        >
-          <PanelLeft className="icon-md" aria-hidden />
-        </Button>
         <CompactRailAction
           label={t("Search")}
           command="App: Search"
@@ -4735,7 +4723,6 @@ function CompactProjectRail({
         <WorkspaceFeatureGate id="inbox" active={inboxActive}>
           <CompactRailAction
             label={inboxUnseen ? t("Inbox, new items") : t("Inbox")}
-            caption={t("Inbox")}
             command="App: Open Inbox"
             icon={Inbox}
             active={inboxActive}
@@ -4748,62 +4735,51 @@ function CompactProjectRail({
             }}
           />
         </WorkspaceFeatureGate>
-        <CompactRailTools
-          active={
-            notesActive ||
-            serversActive ||
-            automationsActive ||
-            tasksActive ||
-            socialActive ||
-            assistantActive
-          }
-        >
-          {onOpenCrews ? (
-            <CompactRailAction label={t("Crews")} icon={Bot} onClick={onOpenCrews} />
-          ) : null}
-          {onOpenServers ? (
-            <CompactRailAction
-              label={t("Servers")}
-              icon={Server}
-              active={serversActive}
-              onClick={action(serversActive, onOpenServers)}
-            />
-          ) : null}
-          {onOpenNotes ? (
-            <CompactRailAction
-              label={t("Notes")}
-              command="App: Open Notes"
-              icon={StickyNote}
-              active={notesActive}
-              onClick={action(notesActive, onOpenNotes)}
-            />
-          ) : null}
-          <WorkspaceFeatureGate id="automations" active={automationsActive}>
-            <CompactRailAction
-              label={t("Automations")}
-              command="App: Open Automations"
-              icon={Zap}
-              active={automationsActive}
-              onClick={action(automationsActive, onOpenAutomations)}
-            />
-          </WorkspaceFeatureGate>
-          <SocialShortcut active={socialActive} cwd={cwd} responsiveRail />
-          <WorkspaceFeatureGate id="tasks" active={tasksActive}>
-            <CompactRailAction
-              label={t("Tasks")}
-              command="App: Open Tasks"
-              icon={DashboardSquare}
-              active={tasksActive}
-              onClick={action(tasksActive, onOpenTasks)}
-            />
-          </WorkspaceFeatureGate>
+        {onOpenCrews ? (
+          <CompactRailAction label={t("Crews")} icon={Bot} onClick={onOpenCrews} />
+        ) : null}
+        {onOpenServers ? (
           <CompactRailAction
-            label={assistantLabel}
-            icon={Sparkles}
-            active={assistantActive}
-            onClick={action(assistantActive, () => openAssistantRoom())}
+            label={t("Servers")}
+            icon={Server}
+            active={serversActive}
+            onClick={action(serversActive, onOpenServers)}
           />
-        </CompactRailTools>
+        ) : null}
+        {onOpenNotes ? (
+          <CompactRailAction
+            label={t("Notes")}
+            command="App: Open Notes"
+            icon={StickyNote}
+            active={notesActive}
+            onClick={action(notesActive, onOpenNotes)}
+          />
+        ) : null}
+        <WorkspaceFeatureGate id="automations" active={automationsActive}>
+          <CompactRailAction
+            label={t("Automations")}
+            command="App: Open Automations"
+            icon={Zap}
+            active={automationsActive}
+            onClick={action(automationsActive, onOpenAutomations)}
+          />
+        </WorkspaceFeatureGate>
+        <SocialShortcut active={socialActive} cwd={cwd} rail />
+        <WorkspaceFeatureGate id="tasks" active={tasksActive}>
+          <CompactRailAction
+            label={t("Tasks")}
+            command="App: Open Tasks"
+            icon={DashboardSquare}
+            active={tasksActive}
+            onClick={action(tasksActive, onOpenTasks)}
+          />
+        </WorkspaceFeatureGate>
+        <CompactRailAction
+          label={assistantLabel}
+          icon={Sparkles}
+          active={assistantActive}
+          onClick={action(assistantActive, () => openAssistantRoom())}
+        />
         {/* Same order as the full sidebar: panel, search and tools first, then the
             work sections (recovered work, projects, last sessions, workspace). */}
         <Divider decorative className="my-0.5 w-6 shrink-0 self-center" />
@@ -4826,13 +4802,13 @@ function CompactProjectRail({
         {onOpenLastSessions ? (
           <CompactRailAction
             label={t("Last sessions")}
-            caption={t("Recent")}
             icon={Clock}
             active={lastSessionsOpen}
             onClick={onOpenLastSessions}
           />
         ) : null}
-        {!tabShown || !workspaceActive ? (
+        {/* Last sessions fills the same pane, so the workspace is not on screen then. */}
+        {!tabShown || !workspaceActive || lastSessionsOpen ? (
           <CompactRailAction
             label={t("Workspace")}
             icon={FolderTree}
@@ -4862,57 +4838,8 @@ function CompactProjectRail({
   );
 }
 
-const CompactRailLayout = createContext<"caption" | "row">("caption");
-
-function CompactRailTools({ active, children }: { active: boolean; children: ReactNode }) {
-  const t = useT();
-  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
-  return (
-    <>
-      <Button
-        variant="ghost"
-        motion="none"
-        iconOnly
-        label={t("Tools")}
-        tooltipSide="right"
-        aria-haspopup="dialog"
-        aria-expanded={Boolean(anchor)}
-        selected={Boolean(anchor) || active}
-        onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}
-      >
-        <DashboardSquare className="icon-md" aria-hidden />
-      </Button>
-      {anchor ? (
-        <Popover
-          anchor={anchor}
-          side="right"
-          align="start"
-          width={240}
-          autoFocus
-          onDismiss={() => setAnchor(null)}
-          role="dialog"
-          aria-label={t("Tools")}
-          data-compact-tools-flyout
-        >
-          <CompactRailLayout.Provider value="row">
-            <div
-              className="flex flex-col gap-1 p-1"
-              onClick={(event) => {
-                if ((event.target as HTMLElement).closest("button")) setAnchor(null);
-              }}
-            >
-              {children}
-            </div>
-          </CompactRailLayout.Provider>
-        </Popover>
-      ) : null}
-    </>
-  );
-}
-
 function CompactRailAction({
   label,
-  caption,
   command,
   icon: Icon,
   active = false,
@@ -4923,7 +4850,6 @@ function CompactRailAction({
   ref,
 }: {
   label: string;
-  caption?: string;
   command?: string;
   icon: typeof PanelLeft;
   active?: boolean;
@@ -4934,9 +4860,7 @@ function CompactRailAction({
   ref?: Ref<HTMLButtonElement>;
 }) {
   useLocale();
-  const layout = useContext(CompactRailLayout);
   const shortcut = useKeybindingShortcut(command ?? "");
-  const row = layout === "row";
   const sharedProps = {
     variant: "ghost" as const,
     motion: "none" as const,
@@ -4973,41 +4897,21 @@ function CompactRailAction({
       ) : null}
     </>
   );
-  // The rail shows icons only: one square hit area and icon size for every action. The name
-  // and shortcut live in the tooltip and the accessible name. Flyout rows keep their text.
-  if (!row)
-    return (
-      <Button
-        {...sharedProps}
-        iconOnly
-        label={label}
-        shortcut={shortcut || undefined}
-        tooltipSide="right"
-        className="relative shrink-0"
-      >
-        <Icon
-          className={`icon-md ${dot ? "compact-rail-icon-with-dot" : ""}`}
-          strokeWidth={1.75}
-          aria-hidden
-        />
-        {marks}
-      </Button>
-    );
+  // Names and shortcuts remain available on hover and keyboard focus.
   return (
     <Button
       {...sharedProps}
-      variant="item"
-      tooltip={label}
-      tooltipWhen={caption && caption !== label ? "always" : "overflow"}
+      iconOnly
+      label={label}
       shortcut={shortcut || undefined}
-      fullWidth
-      align="start"
+      tooltipSide="right"
       className="relative shrink-0"
     >
-      <span className="flex w-full min-w-0 items-center gap-2">
-        <Icon className={`icon-md ${dot ? "compact-rail-icon-with-dot" : ""}`} strokeWidth={1.75} />
-        <span className="max-w-full truncate">{caption ?? label}</span>
-      </span>
+      <Icon
+        className={`icon-md ${dot ? "compact-rail-icon-with-dot" : ""}`}
+        strokeWidth={1.75}
+        aria-hidden
+      />
       {marks}
     </Button>
   );
@@ -5948,14 +5852,13 @@ const SessionCard = memo(function SessionCard({
       </span>
     ) : null;
   // The Pinned section names the state, so its cards keep their project mark at rest.
-  const markPinned = session.pinned && !compact && !inPinnedSection;
+  const markPinned = session.pinned && !compact && !inPinnedSection && !showProjectAppearance;
   const pinAction = (className?: string) =>
     onPin ? (
       <InlineAction
         className={className}
         reveal={markPinned ? "always" : "interaction"}
         label={t(session.pinned ? "Unpin" : "Pin")}
-        tooltip={t(session.pinned ? "Unpin" : "Pin")}
         aria-pressed={!!session.pinned}
         motion="none"
         data-no-drag
@@ -6198,7 +6101,7 @@ const SessionCard = memo(function SessionCard({
                   {isSelected ? <Check className="icon-xs" strokeWidth={2} /> : null}
                 </span>
               ) : null}
-              {compact && session.pinned && !inPinnedSection ? (
+              {compact && session.pinned && !inPinnedSection && !showProjectAppearance ? (
                 <Pin className="icon-xs shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
               ) : null}
               {titleHit ? (

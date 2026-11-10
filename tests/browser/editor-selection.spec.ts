@@ -422,3 +422,77 @@ for (const mode of ["file", "inline", "split"]) {
     expect(await page.evaluate(() => window.visualViewport?.scale ?? 1)).toBe(1);
   });
 }
+
+test("split search keeps independent compact toolbars and keyboard focus", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/tests/browser/editor-selection.html?search=split", {
+    waitUntil: "domcontentloaded",
+  });
+  const editors = page.locator(".cm-editor");
+  await expect(editors).toHaveCount(2);
+  const left = editors.first();
+  const right = editors.last();
+  const leftFind = left.getByRole("textbox", { name: "Find", exact: true });
+  const rightFind = right.getByRole("textbox", { name: "Find", exact: true });
+
+  await left.locator(".cm-content").click();
+  await page.keyboard.press("Control+f");
+  await expect(leftFind).toBeFocused();
+  await leftFind.fill("value10");
+  await left.getByRole("button", { name: "Match Whole Word", exact: true }).click();
+  await expect(left.locator(".cm-find-count")).toContainText("1 of 1");
+  await right.locator(".cm-content").click();
+  await page.keyboard.press("Control+f");
+  await expect(rightFind).toBeFocused();
+  await rightFind.fill("value2");
+  await expect(right.locator(".cm-find-count")).toContainText("111");
+  await expect(leftFind).toHaveValue("value10");
+  await expect(left.getByRole("button", { name: "Match Whole Word", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(
+    right.getByRole("button", { name: "Match Whole Word", exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
+  await rightFind.press("Control+f");
+  await expect(rightFind).toBeFocused();
+  for (const editor of [left, right]) {
+    await expect(editor.locator(".cm-panels-top .cm-find")).toBeVisible();
+    await expect(editor.locator(".cm-panels-bottom")).toHaveCount(0);
+  }
+
+  mkdirSync("temp/verification/split-search", { recursive: true });
+  for (const width of [1280, 800]) {
+    await page.setViewportSize({ width, height: 800 });
+    for (const light of [false, true]) {
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        light,
+      );
+      for (const editor of [left, right]) {
+        const panel = editor.locator(".cm-find");
+        const bounds = (await panel.boundingBox())!;
+        for (const control of await panel.locator("input, button, .cm-find-count").all()) {
+          if (!(await control.isVisible())) continue;
+          const box = (await control.boundingBox())!;
+          expect(box.x).toBeGreaterThanOrEqual(bounds.x - 1);
+          expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1);
+        }
+      }
+      await page.screenshot({
+        path: `temp/verification/split-search/${light ? "light" : "dark"}-${width}.png`,
+      });
+    }
+  }
+  await rightFind.press("Escape");
+  await expect(rightFind).toHaveCount(0);
+  await expect(leftFind).toBeVisible();
+  await leftFind.focus();
+  await leftFind.press("Control+f");
+  await expect(leftFind).toBeFocused();
+  await expect(left.locator(".cm-content")).toHaveAttribute("contenteditable", "false");
+  const original = await left.locator(".cm-content").innerText();
+  await left.locator(".cm-content").focus();
+  await page.keyboard.type("unexpected edit");
+  expect(await left.locator(".cm-content").innerText()).toBe(original);
+});

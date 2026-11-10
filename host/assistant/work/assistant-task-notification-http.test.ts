@@ -115,7 +115,7 @@ it("hands an opted-in task notification to the exact signed native owner without
             name: "Assistant",
             enabled: true,
             setupComplete: true,
-            dailyTokenBudget: 10000,
+            dailyTokenBudget: 20000,
             autonomy: "report",
             observationTaskDone: true,
             notificationAway: "all",

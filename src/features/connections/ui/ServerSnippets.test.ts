@@ -43,7 +43,11 @@ it("mount/restore never inserts; explicit insertion exposes target and requires 
   expect(container.querySelector("textarea")?.value).toBe("git status");
   await act(async () => find("Insert into terminal").click());
   expect(insert).toHaveBeenCalledExactlyOnceWith("git status");
-  expect(container.querySelector('[role="status"]')?.textContent).toContain("Press Enter");
+  expect(
+    [...container.querySelectorAll('[role="status"]')].some((status) =>
+      status.textContent?.includes("Press Enter"),
+    ),
+  ).toBe(true);
 });
 it("does not expose commands belonging to another server", async () => {
   saveSshSnippet({ serverId: "a", name: "SecretTarget", command: "pwd" });
@@ -57,6 +61,35 @@ it("does not expose commands belonging to another server", async () => {
   expect(insert.getAttribute("disabled")).not.toBeNull();
 });
 
+it("confirms save inside its action and clears confirmation when the draft changes", async () => {
+  saveSshSnippet({ serverId: "a", name: "Status", command: "git status" });
+  await act(async () => root.render(createElement(ServerSnippets, { serverId: "a" })));
+  const find = (text: string) =>
+    [...container.querySelectorAll("button")].find((button) => button.textContent === text)!;
+  await act(async () => find("Statusv1").click());
+  await act(async () =>
+    container
+      .querySelector("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+  );
+  expect(find("Saved")).toBeTruthy();
+  expect(
+    [...container.querySelectorAll('[role="status"]')].filter(
+      (status) => status.textContent === "Saved" && !status.classList.contains("sr-only"),
+    ),
+  ).toHaveLength(0);
+  await act(async () => {
+    const field = container.querySelector("textarea")!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      field,
+      "pwd",
+    );
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(find("Save")).toBeTruthy();
+  expect(find("Saved")).toBeUndefined();
+});
+
 it("offers working copy without terminal insertion when no prompt capability is supplied", async () => {
   saveSshSnippet({ serverId: "a", name: "Status", command: "git status" });
   await act(async () => root.render(createElement(ServerSnippets, { serverId: "a" })));
@@ -66,5 +99,10 @@ it("offers working copy without terminal insertion when no prompt capability is 
   await act(async () => find("Status")!.click());
   await act(async () => find("Copy command")!.click());
   expect(copyText).toHaveBeenCalledWith("git status");
-  expect(container.querySelector('[role="status"]')?.textContent).toBe("Copied");
+  expect(find("Copied")).toBeTruthy();
+  expect(
+    [...container.querySelectorAll('[role="status"]')].some(
+      (status) => status.textContent === "Copied",
+    ),
+  ).toBe(true);
 });

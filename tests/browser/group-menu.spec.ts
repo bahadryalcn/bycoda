@@ -1,5 +1,50 @@
 import { expect, test } from "@playwright/test";
 
+for (const theme of ["light", "dark"]) {
+  test(`group menu exposes hover, keyboard and expanded states in ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/tests/browser/group-menu.html");
+    await page.evaluate((value) => {
+      document.documentElement.classList.toggle("theme-light", value === "light");
+      document.documentElement.dataset.canvasBackground = "pure";
+    }, theme);
+    await page.getByRole("button", { name: "Open left", exact: true }).click();
+    const root = page.getByRole("menu", { name: "Project group actions", exact: true });
+    const pin = root.getByRole("menuitem", { name: "Pin group", exact: true });
+    const lock = root.getByRole("menuitem", { name: "Lock group", exact: true });
+    const fill = (row: typeof pin) =>
+      row.evaluate((element) => getComputedStyle(element).backgroundColor);
+    const resting = await fill(lock);
+    await pin.hover();
+    await expect.poll(() => fill(pin)).not.toBe(resting);
+    await expect(pin).not.toHaveCSS("box-shadow", "none");
+    await page.screenshot({ path: `temp/verification/2026-11-11-group-menu/hover-${theme}.png` });
+    await page.mouse.move(700, 500);
+    await pin.focus();
+    await page.keyboard.press("ArrowDown");
+    const reorder = root.getByRole("menuitem", { name: "Reorder group", exact: true });
+    await expect(reorder).toBeFocused();
+    await expect.poll(() => fill(reorder)).not.toBe(resting);
+    const selected = await reorder.evaluate((element) => {
+      const probe = document.createElement("span");
+      probe.style.backgroundColor = "var(--ui-surface-selected)";
+      element.append(probe);
+      const color = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return color;
+    });
+    await expect.poll(() => fill(reorder)).toBe(selected);
+    await page.keyboard.press("ArrowRight");
+    const submenu = page.getByRole("menu", { name: "Reorder group", exact: true });
+    await expect(submenu).toBeVisible();
+    await expect(reorder).toHaveAttribute("aria-expanded", "true");
+    await expect.poll(() => fill(reorder)).not.toBe(resting);
+    await page.screenshot({
+      path: `temp/verification/2026-11-11-group-menu/expanded-${theme}.png`,
+    });
+  });
+}
+
 for (const width of [390, 768, 1440]) {
   test(`keeps grouped flyouts inside a ${width}px viewport`, async ({ page }) => {
     await page.setViewportSize({ width, height: 760 });

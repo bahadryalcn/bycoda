@@ -70,7 +70,6 @@ it("advances idle relative labels from the shared minute clock and unsubscribes 
         rows: [{ ...data.stored[0], updatedAt, harness: "codex", pinnable: true, remote: false }],
         searchActive: false,
         onOpenProject: vi.fn(),
-        onTogglePin: vi.fn(),
       }),
     ),
   );
@@ -85,7 +84,7 @@ it("keeps collapse and radio count selection with focus returning to the native 
     root.render(
       createElement(LastSessionsSection, {
         ...appearance,
-        source: { history: [], live: [], onPin: vi.fn(async () => {}) },
+        source: { history: [], live: [] },
         projectKeys: new Set([pathKey("/work/project")]),
         enabled: true,
         searchActive: false,
@@ -116,7 +115,7 @@ it("keeps collapse and radio count selection with focus returning to the native 
   expect(document.activeElement).toBe(count);
   expect(JSON.parse(localStorage.getItem("bycoda.lastSessions")!).count).toBe(20);
 });
-it("keeps selected session open, independent pin and keyboard context actions", async () => {
+it("keeps selected session open without pin actions, including keyboard context menu", async () => {
   const open = vi.fn(),
     pin = vi.fn();
   await act(async () =>
@@ -128,7 +127,6 @@ it("keeps selected session open, independent pin and keyboard context actions", 
         searchActive: false,
         onOpenSession: open,
         onOpenProject: vi.fn(),
-        onTogglePin: pin,
       }),
     ),
   );
@@ -138,10 +136,8 @@ it("keeps selected session open, independent pin and keyboard context actions", 
   expect(open).toHaveBeenCalledExactlyOnceWith("recent-one", "/work/project");
   await act(async () => session.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
   expect(open).toHaveBeenLastCalledWith("recent-one", "/work/project", { keepOpen: true });
-  const pinButton = container.querySelector<HTMLButtonElement>('button[aria-label="Pin session"]')!;
-  await act(async () => pinButton.click());
-  expect(pin).toHaveBeenCalledTimes(1);
-  expect(open).toHaveBeenCalledTimes(2);
+  expect(container.querySelector('button[aria-label="Pin session"]')).toBeNull();
+  expect(pin).not.toHaveBeenCalled();
   await act(async () =>
     session.dispatchEvent(
       new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true }),
@@ -149,6 +145,7 @@ it("keeps selected session open, independent pin and keyboard context actions", 
   );
   expect(document.querySelector('[role="menu"]')).toBeTruthy();
   expect(document.querySelector('[role="menu"]')?.textContent).toContain("Open project");
+  expect(document.querySelector('[role="menu"]')?.textContent).not.toMatch(/Pin|Unpin/);
 });
 
 it("opens the global workspace from its title independently of collapse, even when empty", async () => {
@@ -160,7 +157,7 @@ it("opens the global workspace from its title independently of collapse, even wh
       root.render(
         createElement(LastSessionsSection, {
           ...appearance,
-          source: { history: [], live: [], onPin: vi.fn(async () => {}) },
+          source: { history: [], live: [] },
           projectKeys: new Set([pathKey("/work/project")]),
           enabled: true,
           searchActive: false,
@@ -203,7 +200,7 @@ it("applies the selected total count to pinned rows and persists the new three-r
       root.render(
         createElement(LastSessionsSection, {
           ...appearance,
-          source: { history: [], live: [], onPin: vi.fn(async () => {}) },
+          source: { history: [], live: [] },
           projectKeys: new Set([pathKey("/work/project")]),
           enabled: true,
           searchActive: false,
@@ -244,7 +241,6 @@ it("marks only the working status dot so the root motion and focus state can pau
         rows: [row("working"), row("done")],
         searchActive: false,
         onOpenProject: vi.fn(),
-        onTogglePin: vi.fn(),
       }),
     ),
   );
@@ -279,7 +275,6 @@ it("bounds a large Last sessions collection while retaining its row actions", as
         searchActive: false,
         onOpenSession: vi.fn(),
         onOpenProject: vi.fn(),
-        onTogglePin: vi.fn(),
       }),
     ),
   );
@@ -298,7 +293,7 @@ it("lists projectless sessions as No project without an Open project action", as
       root.render(
         createElement(LastSessionsSection, {
           ...appearance,
-          source: { history: [], live: [], onPin: vi.fn(async () => {}) },
+          source: { history: [], live: [] },
           projectKeys: new Set([pathKey("/work/project")]),
           enabled: true,
           searchActive: false,

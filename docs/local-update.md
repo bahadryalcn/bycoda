@@ -236,6 +236,16 @@ For an existing profile it cannot prove all activity owners or distinguish an
 intentional stop from a failure, so it defers automatic repair and upgrades. The
 owner-directed update coordinator retains its separate admission and recovery checks.
 
+Settings → Connections offers **Update host now** on that deferred or failed notice.
+It asks the owner to confirm that running sessions and shells are interrupted, then
+runs the same verified bundled installer, which stops the old service through its
+lifecycle command and fails closed when it cannot. Nothing is interrupted without
+that confirmation, and it is not offered while another installer holds the Host.
+When the installed and bundled versions differ, the same confirmation also opens as a
+dialog anywhere in the app; **Not now** postpones it until the app restarts.
+A Host newer than the bundled one is never downgraded: the dialog then offers the
+app update flow, the same one as **Check for Updates**.
+
 Database backups have a 15-second limit and release their connections. The app
 closes after its active turn ends. Verify the macOS bundle signature/version,
 Windows installer checksum, and installed binary against the built artifact.

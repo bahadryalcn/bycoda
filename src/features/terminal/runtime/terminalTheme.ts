@@ -201,6 +201,31 @@ export function registerTerminalOscColorReplies(
   };
 }
 
+/** Inline declarations that move or size a box and cannot change a color. */
+const GEOMETRY_PROPERTY =
+  /^(?:grid-template-(?:rows|columns|areas)|(?:min-|max-)?(?:width|height|inline-size|block-size)|left|top|right|bottom|inset(?:-.+)?|transform|translate|flex(?:-basis|-grow|-shrink)?|cursor|(?:-webkit-)?user-select)$/;
+
+function paletteDeclarations(style: string | null): string {
+  return (style ?? "")
+    .split(";")
+    .map((declaration) => declaration.trim())
+    .filter((declaration) => {
+      const name = declaration.slice(0, declaration.indexOf(":")).trim().toLowerCase();
+      return declaration && !GEOMETRY_PROPERTY.test(name);
+    })
+    .join(";");
+}
+
+/**
+ * A panel drag rewrites an ancestor's inline size on every frame. Only a class
+ * change, or a style change beyond geometry, can alter the terminal palette.
+ */
+export function mayChangePalette(record: MutationRecord): boolean {
+  if (record.attributeName !== "style") return true;
+  const current = (record.target as Element).getAttribute("style");
+  return paletteDeclarations(record.oldValue) !== paletteDeclarations(current);
+}
+
 /**
  * Live theme updates. Root class/style mutations (drag, resize, sliders) arrive
  * in bursts and mostly leave the palette alone: probe once per frame, assign
@@ -245,11 +270,14 @@ export function createTerminalTheme(options: {
     .map((query) => window.matchMedia?.(query))
     .filter((query): query is MediaQueryList => !!query);
   for (const query of media) query.addEventListener?.("change", onSchemeChange);
-  const observer = new MutationObserver(onSchemeChange);
+  const observer = new MutationObserver((records) => {
+    if (records.some(mayChangePalette)) onSchemeChange();
+  });
   for (let node: HTMLElement | null = outer; node; node = node.parentElement) {
     observer.observe(node, {
       attributes: true,
       attributeFilter: ["class", "style"],
+      attributeOldValue: true,
     });
   }
   return {

@@ -59,6 +59,8 @@ you already opened; returning after idle sleep always requires **Talk**.
 In **Global** mode, a project missing from the connected Host's directory does
 not prevent listening. Unverified history and summaries remain excluded. Hiding
 or locking a project captured by the conversation still closes the microphone.
+Choose **Talk** to start again with the currently visible, unlocked projects;
+the previous conversation's scope does not block a new start.
 
 ## Waiting and recovery
 

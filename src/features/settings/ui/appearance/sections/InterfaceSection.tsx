@@ -12,14 +12,10 @@ export function InterfaceSection({ appearance }: { appearance: AppearanceSetting
   return (
     <AppearanceSection id="reading" title={t("Interface")}>
       <div className="interface-grid">
-        <div className="interface-column">
-          <InterfaceSizeGroup appearance={appearance} />
-          <InterfaceBehaviorGroup appearance={appearance} />
-        </div>
-        <div className="interface-column">
-          <InterfaceReadabilityGroup appearance={appearance} />
-          <ScrollbarGroup />
-        </div>
+        <InterfaceSizeGroup appearance={appearance} />
+        <InterfaceReadabilityGroup appearance={appearance} />
+        <ScrollbarGroup />
+        <InterfaceBehaviorGroup appearance={appearance} />
       </div>
       <AppearanceSaveFeedback settingIds={["ui-scale", "diff-palette", "scrollbar-style"]} />
     </AppearanceSection>

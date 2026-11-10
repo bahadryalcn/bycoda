@@ -55,6 +55,7 @@ import {
   type AssistantQuickNoteJob,
   type AssistantQuickAutomationJob,
   type AssistantQuickJob,
+  ASSISTANT_MIN_DAILY_TOKEN_BUDGET,
 } from "../../src/shared/model/host-contracts/assistant";
 import { AssistantRepository, type AssistantTable, type RecordValue } from "./repository";
 import { tokenBudgetMode } from "./cost";
@@ -3467,7 +3468,10 @@ export class HostAssistant {
               throw new Error("Assistant settings changed; reload before saving.");
             const next = { ...previous, ...input.patch, updatedAt: this.now() };
             next.name = next.name.trim();
-            if (next.setupComplete && (!next.name.trim() || next.dailyTokenBudget <= 0))
+            if (
+              next.setupComplete &&
+              (!next.name.trim() || next.dailyTokenBudget < ASSISTANT_MIN_DAILY_TOKEN_BUDGET)
+            )
               throw new Error(
                 "Name and an explicit daily token budget are required to complete setup.",
               );

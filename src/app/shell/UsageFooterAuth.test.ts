@@ -20,6 +20,9 @@ vi.mock("../../integrations/harness/core/auth", async (importOriginal) => ({
   loginHarness: auth.loginHarness,
 }));
 vi.mock("../../features/providers/model/rateLimitsFetch", () => rateLimitsFetch);
+vi.mock("../../features/providers/model/grokRateLimitsFetch", () => ({
+  fetchGrokRateLimits: vi.fn(),
+}));
 
 import type {
   ProviderRateLimits,
@@ -39,6 +42,20 @@ import {
 
 let container: HTMLDivElement;
 let root: Root;
+
+it("shows Grok plan headroom in the footer without profile selection", async () => {
+  const limits = {
+    ...connectedLimits("grok"),
+    session: null,
+    weekly: { usedPercent: 19, windowMinutes: 10080, resetsAt: null },
+  };
+  setCachedRateLimits("grok", "default", limits);
+  await act(async () => root.render(createElement(UsageFooter, { providers: ["grok"] })));
+  expect(button("Grok Build usage details").textContent).toContain("81%");
+  await act(async () => button("Grok Build usage details").click());
+  expect(document.body.textContent).toContain("19%");
+  expect(document.body.textContent).not.toContain("Add account");
+});
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

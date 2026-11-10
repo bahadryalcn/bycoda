@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { AssistantProfilePatch } from "../../../shared/model/host-contracts/assistant";
+import {
+  ASSISTANT_MIN_DAILY_TOKEN_BUDGET,
+  type AssistantProfilePatch,
+} from "../../../shared/model/host-contracts/assistant";
 import { t } from "../../../shared/i18n";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
@@ -29,6 +32,7 @@ import { AssistantKeepAwakeStatus } from "./AssistantKeepAwakeStatus";
 import { AssistantProfileFields } from "./AssistantProfileFields";
 import { AssistantBuilderDialog } from "./builder/AssistantBuilderDialog";
 import { RUNTIME_MODE_LABEL } from "../../sessions/public/session";
+import { ASSISTANT_WORK_PRESET_TEXT, assistantWorkPreset } from "../model/assistantWorkPresets";
 import styles from "./AssistantSetup.module.css";
 
 const DRAFT_KEY = "bycoda.assistant.setup-draft";
@@ -51,7 +55,7 @@ const labels = [
   "Voice",
   "Microphone test",
   "Conversation behavior",
-  "Autonomy",
+  "Work mode",
   "Presence and hours",
   "First rules",
   "Review",
@@ -64,7 +68,7 @@ const intros = [
   "Choose a voice and confirm it plays before you continue.",
   "The microphone opens only when you start this test.",
   "How the assistant sounds and how often it uses your name.",
-  "Choose how far it may act without asking. A job mode proposes a worker model that you confirm with Next.",
+  "Choose how freely it may work. Jobs use your default worker model; change models and permissions later in Settings.",
   "Choose when it may reach out and when it stays quiet.",
   "Each line is saved as a rule when setup finishes.",
   "Check these choices. Start saves them to the Host.",
@@ -122,7 +126,8 @@ export function AssistantSetup({
     [draft?.environmentId],
   );
   const [verified, setVerified] = useState<Record<string, boolean>>({});
-  const steps = voice ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] : [0, 6, 8, 9];
+  // Quick setup is identity, work mode, review. Rules are added later in Memory; the voice path keeps its step.
+  const steps = voice ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] : [0, 6, 9];
   useEffect(() => {
     if (!draft && snapshot && environmentId) {
       const legacy = loadVoicePersona();
@@ -151,6 +156,12 @@ export function AssistantSetup({
   const index = draft ? Math.max(0, steps.indexOf(draft.step)) : 0;
   const step = steps[index];
   const patch = draft?.patch ?? {};
+  const workPreset = assistantWorkPreset(patch);
+  /** A first setup starts with nothing chosen; a custom mix the owner made or already saved is shown as Custom. */
+  const workModeUnchosen =
+    workPreset === "custom" &&
+    !snapshot?.profile.setupComplete &&
+    (patch.autonomy ?? "report") === "report";
   const displayedDefaultWorker = modelSource.resolve("codex", "");
   const proposedWorker =
     !snapshot?.profile.setupComplete &&
@@ -208,11 +219,12 @@ export function AssistantSetup({
   }
   function valid() {
     if (step === 0) return Boolean(patch.name?.trim());
+    if (step === 6 && workModeUnchosen) return false;
     if (
       (step === 6 || step === 9) &&
       (!patch.name?.trim() ||
         !Number.isInteger(patch.dailyTokenBudget) ||
-        (patch.dailyTokenBudget ?? 0) < 1)
+        (patch.dailyTokenBudget ?? 0) < ASSISTANT_MIN_DAILY_TOKEN_BUDGET)
     )
       return false;
     if (step === 2 || step === 3 || step === 4) return verified[String(step)] === true;
@@ -334,7 +346,7 @@ export function AssistantSetup({
         <div className={styles.setup}>
           <p className={styles.muted}>
             {t(
-              "Optional. Check what keeps the assistant working around the clock; you can skip this and find it later in Settings, Computer use.",
+              "Optional. Check what keeps the assistant working around the clock; you can skip this and find it later in Settings, Access.",
             )}
           </p>
           <AlwaysOnChecklist request={checklistRequest} snapshot={snapshot} />
@@ -451,7 +463,12 @@ export function AssistantSetup({
               )}
               {step === 6 && (
                 <div className={styles.grid}>
-                  <AssistantProfileFields section="autonomy" value={patch} onChange={update} />
+                  <AssistantProfileFields
+                    section="workmode"
+                    value={patch}
+                    onChange={update}
+                    workModeUnchosen={workModeUnchosen}
+                  />
                 </div>
               )}
               {step === 7 && (
@@ -484,14 +501,10 @@ export function AssistantSetup({
                 <div className={styles.review}>
                   <DescriptionList>
                     <DescriptionItem term={t("Name")}>{patch.name}</DescriptionItem>
-                    <DescriptionItem term={t("Autonomy")}>
-                      {t(
-                        patch.autonomy === "report"
-                          ? "Report only"
-                          : patch.autonomy === "chief"
-                            ? "Supervise assigned jobs"
-                            : "Run jobs",
-                      )}
+                    <DescriptionItem term={t("Work mode")}>
+                      {workPreset === "custom"
+                        ? t("Custom")
+                        : t(ASSISTANT_WORK_PRESET_TEXT[workPreset].label)}
                     </DescriptionItem>
                     <DescriptionItem term={t("Daily token budget")}>
                       {patch.dailyTokenBudget?.toLocaleString()}

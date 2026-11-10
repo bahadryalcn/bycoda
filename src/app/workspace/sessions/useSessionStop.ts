@@ -31,6 +31,8 @@ import {
 import { type WorkspaceTab } from "../../../features/workspace/model/layout";
 import { notifyFinishedWorkspace } from "../helpers/workspaceNotify";
 import { isSendStarting } from "./submit/submitStarting";
+import { crewManagedSession } from "../../../features/crews/public/managed";
+import { refuseCrewManagedSession } from "./crewManagedGuard";
 
 export interface SessionStopDeps {
   sessionsRef: MutableRefObject<Session[]>;
@@ -64,6 +66,8 @@ export function useSessionStop(deps: SessionStopDeps) {
   const onStop = useCallback(
     (sessionId: string, managed = false, current?: DesktopControlGuard, awaitOutcome = false) => {
       if (current && !current()) return;
+      // Crew conversations are stopped from Crews only.
+      if (refuseCrewManagedSession(sessionId)) return;
       const remote = sessionsRef.current.find((s) => s.id === sessionId);
       if (current && remote && (hostSessionBinding(remote) || remoteProjectFor(remote.cwd))) return;
       // A remote desktop command has no original orchestration receipt. Hold it
@@ -245,6 +249,8 @@ export function useSessionStop(deps: SessionStopDeps) {
         sessionsRef.current,
         projectTerminalFocusedRef.current,
       );
+      // Escape is not a way to stop a crew conversation; stay quiet instead of nagging.
+      if (!sessionId || crewManagedSession(sessionId)) return;
       if (
         !sessionId ||
         !shouldStopFocusedTurnOnEscape(event, {

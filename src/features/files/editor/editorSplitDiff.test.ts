@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { openSearchPanel, getSearchQuery } from "@codemirror/search";
 import type { MergeView } from "@codemirror/merge";
 import { afterEach, describe, expect, it } from "vitest";
 import { editorThemeFor } from "./editorChrome";
@@ -26,6 +27,40 @@ describe("split diff", () => {
     });
     return split;
   }
+
+  it("opens independent compact top search panels in both panes", async () => {
+    const split = create("alpha alpha", "beta beta");
+    for (const [pane, query] of [
+      [split.a, "alpha"],
+      [split.b, "beta"],
+    ] as const) {
+      pane.focus();
+      // CodeMirror reconciles focus asynchronously before handling keyboard input.
+      await expect.poll(() => pane.dom.classList.contains("cm-focused")).toBe(true);
+      pane.contentDOM.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "f",
+          code: "KeyF",
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      const input = pane.dom.querySelector<HTMLInputElement>(
+        '.cm-panels-top .cm-find input[name="search"]',
+      );
+      expect(input).not.toBeNull();
+      input!.value = query;
+      input!.dispatchEvent(new Event("input", { bubbles: true }));
+      expect(pane.dom.querySelector(".cm-find-count")!.textContent).toContain("2");
+    }
+    expect(getSearchQuery(split.a.state).search).toBe("alpha");
+    expect(getSearchQuery(split.b.state).search).toBe("beta");
+    openSearchPanel(split.a);
+    expect(split.a.state.readOnly).toBe(true);
+    expect(split.a.state.doc.toString()).toBe("alpha alpha");
+    expect(split.dom.querySelector(".cm-panels-bottom")).toBeNull();
+  });
 
   it("starts one hunk at each changed region of the right pane", () => {
     const lines = Array.from({ length: 30 }, (_, i) => `line ${i}`);

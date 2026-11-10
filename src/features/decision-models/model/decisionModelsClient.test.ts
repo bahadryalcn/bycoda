@@ -17,6 +17,7 @@ const CASES: Case[] = [
   ["decisionModels.sources.test", (c, p) => c.sources.test(p)],
   ["decisionModels.sources.evaluate", (c, p) => c.sources.evaluate(p)],
   ["decisionModels.discovery.scan", (c, p) => c.discovery.scan(p)],
+  ["decisionModels.discovery.cancel", (c, p) => c.discovery.cancel(p)],
   ["decisionModels.discovery.results", (c, p) => c.discovery.results(p)],
   ["decisionModels.discovery.settings.get", (c, p) => c.discovery.settings.get(p)],
   ["decisionModels.discovery.settings.set", (c, p) => c.discovery.settings.set(p)],

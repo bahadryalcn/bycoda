@@ -159,7 +159,6 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
             variant="ghost"
             iconOnly
             label={t("Refresh")}
-            tooltip={t("Refresh")}
             loading={pending === "read"}
             disabled={pending !== null}
             onClick={() => void refresh()}

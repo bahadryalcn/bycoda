@@ -79,28 +79,53 @@ vi.mock("../model/assistantClient", () => ({
 vi.mock("./AssistantProfileFields", () => ({
   AssistantProfileFields: ({
     section,
-    value,
+    workModeUnchosen,
     onChange,
   }: {
     section: string;
-    value: { dailyTokenBudget?: number };
-    onChange: (patch: { dailyTokenBudget: number }) => void;
+    workModeUnchosen?: boolean;
+    onChange: (patch: Record<string, unknown>) => void;
   }) =>
-    section === "autonomy"
-      ? createElement("input", {
-          "aria-label": "Fixture token budget",
-          type: "number",
-          value: value.dailyTokenBudget,
-          onInput: (event: { currentTarget: HTMLInputElement }) =>
-            onChange({ dailyTokenBudget: Number(event.currentTarget.value) }),
-        })
+    section === "workmode"
+      ? createElement(
+          "div",
+          { "data-unchosen": String(workModeUnchosen === true) },
+          createElement(
+            "button",
+            {
+              type: "button",
+              onClick: () =>
+                onChange({
+                  autonomy: "report",
+                  planApproval: "always",
+                  confirmJobs: true,
+                  allowRoutineQuestions: false,
+                }),
+            },
+            "Fixture only watch",
+          ),
+          createElement(
+            "button",
+            {
+              type: "button",
+              onClick: () =>
+                onChange({
+                  autonomy: "chief",
+                  planApproval: "large",
+                  confirmJobs: true,
+                  allowRoutineQuestions: true,
+                }),
+            },
+            "Fixture work and ask",
+          ),
+        )
       : null,
 }));
 vi.mock("../../voice/ui/VoiceSetupSteps", () => ({
   VoiceSetupSteps: ({ onValidChange }: { onValidChange: (valid: boolean) => void }) =>
     createElement("button", { onClick: () => onValidChange(true) }, "Verify fixture step"),
 }));
-vi.mock("../../voice/model/voicePersona", () => ({ loadVoicePersona: () => ({}) }));
+vi.mock("../../voice/model/voicePersona", () => ({ loadVoicePersona: () => ({ rules: "" }) }));
 vi.mock("../../../shared/i18n", () => ({
   t: (key: string) => key,
   useT: () => (key: string) => key,
@@ -249,7 +274,7 @@ it("keeps all ten voice steps and gates each verification without any setup writ
     "Voice",
     "Microphone test",
     "Conversation behavior",
-    "Autonomy",
+    "Work mode",
     "Presence and hours",
     "First rules",
     "Review",
@@ -266,6 +291,10 @@ it("keeps all ten voice steps and gates each verification without any setup writ
     if (step >= 2 && step <= 4) {
       expect(button("Next").disabled).toBe(true);
       await click("Verify fixture step");
+    }
+    if (titles[step] === "Work mode") {
+      expect(button("Next").disabled).toBe(true);
+      await click("Fixture only watch");
     }
     if (step < 9) await click("Next");
   }
@@ -300,39 +329,67 @@ it("offers a usable fresh budget without writing or changing its authority choic
   expect(saved.patch.execution).toBeNull();
   expect(state.request).not.toHaveBeenCalled();
 });
-it.each([0, 5, 275000])(
-  "normalizes only the initial unconfigured draft budget %s",
+it.each([0, 5, 19_999, 20_000, 275000])(
+  "replaces only a draft budget below the minimum, here %s",
   async (budget) => {
     const retained = draft("host-a");
     retained.patch.dailyTokenBudget = budget;
     localStorage.setItem(key, JSON.stringify(retained));
     await render();
-    expect(JSON.parse(localStorage.getItem(key)!).patch.dailyTokenBudget).toBe(budget || 1_000_000);
+    expect(JSON.parse(localStorage.getItem(key)!).patch.dailyTokenBudget).toBe(
+      budget < 20_000 ? 1_000_000 : budget,
+    );
     expect(JSON.parse(localStorage.getItem(key)!).rules).toBe(retained.rules);
     expect(state.request).not.toHaveBeenCalled();
   },
 );
-it("preserves a configured zero budget and the owner's new invalid draft edit", async () => {
+it("gives a completed profile with a zero budget a usable one, so quick setup can finish", async () => {
   const retained = draft("host-a");
   retained.patch.dailyTokenBudget = 0;
   retained.patch.setupComplete = true;
   localStorage.setItem(key, JSON.stringify(retained));
   await render();
-  expect(JSON.parse(localStorage.getItem(key)!).patch.dailyTokenBudget).toBe(0);
-  expect(button("Start").disabled).toBe(true);
-  await click("Back");
-  await click("Back");
-  const input = document.querySelector<HTMLInputElement>('[aria-label="Fixture token budget"]')!;
-  await act(() => {
-    input.value = "1";
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await act(() => {
-    input.value = "0";
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  expect(JSON.parse(localStorage.getItem(key)!).patch.dailyTokenBudget).toBe(0);
+  expect(JSON.parse(localStorage.getItem(key)!).patch.dailyTokenBudget).toBe(1_000_000);
+});
+it("runs quick setup as identity, work mode and review, without model or rules steps", async () => {
+  await render();
+  const heading = () => {
+    const dialog = document.querySelector('[role="dialog"]')!;
+    return document.getElementById(dialog.getAttribute("aria-labelledby")!)?.textContent;
+  };
+  const progress = () => {
+    const bar = document.querySelector('[role="progressbar"]')!;
+    return [bar.getAttribute("aria-valuenow"), bar.getAttribute("aria-valuemax")];
+  };
+  expect(heading()).toBe("Identity");
+  expect(progress()).toEqual(["1", "3"]);
+  await click("Next");
+  expect(heading()).toBe("Work mode");
+  expect(progress()).toEqual(["2", "3"]);
+  expect(document.body.textContent).not.toContain("Worker model");
+  // Nothing is chosen on a first setup, so Next waits for an explicit work mode.
+  expect(document.querySelector("[data-unchosen]")?.getAttribute("data-unchosen")).toBe("true");
   expect(button("Next").disabled).toBe(true);
+  await click("Fixture only watch");
+  expect(button("Next").disabled).toBe(false);
+  await click("Next");
+  expect(heading()).toBe("Review");
+  expect(progress()).toEqual(["3", "3"]);
+  expect(document.body.textContent).toContain("Work modeOnly watch");
+  expect(document.querySelector("textarea")).toBeNull();
+  expect(button("Start").disabled).toBe(false);
+});
+it("shows Custom for an already set up profile whose job settings match no work mode", async () => {
+  state.profile.setupComplete = true;
+  const retained = draft("host-a");
+  retained.patch.setupComplete = true;
+  retained.patch.autonomy = "jobs" as never;
+  localStorage.setItem(key, JSON.stringify({ ...retained, step: 6 }));
+  await render();
+  expect(document.querySelector("[data-unchosen]")?.getAttribute("data-unchosen")).toBe("false");
+  expect(button("Next").disabled).toBe(false);
+  await click("Next");
+  expect(document.body.textContent).toContain("Work modeCustom");
 });
 it("keeps reviewed values and rules after a failed save and retries against the same Host", async () => {
   localStorage.setItem(key, JSON.stringify(draft("host-a")));
@@ -378,7 +435,6 @@ it.each(["jobs", "chief"])(
       maxRunMinutes: 60,
     };
     expect(JSON.parse(localStorage.getItem(key)!).patch.execution).toEqual(reviewed);
-    await click("Next");
     expect(document.body.textContent).toContain("Worker model");
     expect(document.body.textContent).toContain(models.worker.name);
     await start();

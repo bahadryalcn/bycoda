@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Check, CloudUpload, MoreHorizontal } from "../../../shared/ui/icons";
 import type { SkillEntry, SkillMachine, SkillPresence } from "../model/skillLibrary";
 import styles from "./SkillsPage.module.css";
@@ -15,9 +16,9 @@ export function SkillMachineColumns({ names }: { names: string[] }): ReactNode {
     <div className={styles.columns} aria-hidden="true">
       <span className={styles.columnsName}>{t("Skill")}</span>
       {names.map((name) => (
-        <span key={name} className={styles.cell} title={name}>
-          {name}
-        </span>
+        <OverflowTooltip key={name} label={name}>
+          <span className={styles.cell}>{name}</span>
+        </OverflowTooltip>
       ))}
       <span className={styles.menuSlot} />
     </div>
@@ -100,7 +101,6 @@ export function SkillRow({
                 iconOnly
                 size="sm"
                 label={label}
-                tooltip={label}
                 loading={copy.loading}
                 disabled={copy.disabled || !!copy.blocked}
                 disabledReason={copy.blocked ?? undefined}
@@ -136,7 +136,6 @@ export function SkillRow({
         size="sm"
         className={styles.rowMenu}
         label={t("Actions for {p0}", { p0: entry.name })}
-        tooltip={t("Actions for {p0}", { p0: entry.name })}
         aria-haspopup="menu"
         aria-expanded={actionsOpen}
         onClick={(event) => onActions(event.currentTarget)}

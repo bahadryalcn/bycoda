@@ -216,9 +216,7 @@ function StateMatrix({ layout }: { layout: ControlMatrixLayout }) {
           <MiddleTruncate>{LONG}</MiddleTruncate>
         </Cell>
         <Cell state="extra details remain available">
-          <Button tooltip={t("Preview")} tooltipWhen="overflow" tooltipDetails={[t("Required")]}>
-            {t("Preview")}
-          </Button>
+          <Button tooltipDetails={[t("Required")]}>{t("Preview")}</Button>
         </Cell>
       </Family>
 

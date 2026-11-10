@@ -1,3 +1,4 @@
+import { useCrewManagedSessionsFeed } from "../features/crews/public/managed";
 import { parseRemotePath } from "../features/connections/model/remoteProjects";
 import {
   configureSessionWindowFocus,
@@ -8,7 +9,6 @@ import { useSidebarActions } from "./workspace/layout/useSidebarActions";
 import { useLocalSessionReferences } from "./workspace/sessions/useLocalSessionReferences";
 import { LocalSessionReferenceProvider } from "../features/sessions/ui/LocalSessionReferenceContext";
 import { VoiceCompanionGate } from "../features/voice/ui/VoiceCompanionGate";
-import { DesktopControlStrip } from "../features/host-tools/DesktopControlStrip";
 import {
   RemoteConnectionFeedbackProvider,
   RemoteConnectionNotices,
@@ -2222,7 +2222,6 @@ function Workspace({
     unseenFinishedIds,
     unopenedRemote,
     history,
-    onPinHistorySession,
     deckProjectTabs,
     dirtyFiles,
     pendingWindowMoves,
@@ -2240,6 +2239,18 @@ function Workspace({
     lastSessionsOpen,
     allowedRecentProjectKeys,
   );
+
+  // Which conversations a live crew manages: the session surfaces lock their stop, delete and
+  // composer controls from this index.
+  const crewFeedCwds = useMemo(
+    () => [
+      sidebarCwd,
+      ...sessions.map((session) => session.cwd),
+      ...history.map((entry) => entry.cwd),
+    ],
+    [sidebarCwd, sessions, history],
+  );
+  useCrewManagedSessionsFeed(crewFeedCwds);
 
   // `history` now spans every visited project; consumers that expect the
   // current project only get this slice.
@@ -2602,6 +2613,7 @@ function Workspace({
     surfaceForward,
     onRailBack,
     onRailForward,
+    onShowWorkspace,
   } = useRailNavigation({
     auxiliaryTool,
     setAuxiliaryTool,
@@ -2982,11 +2994,9 @@ function Workspace({
       setAutomationsViewOpen(false);
     },
     onCloseLastSessions: () => setLastSessionsOpen(false),
-    onPinListedSession: (sessionId: string, cwd: string, pinned: boolean) => {
-      if (isRemoteProjectPath(cwd) || !allowedRecentProjectKeys.has(pathKey(cwd))) return;
-      void onPinHistorySession(sessionId, pinned)
-        .then(lastSessionsData.refresh)
-        .catch((error) => console.error("Could not report session pin failure", error));
+    onShowWorkspace: () => {
+      setLastSessionsOpen(false);
+      onShowWorkspace();
     },
     onSelectListedSession: (sessionId: string, cwd: string, options?: { keepOpen?: boolean }) => {
       if (!allowedRecentProjectKeys.has(pathKey(cwd))) return;
@@ -3126,7 +3136,6 @@ function Workspace({
           <OrchestrationWorkers.Provider value={orchestrationWorkers}>
             <div className="app-canvas flex h-full flex-col text-content">
               {compactTitleBar ? workspaceTitleBar : null}
-              {!detachedSessionWindow && <DesktopControlStrip />}
               <RemoteConnectionNotices />
               {!detachedSessionWindow && <AssistantNotifications />}
               {!detachedSessionWindow && !toolWindow && !windowTransfer && (
@@ -3151,8 +3160,8 @@ function Workspace({
                       lastSessionsOpen={lastSessionsOpen}
                       onOpenLastSessions={sidebarActions.onOpenLastSessions}
                       onCloseLastSessions={sidebarActions.onCloseLastSessions}
+                      onShowWorkspace={sidebarActions.onShowWorkspace}
                       onSelectListedSession={sidebarActions.onSelectListedSession}
-                      onPinListedSession={sidebarActions.onPinListedSession}
                       recoveryControl={recoveryControl}
                       cwd={sidebarCwd}
                       gitCwd={gitCwd}

@@ -2629,6 +2629,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     setTranscript("");
     setMessage("");
     try {
+      // A new owner start captures the current scope before any await. A retired
+      // conversation's hidden participants must not cancel this connection.
+      historyBindings.current!.clear();
+      const selected = currentSpeechTarget(),
+        binding = selected.historyBinding!;
+      activeHistoryBinding.current = binding;
       if (manualAway) {
         const actual = await readNativeVoicePresence(settings.idleSleepMinutes);
         if (generation.current !== epoch) return;
@@ -2652,10 +2658,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         snapshotRef.current = { ...snapshotRef.current, profile: currentProfile };
       if (!currentProfile?.setupComplete || !currentProfile.voiceSetupComplete)
         throw new Error("Complete voice setup before starting.");
-      historyBindings.current!.clear();
-      const selected = currentSpeechTarget(),
-        binding = selected.historyBinding!;
-      activeHistoryBinding.current = binding;
       setManagementBinding(binding);
       const opening = binding.open();
       turnHistory.current = opening;
@@ -3057,7 +3059,6 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       iconOnly
       variant="ghost"
       label={moveLabel}
-      tooltip={moveLabel}
       className={styles.drag}
       onDoubleClick={() => {
         if (compact) setCompact(false);

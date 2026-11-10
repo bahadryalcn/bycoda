@@ -47,7 +47,7 @@ export function ModelSettingHelp({
   trailing,
 }: {
   setting: ModelSetting | null;
-  /** Bottom-right action, e.g. a link to the provider settings. */
+  /** Trailing action, e.g. a link to the provider settings. */
   trailing?: ReactNode;
 }) {
   const t = useT();
@@ -58,7 +58,7 @@ export function ModelSettingHelp({
       className="flex shrink-0 items-start gap-2 border-t border-(--ui-frosted-divider) px-3 py-1.5 ui-caption-text"
     >
       <CircleHelp className="icon-xs mt-0.5 shrink-0" aria-hidden />
-      <p className="line-clamp-3 min-h-12 min-w-0 leading-4">
+      <p className="line-clamp-3 min-w-0 flex-1 leading-4">
         {setting && help ? (
           <>
             <span className="font-medium text-(--ui-tone-neutral-fg)">
@@ -70,7 +70,7 @@ export function ModelSettingHelp({
           t("Point at a setting to read what it does.")
         )}
       </p>
-      {trailing ? <span className="ml-auto flex shrink-0 self-stretch">{trailing}</span> : null}
+      {trailing ? <span className="ml-auto flex shrink-0">{trailing}</span> : null}
     </div>
   );
 }

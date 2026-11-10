@@ -194,8 +194,8 @@ export function ManualSessionSupervision({
   );
   const chiefNotice = !chief
     ? settings
-      ? t("Requires Autonomy “Supervise assigned jobs” in Work.")
-      : t("Chief autonomy is required for manual session supervision.")
+      ? t("Requires the work mode “Work and ask” or “Work freely” in Work.")
+      : t("Manual session supervision needs a work mode that runs jobs.")
     : "";
   // Settings rows are direct children of the dialog's group so the shared row layout applies.
   if (settings)

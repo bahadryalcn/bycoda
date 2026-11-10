@@ -52,36 +52,6 @@ vi.mock("../../sessions/model/models", () => ({
       ? Object.fromEntries(model.settings.map((setting) => [setting.id, setting.value]))
       : { effort: "default" },
 }));
-vi.mock("../../sessions/ui/ModelPicker", () => ({
-  ModelPicker: (props: any) =>
-    createElement(
-      "div",
-      null,
-      createElement(
-        "button",
-        {
-          type: "button",
-          onClick: () => props.onChange("claude", "selected-model"),
-        },
-        props.inheritChoice?.selected ? props.inheritChoice.label : props.model || "Choose model",
-      ),
-      createElement(
-        "button",
-        {
-          type: "button",
-          onClick: () => props.onSettingsChange({ ...props.values, effort: "low" }),
-        },
-        "Adjust effort",
-      ),
-      props.inheritChoice
-        ? createElement(
-            "button",
-            { type: "button", onClick: props.inheritChoice.onSelect },
-            "Inherit",
-          )
-        : null,
-    ),
-}));
 import { AssistantProfileFields } from "./AssistantProfileFields";
 import { AssistantCostInfo } from "./settings/AssistantCostFields";
 let root: Root | undefined, container: HTMLDivElement;
@@ -94,7 +64,14 @@ const execution = {
 };
 async function setup(
   initial: AssistantProfilePatch,
-  section: "autonomy" | "cost" | "presence" | "identity" = "autonomy",
+  section:
+    | "jobs"
+    | "budget"
+    | "permissions"
+    | "workmode"
+    | "cost"
+    | "presence"
+    | "identity" = "jobs",
 ) {
   observed.patches = [];
   observed.resolvedDefault = "catalog-default";
@@ -124,11 +101,6 @@ async function click(text: string, scope: ParentNode = container) {
   );
   expect(target).toBeTruthy();
   await act(async () => target!.click());
-}
-function field(label: string) {
-  return [...container.querySelectorAll("fieldset")].find(
-    (field) => field.querySelector("legend")?.textContent === label,
-  )!;
 }
 afterEach(async () => {
   await act(async () => root?.unmount());
@@ -244,7 +216,7 @@ async function choose(label: string, option: string) {
 }
 
 it("keeps exact custom budgets and invalid drafts until an explicit preset replaces them", async () => {
-  await setup({ execution, dailyTokenBudget: 1_234_567 });
+  await setup({ execution, dailyTokenBudget: 1_234_567 }, "budget");
   const input = container.querySelector<HTMLInputElement>(
     'input[aria-label="Custom Daily token budget"]',
   )!;
@@ -262,7 +234,7 @@ it("keeps exact custom budgets and invalid drafts until an explicit preset repla
 });
 
 it("keeps the unconfigured zero budget invalid and switching to Custom does not rewrite a preset", async () => {
-  await setup({ dailyTokenBudget: 0 });
+  await setup({ dailyTokenBudget: 0 }, "budget");
   const input = container.querySelector<HTMLInputElement>(
     'input[aria-label="Custom Daily token budget"]',
   )!;
@@ -294,23 +266,6 @@ it("preserves overnight hours and restores them after explicit all-day and quiet
   expect(observed.patches.at(-1)).toEqual({ quietStart: 23, quietEnd: 7 });
 });
 
-it("direct effort editing materializes the displayed default only on that owner action", async () => {
-  await setup({ execution: null });
-  expect(observed.patches).toEqual([]);
-  await click("Adjust effort", field("Workers"));
-  expect(observed.patches).toEqual([
-    {
-      execution: {
-        harness: "codex",
-        model: "catalog-default",
-        modelSettings: { effort: "low" },
-        runtimeMode: "supervised",
-        maxRunMinutes: 60,
-      },
-    },
-  ]);
-});
-
 it("keeps both hour controls available through an intermediate equal range", async () => {
   await setup({ activeStart: 22, activeEnd: 8, quietStart: 23, quietEnd: 7 }, "presence");
   await choose("Work hours start", "08:00");
@@ -331,33 +286,6 @@ it("keeps both hour controls available through an intermediate equal range", asy
   expect(observed.patches.at(-1)).toEqual({ quietStart: 7, quietEnd: 9 });
   await click("Quiet hours");
   expect(container.querySelector('button[aria-label^="Quiet hours end:"]')).toBeNull();
-});
-
-it("uses the live source default for an empty model and preserves saved account and custom settings on reload", async () => {
-  await setup({
-    execution: {
-      ...execution,
-      harness: "claude",
-      model: "",
-      modelSettings: { accountId: "owner-account", custom: "retained" },
-    },
-  });
-  observed.resolvedDefault = "late-source-default";
-  await click("Adjust effort", field("Workers"));
-  const saved = observed.patches.at(-1)!;
-  expect(saved.execution).toEqual({
-    ...execution,
-    harness: "claude",
-    model: "late-source-default",
-    modelSettings: { effort: "low", accountId: "owner-account", custom: "retained" },
-  });
-  await act(async () => root!.unmount());
-  container.remove();
-  await setup(saved);
-  expect(observed.patches).toEqual([]);
-  expect(field("Workers").textContent).toContain("late-source-default");
-  await click("Adjust effort", field("Workers"));
-  expect(observed.patches.at(-1)).toEqual(saved);
 });
 
 it("materializes the available displayed default only when the owner enables job execution", async () => {
@@ -393,9 +321,10 @@ it("requires an explicit worker choice when the default catalog is unavailable",
   expect(container.querySelector('[role="alert"]')?.textContent).toBe(
     "Choose a worker model before enabling job execution.",
   );
-  await click("Choose model", field("Workers"));
+  observed.defaultAvailable = true;
   await choose("Autonomy", "Run jobs");
-  expect(observed.patches.at(-1)).toEqual({ autonomy: "jobs" });
+  expect(observed.patches.at(-1)?.autonomy).toBe("jobs");
+  expect(observed.patches.at(-1)?.execution?.model).toBe("catalog-default");
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
 
@@ -406,53 +335,6 @@ it("keeps the dynamic title preview available beside its switch without an extra
   expect(document.body.textContent).toContain("Assistant Ada");
   expect(document.body.textContent).toContain("Room · Ada");
   expect(observed.patches).toEqual([]);
-});
-
-it("does not materialize a fallback model from an unavailable catalog on a direct settings edit", async () => {
-  await setup({ execution: null });
-  observed.defaultAvailable = false;
-  await click("Adjust effort", field("Workers"));
-  expect(observed.patches).toEqual([]);
-  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
-    "Choose an available model before changing its settings.",
-  );
-});
-
-it("preserves an existing unknown model and account when its catalog resolves a different fallback", async () => {
-  const saved = {
-    ...execution,
-    model: "saved-private-model",
-    modelSettings: { accountId: "saved-account", custom: "retained" },
-  };
-  await setup({ execution: saved });
-  observed.defaultAvailable = false;
-  observed.resolvedOverride = "baked-fallback";
-  await click("Adjust effort", field("Workers"));
-  expect(observed.patches).toEqual([
-    { execution: { ...saved, modelSettings: { ...saved.modelSettings, effort: "low" } } },
-  ]);
-  expect(container.querySelector('[role="alert"]')).toBeNull();
-});
-
-it("materializes all actual source defaults while changing only effort on an unconfigured model", async () => {
-  await setup({
-    execution: { ...execution, model: "", modelSettings: { accountId: "saved-account" } },
-  });
-  observed.sourceSettings = [
-    { id: "fast", value: "true" },
-    { id: "contextWindow", value: "200000" },
-  ];
-  await click("Adjust effort", field("Workers"));
-  expect(observed.patches.at(-1)?.execution).toEqual({
-    ...execution,
-    model: "catalog-default",
-    modelSettings: {
-      effort: "low",
-      fast: "true",
-      contextWindow: "200000",
-      accountId: "saved-account",
-    },
-  });
 });
 
 it("keeps task observation default off but lets the owner save a preference while unavailable", async () => {
@@ -499,7 +381,7 @@ it("saves address frequency, tone, profanity and persona as profile drafts witho
 });
 
 it("keeps job confirmation off by default and saves the owner's choice from the work tab", async () => {
-  await setup({ autonomy: "chief", execution }, "autonomy");
+  await setup({ autonomy: "chief", execution });
   const confirm = container.querySelector<HTMLButtonElement>(
     'button[role="switch"][aria-label="Confirm jobs before starting"]',
   )!;
@@ -509,7 +391,7 @@ it("keeps job confirmation off by default and saves the owner's choice from the 
 });
 
 it("chooses execution permissions from the icon picker and keeps the selected mode's description visible", async () => {
-  await setup({ autonomy: "chief", execution }, "autonomy");
+  await setup({ autonomy: "chief", execution }, "permissions");
   expect(container.textContent).toContain("Ask before commands and file changes.");
   const edits = container.querySelector<HTMLElement>('[aria-label="Auto-accept edits"]')!;
   expect(edits).toBeTruthy();

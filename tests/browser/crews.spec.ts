@@ -1,6 +1,139 @@
 import { test, expect, type Page } from "@playwright/test";
 const shots = "temp/verification/2026-10-25-crew-management-v2";
 
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [1280, 800]) {
+    test(`rail heading remains readable and independently collapsible ${theme} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/tests/browser/crews.html?headingRegression&theme=${theme}`);
+      const rail = page.locator("aside").first();
+      const heading = rail.getByRole("button", { name: "Open Crews", exact: true });
+      const toggle = rail.getByRole("button", { name: "Crews", exact: true });
+      await expect(heading).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/2026-11-11-crew-heading/${theme}-${width}.png`,
+      });
+      expect(
+        await heading.evaluate((button) => {
+          const label = button.querySelector("span")!;
+          return label.getBoundingClientRect().width;
+        }),
+      ).toBeGreaterThan(25);
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      await expect(heading).toBeVisible();
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      await heading.click();
+      await expect(page.getByRole("heading", { name: "Crews", exact: true })).toBeVisible();
+    });
+  }
+}
+
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [1280, 800]) {
+    test(`project picker and creation stay compact ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/tests/browser/crews.html?longProjects&theme=${theme}`);
+      const management = await openWork(page);
+      const project = management.getByRole("button", {
+        name: "Project: C:/fixture/crew-project",
+        exact: true,
+      });
+      await expect(project).toBeVisible();
+      const before = await project.boundingBox();
+      await project.click();
+      const option = page
+        .getByRole("option")
+        .filter({ hasText: "accessibility-review-and-implementation" });
+      await expect(option).toBeVisible();
+      const bounds = await option.boundingBox();
+      expect(bounds!.height).toBeLessThan(65);
+      expect(bounds!.width).toBeGreaterThan(before!.width);
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+      await page.screenshot({
+        path: `temp/verification/2026-11-11-crew-pickers/picker-${theme}-${width}.png`,
+      });
+      await page.getByRole("button", { name: "New project…", exact: true }).click();
+      const create = page.getByRole("dialog", { name: "Create project", exact: true });
+      await expect(
+        create.getByRole("textbox", { name: "Project name", exact: true }),
+      ).toBeFocused();
+      await expect(create.getByText("Created in C:/fixture", { exact: true })).toBeVisible();
+      await expect(
+        create.getByRole("button", { name: "Create project", exact: true }),
+      ).toBeDisabled();
+      expect(await project.boundingBox()).toEqual(before);
+      await page.screenshot({
+        path: `temp/verification/2026-11-11-crew-pickers/create-${theme}-${width}.png`,
+      });
+      await create.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(create).toHaveCount(0);
+      await expect(management).toBeVisible();
+      await page.keyboard.press("Escape");
+      const start = await openStart(page);
+      await start
+        .getByRole("button", { name: "Project: C:/fixture/crew-project", exact: true })
+        .click();
+      await expect(option).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/2026-11-11-crew-pickers/new-work-picker-${theme}-${width}.png`,
+      });
+      await page.getByRole("button", { name: "New project…", exact: true }).click();
+      await expect(create).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/2026-11-11-crew-pickers/new-work-create-${theme}-${width}.png`,
+      });
+      await page.keyboard.press("Escape");
+      await expect(create).toHaveCount(0);
+      await expect(start).toBeVisible();
+    });
+  }
+}
+
+test("project creation retains invalid and failed drafts then selects created project", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/crews.html?failOperation=projects.createDirectory");
+  const management = await openWork(page);
+  const project = management.getByRole("button", {
+    name: "Project: C:/fixture/crew-project",
+    exact: true,
+  });
+  await project.click();
+  await page.getByRole("button", { name: "New project…", exact: true }).click();
+  const create = page.getByRole("dialog", { name: "Create project", exact: true });
+  const name = create.getByRole("textbox", { name: "Project name", exact: true });
+  await name.fill("../invalid");
+  await create.getByRole("button", { name: "Create project", exact: true }).click();
+  await expect(
+    create.getByText("Use a folder name without slashes or special characters.", { exact: true }),
+  ).toBeVisible();
+  await name.fill("new-project");
+  await create.getByRole("button", { name: "Create project", exact: true }).click();
+  await expect(
+    create.getByText("The Host could not complete this action. Try again in a moment.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(name).toHaveValue("new-project");
+  await create.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(management).toBeVisible();
+  await page.goto("/tests/browser/crews.html");
+  const next = await openWork(page);
+  await next.getByRole("button", { name: "Project: C:/fixture/crew-project", exact: true }).click();
+  await page.getByRole("button", { name: "New project…", exact: true }).click();
+  await name.fill("new-project");
+  await create.getByRole("button", { name: "Create project", exact: true }).click();
+  await expect(create).toHaveCount(0);
+  await expect(
+    next.getByRole("button", { name: "Project: C:/fixture/new-project", exact: true }),
+  ).toBeVisible();
+});
+
 type CrewsTab = "Active" | "Teams" | "Members" | "Work";
 
 /** Opens the Crews page on a tab; the fixture has no app shell, so a button mounts the page. */
@@ -178,7 +311,7 @@ test("legacy activity omission does not claim stopped or permit deleting a sessi
   await page.goto("/tests/browser/crews.html?pausedPlanning&unknownActivity");
   const management = await openWork(page);
   const work = management.locator('[data-crew-run="run"]');
-  await expect(work.getByText("Work is paused. Nothing is running.")).toHaveCount(0);
+  await expect(work.getByRole("button", { name: "Resume work" })).toBeVisible();
   await expect(work.getByRole("button", { name: "Stop work", exact: true })).toBeVisible();
   await expect(work.getByRole("button", { name: "Delete work", exact: true })).toBeDisabled();
 });
@@ -276,7 +409,7 @@ for (const theme of ["light", "dark"]) {
       await page.goto(`/tests/browser/crews.html?pausedPlanning&theme=${theme}`);
       const management = await openWork(page);
       const work = management.locator('[data-crew-run="run"]');
-      await expect(work.getByRole("status")).toHaveText("Work is paused. Nothing is running.");
+      await expect(work.getByRole("status")).toHaveCount(0);
       await expect(work.getByRole("button", { name: "Stop work", exact: true })).toHaveCount(0);
       await expect(work.getByRole("button", { name: "Resume work" })).toBeEnabled();
       await expect(work.getByRole("button", { name: "Resume work" })).toHaveAttribute(
@@ -286,7 +419,6 @@ for (const theme of ["light", "dark"]) {
       await expect(work.getByRole("button", { name: "Delete work", exact: true })).toBeEnabled();
       await expect(work.getByText("Planning", { exact: true })).toHaveCount(0);
       await expect(work).toContainText("No assignments yet");
-      await work.getByText("Work request", { exact: true }).click();
       await expect(work.getByText(/Keep current drafts and provider selections\./)).toBeVisible();
       expect(await management.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       await page.screenshot({
@@ -302,9 +434,6 @@ test("paused work keeps cancellation available while its coordinator is running"
   await page.goto("/tests/browser/crews.html?pausedPlanning&running&slowOperation=crews.stop");
   const management = await openWork(page);
   const work = management.locator('[data-crew-run="run"]');
-  await expect(work.getByRole("status")).toHaveText(
-    "New assignments are paused. Running work can still finish.",
-  );
   await work.getByRole("button", { name: "Stop work", exact: true }).click();
   await page
     .getByRole("dialog", { name: "Stop work", exact: true })
@@ -320,10 +449,7 @@ test("paused work keeps cancellation available while its coordinator is running"
     ).crewFixtureReleaseOperation(),
   );
   // The pending "Stopping…" status can remain briefly beside the paused state.
-  await expect(work.getByRole("status").filter({ hasText: "paused" })).toHaveText(
-    "Work is paused. Nothing is running.",
-  );
-  await expect(work.getByRole("status")).toHaveCount(1);
+  await expect(work.getByRole("status")).toHaveCount(0);
   await expect(work.getByRole("button", { name: "Stop work", exact: true })).toHaveCount(0);
 });
 for (const theme of ["light", "dark"] as const) {
@@ -1197,7 +1323,6 @@ for (const theme of ["light", "dark"] as const) {
       const run = content.locator('[data-crew-run="old-run"]');
       await expect(run.getByRole("region", { name: "Work summary" })).toBeVisible();
       const timeline = run.getByText("Timeline", { exact: true });
-      await timeline.click();
       await timeline.evaluate((node) => node.scrollIntoView({ block: "start" }));
       await shot("work-finished");
       await noOverflow();

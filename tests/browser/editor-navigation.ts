@@ -36,6 +36,9 @@ const view = new EditorView({
 });
 Object.assign(window, {
   editorFixture: {
+    replace: (doc: string) => {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+    },
     point: (needle: string) => {
       const position = source.lastIndexOf(needle) + 2;
       const rect = view.coordsAtPos(position)!;

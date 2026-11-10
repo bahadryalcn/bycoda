@@ -1,4 +1,4 @@
-/* Work tab. Fragments are grid items of the settings body (two columns, one below the container breakpoint). */
+/* Work and Access tabs. Fragments are grid items of the settings body (two columns, one below the container breakpoint). */
 .wide {
   grid-column: 1 / -1;
   min-inline-size: 0;
@@ -23,43 +23,6 @@
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
-.sectionLabel {
-  grid-column: 1 / -1;
-  margin: 8px 0 0;
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-  line-height: 1.4;
-}
-.modelRow {
-  display: grid;
-  gap: 4px;
-  min-inline-size: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  align-content: start;
-}
-.modelRow > legend {
-  padding: 0;
-}
-.modelControl {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-inline-size: 0;
-}
-.modelTrigger {
-  flex: 1 1 auto;
-  min-inline-size: 0;
-}
-/* The inherited model stays readable but reads as not explicitly chosen. */
-.inherited {
-  opacity: 0.6;
-}
-.inheritNote {
-  flex: none;
-  white-space: nowrap;
-}
 .permission {
   display: grid;
   gap: 6px;
@@ -77,12 +40,9 @@
   font-weight: 500;
   color: inherit;
 }
-/* A model choice in the settings dialog: a fieldset that borrows the settings Row layout. */
-.modelRowSettings {
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-}
-.modelControlRow {
-  flex-wrap: nowrap;
+/* The work-mode options span the row (and both setup columns) instead of shrinking to their text. */
+.fill {
+  grid-column: 1 / -1;
+  inline-size: 100%;
+  min-inline-size: 0;
 }

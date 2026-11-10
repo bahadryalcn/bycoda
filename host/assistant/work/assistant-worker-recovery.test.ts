@@ -676,12 +676,20 @@ it.each(["Chief", "budget"])(
     };
     const launching = f.tasks.tick();
     await entered.promise;
+    if (mode === "budget")
+      // The shared fixture has already spent about 12k tokens today, which no budget at the 20k minimum
+      // can be lowered below. Seed spend at the minimum so the owner lowering still crosses the cap.
+      await f.store.db
+        .prepare(
+          "UPDATE assistant_runtime SET value=json_set(value,'$.value.total',20000) WHERE id LIKE 'usage:%'",
+        )
+        .run();
     const profile = (await f.service.request({ op: "snapshot" }, "owner")).snapshot!.profile;
     await f.service.request(
       {
         op: "profile.update",
         expectedVersion: profile.version,
-        patch: mode === "Chief" ? { autonomy: "report" } : { dailyTokenBudget: 1000 },
+        patch: mode === "Chief" ? { autonomy: "report" } : { dailyTokenBudget: 20000 },
       },
       "owner",
     );

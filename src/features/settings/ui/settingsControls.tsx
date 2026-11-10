@@ -64,7 +64,6 @@ export function SettingResetButton({
       size="sm"
       iconOnly
       label={name}
-      tooltip={name}
       className="settings-reset shrink-0"
       onClick={onReset}
     >

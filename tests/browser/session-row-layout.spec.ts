@@ -445,7 +445,7 @@ for (const light of [false, true]) {
 
 for (const light of [false, true]) {
   for (const width of [1280, 800]) {
-    test(`recent row pin never covers title or age at ${width} ${light ? "light" : "dark"}`, async ({
+    test(`recent row exposes no pin and preserves title and age at ${width} ${light ? "light" : "dark"}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 800 });
@@ -456,37 +456,22 @@ for (const light of [false, true]) {
       );
       const row = page.getByRole("listitem").first();
       const open = row.locator("button").first();
-      const pin = row.getByRole("button", { name: "Pin session", exact: true });
       const age = open.locator(".tabular-nums").last();
       await open.hover();
-      await expect(pin).toBeVisible();
+      await expect(row.getByRole("button", { name: /Pin session|Unpin session/ })).toHaveCount(0);
       await expect(age).toBeVisible();
-      const checkGeometry = async () => {
-        const [openBox, ageBox, pinBox] = await Promise.all([
-          open.boundingBox(),
-          age.boundingBox(),
-          pin.boundingBox(),
-        ]);
-        expect(openBox!.x + openBox!.width).toBeLessThanOrEqual(pinBox!.x);
-        expect(ageBox!.x + ageBox!.width).toBeLessThanOrEqual(pinBox!.x);
-        expect(await row.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
-      };
-      await checkGeometry();
-      await pin.focus();
-      await expect(pin).toBeFocused();
-      await checkGeometry();
-      const pinEvidence = path.resolve("temp/verification/2026-11-04-recent-session-pin");
-      await mkdir(pinEvidence, { recursive: true });
+      expect(await row.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+      await open.focus();
+      await page.keyboard.press("Shift+F10");
+      await expect(page.getByRole("menuitem", { name: /^(Pin|Unpin)$/ })).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      const recentEvidence = path.resolve("temp/verification/2026-11-11-last-sessions");
+      await mkdir(recentEvidence, { recursive: true });
       await page.screenshot({
-        path: path.join(pinEvidence, `${light ? "light" : "dark"}-${width}-pin-focus.png`),
+        path: path.join(recentEvidence, `${light ? "light" : "dark"}-${width}-recent.png`),
       });
-      await pin.click();
-      await expect(page.getByRole("status", { name: "Pin operations" })).toHaveText("1");
-      await expect(page.getByRole("status", { name: "Selected session" })).toHaveText("");
-      const unpin = row.getByRole("button", { name: "Unpin session", exact: true });
-      await expect(unpin).toBeVisible();
-      const [ageBox, unpinBox] = await Promise.all([age.boundingBox(), unpin.boundingBox()]);
-      expect(ageBox!.x + ageBox!.width).toBeLessThanOrEqual(unpinBox!.x);
+      await open.click();
+      await expect(page.getByRole("status", { name: "Pin operations" })).toHaveText("0");
     });
   }
 }

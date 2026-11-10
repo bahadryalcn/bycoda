@@ -1,6 +1,34 @@
 import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
+// Real template controls with memory-only settings persistence.
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`template save feedback ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/settings.html?section=chat&theme=${theme}&lang=en`);
+      await page.getByRole("button", { name: "Add template", exact: true }).click();
+      await page.getByRole("textbox", { name: "Template name", exact: true }).fill("Review code");
+      const text = page.getByRole("textbox", { name: "Template text", exact: true });
+      await text.fill("Find bugs and explain their impact.");
+      await page.getByRole("button", { name: "Save templates", exact: true }).click();
+      const saved = page.getByRole("button", { name: "Saved", exact: true });
+      await expect(saved).toBeVisible();
+      await expect(saved).toBeDisabled();
+      await saved.scrollIntoViewIfNeeded();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      mkdirSync("temp/verification/action-feedback", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/action-feedback/templates-saved-${theme}-${width}.png`,
+      });
+      await text.fill("Unsaved revision");
+      await expect(page.getByRole("button", { name: "Save templates", exact: true })).toBeEnabled();
+      await expect(saved).toHaveCount(0);
+    });
+
 for (const theme of ["light", "dark"])
   for (const width of [390, 768, 1024, 1440]) {
     test(`compact chat settings: ${theme} ${width}`, async ({ page }) => {

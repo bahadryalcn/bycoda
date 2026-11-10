@@ -638,6 +638,7 @@ pub fn run() {
             local_host::local_host_status,
             local_host::local_host_start,
             bundled_host::local_host_bundle_status,
+            bundled_host::local_host_bundle_update,
             generic_acp::generic_acp_list,
             generic_acp::generic_acp_save,
             generic_acp::generic_acp_remove,

@@ -1,20 +1,18 @@
-import { readdir, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, extname, isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { type Catalog, loadCatalog } from "./catalog";
 import { catalogFileMatches, localhostPortsFromCatalog } from "./catalog-files";
 import { assertLoopback, probeRequest, probeSystemOne, SYSTEMONE_PATHS } from "./contract-probe";
 import type { DecisionConfig, DiscoveryCandidate, DiscoveryResult } from "./decision-types";
-import { readGgufHeader, sha256File } from "./gguf";
 import { runCommand } from "./local-command";
+import { scanModelFolder } from "./model-folders";
 
 /** Whole-scan budget. The caller's signal can end it sooner. */
 export const SCAN_BUDGET_MS = 8_000;
 const PROBE_TIMEOUT_MS = 1_200;
 const PORT_CONCURRENCY = 6;
 const MAX_PORTS = 24;
-const MAX_SCAN_DEPTH = 5;
-const MAX_SCAN_FILES = 5_000;
 const HEALTH_PATHS = ["/health", "/props", "/v1/models", "/api/tags"] as const;
 /** The catalog has no port list, so llama.cpp server, Ollama and LM Studio defaults live here. */
 const DEFAULT_RUNTIME_PORTS = [8080, 11434, 1234];
@@ -51,19 +49,33 @@ export async function scan(
   const fetchImpl =
     deps.fetchImpl ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init));
   const home = deps.homeDirectory ?? homedir();
+  let incomplete = false;
+  const settle = async (
+    task: () => Promise<DiscoveryCandidate[]>,
+  ): Promise<DiscoveryCandidate[]> => {
+    try {
+      return await task();
+    } catch {
+      incomplete = true;
+      return [];
+    }
+  };
   const [services, processes, models] = await Promise.all([
     settle(() => localServices(catalog, config, budget, fetchImpl)),
     settle(() => runtimeProcesses(budget)),
-    settle(() => modelFiles(catalog, config, home, budget)),
+    settle(() =>
+      modelFiles(catalog, config, home, budget, () => {
+        incomplete = true;
+      }),
+    ),
   ]);
   const byId = new Map<string, DiscoveryCandidate>();
   for (const candidate of [...services, ...processes, ...models, ...apiKeys(catalog, env)])
     if (!byId.has(candidate.id)) byId.set(candidate.id, candidate);
-  return { found: [...byId.values()] };
-}
-
-function settle(task: () => Promise<DiscoveryCandidate[]>): Promise<DiscoveryCandidate[]> {
-  return task().catch(() => []);
+  return {
+    found: [...byId.values()].slice(0, 200),
+    ...(incomplete || budget.aborted || byId.size > 200 ? { incomplete: true } : {}),
+  };
 }
 
 async function localServices(
@@ -104,7 +116,7 @@ async function probePort(
         id: `local:${port}`,
         label: `Local model service on port ${port}`,
         kind: "local_service",
-        detail: systemOne ? `System One at ${systemOne}` : "Answers health or model list requests",
+        detail: `${base}${systemOne ?? ""}`,
       },
     ];
   }
@@ -214,59 +226,39 @@ async function modelFiles(
   config: DecisionConfig,
   home: string,
   budget: AbortSignal,
+  markIncomplete: () => void,
 ): Promise<DiscoveryCandidate[]> {
   const folders = new Set([
+    ...config.discovery.extraFolders.filter((folder) => isAbsolute(folder)),
     join(home, ".cache", "huggingface", "hub"),
     join(home, ".ollama", "models"),
     join(home, ".lmstudio", "models"),
     join(home, ".cache", "lm-studio", "models"),
-    ...config.discovery.extraFolders.filter((folder) => isAbsolute(folder)),
   ]);
-  const files: string[] = [];
-  for (const folder of folders) await collectGguf(folder, 0, files, budget);
   const candidates: DiscoveryCandidate[] = [];
-  for (const file of files) {
-    if (budget.aborted) break;
-    const info = await stat(file).catch(() => undefined);
-    if (!info?.isFile()) continue;
-    if (!(await readGgufHeader(file))) continue;
-    const name = basename(file);
-    // Hashing is expensive, so it runs only when a catalog entry has this name and size.
-    const expected = catalogFileMatches(catalog, name, info.size).filter(
-      (match) => match.file.sha256,
-    );
-    const digest = expected.length
-      ? await sha256File(file, budget).catch(() => undefined)
-      : undefined;
-    const match = expected.find((entry) => entry.file.sha256 === digest);
-    candidates.push({
-      id: `model:${file}`,
-      label: match ? match.model.name : name,
-      kind: "model_file",
-      detail: match ? `${file} (SHA256 matches the catalog)` : `${file} (not verified)`,
+  for (const folder of folders) {
+    if (budget.aborted) {
+      markIncomplete();
+      break;
+    }
+    if (!(await stat(folder).catch(() => undefined))?.isDirectory()) {
+      if (config.discovery.extraFolders.includes(folder)) markIncomplete();
+      continue;
+    }
+    const result = await scanModelFolder(folder, budget, (file) => {
+      const name = basename(file);
+      const match = catalogFileMatches(catalog, name)[0];
+      candidates.push({
+        id: `model:${file}`,
+        label: match ? match.model.name : name,
+        kind: "model_file",
+        // Discovery reads only the fixed header. Full hashes belong to explicit verification.
+        detail: `${file} (not verified)`,
+      });
     });
+    if (result.incomplete) markIncomplete();
   }
   return candidates;
-}
-
-async function collectGguf(
-  folder: string,
-  depth: number,
-  out: string[],
-  budget: AbortSignal,
-): Promise<void> {
-  const entries = await readdir(folder, { withFileTypes: true }).catch(() => []);
-  for (const entry of entries) {
-    if (budget.aborted || out.length >= MAX_SCAN_FILES) return;
-    // Symbolic links are skipped so the scan cannot leave the listed folders.
-    if (entry.isSymbolicLink()) continue;
-    const path = join(folder, entry.name);
-    if (entry.isDirectory()) {
-      if (depth < MAX_SCAN_DEPTH) await collectGguf(path, depth + 1, out, budget);
-    } else if (entry.isFile() && extname(entry.name).toLowerCase() === ".gguf") {
-      out.push(path);
-    }
-  }
 }
 
 function apiKeys(catalog: Catalog, env: Record<string, string | undefined>): DiscoveryCandidate[] {

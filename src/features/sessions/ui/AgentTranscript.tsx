@@ -1927,7 +1927,6 @@ function MessageEditMenu({
         motion="none"
         iconOnly
         label={label}
-        tooltip={label}
         variant="ghost"
         type="button"
         aria-haspopup="menu"

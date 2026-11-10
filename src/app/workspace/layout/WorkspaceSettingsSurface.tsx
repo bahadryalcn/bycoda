@@ -134,7 +134,6 @@ function WorkspaceSettingsSurfaceComponent({
             size="sm"
             variant="ghost"
             label={t("Preview in app")}
-            tooltip={t("Preview in app")}
             aria-pressed={peeking}
             data-appearance-peek
             onClick={togglePeek}

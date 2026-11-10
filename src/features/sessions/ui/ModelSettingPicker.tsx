@@ -64,7 +64,6 @@ export function ModelSettingPicker({
           type="button"
           label={t("Back")}
           aria-label={t("Back")}
-          tooltip={t("Back")}
           onClick={onClose}
         >
           <ArrowLeft className="icon-sm" strokeWidth={1.75} />

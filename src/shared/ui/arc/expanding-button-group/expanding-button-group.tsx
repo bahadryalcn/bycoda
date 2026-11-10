@@ -164,8 +164,7 @@ function ItemButton({
       data-state={showDone ? "done" : "idle"}
       data-expanded={expanded || undefined}
       aria-label={item.ariaLabel ?? item.label}
-      title={item.tooltip ?? item.ariaLabel ?? item.label}
-      tooltipWhen="overflow"
+      tooltip={item.tooltip}
       shortcut={item.shortcut}
       aria-current={item.active ? "page" : undefined}
       onContextMenu={

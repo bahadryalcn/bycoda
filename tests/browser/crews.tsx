@@ -563,7 +563,22 @@ mockIPC(async (command, args) => {
         };
       }
       case "projects.list":
-        return [{ id: "project", cwd, name: "Fixture" }];
+        return [
+          { id: "project", cwd, name: "Fixture" },
+          ...(params.has("longProjects")
+            ? [
+                {
+                  id: "long-project",
+                  cwd: "C:/fixture/projects/product-team/customer-experience/design-system/accessibility-review-and-implementation",
+                  name: "Accessibility review",
+                },
+              ]
+            : []),
+        ];
+      case "projects.createDirectory":
+        return { path: `${String(p.path)}/${String(p.name)}` };
+      case "projects.open":
+        return { id: "created-project", cwd: String(p.cwd), name: "Created project" };
       case "models.list":
         if (params.has("catalogUnavailable"))
           throw new Error("Model catalog temporarily unavailable");
@@ -595,6 +610,20 @@ mockIPC(async (command, args) => {
         return { pools: modelPools };
       case "crews.list":
         return { definitions, runs, agents };
+      case "crews.schema":
+        return {
+          version: 1,
+          hostTools: [
+            { action: "files.read", write: false, summary: "Read a project file." },
+            { action: "files.write", write: true, summary: "Write a project file." },
+            { action: "files.search", write: false, summary: "Search project files by name." },
+            { action: "git.status", write: false, summary: "Show the working tree status." },
+            { action: "git.commit", write: true, summary: "Commit staged changes." },
+            { action: "browser.open", write: true, summary: "Open a page in the Host browser." },
+            { action: "browser.read", write: false, summary: "Read the open page." },
+            { action: "images.generate", write: true, summary: "Generate an image." },
+          ],
+        };
       case "crews.save": {
         const input = p.definition as CrewDefinition;
         if (params.has("saveError"))
@@ -684,6 +713,29 @@ mockIPC(async (command, args) => {
       }
     }
   }
+  if (command === "mcp_discover")
+    return [
+      { provider: "claude", name: "github", scope: "user", configPath: "", transport: "http" },
+      { provider: "codex", name: "github", scope: "user", configPath: "", transport: "http" },
+      { provider: "claude", name: "figma", scope: "user", configPath: "", transport: "http" },
+    ];
+  if (command === "list_skills")
+    return [
+      {
+        name: "frontend-design",
+        description: "Build polished interfaces.",
+        path: "",
+        scope: "user",
+        source: "claude",
+      },
+      {
+        name: "code-review",
+        description: "Review a change for bugs.",
+        path: "",
+        scope: "user",
+        source: "claude",
+      },
+    ];
   if (command.startsWith("plugin:")) return null;
   throw new Error(`Unsupported fixture operation ${command}`);
 });
@@ -735,6 +787,7 @@ const drag = {
   openMenu: () => {},
 };
 function Fixture() {
+  const [railCollapsed, setRailCollapsed] = useState(false);
   const [view, setView] = useState("sessions");
   const [opened, setOpened] = useState("");
   const [crew, setCrew] = useState<string | undefined>();
@@ -751,7 +804,17 @@ function Fixture() {
           className="@container/rail flex shrink-0 flex-col border-e border-(--ui-tone-neutral-border) pt-2"
           style={{ width: 256 }}
         >
-          <CrewRailSection cwd={cwd} drag={drag} onOpenSession={openSession} />
+          <CrewRailSection
+            cwd={cwd}
+            drag={drag}
+            collapsed={railCollapsed}
+            onToggleCollapsed={
+              params.has("headingRegression")
+                ? () => setRailCollapsed((current) => !current)
+                : undefined
+            }
+            onOpenSession={openSession}
+          />
         </aside>
         <aside className="w-80 max-w-full shrink-0 border-e border-(--ui-tone-neutral-border)">
           <CrewSidebar cwd={cwd} onOpen={openSession} onManagedChange={() => {}} />

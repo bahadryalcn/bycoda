@@ -75,7 +75,6 @@ export function EditorDraftRecoverySection({
           variant="ghost"
           iconOnly
           label={t("Refresh copies")}
-          tooltip={t("Refresh copies")}
           loading={recovery.loading}
           onClick={() => void recovery.refresh()}
         >

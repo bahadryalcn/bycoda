@@ -1,7 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { ChevronRight } from "../../../shared/ui/icons";
+import { Eye } from "../../../shared/ui/icons";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import type { HostModelCatalog } from "../../connections/model/protocol";
 import { taskSessionIds } from "../../tasks/model/backgroundSession";
@@ -54,7 +54,8 @@ function SessionRow({
   roleText?: string;
   task?: string;
   model?: ReactNode;
-  status: ReactNode;
+  /** Only what is worth saying: a live, interrupted or unavailable state; omitted when plain. */
+  status?: ReactNode;
   working?: boolean;
   disabled: boolean;
   loading: boolean;
@@ -70,8 +71,8 @@ function SessionRow({
       disabled={disabled}
       loading={loading}
       onClick={onClick}
-      tooltip={title}
-      tooltipWhen="overflow"
+      tooltip={title ?? t("View conversation")}
+      tooltipWhen={title ? "overflow" : "always"}
       tooltipDetails={details}
     >
       {traits ? (
@@ -94,11 +95,13 @@ function SessionRow({
           </span>
         ) : null}
       </span>
-      <span className="inline-flex max-w-[38%] shrink-0 items-center gap-1 text-end text-ui-caption text-(--ui-text-secondary)">
-        {working ? <WorkingIndicator size="xs" /> : null}
-        <span>{status}</span>
-      </span>
-      <ChevronRight className="icon-sm shrink-0" />
+      {working || status ? (
+        <span className="inline-flex max-w-[38%] shrink-0 items-center gap-1 text-end text-ui-caption text-(--ui-text-secondary)">
+          {working ? <WorkingIndicator size="xs" /> : null}
+          {status ? <span>{status}</span> : null}
+        </span>
+      ) : null}
+      <Eye aria-hidden="true" className="icon-sm shrink-0 text-(--ui-text-muted)" />
     </Button>
   );
 }
@@ -134,9 +137,13 @@ export function CrewWorkSessions({
     name.trim().toLocaleLowerCase() === roleLabel(role).toLocaleLowerCase();
   return (
     <>
-      <h4 className="pb-1 pt-4 text-ui-caption font-medium text-(--ui-text-secondary)">
-        {t("Sessions ({p0})", { p0: crewSessionCount(run) })}
-      </h4>
+      {crewSessionCount(run) > 1 ? (
+        <h4 className="pb-1 pt-4 text-ui-caption font-medium text-(--ui-text-secondary)">
+          {t("Sessions")}
+        </h4>
+      ) : (
+        <div className="pt-3" />
+      )}
       <div role="list" aria-label={t("Sessions")} className="flex min-w-0 flex-col gap-px">
         <div role="listitem">
           <SessionRow
@@ -162,9 +169,7 @@ export function CrewWorkSessions({
                   ? t("Working")
                   : run.coordinatorStatus === "interrupted"
                     ? t("Interrupted")
-                    : run.status === "paused" && run.coordinatorStatus === "idle"
-                      ? t("Nothing running")
-                      : t("Conversation")
+                    : undefined
             }
             disabled={!run.coordinatorSessionId || !canOpen || pending}
             loading={pendingAction === "open:coordinator"}

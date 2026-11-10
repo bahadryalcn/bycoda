@@ -165,9 +165,14 @@ export function createDecisionGateway(deps: DecisionGatewayDeps): DecisionGatewa
     }
   }
 
-  /** A local source without its own endpoint gets the address its runtime reports (starting it if needed). */
+  /** Managed local sources resolve their live address, including a stopped recorded endpoint. */
   async function resolveTarget(source: DecisionSource): Promise<DecisionSource | undefined> {
-    if (source.kind !== "local" || source.endpoint || !deps.resolveEndpoint) return source;
+    if (
+      source.kind !== "local" ||
+      (source.endpoint && !source.local?.runtimePath) ||
+      !deps.resolveEndpoint
+    )
+      return source;
     const endpoint = await deps.resolveEndpoint(source).catch(() => undefined);
     if (!endpoint) return undefined;
     deps.touchLocal?.(source.id);
@@ -347,7 +352,8 @@ export function createDecisionGateway(deps: DecisionGatewayDeps): DecisionGatewa
       "generic",
       probe.state,
       { [probe.id]: probe.question },
-      AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+      // Owner-requested tests include cold runtime startup; ordinary decisions keep their deadline.
+      AbortSignal.timeout(90_000),
       DEFAULT_THRESHOLD,
       false,
     );

@@ -97,6 +97,10 @@ export function WorkspaceDirectoryRemoval({
           context,
         );
         onWorkspaceChange?.(closed);
+        if (closed.directoryState === "removed") {
+          onClose();
+          return;
+        }
         setClosing(false);
         approved = await planFor(closed);
         setPlan(approved);
@@ -175,7 +179,7 @@ export function WorkspaceDirectoryRemoval({
     >
       <div className="space-y-3 text-ui-body">
         <p>
-          {closing
+          {closing && workspace.state === "active"
             ? t(
                 "The folder is gone but this workspace is still marked active. Removing the record closes the workspace first; the conversation and branch are kept.",
               )

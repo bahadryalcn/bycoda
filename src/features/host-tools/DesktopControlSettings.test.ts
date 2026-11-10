@@ -151,7 +151,10 @@ it("reports unsaved options and pending saves to its parent", async () => {
     resolve({ ...state, configuration: { ...config, enabled: true, version: 1 } }),
   );
   expect(report).toHaveBeenLastCalledWith({ dirty: false, pending: false });
-  expect(container.textContent).toContain("Computer controls saved.");
+  expect(
+    [...container.querySelectorAll("button")].some((node) => node.textContent === "Saved"),
+  ).toBe(true);
+  expect(container.textContent).not.toContain("Computer controls saved.");
 });
 it("does not hold the settings dialog open while the helper prepares on the Host", async () => {
   mock.helper.mockResolvedValue({ phase: "preparing", stage: "building" });

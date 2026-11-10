@@ -33,7 +33,7 @@ it("waits for Native voice closure before disabling its profile and preserves se
             setupComplete: true,
             voiceSetupComplete: true,
             name: "Assistant",
-            dailyTokenBudget: 10000,
+            dailyTokenBudget: 20000,
           },
         },
         "owner",

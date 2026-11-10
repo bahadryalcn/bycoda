@@ -135,7 +135,6 @@ export function HostShellRow({
             variant="ghost"
             iconOnly
             label={refreshLabel}
-            tooltip={refreshLabel}
             loading={loading}
             disabled={refreshDisabled || loading}
             onClick={onRefresh}

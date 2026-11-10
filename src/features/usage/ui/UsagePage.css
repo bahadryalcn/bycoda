@@ -4,6 +4,31 @@
   min-inline-size: 0;
 }
 
+.usage-active-time {
+  display: grid;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.usage-active-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.usage-active-source {
+  margin-inline-start: auto;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
+  overflow-wrap: anywhere;
+}
+
+.usage-active-time .usage-active-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  font-variant-numeric: tabular-nums;
+}
+
 .usage-toolbar,
 .usage-account-heading,
 .usage-quota-heading {
@@ -36,32 +61,56 @@
 
 .usage-accounts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
-  /* Account cards in one row share a height; content stays top-aligned inside each card. */
-  align-items: stretch;
-  gap: 8px;
-}
-
-.usage-account {
-  display: grid;
-  align-content: start;
-  gap: 10px;
   min-inline-size: 0;
-  padding: 12px;
   border: 1px solid var(--ui-settings-group-border);
   border-radius: var(--ui-radius-card);
   background: var(--ui-settings-group-surface);
 }
 
+.usage-account {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  min-inline-size: 0;
+  padding: 12px;
+}
+
+.usage-account + .usage-account {
+  border-block-start: 1px solid var(--ui-settings-group-border);
+}
+
 .usage-account-heading {
+  flex: 1 1 17rem;
+  min-inline-size: 0;
   align-items: start;
   flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.usage-account-identity {
+  flex: 1;
+  min-inline-size: 0;
+  display: grid;
   gap: 4px;
+}
+
+.usage-account-name {
+  overflow-wrap: anywhere;
+}
+
+.usage-account-provider {
+  color: var(--ui-text-secondary);
+}
+
+.usage-account-subtitle {
+  max-inline-size: 100%;
 }
 
 .usage-account h3 {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   min-inline-size: 0;
 }
@@ -83,36 +132,24 @@
   white-space: nowrap;
 }
 
-/* One quiet row: message on the left, recovery on the right. */
+/* Recovery belongs to its account and wraps below the quota comparison. */
 .usage-account-error {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-basis: 100%;
   min-inline-size: 0;
-  padding: 4px 4px 4px 10px;
-  border: 1px solid var(--ui-tone-danger-border);
-  border-radius: var(--radius-control);
-  background: var(--ui-tone-danger-subtle);
-  color: var(--ui-tone-danger-fg);
-  font-size: var(--ui-font-caption);
-}
-
-.usage-account-error > [role="alert"] {
-  flex: 1;
-  min-inline-size: 0;
-}
-
-.usage-account-error > button {
-  flex-shrink: 0;
+  overflow-wrap: anywhere;
 }
 
 .usage-quota-list {
+  flex: 3 1 27rem;
+  min-inline-size: 0;
   display: grid;
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: 12px 24px;
 }
 
 .usage-quota {
   display: grid;
+  min-inline-size: 0;
   gap: 4px;
 }
 
@@ -122,9 +159,8 @@
 }
 
 .usage-quota-heading h4 {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
+  display: grid;
+  gap: 2px;
   min-inline-size: 0;
   font-weight: 500;
 }
@@ -145,12 +181,10 @@
 }
 
 .usage-quota-reset {
-  overflow: hidden;
   color: var(--ui-text-muted);
   font-weight: 400;
   font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .usage-analysis {

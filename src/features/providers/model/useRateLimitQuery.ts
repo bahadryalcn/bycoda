@@ -11,6 +11,7 @@ const POLL_MS: Record<RateLimitProvider, number> = {
   claude: 120_000,
   codex: 600_000,
   opencode: 120_000,
+  grok: 600_000,
 };
 
 export const rateLimitQueryKey = (provider: RateLimitProvider, accountId: string) =>

@@ -11,7 +11,7 @@ import {
   saveCrewTheme,
   saveTabAnimationsEnabled,
 } from "../../../model/settings";
-import { resolveImageTuning } from "../../../model/themeSuggestionFields";
+import { resolveImageTuning, resolveThemeTypography } from "../../../model/themeSuggestionFields";
 import { ensureAccentContrast, type ThemeSuggestion } from "../../../model/themeSuggestions";
 import { loadWorkingIndicator, saveWorkingIndicator } from "../../../model/workingIndicator";
 import {
@@ -21,8 +21,13 @@ import {
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 
 /** Preference fields a suggestion sets, merged into the record in one write. */
-function preferenceChanges(suggestion: ThemeSuggestion): Partial<AppearancePreferences> {
-  const { typography: type, interface: ui } = suggestion;
+function preferenceChanges(
+  suggestion: ThemeSuggestion,
+  currentCodeSize: number,
+): Partial<AppearancePreferences> {
+  const { interface: ui } = suggestion;
+  const type =
+    suggestion.typography && resolveThemeTypography(suggestion.typography, currentCodeSize);
   const changes: Partial<AppearancePreferences> = {
     ...(suggestion.canvas ? { canvasBackground: suggestion.canvas } : {}),
     ...(suggestion.interfaceFont ? { interfaceFont: suggestion.interfaceFont } : {}),
@@ -115,7 +120,7 @@ export function applyThemeSuggestion(appearance: AppearanceSettings, suggestion:
   appearance.onTint(suggestion.hue, suggestion.saturation);
   appearance.onAccentColor(ensureAccentContrast(suggestion.accent));
   if (suggestion.darkLightness !== undefined) appearance.onDarkLightness(suggestion.darkLightness);
-  const preferences = preferenceChanges(suggestion);
+  const preferences = preferenceChanges(suggestion, appearance.preferences.codeSize);
   if (Object.keys(preferences).length > 0)
     appearance.onPreferences({ ...appearance.preferences, ...preferences });
   if (suggestion.gradient) {

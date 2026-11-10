@@ -184,13 +184,16 @@ export function ModelPoolRow({
         </div>
       </div>
       <div className={styles.controls}>
-        {accounts.length > 0 && (
+        {accounts.length > 0 ? (
           <Select
             label={t("Account")}
             value={accountId}
             options={accounts.map((account) => ({ value: account.id, label: account.label }))}
             onValueChange={(providerAccountId) => onChange({ ...row, providerAccountId })}
           />
+        ) : (
+          // Keeps the three-column grid identical on rows without an account choice.
+          <span aria-hidden="true" />
         )}
         <NumberField
           label={t("Skip below % remaining")}

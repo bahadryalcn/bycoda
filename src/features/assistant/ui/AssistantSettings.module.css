@@ -82,14 +82,6 @@
   margin-inline-start: auto;
   flex: none;
 }
-.saved {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-}
-
 @media (max-width: 640px) {
   .dialog {
     block-size: calc(100dvh - 24px);
@@ -100,4 +92,8 @@
   .content {
     padding: 10px 12px 14px;
   }
+}
+/* Scopes the profile-row control width to one group without adding a layout box. */
+.rowsScope {
+  display: contents;
 }

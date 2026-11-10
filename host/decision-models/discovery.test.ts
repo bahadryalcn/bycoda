@@ -66,6 +66,29 @@ afterEach(() => {
 });
 
 describe("automatic discovery", () => {
+  it("returns an actionable endpoint for a detected local service", async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      if (!String(input).startsWith("http://127.0.0.1:8080/")) throw new TypeError("refused");
+      return new Response(
+        JSON.stringify(
+          String(input).endsWith("/v1/systemone") ? { answers: { probe: { value: true } } } : {},
+        ),
+        { status: 200 },
+      );
+    }) as unknown as typeof fetch;
+    const result = await scan(defaultDecisionConfig(), new AbortController().signal, {
+      catalog: catalogWith(undefined, 1),
+      env: {},
+      homeDirectory: home,
+      fetchImpl,
+    });
+    expect(result.found).toContainEqual(
+      expect.objectContaining({
+        kind: "local_service",
+        detail: "http://127.0.0.1:8080/v1/systemone",
+      }),
+    );
+  });
   it("probes only loopback addresses", async () => {
     const urls: string[] = [];
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
@@ -113,7 +136,7 @@ describe("automatic discovery", () => {
     expect(JSON.stringify(result)).not.toContain("must-not-be-read");
   });
 
-  it("lists only GGUF files inside the fixed model folders and marks catalog SHA matches", async () => {
+  it("lists only GGUF files inside the fixed model folders without hashing during discovery", async () => {
     const folder = join(home, ".cache", "huggingface", "hub", "models--x");
     mkdirSync(folder, { recursive: true });
     const model = join(folder, "clef.gguf");
@@ -134,7 +157,7 @@ describe("automatic discovery", () => {
       expect(models).toEqual([
         expect.objectContaining({
           label: "Clef-Flash 9B",
-          detail: expect.stringContaining("SHA256 matches"),
+          detail: expect.stringContaining("not verified"),
         }),
       ]);
       expect(models[0].detail).toContain(model);

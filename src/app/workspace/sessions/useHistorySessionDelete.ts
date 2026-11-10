@@ -43,6 +43,8 @@ import { pathKey } from "../../../shared/lib/paths";
 import { confirmDiscardUnsaved } from "../helpers/appHelpers";
 import { t } from "../../../shared/i18n";
 import { filesInWorkspaceTabs } from "../helpers/tabHelpers";
+import { crewManagedSession } from "../../../features/crews/public/managed";
+import { refuseCrewManagedSession, reportCrewManagedRefusal } from "./crewManagedGuard";
 import type { useSessionLoading } from "./useSessionLoading";
 import type { useTabActivation } from "../tabs/useTabActivation";
 import type { useWorktreeRemoval } from "../projects/useWorktreeRemoval";
@@ -147,6 +149,11 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
       // A cross-project list row the current project's history does not hold.
       listed?: SessionSummary,
     ): Promise<boolean> => {
+      // Crew conversations are archived and deleted from Crews only.
+      if (refuseCrewManagedSession(sessionId)) {
+        onError?.(t("Open Crews to stop, archive or delete this conversation."));
+        return false;
+      }
       if (removingSessionIds.current.has(sessionId)) return false;
       if (switchingWorktrees.current.has(sessionId) || deleteConfirmationPendingRef.current) {
         const reason = switchingWorktrees.current.has(sessionId)
@@ -407,6 +414,12 @@ ${reason}`,
         }
         return removed;
       } catch (error) {
+        // The Host refused: a crew runs this conversation. Not a failure worth a dialog.
+        if (reportCrewManagedRefusal(error)) {
+          if (deletionStatus) dismissSessionDeletionStatus(sessionId);
+          deletionStatus = undefined;
+          return false;
+        }
         const detail = error instanceof Error ? error.message : String(error);
         if (deletionStatus) {
           deletionStatus = { ...deletionStatus, outcome: "failed", error: detail };
@@ -460,6 +473,10 @@ ${reason}`,
   const onDeleteHistorySessions = useCallback(
     async (sessionIds: readonly string[]) => {
       if (sessionIds.length === 0) return;
+      if (sessionIds.some((sessionId) => crewManagedSession(sessionId))) {
+        refuseCrewManagedSession(sessionIds.find((sessionId) => crewManagedSession(sessionId)));
+        return;
+      }
       if (
         !(await confirmSessionDelete({
           count: sessionIds.length,

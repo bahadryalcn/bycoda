@@ -9,3 +9,7 @@ Owner decision, 2026-11-05, confirming the 2026-11-04 Arif chat direction. Recor
 ## Model pool
 
 Owner decision, 2026-11-10 (translated): workers must use only the selected models, in priority order, with editable order, effort and account, and priorities may follow remaining limits, so subscriptions are managed safely. When a model hits its limit, new tasks move to the next model; a running session never switches model and resumes after the reset; if the whole pool is limited, work waits and the owner is notified.
+
+## Assistant folders
+
+Owner decision, 2026-11-11 (translated): "This setting should not even be needed; I already gave every permission." A whole drive and the home folder may be Assistant folders. System folders and credential folders stay refused, both as a chosen folder and for every path the folder tools touch inside one.

@@ -12,6 +12,7 @@ import { AssistantFoldersResponseSchema } from "../assistantFolders";
 import { AssistantReminderOps, AssistantRemindersResponseSchema } from "../assistantReminders";
 import { quickAutomationActionSchema } from "./assistant-quick-automation";
 export {
+  ASSISTANT_MIN_DAILY_TOKEN_BUDGET,
   AssistantExecutionSchema,
   AssistantProfilePatchSchema,
   type AssistantExecution,

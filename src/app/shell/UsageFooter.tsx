@@ -106,6 +106,7 @@ export function UsageFooter({
   const wantClaude = providers.includes("claude");
   const wantCodex = providers.includes("codex");
   const wantOpencode = providers.includes("opencode");
+  const wantGrok = providers.includes("grok");
   // One shared minute clock (paused while hidden); countdowns show whole minutes.
   const now = useMinuteNow();
   const [refreshing, setRefreshing] = useState(false);
@@ -141,6 +142,7 @@ export function UsageFooter({
     wantCodex && codexAccountAvailable,
   );
   const opencode = useRateLimitQuery("opencode", "default", wantOpencode);
+  const grok = useRateLimitQuery("grok", "default", wantGrok);
   const claude = claudeAccountAvailable
     ? cachedClaude
     : unavailableRateLimits("claude", "This conversation uses a removed account");
@@ -155,6 +157,7 @@ export function UsageFooter({
     if (wantClaude && claudeAccountAvailable) targets.push(["claude", claudeAccountId]);
     if (wantCodex && codexAccountAvailable) targets.push(["codex", codexAccountId]);
     if (wantOpencode) targets.push(["opencode", "default"]);
+    if (wantGrok) targets.push(["grok", "default"]);
     // A refresh for another account or provider set must not join this one.
     const key = JSON.stringify(targets);
     if (inflight.current && (inflightKey.current === null || inflightKey.current === key))
@@ -182,6 +185,7 @@ export function UsageFooter({
     wantClaude,
     wantCodex,
     wantOpencode,
+    wantGrok,
   ]);
 
   const queryClient = useQueryClient();
@@ -290,7 +294,8 @@ export function UsageFooter({
   );
 
   const showOpencodeChip = wantOpencode && opencode.status !== "unavailable";
-  const showUsage = wantClaude || wantCodex || showOpencodeChip;
+  const showGrokChip = wantGrok && grok.status !== "unavailable";
+  const showUsage = wantClaude || wantCodex || showOpencodeChip || showGrokChip;
   const showTerminals = terminals.length > 0;
   const showTerminalButton = Boolean(onNewTerminal || onShowTerminal || terminalUnavailableReason);
   const terminalLabel =
@@ -355,6 +360,7 @@ export function UsageFooter({
             {showOpencodeChip ? (
               <UsageProviderChip limits={opencode} now={now} project={project} />
             ) : null}
+            {showGrokChip ? <UsageProviderChip limits={grok} now={now} project={project} /> : null}
             <Button
               iconOnly
               label={t("Refresh usage")}

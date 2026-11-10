@@ -58,7 +58,7 @@ the public installation identity; it does not enroll it or grant access. Headles
 access needs a separate owner decision.
 
 Task observation has separate, default-off completion and needs-input settings
-under **Settings > Schedule**. They apply only to explicitly supervised projects.
+under **Settings > Work > Presence and hours > Notifications**. They apply only to explicitly supervised projects.
 Preferences can be saved while the source is unavailable; notifications wait
 until this Host can verify the source and transfer an exact notification to its
 native owner. Native acceptance and actual notification display are separate.
@@ -116,9 +116,23 @@ project supervision and computer use are never proposed and stay manual. The
 avatar picker also has **Generate with AI** for a portrait from your own
 description; generated avatars are stored on the Host.
 
-When you enable job execution without a chosen worker, the available default
-model becomes the worker selection. If no model is available, choose one before
-enabling job execution. Opening setup alone does not save a worker or start work.
+Quick setup has three steps: your name and how the assistant addresses you, a
+**Work mode**, and a review. Voice setup adds its provider, voice, microphone,
+conversation and hours steps. The work mode answers one question, how freely the
+assistant may work, and sets the job controls together:
+
+- **Only watch** reports what happens and starts no work.
+- **Work and ask** runs jobs you assign and asks before commands, file changes
+  and big plans.
+- **Work freely** runs jobs without asking; commands and file changes run without
+  confirmation.
+
+Nothing is selected until you choose one. Models are not asked for: the available
+default model becomes the worker, and you manage the model list later in
+**Settings > Work > Models**. If no default model is available, choose a work mode
+that starts no work, or add a model in Settings first. Rules you want the assistant
+to follow are added in Memory. Opening setup alone does not save a worker or start
+work.
 
 Voice has **Global** and **Project** scope. New voice configurations start in
 Global; an existing explicit scope is retained. Moving between projects or app
@@ -131,17 +145,31 @@ metadata, then use exact project/session identities for navigation and lifecycle
 actions. Partial or duplicate project names need clarification. Desktop operations
 can use a real assistant conversation without opening a coding session, while
 retaining the configured app allowlist and the owner's computer use permission mode
-(Ask every time, Auto or Full access, set only in **Computer use** settings). A tool's
+(Ask every time, Auto or Full access, set only in **Access > Computer use** settings). A tool's
 authentic response can be usable even when its contents cannot be attributed to a
 project; that content does not become a saved personal rule or trusted memory.
 
 ## Give and follow work
 
-Room **Settings** separates personal preferences, work permissions, schedules,
-project supervision, computer access and advanced limits. Switching sections keeps
-unsaved preferences. **Save profile settings** applies profile preferences and conversation retention without closing the dialog.
-Project supervision and computer controls have their own Save actions; changing
-sections or saving the profile does not save those independent policies. Search
+Room **Settings** has four sections. **Personal** holds identity and language;
+personality and conversation are under **Personality and conversation**. **Work**
+holds the work mode, the daily token budget, the model list, presence and hours,
+and notifications. **Access** holds everything the assistant may touch: job
+execution permissions, folders and commands, computer use, manual session
+supervision and the 24/7 readiness list. **Advanced** holds cost and context
+limits and conversation retention.
+
+The work mode shows **Custom** when your job settings match none of the three
+modes. **Customize** under it keeps autonomy, plan approval, job confirmation and
+routine worker questions available individually; picking a mode replaces them.
+Execution permissions are on **Access** and the mode sets them together with the
+rest. Switching sections keeps
+unsaved preferences. **Save** applies changed profile preferences and conversation
+retention, then models, project supervision, computer controls and folders, without
+closing the dialog. The button shows progress and confirms **Saved** only after
+every changed section succeeds. Errors keep the remaining drafts for retry; editing
+again restores **Save**. Each section retains its own version and permission checks.
+Changing sections does not save drafts. Search
 projects by name or folder path; paths distinguish projects with the same name.
 Helper executable and checksum fields are under **Advanced helper settings**.
 Closing settings or running setup again asks before discarding unsaved profile,
@@ -160,8 +188,10 @@ helper alone does not mean control is enabled or an operation is running.
 
 **Folders and commands** (Computer settings) is where you choose the folders the
 assistant may use when it is not working in a project. Add up to 20 folders with
-the folder picker; drives, system folders, your home folder itself and credential
-folders are refused, and a link that leads outside a folder is never followed.
+the folder picker. A whole drive or your home folder may be chosen; system folders
+(such as Windows and Program Files) and credential folders (such as `.ssh`) are
+refused, both as a chosen folder and as any path the assistant touches inside one,
+and a link that leads outside a folder is never followed.
 The assistant reads, lists and searches these folders without asking, asks for your
 approval of each exact change (write, create, rename, move, copy, delete), and can
 run a command to completion and read its exit code and output. Every command run
@@ -486,12 +516,17 @@ limit, jobs wait and you get one notification per reset window.
 The voice assistant and Room manager can only use models from this list. Your own
 choices elsewhere in the app are not affected.
 
-Until you save a list, the assistant uses your previous worker, planning, chief and
-reply choices.
+Until you save a list, the assistant shows a suggested one. If you never chose
+different models per role, the suggestion ranks the models available for your
+provider by value: the strongest handles Chief and Planning, a mid-tier model
+handles Worker, and the cheapest handles Reply and takes over Worker work when
+the others are limited. With fewer than two models, or if you chose different
+models per role before, the assistant keeps your previous worker, planning, chief
+and reply choices. Saving the list replaces the suggestion.
 
 ## Running around the clock
 
-**Settings, Computer use, Ready for 24/7** lists what keeps the assistant working
+**Settings, Access, Ready for 24/7** lists what keeps the assistant working
 when you are away. It only reads your saved settings; each item that is not ready
 opens the control that fixes it, and nothing changes until you change that control.
 Setup ends with the same list, which you can skip.
@@ -545,7 +580,9 @@ available. Actions are recorded in History and the daily note using metadata;
 typed text and observed app contents are excluded from that audit.
 
 The screen-edge control indicator uses its own native window so it can remain
-visible while the workspace is minimized. Its Stop button, the inline controls
+visible while the workspace is minimized. It appears only when the assistant
+starts using the computer, not when computer use is merely enabled, and hides
+about 20 seconds after activity ends. Its Stop button, the settings controls
 and the global shortcut share the same captured Host connection. Connection
 errors remain visible; a replaced Host is not silently substituted for an
 uncertain operation.

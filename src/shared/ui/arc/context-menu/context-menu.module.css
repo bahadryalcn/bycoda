@@ -164,15 +164,17 @@
   font-weight: 500;
 }
 
-/* States. Hover, keyboard focus and the controller's highlight share one fill; pointer
-   hover only applies where hover exists. Keyboard focus also draws the shared focus ring,
+/* States. Hover has a visible inset edge; keyboard focus, checked rows and open branches
+   use the selected fill. Pointer hover only applies where hover exists. Keyboard focus draws the shared focus ring,
    inset so the menu's scroll clip never cuts it. */
 .item[data-highlighted="true"],
-.item[aria-expanded="true"] {
-  background: var(--menu-row-hover);
+.item[aria-expanded="true"],
+.item[aria-checked="true"] {
+  background: var(--ui-surface-selected);
+  box-shadow: inset 0 0 0 1px var(--ui-field-border);
 }
 button.item.item:focus-visible {
-  background: var(--menu-row-hover);
+  background: var(--ui-surface-selected);
   outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
   outline-offset: calc(var(--ui-focus-width) * -1);
 }
@@ -185,9 +187,14 @@ button.item.item:focus-visible {
 @media (hover: hover) and (pointer: fine) {
   .item:hover:not(:disabled, [aria-disabled="true"]) {
     background: var(--menu-row-hover);
+    box-shadow: inset 0 0 0 1px var(--ui-field-border-hover);
   }
 }
-.item:is(.destructive, [data-danger="true"]):is([data-highlighted="true"], [aria-expanded="true"]),
+.item:is(.destructive, [data-danger="true"]):is(
+    [data-highlighted="true"],
+    [aria-expanded="true"],
+    [aria-checked="true"]
+  ),
 button.item.item:is(.destructive, [data-danger="true"]):focus-visible {
   background: var(--menu-row-danger-hover);
 }
@@ -218,6 +225,8 @@ button.item.item:is(.destructive, [data-danger="true"]):focus-visible {
 /* Disabled rows are inert: no hover, no pressed fill, and no pointer cursor. */
 .item:disabled,
 .item[aria-disabled="true"] {
+  background: transparent;
+  box-shadow: none;
   opacity: var(--ui-disabled-opacity, 0.5);
   cursor: default;
 }
@@ -269,9 +278,4 @@ button.item.item:is(.destructive, [data-danger="true"]):focus-visible {
     animation: none;
     transition: none;
   }
-}
-
-.item:is([data-highlighted="true"], [aria-expanded="true"], [aria-checked="true"]) {
-  background: var(--ui-surface-selected);
-  box-shadow: inset 0 0 0 1px var(--ui-field-border);
 }

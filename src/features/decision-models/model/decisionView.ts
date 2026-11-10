@@ -196,14 +196,19 @@ export function cleanRouting(routing: DecisionRouting): DecisionRouting {
   return next;
 }
 
-/** Only a model file found on this computer maps to one click; other candidates need the dialog. */
+/** Extracts a discovered model for inspection; display annotations never belong to its file path. */
 export function candidateSourceInput(candidate: DiscoveryCandidate): DecisionSourceInput | null {
-  if (candidate.kind !== "model_file" || !candidate.detail) return null;
+  if (candidate.kind !== "model_file") return null;
+  const modelPath =
+    candidate.id.startsWith("model:") && candidate.id.length > 6
+      ? candidate.id.slice(6)
+      : candidate.detail?.replace(/ \((?:not verified|SHA256 matches the catalog)\)$/, "");
+  if (!modelPath) return null;
   return {
     name: clampName(candidate.label),
     kind: "local",
     adapter: "systemone",
-    local: { modelPath: candidate.detail },
+    local: { modelPath },
   };
 }
 

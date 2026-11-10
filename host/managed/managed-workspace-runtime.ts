@@ -169,6 +169,8 @@ export function createManagedWorkspaceRuntime(
     assertWritable,
     authorizeOwner: async (owner) => authorized(owner),
     isActive: async (workspace) => (await activity.list(workspace.id)).length > 0,
+    canRetireMissing: async (workspace) =>
+      (await activity.list(workspace.id)).every((entry) => entry.kind === "editor"),
     verifyReservation: (request) => activity.verifyReservation(request),
     beforeMaterialize: async (workspace) => {
       // Creation journals themselves are pending here; do not re-enter the writer fence.

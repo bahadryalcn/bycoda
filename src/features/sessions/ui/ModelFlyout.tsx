@@ -141,7 +141,6 @@ function ExtrasView({ extras, onBack }: { extras: ModelFlyoutExtras; onBack: () 
             variant="ghost"
             type="button"
             aria-label={t("Back")}
-            tooltip={t("Back")}
             onClick={onBack}
             className="-ml-1 shrink-0"
           >

@@ -180,10 +180,13 @@ export function createLocalInstaller(options: LocalInstallerOptions) {
       if (!local?.runtimePath) throw new Error("This source has no local runtime path.");
       await verifyBeforeRun(local.modelPath);
       await verifyBeforeRun(local.runtimePath);
+      if (local.projectorPath) await verifyBeforeRun(local.projectorPath);
       await runtime.start({
         sourceId: source.id,
         executable: local.runtimePath,
         modelPath: local.modelPath,
+        ...(local.projectorPath ? { projectorPath: local.projectorPath } : {}),
+        ...(source.model ? { model: source.model } : {}),
       });
       return { state: "running", sourceId: source.id };
     },

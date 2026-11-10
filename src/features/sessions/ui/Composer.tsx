@@ -4032,7 +4032,7 @@ export function ComposerAction({
         motion="none"
         iconOnly
         label={blockedReason ? `${label}. ${blockedReason}` : label}
-        tooltip={blockedReason ?? label}
+        tooltip={blockedReason}
         shortcut={blockedReason ? null : "Enter"}
         aria-description={blockedReason}
         disabled
@@ -4068,7 +4068,6 @@ export function ComposerAction({
               motion="none"
               iconOnly={!busyLabel}
               label={label}
-              tooltip={busyLabel ?? label}
               shortcut="Enter"
               aria-description={busyLabel}
               loading={submitting === "send"}
@@ -4110,7 +4109,7 @@ export function ComposerAction({
       motion="none"
       iconOnly
       label={blockedReason ? `${label}. ${blockedReason}` : label}
-      tooltip={blockedReason ?? label}
+      tooltip={blockedReason}
       shortcut={blockedReason ? null : "Enter"}
       disabled={!hasValue && !submitting}
       loading={submitting !== null}

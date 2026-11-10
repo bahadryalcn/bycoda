@@ -6,6 +6,7 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { recordedSessionRows } from "../model/recordedSessionRows";
 import type { sessionUsage } from "../model/usageAnalytics";
 import { ContinuousUsageTable } from "./UsageCharts";
+import { UsageProviderIdentity } from "./UsageProviderIdentity";
 
 /** Recorded-turn sessions; kept apart from provider-log totals by design. */
 export function UsageRecordedSessions({
@@ -57,9 +58,9 @@ export function UsageRecordedSessions({
       {selectedSession &&
         sessionRows.map((row) => (
           <p className="usage-muted" key={row.key}>
-            {row.title} · {row.provider} · {row.timedTurns}/{row.turns} {t("turns with duration")} ·{" "}
-            {row.meteredTurns}/{row.turns} {t("turns with tokens")} · {row.unpricedTurns}{" "}
-            {t("unpriced turns")}
+            {row.title} · <UsageProviderIdentity provider={row.provider} /> · {row.timedTurns}/
+            {row.turns} {t("turns with duration")} · {row.meteredTurns}/{row.turns}{" "}
+            {t("turns with tokens")} · {row.unpricedTurns} {t("unpriced turns")}
           </p>
         ))}
       {selectedSession && (

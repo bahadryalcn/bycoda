@@ -3,7 +3,7 @@ import { lazy, Suspense, useEffect, type KeyboardEvent } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { Spinner } from "../../../../../shared/ui/Spinner";
-import { Dices, ImagePlus } from "../../../../../shared/ui/icons";
+import { Dices } from "../../../../../shared/ui/icons";
 import { TextField } from "../../../../../shared/ui/TextField";
 import { canRunHarnessTextPrompt } from "../../../../../integrations/harness";
 import { HARNESSES } from "../../../../sessions";
@@ -25,8 +25,9 @@ import {
   type ThemeSuggestion,
   type ThemeSuggestionArea,
 } from "../../../model/themeSuggestions";
-import { Segmented, SettingsFeedback } from "../../settingsControls";
+import { SettingsFeedback } from "../../settingsControls";
 import { SaveLookButton } from "./SaveLookButton";
+import { ImageProviderButton } from "./ImageProviderButton";
 import { applyDrawnImageTuning, applyThemeSuggestion } from "./applyThemeSuggestion";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import {
@@ -102,6 +103,7 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
   /** `null` while nothing failed; otherwise the Host's reason, or "" when it gave none. */
   const [failure, setFailure] = useGeneratorState<string | null>("failure", null);
   const [withImage, setWithImage] = useGeneratorState("withImage", false);
+  const [, setLookName] = useGeneratorState("selectedLookName", "");
   const [imageProvider, setImageProvider] = useGeneratorState<BackgroundImageProvider>(
     "imageProvider",
     "codex",
@@ -213,6 +215,7 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
   /** `fresh` skips the chip state, which still holds the previous list right after a reset. */
   const choose = (suggestion: ThemeSuggestion, index: number, fresh = false) => {
     applyThemeSuggestion(appearance, suggestion);
+    setLookName(suggestion.name);
     session.select(index);
     setSelectedIndex(index);
     setImageFailure(null);
@@ -310,27 +313,13 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
           >
             <Dices />
           </Button>
-          <Button
-            iconOnly
-            label={t("Background image")}
-            size="sm"
-            variant="ghost"
-            pressed={withImage}
-            onClick={() => setWithImage(!withImage)}
-          >
-            <ImagePlus />
-          </Button>
-          {withImage ? (
-            <Segmented<BackgroundImageProvider>
-              label={t("Image provider")}
-              value={imageProvider}
-              options={[
-                { value: "codex", label: "Codex" },
-                { value: "gemini", label: "Gemini" },
-              ]}
-              onChange={setImageProvider}
-            />
-          ) : null}
+          <ImageProviderButton
+            value={withImage ? imageProvider : "none"}
+            onChange={(value) => {
+              setWithImage(value !== "none");
+              if (value !== "none") setImageProvider(value);
+            }}
+          />
           <SaveLookButton appearance={appearance} iconOnly />
         </div>
         <Suspense fallback={<LoadingText />}>

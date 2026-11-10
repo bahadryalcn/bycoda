@@ -6,6 +6,8 @@ import type { SettingsSectionId } from "../../../features/settings/model/setting
 import { canOpenTerminalIn } from "../../../features/projects/model/recents";
 import { ProjectTerminalDock } from "../../../features/terminal/ui/ProjectTerminalDock";
 import { ApprovalToasts } from "../../../features/sessions/ui/ApprovalToasts";
+import { LocalHostVersionPrompt } from "../../../features/connections/public/LocalHostDownNotice";
+import { runUpdateFlow } from "../../model/updater";
 import { HiddenDictationIndicator } from "../../../features/voice/ui/HiddenDictationIndicator";
 import { UsageFooter } from "../../shell/UsageFooter";
 import { WorkspaceControls } from "../../shell/WorkspaceControls";
@@ -141,6 +143,7 @@ function WorkspaceFooterComponent({
         }
       />
       <div className="flex shrink-0 items-center pe-2">
+        <LocalHostVersionPrompt onUpdateApp={updateApp} />
         <HiddenDictationIndicator onOpenSession={onOpenApprovalSession} />
         <ApprovalToasts
           notices={pendingNotifications}
@@ -155,6 +158,11 @@ function WorkspaceFooterComponent({
     </div>
   );
 }
+
+/** The same owner-visible flow as "Check for Updates": it reports when no update exists. */
+const updateApp = async () => {
+  await runUpdateFlow(true);
+};
 
 const MemoWorkspaceFooter = memo(WorkspaceFooterComponent);
 

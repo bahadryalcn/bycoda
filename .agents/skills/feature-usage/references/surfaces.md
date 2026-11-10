@@ -27,6 +27,7 @@ Paths are repository-relative. Read the affected subsection only; reports and ru
 - Quota observations use `bycoda.quotaHistory.v1`; preserve retention/dedup/reset/current timestamp semantics from the model. Observed history is not provider historical truth; no gap interpolation or invented points.
 - Keep v1 rule compatibility and token-threshold versus account-percent semantics. Common machine scope excludes remote cwd and cannot silently extend to other machines/Host tasks.
 - Native quota reads include `fetch_claude_usage`, `fetch_claude_usage_once`, `fetch_opencode_go_usage`; Codex quota uses provider account rate-limit reads. Confirm actual current transport before adding refresh behavior.
+- Grok quota uses `src/features/providers/model/grokRateLimitsFetch.ts`: managed CLI ACP `_x.ai/billing`, cached-token authentication only, with no session or prompt. `src/features/usage/ui/GrokLimits.tsx` shows its single CLI login separately from isolated account profiles. Preserve provider-reported credit percentage, billing period and unavailable-data truth.
 
 ## Host/mobile boundaries
 

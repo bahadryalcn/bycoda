@@ -1,7 +1,7 @@
+import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { MessageSquare, Pause, Play, Square, Trash2 } from "../../../shared/ui/icons";
 import type { HostModelCatalog } from "../../connections/model/protocol";
@@ -14,63 +14,16 @@ import {
   crewMessageMayBeClipped,
   crewProgressLabel,
   crewRequestInfo,
-  crewSavedTeamChanged,
 } from "../model/crewPresentation";
 import { crewRunTitle } from "../model/crewRoster";
-import { roleLabel } from "./CrewMemberForm";
-import { CrewModelTag } from "./CrewModelTag";
-import { teamTraits } from "../model/memberAvatars";
-import { MemberAvatar } from "./MemberAvatar";
+import { composerDefaultMember } from "../model/crewComposer";
 import { CrewWorkOwnerActions, type CrewOwnerTools } from "./CrewWorkOwnerActions";
 import { CrewWorkSessions } from "./CrewWorkSessions";
 import { CrewWorkSummary } from "./CrewWorkSummary";
-import { CrewWorkTimeline } from "./CrewWorkTimeline";
+import { CrewWorkTeam } from "./CrewWorkTeam";
+import { CrewWorkTimeline, crewUsageText } from "./CrewWorkTimeline";
+import { crewRunUsage } from "../model/crewUsage";
 import { CrewWorkBadges, CrewWorkUpdated } from "./CrewWorkState";
-
-/** The team this work started with: an immutable snapshot, not the saved crew. */
-function CrewWorkTeam({
-  run,
-  catalog,
-  savedCrew,
-}: {
-  run: CrewRunView;
-  catalog: HostModelCatalog;
-  savedCrew?: CrewDefinition;
-}) {
-  const looks = teamTraits(run.definition.agents);
-  return (
-    <Disclosure
-      className="mt-4"
-      size="sm"
-      summary={t("This work's team ({p0})", { p0: run.definition.agents.length })}
-    >
-      <p className="mt-1 text-ui-caption text-(--ui-text-secondary)">
-        {t("Fixed when the work started. Editing the saved crew only changes future work.")}
-        {crewSavedTeamChanged(run, savedCrew) ? ` ${t("The saved crew has changed since.")}` : ""}
-      </p>
-      <ul className="mt-2 flex flex-col">
-        {run.definition.agents.map((agent) => (
-          <li
-            key={agent.id}
-            className="flex min-h-(--ui-control-height-compact) min-w-0 items-center gap-2"
-          >
-            <MemberAvatar traits={looks.get(agent.id)!} size={24} className="shrink-0" />
-            <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-              <span className="truncate text-ui-secondary font-medium">{agent.name}</span>
-              {agent.name.trim().toLocaleLowerCase() ===
-              roleLabel(agent.role).toLocaleLowerCase() ? null : (
-                <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
-                  {roleLabel(agent.role)}
-                </span>
-              )}
-            </span>
-            <CrewModelTag catalog={catalog} agent={agent} className="max-w-[45%] shrink-0" />
-          </li>
-        ))}
-      </ul>
-    </Disclosure>
-  );
-}
 
 /** Selected work: state, request, decisions and blockers, controls, conversations and team. */
 export function CrewWorkDetail({
@@ -111,6 +64,8 @@ export function CrewWorkDetail({
   useLocale();
   const { confirm, dialog } = useConfirm();
   const title = crewRunTitle(run);
+  const [target, setTarget] = useState(() => composerDefaultMember(run));
+  const spent = crewUsageText(crewRunUsage(run).total);
   const requests = run.messages.filter((message) => !message.resolvedAt);
   const blocked = run.tasks.filter((task) => task.status === "blocked");
   const awaiting =
@@ -149,24 +104,76 @@ export function CrewWorkDetail({
   );
   return (
     <section data-crew-run={run.id} aria-label={title} className="min-w-0">
-      <h3 className="break-words text-ui-title font-medium text-content [overflow-wrap:anywhere]">
-        {title}
-      </h3>
-      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+        <h3 className="min-w-0 flex-1 basis-56 break-words text-ui-title font-medium text-content [overflow-wrap:anywhere]">
+          {title}
+        </h3>
+        {run.status !== "finished" ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-1">
+            {pendingText ? (
+              <span role="status" className="me-1 text-ui-caption text-(--ui-text-secondary)">
+                {pendingText}
+              </span>
+            ) : null}
+            <Button
+              variant={run.status === "paused" ? "primary" : "secondary"}
+              size="sm"
+              disabled={pending}
+              loading={pendingAction === `pause:${run.id}`}
+              label={run.status === "paused" ? t("Resume work") : t("Pause new assignments")}
+              startIcon={
+                run.status === "paused" ? (
+                  <Play className="icon-sm" />
+                ) : (
+                  <Pause className="icon-sm" />
+                )
+              }
+              onClick={onPause}
+            >
+              {run.status === "paused" ? t("Resume") : t("Pause")}
+            </Button>
+            {canStop ? (
+              <Button
+                variant="ghost"
+                tone="danger"
+                size="sm"
+                disabled={pending}
+                loading={pendingAction === `stop:${run.id}`}
+                startIcon={<Square className="icon-sm" />}
+                label={t("Stop work")}
+                tooltip={t("Stop work and cancel running assignments")}
+                onClick={() =>
+                  void confirm({
+                    title: t("Stop work"),
+                    message: `${title}\n${t("Stop work and cancel running assignments")}`,
+                    confirmLabel: t("Stop work"),
+                  }).then((ok) => {
+                    if (ok) onStop();
+                  })
+                }
+              >
+                {t("Stop")}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
         <CrewWorkBadges run={run} size="md" />
         <span className="text-ui-caption tabular-nums text-(--ui-text-secondary)">
           {crewProgressLabel(run)}
         </span>
         <CrewWorkUpdated value={run.updatedAt} />
+        {spent && run.status !== "finished" ? (
+          <span className="text-ui-caption tabular-nums text-(--ui-text-secondary)">{spent}</span>
+        ) : null}
       </div>
-      <CrewWorkSummary run={run} />
-      {run.status === "paused" && crewActivityKnown(run) ? (
-        <p role="status" className="mt-2 text-ui-caption text-(--ui-text-secondary)">
-          {running
-            ? t("New assignments are paused. Running work can still finish.")
-            : t("Work is paused. Nothing is running.")}
+      {request.kind === "full" && request.text !== title ? (
+        <p className="mt-2 max-h-32 max-w-[46rem] overflow-y-auto whitespace-pre-wrap break-words text-ui-secondary text-(--ui-text-secondary) [overflow-wrap:anywhere]">
+          {request.text}
         </p>
       ) : null}
+      <CrewWorkSummary run={run} />
       {/* What needs the owner comes first: decisions, acceptance and blockers lead the actions. */}
       {requests.length || blocked.length || awaiting.length ? (
         <div className="mt-3 flex flex-col gap-2">
@@ -200,56 +207,6 @@ export function CrewWorkDetail({
           ))}
         </div>
       ) : null}
-      <div className="mt-4 flex flex-wrap items-center gap-1">
-        {run.status !== "finished" ? (
-          <>
-            <Button
-              variant={run.status === "paused" ? "primary" : "secondary"}
-              size="sm"
-              disabled={pending}
-              loading={pendingAction === `pause:${run.id}`}
-              label={run.status === "paused" ? t("Resume work") : t("Pause new assignments")}
-              startIcon={
-                run.status === "paused" ? (
-                  <Play className="icon-sm" />
-                ) : (
-                  <Pause className="icon-sm" />
-                )
-              }
-              onClick={onPause}
-            >
-              {run.status === "paused" ? t("Resume work") : t("Pause")}
-            </Button>
-            {canStop ? (
-              <Button
-                variant="ghost"
-                tone="danger"
-                size="sm"
-                disabled={pending}
-                loading={pendingAction === `stop:${run.id}`}
-                startIcon={<Square className="icon-sm" />}
-                tooltip={t("Stop work and cancel running assignments")}
-                onClick={() =>
-                  void confirm({
-                    title: t("Stop work"),
-                    message: `${title}\n${t("Stop work and cancel running assignments")}`,
-                    confirmLabel: t("Stop work"),
-                  }).then((ok) => {
-                    if (ok) onStop();
-                  })
-                }
-              >
-                {t("Stop work")}
-              </Button>
-            ) : null}
-            {pendingText ? (
-              <span role="status" className="ms-1 text-ui-caption text-(--ui-text-secondary)">
-                {pendingText}
-              </span>
-            ) : null}
-          </>
-        ) : null}
-      </div>
       {error ? (
         <div className="pt-3">
           <Alert tone="danger">{error}</Alert>
@@ -268,32 +225,27 @@ export function CrewWorkDetail({
         pendingAction={pendingAction}
         onOpen={onOpen}
       />
-      {ownerTools ? <CrewWorkOwnerActions run={run} tools={ownerTools} /> : null}
+      <CrewWorkTeam
+        run={run}
+        catalog={catalog}
+        savedCrew={savedCrew}
+        pickedId={target}
+        onPick={ownerTools && run.status !== "finished" ? setTarget : undefined}
+      />
+      {ownerTools ? (
+        <CrewWorkOwnerActions
+          run={run}
+          tools={ownerTools}
+          memberId={target}
+          onMemberChange={setTarget}
+        />
+      ) : null}
       <CrewWorkTimeline run={run} />
-      {/* Technical metadata stays reachable but quiet, after the actionable parts. */}
-      {request.kind === "full" ? (
-        request.text !== title ? (
-          <Disclosure className="mt-4" size="sm" summary={t("Work request")}>
-            <p className="mt-2 max-w-[46rem] whitespace-pre-wrap break-words text-content [overflow-wrap:anywhere] leading-relaxed">
-              {request.text}
-            </p>
-          </Disclosure>
-        ) : null
-      ) : (
-        <p
-          data-crew-request-note={request.kind}
-          className="mt-2 text-ui-caption text-(--ui-text-secondary)"
-        >
-          {request.kind === "first-line"
-            ? t("Only the request's first line is available from this Host.")
-            : t("The request text is not available from this Host.")}
-        </p>
-      )}
-      <CrewWorkTeam run={run} catalog={catalog} savedCrew={savedCrew} />
       {canDelete ? (
-        <div className="mt-4">
+        <div className="mt-5">
           <Button
             variant="ghost"
+            tone="danger"
             size="sm"
             disabled={pending || !canRemove}
             loading={pendingAction === `delete:${run.id}`}

@@ -176,7 +176,7 @@ export function BadgeList({
       className={styles.badge}
     >
       {/* A label clipped by the row or `--badge-list-item-max` shows in full on hover/focus. */}
-      <OverflowTooltip label={item.title ?? item.label}>
+      <OverflowTooltip label={item.title ?? item.label} side="top">
         <span className={styles.text}>{item.label}</span>
       </OverflowTooltip>
     </Badge>
@@ -212,9 +212,7 @@ export function BadgeList({
       <ul ref={list} role="list" id={listId} aria-label={label} className={styles.list}>
         {shown.map((item) => (
           <li key={item.id} className={styles.item}>
-            <OverflowTooltip label={item.title ?? item.label} side="top">
-              {badge(item)}
-            </OverflowTooltip>
+            {badge(item)}
           </li>
         ))}
         {hidden.length > 0 ? (

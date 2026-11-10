@@ -10,6 +10,7 @@ import { withCrewTools } from "./crew-identity";
 import {
   assertCrewToolAllowed,
   crewToolAllowed,
+  crewToolCatalog,
   crewToolGate,
   crewToolProfileOf,
 } from "./crew-tools";
@@ -156,5 +157,22 @@ describe("enforcement", () => {
       preset: "custom",
       conversationTools: ["files.read"],
     });
+  });
+});
+
+describe("catalog", () => {
+  it("lists session Host tools with scope and a short summary, without the always-allowed ones", () => {
+    const catalog = crewToolCatalog();
+    const actions = catalog.map((tool) => tool.action);
+    expect(actions).toEqual(expect.arrayContaining(["files.read", "files.write", "browser.open"]));
+    expect(actions).not.toContain("tools.list");
+    expect(actions).not.toContain("crews.request");
+    expect(catalog.find((tool) => tool.action === "files.read")?.write).toBe(false);
+    expect(catalog.find((tool) => tool.action === "files.write")?.write).toBe(true);
+    for (const tool of catalog) {
+      expect(tool.summary.length).toBeGreaterThan(0);
+      expect(tool.summary.length).toBeLessThanOrEqual(160);
+      expect(tool.summary.startsWith(`${tool.action}:`)).toBe(false);
+    }
   });
 });

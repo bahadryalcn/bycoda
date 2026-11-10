@@ -96,16 +96,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 4px 8px;
-  padding: 4px 12px 8px;
-}
-.notification-history-note {
-  flex: 1 1 14rem;
-  margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
 }
 .notification-history-status {
   display: flex;
@@ -171,11 +163,6 @@
 }
 .notification-history-meta > :not(.notification-project) {
   flex: none;
-}
-.notification-history-kind {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
 .notification-history-actions {
   display: flex;

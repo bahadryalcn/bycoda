@@ -8,6 +8,7 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { ProfileSegmented, ProfileSelect } from "./settings/ProfileControls";
 import { ProfileRow, ProfileSwitch, useProfileRows } from "./settings/SettingsProfileRow";
 import { AssistantWorkFields } from "./settings/AssistantWorkFields";
+import { AssistantWorkModeField } from "./settings/AssistantWorkModeField";
 import { AssistantScheduleFields } from "./settings/AssistantScheduleFields";
 import { AssistantCostFields } from "./settings/AssistantCostFields";
 import { AssistantAvatarPicker } from "./AssistantAvatar";
@@ -19,8 +20,10 @@ export type ProfileSection =
   | "language"
   | "personality"
   | "behavior"
-  | "autonomy"
-  | "models"
+  | "workmode"
+  | "jobs"
+  | "budget"
+  | "permissions"
   | "presence"
   | "notifications"
   | "cost";
@@ -31,10 +34,13 @@ export function AssistantProfileFields({
   value,
   onChange,
   observationTasksAvailable = false,
+  workModeUnchosen = false,
 }: {
   section: ProfileSection;
   value: AssistantProfilePatch;
   observationTasksAvailable?: boolean;
+  /** Work mode only: show no selection instead of "Custom" (first setup, nothing chosen yet). */
+  workModeUnchosen?: boolean;
   onChange: (patch: AssistantProfilePatch) => void;
 }) {
   const rows = useProfileRows();
@@ -165,14 +171,10 @@ export function AssistantProfileFields({
         )}
       </>
     );
-  if (section === "autonomy" || section === "models")
-    return (
-      <AssistantWorkFields
-        value={value}
-        onChange={onChange}
-        part={section === "models" ? "models" : rows ? "jobs" : "all"}
-      />
-    );
+  if (section === "workmode")
+    return <AssistantWorkModeField value={value} onChange={onChange} unchosen={workModeUnchosen} />;
+  if (section === "jobs" || section === "budget" || section === "permissions")
+    return <AssistantWorkFields value={value} onChange={onChange} part={section} />;
   if (section === "presence" || section === "notifications")
     return (
       <AssistantScheduleFields

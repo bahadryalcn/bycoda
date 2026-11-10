@@ -167,7 +167,11 @@ Default disk policy is 50 GiB for materialized directories, an 80% warning and
 `managed-workspaces` folder) are reported separately; shared cache roots are not
 wired, so that measurement stays null. A present-state workspace whose directory
 is gone counts as 0 bytes and is returned in `missingPaths`; owner Delete directory
-then prunes only its stale registration. Pressure only accelerates already eligible clean directory cleanup;
+then retires it. Closing a missing active record can mark its directory removed
+without filesystem effects or Git pruning when only editor activities remain.
+That metadata-only transition retains editor holds, drafts, recovery history,
+branch and registration; non-editor activity and pending operations still block it.
+Pressure only accelerates already eligible clean directory cleanup;
 it cannot authorize source loss or deletion of unmerged branches/rescue refs.
 Insufficient safe reclamation pauses new materialization.
 

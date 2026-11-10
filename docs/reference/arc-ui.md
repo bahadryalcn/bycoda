@@ -72,6 +72,14 @@ while improving the interaction. A shared import alone does not prove task fit.
 
 ### Buttons: one shared presentation contract
 
+For a foreground save or copy, keep completion in the initiating shared `Button`.
+Supply controlled `success` and translated `successLabel`; keep persistence and
+error handling in the feature. Pending takes precedence over success. Clear the
+confirmation when the draft or target changes. The adapter reserves label and icon
+space and announces completion with shared `LiveText`; do not add a sibling Saved
+badge, success sentence or toast for the same result. Durable autosave and
+credential-presence states keep their own status presentation.
+
 `src/shared/ui/Button.tsx` is the application-facing action button. New application code must not import the registry Button
 directly or define another button's color, padding, border, focus and loading system.
 

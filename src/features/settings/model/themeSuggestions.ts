@@ -9,6 +9,7 @@ import { CODE_FONT_CATALOG, INTERFACE_FONT_CATALOG, findFont } from "./fontCatal
 import {
   THEME_FIELD_GROUPS,
   sanitizeThemeGroup,
+  resolveThemeTypography,
   type ThemeBackground,
   type ThemeImage,
   type ThemeInterface,
@@ -94,6 +95,8 @@ function optionalThemeFields(value: Record<string, unknown>): Partial<ThemeSugge
     const kept = sanitizeThemeGroup(group, value[group]);
     if (kept) Object.assign(fields, { [group]: kept });
   }
+  if (fields.typography?.codeSize !== undefined)
+    fields.typography = resolveThemeTypography(fields.typography, fields.typography.codeSize);
   const imagePrompt =
     typeof value.imagePrompt === "string" ? value.imagePrompt.replace(/\s+/g, " ").trim() : "";
   if (imagePrompt)

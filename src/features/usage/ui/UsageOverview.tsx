@@ -1,4 +1,5 @@
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import {
   useContext,
   useDeferredValue,
@@ -72,6 +73,7 @@ import { Contribution, TimeDistribution, UsageShare, UsageTrend } from "./UsageV
 import { usageColorMap } from "../model/usageColors";
 import { QuotaHistory } from "./UsageQuotaHistory";
 import { UsageRecordedSessions } from "./UsageRecordedSessions";
+import { usageProviderLabel, UsageProviderIdentity } from "./UsageProviderIdentity";
 import { useRateLimitHistory } from "../../providers/model/rateLimitHistory";
 import "./UsageAnalytics.css";
 
@@ -167,6 +169,7 @@ export function UsageOverview({
   const [resolution, setResolution] = useState<UsageResolution>("day");
   const [openFilters, setOpenFilters] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [showProjectTable, setShowProjectTable] = useState(false);
   const [reload, setReload] = useState(0);
   const [version, setVersion] = useState(0);
   const [load, setLoad] = useState<Load>(() => recallUsageLoad(interval, initialLoad));
@@ -359,8 +362,8 @@ export function UsageOverview({
       ]),
     ) as Record<keyof UsageFilters, Map<string, string>>;
     for (const s of [...samples, ...runtime]) {
-      result.provider.set(s.provider, s.provider);
-      result.account.set(s.account, `${s.provider} · ${s.accountLabel}`);
+      result.provider.set(s.provider, usageProviderLabel(s.provider));
+      result.account.set(s.account, `${usageProviderLabel(s.provider)} · ${s.accountLabel}`);
       result.model.set(s.model, s.model);
       result.project.set(s.project, s.projectLabel);
       result.group.set(s.group, s.groupLabel);
@@ -372,28 +375,36 @@ export function UsageOverview({
     for (const account of accounts) {
       if (view === "limits" && account.provider !== "codex" && account.provider !== "claude")
         continue;
-      result.provider.set(account.provider, account.provider);
+      result.provider.set(account.provider, usageProviderLabel(account.provider));
       result.account.set(
         `${account.provider}:${account.id}`,
-        `${account.provider} · ${account.label}`,
+        `${usageProviderLabel(account.provider)} · ${account.label}`,
       );
+    }
+    if (view === "limits") {
+      result.provider.set("grok", "Grok");
+      result.account.set("grok:default", "Grok");
     }
     return result;
   }, [samples, runtime, accounts, view]);
   const quotaFilters = {
     ...emptyUsageFilters(),
-    provider: filters.provider.filter((provider) =>
-      accounts.some(
-        (account) =>
-          account.provider === provider && (provider === "codex" || provider === "claude"),
-      ),
+    provider: filters.provider.filter(
+      (provider) =>
+        provider === "grok" ||
+        accounts.some(
+          (account) =>
+            account.provider === provider && (provider === "codex" || provider === "claude"),
+        ),
     ),
-    account: filters.account.filter((key) =>
-      accounts.some(
-        (account) =>
-          `${account.provider}:${account.id}` === key &&
-          (account.provider === "codex" || account.provider === "claude"),
-      ),
+    account: filters.account.filter(
+      (key) =>
+        key === "grok:default" ||
+        accounts.some(
+          (account) =>
+            `${account.provider}:${account.id}` === key &&
+            (account.provider === "codex" || account.provider === "claude"),
+        ),
     ),
   };
   const effectiveFilters = view === "limits" ? quotaFilters : filters;
@@ -428,10 +439,19 @@ export function UsageOverview({
   const inputTotal = totals.input + totals.cacheRead + totals.cacheWrite;
   // The search box stays responsive; the rows filter in a later render.
   const deferredSearch = useDeferredValue(search);
-  const matchedRows = useMemo(
-    () => searchRows(breakdown, (row) => row.label, deferredSearch, locale),
-    [breakdown, deferredSearch, locale],
-  );
+  const matchedRows = useMemo(() => {
+    const providersByRow = new Map<string, Set<string>>();
+    for (const sample of chartSamples) {
+      const key = sample[dimension];
+      const providers = providersByRow.get(key) ?? new Set<string>();
+      providers.add(sample.provider);
+      providersByRow.set(key, providers);
+    }
+    return searchRows(breakdown, (row) => row.label, deferredSearch, locale).map((row) => ({
+      ...row,
+      providers: [...(providersByRow.get(row.key) ?? [])],
+    }));
+  }, [breakdown, chartSamples, dimension, deferredSearch, locale]);
   const sessionRows = useMemo(
     () =>
       searchRows(sessions, (row) => `${row.title} ${row.project}`, deferredSearch, locale).filter(
@@ -521,15 +541,21 @@ export function UsageOverview({
           />
         )}
         <div className="usage-band-scope">
-          <p>
-            {t(limitsOnly ? "This machine" : "This machine · Local session logs")} ·{" "}
-            {Intl.DateTimeFormat().resolvedOptions().timeZone}
-            {view !== "limits" &&
-              load.refreshedAt > 0 &&
-              !partial &&
-              !unavailable &&
-              ` · ${t("Updated")} ${new Date(load.refreshedAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", hour12: false })}`}
-          </p>
+          <p>{t("This machine")}</p>
+          <InfoPopover label={t("Data sources and coverage")}>
+            <p>{t(limitsOnly ? "This machine" : "This machine · Local session logs")}</p>
+            <p>{Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
+            {view !== "limits" && load.refreshedAt > 0 && !partial && !unavailable && (
+              <p>
+                {t("Updated")}{" "}
+                {new Date(load.refreshedAt).toLocaleTimeString(locale, {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false,
+                })}
+              </p>
+            )}
+          </InfoPopover>
           {view === "limits" ? (
             <InfoPopover label={t("About limit filters")}>
               {t(
@@ -653,7 +679,20 @@ export function UsageOverview({
                 label={t(names[key])}
                 placeholder={t("All")}
                 value={effectiveFilters[key]}
-                options={[...options[key]].map(([value, label]) => ({ value, label: t(label) }))}
+                options={[...options[key]].map(([value, label]) => ({
+                  value,
+                  label: t(label),
+                  ...(key === "provider" || key === "account"
+                    ? {
+                        icon: (
+                          <UsageProviderIdentity
+                            provider={key === "provider" ? value : value.split(":")[0]}
+                            label=""
+                          />
+                        ),
+                      }
+                    : {}),
+                }))}
                 onChange={(values) => {
                   setFilters((f) => ({ ...f, [key]: values }));
                   setSelectedSession(null);
@@ -910,22 +949,44 @@ export function UsageOverview({
                   />
                   <Button
                     variant="ghost"
-                    iconOnly
-                    label={t("Export CSV")}
-                    tooltip={t("Export CSV")}
+                    size="sm"
+                    aria-label={t("Export CSV")}
                     onClick={exportCsv}
                   >
                     <ArrowDownCircle aria-hidden className="icon-sm" strokeWidth={1.75} />
+                    {t("Export CSV")}
                   </Button>
                 </div>
               </div>
-              <ContinuousUsageTable
-                stateKey={JSON.stringify(["usage-breakdown", dimension, filters, search, preset])}
-                caption={t("Usage breakdown")}
-                rows={matchedRows}
-                metric={metric}
-                onSelect={(value) => chooseFilter(dimension, value)}
-              />
+              <div className="usage-overview-main">
+                <Contribution
+                  title={t("Usage breakdown")}
+                  rows={matchedRows}
+                  metric={metric}
+                  colors={colors}
+                  onSelect={(value) => chooseFilter(dimension, value)}
+                />
+                <UsageShare
+                  rows={providers}
+                  metric={metric}
+                  colors={providerColors}
+                  onSelect={(value) => chooseFilter("provider", value)}
+                />
+              </div>
+              <Disclosure
+                summary={t("Show as table")}
+                size="sm"
+                open={showProjectTable}
+                onOpenChange={setShowProjectTable}
+              >
+                <ContinuousUsageTable
+                  stateKey={JSON.stringify(["usage-breakdown", dimension, filters, search, preset])}
+                  caption={t("Usage breakdown")}
+                  rows={matchedRows}
+                  metric={metric}
+                  onSelect={(value) => chooseFilter(dimension, value)}
+                />
+              </Disclosure>
               <UsageRecordedSessions
                 unavailable={load.turns === null}
                 stateKey={JSON.stringify(["usage-sessions", selectedSession, filters, preset])}

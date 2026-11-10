@@ -1180,3 +1180,78 @@ describe("crew access mode", () => {
     expect(launchMode(f)).toBe("auto");
   });
 });
+describe("host crews coordinator reconciliation", () => {
+  it("pauses an active run whose coordinator was stopped outside Crews", async () => {
+    const f = await setup();
+    await f.start();
+    const coordinator = await f.store.session("lead-session");
+    vi.mocked(f.store.session).mockResolvedValue({ ...coordinator, status: "interrupted" });
+    await f.service.tick();
+    const run = (await f.service.list(f.project.id)).runs[0];
+    expect(run.status).toBe("paused");
+    expect(run.error).toContain("stopped outside Crews");
+  });
+  it("reports a run that already lost its coordinator as paused on read", async () => {
+    const f = await setup();
+    await f.start();
+    vi.mocked(f.store.session).mockRejectedValue(new Error("Session not found on this machine"));
+    const run = (await f.service.list(f.project.id)).runs[0];
+    expect(run.status).toBe("paused");
+    expect(run.error).toContain("deleted");
+    expect((await readCrewRun(f.store, "run"))?.status).toBe("paused");
+  });
+  it("keeps an idle healthy run active on read", async () => {
+    const f = await setup();
+    await f.start();
+    expect((await f.service.list(f.project.id)).runs[0].status).toBe("active");
+  });
+});
+describe("host crews resume after external coordinator loss", () => {
+  const creates = (f: Awaited<ReturnType<typeof setup>>) =>
+    (f.engine.command.mock.calls as unknown as Array<[{ type: string; commandId?: string }]>)
+      .map(([input]) => input)
+      .filter((input) => input.type === "create");
+  it("clears a deleted coordinator and resumes with a fresh, distinct launch", async () => {
+    const f = await setup();
+    await f.service.startRun(f.project.id, "crew", "Start", "launch-run", "supervised");
+    expect(creates(f)[0].commandId).toBe("crew-launch-run:create");
+    vi.mocked(f.store.session).mockRejectedValue(new Error("Session not found on this machine"));
+    const lost = (await f.service.list(f.project.id)).runs[0];
+    expect(lost).toMatchObject({ status: "paused" });
+    expect((await readCrewRun(f.store, "launch-run"))?.coordinatorSessionId).toBeUndefined();
+    let created = 0;
+    f.engine.command.mockImplementation((...args: unknown[]) => ({
+      sessionId: (args[0] as { type?: string }).type === "create" ? `fresh-${++created}` : "x",
+    }));
+    vi.mocked(f.store.session).mockResolvedValue({
+      projectId: f.project.id,
+      status: "idle",
+    } as Awaited<ReturnType<HostStore["session"]>>);
+    await f.service.call("crews.resume", { runId: "launch-run" }, f.project.id);
+    const run = await readCrewRun(f.store, "launch-run");
+    expect(run).toMatchObject({ status: "active", coordinatorSessionId: "fresh-1" });
+    expect(run?.error).toBeUndefined();
+    expect(creates(f).at(-1)?.commandId).toBe("crew-launch-run-1:create");
+  });
+  it("resumes an externally stopped coordinator once, without launching a second", async () => {
+    const f = await setup();
+    await f.service.startRun(f.project.id, "crew", "Start", "launch-run", "supervised");
+    vi.mocked(f.store.session).mockResolvedValue({
+      projectId: f.project.id,
+      status: "interrupted",
+    } as Awaited<ReturnType<HostStore["session"]>>);
+    await f.service.tick();
+    expect((await readCrewRun(f.store, "launch-run"))?.status).toBe("paused");
+    f.engine.command.mockClear();
+    await f.service.call("crews.resume", { runId: "launch-run" }, f.project.id);
+    const run = await readCrewRun(f.store, "launch-run");
+    expect(run).toMatchObject({ status: "active", coordinatorSessionId: "coordinator" });
+    expect(run?.error).toBeUndefined();
+    expect(run?.pendingDelivery?.text).toContain("Resume crew work");
+    expect(creates(f)).toHaveLength(0);
+    await f.service.tick();
+    expect(f.engine.command).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "send", sessionId: "coordinator" }),
+    );
+  });
+});

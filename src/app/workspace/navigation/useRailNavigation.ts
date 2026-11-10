@@ -162,5 +162,10 @@ export function useRailNavigation(d: RailNavigationDeps) {
     surfaceForward: { canForward: navigation.canForward },
     onRailBack: () => step("back"),
     onRailForward: () => step("forward"),
+    /** Closes every tool page and shows the current tab; the layout effect records the visit. */
+    onShowWorkspace: () => {
+      if (d.toolWindow || view === "workspace") return;
+      restore({ view: "workspace", tabId: current.tabId, cwd: d.projectCwd }, current);
+    },
   };
 }

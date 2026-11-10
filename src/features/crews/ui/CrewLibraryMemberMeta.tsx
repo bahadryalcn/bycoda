@@ -7,7 +7,7 @@ import { memberTraits } from "../model/memberAvatars";
 import { CrewRoleIcon } from "./CrewRoleIcon";
 import { MemberAvatar } from "./MemberAvatar";
 import { roleLabel } from "./CrewMemberForm";
-import { crewToolPresetLabel } from "./MemberToolsPicker";
+import { crewToolProfileLabel } from "./MemberToolsPicker";
 
 /** Library profile scope, the same wording in the library list and the picker. */
 export function memberScopeLabel(agent: Pick<SavedCrewAgent, "projectId">, short = false) {
@@ -92,7 +92,7 @@ export function CrewMemberMeta({
             ? t("Automatic: {p0}", { p0: poolName })
             : memberModelSummary(catalog, agent),
           memberScopeLabel(agent, shortScope),
-          ...(agent.tools ? [crewToolPresetLabel(agent.tools.preset)] : []),
+          ...(agent.tools ? [crewToolProfileLabel(agent.tools)] : []),
         ].join(" · ")}
       </span>
     </span>

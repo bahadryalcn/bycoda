@@ -5,6 +5,7 @@ import { MOD } from "../../../platform/tauri/platform";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { replyToThread } from "../model/messagingApi";
 import type { MessageThread, ThreadMessage } from "../model/messagingTypes";
 import {
@@ -105,12 +106,11 @@ export function MessageReplyComposer({
       />
       <div className="flex min-w-0 items-center justify-end gap-2">
         {hint ? (
-          <span
-            className="min-w-0 flex-1 truncate text-ui-caption text-(--ui-text-secondary)"
-            title={hint}
-          >
-            {hint}
-          </span>
+          <OverflowTooltip label={hint}>
+            <span className="min-w-0 flex-1 truncate text-ui-caption text-(--ui-text-secondary)">
+              {hint}
+            </span>
+          </OverflowTooltip>
         ) : null}
         <Button
           variant="primary"

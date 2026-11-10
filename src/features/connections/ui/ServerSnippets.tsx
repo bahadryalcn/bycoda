@@ -4,6 +4,7 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -41,7 +42,7 @@ function ServerSnippetsForm({
   const [name, setName] = useState("");
   const [command, setCommand] = useState("");
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState<"" | "saved" | "copied" | "inserted">("");
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState("");
   const matches = snippets.filter((snippet) =>
@@ -128,7 +129,7 @@ function ServerSnippetsForm({
                 expectedCommand: selected?.command,
               });
               setSelected(saved);
-              setNotice(t("Saved"));
+              setNotice("saved");
             } catch {
               setError(
                 t(
@@ -180,12 +181,19 @@ function ServerSnippetsForm({
                 {t("New command")}
               </Button>
             ) : null}
-            <Button type="submit" disabled={busy || !name.trim() || !isSingleLineCommand(command)}>
+            <Button
+              type="submit"
+              success={notice === "saved"}
+              successLabel={t("Saved")}
+              disabled={busy || !name.trim() || !isSingleLineCommand(command)}
+            >
               {t("Save")}
             </Button>
             <Button
               variant={onInsert ? "secondary" : "primary"}
               loading={busy}
+              success={notice === "copied"}
+              successLabel={t("Copied")}
               disabled={
                 !selected ||
                 selected.command !== command ||
@@ -199,7 +207,7 @@ function ServerSnippetsForm({
                 setNotice("");
                 try {
                   await insertSshSnippet(selected, serverId, copyText);
-                  setNotice(t("Copied"));
+                  setNotice("copied");
                 } catch {
                   setError(t("Couldn’t copy this command. Review and save it first."));
                 } finally {
@@ -226,7 +234,7 @@ function ServerSnippetsForm({
                   setNotice("");
                   try {
                     await insertSshSnippet(selected, serverId, onInsert);
-                    setNotice(t("Inserted. Press Enter in the terminal to run."));
+                    setNotice("inserted");
                   } catch {
                     setError(
                       t(
@@ -250,9 +258,10 @@ function ServerSnippetsForm({
         </p>
       ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
-      <p role="status" className="text-ui-caption text-(--ui-text-muted)">
-        {notice}
-      </p>
+      <LiveText
+        text={notice === "inserted" ? t("Inserted. Press Enter in the terminal to run.") : ""}
+        className="text-ui-caption text-(--ui-text-muted)"
+      />
     </section>
   );
 }

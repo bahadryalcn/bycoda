@@ -84,7 +84,6 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
           label={t("Quoted reply")}
           variant="ghost"
           size="sm"
-          tooltip={t("Quoted reply")}
           aria-expanded={Boolean(anchor)}
           onClick={(event) => {
             event.stopPropagation();

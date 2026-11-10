@@ -43,11 +43,14 @@ if (new URLSearchParams(location.search).has("draft"))
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const badgeCount = Number(new URLSearchParams(location.search).get("badgeCount"));
 const expandedRail = new URLSearchParams(location.search).has("expandedRail");
+const headerNavigation = new URLSearchParams(location.search).has("headerNavigation");
+const projectHeader = new URLSearchParams(location.search).has("projectHeader");
 
 function Fixture() {
   const [cwd, setCwd] = useState(projects[0]);
   const [tab, setTab] = useState<ComponentProps<typeof Sidebar>["tab"]>("sessions");
   const [selected, setSelected] = useState("");
+  const [projectToggleCount, setProjectToggleCount] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [request, setRequest] = useState<SearchRequest>();
   const [sidebarOpen, setSidebarOpen] = useState(
@@ -66,7 +69,11 @@ function Fixture() {
           open={sidebarOpen}
           projectRailOpen={expandedRail}
           compactProjectRail
-          titleBarAbove
+          titleBarAbove={!headerNavigation}
+          lastSessionsOpen={headerNavigation && !projectHeader}
+          canGoBack={headerNavigation}
+          canGoForward={headerNavigation}
+          onGoForward={() => setSelected("Forward")}
           sessions={history}
           busySessionIds={new Set(history.slice(0, badgeCount || 6).map((session) => session.id))}
           recoveryControl={
@@ -90,7 +97,12 @@ function Fixture() {
           recents={projects.map((path) => ({ path, openedAt: 1 }))}
           onSelectProject={setCwd}
           onOpenProject={() => setSelected("Add project")}
-          onToggleProjectRail={() => setSelected("Expand projects")}
+          onToggleProjectRail={() => {
+            setSelected("Expand projects");
+            setProjectToggleCount((count) => count + 1);
+          }}
+          onOpenLastSessions={() => setSelected("Last sessions")}
+          onShowWorkspace={() => setView("workspace")}
           onOpenCrewSession={() => setSelected("Crew")}
           onSearch={openSearch}
           onSearchConversations={(query) => {
@@ -102,7 +114,10 @@ function Fixture() {
             setView("inbox");
           }}
           inboxActive={view === "inbox"}
-          onGoBack={() => setView("workspace")}
+          onGoBack={() => {
+            if (headerNavigation) setSelected("Back");
+            else setView("workspace");
+          }}
           onOpenNotes={() => setSelected("Notes")}
           onOpenServers={() => setSelected("Servers")}
           onOpenTasks={() => setSelected("Tasks")}
@@ -156,6 +171,9 @@ function Fixture() {
           </div>
           <output aria-label="Selected action" className="sr-only">
             {selected}
+          </output>
+          <output aria-label="Project panel toggle count" className="sr-only">
+            {projectToggleCount}
           </output>
         </main>
         {searchOpen && (

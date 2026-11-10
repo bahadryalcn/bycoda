@@ -405,6 +405,16 @@ fn automatic_activity(base: &Path) -> Result<bool, ()> {
     host_busy(base)
 }
 
+/// The owner confirmed in Settings that running sessions and shells may be
+/// interrupted, so activity no longer defers the update. The installer still
+/// stops the old service through its own lifecycle and fails closed.
+fn admitted_activity(base: &Path, owner_approved: bool) -> Result<bool, ()> {
+    if owner_approved {
+        return Ok(false);
+    }
+    automatic_activity(base)
+}
+
 /// A local update coordinator job for the host that is still in progress.
 pub(crate) fn job_pending(base: &Path) -> bool {
     let job = base.join("update-jobs").join("host.json");
@@ -686,8 +696,9 @@ fn record(status: BundledHostStatus) {
     }
 }
 
-/// One attempt; returns the delay before another useful probe.
-fn ensure_once(app: &AppHandle) -> Option<Duration> {
+/// One attempt; returns the delay before another useful probe. `owner_approved`
+/// is the owner's explicit confirmation to interrupt running work.
+fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
     if crate::debug_profile::profile_id().is_some() {
         // The dev supervisor owns its child Host. Never install a system service.
         record(BundledHostStatus {
@@ -711,6 +722,14 @@ fn ensure_once(app: &AppHandle) -> Option<Duration> {
         return None;
     };
     let Some(lock) = InstallLock::acquire(&base) else {
+        if owner_approved {
+            record(BundledHostStatus {
+                state: "deferred".into(),
+                message: Some("Another host update is being installed.".into()),
+                bundled: Some(bundled),
+                installed: installed_version(&base),
+            });
+        }
         return Some(RETRY_INTERVAL);
     };
     let lock = std::sync::Arc::new(lock);
@@ -718,7 +737,7 @@ fn ensure_once(app: &AppHandle) -> Option<Duration> {
     let decision = plan(
         installed.as_deref(),
         &bundled,
-        automatic_activity(&base),
+        admitted_activity(&base, owner_approved),
         job_pending(&base),
         host_healthy(&base),
     );
@@ -753,7 +772,8 @@ fn ensure_once(app: &AppHandle) -> Option<Duration> {
                 }
             };
             let mut retry = RetryState::load(&retry_path, &package);
-            if let Some(delay) = retry.remaining(unix_now()) {
+            // The back-off paces unattended retries; an explicit request runs now.
+            if let Some(delay) = retry.remaining(unix_now()).filter(|_| !owner_approved) {
                 record(status(
                     "deferred",
                     Some(format!(
@@ -813,7 +833,7 @@ pub fn start(app: &AppHandle) {
     }
     let app = app.clone();
     std::thread::spawn(move || {
-        while let Some(delay) = ensure_once(&app) {
+        while let Some(delay) = ensure_once(&app, false) {
             std::thread::sleep(delay);
         }
     });
@@ -823,6 +843,20 @@ pub fn start(app: &AppHandle) {
 #[tauri::command]
 pub fn local_host_bundle_status() -> Option<BundledHostStatus> {
     STATUS.lock().ok().and_then(|slot| slot.clone())
+}
+
+/// Updates this computer's host now, from Settings → Connections. The caller
+/// has shown the owner that running sessions and shells are interrupted.
+#[tauri::command]
+pub async fn local_host_bundle_update(app: AppHandle) -> Result<Option<BundledHostStatus>, String> {
+    crate::harness::run_blocking("local_host_bundle_update", move || {
+        if app.config().identifier != RELEASE_IDENTIFIER {
+            return Err("Only the installed app can update this computer's host.".into());
+        }
+        ensure_once(&app, true);
+        Ok(local_host_bundle_status())
+    })
+    .await
 }
 
 #[cfg(test)]
@@ -1011,6 +1045,23 @@ mod tests {
                 Plan::Deferred(_)
             ));
         }
+        // The owner's confirmation admits the same profile that automation defers.
+        for (installed, expected) in [
+            (Some("0.6.74"), Plan::Upgrade),
+            (Some("0.6.75"), Plan::Repair),
+        ] {
+            assert_eq!(
+                plan(
+                    installed,
+                    "0.6.75",
+                    admitted_activity(&base, true),
+                    false,
+                    false
+                ),
+                expected
+            );
+        }
+        assert_eq!(admitted_activity(&base, false), automatic_activity(&base));
         // Owner-directed repair/upgrade retains the existing verified-idle plan.
         assert_eq!(
             plan(Some("0.6.75"), "0.6.75", Ok(false), false, false),

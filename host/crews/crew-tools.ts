@@ -8,7 +8,11 @@ import {
   DELEGATION_LIMITS,
 } from "../../src/shared/model/host-contracts/delegation";
 import { CONVERSATION_READ_ACTIONS } from "../conversation/conversation-read-actions";
-import { isRoomOnlyConversationAction } from "../conversation/conversation-tools";
+import {
+  isRoomOnlyConversationAction,
+  sessionConversationToolCatalog,
+} from "../conversation/conversation-tools";
+import { truncateGraphemes } from "../../src/shared/lib/text/truncate";
 
 /**
  * Per-member narrowing of Host Conversation Tools. A profile is stored on the member,
@@ -30,6 +34,23 @@ const ALWAYS_ALLOWED: readonly string[] = [
   "tools.status",
   "crews.request",
 ];
+
+/**
+ * Host tools an owner can list for a member (`crews.schema` with `hostTools`): id, whether it
+ * writes or starts things, and a one-sentence summary. Tools every profile keeps are left out.
+ */
+export function crewToolCatalog(): { action: string; write: boolean; summary: string }[] {
+  return sessionConversationToolCatalog()
+    .filter((tool) => !ALWAYS_ALLOWED.includes(tool.action))
+    .map((tool) => {
+      const text = tool.description.slice(tool.action.length + 2);
+      return {
+        action: tool.action,
+        write: tool.authorizationScope === "write",
+        summary: truncateGraphemes(/^.*?[.!?](?=\s|$)/.exec(text)?.[0] ?? text, 160),
+      };
+    });
+}
 
 const PRESET_EXTRA: Record<"design" | "browser", readonly string[]> = {
   design: ["images.generate", "visuals.preview", "visuals.render", "images.status"],

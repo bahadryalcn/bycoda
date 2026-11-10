@@ -125,7 +125,6 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               variant={canTalk || (live && !p.muted) ? "primary" : "secondary"}
               tone={p.muted ? "danger" : undefined}
               label={micLabel}
-              tooltip={micLabel}
               loading={connecting}
               disabled={canTalk ? p.startDisabled : !live}
               selected={live && p.muted}
@@ -139,13 +138,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               )}
             </Button>
             {p.status !== "idle" && (
-              <Button
-                iconOnly
-                variant="danger"
-                label={t("Disconnect voice")}
-                tooltip={t("Disconnect voice")}
-                onClick={p.onClose}
-              >
+              <Button iconOnly variant="danger" label={t("Disconnect voice")} onClick={p.onClose}>
                 <Square className="icon-sm" />
               </Button>
             )}
@@ -170,19 +163,13 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
           ref={toggleRef}
           iconOnly
           label={toggleLabel}
-          tooltip={toggleLabel}
           aria-expanded={!p.compact}
           onClick={p.onToggleCompact}
         >
           {p.compact ? <Maximize2 className="icon-sm" /> : <Minimize2 className="icon-sm" />}
         </Button>
         {!p.compact && (
-          <Button
-            iconOnly
-            label={t("Close voice companion")}
-            tooltip={t("Close voice companion")}
-            onClick={p.onDismiss}
-          >
+          <Button iconOnly label={t("Close voice companion")} onClick={p.onDismiss}>
             <X className="icon-sm" />
           </Button>
         )}

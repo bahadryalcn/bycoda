@@ -70,6 +70,10 @@ export async function handleDecisionModelsRpc(
       request.result = await service.scanDiscovery();
       break;
 
+    case "decisionModels.discovery.cancel":
+      request.result = service.cancelDiscovery();
+      break;
+
     case "decisionModels.discovery.results":
       request.result = service.discoveryResults();
       break;

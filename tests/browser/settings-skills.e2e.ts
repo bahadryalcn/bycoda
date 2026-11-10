@@ -15,8 +15,8 @@ for (const theme of ["dark", "light"]) {
       await editor.fill("---\nname: arc\n---\n\n# Edited instructions\n");
       await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible();
       await page.getByRole("button", { name: "Save", exact: true }).click();
-      await expect(page.getByText("Skill saved.", { exact: true })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeDisabled();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -48,6 +48,37 @@ for (const theme of ["dark", "light"]) {
     });
   }
 }
+
+// Production skill editor, memory-only filesystem/Host fixture ports.
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`skill save feedback ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/settings.html?section=skills&skills=1&theme=${theme}`);
+      await page.getByRole("button", { name: "arc", exact: true }).click();
+      const editor = page.getByRole("textbox", { name: "Skill instructions", exact: true });
+      await expect(editor).toBeVisible();
+      await editor.fill("---\nname: arc\n---\n\n# Updated instructions\n");
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      const saved = page.getByRole("button", { name: "Saved", exact: true });
+      await expect(saved).toBeVisible();
+      await expect(saved).toBeDisabled();
+      await expect(page.getByText("Skill saved.", { exact: true })).toHaveCount(0);
+      await expect(
+        page.getByRole("complementary", { name: "Skill preview" }).locator("footer"),
+      ).not.toContainText("Saved");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      mkdirSync("temp/verification/action-feedback", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/action-feedback/skills-saved-${theme}-${width}.png`,
+      });
+      await editor.fill("---\nname: arc\n---\n\n# Further edit\n");
+      await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+      await expect(saved).toHaveCount(0);
+    });
 
 for (const theme of ["dark", "light"]) {
   for (const width of [800, 1280]) {

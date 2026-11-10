@@ -1,5 +1,7 @@
 # Decision models
 
+For folder setup and settings, see [Manage decision models](../guides/decision-models.md).
+
 Decision models answer narrow questions with a typed answer and a confidence value. Examples
 are whether a screen is a login page, which visible element to choose, or whether a comment is
 an opt-out. The Host gateway is the only way Social and AI tools call them. Callers never talk to
@@ -60,7 +62,7 @@ layouts. Their tests state that they are assumptions.
   machine is available.
 - Owner RPC (`host/server/rpc-decision-models.ts`): `decisionModels.catalog.get`,
   `routing.get`, `routing.set`, `local.status`, `decide`, `sources.add`, `sources.update`,
-  `sources.remove`, `sources.test`, `sources.evaluate`, `discovery.scan`, `discovery.results`,
+  `sources.remove`, `sources.test`, `sources.evaluate`, `discovery.scan`, `discovery.cancel`, `discovery.results`,
   `discovery.settings.get`, `discovery.settings.set`, `manual.verify`, `firstRun.get` and
   `firstRun.set`. Only the owner changes configuration. Callers use `decide`.
 - Local runtime install and discovery (`discovery.ts`, `hardware.ts`, `local-install.ts`,

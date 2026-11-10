@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SecretValueStore } from "../secrets/secret-store";
 import { DecisionModelsService } from "./decision-service";
 import { DEFAULT_THRESHOLD, type DecisionRequest } from "./decision-types";
+import * as discovery from "./discovery";
+import type { LocalInstaller } from "./local-install";
 
 const API_KEY = "sk-test-0123456789-do-not-store-in-config";
 
@@ -64,6 +66,88 @@ const request: DecisionRequest = {
 };
 
 describe("DecisionModelsService without sources", () => {
+  it.each([true, false])(
+    "reuses a recorded running endpoint or starts a stopped folder model (healthy=%s)",
+    async (healthy) => {
+      let running = false;
+      const start = vi.fn(async () => {
+        running = true;
+      });
+      const installer = {
+        start,
+        endpoint: () => (running ? "http://127.0.0.1:45000" : undefined),
+        touch: vi.fn(),
+      } as unknown as LocalInstaller;
+      const fetcher = vi.fn(async (input: string | URL | Request) => {
+        if (String(input).endsWith("/health"))
+          return new Response("{}", { status: healthy ? 200 : 503 });
+        return new Response(JSON.stringify({ answers: { check: { type: "noul", noul: 0.99 } } }), {
+          status: 200,
+        });
+      });
+      vi.stubGlobal("fetch", fetcher);
+      try {
+        const instance = new DecisionModelsService({
+          directory,
+          secrets,
+          localInstaller: installer,
+        });
+        const source = await instance.addSource({
+          ...localClef,
+          endpoint: "http://127.0.0.1:8767/v1/systemone",
+          local: { modelPath: "C:/m.gguf", runtimePath: "C:/llama-server.exe" },
+        });
+        await instance.testSource(source.id);
+        expect(start).toHaveBeenCalledTimes(healthy ? 0 : 1);
+        expect(fetcher).toHaveBeenCalledWith(
+          healthy ? "http://127.0.0.1:8767/v1/systemone" : "http://127.0.0.1:45000/v1/systemone",
+          expect.objectContaining({ method: "POST" }),
+        );
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+  it("keeps cached candidates when an incomplete retry has no new results", async () => {
+    const candidate = { id: "model:cached", label: "Cached model", kind: "model_file" as const };
+    const scan = vi
+      .spyOn(discovery, "scan")
+      .mockResolvedValueOnce({ found: [candidate] })
+      .mockResolvedValueOnce({ found: [], incomplete: true });
+    try {
+      await service.scanDiscovery();
+      expect(await service.scanDiscovery()).toEqual({ found: [candidate], incomplete: true });
+      expect(service.discoveryResults()).toEqual({ found: [candidate], incomplete: true });
+    } finally {
+      scan.mockRestore();
+    }
+  });
+  it("coalesces scans and retains partial results after cancellation", async () => {
+    const candidate = { id: "model:partial", label: "Partial model", kind: "model_file" as const };
+    const scan = vi.spyOn(discovery, "scan").mockImplementation(
+      async (_config, signal) =>
+        new Promise((resolve) => {
+          signal.addEventListener(
+            "abort",
+            () => resolve({ found: [candidate], incomplete: true }),
+            { once: true },
+          );
+        }),
+    );
+    try {
+      expect(service.cancelDiscovery()).toEqual({ cancelled: false });
+      const first = service.scanDiscovery();
+      const second = service.scanDiscovery();
+      await vi.waitFor(() => expect(scan).toHaveBeenCalledTimes(1));
+      expect(service.cancelDiscovery()).toEqual({ cancelled: true });
+      expect(service.cancelDiscovery()).toEqual({ cancelled: false });
+      expect(await first).toEqual({ found: [candidate], incomplete: true });
+      expect(await second).toEqual(await first);
+      expect(service.discoveryResults()).toEqual(await first);
+    } finally {
+      scan.mockRestore();
+    }
+  });
   it("answers every question as unavailable when no source is configured", async () => {
     const result = await service.decide(request);
 
@@ -338,6 +422,23 @@ describe("DecisionModelsService discovery, first run and manual checks", () => {
         authHeader: "Cookie",
       }),
     ).rejects.toThrow("Invalid key header name.");
+    expect(await service.listSources()).toEqual([]);
+  });
+
+  it("resolves a discovered file through model_installation without adding a source", async () => {
+    const modelPath = join(directory, "discovered.gguf");
+    writeFileSync(
+      modelPath,
+      Buffer.concat([Buffer.from("GGUF"), Buffer.from([3, 0, 0, 0]), Buffer.alloc(16)]),
+    );
+    expect(
+      await service.verifyManual({ kind: "model_installation", path: modelPath }),
+    ).toMatchObject({
+      kind: "installation_folder",
+      folder: directory,
+      modelPath,
+      verified: false,
+    });
     expect(await service.listSources()).toEqual([]);
   });
 

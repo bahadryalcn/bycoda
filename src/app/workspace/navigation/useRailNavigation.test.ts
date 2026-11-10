@@ -108,6 +108,9 @@ function mount(toolWindow = false, mouse = false) {
     forward() {
       act(() => navigation.onRailForward());
     },
+    showWorkspace() {
+      act(() => navigation.onShowWorkspace());
+    },
     close(id: string) {
       act(() => setTabs((prev) => new Set([...prev].filter((tab) => tab !== id))));
     },
@@ -257,4 +260,21 @@ it("bounds the window history to the most recent 50 visits", () => {
   expect(w.nav.canBack).toBe(false);
   w.back();
   expect(w.state.projectCwd).toBe("/project-19");
+});
+
+it("shows the workspace directly instead of stepping back to an older surface", () => {
+  const w = mount();
+  w.go({ settingsOpen: true });
+  w.go({ settingsOpen: false, inboxViewOpen: true });
+  w.showWorkspace();
+  expect(w.state).toMatchObject({ settingsOpen: false, inboxViewOpen: false, activeTabId: "a" });
+  // The tool page stays one step back, like any other navigation.
+  w.back();
+  expect(w.state.inboxViewOpen).toBe(true);
+});
+
+it("leaves a tools window on its tool when asked for the workspace", () => {
+  const w = mount(true);
+  w.showWorkspace();
+  expect(w.state.notesViewOpen).toBe(true);
 });

@@ -90,6 +90,7 @@ export function CrewLibraryProfileDialog({
           groupSuggestions={groupNames}
           nameError={showIssues && !agent.name.trim() ? t("Add a name") : undefined}
           machineId={data.machine.id}
+          projectId={data.project.id}
           modelPoolsSupported={data.modelPoolsSupported}
           modelError={showIssues && !agent.candidates.length ? t("Choose a model") : undefined}
         />

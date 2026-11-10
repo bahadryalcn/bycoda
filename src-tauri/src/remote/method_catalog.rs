@@ -281,6 +281,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "decisionModels.decide"
             | "decisionModels.discovery.results"
             | "decisionModels.discovery.scan"
+            | "decisionModels.discovery.cancel"
             | "decisionModels.discovery.settings.get"
             | "decisionModels.discovery.settings.set"
             | "decisionModels.firstRun.get"
@@ -310,6 +311,8 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "sessions.taskLink.link"
             | "sessions.taskLink.unlink"
             | "decisionModels.sources.list"
+            | "decisionModels.sources.add"
+            | "decisionModels.sources.update"
             | "decisionModels.sources.remove"
             | "decisionModels.sources.test"
             | "decisionModels.sources.evaluate"
@@ -318,9 +321,37 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
     )
 }
 
+/// Source edits without credentials may target any Host. Keys stay on the desktop's local Host.
+pub(super) fn decision_model_key_allowed(
+    method: &str,
+    has_api_key: bool,
+    local_host: bool,
+) -> bool {
+    !matches!(
+        method,
+        "decisionModels.sources.add" | "decisionModels.sources.update"
+    ) || !has_api_key
+        || local_host
+}
+
 #[cfg(test)]
 mod tests {
-    use super::supported_remote_method;
+    use super::{decision_model_key_allowed, supported_remote_method};
+
+    #[test]
+    fn decision_source_edits_preserve_credential_locality() {
+        for method in [
+            "decisionModels.sources.add",
+            "decisionModels.sources.update",
+        ] {
+            assert!(supported_remote_method(method));
+            assert!(decision_model_key_allowed(method, false, false));
+            assert!(decision_model_key_allowed(method, false, true));
+            assert!(!decision_model_key_allowed(method, true, false));
+            assert!(decision_model_key_allowed(method, true, true));
+        }
+        assert!(!supported_remote_method("decisionModels.sources.anything"));
+    }
 
     #[test]
     fn media_custody_uses_exact_method_names_without_a_prefix_grant() {

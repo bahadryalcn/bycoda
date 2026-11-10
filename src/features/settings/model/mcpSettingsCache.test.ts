@@ -3,6 +3,7 @@ import type { McpConnection } from "./mcp";
 import {
   clearMcpSettingsCache,
   getCachedMcpSettings,
+  invalidateMcpSettings,
   loadMcpSettings,
   MCP_LOCAL_ONLY_ERROR,
   subscribeMcpSettings,
@@ -26,6 +27,70 @@ beforeEach(() => {
   invoke.mockReset();
 });
 afterEach(clearMcpSettingsCache);
+
+it("isolates global discovery from ambiguous project settings and project subscribers", async () => {
+  const global = { ...configured[0], scope: "user" as const, configPath: "/home/.claude.json" };
+  invoke.mockImplementation(async (command: string, args: { globalOnly?: boolean }) => {
+    if (command === "mcp_discover" && args.globalOnly) return [global, ...configured];
+    throw new Error("Claude has ambiguous project settings; resolve duplicate project paths first");
+  });
+  const projectChanged = vi.fn();
+  const globalChanged = vi.fn();
+  const stopProject = subscribeMcpSettings("/repo", projectChanged);
+  const stopGlobal = subscribeMcpSettings("/repo", globalChanged, true);
+  try {
+    const project = await loadMcpSettings("/repo", false, { claudeHealth: false });
+    const snapshot = await loadMcpSettings("/repo", false, { globalOnly: true });
+    expect(project.error).toContain("ambiguous project settings");
+    expect(snapshot).toEqual({
+      servers: [{ ...global, status: "Configured" }],
+      error: "",
+      claudeError: "",
+    });
+    expect(getCachedMcpSettings("/repo")).toBe(project);
+    expect(getCachedMcpSettings("/repo", true)).toBe(snapshot);
+    expect(projectChanged).toHaveBeenCalledTimes(1);
+    expect(globalChanged).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith("mcp_discover", { cwd: "/repo", globalOnly: true });
+    expect(invoke).not.toHaveBeenCalledWith("claude_mcp_list", expect.anything());
+    await loadMcpSettings("/repo", false, { globalOnly: true });
+    expect(invoke).toHaveBeenCalledTimes(2);
+  } finally {
+    stopProject();
+    stopGlobal();
+  }
+});
+
+it("never starts desktop discovery for a remote global view", async () => {
+  const snapshot = await loadMcpSettings("remote://host/repo", true, { globalOnly: true });
+  expect(snapshot.error).toBe(MCP_LOCAL_ONLY_ERROR);
+  expect(invoke).not.toHaveBeenCalled();
+});
+
+it("publishes Codex authentication to its exact global or project snapshot", async () => {
+  const auth: ((value: { name: string; authStatus: string }[]) => void)[] = [];
+  invoke.mockImplementation((command: string, args: { globalOnly?: boolean }) => {
+    if (command === "mcp_discover")
+      return Promise.resolve([
+        {
+          ...configured[0],
+          provider: "codex",
+          scope: args.globalOnly ? "user" : "project",
+        },
+      ]);
+    return new Promise((resolve) => auth.push(resolve));
+  });
+  await loadMcpSettings("/repo", false, { claudeHealth: false });
+  await loadMcpSettings("/repo", false, { globalOnly: true });
+  auth[1]([{ name: "docs", authStatus: "o_auth" }]);
+  await vi.waitFor(() =>
+    expect(getCachedMcpSettings("/repo", true)?.servers[0].auth).toBe("signed_in"),
+  );
+  expect(getCachedMcpSettings("/repo")?.servers[0].auth).toBeUndefined();
+  auth[0]([{ name: "docs", authStatus: "not_logged_in" }]);
+  await vi.waitFor(() => expect(getCachedMcpSettings("/repo")?.servers[0].auth).toBe("signed_out"));
+  expect(getCachedMcpSettings("/repo", true)?.servers[0].auth).toBe("signed_in");
+});
 
 it("clears verified connection and sign-in after failed discovery without losing configuration", async () => {
   invoke.mockImplementation(async (command: string) =>
@@ -151,4 +216,15 @@ it("reads Codex sign-in state when the list opens without Claude health", async 
     ]),
   );
   expect(invoke).not.toHaveBeenCalledWith("claude_mcp_list", expect.anything());
+});
+
+it("rereads both views after mutation while retaining last-good rows", async () => {
+  invoke.mockResolvedValue(configured);
+  await loadMcpSettings("/repo", false, { claudeHealth: false });
+  await loadMcpSettings("/repo", false, { globalOnly: true });
+  invalidateMcpSettings("/repo");
+  expect(getCachedMcpSettings("/repo")?.servers[0].name).toBe("docs");
+  await loadMcpSettings("/repo", false, { claudeHealth: false });
+  await loadMcpSettings("/repo", false, { globalOnly: true });
+  expect(invoke.mock.calls.filter(([command]) => command === "mcp_discover")).toHaveLength(4);
 });

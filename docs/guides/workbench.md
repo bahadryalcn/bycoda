@@ -2,7 +2,15 @@
 
 Collapsed project navigation uses a 56px icon rail with a centered divider and a
 small-size vector mark. Expanded sections share label and count columns; Last
-sessions keeps separate collapse and open actions.
+sessions keeps separate collapse and open actions. The workspace header emphasizes
+the current location. Its Back, Forward and Expand projects controls sit after the
+title, before conversation search; Expand projects is no longer repeated in the
+compact rail. Narrow workspace panes keep the location on its own row and the
+same controls immediately below, so every action stays inside the pane. Crews, Servers, Notes,
+Automations, Social Media, Tasks and Room appear directly as stacked rail icons.
+Hover or focus an icon for its name and shortcut. The rail scrolls in short windows
+while Account and Settings remain at the bottom. Recovered work uses a restore
+arrow; Last sessions uses a clock.
 
 GitHub Inbox discovers repositories from local remembered projects. Its **Local
 repositories** filter shows each `owner/repo` once, even when several checkouts
@@ -21,7 +29,9 @@ following new messages.
 
 On Windows and Linux, scrollbar thumbs appear when you hover over or focus a
 scrolling area. Touch-only devices and high-contrast mode keep them visible.
-macOS native scrollbars follow the system preference. The editor's custom thumb
+Appearance offers Extra thin (3px), Thin (6px), Medium (10px), Large (14px) and
+XLarge (18px) scrollbar sizes. Existing Wide preferences retain their 14px width as
+Large. macOS native scrollbars follow the system preference. The editor's custom thumb
 also appears on hover or focus; its diagnostic and cursor marks stay visible.
 Scrolling and dragging remain available without changing the reserved space.
 
@@ -35,6 +45,9 @@ Ordinary panels, lists, detail panes and empty states share the canvas in both
 Pure and Tinted appearance. Spacing and fine borders separate content. Floating
 menus and dialogs, writing controls and code or log viewers keep their raised
 surfaces; selection, hover, drag and status indicators retain their own roles.
+
+Context-menu rows show a fill and inset border on hover. Keyboard focus uses the
+selected fill and focus ring; an open submenu keeps its parent row marked.
 
 Counters use compact, borderless accent labels. Counts above 99 show `99+` while
 retaining the exact accessible count. Pending questions and approvals use warning
@@ -66,14 +79,18 @@ work, a red cross marks failure, and warning icons distinguish stopped and inter
 runs. Hover or focus a row for its full identity and status. Missing child-model
 metadata stays unspecified rather than borrowing the parent conversation's model.
 
-Readable labels stay quiet on hover. Tooltips explain icons, missing shortcuts
-and additional context, or reveal the full text when a label is clipped. Narrow
-panes that hide tab labels keep their icon explanations. Error reasons and
-connection details remain available; accessible control names do not depend on
-whether a tooltip is visible.
+Tooltip content is chosen by each control: readable labels stay quiet on hover,
+while hints explain icons, missing shortcuts and additional context. Overflow
+hints reveal full text when a label is clipped or hidden; narrow panes keep their
+icon explanations. Explicit tooltip content is shown as supplied. Error reasons
+and connection details remain available; accessible control names do not depend
+on whether a tooltip is visible.
 
 Conversation deletion keeps its confirmation and shows progress while work is
-pending. Successful deletion clears the progress without an extra success banner.
+pending. Sidebar bulk deletion uses one compact row: a red spinner, clipped conversation
+title, completed/total count and red trash icon. Completion replaces progress in the
+same row, using the normal text color. Successful feedback closes
+after ten seconds; its close button dismisses it immediately.
 Failures, skipped conversations and incomplete cleanup remain visible for review.
 
 While a queued message is being delivered, its queue header shows a compact progress indicator. A brief check means the provider accepted it; follow the conversation for execution and completion. Unconfirmed or rejected deliveries retain their explanation and recovery actions.
@@ -197,8 +214,10 @@ to its own conversation list. The
 combined list does not make unrelated repositories share Git operations. The time
 filter can narrow this window to Today; Clear restores Last 7 days. Remote rows
 come from available history and show a coverage note rather than claiming a full
-remote archive. Local pinning remains available; project-scoped archive/delete
-operations stay in the project view. Deleting several remote conversations at once
+remote archive. Pin actions are available only in the project view. Local rows
+provide Settle, Archive and Delete; each action updates that conversation in its
+own project, even while another project is open. Remote lifecycle actions remain
+in the owning project view. Deleting several remote conversations at once
 sends them together; the result appears on both computers.
 
 The sessions filter menu can show only conversations managed by your named
@@ -289,7 +308,9 @@ with tooltips; a failed copy or save shows the reason and a retry icon in place.
 The notifications sheet lists pending requests and **Recent**, the common log of
 what the app announced (the last 100): questions, approvals, finished and failed
 turns, reminders, background work, assistant messages and account notices. Each
-row carries a kind label and icon. An event is logged when its notification
+row carries a colored kind badge and icon: failed turns use red, finished turns
+green, questions/approvals/reminders amber, assistant messages the accent color,
+background work blue and account notices a neutral tone. An event is logged when its notification
 setting allows it, even if no desktop banner was shown because bycoda was in the
 foreground or banners are off; a muted project is not logged, and a locked group
 is logged without its text. A pending approval is decided in place with Allow or
@@ -298,7 +319,7 @@ question opens its conversation with **Answer**. Clicking a recent row opens its
 conversation, or for background work, the assistant and account notices the view
 they belong to; if that conversation no longer exists, the row says so and the
 sheet stays open. A recent request that is still unanswered is marked **Waiting
-for you**. Each row can be removed on its own, and **Clear all** above the list
+for you**. Each row can be removed on its own, and **Clear all** opposite **Recent**
 removes them all. Removing and clearing happen only after the change is saved; if
 saving fails, the list stays and says so.
 

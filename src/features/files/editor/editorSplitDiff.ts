@@ -2,6 +2,7 @@ import { getChunks, MergeView } from "@codemirror/merge";
 import { EditorState, type Extension, type Text } from "@codemirror/state";
 import { EditorView, type ViewUpdate } from "@codemirror/view";
 import { t } from "../../../shared/i18n";
+import { editorSearch } from "./editorSearch";
 import { editorDocChanges } from "./editorDoc";
 import { editorSurfaceActive } from "./editorSurfaceVisibility";
 import {
@@ -114,6 +115,7 @@ export function createSplitDiff(options: {
       doc: options.original,
       extensions: [
         options.originalExtensions,
+        editorSearch,
         EditorState.readOnly.of(true),
         EditorView.contentAttributes.of({ "aria-label": "Before (read-only)" }),
         splitTheme,
@@ -124,6 +126,7 @@ export function createSplitDiff(options: {
       doc: options.doc,
       extensions: [
         options.extensions,
+        editorSearch,
         EditorView.contentAttributes.of({ "aria-label": "After" }),
         splitTheme,
         splitScroll,

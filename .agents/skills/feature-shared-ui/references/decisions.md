@@ -25,3 +25,11 @@ Owner decision, 2026-11-08, source: owner chat:
 > let us write what each component really does and introduce the appropriate skills ... we need to solve all of it permanently (translated)
 
 Recorded decision: each shared component's JSDoc (`@group`, `@use`, `@avoid`, `@replaces`, `@status`, `@instead`) is the single source of truth. The component catalog is generated from it, `check:ui-drift` bans the raw tags it replaces and deprecated imports, and Modal/Sheet own their body padding.
+
+## Tooltip content belongs to its caller
+
+Owner decision, 2026-11-11, source: owner chat:
+
+> Butonda isim varsa bunu kod ile değil direk kaldırmamız gerekiyor gereksiz kodlara workaroundlar istemiyorum.
+
+Recorded decision: remove redundant tooltip content at its source. Shared Tooltip renders explicitly supplied content unchanged; it does not compare the title with visible control text and remove matching words. Visible text buttons do not generate name tooltips automatically. Keep icon explanations, shortcuts, disabled reasons, additional context and explicit recovery of clipped or responsively hidden text.

@@ -440,12 +440,13 @@ export function DesktopControlSettings({
       {!saveRef && (
         <div className={styles.saveArea}>
           <p>{t("Computer controls save separately from assistant settings.")}</p>
-          {saveConfirmed && !dirty && <p role="status">{t("Computer controls saved.")}</p>}
           <div className={styles.actions}>
             <Button
               type="button"
               variant="primary"
               loading={pending}
+              success={saveConfirmed && !dirty && !error}
+              successLabel={t("Saved")}
               onClick={() => void perform("configure")}
             >
               {t("Save computer controls")}

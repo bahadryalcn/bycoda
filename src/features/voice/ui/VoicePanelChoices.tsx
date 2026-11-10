@@ -167,7 +167,6 @@ export function VoiceOptionsMenu({ onFloat }: { onFloat?: () => void } = {}) {
       <Button
         iconOnly
         label={t("Voice options")}
-        tooltip={t("Voice options")}
         aria-haspopup="menu"
         aria-expanded={Boolean(anchor)}
         onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}

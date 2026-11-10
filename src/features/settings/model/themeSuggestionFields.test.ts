@@ -15,6 +15,7 @@ import {
   THEME_IMAGE_DEFAULTS,
   describeThemeFieldGroups,
   resolveImageTuning,
+  resolveThemeTypography,
   sanitizeThemeGroup,
 } from "./themeSuggestionFields";
 import { APPEARANCE_CHOICES } from "./themeRanges";
@@ -39,7 +40,7 @@ describe("sanitizeThemeGroup", () => {
   it("clamps numbers to their range", () => {
     expect(sanitizeThemeGroup("typography", { codeSize: 40, terminalSize: 2 })).toEqual({
       codeSize: 18,
-      terminalSize: 8,
+      terminalSize: 11,
     });
     expect(
       sanitizeThemeGroup("image", {
@@ -47,12 +48,12 @@ describe("sanitizeThemeGroup", () => {
         sessionOpacity: 0,
         blur: 99,
       }),
-    ).toEqual({ emptyOpacity: 65, sessionOpacity: 5, blur: 40 });
+    ).toEqual({ emptyOpacity: 65, sessionOpacity: 15, blur: 12 });
   });
 
   it("keeps accessibility guards tighter than the sliders", () => {
     expect(sanitizeThemeGroup("interface", { contrast: 75, uiScale: 200 })).toEqual({
-      contrast: 90,
+      contrast: 100,
       uiScale: 150,
     });
     expect(sanitizeThemeGroup("background", { sidebarOpacity: 15, mainOpacity: 30 })).toEqual({
@@ -94,13 +95,34 @@ describe("sanitizeThemeGroup", () => {
       sanitizeThemeGroup("interface", {
         rowDensity: "detailed",
         diffPalette: "colorblind",
-        scrollbarSize: "wide",
+        scrollbarSize: "large",
       }),
     ).toEqual({
       rowDensity: "detailed",
       diffPalette: "colorblind",
-      scrollbarSize: "wide",
+      scrollbarSize: "large",
     });
+  });
+});
+
+describe("generated typography coherence", () => {
+  it("normalizes related values before the Host returns a generated theme", () => {
+    expect(
+      normalizeThemeSuggestion({ ...base, typography: { codeSize: 12, terminalSize: 40 } })
+        ?.typography,
+    ).toEqual({ codeSize: 12, terminalSize: 14 });
+  });
+  it("couples terminal size to the suggested code size, or the current size when omitted", () => {
+    expect(resolveThemeTypography({ codeSize: 12, terminalSize: 18 }, 15)).toEqual({
+      codeSize: 12,
+      terminalSize: 14,
+    });
+    expect(resolveThemeTypography({ terminalSize: 11 }, 16)).toEqual({ terminalSize: 14 });
+    expect(resolveThemeTypography({ codeSize: 15, terminalSize: 14 }, 13)).toEqual({
+      codeSize: 15,
+      terminalSize: 14,
+    });
+    expect(resolveThemeTypography({ ligatures: true }, 13)).toEqual({ ligatures: true });
   });
 });
 
@@ -138,6 +160,14 @@ describe("normalizeThemeSuggestion groups", () => {
 });
 
 describe("image tuning", () => {
+  it("also guards cached suggestions drawn after the model validation step", () => {
+    expect(resolveImageTuning({ emptyOpacity: 5, sessionOpacity: 0, blur: 40 })).toEqual({
+      scope: "all",
+      emptyOpacity: 30,
+      sessionOpacity: 15,
+      blur: 12,
+    });
+  });
   it("falls back to readable defaults and lets the model override", () => {
     expect(resolveImageTuning(undefined)).toEqual(THEME_IMAGE_DEFAULTS);
     expect(resolveImageTuning({ blur: 12 })).toEqual({

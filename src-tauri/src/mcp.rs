@@ -7,6 +7,8 @@ use tauri::State;
 use crate::dirs_home;
 use crate::fs::expand_home;
 mod config;
+#[cfg(test)]
+mod discovery_tests;
 pub(crate) mod enablement;
 #[path = "mcp_jsonc.rs"]
 mod jsonc;
@@ -382,7 +384,10 @@ pub struct McpConnection {
 }
 
 #[tauri::command]
-pub async fn mcp_discover(cwd: String) -> Result<Vec<McpConnection>, String> {
+pub async fn mcp_discover(
+    cwd: String,
+    global_only: Option<bool>,
+) -> Result<Vec<McpConnection>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let home = dirs_home().ok_or("Home directory not found")?;
         let project = expand_home(&cwd);
@@ -391,7 +396,7 @@ pub async fn mcp_discover(cwd: String) -> Result<Vec<McpConnection>, String> {
         let opencode_config = std::env::var_os("OPENCODE_CONFIG").map(PathBuf::from);
         discover(
             Path::new(&home),
-            &project,
+            (!global_only.unwrap_or(false)).then_some(project.as_path()),
             codex_home.as_deref(),
             &desktop_config,
             opencode_config.as_deref(),
@@ -403,7 +408,7 @@ pub async fn mcp_discover(cwd: String) -> Result<Vec<McpConnection>, String> {
 
 fn discover(
     home: &Path,
-    project: &Path,
+    project: Option<&Path>,
     codex_home_override: Option<&Path>,
     desktop_config: &Path,
     opencode_config: Option<&Path>,
@@ -411,8 +416,9 @@ fn discover(
     let mut connections = Vec::new();
     let claude = home.join(".claude.json");
     let claude_config = read_json(&claude).unwrap_or_else(|| serde_json::json!({}));
-    let claude_project =
-        enablement::claude_project_key(&claude_config, &project.to_string_lossy())?;
+    let claude_project = project
+        .map(|project| enablement::claude_project_key(&claude_config, &project.to_string_lossy()))
+        .transpose()?;
     if claude.exists() {
         let config = &claude_config;
         add_json_servers(
@@ -422,16 +428,18 @@ fn discover(
             &claude,
             config.get("mcpServers"),
         );
-        add_json_servers(
-            &mut connections,
-            "claude",
-            "local",
-            &claude,
-            config
-                .get("projects")
-                .and_then(|projects| projects.get(&claude_project))
-                .and_then(|entry| entry.get("mcpServers")),
-        );
+        if let Some(claude_project) = &claude_project {
+            add_json_servers(
+                &mut connections,
+                "claude",
+                "local",
+                &claude,
+                config
+                    .get("projects")
+                    .and_then(|projects| projects.get(claude_project))
+                    .and_then(|entry| entry.get("mcpServers")),
+            );
+        }
     }
     let cursor = home.join(".cursor/mcp.json");
     add_json_file(&mut connections, "cursor", "user", &cursor, "mcpServers");
@@ -468,7 +476,7 @@ fn discover(
 
     // Project configuration is inherited from parent directories. Stop at the
     // repository boundary so an unrelated parent project is not shown.
-    for directory in project.ancestors() {
+    for directory in project.into_iter().flat_map(Path::ancestors) {
         if directory == home {
             break;
         }
@@ -513,8 +521,10 @@ fn discover(
     // Claude opt-outs belong to the current project and apply to every scope.
     for connection in &mut connections {
         if connection.provider == "claude" {
-            connection.enabled =
-                !enablement::claude_disabled(&claude_config, &claude_project, &connection.name);
+            if let Some(claude_project) = &claude_project {
+                connection.enabled =
+                    !enablement::claude_disabled(&claude_config, claude_project, &connection.name);
+            }
         }
     }
     connections.sort_by(|a, b| {
@@ -1278,7 +1288,7 @@ mod tests {
         let codex_config: toml::Value = toml::from_str(&codex_raw).unwrap();
         assert!(codex_config.get("mcp_servers").is_some());
         std::fs::write(home.join(".config/opencode/opencode.jsonc"), "{\"mcp\": {\"servers\": {\"four\": {\"type\": \"remote\", \"url\": \"https://example.com\",},},}}").unwrap();
-        let found = discover(&home, &project, None, &desktop, None).unwrap();
+        let found = discover(&home, Some(&project), None, &desktop, None).unwrap();
         let names: Vec<_> = found
             .iter()
             .map(|entry| (entry.provider.as_str(), entry.name.as_str()))
@@ -1405,7 +1415,14 @@ mod tests {
             r#"{"mcpServers":{"servers":{"command":"npx"},"docs":{"command":"node"}}}"#,
         )
         .unwrap();
-        let found = discover(&root, &project, None, &root.join("desktop.json"), None).unwrap();
+        let found = discover(
+            &root,
+            Some(&project),
+            None,
+            &root.join("desktop.json"),
+            None,
+        )
+        .unwrap();
         assert_eq!(found.len(), 2);
         assert!(found.iter().all(|server| server.scope == "user"));
         assert!(found.iter().any(|server| server.name == "servers"));

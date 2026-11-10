@@ -100,7 +100,6 @@ export function VoiceMemoryDialog({ onClose }: { onClose: () => void }) {
                   size="sm"
                   iconOnly
                   label={t("Forget note")}
-                  tooltip={t("Forget note")}
                   onClick={() => forgetVoiceNote(note.id)}
                 >
                   <Trash2 aria-hidden className="icon-sm" />

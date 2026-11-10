@@ -288,7 +288,7 @@ export function AssistantView(props: AssistantViewProps) {
                 label: t("Recently deleted"),
                 icon: <Trash2 className="icon-sm" />,
               },
-              { kind: "item", id: "setup", label: t("Run setup again") },
+              { kind: "item", id: "setup", label: t("Quick setup") },
             ]}
           />
         )}

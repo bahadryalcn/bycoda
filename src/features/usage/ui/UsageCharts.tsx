@@ -1,10 +1,11 @@
-import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useState } from "react";
 import { formatNumber, getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { SortableDataTable } from "../../../shared/ui/SortableDataTable";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
+import { UsageProviderIdentity } from "./UsageProviderIdentity";
 
 import type { UsageMetric, UsageResolution } from "../model/usageAnalytics";
 
@@ -115,6 +116,23 @@ export function ContinuousUsageTable({
       (sort.direction === "asc" ? 1 : -1)
     );
   });
+  const name = (row: (typeof rows)[number]) => {
+    const providers = Array.isArray(row.providers)
+      ? row.providers.filter((provider): provider is string => typeof provider === "string")
+      : typeof row.provider === "string"
+        ? row.provider.split("·")
+        : [];
+    if (providers.length === 1 && row.label === providers[0])
+      return <UsageProviderIdentity provider={providers[0]} />;
+    return (
+      <span className="flex min-w-0 items-center gap-2">
+        {providers.map((provider) => (
+          <UsageProviderIdentity key={provider} provider={provider} label="" />
+        ))}
+        <span>{t(row.label)}</span>
+      </span>
+    );
+  };
   return (
     <>
       <div className="usage-section-heading">
@@ -149,10 +167,10 @@ export function ContinuousUsageTable({
             render: (_, row) =>
               onSelect ? (
                 <Button variant="link" onClick={() => onSelect(row.key)}>
-                  {t(row.label)}
+                  {name(row)}
                 </Button>
               ) : (
-                <span>{t(row.label)}</span>
+                name(row)
               ),
           },
           ...(
@@ -216,54 +234,58 @@ export function UsageDataNotes({
   truncated: boolean;
 }) {
   return (
-    <Disclosure
-      size="sm"
-      className="usage-data-notes"
-      summary={
-        <>
-          {t("Data sources and coverage")}
-          {unpriced.length ? ` · ${t("Models without prices")}: ${unpriced.length}` : ""}
-        </>
-      }
-    >
-      <p>
-        {t("API-equivalent estimates from local session logs, not what a subscription plan bills.")}{" "}
-        {t("Priced token coverage")}: {pricedCoverage}.
-      </p>
-      {unpriced.length > 0 && (
-        <>
-          <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
-            <span className="shrink-0">{t("Models without prices")}:</span>
-            <BadgeList
-              label={t("Models without prices")}
-              size="xs"
-              className="min-w-0 flex-1"
-              items={unpriced.map((model, index) => ({
-                id: `${index}:${model}`,
-                label: model,
-              }))}
-            />
-          </div>
-          <p>{t("Their tokens are included; their cost is unavailable.")}</p>
-        </>
-      )}
-      {pricesUnavailable && (
-        <p>{t("OpenRouter prices could not be loaded, so built-in prices are used.")}</p>
-      )}
-      {sessionDurationUnavailable ? (
-        <p>{t("Session duration data is unavailable on this app version or could not be read.")}</p>
-      ) : (
+    <div className="usage-data-notes flex items-center gap-2">
+      <InfoPopover label={t("Data sources and coverage")}>
         <p>
           {t(
-            "Agent time sums recorded completed turn intervals and may include waiting. Parallel sessions can exceed wall-clock time.",
+            "API-equivalent estimates from local session logs, not what a subscription plan bills.",
           )}{" "}
-          {timedTurns}/{turns} {t("turns with duration")}.
+          {t("Priced token coverage")}: {pricedCoverage}.
         </p>
+        {unpriced.length > 0 && (
+          <>
+            <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
+              <span className="shrink-0">{t("Models without prices")}:</span>
+              <BadgeList
+                label={t("Models without prices")}
+                size="xs"
+                className="min-w-0 flex-1"
+                items={unpriced.map((model, index) => ({
+                  id: `${index}:${model}`,
+                  label: model,
+                }))}
+              />
+            </div>
+            <p>{t("Their tokens are included; their cost is unavailable.")}</p>
+          </>
+        )}
+        {pricesUnavailable && (
+          <p>{t("OpenRouter prices could not be loaded, so built-in prices are used.")}</p>
+        )}
+        {sessionDurationUnavailable ? (
+          <p>
+            {t("Session duration data is unavailable on this app version or could not be read.")}
+          </p>
+        ) : (
+          <p>
+            {t(
+              "Agent time sums recorded completed turn intervals and may include waiting. Parallel sessions can exceed wall-clock time.",
+            )}{" "}
+            {timedTurns}/{turns} {t("turns with duration")}.
+          </p>
+        )}
+        {truncated && (
+          <p>
+            {t("Session data is limited to the latest 50,000 turns. Select a shorter interval.")}
+          </p>
+        )}
+        <p>{t("Token timestamps have 15-minute precision. End time is exclusive.")}</p>
+      </InfoPopover>
+      {unpriced.length > 0 && (
+        <span className="usage-muted">
+          {t("Models without prices")}: {unpriced.length}
+        </span>
       )}
-      {truncated && (
-        <p>{t("Session data is limited to the latest 50,000 turns. Select a shorter interval.")}</p>
-      )}
-      <p>{t("Token timestamps have 15-minute precision. End time is exclusive.")}</p>
-    </Disclosure>
+    </div>
   );
 }

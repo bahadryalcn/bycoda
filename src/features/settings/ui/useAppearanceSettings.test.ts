@@ -232,7 +232,7 @@ describe("mounted shared appearance preferences", () => {
         groupDelayMs: 1200,
       });
       saveInteractionTint({ ...INTERACTION_TINT_DEFAULT, strength: 150 });
-      saveScrollbarStyle({ ...SCROLLBAR_STYLE_DEFAULT, size: "wide" });
+      saveScrollbarStyle({ ...SCROLLBAR_STYLE_DEFAULT, size: "large" });
       saveWorkingIndicator({ ...WORKING_INDICATOR_DEFAULT, style: "off" });
       states[0].onPreferences({ ...states[0].preferences, wheelZoom: false, codeSize: 18 });
       states[0].onUiScale(150);

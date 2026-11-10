@@ -97,6 +97,73 @@ async function fixture() {
   };
 }
 
+it("retires missing records without touching editor recovery or Git registrations", async () => {
+  const f = await fixture();
+  const { workspace } = await f.registry.prepare(f.request);
+  const canRetireMissing = vi.fn(async () => true);
+  const registry = createManagedWorkspaceRegistry(f.store, f.policy, {
+    isActive: async () => true,
+    canRetireMissing,
+  });
+  const request = {
+    workspaceId: workspace.id,
+    expectedRevision: workspace.revision,
+    idempotencyKey: "retire-missing",
+  };
+  await expect(registry.close(request)).rejects.toThrow("idle");
+  expect(canRetireMissing).not.toHaveBeenCalled();
+  rmSync(workspace.path, { recursive: true, force: true });
+  const persistence = f.store.workspaceActivityPersistence();
+  await persistence.saveReservation({
+    id: "held",
+    workspaceId: workspace.id,
+    operationId: "orphan",
+    purpose: "removal",
+    expectedRevision: workspace.revision,
+    acquiredAt: 1,
+  });
+  await expect(registry.close(request)).rejects.toThrow("reserved");
+  await persistence.removeReservation("held");
+  await expect(registry.finish({ ...request, idempotencyKey: "finish-missing" })).rejects.toThrow(
+    "idle",
+  );
+  const retired = await registry.close(request);
+  expect(retired).toMatchObject({
+    state: "abandoned",
+    directoryState: "removed",
+    revision: workspace.revision + 1,
+  });
+  expect(await registry.close(request)).toEqual(retired);
+  expect(f.git("rev-parse", workspace.branchRef)).toBe(workspace.baseCommit);
+  expect(f.git("worktree", "list", "--porcelain")).toContain(workspace.branchRef);
+  const idle = createManagedWorkspaceRegistry(f.store, f.policy, { isActive: async () => false });
+  const resumed = await idle.resume({
+    workspaceId: workspace.id,
+    expectedRevision: retired.revision,
+    idempotencyKey: "resume-retired",
+  });
+  expect(resumed).toMatchObject({ state: "idle", directoryState: "present" });
+  expect(f.gitAt(workspace.path, "rev-parse", "HEAD")).toBe(workspace.baseCommit);
+});
+
+it("keeps missing records held when non-editor execution cannot be ruled out", async () => {
+  const f = await fixture();
+  const { workspace } = await f.registry.prepare(f.request);
+  rmSync(workspace.path, { recursive: true, force: true });
+  const registry = createManagedWorkspaceRegistry(f.store, f.policy, {
+    isActive: async () => true,
+    canRetireMissing: async () => false,
+  });
+  await expect(
+    registry.close({
+      workspaceId: workspace.id,
+      expectedRevision: workspace.revision,
+      idempotencyKey: "held-missing",
+    }),
+  ).rejects.toThrow("idle");
+  expect(await registry.get({ workspaceId: workspace.id })).toEqual(workspace);
+});
+
 it("persists owner pinning with revision and idempotency binding", async () => {
   const f = await fixture();
   const created = await f.registry.prepare(f.request);

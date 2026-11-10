@@ -65,7 +65,18 @@ if (!localStorage.getItem(NOTIFICATION_HISTORY_KEY)) {
         cwd,
         title: index === 1 ? "codex · old-gone" : `codex · ${titles[index % titles.length]}`,
         label: index === 2 ? "long_unbroken_value_".repeat(80) : label,
-        kind: index % 2 ? "approval" : "question",
+        kind: (
+          [
+            "question",
+            "approval",
+            "failed",
+            "finished",
+            "reminder",
+            "assistant",
+            "background",
+            "account",
+          ] as const
+        )[index % 8],
         occurredAt: Date.UTC(2026, 9, 18, 1, 27) - index * 3600000,
       })),
     ),

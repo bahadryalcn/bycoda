@@ -133,7 +133,7 @@ export function workspaceRemovalAction(
     : facts.missing
       ? t("Remove record")
       : t("Delete directory");
-  const closeFirst = facts.missing && workspace.state === "active";
+  const closeFirst = facts.missing && workspace.state !== "merged";
   const disabledReason = !lifecycleAvailable
     ? t("Update the execution Host to remove managed directories.")
     : workspace.directoryState === "removed"

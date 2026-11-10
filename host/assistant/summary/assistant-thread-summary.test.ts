@@ -499,7 +499,7 @@ it("uses actual remaining capacity and day in a known-zero refusal key, so a new
       throw new AssistantTextPreflightError();
     },
   });
-  await f.patch({ dailyTokenBudget: 10000 });
+  await f.patch({ dailyTokenBudget: 20000 });
   await f.fill();
   const day = new Date(Date.UTC(2026, 10, 2, 12)).toISOString().slice(0, 10),
     id = `usage:${day}`,
@@ -510,9 +510,9 @@ it("uses actual remaining capacity and day in a known-zero refusal key, so a new
       updatedAt: 1,
       value: {
         day,
-        chiefTokens: 5000,
+        chiefTokens: 13000,
         workerTokens: 0,
-        total: 5000,
+        total: 13000,
         mode: "run",
         estimated: false,
       },

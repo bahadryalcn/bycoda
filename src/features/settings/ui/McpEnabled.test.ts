@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
+import { useRetainedState, resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { clearMcpSettingsCache } from "../model/mcpSettingsCache";
 import type { McpConnection } from "../model/mcp";
 import { McpSettings } from "./McpSettings";
@@ -20,7 +20,7 @@ let container: HTMLDivElement;
 let root: Root;
 let servers: McpConnection[];
 
-beforeEach(() => {
+beforeEach(async () => {
   resetRetainedState();
   clearMcpSettingsCache();
   const storage = new Map<string, string>();
@@ -33,6 +33,11 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+  function ProjectView() {
+    useRetainedState("mcp:view", "project");
+    return null;
+  }
+  await act(async () => root.render(createElement(ProjectView)));
   servers = [
     {
       provider: "claude",
@@ -194,3 +199,20 @@ it.each(["cursor", "claude_desktop"] as const)(
     expect(invoke.mock.calls.some(([command]) => command === "mcp_set_enabled")).toBe(false);
   },
 );
+
+it("keeps Claude permissions project-only and writes Codex Global identity", async () => {
+  resetRetainedState();
+  await render();
+  expect(toggles()).toHaveLength(2);
+  expect(toggles()[0].disabled).toBe(true);
+  await act(async () => toggles()[1].click());
+  expect(invoke).toHaveBeenCalledWith(
+    "mcp_set_enabled",
+    expect.objectContaining({
+      provider: "codex",
+      scope: "user",
+      globalOnly: true,
+      configPath: "/home/.codex/config.toml",
+    }),
+  );
+});

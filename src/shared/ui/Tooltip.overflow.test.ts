@@ -29,6 +29,10 @@ async function mount() {
   const root = createRoot(host);
   roots.push(root);
   await act(async () => root.render(createElement(Anchor, { onRender })));
+  const anchor = host.querySelector<HTMLElement>("#anchor")!;
+  anchor.style.overflow = "hidden";
+  Object.defineProperty(anchor, "clientWidth", { configurable: true, value: 100 });
+  Object.defineProperty(anchor, "scrollWidth", { configurable: true, value: 200 });
   // The overflow observer exists only while the tooltip is open: hover the anchor and wait out the open delay.
   await act(async () => {
     host

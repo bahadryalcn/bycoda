@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
-import { isAbsolute } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { z } from "zod";
 import { monotonicNow } from "../../../src/shared/lib/time/timestamps";
 import type { AssistantFoldersResponse } from "../../../src/shared/model/assistantFolders";
@@ -17,7 +17,7 @@ import { scrubRuntimeLogText } from "../../execution/runtime-logs";
 import { existingPath } from "../../workspaces/workspace";
 import type { AssistantThreadPrincipal } from "../../sessions/session-authority";
 import { roomOperationInput } from "../room/assistant-room-operation-input";
-import { resolveAssistantFolder } from "./assistant-folders";
+import { assertAssistantPathAllowed, resolveAssistantFolder } from "./assistant-folders";
 import { folderWorkspaceRun } from "./assistant-folder-mutations";
 import {
   COMMAND_DEFAULT_TIMEOUT_SECONDS,
@@ -79,6 +79,36 @@ type Entry = {
   settledAt?: number;
 };
 
+/** A chosen folder may be a whole drive or the home folder; system and credential folders inside
+ * it stay closed to every file tool, including a create or rename that would land in one. */
+async function guardFolderPaths(root: string, action: string, input: Record<string, unknown>) {
+  const text = (value: unknown) => (typeof value === "string" ? value : undefined);
+  const path = text(input.path);
+  const parent = text(input.parent);
+  const name = text(input.name);
+  const paths = [path, parent, text(input.destinationParent)].filter(
+    (value) => value !== undefined,
+  );
+  if (name !== undefined) paths.push(join(parent ?? dirname(path ?? "."), name));
+  if (action === "files.list" && paths.length === 0) paths.push(".");
+  for (const value of paths) await assertAssistantPathAllowed(resolve(root, value));
+}
+
+/** Drops content previews found in system or credential folders. shortcut: totals are counted
+ * before filtering; filter inside the search if exact totals are ever needed. */
+async function withoutProtectedMatches(root: string, result: unknown) {
+  const page = result as { items: { path: string }[] };
+  const items = [];
+  for (const item of page.items) {
+    const allowed = await assertAssistantPathAllowed(resolve(root, item.path)).then(
+      () => true,
+      () => false,
+    );
+    if (allowed) items.push(item);
+  }
+  return { ...page, items };
+}
+
 /** The final, output-free part of a run, kept in the durable receipt. */
 const summary = (snapshot: CommandSnapshot) => ({
   status: snapshot.status,
@@ -138,6 +168,7 @@ export function createAssistantFolderTools(ports: FolderToolPorts) {
         const path = (await base(principal, root)).path;
         if (path !== rootPath) throw new Error("The Assistant folder changed during review.");
         validateConversationTool(action, input);
+        if (root !== undefined) await guardFolderPaths(path, action, input);
         const result = await callFileConversationTool(
           path,
           action,
@@ -170,6 +201,7 @@ export function createAssistantFolderTools(ports: FolderToolPorts) {
         const cwd = await existingPath(target.path, rest.cwd ?? ".", true);
         if (cwd !== resolvedCwd || !(await stat(cwd)).isDirectory())
           throw new Error("The command working directory changed during review.");
+        if (root !== undefined) await assertAssistantPathAllowed(cwd);
         if (ledger.size >= LEDGER_MAX) prune();
         if (
           [...ledger.values()].filter((entry) => entry.settledAt === undefined).length >=
@@ -336,11 +368,14 @@ export function createAssistantFolderTools(ports: FolderToolPorts) {
     }
     const path = (await base(principal, root)).path;
     validateConversationTool(action, original);
+    await guardFolderPaths(path, action, original);
     if (FILE_READS.has(action)) {
       if (!(await authorized())) throw new Error("Assistant folder authority revoked.");
       const result = await callFileConversationTool(path, action, original);
       if (!(await authorized())) throw new Error("Assistant folder authority revoked.");
-      return result;
+      return action === "files.searchContent"
+        ? await withoutProtectedMatches(path, result)
+        : result;
     }
     if (!FILE_WRITES.has(action)) throw new Error("Unsupported Assistant folder file tool.");
     const id = requireRequestId(requestId);

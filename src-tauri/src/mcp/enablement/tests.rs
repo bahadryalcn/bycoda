@@ -80,7 +80,14 @@ fn discovery_respects_claude_project_opt_out_across_scopes() {
         r#"{"mcpServers":{"docs":{"command":"node"},"on":{"command":"node"}}}"#,
     )
     .unwrap();
-    let connections = discover(&home, &project, None, &home.join("desktop.json"), None).unwrap();
+    let connections = discover(
+        &home,
+        Some(&project),
+        None,
+        &home.join("desktop.json"),
+        None,
+    )
+    .unwrap();
     let docs: Vec<_> = connections
         .iter()
         .filter(|server| server.provider == "claude" && server.name == "docs")

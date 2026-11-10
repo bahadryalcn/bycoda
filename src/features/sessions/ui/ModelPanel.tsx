@@ -158,9 +158,8 @@ export function ModelPanel({
               size="sm"
               type="button"
               label={t("Provider settings")}
-              tooltip={t("Provider settings")}
               data-model-provider-settings
-              className="-my-1 -mr-1.5 shrink-0 self-end"
+              className="-my-1 -mr-1.5 shrink-0"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
                 onDismiss("outside");

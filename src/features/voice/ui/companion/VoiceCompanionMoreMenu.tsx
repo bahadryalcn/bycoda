@@ -56,7 +56,6 @@ export function VoiceCompanionMoreMenu({
         size="sm"
         variant="ghost"
         label={t("More voice options")}
-        tooltip={t("More voice options")}
         aria-haspopup="menu"
         aria-expanded={Boolean(anchor)}
         onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}

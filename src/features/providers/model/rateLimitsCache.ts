@@ -2,6 +2,7 @@ import { createStore } from "../../../shared/lib/store";
 import { useSyncExternalStore } from "react";
 import { replaceEqualDeep } from "@tanstack/react-query";
 import { recordRateLimitHistory } from "./rateLimitHistory";
+import { fetchGrokRateLimits } from "./grokRateLimitsFetch";
 import {
   errorRateLimits,
   fetchingRateLimits,
@@ -56,6 +57,7 @@ const idle: Record<RateLimitProvider, ProviderRateLimits> = {
   claude: idleRateLimits("claude"),
   codex: idleRateLimits("codex"),
   opencode: idleRateLimits("opencode"),
+  grok: idleRateLimits("grok"),
 };
 
 export function useCachedRateLimits(
@@ -120,7 +122,9 @@ export function loadRateLimits(
           ? await fetchClaudeRateLimits(accountId, oneShot)
           : provider === "codex"
             ? await fetchCodexRateLimits(accountId)
-            : await fetchOpencodeGoRateLimits();
+            : provider === "grok"
+              ? await fetchGrokRateLimits()
+              : await fetchOpencodeGoRateLimits();
     } catch (error) {
       result = errorRateLimits(provider, error instanceof Error ? error.message : String(error));
     } finally {

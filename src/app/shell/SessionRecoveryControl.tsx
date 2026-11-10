@@ -4,7 +4,7 @@ import { InlineError } from "../../shared/ui/InlineError";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { useT } from "../../shared/i18n";
 import { useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
-import { Trash2, Clock } from "../../shared/ui/icons";
+import { Trash2, RotateCcw } from "../../shared/ui/icons";
 import { RAIL_SECTION_HEADER, RAIL_SECTION_LABEL } from "./useRailSections";
 import {
   getRecoverySaveFailure,
@@ -70,7 +70,7 @@ export function SessionRecoveryControl({
         disabled={pending}
         onClick={onOpen}
       >
-        <Clock className="icon-sm shrink-0" aria-hidden="true" />
+        <RotateCcw className="icon-sm shrink-0" aria-hidden="true" />
         <span className="recovery-rail-label min-w-0 flex-1 truncate @max-[140px]/rail:hidden [[data-compact-project-rail]_&]:hidden">
           {label}
         </span>

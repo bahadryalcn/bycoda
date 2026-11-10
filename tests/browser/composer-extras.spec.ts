@@ -1327,9 +1327,20 @@ test("model panel stays inside the viewport", async ({ page }, testInfo) => {
     { width: 661, height: 761 },
     { width: 320, height: 480 },
     { width: 1000, height: 800 },
+    { width: 1280, height: 800 },
+    { width: 800, height: 800 },
   ]) {
     await page.setViewportSize(viewport);
     await expect(panel).toBeInViewport();
+    const help = panel.locator("[data-model-setting-help]");
+    const helpText = await help.locator("p").boundingBox();
+    const settingsButton = await help.locator("[data-model-provider-settings]").boundingBox();
+    expect(helpText).not.toBeNull();
+    expect(settingsButton).not.toBeNull();
+    expect(
+      Math.abs(settingsButton!.y + settingsButton!.height / 2 - (helpText!.y + 8)),
+    ).toBeLessThanOrEqual(8);
+    expect((await help.boundingBox())!.height).toBeLessThanOrEqual(44);
     // The panel and its rail, model list and settings column all fit the viewport.
     await expect
       .poll(() =>
@@ -1354,10 +1365,15 @@ test("model panel stays inside the viewport", async ({ page }, testInfo) => {
         }),
       )
       .toBe(true);
-    await page.screenshot({
-      path: testInfo.outputPath(`model-panel-fixed-${viewport.width}.png`),
-      animations: "disabled",
-    });
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate((light) => {
+        document.documentElement.classList.toggle("theme-light", light);
+      }, theme === "light");
+      await page.screenshot({
+        path: testInfo.outputPath(`model-panel-fixed-${viewport.width}-${theme}.png`),
+        animations: "disabled",
+      });
+    }
   }
   await page.screenshot({
     path: testInfo.outputPath("model-panel-fixed.png"),

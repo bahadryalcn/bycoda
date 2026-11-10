@@ -126,7 +126,7 @@ it("retires a missing folder's record, closing a stale active record first", () 
   });
   expect(workspaceRemovalAction(workspace({}), missing, true)).toMatchObject({
     label: "Remove record",
-    closeFirst: false,
+    closeFirst: true,
   });
 });
 

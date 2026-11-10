@@ -7,7 +7,7 @@ import { Select as SharedSelect } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
-import { AdvancedSettings, Row, SettingsFeedback } from "./settingsControls";
+import { SettingsFeedback } from "./settingsControls";
 import { MCP_PROVIDER_LABELS, type McpConnection } from "../model/mcp";
 type Scope = McpConnection["scope"];
 export type Provider = McpConnection["provider"];
@@ -123,7 +123,6 @@ export function AddServerModal({
   return (
     <Modal
       title={t("Add MCP server")}
-      description={t("Paste a server configuration and choose where to add it.")}
       onClose={() => {
         if (!adding.current) onClose();
       }}
@@ -179,11 +178,15 @@ export function AddServerModal({
             onChange={setScope}
           />
         </div>
-        <p className="text-ui-caption text-(--ui-text-secondary)" role="status">
-          {MCP_PROVIDER_LABELS[provider]} · {scopeDescription(scope)}
-        </p>
-        <p className="break-all text-ui-caption text-(--ui-text-muted)">
-          {t("Selected project: {p0}", { p0: cwd })}
+        <p className="break-all text-ui-caption text-(--ui-text-secondary)">
+          {scope === "user"
+            ? t("Available to all projects.")
+            : t("Selected project: {p0}", { p0: cwd })}
+          {scope === "local" ? (
+            <span className="mt-1 block text-(--ui-text-muted)">
+              {t("Only this project, in your personal settings.")}
+            </span>
+          ) : null}
         </p>
         <TextField
           label={t("Name")}
@@ -202,25 +205,19 @@ export function AddServerModal({
           value={config}
           disabled={busy}
           onChange={(event) => setConfig(event.target.value)}
-          rows={7}
+          rows={6}
+          monospace
           spellCheck={false}
 
           placeholder={'{"mcpServers":{"my-server":{"command":"npx","args":["-y","example-mcp"]}}}'}
         />
 
         <p className="text-ui-caption text-(--ui-text-muted)">
-          {t(
-            "Paste one entry from an mcpServers block, or a single server object with a name above.",
-          )}
+          {t("Paste an mcpServers block or a server object.")}
         </p>
-        <AdvancedSettings title={t("Advanced: configuration requirements")} defaultOpen>
-          <Row
-            label={t("Before adding a server")}
-            description={t(
-              "Check the command or URL and required credentials. Adding saves configuration for the selected provider and scope; it does not confirm a working connection. Refresh to check available status.",
-            )}
-          />
-        </AdvancedSettings>
+        <p className="text-ui-caption text-(--ui-text-muted)">
+          {t("Saves configuration. Refresh to check status.")}
+        </p>
         {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
       </form>
     </Modal>

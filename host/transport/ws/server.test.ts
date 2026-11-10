@@ -439,8 +439,15 @@ describe("WebSocket read admission and safe disclosure", () => {
     expect(await client.response(null)).toMatchObject({
       error: { code: RPC_ERROR_CODES.parseError },
     });
-    expect(await client.request("invalid", "projects.list", { unexpected: true })).toMatchObject({
-      error: { code: RPC_ERROR_CODES.invalidParams },
+    // The refusal names the method and field so contract drift is diagnosable,
+    // and never echoes the submitted value.
+    expect(
+      await client.request("invalid", "projects.list", { unexpected: "secret-value" }),
+    ).toMatchObject({
+      error: {
+        code: RPC_ERROR_CODES.invalidParams,
+        message: "Invalid Host RPC request: projects.list (params: unrecognized unexpected)",
+      },
     });
     expect(await client.request("probe", "connection.probe")).toMatchObject({
       result: { environmentId: ENVIRONMENT },

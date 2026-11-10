@@ -57,7 +57,7 @@ const choice = {
         multiSelect: false,
         allowCustom: false,
         options: [
-          { id: "a", label: "monocode" },
+          { id: "a", label: "workspace" },
           { id: "b", label: "mobile" },
         ],
       },

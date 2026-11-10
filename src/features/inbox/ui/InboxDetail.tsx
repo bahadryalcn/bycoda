@@ -288,6 +288,7 @@ export function InboxDetail({
           variant="ghost"
           type="button"
           tooltip={externalActionLabel}
+          tooltipWhen="overflow"
           aria-label={externalActionLabel}
           disabled={!item.url}
           disabledReason={item.url ? undefined : t("No link available")}
@@ -428,6 +429,7 @@ export function InboxDetail({
                           key={session.id}
                           type="button"
                           tooltip={title}
+                          tooltipWhen="overflow"
                           onClick={() => void onOpenSession?.(session.id)}
                           className="min-w-0 max-w-64"
                         >

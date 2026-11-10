@@ -16,6 +16,7 @@ function fixture(deviceName: string) {
     })),
     assertAuthority: vi.fn(async () => {}),
     session: vi.fn(async () => ({ projectId: "p1" })),
+    db: { prepare: () => ({ get: async () => undefined }) },
   };
   const workspace = { id: "w1", projectId: "p1" };
   const dependencies = {

@@ -1358,6 +1358,26 @@ async function setupGlobal(
   await act(async () => container.querySelector<HTMLButtonElement>(START_CONTROL)!.click());
   return { render, workspace, onSubmit, onStop, ensureToolSession };
 }
+it.each(["local", "openai", "grok"] as const)(
+  "restarts %s voice after a previous global participant becomes private",
+  async (mode) => {
+    const { render } = await setupGlobal("a", mode);
+    const connect = mode === "local" ? mock.connect : mock.realtimeConnect;
+    expect(connect).toHaveBeenCalledOnce();
+    const locked = vi
+      .spyOn(groupLock, "isProjectLocked")
+      .mockImplementation((path) => path === "/b");
+    try {
+      await render("a");
+      expect((overlay.host as any)?.state.status).toBe("ready");
+      await act(async () => overlay.host!.onCommand("start"));
+      expect(connect).toHaveBeenCalledTimes(2);
+      expect((overlay.host as any)?.state.status).toBe("live");
+    } finally {
+      locked.mockRestore();
+    }
+  },
+);
 it("offers Global for a fresh workspace and keeps both scope choices discoverable", async () => {
   await setupGlobal("a", "openai", null);
   const choices = [...container.querySelectorAll('[role="radio"]')];

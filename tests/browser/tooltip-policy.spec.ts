@@ -1,7 +1,7 @@
 import { expect, test, type Page, type Locator } from "@playwright/test";
 import { join } from "node:path";
 
-const captures = join(process.cwd(), "temp/verification/2026-11-01-tooltip-cleanup");
+const captures = join(process.cwd(), "temp/verification/2026-11-11-tooltip-fix");
 async function reset(page: Page) {
   await page.mouse.move(0, 0);
   await page.keyboard.press("Escape");
@@ -88,6 +88,19 @@ test("hidden shortcut parents, single letters and already-visible keycaps keep d
     page.getByRole("tooltip").getByRole("img", { name: "S", exact: true }),
   ).toBeVisible();
   await absent(page, page.getByTestId("keycap-shortcut"));
+});
+
+test("expanding project actions supply shortcuts without generating a second name", async ({
+  page,
+}) => {
+  const group = page.getByRole("toolbar", { name: "Project shortcut actions" });
+  for (const [name, shortcut] of [
+    ["Notes", /Ctrl.*Shift.*L/],
+    ["Automations", /Ctrl.*Shift.*U/],
+  ] as const) {
+    await hint(page, group.getByRole("button", { name, exact: true }), shortcut);
+    await expect(page.getByRole("tooltip")).not.toContainText(name);
+  }
 });
 
 test("selection, middle truncation, action groups and actual activity header suppress repeated text", async ({
@@ -195,6 +208,17 @@ for (const width of [1280, 800])
         if (reducedMotion === "reduce")
           await page.screenshot({
             path: join(captures, `hint-${theme}-${width}.png`),
+            fullPage: true,
+          });
+        await hint(
+          page,
+          page.getByRole("button", { name: "Automations", exact: true }),
+          /Ctrl.*Shift.*U/,
+        );
+        await expect(page.getByRole("tooltip")).not.toContainText("Automations");
+        if (reducedMotion === "reduce")
+          await page.screenshot({
+            path: join(captures, `project-actions-${theme}-${width}.png`),
             fullPage: true,
           });
       }

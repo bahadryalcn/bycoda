@@ -595,7 +595,6 @@ export function KeybindingsPage() {
           variant="ghost"
           iconOnly
           label={t("Filters")}
-          tooltip={t("Filters")}
           selected={filtered}
           aria-expanded={filtersOpen}
           aria-haspopup="dialog"

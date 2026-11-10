@@ -415,6 +415,7 @@ function LibraryMemberDialog({
           identity={data.identitySupported}
           tools={data.toolsSupported}
           machineId={data.machine.id}
+          projectId={data.project.id}
           modelPoolsSupported={data.modelPoolsSupported}
           handleError={/handle/i.test(error) ? error : undefined}
           onChange={(patch) => setAgent((current) => ({ ...current, ...patch }))}
