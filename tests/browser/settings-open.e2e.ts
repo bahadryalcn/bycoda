@@ -115,7 +115,8 @@ test("settings expose advanced controls without opening a menu", async ({ page }
       ).toBeVisible();
       await page.keyboard.press("Escape");
       // Manual URL setup shares the inline Add machine form instead of a separate disclosure.
-      await form.getByRole("button", { name: "Add machine", exact: true }).click();
+      // The empty list repeats this action; both buttons open the same inline form.
+      await form.getByRole("button", { name: "Add machine", exact: true }).first().click();
       const machineForm = form.getByRole("form", { name: "Add a new machine", exact: true });
       await machineForm.getByRole("radio", { name: "Host URL", exact: true }).click();
       await expect(

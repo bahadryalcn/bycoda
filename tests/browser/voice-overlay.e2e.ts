@@ -319,18 +319,21 @@ for (const theme of ["light", "dark"])
           true,
         ),
       );
-      await expect(
-        panel.locator("details").filter({ hasText: "Error details" }),
-      ).not.toHaveAttribute("open", "");
+      const attention = panel.getByRole("button", { name: "Voice needs attention", exact: true });
+      await expect(attention).toHaveAttribute("aria-expanded", "false");
       await expect(panel.getByRole("button", { name: "Start voice", exact: true })).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-attention.png`) });
-      await panel.locator('summary:has-text("Error details")').click();
+      await attention.click();
+      const errorDetails = page.getByRole("dialog", { name: "Voice needs attention", exact: true });
       await expect(
-        panel.getByText("Voice input cleanup was not confirmed. Start voice again.", {
+        errorDetails.getByText("Voice input cleanup was not confirmed. Start voice again.", {
           exact: true,
         }),
       ).toBeVisible();
-      await panel.screenshot({ path: join(output, `${theme}-${width}-error-details.png`) });
+      await page.screenshot({ path: join(output, `${theme}-${width}-error-details.png`) });
+      await page.keyboard.press("Escape");
+      await expect(errorDetails).toHaveCount(0);
+      await expect(attention).toBeFocused();
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
       await expect.poll(() => page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(2);
       expect(await page.evaluate(() => (window as any).fixtureVoice.closes)).toBe(1);
@@ -423,6 +426,13 @@ for (const theme of ["light", "dark"])
       await expect(panel.getByRole("button", { name: "Finish turn", exact: true })).toHaveCount(0);
       await panel.screenshot({ path: join(output, `${theme}-${width}-rule-pending.png`) });
       await panel.getByRole("button", { name: "Retry rule save", exact: true }).click();
+      await expect(lastReply(panel)).toContainText("Your rule was saved.");
+      // Saving a no-interruption rule must not change how the owner ends a turn.
+      await expect(panel.getByRole("button", { name: "Finish turn", exact: true })).toHaveCount(0);
+      await panel.getByRole("button", { name: "Reply when I pause", exact: true }).click();
+      await page
+        .getByRole("menuitemradio", { name: "I'll finish when ready", exact: true })
+        .click();
       await expect(panel.getByRole("button", { name: "Finish turn", exact: true })).toBeVisible();
       await panel.getByRole("button", { name: "Finish turn", exact: true }).click();
       expect(await page.evaluate(() => (window as any).fixtureVoice.finishes)).toBe(1);

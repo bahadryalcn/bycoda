@@ -3,6 +3,7 @@ import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Popover } from "../../../../shared/ui/Popover";
 import { TriangleAlert } from "../../../../shared/ui/icons";
+import { MicrophoneRecoveryAction } from "../MicrophoneRecoveryAction";
 
 /** Errors whose text is already the owner's next step; every other error is a technical detail. */
 export function isActionableVoiceError(error: string | undefined) {
@@ -58,6 +59,7 @@ export function VoiceErrorNotice({ error, onDismiss }: { error: string; onDismis
         >
           {title === error ? null : <p className="font-medium">{title}</p>}
           <p className="break-words text-(--ui-text-secondary) select-text">{error}</p>
+          <MicrophoneRecoveryAction message={error} />
           <div className="flex justify-end">
             <Button variant="primary" onClick={onDismiss}>
               {t("Dismiss")}

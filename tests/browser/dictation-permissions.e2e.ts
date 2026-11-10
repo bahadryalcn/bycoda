@@ -227,10 +227,20 @@ for (const platform of ["macOS", "Windows", "Linux"])
           else {
             await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
             await page.getByRole("button", { name: "Start voice", exact: true }).click();
-            await page.locator("summary").filter({ hasText: "Error details" }).click();
+            await page.getByRole("button", { name: "Voice needs attention", exact: true }).click();
+            await expect(
+              page.getByRole("dialog", { name: "Voice needs attention", exact: true }),
+            ).toContainText("Microphone access is blocked.");
           }
-          await expect(page.getByText(/Microphone access is blocked\./)).toBeVisible();
-          const action = page.getByRole("button", { name: "Open Privacy Settings", exact: true });
+          const errorSurface =
+            surface === "companion"
+              ? page.getByRole("dialog", { name: "Voice needs attention", exact: true })
+              : page;
+          await expect(errorSurface.getByText(/Microphone access is blocked\./)).toBeVisible();
+          const action = errorSurface.getByRole("button", {
+            name: "Open Privacy Settings",
+            exact: true,
+          });
           if (platform === "Linux") await expect(action).toHaveCount(0);
           else await expect(action).toBeVisible();
           await page.screenshot({
