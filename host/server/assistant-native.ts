@@ -26,6 +26,7 @@ import { createRoomBrowserTools } from "../assistant/room/assistant-room-browser
 import { hostRoomDelegationStore } from "../assistant/room/assistant-room-delegation-store";
 import { createRoomDevServerTools } from "../assistant/room/assistant-room-dev-servers";
 import { createRoomFileTools } from "../assistant/room/assistant-room-files";
+import { createAssistantFolderTools } from "../assistant/folders/assistant-folder-tools";
 import { createRoomNativeTargetAdapter } from "../assistant/room/assistant-room-native-target";
 import { AssistantRoomNotebook } from "../assistant/room/assistant-room-notebook";
 import {
@@ -465,16 +466,42 @@ export function createAssistantNativeRuntime(
     },
     approve: dependencies.approveManagementOperation,
   };
-  const roomFiles = createRoomFileTools({
-    ...roomResourceReceipts,
-    run: (principal, command, input, authorized) =>
-      dependencies.workspace.run(
-        command,
-        input,
-        `room:${dependencies.engine.store.environmentId}:${principal.threadId}`,
-        authorized,
-      ),
-  });
+  const roomFiles = Object.assign(
+    createRoomFileTools({
+      ...roomResourceReceipts,
+      run: (principal, command, input, authorized) =>
+        dependencies.workspace.run(
+          command,
+          input,
+          `room:${dependencies.engine.store.environmentId}:${principal.threadId}`,
+          authorized,
+        ),
+    }),
+    {
+      /** Owner-chosen folders (global Room files) and commands.run (global and project Room). */
+      folders: createAssistantFolderTools({
+        receipt: roomResourceReceipts.receipt,
+        saveReceipt: roomResourceReceipts.saveReceipt,
+        folders: async () => {
+          const { assistantFolders } = await dependencies.assistant.request(
+            { op: "folders.get" },
+            "assistant",
+          );
+          if (!assistantFolders) throw new Error("The Assistant folders are unavailable.");
+          return assistantFolders;
+        },
+        approve: async (operation, principal, authorized) =>
+          "projectCwd" in principal
+            ? roomResourceReceipts.approve(operation, principal, authorized)
+            : ((await dependencies.conversationDesktop.callAssistantThread(
+                "management.write.authorize",
+                { operation },
+                principal,
+                authorized,
+              )) as { approved?: boolean; operationHash?: string }),
+      }),
+    },
+  );
   const roomDevServers = createRoomDevServerTools({
     ...roomResourceReceipts,
     project: (id) => dependencies.engine.store.project(id),

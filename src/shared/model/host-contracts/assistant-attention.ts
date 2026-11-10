@@ -10,6 +10,7 @@ export const AssistantNotificationKindSchema = z.enum([
   "owner.question",
   "task.done",
   "task.needsInput",
+  "reminder",
 ]);
 export type AssistantNotificationKind = z.infer<typeof AssistantNotificationKindSchema>;
 export const AssistantJobHoldReasonSchema = z.enum([
@@ -21,11 +22,12 @@ export const AssistantJobHoldReasonSchema = z.enum([
   "disabled",
   "limits",
   "noModel",
+  "dependency",
 ]);
 /** Why a queued job is not starting. */
 export type AssistantJobHoldReason = z.infer<typeof AssistantJobHoldReasonSchema>;
 /** Opt-in snapshot data that older strict clients cannot parse. */
 export const AssistantSnapshotFeaturesSchema = z
-  .array(z.enum(["jobHolds", "jobStalled"]))
+  .array(z.enum(["jobHolds", "jobStalled", "reminders", "onceSchedule"]))
   .max(8)
   .optional();

@@ -19,8 +19,12 @@ import {
 import { crewRunTitle } from "../model/crewRoster";
 import { roleLabel } from "./CrewMemberForm";
 import { CrewModelTag } from "./CrewModelTag";
-import { CrewRoleIcon } from "./CrewRoleIcon";
+import { teamTraits } from "../model/memberAvatars";
+import { MemberAvatar } from "./MemberAvatar";
+import { CrewWorkOwnerActions, type CrewOwnerTools } from "./CrewWorkOwnerActions";
 import { CrewWorkSessions } from "./CrewWorkSessions";
+import { CrewWorkSummary } from "./CrewWorkSummary";
+import { CrewWorkTimeline } from "./CrewWorkTimeline";
 import { CrewWorkBadges, CrewWorkUpdated } from "./CrewWorkState";
 
 /** The team this work started with: an immutable snapshot, not the saved crew. */
@@ -33,6 +37,7 @@ function CrewWorkTeam({
   catalog: HostModelCatalog;
   savedCrew?: CrewDefinition;
 }) {
+  const looks = teamTraits(run.definition.agents);
   return (
     <Disclosure
       className="mt-4"
@@ -49,7 +54,7 @@ function CrewWorkTeam({
             key={agent.id}
             className="flex min-h-(--ui-control-height-compact) min-w-0 items-center gap-2"
           >
-            <CrewRoleIcon role={agent.role} className="icon-sm shrink-0" />
+            <MemberAvatar traits={looks.get(agent.id)!} size={24} className="shrink-0" />
             <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
               <span className="truncate text-ui-secondary font-medium">{agent.name}</span>
               {agent.name.trim().toLocaleLowerCase() ===
@@ -78,6 +83,7 @@ export function CrewWorkDetail({
   canOpen,
   canDelete,
   stopRequested = false,
+  ownerTools,
   onOpen,
   onPause,
   onStop,
@@ -95,6 +101,8 @@ export function CrewWorkDetail({
   canDelete: boolean;
   /** The owner stopped this work in this dialog; the lead may still be cancelling. */
   stopRequested?: boolean;
+  /** Host access for the owner actions; without it they stay hidden. */
+  ownerTools?: CrewOwnerTools;
   onOpen: (id: string, source?: string) => void;
   onPause: () => void;
   onStop: () => void;
@@ -151,6 +159,7 @@ export function CrewWorkDetail({
         </span>
         <CrewWorkUpdated value={run.updatedAt} />
       </div>
+      <CrewWorkSummary run={run} />
       {run.status === "paused" && crewActivityKnown(run) ? (
         <p role="status" className="mt-2 text-ui-caption text-(--ui-text-secondary)">
           {running
@@ -259,6 +268,8 @@ export function CrewWorkDetail({
         pendingAction={pendingAction}
         onOpen={onOpen}
       />
+      {ownerTools ? <CrewWorkOwnerActions run={run} tools={ownerTools} /> : null}
+      <CrewWorkTimeline run={run} />
       {/* Technical metadata stays reachable but quiet, after the actionable parts. */}
       {request.kind === "full" ? (
         request.text !== title ? (

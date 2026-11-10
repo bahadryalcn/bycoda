@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { startDesktopStopShortcut } from "../../../features/host-tools/desktopStopShortcut";
+import { startDesktopTalkShortcut } from "../../../features/settings/model/desktopTalkShortcut";
 import type { FocusDir, SplitDir } from "../../../features/workspace/model/layout";
 import type { LayoutPreset } from "../../../features/workspace/model/layoutPresets";
 import type { SettingsAnchor } from "../../../features/settings/ui/SettingsView";
@@ -75,7 +76,8 @@ export function useWorkspaceActions(handlers: WorkspaceActions): WorkspaceAction
   }, []);
 
   useEffect(() => {
-    return startDesktopStopShortcut();
+    const stops = [startDesktopStopShortcut(), startDesktopTalkShortcut()];
+    return () => stops.forEach((stop) => stop());
   }, []);
 
   useEffect(() => {

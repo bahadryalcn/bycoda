@@ -11,6 +11,14 @@ fn field<'a>(v: &'a Value, name: &str, max: usize) -> Result<&'a str, String> {
         .filter(|s| !s.is_empty() && s.len() <= max && !s.contains('\0'))
         .ok_or_else(|| format!("Invalid notification {name}"))
 }
+/// Maps a Room notification kind to the local event switch the JS path uses.
+fn event_for_kind(kind: &str) -> &'static str {
+    if kind == "task.needsInput" {
+        "input"
+    } else {
+        "finished"
+    }
+}
 pub(super) fn call(
     app: &AppHandle,
     request: &Value,
@@ -174,6 +182,13 @@ pub(super) fn call(
             if !allowed {
                 return Ok(false);
             }
+            // Local preferences (master switch, event kind) mute Room banners too.
+            if !worker_app
+                .try_state::<crate::reminders::ReminderService>()
+                .is_some_and(|service| service.allows_event(event_for_kind(&worker_kind)))
+            {
+                return Ok(false);
+            }
             if tauri::async_runtime::block_on(crate::notifications::notification_permission(
                 worker_app.clone(),
             )) != crate::notifications::Permission::Granted
@@ -182,7 +197,8 @@ pub(super) fn call(
             }
             tauri::async_runtime::block_on(crate::notifications::show_notification(
                 worker_app,
-                String::new(),
+                // Same click target as the in-app path; the renderer opens the assistant.
+                "background:assistant".into(),
                 "bycoda".into(),
                 String::new(),
                 if worker_kind == "task.done" {
@@ -211,4 +227,15 @@ pub(super) fn call(
     )?;
     check()?;
     Ok(json!({"operationJson":operation_json,"proof":proof}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::event_for_kind;
+
+    #[test]
+    fn room_kinds_map_to_local_event_switches() {
+        assert_eq!(event_for_kind("task.done"), "finished");
+        assert_eq!(event_for_kind("task.needsInput"), "input");
+    }
 }

@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { DesktopControlOperationSchema } from "../../src/shared/model/host-contracts/desktop-control";
+import {
+  DESKTOP_PERMISSION_MODES,
+  DesktopControlOperationSchema,
+} from "../../src/shared/model/host-contracts/desktop-control";
 
 export const DesktopOperationAuditSchema = z.strictObject({
   id: z.string().regex(/^[a-f0-9]{64}$/),
@@ -26,12 +29,18 @@ export const DesktopOperationAuditSchema = z.strictObject({
     "double-click",
     "right-click",
     "press",
+    "scroll",
+    "hover",
+    "drag",
+    "focus-window",
     "launch",
     "clipboard-get",
     "clipboard-set",
     "clipboard-clear",
   ]),
   headed: z.boolean(),
+  /** Owner-set mode in force for this effect; absent on events recorded before modes existed. */
+  permissionMode: z.enum(DESKTOP_PERMISSION_MODES).optional(),
   operation: DesktopControlOperationSchema.omit({ errorCode: true }),
 });
 export type DesktopOperationAudit = z.infer<typeof DesktopOperationAuditSchema>;

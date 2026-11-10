@@ -19,6 +19,8 @@ import { inspectConversationPath, mutateConversationPath } from "./conversation-
 import type { WorkspaceCommands } from "../workspaces/workspace-commands";
 
 const path = { type: "string", minLength: 1, maxLength: 4096 };
+/** Global Assistant Room only: an owner-chosen folder id from files.roots. Never a path. */
+const root = { type: "string", minLength: 1, maxLength: 64 };
 const expectedHash = { type: "string", minLength: 64, maxLength: 64, pattern: "^[a-f0-9]{64}$" };
 const pagination = {
   offset: { type: "integer", minimum: 0 },
@@ -34,26 +36,28 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
   required,
   additionalProperties: false,
 });
+const fileObject = (properties: Record<string, unknown>, required: string[] = []) =>
+  object({ root, ...properties }, required);
 export const CONVERSATION_FILE_TOOLS = {
-  "files.inspect": object({ path }, ["path"]),
-  "files.rename": object({ path, name: path, expectedHash }, ["path", "name", "expectedHash"]),
-  "files.move": object({ path, destinationParent: path, expectedHash }, [
+  "files.inspect": fileObject({ path }, ["path"]),
+  "files.rename": fileObject({ path, name: path, expectedHash }, ["path", "name", "expectedHash"]),
+  "files.move": fileObject({ path, destinationParent: path, expectedHash }, [
     "path",
     "destinationParent",
     "expectedHash",
   ]),
-  "files.copy": object({ path, destinationParent: path, expectedHash }, [
+  "files.copy": fileObject({ path, destinationParent: path, expectedHash }, [
     "path",
     "destinationParent",
     "expectedHash",
   ]),
-  "files.delete": object({ path, expectedHash }, ["path", "expectedHash"]),
-  "files.create": object({ parent: path, name: path, isDir: { type: "boolean" } }, [
+  "files.delete": fileObject({ path, expectedHash }, ["path", "expectedHash"]),
+  "files.create": fileObject({ parent: path, name: path, isDir: { type: "boolean" } }, [
     "parent",
     "name",
     "isDir",
   ]),
-  "files.write": object(
+  "files.write": fileObject(
     {
       path,
       expectedHash: { type: "string", minLength: 64, maxLength: 64, pattern: "^[a-f0-9]{64}$" },
@@ -61,13 +65,13 @@ export const CONVERSATION_FILE_TOOLS = {
     },
     ["path", "expectedHash", "content"],
   ),
-  "files.list": object({ path, ...pagination }),
-  "files.index": object(pagination),
-  "files.search": object(
+  "files.list": fileObject({ path, ...pagination }),
+  "files.index": fileObject(pagination),
+  "files.search": fileObject(
     { query: { type: "string", minLength: 1, maxLength: 200 }, ...pagination },
     ["query"],
   ),
-  "files.searchContent": object(
+  "files.searchContent": fileObject(
     {
       query: { type: "string", minLength: 1, maxLength: 1000 },
       caseSensitive: { type: "boolean" },
@@ -79,7 +83,7 @@ export const CONVERSATION_FILE_TOOLS = {
     },
     ["query"],
   ),
-  "files.read": object({ path, ...textPage }, ["path"]),
+  "files.read": fileObject({ path, ...textPage }, ["path"]),
   "git.index": object(pagination),
   "git.fileDiff": object({ path, staged: { type: "boolean" }, ...textPage }, ["path"]),
   "git.branches": object({}),
@@ -103,10 +107,10 @@ export function describeFileConversationTool(action: string) {
   if (
     ["files.inspect", "files.rename", "files.move", "files.copy", "files.delete"].includes(action)
   )
-    return "Inspect or mutate a file/directory in this conversation's verified working copy. Read files.inspect first and pass its exact expectedHash; the shared host editor queue rechecks it before commit and rejects observed changes. Arbitrary external filesystem writes are not an atomic tree transaction. Inspection is bounded to 2000 entries/32 MiB and rejects Git internals, links and special files. rename takes one name; move/copy take an existing destinationParent in the same checkout and refuse collisions. delete removes the inspected tree. No root deletion, arbitrary paths, Git actions or cross-project operations. Mutations reuse the editor filesystem service.";
+    return "Inspect or mutate a file/directory in this conversation's verified working copy. Read files.inspect first and pass its exact expectedHash; the shared host editor queue rechecks it before commit and rejects observed changes. Arbitrary external filesystem writes are not an atomic tree transaction. Inspection is bounded to 2000 entries/32 MiB and rejects Git internals, links and special files. rename takes one name; move/copy take an existing destinationParent in the same checkout and refuse collisions. delete removes the inspected tree. No root deletion, arbitrary paths, Git actions or cross-project operations. Mutations reuse the editor filesystem service. The global Room has no working copy: it passes root (a folder id from files.roots) and each write needs exact in-app owner approval with a stable requestId.";
   if (action === "files.create" || action === "files.write")
-    return "Create or save a file in the calling session's verified working copy through the existing editor service. Read before write and pass files.read's hash as expectedHash; concurrent changes reject the save. No cwd/project override, deletion, Git operation or publishing. Creation refuses an existing target. File content is bounded; writes do not execute it.";
-  return "Read files, search or inspect Git in the calling session's verified project working copy. Paths are workspace-relative; no cwd/project override or Git writes. Results are bounded with pagination; search truncation is explicit. File/diff text uses character offsets after credential redaction. A read does not authorize edits, commits or publication.";
+    return "Create or save a file in the calling session's verified working copy through the existing editor service. Read before write and pass files.read's hash as expectedHash; concurrent changes reject the save. No cwd/project override, deletion, Git operation or publishing. Creation refuses an existing target. File content is bounded; writes do not execute it. The global Room passes root (a folder id from files.roots), approves each write exactly and keeps one requestId per operation.";
+  return "Read files, search or inspect Git in the calling session's verified project working copy. Paths are workspace-relative (global Room: relative to the root folder id from files.roots, no approval needed for reads); no cwd/project override or Git writes. Results are bounded with pagination; search truncation is explicit. File/diff text uses character offsets after credential redaction. A read does not authorize edits, commits or publication.";
 }
 const page = <T>(items: T[], input: Record<string, unknown>) => {
   const offset = Number(input.offset ?? 0),
@@ -130,7 +134,8 @@ const text = (value: string, input: Record<string, unknown>) => {
   };
 };
 
-/** root is resolved by the host from the authenticated session, never tool input. */
+/** root is resolved by the host from the authenticated session, never tool input. The
+ * schema's `root` folder id belongs to the global Room, which resolves it before calling here. */
 export async function callFileConversationTool(
   root: string,
   action: string,
@@ -138,6 +143,8 @@ export async function callFileConversationTool(
   execute?: WorkspaceCommands["run"],
   authorized?: () => Promise<boolean>,
 ) {
+  if (Object.hasOwn(input, "root"))
+    throw new Error("root selects an Assistant folder and is only available in the global Room.");
   if (action === "files.inspect") return await inspectConversationPath(root, input.path);
   if (["files.rename", "files.move", "files.copy", "files.delete"].includes(action)) {
     if (!execute) throw new Error("Editor filesystem mutations unavailable.");

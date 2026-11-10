@@ -24,6 +24,8 @@ import {
   isRuntimeManagementAction,
 } from "../../conversation/conversation-management-runtime";
 import { isRoomFileAction } from "../room/assistant-room-files";
+import { isRoomAppRead } from "../room/assistant-room-app-reads";
+import { isRoomFolderAction } from "../folders/assistant-folder-schemas";
 import { isRoomDevServerAction } from "../room/assistant-room-dev-servers";
 import { isRoomTerminalAction } from "../room/assistant-room-terminals";
 import { isRoomBrowserAction } from "../room/assistant-room-browser";
@@ -79,6 +81,11 @@ export function roomManagementToolAllowed(family: string, action: string, projec
     return !projectId;
   if (family === "conversation" && ["social.send.propose", "social.send.status"].includes(action))
     return true;
+  // Owner-chosen folders: files.* with a folder id in the global Room, commands.run in both.
+  if (family === "conversation" && isRoomFolderAction(action))
+    return action === "files.roots" ? !projectId : true;
+  if (family === "conversation" && isRoomFileAction(action) && !projectId)
+    return voiceGlobalToolAllowed(family, action);
   if (
     family === "conversation" &&
     (isRoomFileAction(action) ||
@@ -91,6 +98,14 @@ export function roomManagementToolAllowed(family: string, action: string, projec
   if (family === "conversation" && isAssistantObservationAction(action)) return true;
   if (family === "conversation" && isRoomNotebookAction(action)) return true;
   if (family === "conversation" && isRoomWorkspaceAction(action)) return !!projectId;
+  // Host-wide device list is the one application read that also works without a project.
+  if (family === "conversation" && action === "devices.list")
+    return (
+      voiceGlobalToolAllowed(family, action) ||
+      (!!projectId && voiceThreadToolAllowed(family, action))
+    );
+  if (family === "conversation" && isRoomAppRead(action))
+    return !!projectId && voiceThreadToolAllowed(family, action);
   if (!projectId) return voiceGlobalToolAllowed(family, action);
   if (family !== "conversation") return voiceThreadToolAllowed(family, action);
   return (
@@ -212,6 +227,7 @@ export function roomManagementInput(
   else if (
     !action.startsWith("crews.") &&
     !action.startsWith("servers.") &&
+    action !== "commands.run.cancel" &&
     !action.endsWith(".status") &&
     !action.endsWith(".result")
   ) {
@@ -338,12 +354,18 @@ export function createRoomManagementDispatcher(ports: {
       ...(call.projectId &&
       call.family === "conversation" &&
       (isRoomFileAction(call.action) ||
+        isRoomFolderAction(call.action) ||
         isRoomDevServerAction(call.action) ||
         isRoomTerminalAction(call.action) ||
         isRoomBrowserAction(call.action))
         ? { contributorProjectIds: [call.projectId] }
         : {}),
       ...(!call.projectId && call.family === "conversation" && isGlobalRuntimeRead(call.action)
+        ? { contributorProjectIds: [] }
+        : {}),
+      ...(!call.projectId &&
+      call.family === "conversation" &&
+      (isRoomFileAction(call.action) || isRoomFolderAction(call.action))
         ? { contributorProjectIds: [] }
         : {}),
       ...(!call.projectId &&

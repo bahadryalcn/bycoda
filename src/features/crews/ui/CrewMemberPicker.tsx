@@ -12,7 +12,7 @@ import { X } from "../../../shared/ui/icons";
 import type { CrewAgent, CrewRole, SavedCrewAgent } from "../model/crew";
 import type { ProjectCrews } from "../model/crewClient";
 import { libraryGroups } from "../model/crewRoster";
-import { CrewMemberMeta, visibleLibraryMembers } from "./CrewLibraryMemberMeta";
+import { CrewMemberIdentity, CrewMemberMeta, visibleLibraryMembers } from "./CrewLibraryMemberMeta";
 import { hiddenSelection } from "./CrewLibrarySearch";
 import { CrewMemberForm, roleLabel } from "./CrewMemberForm";
 
@@ -204,8 +204,8 @@ export function CrewMemberPicker({
                         label={
                           <>
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-ui-body font-medium">
-                                {agent.name}
+                              <span className="block text-ui-body font-medium">
+                                <CrewMemberIdentity agent={agent} />
                               </span>
                               <CrewMemberMeta agent={agent} catalog={data.catalog} shortScope />
                             </span>
@@ -236,6 +236,8 @@ export function CrewMemberPicker({
             agent={draft}
             onChange={onDraftChange}
             groups={data.groupsSupported}
+            identity={data.identitySupported}
+            tools={data.toolsSupported}
             groupSuggestions={groups}
             nameError={nameError}
             modelError={modelError}

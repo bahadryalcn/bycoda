@@ -43,6 +43,8 @@ let desktopConfiguration = {
   binarySha256: desktopInstalled ? "a".repeat(64) : "",
   allowedApps: [] as string[],
   allowPhysicalInput: false,
+  permissionMode: "ask",
+  allowAllApps: false,
   version: 0,
 };
 function desktopFixtureRequest(input: any) {

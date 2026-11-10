@@ -25,7 +25,9 @@ import { AssistantRetentionField } from "./settings/AssistantUsageSettings";
 import { AssistantScheduleInfo } from "./settings/AssistantScheduleFields";
 import { AssistantCostInfo } from "./settings/AssistantCostFields";
 import { settingsProfilePatch } from "./settings/settingsPatch";
+import { AlwaysOnChecklist } from "./settings/AlwaysOnChecklist";
 import { ModelPoolEditor } from "./settings/pool/ModelPoolEditor";
+import { AssistantFoldersSettings } from "./settings/folders/AssistantFoldersSettings";
 import settingsStyles from "./AssistantSettings.module.css";
 
 type OwnerRequest = typeof assistantRequest;
@@ -92,6 +94,7 @@ export function AssistantSettings({
   const [projectState, setProjectState] = useState({ dirty: false, pending: false });
   const [computerState, setComputerState] = useState({ dirty: false, pending: false });
   const [poolState, setPoolState] = useState({ dirty: false, pending: false });
+  const [foldersState, setFoldersState] = useState({ dirty: false, pending: false });
   const [leave, setLeave] = useState<"close" | "setup" | null>(null);
   const [retention, setRetention] = useState(snapshot.conversationRetentionDays ?? 0);
   const [savedRetention, setSavedRetention] = useState(snapshot.conversationRetentionDays ?? 0);
@@ -106,12 +109,23 @@ export function AssistantSettings({
   const projectSave: SectionSave = useRef<(() => Promise<void>) | null>(null);
   const computerSave: SectionSave = useRef<(() => Promise<void>) | null>(null);
   const poolSave: SectionSave = useRef<(() => Promise<void>) | null>(null);
+  const foldersSave: SectionSave = useRef<(() => Promise<void>) | null>(null);
   /** The computer section status refresh, shown in its title row by this shell. */
   const computerRefresh = useRef<(() => void) | null>(null);
   const currentPage = pages.find(([id]) => id === page)!;
   const profileDirty = JSON.stringify(draft) !== savedDraft || retention !== savedRetention;
-  const anyDirty = profileDirty || projectState.dirty || computerState.dirty || poolState.dirty;
-  const busy = pending || projectState.pending || computerState.pending || poolState.pending;
+  const anyDirty =
+    profileDirty ||
+    projectState.dirty ||
+    computerState.dirty ||
+    poolState.dirty ||
+    foldersState.dirty;
+  const busy =
+    pending ||
+    projectState.pending ||
+    computerState.pending ||
+    poolState.pending ||
+    foldersState.pending;
   const saved = savedNotice && !anyDirty;
   const changeProjectState = useCallback((state: { dirty: boolean; pending: boolean }) => {
     setProjectState(state);
@@ -119,6 +133,10 @@ export function AssistantSettings({
   }, []);
   const changeComputerState = useCallback((state: { dirty: boolean; pending: boolean }) => {
     setComputerState(state);
+    if (state.dirty) setSavedNotice(false);
+  }, []);
+  const changeFoldersState = useCallback((state: { dirty: boolean; pending: boolean }) => {
+    setFoldersState(state);
     if (state.dirty) setSavedNotice(false);
   }, []);
   const changePoolState = useCallback((state: { dirty: boolean; pending: boolean }) => {
@@ -151,7 +169,7 @@ export function AssistantSettings({
       setSavedRetention(retention);
     }
   }
-  /** Profile, then the model list, then project scope, then computer use. The first failure stops the chain. */
+  /** Profile, then the model list, then project scope, computer use, then folders. The first failure stops the chain. */
   async function save() {
     if (busy) return;
     setPending(true);
@@ -162,6 +180,7 @@ export function AssistantSettings({
       if (poolState.dirty) await poolSave.current?.();
       if (projectState.dirty) await projectSave.current?.();
       if (computerState.dirty) await computerSave.current?.();
+      if (foldersState.dirty) await foldersSave.current?.();
       setSavedNotice(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -392,16 +411,38 @@ export function AssistantSettings({
             )}
             {tab(
               "computer",
-              <Group
-                title={t("Computer use")}
-                action={<RefreshButton onClick={() => computerRefresh.current?.()} />}
-              >
-                <DesktopControlSettings
-                  saveRef={computerSave}
-                  refreshRef={computerRefresh}
-                  onDraftStateChange={changeComputerState}
-                />
-              </Group>,
+              <>
+                <Group title={t("Ready for 24/7")}>
+                  <AlwaysOnChecklist
+                    request={assistantRequest}
+                    snapshot={snapshot}
+                    onOpen={(target) => {
+                      if (target === "setup") requestLeave("setup");
+                      else {
+                        setPage(target);
+                        if (contentRef.current) contentRef.current.scrollTop = 0;
+                      }
+                    }}
+                  />
+                </Group>
+                <Group
+                  title={t("Computer use")}
+                  action={<RefreshButton onClick={() => computerRefresh.current?.()} />}
+                >
+                  <DesktopControlSettings
+                    saveRef={computerSave}
+                    refreshRef={computerRefresh}
+                    onDraftStateChange={changeComputerState}
+                  />
+                </Group>
+                <Group title={t("Folders and commands")}>
+                  <AssistantFoldersSettings
+                    request={assistantRequest}
+                    saveRef={foldersSave}
+                    onDraftStateChange={changeFoldersState}
+                  />
+                </Group>
+              </>,
             )}
             {tab(
               "advanced",

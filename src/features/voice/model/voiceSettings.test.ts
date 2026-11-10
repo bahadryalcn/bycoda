@@ -96,3 +96,18 @@ it("never forces the interface language on cloud dictation, which would translat
   expect(dictationLanguage({ ...chosen, dictationEngine: "xai" }, "en-US")).toBe("tr");
   expect(dictationLanguage({ ...chosen, dictationEngine: "local" }, "en-US")).toBe("tr");
 });
+
+it("parses the return call settings backward compatibly", async () => {
+  const { loadVoiceSettings } = await import("./voiceSettings");
+  const save = (value: unknown) => localStorage.setItem("bycoda.voice", JSON.stringify(value));
+  localStorage.removeItem("bycoda.voice");
+  expect(loadVoiceSettings().returnCall).toBeUndefined();
+  save({ enabled: true });
+  expect(loadVoiceSettings()).not.toHaveProperty("returnCall");
+  save({ returnCall: true, returnCallSeconds: 45 });
+  expect(loadVoiceSettings()).toMatchObject({ returnCall: true, returnCallSeconds: 45 });
+  save({ returnCall: "yes", returnCallSeconds: 3 });
+  const bad = loadVoiceSettings();
+  expect(bad).not.toHaveProperty("returnCall");
+  expect(bad).not.toHaveProperty("returnCallSeconds");
+});

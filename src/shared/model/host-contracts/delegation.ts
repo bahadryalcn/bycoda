@@ -12,10 +12,22 @@ export const CROSS_SUBAGENTS_KEY = "crossSubagents";
 export const CROSS_ADVISOR_KEY = "crossAdvisor";
 /** Set by the Host on a child session; display linkage only, never authority. */
 export const DELEGATION_PARENT_KEY = "delegationParent";
+/**
+ * Set by the Host on a session that runs one Crew member for an owner `@member` ask
+ * (`crews.member.ask`). JSON of `CrewMemberChildSchema`; display only, never authority.
+ */
+export const CREW_MEMBER_KEY = "crewMember";
+/**
+ * Set by the Host when it starts a Crew member's session: JSON of the member's tool profile
+ * (`CrewToolProfile`). The Host narrows that session's Conversation Tools by it.
+ */
+export const CREW_TOOLS_KEY = "crewTools";
 export const CROSS_DELEGATION_KEYS = [CROSS_SUBAGENTS_KEY, CROSS_ADVISOR_KEY] as const;
 const RESERVED_KEYS = new Set<string>([
   ...CROSS_DELEGATION_KEYS,
   DELEGATION_PARENT_KEY,
+  CREW_MEMBER_KEY,
+  CREW_TOOLS_KEY,
   IMAGE_MODELS_KEY,
 ]);
 
@@ -52,6 +64,20 @@ export const DelegationParentSchema = z.strictObject({
   startedAt: z.number().int().nonnegative(),
 });
 export type DelegationParent = z.infer<typeof DelegationParentSchema>;
+
+/** Identity of the library member a session runs; `avatar` is the member's saved avatar choice. */
+export const CrewMemberChildSchema = z.strictObject({
+  id: z.string().min(1).max(200),
+  name: z.string().min(1).max(200),
+  handle: z.string().min(1).max(64).optional(),
+  avatar: z.record(z.string(), z.unknown()).optional(),
+  sourceId: z.string().min(1).max(200).optional(),
+  /** Idempotency signature of the ask that created the session. */
+  request: z.string().min(1).max(128).optional(),
+  /** Host task of the ask; the calling conversation's delegation note names the same id. */
+  taskId: z.string().min(1).max(200).optional(),
+});
+export type CrewMemberChild = z.infer<typeof CrewMemberChildSchema>;
 export type DelegationCollectionMetadata = { delegationParent?: DelegationParent | null };
 
 /** Full settings take precedence over a potentially stale collection projection. */
@@ -125,6 +151,11 @@ export function decodeDelegationParent(value: unknown): DelegationParent | undef
   return result.success ? result.data : undefined;
 }
 
+export function decodeCrewMemberChild(value: unknown): CrewMemberChild | undefined {
+  const result = CrewMemberChildSchema.safeParse(parseJson(value));
+  return result.success ? result.data : undefined;
+}
+
 /** Copies the valid reserved keys of `from` into `into`, dropping invalid values. */
 export function carryCrossDelegation(
   from: Readonly<Record<string, string>> | undefined,
@@ -141,6 +172,9 @@ export function carryCrossDelegation(
   if (parent) into[DELEGATION_PARENT_KEY] = JSON.stringify(parent);
   const images = encodeImageModels(decodeImageModels(from[IMAGE_MODELS_KEY]));
   if (images) into[IMAGE_MODELS_KEY] = images;
+  // A model change must not lift the member's tool restriction.
+  const tools = from[CREW_TOOLS_KEY];
+  if (tools && tools.length <= DELEGATION_LIMITS.valueBytes) into[CREW_TOOLS_KEY] = tools;
   return into;
 }
 

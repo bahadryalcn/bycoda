@@ -24,7 +24,13 @@ export type AppControlRequest = {
 };
 
 export function handleOwnerApprovalControl(
-  payload: { namespace: string; id: string; sessionId?: unknown; input: Record<string, unknown> },
+  payload: {
+    namespace: string;
+    id: string;
+    sessionId?: unknown;
+    action?: string;
+    input: Record<string, unknown>;
+  },
   sessions: () => readonly Pick<Session, "id" | "cwd">[],
   disposed: () => boolean,
 ) {

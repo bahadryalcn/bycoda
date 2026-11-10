@@ -23,7 +23,7 @@ it("starts the independent desktop heartbeat parts together and keeps the result
   };
   const dependencies = {
     desktop: { live: { beat: () => ({ commands: [{ id: "live" }] }) } },
-    pushNotifications: { desktopPresence: () => undefined },
+    pushNotifications: { desktopPresence: () => undefined, ownedEvents: async () => [] },
     desktopCommandDelivery: { poll: async () => [{ id: "durable" }] },
     renewRunLeases: async () => ({ s1: null }),
     heartbeatEffects: Promise.resolve(),
@@ -55,6 +55,7 @@ it("starts the independent desktop heartbeat parts together and keeps the result
   expect(request.result).toEqual({
     commands: [{ id: "live" }, { id: "durable" }],
     deletions: { jobs: [{ id: "job" }], acked: [] },
+    hostPush: [],
     inbox: { jobs: [], acked: ["m1"] },
     notesRevision: 7,
     queues: { seq: 3 },

@@ -20,13 +20,15 @@ Use for notification settings, project exceptions/mute, pending request sheet/hi
 
 - `src/features/notifications/model/ownerApprovals.ts` and `ui/OwnerApprovalRequests.tsx` route transient native-owned decisions into chat or the shared in-app confirmation; `src-tauri/src/control/owner_approval.rs` retains window, source and deadline authority.
 
+- `host/approvals/` mirrors pending owner approvals (`src/features/notifications/model/ownerApprovalMirror.ts` publishes them) so a paired phone can answer the `remote` ones through `approvals.*`; the desktop still settles the native dialog, only for a matching signature, and secrets and desktop input stay `remote: false` (see [decisions](references/decisions.md)).
+
 ## Preserve
 
 - Sound, desktop alerts and request popups are independent preferences; master-off preserves dependent event/project/schedule choices. Saved intent is not permission or delivered notification.
 - Keep unavailable native permission distinct from denied/granted; reject stale read/request results and request permission only through current user-intent gates.
 - Project mute/category identity includes machine/provider/project; preserve expiry, custom-time drafts, all-known bulk scope and truthful visible/known counts.
 - Application-owned approval requests use chat or the shared in-app confirmation, never native/browser fallback. Source retirement, timeout and relock dismiss the request; an automatic dismissal is not an owner choice. Full access only reuses existing execution authority, not publication or persistent access consent.
-- Pending approvals/questions, transient popups and capped arrival history are different collections. Dismissal or timeout does not resolve a request; history is not an unread/resolved/all-delivery ledger.
+- Pending approvals/questions, transient popups and capped arrival history are different collections. Dismissal or timeout does not resolve a request; history is the capped common log of announcements (see [decisions](references/decisions.md)), not an unread/resolved ledger.
 - Pending Question and Approval badges use the shared warning tone for waiting owner input; preserve their distinct labels, response actions and permission gates.
 - Preserve exact represented request/context and current session/provider/remote/worktree gates. Pending or uncertain decisions stay disabled across remounts; callback return or absence alone does not confirm provider acceptance.
 - Keep locked/hidden content redacted before previews/options/counts and revalidate cached summaries on relock; never reconstruct private context from stale display data.

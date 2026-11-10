@@ -19,6 +19,7 @@ fn database(ids: &[&str]) -> Arc<SessionStore> {
 fn preferences(ids: &[&str]) -> DeliveryPreferences {
     DeliveryPreferences {
         notifications_enabled: true,
+        events: Default::default(),
         sound: false,
         project_rules: ids
             .iter()

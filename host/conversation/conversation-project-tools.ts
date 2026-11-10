@@ -3,7 +3,10 @@ import type { HostGoals } from "../goals/goals";
 import type { HostCheckpoints } from "../checkpoints/checkpoints";
 import type { HostStewards } from "../stewards/stewards";
 import type { HostAutomations } from "../automations/automations";
-import type { RuntimeLogPrincipal } from "../execution/runtime-log-tools";
+import type {
+  RuntimeLogPrincipal,
+  RuntimeLogSubjectPrincipal,
+} from "../execution/runtime-log-tools";
 import { scrubRuntimeLogText } from "../execution/runtime-logs";
 import { readSessionUsage } from "../usage/usage-report";
 import {
@@ -152,7 +155,7 @@ export class ConversationProjectTools {
   async call(
     action: ProjectConversationTool,
     input: Record<string, unknown>,
-    principal: RuntimeLogPrincipal,
+    principal: RuntimeLogSubjectPrincipal,
     authorized: () => boolean | Promise<boolean>,
   ): Promise<unknown> {
     const check = async () => {
@@ -243,6 +246,7 @@ export class ConversationProjectTools {
     }
     if (action !== "checkpoints.status" && action !== "checkpoints.diff")
       throw new Error("Unsupported project conversation tool.");
+    if (principal.kind !== "session") throw new Error("This tool requires a real focused session.");
     const sessionId = String(input.sessionId ?? principal.sessionId);
     const session = await (this.optional.session ?? (async (id) => await this.store.session(id)))(
       sessionId,

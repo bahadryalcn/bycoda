@@ -27,6 +27,10 @@ export type AssistantJobDraft = {
   automationDraft?: AssistantQuickAutomationAction;
   projectDraft?: { projectId: string; projectIds: readonly string[] };
   idempotencyKey: string;
+  /** Project jobs only: start after this existing job finished. */
+  after?: string;
+  /** Project jobs only: start after the job created from the draft with this idempotency key. */
+  afterKey?: string;
 };
 export type AssistantJobProjectSource = {
   kind?: "project" | "quick";
@@ -324,7 +328,16 @@ export class AssistantJobBatch {
         const prior = current.snapshot?.jobs.find(
           (job) => job.idempotencyKey === row.idempotencyKey,
         );
-        const input = assistantJobDraftRequest(row);
+        const base = assistantJobDraftRequest(row);
+        const after =
+          row.kind === "quick"
+            ? undefined
+            : row.afterKey
+              ? this.accepted.find((job) => job.idempotencyKey === row.afterKey)?.id
+              : row.after;
+        if (row.afterKey && row.kind !== "quick" && !after)
+          throw new Error("The job to wait for was not created. Check the Room before retrying.");
+        const input: Create = after && base.kind !== "quick" ? { ...base, after } : base;
         if (prior) {
           if (!receiptMatches(prior, input))
             throw new Error("Job request identity changed. Open the Room to check it.");

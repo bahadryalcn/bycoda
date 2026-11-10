@@ -1,0 +1,28 @@
+/* Assistant folders list. Spans the settings row; one path per line. */
+.list {
+  display: grid;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding-inline-start: 8px;
+  min-inline-size: 0;
+  border: 1px solid var(--ui-tone-neutral-border);
+  border-radius: var(--ui-radius-card);
+}
+.path {
+  min-inline-size: 0;
+  overflow: hidden;
+  font-size: var(--ui-font-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.empty {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}

@@ -241,3 +241,18 @@ export async function patchCrewSchedulerRun(
   await saveRun(store, ordinal, run);
   store.afterCommit(() => store.changes.notify());
 }
+
+/** Runs that can still have working members, across projects; finished history is never loaded. */
+export async function readActiveCrewRuns(store: HostStore, limit: number): Promise<CrewRun[]> {
+  if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Invalid active Crew run limit");
+  return store.db.scope(async () => {
+    const state = await store.db.prepare("SELECT 1 AS ok FROM metadata WHERE key=?").get(stateKey);
+    if (!state) throw new Error("Crew storage is unavailable");
+    const rows = await store.db
+      .prepare(
+        "SELECT payload FROM crew_runs_v2 WHERE status IN ('active','paused') ORDER BY ordinal LIMIT ?",
+      )
+      .all(limit);
+    return rows.map((row) => JSON.parse(String(row.payload)) as CrewRun);
+  });
+}

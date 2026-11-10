@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { AssistantProfilePatch } from "../../../shared/model/host-contracts/assistant";
 import { t } from "../../../shared/i18n";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -24,6 +24,7 @@ import {
   getHarnessAvailabilitySnapshot,
   subscribeHarnessAvailability,
 } from "../../../integrations/harness/core/availability";
+import { AlwaysOnChecklist } from "./settings/AlwaysOnChecklist";
 import { AssistantKeepAwakeStatus } from "./AssistantKeepAwakeStatus";
 import { AssistantProfileFields } from "./AssistantProfileFields";
 import { AssistantBuilderDialog } from "./builder/AssistantBuilderDialog";
@@ -115,6 +116,11 @@ export function AssistantSetup({
   liveEnvironment.current = environmentId;
   const [error, setError] = useState("");
   const [builderOpen, setBuilderOpen] = useState(false);
+  const [finished, setFinished] = useState(false);
+  const checklistRequest = useMemo(
+    (): typeof assistantRequest => (input) => assistantRequest(input, draft?.environmentId),
+    [draft?.environmentId],
+  );
   const [verified, setVerified] = useState<Record<string, boolean>>({});
   const steps = voice ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] : [0, 6, 8, 9];
   useEffect(() => {
@@ -302,7 +308,7 @@ export function AssistantSetup({
       assertSource();
       if (!profile?.setupComplete) throw new Error(t("Setup was not confirmed by the Host."));
       localStorage.removeItem(DRAFT_KEY);
-      onClose();
+      setFinished(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -310,6 +316,31 @@ export function AssistantSetup({
       setPending(false);
     }
   }
+  if (finished && snapshot)
+    return (
+      <Modal
+        title={t("Ready for 24/7")}
+        size="md"
+        fitViewport
+        onClose={onClose}
+        footer={
+          <ModalActions>
+            <Button variant="primary" onClick={onClose}>
+              {t("Done")}
+            </Button>
+          </ModalActions>
+        }
+      >
+        <div className={styles.setup}>
+          <p className={styles.muted}>
+            {t(
+              "Optional. Check what keeps the assistant working around the clock; you can skip this and find it later in Settings, Computer use.",
+            )}
+          </p>
+          <AlwaysOnChecklist request={checklistRequest} snapshot={snapshot} />
+        </div>
+      </Modal>
+    );
   return (
     <Modal
       title={draft ? t(labels[step]) : t("Set up")}

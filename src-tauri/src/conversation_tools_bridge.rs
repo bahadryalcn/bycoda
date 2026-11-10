@@ -16,6 +16,7 @@ mod assistant_notification_owner;
 #[path = "assistant/assistant_observation_publisher.rs"]
 mod assistant_observation_publisher;
 mod owner_approval;
+mod management_actions;
 #[path = "privacy_account_capture.rs"]
 mod privacy_account_capture;
 #[path = "privacy_scope_capture.rs"]
@@ -663,92 +664,7 @@ fn management_approval_message(request: &Value) -> Result<(String, String), Stri
     let action = operation["action"]
         .as_str()
         .ok_or("Management action required")?;
-    if !matches!(
-        action,
-        "workspaces.resume"
-            | "workspaces.finish"
-            | "workspaces.close"
-            | "workspaces.prepare"
-            | "git.stash"
-            | "git.pull"
-            | "projects.createDirectory"
-            | "projects.open"
-            | "providers.quota.refresh"
-            | "servers.ssh.save"
-            | "servers.ssh.remove"
-            | "social.send"
-            | "notebook.create"
-            | "notebook.update"
-            | "notebook.delete"
-            | "notes.create"
-            | "notes.update"
-            | "notes.delete"
-            | "files.create"
-            | "files.write"
-            | "files.rename"
-            | "files.move"
-            | "files.copy"
-            | "files.delete"
-            | "devServers.start"
-            | "devServers.stop"
-            | "devServers.restart"
-            | "terminals.create"
-            | "terminals.write"
-            | "terminals.interrupt"
-            | "terminals.close"
-            | "workspace.projects.select"
-            | "workspace.sessions.create"
-            | "workspace.sessions.open"
-            | "workspace.sessions.submit"
-            | "workspace.sessions.stop"
-            | "crews.save"
-            | "crews.agent.save"
-            | "crews.start"
-            | "crews.pause"
-            | "crews.stop"
-            | "crews.resume"
-            | "crews.request"
-            | "crews.resolve"
-            | "crews.assign"
-            | "crews.accept"
-            | "crews.finish"
-            | "projects.organization.patch"
-            | "organization.patch"
-            | "workspaces.featureClaims.acquire"
-            | "workspaces.featureClaims.release"
-            | "sessions.configure"
-            | "sessions.contextual.create"
-            | "sessions.draft"
-            | "sprints.create"
-            | "sprints.update"
-            | "sprints.start"
-            | "sprints.complete"
-            | "sprints.archive"
-            | "sprints.plan"
-            | "git.stage"
-            | "git.unstage"
-            | "git.commit"
-            | "preferences.patch"
-            | "commands.dispatch"
-            | "ownerQuestions.answer"
-            | "tasks.create"
-            | "tasks.start"
-            | "tasks.update"
-            | "tasks.stop"
-            | "tasks.retry"
-            | "goals.create"
-            | "goals.replan"
-            | "goals.cancel"
-            | "goals.update"
-            | "goals.delete"
-            | "automations.create"
-            | "automations.update"
-            | "automations.pause"
-            | "automations.resume"
-            | "automations.delete"
-            | "automations.runNow"
-            | "automations.stopRun"
-    ) {
+    if !management_actions::MANAGEMENT_APPROVAL_ACTIONS.contains(&action) {
         return Err("Unsupported management approval action".into());
     }
     let operation_hash = operation["operationHash"]
@@ -799,7 +715,13 @@ fn management_approval_message(request: &Value) -> Result<(String, String), Stri
             .map_err(|_| "Invalid host")?,
     );
     let details = escape_approval_direction(&details);
-    let consequence = if action == "social.send" {
+    let consequence = if action == "git.push" {
+        "
+This publishes the listed local commits to the listed remote branch. It never forces, deletes or rewrites remote history; an uncertain result is never retried."
+    } else if action == "git.merge" {
+        "
+This merges the listed source branch into the current branch (fast-forward or merge commit only). A conflict aborts the merge and restores the checkout."
+    } else if action == "social.send" {
         "\nThis sends the exact reviewed draft to an external recipient. Review the account, recipient, complete message and media above. Approval applies only to this operation; a queued job is not proof of delivery."
     } else if action.starts_with("terminals.") {
         "\nThis controls a Host pipe shell. Its launch directory is not a sandbox; accepted input may continue running after Room closes. Command completion is not observed."

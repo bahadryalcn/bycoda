@@ -7,6 +7,7 @@ import type { HostTasks } from "../tasks/tasks";
 import type { HostEngine } from "../engine";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 import { defaultCrewPolicy, type CrewDefinition } from "../../src/features/crews/model/crew";
+import { DELEGATION_PARENT_KEY } from "../../src/shared/model/host-contracts/delegation";
 const stores: HostStore[] = [];
 afterEach(async () => {
   await forEachAsync(stores.splice(0), async (store) => await store.close());
@@ -765,6 +766,87 @@ describe("crew deletion", () => {
     ).rejects.toThrow("owner");
     await f.service.call("crews.agent.delete", { agentId: "saved" }, f.project.id);
     expect((await f.service.list(f.project.id)).agents).toEqual([]);
+  });
+  describe("conversation member asks", () => {
+    async function askFixture() {
+      const f = await setup();
+      Object.assign(f.tasks, {
+        taskIndex: async (ids?: readonly string[]) =>
+          new Map(f.rows.filter((row) => !ids || ids.includes(row.id)).map((row) => [row.id, row])),
+      });
+      await f.service.call(
+        "crews.agent.save",
+        { agent: { ...f.definition.agents[1]!, id: "expert", handle: "expert" } },
+        f.project.id,
+      );
+      const ask = (input: Record<string, unknown>, principal = f.principal) =>
+        f.service.call(
+          "crews.member.ask",
+          { requestId: "ask-1", handle: "expert", prompt: "Fix it", ...input },
+          f.project.id,
+          principal,
+        ) as Promise<{ taskId: string; reused: boolean }>;
+      const parentOf = (index: number) =>
+        JSON.parse(
+          (f.rows[index] as unknown as { modelSettings: Record<string, string> }).modelSettings[
+            DELEGATION_PARENT_KEY
+          ]!,
+        ) as { parentSessionId: string };
+      return { ...f, ask, parentOf };
+    }
+    it("queues an own-project ask with the calling session as parent and its mode", async () => {
+      const f = await askFixture();
+      const result = await f.ask({});
+      expect(result.reused).toBe(false);
+      expect(f.parentOf(0).parentSessionId).toBe("lead-session");
+      expect(f.rows[0]).toMatchObject({ runtimeMode: "supervised", review: false });
+    });
+    it("refuses delegating for another session or from another project", async () => {
+      const f = await askFixture();
+      await expect(f.ask({ parentSessionId: "other-session" })).rejects.toThrow(
+        "calling conversation",
+      );
+      await expect(
+        f.ask({}, { projectId: "elsewhere", sessionId: "lead-session" }),
+      ).rejects.toThrow("another project");
+      expect(f.rows).toHaveLength(0);
+    });
+    it("replays one operation and rejects a changed one", async () => {
+      const f = await askFixture();
+      const first = await f.ask({});
+      const again = await f.ask({});
+      expect(again).toMatchObject({ taskId: first.taskId, reused: true });
+      expect(f.rows).toHaveLength(1);
+      await expect(f.ask({ prompt: "Other" })).rejects.toThrow("reused with different input");
+    });
+    it("stops at revoked authority", async () => {
+      const f = await askFixture();
+      await expect(
+        f.store.db.withAuthorization(
+          async () => false,
+          () => f.ask({}),
+        ),
+      ).rejects.toThrow();
+      expect(f.rows).toHaveLength(0);
+    });
+    it("gives a Room ask no calling conversation to delegate from", async () => {
+      const f = await askFixture();
+      await expect(
+        f.service.callReviewedAssistantThread(
+          "crews.member.ask",
+          { requestId: "r", handle: "expert", prompt: "x", parentSessionId: "lead-session" },
+          { kind: "assistant-thread", projectId: f.project.id, threadId: "thread" } as never,
+          "a".repeat(64),
+        ),
+      ).rejects.toThrow("no calling conversation");
+    });
+    it("lists only the calling project's active members", async () => {
+      const f = await setup();
+      Object.assign(f.tasks, { taskIndex: async () => new Map() });
+      expect(await f.service.call("crews.active.list", {}, f.project.id, f.principal)).toEqual({
+        items: [],
+      });
+    });
   });
   it("lists a short work title without exposing the launch prompt", async () => {
     const f = await setup();

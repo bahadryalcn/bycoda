@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { withTimeout } from "../../../shared/lib/withTimeout";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
+import { noteVoiceActivity } from "../../../shared/lib/voiceActivity";
 
 export type VoicePresence = "active" | "idle" | "away" | "unknown";
 export type UserPresence = { idleMs: number; locked: boolean; supported: boolean };
@@ -25,6 +26,12 @@ export function deriveCapturePresence(
     age < idleSleepMinutes * 60_000
     ? "active"
     : rawPresence;
+}
+
+/** Accepted owner speech: postpones idle sleep and tells the Host the owner is present. Returns its time. */
+export function markAcceptedVoiceSpeech(): number {
+  noteVoiceActivity();
+  return Date.now();
 }
 
 export function classifyVoicePresence(value: UserPresence, minutes: number): VoicePresence {

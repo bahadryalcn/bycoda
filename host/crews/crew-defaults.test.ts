@@ -86,7 +86,9 @@ function legacySeed() {
 async function persistLegacy(store: HostStore, state: unknown) {
   await initializeCrewSchedulerProjection(store);
   const snapshot = state as Awaited<ReturnType<typeof readCrewState>>;
-  await store.transaction(() => writeCrewState(store, { ...snapshot, runs: snapshot.runs ?? [] }));
+  await store.transaction(() =>
+    writeCrewState(store, { ...snapshot, membershipLinked: true, runs: snapshot.runs ?? [] }),
+  );
 }
 
 describe("editable bycoda defaults", () => {
@@ -215,12 +217,13 @@ describe("editable bycoda defaults", () => {
       },
       f.project.id,
     );
+    // The example crew's member follows its library profile until the crew customizes it.
     expect(
       (await f.service.list(f.project.id)).definitions[0]!.agents.find(
         (agent) => agent.id === profile.id,
-      )?.instructions,
-    ).toBe(profile.instructions);
-    const team = before.definitions[0]!;
+      ),
+    ).toMatchObject({ name: "Our mobile expert", instructions: "Our own rules" });
+    const team = (await f.service.list(f.project.id)).definitions[0]!;
     await f.service.save({ ...team, name: "Our product team" }, team.updatedAt);
     const restarted = await f.restart();
     await restarted.call("crews.list", {}, f.other.id);

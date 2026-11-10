@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import type { AgentStep, Block } from "../model/session";
-import { SubagentStateLine } from "./SubagentAnatomy";
+import { SubagentMarks, SubagentStateLine } from "./SubagentAnatomy";
 
 it("keeps only the latest lifecycle and counters with independent failure tones", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -61,5 +61,26 @@ it("keeps only the latest lifecycle and counters with independent failure tones"
     await act(async () => root.unmount());
     container.remove();
     vi.unstubAllGlobals();
+  }
+});
+
+it("draws a crew member's portrait instead of the generic mascot", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(createElement(SubagentMarks, { name: "Ada" })));
+    const plain = container.querySelectorAll("svg").length;
+    const members = { id: "m1", name: "Ada", handle: "ada" };
+    await act(async () =>
+      root.render(createElement(SubagentMarks, { name: "Ada", member: members })),
+    );
+    const portrait = container.querySelector('svg[viewBox="0 0 24 24"][width="16"]');
+    expect(portrait).not.toBeNull();
+    expect(container.querySelectorAll("svg").length).toBe(plain);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
   }
 });

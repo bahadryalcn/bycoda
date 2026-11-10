@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatSessionTitle } from "../../features/sessions/model/session";
 import { formatReminderTime } from "../../features/sessions/model/sessionReminders";
 import { Sidebar } from "./Sidebar";
+import { OPEN_CREWS_PAGE_EVENT } from "../../features/crews/model/crewsPage";
 import { loadSessionFolders } from "../../features/sessions/model/sessionFolders";
 import { useProjectDiffStats } from "../../features/source-control/hooks/useProjectDiffStats";
 import { copyText } from "../../platform/tauri/clipboard";
@@ -1782,12 +1783,12 @@ describe("collapsed rail Inbox actions", () => {
     expect(props.onTabChange).not.toHaveBeenCalled();
   });
 
-  it("opens crew management from the grouped tools menu", async () => {
+  it("opens the Crews page from the grouped tools menu", async () => {
+    const openCrewsPage = vi.fn();
+    window.addEventListener(OPEN_CREWS_PAGE_EVENT, openCrewsPage, { once: true });
     props.projectRailOpen = false;
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();
-    props.onOpenSettings = vi.fn();
-    props.onSelectSettingsSection = vi.fn();
     await act(async () => render());
     act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Tools"]')!.click());
     act(() =>
@@ -1795,8 +1796,7 @@ describe("collapsed rail Inbox actions", () => {
         .querySelector<HTMLButtonElement>('[data-compact-tools-flyout] button[aria-label="Crews"]')!
         .click(),
     );
-    expect(props.onOpenSettings).toHaveBeenCalledOnce();
-    expect(props.onSelectSettingsSection).toHaveBeenCalledWith("crews");
+    expect(openCrewsPage).toHaveBeenCalledOnce();
     expect(document.querySelector("[data-compact-tools-flyout]")).toBeNull();
   });
 

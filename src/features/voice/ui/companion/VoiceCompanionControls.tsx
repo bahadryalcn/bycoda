@@ -43,8 +43,12 @@ export function VoiceCompanionControls({
     return (
       <div className={styles.bar}>
         <span className={styles.spacer} />
-        <Button label={t("Cancel")} startIcon={<X className="icon-sm" />} onClick={onClose}>
-          {t("Cancel")}
+        <Button
+          label={t(status === "reconnecting" ? "Stop" : "Cancel")}
+          startIcon={<X className="icon-sm" />}
+          onClick={onClose}
+        >
+          {t(status === "reconnecting" ? "Stop" : "Cancel")}
         </Button>
       </div>
     );

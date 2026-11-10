@@ -18,7 +18,7 @@ for (const theme of ["dark", "light"]) {
       await page.getByRole("button", { name: "Allow", exact: true }).click();
       await expect(page.getByLabel("Fixture result")).toHaveText("fixture-1:1:allow");
       await expect(panel.locator(".approval-toast")).toHaveCount(2);
-      await page.getByRole("tab", { name: /Recent requests/ }).click();
+      await page.getByRole("tab", { name: /^Recent/ }).click();
       // The two requests still pending are marked; the answered one is not.
       await expect(panel.getByText("Waiting for you", { exact: true })).toHaveCount(2);
       const row = panel.locator(".notification-history-item").first();
@@ -66,7 +66,7 @@ test("empty state, persisted preferences and clearing history", async ({ page })
   await page.getByRole("button", { name: "Notification options", exact: true }).click();
   await page.getByRole("switch", { name: "Show request popups", exact: true }).click();
   await page.keyboard.press("Escape");
-  await page.getByRole("tab", { name: /Recent requests/ }).focus();
+  await page.getByRole("tab", { name: /^Recent/ }).focus();
   await page.keyboard.press("Home");
   await expect(page.getByRole("tab", { name: /Pending/ })).toBeFocused();
   await page.keyboard.press("End");
@@ -76,7 +76,7 @@ test("empty state, persisted preferences and clearing history", async ({ page })
   await page.waitForTimeout(400);
   await page.screenshot({ path: "temp/verification/2026-11-10-notifications/clear-confirm.png" });
   await page.getByRole("button", { name: "Clear", exact: true }).click();
-  await expect(page.getByText("No recent requests", { exact: true })).toBeVisible();
+  await expect(page.getByText("No recent notifications", { exact: true })).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "Notifications", exact: true }).click();
   await page.getByRole("button", { name: "Notification options", exact: true }).click();

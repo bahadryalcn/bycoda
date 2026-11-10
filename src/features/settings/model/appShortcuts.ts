@@ -46,6 +46,7 @@ const APP_SHORTCUTS: [string, string, boolean][] = [
   ["App: Open Notes", "l", true],
   ["App: Open Tasks", "y", true],
   ["App: Open Automations", "u", true],
+  ["App: Open Crews", "e", true],
 ];
 
 const APP_COMMANDS = new Set([

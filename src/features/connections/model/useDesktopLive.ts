@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
+import { setHostPushEvents } from "../../../shared/lib/hostPushEvents";
 import { userPresent } from "../../../shared/lib/userPresence";
+import { takeVoiceActivityReport } from "../../../shared/lib/voiceActivity";
 import { hostSessionBinding } from "./sessionExecutionBinding";
 import { remoteProjectFor } from "./remoteProjects";
 import { liveTurnHarness } from "../../sessions/public/messageQueue";
@@ -110,6 +112,8 @@ export function useDesktopLive(
           approvalOccurrenceSupported,
           clientId: desktopClientId,
           userActive: userPresent,
+          voiceActiveAge: takeVoiceActivityReport,
+          hostPush: setHostPushEvents,
           controlGuard: {
             pageToken: () => invoke<string>("desktop_control_page_token"),
             verify: (token) => invoke<void>("desktop_control_page_verify", { token }),
@@ -207,6 +211,7 @@ export function useDesktopLive(
       } catch {
         machineId = undefined; // Host unreachable; the next tick looks again.
         approvalOccurrenceSupported = false;
+        setHostPushEvents(undefined); // The Host cannot push now, so the account copy resumes.
         beat.idleAt = undefined;
         adoptedBeatFailed();
       } finally {

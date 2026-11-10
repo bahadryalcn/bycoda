@@ -16,7 +16,9 @@ import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { WindowControls } from "../../shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
+import { useAssistantRoomRequests } from "./useAssistantRoomRequests";
+import { useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import type { ConversationTools } from "../../../features/host-tools/SessionHostTools";
 import { lazySurface } from "../../../shared/ui/lazySurface";
@@ -32,6 +34,7 @@ import {
   SocialView,
   TasksView,
   ServersView,
+  CrewsView,
 } from "../surfaces/lazySurfaces";
 
 const SessionHostTools = lazySurface(
@@ -165,6 +168,7 @@ function WorkspaceToolPanelsComponent({
   launchAutomation,
   onLaunchAutomationAssistant,
 }: WorkspaceToolPanelsProps) {
+  const crewsOpen = useCrewsPageOpen();
   const [terminalId] = useState(() => `tools-terminal-${crypto.randomUUID()}`);
   const [goalReveal, setGoalReveal] = useState<{
     machineId: string;
@@ -178,29 +182,7 @@ function WorkspaceToolPanelsComponent({
       !isProjectLocked(path) && visibleRecents.some((project) => key(project.path) === key(path))
     );
   });
-  const [assistantNavigation, setAssistantNavigation] = useState<{
-    tab: "today" | "memory" | "settings" | "history";
-    token: number;
-  }>({ tab: "today", token: 0 });
-  useEffect(() => {
-    const openAssistant = (event: Event) => {
-      const requested = (event as CustomEvent<{ tab?: string }>).detail?.tab;
-      const tab =
-        requested === "memory" || requested === "settings" || requested === "history"
-          ? requested
-          : "today";
-      setAssistantNavigation((previous) => ({ tab, token: previous.token + 1 }));
-      setInboxViewOpen(false);
-      setNotesViewOpen(false);
-      setServersViewOpen(false);
-      setAutomationsViewOpen(true);
-      setSocialBoardShown(false);
-      setTaskBoardShown(false);
-      setAuxiliaryTool?.("assistant");
-    };
-    window.addEventListener("bycoda:open-assistant", openAssistant);
-    return () => window.removeEventListener("bycoda:open-assistant", openAssistant);
-  }, [
+  const assistantNavigation = useAssistantRoomRequests({
     setInboxViewOpen,
     setNotesViewOpen,
     setServersViewOpen,
@@ -208,7 +190,7 @@ function WorkspaceToolPanelsComponent({
     setSocialBoardShown,
     setTaskBoardShown,
     setAuxiliaryTool,
-  ]);
+  });
   const onLeaveInbox = navigation?.onBack ?? leaveInbox;
   const onLeaveNotes = navigation?.onBack ?? leaveNotes;
   const onLeaveServers = navigation?.onBack ?? leaveServers;
@@ -239,7 +221,7 @@ function WorkspaceToolPanelsComponent({
   const activeTool: WorkspaceToolId | null =
     automationsViewOpen && auxiliaryTool
       ? auxiliaryTool
-      : serversViewOpen
+      : serversViewOpen && !crewsOpen
         ? "servers"
         : inboxViewOpen
           ? "inbox"
@@ -541,7 +523,19 @@ function WorkspaceToolPanelsComponent({
           </div>
         </NavigationBoundary>
       </ToolPanel>
-      <ToolPanel active={serversViewOpen} keepEffects>
+      <ToolPanel active={crewsOpen}>
+        <NavigationBoundary name="Crews" onBack={onLeaveServers}>
+          <CrewsView
+            cwd={projectCwd}
+            besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
+            compactRail={compactRailActive}
+            onClose={onLeaveServers}
+            onToggleSidebar={onToggleSidebar}
+            onOpenSession={onOpenBackgroundSession}
+          />
+        </NavigationBoundary>
+      </ToolPanel>
+      <ToolPanel active={serversViewOpen && !crewsOpen} keepEffects>
         <NavigationBoundary name="Servers" onBack={onLeaveServers}>
           <ServersView
             besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}

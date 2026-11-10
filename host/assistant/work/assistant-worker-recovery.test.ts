@@ -681,7 +681,7 @@ it.each(["Chief", "budget"])(
       {
         op: "profile.update",
         expectedVersion: profile.version,
-        patch: mode === "Chief" ? { autonomy: "jobs" } : { dailyTokenBudget: 1000 },
+        patch: mode === "Chief" ? { autonomy: "report" } : { dailyTokenBudget: 1000 },
       },
       "owner",
     );

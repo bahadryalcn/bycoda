@@ -46,6 +46,29 @@ export const CrewCandidateSchema = z.strictObject({
   samples: SafeCounterSchema.optional(),
 });
 export const CrewRoleSchema = z.enum(["coordinator", "specialist", "reviewer", "advisor"]);
+// Mirrors features/crews/model/memberAvatarTraits.ts (shared cannot import features);
+// crews.test.ts keeps both lists identical.
+export const MemberAvatarChoiceSchema = z.strictObject({
+  headwear: z.enum(["flat-cap", "takke", "beret", "bald", "grey-hair"]).optional(),
+  face: z.enum(["walrus", "bushy", "short-beard", "white-beard", "shaven"]).optional(),
+  glasses: z.boolean().optional(),
+  outfit: z.enum(["cardigan", "vest", "jacket"]).optional(),
+  palette: z.number().int().min(0).max(5).optional(),
+  accessory: z
+    .enum(["none", "tespih", "magnifier", "brush", "notebook", "key", "wrench", "pen"])
+    .optional(),
+});
+export const CrewAppearanceSchema = z.strictObject({
+  icon: text.optional(),
+  color: z.number().int().min(1).optional(),
+});
+/** Mirror of `CrewToolProfile`; the Host re-parses it with `parseCrewTools`. */
+export const CrewToolProfileSchema = z.strictObject({
+  preset: z.enum(["read-only", "code", "design", "browser", "custom"]),
+  conversationTools: z.array(text.max(100)).max(120).optional(),
+  mcpServers: z.array(text.max(100)).max(50).optional(),
+  skills: z.array(text.max(100)).max(50).optional(),
+});
 export const CrewAgentSchema = z.strictObject({
   id: text,
   name: text,
@@ -55,6 +78,10 @@ export const CrewAgentSchema = z.strictObject({
   candidates: z.array(CrewCandidateSchema),
   groups: z.array(text).optional(),
   source: z.strictObject({ id: text, updatedAt: z.number() }).optional(),
+  customized: z.literal(true).optional(),
+  avatar: MemberAvatarChoiceSchema.optional(),
+  handle: text.optional(),
+  tools: CrewToolProfileSchema.optional(),
 });
 export const CrewAgentInputSchema = CrewAgentSchema.extend({
   projectId: text.optional(),
@@ -83,6 +110,7 @@ export const CrewDefinitionTemplateSchema = z.strictObject({
   projectId: text.optional(),
   agents: z.array(CrewAgentSchema),
   policy: CrewPolicySchema,
+  appearance: CrewAppearanceSchema.optional(),
 });
 export const CrewDefinitionInputSchema = CrewDefinitionTemplateSchema.extend({
   updatedAt: z.number().optional(),
@@ -421,8 +449,67 @@ export const CrewsResumeResultSchema = CrewRunSchema;
 export const CrewsAcceptResultSchema = HostTaskSchema;
 export const CrewsFinishResultSchema = CrewRunSchema;
 
+export const CrewsActiveListParamsSchema = z.strictObject({
+  limit: z.number().int().min(1).max(200).optional(),
+});
+/** One member currently working or waiting on someone; no prompts, instructions or launch data. */
+export const ActiveCrewMemberSchema = z.strictObject({
+  runId: text,
+  projectId: text,
+  projectName: text.optional(),
+  definitionId: text,
+  definitionName: text,
+  runTitle: text.optional(),
+  runStatus: z.enum(["active", "paused"]),
+  memberId: text,
+  memberName: text,
+  memberRole: CrewRoleSchema,
+  avatar: MemberAvatarChoiceSchema.optional(),
+  handle: text.optional(),
+  memberSource: z.strictObject({ id: text }).optional(),
+  kind: z.enum(["coordinator", "worker", "review"]),
+  taskId: text.optional(),
+  taskTitle: text.optional(),
+  taskStatus: text.optional(),
+  startedAt: z.number().optional(),
+  sessionId: text.optional(),
+  attention: z.enum(["decision", "review", "blocked"]).optional(),
+});
+export const CrewsActiveListResultSchema = z.strictObject({
+  items: z.array(ActiveCrewMemberSchema),
+  truncated: z.literal(true).optional(),
+});
+
+/** Runs one library member in its own conversation; `handle` or `memberId` selects it. */
+export const CrewsMemberAskParamsSchema = z.strictObject({
+  ...project,
+  requestId: z.string().min(1).max(200),
+  /** Exactly one of `memberId` or `handle`; the Host rejects both or neither. */
+  memberId: text.min(1).max(200).optional(),
+  handle: text.min(1).max(64).optional(),
+  prompt: z.string().min(1).max(20_000),
+  parentSessionId: z.string().min(1).max(200).optional(),
+  files: z.array(z.string().min(1).max(500)).max(100).optional(),
+});
+export const CrewsMemberAskResultSchema = z.strictObject({
+  taskId: text,
+  sessionId: text.optional(),
+  memberId: text,
+  memberName: text,
+  handle: text.optional(),
+  reused: z.boolean(),
+});
+
 /** Schema inventory only; no method registration, authority or dispatch. */
 export const CREWS_RPC_SCHEMAS = {
+  "crews.member.ask": {
+    params: CrewsMemberAskParamsSchema,
+    result: CrewsMemberAskResultSchema,
+  },
+  "crews.active.list": {
+    params: CrewsActiveListParamsSchema,
+    result: CrewsActiveListResultSchema,
+  },
   "crews.list": {
     params: CrewsListParamsSchema,
     result: CrewsListResultSchema,
@@ -502,6 +589,7 @@ export const CREWS_RPC_SCHEMAS = {
   },
 } as const;
 export type CrewRun = z.infer<typeof CrewRunSchema>;
+export type ActiveCrewMember = z.infer<typeof ActiveCrewMemberSchema>;
 export type CrewRunView = z.infer<typeof CrewRunViewSchema>;
 export type CrewRunDetail = z.infer<typeof CrewRunDetailSchema>;
 export type CrewDefinition = z.infer<typeof CrewDefinitionSchema>;

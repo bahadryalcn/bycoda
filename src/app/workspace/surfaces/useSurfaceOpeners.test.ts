@@ -3,6 +3,11 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useSurfaceOpeners, type SurfaceOpenersDeps } from "./useSurfaceOpeners";
+import {
+  crewsPageOpen,
+  requestOpenCrewsPage,
+  setCrewsPageOpen,
+} from "../../../features/crews/model/crewsPage";
 import { routeWindowDestination } from "../../model/windowNavigation";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import {
@@ -70,6 +75,12 @@ it("opens tools locally even when another window could handle them", async () =>
       if (open === "onOpenInbox")
         expect(setters.setPullRequestsOnly).toHaveBeenLastCalledWith(false);
     }
+    Object.values(setters).forEach((setter) => setter.mockClear());
+    await act(async () => requestOpenCrewsPage());
+    expect(crewsPageOpen()).toBe(true);
+    expect(setters.setServersViewOpen).toHaveBeenLastCalledWith(false);
+    expect(setters.setSettingsOpen).toHaveBeenLastCalledWith(false);
+    setCrewsPageOpen(false);
     Object.values(setters).forEach((setter) => setter.mockClear());
     await act(async () => requestOpenNoteLibrary({ id: "panel-note", cwd: "/repo" }));
     expect(setters.setNotesViewOpen).toHaveBeenLastCalledWith(true);

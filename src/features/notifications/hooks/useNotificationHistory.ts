@@ -5,6 +5,7 @@ import {
   historyEntry,
   mergeNotificationHistory,
   notificationKey,
+  NOTIFICATION_HISTORY_EVENT,
   NOTIFICATION_HISTORY_KEY,
   readNotificationHistoryStatus,
   removeNotificationHistoryEntry,
@@ -14,7 +15,8 @@ import {
 type Notice = Parameters<typeof historyEntry>[0];
 
 /**
- * The request center's arrival history: records each new pending request once,
+ * The notification log: records each new pending request once, shows what the app
+ * announced elsewhere (written by the delivery code),
  * follows other windows through storage events, and removes one entry or all of
  * them only after the durable write is confirmed. `remove` and `clear` resolve
  * `false` when nothing was removed.
@@ -73,7 +75,12 @@ export function useNotificationHistory(notices: readonly Notice[]) {
       if (event.key === NOTIFICATION_HISTORY_KEY || event.key === null) reload();
     };
     window.addEventListener("storage", sync);
-    return () => window.removeEventListener("storage", sync);
+    // Other windows raise `storage`; this window's own recordings raise the event.
+    window.addEventListener(NOTIFICATION_HISTORY_EVENT, reload);
+    return () => {
+      window.removeEventListener("storage", sync);
+      window.removeEventListener(NOTIFICATION_HISTORY_EVENT, reload);
+    };
   }, [reload]);
 
   // The list only empties once the durable clear is confirmed.

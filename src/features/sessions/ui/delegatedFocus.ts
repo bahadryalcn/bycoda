@@ -19,3 +19,21 @@ export function consumeViewDelegated(parentId: string): string | undefined {
   clearTimeout(expiry);
   return childId;
 }
+
+const stoppers = new Map<string, (childId: string) => Promise<void>>();
+
+/** The pane that owns a session's delegated children answers their Stop from the transcript. */
+export function registerDelegatedStop(
+  parentId: string,
+  stop: (childId: string) => Promise<void>,
+): () => void {
+  stoppers.set(parentId, stop);
+  return () => {
+    if (stoppers.get(parentId) === stop) stoppers.delete(parentId);
+  };
+}
+
+export function stopDelegated(parentId: string, childId: string): Promise<void> {
+  const stop = stoppers.get(parentId);
+  return stop ? stop(childId) : Promise.reject(new Error("No pane owns this conversation"));
+}

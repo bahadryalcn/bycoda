@@ -28,11 +28,13 @@ or **Talk**. Closing voice never stops coding work.
 
 ## Connection recovery and idle sleep
 
-Cloud voice retries temporary connection failures with fresh credentials, at most
-five consecutive times (1, 2, 5, 10 and 30 seconds). A stable minute restores
-the retry budget. Sign-in, billing and microphone permission failures require
-your action. **Disconnect voice** cancels any scheduled reconnect. Escape closes
-menus without disconnecting voice.
+Cloud voice retries temporary connection failures with fresh credentials: five
+quick attempts (1, 2, 5, 10 and 30 seconds), then once a minute for up to 30
+minutes. It shows **Reconnecting...** with a **Stop** button, and retries at once
+when the network comes back. A stable minute restores the quick attempts.
+Sign-in, billing and microphone permission failures require your action.
+**Stop**, **Disconnect voice** and sleep cancel any scheduled reconnect. A muted
+microphone stays muted. Escape closes menus without disconnecting voice.
 
 Voice sleeps after ten minutes without input by default. Change **Sleep voice
 when I'm idle** in Voice settings; **Never** disables idle sleep. On Windows,
@@ -46,7 +48,11 @@ Accepted speech also keeps an already open conversation active while the mouse
 and keyboard are idle. This does not override screen lock, Away, Do not disturb
 or unknown computer presence. Pausing the microphone clears this activity receipt.
 
-Recovery restores up to six recent text turns. It does not replay tool calls or
+Recovery restores up to six recent text turns, the conversation summary and a short
+**Open work** note: up to ten unfinished assistant jobs with their status and hold
+reason, and how many questions wait for you. The note follows the same project
+visibility as the assistant status and is text only. A new connection and the
+55 minute session rotation seed it too. Recovery does not replay tool calls or
 generate a new response automatically. A temporary drop can resume a microphone
 you already opened; returning after idle sleep always requires **Talk**.
 
@@ -202,6 +208,15 @@ Quiet hours, Away/Do not disturb and held announcements prevent this. **Talk**
 still opens the microphone; otherwise the output-only session sleeps after a
 minute. Explicit Disconnect stays off.
 
+Turn on **Call me when I return** in Voice settings (off by default) and the
+assistant speaks first when you come back: the welcome-back briefing if one is
+waiting, otherwise a short greeting. The microphone then opens for the window you
+choose (20 seconds by default, 5 to 120). If you answer, the conversation
+continues. If not, the microphone closes, the panel shows **I called you but you
+didn't answer.** with **Talk now**, and a notification says the same. Quiet
+hours, Away, Do not disturb, a muted microphone or speaker, and unfinished voice
+setup prevent the call. With the setting off, returning keeps the microphone closed.
+
 ## Visual style and compact mode
 
 The expanded companion has one header with a **More voice options** button for its
@@ -281,6 +296,11 @@ While voice is connected and the microphone is paused, hold the shortcut to
 capture one turn. Release it to submit the captured speech and pause the microphone
 again. Escape or losing focus cancels capture. The shortcut never starts a closed
 voice connection or opens the microphone while disconnected.
+
+Assign **Voice: Talk to assistant (global)** to start talking from anywhere. It has no
+default, needs Control or Command, and cannot match the emergency stop shortcut. Pressing
+it shows and focuses the main window even when it is hidden, minimized or in the tray,
+then starts voice talk as an explicit action of yours.
 
 The expanded companion and floating window show recent tool activity with the
 tool, target, elapsed wait and observed outcome. **Stop waiting** releases voice
@@ -582,6 +602,18 @@ to move the window. Its saved position is clamped to the current viewport. Drag
 it past the app's edge, or choose **Float outside the app**, to move it outside
 bycoda (see [Floating outside the app](#floating-outside-the-app)).
 
+### Schedules, reminders and ordered jobs by voice
+
+Say "run this tomorrow at nine" and the assistant resolves the time to an exact
+local date and time, repeats it back, and offers a one-time automation like any
+other automation review. Say "remind me at 5 to call Sam" for a personal
+reminder: nothing is started, the assistant confirms the resolved time aloud, and
+the reminder arrives as a notification (never spoken without you asking) at that time,
+subject to quiet hours and do-not-disturb. You can ask for your pending reminders
+and cancel one. When you give several jobs, say "start the second after the first
+finishes" and the later job stays queued until the earlier one is done; if the
+earlier one fails, you are notified and the later one keeps waiting.
+
 ## Global voice management
 
 Project discovery uses the name shown in the project rail and keeps the original
@@ -635,13 +667,22 @@ assistant threads are available. Opening, creating, renaming, closing, archiving
 uses the normal workspace lifecycle. A background pane close preserves sibling
 panes. Historical remote sessions may need opening before a lifecycle change.
 
+Voice can request a Git push of the current branch (to its upstream, or to a remote
+and branch you name), a merge of a local branch into the current branch (fast-forward or
+merge commit), and a direct social send of a saved draft. Each opens the native approval
+with the exact operation: repository, branch, remote address without credentials, target
+ref and commits for a push; source and commits for a merge; account, recipient and the
+complete reviewed text for a send. A paired phone can answer the same approval. A changed
+HEAD, upstream or draft after review cancels the operation, and a merge conflict is
+aborted with the checkout restored. Force push, deleting remote branches, history
+rewrite and sending anything other than the reviewed draft are never available by voice.
 Existing owner approvals still apply, including social sends and Inbox/PR writes.
 An automation's **pause** stops future launches; **stop run** targets a specific
 active run. Acceptance or queuing does not mean completion. When a tool result
 is uncertain, the assistant must inspect its state rather than blindly retry.
 Application tools also expose session configuration and unsent handoff/drafts,
 workspace lifecycle and delivery review, sprints, project organization, Git
-status/stage/unstage/commit/selected-file stash/fast-forward pull, provider status
+status/stage/unstage/commit/selected-file stash/fast-forward pull/push/merge, provider status
 and quota refresh, and theme/density/language/voice preferences. Every mutation
 requires its exact native review and existing scope/revision checks. Global
 application preferences and provider metadata use the registered Assistant Room
@@ -667,19 +708,36 @@ destructive recovery remain in their existing owner workflows.
 Optional native computer use exposes status, snapshot, find, screenshot, window list,
 wait, launch, clipboard and act (`desktop.status`, `desktop.snapshot`, `desktop.find`,
 `desktop.screenshot`, `desktop.windows.list`, `desktop.wait`, `desktop.launch`,
-`desktop.clipboard` and `desktop.act`). Voice currently receives screenshots as data it
-cannot view; it reads app contents through snapshots and find. Physical input is
-available on Windows only. The owner configures the verified helper and app allowlist in
+`desktop.clipboard` and `desktop.act`). With OpenAI Realtime, screenshots and browser
+frames reach the assistant as real images. Grok and local replies cannot see images and
+say so; they read app contents through snapshots and find instead. Large snapshots are
+paged: the assistant reads more with the returned cursor. Every action uses up its
+snapshot and returns a fresh one for the next step. Beyond clicking and typing,
+`desktop.act` can press key chords (such as Ctrl+S), scroll an element by direction and
+amount, hover, drag one element onto another and bring the window to the front. Key
+chords, hover, drag and window focus need the physical-input grant; scroll runs
+headless. All of them pass the same permission mode, presence and Stop checks. Alt+F4
+and Win+L stay blocked. Free mouse coordinates, held keys, resizing or moving windows,
+and system surfaces are not available. Physical input is available on
+Windows only. The owner configures the verified helper and app allowlist in
 **Computer use** settings. Observations and element refs belong to the captured
 conversation and expire after five minutes. App content remains untrusted data.
-When the owner is present, every input requires the native approval dialog for the
-exact app, window, element, action and text.
-The native approval identifies either the real coding session or the real
-assistant thread; no artificial coding session is created for global voice.
-Headless actions can run while the owner is away; locked or unknown desktop state
-blocks input. Physical pointer/keyboard input additionally needs the owner's presence,
-the physical-input setting and exact operation approval. **Stop computer use** stays
-an owner control; the assistant cannot enable, resume or stop control itself.
+
+In the shared browser the assistant reads the page text and its buttons, links and fields
+with `browser.read`, then clicks or types into an element by its reference. This works
+without image support. References expire when the page changes.
+Only you choose the **Permission** mode in **Computer use** settings; voice and the
+assistant cannot change it. **Ask every time** (the default) shows the native approval
+dialog for every action, launch and clipboard use, whether you are present or away.
+**Auto** runs actions on allowed apps without a dialog and still asks for launching
+apps, the clipboard and physical input. **Full access** asks nothing, even while you
+are away; it can also **Allow all apps** instead of the allowlist. Each approval names
+the exact app, window, element, action and text, and identifies the real coding
+session or assistant thread; no artificial coding session is created for global voice.
+In every mode a locked or unknown desktop, a disabled helper and a Stop block input.
+Physical pointer/keyboard input needs the physical-input setting; outside Full access
+it also needs your presence. **Stop computer use** and the emergency shortcut always
+work; the assistant cannot enable, resume or stop control itself.
 Input attempts and outcomes go to History and the daily note using a stable operation
 identity. These records contain app/action and delivery metadata, never snapshot trees
 or typed text. Notebook delivery retries cannot repeat the computer action.

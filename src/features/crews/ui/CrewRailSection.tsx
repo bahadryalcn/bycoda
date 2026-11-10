@@ -2,13 +2,13 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost, InlineAction, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
-import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { Badge } from "../../../shared/ui/Badge";
 import { StatusDot } from "../../../shared/ui/StatusDot";
-import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { InlineError } from "../../../shared/ui/InlineError";
 import type { PopoverAnchor } from "../../../shared/ui/Popover";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
-import { Bot, Copy, Globe, Pencil, Play, Plus, Trash2 } from "../../../shared/ui/icons";
+import { Play, Plus } from "../../../shared/ui/icons";
 import {
   RAIL_SECTION_BLOCK,
   RailSectionHeader,
@@ -18,75 +18,19 @@ import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSessio
 import type { CrewDefinition } from "../model/crew";
 import { useProjectCrews, type CrewRunView } from "../model/crewClient";
 import { useCrewsOnRail } from "../model/crewAppearance";
-import { activeCrewRuns, crewRunTitle } from "../model/crewRoster";
+import { activeCrewRuns } from "../model/crewRoster";
+import { activeMemberIds } from "../model/crewTableLayout";
 import { CrewAvatar } from "./CrewAvatar";
-import { CrewManagementDialog } from "./CrewSessions";
-import {
-  crewAttentionLabel,
-  crewHasRunningWork,
-  crewRunAttention,
-  crewWorkStatusLabel,
-  type CrewAttention,
-  type CrewWorkStatus,
-} from "../model/crewPresentation";
+import { CrewFaces } from "./CrewFaces";
+import { CrewRailActive } from "./CrewRailActive";
+import { openCrewsPageAt } from "../model/crewsPage";
+import { CrewDialogHost } from "./CrewDialogHost";
+import { crewMenuDialog, crewMenuItems, type CrewDialog } from "./crewMenuItems";
+import { CREW_ATTENTION_TONE, CREW_EXECUTION_TONE, crewSignal } from "../model/crewSignal";
+import { crewAttentionLabel, crewWorkStatusLabel } from "../model/crewPresentation";
 export { crewWorkStatus, crewWorkStatusLabel } from "../model/crewPresentation";
-import { lazySurface } from "../../../shared/ui/lazySurface";
-import type { CrewEditorPage } from "./CrewEditor";
 
-const CrewDeleteDialog = lazySurface(async () => ({
-  default: (await import("./CrewDialogs")).CrewDeleteDialog,
-}));
-const CrewEditDialog = lazySurface(async () => ({
-  default: (await import("./CrewDialogs")).CrewEditDialog,
-}));
-const StartCrewDialog = lazySurface(async () => ({
-  default: (await import("./CrewDialogs")).StartCrewDialog,
-}));
-
-/** Execution state only; what needs the owner is `CrewAttention` and takes the dot. */
-type RailExecution = Extract<CrewWorkStatus, "working" | "paused" | "active">;
-
-const ATTENTION_DOT: Record<CrewAttention, BadgeTone> = {
-  decision: "warning",
-  review: "warning",
-  blocked: "danger",
-};
-const EXECUTION_DOT: Record<Exclude<RailExecution, "working">, BadgeTone> = {
-  paused: "neutral",
-  active: "neutral",
-};
-
-// Most urgent first: the rail shows the strongest signal across a crew's ongoing work.
-const ATTENTION_RANK: CrewAttention[] = ["decision", "review", "blocked"];
-const EXECUTION_RANK: RailExecution[] = ["working", "paused", "active"];
-
-/** A crew's rail signal: attention (decision, review, blocker) is independent of paused or working. */
-function railSignal(runs: readonly CrewRunView[]) {
-  const attention = runs
-    .map(crewRunAttention)
-    .filter((value): value is CrewAttention => value !== null)
-    .sort((a, b) => ATTENTION_RANK.indexOf(a) - ATTENTION_RANK.indexOf(b))[0];
-  const execution = runs
-    .map((run): RailExecution =>
-      run.status === "paused" ? "paused" : crewHasRunningWork(run) ? "working" : "active",
-    )
-    .sort((a, b) => EXECUTION_RANK.indexOf(a) - EXECUTION_RANK.indexOf(b))[0];
-  return { attention, execution };
-}
-
-type Dialog =
-  | {
-      kind: "edit";
-      crewId?: string;
-      createScope?: "project" | "global";
-      copyOf?: { crewId: string; scope: "project" | "global" };
-      initialPage?: CrewEditorPage;
-      /** Editing from the start dialog returns to it with the written delivery. */
-      returnToStart?: string;
-    }
-  | { kind: "start"; definitionId?: string }
-  | { kind: "delete"; crewId: string }
-  | { kind: "work"; crewId: string };
+const RAIL_FACE_SIZE = 20;
 
 type Menu = { kind: "crew" | "work"; crewId: string; anchor: PopoverAnchor };
 
@@ -111,7 +55,7 @@ export function CrewRailSection({
   // Hidden from the rail: no host polling for a section that is not shown.
   const state = useProjectCrews(cwd, onRail);
   const data = state.data;
-  const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [dialog, setDialog] = useState<CrewDialog | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [pendingCrew, setPendingCrew] = useState<string | null>(null);
   const pending = pendingCrew !== null;
@@ -156,89 +100,23 @@ export function CrewRailSection({
   const menuCrew = menu ? data.definitions.find((d) => d.id === menu.crewId) : undefined;
   const menuRuns = menuCrew ? activeCrewRuns(data.runs, menuCrew.id) : [];
   const single = menuRuns.length === 1 ? menuRuns[0] : undefined;
-  const crewItems: DropdownMenuItem[] = menuCrew
-    ? [
-        ...(single?.coordinatorSessionId && onOpenSession
-          ? [
-              {
-                kind: "item" as const,
-                id: "open",
-                label: t("Open coordinator"),
-                description: crewRunTitle(single),
-                icon: <Bot className="icon-sm" />,
-              },
-            ]
-          : []),
-        {
-          kind: "item",
-          id: "work",
-          label: t("Crew work"),
-          icon: <Bot className="icon-sm" />,
-        },
-        {
-          kind: "item",
-          id: "start",
-          label: t("New work"),
-          icon: <Play className="icon-sm" />,
-        },
-        {
-          kind: "item",
-          id: "edit",
-          label: t("Edit crew"),
-          icon: <Pencil className="icon-sm" />,
-        },
-        {
-          kind: "item",
-          id: "members",
-          label: t("Add members"),
-          icon: <Plus className="icon-sm" />,
-        },
-        {
-          kind: "item",
-          id: "duplicate",
-          label: t("Duplicate"),
-          icon: <Copy className="icon-sm" />,
-        },
-        {
-          kind: "item",
-          id: "scope",
-          label: menuCrew.projectId ? t("Copy to all projects") : t("Copy to this project"),
-          icon: <Globe className="icon-sm" />,
-        },
-        ...(data.deleteSupported
-          ? [
-              { kind: "sep" as const },
-              {
-                kind: "item" as const,
-                id: "delete",
-                label: t("Delete crew"),
-                danger: true,
-                icon: <Trash2 className="icon-sm" />,
-              },
-            ]
-          : []),
-      ]
+  const crewItems = menuCrew
+    ? crewMenuItems(menuCrew, {
+        single,
+        canOpenCoordinator: !!onOpenSession,
+        deleteSupported: data.deleteSupported,
+      })
     : [];
   const pickCrew = (id: string) => {
     if (!menuCrew) return;
-    const crewId = menuCrew.id;
-    const scope = menuCrew.projectId ? "global" : "project";
     if (id === "open" && single) openCoordinator(single);
-    else if (id === "work") setDialog({ kind: "work", crewId });
-    else if (id === "start") setDialog({ kind: "start", definitionId: crewId });
-    else if (id === "edit") setDialog({ kind: "edit", crewId });
-    else if (id === "members") setDialog({ kind: "edit", crewId, initialPage: "add" });
-    else if (id === "duplicate")
-      setDialog({
-        kind: "edit",
-        copyOf: { crewId, scope: menuCrew.projectId ? "project" : "global" },
-      });
-    else if (id === "scope") setDialog({ kind: "edit", copyOf: { crewId, scope } });
-    else if (id === "delete") setDialog({ kind: "delete", crewId });
+    else if (id === "work") openCrewsPageAt({ tab: "work", definitionId: menuCrew.id });
+    else {
+      const next = crewMenuDialog(id, menuCrew);
+      if (next) setDialog(next);
+    }
   };
   const label = t("Crews");
-  const deleting =
-    dialog?.kind === "delete" ? data.definitions.find((d) => d.id === dialog.crewId) : undefined;
 
   return (
     <div
@@ -265,6 +143,13 @@ export function CrewRailSection({
           </InlineAction>
         }
       />
+      {drag.folded || collapsed ? null : (
+        <CrewRailActive
+          project={{ machineId: data.machine.id, projectId: data.project.id, cwd }}
+          onOpenSession={onOpenSession}
+          onError={setError}
+        />
+      )}
       <div
         role="list"
         aria-label={label}
@@ -285,7 +170,7 @@ export function CrewRailSection({
         ) : null}
         {data.definitions.map((crew) => {
           const runs = activeCrewRuns(data.runs, crew.id);
-          const { attention, execution } = railSignal(runs);
+          const { attention, execution } = crewSignal(runs);
           const working = execution === "working";
           const scope = crew.projectId ? t("This project") : t("All projects on this host");
           // Attention is named first so a paused run with an open decision still reads
@@ -336,16 +221,27 @@ export function CrewRailSection({
                 }}
                 className="flex min-w-0 flex-1 items-center gap-2 @max-[140px]/rail:justify-center"
               >
-                <span className="relative grid icon-sm shrink-0 place-items-center">
-                  <CrewAvatar crew={crew} active={working} />
+                <span className="relative flex shrink-0 items-center">
+                  <span className="@max-[140px]/rail:hidden">
+                    <CrewFaces
+                      members={crew.agents}
+                      size={RAIL_FACE_SIZE}
+                      reserve
+                      label={crew.name}
+                      activeIds={working ? activeMemberIds(runs, crew.agents) : undefined}
+                    />
+                  </span>
+                  <span className="hidden icon-sm place-items-center @max-[140px]/rail:grid">
+                    <CrewAvatar crew={crew} active={working} />
+                  </span>
                   {attention || (execution && !working) ? (
                     <StatusDot
                       label={statusText}
                       className="absolute -right-0.5 -bottom-0.5"
                       tone={
                         attention
-                          ? ATTENTION_DOT[attention]
-                          : EXECUTION_DOT[execution as keyof typeof EXECUTION_DOT]
+                          ? CREW_ATTENTION_TONE[attention]
+                          : CREW_EXECUTION_TONE[execution as keyof typeof CREW_EXECUTION_TONE]
                       }
                     />
                   ) : null}
@@ -410,51 +306,13 @@ export function CrewRailSection({
           onClose={() => setMenu((current) => (current?.kind === "crew" ? null : current))}
         />
       ) : null}
-      {dialog?.kind === "work" ? (
-        <CrewManagementDialog
-          cwd={cwd}
-          state={state}
-          definitionId={dialog.crewId}
-          onOpen={onOpenSession}
-          onClose={() => setDialog(null)}
-        />
-      ) : null}
-      {dialog?.kind === "edit" ? (
-        <CrewEditDialog
-          cwd={cwd}
-          crewId={dialog.crewId}
-          createScope={dialog.createScope}
-          copyOf={dialog.copyOf}
-          initialPage={dialog.initialPage}
-          onStart={(definitionId) => setDialog({ kind: "start", definitionId })}
-          onClose={() =>
-            setDialog(
-              dialog.returnToStart ? { kind: "start", definitionId: dialog.returnToStart } : null,
-            )
-          }
-        />
-      ) : null}
-      {dialog?.kind === "start" ? (
-        <StartCrewDialog
-          cwd={cwd}
-          state={state}
-          definitionId={dialog.definitionId}
-          onOpen={onOpenSession}
-          onEdit={(crewId) => setDialog({ kind: "edit", crewId, returnToStart: crewId })}
-          onClose={() => setDialog(null)}
-        />
-      ) : null}
-      {deleting ? (
-        <CrewDeleteDialog
-          state={state}
-          crew={deleting}
-          activeWork={
-            data.runs.filter((run) => run.definition.id === deleting.id && run.status === "active")
-              .length
-          }
-          onClose={() => setDialog(null)}
-        />
-      ) : null}
+      <CrewDialogHost
+        cwd={cwd}
+        state={state}
+        dialog={dialog}
+        setDialog={setDialog}
+        onOpenSession={onOpenSession}
+      />
     </div>
   );
 }

@@ -21,6 +21,8 @@ import {
   HOST_CREW_RUN_DELETE,
   HOST_CREW_AGENT_GROUPS,
   HOST_CREW_ACCESS,
+  HOST_CREW_IDENTITY,
+  HOST_CREW_TOOLS,
   type CrewDefinition,
   type CrewRun,
   type SavedCrewAgent,
@@ -45,6 +47,10 @@ export type ProjectCrews = {
   /** Older hosts drop member groups and library sources, so their controls stay hidden. */
   groupsSupported?: boolean;
   accessSupported?: boolean;
+  /** Older hosts drop member handles and avatar choices, so their controls stay hidden. */
+  identitySupported?: boolean;
+  /** Older hosts drop member tool profiles, so the Tools section stays hidden. */
+  toolsSupported?: boolean;
   machine: RemoteMachine;
   project: HostProject;
   definitions: CrewDefinition[];
@@ -54,6 +60,24 @@ export type ProjectCrews = {
   catalog: HostModelCatalog;
   catalogError?: string;
 };
+/** Calls `method` on every connected host that advertises `capability`; a failing host is skipped unless all fail. */
+export async function requestCrewHosts<T>(
+  capability: string,
+  method: string,
+  params: Record<string, unknown>,
+): Promise<Array<{ machineId: string; result: T }>> {
+  const machines = await backgroundMachines(capability);
+  const settled = await Promise.allSettled(
+    machines.map(async (machine) => ({
+      machineId: machine.id,
+      result: await remoteRequest<T>(machine.id, method, params),
+    })),
+  );
+  const done = settled.flatMap((entry) => (entry.status === "fulfilled" ? [entry.value] : []));
+  const failed = settled.find((entry) => entry.status === "rejected");
+  if (!done.length && failed) throw (failed as PromiseRejectedResult).reason;
+  return done;
+}
 export function useProjectCrews(cwd: string, enabled = true) {
   const [older, setOlder] = useState<CrewRunView[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null | undefined>();
@@ -105,6 +129,8 @@ export function useProjectCrews(cwd: string, enabled = true) {
         runDeleteSupported: capabilities.includes(HOST_CREW_RUN_DELETE),
         groupsSupported: capabilities.includes(HOST_CREW_AGENT_GROUPS),
         accessSupported: capabilities.includes(HOST_CREW_ACCESS),
+        identitySupported: capabilities.includes(HOST_CREW_IDENTITY),
+        toolsSupported: capabilities.includes(HOST_CREW_TOOLS),
       };
     },
     staleTime: 3000,

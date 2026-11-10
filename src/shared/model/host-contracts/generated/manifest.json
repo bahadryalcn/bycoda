@@ -442,6 +442,308 @@
       "retry": "never",
       "scope": "device"
     },
+    "approvals.decide": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "approved": { "type": "boolean" },
+          "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+          "signature": { "maxLength": 64, "minLength": 64, "type": "string" }
+        },
+        "required": ["id", "signature", "approved"],
+        "type": "object"
+      },
+      "requiredCapability": "approvals.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "alreadyDecided": { "type": "boolean" },
+          "approved": { "type": "boolean" },
+          "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+          "status": { "enum": ["pending", "approved", "denied", "expired"], "type": "string" }
+        },
+        "required": ["id", "status", "approved", "alreadyDecided"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "approvals.decisions": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "requiredCapability": "approvals.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "decisions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "approved": { "type": "boolean" },
+                "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "signature": { "maxLength": 64, "minLength": 64, "type": "string" }
+              },
+              "required": ["id", "signature", "approved"],
+              "type": "object"
+            },
+            "maxItems": 24,
+            "type": "array"
+          }
+        },
+        "required": ["decisions"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
+    "approvals.list": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "requiredCapability": "approvals.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "approvals": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "cancelLabel": { "maxLength": 200, "type": "string" },
+                "confirmLabel": { "maxLength": 200, "type": "string" },
+                "deadline": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "decidedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "decidedBy": { "enum": ["phone", "desktop"], "type": "string" },
+                "details": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "action": { "enum": ["comment", "review", "pr-action"], "type": "string" },
+                    "body": { "maxLength": 65536, "type": "string" },
+                    "headSha": { "maxLength": 65536, "type": "string" },
+                    "prAction": { "maxLength": 65536, "type": "string" },
+                    "project": { "maxLength": 65536, "type": "string" },
+                    "provider": { "maxLength": 65536, "type": "string" },
+                    "replyTo": { "maxLength": 65536, "type": "string" },
+                    "review": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "body": { "maxLength": 65536, "type": "string" },
+                        "comments": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "body": { "maxLength": 65536, "type": "string" },
+                              "line": {
+                                "maximum": 9007199254740991,
+                                "minimum": -9007199254740991,
+                                "type": "integer"
+                              },
+                              "path": { "maxLength": 65536, "type": "string" },
+                              "side": { "maxLength": 65536, "type": "string" },
+                              "startLine": {
+                                "maximum": 9007199254740991,
+                                "minimum": -9007199254740991,
+                                "type": "integer"
+                              }
+                            },
+                            "required": ["path", "line", "side", "body"],
+                            "type": "object"
+                          },
+                          "maxItems": 500,
+                          "type": "array"
+                        },
+                        "commitId": { "maxLength": 65536, "type": "string" },
+                        "event": { "maxLength": 65536, "type": "string" }
+                      },
+                      "required": ["event", "commitId", "body", "comments"],
+                      "type": "object"
+                    },
+                    "target": { "maxLength": 65536, "type": "string" },
+                    "thread": { "maxLength": 65536, "type": "string" }
+                  },
+                  "required": ["action", "project", "provider", "target"],
+                  "type": "object"
+                },
+                "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "message": { "maxLength": 20000, "type": "string" },
+                "notice": { "maxLength": 500, "type": "string" },
+                "remote": { "type": "boolean" },
+                "signature": { "maxLength": 64, "minLength": 64, "type": "string" },
+                "status": {
+                  "enum": ["pending", "approved", "denied", "expired"],
+                  "type": "string"
+                },
+                "title": { "maxLength": 200, "type": "string" }
+              },
+              "required": [
+                "id",
+                "title",
+                "message",
+                "confirmLabel",
+                "cancelLabel",
+                "deadline",
+                "remote",
+                "signature",
+                "status"
+              ],
+              "type": "object"
+            },
+            "maxItems": 200,
+            "type": "array"
+          }
+        },
+        "required": ["approvals"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
+    "approvals.mirror": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "remove": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "approved": { "type": "boolean" },
+                "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "outcome": { "enum": ["answered", "ended"], "type": "string" }
+              },
+              "required": ["id", "outcome"],
+              "type": "object"
+            },
+            "maxItems": 24,
+            "type": "array"
+          },
+          "upsert": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "cancelLabel": { "maxLength": 200, "type": "string" },
+                "confirmLabel": { "maxLength": 200, "type": "string" },
+                "deadline": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "details": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "action": { "enum": ["comment", "review", "pr-action"], "type": "string" },
+                    "body": { "maxLength": 65536, "type": "string" },
+                    "headSha": { "maxLength": 65536, "type": "string" },
+                    "prAction": { "maxLength": 65536, "type": "string" },
+                    "project": { "maxLength": 65536, "type": "string" },
+                    "provider": { "maxLength": 65536, "type": "string" },
+                    "replyTo": { "maxLength": 65536, "type": "string" },
+                    "review": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "body": { "maxLength": 65536, "type": "string" },
+                        "comments": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "body": { "maxLength": 65536, "type": "string" },
+                              "line": {
+                                "maximum": 9007199254740991,
+                                "minimum": -9007199254740991,
+                                "type": "integer"
+                              },
+                              "path": { "maxLength": 65536, "type": "string" },
+                              "side": { "maxLength": 65536, "type": "string" },
+                              "startLine": {
+                                "maximum": 9007199254740991,
+                                "minimum": -9007199254740991,
+                                "type": "integer"
+                              }
+                            },
+                            "required": ["path", "line", "side", "body"],
+                            "type": "object"
+                          },
+                          "maxItems": 500,
+                          "type": "array"
+                        },
+                        "commitId": { "maxLength": 65536, "type": "string" },
+                        "event": { "maxLength": 65536, "type": "string" }
+                      },
+                      "required": ["event", "commitId", "body", "comments"],
+                      "type": "object"
+                    },
+                    "target": { "maxLength": 65536, "type": "string" },
+                    "thread": { "maxLength": 65536, "type": "string" }
+                  },
+                  "required": ["action", "project", "provider", "target"],
+                  "type": "object"
+                },
+                "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "message": { "maxLength": 20000, "type": "string" },
+                "remote": { "type": "boolean" },
+                "signature": { "maxLength": 64, "minLength": 64, "type": "string" },
+                "title": { "maxLength": 200, "type": "string" }
+              },
+              "required": [
+                "id",
+                "title",
+                "message",
+                "confirmLabel",
+                "cancelLabel",
+                "deadline",
+                "remote",
+                "signature"
+              ],
+              "type": "object"
+            },
+            "maxItems": 24,
+            "type": "array"
+          }
+        },
+        "required": ["upsert", "remove"],
+        "type": "object"
+      },
+      "requiredCapability": "approvals.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "accepted": { "maximum": 24, "minimum": 0, "type": "integer" } },
+        "required": ["accepted"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
     "assistant.builder.avatarGenerate": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
@@ -968,7 +1270,10 @@
                 "additionalProperties": false,
                 "properties": {
                   "features": {
-                    "items": { "enum": ["jobHolds", "jobStalled"], "type": "string" },
+                    "items": {
+                      "enum": ["jobHolds", "jobStalled", "reminders", "onceSchedule"],
+                      "type": "string"
+                    },
                     "maxItems": 8,
                     "type": "array"
                   },
@@ -1061,6 +1366,64 @@
                   }
                 },
                 "required": ["op", "expectedVersion", "rows"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": { "op": { "const": "folders.get", "type": "string" } },
+                "required": ["op"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "expectedVersion": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "op": { "const": "folders.set", "type": "string" },
+                  "paths": { "items": { "type": "string" }, "maxItems": 20, "type": "array" },
+                  "runWithoutAsking": { "type": "boolean" }
+                },
+                "required": ["op", "expectedVersion", "paths", "runWithoutAsking"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": { "op": { "const": "alwaysOn.get", "type": "string" } },
+                "required": ["op"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "op": { "const": "reminders.create", "type": "string" },
+                  "requestId": { "type": "string" },
+                  "text": { "type": "string" }
+                },
+                "required": ["op", "text", "at", "requestId"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": { "op": { "const": "reminders.list", "type": "string" } },
+                "required": ["op"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "expectedVersion": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "id": { "type": "string" },
+                  "op": { "const": "reminders.cancel", "type": "string" }
+                },
+                "required": ["op", "id", "expectedVersion"],
                 "type": "object"
               },
               {
@@ -1626,6 +1989,7 @@
               {
                 "additionalProperties": false,
                 "properties": {
+                  "after": { "type": "string" },
                   "idempotencyKey": { "type": "string" },
                   "kind": { "const": "project", "type": "string" },
                   "op": { "const": "jobs.create", "type": "string" },
@@ -2064,12 +2428,17 @@
                       "name": { "type": "string" },
                       "projectId": { "type": "string" },
                       "prompt": { "type": "string" },
+                      "runAt": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
                       "runtimeMode": {
                         "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
                         "type": "string"
                       },
                       "scheduleKind": {
-                        "enum": ["hourly", "daily", "weekdays", "weekly"],
+                        "enum": ["hourly", "daily", "weekdays", "weekly", "once"],
                         "type": "string"
                       },
                       "time": { "type": "string" }
@@ -2110,6 +2479,35 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
+          "alwaysOn": {
+            "additionalProperties": false,
+            "properties": {
+              "assistantPushPhones": { "maximum": 1000, "minimum": 0, "type": "integer" },
+              "pushPhones": { "maximum": 1000, "minimum": 0, "type": "integer" }
+            },
+            "required": ["pushPhones", "assistantPushPhones"],
+            "type": "object"
+          },
+          "assistantFolders": {
+            "additionalProperties": false,
+            "properties": {
+              "folders": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": { "id": { "type": "string" }, "path": { "type": "string" } },
+                  "required": ["id", "path"],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "runWithoutAsking": { "type": "boolean" },
+              "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+            },
+            "required": ["folders", "runWithoutAsking", "version", "updatedAt"],
+            "type": "object"
+          },
           "deleteReview": {
             "additionalProperties": false,
             "properties": {
@@ -2410,12 +2808,17 @@
                       "name": { "type": "string" },
                       "projectId": { "type": "string" },
                       "prompt": { "type": "string" },
+                      "runAt": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
                       "runtimeMode": {
                         "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
                         "type": "string"
                       },
                       "scheduleKind": {
-                        "enum": ["hourly", "daily", "weekdays", "weekly"],
+                        "enum": ["hourly", "daily", "weekdays", "weekly", "once"],
                         "type": "string"
                       },
                       "time": { "type": "string" }
@@ -3454,6 +3857,45 @@
             "maxItems": 1000,
             "type": "array"
           },
+          "reminders": {
+            "additionalProperties": false,
+            "properties": {
+              "items": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                    "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                    "firedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                    "id": { "type": "string" },
+                    "status": { "enum": ["pending", "fired"], "type": "string" },
+                    "text": { "type": "string" },
+                    "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                  },
+                  "required": ["id", "version", "text", "at", "status", "createdAt"],
+                  "type": "object"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "reminder": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "firedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "id": { "type": "string" },
+                  "status": { "enum": ["pending", "fired"], "type": "string" },
+                  "text": { "type": "string" },
+                  "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                },
+                "required": ["id", "version", "text", "at", "status", "createdAt"],
+                "type": "object"
+              }
+            },
+            "required": ["items"],
+            "type": "object"
+          },
           "sendIdentity": {
             "additionalProperties": false,
             "properties": { "instanceId": { "type": "string" } },
@@ -3591,7 +4033,8 @@
                     "noExecution",
                     "disabled",
                     "limits",
-                    "noModel"
+                    "noModel",
+                    "dependency"
                   ],
                   "type": "string"
                 },
@@ -3888,12 +4331,17 @@
                             "name": { "type": "string" },
                             "projectId": { "type": "string" },
                             "prompt": { "type": "string" },
+                            "runAt": {
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "type": "integer"
+                            },
                             "runtimeMode": {
                               "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
                               "type": "string"
                             },
                             "scheduleKind": {
-                              "enum": ["hourly", "daily", "weekdays", "weekly"],
+                              "enum": ["hourly", "daily", "weekdays", "weekly", "once"],
                               "type": "string"
                             },
                             "time": { "type": "string" }
@@ -4162,7 +4610,8 @@
                         "budget.exhausted",
                         "owner.question",
                         "task.done",
-                        "task.needsInput"
+                        "task.needsInput",
+                        "reminder"
                       ],
                       "type": "string"
                     },
@@ -8012,6 +8461,109 @@
       "retry": "never",
       "scope": "device"
     },
+    "crews.active.list": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "limit": { "maximum": 200, "minimum": 1, "type": "integer" } },
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.crews.v2",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "attention": { "enum": ["decision", "review", "blocked"], "type": "string" },
+                "avatar": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "accessory": {
+                      "enum": [
+                        "none",
+                        "tespih",
+                        "magnifier",
+                        "brush",
+                        "notebook",
+                        "key",
+                        "wrench",
+                        "pen"
+                      ],
+                      "type": "string"
+                    },
+                    "face": {
+                      "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                      "type": "string"
+                    },
+                    "glasses": { "type": "boolean" },
+                    "headwear": {
+                      "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                      "type": "string"
+                    },
+                    "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                    "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                  },
+                  "type": "object"
+                },
+                "definitionId": { "type": "string" },
+                "definitionName": { "type": "string" },
+                "handle": { "type": "string" },
+                "kind": { "enum": ["coordinator", "worker", "review"], "type": "string" },
+                "memberId": { "type": "string" },
+                "memberName": { "type": "string" },
+                "memberRole": {
+                  "enum": ["coordinator", "specialist", "reviewer", "advisor"],
+                  "type": "string"
+                },
+                "memberSource": {
+                  "additionalProperties": false,
+                  "properties": { "id": { "type": "string" } },
+                  "required": ["id"],
+                  "type": "object"
+                },
+                "projectId": { "type": "string" },
+                "projectName": { "type": "string" },
+                "runId": { "type": "string" },
+                "runStatus": { "enum": ["active", "paused"], "type": "string" },
+                "runTitle": { "type": "string" },
+                "sessionId": { "type": "string" },
+                "startedAt": { "type": "number" },
+                "taskId": { "type": "string" },
+                "taskStatus": { "type": "string" },
+                "taskTitle": { "type": "string" }
+              },
+              "required": [
+                "runId",
+                "projectId",
+                "definitionId",
+                "definitionName",
+                "runStatus",
+                "memberId",
+                "memberName",
+                "memberRole",
+                "kind"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "truncated": { "const": true, "type": "boolean" }
+        },
+        "required": ["items"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
     "crews.agent.delete": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
@@ -8052,6 +8604,36 @@
               "agent": {
                 "additionalProperties": false,
                 "properties": {
+                  "avatar": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "accessory": {
+                        "enum": [
+                          "none",
+                          "tespih",
+                          "magnifier",
+                          "brush",
+                          "notebook",
+                          "key",
+                          "wrench",
+                          "pen"
+                        ],
+                        "type": "string"
+                      },
+                      "face": {
+                        "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                        "type": "string"
+                      },
+                      "glasses": { "type": "boolean" },
+                      "headwear": {
+                        "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                        "type": "string"
+                      },
+                      "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                      "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                    },
+                    "type": "object"
+                  },
                   "candidates": {
                     "items": {
                       "additionalProperties": false,
@@ -8217,7 +8799,9 @@
                     },
                     "type": "array"
                   },
+                  "customized": { "const": true, "type": "boolean" },
                   "groups": { "items": { "type": "string" }, "type": "array" },
+                  "handle": { "type": "string" },
                   "id": { "type": "string" },
                   "instructions": { "type": "string" },
                   "name": { "type": "string" },
@@ -8231,6 +8815,32 @@
                     "additionalProperties": false,
                     "properties": { "id": { "type": "string" }, "updatedAt": { "type": "number" } },
                     "required": ["id", "updatedAt"],
+                    "type": "object"
+                  },
+                  "tools": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "conversationTools": {
+                        "items": { "maxLength": 100, "type": "string" },
+                        "maxItems": 120,
+                        "type": "array"
+                      },
+                      "mcpServers": {
+                        "items": { "maxLength": 100, "type": "string" },
+                        "maxItems": 50,
+                        "type": "array"
+                      },
+                      "preset": {
+                        "enum": ["read-only", "code", "design", "browser", "custom"],
+                        "type": "string"
+                      },
+                      "skills": {
+                        "items": { "maxLength": 100, "type": "string" },
+                        "maxItems": 50,
+                        "type": "array"
+                      }
+                    },
+                    "required": ["preset"],
                     "type": "object"
                   },
                   "updatedAt": { "type": "number" }
@@ -8251,6 +8861,36 @@
               "agent": {
                 "additionalProperties": false,
                 "properties": {
+                  "avatar": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "accessory": {
+                        "enum": [
+                          "none",
+                          "tespih",
+                          "magnifier",
+                          "brush",
+                          "notebook",
+                          "key",
+                          "wrench",
+                          "pen"
+                        ],
+                        "type": "string"
+                      },
+                      "face": {
+                        "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                        "type": "string"
+                      },
+                      "glasses": { "type": "boolean" },
+                      "headwear": {
+                        "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                        "type": "string"
+                      },
+                      "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                      "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                    },
+                    "type": "object"
+                  },
                   "candidates": {
                     "items": {
                       "additionalProperties": false,
@@ -8416,7 +9056,9 @@
                     },
                     "type": "array"
                   },
+                  "customized": { "const": true, "type": "boolean" },
                   "groups": { "items": { "type": "string" }, "type": "array" },
+                  "handle": { "type": "string" },
                   "id": { "type": "string" },
                   "instructions": { "type": "string" },
                   "name": { "type": "string" },
@@ -8430,6 +9072,32 @@
                     "additionalProperties": false,
                     "properties": { "id": { "type": "string" }, "updatedAt": { "type": "number" } },
                     "required": ["id", "updatedAt"],
+                    "type": "object"
+                  },
+                  "tools": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "conversationTools": {
+                        "items": { "maxLength": 100, "type": "string" },
+                        "maxItems": 120,
+                        "type": "array"
+                      },
+                      "mcpServers": {
+                        "items": { "maxLength": 100, "type": "string" },
+                        "maxItems": 50,
+                        "type": "array"
+                      },
+                      "preset": {
+                        "enum": ["read-only", "code", "design", "browser", "custom"],
+                        "type": "string"
+                      },
+                      "skills": {
+                        "items": { "maxLength": 100, "type": "string" },
+                        "maxItems": 50,
+                        "type": "array"
+                      }
+                    },
+                    "required": ["preset"],
                     "type": "object"
                   },
                   "updatedAt": { "type": "number" }
@@ -8452,6 +9120,36 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
+          "avatar": {
+            "additionalProperties": false,
+            "properties": {
+              "accessory": {
+                "enum": [
+                  "none",
+                  "tespih",
+                  "magnifier",
+                  "brush",
+                  "notebook",
+                  "key",
+                  "wrench",
+                  "pen"
+                ],
+                "type": "string"
+              },
+              "face": {
+                "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                "type": "string"
+              },
+              "glasses": { "type": "boolean" },
+              "headwear": {
+                "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                "type": "string"
+              },
+              "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+              "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+            },
+            "type": "object"
+          },
           "candidates": {
             "items": {
               "additionalProperties": false,
@@ -8614,7 +9312,9 @@
             },
             "type": "array"
           },
+          "customized": { "const": true, "type": "boolean" },
           "groups": { "items": { "type": "string" }, "type": "array" },
+          "handle": { "type": "string" },
           "id": { "type": "string" },
           "instructions": { "type": "string" },
           "name": { "type": "string" },
@@ -8628,6 +9328,32 @@
             "additionalProperties": false,
             "properties": { "id": { "type": "string" }, "updatedAt": { "type": "number" } },
             "required": ["id", "updatedAt"],
+            "type": "object"
+          },
+          "tools": {
+            "additionalProperties": false,
+            "properties": {
+              "conversationTools": {
+                "items": { "maxLength": 100, "type": "string" },
+                "maxItems": 120,
+                "type": "array"
+              },
+              "mcpServers": {
+                "items": { "maxLength": 100, "type": "string" },
+                "maxItems": 50,
+                "type": "array"
+              },
+              "preset": {
+                "enum": ["read-only", "code", "design", "browser", "custom"],
+                "type": "string"
+              },
+              "skills": {
+                "items": { "maxLength": 100, "type": "string" },
+                "maxItems": 50,
+                "type": "array"
+              }
+            },
+            "required": ["preset"],
             "type": "object"
           },
           "updatedAt": { "type": "number" }
@@ -9234,6 +9960,36 @@
                 "items": {
                   "additionalProperties": false,
                   "properties": {
+                    "avatar": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "accessory": {
+                          "enum": [
+                            "none",
+                            "tespih",
+                            "magnifier",
+                            "brush",
+                            "notebook",
+                            "key",
+                            "wrench",
+                            "pen"
+                          ],
+                          "type": "string"
+                        },
+                        "face": {
+                          "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                          "type": "string"
+                        },
+                        "glasses": { "type": "boolean" },
+                        "headwear": {
+                          "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                          "type": "string"
+                        },
+                        "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                        "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                      },
+                      "type": "object"
+                    },
                     "candidates": {
                       "items": {
                         "additionalProperties": false,
@@ -9403,7 +10159,9 @@
                       },
                       "type": "array"
                     },
+                    "customized": { "const": true, "type": "boolean" },
                     "groups": { "items": { "type": "string" }, "type": "array" },
+                    "handle": { "type": "string" },
                     "id": { "type": "string" },
                     "instructions": { "type": "string" },
                     "name": { "type": "string" },
@@ -9420,12 +10178,46 @@
                       },
                       "required": ["id", "updatedAt"],
                       "type": "object"
+                    },
+                    "tools": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "conversationTools": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 120,
+                          "type": "array"
+                        },
+                        "mcpServers": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 50,
+                          "type": "array"
+                        },
+                        "preset": {
+                          "enum": ["read-only", "code", "design", "browser", "custom"],
+                          "type": "string"
+                        },
+                        "skills": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 50,
+                          "type": "array"
+                        }
+                      },
+                      "required": ["preset"],
+                      "type": "object"
                     }
                   },
                   "required": ["id", "name", "role", "instructions", "selection", "candidates"],
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "appearance": {
+                "additionalProperties": false,
+                "properties": {
+                  "color": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+                  "icon": { "type": "string" }
+                },
+                "type": "object"
               },
               "id": { "type": "string" },
               "name": { "type": "string" },
@@ -10019,6 +10811,36 @@
                 "items": {
                   "additionalProperties": false,
                   "properties": {
+                    "avatar": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "accessory": {
+                          "enum": [
+                            "none",
+                            "tespih",
+                            "magnifier",
+                            "brush",
+                            "notebook",
+                            "key",
+                            "wrench",
+                            "pen"
+                          ],
+                          "type": "string"
+                        },
+                        "face": {
+                          "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                          "type": "string"
+                        },
+                        "glasses": { "type": "boolean" },
+                        "headwear": {
+                          "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                          "type": "string"
+                        },
+                        "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                        "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                      },
+                      "type": "object"
+                    },
                     "candidates": {
                       "items": {
                         "additionalProperties": false,
@@ -10188,7 +11010,9 @@
                       },
                       "type": "array"
                     },
+                    "customized": { "const": true, "type": "boolean" },
                     "groups": { "items": { "type": "string" }, "type": "array" },
+                    "handle": { "type": "string" },
                     "id": { "type": "string" },
                     "instructions": { "const": "", "type": "string" },
                     "name": { "type": "string" },
@@ -10205,12 +11029,46 @@
                       },
                       "required": ["id", "updatedAt"],
                       "type": "object"
+                    },
+                    "tools": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "conversationTools": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 120,
+                          "type": "array"
+                        },
+                        "mcpServers": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 50,
+                          "type": "array"
+                        },
+                        "preset": {
+                          "enum": ["read-only", "code", "design", "browser", "custom"],
+                          "type": "string"
+                        },
+                        "skills": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 50,
+                          "type": "array"
+                        }
+                      },
+                      "required": ["preset"],
+                      "type": "object"
                     }
                   },
                   "required": ["id", "name", "role", "instructions", "selection", "candidates"],
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "appearance": {
+                "additionalProperties": false,
+                "properties": {
+                  "color": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+                  "icon": { "type": "string" }
+                },
+                "type": "object"
               },
               "id": { "type": "string" },
               "name": { "type": "string" },
@@ -11867,6 +12725,36 @@
               "agent": {
                 "additionalProperties": false,
                 "properties": {
+                  "avatar": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "accessory": {
+                        "enum": [
+                          "none",
+                          "tespih",
+                          "magnifier",
+                          "brush",
+                          "notebook",
+                          "key",
+                          "wrench",
+                          "pen"
+                        ],
+                        "type": "string"
+                      },
+                      "face": {
+                        "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                        "type": "string"
+                      },
+                      "glasses": { "type": "boolean" },
+                      "headwear": {
+                        "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                        "type": "string"
+                      },
+                      "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                      "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                    },
+                    "type": "object"
+                  },
                   "candidates": {
                     "items": {
                       "additionalProperties": false,
@@ -12032,7 +12920,9 @@
                     },
                     "type": "array"
                   },
+                  "customized": { "const": true, "type": "boolean" },
                   "groups": { "items": { "type": "string" }, "type": "array" },
+                  "handle": { "type": "string" },
                   "id": { "type": "string" },
                   "instructions": { "type": "string" },
                   "name": { "type": "string" },
@@ -12045,6 +12935,32 @@
                     "additionalProperties": false,
                     "properties": { "id": { "type": "string" }, "updatedAt": { "type": "number" } },
                     "required": ["id", "updatedAt"],
+                    "type": "object"
+                  },
+                  "tools": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "conversationTools": {
+                        "items": { "maxLength": 100, "type": "string" },
+                        "maxItems": 120,
+                        "type": "array"
+                      },
+                      "mcpServers": {
+                        "items": { "maxLength": 100, "type": "string" },
+                        "maxItems": 50,
+                        "type": "array"
+                      },
+                      "preset": {
+                        "enum": ["read-only", "code", "design", "browser", "custom"],
+                        "type": "string"
+                      },
+                      "skills": {
+                        "items": { "maxLength": 100, "type": "string" },
+                        "maxItems": 50,
+                        "type": "array"
+                      }
+                    },
+                    "required": ["preset"],
                     "type": "object"
                   }
                 },
@@ -13159,6 +14075,36 @@
             "items": {
               "additionalProperties": false,
               "properties": {
+                "avatar": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "accessory": {
+                      "enum": [
+                        "none",
+                        "tespih",
+                        "magnifier",
+                        "brush",
+                        "notebook",
+                        "key",
+                        "wrench",
+                        "pen"
+                      ],
+                      "type": "string"
+                    },
+                    "face": {
+                      "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                      "type": "string"
+                    },
+                    "glasses": { "type": "boolean" },
+                    "headwear": {
+                      "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                      "type": "string"
+                    },
+                    "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                    "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                  },
+                  "type": "object"
+                },
                 "candidates": {
                   "items": {
                     "additionalProperties": false,
@@ -13324,7 +14270,9 @@
                   },
                   "type": "array"
                 },
+                "customized": { "const": true, "type": "boolean" },
                 "groups": { "items": { "type": "string" }, "type": "array" },
+                "handle": { "type": "string" },
                 "id": { "type": "string" },
                 "instructions": { "type": "string" },
                 "name": { "type": "string" },
@@ -13338,6 +14286,32 @@
                   "additionalProperties": false,
                   "properties": { "id": { "type": "string" }, "updatedAt": { "type": "number" } },
                   "required": ["id", "updatedAt"],
+                  "type": "object"
+                },
+                "tools": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "conversationTools": {
+                      "items": { "maxLength": 100, "type": "string" },
+                      "maxItems": 120,
+                      "type": "array"
+                    },
+                    "mcpServers": {
+                      "items": { "maxLength": 100, "type": "string" },
+                      "maxItems": 50,
+                      "type": "array"
+                    },
+                    "preset": {
+                      "enum": ["read-only", "code", "design", "browser", "custom"],
+                      "type": "string"
+                    },
+                    "skills": {
+                      "items": { "maxLength": 100, "type": "string" },
+                      "maxItems": 50,
+                      "type": "array"
+                    }
+                  },
+                  "required": ["preset"],
                   "type": "object"
                 },
                 "updatedAt": { "type": "number" }
@@ -13363,6 +14337,36 @@
                   "items": {
                     "additionalProperties": false,
                     "properties": {
+                      "avatar": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "accessory": {
+                            "enum": [
+                              "none",
+                              "tespih",
+                              "magnifier",
+                              "brush",
+                              "notebook",
+                              "key",
+                              "wrench",
+                              "pen"
+                            ],
+                            "type": "string"
+                          },
+                          "face": {
+                            "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                            "type": "string"
+                          },
+                          "glasses": { "type": "boolean" },
+                          "headwear": {
+                            "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                            "type": "string"
+                          },
+                          "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                          "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                        },
+                        "type": "object"
+                      },
                       "candidates": {
                         "items": {
                           "additionalProperties": false,
@@ -13532,7 +14536,9 @@
                         },
                         "type": "array"
                       },
+                      "customized": { "const": true, "type": "boolean" },
                       "groups": { "items": { "type": "string" }, "type": "array" },
+                      "handle": { "type": "string" },
                       "id": { "type": "string" },
                       "instructions": { "type": "string" },
                       "name": { "type": "string" },
@@ -13549,12 +14555,46 @@
                         },
                         "required": ["id", "updatedAt"],
                         "type": "object"
+                      },
+                      "tools": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "conversationTools": {
+                            "items": { "maxLength": 100, "type": "string" },
+                            "maxItems": 120,
+                            "type": "array"
+                          },
+                          "mcpServers": {
+                            "items": { "maxLength": 100, "type": "string" },
+                            "maxItems": 50,
+                            "type": "array"
+                          },
+                          "preset": {
+                            "enum": ["read-only", "code", "design", "browser", "custom"],
+                            "type": "string"
+                          },
+                          "skills": {
+                            "items": { "maxLength": 100, "type": "string" },
+                            "maxItems": 50,
+                            "type": "array"
+                          }
+                        },
+                        "required": ["preset"],
+                        "type": "object"
                       }
                     },
                     "required": ["id", "name", "role", "instructions", "selection", "candidates"],
                     "type": "object"
                   },
                   "type": "array"
+                },
+                "appearance": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "color": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+                    "icon": { "type": "string" }
+                  },
+                  "type": "object"
                 },
                 "id": { "type": "string" },
                 "name": { "type": "string" },
@@ -13960,6 +15000,39 @@
                       "items": {
                         "additionalProperties": false,
                         "properties": {
+                          "avatar": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "accessory": {
+                                "enum": [
+                                  "none",
+                                  "tespih",
+                                  "magnifier",
+                                  "brush",
+                                  "notebook",
+                                  "key",
+                                  "wrench",
+                                  "pen"
+                                ],
+                                "type": "string"
+                              },
+                              "face": {
+                                "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                                "type": "string"
+                              },
+                              "glasses": { "type": "boolean" },
+                              "headwear": {
+                                "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                                "type": "string"
+                              },
+                              "outfit": {
+                                "enum": ["cardigan", "vest", "jacket"],
+                                "type": "string"
+                              },
+                              "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                            },
+                            "type": "object"
+                          },
                           "candidates": {
                             "items": {
                               "additionalProperties": false,
@@ -14135,7 +15208,9 @@
                             },
                             "type": "array"
                           },
+                          "customized": { "const": true, "type": "boolean" },
                           "groups": { "items": { "type": "string" }, "type": "array" },
+                          "handle": { "type": "string" },
                           "id": { "type": "string" },
                           "instructions": { "const": "", "type": "string" },
                           "name": { "type": "string" },
@@ -14152,6 +15227,32 @@
                             },
                             "required": ["id", "updatedAt"],
                             "type": "object"
+                          },
+                          "tools": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "conversationTools": {
+                                "items": { "maxLength": 100, "type": "string" },
+                                "maxItems": 120,
+                                "type": "array"
+                              },
+                              "mcpServers": {
+                                "items": { "maxLength": 100, "type": "string" },
+                                "maxItems": 50,
+                                "type": "array"
+                              },
+                              "preset": {
+                                "enum": ["read-only", "code", "design", "browser", "custom"],
+                                "type": "string"
+                              },
+                              "skills": {
+                                "items": { "maxLength": 100, "type": "string" },
+                                "maxItems": 50,
+                                "type": "array"
+                              }
+                            },
+                            "required": ["preset"],
+                            "type": "object"
                           }
                         },
                         "required": [
@@ -14165,6 +15266,14 @@
                         "type": "object"
                       },
                       "type": "array"
+                    },
+                    "appearance": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "color": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+                        "icon": { "type": "string" }
+                      },
+                      "type": "object"
                     },
                     "id": { "type": "string" },
                     "name": { "type": "string" },
@@ -14868,6 +15977,50 @@
       "retry": "never",
       "scope": "device"
     },
+    "crews.member.ask": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "files": {
+            "items": { "maxLength": 500, "minLength": 1, "type": "string" },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "handle": { "maxLength": 64, "minLength": 1, "type": "string" },
+          "memberId": { "maxLength": 200, "minLength": 1, "type": "string" },
+          "parentSessionId": { "maxLength": 200, "minLength": 1, "type": "string" },
+          "projectId": { "type": "string" },
+          "prompt": { "maxLength": 20000, "minLength": 1, "type": "string" },
+          "requestId": { "maxLength": 200, "minLength": 1, "type": "string" }
+        },
+        "required": ["projectId", "requestId", "prompt"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.crews.v2",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "handle": { "type": "string" },
+          "memberId": { "type": "string" },
+          "memberName": { "type": "string" },
+          "reused": { "type": "boolean" },
+          "sessionId": { "type": "string" },
+          "taskId": { "type": "string" }
+        },
+        "required": ["taskId", "memberId", "memberName", "reused"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
     "crews.pause": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
@@ -15187,6 +16340,36 @@
                 "items": {
                   "additionalProperties": false,
                   "properties": {
+                    "avatar": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "accessory": {
+                          "enum": [
+                            "none",
+                            "tespih",
+                            "magnifier",
+                            "brush",
+                            "notebook",
+                            "key",
+                            "wrench",
+                            "pen"
+                          ],
+                          "type": "string"
+                        },
+                        "face": {
+                          "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                          "type": "string"
+                        },
+                        "glasses": { "type": "boolean" },
+                        "headwear": {
+                          "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                          "type": "string"
+                        },
+                        "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                        "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                      },
+                      "type": "object"
+                    },
                     "candidates": {
                       "items": {
                         "additionalProperties": false,
@@ -15356,7 +16539,9 @@
                       },
                       "type": "array"
                     },
+                    "customized": { "const": true, "type": "boolean" },
                     "groups": { "items": { "type": "string" }, "type": "array" },
+                    "handle": { "type": "string" },
                     "id": { "type": "string" },
                     "instructions": { "type": "string" },
                     "name": { "type": "string" },
@@ -15373,12 +16558,46 @@
                       },
                       "required": ["id", "updatedAt"],
                       "type": "object"
+                    },
+                    "tools": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "conversationTools": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 120,
+                          "type": "array"
+                        },
+                        "mcpServers": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 50,
+                          "type": "array"
+                        },
+                        "preset": {
+                          "enum": ["read-only", "code", "design", "browser", "custom"],
+                          "type": "string"
+                        },
+                        "skills": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 50,
+                          "type": "array"
+                        }
+                      },
+                      "required": ["preset"],
+                      "type": "object"
                     }
                   },
                   "required": ["id", "name", "role", "instructions", "selection", "candidates"],
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "appearance": {
+                "additionalProperties": false,
+                "properties": {
+                  "color": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+                  "icon": { "type": "string" }
+                },
+                "type": "object"
               },
               "id": { "type": "string" },
               "name": { "type": "string" },
@@ -16104,6 +17323,36 @@
                 "items": {
                   "additionalProperties": false,
                   "properties": {
+                    "avatar": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "accessory": {
+                          "enum": [
+                            "none",
+                            "tespih",
+                            "magnifier",
+                            "brush",
+                            "notebook",
+                            "key",
+                            "wrench",
+                            "pen"
+                          ],
+                          "type": "string"
+                        },
+                        "face": {
+                          "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                          "type": "string"
+                        },
+                        "glasses": { "type": "boolean" },
+                        "headwear": {
+                          "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                          "type": "string"
+                        },
+                        "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                        "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                      },
+                      "type": "object"
+                    },
                     "candidates": {
                       "items": {
                         "additionalProperties": false,
@@ -16273,7 +17522,9 @@
                       },
                       "type": "array"
                     },
+                    "customized": { "const": true, "type": "boolean" },
                     "groups": { "items": { "type": "string" }, "type": "array" },
+                    "handle": { "type": "string" },
                     "id": { "type": "string" },
                     "instructions": { "type": "string" },
                     "name": { "type": "string" },
@@ -16290,12 +17541,46 @@
                       },
                       "required": ["id", "updatedAt"],
                       "type": "object"
+                    },
+                    "tools": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "conversationTools": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 120,
+                          "type": "array"
+                        },
+                        "mcpServers": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 50,
+                          "type": "array"
+                        },
+                        "preset": {
+                          "enum": ["read-only", "code", "design", "browser", "custom"],
+                          "type": "string"
+                        },
+                        "skills": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 50,
+                          "type": "array"
+                        }
+                      },
+                      "required": ["preset"],
+                      "type": "object"
                     }
                   },
                   "required": ["id", "name", "role", "instructions", "selection", "candidates"],
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "appearance": {
+                "additionalProperties": false,
+                "properties": {
+                  "color": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+                  "icon": { "type": "string" }
+                },
+                "type": "object"
               },
               "id": { "type": "string" },
               "name": { "type": "string" },
@@ -16588,6 +17873,36 @@
                     "items": {
                       "additionalProperties": false,
                       "properties": {
+                        "avatar": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "accessory": {
+                              "enum": [
+                                "none",
+                                "tespih",
+                                "magnifier",
+                                "brush",
+                                "notebook",
+                                "key",
+                                "wrench",
+                                "pen"
+                              ],
+                              "type": "string"
+                            },
+                            "face": {
+                              "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                              "type": "string"
+                            },
+                            "glasses": { "type": "boolean" },
+                            "headwear": {
+                              "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                              "type": "string"
+                            },
+                            "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                            "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                          },
+                          "type": "object"
+                        },
                         "candidates": {
                           "items": {
                             "additionalProperties": false,
@@ -16757,7 +18072,9 @@
                           },
                           "type": "array"
                         },
+                        "customized": { "const": true, "type": "boolean" },
                         "groups": { "items": { "type": "string" }, "type": "array" },
+                        "handle": { "type": "string" },
                         "id": { "type": "string" },
                         "instructions": { "type": "string" },
                         "name": { "type": "string" },
@@ -16774,12 +18091,46 @@
                           },
                           "required": ["id", "updatedAt"],
                           "type": "object"
+                        },
+                        "tools": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "conversationTools": {
+                              "items": { "maxLength": 100, "type": "string" },
+                              "maxItems": 120,
+                              "type": "array"
+                            },
+                            "mcpServers": {
+                              "items": { "maxLength": 100, "type": "string" },
+                              "maxItems": 50,
+                              "type": "array"
+                            },
+                            "preset": {
+                              "enum": ["read-only", "code", "design", "browser", "custom"],
+                              "type": "string"
+                            },
+                            "skills": {
+                              "items": { "maxLength": 100, "type": "string" },
+                              "maxItems": 50,
+                              "type": "array"
+                            }
+                          },
+                          "required": ["preset"],
+                          "type": "object"
                         }
                       },
                       "required": ["id", "name", "role", "instructions", "selection", "candidates"],
                       "type": "object"
                     },
                     "type": "array"
+                  },
+                  "appearance": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "color": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+                      "icon": { "type": "string" }
+                    },
+                    "type": "object"
                   },
                   "id": { "type": "string" },
                   "name": { "type": "string" },
@@ -16835,6 +18186,36 @@
                     "items": {
                       "additionalProperties": false,
                       "properties": {
+                        "avatar": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "accessory": {
+                              "enum": [
+                                "none",
+                                "tespih",
+                                "magnifier",
+                                "brush",
+                                "notebook",
+                                "key",
+                                "wrench",
+                                "pen"
+                              ],
+                              "type": "string"
+                            },
+                            "face": {
+                              "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                              "type": "string"
+                            },
+                            "glasses": { "type": "boolean" },
+                            "headwear": {
+                              "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                              "type": "string"
+                            },
+                            "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                            "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                          },
+                          "type": "object"
+                        },
                         "candidates": {
                           "items": {
                             "additionalProperties": false,
@@ -17004,7 +18385,9 @@
                           },
                           "type": "array"
                         },
+                        "customized": { "const": true, "type": "boolean" },
                         "groups": { "items": { "type": "string" }, "type": "array" },
+                        "handle": { "type": "string" },
                         "id": { "type": "string" },
                         "instructions": { "type": "string" },
                         "name": { "type": "string" },
@@ -17021,12 +18404,46 @@
                           },
                           "required": ["id", "updatedAt"],
                           "type": "object"
+                        },
+                        "tools": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "conversationTools": {
+                              "items": { "maxLength": 100, "type": "string" },
+                              "maxItems": 120,
+                              "type": "array"
+                            },
+                            "mcpServers": {
+                              "items": { "maxLength": 100, "type": "string" },
+                              "maxItems": 50,
+                              "type": "array"
+                            },
+                            "preset": {
+                              "enum": ["read-only", "code", "design", "browser", "custom"],
+                              "type": "string"
+                            },
+                            "skills": {
+                              "items": { "maxLength": 100, "type": "string" },
+                              "maxItems": 50,
+                              "type": "array"
+                            }
+                          },
+                          "required": ["preset"],
+                          "type": "object"
                         }
                       },
                       "required": ["id", "name", "role", "instructions", "selection", "candidates"],
                       "type": "object"
                     },
                     "type": "array"
+                  },
+                  "appearance": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "color": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+                      "icon": { "type": "string" }
+                    },
+                    "type": "object"
                   },
                   "id": { "type": "string" },
                   "name": { "type": "string" },
@@ -17084,6 +18501,36 @@
             "items": {
               "additionalProperties": false,
               "properties": {
+                "avatar": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "accessory": {
+                      "enum": [
+                        "none",
+                        "tespih",
+                        "magnifier",
+                        "brush",
+                        "notebook",
+                        "key",
+                        "wrench",
+                        "pen"
+                      ],
+                      "type": "string"
+                    },
+                    "face": {
+                      "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                      "type": "string"
+                    },
+                    "glasses": { "type": "boolean" },
+                    "headwear": {
+                      "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                      "type": "string"
+                    },
+                    "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                    "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                  },
+                  "type": "object"
+                },
                 "candidates": {
                   "items": {
                     "additionalProperties": false,
@@ -17249,7 +18696,9 @@
                   },
                   "type": "array"
                 },
+                "customized": { "const": true, "type": "boolean" },
                 "groups": { "items": { "type": "string" }, "type": "array" },
+                "handle": { "type": "string" },
                 "id": { "type": "string" },
                 "instructions": { "type": "string" },
                 "name": { "type": "string" },
@@ -17263,12 +18712,46 @@
                   "properties": { "id": { "type": "string" }, "updatedAt": { "type": "number" } },
                   "required": ["id", "updatedAt"],
                   "type": "object"
+                },
+                "tools": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "conversationTools": {
+                      "items": { "maxLength": 100, "type": "string" },
+                      "maxItems": 120,
+                      "type": "array"
+                    },
+                    "mcpServers": {
+                      "items": { "maxLength": 100, "type": "string" },
+                      "maxItems": 50,
+                      "type": "array"
+                    },
+                    "preset": {
+                      "enum": ["read-only", "code", "design", "browser", "custom"],
+                      "type": "string"
+                    },
+                    "skills": {
+                      "items": { "maxLength": 100, "type": "string" },
+                      "maxItems": 50,
+                      "type": "array"
+                    }
+                  },
+                  "required": ["preset"],
+                  "type": "object"
                 }
               },
               "required": ["id", "name", "role", "instructions", "selection", "candidates"],
               "type": "object"
             },
             "type": "array"
+          },
+          "appearance": {
+            "additionalProperties": false,
+            "properties": {
+              "color": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+              "icon": { "type": "string" }
+            },
+            "type": "object"
           },
           "id": { "type": "string" },
           "name": { "type": "string" },
@@ -17351,6 +18834,36 @@
                 "items": {
                   "additionalProperties": false,
                   "properties": {
+                    "avatar": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "accessory": {
+                          "enum": [
+                            "none",
+                            "tespih",
+                            "magnifier",
+                            "brush",
+                            "notebook",
+                            "key",
+                            "wrench",
+                            "pen"
+                          ],
+                          "type": "string"
+                        },
+                        "face": {
+                          "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                          "type": "string"
+                        },
+                        "glasses": { "type": "boolean" },
+                        "headwear": {
+                          "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                          "type": "string"
+                        },
+                        "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                        "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                      },
+                      "type": "object"
+                    },
                     "candidates": {
                       "items": {
                         "additionalProperties": false,
@@ -17520,7 +19033,9 @@
                       },
                       "type": "array"
                     },
+                    "customized": { "const": true, "type": "boolean" },
                     "groups": { "items": { "type": "string" }, "type": "array" },
+                    "handle": { "type": "string" },
                     "id": { "type": "string" },
                     "instructions": { "type": "string" },
                     "name": { "type": "string" },
@@ -17537,12 +19052,46 @@
                       },
                       "required": ["id", "updatedAt"],
                       "type": "object"
+                    },
+                    "tools": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "conversationTools": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 120,
+                          "type": "array"
+                        },
+                        "mcpServers": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 50,
+                          "type": "array"
+                        },
+                        "preset": {
+                          "enum": ["read-only", "code", "design", "browser", "custom"],
+                          "type": "string"
+                        },
+                        "skills": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 50,
+                          "type": "array"
+                        }
+                      },
+                      "required": ["preset"],
+                      "type": "object"
                     }
                   },
                   "required": ["id", "name", "role", "instructions", "selection", "candidates"],
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "appearance": {
+                "additionalProperties": false,
+                "properties": {
+                  "color": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+                  "icon": { "type": "string" }
+                },
+                "type": "object"
               },
               "id": { "type": "string" },
               "name": { "type": "string" },
@@ -17914,6 +19463,36 @@
                 "items": {
                   "additionalProperties": false,
                   "properties": {
+                    "avatar": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "accessory": {
+                          "enum": [
+                            "none",
+                            "tespih",
+                            "magnifier",
+                            "brush",
+                            "notebook",
+                            "key",
+                            "wrench",
+                            "pen"
+                          ],
+                          "type": "string"
+                        },
+                        "face": {
+                          "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                          "type": "string"
+                        },
+                        "glasses": { "type": "boolean" },
+                        "headwear": {
+                          "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                          "type": "string"
+                        },
+                        "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                        "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                      },
+                      "type": "object"
+                    },
                     "candidates": {
                       "items": {
                         "additionalProperties": false,
@@ -18083,7 +19662,9 @@
                       },
                       "type": "array"
                     },
+                    "customized": { "const": true, "type": "boolean" },
                     "groups": { "items": { "type": "string" }, "type": "array" },
+                    "handle": { "type": "string" },
                     "id": { "type": "string" },
                     "instructions": { "type": "string" },
                     "name": { "type": "string" },
@@ -18100,12 +19681,46 @@
                       },
                       "required": ["id", "updatedAt"],
                       "type": "object"
+                    },
+                    "tools": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "conversationTools": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 120,
+                          "type": "array"
+                        },
+                        "mcpServers": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 50,
+                          "type": "array"
+                        },
+                        "preset": {
+                          "enum": ["read-only", "code", "design", "browser", "custom"],
+                          "type": "string"
+                        },
+                        "skills": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 50,
+                          "type": "array"
+                        }
+                      },
+                      "required": ["preset"],
+                      "type": "object"
                     }
                   },
                   "required": ["id", "name", "role", "instructions", "selection", "candidates"],
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "appearance": {
+                "additionalProperties": false,
+                "properties": {
+                  "color": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+                  "icon": { "type": "string" }
+                },
+                "type": "object"
               },
               "id": { "type": "string" },
               "name": { "type": "string" },
@@ -18698,6 +20313,36 @@
                 "items": {
                   "additionalProperties": false,
                   "properties": {
+                    "avatar": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "accessory": {
+                          "enum": [
+                            "none",
+                            "tespih",
+                            "magnifier",
+                            "brush",
+                            "notebook",
+                            "key",
+                            "wrench",
+                            "pen"
+                          ],
+                          "type": "string"
+                        },
+                        "face": {
+                          "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                          "type": "string"
+                        },
+                        "glasses": { "type": "boolean" },
+                        "headwear": {
+                          "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                          "type": "string"
+                        },
+                        "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                        "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                      },
+                      "type": "object"
+                    },
                     "candidates": {
                       "items": {
                         "additionalProperties": false,
@@ -18867,7 +20512,9 @@
                       },
                       "type": "array"
                     },
+                    "customized": { "const": true, "type": "boolean" },
                     "groups": { "items": { "type": "string" }, "type": "array" },
+                    "handle": { "type": "string" },
                     "id": { "type": "string" },
                     "instructions": { "type": "string" },
                     "name": { "type": "string" },
@@ -18884,12 +20531,46 @@
                       },
                       "required": ["id", "updatedAt"],
                       "type": "object"
+                    },
+                    "tools": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "conversationTools": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 120,
+                          "type": "array"
+                        },
+                        "mcpServers": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 50,
+                          "type": "array"
+                        },
+                        "preset": {
+                          "enum": ["read-only", "code", "design", "browser", "custom"],
+                          "type": "string"
+                        },
+                        "skills": {
+                          "items": { "maxLength": 100, "type": "string" },
+                          "maxItems": 50,
+                          "type": "array"
+                        }
+                      },
+                      "required": ["preset"],
+                      "type": "object"
                     }
                   },
                   "required": ["id", "name", "role", "instructions", "selection", "candidates"],
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "appearance": {
+                "additionalProperties": false,
+                "properties": {
+                  "color": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+                  "icon": { "type": "string" }
+                },
+                "type": "object"
               },
               "id": { "type": "string" },
               "name": { "type": "string" },
@@ -20961,11 +22642,13 @@
               "configuration": {
                 "additionalProperties": false,
                 "properties": {
+                  "allowAllApps": { "type": "boolean" },
                   "allowPhysicalInput": { "type": "boolean" },
                   "allowedApps": { "items": { "type": "string" }, "maxItems": 50, "type": "array" },
                   "binaryPath": { "type": "string" },
                   "binarySha256": { "type": "string" },
-                  "enabled": { "type": "boolean" }
+                  "enabled": { "type": "boolean" },
+                  "permissionMode": { "enum": ["ask", "auto", "full"], "type": "string" }
                 },
                 "required": [
                   "enabled",
@@ -20986,6 +22669,8 @@
             "additionalProperties": false,
             "properties": {
               "app": { "type": "string" },
+              "cursor": { "type": "string" },
+              "maxChars": { "maximum": 40000, "minimum": 1000, "type": "integer" },
               "op": { "const": "snapshot", "type": "string" },
               "windowId": { "type": "string" }
             },
@@ -21083,16 +22768,23 @@
                   "focus",
                   "double-click",
                   "right-click",
-                  "press"
+                  "press",
+                  "scroll",
+                  "hover",
+                  "drag",
+                  "focus-window"
                 ],
                 "type": "string"
               },
+              "amount": { "maximum": 50, "minimum": 1, "type": "integer" },
+              "direction": { "enum": ["up", "down", "left", "right"], "type": "string" },
               "headed": { "type": "boolean" },
               "op": { "const": "act", "type": "string" },
               "ref": { "type": "string" },
               "requestId": { "type": "string" },
               "snapshotId": { "type": "string" },
-              "text": { "type": "string" }
+              "text": { "type": "string" },
+              "toRef": { "type": "string" }
             },
             "required": ["op", "requestId", "snapshotId", "ref", "action"],
             "type": "object"
@@ -21126,11 +22818,13 @@
           "configuration": {
             "additionalProperties": false,
             "properties": {
+              "allowAllApps": { "type": "boolean" },
               "allowPhysicalInput": { "type": "boolean" },
               "allowedApps": { "items": { "type": "string" }, "maxItems": 50, "type": "array" },
               "binaryPath": { "type": "string" },
               "binarySha256": { "type": "string" },
               "enabled": { "type": "boolean" },
+              "permissionMode": { "enum": ["ask", "auto", "full"], "type": "string" },
               "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
             "required": [
@@ -21139,11 +22833,37 @@
               "binarySha256",
               "allowedApps",
               "allowPhysicalInput",
+              "permissionMode",
+              "allowAllApps",
               "version"
             ],
             "type": "object"
           },
           "dataJson": { "type": "string" },
+          "next": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "app": { "type": "string" },
+                  "complete": { "type": "boolean" },
+                  "nextCursor": { "type": ["string", "null"] },
+                  "snapshotId": { "type": "string" },
+                  "totalChars": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "treeJson": { "type": "string" },
+                  "windowId": { "type": "string" }
+                },
+                "required": ["snapshotId", "app", "windowId", "complete", "treeJson"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": { "error": { "maxLength": 300, "type": "string" } },
+                "required": ["error"],
+                "type": "object"
+              }
+            ]
+          },
           "ok": { "type": "boolean" },
           "operation": {
             "additionalProperties": false,
@@ -21167,6 +22887,7 @@
             "required": ["requestId", "state", "ok", "delivery", "retry"],
             "type": "object"
           },
+          "refsExpired": { "type": "boolean" },
           "screenshot": {
             "additionalProperties": false,
             "properties": {
@@ -21185,7 +22906,9 @@
             "properties": {
               "app": { "type": "string" },
               "complete": { "type": "boolean" },
+              "nextCursor": { "type": ["string", "null"] },
               "snapshotId": { "type": "string" },
+              "totalChars": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
               "treeJson": { "type": "string" },
               "windowId": { "type": "string" }
             },
@@ -50640,7 +52363,10 @@
                       "additionalProperties": false,
                       "properties": {
                         "features": {
-                          "items": { "enum": ["jobHolds", "jobStalled"], "type": "string" },
+                          "items": {
+                            "enum": ["jobHolds", "jobStalled", "reminders", "onceSchedule"],
+                            "type": "string"
+                          },
                           "maxItems": 8,
                           "type": "array"
                         },
@@ -50741,6 +52467,64 @@
                         }
                       },
                       "required": ["op", "expectedVersion", "rows"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": { "op": { "const": "folders.get", "type": "string" } },
+                      "required": ["op"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "expectedVersion": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "op": { "const": "folders.set", "type": "string" },
+                        "paths": { "items": { "type": "string" }, "maxItems": 20, "type": "array" },
+                        "runWithoutAsking": { "type": "boolean" }
+                      },
+                      "required": ["op", "expectedVersion", "paths", "runWithoutAsking"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": { "op": { "const": "alwaysOn.get", "type": "string" } },
+                      "required": ["op"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                        "op": { "const": "reminders.create", "type": "string" },
+                        "requestId": { "type": "string" },
+                        "text": { "type": "string" }
+                      },
+                      "required": ["op", "text", "at", "requestId"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": { "op": { "const": "reminders.list", "type": "string" } },
+                      "required": ["op"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "expectedVersion": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "id": { "type": "string" },
+                        "op": { "const": "reminders.cancel", "type": "string" }
+                      },
+                      "required": ["op", "id", "expectedVersion"],
                       "type": "object"
                     },
                     {
@@ -51358,6 +53142,7 @@
                     {
                       "additionalProperties": false,
                       "properties": {
+                        "after": { "type": "string" },
                         "idempotencyKey": { "type": "string" },
                         "kind": { "const": "project", "type": "string" },
                         "op": { "const": "jobs.create", "type": "string" },
@@ -51817,12 +53602,17 @@
                             "name": { "type": "string" },
                             "projectId": { "type": "string" },
                             "prompt": { "type": "string" },
+                            "runAt": {
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "type": "integer"
+                            },
                             "runtimeMode": {
                               "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
                               "type": "string"
                             },
                             "scheduleKind": {
-                              "enum": ["hourly", "daily", "weekdays", "weekly"],
+                              "enum": ["hourly", "daily", "weekdays", "weekly", "once"],
                               "type": "string"
                             },
                             "time": { "type": "string" }
@@ -51884,6 +53674,7 @@
                     "configuration": {
                       "additionalProperties": false,
                       "properties": {
+                        "allowAllApps": { "type": "boolean" },
                         "allowPhysicalInput": { "type": "boolean" },
                         "allowedApps": {
                           "items": { "type": "string" },
@@ -51892,7 +53683,8 @@
                         },
                         "binaryPath": { "type": "string" },
                         "binarySha256": { "type": "string" },
-                        "enabled": { "type": "boolean" }
+                        "enabled": { "type": "boolean" },
+                        "permissionMode": { "enum": ["ask", "auto", "full"], "type": "string" }
                       },
                       "required": [
                         "enabled",
@@ -51917,6 +53709,8 @@
                   "additionalProperties": false,
                   "properties": {
                     "app": { "type": "string" },
+                    "cursor": { "type": "string" },
+                    "maxChars": { "maximum": 40000, "minimum": 1000, "type": "integer" },
                     "op": { "const": "snapshot", "type": "string" },
                     "windowId": { "type": "string" }
                   },
@@ -52014,16 +53808,23 @@
                         "focus",
                         "double-click",
                         "right-click",
-                        "press"
+                        "press",
+                        "scroll",
+                        "hover",
+                        "drag",
+                        "focus-window"
                       ],
                       "type": "string"
                     },
+                    "amount": { "maximum": 50, "minimum": 1, "type": "integer" },
+                    "direction": { "enum": ["up", "down", "left", "right"], "type": "string" },
                     "headed": { "type": "boolean" },
                     "op": { "const": "act", "type": "string" },
                     "ref": { "type": "string" },
                     "requestId": { "type": "string" },
                     "snapshotId": { "type": "string" },
-                    "text": { "type": "string" }
+                    "text": { "type": "string" },
+                    "toRef": { "type": "string" }
                   },
                   "required": ["op", "requestId", "snapshotId", "ref", "action"],
                   "type": "object"
@@ -52952,6 +54753,172 @@
               "required": ["today", "timeZone"],
               "type": "object"
             }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "approvals.mirror", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "remove": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "approved": { "type": "boolean" },
+                      "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+                      "outcome": { "enum": ["answered", "ended"], "type": "string" }
+                    },
+                    "required": ["id", "outcome"],
+                    "type": "object"
+                  },
+                  "maxItems": 24,
+                  "type": "array"
+                },
+                "upsert": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cancelLabel": { "maxLength": 200, "type": "string" },
+                      "confirmLabel": { "maxLength": 200, "type": "string" },
+                      "deadline": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                      "details": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "action": {
+                            "enum": ["comment", "review", "pr-action"],
+                            "type": "string"
+                          },
+                          "body": { "maxLength": 65536, "type": "string" },
+                          "headSha": { "maxLength": 65536, "type": "string" },
+                          "prAction": { "maxLength": 65536, "type": "string" },
+                          "project": { "maxLength": 65536, "type": "string" },
+                          "provider": { "maxLength": 65536, "type": "string" },
+                          "replyTo": { "maxLength": 65536, "type": "string" },
+                          "review": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "body": { "maxLength": 65536, "type": "string" },
+                              "comments": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "body": { "maxLength": 65536, "type": "string" },
+                                    "line": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": -9007199254740991,
+                                      "type": "integer"
+                                    },
+                                    "path": { "maxLength": 65536, "type": "string" },
+                                    "side": { "maxLength": 65536, "type": "string" },
+                                    "startLine": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": -9007199254740991,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": ["path", "line", "side", "body"],
+                                  "type": "object"
+                                },
+                                "maxItems": 500,
+                                "type": "array"
+                              },
+                              "commitId": { "maxLength": 65536, "type": "string" },
+                              "event": { "maxLength": 65536, "type": "string" }
+                            },
+                            "required": ["event", "commitId", "body", "comments"],
+                            "type": "object"
+                          },
+                          "target": { "maxLength": 65536, "type": "string" },
+                          "thread": { "maxLength": 65536, "type": "string" }
+                        },
+                        "required": ["action", "project", "provider", "target"],
+                        "type": "object"
+                      },
+                      "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+                      "message": { "maxLength": 20000, "type": "string" },
+                      "remote": { "type": "boolean" },
+                      "signature": { "maxLength": 64, "minLength": 64, "type": "string" },
+                      "title": { "maxLength": 200, "type": "string" }
+                    },
+                    "required": [
+                      "id",
+                      "title",
+                      "message",
+                      "confirmLabel",
+                      "cancelLabel",
+                      "deadline",
+                      "remote",
+                      "signature"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 24,
+                  "type": "array"
+                }
+              },
+              "required": ["upsert", "remove"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "approvals.list", "type": "string" },
+            "params": { "additionalProperties": false, "properties": {}, "type": "object" }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "approvals.decide", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "approved": { "type": "boolean" },
+                "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "signature": { "maxLength": 64, "minLength": 64, "type": "string" }
+              },
+              "required": ["id", "signature", "approved"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "approvals.decisions", "type": "string" },
+            "params": { "additionalProperties": false, "properties": {}, "type": "object" }
           },
           "required": ["jsonrpc", "id", "method", "params"],
           "type": "object"
@@ -56410,6 +58377,55 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "crews.active.list", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": { "limit": { "maximum": 200, "minimum": 1, "type": "integer" } },
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "crews.member.ask", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "files": {
+                  "items": { "maxLength": 500, "minLength": 1, "type": "string" },
+                  "maxItems": 100,
+                  "type": "array"
+                },
+                "handle": { "maxLength": 64, "minLength": 1, "type": "string" },
+                "memberId": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "parentSessionId": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "projectId": { "type": "string" },
+                "prompt": { "maxLength": 20000, "minLength": 1, "type": "string" },
+                "requestId": { "maxLength": 200, "minLength": 1, "type": "string" }
+              },
+              "required": ["projectId", "requestId", "prompt"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "crews.list", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -56488,6 +58504,45 @@
                           "items": {
                             "additionalProperties": false,
                             "properties": {
+                              "avatar": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "accessory": {
+                                    "enum": [
+                                      "none",
+                                      "tespih",
+                                      "magnifier",
+                                      "brush",
+                                      "notebook",
+                                      "key",
+                                      "wrench",
+                                      "pen"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "face": {
+                                    "enum": [
+                                      "walrus",
+                                      "bushy",
+                                      "short-beard",
+                                      "white-beard",
+                                      "shaven"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "glasses": { "type": "boolean" },
+                                  "headwear": {
+                                    "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                                    "type": "string"
+                                  },
+                                  "outfit": {
+                                    "enum": ["cardigan", "vest", "jacket"],
+                                    "type": "string"
+                                  },
+                                  "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                                },
+                                "type": "object"
+                              },
                               "candidates": {
                                 "items": {
                                   "additionalProperties": false,
@@ -56663,7 +58718,9 @@
                                 },
                                 "type": "array"
                               },
+                              "customized": { "const": true, "type": "boolean" },
                               "groups": { "items": { "type": "string" }, "type": "array" },
+                              "handle": { "type": "string" },
                               "id": { "type": "string" },
                               "instructions": { "type": "string" },
                               "name": { "type": "string" },
@@ -56680,6 +58737,32 @@
                                 },
                                 "required": ["id", "updatedAt"],
                                 "type": "object"
+                              },
+                              "tools": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "conversationTools": {
+                                    "items": { "maxLength": 100, "type": "string" },
+                                    "maxItems": 120,
+                                    "type": "array"
+                                  },
+                                  "mcpServers": {
+                                    "items": { "maxLength": 100, "type": "string" },
+                                    "maxItems": 50,
+                                    "type": "array"
+                                  },
+                                  "preset": {
+                                    "enum": ["read-only", "code", "design", "browser", "custom"],
+                                    "type": "string"
+                                  },
+                                  "skills": {
+                                    "items": { "maxLength": 100, "type": "string" },
+                                    "maxItems": 50,
+                                    "type": "array"
+                                  }
+                                },
+                                "required": ["preset"],
+                                "type": "object"
                               }
                             },
                             "required": [
@@ -56693,6 +58776,18 @@
                             "type": "object"
                           },
                           "type": "array"
+                        },
+                        "appearance": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "color": {
+                              "maximum": 9007199254740991,
+                              "minimum": 1,
+                              "type": "integer"
+                            },
+                            "icon": { "type": "string" }
+                          },
+                          "type": "object"
                         },
                         "id": { "type": "string" },
                         "name": { "type": "string" },
@@ -56751,6 +58846,45 @@
                           "items": {
                             "additionalProperties": false,
                             "properties": {
+                              "avatar": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "accessory": {
+                                    "enum": [
+                                      "none",
+                                      "tespih",
+                                      "magnifier",
+                                      "brush",
+                                      "notebook",
+                                      "key",
+                                      "wrench",
+                                      "pen"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "face": {
+                                    "enum": [
+                                      "walrus",
+                                      "bushy",
+                                      "short-beard",
+                                      "white-beard",
+                                      "shaven"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "glasses": { "type": "boolean" },
+                                  "headwear": {
+                                    "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                                    "type": "string"
+                                  },
+                                  "outfit": {
+                                    "enum": ["cardigan", "vest", "jacket"],
+                                    "type": "string"
+                                  },
+                                  "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                                },
+                                "type": "object"
+                              },
                               "candidates": {
                                 "items": {
                                   "additionalProperties": false,
@@ -56926,7 +59060,9 @@
                                 },
                                 "type": "array"
                               },
+                              "customized": { "const": true, "type": "boolean" },
                               "groups": { "items": { "type": "string" }, "type": "array" },
+                              "handle": { "type": "string" },
                               "id": { "type": "string" },
                               "instructions": { "type": "string" },
                               "name": { "type": "string" },
@@ -56943,6 +59079,32 @@
                                 },
                                 "required": ["id", "updatedAt"],
                                 "type": "object"
+                              },
+                              "tools": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "conversationTools": {
+                                    "items": { "maxLength": 100, "type": "string" },
+                                    "maxItems": 120,
+                                    "type": "array"
+                                  },
+                                  "mcpServers": {
+                                    "items": { "maxLength": 100, "type": "string" },
+                                    "maxItems": 50,
+                                    "type": "array"
+                                  },
+                                  "preset": {
+                                    "enum": ["read-only", "code", "design", "browser", "custom"],
+                                    "type": "string"
+                                  },
+                                  "skills": {
+                                    "items": { "maxLength": 100, "type": "string" },
+                                    "maxItems": 50,
+                                    "type": "array"
+                                  }
+                                },
+                                "required": ["preset"],
+                                "type": "object"
                               }
                             },
                             "required": [
@@ -56956,6 +59118,18 @@
                             "type": "object"
                           },
                           "type": "array"
+                        },
+                        "appearance": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "color": {
+                              "maximum": 9007199254740991,
+                              "minimum": 1,
+                              "type": "integer"
+                            },
+                            "icon": { "type": "string" }
+                          },
+                          "type": "object"
                         },
                         "id": { "type": "string" },
                         "name": { "type": "string" },
@@ -57073,6 +59247,36 @@
                     "agent": {
                       "additionalProperties": false,
                       "properties": {
+                        "avatar": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "accessory": {
+                              "enum": [
+                                "none",
+                                "tespih",
+                                "magnifier",
+                                "brush",
+                                "notebook",
+                                "key",
+                                "wrench",
+                                "pen"
+                              ],
+                              "type": "string"
+                            },
+                            "face": {
+                              "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                              "type": "string"
+                            },
+                            "glasses": { "type": "boolean" },
+                            "headwear": {
+                              "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                              "type": "string"
+                            },
+                            "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                            "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                          },
+                          "type": "object"
+                        },
                         "candidates": {
                           "items": {
                             "additionalProperties": false,
@@ -57242,7 +59446,9 @@
                           },
                           "type": "array"
                         },
+                        "customized": { "const": true, "type": "boolean" },
                         "groups": { "items": { "type": "string" }, "type": "array" },
+                        "handle": { "type": "string" },
                         "id": { "type": "string" },
                         "instructions": { "type": "string" },
                         "name": { "type": "string" },
@@ -57259,6 +59465,32 @@
                             "updatedAt": { "type": "number" }
                           },
                           "required": ["id", "updatedAt"],
+                          "type": "object"
+                        },
+                        "tools": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "conversationTools": {
+                              "items": { "maxLength": 100, "type": "string" },
+                              "maxItems": 120,
+                              "type": "array"
+                            },
+                            "mcpServers": {
+                              "items": { "maxLength": 100, "type": "string" },
+                              "maxItems": 50,
+                              "type": "array"
+                            },
+                            "preset": {
+                              "enum": ["read-only", "code", "design", "browser", "custom"],
+                              "type": "string"
+                            },
+                            "skills": {
+                              "items": { "maxLength": 100, "type": "string" },
+                              "maxItems": 50,
+                              "type": "array"
+                            }
+                          },
+                          "required": ["preset"],
                           "type": "object"
                         },
                         "updatedAt": { "type": "number" }
@@ -57279,6 +59511,36 @@
                     "agent": {
                       "additionalProperties": false,
                       "properties": {
+                        "avatar": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "accessory": {
+                              "enum": [
+                                "none",
+                                "tespih",
+                                "magnifier",
+                                "brush",
+                                "notebook",
+                                "key",
+                                "wrench",
+                                "pen"
+                              ],
+                              "type": "string"
+                            },
+                            "face": {
+                              "enum": ["walrus", "bushy", "short-beard", "white-beard", "shaven"],
+                              "type": "string"
+                            },
+                            "glasses": { "type": "boolean" },
+                            "headwear": {
+                              "enum": ["flat-cap", "takke", "beret", "bald", "grey-hair"],
+                              "type": "string"
+                            },
+                            "outfit": { "enum": ["cardigan", "vest", "jacket"], "type": "string" },
+                            "palette": { "maximum": 5, "minimum": 0, "type": "integer" }
+                          },
+                          "type": "object"
+                        },
                         "candidates": {
                           "items": {
                             "additionalProperties": false,
@@ -57448,7 +59710,9 @@
                           },
                           "type": "array"
                         },
+                        "customized": { "const": true, "type": "boolean" },
                         "groups": { "items": { "type": "string" }, "type": "array" },
+                        "handle": { "type": "string" },
                         "id": { "type": "string" },
                         "instructions": { "type": "string" },
                         "name": { "type": "string" },
@@ -57465,6 +59729,32 @@
                             "updatedAt": { "type": "number" }
                           },
                           "required": ["id", "updatedAt"],
+                          "type": "object"
+                        },
+                        "tools": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "conversationTools": {
+                              "items": { "maxLength": 100, "type": "string" },
+                              "maxItems": 120,
+                              "type": "array"
+                            },
+                            "mcpServers": {
+                              "items": { "maxLength": 100, "type": "string" },
+                              "maxItems": 50,
+                              "type": "array"
+                            },
+                            "preset": {
+                              "enum": ["read-only", "code", "design", "browser", "custom"],
+                              "type": "string"
+                            },
+                            "skills": {
+                              "items": { "maxLength": 100, "type": "string" },
+                              "maxItems": 50,
+                              "type": "array"
+                            }
+                          },
+                          "required": ["preset"],
                           "type": "object"
                         },
                         "updatedAt": { "type": "number" }
@@ -67268,5 +69558,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "996d26431bbd262b92d919d695733c380c68c9f135f903133da362b1947cd68d"
+  "schemaHash": "110cb635a9fa026a1763575d23c1c7324c64f2e3a50fce3a32721a8f25be29a3"
 }

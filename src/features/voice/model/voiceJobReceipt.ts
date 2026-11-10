@@ -7,7 +7,8 @@ export type VoiceJobHold =
   | "noExecution"
   | "disabled"
   | "limits"
-  | "noModel";
+  | "noModel"
+  | "dependency";
 type ReceiptJob = { id: string; title: string; status: string };
 
 const NEXT: Record<VoiceJobHold, string> = {
@@ -26,6 +27,8 @@ const NEXT: Record<VoiceJobHold, string> = {
     "Jobs wait because every model in the pool is at its limit; they start after the limit resets.",
   noModel:
     "Jobs wait because no model in the pool can run them; the owner can add one in Room settings.",
+  dependency:
+    "A job waits for the job it was told to follow; it starts when that job is done, and stays queued if that job failed or was cancelled.",
 };
 
 /** Tool result for accepted jobs: states which started and why the others wait. */

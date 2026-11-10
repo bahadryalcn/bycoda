@@ -30,6 +30,14 @@ vi.mock("../../../integrations/harness", () => ({
 vi.mock("../../../features/orchestration/model/orchestration", () => ({
   orchestrator: { forSession: () => undefined },
 }));
+const lock = vi.hoisted(() => ({ locked: new Set<string>() }));
+vi.mock("../../../features/group-lock/model/groupLock", () => ({
+  getGroupLockView: () => ({ lock: { locked: lock.locked } }),
+}));
+vi.mock("../../../features/group-lock/model/lockState", () => ({
+  isProjectLockedIn: (snapshot: { locked: Set<string> }, path: string) => snapshot.locked.has(path),
+}));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ message: vi.fn(async () => {}) }));
 const cleanups: (() => void | Promise<void>)[] = [];
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -57,7 +65,7 @@ function request(id = 71) {
 async function mount(
   value: Session,
   open: Partial<
-    Pick<Parameters<typeof useApprovalActions>[0], "focusOpenSession" | "onSelectHistorySession">
+    Omit<Parameters<typeof useApprovalActions>[0], "sessionsRef" | "setInspectedWorkerId">
   > = {},
 ) {
   const sessionsRef = { current: [value] };
@@ -113,6 +121,53 @@ it("reports whether a request's conversation opened instead of assuming it did",
   logged.mockRestore();
   const open = await mount(request());
   expect(await open.actions.onOpenApprovalSession("already-open")).toBe(true);
+});
+
+it("refuses a session in a locked project group without opening it", async () => {
+  const select = vi.fn(async (): Promise<unknown> => true);
+  const focus = vi.fn(() => true);
+  const stored = newSession("codex", "G:/locked");
+  lock.locked = new Set(["G:/locked"]);
+  const fixture = await mount(request(), {
+    focusOpenSession: focus,
+    onSelectHistorySession: select,
+    ensureOpenSession: async () => stored,
+  });
+  expect(await fixture.actions.onOpenApprovalSession(stored.id)).toBe(false);
+  expect(focus).not.toHaveBeenCalled();
+  expect(select).not.toHaveBeenCalled();
+  lock.locked = new Set();
+  focus.mockReturnValue(false);
+  expect(await fixture.actions.onOpenApprovalSession(stored.id)).toBe(true);
+  expect(select).toHaveBeenCalledWith(stored.id);
+});
+
+it("routes an unloaded remote session through the remote opener", async () => {
+  const select = vi.fn(async (): Promise<unknown> => true);
+  const remote = vi.fn();
+  const dismiss = vi.fn();
+  const fixture = await mount(request(), {
+    focusOpenSession: () => false,
+    onSelectHistorySession: select,
+    unopenedRemoteRef: { current: [{ project: "ssh:/repo", session: { id: "remote-1" } }] },
+    dismissRemoteFinished: dismiss,
+    onSelectRemoteSession: remote,
+  });
+  expect(await fixture.actions.onOpenApprovalSession("remote-1")).toBe(true);
+  expect(remote).toHaveBeenCalledWith("ssh:/repo", "remote-1");
+  expect(dismiss).toHaveBeenCalledWith("remote-1");
+  expect(select).not.toHaveBeenCalled();
+});
+
+it("does not open a conversation that no longer exists", async () => {
+  const select = vi.fn(async (): Promise<unknown> => true);
+  const fixture = await mount(request(), {
+    focusOpenSession: () => false,
+    onSelectHistorySession: select,
+    ensureOpenSession: async () => null,
+  });
+  expect(await fixture.actions.onOpenApprovalSession("deleted")).toBe(false);
+  expect(select).not.toHaveBeenCalled();
 });
 
 it("does not answer a question after the original turn guard changes", async () => {

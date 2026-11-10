@@ -1,3 +1,4 @@
+import { hostPushesEvent } from "../../../shared/lib/hostPushEvents";
 import type { ServerReportEvent } from "./serverPort";
 import type { ServerSync } from "./serverSync";
 
@@ -42,7 +43,7 @@ export function reportAgentEvent(
   occurredAt: number = Date.now(),
 ): void {
   const sync = active;
-  if (!sync) return;
+  if (!sync || hostPushesEvent(kind)) return;
   reportDedupeKey([kind, ...identity])
     .then((key) => sync.report(EVENT_OF[kind], key, occurredAt))
     .catch(() => undefined); // -- the phone copy is best effort; the desktop already notified.

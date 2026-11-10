@@ -12,14 +12,19 @@ export type PushRegistration = {
   pushToken: string;
   platform: PushPlatform;
   title: string;
-  texts: Record<PushEventKind, string>;
-  events: Record<PushEventKind, boolean>;
+  texts: Record<PushEventKind, string> & { assistant: string; approvals: string };
+  /** `assistant` covers Host-queued Assistant notifications, `approvals` owner approvals a phone may answer; phones that predate either get it on. */
+  events: Record<PushEventKind, boolean> & { assistant: boolean; approvals: boolean };
+  /** Urgent Assistant notifications may ring during quiet hours; phones that predate it get true. */
+  assistantUrgentDuringQuiet: boolean;
 };
 
 export type PushRecipient = PushRegistration & { deviceHash: string };
 
 const TOKEN = /^Expo(nent)?PushToken\[[A-Za-z0-9_-]{8,256}\]$/;
 const TEXT_MAX = 120;
+export const ASSISTANT_PUSH_TEXT = "Your assistant has an update";
+export const APPROVAL_PUSH_TEXT = "Your assistant needs your approval";
 
 export function pushText(value: unknown, field: string): string {
   if (typeof value !== "string") throw new Error(`Invalid push ${field}`);
@@ -46,12 +51,23 @@ export function parsePushRegistration(input: unknown): PushRegistration {
     pushToken: value.pushToken,
     platform: value.platform,
     title: pushText(value.title, "title"),
-    texts: Object.fromEntries(
-      PUSH_EVENT_KINDS.map((kind) => [kind, pushText(texts[kind], "text")]),
-    ) as Record<PushEventKind, string>,
-    events: Object.fromEntries(
-      PUSH_EVENT_KINDS.map((kind) => [kind, events[kind] === true]),
-    ) as Record<PushEventKind, boolean>,
+    texts: {
+      ...(Object.fromEntries(
+        PUSH_EVENT_KINDS.map((kind) => [kind, pushText(texts[kind], "text")]),
+      ) as Record<PushEventKind, string>),
+      assistant:
+        texts.assistant === undefined ? ASSISTANT_PUSH_TEXT : pushText(texts.assistant, "text"),
+      approvals:
+        texts.approvals === undefined ? APPROVAL_PUSH_TEXT : pushText(texts.approvals, "text"),
+    },
+    events: {
+      ...(Object.fromEntries(
+        PUSH_EVENT_KINDS.map((kind) => [kind, events[kind] === true]),
+      ) as Record<PushEventKind, boolean>),
+      assistant: events.assistant !== false,
+      approvals: events.approvals !== false,
+    },
+    assistantUrgentDuringQuiet: value.assistantUrgentDuringQuiet !== false,
   };
 }
 

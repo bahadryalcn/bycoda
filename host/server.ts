@@ -263,6 +263,7 @@ export async function createHostServer(
       voiceSetup: () => voiceRuntime.voiceSetup,
       pushDevices: () => pushRuntime.pushDevices,
       pushNotifications: () => pushRuntime.pushNotifications,
+      approvals: () => pushRuntime.approvals,
       decisionModels: () => decisionRuntime.decisionModels,
       accountPlatform: () => accountPlatformRuntime,
       catalogs: () => projectsRuntime.catalogs,

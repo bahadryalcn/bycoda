@@ -6,7 +6,7 @@ import { SocialPlatformError } from "../../src/integrations/social/adapter";
 import { createSocialAdapters } from "../../src/integrations/social/platformAdapters";
 import { ConversationDesktopControlTools } from "../conversation/conversation-desktop-control-tools";
 import { ConversationDesktopRelay } from "../conversation/conversation-tools";
-import { readDesktopPresence } from "../desktop/desktop-presence";
+import { readDesktopPresenceWithVoice } from "../desktop/desktop-voice-activity";
 import { desktopReviewSecret } from "../desktop/reviewed-desktop-scope";
 import { RuntimeLogAccess } from "../execution/runtime-log-tools";
 import { resolveHostWorktreeAsync } from "../git/git-worktrees";
@@ -150,7 +150,7 @@ export async function createSocialRuntime(
     settings: (accountId) => readBrowserSettings(social.audience, accountId),
     presence: async (computerId) =>
       computerId === dependencies.engine.store.environmentId
-        ? await readDesktopPresence()
+        ? await readDesktopPresenceWithVoice()
         : undefined,
     // shortcut: no owner-active computer signal is wired yet; the desktop layer has no adapter, so it cannot run.
     ownerActiveComputerId: async () => undefined,
@@ -186,7 +186,7 @@ export async function createSocialRuntime(
     environmentId: dependencies.engine.store.environmentId,
     desktop: dependencies.desktopControl,
     presence: async () => {
-      const native = await readDesktopPresence();
+      const native = await readDesktopPresenceWithVoice();
       const manual = await dependencies.assistant.ownerPresence();
       if (manual.state === "dnd")
         throw new Error("Desktop input is deferred while Do not disturb is active.");
@@ -196,7 +196,7 @@ export async function createSocialRuntime(
         ownerPresent:
           native.idleMs === undefined
             ? undefined
-            : manual.state === "away" || native.idleMs >= 10 * 60000
+            : manual.state === "away" || native.locked || native.idleMs >= 10 * 60000
               ? false
               : true,
       };

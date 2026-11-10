@@ -2,6 +2,7 @@
 import { rememberRemoteSession } from "../../connections/model/connections";
 import { describe, expect, it } from "vitest";
 import {
+  CREW_MEMBER_KEY,
   DELEGATION_PARENT_KEY,
   type DelegationParent,
 } from "../../../shared/model/host-contracts/delegation";
@@ -10,6 +11,7 @@ import {
   delegatedBlockId,
   delegatedChildren,
   delegatedDockAgents,
+  crewMemberOf,
   delegationParentOf,
 } from "./delegatedAgents";
 import { deriveActivityDock } from "./activityDock";
@@ -305,4 +307,37 @@ it("groups verified remote children under their mapped parent shell", () => {
     rememberRemoteSession(parent.id);
     rememberRemoteSession(run.id);
   }
+});
+
+describe("crew member children", () => {
+  const member = { id: "m1", name: "Ada Reviewer", handle: "ada", sourceId: "src-1" };
+  const asMember = (id: string) =>
+    finished(id, [], {
+      title: "Review the parser",
+      modelSettings: {
+        [DELEGATION_PARENT_KEY]: parentLink(),
+        [CREW_MEMBER_KEY]: JSON.stringify(member),
+      },
+    });
+
+  it("decodes the member identity and ignores a malformed value", () => {
+    expect(crewMemberOf(asMember("c1"))).toMatchObject(member);
+    expect(crewMemberOf(child("c2"))).toBeUndefined();
+    expect(
+      crewMemberOf(child("c3", { modelSettings: { [CREW_MEMBER_KEY]: "{oops" } })),
+    ).toBeUndefined();
+  });
+
+  it("names the card and dock row for the member, with the handle as agent type", () => {
+    const block = delegatedAgentBlock(asMember("c1"));
+    expect(block.agentRun).toMatchObject({ name: "Ada Reviewer", agentType: "@ada" });
+    expect(block.tool?.kind).toBe("subagent");
+    const [row] = delegatedDockAgents([asMember("c1")], undefined);
+    expect(row).toMatchObject({ name: "Ada Reviewer", crewMember: member, kind: "agent" });
+  });
+
+  it("leaves ordinary delegated children unchanged", () => {
+    const [row] = delegatedDockAgents([finished("c4", [])], undefined);
+    expect(row.crewMember).toBeUndefined();
+  });
 });

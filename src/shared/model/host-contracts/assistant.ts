@@ -8,17 +8,17 @@ import {
 } from "./assistant-attention";
 import { AssistantProfilePatchSchema, type AssistantProfilePatch } from "./assistant-profile";
 import { AssistantModelPoolOps, AssistantModelPoolResponseSchema } from "../assistantModelPool";
+import { AssistantAlwaysOnSchema, AssistantRoomSettingsOps } from "../assistantAlwaysOn";
+import { AssistantFoldersResponseSchema } from "../assistantFolders";
+import { AssistantReminderOps, AssistantRemindersResponseSchema } from "../assistantReminders";
+import { quickAutomationActionSchema } from "./assistant-quick-automation";
 export {
   AssistantExecutionSchema,
   AssistantProfilePatchSchema,
   type AssistantExecution,
   type AssistantProfilePatch,
 } from "./assistant-profile";
-import {
-  SessionProviderSchema,
-  SessionRuntimeModeSchema,
-  ModelSettingsSchema,
-} from "./session-commands";
+import { ModelSettingsSchema } from "./session-commands";
 import type {
   ManualSupervisionPolicy,
   ManualSupervisionGrant,
@@ -355,24 +355,6 @@ const quickNoteActionSchema = z.strictObject({
   title: text(400),
   body: z.string().max(100000),
 });
-const quickAutomationActionSchema = z.strictObject({
-  kind: z.literal("automation"),
-  projectId: id,
-  name: text(200).refine((value) => !!value.trim()),
-  prompt: text(16000).refine((value) => !!value.trim() && !value.includes("\0")),
-  harness: SessionProviderSchema,
-  model: text(200).refine((value) => !!value.trim()),
-  modelSettings: ModelSettingsSchema,
-  runtimeMode: SessionRuntimeModeSchema,
-  scheduleKind: z.enum(["hourly", "daily", "weekdays", "weekly"]),
-  minute: z.number().int().min(0).max(59),
-  time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-  dayOfWeek: z.number().int().min(0).max(6),
-  maxRunMinutes: z.number().int().min(0).max(10080),
-  maxRunsPerDay: z.number().int().min(0).max(1000),
-  isolate: z.boolean(),
-  enabled: z.boolean(),
-});
 const quickJobCreateSchema = z.strictObject({
   op: z.literal("jobs.create"),
   kind: z.literal("quick"),
@@ -397,6 +379,8 @@ export const AssistantRequestValidationSchema = z.union([
     z.strictObject({ op: z.literal("snapshot"), limit, features: AssistantSnapshotFeaturesSchema }),
     z.strictObject({ op: z.literal("profile.get") }),
     ...AssistantModelPoolOps,
+    ...AssistantRoomSettingsOps,
+    ...AssistantReminderOps,
     z.strictObject({ op: z.literal("narration.pending"), threadId: id, generation: id }),
     z.strictObject({ op: z.literal("narration.claim"), threadId: id, eventId: id, generation: id }),
     z.strictObject({
@@ -502,6 +486,7 @@ export const AssistantRequestValidationSchema = z.union([
       projectId: id,
       projectIds: z.array(id).min(1).max(20).optional(),
       idempotencyKey: id,
+      after: id.optional(),
     }),
     z
       .strictObject({
@@ -665,6 +650,9 @@ export type AssistantResponse = {
   };
   profile?: AssistantProfile;
   modelPool?: z.infer<typeof AssistantModelPoolResponseSchema>;
+  assistantFolders?: z.infer<typeof AssistantFoldersResponseSchema>;
+  alwaysOn?: z.infer<typeof AssistantAlwaysOnSchema>;
+  reminders?: z.infer<typeof AssistantRemindersResponseSchema>;
   memory?: AssistantMemory;
   entries?: AssistantMemory[];
   thread?: AssistantThread;
@@ -1015,6 +1003,9 @@ export const AssistantResponseValidationSchema = z.strictObject({
     .optional(),
   profile: profileSchema.optional(),
   modelPool: AssistantModelPoolResponseSchema.optional(),
+  assistantFolders: AssistantFoldersResponseSchema.optional(),
+  alwaysOn: AssistantAlwaysOnSchema.optional(),
+  reminders: AssistantRemindersResponseSchema.optional(),
   memory: memorySchema.optional(),
   entries: z.array(memorySchema).max(100).optional(),
   thread: threadSchema.optional(),

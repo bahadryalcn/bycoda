@@ -304,6 +304,20 @@ it("routes Room file reads to the captured project without creating a coding ses
       requestId: "thread-file",
     }),
   );
+  mock.call.mockClear();
+  await controller.execute("app_tool_call", {
+    family: "conversation",
+    action: "files.read",
+    input: { root: "folder-1", path: "notes.md" },
+    requestId: "folder-file",
+  });
+  expect(mock.call).toHaveBeenCalledWith(
+    expect.objectContaining({ cwd: "", threadId: "thread-a" }),
+    expect.objectContaining({
+      action: "files.read",
+      input: { root: "folder-1", path: "notes.md" },
+    }),
+  );
 });
 
 it("captures a stable target for context, draft and catalog while the active tab changes", async () => {

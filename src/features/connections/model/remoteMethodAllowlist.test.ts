@@ -97,6 +97,8 @@ describe("remote method allowlist", () => {
     const allowed = allowlist();
     const served = hostMethods();
     for (const action of [
+      "active.list",
+      "member.ask",
       "list",
       "save",
       "delete",

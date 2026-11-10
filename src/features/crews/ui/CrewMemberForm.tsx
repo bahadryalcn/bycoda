@@ -23,8 +23,13 @@ import {
   memberCandidatePool,
   memberModelSummary,
 } from "../model/crewRoster";
+import type { MemberAvatarTraits } from "../model/memberAvatarTraits";
+import { memberTraits } from "../model/memberAvatars";
 import { CrewRoleIcon } from "./CrewRoleIcon";
+import { MemberAppearancePicker } from "./MemberAppearancePicker";
+import { MemberHandleField } from "./MemberHandleField";
 import { MemberModelPicker } from "./MemberModelPicker";
+import { MemberToolsPicker } from "./MemberToolsPicker";
 
 export function roleLabel(role: CrewRole) {
   return role === "coordinator"
@@ -85,6 +90,10 @@ export function CrewMemberForm({
   agent,
   onChange,
   groups,
+  identity,
+  tools,
+  handleError,
+  traits,
   groupSuggestions = [],
   nameError,
   modelError,
@@ -99,6 +108,14 @@ export function CrewMemberForm({
   onChange: (patch: Partial<CrewAgent>) => void;
   /** Shown when the host keeps specialty groups. */
   groups?: boolean;
+  /** Shown when the host keeps member handles and avatar choices. */
+  identity?: boolean;
+  /** Shown when the host enforces member tool profiles. */
+  tools?: boolean;
+  /** A Host refusal about the handle, shown under its field. */
+  handleError?: string;
+  /** The look to preview when it depends on the roster (see `teamTraits`); defaults to the member alone. */
+  traits?: MemberAvatarTraits;
   groupSuggestions?: string[];
   nameError?: string;
   /** Shown under the model choice when no model is selected (save was attempted). */
@@ -177,6 +194,23 @@ export function CrewMemberForm({
           </p>
         </div>
       )}
+      {identity ? (
+        <>
+          <MemberHandleField
+            value={agent.handle}
+            hostError={handleError}
+            onChange={(handle) => onChange({ handle })}
+          />
+          <MemberAppearancePicker
+            traits={traits ?? memberTraits(agent)}
+            chosen={!!agent.avatar}
+            onChange={(avatar) => onChange({ avatar })}
+          />
+        </>
+      ) : null}
+      {tools ? (
+        <MemberToolsPicker value={agent.tools} onChange={(next) => onChange({ tools: next })} />
+      ) : null}
       <TextareaField
         label={t("Instructions")}
         placeholder={t("e.g. Build accessible screens and follow the design system.")}

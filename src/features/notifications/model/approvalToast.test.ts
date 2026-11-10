@@ -19,21 +19,30 @@ function block(role: Block["role"], approval?: Block["approval"]): Block {
 }
 
 describe("pendingApprovalForSession", () => {
-  it("never toasts a worker approval, which its lead answers instead", () => {
+  it("lists a worker approval in the request center, as its banner does", () => {
     const worker = {
       ...newSession(),
       id: "worker",
       orchestrationLeadId: "lead",
       blocks: [block("tool", { requestId: 42 })],
     };
-    const leadTab = newTab("lead");
-    const otherTab = newTab("unrelated");
-    const tabs = [leadTab, otherTab];
-    for (const active of [leadTab, otherTab])
-      expect(hiddenApprovalNotices([worker], active.id, tabs, true)).toEqual([]);
-    // The same approval on an ordinary session still reaches the user.
-    const solo = { ...worker, orchestrationLeadId: undefined };
-    expect(hiddenApprovalNotices([solo], otherTab.id, tabs, true)[0].sessionId).toBe("worker");
+    const tabs = [newTab("lead")];
+    expect(pendingApprovalNotices([worker]).map((n) => n.sessionId)).toEqual(["worker"]);
+    expect(hiddenApprovalNotices([worker], tabs[0].id, tabs, false)).toHaveLength(1);
+    // Inbox discussions stay out of the center.
+    expect(
+      pendingApprovalNotices([
+        {
+          ...worker,
+          inboxAsk: {
+            key: "i",
+            title: "Issue",
+            url: "https://example.com/i",
+            provider: "github" as const,
+          },
+        },
+      ]),
+    ).toEqual([]);
   });
   it("returns the latest undecided approval", () => {
     const session = newSession();
@@ -81,7 +90,7 @@ describe("isSessionConversationFocused", () => {
 });
 
 describe("hiddenApprovalNotices", () => {
-  it("keeps focused requests in the center but excludes lead-owned and inbox requests", () => {
+  it("keeps focused and worker requests in the center but excludes inbox requests", () => {
     const focused = newSession();
     focused.pendingQuestion = {
       requestId: 1,
@@ -102,6 +111,7 @@ describe("hiddenApprovalNotices", () => {
     inbox.pendingQuestion = focused.pendingQuestion;
     expect(pendingApprovalNotices([focused, worker, inbox]).map((item) => item.sessionId)).toEqual([
       focused.id,
+      worker.id,
     ]);
   });
   it("omits approvals that are already in the focused conversation", () => {

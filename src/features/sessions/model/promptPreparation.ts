@@ -7,13 +7,22 @@ import {
   type SkillCatalogContext,
 } from "../../skills/model/skills";
 import { nativeCommandPrompt } from "../../../integrations/harness/core/nativeCommands";
+import { delegateCrewMentions, type DelegationContext } from "./crewDelegation";
 import {
   extractChatCitations,
   projectChatCitationsForProvider,
   withChatCitations,
 } from "./chatCitation";
 
-export async function preparePrompt(text: string, context: SkillCatalogContext): Promise<string> {
+/**
+ * `delegation` is set by sends that may hand work to `@member` and `@crew` mentions; the
+ * message is delegated once its request key is known, so a repeated send repeats the same Host
+ * requests. Without it a mention stays plain text.
+ */
+export async function preparePrompt(
+  text: string,
+  context: SkillCatalogContext & { delegation?: Omit<DelegationContext, "cwd" | "sessionId"> },
+): Promise<string> {
   const cited = extractChatCitations(text);
   warmNativeSkills(context);
   if (!cited.citations.length && isNativeCommandPrompt(text, context.harness))
@@ -21,5 +30,14 @@ export async function preparePrompt(text: string, context: SkillCatalogContext):
   const withFiles = await applyFileMentionsToTurn(cited.text, context.cwd);
   const withNotes = await applyNotesToTurn(withFiles);
   const withSkills = await applySkillsToTurn(withNotes, context);
-  return projectChatCitationsForProvider(withChatCitations(withSkills, cited.citations));
+  const notes =
+    context.delegation && context.sessionId
+      ? await delegateCrewMentions(cited.text, {
+          ...context.delegation,
+          cwd: context.cwd,
+          sessionId: context.sessionId,
+        })
+      : [];
+  const delegated = notes.length ? [withSkills, "", "---", ...notes].join("\n") : withSkills;
+  return projectChatCitationsForProvider(withChatCitations(delegated, cited.citations));
 }

@@ -1,10 +1,14 @@
 import {
+  CREW_MEMBER_KEY,
   DELEGATION_PARENT_KEY,
+  decodeCrewMemberChild,
   decodeDelegationParent,
+  type CrewMemberChild,
   type DelegationParent,
 } from "../../../shared/model/host-contracts/delegation";
 import type { DockAgent, DockAgentStatus } from "./activityDock";
 import type { AgentStep, Block, Session } from "./session";
+import { delegatedBlockId } from "./delegatedBlockId";
 import { sessionIssue } from "./sessionIssue";
 import { sessionNeedsInput } from "./session";
 import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
@@ -31,6 +35,11 @@ export function delegationParentOf(
   session: Pick<Session, "modelSettings">,
 ): DelegationParent | undefined {
   return decodeDelegationParent(session.modelSettings?.[DELEGATION_PARENT_KEY]);
+}
+
+/** The Crew member a delegated child runs (`crews.member.ask`); display only. */
+export function crewMemberOf(session: Pick<Session, "modelSettings">): CrewMemberChild | undefined {
+  return decodeCrewMemberChild(session.modelSettings?.[CREW_MEMBER_KEY]);
 }
 
 /** Both sides must prove the same owner when a Host identity is involved. */
@@ -88,7 +97,7 @@ export function delegatedDockAgents(
   return children.map(delegatedDockAgent);
 }
 
-function delegatedStatus(child: Session): DockAgentStatus {
+export function delegatedStatus(child: Session): DockAgentStatus {
   if (child.busy || child.continuingElsewhere) return "running";
   if (sessionIssue(child) === "failed") return "failed";
   return isStopped(child) ? "stopped" : "done";
@@ -96,6 +105,7 @@ function delegatedStatus(child: Session): DockAgentStatus {
 
 function delegatedDockAgent(child: Session): DockAgent {
   const block = delegatedAgentBlock(child);
+  const member = crewMemberOf(child);
   const steps = block.agentRun?.steps ?? [];
   const status = delegatedStatus(child);
   const startedAt = block.agentRun?.startedAt;
@@ -107,6 +117,7 @@ function delegatedDockAgent(child: Session): DockAgent {
     providerAccountId: child.runningModelTarget?.providerAccountId ?? child.providerAccountId,
     ...(status === "running" && sessionNeedsInput(child) ? { needsInput: true } : {}),
     name: subagentName(block),
+    ...(member ? { crewMember: member } : {}),
     kind: "agent",
     status,
     model: subagentModelName(block),
@@ -117,9 +128,7 @@ function delegatedDockAgent(child: Session): DockAgent {
   };
 }
 
-export function delegatedBlockId(sessionId: string): string {
-  return `delegated:${sessionId}`;
-}
+export { delegatedBlockId };
 
 /**
  * A tool-shaped block for a child session, so the subagent sheet renders it
@@ -154,7 +163,10 @@ export function delegatedAgentBlock(child: Session): Block {
   // recover their task line from the brief instead of repeating the model.
   const named = child.title && !/^(?:Subagent|Advisor) · /.test(child.title) ? child.title : "";
   const task = first?.text.match(/\n(?:Task|Question):\n(.+)/)?.[1]?.trim();
-  const title = named || task || (parent?.kind === "advisor" ? "Advisor" : "Subagent");
+  const member = crewMemberOf(child);
+  // A member's run is named for the member; its @handle leads the state line.
+  const title =
+    member?.name || named || task || (parent?.kind === "advisor" ? "Advisor" : "Subagent");
   return {
     id: delegatedBlockId(child.id),
     role: "tool",
@@ -166,6 +178,7 @@ export function delegatedAgentBlock(child: Session): Block {
     },
     agentRun: {
       name: title,
+      ...(member?.handle ? { agentType: `@${member.handle}` } : {}),
       model: child.runningModelTarget?.model || child.model || parent?.model,
       ...(first?.text ? { prompt: first.text } : {}),
       steps,

@@ -3,17 +3,37 @@ import { t } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { TextField } from "../../shared/ui/TextField";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
-import { AdvancedSettings, Row, Toggle } from "../settings/ui/settingsControls";
+import { AdvancedSettings, Row, Select, Toggle } from "../settings/ui/settingsControls";
+import { Alert } from "../../shared/ui/Alert";
 import { Badge } from "../../shared/ui/Badge";
 import { RefreshCw } from "../../shared/ui/icons";
-import type {
-  DesktopControlConfiguration,
-  DesktopControlResponse,
+import {
+  DESKTOP_PERMISSION_MODES,
+  type DesktopControlConfiguration,
+  type DesktopControlResponse,
+  type DesktopPermissionMode,
 } from "../../shared/model/host-contracts/desktop-control";
 import { desktopControlRequest } from "./desktopControlClient";
 import { DesktopHelperSetup } from "./DesktopHelperSetup";
 import { InlineError } from "../../shared/ui/InlineError";
 import styles from "./DesktopControlSettings.module.css";
+
+function permissionModeLabels(mode: DesktopPermissionMode) {
+  if (mode === "full")
+    return {
+      label: t("Full access"),
+      description: t("No questions. Physical input still needs the switch below."),
+    };
+  if (mode === "auto")
+    return {
+      label: t("Auto"),
+      description: t("Asks only for launching apps, the clipboard and physical input."),
+    };
+  return {
+    label: t("Ask every time"),
+    description: t("Every action asks for your approval first."),
+  };
+}
 
 /**
  * Owner configuration and emergency stop; no observation or desktop input on mount.
@@ -103,6 +123,8 @@ export function DesktopControlSettings({
         draft.binaryPath !== saved.binaryPath ||
         draft.binarySha256 !== saved.binarySha256 ||
         draft.allowPhysicalInput !== saved.allowPhysicalInput ||
+        draft.permissionMode !== saved.permissionMode ||
+        draft.allowAllApps !== saved.allowAllApps ||
         JSON.stringify(draft.allowedApps) !== JSON.stringify(saved.allowedApps)));
   // Helper preparation runs on the Host and survives closing, so it does not hold the dialog.
   useEffect(() => {
@@ -133,6 +155,8 @@ export function DesktopControlSettings({
                 binarySha256: draft.binarySha256,
                 allowedApps: draft.allowedApps,
                 allowPhysicalInput: draft.allowPhysicalInput,
+                permissionMode: draft.permissionMode,
+                allowAllApps: draft.permissionMode === "full" && draft.allowAllApps,
               },
             })
           : await desktopControlRequest({
@@ -247,7 +271,9 @@ export function DesktopControlSettings({
         <>
           <Row
             label={t("Enable computer use")}
-            description={t("Each action still needs your request and approval.")}
+            description={t(
+              "Only on your request. The permission mode below sets when you are asked.",
+            )}
             feedback={
               status?.stopped || computerOn ? (
                 <div className={styles.stopActions}>
@@ -314,6 +340,52 @@ export function DesktopControlSettings({
               </Button>
             </div>
           </Row>
+          <Row
+            label={t("Permission")}
+            description={permissionModeLabels(draft.permissionMode).description}
+          >
+            <Select
+              hideLabel
+              label={t("Permission")}
+              value={draft.permissionMode}
+              disabled={pending}
+              options={DESKTOP_PERMISSION_MODES.map((value) => ({
+                value,
+                label: permissionModeLabels(value).label,
+              }))}
+              onChange={(value) => {
+                const permissionMode = DESKTOP_PERMISSION_MODES.find((mode) => mode === value);
+                if (permissionMode)
+                  setDraft({
+                    ...draft,
+                    permissionMode,
+                    allowAllApps: permissionMode === "full" && draft.allowAllApps,
+                  });
+              }}
+            />
+          </Row>
+          {draft.permissionMode === "full" && (
+            <>
+              <Alert tone="warning" title={t("Full access asks nothing")}>
+                {t(
+                  "The assistant can launch apps, use the clipboard and use physical input on allowed apps without asking, even while you are away. Stop computer use and the emergency shortcut always work.",
+                )}
+              </Alert>
+              <Row
+                label={t("Allow all apps")}
+                description={t(
+                  "Any running app can be controlled, not only the allowed apps above.",
+                )}
+              >
+                <Toggle
+                  label={t("Allow all apps")}
+                  on={draft.allowAllApps}
+                  disabled={pending}
+                  onChange={(allowAllApps) => setDraft({ ...draft, allowAllApps })}
+                />
+              </Row>
+            </>
+          )}
           <Row
             label={t("Physical input")}
             description={t("Allows pointer and focus changes, only on your direct request.")}

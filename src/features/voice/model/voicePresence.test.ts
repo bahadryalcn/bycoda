@@ -5,8 +5,13 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 import {
   classifyVoicePresence,
   deriveCapturePresence,
+  markAcceptedVoiceSpeech,
   readNativeVoicePresence,
 } from "./voicePresence";
+import {
+  resetVoiceActivityForTest,
+  takeVoiceActivityReport,
+} from "../../../shared/lib/voiceActivity";
 afterEach(() => {
   vi.useRealTimers();
   Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
@@ -82,4 +87,12 @@ describe("conversation capture presence", () => {
     expect(deriveCapturePresence("active", "active", 1_000, 0, 2_000)).toBe("active");
     expect(deriveCapturePresence("idle", "active", 1_000, NaN, 2_000)).toBe("idle");
   });
+});
+it("accepted speech postpones idle sleep and is reported to the Host; no speech reports nothing", () => {
+  resetVoiceActivityForTest();
+  expect(takeVoiceActivityReport()).toBeUndefined();
+  const at = markAcceptedVoiceSpeech();
+  expect(deriveCapturePresence("idle", "present", at, 10, at + 9 * 60_000)).toBe("active");
+  expect(deriveCapturePresence("idle", "present", null, 10, at + 9 * 60_000)).toBe("idle");
+  expect(takeVoiceActivityReport()).toBeGreaterThanOrEqual(0);
 });

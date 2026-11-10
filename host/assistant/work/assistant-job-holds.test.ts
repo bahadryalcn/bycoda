@@ -59,7 +59,9 @@ describe("assistantJobNotificationBody", () => {
       "No output for 15 minutes. last",
     );
     expect(assistantJobNotificationBody("waiting", "", undefined, 15)).toBe("Job is waiting.");
-    expect(assistantJobNotificationBody("done", "ok", undefined, 15)).toBe("ok");
+    expect(assistantJobNotificationBody("done", "ok", undefined, 15)).toBe(
+      "ok No verification was recorded.",
+    );
   });
 });
 

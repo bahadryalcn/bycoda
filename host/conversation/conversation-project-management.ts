@@ -4,6 +4,7 @@ import { existingPath, hostGitIndex, workspacePath } from "../workspaces/workspa
 import { relative, sep } from "node:path";
 import { lstat } from "node:fs/promises";
 import { scrubRuntimeLogText } from "../execution/runtime-logs";
+import { GIT_PUBLISH_READS, GIT_PUBLISH_TOOLS } from "./conversation-git-publish";
 const text = { type: "string", minLength: 1, maxLength: 4096 };
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({
   type: "object",
@@ -70,8 +71,10 @@ export const PROJECT_MANAGEMENT_TOOLS = {
     ["requestId", "expectedStatus", "paths"],
   ),
   "git.pull": object(write, ["requestId", "expectedStatus"]),
+  ...GIT_PUBLISH_TOOLS,
 } as const;
 export const PROJECT_MANAGEMENT_READS = new Set<string>([
+  ...GIT_PUBLISH_READS,
   "projects.browse",
   "projects.organization.read",
   "projects.organization.status",

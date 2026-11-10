@@ -15,6 +15,7 @@ import {
 } from "./activityDock";
 import { stopAllControl } from "./backgroundStop";
 import { delegatedChildren, delegatedDockAgents } from "./delegatedAgents";
+import { crewMemberChildren, placeDelegatedCards } from "./delegatedCards";
 import { executionUserIndex } from "./executionTurn";
 import { queuedSteerRoute, queuedTargetSummary } from "./messageQueue";
 import { getModelSnapshot, resolveModel, subscribeModels } from "./models";
@@ -120,6 +121,19 @@ export function useActivityDock(input: ActivityDockInput): {
 
 function sameSessionList(a: readonly Session[], b: readonly Session[]): boolean {
   return a.length === b.length && a.every((session, index) => session === b[index]);
+}
+
+/** The transcript's blocks with each Crew member ask shown as a card in its turn. */
+export function useDelegatedCardBlocks(
+  parentId: string,
+  blocks: Block[],
+  enabled: boolean,
+): Block[] {
+  const children = useSessionsSelector(
+    (sessions) => (enabled ? crewMemberChildren(delegatedChildren(sessions, parentId)) : []),
+    sameSessionList,
+  );
+  return useMemo(() => placeDelegatedCards(blocks, children), [blocks, children]);
 }
 
 /** Cross-provider children of one session, as dock rows for its current turn. */

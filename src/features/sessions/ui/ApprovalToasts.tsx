@@ -52,6 +52,8 @@ type Props = {
     sessionId: string,
     cwd: string,
   ) => void | boolean | Promise<void | boolean>;
+  /** Opens the view a `background:*` history entry points at (tasks, assistant, account...). */
+  onOpenBackground?: (target: string) => void;
   /** Opens the full Notifications page in Settings. */
   onOpenSettings?: () => void;
 };
@@ -74,6 +76,7 @@ export function ApprovalToasts({
   onFocusSession,
   onApproval,
   onOpenHistorySession,
+  onOpenBackground,
   onOpenSettings,
 }: Props) {
   const t = useT();
@@ -160,13 +163,20 @@ export function ApprovalToasts({
   }, []);
   // ConfirmMorph shows its error state when the confirmation rejects.
   const clearHistory = async () => {
-    if (!(await clear())) throw new Error(t("Request history could not be cleared."));
+    if (!(await clear())) throw new Error(t("Notification history could not be cleared."));
   };
   const liveRequests = new Set(notices.map(noticeKey));
   const livePending = new Set(notices.map((notice) => notice.sessionId));
   const canOpenHistory = (entry: NotificationHistoryEntry) =>
-    Boolean(onOpenHistorySession) || livePending.has(entry.sessionId);
+    entry.target
+      ? Boolean(onOpenBackground)
+      : Boolean(onOpenHistorySession) || livePending.has(entry.sessionId);
   const openHistorySession = async (entry: NotificationHistoryEntry) => {
+    if (entry.target) {
+      onOpenBackground?.(entry.target);
+      closePanel();
+      return;
+    }
     if (isProjectLockedIn(getGroupLockView().lock, entry.cwd)) {
       throw new Error(t("This conversation is in a locked group."));
     }
@@ -251,7 +261,7 @@ export function ApprovalToasts({
               controls={`${panelId}-list`}
               items={[
                 { value: "pending", label: t("Pending"), count },
-                { value: "history", label: t("Recent requests"), count: visibleHistory.length },
+                { value: "history", label: t("Recent"), count: visibleHistory.length },
               ]}
             />
           }
@@ -303,7 +313,7 @@ export function ApprovalToasts({
               <p className="text-ui-caption leading-relaxed text-(--ui-text-secondary)">
                 {view === "pending"
                   ? t("Pending requests stay here until answered.")
-                  : t("Only the latest {p0} questions and approvals are kept on this device.", {
+                  : t("Only the latest {p0} notifications are kept on this device.", {
                       p0: MAX_NOTIFICATION_HISTORY,
                     })}
               </p>
@@ -320,7 +330,7 @@ export function ApprovalToasts({
               <div className="notification-history-toolbar">
                 <p className="notification-history-note">
                   {t(
-                    "Questions and approvals this app received, newest first. Finished and error alerts are not listed.",
+                    "What this app announced, newest first: questions, approvals, finished and failed turns, reminders, background work and account notices.",
                   )}
                 </p>
                 {/* Where the list is, not behind the options menu: the confirmation needs the row's width. */}
@@ -336,7 +346,7 @@ export function ApprovalToasts({
             {view === "history" && historyUnavailable ? (
               <div className="notification-history-status">
                 <Alert tone="warning">
-                  {t("Request history could not be read. Showing what this window has.")}
+                  {t("Notification history could not be read. Showing what this window has.")}
                 </Alert>
                 <Button variant="ghost" size="sm" type="button" onClick={reloadHistory}>
                   {t("Retry")}
@@ -346,7 +356,7 @@ export function ApprovalToasts({
             {view === "history" && clearError ? (
               <div className="notification-history-status">
                 <Alert tone="danger">
-                  {t("Request history could not be cleared. Nothing was removed.")}
+                  {t("Notification history could not be cleared. Nothing was removed.")}
                 </Alert>
                 <Button
                   variant="ghost"
@@ -366,7 +376,7 @@ export function ApprovalToasts({
                 context="list"
                 icon={<MessageMultiple className="size-6" aria-hidden />}
                 description={
-                  view === "pending" ? t("No pending requests") : t("No recent requests")
+                  view === "pending" ? t("No pending requests") : t("No recent notifications")
                 }
                 action={
                   view === "pending" && visibleHistory.length > 0 ? (
@@ -376,7 +386,7 @@ export function ApprovalToasts({
                       type="button"
                       onClick={() => setView("history")}
                     >
-                      {t("View recent requests")}
+                      {t("View recent")}
                     </Button>
                   ) : undefined
                 }

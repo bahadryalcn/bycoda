@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ChevronRight } from "../../../shared/ui/icons";
@@ -14,6 +14,9 @@ import {
   crewTaskReview,
   crewTaskStatusLabel,
 } from "../model/crewPresentation";
+import type { MemberAvatarTraits } from "../model/memberAvatarTraits";
+import { teamTraits } from "../model/memberAvatars";
+import { MemberAvatar } from "./MemberAvatar";
 import { roleLabel } from "./CrewMemberForm";
 import { CrewModelTag } from "./CrewModelTag";
 import { CrewRoleIcon } from "./CrewRoleIcon";
@@ -30,6 +33,7 @@ export function crewSessionCount(run: CrewRunView) {
 /** One conversation: the member's cue, name and role, then its task and model, and its state. */
 function SessionRow({
   role,
+  traits,
   name,
   roleText,
   task,
@@ -43,6 +47,8 @@ function SessionRow({
   onClick,
 }: {
   role: CrewRole;
+  /** The member's pixel look; the role glyph stands in when the member is unknown. */
+  traits?: MemberAvatarTraits;
   name: string;
   /** Responsibility, shown when the member's name does not already say it. */
   roleText?: string;
@@ -68,7 +74,11 @@ function SessionRow({
       tooltipWhen="overflow"
       tooltipDetails={details}
     >
-      <CrewRoleIcon role={role} className="icon-sm shrink-0" />
+      {traits ? (
+        <MemberAvatar traits={traits} size={24} className="shrink-0" />
+      ) : (
+        <CrewRoleIcon role={role} className="icon-sm shrink-0" />
+      )}
       <span className="flex min-w-0 flex-1 flex-col text-start">
         <span className="flex min-w-0 items-baseline gap-1.5">
           <span className="truncate text-ui-secondary font-medium">{name}</span>
@@ -115,6 +125,7 @@ export function CrewWorkSessions({
   onOpen: (id: string, source?: string) => void;
 }) {
   useLocale();
+  const looks = useMemo(() => teamTraits(run.definition.agents), [run.definition.agents]);
   const coordinator = crewRunRoleMember(run, "coordinator");
   const reviewer = crewRunRoleMember(run, "reviewer");
   const coordinatorName = coordinator?.name.trim() || roleLabel("coordinator");
@@ -130,6 +141,7 @@ export function CrewWorkSessions({
         <div role="listitem">
           <SessionRow
             role="coordinator"
+            traits={coordinator && looks.get(coordinator.id)}
             name={coordinatorName}
             roleText={same(coordinatorName, "coordinator") ? undefined : roleLabel("coordinator")}
             model={
@@ -171,6 +183,7 @@ export function CrewWorkSessions({
             <div key={task.id} role="listitem" className="flex min-w-0 flex-col gap-px">
               <SessionRow
                 role={agent?.role ?? "specialist"}
+                traits={agent && looks.get(agent.id)}
                 name={workerName}
                 roleText={
                   agent && !same(workerName, agent.role) && agent.role !== "specialist"
@@ -192,6 +205,7 @@ export function CrewWorkSessions({
               {ids.review ? (
                 <SessionRow
                   role="reviewer"
+                  traits={reviewer && looks.get(reviewer.id)}
                   name={reviewerName}
                   roleText={same(reviewerName, "reviewer") ? undefined : roleLabel("reviewer")}
                   task={task.title}

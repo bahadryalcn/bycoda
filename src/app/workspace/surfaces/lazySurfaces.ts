@@ -10,6 +10,13 @@ export const ServersView = lazySurface<ServersViewProps>(
   },
   { suspense: false },
 );
+export const CrewsView = lazySurface(
+  async () => {
+    const module = await import("./CrewsSurface");
+    return { default: module.CrewsSurface };
+  },
+  { suspense: false },
+);
 export const SearchView = lazySurface(
   async () => {
     const module = await import("../../../features/search/ui/SearchView");

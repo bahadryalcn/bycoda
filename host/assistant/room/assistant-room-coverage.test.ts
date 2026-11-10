@@ -85,9 +85,8 @@ describe("Room management capability contract", () => {
   });
 
   it("does not turn catalog discovery into owner or cross-project authority", () => {
+    // Git push/merge are project tools with exact native approval (owner decision 2026-11-10).
     for (const action of [
-      "git.push",
-      "git.merge",
       "crews.respond",
       "workspaces.cleanup.apply",
       "providers.signIn",

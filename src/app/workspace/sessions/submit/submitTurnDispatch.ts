@@ -41,6 +41,7 @@ import {
 } from "../../../../features/sessions/model/plan";
 import { markSharedProviderSend } from "../../../../features/connections/model/useSharedLocalQueues";
 import { preparePrompt } from "../../../../features/sessions/model/promptPreparation";
+import { submitDelegationKey } from "./submitDelegationKey";
 import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
 import {
   canRewindHarnessLastTurn,
@@ -167,7 +168,12 @@ export async function runSubmitDispatch(
       prompt: () =>
         intent === "build" && approvedPlan
           ? Promise.resolve(buildPlanPrompt(approvedPlan.text))
-          : preparePrompt(harnessText, { harness: current.harness, sessionId, cwd: workCwd }),
+          : preparePrompt(harnessText, {
+              harness: current.harness,
+              sessionId,
+              cwd: workCwd,
+              delegation: { requestKey: submitDelegationKey(sessionId, options, current) },
+            }),
       isCurrent: () => turnGen.current.get(sessionId) === gen,
     });
     if (!preparation) return;

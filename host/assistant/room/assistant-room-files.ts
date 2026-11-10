@@ -19,6 +19,11 @@ const reads = new Set([
   "files.search",
   "files.searchContent",
   "files.read",
+  // Read-only Git views answered by the same bounded project reader.
+  "git.index",
+  "git.fileDiff",
+  "git.branches",
+  "git.worktrees",
 ]);
 const writes = new Set([
   "files.create",
@@ -137,6 +142,10 @@ export function createRoomFileTools(ports: Ports) {
         });
       }
       const { requestId, ...original } = input;
+      if (Object.hasOwn(original, "root"))
+        throw new Error(
+          "root selects an Assistant folder and is only available in the global Room.",
+        );
       validateConversationTool(action, original);
       if (
         writes.has(action) &&

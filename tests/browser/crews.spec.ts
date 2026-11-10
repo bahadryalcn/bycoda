@@ -1,6 +1,23 @@
 import { test, expect, type Page } from "@playwright/test";
 const shots = "temp/verification/2026-10-25-crew-management-v2";
 
+type CrewsTab = "Active" | "Teams" | "Members" | "Work";
+
+/** Opens the Crews page on a tab; the fixture has no app shell, so a button mounts the page. */
+async function openCrewsTab(page: Page, tab: CrewsTab) {
+  await page.getByRole("button", { name: "Crews page", exact: true }).click();
+  const content = page.locator("[data-app-crews]");
+  await content.getByRole("tab", { name: new RegExp(`^${tab}`) }).click();
+  await expect(content.getByRole("tabpanel")).toBeVisible();
+  return content;
+}
+
+/** Opens a saved crew's editor from its card on the Teams tab. */
+async function editCrew(page: Page, name = "Website Crew") {
+  await openCrewsTab(page, "Teams");
+  await page.getByRole("button", { name: `Edit ${name}`, exact: true }).click();
+}
+
 async function openStart(page: Page) {
   const row = page.getByRole("listitem").filter({ hasText: "Website Crew" });
   await row.getByRole("button", { name: "New work with Website Crew" }).click();
@@ -11,7 +28,9 @@ test("a new review shows current activity and opens the current reviewer", async
   await page.goto("/tests/browser/crews.html?reviewingAgain");
   const management = await openWork(page);
   const work = management.locator('[data-crew-run="run"]');
-  const reviewer = work.getByRole("button", { name: /Reviewer.*Build settings.*Reviewing/ });
+  const reviewer = work.getByRole("button", {
+    name: /Reviewer.*Build settings.*Reviewing/,
+  });
   await expect(reviewer).toBeVisible();
   await expect(work.getByRole("button", { name: /Reviewer.*Passed/ })).toHaveCount(0);
   await reviewer.click();
@@ -20,12 +39,15 @@ test("a new review shows current activity and opens the current reviewer", async
 
 test("partial library group updates retry only the remaining profiles", async ({ page }) => {
   await page.goto("/tests/browser/crews.html?groupRetry");
-  await page.getByRole("button", { name: "Crew settings page", exact: true }).click();
+  await openCrewsTab(page, "Members");
   await page.getByRole("button", { name: /^Member group:/ }).click();
   await page.getByRole("option", { name: "UI", exact: true }).click();
   await page.getByRole("button", { name: "Group options", exact: true }).click();
   await page.getByRole("menuitem", { name: "Rename group", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Rename group", exact: true });
+  const dialog = page.getByRole("dialog", {
+    name: "Rename group",
+    exact: true,
+  });
   await dialog.getByRole("textbox", { name: "Group name", exact: true }).fill("Interface");
   await dialog.getByRole("button", { name: "Rename", exact: true }).click();
   await expect(dialog.getByRole("alert")).toContainText("Second profile unavailable");
@@ -51,13 +73,16 @@ test("library copy reconciles an uncertain saved profile without a second save",
   page,
 }) => {
   await page.goto("/tests/browser/crews.html?copyUnknown");
-  await page.getByRole("button", { name: "Crew settings page", exact: true }).click();
+  await openCrewsTab(page, "Members");
   await page
     .locator(".settings-collection-row")
     .filter({ hasText: "API engineer" })
     .getByRole("button", { name: /^Edit / })
     .click();
-  const dialog = page.getByRole("dialog", { name: "API engineer", exact: true });
+  const dialog = page.getByRole("dialog", {
+    name: "API engineer",
+    exact: true,
+  });
   await dialog.getByRole("button", { name: "Copy to all projects", exact: true }).click();
   await expect(dialog.getByRole("alert")).toContainText("Profile save response unavailable");
   await dialog.getByRole("button", { name: "Copy to all projects", exact: true }).click();
@@ -307,7 +332,10 @@ for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/tests/browser/crews.html?theme=${theme}&slowOperation=crews.pause`);
     const management = await openWork(page);
-    const pause = management.getByRole("button", { name: "Pause new assignments", exact: true });
+    const pause = management.getByRole("button", {
+      name: "Pause new assignments",
+      exact: true,
+    });
     await pause.focus();
     await pause.press("Enter");
     await expect(pause).toHaveAttribute("aria-busy", "true");
@@ -342,7 +370,10 @@ for (const theme of ["light", "dark"] as const) {
 }
 async function openWork(page: Page, runId = "run") {
   await page.locator(`[data-crew-work-link="${runId}"]`).click();
-  const dialog = page.getByRole("dialog", { name: "Website Crew", exact: true });
+  const dialog = page.getByRole("dialog", {
+    name: "Website Crew",
+    exact: true,
+  });
   await expect(dialog).toBeVisible();
   return dialog;
 }
@@ -354,16 +385,20 @@ for (const theme of ["light", "dark"] as const) {
   test(`bycoda defaults stay editable with independent library profiles in ${theme} theme`, async ({
     page,
   }, testInfo) => {
-    await page.setViewportSize({ width: theme === "light" ? 390 : 1100, height: 844 });
+    await page.setViewportSize({
+      width: theme === "light" ? 390 : 1100,
+      height: 844,
+    });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/tests/browser/crews.html?defaults&theme=${theme}`);
-    await page.getByRole("button", { name: "Crew settings page" }).click();
-    await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(18);
-    await page
-      .getByRole("button", { name: /^Edit / })
-      .first()
-      .click();
-    const team = page.getByRole("dialog", { name: "bycoda Product Team", exact: true });
+    const content = await openCrewsTab(page, "Members");
+    await expect(content.getByRole("button", { name: /^Edit / })).toHaveCount(17);
+    await content.getByRole("tab", { name: "Teams", exact: true }).click();
+    await page.getByRole("button", { name: "Edit bycoda Product Team", exact: true }).click();
+    const team = page.getByRole("dialog", {
+      name: "bycoda Product Team",
+      exact: true,
+    });
     await expect(team.locator("[data-member-row]")).toHaveCount(17);
     await expect(team).not.toContainText("Responsibilities");
     for (const width of [1280, 800]) {
@@ -406,16 +441,18 @@ for (const theme of ["light", "dark"] as const) {
     await page.keyboard.press("Escape");
     await expect(team).not.toBeVisible();
     // Team edits leave the reusable library profile independent.
-    const mobile = page.getByText("Mobile Engineer", { exact: true });
+    await content.getByRole("tab", { name: "Members", exact: true }).click();
+    const mobile = content.getByText("Mobile Engineer", { exact: true });
     await expect(mobile).toBeVisible();
     await page.screenshot({
       path: `${shots}/defaults-${theme}-${testInfo.project.name}.png`,
     });
-    await page
-      .getByRole("button", { name: /^Edit / })
-      .first()
-      .click();
-    const saved = page.getByRole("dialog", { name: "bycoda Product Team", exact: true });
+    await content.getByRole("tab", { name: "Teams", exact: true }).click();
+    await page.getByRole("button", { name: "Edit bycoda Product Team", exact: true }).click();
+    const saved = page.getByRole("dialog", {
+      name: "bycoda Product Team",
+      exact: true,
+    });
     await expect(saved.getByRole("region", { name: "Specialists", exact: true })).toContainText(
       "Our mobile engineer",
     );
@@ -516,12 +553,19 @@ test("opens ongoing work from the rail and keeps the delivery while editing the 
   const start = page.getByRole("dialog", { name: "New work" });
   // Check the exposed roster, not BadgeList's inert, aria-hidden measurement probes.
   const roster = start.locator("dl");
-  await expect(roster.locator("dt")).toHaveText(["Coordinator", "Specialist:", "Reviewer"]);
+  await expect(roster.locator("dt")).toHaveText(["Coordinator:", "Specialist:", "Reviewer:"]);
   await expect(roster.locator("dd")).toHaveCount(3);
-  // Members named like their responsibility are not repeated.
-  await expect(roster.locator("dd").first()).toBeEmpty();
-  await expect(roster.locator("dd").last()).toBeEmpty();
-  const specialists = roster.getByRole("list", { name: "Specialist", exact: true });
+  // Every member is listed with its face, also one named like its responsibility.
+  await expect(
+    roster.getByRole("list", { name: "Coordinator", exact: true }).getByRole("listitem"),
+  ).toHaveText(["Coordinator"]);
+  await expect(
+    roster.getByRole("list", { name: "Reviewer", exact: true }).getByRole("listitem"),
+  ).toHaveText(["Reviewer"]);
+  const specialists = roster.getByRole("list", {
+    name: "Specialist",
+    exact: true,
+  });
   await expect(specialists.getByRole("listitem")).toHaveText(["UI"]);
   await expect(specialists.getByRole("button")).toHaveCount(0);
   const originalClass = await page.evaluate(() => document.documentElement.className);
@@ -611,7 +655,9 @@ test("compact work list opens selected work with visible conversations", async (
   await expect(work.getByRole("button", { name: /Coordinator/ })).toBeVisible();
   await expect(work.getByRole("button", { name: /UI.*Awaiting acceptance/ })).toBeVisible();
   await expect(work.getByRole("button", { name: /Reviewer.*Build settings/ })).toBeVisible();
-  await page.screenshot({ path: `${shots}/management-${testInfo.project.name}.png` });
+  await page.screenshot({
+    path: `${shots}/management-${testInfo.project.name}.png`,
+  });
   await work.getByRole("button", { name: /UI.*Awaiting acceptance/ }).click();
   await expect(page.getByLabel("Opened session")).toHaveText("ui-session");
   await expect(management).not.toBeVisible();
@@ -642,7 +688,9 @@ test("work management exposes long decisions and blockers without extra disclosu
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
-  await page.screenshot({ path: `${shots}/blocked-narrow-${testInfo.project.name}.png` });
+  await page.screenshot({
+    path: `${shots}/blocked-narrow-${testInfo.project.name}.png`,
+  });
   await work.getByRole("button", { name: /Coordinator/ }).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByLabel("Opened session")).toHaveText("lead-session");
@@ -678,7 +726,9 @@ test("one manager selects ongoing and finished work without mixing conversations
   await management.getByRole("radio", { name: "Finished", exact: true }).click();
   await management.getByRole("button", { name: /^Audit landing page/ }).click();
   await expect(management.locator('[data-crew-run="old-run"]')).toContainText("Audit landing page");
-  await page.screenshot({ path: `${shots}/finished-${testInfo.project.name}.png` });
+  await page.screenshot({
+    path: `${shots}/finished-${testInfo.project.name}.png`,
+  });
   await management.getByRole("radio", { name: /Ongoing/ }).click();
   await management.getByRole("button", { name: /^Improve mobile navigation/ }).click();
   await management
@@ -691,11 +741,7 @@ test("editing is one page: roster first, advanced settings one disclosure away, 
   page,
 }, testInfo) => {
   await page.goto("/tests/browser/crews.html?theme=light");
-  await page.getByRole("button", { name: "Crew settings page" }).click();
-  await page
-    .getByRole("button", { name: /^Edit / })
-    .first()
-    .click();
+  await editCrew(page);
   const dialog = page.getByRole("dialog", { name: "Website Crew" });
   await expect(dialog.getByRole("region", { name: "Coordinator" })).toBeVisible();
   await dialog.getByRole("button", { name: "UI", exact: true }).click();
@@ -737,17 +783,14 @@ test("editing is one page: roster first, advanced settings one disclosure away, 
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   // The library keeps the saved profile with its group.
+  await page.locator("[data-app-crews]").getByRole("tab", { name: "Members", exact: true }).click();
   await expect(page.getByText("Frontend").first()).toBeVisible();
 });
 test("conflicting edits can be preserved as a new crew or replaced by the latest", async ({
   page,
 }) => {
   await page.goto("/tests/browser/crews.html");
-  await page.getByRole("button", { name: "Crew settings page" }).click();
-  await page
-    .getByRole("button", { name: /^Edit / })
-    .first()
-    .click();
+  await editCrew(page);
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("textbox", { name: "Crew name" }).fill("My local edits");
   await page.evaluate(() =>
@@ -784,12 +827,17 @@ for (const theme of ["dark", "light"]) {
       .getByRole("button", { name: "Stop work", exact: true })
       .click();
     await expect(work.getByRole("button", { name: "Resume work" })).toBeVisible();
-    await page.screenshot({ path: `${shots}/work-${theme}-${testInfo.project.name}.png` });
+    await page.screenshot({
+      path: `${shots}/work-${theme}-${testInfo.project.name}.png`,
+    });
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
     await deleteSelectedWork(page, work);
-    const confirmation = page.getByRole("dialog", { name: "Delete work", exact: true });
+    const confirmation = page.getByRole("dialog", {
+      name: "Delete work",
+      exact: true,
+    });
     await expect(confirmation).toContainText("The crew, tasks and conversations are kept.");
     await confirmation.getByRole("button", { name: "Delete work", exact: true }).click();
     await expect(work).toHaveCount(0);
@@ -842,7 +890,10 @@ test("polling keeps the selected work when another delivery becomes newest", asy
     .getByRole("region", { name: "Crew work", exact: true })
     .getByRole("button", { name: "Manage", exact: true })
     .click();
-  const management = page.getByRole("dialog", { name: "Website Crew", exact: true });
+  const management = page.getByRole("dialog", {
+    name: "Website Crew",
+    exact: true,
+  });
   await expect(management.locator('[data-crew-run="second-run"]')).toBeVisible();
   await page.evaluate(() =>
     (window as unknown as { simulateRunUpdate: (id: string) => void }).simulateRunUpdate("run"),
@@ -854,13 +905,16 @@ test("polling keeps the selected work when another delivery becomes newest", asy
   await expect(management.locator('[data-crew-run="run"]')).toHaveCount(0);
 });
 
-test("crew settings work view opens the selected conversation", async ({ page }) => {
+test("the crew card menu opens the selected work's conversation", async ({ page }) => {
   await page.goto("/tests/browser/crews.html");
-  await page.getByRole("button", { name: "Crew settings page", exact: true }).click();
-  // Crew work sits in the crew row's overflow menu beside the direct Edit action.
-  await page.getByRole("button", { name: "Crew actions", exact: true }).click();
+  const content = await openCrewsTab(page, "Teams");
+  // Crew work sits in the crew card's overflow menu beside the direct Edit action.
+  await content.getByRole("button", { name: "Website Crew options", exact: true }).click();
   await page.getByRole("menuitem", { name: "Crew work", exact: true }).click();
-  const management = page.getByRole("dialog", { name: "Website Crew", exact: true });
+  const management = page.getByRole("dialog", {
+    name: "Website Crew",
+    exact: true,
+  });
   await management
     .locator('[data-crew-run="run"]')
     .getByRole("button", { name: /Coordinator/ })
@@ -886,7 +940,10 @@ test("narrow windows show the work list or one work at a time", async ({ page })
     .getByRole("region", { name: "Crew work", exact: true })
     .getByRole("button", { name: "Manage", exact: true })
     .click();
-  const management = page.getByRole("dialog", { name: "Website Crew", exact: true });
+  const management = page.getByRole("dialog", {
+    name: "Website Crew",
+    exact: true,
+  });
   const list = management.getByRole("list", { name: "Work list", exact: true });
   // Opened without a chosen work: the list leads and no detail column is squeezed beside it.
   await expect(list).toBeVisible();
@@ -923,14 +980,12 @@ test("access is set once for every member, model rules open on demand, and edits
   page,
 }) => {
   await page.goto("/tests/browser/crews.html");
-  await page.getByRole("button", { name: "Crew settings page" }).click();
-  await page
-    .getByRole("button", { name: /^Edit / })
-    .first()
-    .click();
+  await editCrew(page);
   const dialog = page.getByRole("dialog", { name: "Website Crew" });
   // Access for the whole crew is one row at the top of the page, not inside Advanced.
-  const access = dialog.getByRole("region", { name: "Access for every member" });
+  const access = dialog.getByRole("region", {
+    name: "Access for every member",
+  });
   await expect(access.getByRole("button", { name: "Supervised", exact: true })).toBeVisible();
   await access.getByRole("button", { name: "Supervised", exact: true }).click();
   await page.getByRole("option", { name: /Auto-accept edits/ }).click();
@@ -951,10 +1006,7 @@ test("access is set once for every member, model rules open on demand, and edits
   await expect(dialog.getByRole("button", { name: "Discard", exact: true })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
-  await page
-    .getByRole("button", { name: /^Edit / })
-    .first()
-    .click();
+  await page.getByRole("button", { name: "Edit Website Crew", exact: true }).click();
   const reopened = page.getByRole("dialog", { name: "Website Crew" });
   await expect(
     reopened
@@ -962,33 +1014,29 @@ test("access is set once for every member, model rules open on demand, and edits
       .getByRole("button", { name: "Auto-accept edits", exact: true }),
   ).toBeVisible();
   await expect(
-    reopened.getByRole("switch", { name: "Coordinator answers permission requests" }),
+    reopened.getByRole("switch", {
+      name: "Coordinator answers permission requests",
+    }),
   ).toBeChecked();
 });
 
 test("an unsupported Host hides the access picker but keeps the grants", async ({ page }) => {
   await page.goto("/tests/browser/crews.html?noAccess");
-  await page.getByRole("button", { name: "Crew settings page" }).click();
-  await page
-    .getByRole("button", { name: /^Edit / })
-    .first()
-    .click();
+  await editCrew(page);
   const access = page
     .getByRole("dialog", { name: "Website Crew" })
     .getByRole("region", { name: "Access for every member" });
   await expect(access.getByRole("button", { name: "Supervised", exact: true })).toHaveCount(0);
   await expect(
-    access.getByRole("switch", { name: "Coordinator answers permission requests" }),
+    access.getByRole("switch", {
+      name: "Coordinator answers permission requests",
+    }),
   ).toBeVisible();
 });
 
 test("one model with its options can be applied to chosen members at once", async ({ page }) => {
   await page.goto("/tests/browser/crews.html");
-  await page.getByRole("button", { name: "Crew settings page" }).click();
-  await page
-    .getByRole("button", { name: /^Edit / })
-    .first()
-    .click();
+  await editCrew(page);
   const dialog = page.getByRole("dialog", { name: "Website Crew" });
   const apply = dialog.getByRole("button", { name: /^Apply to / });
   // The bar offers a real model from the start, so Apply is ready.
@@ -1003,11 +1051,7 @@ test("one model with its options can be applied to chosen members at once", asyn
 
 test("a failed save stays visible, keeps the draft and starts nothing", async ({ page }) => {
   await page.goto("/tests/browser/crews.html?saveError&longRoster");
-  await page.getByRole("button", { name: "Crew settings page" }).click();
-  await page
-    .getByRole("button", { name: /^Edit / })
-    .first()
-    .click();
+  await editCrew(page);
   const dialog = page.getByRole("dialog", { name: "Website Crew" });
   await dialog.getByRole("textbox", { name: "Crew name", exact: true }).fill("Website Crew v2");
   // The autosave fails: the error and Retry stay in the footer, the draft stays as typed.
@@ -1027,11 +1071,7 @@ test("a long roster scrolls under an opaque header and keeps the footer actions"
 }) => {
   await page.setViewportSize({ width: 1280, height: 560 });
   await page.goto("/tests/browser/crews.html?longRoster");
-  await page.getByRole("button", { name: "Crew settings page" }).click();
-  await page
-    .getByRole("button", { name: /^Edit / })
-    .first()
-    .click();
+  await editCrew(page);
   const dialog = page.getByRole("dialog", { name: "Website Crew" });
   await expect(dialog.locator("[data-member-row]")).toHaveCount(15);
   await dialog.getByRole("textbox", { name: "Crew name", exact: true }).fill("Website Crew v2");
@@ -1043,3 +1083,142 @@ test("a long roster scrolls under an opaque header and keeps the footer actions"
   await expect(dialog.getByRole("button", { name: "Close", exact: true })).toBeInViewport();
   await expect(dialog.getByText("All changes saved", { exact: true })).toBeInViewport();
 });
+
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [1280, 800]) {
+    test(`crews page tabs, filter and layout (${theme}, ${width}px)`, async ({
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/crews.html?theme=${theme}`);
+      await page.getByRole("button", { name: "Crews page", exact: true }).click();
+      const content = page.locator("[data-app-crews]");
+      await expect(content.getByRole("heading", { name: "Crews", exact: true })).toBeVisible();
+      await expect(content.getByRole("tab")).toHaveText(["Teams", "Members", "Work"]);
+      const teams = content.getByRole("list", { name: "Crews", exact: true });
+      await expect(teams.getByRole("listitem").first()).toBeVisible();
+      await page.screenshot({
+        path: `${"temp/verification/crews-hub"}/crews-page-teams-${theme}-${width}-${testInfo.project.name}.png`,
+      });
+      await content.getByRole("textbox", { name: "Filter crews" }).fill("no such crew");
+      await expect(content.getByText("No crews match your filter.")).toBeVisible();
+      await content.getByRole("button", { name: "Reset filters", exact: true }).click();
+      await content.getByRole("radio", { name: "List", exact: true }).click();
+      await expect(teams.getByRole("listitem").first()).toBeVisible();
+      await content.getByRole("tab", { name: "Members", exact: true }).click();
+      await expect(content.getByRole("tabpanel")).toContainText("Member library");
+      await content.getByRole("tab", { name: "Work", exact: true }).click();
+      await expect(content.getByRole("tabpanel")).toBeVisible();
+    });
+  }
+}
+
+test("settings only hold the sidebar toggle and a link to the Crews page", async ({ page }) => {
+  await page.goto("/tests/browser/crews.html");
+  await page.getByRole("button", { name: "Crew settings page", exact: true }).click();
+  await expect(page.getByRole("switch", { name: "Show crews", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open Crews", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Edit /, exact: false })).toHaveCount(0);
+});
+
+test("the Members tab changes a member's teams from its Teams menu", async ({ page }) => {
+  await page.goto("/tests/browser/crews.html?rich");
+  const content = await openCrewsTab(page, "Members");
+  const row = content.locator(".settings-collection-row").filter({ hasText: "Researcher" });
+  await expect(row.getByText("Not in a team")).toBeVisible();
+  await row.getByRole("button", { name: "Teams of Researcher", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Website Crew" }).click();
+  await expect(row.getByRole("group", { name: "Teams" })).toContainText("Website Crew");
+});
+
+test("the Active tab lists working members and opens their conversation", async ({ page }) => {
+  await page.goto("/tests/browser/crews.html?rich");
+  await page.getByRole("button", { name: "Crews page", exact: true }).click();
+  const content = page.locator("[data-app-crews]");
+  await expect(content.getByRole("tab", { name: /^Active/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  const rows = content.getByRole("region", { name: "Fixture" }).getByRole("listitem");
+  await expect(rows).toHaveCount(3);
+  await rows.filter({ hasText: "API engineer" }).getByRole("button").first().click();
+  await expect(page.getByLabel("Opened session")).toHaveText("api-session");
+});
+
+const evidence = "temp/verification/crews-hub";
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [1280, 800]) {
+    test(`crews hub evidence (${theme}, ${width}px)`, async ({ page }, testInfo) => {
+      test.setTimeout(90000);
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/crews.html?rich&theme=${theme}`);
+      const shot = (name: string) =>
+        page.screenshot({
+          path: `${evidence}/${name}-${theme}-${width}-${testInfo.project.name}.png`,
+          animations: "disabled",
+        });
+      const noOverflow = async () =>
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+        ).toBe(true);
+      // Rail: faces and the working-now strip.
+      await expect(page.getByRole("group", { name: "Working now" })).toBeVisible();
+      await page
+        .locator("aside")
+        .first()
+        .screenshot({
+          path: `${evidence}/rail-${theme}-${width}-${testInfo.project.name}.png`,
+          animations: "disabled",
+        });
+      const content = await openCrewsTab(page, "Active");
+      await expect(content.getByRole("listitem")).toHaveCount(3);
+      await shot("active");
+      await noOverflow();
+      await content.getByRole("tab", { name: "Teams", exact: true }).click();
+      await expect(content.getByRole("list", { name: "Crews" }).getByRole("listitem")).toHaveCount(
+        2,
+      );
+      await shot("teams-cards");
+      await content.getByRole("radio", { name: "List", exact: true }).click();
+      await shot("teams-list");
+      await noOverflow();
+      await content.getByRole("tab", { name: "Members", exact: true }).click();
+      await expect(content.getByText("Researcher", { exact: true })).toBeVisible();
+      await shot("members");
+      await content.getByRole("button", { name: "Teams of UI designer", exact: true }).click();
+      await expect(page.getByRole("menu", { name: "Teams of UI designer" })).toBeVisible();
+      await shot("members-teams-menu");
+      await page.keyboard.press("Escape");
+      await noOverflow();
+      await content.getByRole("tab", { name: "Work", exact: true }).click();
+      await content.getByRole("radio", { name: "Finished", exact: true }).click();
+      await content.getByRole("button", { name: /^Audit landing page/ }).click();
+      const run = content.locator('[data-crew-run="old-run"]');
+      await expect(run.getByRole("region", { name: "Work summary" })).toBeVisible();
+      const timeline = run.getByText("Timeline", { exact: true });
+      await timeline.click();
+      await timeline.evaluate((node) => node.scrollIntoView({ block: "start" }));
+      await shot("work-finished");
+      await noOverflow();
+      await content.getByRole("tab", { name: "Teams", exact: true }).click();
+      await page.getByRole("button", { name: "Edit Website Crew", exact: true }).click();
+      const dialog = page.getByRole("dialog", {
+        name: "Website Crew",
+        exact: true,
+      });
+      await expect(dialog.getByText("Library", { exact: true }).first()).toBeVisible();
+      await expect(dialog.getByText("Customized", { exact: true }).first()).toBeVisible();
+      await shot("crew-editor");
+      await dialog.getByRole("button", { name: /^UI/ }).first().click();
+      await expect(dialog.getByRole("textbox", { name: /^Handle/ })).toBeVisible();
+      await dialog
+        .getByRole("textbox", { name: "Instructions", exact: true })
+        .scrollIntoViewIfNeeded();
+      await shot("member-form");
+      await dialog.getByRole("textbox", { name: /^Handle/ }).scrollIntoViewIfNeeded();
+      await shot("member-form-identity");
+      await noOverflow();
+    });
+  }
+}

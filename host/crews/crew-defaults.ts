@@ -18,6 +18,8 @@ export type CrewDefaultsState = {
   defaultsInitialized?: boolean;
   defaultsRevision?: number;
   defaultInstructionHashes?: Record<string, string>;
+  /** Set once `migrateLinkedMembers` normalized member links to the library. */
+  membershipLinked?: boolean;
 };
 
 /** Immutable fingerprints of the original seed, before revision tracking existed. */
@@ -139,6 +141,14 @@ export function applyCrewDefaults<T extends CrewDefaultsState>(
         updated.source.updatedAt !== saved.updatedAt
       )
         updated = { ...updated, source: { ...updated.source, updatedAt: saved.updatedAt } };
+      // A refreshed library profile no longer matches a member the crew edited itself.
+      if (
+        updated.source?.id === member.id &&
+        saved !== previous &&
+        saved?.instructions !== updated.instructions &&
+        !updated.customized
+      )
+        updated = { ...updated, customized: true };
       changed ||= updated !== member;
       return updated;
     });

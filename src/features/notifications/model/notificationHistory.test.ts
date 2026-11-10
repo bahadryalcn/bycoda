@@ -2,7 +2,9 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   MAX_NOTIFICATION_HISTORY,
+  NOTIFICATION_HISTORY_EVENT,
   NOTIFICATION_HISTORY_KEY,
+  recordNotificationHistory,
   historyOccurrenceIds,
   readNotificationHistory,
   readNotificationHistoryStatus,
@@ -152,4 +154,43 @@ it("removes one occurrence, keeps a reused request ID and refuses an unreadable 
   localStorage.setItem(NOTIFICATION_HISTORY_KEY, "bad json");
   expect(removeNotificationHistoryEntry(reused)).toBeNull();
   expect(localStorage.getItem(NOTIFICATION_HISTORY_KEY)).toBe("bad json");
+});
+
+it("reads entries stored before the log held other kinds, and the new kinds with their target", () => {
+  const old = { ...entry, key: "old", kind: "question" as const };
+  const finished = { ...entry, key: "done", kind: "finished" as const };
+  const background = {
+    ...entry,
+    key: "bg",
+    kind: "background" as const,
+    sessionId: "",
+    cwd: "",
+    target: "background:tasks",
+  };
+  localStorage.setItem(NOTIFICATION_HISTORY_KEY, JSON.stringify([background, finished, old]));
+  expect(readNotificationHistory()).toEqual([background, finished, old]);
+  localStorage.setItem(
+    NOTIFICATION_HISTORY_KEY,
+    JSON.stringify([
+      { ...entry, target: 5 },
+      { ...entry, kind: "other" },
+    ]),
+  );
+  expect(readNotificationHistory()).toEqual([]);
+});
+
+it("records an entry once per key and time and announces the change in this window", async () => {
+  const changed = vi.fn();
+  window.addEventListener(NOTIFICATION_HISTORY_EVENT, changed);
+  const logged = { ...entry, key: "done", kind: "finished" as const };
+  expect(await recordNotificationHistory(logged)).toBe(true);
+  expect(await recordNotificationHistory(logged)).toBe(false);
+  expect(await recordNotificationHistory({ ...logged, occurredAt: logged.occurredAt + 1 })).toBe(
+    true,
+  );
+  expect(readNotificationHistory()).toHaveLength(2);
+  expect(changed).toHaveBeenCalledTimes(2);
+  window.removeEventListener(NOTIFICATION_HISTORY_EVENT, changed);
+  localStorage.setItem(NOTIFICATION_HISTORY_KEY, "bad json");
+  expect(await recordNotificationHistory({ ...logged, key: "other" })).toBe(false);
 });

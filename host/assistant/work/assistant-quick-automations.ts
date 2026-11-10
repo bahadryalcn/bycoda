@@ -6,6 +6,7 @@ import {
   type HostAutomation,
 } from "../../../src/features/automations/model/hostAutomations";
 import type { AssistantQuickAutomationJob } from "../../../src/shared/model/host-contracts/assistant";
+import { QUICK_AUTOMATION_MAX_AHEAD_MS } from "../../../src/shared/model/host-contracts/assistant-quick-automation";
 import { normalizeAssistantQuickAutomationAction } from "../../../src/shared/model/assistantQuickAutomation";
 import {
   assertPoolExecution,
@@ -53,13 +54,31 @@ export type AssistantQuickAutomationResult = {
 };
 export type AssistantQuickAutomationService = Pick<
   HostAutomations,
-  "list" | "save" | "withAuthorization" | "usesStore"
+  "list" | "save" | "withAuthorization" | "usesStore" | "scheduleOnce"
 >;
+const ONCE_WINDOW = "A one-time automation must run at a future time within one year.";
+const quickAutomationRunAtValid = (runAt: number | undefined, now: number) =>
+  runAt === undefined || (runAt > now && runAt <= now + QUICK_AUTOMATION_MAX_AHEAD_MS);
+/** Rejects a one-time automation whose run time is not in the future or is more than a year away. */
+export function assertQuickAutomationSchedule(action: { runAt?: number }, now: number) {
+  if (!quickAutomationRunAtValid(action.runAt, now)) throw new Error(ONCE_WINDOW);
+}
 export const assistantQuickAutomationId = (jobId: string) =>
   `assistant-quick-${createHash("sha256").update(jobId).digest("hex").slice(0, 40)}`;
 export function assistantQuickAutomationConfiguration(job: AssistantQuickAutomationJob) {
-  const { kind: _, ...action } = normalizeAssistantQuickAutomationAction(job.quickAction);
-  return parseHostAutomation({ id: assistantQuickAutomationId(job.id), ...action });
+  const { kind: _, runAt, ...action } = normalizeAssistantQuickAutomationAction(job.quickAction);
+  // A one-time run is stored as a daily schedule at its local time and armed with `scheduleOnce` after saving.
+  const at = new Date(runAt ?? 0);
+  const once =
+    runAt === undefined
+      ? {}
+      : {
+          scheduleKind: "daily",
+          minute: 0,
+          time: `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`,
+          dayOfWeek: at.getDay(),
+        };
+  return parseHostAutomation({ id: assistantQuickAutomationId(job.id), ...action, ...once });
 }
 export function assistantQuickAutomationFingerprint(job: AssistantQuickAutomationJob) {
   return createHash("sha256")
@@ -186,6 +205,12 @@ export class HostAssistantQuickAutomations {
           : "The prior automation creation is unknown or missing. Owner inspection is required; no replay was issued.",
       };
     }
+    const runAt = job.quickAction.runAt;
+    if (!quickAutomationRunAtValid(runAt, this.now()))
+      return {
+        state: "waiting",
+        message: `${ONCE_WINDOW} No creation was issued.`,
+      };
     if (!(await this.ports.authorized(job)))
       return {
         state: "waiting",
@@ -223,6 +248,7 @@ export class HostAssistantQuickAutomations {
             throw new Error(
               "The actual automation configuration did not match the owner's reviewed payload.",
             );
+          if (runAt !== undefined) await automations.scheduleOnce(automationId, runAt);
           await this.write({
             ...receipt!,
             state: "completed",

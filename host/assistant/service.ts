@@ -58,6 +58,7 @@ import {
 } from "./work/assistant-cache-usage";
 import { compareAssistantJobPriority } from "../../src/shared/model/assistantJobPriority";
 import { assistantRoleExecution } from "../../src/shared/model/assistantRoles";
+import { keepAwakeDemand, readKeepAwakeBriefing } from "./core/assistant-keep-awake-demand";
 import { assistantDetailedBriefingText, assistantUpdateFallback } from "./briefing";
 import { readBriefingApprovals, recentBriefingNotes, briefingNoteLines } from "./briefing-sources";
 import type { HostAssistantManualSessions } from "./sessions/assistant-manual-sessions";
@@ -75,6 +76,7 @@ import type {
 import { HostAssistantQuickJobs, assistantQuickFingerprint } from "./work/assistant-quick-jobs";
 import {
   HostAssistantQuickAutomations,
+  assertQuickAutomationSchedule,
   assistantQuickAutomationId,
   type AssistantQuickAutomationService,
 } from "./work/assistant-quick-automations";
@@ -87,6 +89,8 @@ import {
 } from "../../src/shared/model/assistantPolicy";
 import { readAssistantProfile } from "./profile-defaults";
 import { assistantModelPoolOp } from "./models/assistant-model-pool";
+import { readAlwaysOn, type PushPhoneReader } from "./core/assistant-always-on";
+import { assistantFoldersOp } from "./folders/assistant-folders";
 import type { HostAssistantJobDeletion } from "./work/assistant-job-deletion";
 import type { AsyncHostNotes } from "../host-notes-async";
 import {
@@ -95,15 +99,22 @@ import {
   type AssistantQuestionStatus,
 } from "./core/assistant-questions";
 import { parseChiefReadRequests, type ChiefReadRequest } from "./chief/assistant-chief-reads";
-import { assertAssistantGoalProjects } from "./work/assistant-job-scope";
 import { appendAssistantDailyNote } from "./work/assistant-daily-note";
 import * as jobLog from "./work/assistant-job-activity";
 import { readAssistantTrash } from "./work/assistant-trash";
-import { applySnapshotFeatures, assistantJobNotificationBody } from "./work/assistant-job-holds";
+import {
+  applySnapshotFeatures,
+  assistantJobNotificationBody,
+  assistantNotificationUrgent,
+} from "./work/assistant-job-holds";
+import * as jobAfter from "./work/assistant-job-after";
+import { createAssistantProjectJob } from "./work/assistant-project-job";
+import { assistantReminderOp, fireDueReminders } from "./work/assistant-reminders";
 import * as modelHold from "./work/assistant-model-hold";
+import * as goalAdmission from "./work/assistant-goal-admission";
+import { AssistantTrackedWork, type TrackedWorkInput } from "./work/assistant-tracked-work";
+import { stallRecoveryAutonomy } from "./work/assistant-jobs-stall";
 import { GOAL_RESENT, hasErrorCode, resubmitGoal } from "./work/assistant-goal-recovery";
-import type { HostGoal } from "../../src/features/tasks/model/hostGoals";
-import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 import {
   HostAssistantVoiceContexts,
   type AssistantVoiceToolSource,
@@ -152,6 +163,8 @@ export type AssistantGoalStatus = {
   waitingReason?: "error" | "planApproval" | "owner" | "limits";
   runningChildren?: boolean;
   sessionQuestions?: AssistantQuestionStatus[];
+  /** One line of recorded verification, set once the goal is done. */
+  verification?: string;
 };
 export interface AssistantPorts {
   withNativeVoiceRuntimeRegistration?<T>(
@@ -306,6 +319,7 @@ export interface AssistantPorts {
   onJobPause?(id: string): void;
   onJobResume?(id: string): void;
   keepAwake?(enabled: boolean): Promise<AssistantKeepAwakeStatus>;
+  readPushPhones?: PushPhoneReader;
   markManagedSessions?(job: AssistantJob): Promise<void>;
   chiefReadSnapshot?(
     profile: AssistantProfile,
@@ -431,6 +445,7 @@ export class HostAssistant {
   private readonly ownerQuestions: HostAssistantOwnerQuestions;
   private readonly voiceContexts: HostAssistantVoiceContexts;
   private readonly threadSummaries: HostAssistantThreadSummaries;
+  private readonly tracked: AssistantTrackedWork;
   private quickPolicyEpoch = 0;
   private readonly quickJobEpochs = new Map<string, number>();
   constructor(
@@ -596,6 +611,14 @@ export class HostAssistant {
           now: () => this.now(),
         })
       : undefined;
+    this.tracked = new AssistantTrackedWork({
+      repository: this.repository,
+      ports,
+      now: () => this.now(),
+      notify: (value) => this.queueNotification(value),
+      activity: (kind, summary, extra) => this.activity(kind, summary, extra),
+      onError: (error) => ports.onError?.(error),
+    });
     this.ready = Promise.all([
       repositoryReady,
       this.ownerQuestions.ready,
@@ -1066,7 +1089,7 @@ export class HostAssistant {
       body: (await this.safeOutput(value.body)).slice(0, 2000),
     });
   }
-  private async notifications(profile: AssistantProfile): Promise<AssistantNotification[]> {
+  async notifications(profile: AssistantProfile): Promise<AssistantNotification[]> {
     const rows = await this.store.db
       .prepare(
         "SELECT value FROM assistant_runtime WHERE id LIKE 'notification:%' AND deleted_at IS NULL AND json_extract(value,'$.value.acknowledgedAt') IS NULL AND json_extract(value,'$.value.supersededBy') IS NULL AND (?=1 OR json_extract(value,'$.value.kind') NOT IN ('task.done','task.needsInput')) ORDER BY updated_at,id LIMIT 100",
@@ -1144,11 +1167,7 @@ export class HostAssistant {
           )
             return null;
         }
-        let urgent =
-          value.kind === "budget.exhausted" ||
-          value.kind === "job.failed" ||
-          value.kind === "job.stalled" ||
-          value.kind === "task.needsInput";
+        let urgent = assistantNotificationUrgent(value.kind);
         if (value.kind === "job.waiting" && value.jobId) {
           let pending = approvals.get(value.jobId);
           if (!pending) {
@@ -1377,7 +1396,8 @@ export class HostAssistant {
       await this.setRuntime(`dailyBriefing:${key}`, briefing.id);
     } else await this.setRuntime("lastReturnBriefingAt", this.now());
   }
-  async supervisionAllowed(): Promise<boolean> {
+  /** Chief authority; `jobs` also admits the Jobs-mode one-time stalled-worker recovery. */
+  async supervisionAllowed(jobs = false): Promise<boolean> {
     await this.ready;
     const profile = await this.profile();
     return (
@@ -1385,7 +1405,7 @@ export class HostAssistant {
       !this.emergencyStop &&
       profile.enabled &&
       profile.setupComplete &&
-      profile.autonomy === "chief" &&
+      stallRecoveryAutonomy(profile, jobs) &&
       assistantActiveHours(profile, this.now()) &&
       !(await this.runtime("paused", false)) &&
       (await this.usage(profile)).mode === "run"
@@ -1422,69 +1442,18 @@ export class HostAssistant {
   /** Read-only final admission; this restricts canonical assistant work and grants nothing. */
   async autonomousJobAllowed(goalId: string): Promise<boolean> {
     await this.ready;
-    return this.store.db.scope(async () => {
-      if (!goalId.startsWith("assistant-"))
-        return !(await this.store.db
-          .prepare(
-            "SELECT 1 FROM assistant_jobs WHERE deleted_at IS NULL AND json_extract(value,'$.goalId')=? LIMIT 1",
-          )
-          .get(goalId));
-      const id = goalId.slice("assistant-".length),
-        job = await this.repository.get<AssistantJob>("jobs", id);
-      if (
-        !job ||
-        job.kind === "quick" ||
-        (job.goalId !== undefined && job.goalId !== goalId) ||
-        (job.goalId === undefined &&
-          (job.status !== "planning" || job.dispatchState !== "unknown")) ||
-        ["queued", "done", "failed", "paused", "cancelled"].includes(job.status) ||
-        job.pendingTaskDeletion ||
-        job.awaitingOwnerRestart
-      )
-        return false;
-      try {
-        const row = await this.store.db.prepare("SELECT value FROM goals WHERE id=?").get(goalId);
-        if (!row) return false;
-        const goal = JSON.parse(row.value) as HostGoal;
-        assertAssistantGoalProjects(job, goal);
-        if (goal.status === "cancelled" || goal.awaitingOwnerRestart) return false;
-        const rows = await this.store.db
-            .prepare("SELECT value FROM tasks WHERE json_extract(value,'$.goalId')=?")
-            .all(goalId),
-          tasks = rows.map((row) => JSON.parse(row.value) as HostTask);
-        if (
-          tasks.length !== goal.taskIds.length ||
-          new Set(goal.taskIds).size !== goal.taskIds.length ||
-          tasks.some(
-            (task) =>
-              !goal.taskIds.includes(task.id) ||
-              !assistantJobProjectIds(job).includes(task.projectId),
-          )
-        )
-          return false;
-        if (
-          await this.store.db
-            .prepare(
-              "SELECT goal_id FROM task_goal_holds WHERE goal_id=? UNION SELECT goal_id FROM task_goal_reason_holds WHERE goal_id=? AND reason='assistant-budget' UNION SELECT goal_id FROM task_goal_deletion_holds WHERE goal_id=? LIMIT 1",
-            )
-            .get(goalId, goalId, goalId)
-        )
-          return false;
-      } catch {
-        return false;
-      }
-      const profile = await this.profile();
-      if (
-        !profile.enabled ||
-        !profile.setupComplete ||
-        profile.autonomy === "report" ||
-        !assistantActiveHours(profile, this.now()) ||
-        (await this.usage(profile)).mode !== "run" ||
-        (await this.runtime("paused", false))
-      )
-        return false;
-      return !this.closing && !this.emergencyStop && !this.pendingJobStops.has(job.id);
-    });
+    return goalAdmission.autonomousJobAllowed(
+      {
+        store: this.store,
+        repository: this.repository,
+        profile: () => this.profile(),
+        now: () => this.now(),
+        usageRuns: async (profile) => (await this.usage(profile)).mode === "run",
+        paused: () => this.runtime("paused", false),
+        stopping: (jobId) => this.closing || this.emergencyStop || this.pendingJobStops.has(jobId),
+      },
+      goalId,
+    );
   }
   async manualPolicy(): Promise<ManualSupervisionPolicy> {
     await this.ready;
@@ -1507,7 +1476,12 @@ export class HostAssistant {
     return (await this.manualPolicy()).enabled && (await this.supervisionAllowed());
   }
   async workerRecoveryAllowed(jobId?: string): Promise<boolean> {
-    return (!jobId || !this.pendingJobStops.has(jobId)) && (await this.supervisionAllowed());
+    return (!jobId || !this.pendingJobStops.has(jobId)) && (await this.supervisionAllowed(true));
+  }
+  /** Observation-only record of direct Room/voice work; it grants no authority over it. */
+  async trackDirectWork(input: TrackedWorkInput): Promise<void> {
+    await this.ready;
+    await this.tracked.track(input);
   }
   async recordWorkerRecovery(record: AssistantRecoveryRecord): Promise<void> {
     await this.ready;
@@ -2659,7 +2633,7 @@ export class HostAssistant {
               ? "delivery unknown"
               : event.operation.delivery.replaceAll("_", " ");
           const summary = await this.safeOutput(
-            `Computer input · ${plain(event.app)} · ${event.action} · ${outcome} · ${event.principal.kind} · request ${plain(event.operation.requestId)}`,
+            `Computer input · ${plain(event.app)} · ${event.action} · ${outcome} · ${event.principal.kind} · ${event.permissionMode ?? "ask"} mode · request ${plain(event.operation.requestId)}`,
           );
           activity = await this.store.transaction(async () => {
             const value = await this.repository.put("activity", {
@@ -2728,7 +2702,7 @@ export class HostAssistant {
     if (principal !== "owner")
       throw new Error("This action requires the owner's direct authority.");
   }
-  private profile(): Promise<AssistantProfile> {
+  profile(): Promise<AssistantProfile> {
     return readAssistantProfile(this.repository);
   }
   private async runtime<T>(id: string, fallback: T): Promise<T> {
@@ -2963,6 +2937,16 @@ export class HostAssistant {
       },
     });
   }
+  private reminderDeps = () => ({
+    repository: this.repository,
+    now: () => this.now(),
+    queueNotification: (value: Omit<PendingNotification, "acknowledgedAt">) =>
+      this.queueNotification(value),
+  });
+  private afterDeps = () => ({
+    ...this.reminderDeps(),
+    after: (id: string) => this.runtime<{ after: string } | null>(jobAfter.jobAfterKey(id), null),
+  });
   private stamp() {
     const now = this.now();
     return { id: randomUUID(), version: 0, createdAt: now, updatedAt: now };
@@ -3447,6 +3431,7 @@ export class HostAssistant {
             emergencyStop: this.emergencyStop,
             canCreateGoal: !!this.ports.createGoal,
             modelHolds: await modelHold.loadModelHolds(this.store.db),
+            dependencies: await jobAfter.loadJobDependencies(this.store.db),
           }),
         };
       case "models.pool.get":
@@ -3454,6 +3439,19 @@ export class HostAssistant {
         return assistantModelPoolOp(input, principal, {
           repository: this.repository,
           profile: () => this.profile(),
+          now: () => this.now(),
+        });
+      case "reminders.create":
+      case "reminders.list":
+      case "reminders.cancel":
+        return assistantReminderOp(input, principal, this.reminderDeps());
+      case "alwaysOn.get":
+        this.owner(principal);
+        return { alwaysOn: await readAlwaysOn(this.ports.readPushPhones) };
+      case "folders.get":
+      case "folders.set":
+        return assistantFoldersOp(input, principal, {
+          repository: this.repository,
           now: () => this.now(),
         });
       case "profile.get":
@@ -4692,7 +4690,10 @@ export class HostAssistant {
               : normalizeAssistantQuickAutomationAction(input.quickAction);
           if (quickAction.kind === "note" ? !this.quickJobs : !this.quickAutomations)
             throw new Error("This quick action is unavailable on this Host.");
-          if (quickAction.kind === "automation") await this.assertProject(quickAction.projectId);
+          if (quickAction.kind === "automation") {
+            assertQuickAutomationSchedule(quickAction, this.now());
+            await this.assertProject(quickAction.projectId);
+          }
           const job = await this.store.transaction(async () => {
             const old = await this.repository.byKey<AssistantJob>("jobs", input.idempotencyKey);
             if (old) {
@@ -4762,47 +4763,17 @@ export class HostAssistant {
         if (projectIds.length > 20)
           throw new Error("Choose at most 20 projects including the lead.");
         for (const id of projectIds) await this.assertProject(id);
-        const job = await this.store.transaction(async () => {
-          const old = await this.repository.byKey<AssistantJob>("jobs", input.idempotencyKey);
-          if (old) {
-            if (
-              old.kind === "quick" ||
-              old.title !== input.title ||
-              old.request !== input.request ||
-              old.projectId !== input.projectId ||
-              JSON.stringify(assistantJobProjectIds(old)) !== JSON.stringify(projectIds)
-            )
-              throw new Error("A job retry must preserve the original request.");
-            return old;
-          }
-          const active = (await this.repository.list<AssistantJob>("jobs", 10000)).filter(
-            (job) => !terminal.has(job.status),
-          );
-          if (active.length >= 100)
-            throw new Error("The assistant already tracks 100 active jobs.");
-          const value = await this.repository.put(
-            "jobs",
-            {
-              ...this.stamp(),
-              title: input.title,
-              request: input.request,
-              projectId: input.projectId,
-              projectIds,
-              status: "queued" as const,
-              taskIds: [],
-              sessionIds: [],
-              progress: { done: 0, total: 0 },
-              summary: "",
-              tokens: 0,
-              idempotencyKey: input.idempotencyKey,
-              dispatchState: "pending" as const,
-            },
-            0,
-            input.idempotencyKey,
-          );
-          await this.activity("job.received", "A new job was received.", { jobId: value.id });
-          return value;
-        }, "critical");
+        const job = await createAssistantProjectJob(
+          {
+            store: this.store,
+            repository: this.repository,
+            stamp: () => this.stamp(),
+            activity: (kind, summary, extra) => this.activity(kind, summary, extra),
+            setRuntime: (id, value) => this.setRuntime(id, value),
+          },
+          input,
+          projectIds,
+        );
         await this.tickInner(this.later); // The Chief's model turn may outlast this RPC.
         return { job: await this.require<AssistantJob>("jobs", job.id) };
       }
@@ -6295,7 +6266,20 @@ export class HostAssistant {
         return;
       }
     }
-    const requested = eligible && running;
+    const requested =
+      eligible &&
+      (running ||
+        keepAwakeDemand({
+          running: false,
+          queuedJobs: jobs.some((job) => job.kind !== "quick" && job.status === "queued"),
+          canStartJobs: profile.autonomy !== "report" && !!profile.execution,
+          policy: profile,
+          now: this.now(),
+          briefing: await readKeepAwakeBriefing(
+            (id, fallback) => this.runtime(id, fallback),
+            this.now(),
+          ),
+        }));
     try {
       this.keepAwakeStatus = await this.ports.keepAwake(requested);
     } catch (error) {
@@ -6504,6 +6488,7 @@ export class HostAssistant {
         await this.prepareBriefing(this.now() - DAY, day);
     }
     await this.syncHoursHolds(profile);
+    if (profile.enabled && profile.setupComplete) await fireDueReminders(this.reminderDeps());
     if (
       this.emergencyStop ||
       !profile.enabled ||
@@ -6557,6 +6542,11 @@ export class HostAssistant {
       }
       let job: AssistantProjectJob = { ...original, projectIds: assistantJobProjectIds(original) };
       if (terminal.has(job.status) && job.tokensComplete !== false) continue;
+      if (
+        job.status === "queued" &&
+        (await jobAfter.holdForDependency(this.afterDeps(), job, jobs))
+      )
+        continue;
       if (
         job.status === "queued" &&
         usage.mode === "run" &&
@@ -6734,6 +6724,7 @@ export class HostAssistant {
                   summary,
                   status.waitingReason,
                   profile.stallMinutes,
+                  status.verification,
                 ),
                 createdAt: this.now(),
                 jobId: job.id,
@@ -6748,8 +6739,11 @@ export class HostAssistant {
         } catch (error) {
           this.ports.onError?.(error);
         }
+        if (nextStatus === "stalled")
+          await this.tracked.nudgeStalled(job, status.sessionIds, profile);
       }
     }
+    await this.tracked.tick(profile);
     const manualState = await this.manualTick(profile);
     incompleteUsage ||= manualState.incomplete;
     await this.store.transaction(async () => {

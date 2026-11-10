@@ -2,9 +2,13 @@
 
 ## Capture, recovery and provenance
 
-Owner action alone opens capture. Mute/disable/close/device changes invalidate pending
-work. Recover only recoverable live failures with fresh credentials, mute and bounded context.
-Idle/lock sleep releases capture; return is Ready until Talk. Disconnect, Stop and
+Owner action alone opens capture, except the opt-in, default-off return call: it speaks
+through output-only playback, opens capture for a bounded window, and a silent window closes
+it with a notice and notification. Mute/disable/close/device changes invalidate pending
+work. Recover only recoverable live failures with fresh credentials, mute and bounded
+text context (summary, recent turns, scoped open work). Retries are fast, then every minute
+up to 30 minutes, and run at once on `online`. Idle/lock sleep releases capture; return is
+Ready until Talk unless the return call is on. Disconnect, Stop and
 sleep cancel retries; old timers/callbacks cannot reopen capture. Unknown presence
 is not active. Generation binds actual runtime birth, original
 Room/window and closure. Preconnect registration creates no utterance/tool provenance.

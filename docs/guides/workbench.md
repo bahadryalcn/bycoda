@@ -286,15 +286,21 @@ draft, cursor and attachments stay as they are. Actions under an assistant reply
 (copy, save as note, handoff, second opinion, turn details) are a compact icon row
 with tooltips; a failed copy or save shows the reason and a retry icon in place.
 
-The notifications sheet lists pending requests and **Recent requests** (the last
-100). A pending approval is decided in place with Allow or Deny, which show their
-progress and any error on the request itself; a pending question opens its
-conversation with **Answer**. Clicking a recent request opens its conversation; if
-that conversation no longer exists, the row says so and the sheet stays open. A
-recent request that is still unanswered is marked **Waiting for you**. Each recent
-request can be removed on its own, and **Clear all** above the list removes them
-all. Removing and clearing happen only after the change is saved; if saving fails,
-the list stays and says so.
+The notifications sheet lists pending requests and **Recent**, the common log of
+what the app announced (the last 100): questions, approvals, finished and failed
+turns, reminders, background work, assistant messages and account notices. Each
+row carries a kind label and icon. An event is logged when its notification
+setting allows it, even if no desktop banner was shown because bycoda was in the
+foreground or banners are off; a muted project is not logged, and a locked group
+is logged without its text. A pending approval is decided in place with Allow or
+Deny, which show their progress and any error on the request itself; a pending
+question opens its conversation with **Answer**. Clicking a recent row opens its
+conversation, or for background work, the assistant and account notices the view
+they belong to; if that conversation no longer exists, the row says so and the
+sheet stays open. A recent request that is still unanswered is marked **Waiting
+for you**. Each row can be removed on its own, and **Clear all** above the list
+removes them all. Removing and clearing happen only after the change is saved; if
+saving fails, the list stays and says so.
 
 Desktop banners appear only while bycoda is in the background. While any bycoda
 window is focused, conversation updates, pending requests and reminders remain

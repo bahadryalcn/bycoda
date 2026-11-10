@@ -207,6 +207,33 @@ export function codexExternalMcpArgs(external: ExternalMcp): string[] {
   return args;
 }
 
+/** A member's MCP allowlist: other hub servers are dropped and disabled in the provider. */
+export function narrowExternalMcp(external: ExternalMcp, allow: readonly string[]): ExternalMcp {
+  const dropped = external.servers.filter((server) => !allow.includes(server.name));
+  return {
+    servers: external.servers.filter((server) => allow.includes(server.name)),
+    disable: {
+      claude: [...external.disable.claude, ...dropped.map((server) => server.name)],
+      codex: [...external.disable.codex, ...dropped.map((server) => server.codexName)],
+      opencode: [...(external.disable.opencode ?? []), ...dropped.map((server) => server.name)],
+    },
+  };
+}
+
+/** The bridge fragment narrowed to an allowlist. Without readable hub metadata the allowlist
+ * cannot be applied, so the launch is refused instead of running with every server. */
+export function narrowPublishedMcp(
+  published: { externalMcp: unknown } | undefined,
+  allow: readonly string[],
+): { externalMcp: ExternalMcp } {
+  const external = published ? parseExternalMcp(published.externalMcp) : undefined;
+  if (!external)
+    throw new Error(
+      "The MCP server list is unavailable, so this member's MCP servers cannot be restricted. Try again.",
+    );
+  return { externalMcp: narrowExternalMcp(external, allow) };
+}
+
 const parseRecord = (value: string | undefined) => {
   if (value === undefined) return undefined;
   try {

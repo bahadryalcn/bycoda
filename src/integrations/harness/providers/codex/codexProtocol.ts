@@ -30,104 +30,27 @@ import {
   COMPACTION_STATUS_KEY,
 } from "../../../../features/sessions/model/compactionStatus";
 
-/** Codex approval / sandbox settings for thread/start and turn/start. */
-export type CodexThreadConfig = {
-  approvalPolicy: "untrusted" | "on-request" | "never";
-  sandbox: "read-only" | "workspace-write" | "danger-full-access";
-  approvalsReviewer: "user" | "auto_review";
-  sandboxPolicy:
-    | { type: "readOnly"; networkAccess?: boolean }
-    | {
-        type: "workspaceWrite";
-        networkAccess?: boolean;
-        writableRoots?: string[];
-      }
-    | { type: "dangerFullAccess" };
-};
-
-/**
- * Lets a workspace-write sandbox edit folders beyond the cwd. Read-only and
- * full-access policies need nothing: reads are not confined to the cwd.
- */
-function withWritableRoots(
-  config: CodexThreadConfig,
-  additionalDirs?: readonly string[],
-): CodexThreadConfig {
-  if (!additionalDirs?.length || config.sandboxPolicy.type !== "workspaceWrite") return config;
-  return {
-    ...config,
-    sandboxPolicy: {
-      ...config.sandboxPolicy,
-      writableRoots: [...additionalDirs],
-    },
-  };
-}
-
-/**
- * `readOnly` and `workspaceWrite` both default to networkAccess: false, which
- * blocks loopback too. An orchestration lead or a /operator-enabled thread
- * needs the local CLI socket, so its turns enable network access.
- */
-function withNetwork(config: CodexThreadConfig, controlsAgents?: boolean): CodexThreadConfig {
-  if (!controlsAgents || config.sandboxPolicy.type === "dangerFullAccess") return config;
-  return {
-    ...config,
-    sandboxPolicy: { ...config.sandboxPolicy, networkAccess: true },
-  };
-}
-
-export function runtimeModeToCodexConfig(
-  mode: RuntimeMode,
-  controlsAgents?: boolean,
-): CodexThreadConfig {
-  return withNetwork(baseCodexConfig(mode), controlsAgents);
-}
-
-function baseCodexConfig(mode: RuntimeMode): CodexThreadConfig {
-  switch (mode) {
-    case "supervised":
-      return {
-        approvalPolicy: "untrusted",
-        sandbox: "read-only",
-        approvalsReviewer: "user",
-        sandboxPolicy: { type: "readOnly" },
-      };
-    case "auto-accept-edits":
-      return {
-        approvalPolicy: "on-request",
-        sandbox: "workspace-write",
-        approvalsReviewer: "user",
-        sandboxPolicy: { type: "workspaceWrite" },
-      };
-    case "auto":
-      return {
-        approvalPolicy: "on-request",
-        sandbox: "workspace-write",
-        approvalsReviewer: "auto_review",
-        sandboxPolicy: { type: "workspaceWrite" },
-      };
-    case "full-access":
-      return {
-        // Explicit escalations still need an approval round-trip. "never"
-        // rejects them before the client's full-access handler can allow them.
-        approvalPolicy: "on-request",
-        sandbox: "danger-full-access",
-        approvalsReviewer: "user",
-        sandboxPolicy: { type: "dangerFullAccess" },
-      };
-  }
-}
+import {
+  codexMode,
+  runtimeModeToCodexConfig,
+  withNetwork,
+  withWritableRoots,
+  type CodexThreadConfig,
+} from "./codexConfig";
+export { codexMode, runtimeModeToCodexConfig, type CodexThreadConfig };
 
 export function buildThreadStartParams(input: {
   cwd: string;
   runtimeMode: RuntimeMode;
   controlsAgents?: boolean;
+  /** Crew read-only member. */
+  readOnly?: boolean;
   model?: string;
   serviceTier?: string;
   additionalDirs?: readonly string[];
 }): Record<string, unknown> {
   const config = withWritableRoots(
-    runtimeModeToCodexConfig(input.runtimeMode, input.controlsAgents),
+    runtimeModeToCodexConfig(input.runtimeMode, input.controlsAgents, input.readOnly),
     input.additionalDirs,
   );
   return {
@@ -161,6 +84,8 @@ export function buildTurnStartParams(input: {
   threadId: string;
   runtimeMode: RuntimeMode;
   controlsAgents?: boolean;
+  /** Crew read-only member. */
+  readOnly?: boolean;
   prompt?: string;
   attachments?: Attachment[];
   model?: string;
@@ -177,7 +102,7 @@ export function buildTurnStartParams(input: {
     );
   }
   const runtimeConfig = withWritableRoots(
-    runtimeModeToCodexConfig(input.runtimeMode, input.controlsAgents),
+    runtimeModeToCodexConfig(input.runtimeMode, input.controlsAgents, input.readOnly),
     input.additionalDirs,
   );
   const config: CodexThreadConfig =

@@ -1,8 +1,6 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useCallback, useMemo, useRef } from "react";
 import type { Submit } from "../helpers/types";
 import { type OrchestrationWorkerDetail } from "../../../features/orchestration/ui/OrchestrationActions";
-import { focusWindowLiveAgent } from "../../model/useWindowLiveAgents";
 import {
   type OrchestrationProposal,
   withOrchestrationProposal,
@@ -11,37 +9,17 @@ import {
 import { sessionsRef, setSessions } from "../../../features/sessions/model/sessionsStore";
 import { orchestrator } from "../../../features/orchestration/model/orchestration";
 import { upsertSession } from "../../../features/sessions/data/sessionStore";
-import { message } from "@tauri-apps/plugin-dialog";
-import { t } from "../../../shared/i18n";
 
 export interface OrchestrationActionsDeps {
-  onOpenApprovalSession: (sessionId: string) => void;
+  onOpenApprovalSession: (sessionId: string) => unknown;
   queueWorkerPanes: (workers: OrchestrationWorkerDetail[]) => void;
   onSubmit: Submit;
-  liveAgents: Parameters<typeof focusWindowLiveAgent>[0][];
-  unopenedRemoteRef: MutableRefObject<{ project: string; session: { id: string } }[]>;
-  dismissRemoteFinished: (sessionId: string) => void;
-  onSelectRemoteSession: (project: string, remoteSessionId: string) => void;
-  setSearchViewOpen: Dispatch<SetStateAction<boolean>>;
-  setInboxViewOpen: Dispatch<SetStateAction<boolean>>;
-  setNotesViewOpen: Dispatch<SetStateAction<boolean>>;
-  setAutomationsViewOpen: Dispatch<SetStateAction<boolean>>;
-  setServersViewOpen?: Dispatch<SetStateAction<boolean>>;
 }
 
 export function useOrchestrationActions({
   onOpenApprovalSession,
   queueWorkerPanes,
   onSubmit,
-  liveAgents,
-  unopenedRemoteRef,
-  dismissRemoteFinished,
-  onSelectRemoteSession,
-  setSearchViewOpen,
-  setInboxViewOpen,
-  setNotesViewOpen,
-  setAutomationsViewOpen,
-  setServersViewOpen,
 }: OrchestrationActionsDeps) {
   const confirmingOrchestration = useRef(new Set<string>());
   const updateOrchestrationCard = useCallback(
@@ -134,32 +112,9 @@ export function useOrchestrationActions({
 
   const onSelectLiveAgent = useCallback(
     (sessionId: string) => {
-      const elsewhere = liveAgents.find(
-        (agent) => agent.id === sessionId && agent.ownerWindowLabel,
-      );
-      if (elsewhere) {
-        void focusWindowLiveAgent(elsewhere).catch((error) => {
-          void message(String(error), {
-            get title() {
-              return t("Open conversation window");
-            },
-          });
-        });
-        return;
-      }
-
-      setSearchViewOpen(false);
-      setInboxViewOpen(false);
-      setNotesViewOpen(false);
-      setAutomationsViewOpen(false);
-      setServersViewOpen?.(false);
-      const remote = unopenedRemoteRef.current.find(({ session }) => session.id === sessionId);
-      if (remote) {
-        dismissRemoteFinished(sessionId);
-        onSelectRemoteSession(remote.project, sessionId);
-      } else onOpenApprovalSession(sessionId);
+      void onOpenApprovalSession(sessionId);
     },
-    [dismissRemoteFinished, onOpenApprovalSession, onSelectRemoteSession, liveAgents],
+    [onOpenApprovalSession],
   );
   return { orchestrationActions, onSelectLiveAgent };
 }

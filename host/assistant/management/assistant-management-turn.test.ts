@@ -323,7 +323,7 @@ it("completes realistic bounded discovery, read, write and readback within the d
   const f = fixture();
   f.input.tokenCap = 8000;
   const plans = [
-    decision("tools.search", { query: "tasks", limit: 3 }, "project"),
+    decision("tools.search", { query: "tasks.update", limit: 3 }, "project"),
     decision(
       "tools.describe",
       { ids: ["conversation:tasks.get", "conversation:tasks.update"], maxChars: 3000 },

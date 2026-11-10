@@ -196,6 +196,9 @@ it("binds an unattempted legacy draft to the observed Host and forwards reviewed
     }),
     "host-a",
   );
+  expect(state.close).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("Ready for 24/7");
+  await act(async () => button("Done").click());
   expect(state.close).toHaveBeenCalledOnce();
   expect(localStorage.getItem(key)).toBeNull();
 });
@@ -272,7 +275,7 @@ it("keeps all ten voice steps and gates each verification without any setup writ
   expect(document.querySelector("textarea")?.value).toBe("Keep replies concise");
   await click("Next");
   await start();
-  expect(state.request).toHaveBeenLastCalledWith(
+  expect(state.request).toHaveBeenCalledWith(
     expect.objectContaining({
       op: "profile.update",
       patch: expect.objectContaining({ voiceSetupComplete: true }),
@@ -341,6 +344,9 @@ it("keeps reviewed values and rules after a failed save and retries against the 
   expect(state.close).not.toHaveBeenCalled();
   await start();
   expect(state.request.mock.calls.every((call) => call[1] === "host-a")).toBe(true);
+  expect(state.close).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("Ready for 24/7");
+  await act(async () => button("Done").click());
   expect(state.close).toHaveBeenCalledOnce();
 });
 it.each(["jobs", "chief"])(
@@ -376,7 +382,7 @@ it.each(["jobs", "chief"])(
     expect(document.body.textContent).toContain("Worker model");
     expect(document.body.textContent).toContain(models.worker.name);
     await start();
-    expect(state.request).toHaveBeenLastCalledWith(
+    expect(state.request).toHaveBeenCalledWith(
       expect.objectContaining({
         op: "profile.update",
         patch: expect.objectContaining({
@@ -399,7 +405,7 @@ it("materializes a missing worker in a retained unconfigured Review only at Star
   expect(JSON.parse(localStorage.getItem(key)!).patch.execution).toBeNull();
   expect(document.body.textContent).toContain(models.worker.name);
   await start();
-  expect(state.request).toHaveBeenLastCalledWith(
+  expect(state.request).toHaveBeenCalledWith(
     expect.objectContaining({
       op: "profile.update",
       patch: expect.objectContaining({
@@ -445,7 +451,7 @@ it("does not replace a chosen execution or materialize a completed profile's nul
   );
   await render();
   await start();
-  expect(state.request).toHaveBeenLastCalledWith(
+  expect(state.request).toHaveBeenCalledWith(
     expect.objectContaining({
       op: "profile.update",
       patch: expect.objectContaining({ execution }),
@@ -465,7 +471,7 @@ it("does not replace a chosen execution or materialize a completed profile's nul
   );
   await render();
   await start();
-  expect(state.request).toHaveBeenLastCalledWith(
+  expect(state.request).toHaveBeenCalledWith(
     expect.objectContaining({
       op: "profile.update",
       patch: expect.objectContaining({ execution: null }),

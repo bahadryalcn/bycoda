@@ -37,7 +37,11 @@ export function createHostCrewsService(ports: {
           await assertDomainAuthority(accepted);
           // Paired owner requests have no conversation principal. It is never
           // extracted from params; scoped tools keep their separate native binding.
-          return ports.crews.call(method, params, String(params.projectId ?? ""));
+          return ports.crews.call(
+            method,
+            params,
+            String((params as { projectId?: string }).projectId ?? ""),
+          );
         },
       );
       await assertDomainAuthority(accepted);

@@ -9,6 +9,7 @@ import {
 } from "../../../integrations/harness/core/preview";
 import { leafName } from "../../files/public/fileName";
 import { displayPath, pathKey, resolveWorkspacePath } from "../../../shared/lib/paths";
+import { delegatedChildIdOf } from "./delegatedBlockId";
 import { isTurnInterruptMessage } from "./inFlight";
 import { isSessionErrorBlock } from "./sessionIssue";
 import { COMPACTING_TEXT, isRunningCompaction } from "./compactionStatus";
@@ -504,13 +505,9 @@ export function groupTurnItems(blocks: Block[], options?: { settled?: boolean })
     activity = [];
   };
   visible.forEach((block) => {
-    // Delegated runs keep their own rows while the turn is live. Their row is
-    // the one thing in a turn that has to stay put: it is where the user goes
-    // to watch, and the trail around it folds and re-folds while the subagent
-    // is still going. Once the turn settles they are work like any other call
-    // — except one that died: a failed run keeps its own row under the fold,
-    // where it opens itself onto the reason rather than folding out of sight.
-    if (isSubagentBlock(block) && (!settled || toolCallState(block) === "rejected")) {
+    // Delegated runs keep their own rows while the turn is live. Once settled
+    // they fold in, except a run that died and a Crew member's own conversation.
+    if (isSubagentBlock(block) && (!settled || ownsRow(block))) {
       flush();
       const last = items[items.length - 1];
       if (last?.type === "subagents") last.blocks.push(block);
@@ -617,6 +614,8 @@ export function activityStillRunning(blocks: Block[]): boolean {
       needsApproval(block),
   );
 }
+
+const ownsRow = (b: Block) => toolCallState(b) === "rejected" || !!delegatedChildIdOf(b.id);
 
 export function hasRunningSubagent(blocks: Block[]): boolean {
   return blocks.some((block) => isSubagentBlock(block) && toolCallState(block) === "pending");

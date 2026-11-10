@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   codexExternalMcpArgs,
+  narrowExternalMcp,
+  narrowPublishedMcp,
   opencodeConfigContent,
   parseExternalMcp,
   rebaseExternalMcp,
@@ -235,5 +237,33 @@ describe("opencodeLaunchEnv", () => {
     expect(JSON.parse(env!.OPENCODE_CONFIG_CONTENT).mcp.arc.type).toBe("remote");
     expect(opencodeLaunchEnv(undefined)).toBeUndefined();
     expect(opencodeLaunchEnv({ servers: [], disable: { claude: [], codex: [] } })).toBeUndefined();
+  });
+});
+
+describe("narrowing to a member's MCP allowlist", () => {
+  it("drops unlisted hub servers and disables them in each provider", () => {
+    const narrowed = narrowExternalMcp(external, ["uiarc"]);
+    expect(narrowed.servers.map((server) => server.name)).toEqual(["uiarc"]);
+    expect(narrowed.disable.claude).toEqual(["rea", "arc"]);
+    expect(narrowed.disable.codex).toEqual(["rea", "a.b", "arc-hub"]);
+    expect(narrowed.disable.opencode).toEqual(["arc"]);
+    expect(codexExternalMcpArgs(narrowed)).toContain("mcp_servers.arc-hub={enabled=false}");
+  });
+
+  it("an empty allowlist removes every hub server and Claude then loads only the hub config", () => {
+    const narrowed = narrowExternalMcp(external, []);
+    expect(narrowed.servers).toEqual([]);
+    const args = withExternalMcpArgs("claude", ["--model", "x"], narrowed);
+    expect(args).toContain("--strict-mcp-config");
+    expect(JSON.parse(args[args.indexOf("--mcp-config") + 1]!).mcpServers).toEqual({});
+  });
+
+  it("refuses to launch without readable hub metadata", () => {
+    expect(() => narrowPublishedMcp(undefined, ["arc"])).toThrow(/cannot be restricted/);
+    expect(() => narrowPublishedMcp({ externalMcp: { nope: 1 } }, ["arc"])).toThrow(
+      /cannot be restricted/,
+    );
+    const published = narrowPublishedMcp({ externalMcp: external }, ["arc"]);
+    expect(parseExternalMcp(published.externalMcp)?.servers.map((s) => s.name)).toEqual(["arc"]);
   });
 });

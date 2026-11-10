@@ -1,20 +1,15 @@
 import { useSyncExternalStore } from "react";
-import { TAB_GROUP_COLORS } from "../../workspace/model/tabGroups";
-import { normalizeProjectMascotName } from "../../projects/model/projectMascots";
+import { crewPaletteColor, parseAppearance, type CrewAppearance } from "./crewIdentity";
 import { createWindowStore } from "../../../shared/lib/store";
 
-// The host keeps only what runs a crew; how it looks on this device lives here,
-// like project group icons and colors.
+// A host with `crews.identity.v1` stores a crew's look on the definition (`crewLook.ts`).
+// This device-local copy serves older hosts and looks not yet migrated to the host.
+// "Show crews on rail" is always a device preference.
 const APPEARANCE_KEY = "bycoda:crews:appearance";
 const RAIL_KEY = "bycoda:crews:show-on-rail";
 const CHANGED = "bycoda:crews-appearance-changed";
 
-export type CrewAppearance = {
-  /** A project mascot name; unset uses the one hashed from the crew id. */
-  icon?: string;
-  /** Index into `TAB_GROUP_COLORS`; unset or 0 keeps the mascot's own colors. */
-  color?: number;
-};
+export type { CrewAppearance };
 
 let cache: { raw: string | null; value: Record<string, CrewAppearance> } | null = null;
 const appearanceStore = createWindowStore({
@@ -50,18 +45,8 @@ export function loadCrewAppearances(): Record<string, CrewAppearance> {
   try {
     const parsed = JSON.parse(raw ?? "{}") as Record<string, unknown>;
     for (const [id, entry] of Object.entries(parsed)) {
-      if (!entry || typeof entry !== "object") continue;
-      const { icon, color } = entry as Record<string, unknown>;
-      const name = typeof icon === "string" ? normalizeProjectMascotName(icon) : null;
-      value[id] = {
-        ...(name ? { icon: name } : {}),
-        ...(typeof color === "number" &&
-        Number.isInteger(color) &&
-        color > 0 &&
-        color < TAB_GROUP_COLORS.length
-          ? { color }
-          : {}),
-      };
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+      value[id] = parseAppearance(entry) ?? {};
     }
   } catch {
     // A corrupt entry falls back to every crew's default look.
@@ -80,8 +65,12 @@ export function saveCrewAppearance(id: string, patch: CrewAppearance) {
   write(APPEARANCE_KEY, JSON.stringify(all));
 }
 
+export function forgetCrewAppearance(id: string) {
+  if (loadCrewAppearances()[id]) saveCrewAppearance(id, { icon: undefined, color: undefined });
+}
+
 export function crewColor(appearance: CrewAppearance | undefined): string | undefined {
-  return appearance?.color ? TAB_GROUP_COLORS[appearance.color] : undefined;
+  return crewPaletteColor(appearance?.color);
 }
 
 export function loadCrewsOnRail(): boolean {

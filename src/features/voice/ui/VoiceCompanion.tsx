@@ -18,7 +18,6 @@ import {
 import type { Session } from "../../sessions/model/session";
 import { sessionsRef as liveSessions, useSession } from "../../sessions/model/sessionsStore";
 import { Button } from "../../../shared/ui/Button";
-import { InlineError } from "../../../shared/ui/InlineError";
 import { useOverlay } from "../../../shared/ui/overlay";
 import { GripVertical } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
@@ -42,9 +41,15 @@ import {
   useVoicePresence,
   readNativeVoicePresence,
   deriveCapturePresence,
+  markAcceptedVoiceSpeech,
 } from "../model/voicePresence";
 import { shouldSilentlyAcknowledgeVoice, shouldWaitForVoice } from "../model/voiceSpeechPolicy";
-import { classifyVoiceFailure, VOICE_RECONNECT_DELAYS } from "../model/voiceReconnect";
+import { classifyVoiceFailure } from "../model/voiceReconnect";
+import { VoiceReconnectScheduler } from "../model/voiceReconnectScheduler";
+import { VoiceCompanionRecovery } from "./companion/VoiceCompanionRecovery";
+import { voiceStatusText } from "./companion/voiceStatusText";
+import { useVoiceReturnCall } from "./useVoiceReturnCall";
+import { useVoiceTalkEvent } from "./useVoiceTalkEvent";
 import { RealtimeVoice } from "../model/realtimeVoice";
 import { realtimeSecret, type RealtimeProvider } from "../model/realtimeVoiceClient";
 import {
@@ -141,7 +146,7 @@ import { VoiceJobReview } from "./VoiceJobReview";
 import {
   VoiceJobBatch,
   VoiceJobDraftsSchema,
-  resolveVoiceJobDraft,
+  voiceJobDrafts,
   changeVoiceJobRows,
   spokenJobReviewDecision,
   type VoiceJobDraft,
@@ -163,8 +168,6 @@ import {
 } from "../../group-lock/model/groupLock";
 import { useVoiceBriefing } from "./useVoiceBriefing";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
-import { LiveText } from "../../../shared/ui/LiveText";
-import { MicrophoneRecoveryAction } from "./MicrophoneRecoveryAction";
 import { newRequestId } from "../../../shared/lib/id/requestId";
 
 /** Cloud speech-to-speech providers, signed in through Grok Build or Codex. */
@@ -869,9 +872,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   ]);
   const detectedPresence = useVoicePresence(open, settings.idleSleepMinutes);
   const [lastAdmittedSpeechAt, setLastAdmittedSpeechAt] = useState<number | null>(null);
-  const markAdmittedSpeech = useCallback(() => {
-    setLastAdmittedSpeechAt(Date.now());
-  }, []);
+  const markAdmittedSpeech = useCallback(
+    () => setLastAdmittedSpeechAt(markAcceptedVoiceSpeech()),
+    [],
+  );
   const lastDeliveredAssistant = useRef("");
   const playbackRef = useRef(playback);
   useLayoutEffect(() => {
@@ -921,8 +925,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   });
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
-  const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const retryCount = useRef(0);
+  const [reconnect] = useState(() => new VoiceReconnectScheduler());
   const stableTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const recentTurns = useRef<
     { role: "user" | "assistant"; text: string; projectIds?: readonly string[] }[]
@@ -1454,8 +1457,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     }
     transcriptStore.current?.finish();
     clearTimeout(stableTimer.current);
-    clearTimeout(retryTimer.current);
-    retryTimer.current = undefined;
+    reconnect.cancel();
     generation.current++;
     turnCaptured.current = false;
     sequence.current++;
@@ -1478,9 +1480,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     releaseChoice();
     transcriptStore.current?.finish();
     clearTimeout(stableTimer.current);
-    clearTimeout(retryTimer.current);
-    retryTimer.current = undefined;
-    retryCount.current = 0;
+    reconnect.reset();
     recentTurns.current = [];
     generation.current++;
     turnCaptured.current = false;
@@ -1538,7 +1538,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   useEffect(
     () => () => {
       clearTimeout(stableTimer.current);
-      clearTimeout(retryTimer.current);
+      reconnect.cancel();
       generation.current++;
       sideRequest.current?.abort();
       transcriptStore.current?.finish();
@@ -1855,6 +1855,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           signal: controller.signal,
           tools: voiceTools,
           persona: ownerInstructions(),
+          onProgress: reply,
+          onFailure: setError,
           execute: async (name, args, _signal, wait) => {
             if (
               controller.signal.aborted ||
@@ -2130,11 +2132,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         capabilities?.quickAutomations !== true
       )
         throw new Error("Quick automation jobs are unavailable for this project.");
-      const jobs = input.map((item) => ({
-        ...resolveVoiceJobDraft(item, projects, allowed, defaultPath ?? ""),
-        id: crypto.randomUUID(),
-        idempotencyKey: newRequestId(),
-      }));
+      const jobs = voiceJobDrafts(input, projects, allowed, defaultPath ?? "", newRequestId);
       const review: VoiceJobReviewState = {
         id: crypto.randomUUID(),
         jobs,
@@ -2340,18 +2338,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       setError("");
       return;
     }
-    const delay = rotation ? 0 : VOICE_RECONNECT_DELAYS[retryCount.current++];
     stopCapture("reconnecting", true);
     setMuted(wasMuted);
     setError("");
-    if (delay === undefined) {
-      stopCapture("idle");
-      setError(t("Couldn't connect voice. Try again."));
-      return;
-    }
     const epoch = generation.current;
-    retryTimer.current = setTimeout(() => {
-      retryTimer.current = undefined;
+    const retry = () => {
       if (generation.current !== epoch) return;
       if (presenceRef.current !== "active") {
         stopCapture("sleeping");
@@ -2359,8 +2350,18 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         return;
       }
       void startRealtime(epoch, provider, true, wasMuted);
-    }, delay);
+    };
+    // Slow retries continue until Stop, sleep, a fatal error or the 30 minute cap.
+    if (!reconnect.schedule(retry, rotation)) {
+      stopCapture("idle");
+      setError(t("Couldn't connect voice. Try again."));
+    }
   }
+  useEffect(() => {
+    const online = () => void reconnect.retryNow();
+    window.addEventListener("online", online);
+    return () => window.removeEventListener("online", online);
+  }, [reconnect]);
   useEffect(() => {
     if (checkingTalkPresence.current && status === "connecting") return;
     if (
@@ -2575,6 +2576,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       runtimeRegistrationPending = false;
       await voice.connect(secret, safeTurns, {
         summary,
+        openWork: await assistantControls.current!.openWork(disclosureCurrent),
         disclosureCurrent,
         ...(settings.microphoneId ? { deviceId: settings.microphoneId } : {}),
       });
@@ -2587,7 +2589,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         setStatus("live");
         // A brief connection must not replenish an endless retry loop.
         stableTimer.current = setTimeout(() => {
-          if (generation.current === epoch) retryCount.current = 0;
+          if (generation.current === epoch) reconnect.reset();
         }, 60_000);
       }
     } catch (cause) {
@@ -2615,8 +2617,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     )
       return;
     clearTimeout(stableTimer.current);
-    clearTimeout(retryTimer.current);
-    retryCount.current = 0;
+    reconnect.reset();
     setMuted(false);
     const epoch = ++generation.current;
     const manualAway =
@@ -2771,38 +2772,43 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       setError(voiceError(cause, "Local voice could not start."));
     }
   }
+  const returnCall = useVoiceReturnCall({
+    settings,
+    snapshot: assistantSnapshot,
+    capturePresence,
+    status,
+    muted,
+    speakerMuted,
+    available: Boolean(target) || Boolean(props.workspace),
+    lastAdmittedSpeechAt,
+    briefingDelivering: briefingRetry.delivering,
+    start,
+    stopToReady: () => {
+      stopCapture("ready");
+      setMuted(false);
+    },
+    setPlayback,
+  });
+  useVoiceTalkEvent({
+    status,
+    start: () => {
+      setOpen(true);
+      void start();
+    },
+  });
   const visualState = voiceVisualState({ status, phase, muted, playback, error });
   const sessionProgress = useVoiceSessionProgress(target);
   const sessionStatusText = t(
     sessionProgress === "quiet" ? "No recent session updates" : "Session working",
   );
-  const statusText = t(
-    status === "live"
-      ? muted
-        ? "Microphone paused"
-        : playback
-          ? "Assistant speaking"
-          : phase === "transcribing"
-            ? "Transcribing locally..."
-            : phase === "replying"
-              ? "Preparing a reply..."
-              : phase === "speaking"
-                ? "Receiving speech..."
-                : hearingInput
-                  ? "Microphone is receiving sound"
-                  : "Listening"
-      : status === "reconnecting"
-        ? "Reconnecting..."
-        : status === "sleeping"
-          ? "Asleep"
-          : status === "ready"
-            ? "Ready. Microphone is off."
-            : status === "connecting"
-              ? realtime
-                ? "Connecting voice..."
-                : "Preparing local voice..."
-              : "Ready to connect",
-  );
+  const statusText = voiceStatusText({
+    status,
+    muted,
+    playback,
+    phase,
+    hearingInput,
+    realtime: !!realtime,
+  });
   function toggleMute() {
     setLastAdmittedSpeechAt(null);
     client.current?.mute(!muted);
@@ -3279,50 +3285,29 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           ) : null
         }
         recovery={
-          <>
-            {error === t("Conversation was not saved. Retry.") ||
-            historyNotice === t("Conversation was not saved. Retry.") ? (
-              <Button
-                onClick={() => {
-                  transcriptStore.current?.finish();
-                  void transcriptStore.current
-                    ?.retry()
-                    .then(() => {
-                      setError("");
-                      setHistoryNotice("");
-                    })
-                    .catch(() => setError(t("Conversation was not saved. Retry.")));
-                }}
-              >
-                {t("Save conversation")}
-              </Button>
-            ) : historyNotice === t("Conversation history could not be loaded.") ? (
-              <InlineError live="polite" retry={{ onRetry: retryHistoryLoad }}>
-                {historyNotice}
-              </InlineError>
-            ) : null}
-            {briefingRetry.retryable && (
-              <Button disabled={!briefingRetry.canRetry} onClick={briefingRetry.retry}>
-                {t("Retry briefing")}
-              </Button>
-            )}
-            {shownError ? <MicrophoneRecoveryAction message={shownError} /> : null}
-            <LiveText
-              className={styles.caption}
-              text={
-                historyNotice !== shownError &&
-                historyNotice !== t("Conversation history could not be loaded.")
-                  ? historyNotice
-                  : ""
-              }
-            />
-            <LiveText className={styles.caption} text={ruleNotice} />
-            {ownerRuleWrites.current.hasPending && (
-              <Button loading={savingRule} onClick={() => void saveOwnerRule()}>
-                {t("Retry rule save")}
-              </Button>
-            )}
-          </>
+          <VoiceCompanionRecovery
+            error={error}
+            shownError={shownError}
+            historyNotice={historyNotice}
+            ruleNotice={ruleNotice}
+            returnNotice={returnCall.notice}
+            briefing={briefingRetry}
+            rulePending={ownerRuleWrites.current.hasPending}
+            savingRule={savingRule}
+            onSaveConversation={() => {
+              transcriptStore.current?.finish();
+              void transcriptStore.current
+                ?.retry()
+                .then(() => {
+                  setError("");
+                  setHistoryNotice("");
+                })
+                .catch(() => setError(t("Conversation was not saved. Retry.")));
+            }}
+            onRetryHistory={retryHistoryLoad}
+            onSaveRule={() => void saveOwnerRule()}
+            onTalkNow={returnCall.talkNow}
+          />
         }
         onScopeChange={(value) => {
           scopeRef.current = value;

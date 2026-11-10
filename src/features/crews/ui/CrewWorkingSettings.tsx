@@ -167,6 +167,7 @@ export function CrewWorkingSettings({
   onPolicyChange,
   appearance,
   appearanceSavedNow,
+  appearanceOnHost = false,
   maintenance,
 }: {
   agents: CrewAgent[];
@@ -177,6 +178,8 @@ export function CrewWorkingSettings({
   appearance: ReactNode;
   /** Existing crew: appearance is already stored on this device; a new crew saves it on create. */
   appearanceSavedNow: boolean;
+  /** Existing crew on a host that stores the look with the crew, shared by every device. */
+  appearanceOnHost?: boolean;
   /** Copy and delete actions, owned by the editor. */
   maintenance?: ReactNode;
 }) {
@@ -366,9 +369,11 @@ export function CrewWorkingSettings({
             <Line
               label={t("Crew icon and color")}
               description={
-                appearanceSavedNow
-                  ? t("Saved on this device right away.")
-                  : t("Saved with the crew when you create it.")
+                appearanceOnHost
+                  ? t("Saved with the crew and shown on every device.")
+                  : appearanceSavedNow
+                    ? t("Saved on this device right away.")
+                    : t("Saved with the crew when you create it.")
               }
             >
               {appearance}

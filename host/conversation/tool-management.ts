@@ -3,6 +3,7 @@ import { MANAGEMENT_CONVERSATION_TOOLS } from "./conversation-management-tools";
 import { ROOM_NOTEBOOK_TOOLS } from "../assistant/room/assistant-room-notebook";
 import { ROOM_WORKSPACE_TOOLS } from "../assistant/room/assistant-room-workspace";
 import { ROOM_SESSION_TOOLS } from "../assistant/room/assistant-room-session";
+import { ROOM_FOLDER_SCHEMAS } from "../assistant/folders/assistant-folder-schemas";
 import {
   ROOM_TERMINAL_SCHEMAS,
   ROOM_SOCIAL_SCHEMAS,
@@ -71,7 +72,7 @@ export type ManagedTool = {
 };
 
 const CONVERSATION_ACTIONS = new Set(
-  `visuals.preview visuals.render images.status images.generate crews.definitions.list crews.definition.get crews.agents.list crews.agent.get crews.runs.list files.inspect files.rename files.move files.copy files.delete files.create files.write files.list files.index files.search files.searchContent files.read git.index git.fileDiff git.branches git.worktrees automations.preview stewards.list stewards.get usage.sessions.read goals.list goals.get checkpoints.status checkpoints.diff providers.list models.list terminals.interrupt terminals.create terminals.close servers.list servers.get servers.ssh.save servers.ssh.remove servers.ssh.identity.set servers.metadata.update servers.activity.bookmark devServers.logs devServers.kill devServers.openExternal tasks.artifacts.list tasks.dependencies.list goals.create goals.replan goals.cancel goals.update goals.delete tasks.queue.pause tasks.reorder browser.annotation.start browser.annotation.hover browser.annotation.select browser.annotation.read browser.annotation.clear browser.annotation.cancel stewards.delete stewards.decline stewards.create stewards.update stewards.pause stewards.resume stewards.runNow stewards.stopRun host.limits.status shell.profiles attachments.list attachments.read crews.list crews.schema crews.inspect crews.save crews.agent.save crews.start crews.get crews.assign crews.request crews.resolve crews.respond crews.answer crews.pause crews.stop crews.resume crews.accept crews.finish sessions.list sessions.read tools.list tools.search tools.describe tools.status tasks.create skills.search skills.read ui.workspace.list ui.workspace.status ui.workspace.open ui.workspace.close ui.tools.status ui.tools.open ui.tools.place ui.tools.close notes.list notes.read notes.create notes.update notes.delete automations.list automations.get automations.create automations.update automations.pause automations.resume automations.delete automations.runs automations.runNow automations.stopRun inbox.list inbox.providers.status inbox.providers.list inbox.details inbox.thread inbox.comment inbox.reviewContext inbox.review inbox.prAction inbox.result machines.list devices.status devices.preflight devices.preview devices.preview.status devices.list devices.start devices.boot devices.capture devices.action terminals.list terminals.read terminals.write logs.sources logs.read logs.wait logs.monitors.list logs.monitors.start logs.monitors.stop browser.status browser.claim browser.release browser.open browser.frame browser.input browser.close browser.recording.start browser.recording.stop browser.recording.status tasks.list tasks.delete tasks.transfer tasks.notes.resolve tasks.get tasks.session.read tasks.start tasks.retry tasks.stop tasks.update tasks.review.recheck tasks.notes.read devServers.list devServers.details devServers.start devServers.stop devServers.restart resources.read secrets.request secrets.materialize secrets.list secrets.revoke secrets.run`.split(
+  `visuals.preview visuals.render images.status images.generate crews.definitions.list crews.definition.get crews.agents.list crews.agent.get crews.runs.list files.inspect files.rename files.move files.copy files.delete files.create files.write files.list files.index files.search files.searchContent files.read git.index git.fileDiff git.branches git.worktrees automations.preview stewards.list stewards.get usage.sessions.read goals.list goals.get checkpoints.status checkpoints.diff providers.list models.list terminals.interrupt terminals.create terminals.close servers.list servers.get servers.ssh.save servers.ssh.remove servers.ssh.identity.set servers.metadata.update servers.activity.bookmark devServers.logs devServers.kill devServers.openExternal tasks.artifacts.list tasks.dependencies.list goals.create goals.replan goals.cancel goals.update goals.delete tasks.queue.pause tasks.reorder browser.annotation.start browser.annotation.hover browser.annotation.select browser.annotation.read browser.annotation.clear browser.annotation.cancel stewards.delete stewards.decline stewards.create stewards.update stewards.pause stewards.resume stewards.runNow stewards.stopRun host.limits.status shell.profiles attachments.list attachments.read crews.list crews.schema crews.inspect crews.save crews.agent.save crews.start crews.member.ask crews.active.list crews.get crews.assign crews.request crews.resolve crews.respond crews.answer crews.pause crews.stop crews.resume crews.accept crews.finish sessions.list sessions.read tools.list tools.search tools.describe tools.status tasks.create skills.search skills.read ui.workspace.list ui.workspace.status ui.workspace.open ui.workspace.close ui.tools.status ui.tools.open ui.tools.place ui.tools.close notes.list notes.read notes.create notes.update notes.delete automations.list automations.get automations.create automations.update automations.pause automations.resume automations.delete automations.runs automations.runNow automations.stopRun inbox.list inbox.providers.status inbox.providers.list inbox.details inbox.thread inbox.comment inbox.reviewContext inbox.review inbox.prAction inbox.result machines.list devices.status devices.preflight devices.preview devices.preview.status devices.list devices.start devices.boot devices.capture devices.action terminals.list terminals.read terminals.write logs.sources logs.read logs.wait logs.monitors.list logs.monitors.start logs.monitors.stop browser.status browser.claim browser.release browser.open browser.frame browser.read browser.input browser.close browser.recording.start browser.recording.stop browser.recording.status tasks.list tasks.delete tasks.transfer tasks.notes.resolve tasks.get tasks.session.read tasks.start tasks.retry tasks.stop tasks.update tasks.review.recheck tasks.notes.read devServers.list devServers.details devServers.start devServers.stop devServers.restart resources.read secrets.request secrets.materialize secrets.list secrets.revoke secrets.run`.split(
     " ",
   ),
 );
@@ -94,6 +95,7 @@ for (const action of [
   ...Object.keys(ROOM_TERMINAL_SCHEMAS),
   ...Object.keys(ROOM_SOCIAL_SCHEMAS),
   ...Object.keys(ROOM_REMOTE_SCHEMAS),
+  ...Object.keys(ROOM_FOLDER_SCHEMAS),
   "files.operation.status",
   "devServers.operation.status",
   "browser.operation.status",
@@ -136,7 +138,7 @@ const READBACKS: Record<string, string[]> = {
   devServers: ["devServers.details", "devServers.logs"],
   tasks: ["tasks.get"],
   agents: ["agents.options"],
-  browser: ["browser.status", "browser.frame"],
+  browser: ["browser.status", "browser.frame", "browser.read"],
   host: ["host.limits.status"],
   shell: ["shell.profiles"],
   attachments: ["attachments.list"],
@@ -154,6 +156,7 @@ const READBACKS: Record<string, string[]> = {
 const CANCELLATIONS: Record<string, string[]> = {
   "crews.start": ["crews.stop"],
   "crews.assign": ["crews.stop"],
+  "crews.member.ask": ["tasks.stop"],
   "automations.runNow": ["automations.stopRun"],
   "stewards.runNow": ["stewards.stopRun"],
   "goals.create": ["goals.cancel"],
@@ -162,6 +165,7 @@ const CANCELLATIONS: Record<string, string[]> = {
   "terminals.create": ["terminals.close"],
   "terminals.write": ["terminals.interrupt"],
   "servers.ssh.execute": ["servers.ssh.cancel"],
+  "commands.run": ["commands.run.cancel"],
   "devServers.start": ["devServers.stop"],
   "devServers.restart": ["devServers.stop"],
   "tasks.create": ["tasks.stop"],
@@ -269,9 +273,11 @@ function effectFor(group: ManagedToolGroup, action: string, read: boolean): Tool
   if (read) return ["read"];
   if (action === "servers.ssh.execute") return ["execution", "external-write"];
   if (action === "servers.ssh.cancel") return ["execution", "local-state"];
+  if (action === "commands.run") return ["execution", "local-state", "external-write"];
+  if (action === "commands.run.cancel") return ["execution", "local-state"];
   if (/^inbox\.(comment|review|prAction)$/.test(action)) return ["external-write"];
   if (
-    /^(agents\.(delegate|consult|cancel)|devServers\.(start|stop|restart|kill)|images\.generate|terminals\.(write|interrupt|close|create)|devices\.(start|boot|action|preview)|tasks\.(start|retry|stop|review\.recheck)|crews\.(start|assign|respond|answer|stop)|automations\.(runNow|stopRun)|stewards\.(runNow|stopRun)|logs\.monitors\.(start|stop)|goals\.(create|replan|cancel)|browser\.recording\.(start|stop))$/.test(
+    /^(agents\.(delegate|consult|cancel)|devServers\.(start|stop|restart|kill)|images\.generate|terminals\.(write|interrupt|close|create)|devices\.(start|boot|action|preview)|tasks\.(start|retry|stop|review\.recheck)|crews\.(start|assign|member\.ask|respond|answer|stop)|automations\.(runNow|stopRun)|stewards\.(runNow|stopRun)|logs\.monitors\.(start|stop)|goals\.(create|replan|cancel)|browser\.recording\.(start|stop))$/.test(
       action,
     )
   )
@@ -322,12 +328,13 @@ export function createManagedToolCatalog(
       if (
         group === "conversation" &&
         requestFields.length &&
-        (/^crews\.(start|assign|request|resolve|respond|answer)$/.test(action) ||
+        (/^crews\.(start|assign|member\.ask|request|resolve|respond|answer)$/.test(action) ||
           action.startsWith("inbox.") ||
           /^agents\.(delegate|consult)$/.test(action) ||
           action === "devices.preview" ||
           action === "terminals.create" ||
           action === "servers.ssh.execute" ||
+          action === "commands.run" ||
           [
             "desktop.act",
             "desktop.click",
@@ -366,6 +373,7 @@ export function createManagedToolCatalog(
       if (action.startsWith("browser.recording.")) readback = ["browser.recording.status"];
       if (["servers.ssh.execute", "servers.ssh.status", "servers.ssh.cancel"].includes(action))
         readback = ["servers.ssh.status"];
+      if (action.startsWith("commands.run")) readback = ["commands.run.status"];
       if (action.startsWith("desktop."))
         readback =
           action === "desktop.clipboard"

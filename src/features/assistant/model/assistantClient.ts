@@ -48,7 +48,11 @@ function runRefresh(showLoading: boolean): Promise<void> {
           "",
           "assistant.v1",
           "assistant.request",
-          { op: "snapshot", limit: 100, features: ["jobHolds", "jobStalled"] },
+          {
+            op: "snapshot",
+            limit: 100,
+            features: ["jobHolds", "jobStalled", "reminders", "onceSchedule"],
+          },
           { kind: "local" },
           owner.environmentId,
         ),
@@ -110,6 +114,8 @@ export async function assistantRequest(
       "notes.get",
       "questions.get",
       "models.pool.get",
+      "folders.get",
+      "alwaysOn.get",
     ].includes(request.op)
   ) {
     await refreshAssistant();

@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
+import { setCrewsPageOpen, useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
 import type { AuxiliaryToolId } from "../../model/toolWindows";
 
 export interface SettingsReturnView {
@@ -15,6 +16,7 @@ type View =
   | "settings"
   | "search"
   | "servers"
+  | "crews"
   | "inbox"
   | "notes"
   | "social"
@@ -58,12 +60,15 @@ const sameVisit = (a: Visit, b: Visit) =>
 
 /** One chronological history per mounted window. Never share or persist this stack. */
 export function useRailNavigation(d: RailNavigationDeps) {
+  const crewsOpen = useCrewsPageOpen();
   const view: View = d.settingsOpen
     ? "settings"
     : d.searchViewOpen
       ? "search"
       : d.serversViewOpen
-        ? "servers"
+        ? crewsOpen
+          ? "crews"
+          : "servers"
         : d.inboxViewOpen
           ? "inbox"
           : d.notesViewOpen
@@ -112,6 +117,8 @@ export function useRailNavigation(d: RailNavigationDeps) {
     d.setSettingsOpen(visit.view === "settings");
     d.setSearchViewOpen(visit.view === "search");
     d.setServersViewOpen(visit.view === "servers");
+    // Closing Servers closed Crews; reopen it only for a Crews visit.
+    setCrewsPageOpen(visit.view === "crews");
     d.setInboxViewOpen(visit.view === "inbox");
     d.setNotesViewOpen(visit.view === "notes");
     d.setAutomationsViewOpen(

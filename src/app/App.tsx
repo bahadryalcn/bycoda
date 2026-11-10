@@ -1470,12 +1470,38 @@ function Workspace({
     workspaceNavigation,
   });
 
+  const closeSurfaces = () => {
+    setSearchViewOpen(false);
+    setInboxViewOpen(false);
+    setNotesViewOpen(false);
+    setAutomationsViewOpen(false);
+    setServersViewOpen(false);
+  };
+  const {
+    onApproval,
+    onQuestionReply,
+    onQuestionInteraction,
+    onOpenApprovalSession,
+    onFocusOwnedApprovalSession,
+  } = useApprovalActions({
+    sessionsRef,
+    setInspectedWorkerId,
+    focusOpenSession,
+    onSelectHistorySession,
+    ensureOpenSession,
+    liveAgents,
+    unopenedRemoteRef,
+    dismissRemoteFinished,
+    onSelectRemoteSession,
+    closeSurfaces,
+  });
+
   const { sessionReminders } = useSessionReminderActions({
     setServersViewOpen,
     sessions,
     sessionsRef,
     ensureOpenSession,
-    onSelectHistorySession,
+    openSession: onOpenApprovalSession,
     setSearchViewOpen,
     setInboxViewOpen,
     setNotesViewOpen,
@@ -2143,19 +2169,6 @@ function Workspace({
     onStopRef,
   });
   onStopForRoomRef.current = onStopForRoom;
-  const {
-    onApproval,
-    onQuestionReply,
-    onQuestionInteraction,
-    onOpenApprovalSession,
-    onFocusOwnedApprovalSession,
-  } = useApprovalActions({
-    sessionsRef,
-    setInspectedWorkerId,
-    focusOpenSession,
-    onSelectHistorySession,
-  });
-
   useDesktopLiveHandlers({
     desktopLiveHandlers,
     onDeleteHistorySessionNow,
@@ -2201,18 +2214,9 @@ function Workspace({
     setWorkerDetailRequest,
   });
   const { orchestrationActions, onSelectLiveAgent } = useOrchestrationActions({
-    setServersViewOpen,
     onOpenApprovalSession,
     queueWorkerPanes,
     onSubmit,
-    liveAgents,
-    unopenedRemoteRef,
-    dismissRemoteFinished,
-    onSelectRemoteSession,
-    setSearchViewOpen,
-    setInboxViewOpen,
-    setNotesViewOpen,
-    setAutomationsViewOpen,
   });
 
   useLiveAgentAnnouncements({ onFocusOwnedApprovalSession, unopenedRemote });
@@ -2696,11 +2700,7 @@ function Workspace({
     projectCwd,
     closeSurfaces: () => {
       setSettingsOpen(false);
-      setSearchViewOpen(false);
-      setInboxViewOpen(false);
-      setServersViewOpen(false);
-      setNotesViewOpen(false);
-      setAutomationsViewOpen(false);
+      closeSurfaces();
     },
     setSidebarTab,
     setSessionSidebarOpen,

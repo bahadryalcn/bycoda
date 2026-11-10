@@ -38,6 +38,7 @@ import {
 import { PI_FLAVOR, OMP_FLAVOR } from "../../src/integrations/harness/providers/pi/piFlavor";
 import { respondQuestion as respondPiQuestion } from "../../src/integrations/harness/providers/pi/piFamily";
 import { readSkillPolicy } from "../skills/skill-policy";
+import { crewDeniedSkills, crewNativeInput } from "../crews/crew-native-tools";
 import { withSkillPolicy } from "../../src/integrations/harness/core/skillPolicy";
 import {
   getReportedCommands,
@@ -242,7 +243,13 @@ export function withMachineSkillPolicy(
     const native = reportedSkillRestrictions(getReportedCommands(input.sessionId));
     const policy = withInstalledSkillScope(
       {
-        disabledNames: [...new Set([...machine.disabledNames, ...native.disabledNames])],
+        disabledNames: [
+          ...new Set([
+            ...machine.disabledNames,
+            ...native.disabledNames,
+            ...crewDeniedSkills(input.modelSettings, candidates),
+          ]),
+        ],
         disabledPaths: [...new Set([...machine.disabledPaths, ...native.disabledPaths])],
       },
       id,
@@ -303,11 +310,34 @@ export function withMachineSkillPolicy(
   };
 }
 
+/** A crew member's tool profile narrows provider-native tools; unsupported providers refuse. */
+export function withCrewNativeTools(id: string, provider: HostProvider): HostProvider {
+  return {
+    ...provider,
+    send: async (input) => provider.send(crewNativeInput(id, input)),
+    ...(provider.compact
+      ? {
+          compact: async (input: CompactContextInput) =>
+            provider.compact!(crewNativeInput(id, input)),
+        }
+      : {}),
+    ...(provider.rewind
+      ? {
+          rewind: async (input: RewindLastTurnInput) =>
+            provider.rewind!(crewNativeInput(id, input)),
+        }
+      : {}),
+    ...(provider.steer
+      ? { steer: async (input: SteerTurnInput) => provider.steer!(crewNativeInput(id, input)) }
+      : {}),
+  };
+}
+
 /** Every host entry point, including unattended tasks and follow-ups, uses machine settings. */
 export const hostProviders = Object.fromEntries(
   Object.entries(providers).map(([id, provider]) => [
     id,
-    withMachineSkillPolicy(id as RemoteProvider, provider),
+    withMachineSkillPolicy(id as RemoteProvider, withCrewNativeTools(id, provider)),
   ]),
 ) as Record<RemoteProvider, HostProvider>;
 

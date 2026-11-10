@@ -4,4 +4,8 @@ export {
   backgroundMachines,
   hostProjectCwd,
 } from "../model/hostAutomationClient";
-export { invalidateMachineSnapshot, machineProjects } from "../model/machineSnapshot";
+export {
+  invalidateMachineSnapshot,
+  machineCapabilities,
+  machineProjects,
+} from "../model/machineSnapshot";

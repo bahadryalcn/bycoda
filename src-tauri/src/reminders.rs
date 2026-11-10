@@ -33,6 +33,9 @@ pub struct DeliveryPreferences {
     sound: bool,
     #[serde(default)]
     project_rules: HashMap<String, ProjectDeliveryRule>,
+    /// Local per-event switches (`finished`, `input`, `failed`); a missing key is on.
+    #[serde(default)]
+    events: HashMap<String, bool>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -42,6 +45,12 @@ pub struct ProjectDeliveryRule {
 }
 
 impl DeliveryPreferences {
+    /// Master switch plus the event switch of an assistant banner (`finished`,
+    /// `input` or `failed`). Project rules need session context native lacks.
+    pub(crate) fn allows_event(&self, event: &str) -> bool {
+        self.notifications_enabled && self.events.get(event).copied().unwrap_or(true)
+    }
+
     fn allows(&self, reminder: &Reminder) -> bool {
         self.notifications_enabled
             && self
@@ -65,6 +74,17 @@ pub struct ReminderService {
     preferences: Mutex<Option<DeliveryPreferences>>,
     pending_open: Mutex<std::collections::VecDeque<OpenReminder>>,
     window_sessions: Mutex<HashMap<String, Vec<String>>>,
+}
+
+impl ReminderService {
+    /// Fails closed until the renderer has sent its first preference snapshot.
+    pub(crate) fn allows_event(&self, event: &str) -> bool {
+        self.preferences
+            .lock()
+            .ok()
+            .and_then(|p| p.as_ref().map(|p| p.allows_event(event)))
+            .unwrap_or(false)
+    }
 }
 
 pub(crate) fn ensure_table(conn: &Connection) -> rusqlite::Result<()> {
@@ -548,6 +568,23 @@ mod tests {
             params![id, cwd],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn assistant_banner_follows_master_switch_and_event_kind() {
+        let parse = |json: &str| -> DeliveryPreferences { serde_json::from_str(json).unwrap() };
+        let on = parse(r#"{"notificationsEnabled":true,"sound":false}"#);
+        assert!(on.allows_event("finished") && on.allows_event("input"));
+        let muted = parse(r#"{"notificationsEnabled":false,"sound":false}"#);
+        assert!(!muted.allows_event("finished"));
+        let some = parse(
+            r#"{"notificationsEnabled":true,"sound":false,"events":{"finished":false,"input":true}}"#,
+        );
+        assert!(!some.allows_event("finished") && some.allows_event("input"));
+        let service = ReminderService::default();
+        assert!(!service.allows_event("input"), "unconfigured fails closed");
+        *service.preferences.lock().unwrap() = Some(some);
+        assert!(service.allows_event("input") && !service.allows_event("finished"));
     }
 
     #[test]

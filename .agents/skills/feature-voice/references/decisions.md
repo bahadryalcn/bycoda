@@ -43,3 +43,13 @@ Source references identify the original card's provenance; they are not acceptan
 
   Consequence: allowed proactive speech uses output only, respects quiet hours,
   presence and owner interruption rules, and never opens microphone capture.
+
+- 2026-11-10, owner chat during the voice operator program (translated):
+
+  > add it as a setting. When I come back it should call out to me; if I do not answer, the microphone must close after a while, show a warning on screen and send a notification, like "I called you but you didn't hear"
+
+  Consequence: an opt-in, default-off "call me when I return" setting may open
+  capture on return for a bounded window after speaking. No reply within the
+  window closes capture, shows an on-screen notice and sends a notification.
+  This setting supersedes the 2026-11-02 "return keeps the microphone closed"
+  rule only while it is on; with it off, return stays Ready with capture closed.

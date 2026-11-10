@@ -12,6 +12,7 @@ Code paths below are relative to `src/features/assistant/`.
 - Model effort edits must bind to the actual displayed model, including a resolved default. An explicit inherited-role edit creates the corresponding override while preserving other settings and execution permissions.
 - Enabling job execution with no selected worker binds the verified available default on that explicit choice. Never persist a jobs/supervision profile with a merely displayed fallback and no execution identity. Without a verified catalog, keep the previous mode and show the worker selection error. Setup also verifies and retains the default identity on explicit Next/Start; mounting a form never writes it.
 - `../voice/ui/VoiceSetupSteps.tsx` owns explicit provider checks, playback and microphone tests. Invalidating a previous check must also invalidate its Ready indication and navigation gate.
+- `ui/settings/pool/` owns the ordered model pool editor with its own Save, version and dirty state; the Host contract is `src/shared/model/assistantModelPool.ts` and `host/assistant/models/`. Voice and Room callers resolve execution only from pool rows (`host/conversation/conversation-model-pool-guard.ts`).
 
 Use shared fields, selections, disclosure and information controls. Keep one visible step heading, concise progress, a bounded reading/form area and persistent navigation. Optional explanations stay in disclosures; errors, pending operations and permission consequences remain available at the initiating control. Retain drafts, keyboard operation, review, retry and cancellation.
 

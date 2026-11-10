@@ -48,6 +48,12 @@ export const THREAD_WORK_ACTIONS = new Set([
   "tasks.stop",
   "tasks.retry",
   "tasks.update",
+  // Reviewed task writes shared with coding sessions; same approval, versions and receipts.
+  "tasks.delete",
+  "tasks.transfer",
+  "tasks.queue.pause",
+  "tasks.review.recheck",
+  "tasks.reorder",
   "goals.list",
   "goals.get",
   "goals.create",
@@ -66,8 +72,31 @@ export const THREAD_WORK_ACTIONS = new Set([
   "automations.runNow",
   "automations.stopRun",
 ]);
+type Task = Awaited<ReturnType<HostTasks["list"]>>[number];
+function reorderSelection(rows: Task[], order: unknown) {
+  if (!Array.isArray(order) || !order.length || order.length > 100) return undefined;
+  const picked = order.map((entry) => rows.find((row) => row.id === entry?.taskId));
+  return picked.every(Boolean) && new Set(picked.map((row) => row!.id)).size === picked.length
+    ? (picked as Task[])
+    : undefined;
+}
+function assertReorderable(tasks: Task[], order: unknown) {
+  (order as { expectedUpdatedAt?: unknown }[]).forEach((entry, index) => {
+    if (tasks[index].updatedAt !== entry.expectedUpdatedAt)
+      throw new Error("Work changed. Read it again.");
+  });
+  if (tasks.some((task) => task.status !== "todo" && task.status !== "queued"))
+    throw new Error("Only To do and queued tasks can be reordered.");
+}
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 type Input = Record<string, unknown>;
+export type ThreadWorkTrack = {
+  kind: "goal" | "task" | "crew";
+  id: string;
+  projectId: string;
+  threadId: string;
+  title: string;
+};
 type Approve = (
   operation: { action: string; input: Input; operationHash: string },
   principal: RuntimeLogSubjectPrincipal,
@@ -79,7 +108,10 @@ type Approve = (
 export class ConversationThreadWorkTools {
   constructor(
     private readonly store: HostStore,
-    private readonly tasks: Pick<HostTasks, "list" | "save" | "startTask" | "move">,
+    private readonly tasks: Pick<
+      HostTasks,
+      "list" | "save" | "startTask" | "move" | "delete" | "transfer" | "recheckReview" | "reorder"
+    >,
     private readonly goals: Pick<
       HostGoals,
       "list" | "create" | "update" | "replan" | "cancel" | "delete"
@@ -90,7 +122,32 @@ export class ConversationThreadWorkTools {
     >,
     private readonly approve: Approve,
     readonly pool: ModelPoolSource,
+    /** Observation-only: lets the assistant report on work its thread started. */
+    private readonly trackWork?: (item: ThreadWorkTrack) => Promise<void>,
   ) {}
+
+  private async track(
+    action: string,
+    principal: { threadId: string; projectId: string },
+    id: string,
+    current: unknown,
+    input: Input,
+  ) {
+    const row = current as { title?: string; goalId?: string; crewRunId?: string } | undefined;
+    if (!this.trackWork || row?.goalId || row?.crewRunId) return;
+    const kind = (
+      { "tasks.create": "task", "tasks.start": "task", "goals.create": "goal" } as const
+    )[action as "tasks.create"];
+    if (!kind) return;
+    // Tracking is best effort: the owner-approved work already happened.
+    await this.trackWork({
+      kind,
+      id,
+      projectId: principal.projectId,
+      threadId: principal.threadId,
+      title: String(input.title ?? row?.title ?? id),
+    }).catch(() => undefined);
+  }
 
   /** Every execution the thread principal creates must come from the owner's model pool. */
   private async resolveExecution(raw: unknown) {
@@ -159,8 +216,16 @@ export class ConversationThreadWorkTools {
     // Review and errors must not reveal project state before scope admission.
     const rows = await qualify(read);
     await check();
-    const id = String(input.taskId ?? input.goalId ?? input.automationId ?? "");
-    const current = rows.find((item) => item.id === id);
+    const reorder = action === "tasks.reorder";
+    const id = reorder
+      ? "reorder"
+      : String(input.taskId ?? input.goalId ?? input.automationId ?? "");
+    // A reorder reviews exactly the listed tasks, in the requested order.
+    const lookup = (items: typeof rows) =>
+      reorder
+        ? reorderSelection(items as Task[], input.order)
+        : items.find((item) => item.id === id);
+    const current = lookup(rows);
     const page = (items: unknown[]) => {
       const offset = Number(input.offset ?? 0),
         limit = Number(input.limit ?? 30);
@@ -194,6 +259,7 @@ export class ConversationThreadWorkTools {
       return result;
     }
     if (!creating && !current) throw new Error("Work is not wholly in this project.");
+    if (reorder) assertReorderable(current as Task[], input.order);
     if (!requestId || requestId.length > 300)
       throw new Error("Global work mutations require a stable requestId.");
     // Validated before review so the owner sees the resolved pool model, and again at effect time.
@@ -218,7 +284,10 @@ export class ConversationThreadWorkTools {
           };
     }
     if (creating && current) throw new Error("Work ID already exists. Read it before retrying.");
-    if (input.expectedUpdatedAt !== undefined && current?.updatedAt !== input.expectedUpdatedAt)
+    if (
+      input.expectedUpdatedAt !== undefined &&
+      (current as { updatedAt?: number } | undefined)?.updatedAt !== input.expectedUpdatedAt
+    )
       throw new Error("Work changed. Read it again.");
     const currentHash = hash(current ?? null);
     const operationHash = hash([fingerprint, currentHash]);
@@ -239,7 +308,7 @@ export class ConversationThreadWorkTools {
     await check();
     if (!approved.approved || approved.operationHash !== operationHash)
       throw new Error("Native owner approval was not granted.");
-    if (hash((await read()).find((item) => item.id === id) ?? null) !== currentHash)
+    if (hash(lookup(await read()) ?? null) !== currentHash)
       throw new Error("Work changed during approval. Read it again.");
     await check();
     const claimed = await this.store.db
@@ -256,7 +325,7 @@ export class ConversationThreadWorkTools {
     // Persist intent before effects. Any thrown/uncertain result retains the same
     // receipt across restart, never starting another provider run automatically.
     const result = await qualify(async () => {
-      if (hash((await read()).find((item) => item.id === id) ?? null) !== currentHash)
+      if (hash(lookup(await read()) ?? null) !== currentHash)
         throw new Error("Work changed during qualification. Read it again.");
       const execution = creating ? await this.resolveExecution(input.execution) : undefined;
       if (execution && execution.poolRowId !== reviewedExecution?.poolRowId)
@@ -264,6 +333,7 @@ export class ConversationThreadWorkTools {
       return this.execute(action, input, principal.projectId, id, current, execution);
     });
     await check();
+    await this.track(action, principal, id, current, input);
     await this.store.db.prepare("UPDATE metadata SET value=? WHERE key=?").run(
       JSON.stringify({
         fingerprint,
@@ -303,7 +373,23 @@ export class ConversationThreadWorkTools {
           continueUntilDone: false,
           maxRunMinutes: 0,
         });
+      if (action === "tasks.reorder") {
+        await this.tasks.reorder((current as Task[]).map((item) => item.id));
+        return { status: "completed", action, targetId: id };
+      }
       if (!task) throw new Error("Task not found.");
+      if (action === "tasks.delete") {
+        await this.tasks.delete(id, false, task.updatedAt);
+        return { deleted: true };
+      }
+      if (action === "tasks.transfer")
+        return this.tasks.transfer(id, String(input.targetProjectId), task.updatedAt);
+      if (action === "tasks.review.recheck") return this.tasks.recheckReview(id);
+      if (action === "tasks.queue.pause") {
+        if (task.status !== "queued" || task.sessionId || task.startedAt)
+          throw new Error("Only a never-started queued task can be paused.");
+        return this.tasks.move(id, "todo");
+      }
       if (task.autoMerge || task.continueUntilDone)
         throw new Error("Use the owner UI for work with delivery or continuous execution enabled.");
       if (action === "tasks.start") return this.tasks.startTask(id, task);

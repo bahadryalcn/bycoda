@@ -94,7 +94,15 @@ describe("parsePushRegistration", () => {
   it("accepts a valid registration and strips control characters", () => {
     const parsed = parsePushRegistration({ ...registration, title: "bycoda\n PC" });
     expect(parsed.title).toBe("bycoda  PC");
-    expect(parsed.events).toEqual({ finished: true, input: true, failed: true });
+    expect(parsed.events).toEqual({
+      finished: true,
+      input: true,
+      failed: true,
+      assistant: true,
+      approvals: true,
+    });
+    expect(parsed.assistantUrgentDuringQuiet).toBe(true);
+    expect(parsed.texts.assistant).toBeTruthy();
   });
 
   it.each([
@@ -170,6 +178,11 @@ describe("sendExpoPush", () => {
 });
 
 describe("PushNotifications", () => {
+  it("reports the kinds a registered phone receives, so the desktop does not report them too", async () => {
+    const { service } = await setup({ finished: true, input: false, failed: true });
+    expect(await service.ownedEvents()).toEqual(["finished", "failed"]);
+  });
+
   async function setup(events = registration.events) {
     const { store } = await storeWithDevices("phone");
     await store.register("phone", parsePushRegistration({ ...registration, events }));

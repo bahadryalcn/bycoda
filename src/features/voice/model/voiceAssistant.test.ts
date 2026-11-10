@@ -191,7 +191,8 @@ it("keeps unrelated historical commands separate from the current clarification"
 it("refuses functions absent from the supplied application catalog", async () => {
   run.mockResolvedValue('{"type":"tool","name":"arbitrary_shell","args":{}}');
   const request = input();
-  await expect(converseWithAssistant(request)).rejects.toThrow("unavailable function");
+  const result = await converseWithAssistant(request);
+  expect(result.reply).toContain("unavailable function");
   expect(request.execute).not.toHaveBeenCalled();
 });
 
@@ -259,12 +260,72 @@ it("cancels after an admitted operation without requesting more model output", a
   expect(run).toHaveBeenCalledOnce();
 });
 
-it("bounds tool chains and refuses the final extra effect", async () => {
-  run.mockResolvedValue('{"type":"tool","name":"app_context","args":{}}');
+it("summarizes at the tool cap without a throw or a repeated effect", async () => {
+  run
+    .mockResolvedValueOnce('{"type":"tool","name":"app_context","args":{"requestId":"r1"}}')
+    .mockResolvedValueOnce('{"type":"tool","name":"app_context","args":{"requestId":"r2"}}')
+    .mockResolvedValueOnce('{"type":"reply","text":"Yarısı bitti; devam et de."}');
   const request = input({ maxToolCalls: 1 });
-  await expect(converseWithAssistant(request)).rejects.toThrow("tool limit");
+  const result = await converseWithAssistant(request);
+  expect(result).toMatchObject({ action: "reply", reply: "Yarısı bitti; devam et de." });
+  expect(result.requestIds).toEqual(["r1"]);
   expect(request.execute).toHaveBeenCalledOnce();
-  expect(run).toHaveBeenCalledTimes(2);
+  expect(run).toHaveBeenCalledTimes(3);
+  expect(run.mock.calls[2][0].prompt).toContain("AVAILABLE FUNCTIONS: []");
+});
+
+it("falls back to a spoken limit notice when the summary call is unusable", async () => {
+  run.mockResolvedValue('{"type":"tool","name":"app_context","args":{}}');
+  const result = await converseWithAssistant(input({ maxToolCalls: 1 }));
+  expect(result.reply).toContain("devam et");
+});
+
+it("emits one progress notice after a slow step, in the turn language", async () => {
+  vi.useFakeTimers();
+  try {
+    run
+      .mockResolvedValueOnce('{"type":"tool","name":"app_context","args":{}}')
+      .mockResolvedValueOnce('{"type":"tool","name":"app_tool_call","args":{"a":1}}')
+      .mockResolvedValueOnce('{"type":"tool","name":"app_tool_call","args":{"a":2}}')
+      .mockResolvedValueOnce('{"type":"reply","text":"Tamam."}');
+    const onProgress = vi.fn();
+    const slow = vi.fn(async () => {
+      await vi.advanceTimersByTimeAsync(7000);
+      return { status: "completed" };
+    });
+    await converseWithAssistant(input({ onProgress, execute: slow }));
+    expect(onProgress).toHaveBeenCalledOnce();
+    expect(onProgress).toHaveBeenCalledWith("Hâlâ üzerindeyim…");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("stays quiet when the turn is fast", async () => {
+  run
+    .mockResolvedValueOnce('{"type":"tool","name":"app_context","args":{}}')
+    .mockResolvedValueOnce('{"type":"tool","name":"app_tool_call","args":{"a":1}}')
+    .mockResolvedValueOnce('{"type":"reply","text":"ok"}');
+  const onProgress = vi.fn();
+  await converseWithAssistant(input({ onProgress }));
+  expect(onProgress).not.toHaveBeenCalled();
+});
+
+it("speaks a bounded failure instead of throwing, and keeps cancellation silent", async () => {
+  run.mockRejectedValueOnce(new Error(`boom ${"x".repeat(400)}\n    at stack (file.ts:1:1)`));
+  const onFailure = vi.fn();
+  const result = await converseWithAssistant(input({ transcript: "create a note", onFailure }));
+  expect(result.action).toBe("reply");
+  expect(result.reply).toMatch(/^I couldn't finish that: boom x+…. Nothing else was changed\.$/);
+  expect(result.reply).not.toContain("file.ts");
+  expect(result.reply.length).toBeLessThan(300);
+  expect(onFailure).toHaveBeenCalledWith(result.reply);
+  const controller = new AbortController();
+  run.mockImplementationOnce(async () => {
+    controller.abort();
+    throw new Error("aborted");
+  });
+  await expect(converseWithAssistant(input({ signal: controller.signal }))).rejects.toThrow();
 });
 
 it("does not expose image base64 as fake visual input to a text-only provider", async () => {
@@ -299,7 +360,7 @@ it("rejects unsupported providers and invalid budgets before starting any work",
   supports.mockReturnValue(false);
   await expect(converseWithAssistant(input())).rejects.toThrow("signed-in provider");
   supports.mockReturnValue(true);
-  await expect(converseWithAssistant(input({ maxToolCalls: 50 }))).rejects.toThrow("1–12");
+  await expect(converseWithAssistant(input({ maxToolCalls: 50 }))).rejects.toThrow("1–20");
   expect(run).not.toHaveBeenCalled();
 });
 

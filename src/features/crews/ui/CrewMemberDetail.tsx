@@ -1,12 +1,18 @@
+import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Surface } from "../../../shared/ui/Surface";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import type { CrewAgent, CrewPolicy } from "../model/crew";
-import type { ProjectCrews } from "../model/crewClient";
+import type { ProjectCrews, useProjectCrews } from "../model/crewClient";
+import { libraryVersionPatch, memberLink } from "../model/crewLink";
+import type { MemberAvatarTraits } from "../model/memberAvatarTraits";
 import { libraryUpdate, memberFromLibrary } from "../model/crewRoster";
+import { CrewLibraryProfileDialog } from "./CrewLibraryProfileDialog";
 import { CrewMemberForm } from "./CrewMemberForm";
+import { MemberPerformance } from "./MemberPerformance";
 
 export type CrewInspection = {
   model: string;
@@ -22,7 +28,10 @@ export type CrewBusyAction = "save" | "start" | "add" | "inspect" | "library" | 
  */
 export function CrewMemberDetail({
   cwd,
+  state,
   data,
+  traits,
+  handleError,
   crewSaved,
   policy,
   agent,
@@ -38,7 +47,12 @@ export function CrewMemberDetail({
   onChange,
 }: {
   cwd: string;
+  state: ReturnType<typeof useProjectCrews>;
   data: ProjectCrews;
+  /** The member's look resolved over the whole roster, equal to its roster face. */
+  traits?: MemberAvatarTraits;
+  /** A Host refusal about this member's handle. */
+  handleError?: string;
   crewSaved: boolean;
   policy: CrewPolicy;
   agent: CrewAgent;
@@ -54,12 +68,57 @@ export function CrewMemberDetail({
   onChange: (patch: Partial<CrewAgent>) => void;
 }) {
   useLocale();
-  const update = libraryUpdate(agent, data.agents);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const identity = data.identitySupported === true;
+  const link = identity ? memberLink(agent, data.agents) : undefined;
+  const update = identity ? undefined : libraryUpdate(agent, data.agents);
   const source = agent.source && data.agents.find((saved) => saved.id === agent.source!.id);
   const projectId = scope === "project" ? data.project.id : undefined;
+  // Observations are kept per saved crew, so the section needs the saved crew that holds this member.
+  const definitionId = data.definitions.find((d) => d.agents.some((a) => a.id === agent.id))?.id;
   const updatesProfile = !!source && source.projectId === projectId;
   return (
     <Surface variant="outline" padding="md" className="mt-1 mb-3 flex min-w-0 flex-col gap-4">
+      {link ? (
+        <Alert tone="info">
+          <p className="flex flex-wrap items-center gap-2">
+            <Badge size="sm" tone={link.state === "linked" ? "info" : "neutral"}>
+              {link.state === "linked" ? t("Linked to library") : t("Customized for this crew")}
+            </Badge>
+            <span>{t("Library profile: {p0}", { p0: link.profile.name })}</span>
+          </p>
+          <p>
+            {link.state === "linked"
+              ? t(
+                  "Changes to the name, instructions, model, groups, avatar or handle here customize this member for this crew only.",
+                )
+              : t("This member differs from its library profile and no longer follows it.")}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {link.state === "customized" ? (
+              <Button onClick={() => onChange(libraryVersionPatch(link.profile))}>
+                {t("Use library version")}
+              </Button>
+            ) : null}
+            <Button variant="secondary" onClick={() => setEditingProfile(true)}>
+              {t("Edit library profile")}
+            </Button>
+          </div>
+        </Alert>
+      ) : null}
+      {link && editingProfile ? (
+        <CrewLibraryProfileDialog
+          cwd={cwd}
+          state={state}
+          data={data}
+          profile={link.profile}
+          groupNames={groupNames}
+          onClose={() => setEditingProfile(false)}
+        />
+      ) : null}
+      {definitionId ? (
+        <MemberPerformance state={state} definitionId={definitionId} memberId={agent.id} />
+      ) : null}
       {update ? (
         <Alert tone="info">
           <p>
@@ -82,6 +141,10 @@ export function CrewMemberDetail({
         policy={policy}
         onChange={onChange}
         groups={data.groupsSupported}
+        identity={identity}
+        tools={data.toolsSupported}
+        handleError={handleError}
+        traits={traits}
         groupSuggestions={groupNames}
         nameError={showIssues && !agent.name.trim() ? t("Add a name") : undefined}
         modelError={showIssues && !agent.candidates.length ? t("Choose a model") : undefined}

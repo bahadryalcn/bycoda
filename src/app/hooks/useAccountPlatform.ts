@@ -11,7 +11,11 @@ import {
 import { useDiagnostics } from "../../features/diagnostics";
 import { useActivitySync, useActivityTracker } from "../../features/activity";
 import { useRemoteMachines } from "../../features/connections/public/connections";
-import { bindNotificationsServer, useServerNotifications } from "../../features/notifications";
+import {
+  bindNotificationsServer,
+  useOwnerApprovalMirror,
+  useServerNotifications,
+} from "../../features/notifications";
 import { useDailySummary } from "../../features/notifications/hooks/useDailySummary";
 import {
   appDiagnosticsFacts,
@@ -49,5 +53,6 @@ export function useAccountPlatform(): void {
   useActivityTracker(hostId);
   useActivitySync(hostId, accountApi, reportAccountFailure);
   useServerNotifications();
+  useOwnerApprovalMirror(machines.find(isLocalSyncMachine)?.id);
   useDailySummary(hostId);
 }

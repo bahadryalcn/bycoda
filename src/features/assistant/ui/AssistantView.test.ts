@@ -1950,13 +1950,11 @@ it("offers the unconfigured setup budget without saving and saves rules before e
     expect.objectContaining({
       op: "profile.update",
       expectedVersion: 3,
-      patch: expect.objectContaining({
-        setupComplete: true,
-        dailyTokenBudget: 300000,
-      }),
+      patch: expect.objectContaining({ setupComplete: true, dailyTokenBudget: 300000 }),
     }),
     "room-fixture",
   );
+  await click("Done"); // The optional "Ready for 24/7" checklist follows a successful Start.
   expect(mock.close).toHaveBeenCalledOnce();
 });
 it("saves project priority through its captured Host and preserves exact uncertain replans", async () => {

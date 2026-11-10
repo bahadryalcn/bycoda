@@ -25,7 +25,8 @@ Source paths below are repository-relative.
   only after transcript acceptance, for local and realtime speech. Explicit targets
   must be visible/unlocked; a missing captured target must not follow a later tab.
 - Reuse existing tool validators and dispatchers. Voice grants no new settings,
-  provider, skill enable/install, Git publication, Inbox or social send authority.
+  provider, skill enable/install or Inbox authority. Git push/merge and social
+  sends need native approval.
   Never synthesize owner approval or owner social principals for model calls.
 - `voiceFeatureLexicon` expands localized labels and conservative Turkish suffixes
   for catalog discovery only. Preserve family/category filtering, exact tool IDs
@@ -45,7 +46,9 @@ Source paths below are repository-relative.
   `workspace.projects.actions.list` only reads saved project actions and manifest
   scripts (`projectActionCatalog`); starting one stays on `devServers.start` or
   terminal tools and their gates. Project work retains
-  explicit target grants. A local thread is not a
+  explicit target grants. The global Room reaches files only in owner-chosen Assistant
+  folders (`files.roots`); `commands.run` needs per-run approval unless the owner
+  setting allows; `folders.*` is never a tool. A local thread is not a
   remote Host principal; never substitute another source after a failed route.
 - Crew thread writes retain exact native review, snapshot revision and operation
   receipts. The operation ID differs from a run or directive request ID. A new

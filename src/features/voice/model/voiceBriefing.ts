@@ -20,6 +20,13 @@ export type VoiceBriefingDelivery = {
 
 export const VOICE_BRIEFING_FRESHNESS_MS = 5 * 60_000;
 
+export function voiceQuietHours(profile: AssistantProfile, hour: number): boolean {
+  if (profile.quietStart === profile.quietEnd) return false;
+  return profile.quietStart < profile.quietEnd
+    ? hour >= profile.quietStart && hour < profile.quietEnd
+    : hour >= profile.quietStart || hour < profile.quietEnd;
+}
+
 export function maySpeakVoiceBriefing(
   profile: AssistantProfile,
   presence: string,
@@ -29,13 +36,7 @@ export function maySpeakVoiceBriefing(
 ) {
   if (presence !== "active" || status !== "ready" || hold || profile.proactiveSpeech === "never")
     return false;
-  const quiet =
-    profile.quietStart === profile.quietEnd
-      ? false
-      : profile.quietStart < profile.quietEnd
-        ? hour >= profile.quietStart && hour < profile.quietEnd
-        : hour >= profile.quietStart || hour < profile.quietEnd;
-  return !quiet;
+  return !voiceQuietHours(profile, hour);
 }
 
 export function mayDeliverVoiceBriefing(input: VoiceBriefingDelivery): boolean {

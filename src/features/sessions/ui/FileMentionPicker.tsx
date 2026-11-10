@@ -1,12 +1,14 @@
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { StickyNote } from "../../../shared/ui/icons";
-import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
+import { Fragment, useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import type { RankedFile } from "../../files";
 import { isNoteMentionPath } from "../../notes";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { MatchText } from "../../../shared/ui/MatchText";
+import { crewMentionOf } from "../model/crewMentions";
+import { CrewMentionIcon, CrewMentionText } from "./ComposerCrewMentionRow";
 
 type Props = {
   files: RankedFile[];
@@ -86,6 +88,13 @@ export function FileMentionPicker({
         >
           {files.map((file, index) => {
             const highlighted = index === active;
+            const crew = crewMentionOf(file);
+            const heading =
+              crew && crew.kind !== (index > 0 ? crewMentionOf(files[index - 1]!)?.kind : undefined)
+                ? crew.kind === "member"
+                  ? t("Members")
+                  : t("Crews")
+                : null;
             const note = isNoteMentionPath(file.path);
             const slash = file.relative.lastIndexOf("/");
             const dir = note ? "" : slash === -1 ? "" : file.relative.slice(0, slash);
@@ -94,49 +103,68 @@ export function FileMentionPicker({
               ? file.positions
               : file.positions.filter((pos) => pos >= nameOffset).map((pos) => pos - nameOffset);
             return (
-              <Button
-                className="w-full text-left"
-                fullWidth
-                selected={highlighted}
-                variant="item"
-                key={file.path}
-                ref={highlighted ? activeRef : undefined}
-                type="button"
-                role="option"
-                aria-selected={highlighted}
-                onMouseDown={(e) => e.preventDefault()}
-                onMouseEnter={() => onRowEnter(index)}
-                onClick={() => onPick(file)}
-              >
-                <span className="shrink-0">
-                  {isNoteMentionPath(file.path) ? (
-                    <StickyNote className="icon-sm" strokeWidth={1.75} />
-                  ) : (
-                    <FileTypeIcon name={file.name} isDir={Boolean(file.isDir)} size="md" />
-                  )}
-                </span>
-                <span className={`min-w-0 flex-1 truncate ${highlighted ? "text-mention" : ""}`}>
-                  <MatchText
-                    text={file.name}
-                    positions={namePositions}
-                    active={Boolean(query.trim())}
-                  />
-                  {file.isDir ? "/" : null}
-                </span>
-                {note ? (
-                  <span className="shrink-0 font-mono text-ui-micro text-(--ui-text-secondary)">
-                    {t("Note")}
-                  </span>
-                ) : dir ? (
-                  <span className="min-w-0 max-w-[45%] truncate font-mono text-ui-micro text-(--ui-text-secondary)">
-                    <MatchText
-                      text={dir}
-                      positions={file.positions.filter((pos) => pos < slash)}
-                      active={Boolean(query.trim())}
-                    />
-                  </span>
+              <Fragment key={file.path}>
+                {heading ? (
+                  <div
+                    role="presentation"
+                    className="px-2 pb-0.5 pt-1.5 text-ui-micro text-(--ui-text-secondary)"
+                  >
+                    {heading}
+                  </div>
                 ) : null}
-              </Button>
+                <Button
+                  className="w-full text-left"
+                  fullWidth
+                  selected={highlighted}
+                  variant="item"
+                  ref={highlighted ? activeRef : undefined}
+                  type="button"
+                  role="option"
+                  aria-selected={highlighted}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => onRowEnter(index)}
+                  onClick={() => onPick(file)}
+                >
+                  <span className="shrink-0">
+                    {crew ? (
+                      <CrewMentionIcon target={crew} />
+                    ) : isNoteMentionPath(file.path) ? (
+                      <StickyNote className="icon-sm" strokeWidth={1.75} />
+                    ) : (
+                      <FileTypeIcon name={file.name} isDir={Boolean(file.isDir)} size="md" />
+                    )}
+                  </span>
+                  {crew ? (
+                    <CrewMentionText target={crew} positions={file.positions} query={query} />
+                  ) : (
+                    <>
+                      <span
+                        className={`min-w-0 flex-1 truncate ${highlighted ? "text-mention" : ""}`}
+                      >
+                        <MatchText
+                          text={file.name}
+                          positions={namePositions}
+                          active={Boolean(query.trim())}
+                        />
+                        {file.isDir ? "/" : null}
+                      </span>
+                      {note ? (
+                        <span className="shrink-0 font-mono text-ui-micro text-(--ui-text-secondary)">
+                          {t("Note")}
+                        </span>
+                      ) : dir ? (
+                        <span className="min-w-0 max-w-[45%] truncate font-mono text-ui-micro text-(--ui-text-secondary)">
+                          <MatchText
+                            text={dir}
+                            positions={file.positions.filter((pos) => pos < slash)}
+                            active={Boolean(query.trim())}
+                          />
+                        </span>
+                      ) : null}
+                    </>
+                  )}
+                </Button>
+              </Fragment>
             );
           })}
         </div>

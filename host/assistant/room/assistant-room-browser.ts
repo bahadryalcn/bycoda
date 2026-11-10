@@ -19,6 +19,7 @@ const actions = new Set([
   "browser.release",
   "browser.open",
   "browser.frame",
+  "browser.read",
   "browser.resize",
   "browser.preview",
   "browser.input",

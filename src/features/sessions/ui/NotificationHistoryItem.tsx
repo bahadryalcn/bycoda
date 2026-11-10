@@ -6,9 +6,22 @@ import { ActionHost, InlineAction, InlineTextAction } from "../../../shared/ui/A
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { X } from "../../../shared/ui/icons";
+import {
+  CheckCircle,
+  CheckList,
+  CircleX,
+  Clock,
+  MessageSquare,
+  Shield,
+  Sparkles,
+  UserRound,
+  X,
+} from "../../../shared/ui/icons";
 import { useNotificationProjects } from "../../notifications/hooks/useNotificationProjects";
-import type { NotificationHistoryEntry } from "../../notifications/model/notificationHistory";
+import type {
+  NotificationHistoryEntry,
+  NotificationHistoryKind,
+} from "../../notifications/model/notificationHistory";
 import { HARNESS_LABEL, sessionDisplayTitle, type HarnessId } from "../model/session";
 
 /** Same date-and-time wording in Pending rows and History rows. */
@@ -31,6 +44,31 @@ function historyTitle(entry: NotificationHistoryEntry): string {
     if (title !== entry.title) return title;
   }
   return entry.title;
+}
+
+/** The kind label and icon shown on every row of the notification log. */
+export function historyKindMeta(
+  kind: NotificationHistoryKind,
+  t: (text: string) => string,
+): { label: string; Icon: typeof Shield } {
+  switch (kind) {
+    case "question":
+      return { label: t("Question"), Icon: MessageSquare };
+    case "finished":
+      return { label: t("Finished"), Icon: CheckCircle };
+    case "failed":
+      return { label: t("Failed"), Icon: CircleX };
+    case "reminder":
+      return { label: t("Reminder"), Icon: Clock };
+    case "assistant":
+      return { label: t("Assistant"), Icon: Sparkles };
+    case "background":
+      return { label: t("Background"), Icon: CheckList };
+    case "account":
+      return { label: t("Account"), Icon: UserRound };
+    default:
+      return { label: t("Approval"), Icon: Shield };
+  }
 }
 
 /** Longer or multi-line requests get a "Show more" toggle; shorter ones fit the clamp. */
@@ -67,7 +105,7 @@ export function HistoryItem({
     setError(null);
     try {
       if (action === "open") await onOpen(entry);
-      else if (!(await onRemove(entry))) setError(t("This request could not be removed."));
+      else if (!(await onRemove(entry))) setError(t("This notification could not be removed."));
     } catch (failure) {
       setError(
         failure instanceof Error && failure.message
@@ -79,6 +117,7 @@ export function HistoryItem({
       setBusy(null);
     }
   };
+  const kind = historyKindMeta(entry.kind, t);
   const long = entry.label.length > LONG_REQUEST || /\n/.test(entry.label);
   const content = (
     <>
@@ -91,7 +130,9 @@ export function HistoryItem({
       <span className={expanded ? "notification-history-label" : "notification-history-preview"}>
         {entry.label}
       </span>
-      {canOpen ? <span className="sr-only">{t("Open session")}</span> : null}
+      {canOpen ? (
+        <span className="sr-only">{entry.target ? t("Open") : t("Open session")}</span>
+      ) : null}
     </>
   );
   return (
@@ -112,8 +153,15 @@ export function HistoryItem({
         <div className="notification-history-static">{content}</div>
       )}
       <div className="notification-history-meta" data-no-drag="">
-        <NotificationProjectLabel cwd={entry.cwd} />
-        <span>{entry.kind === "question" ? t("Question") : t("Approval")}</span>
+        {entry.cwd ? (
+          <NotificationProjectLabel cwd={entry.cwd} />
+        ) : (
+          <span className="notification-project" />
+        )}
+        <span className="notification-history-kind">
+          <kind.Icon className="icon-sm" strokeWidth={1.75} aria-hidden />
+          {kind.label}
+        </span>
         {pending ? <Badge tone="warning">{t("Waiting for you")}</Badge> : null}
         <span className="notification-history-actions">
           {long ? (
@@ -131,7 +179,7 @@ export function HistoryItem({
           </InlineAction>
         </span>
       </div>
-      {expanded ? (
+      {expanded && entry.cwd ? (
         <p className="notification-history-path" title={entry.cwd}>
           {prettyCwd(entry.cwd)}
         </p>

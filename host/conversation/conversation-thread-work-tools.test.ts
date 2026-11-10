@@ -73,7 +73,7 @@ function fixture() {
     approved: true,
     operationHash: operation.operationHash,
   }));
-  const service = () =>
+  const service = (track?: ConstructorParameters<typeof ConversationThreadWorkTools>[6]) =>
     new ConversationThreadWorkTools(
       store,
       tasks as unknown as HostTasks,
@@ -81,6 +81,7 @@ function fixture() {
       automations as unknown as HostAutomations,
       approve,
       async () => pool,
+      track,
     );
   const principal = {
     kind: "assistant-thread",
@@ -399,4 +400,97 @@ it("resolves poolRowId and defaults to the first worker row when omitted", async
         "bad",
       ),
   ).rejects.toThrow("model pool");
+});
+
+it("reviews task deletion, transfer, queue pause, review recheck and reorder like other work writes", async () => {
+  const f = fixture();
+  f.records = [
+    { id: "a", projectId: "p", status: "queued", updatedAt: 3, title: "A" },
+    { id: "b", projectId: "p", status: "todo", updatedAt: 4, title: "B" },
+    { id: "other", projectId: "q", status: "todo", updatedAt: 1, title: "Other" },
+  ];
+  const extra = f.tasks as Record<string, unknown>;
+  extra.delete = vi.fn(async () => undefined);
+  extra.transfer = vi.fn(async () => ({ id: "a", projectId: "q" }));
+  extra.recheckReview = vi.fn(async () => ({ id: "a" }));
+  extra.reorder = vi.fn(async () => []);
+  extra.move = vi.fn(async () => ({ id: "a", status: "todo" }));
+  const run = (action: string, body: Record<string, unknown>, id: string) =>
+    f.service().call(action, body, f.principal, f.authorized, id);
+  await run("tasks.delete", { taskId: "b", expectedUpdatedAt: 4 }, "r1");
+  expect(extra.delete).toHaveBeenCalledWith("b", false, 4);
+  await run("tasks.transfer", { taskId: "a", targetProjectId: "q", expectedUpdatedAt: 3 }, "r2");
+  expect(extra.transfer).toHaveBeenCalledWith("a", "q", 3);
+  await run("tasks.queue.pause", { taskId: "a", expectedUpdatedAt: 3 }, "r3");
+  expect(extra.move).toHaveBeenCalledWith("a", "todo");
+  await run("tasks.review.recheck", { taskId: "a" }, "r4");
+  expect(extra.recheckReview).toHaveBeenCalledWith("a");
+  await run(
+    "tasks.reorder",
+    {
+      order: [
+        { taskId: "b", expectedUpdatedAt: 4 },
+        { taskId: "a", expectedUpdatedAt: 3 },
+      ],
+    },
+    "r5",
+  );
+  expect(extra.reorder).toHaveBeenCalledWith(["b", "a"]);
+  expect(f.approve).toHaveBeenCalledTimes(5);
+  await expect(
+    run("tasks.delete", { taskId: "other", expectedUpdatedAt: 1 }, "r6"),
+  ).rejects.toThrow(/not wholly in this project/);
+  await expect(run("tasks.delete", { taskId: "b", expectedUpdatedAt: 9 }, "r7")).rejects.toThrow(
+    /changed/,
+  );
+  await expect(
+    run("tasks.reorder", { order: [{ taskId: "other", expectedUpdatedAt: 1 }] }, "r8"),
+  ).rejects.toThrow(/not wholly in this project/);
+  expect(extra.delete).toHaveBeenCalledTimes(1);
+});
+
+it("denies task deletion when the owner approval is not granted", async () => {
+  const f = fixture();
+  f.records = [{ id: "b", projectId: "p", status: "todo", updatedAt: 4 }];
+  const extra = f.tasks as Record<string, unknown>;
+  extra.delete = vi.fn();
+  f.approve.mockResolvedValueOnce({ approved: false } as never);
+  await expect(
+    f
+      .service()
+      .call("tasks.delete", { taskId: "b", expectedUpdatedAt: 4 }, f.principal, f.authorized, "r1"),
+  ).rejects.toThrow(/approval/);
+  expect(extra.delete).not.toHaveBeenCalled();
+});
+it("tracks only top-level work the thread started, best effort and without extra authority", async () => {
+  const f = fixture();
+  const track = vi.fn(async () => undefined);
+  const tools = f.service(track);
+  await tools.call("tasks.create", input, f.principal, f.authorized, "track-1");
+  expect(track).toHaveBeenCalledWith({
+    kind: "task",
+    id: "task",
+    projectId: "p",
+    threadId: "thread",
+    title: "Task",
+  });
+  await tools.call(
+    "goals.create",
+    { title: "Goal", prompt: "Do", execution: input.execution, goalId: "goal" },
+    f.principal,
+    f.authorized,
+    "g-1",
+  );
+  expect(track).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "goal", id: "goal" }));
+  // A goal-owned task and a failing tracker never affect the approved work.
+  track.mockClear();
+  f.records = [{ id: "owned", projectId: "p", goalId: "g", title: "Owned", updatedAt: 1 }];
+  await tools.call("tasks.start", { taskId: "owned" }, f.principal, f.authorized, "start-1");
+  expect(track).not.toHaveBeenCalled();
+  f.records = [{ id: "own", projectId: "p", title: "Own", updatedAt: 1 }];
+  track.mockRejectedValueOnce(new Error("tracker down"));
+  await expect(
+    tools.call("tasks.start", { taskId: "own" }, f.principal, f.authorized, "start-2"),
+  ).resolves.toBeDefined();
+  expect(track).toHaveBeenCalledWith(expect.objectContaining({ id: "own", title: "Own" }));
 });

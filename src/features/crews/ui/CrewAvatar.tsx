@@ -1,21 +1,21 @@
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { crewColor, useCrewAppearances, type CrewAppearance } from "../model/crewAppearance";
+import { resolveCrewLook } from "../model/crewLook";
 
-/** A crew's pixel icon in the color chosen for it on this device. */
+/** A crew's pixel icon in the look stored with the crew on the host, else this device's. */
 export function CrewAvatar({
   crew,
   className = "icon-sm",
   active = false,
   look,
 }: {
-  crew: { id: string };
+  crew: { id: string; appearance?: CrewAppearance };
   className?: string;
   active?: boolean;
-  /** An unsaved crew's look, before it is stored for this device. */
+  /** An unsaved crew's look, before it is stored. */
   look?: CrewAppearance;
 }) {
-  const saved = useCrewAppearances()[crew.id];
-  const appearance = look ?? saved;
+  const appearance = resolveCrewLook(crew, useCrewAppearances(), look);
   return (
     <ProjectMascot
       project={crew.id}

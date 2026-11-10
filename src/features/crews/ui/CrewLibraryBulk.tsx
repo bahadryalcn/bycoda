@@ -6,6 +6,8 @@ import type { CrewCandidate, SavedCrewAgent } from "../model/crew";
 import type { ProjectCrews, useProjectCrews } from "../model/crewClient";
 import { commonCandidate } from "../model/crewBulk";
 import { CrewBulkModelBar } from "./CrewBulkModelBar";
+import { CrewBulkTeamAdd } from "./CrewLibraryTeams";
+import type { CrewAssignment } from "./useCrewAssignment";
 
 type CrewState = ReturnType<typeof useProjectCrews>;
 export type BulkFailure = { name: string; reason: string };
@@ -48,6 +50,7 @@ export function CrewLibraryBulkBar({
   state,
   data,
   visible,
+  assignment,
   selected,
   onSelectedChange,
 }: {
@@ -55,6 +58,7 @@ export function CrewLibraryBulkBar({
   state: CrewState;
   data: ProjectCrews;
   visible: SavedCrewAgent[];
+  assignment: CrewAssignment;
   selected: ReadonlySet<string>;
   onSelectedChange: (next: Set<string>) => void;
 }) {
@@ -110,6 +114,13 @@ export function CrewLibraryBulkBar({
           noun="profiles"
           suggested={commonCandidate(targets)}
         />
+        {assignment.supported ? (
+          <CrewBulkTeamAdd
+            selected={visible.filter((agent) => selected.has(agent.id))}
+            definitions={data.definitions}
+            assignment={assignment}
+          />
+        ) : null}
       </div>
       {done !== null && !failures.length ? (
         <Alert tone="success">{t("Updated {p0} profiles", { p0: done })}</Alert>

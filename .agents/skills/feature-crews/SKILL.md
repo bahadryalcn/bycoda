@@ -27,6 +27,7 @@ Code paths below are repository-root relative.
 - Scheduler reads use a transactionally backfilled SQLite active-run projection maintained by metadata insert/update/delete triggers, including legacy writers. Invalid source fails closed; history remains canonical. Delivery updates preserve original coordinator and persisted command identity. SQLite JSON write/trigger traversal still scales with canonical state; active payloads are never truncated.
 
 - Owner-started work runs with the crew's `policy.runtimeMode` (default supervised, capability `crews.access.v1`); task-started work keeps the task's mode and members follow the run's mode.
+- A member tool profile (`crews.tools.v1`) only narrows; the Host writes it into session model settings at start. `host/crews/crew-tools.ts` checks Host Conversation Tools before the existing authorization; `host/crews/crew-native-tools.ts` maps it onto provider-native tools (Claude, Codex; other providers refuse a read-only member), the MCP hub allowlist and the skill policy at the Host provider boundary.
 - Retain every role/instruction, fixed/custom and automatic model choices, independent model settings, candidate ratings, scope/groups and defaults tombstones.
 - Keep roster rows focused on name, role, model and groups; full instructions belong in the member form, not repeated instruction-heading previews.
 - Saved-definition edits do not rewrite existing run/member/model snapshots. Device-local appearance must not change execution settings.
@@ -40,6 +41,6 @@ Code paths below are repository-root relative.
 
 - Choose crew/crewClient/crewRoster/crewPresentation tests and changed UI tests; Host changes need relevant crews, lifecycle/defaults and dispatcher suites. Use `host/crews/crew-native-session.test.ts` for native coordinator resolution, ownership races and command routing.
 - Use the affected UI matrix for Team/library/settings/work/rail states. Exercise isolated Host/native orchestration separately from browser fixtures; review scene motion and keyboard only when affected.
-- Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners. Re-search current callers before broad changes.
+- Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners, and [decision provenance](references/decisions.md) for owner decisions. Re-search current callers before broad changes.
 - [Crew behavior](../../../docs/guides/crews.md)
 - [Host service contracts](../../../docs/reference/host-runtime.md)

@@ -1971,7 +1971,7 @@ it("cancels a pending reconnect when the owner disconnects", async () => {
   await setup();
   vi.useFakeTimers();
   await act(async () => mock.realtime.error("Connection closed", true, { recoverable: true }));
-  await click("Cancel");
+  await click("Stop");
   await act(async () => vi.advanceTimersByTimeAsync(30_000));
   expect(mock.realtimeSecret).toHaveBeenCalledOnce();
 });
@@ -2020,7 +2020,7 @@ it.each(["cancel", "sleep", "privacy", "unmount"])(
     );
     let locked: ReturnType<typeof vi.spyOn> | undefined;
     try {
-      if (reason === "cancel") await click("Cancel");
+      if (reason === "cancel") await click("Stop");
       if (reason === "sleep") {
         presence.value = "away";
         await render("a");
@@ -2113,28 +2113,28 @@ it("does not reconnect while away and does not open the mic on return", async ()
   expect(page.textContent).toContain("Ready to connect");
 });
 
-it("exhausts five consecutive retry attempts and replenishes only after a stable minute", async () => {
+it("retries slowly after the fast attempts, retries on online, and Stop ends it", async () => {
   localStorage.setItem("bycoda.voice", JSON.stringify({ mode: "openai" }));
   await setup();
   vi.useFakeTimers();
-  for (const delay of [1000, 2000]) {
-    await act(async () => mock.realtime.error("Closed", true, { recoverable: true }));
+  const fail = () => act(async () => mock.realtime.error("Closed", true, { recoverable: true }));
+  for (const delay of [1000, 2000, 5000, 10000, 30000]) {
+    await fail();
     await act(async () => vi.advanceTimersByTimeAsync(delay));
   }
-  await act(async () => vi.advanceTimersByTimeAsync(60_000));
-  // Stable minute restores the first 1s delay; no lifetime-wide cap.
-  await act(async () => mock.realtime.error("Closed", true, { recoverable: true }));
-  await act(async () => vi.advanceTimersByTimeAsync(1000));
-  expect(mock.realtimeSecret).toHaveBeenCalledTimes(4);
-  for (const delay of [2000, 5000, 10000, 30000]) {
-    await act(async () => mock.realtime.error("Closed", true, { recoverable: true }));
-    await act(async () => vi.advanceTimersByTimeAsync(delay));
-  }
-  await act(async () => mock.realtime.error("Closed", true, { recoverable: true }));
-  expect(page.textContent).toContain("Couldn't connect voice. Try again.");
+  await fail();
+  expect(page.textContent).toContain("Reconnecting...");
+  expect(page.textContent).not.toContain("Couldn't connect voice. Try again.");
   const attempts = mock.realtimeSecret.mock.calls.length;
   await act(async () => vi.advanceTimersByTimeAsync(60_000));
-  expect(mock.realtimeSecret).toHaveBeenCalledTimes(attempts);
+  expect(mock.realtimeSecret).toHaveBeenCalledTimes(attempts + 1);
+  await fail();
+  await act(async () => void window.dispatchEvent(new Event("online")));
+  expect(mock.realtimeSecret).toHaveBeenCalledTimes(attempts + 2);
+  await fail();
+  await click("Stop");
+  await act(async () => vi.advanceTimersByTimeAsync(120_000));
+  expect(mock.realtimeSecret).toHaveBeenCalledTimes(attempts + 2);
 });
 
 it("does not retry credential failures", async () => {

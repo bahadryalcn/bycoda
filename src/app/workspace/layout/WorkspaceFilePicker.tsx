@@ -19,6 +19,7 @@ import { sessionHasBackgroundWork } from "../../../features/sessions/model/backg
 import { reconnectRemoteMachine } from "../../../features/connections/model/remoteReconnect";
 import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
+import { requestOpenCrewsPage } from "../../../features/crews/model/crewsPage";
 import { toggleNotesPanel } from "../../../features/notes/notesPanel";
 import type { WorkspaceActions } from "../input/useWorkspaceActions";
 
@@ -69,6 +70,7 @@ function WorkspaceFilePickerComponent({
           : null;
         if (layoutPreset) onArrangeActiveTab(layoutPreset);
         else if (id === "reload") actions.current.onReload();
+        else if (id === "open-crews") requestOpenCrewsPage();
         else if (id === "stop-background" && active) {
           void stopHarnessBackgroundWork(active.harness, active.id).catch(console.error);
         } else if (id === "reconnect-remote") {

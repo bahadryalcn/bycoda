@@ -15,6 +15,7 @@ import {
   rankNoteFiles,
   type NoteSummary,
 } from "../../notes";
+import { useComposerCrewMentions } from "./useComposerCrewMentions";
 
 type ScopedProjectFiles = { cwd: string; files: ProjectFile[] };
 
@@ -102,6 +103,11 @@ export function useComposerMentionSources(input: {
   const { executionCwd, remote, notesEnabled, mentionOpen, mentionQuery } = input;
   const files = useComposerProjectFiles({ cwd: executionCwd, remote, mentionOpen });
   const notes = useComposerNotes(!remote && mentionOpen && notesEnabled);
+  const crewHits = useComposerCrewMentions({
+    cwd: executionCwd,
+    active: mentionOpen,
+    query: mentionQuery,
+  });
   const mentionFiles = useMemo(
     () => (!remote && notesEnabled ? [...files, ...notesAsProjectFiles(notes)] : files),
     [files, notes, notesEnabled, remote],
@@ -115,7 +121,16 @@ export function useComposerMentionSources(input: {
       : [];
     const noteHits = !remote && notesEnabled ? rankNoteFiles(notes, deferredMentionQuery) : [];
     const seen = new Set(noteHits.map((file) => file.path));
-    return [...noteHits, ...fileHits.filter((file) => !seen.has(file.path))];
-  }, [executionCwd, files, deferredMentionQuery, mentionOpen, notes, notesEnabled, remote]);
+    return [...crewHits, ...noteHits, ...fileHits.filter((file) => !seen.has(file.path))];
+  }, [
+    crewHits,
+    executionCwd,
+    files,
+    deferredMentionQuery,
+    mentionOpen,
+    notes,
+    notesEnabled,
+    remote,
+  ]);
   return { mentionIndex, rankedFiles };
 }

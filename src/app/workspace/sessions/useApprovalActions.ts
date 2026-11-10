@@ -23,6 +23,10 @@ import {
 } from "../../../features/sessions/model/delegatedAgents";
 import { requestViewDelegated } from "../../../features/sessions/ui/delegatedFocus";
 import { t } from "../../../shared/i18n";
+import { message } from "@tauri-apps/plugin-dialog";
+import { isProjectLockedIn } from "../../../features/group-lock/model/lockState";
+import { getGroupLockView } from "../../../features/group-lock/model/groupLock";
+import { focusWindowLiveAgent } from "../../model/useWindowLiveAgents";
 
 /** An answer that never left the app must not leave its form on "Sending answer…". */
 function failQuestionDelivery(sessionId: string, requestId: number, error: string): void {
@@ -40,11 +44,33 @@ export interface ApprovalActionDeps {
   setInspectedWorkerId: (workerId: string) => void;
   focusOpenSession: (sessionId: string) => boolean;
   onSelectHistorySession: (sessionId: string) => Promise<unknown>;
+  /** Loads a closed session so its project can be checked against the group lock. */
+  ensureOpenSession?: (sessionId: string) => Promise<Session | null>;
+  /** Conversations other windows hold; a click focuses that window. */
+  liveAgents?: Parameters<typeof focusWindowLiveAgent>[0][];
+  unopenedRemoteRef?: MutableRefObject<{ project: string; session: { id: string } }[]>;
+  dismissRemoteFinished?: (sessionId: string) => void;
+  onSelectRemoteSession?: (project: string, remoteSessionId: string) => void;
+  /** Closes the full-screen surfaces (search, inbox, ...) that would cover the conversation. */
+  closeSurfaces?: () => void;
 }
 
 /** Approval, question reply/interaction and open-approval-session callbacks. Verbatim bodies. */
 export function useApprovalActions(deps: ApprovalActionDeps) {
   const { sessionsRef, setInspectedWorkerId, focusOpenSession, onSelectHistorySession } = deps;
+  const { ensureOpenSession, liveAgents, unopenedRemoteRef, dismissRemoteFinished } = deps;
+  const { onSelectRemoteSession, closeSurfaces } = deps;
+
+  /** An orchestrated worker is opened through its lead. */
+  const ownerOf = useCallback(
+    (sessionId: string) => {
+      const parentId =
+        sessionsRef.current.find((session) => session.id === sessionId)?.orchestrationLeadId ??
+        orchestrator.forSession(sessionId)?.leadId;
+      return parentId && parentId !== sessionId ? parentId : sessionId;
+    },
+    [sessionsRef],
+  );
 
   const onApproval = useCallback(
     (
@@ -105,26 +131,65 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
   }, []);
 
   /**
-   * Resolves whether the conversation actually opened. It may be closed, deleted
-   * or owned by another window, and a caller such as the request history must be
-   * able to say so instead of closing over nothing.
+   * The one opener behind every notification target. Resolves whether the
+   * conversation actually opened or was focused: it may be closed, deleted,
+   * owned by another window or machine, or in a locked project group.
    */
   const onOpenApprovalSession = useCallback(
     async (sessionId: string): Promise<boolean> => {
-      const parentId =
-        sessionsRef.current.find((session) => session.id === sessionId)?.orchestrationLeadId ??
-        orchestrator.forSession(sessionId)?.leadId;
-      const ownerId = parentId && parentId !== sessionId ? parentId : sessionId;
-      if (ownerId !== sessionId) setInspectedWorkerId(sessionId);
-      if (focusOpenSession(ownerId)) return true;
+      const ownerId = ownerOf(sessionId);
+      const locked = (cwd: string) => isProjectLockedIn(getGroupLockView().lock, cwd);
       try {
+        const elsewhere = liveAgents?.find(
+          (agent) => agent.id === ownerId && agent.ownerWindowLabel,
+        );
+        if (elsewhere) {
+          if (locked(elsewhere.cwd)) return false;
+          try {
+            await focusWindowLiveAgent(elsewhere);
+            return true;
+          } catch (error) {
+            void message(String(error), { title: t("Open conversation window") }).catch(() => {});
+            return false;
+          }
+        }
+        const remote =
+          sessionsRef.current.some((session) => session.id === ownerId) || !onSelectRemoteSession
+            ? undefined
+            : unopenedRemoteRef?.current.find(({ session }) => session.id === ownerId);
+        if (remote) {
+          if (locked(remote.project)) return false;
+          closeSurfaces?.();
+          dismissRemoteFinished?.(ownerId);
+          onSelectRemoteSession?.(remote.project, ownerId);
+          return true;
+        }
+        const known = sessionsRef.current.find((session) => session.id === ownerId);
+        const session = known ?? (await ensureOpenSession?.(ownerId));
+        if (ensureOpenSession && !session) return false;
+        if (session && locked(session.cwd)) return false;
+        closeSurfaces?.();
+        if (ownerId !== sessionId) setInspectedWorkerId(sessionId);
+        if (focusOpenSession(ownerId)) return true;
         return (await onSelectHistorySession(ownerId)) === true;
       } catch (error) {
         console.error("Conversation could not be opened", error);
         return false;
       }
     },
-    [focusOpenSession, onSelectHistorySession],
+    [
+      closeSurfaces,
+      dismissRemoteFinished,
+      ensureOpenSession,
+      focusOpenSession,
+      liveAgents,
+      onSelectHistorySession,
+      onSelectRemoteSession,
+      ownerOf,
+      sessionsRef,
+      setInspectedWorkerId,
+      unopenedRemoteRef,
+    ],
   );
 
   // A cross-window live-agent announcement is only a request to focus an
@@ -140,14 +205,11 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
         requestViewDelegated(parents[0].id, child.id);
         return;
       }
-      const parentId =
-        sessionsRef.current.find((session) => session.id === sessionId)?.orchestrationLeadId ??
-        orchestrator.forSession(sessionId)?.leadId;
-      const ownerId = parentId && parentId !== sessionId ? parentId : sessionId;
+      const ownerId = ownerOf(sessionId);
       if (!focusOpenSession(ownerId)) return;
       if (ownerId !== sessionId) setInspectedWorkerId(sessionId);
     },
-    [focusOpenSession, sessionsRef, setInspectedWorkerId],
+    [focusOpenSession, ownerOf, sessionsRef, setInspectedWorkerId],
   );
 
   return {

@@ -138,7 +138,6 @@ export function SettingsView({
   onClose,
   onSelectSection,
   onOpenSession,
-  onOpenBackgroundSession,
   onArchiveSession,
   onDeleteSession,
   sessionsStatus,
@@ -510,17 +509,7 @@ export function SettingsView({
                         ) : null}
                         {section === "crews" ? (
                           <div className="settings-topics">
-                            <CrewsSettings
-                              cwd={cwd}
-                              onOpen={
-                                onOpenBackgroundSession
-                                  ? async (target) => {
-                                      await onOpenBackgroundSession(target);
-                                      onClose();
-                                    }
-                                  : undefined
-                              }
-                            />
+                            <CrewsSettings />
                           </div>
                         ) : null}
                         {section === "connections" ? <ConnectionsSettings /> : null}

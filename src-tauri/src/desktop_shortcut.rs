@@ -13,7 +13,7 @@ use tauri_plugin_global_shortcut::{
 
 #[derive(Default)]
 pub(crate) struct DesktopShortcutState {
-    shortcut: Mutex<Option<Shortcut>>,
+    pub(crate) shortcut: Mutex<Option<Shortcut>>,
     pressed: AtomicBool,
 }
 
@@ -25,7 +25,7 @@ fn parse(value: &str) -> Result<Shortcut, String> {
     Ok(chord)
 }
 
-fn pressed_once(pressed: &AtomicBool, state: ShortcutState) -> bool {
+pub(crate) fn pressed_once(pressed: &AtomicBool, state: ShortcutState) -> bool {
     if state == ShortcutState::Released {
         pressed.store(false, Ordering::Release);
         false
@@ -36,9 +36,13 @@ fn pressed_once(pressed: &AtomicBool, state: ShortcutState) -> bool {
 
 pub(crate) fn init(app: &AppHandle) -> tauri::Result<()> {
     app.manage(DesktopShortcutState::default());
+    crate::desktop_talk_shortcut::init(app);
     app.plugin(
         tauri_plugin_global_shortcut::Builder::new()
             .with_handler(|app, shortcut, event: ShortcutEvent| {
+                if crate::desktop_talk_shortcut::handle(app, shortcut, event.state) {
+                    return;
+                }
                 let state = app.state::<DesktopShortcutState>();
                 let matches = state
                     .shortcut
@@ -83,7 +87,7 @@ pub(crate) fn init(app: &AppHandle) -> tauri::Result<()> {
 }
 
 /** Register first and release second: failure retains the previous binding. */
-fn replace(
+pub(crate) fn replace(
     current: &mut Option<Shortcut>,
     next: Option<Shortcut>,
     mut register: impl FnMut(Shortcut) -> Result<(), String>,
@@ -124,6 +128,10 @@ pub fn desktop_shortcut_configure(
         .shortcut
         .lock()
         .map_err(|_| "Emergency shortcut state is locked")?;
+    // Lock order: stop, then talk.
+    if next.is_some() && crate::desktop_talk_shortcut::current(&app) == next {
+        return Err("The emergency shortcut cannot match the Talk to assistant shortcut".into());
+    }
     let shortcuts = app.global_shortcut();
     replace(
         &mut current,

@@ -25,6 +25,7 @@ it("derives SSH permission from original session metadata, not another selected 
       },
     },
     conversationDesktop: relay,
+    inHost: async () => false,
     featureMeta,
   };
   const request = {

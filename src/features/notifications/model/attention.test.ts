@@ -10,6 +10,7 @@ import {
   maskLockedNotification,
   pruneUnseen,
   sessionPhase,
+  sessionsNeedingAttention,
   taskbarAttention,
   turnOutcome,
   type NotificationContext,
@@ -297,7 +298,7 @@ describe("taskbar attention", () => {
     id: "wait",
   });
   const quiet = chat([reply("done")], { id: "quiet" });
-  const allow = () => true;
+  const allow = { input: true, unseen: true };
 
   it("counts pending input and unseen finishes, excluding the viewed session", () => {
     const sessions = [waiting, quiet];
@@ -314,10 +315,53 @@ describe("taskbar attention", () => {
   });
 
   it("skips input from projects that do not allow it", () => {
-    expect(taskbarAttention([waiting], new Set(), undefined, false, () => false)).toEqual({
+    expect(
+      taskbarAttention([waiting], new Set(), undefined, false, {
+        input: true,
+        unseen: true,
+        inputAllowed: () => false,
+      }),
+    ).toEqual({
       count: 0,
       hasInput: false,
     });
+  });
+
+  it("hides everything when its surface is off, and hidden sessions never count", () => {
+    const off = { input: false, unseen: false };
+    expect(
+      taskbarAttention([waiting, quiet], new Set(["quiet"]), undefined, false, off).count,
+    ).toBe(0);
+    const hidden = {
+      ...allow,
+      hidden: (session: Session) => session.id === "wait",
+    };
+    expect(
+      taskbarAttention([waiting, quiet], new Set(["quiet"]), undefined, false, hidden),
+    ).toEqual({
+      count: 1,
+      hasInput: false,
+    });
+  });
+
+  it("returns each session once, input first, and skips inbox discussions", () => {
+    const inbox = {
+      ...waiting,
+      id: "inbox",
+      inboxAsk: {
+        key: "i",
+        title: "Issue",
+        url: "https://example.com/i",
+        provider: "github" as const,
+      },
+    };
+    const found = sessionsNeedingAttention(
+      [waiting, quiet, inbox],
+      new Set(["wait", "quiet", "inbox"]),
+      allow,
+    );
+    expect(found.input.map((s) => s.id)).toEqual(["wait"]);
+    expect(found.unseen.map((s) => s.id)).toEqual(["quiet"]);
   });
 
   it("clears unseen entries once viewed or closed", () => {

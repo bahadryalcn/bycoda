@@ -356,6 +356,7 @@ import {
   remoteProjectFor,
 } from "../../features/connections/model/remoteProjects";
 import { newRequestId } from "../../shared/lib/id/requestId";
+import { requestOpenCrewsPage } from "../../features/crews/model/crewsPage";
 
 const EMPTY_SESSIONS: SessionSummary[] = [];
 const EMPTY_REMINDERS: SessionReminder[] = [];
@@ -4138,14 +4139,7 @@ function SidebarComponent({
           assistantActive={assistantActive}
           onOpenSettings={onOpenSettings}
           onOpenAccountSettings={openAccountSettings}
-          onOpenCrews={
-            onSelectSettingsSection && onOpenSettings
-              ? () => {
-                  onOpenSettings();
-                  onSelectSettingsSection("crews");
-                }
-              : undefined
-          }
+          onOpenCrews={requestOpenCrewsPage}
           onTogglePanel={onToggleProjectRail}
           onLeaveActive={onGoBack}
           titleBarAbove={titleBarAbove}

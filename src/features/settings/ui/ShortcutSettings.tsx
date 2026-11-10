@@ -13,8 +13,8 @@ import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPrefere
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { IS_MAC } from "../../../platform/tauri/platform";
-import { DESKTOP_STOP_COMMAND } from "../model/desktopStopKeybinding";
-import { applyDesktopStopShortcut } from "../../host-tools/desktopStopShortcut";
+import { isDesktopGlobal } from "../model/desktopStopKeybinding";
+import { applyDesktopShortcuts } from "../model/desktopTalkShortcut";
 
 import {
   filterKeybindings,
@@ -535,9 +535,9 @@ export function KeybindingsPage() {
       let nativeAttempted = false;
       let desktopAttempted = false;
       try {
-        if (command === DESKTOP_STOP_COMMAND) {
+        if (isDesktopGlobal(command)) {
           desktopAttempted = true;
-          await applyDesktopStopShortcut(next);
+          await applyDesktopShortcuts(next);
         }
         if (IS_MAC) {
           nativeAttempted = true;
@@ -548,7 +548,7 @@ export function KeybindingsPage() {
         const rollbackErrors: unknown[] = [];
         if (desktopAttempted) {
           try {
-            await applyDesktopStopShortcut(previous);
+            await applyDesktopShortcuts(previous);
           } catch (rollbackError) {
             rollbackErrors.push(rollbackError);
           }

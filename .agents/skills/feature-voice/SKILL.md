@@ -31,7 +31,8 @@ and Assistant owns shared identity, Room and setup completion. Inspect mobile se
 ## Preserve
 
 - Capture needs explicit owner action. Authorized live recovery preserves mute; idle/lock sleep
-  releases capture and returns Ready with microphone closed. Disconnect cancels retries.
+  releases capture and returns Ready with microphone closed unless the opt-in return call is on.
+  Disconnect cancels retries.
 - Onset/accepted binding captures target, including absence. Candidates and accepted speech have
   separate ownership; rejected sounds cannot replace accepted work or interrupt playback.
 - Preserve realtime microphone epochs, serialized item/commit matching, authorized response IDs

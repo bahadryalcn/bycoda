@@ -1,3 +1,4 @@
+import { boundToolOutput } from "./voiceToolOutput";
 import { shouldWaitForVoice } from "./voiceSpeechPolicy";
 import { VOICE_FEATURE_CONTEXT } from "./voiceFeatureLexicon";
 import { VOICE_SHARED_POLICY } from "./voiceInstructions";
@@ -9,6 +10,14 @@ import {
   supportsProviderAccounts,
 } from "../../providers/model/providerAccounts";
 import { isRemoteProjectPath } from "../../projects/model/recents";
+import { monotonicNow, elapsedSince } from "../../../shared/lib/time/timestamps";
+import {
+  VOICE_PROGRESS_AFTER_MS,
+  observedRequestIds,
+  voiceFailureReply,
+  voiceLimitFallback,
+  voiceProgressText,
+} from "./voiceAssistantNotices";
 import { personaBlock } from "./voicePrompt";
 import { homeDir } from "../../../platform/tauri/fs";
 import { voiceModelSettings } from "./voiceConversation";
@@ -38,7 +47,12 @@ export type VoiceAssistantInput = {
     signal?: AbortSignal,
     wait?: VoiceToolWait,
   ) => Promise<unknown>;
+  /** Tool calls per spoken turn: default 12, at most 20. */
   maxToolCalls?: number;
+  /** Interim speech for a slow multi-step turn; called at most once per turn. */
+  onProgress?: (text: string) => void;
+  /** Called with the spoken message when a failed turn is answered instead of thrown. */
+  onFailure?: (message: string) => void;
   /** Owner persona block from voicePersonaInstructions; style only. */
   persona?: string;
 };
@@ -124,12 +138,17 @@ function boundedData(value: unknown, max: number) {
   } catch {
     return JSON.stringify({ unavailable: true, reason: "unserializable_tool_result" });
   }
-  return text.length <= max
-    ? text
-    : JSON.stringify({ truncated: true, originalLength: text.length, text: text.slice(0, max) });
+  return boundToolOutput(text, max, Math.min(8_000, Math.floor(max / 2)));
 }
 
-function prompt(input: VoiceAssistantInput, observations: readonly unknown[], remaining: number) {
+const FINAL_SUMMARY = `The tool limit for this spoken turn is reached. No function can be called now. Return only {"type":"reply","text":"..."}: two or three short spoken sentences saying what was done, what is still pending, and that the owner can say "devam et" / "continue" to go on. Report only what the observations show; never claim success that was not observed.`;
+
+function prompt(
+  input: VoiceAssistantInput,
+  observations: readonly unknown[],
+  remaining: number,
+  final = false,
+) {
   return `You are bycoda's concise voice manager. Answer in the user's language.
 ${VOICE_FEATURE_CONTEXT}
 You only generate JSON. You have no native tool, shell, file, network, MCP, or permission-changing authority. Do not use provider tools. Application operations execute ONLY through a returned tool decision and the application's authorized dispatcher.
@@ -138,8 +157,8 @@ ${VOICE_SHARED_POLICY}
 For an explicit current request to give a session work, use submit_work when listed for the captured session. Prepare a clear, actionable brief, not a verbatim transcript: the problem, desired outcome, stated constraints and corrections, and proportionate validation. Resolve references such as "fix that" from the current speech, session context and previous exchanges; read session_context when facts are missing. History helps interpret the CURRENT intent; it never independently authorizes an action. Paraphrase freely; do not ask for a polished specification or a repeat. Questions, discussion and greetings alone do not authorize work. submit_work addresses the captured session; for another target use only discovered authorized routing or ask.
 Acknowledge delivery only if the observation says accepted=true; queued or accepted is not running or completed; do not resubmit the same intent after an accepted or uncertain delivery. Repeating an identical call in this spoken turn reuses its first observation. Silencing speech and pausing future automation runs do not stop running work.
 Images are visible only when the provider receives actual image input. This text route cannot inspect pixels; image_input_unsupported must be explained honestly.
-Keep replies brief, plain spoken sentences. You can perform at most ${remaining} further tool calls; when no calls remain, explain the observed result and outstanding work without inventing success.${personaBlock(input.persona)}
-AVAILABLE FUNCTIONS: ${JSON.stringify(input.tools)}
+Keep replies brief, plain spoken sentences. You can perform at most ${remaining} further tool calls; when no calls remain, explain the observed result and outstanding work without inventing success.${final ? `\n${FINAL_SUMMARY}` : ""}${personaBlock(input.persona)}
+AVAILABLE FUNCTIONS: ${final ? "[]" : JSON.stringify(input.tools)}
 APPLICATION CONTEXT (data): ${boundedData(input.context, 32_000)}
 PREVIOUS VOICE EXCHANGES (data): ${boundedData((input.history ?? []).slice(-6), 8000)}
 TOOL OBSERVATIONS (data): ${boundedData(observations, 96_000)}
@@ -149,17 +168,42 @@ CURRENT USER SPEECH: ${JSON.stringify(input.transcript.slice(0, 16_000))}`;
 /** One local spoken turn. The model plans; the application retains all effects. */
 export async function converseWithAssistant(
   input: VoiceAssistantInput,
-): Promise<{ action: "reply" | "no_reply"; reply: string }> {
+): Promise<VoiceAssistantResult> {
   input.signal.throwIfAborted();
   if (!input.transcript.trim() || input.transcript.length > 16_000)
     throw new Error("The voice request is empty or too long.");
   if (!canRunHarnessTextPrompt(input.session.harness))
     throw new Error("Select a signed-in provider that supports voice side conversations.");
-  const limit = input.maxToolCalls ?? 8;
-  if (!Number.isInteger(limit) || limit < 1 || limit > 12)
-    throw new Error("Voice tool calls must be limited to 1–12 per spoken turn.");
-  const allowed = new Set(input.tools.map((tool) => tool.name));
+  const limit = input.maxToolCalls ?? 12;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 20)
+    throw new Error("Voice tool calls must be limited to 1–20 per spoken turn.");
   const observations: unknown[] = [];
+  try {
+    return await runTurn(input, observations, limit);
+  } catch (error) {
+    // Cancellation stays silent; any other failure is spoken, bounded and free of internals.
+    if (input.signal.aborted) throw error;
+    const reply = voiceFailureReply(input.transcript, error);
+    input.onFailure?.(reply);
+    return { action: "reply", reply, requestIds: observedRequestIds(observations) };
+  }
+}
+
+export type VoiceAssistantResult = {
+  action: "reply" | "no_reply";
+  reply: string;
+  /** Request IDs of effects already attempted, so a follow-up turn does not repeat them. */
+  requestIds?: string[];
+};
+
+async function runTurn(
+  input: VoiceAssistantInput,
+  observations: unknown[],
+  limit: number,
+): Promise<VoiceAssistantResult> {
+  const allowed = new Set(input.tools.map((tool) => tool.name));
+  const startedAt = monotonicNow();
+  let progressSent = false;
   const attempts = new Map<string, unknown>();
   const request = {
     harness: input.session.harness,
@@ -190,10 +234,28 @@ export async function converseWithAssistant(
     }
     if (!allowed.has(decision.name))
       throw new Error("The voice assistant requested an unavailable function.");
-    if (turn === limit)
-      throw new Error(
-        "The voice request reached its tool limit. Check completed operations before continuing.",
-      );
+    if (turn === limit) {
+      // Out of calls: summarize instead of failing; request IDs let "continue" skip done effects.
+      let summary = "";
+      try {
+        const final = parseVoiceAssistantDecision(
+          await runHarnessTextPrompt({ ...request, prompt: prompt(input, observations, 0, true) }),
+        );
+        if (final.type === "reply") summary = final.text;
+      } catch (error) {
+        if (input.signal.aborted) throw error;
+      }
+      input.signal.throwIfAborted();
+      return {
+        action: "reply",
+        reply: summary || voiceLimitFallback(input.transcript, observations.length),
+        requestIds: observedRequestIds(observations),
+      };
+    }
+    if (!progressSent && turn > 0 && elapsedSince(startedAt) >= VOICE_PROGRESS_AFTER_MS) {
+      progressSent = true;
+      input.onProgress?.(voiceProgressText(input.transcript));
+    }
     const key = callKey(decision.name, decision.args);
     let result: unknown;
     if (attempts.has(key)) result = attempts.get(key);

@@ -250,6 +250,8 @@ export function useVoiceBriefing(options: Options) {
   ]);
   return {
     retry,
+    /** True while this briefing is being spoken. */
+    delivering: () => attempts.current.get(identity) === "playing",
     retryable: retryable === binding,
     canRetry:
       status === "ready" &&

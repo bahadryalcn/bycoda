@@ -108,6 +108,8 @@ export function createRegistryRuntime(
             dependencies.nativeWorkspacesService.call(method, params, context),
         ]),
       ),
+      "crews.active.list": dependencies.crewOperation("crews.active.list"),
+      "crews.member.ask": dependencies.crewOperation("crews.member.ask"),
       "crews.list": dependencies.crewOperation("crews.list"),
       "crews.schema": dependencies.crewOperation("crews.schema"),
       "crews.inspect": dependencies.crewOperation("crews.inspect"),

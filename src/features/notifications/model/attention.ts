@@ -357,28 +357,66 @@ export type TaskbarAttention = {
   hasInput: boolean;
 };
 
+/** What a counter may show; each surface builds this from the owner's preferences. */
+export type AttentionRules = {
+  /** Show sessions waiting on an approval or question. */
+  input: boolean;
+  /** Show sessions with an unseen finished or failed turn. */
+  unseen: boolean;
+  /** Project rule for input (`agentInput`); everything is allowed when absent. */
+  inputAllowed?: (session: Session) => boolean;
+  /** Sessions no counter may reveal, such as those in a locked group. */
+  hidden?: (session: Session) => boolean;
+};
+
+export type SessionAttention = {
+  /** Sessions waiting on the owner, each once. */
+  input: Session[];
+  /** Sessions finished or failed and not looked at yet, minus the ones in `input`. */
+  unseen: Session[];
+};
+
 /**
- * Sessions that want the user: pending input (whose project allows it) plus
- * unseen finished/failed turns. The session in view in a focused window never
- * counts, so looking at it clears it.
+ * The one definition of "needs the owner's attention", shared by the taskbar,
+ * the Dock badge and the request center. Inbox discussions never count; the
+ * session in view in a focused window never counts, so looking at it clears it.
  */
+export function sessionsNeedingAttention(
+  sessions: readonly Session[],
+  unseenIds: ReadonlySet<string>,
+  rules: AttentionRules,
+  viewedSessionId?: string,
+): SessionAttention {
+  const result: SessionAttention = { input: [], unseen: [] };
+  for (const session of sessions) {
+    if (session.inboxAsk || session.id === viewedSessionId || rules.hidden?.(session)) continue;
+    if (rules.input && sessionNeedsInput(session) && (rules.inputAllowed?.(session) ?? true)) {
+      result.input.push(session);
+    } else if (rules.unseen && unseenIds.has(session.id)) {
+      result.unseen.push(session);
+    }
+  }
+  return result;
+}
+
+/** Taskbar overlay: input plus unseen finishes, nothing for the viewed session. */
 export function taskbarAttention(
   sessions: readonly Session[],
   unseen: ReadonlySet<string>,
   activeSessionId: string | undefined,
   windowFocused: boolean,
-  inputAllowed: (session: Session) => boolean,
+  rules: AttentionRules,
 ): TaskbarAttention {
-  let count = 0;
-  let hasInput = false;
-  for (const session of sessions) {
-    if (session.inboxAsk) continue;
-    if (windowFocused && session.id === activeSessionId) continue;
-    const input = sessionNeedsInput(session) && inputAllowed(session);
-    if (input) hasInput = true;
-    if (input || unseen.has(session.id)) count++;
-  }
-  return { count, hasInput };
+  const found = sessionsNeedingAttention(
+    sessions,
+    unseen,
+    rules,
+    windowFocused ? activeSessionId : undefined,
+  );
+  return {
+    count: found.input.length + found.unseen.length,
+    hasInput: found.input.length > 0,
+  };
 }
 
 export type FlashRequest = "none" | "info" | "critical";

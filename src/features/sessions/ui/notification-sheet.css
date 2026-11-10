@@ -172,6 +172,11 @@
 .notification-history-meta > :not(.notification-project) {
   flex: none;
 }
+.notification-history-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .notification-history-actions {
   display: flex;
   align-items: center;

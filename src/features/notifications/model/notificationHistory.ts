@@ -3,15 +3,39 @@ import type { HarnessId, Session } from "../../sessions/model/session";
 
 export const NOTIFICATION_HISTORY_KEY = "bycoda.notifications.history.v1";
 export const MAX_NOTIFICATION_HISTORY = 100;
+/**
+ * What the log records: the questions and approvals waiting on the owner, and
+ * the other things the app announced (finished/failed turns, reminders,
+ * assistant, background work, account items).
+ */
+export const NOTIFICATION_HISTORY_KINDS = [
+  "approval",
+  "question",
+  "finished",
+  "failed",
+  "reminder",
+  "assistant",
+  "background",
+  "account",
+] as const;
+export type NotificationHistoryKind = (typeof NOTIFICATION_HISTORY_KINDS)[number];
+
+/** Window event after this window recorded an entry; other windows get `storage`. */
+export const NOTIFICATION_HISTORY_EVENT = "bycoda:notification-history-change";
+
 export type NotificationHistoryEntry = {
   key: string;
+  /** The conversation a click opens; empty for entries with a background `target`. */
   sessionId: string;
+  /** Project of the conversation; empty for entries with a background `target`. */
   cwd: string;
+  /** `background:tasks|automations|summary|account|assistant`; absent for conversations. */
+  target?: string;
   title: string;
   /** Absent in entries stored before the provider was recorded. */
   harness?: HarnessId;
   label: string;
-  kind: PendingApprovalNotice["kind"];
+  kind: NotificationHistoryKind;
   occurredAt: number;
 };
 export const notificationKey = (notice: PendingApprovalNotice) =>
@@ -39,7 +63,8 @@ export function readNotificationHistoryStatus(): NotificationHistoryRead {
           [item.key, item.sessionId, item.cwd, item.title, item.label].every(
             (field) => typeof field === "string",
           ) &&
-          (item.kind === "approval" || item.kind === "question") &&
+          NOTIFICATION_HISTORY_KINDS.includes(item.kind) &&
+          (item.target === undefined || typeof item.target === "string") &&
           Number.isFinite(item.occurredAt) &&
           item.occurredAt >= 0 &&
           item.occurredAt <= 8_640_000_000_000_000,
@@ -138,6 +163,30 @@ export function removeNotificationHistoryEntry(
     const next = read.entries.filter((_, at) => at !== index);
     return writeNotificationHistory(next) ? next : null;
   });
+}
+
+/**
+ * Records one announced event under the same lock as every other write. An
+ * entry with the same key and time is already there (another window or a
+ * repeated delivery) and is not added twice. Resolves with whether the list
+ * changed; recording is best effort and never throws.
+ */
+export async function recordNotificationHistory(entry: NotificationHistoryEntry): Promise<boolean> {
+  try {
+    const recorded = await withHistoryLock(() => {
+      const read = readNotificationHistoryStatus();
+      if (read.state !== "ready" || read.entries.some((item) => sameOccurrence(item, entry))) {
+        return false;
+      }
+      return writeNotificationHistory(mergeNotificationHistory([entry], read.entries));
+    });
+    if (recorded && typeof window !== "undefined") {
+      window.dispatchEvent(new Event(NOTIFICATION_HISTORY_EVENT));
+    }
+    return recorded;
+  } catch {
+    return false;
+  }
 }
 
 export function clearNotificationHistory(): boolean | Promise<boolean> {

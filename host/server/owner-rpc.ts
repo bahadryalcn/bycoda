@@ -1,5 +1,6 @@
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
+import { handleApprovalsRpc } from "./rpc-approvals";
 import { handleAppearanceRpc } from "./rpc-appearance";
 import { handleAssistantRpc } from "./rpc-assistant";
 import { handleAssistantBuilderRpc } from "./rpc-assistant-builder";
@@ -104,6 +105,7 @@ type Dependencies = Pick<
   | "voiceSetup"
   | "pushDevices"
   | "pushNotifications"
+  | "approvals"
   | "providers"
   | "genericAcp"
   | "catalogs"
@@ -377,6 +379,10 @@ const handlers: Record<
   "push.register": handlePushRpc,
   "push.unregister": handlePushRpc,
   "push.test": handlePushRpc,
+  "approvals.mirror": handleApprovalsRpc,
+  "approvals.list": handleApprovalsRpc,
+  "approvals.decide": handleApprovalsRpc,
+  "approvals.decisions": handleApprovalsRpc,
   "voice.local.inspect": handleVoiceRpc,
   "voice.realtime.secret": handleVoiceRpc,
   "voice.cloud.status": handleVoiceRpc,
@@ -559,6 +565,8 @@ const handlers: Record<
   "stewards.delete": handleTasksRpc,
   "stewards.runNow": handleTasksRpc,
   "stewards.decline": handleTasksRpc,
+  "crews.active.list": handleCrewsRpc,
+  "crews.member.ask": handleCrewsRpc,
   "crews.list": handleCrewsRpc,
   "crews.schema": handleCrewsRpc,
   "crews.inspect": handleCrewsRpc,
@@ -605,6 +613,8 @@ export async function dispatchOwnerRpc(
   const handler =
     typeof method === "string" && Object.hasOwn(handlers, method) ? handlers[method] : undefined;
   if (!handler) throw new Error("Unsupported host method");
+  // Only the desktop app sends this heartbeat; it is how the Host recognizes the desktop principal.
+  if (method === "sessions.desktopLive") dependencies.approvals.noteDesktop(request.tokenHash);
   const startedAt = performance.now();
   try {
     await handler(dependencies, request);

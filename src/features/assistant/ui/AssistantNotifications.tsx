@@ -32,7 +32,7 @@ export function AssistantNotifications() {
           await assistantRequest({
             op: "snapshot",
             limit: 100,
-            features: ["jobHolds", "jobStalled"],
+            features: ["jobHolds", "jobStalled", "reminders", "onceSchedule"],
           })
         ).snapshot;
         return state?.profile.enabled && state.profile.setupComplete
@@ -51,6 +51,7 @@ export function AssistantNotifications() {
           kind:
             notification.kind === "job.waiting" ||
             notification.kind === "job.stalled" ||
+            notification.kind === "reminder" ||
             notification.kind === "task.needsInput"
               ? "input"
               : notification.kind === "job.failed" || notification.kind === "budget.exhausted"

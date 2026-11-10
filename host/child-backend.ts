@@ -158,7 +158,7 @@ export class HostChildBackend implements ChildBackend {
     private readonly runWriters?: HostRunWriters,
     private readonly removeTextWorkspace: (path: string) => Promise<void> = (path) =>
       rm(path, { recursive: true }),
-    private readonly mcpHub?: Pick<import("./mcp/hub/hub").McpHub, "externalMcp">,
+    private readonly mcpHub?: import("./mcp/hub/member-hub").SessionMcpHub,
   ) {
     this.events.setMaxListeners(0);
   }
@@ -257,7 +257,7 @@ export class HostChildBackend implements ChildBackend {
               command: process.execPath,
               args: [process.argv[1]],
               ...(tool.mcpUrl ? { mcpUrl: tool.mcpUrl } : {}),
-              ...(await this.mcpHub?.externalMcp(tool.mcpUrl, tool.projectId)),
+              ...(await this.mcpHub?.externalMcp(tool.mcpUrl, tool.projectId, id)),
             }
           : null
       ) as T;
@@ -834,7 +834,7 @@ export class HostChildBackend implements ChildBackend {
         if (beforeSpawn || runPreparation) await restrict();
         Object.assign(env, tool?.env);
         if (group === "conversation" && tool && isOpencodeAcpLaunch(launch.command, launch.args)) {
-          const published = await this.mcpHub?.externalMcp(tool.mcpUrl, tool.projectId);
+          const published = await this.mcpHub?.externalMcp(tool.mcpUrl, tool.projectId, id);
           Object.assign(env, opencodeLaunchEnv(launch.command, launch.args, published));
         }
       }

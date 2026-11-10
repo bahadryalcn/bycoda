@@ -2,14 +2,18 @@ import { z } from "zod";
 
 export const AGENT_DESKTOP_UPSTREAM_REF = "9eb9b296192fcb70bda25e918cd6dd66abfa3d0d";
 export const AGENT_DESKTOP_PROTOCOL = "2.5";
+export const DESKTOP_PERMISSION_MODES = ["ask", "auto", "full"] as const;
 /** These system shortcuts are unavailable even with a physical-input grant. */
 export function isForbiddenDesktopShortcut(value: string): boolean {
-  const chord = value
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "");
-  return /alt.*f4|f4.*alt|(?:win(?:dows)?|meta|super).*l|l.*(?:win(?:dows)?|meta|super)/.test(
-    chord,
+  const normalized = value.normalize("NFKC").toLowerCase();
+  const keys = normalized.split(/[\s+-]+/).filter(Boolean);
+  const compact = normalized.replace(/[^a-z0-9]/g, "");
+  const winKey = (key: string) => ["win", "windows", "meta", "super"].includes(key);
+  // Only the exact chords: Alt+F4 and Win+L (any order); Ctrl+Win+Left etc. stay allowed.
+  return (
+    (keys.includes("alt") && keys.includes("f4")) ||
+    (keys.some(winKey) && keys.includes("l")) ||
+    /^(?:altf4|f4alt|(?:win(?:dows)?|meta|super)l|l(?:win(?:dows)?|meta|super))$/.test(compact)
   );
 }
 function requestSchema(bounded: boolean) {
@@ -32,9 +36,17 @@ function requestSchema(bounded: boolean) {
         binarySha256: plain(64),
         allowedApps: z.array(text(200)).max(50),
         allowPhysicalInput: z.boolean(),
+        permissionMode: z.enum(DESKTOP_PERMISSION_MODES).optional(),
+        allowAllApps: z.boolean().optional(),
       }),
     }),
-    z.strictObject({ op: z.literal("snapshot"), app: text(200), windowId: text(200).optional() }),
+    z.strictObject({
+      op: z.literal("snapshot"),
+      app: text(200),
+      windowId: text(200).optional(),
+      maxChars: z.number().int().min(1000).max(40000).optional(),
+      cursor: text(300).optional(),
+    }),
     z.strictObject({ op: z.literal("windows.list"), app: text(200) }),
     z.strictObject({ op: z.literal("launch"), requestId: text(200), app: text(200) }),
     z.strictObject({
@@ -83,9 +95,18 @@ function requestSchema(bounded: boolean) {
         "double-click",
         "right-click",
         "press",
+        "scroll",
+        "hover",
+        "drag",
+        "focus-window",
       ]),
       text: plain(10000).optional(),
       headed: z.boolean().optional(),
+      /** drag: destination ref from the same snapshot. */
+      toRef: text(200).optional(),
+      /** scroll only. */
+      direction: z.enum(["up", "down", "left", "right"]).optional(),
+      amount: z.number().int().min(1).max(50).optional(),
     }),
     z.strictObject({ op: z.literal("stop") }),
     z.strictObject({ op: z.literal("resume") }),
@@ -94,12 +115,17 @@ function requestSchema(bounded: boolean) {
 export const DesktopControlRequestSchema = requestSchema(false);
 export const DesktopControlRequestValidationSchema = requestSchema(true);
 export type DesktopControlRequest = z.infer<typeof DesktopControlRequestValidationSchema>;
+/** Owner-only: ask every time, auto (ask only for launch, clipboard, physical input) or full access. */
+export type DesktopPermissionMode = (typeof DESKTOP_PERMISSION_MODES)[number];
 export type DesktopControlConfiguration = {
   enabled: boolean;
   binaryPath: string;
   binarySha256: string;
   allowedApps: string[];
   allowPhysicalInput: boolean;
+  permissionMode: DesktopPermissionMode;
+  /** Only honored in full access: any running app may be targeted. */
+  allowAllApps: boolean;
   version: number;
 };
 export const DesktopControlConfigurationSchema = z.strictObject({
@@ -108,6 +134,8 @@ export const DesktopControlConfigurationSchema = z.strictObject({
   binarySha256: z.string(),
   allowedApps: z.array(z.string()).max(50),
   allowPhysicalInput: z.boolean(),
+  permissionMode: z.enum(DESKTOP_PERMISSION_MODES),
+  allowAllApps: z.boolean(),
   version: z.number().int().nonnegative(),
 });
 export const DesktopControlOperationSchema = z.strictObject({
@@ -125,6 +153,16 @@ export const DesktopControlOperationSchema = z.strictObject({
   errorCode: z.string().optional(),
 });
 export type DesktopControlOperation = z.infer<typeof DesktopControlOperationSchema>;
+/** `treeJson` is one page of line-per-node text; pass `nextCursor` to read more. */
+const DesktopSnapshotSchema = z.strictObject({
+  snapshotId: z.string(),
+  app: z.string(),
+  windowId: z.string(),
+  complete: z.boolean(),
+  treeJson: z.string(),
+  nextCursor: z.string().nullable().optional(),
+  totalChars: z.number().int().nonnegative().optional(),
+});
 export const DesktopControlResponseSchema = z.strictObject({
   configuration: DesktopControlConfigurationSchema.optional(),
   status: z
@@ -140,15 +178,9 @@ export const DesktopControlResponseSchema = z.strictObject({
       message: z.string().optional(),
     })
     .optional(),
-  snapshot: z
-    .strictObject({
-      snapshotId: z.string(),
-      app: z.string(),
-      windowId: z.string(),
-      complete: z.boolean(),
-      treeJson: z.string(),
-    })
-    .optional(),
+  snapshot: DesktopSnapshotSchema.optional(),
+  next: z.union([DesktopSnapshotSchema, z.strictObject({ error: z.string().max(300) })]).optional(),
+  refsExpired: z.boolean().optional(),
   windows: z
     .array(
       z.strictObject({

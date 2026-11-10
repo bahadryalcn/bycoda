@@ -8,7 +8,9 @@ export type AssistantQuickAutomationAction = {
   model: string;
   modelSettings: Record<string, string>;
   runtimeMode: AssistantExecution["runtimeMode"];
-  scheduleKind: "hourly" | "daily" | "weekdays" | "weekly";
+  scheduleKind: "hourly" | "daily" | "weekdays" | "weekly" | "once";
+  /** Absolute run time in epoch ms; present exactly when scheduleKind is "once". */
+  runAt?: number;
   minute: number;
   time: string;
   dayOfWeek: number;
@@ -33,6 +35,7 @@ export function normalizeAssistantQuickAutomationAction(
     ),
     runtimeMode: action.runtimeMode,
     scheduleKind: action.scheduleKind,
+    ...(action.runAt === undefined ? {} : { runAt: action.runAt }),
     minute: action.minute,
     time: action.time,
     dayOfWeek: action.dayOfWeek,

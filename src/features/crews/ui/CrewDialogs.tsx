@@ -16,7 +16,9 @@ import type { useProjectCrews } from "../model/crewClient";
 import { saveCrewAppearance } from "../model/crewAppearance";
 import { roleLabel } from "./CrewMemberForm";
 import { useCrewMachineScope } from "./CrewMachineScope";
+import { teamTraits } from "../model/memberAvatars";
 import { CrewRoleIcon } from "./CrewRoleIcon";
+import { MemberAvatar } from "./MemberAvatar";
 
 export { CrewEditDialog } from "./CrewEditor";
 
@@ -255,6 +257,7 @@ export function StartCrewDialog({
 
 /** Members grouped by responsibility; a member named like its responsibility is not repeated. */
 function CrewRosterSummary({ crew }: { crew: CrewDefinition }) {
+  const looks = teamTraits(crew.agents);
   const groups = (["coordinator", "specialist", "reviewer", "advisor"] as const).flatMap((role) => {
     const members = crew.agents.filter((agent) => agent.role === role);
     if (!members.length) return [];
@@ -266,9 +269,11 @@ function CrewRosterSummary({ crew }: { crew: CrewDefinition }) {
         : role === "advisor" && members.length > 1
           ? t("Advisors")
           : roleLabel(role);
-    const names = members
-      .map((agent) => agent.name)
-      .filter((name) => name.trim().toLocaleLowerCase() !== roleLabel(role).toLocaleLowerCase());
+    const names = members.map((agent) => ({
+      id: agent.id,
+      name: agent.name.trim() || roleLabel(role),
+      traits: looks.get(agent.id)!,
+    }));
     return [{ role, label, names }];
   });
   return (
@@ -290,9 +295,10 @@ function CrewRosterSummary({ crew }: { crew: CrewDefinition }) {
               size="xs"
               rows={2}
               className="[--badge-list-item-max:16rem]"
-              items={group.names.map((name, index) => ({
-                id: `${index}:${name}`,
-                label: name,
+              items={group.names.map((member) => ({
+                id: member.id,
+                label: member.name,
+                icon: <MemberAvatar traits={member.traits} size={16} />,
               }))}
             />
           ) : null}

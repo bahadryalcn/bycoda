@@ -16,7 +16,7 @@ import {
 /** Published preview releases kept for manual reinstall; older ones and their tags go. */
 export const PREVIEW_RELEASES_KEPT = 10;
 const previewTag = /^v\d+\.\d+\.\d+-preview\.\d+\.g[a-f0-9]{12}$/;
-import { digest, validatePackageManifest } from "./package-manifest.mjs";
+import { digest, restoreEmptyPayloadFiles, validatePackageManifest } from "./package-manifest.mjs";
 import { validateHostManifest } from "./host-manifest.mjs";
 import { verifyUpdaterSignature } from "./updater-signature.mjs";
 import { formatSha256Sum } from "./checksum.mjs";
@@ -318,7 +318,9 @@ async function main() {
   );
   const packages = ["windows-x64", "macos-arm64"].map((platform) => {
     const root = path.join(directory, `desktop-package-${platform}`);
-    return { root, manifest: readJson(path.join(root, "manifest.json")) };
+    const manifest = readJson(path.join(root, "manifest.json"));
+    restoreEmptyPayloadFiles(manifest, root);
+    return { root, manifest };
   });
   validatePackageSet(candidate, packages);
   if (isSignedChannel(candidate.channel)) {

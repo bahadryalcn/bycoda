@@ -62,7 +62,16 @@ async function render() {
 
 it("keeps the previous emergency global shortcut when the OS rejects its replacement", async () => {
   await act(async () => root.render(createElement(KeybindingsPage)));
-  vi.mocked(invoke).mockRejectedValueOnce(new Error("OS shortcut conflict"));
+  // Saving re-syncs every global shortcut; only the stop chord's registration is rejected.
+  const passthrough = vi.mocked(invoke).getMockImplementation();
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (
+      command === "desktop_shortcut_configure" &&
+      (args as { shortcut?: unknown } | undefined)?.shortcut === "Control+Option+KeyX"
+    )
+      throw new Error("OS shortcut conflict");
+    return passthrough?.(command, args);
+  });
   const input = container.querySelector<HTMLButtonElement>(
     '[aria-label="Change App: Stop computer use shortcut"]',
   )!;

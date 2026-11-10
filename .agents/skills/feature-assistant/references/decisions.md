@@ -5,3 +5,7 @@ Historical owner statements explain design intent; they do not authorize operati
 ## Messaging conversation layout
 
 Owner decision, 2026-11-05, confirming the 2026-11-04 Arif chat direction. Recorded decision: the personal assistant chat, social direct messages and any person-to-person or person-to-assistant thread use the messaging layout. The owner's messages sit on the right and the other party on the left, in bounded-width bubbles one quiet step above the canvas. Day separators, a small time under each bubble and a compact composer at the bottom are used. Enter sends and Shift+Enter breaks a line. Voice and send are separate controls that never overlap.
+
+## Model pool
+
+Owner decision, 2026-11-10 (translated): workers must use only the selected models, in priority order, with editable order, effort and account, and priorities may follow remaining limits, so subscriptions are managed safely. When a model hits its limit, new tasks move to the next model; a running session never switches model and resumes after the reset; if the whole pool is limited, work waits and the owner is notified.

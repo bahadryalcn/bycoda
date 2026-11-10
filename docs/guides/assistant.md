@@ -130,7 +130,8 @@ Global voice can discover displayed project names and historical session
 metadata, then use exact project/session identities for navigation and lifecycle
 actions. Partial or duplicate project names need clarification. Desktop operations
 can use a real assistant conversation without opening a coding session, while
-retaining the configured app allowlist and existing native approval flow. A tool's
+retaining the configured app allowlist and the owner's computer use permission mode
+(Ask every time, Auto or Full access, set only in **Computer use** settings). A tool's
 authentic response can be usable even when its contents cannot be attributed to a
 project; that content does not become a saved personal rule or trusted memory.
 
@@ -156,6 +157,19 @@ currently running desktop operation. Opening settings reads these states; it doe
 not enable control, connect to an application or prepare the helper. Enabling the
 saved permission allows future requests through existing approvals. A verified
 helper alone does not mean control is enabled or an operation is running.
+
+**Folders and commands** (Computer settings) is where you choose the folders the
+assistant may use when it is not working in a project. Add up to 20 folders with
+the folder picker; drives, system folders, your home folder itself and credential
+folders are refused, and a link that leads outside a folder is never followed.
+The assistant reads, lists and searches these folders without asking, asks for your
+approval of each exact change (write, create, rename, move, copy, delete), and can
+run a command to completion and read its exit code and output. Every command run
+shows its command, arguments and folder for approval unless you switch on **Run
+commands without asking** (off by default; it also applies to project
+conversations). Both choices are saved only from this screen, never by the
+assistant, and use the dialog's Save. After a Host restart an unfinished command
+is reported as unknown and is never run again automatically.
 
 The Room opens full screen on **Today**, with a request field and current work. Use its tabs
 for conversations, jobs, sessions, notes, history and memory. The header's status
@@ -253,6 +267,17 @@ is uncertain, it waits for you. Manually enrolled conversations are escalated
 without automatic cancellation. Inspect an uncertain task before using its normal
 Retry action; resuming the assistant does not replay it.
 
+In Jobs autonomy there is no supervisor to follow up, so a stalled job worker gets
+one fixed follow-up per stall, still within the nudge limit, budgets and holds.
+After the follow-ups are used, the same single restart applies. Manually enrolled
+conversations never get this automatic follow-up, and Supervisor mode keeps its own
+review-driven follow-ups.
+
+Work you start by voice or in the Room (goals, standalone tasks and crew runs) is
+tracked once it is created. The assistant only watches it: you still get a notice
+when it is done, fails, needs you or stalls, and no new authority over it is
+granted. Up to 200 items are tracked; finished ones are forgotten after seven days.
+
 Use a job's pause, resume or stop action to control that job. **Stop everything**
 interrupts the supervisor and requests that its linked jobs stop. Errors remain
 visible when a child cannot be stopped. Resuming the supervisor permits new
@@ -271,6 +296,26 @@ and its choices even with voice off. Choose an option, type your own answer, or
 use **Later** to postpone the whole question. Later schedules a reminder without
 answering it. Answers become context for the next supervisor review and grant no
 additional permissions. Unrelated jobs can continue while a question waits.
+
+### One-time schedules, reminders and job chaining
+
+An automation created from a quick job can run **once** at an exact date and time
+(up to a year ahead) instead of repeating. The Host stores it as an ordinary
+automation armed for that moment; it runs a single time and then turns itself off.
+The review shows the run time. Changing its schedule later in Automations makes it
+a normal repeating schedule. A run missed while the computer was off for more than
+twelve hours is recorded as skipped, as for other automations.
+
+**Reminders** are personal and start no work. The assistant keeps them separately
+from jobs; each one fires once at its time as an assistant notification, with
+the usual quiet-hours, do-not-disturb and presence rules, and reaches a paired
+phone through assistant push. Older phone builds do not receive reminder
+notifications. Ask the voice assistant to list or cancel pending reminders.
+
+A project job can **wait for another job**: it stays queued until that job is
+done. If the earlier job fails or is cancelled, the later one stays queued with
+the hold reason "dependency" and you get one notification saying which job it is
+waiting for. Stop it in the Room if you no longer want it.
 
 ## Rules, conversations and notes
 
@@ -363,6 +408,9 @@ briefing. By default, only urgent updates notify you while away. A job that stal
 (no output for the configured stall minutes) also notifies you and counts as urgent.
 Waiting notifications say why: plan approval needed, needs your input, or stopped
 with an error.
+A done notification also says what verification was actually recorded for the work
+(checks that passed or failed, independent review, final review). If none was
+recorded it says "No verification was recorded." and never implies tests ran.
 
 **I'm back** refreshes the return briefing. **Listen** reads it through speaker
 output only, with Stop and playback errors visible. An explicit assistant language
@@ -404,6 +452,47 @@ follow-ups before a worker needs recovery. Zero disables follow-ups and automati
 recovery. Manually enrolled conversations always wait for your review after their
 limit. Chief context renews at the local briefing time and earlier when it reaches
 80% of a known model window or your saved hard limit.
+
+### Model pool
+
+In Room **Settings** → **Models** you list the models the assistant may use, in
+priority order. Each model has an effort, a provider account and roles: Worker,
+Planning, Chief and Reply. Each also has a **Skip below % remaining** threshold and
+an **If limit unknown** choice for when the limit cannot be read.
+
+The assistant uses the first model whose remaining limit is above its threshold.
+Running work never switches model. When a running model hits its limit, that work
+resumes on the same model after the limit resets, even with the window closed.
+Tasks that have not started move to the next model. If every model is at its
+limit, jobs wait and you get one notification per reset window.
+
+The voice assistant and Room manager can only use models from this list. Your own
+choices elsewhere in the app are not affected.
+
+Until you save a list, the assistant uses your previous worker, planning, chief and
+reply choices.
+
+## Running around the clock
+
+**Settings, Computer use, Ready for 24/7** lists what keeps the assistant working
+when you are away. It only reads your saved settings; each item that is not ready
+opens the control that fixes it, and nothing changes until you change that control.
+Setup ends with the same list, which you can skip.
+
+- The assistant is turned on and setup is finished.
+- Autonomy is Run jobs or Supervise assigned jobs, not Report only.
+- A worker model is in the model list and the daily token budget is above zero.
+- Keep the computer awake while working is on (Windows only; other systems show
+  it as not supported). A sleeping computer stops jobs, the morning briefing and
+  supervisor reviews.
+- A paired phone has assistant updates on, so stalled jobs reach you.
+- Task done and needs-input events are watched, and notices while away are All
+  or Urgent only.
+- Quiet hours are shown so you can check the range.
+- The Host survives signing out. This cannot be detected and always shows as
+  unknown. On Windows the Host stops when you sign out; stay signed in (locking
+  the screen is fine) and install the Host service so it restarts at sign-in. See
+  [Manage the host](remote-access.md#manage-the-host).
 
 ## Optional desktop control
 

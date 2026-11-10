@@ -2,7 +2,20 @@ import type { HostSessionSummary } from "../../src/features/connections/model/pr
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { hostWarnDeduped } from "../diagnostics/log-dedupe";
 import { sendExpoPush, type ExpoPushMessage } from "./expo-push";
-import { detectPushEvents, type PushEvent, type PushSnapshot } from "./push-events";
+import {
+  AssistantPushLedger,
+  assistantPushAllowed,
+  assistantPushMessage,
+  type AssistantPushSource,
+} from "./push-assistant";
+import {
+  detectPushEvents,
+  PUSH_EVENT_KINDS,
+  type PushEvent,
+  type PushEventKind,
+  type PushSnapshot,
+} from "./push-events";
+import type { ApprovalRegistry } from "../approvals/approval-registry";
 import type { PushDeviceStore, PushRecipient } from "./push-store";
 
 /** A desktop window counts as in use for this long after its last active report. */
@@ -16,6 +29,11 @@ type Dependencies = {
   environmentId: string;
   /** Every top-level conversation on this Host, desktop-owned ones included. */
   sessions: () => Promise<HostSessionSummary[]>;
+  /** Pending Assistant notifications with the Host's own delivery verdicts; absent disables that channel. */
+  assistant?: AssistantPushSource;
+  assistantLedger?: AssistantPushLedger;
+  /** Remote-answerable owner approvals; absent disables that channel. */
+  approvals?: ApprovalRegistry;
   send?: typeof sendExpoPush;
   now?: () => number;
   pollMs?: number;
@@ -94,14 +112,91 @@ export class PushNotifications {
     }
     const { events, next } = detectPushEvents(this.snapshot, await this.deps.sessions());
     this.snapshot = next;
-    if (events.length === 0 || this.desktopActive()) return;
+    const away = !this.desktopActive();
+    if (events.length > 0 && away)
+      await this.deliver(
+        recipients.flatMap((recipient) =>
+          events
+            .filter((event) => recipient.events[event.kind])
+            .slice(0, MAX_PER_TICK)
+            .map((event) => this.message(recipient, event)),
+        ),
+      );
+    if (away) await this.tickAssistant(recipients);
+    if (away) await this.tickApprovals(recipients);
+  }
+
+  /**
+   * An approval that waits while nobody uses the desktop reaches each interested phone once. The message
+   * carries no operation text; the phone opens the approval and reads the full summary from the Host.
+   */
+  private async tickApprovals(recipients: PushRecipient[]): Promise<void> {
+    const registry = this.deps.approvals;
+    if (!registry) return;
+    const waiting = registry.unpushed();
+    if (waiting.length === 0) return;
+    // Marked before sending: a failed send is not retried, so a flaky push service cannot repeat it.
+    for (const item of waiting) registry.markPushed(item.id);
     await this.deliver(
-      recipients.flatMap((recipient) =>
-        events
-          .filter((event) => recipient.events[event.kind])
-          .slice(0, MAX_PER_TICK)
-          .map((event) => this.message(recipient, event)),
-      ),
+      recipients
+        .filter((recipient) => recipient.events.approvals)
+        .flatMap((recipient) =>
+          waiting.slice(0, MAX_PER_TICK).map((item): ExpoPushMessage => ({
+            to: recipient.pushToken,
+            title: recipient.title,
+            body: recipient.texts.approvals,
+            data: {
+              kind: "approval",
+              approvalId: item.id,
+              environmentId: this.deps.environmentId,
+            },
+            sound: "default",
+            channelId: "bycoda",
+            priority: "high",
+          })),
+        ),
+    );
+  }
+
+  /**
+   * Assistant notifications wait on the Host for a desktop window that may never open. With no desktop
+   * in use, each phone hears about each one once; acknowledging stays with the owner.
+   */
+  private async tickAssistant(recipients: PushRecipient[]): Promise<void> {
+    const { assistant, assistantLedger: ledger } = this.deps;
+    const interested = recipients.filter((recipient) => recipient.events.assistant);
+    if (!assistant || !ledger || interested.length === 0) return;
+    const pending = await assistant();
+    if (pending.length === 0) return;
+    const sends: { recipient: PushRecipient; id: string; message: ExpoPushMessage }[] = [];
+    for (const recipient of interested) {
+      const done = await ledger.sent(
+        recipient.deviceHash,
+        pending.map((item) => item.id),
+      );
+      for (const item of pending) {
+        if (done.has(item.id) || !assistantPushAllowed(item, recipient)) continue;
+        sends.push({
+          recipient,
+          id: item.id,
+          message: assistantPushMessage(recipient, item, this.deps.environmentId),
+        });
+      }
+    }
+    if (sends.length === 0) return;
+    await this.deliver(sends.map((send) => send.message));
+    for (const send of sends) await ledger.record(send.recipient.deviceHash, send.id, Date.now());
+    await ledger.prune(Date.now());
+  }
+
+  /**
+   * The event kinds at least one registered phone receives from this Host. The desktop leaves those
+   * to the Host instead of also reporting them to the account, which would push the same phone twice.
+   */
+  async ownedEvents(): Promise<PushEventKind[]> {
+    const recipients = await this.deps.store.recipients();
+    return PUSH_EVENT_KINDS.filter((kind) =>
+      recipients.some((recipient) => recipient.events[kind]),
     );
   }
 

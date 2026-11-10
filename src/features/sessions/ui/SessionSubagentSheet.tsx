@@ -18,7 +18,11 @@ import {
   captureRemoteSessionActions,
   subscribeRemoteSessionActions,
 } from "../../connections/public/remoteSessionActions";
-import { consumeViewDelegated, VIEW_DELEGATED_EVENT } from "./delegatedFocus";
+import {
+  consumeViewDelegated,
+  registerDelegatedStop,
+  VIEW_DELEGATED_EVENT,
+} from "./delegatedFocus";
 import { requestViewSubagent } from "./subagentFocus";
 import { useDelegatedMessage } from "./useDelegatedMessage";
 import { SubagentSheet, type SubagentRelay } from "./SubagentSheet";
@@ -127,6 +131,7 @@ export function useDelegatedSheet({
     },
     [onStopSession],
   );
+  useEffect(() => registerDelegatedStop(sessionId, stop), [sessionId, stop]);
   /** Ends the running children; their own sessions then report cancelled. */
   const stopRunning = useCallback(async () => {
     await Promise.all(

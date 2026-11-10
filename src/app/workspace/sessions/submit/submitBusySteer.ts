@@ -16,6 +16,7 @@ import {
   sentQueuedMessage,
 } from "../../../../features/sessions/model/messageQueue";
 import { preparePrompt } from "../../../../features/sessions/model/promptPreparation";
+import { submitDelegationKey } from "./submitDelegationKey";
 import { type Session } from "../../../../features/sessions/model/session";
 import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
 import {
@@ -430,6 +431,7 @@ export function steerBusySubmit(
           harness: running.harness,
           sessionId,
           cwd: initialWorkCwd,
+          delegation: { requestKey: submitDelegationKey(sessionId, options, current) },
         });
         // The turn ended or was replaced before the write. A user Stop pauses the
         // queue itself; this message keeps its place either way.

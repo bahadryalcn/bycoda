@@ -1,5 +1,6 @@
 import { leafIds, type WorkspaceTab } from "../../workspace/model/layout";
 import type { Block, Session } from "../../sessions/model/session";
+import { sessionsNeedingAttention } from "./attention";
 import { toolCallLabel } from "../../sessions/model/transcriptActivity";
 
 export type PendingApprovalNotice = {
@@ -64,14 +65,16 @@ export function hiddenApprovalNotices(
 export function pendingApprovalNotices(
   sessions: Session[],
 ): Array<PendingApprovalNotice & { session: Session }> {
+  // In-app requests ignore the notification preferences: they must stay answerable.
+  // Orchestrated workers are included; opening one inspects it under its lead.
+  const { input } = sessionsNeedingAttention(sessions, new Set(), {
+    input: true,
+    unseen: false,
+  });
   const notices: Array<PendingApprovalNotice & { session: Session }> = [];
-  for (const session of sessions) {
-    if (session.inboxAsk) continue;
-    // An orchestrated worker answers to its lead, never to the user directly.
-    if (session.orchestrationLeadId) continue;
+  for (const session of input) {
     const pending = pendingApprovalForSession(session);
-    if (!pending) continue;
-    notices.push({ ...pending, session });
+    if (pending) notices.push({ ...pending, session });
   }
   return notices;
 }

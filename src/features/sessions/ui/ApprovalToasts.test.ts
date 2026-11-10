@@ -4,7 +4,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { updateNotificationPreferences } from "../../notifications/model/notificationPreferences";
 import { ApprovalToasts } from "./ApprovalToasts";
-import { NOTIFICATION_HISTORY_KEY } from "../../notifications/model/notificationHistory";
+import {
+  NOTIFICATION_HISTORY_KEY,
+  type NotificationHistoryEntry,
+} from "../../notifications/model/notificationHistory";
 import * as groupLock from "../../group-lock/hooks/useGroupLock";
 import { pathKey } from "../../../shared/lib/paths";
 import { rememberNotificationProjects } from "../../notifications/model/notificationProjects";
@@ -255,8 +258,63 @@ it("keeps expired requests in history without approval controls and can clear th
   act(() => morph("Clear all").click());
   now += 300;
   await act(async () => morph("Clear").click());
-  expect(document.body.textContent).toContain("No recent requests");
+  expect(document.body.textContent).toContain("No recent notifications");
   expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toEqual([]);
+});
+
+const logEntry = (patch: Partial<NotificationHistoryEntry>): NotificationHistoryEntry => ({
+  key: "log",
+  sessionId: "",
+  cwd: "",
+  title: "Nightly",
+  label: "Background automation",
+  kind: "background",
+  occurredAt: Date.now(),
+  ...patch,
+});
+
+it("lists every kind of the common log with its label and opens a background target", async () => {
+  localStorage.setItem(
+    NOTIFICATION_HISTORY_KEY,
+    JSON.stringify([
+      logEntry({ target: "background:automations", occurredAt: 3 }),
+      logEntry({
+        key: "done",
+        kind: "finished",
+        sessionId: "work",
+        cwd: "/projects/work",
+        title: "Fix tests",
+        occurredAt: 2,
+      }),
+      logEntry({ key: "acct", kind: "account", target: "background:account", occurredAt: 1 }),
+    ]),
+  );
+  const onOpenBackground = vi.fn();
+  const onOpenHistorySession = vi.fn(async () => true);
+  act(() => renderWith([], { onOpenBackground, onOpenHistorySession }));
+  openHistory();
+  const rows = historyRows();
+  expect(rows.map((row) => row.querySelector(".notification-history-kind")?.textContent)).toEqual([
+    "Background",
+    "Finished",
+    "Account",
+  ]);
+  await act(async () =>
+    rows[0].querySelector<HTMLButtonElement>(".notification-request-body")!.click(),
+  );
+  expect(onOpenBackground).toHaveBeenCalledWith("background:automations");
+  expect(onOpenHistorySession).not.toHaveBeenCalled();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
+
+it("shows a background row without an open action when nothing can open it", () => {
+  localStorage.setItem(
+    NOTIFICATION_HISTORY_KEY,
+    JSON.stringify([logEntry({ target: "background:tasks" })]),
+  );
+  act(() => renderWith([]));
+  openHistory();
+  expect(document.querySelector(".notification-request-body")).toBeNull();
 });
 
 it("shows the registered project and distinguishing path in popups, pending requests and restored history", () => {
@@ -505,14 +563,14 @@ it("keeps history when the durable clear fails and offers a retry", async () => 
   now += 300;
   await act(async () => morph("Clear").click());
   expect(document.querySelector('[role="tabpanel"]')?.textContent).toContain("Request work");
-  expect(document.body.textContent).toContain("Request history could not be cleared");
+  expect(document.body.textContent).toContain("Notification history could not be cleared");
   setItem.mockRestore();
   await act(async () => {
     [...document.querySelectorAll<HTMLButtonElement>('[role="tabpanel"] button')]
       .find((item) => item.textContent === "Retry")!
       .click();
   });
-  expect(document.body.textContent).toContain("No recent requests");
+  expect(document.body.textContent).toContain("No recent notifications");
   expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toEqual([]);
 });
 
@@ -521,8 +579,8 @@ it("does not show unreadable history as empty", () => {
   act(() => render([]));
   act(() => button("Notifications").click());
   act(() => document.querySelector<HTMLButtonElement>('[role="tab"]:last-child')!.click());
-  expect(document.body.textContent).toContain("Request history could not be read");
-  expect(document.body.textContent).not.toContain("No recent requests");
+  expect(document.body.textContent).toContain("Notification history could not be read");
+  expect(document.body.textContent).not.toContain("No recent notifications");
 });
 
 const longNotice = (id: string): Notice => ({
@@ -579,7 +637,7 @@ it("keeps a history entry and says so when its removal cannot be saved", async (
   });
   await act(async () => rowButton(historyRows()[0], "Remove").click());
   expect(historyRows()).toHaveLength(1);
-  expect(document.body.textContent).toContain("This request could not be removed.");
+  expect(document.body.textContent).toContain("This notification could not be removed.");
 });
 
 it("marks a history entry whose request is still waiting", () => {

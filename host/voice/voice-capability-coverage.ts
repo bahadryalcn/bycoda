@@ -16,6 +16,11 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
     remaining:
       "Owner-only Settings model calls that write theme drafts; voice does not generate or apply themes.",
   },
+  approvals: {
+    tools: [],
+    remaining:
+      "Owner approval relay between the computer and paired phones; the assistant never answers its own approvals.",
+  },
   assistant: {
     tools: [],
     remaining:
@@ -41,22 +46,29 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
     remaining: "Global creation requires explicit reviewed execution settings.",
   },
   browser: {
-    tools: ["browser.preview", "browser.status"],
-    remaining: "Real session control lease required.",
+    tools: ["browser.preview", "browser.status", "browser.read"],
+    remaining:
+      "Real session control lease required. browser.annotation.* is owned by one coding session's annotation scope and the Room browser refuses it, so annotations stay session-only.",
   },
   commands: {
-    tools: ["commands.dispatch", "commands.status"],
+    tools: [
+      "commands.dispatch",
+      "commands.status",
+      "commands.run",
+      "commands.run.status",
+      "commands.run.cancel",
+    ],
     remaining:
-      "Finite session command allowlist; arbitrary shell/send/rewind require dedicated owner workflow.",
+      "Finite session command allowlist; session shell/send/rewind require dedicated owner workflow. commands.run is Room-only, needs exact native approval per run unless the owner enabled Run commands without asking, and runs only inside an owner-chosen folder or the project working copy.",
   },
   conversation: {
     tools: ["tools.search", "tools.describe"],
     remaining: "Grant issuance and native relay are internal transport.",
   },
   crews: {
-    tools: ["crews.list", "crews.start"],
+    tools: ["crews.list", "crews.active.list", "crews.start", "crews.member.ask", "crews.answer"],
     remaining:
-      "Room writes require exact native review and current project revision; response and answer retain session-specific owner gates.",
+      "Room writes, including member answers, require exact native review, the owner's delegated-approval policy, the pending question and current project revision. crews.respond (granting a member's tool approval) stays a coordinator/owner action: the assistant never grants approvals.",
   },
   decisionModels: {
     tools: [],
@@ -65,12 +77,14 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
   },
   desktop: {
     tools: ["desktop.status", "desktop.act"],
-    remaining: "Exact native approval and owner control allowlist retained.",
+    remaining:
+      "Exact native approval and owner control allowlist retained. Human input (key chords via press, scroll, hover, drag, window focus) uses the same gate; Alt+F4 and Win+L, free mouse coordinates, held keys, window resize/move/minimize, system surfaces and notifications are unavailable.",
   },
   devices: {
-    tools: [],
-    sessionOnly: ["devices.list", "devices.preview"],
-    remaining: "Explicit machine/device and device control gates retained.",
+    tools: ["devices.list"],
+    sessionOnly: ["devices.preview"],
+    remaining:
+      "Host simulator/emulator list only; a connected machine's devices, preview and control need a focused session and device control gates.",
   },
   devServers: {
     tools: ["devServers.list", "devServers.start"],
@@ -85,13 +99,29 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
     remaining: "Bounded committed-change long poll; no durable replay or external PR push.",
   },
   files: {
-    tools: ["files.read", "files.write"],
-    remaining: "Exact working-copy and file revision gates retained.",
+    tools: ["files.read", "files.write", "files.roots"],
+    remaining:
+      "Exact working-copy and file revision gates retained. The global Room reaches only owner-chosen Assistant folders; folder choice is owner-only Settings.",
   },
   git: {
-    tools: ["git.status", "git.stage", "git.unstage", "git.commit", "git.stash", "git.pull"],
+    tools: [
+      "git.status",
+      "git.index",
+      "git.fileDiff",
+      "git.branches",
+      "git.worktrees",
+      "git.stage",
+      "git.unstage",
+      "git.commit",
+      "git.stash",
+      "git.pull",
+      "git.pushPreview",
+      "git.push",
+      "git.mergePreview",
+      "git.merge",
+    ],
     remaining:
-      "Exact native review and Git state checks; push/merge/history rewrite remain owner workflows.",
+      "Exact native review and Git state checks; push and merge need exact approval; force push and history rewrite remain unavailable.",
   },
   goals: {
     tools: ["goals.create", "goals.get"],
@@ -130,15 +160,14 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
     remaining: "Pairing/access enable/disable secrets remain owner-device scoped.",
   },
   models: {
-    tools: ["models.pool.list"],
-    sessionOnly: ["models.list"],
+    tools: ["models.pool.list", "models.list"],
     remaining: "Catalog availability is not provider entitlement.",
   },
   native: {
     tools: [],
     sessionOnly: ["ui.tools.open", "ui.workspace.open"],
     remaining:
-      "Native upload/rewind/window lifecycle APIs are privileged internal protocols, not generic voice RPCs.",
+      "Native upload/rewind/window lifecycle APIs are privileged internal protocols, not generic voice RPCs. ui.workspace.open only navigates but its relay needs a coding-session window context; opening any view or settings section from the global Room needs a native Room navigation operation that does not exist yet.",
   },
   notes: {
     tools: [
@@ -182,7 +211,7 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
   pullRequests: {
     tools: [],
     remaining:
-      "Linking a session to a pull request is an owner action in the Git panel, not a voice action.",
+      "Linking a session to a pull request is an owner action in the Git panel. pullRequests.watch, unwatch and watches are stored per coding session, so they stay session-only; a Room thread has no session to watch from, so PR or CI follow-up from the Room is not offered.",
   },
   push: {
     tools: [],
@@ -192,7 +221,8 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
   resources: {
     tools: [],
     sessionOnly: ["resources.read"],
-    remaining: "Observed runtime resources, not billed provider usage.",
+    remaining:
+      "Observed runtime resources, not billed provider usage. The read is answered by the desktop relay, which accepts only coding-session windows.",
   },
   runtimeLogs: {
     family: "runtime-logs",
@@ -247,8 +277,18 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
       "Read host sync counter only; replication push/pull remain internal owner protocols.",
   },
   tasks: {
-    tools: ["tasks.list", "tasks.create", "tasks.start"],
-    remaining: "No auto-merge or publication; exact reviewed global execution settings.",
+    tools: [
+      "tasks.list",
+      "tasks.create",
+      "tasks.start",
+      "tasks.delete",
+      "tasks.transfer",
+      "tasks.queue.pause",
+      "tasks.review.recheck",
+      "tasks.reorder",
+    ],
+    remaining:
+      "No auto-merge or publication; exact reviewed global execution settings. Deletion, transfer, queue changes and review recheck use the same native review, task versions and durable receipts as other Room work writes.",
   },
   terminals: {
     tools: ["terminals.list", "terminals.write"],
@@ -259,8 +299,7 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
     remaining: "Exposure/start/stop and credentials remain native owner-only.",
   },
   usage: {
-    tools: [],
-    sessionOnly: ["usage.sessions.read"],
+    tools: ["usage.sessions.read"],
     remaining: "Host-observed coverage, not provider billing.",
   },
   voice: {
@@ -271,6 +310,9 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
     tools: [
       "files.read",
       "git.status",
+      "skills.search",
+      "skills.read",
+      "logs.monitors.list",
       "workspace.projects.select",
       "workspace.sessions.create",
       "workspace.sessions.open",
@@ -279,7 +321,7 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
       "workspace.sessions.stop",
     ],
     remaining:
-      "Finite Room navigation/session owner workflows only; source admission and native effect availability must be verified. Submit status retains the original appRequestId; absence is not proof of non-delivery.",
+      "Finite Room navigation/session owner workflows only; source admission and native effect availability must be verified. Submit status retains the original appRequestId; absence is not proof of non-delivery. Global app search, the Today summary and MCP server status are computed in the desktop renderer or its native files and have no Host data path, so they have no voice tool; machines.list and logs.wait need the desktop relay or a session waiter. Assistant activity and notifications are read through the voice assistant_activity control.",
   },
   workspaces: {
     tools: [
@@ -291,8 +333,7 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
     remaining: "Cleanup apply, merge, publish and owner-retarget remain native workflows.",
   },
   worktrees: {
-    tools: ["workspaces.prepare"],
-    sessionOnly: ["git.worktrees"],
+    tools: ["workspaces.prepare", "git.worktrees"],
     remaining: "Legacy removal and branch publication retain owner workflow.",
   },
 };

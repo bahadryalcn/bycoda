@@ -5,6 +5,10 @@ export async function handleCrewsRpc(
   request: OwnerRpcRequest,
 ): Promise<void> {
   switch (request.input.method) {
+    case "crews.active.list":
+
+    case "crews.member.ask":
+
     case "crews.list":
 
     case "crews.schema":

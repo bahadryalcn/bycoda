@@ -2,12 +2,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
 import { message } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { loadNotificationEvents, subscribeNotificationEvents } from "../model/notificationEvents";
 import { loadNotificationsEnabled, subscribeNotificationsEnabled } from "../model/notifications";
 import { loadSoundsEnabled, subscribeSoundsEnabled } from "../../settings/model/sounds";
 import {
   getProjectNotificationRule,
   subscribeNotificationPreferences,
 } from "../model/notificationPreferences";
+import { isProjectLocked } from "../../group-lock/public/projectLock";
+import { logNotification } from "../model/notificationLog";
 import { knownNotificationProject } from "../model/notificationProjects";
 import {
   clearReminders,
@@ -49,6 +52,7 @@ export function useSessionReminders(
           preferences: {
             notificationsEnabled: loadNotificationsEnabled(),
             sound: loadSoundsEnabled(),
+            events: loadNotificationEvents(),
             projectRules: Object.fromEntries(
               remindersRef.current.flatMap((reminder) => {
                 const project = knownNotificationProject(reminder.cwd);
@@ -205,6 +209,7 @@ export function useSessionReminders(
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisible);
     const unsubscribeNotifications = subscribeNotificationsEnabled(configureCurrent);
+    const unsubscribeEvents = subscribeNotificationEvents(configureCurrent);
     const unsubscribeSounds = subscribeSoundsEnabled(configureCurrent);
     const unsubscribePreferences = subscribeNotificationPreferences(configureCurrent);
     return () => {
@@ -218,6 +223,7 @@ export function useSessionReminders(
       document.removeEventListener("visibilitychange", onVisible);
       unsubscribeNotifications();
       unsubscribeSounds();
+      unsubscribeEvents();
     };
   }, [openHere, refresh, configure]);
 
@@ -250,6 +256,26 @@ export function useSessionReminders(
     // policyRevision: notification rules live outside React state.
     [reminders, now, policyRevision],
   );
+
+  // The log keeps every due reminder, also when the banner was suppressed. Windows record
+  // the same key and time, which the log stores once.
+  const logged = useRef(new Set<string>());
+  useEffect(() => {
+    for (const reminder of due) {
+      const key = `reminder:${reminder.sessionId}:${reminder.dueAt}`;
+      if (logged.current.has(key)) continue;
+      logged.current.add(key);
+      logNotification({
+        kind: "reminder",
+        key,
+        title: reminder.title,
+        label: "",
+        session: { id: reminder.sessionId, cwd: reminder.cwd, harness: reminder.harness },
+        occurredAt: reminder.dueAt,
+        locked: isProjectLocked(reminder.cwd),
+      });
+    }
+  }, [due]);
 
   return {
     reminders,

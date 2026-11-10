@@ -3,6 +3,8 @@ import { StatusDot } from "../../../shared/ui/StatusDot";
 import { t, useT } from "../../../shared/i18n";
 import { createContext, useContext } from "react";
 import { HarnessIcon } from "../../../shared/ui/identity/HarnessIcon";
+import type { CrewMemberChild } from "../../../shared/model/host-contracts/delegation";
+import { MemberAvatar, memberTraits } from "../../crews/public/mentions";
 import { ProjectMascot } from "../../projects/public/ProjectMascot";
 import { blockLifecycle, type DockAgentStatus } from "../model/activityDock";
 import { findModelIdentity } from "../model/models";
@@ -53,8 +55,11 @@ export function SubagentMarks({
   model,
   active = false,
   failed = false,
+  member,
 }: {
   name: string;
+  /** A Crew member's run shows the member's portrait instead of the hashed mascot. */
+  member?: CrewMemberChild;
   harness?: HarnessId;
   /** Model id; names the provider when `harness` is not known. */
   model?: string;
@@ -66,11 +71,23 @@ export function SubagentMarks({
     harness ?? (model ? findModelIdentity(model)?.harness : undefined) ?? turnHarness;
   return (
     <span className="flex shrink-0 items-center gap-1" aria-hidden="true">
-      <ProjectMascot
-        project={name}
-        active={active}
-        className={`size-3.5 shrink-0 ${failed ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
-      />
+      {member ? (
+        <MemberAvatar
+          traits={memberTraits({
+            id: member.sourceId ?? member.id,
+            source: member.sourceId ? { id: member.sourceId } : undefined,
+            avatar: member.avatar as Parameters<typeof memberTraits>[0]["avatar"],
+          })}
+          size={16}
+          active={active}
+        />
+      ) : (
+        <ProjectMascot
+          project={name}
+          active={active}
+          className={`size-3.5 shrink-0 ${failed ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
+        />
+      )}
       {provider ? <HarnessIcon harness={provider} size="sm" /> : null}
     </span>
   );

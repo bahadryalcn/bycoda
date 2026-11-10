@@ -14,6 +14,13 @@ const project = z.strictObject({
   request: z.string().min(1).max(16000),
   projectPath: z.string().max(4096).optional(),
   projectPaths: z.array(z.string().min(1).max(4096)).min(1).max(20).optional(),
+  /** Start only after another job finished: the index of an earlier job in this call, or an existing job id. */
+  after: z
+    .preprocess(
+      (value) => (typeof value === "string" && /^[0-9]{1,2}$/.test(value) ? Number(value) : value),
+      z.union([z.number().int().min(0).max(9), z.string().min(1).max(200)]),
+    )
+    .optional(),
 });
 const quick = z.strictObject({
   kind: z.literal("quick"),
@@ -34,7 +41,9 @@ const automation = z.strictObject({
     projectPath: z.string().min(1).max(4096),
     name: z.string().trim().min(1).max(200),
     prompt: z.string().min(1).max(16000),
-    scheduleKind: z.enum(["hourly", "daily", "weekdays", "weekly"]),
+    scheduleKind: z.enum(["hourly", "daily", "weekdays", "weekly", "once"]),
+    /** Epoch milliseconds of the single run when scheduleKind is once; resolved from the owner's local time. */
+    runAt: z.number().int().positive().optional(),
     minute: z.number().int().min(0).max(59),
     time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
     dayOfWeek: z.number().int().min(0).max(6),
@@ -47,7 +56,32 @@ const automation = z.strictObject({
 export const VoiceJobDraftsSchema = z
   .array(z.union([project, quick, automation]))
   .min(1)
-  .max(10);
+  .max(10)
+  .superRefine((jobs, ctx) => {
+    jobs.forEach((job, index) => {
+      if (job.kind === "quick") {
+        const action = job.quickAction;
+        if (
+          action.kind === "automation" &&
+          (action.scheduleKind === "once") !== (action.runAt !== undefined)
+        )
+          ctx.addIssue({
+            code: "custom",
+            message: "A one-time automation needs runAt; others must omit it.",
+          });
+        return;
+      }
+      const after = job.after;
+      if (typeof after !== "number") return;
+      // Only an earlier project job can be waited for, which also rules out cycles and self-reference.
+      const target = jobs[after];
+      if (after >= index || !target || target.kind === "quick")
+        ctx.addIssue({
+          code: "custom",
+          message: "after must be the index of an earlier project job in this call.",
+        });
+    });
+  });
 export type VoiceJobDraft = AssistantJobDraft;
 export type VoiceJobReviewState = {
   id: string;
@@ -68,6 +102,13 @@ export function resolveVoiceJobDraft(
   if (input.kind === "quick") {
     if (input.quickAction.kind === "automation") {
       const { projectPath, ...action } = input.quickAction;
+      // The Host derives the stored local time of a one-time run from runAt; keep the form's fields consistent.
+      if (action.runAt !== undefined) {
+        const at = new Date(action.runAt);
+        action.minute = 0;
+        action.dayOfWeek = at.getDay();
+        action.time = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+      }
       const scope = resolveVoiceJobProjects({ projectPath }, projects, allowedPaths, defaultPath);
       return {
         kind: "quick",
@@ -100,6 +141,27 @@ export function resolveVoiceJobDraft(
     title: input.title,
     request: input.request,
   };
+}
+/** Drafts for one give_jobs call; an index in `after` becomes the earlier draft's idempotency key. */
+export function voiceJobDrafts(
+  input: z.infer<typeof VoiceJobDraftsSchema>,
+  projects: readonly { id: string; path: string }[],
+  allowedPaths: readonly string[],
+  defaultPath: string,
+  newKey: () => string,
+): VoiceJobDraft[] {
+  const drafts: VoiceJobDraft[] = [];
+  input.forEach((item) => {
+    const after = item.kind === "quick" ? undefined : item.after;
+    drafts.push({
+      ...resolveVoiceJobDraft(item, projects, allowedPaths, defaultPath),
+      id: crypto.randomUUID(),
+      idempotencyKey: newKey(),
+      ...(typeof after === "number" ? { afterKey: drafts[after].idempotencyKey } : {}),
+      ...(typeof after === "string" ? { after } : {}),
+    });
+  });
+  return drafts;
 }
 export function changeVoiceJobRows(
   original: readonly VoiceJobDraft[],

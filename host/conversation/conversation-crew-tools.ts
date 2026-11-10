@@ -32,6 +32,39 @@ export const CONVERSATION_CREW_READ_TOOLS = {
   }),
 };
 
+const runOnly = (extra: Record<string, unknown> = {}) =>
+  object({ runId: text, ...extra }, ["runId", ...Object.keys(extra)]);
+
+/** Run control plus the single-expert ask and the project-scoped active list. */
+export const CONVERSATION_CREW_WRITE_TOOLS = {
+  "crews.member.ask": object(
+    {
+      requestId: { type: "string", minLength: 1, maxLength: 200 },
+      memberId: { type: "string", minLength: 1, maxLength: 200 },
+      handle: { type: "string", minLength: 1, maxLength: 64 },
+      prompt: { type: "string", minLength: 1, maxLength: 20000 },
+      parentSessionId: {
+        type: "string",
+        minLength: 1,
+        maxLength: 200,
+        description: "Optional; only the calling conversation is accepted.",
+      },
+      files: {
+        type: "array",
+        maxItems: 100,
+        items: { type: "string", minLength: 1, maxLength: 500 },
+      },
+    },
+    ["requestId", "prompt"],
+  ),
+  "crews.active.list": object({ limit: { type: "integer", minimum: 1, maximum: 200 } }),
+  "crews.pause": runOnly(),
+  "crews.stop": runOnly(),
+  "crews.resume": runOnly(),
+  "crews.accept": runOnly({ taskId: text }),
+  "crews.finish": runOnly(),
+};
+
 type View = Awaited<ReturnType<HostCrews["list"]>>;
 const matches = (search: unknown, ...values: (string | undefined)[]) =>
   typeof search !== "string" ||

@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -14,10 +15,23 @@ import {
   memberModelSummary,
   type CrewRosterIssues,
 } from "../model/crewRoster";
+import { memberLink } from "../model/crewLink";
 import { matchesMemberQuery, memberSearchHaystack } from "./CrewLibrarySearch";
 import { roleLabel } from "./CrewMemberForm";
-import { CrewRoleIcon } from "./CrewRoleIcon";
+import { teamTraits } from "../model/memberAvatars";
+import { MemberAvatar } from "./MemberAvatar";
 import { MemberModelPicker } from "./MemberModelPicker";
+
+/** Short link state in a roster row; the open row says it in full. */
+function MemberLinkBadge({ link }: { link?: "linked" | "customized" }) {
+  useLocale();
+  if (!link) return null;
+  return (
+    <Badge size="xs" tone={link === "linked" ? "info" : "neutral"} className="shrink-0">
+      {link === "linked" ? t("Library") : t("Customized")}
+    </Badge>
+  );
+}
 
 const ROLES: CrewRole[] = ["coordinator", "specialist", "reviewer", "advisor"];
 
@@ -143,6 +157,7 @@ export function CrewMemberTable({
       query,
     );
   const matchCount = agents.filter(matches).length;
+  const looks = useMemo(() => teamTraits(agents), [agents]);
   const toggle = (id: string, on: boolean) =>
     onSelectedChange(on ? [...selected, id] : selected.filter((item) => item !== id));
 
@@ -186,7 +201,10 @@ export function CrewMemberTable({
           />
           {queryActive ? (
             <span className="text-ui-caption tabular-nums text-(--ui-text-secondary)">
-              {t("{p0} of {p1} members shown", { p0: matchCount, p1: agents.length })}
+              {t("{p0} of {p1} members shown", {
+                p0: matchCount,
+                p1: agents.length,
+              })}
             </span>
           ) : null}
         </div>
@@ -244,9 +262,10 @@ export function CrewMemberTable({
                           className="min-w-0"
                           aria-expanded={open}
                           startIcon={
-                            <CrewRoleIcon
-                              role={agent.role}
-                              className="icon-xs shrink-0 text-(--ui-text-secondary)"
+                            <MemberAvatar
+                              traits={looks.get(agent.id)!}
+                              size={24}
+                              className="shrink-0"
                             />
                           }
                           endIcon={open ? <ChevronDown /> : <ChevronRight />}
@@ -257,6 +276,14 @@ export function CrewMemberTable({
                             <span className="min-w-0 truncate text-ui-body font-medium">
                               {name}
                             </span>
+                            {agent.handle ? (
+                              <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
+                                @{agent.handle}
+                              </span>
+                            ) : null}
+                            {data.identitySupported ? (
+                              <MemberLinkBadge link={memberLink(agent, data.agents)?.state} />
+                            ) : null}
                             {problem ? (
                               <span className="shrink-0 text-ui-caption text-danger">
                                 {problem === "model" ? t("Choose a model") : t("Add a name")}
@@ -273,7 +300,10 @@ export function CrewMemberTable({
                           fieldVariant="compact"
                           label={t("Responsibility of {p0}", { p0: name })}
                           value={agent.role}
-                          options={ROLES.map((role) => ({ value: role, label: roleLabel(role) }))}
+                          options={ROLES.map((role) => ({
+                            value: role,
+                            label: roleLabel(role),
+                          }))}
                           onValueChange={(role) => onChange(agent.id, { role: role as CrewRole })}
                         />
                         {agent.selection === "fixed" ? (
@@ -294,14 +324,19 @@ export function CrewMemberTable({
                           <Button
                             variant="ghost"
                             size="sm"
+                            className="max-w-44 min-w-0"
                             onClick={() => onExpandedChange(agent.id)}
                           >
-                            {memberModelSummary(data.catalog, agent)}
+                            <span className="truncate">
+                              {memberModelSummary(data.catalog, agent)}
+                            </span>
                           </Button>
                         )}
                         <InlineAction
                           reveal="always"
-                          label={t("Remove {p0} from crew", { p0: agent.name || t("member") })}
+                          label={t("Remove {p0} from crew", {
+                            p0: agent.name || t("member"),
+                          })}
                           onClick={() => onRemove(agent.id)}
                         >
                           <Trash2 aria-hidden />
@@ -335,7 +370,10 @@ export function CrewMemberTable({
       })}
       {queryActive ? (
         <p role="status" className="sr-only">
-          {t("{p0} of {p1} members shown", { p0: matchCount, p1: agents.length })}
+          {t("{p0} of {p1} members shown", {
+            p0: matchCount,
+            p1: agents.length,
+          })}
         </p>
       ) : null}
       {issues.size === "large" ? (

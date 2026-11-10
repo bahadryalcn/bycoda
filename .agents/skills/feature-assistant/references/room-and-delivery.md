@@ -54,9 +54,11 @@ Read only the section affected by the change. UI owners are in [source owners](s
 
 ## Desktop control
 
-- Desktop observations grant only volatile same-caller snapshot refs. Present
-  owners approve the exact operation through the native dialog. Headed input
-  additionally requires saved physical-input consent and current presence.
+- Desktop observations grant only volatile same-caller snapshot refs. The
+  owner-only permission mode (ask, auto, full; `desktop-control-permission.ts`)
+  decides whether the exact operation goes through the native dialog; voice and
+  Room tools cannot write it. Headed input additionally requires saved
+  physical-input consent, and current presence outside full access.
   Lock, failed presence and revoked authority fail closed. Stop fences queued
   configuration, resume and input; only a newer explicit Resume can re-enable.
 

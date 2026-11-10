@@ -100,7 +100,6 @@ import {
   taskListFromTodos,
   previewFromTool,
   resolveClaudeApiModelId,
-  runtimeModeToPermission,
   sessionIdFromMessage,
   statusTextFromSystem,
   streamDeltaFromEvent,
@@ -120,6 +119,7 @@ import {
   type ClaudeCliSettings,
   type ClaudeControlRequest,
 } from "./claudeProtocol";
+import { claudeNativeLaunch } from "./claudeNativeLaunch";
 import { compactionPhaseFromSystem } from "./claudeCompaction";
 import {
   COMPACTING_TEXT,
@@ -2468,7 +2468,7 @@ function settingsKeyFor(input: HarnessSessionInput): string {
     runtimeMode: input.runtimeMode,
     hooks: loadClaudeHooks(),
     // Folders are fixed at launch, so a change needs a fresh process.
-  })}:${additionalDirsFor(input.sessionId).join("|")}:${JSON.stringify(input.skillPolicy)}`;
+  })}:${additionalDirsFor(input.sessionId).join("|")}:${JSON.stringify(input.skillPolicy)}${claudeNativeLaunch(input).nativeReadOnly ? ":ro" : ""}`;
 }
 
 function launchOptions(
@@ -2481,13 +2481,11 @@ function launchOptions(
   subagentModel?: string;
   subagentPolicy?: string;
   effort?: string;
-  permissionMode?: ReturnType<typeof runtimeModeToPermission>;
   resume?: string;
   sessionId?: string;
   settings?: ClaudeCliSettings;
   additionalDirs: string[];
-  disabledSkills?: string[];
-} {
+} & ReturnType<typeof claudeNativeLaunch> {
   const native = nativeModelId(input.model);
   const effortRaw = input.modelSettings?.effort;
   const context = input.modelSettings?.context;
@@ -2506,13 +2504,12 @@ function launchOptions(
   }
   Object.assign(settings, claudeAutoCompactSettings(input.modelSettings));
   return {
-    disabledSkills: input.skillPolicy?.disabledNames,
+    ...claudeNativeLaunch(input),
     model: resolveClaudeApiModelId(native, context),
     advisor: input.modelSettings?.advisor,
     subagentModel: input.modelSettings?.subagentModel,
     subagentPolicy: input.modelSettings?.subagentPolicy,
     effort: normalizeClaudeCliEffort(effortRaw, native),
-    permissionMode: input.intent === "plan" ? "plan" : runtimeModeToPermission(input.runtimeMode),
     resume,
     sessionId: resume ? undefined : sessionId,
     settings: Object.keys(settings).length > 0 ? settings : undefined,

@@ -1,6 +1,7 @@
 import { ConversationManagementTools, type ManagementPorts } from "./conversation-management-tools";
 import type { HostCrews } from "../crews/crews";
 import type { AssistantThreadPrincipal } from "../sessions/session-authority";
+import type { ThreadWorkTrack } from "./conversation-thread-work-tools";
 import { assertPoolModel, type ModelPoolSource } from "./conversation-model-pool-guard";
 
 export const THREAD_CREW_READS = new Set([
@@ -13,11 +14,13 @@ export const THREAD_CREW_READS = new Set([
   "crews.agents.list",
   "crews.agent.get",
   "crews.runs.list",
+  "crews.active.list",
 ]);
 export const THREAD_CREW_WRITES = new Set([
   "crews.save",
   "crews.agent.save",
   "crews.start",
+  "crews.member.ask",
   "crews.assign",
   "crews.request",
   "crews.resolve",
@@ -26,6 +29,9 @@ export const THREAD_CREW_WRITES = new Set([
   "crews.resume",
   "crews.accept",
   "crews.finish",
+  // Member questions only: native review per call plus the owner's delegateApprovals policy
+  // and the exact pending question still apply. crews.respond (tool approvals) stays owner-only.
+  "crews.answer",
 ]);
 export const threadCrewAction = (action: string) =>
   THREAD_CREW_READS.has(action) || THREAD_CREW_WRITES.has(action);
@@ -43,6 +49,8 @@ export class ConversationThreadCrewTools {
     private readonly crews: HostCrews,
     ports: Ports,
     private readonly pool: ModelPoolSource,
+    /** Observation-only: lets the assistant report on runs its thread started. */
+    private readonly trackWork?: (item: ThreadWorkTrack) => Promise<void>,
   ) {
     this.management = new ConversationManagementTools<string, AssistantThreadPrincipal>(
       {
@@ -113,7 +121,7 @@ export class ConversationThreadCrewTools {
       throw new Error("Read the Crew state and retain its expectedRevision before a change.");
     if (action === "crews.save" || action === "crews.agent.save")
       await this.assertCandidatesInPool(action, input);
-    return this.management.call(
+    const outcome = await this.management.call(
       action,
       {
         requestId: input.operationId,
@@ -123,5 +131,15 @@ export class ConversationThreadCrewTools {
       authorized,
       qualify,
     );
+    const run = (outcome as { state?: string; result?: { id?: string; title?: string } }) ?? {};
+    if (action === "crews.start" && run.state === "completed" && run.result?.id)
+      await this.trackWork?.({
+        kind: "crew",
+        id: run.result.id,
+        projectId: principal.projectId,
+        threadId: principal.threadId,
+        title: run.result.title ?? run.result.id,
+      }).catch(() => undefined);
+    return outcome;
   }
 }

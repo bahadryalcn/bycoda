@@ -168,13 +168,13 @@ import { useClampOverflow } from "./useClampOverflow";
 import { useRetainedDisclosure } from "./useRetainedDisclosure";
 import {
   ActivityPhases,
-  SubagentStack,
   ActivityPhaseIcon,
   formatWorkingDuration,
   ToolCall,
   HandoffDivider,
   InterjectionDivider,
 } from "./AgentTranscriptActivity";
+import { SubagentStack } from "./SubagentCards";
 export { ActivityRow, agentStepBlock } from "./AgentTranscriptActivity";
 type Props = {
   /** Travels with the element when TranscriptPool renders it in its outlet. */

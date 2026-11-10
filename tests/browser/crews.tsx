@@ -3,6 +3,7 @@ import { useState } from "react";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { QueryProvider } from "../../src/app/QueryProvider";
 import { CrewsSettings } from "../../src/features/crews/ui/CrewsSettings";
+import { CrewsPage } from "../../src/features/crews/ui/page/CrewsPage";
 import { CrewSidebar } from "../../src/features/crews/ui/CrewSessions";
 import { CrewRailSection } from "../../src/features/crews/ui/CrewRailSection";
 import { CrewTaskPicker } from "../../src/features/crews/ui/CrewTaskPicker";
@@ -123,7 +124,12 @@ if (params.has("defaults")) {
     {
       models: {
         codex: [
-          { id: candidate.model, harness: candidate.harness, name: "Codex fixture", settings: [] },
+          {
+            id: candidate.model,
+            harness: candidate.harness,
+            name: "Codex fixture",
+            settings: [],
+          },
         ],
       },
       errors: {},
@@ -132,6 +138,99 @@ if (params.has("defaults")) {
   )!;
   definitions = [defaults.definition];
   agents = defaults.agents;
+}
+
+if (params.has("rich")) {
+  // Identity, tools, library links and teams for the Crews page evidence. Fixture data only.
+  const look = (
+    outfit: "cardigan" | "vest" | "jacket",
+    palette: number,
+    headwear?: "flat-cap" | "takke" | "beret",
+  ) => ({
+    outfit,
+    palette,
+    ...(headwear ? { headwear } : {}),
+  });
+  Object.assign(definition.agents[0]!, {
+    avatar: look("jacket", 1, "flat-cap"),
+    handle: "lead",
+  });
+  Object.assign(definition.agents[1]!, {
+    avatar: look("vest", 3, "beret"),
+    handle: "ui",
+    source: { id: "lib-ui", updatedAt: 1 },
+    tools: { preset: "design" },
+  });
+  Object.assign(definition.agents[2]!, {
+    avatar: look("cardigan", 4),
+    handle: "reviewer",
+  });
+  definition.agents.push({
+    id: "api",
+    name: "API engineer",
+    role: "specialist",
+    selection: "fixed",
+    instructions: "Owns backend contracts for this crew",
+    candidates: [candidate],
+    groups: ["Backend"],
+    avatar: look("cardigan", 2, "takke"),
+    handle: "api",
+    source: { id: "lib-api", updatedAt: 1 },
+    customized: true,
+    tools: { preset: "read-only" },
+  } as CrewDefinition["agents"][number]);
+}
+if (params.has("rich")) {
+  agents = agents.map((agent) =>
+    agent.id === "lib-ui"
+      ? {
+          ...agent,
+          handle: "ui",
+          avatar: { outfit: "vest", palette: 3, headwear: "beret" },
+        }
+      : {
+          ...agent,
+          handle: "api",
+          avatar: { outfit: "cardigan", palette: 2, headwear: "takke" },
+        },
+  );
+  agents.push({
+    id: "lib-research",
+    name: "Researcher",
+    role: "advisor",
+    selection: "fixed",
+    instructions: "Finds prior art and summarises it",
+    candidates: [candidate],
+    groups: ["Research"],
+    updatedAt: 1,
+    handle: "research",
+    avatar: { outfit: "jacket", palette: 5, headwear: "flat-cap" },
+  });
+  definitions = [
+    definition,
+    {
+      id: "mobile",
+      name: "Mobile Crew",
+      projectId: "project",
+      updatedAt: 1,
+      policy: defaultCrewPolicy,
+      agents: [
+        {
+          ...definition.agents[0]!,
+          id: "m-coordinator",
+          name: "Release lead",
+          handle: "release",
+        },
+        { ...definition.agents[1]!, id: "m-ui", name: "UI designer" },
+        {
+          ...definition.agents[2]!,
+          id: "m-review",
+          name: "Mobile reviewer",
+          handle: "mreview",
+        },
+      ],
+    },
+  ];
 }
 // Realistic recent times for the work list (fixture data; ordering is unchanged).
 const baseTime = Date.now() - 3 * 60 * 60_000;
@@ -228,7 +327,11 @@ if (params.has("multiple")) {
     ...structuredClone(runs[0]),
     id: "second-run",
     coordinatorSessionId: "second-lead",
-    launch: { candidate, runtimeMode: "supervised", prompt: "Improve mobile navigation" },
+    launch: {
+      candidate,
+      runtimeMode: "supervised",
+      prompt: "Improve mobile navigation",
+    },
     assignments: [],
     tasks: [],
     messages: [],
@@ -273,6 +376,54 @@ if (params.has("pausedPlanning")) {
     messages: [],
   };
 }
+if (params.has("rich")) {
+  // A finished delivery with accepted work, usage and history for the summary card.
+  const doneTask = (id: string, title: string, minutes: number) => ({
+    id,
+    title,
+    harness: "codex",
+    model: "codex:fixture",
+    status: "done",
+    sessionId: `${id}-session`,
+    startedAt: at(0),
+    completedAt: at(minutes),
+    updatedAt: at(minutes),
+    budgetUsage: {
+      attempts: 1,
+      agentMinutes: minutes,
+      tokens: 48_000,
+      reportedTokens: 48_000,
+      reportedCostUsd: 0.42,
+    },
+  });
+  runs[1] = {
+    ...runs[1]!,
+    definition,
+    assignments: [
+      {
+        id: "a1",
+        taskId: "t1",
+        memberId: "ui",
+        title: "Landing hero",
+        candidate,
+        reason: "Fixed",
+      },
+      {
+        id: "a2",
+        taskId: "t2",
+        memberId: "api",
+        title: "Contact API",
+        candidate,
+        reason: "Fixed",
+      },
+    ],
+    tasks: [
+      doneTask("t1", "Rebuild the landing hero", 22),
+      doneTask("t2", "Add the contact form endpoint", 15),
+      { ...doneTask("t3", "Polish footer links", 5), status: "blocked" },
+    ],
+  } as unknown as (typeof runs)[number];
+}
 if (params.has("singleRun")) runs = runs.filter((run) => run.id === "run");
 if (params.has("unknownActivity")) {
   delete (runs[0] as { coordinatorStatus?: string }).coordinatorStatus;
@@ -312,10 +463,62 @@ mockIPC(async (command, args) => {
             "crews.tasks.v1",
             "crews.delete.v1",
             ...(params.has("noAccess") ? [] : ["crews.access.v1"]),
+            ...(params.has("noTools") ? [] : ["crews.tools.v1"]),
+            ...(params.has("rich") ? ["crews.active.v1"] : []),
+            ...(params.has("noIdentity") ? [] : ["crews.identity.v1"]),
             ...(params.get("legacy") ? [] : ["crews.agent-groups.v1", "crews.run-delete.v1"]),
           ],
           environmentId: "fixture",
         };
+      case "crews.active.list": {
+        const base = Date.now();
+        const row = (
+          memberId: string,
+          memberName: string,
+          memberRole: string,
+          kind: string,
+          extra: Record<string, unknown>,
+        ) => ({
+          runId: "run",
+          projectId: "project",
+          projectName: "Fixture",
+          definitionId: "crew",
+          definitionName: "Website Crew",
+          runStatus: "active",
+          memberId,
+          memberName,
+          memberRole,
+          kind,
+          ...extra,
+        });
+        return {
+          items: [
+            row("coordinator", "Coordinator", "coordinator", "coordinator", {
+              handle: "lead",
+              startedAt: base - 7 * 60_000,
+              sessionId: "lead-session",
+              avatar: { outfit: "jacket", palette: 1, headwear: "flat-cap" },
+            }),
+            row("ui", "UI", "specialist", "worker", {
+              handle: "ui",
+              taskId: "task",
+              taskTitle: "Build settings",
+              startedAt: base - 3 * 60_000,
+              sessionId: "ui-session",
+              attention: "review",
+              avatar: { outfit: "vest", palette: 3, headwear: "beret" },
+            }),
+            row("api", "API engineer", "specialist", "worker", {
+              handle: "api",
+              taskId: "task-api",
+              taskTitle: "Contact endpoint",
+              startedAt: base - 90_000,
+              sessionId: "api-session",
+              avatar: { outfit: "cardigan", palette: 2, headwear: "takke" },
+            }),
+          ],
+        };
+      }
       case "projects.list":
         return [{ id: "project", cwd, name: "Fixture" }];
       case "models.list":
@@ -401,7 +604,12 @@ mockIPC(async (command, args) => {
       case "crews.stop":
         runs = runs.map((r) =>
           r.id === p.runId
-            ? { ...r, status: "paused", coordinatorStatus: "idle", updatedAt: r.updatedAt + 1 }
+            ? {
+                ...r,
+                status: "paused",
+                coordinatorStatus: "idle",
+                updatedAt: r.updatedAt + 1,
+              }
             : r,
         );
         return runs.find((run) => run.id === p.runId);
@@ -496,6 +704,9 @@ function Fixture() {
           <Button variant="ghost" onClick={() => setView("settings")}>
             Crew settings page
           </Button>
+          <Button variant="ghost" onClick={() => setView("page")}>
+            Crews page
+          </Button>
           <Button variant="ghost" onClick={() => setView("task")}>
             Task crew selection
           </Button>
@@ -514,9 +725,13 @@ function Fixture() {
                 {valid ? (crew ?? "Single agent") : "Unavailable"}
               </output>
             </div>
+          ) : view === "page" ? (
+            <div className="flex h-[600px] min-w-0 flex-col border border-(--ui-pane-border)">
+              <CrewsPage cwd={cwd} onOpenSession={openSession} />
+            </div>
           ) : view === "settings" ? (
             <div className="bycoda-settings-content bycoda-settings-form">
-              <CrewsSettings cwd={cwd} onOpen={openSession} />
+              <CrewsSettings />
             </div>
           ) : null}
         </div>

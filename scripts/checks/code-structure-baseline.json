@@ -517,7 +517,7 @@
     "src/features/crews/model/crew.ts": {
       "cross-feature-deep-import": 2
     },
-    "src/features/crews/model/crewAppearance.ts": {
+    "src/features/crews/model/crewIdentity.ts": {
       "cross-feature-deep-import": 2
     },
     "src/features/crews/model/crewClient.ts": {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { AssistantQuickAutomationAction } from "../../../shared/model/assistantQuickAutomation";
 import { t } from "../../../shared/i18n";
+import { formatDate } from "../../../shared/i18n/core";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { NumberField } from "../../../shared/ui/NumberField";
@@ -99,37 +100,49 @@ export function AssistantQuickAutomationFields({
       </div>
       <fieldset className={styles.scheduleField}>
         <legend>{t("Automation schedule")}</legend>
-        <div className={styles.scheduleRow}>
-          <div className={styles.scheduleKind}>
-            <Select
-              hideLabel
-              label={t("Automation schedule")}
-              value={value.scheduleKind}
-              disabled={disabled}
-              options={[
-                ["hourly", "Hourly"],
-                ["daily", "Daily"],
-                ["weekdays", "Weekdays"],
-                ["weekly", "Weekly"],
-              ].map(([id, label]) => ({ value: id, label: t(label) }))}
-              onValueChange={(scheduleKind) =>
-                update({
-                  scheduleKind: scheduleKind as AssistantQuickAutomationAction["scheduleKind"],
-                })
-              }
-            />
+        {value.scheduleKind === "once" && value.runAt !== undefined ? (
+          <p className={styles.muted}>
+            {t("Runs once on {p0}, then turns itself off.", {
+              p0: formatDate(value.runAt, { dateStyle: "full", timeStyle: "short" }),
+            })}
+          </p>
+        ) : (
+          <div className={styles.scheduleRow}>
+            <div className={styles.scheduleKind}>
+              <Select
+                hideLabel
+                label={t("Automation schedule")}
+                value={value.scheduleKind}
+                disabled={disabled}
+                options={[
+                  ["hourly", "Hourly"],
+                  ["daily", "Daily"],
+                  ["weekdays", "Weekdays"],
+                  ["weekly", "Weekly"],
+                ].map(([id, label]) => ({ value: id, label: t(label) }))}
+                onValueChange={(scheduleKind) =>
+                  update({
+                    scheduleKind: scheduleKind as AssistantQuickAutomationAction["scheduleKind"],
+                  })
+                }
+              />
+            </div>
+            <div className={styles.scheduleSentence}>
+              <TimeTriggerSentence
+                trigger={
+                  value as AssistantQuickAutomationAction & {
+                    scheduleKind: Exclude<AssistantQuickAutomationAction["scheduleKind"], "once">;
+                  }
+                }
+                nextAt={0}
+                executionTimeZone={null}
+                onChange={(next) => {
+                  if (!disabled) onChange(next);
+                }}
+              />
+            </div>
           </div>
-          <div className={styles.scheduleSentence}>
-            <TimeTriggerSentence
-              trigger={value}
-              nextAt={0}
-              executionTimeZone={null}
-              onChange={(next) => {
-                if (!disabled) onChange(next);
-              }}
-            />
-          </div>
-        </div>
+        )}
       </fieldset>
       <div className={styles.fieldRow}>
         <Numeric

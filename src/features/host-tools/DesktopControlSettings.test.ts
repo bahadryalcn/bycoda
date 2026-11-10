@@ -15,6 +15,8 @@ const config = {
   binarySha256: "",
   allowedApps: [],
   allowPhysicalInput: false,
+  permissionMode: "ask",
+  allowAllApps: false,
   version: 0,
 };
 const state = {
@@ -64,6 +66,31 @@ async function click(label: string) {
   expect(button).toBeTruthy();
   await act(async () => button.click());
 }
+it("offers allow-all-apps only in full access and saves the mode with the version", async () => {
+  await render();
+  expect(container.textContent).not.toContain("Allow all apps");
+  expect(container.textContent).not.toContain("Full access asks nothing");
+  await act(() => root.unmount());
+  root = createRoot(container);
+  mock.request.mockReset().mockResolvedValue({
+    ...state,
+    configuration: { ...config, permissionMode: "full", version: 4 },
+  });
+  await render();
+  expect(container.textContent).toContain("Full access asks nothing");
+  expect(container.textContent).toContain("Allow all apps");
+  const toggle = container.querySelector<HTMLButtonElement>(
+    '[role="switch"][aria-label="Allow all apps"]',
+  )!;
+  await act(async () => toggle.click());
+  await click("Save computer controls");
+  expect(
+    mock.request.mock.calls.filter(([input]) => input.op === "configure").at(-1)?.[0],
+  ).toMatchObject({
+    expectedVersion: 4,
+    configuration: { permissionMode: "full", allowAllApps: true },
+  });
+});
 it("does not observe the desktop or enable an uninstalled helper on mount", async () => {
   await render();
   expect(mock.request).toHaveBeenCalledExactlyOnceWith({ op: "status" });

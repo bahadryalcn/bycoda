@@ -8,6 +8,8 @@ export const ASSISTANT_QUEUE_FREE_READS: ReadonlySet<string> = new Set([
   "snapshot",
   "profile.get",
   "models.pool.get",
+  "folders.get",
+  "alwaysOn.get",
   "memory.search",
   "threads.messages",
 ]);

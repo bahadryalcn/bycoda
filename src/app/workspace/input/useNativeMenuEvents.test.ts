@@ -14,6 +14,7 @@ const api = vi.hoisted(() => ({
   }[],
   saveAutosave: vi.fn((value: boolean) => value),
   gate: null as Promise<void> | null,
+  lead: false,
 }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (name, handler, options) => {
@@ -29,20 +30,32 @@ vi.mock("@tauri-apps/api/event", () => ({
 vi.mock("@tauri-apps/api/webviewWindow", () => ({
   getCurrentWebviewWindow: () => ({ label: api.label }),
 }));
-vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({}) }));
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    unminimize: async () => {},
+    show: async () => {},
+    setFocus: async () => {},
+  }),
+}));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../../../platform/tauri/platform", () => ({ IS_MAC: false }));
 vi.mock("../../../features/settings/model/settings", () => ({ saveAutosave: api.saveAutosave }));
 vi.mock("../../../features/notifications/hooks/useBackgroundNotifications", () => ({
-  isLeadWindow: async () => false,
+  isLeadWindow: async () => api.lead,
 }));
 vi.mock("../../model/updater", () => ({ runUpdateFlow: vi.fn() }));
 import { useNativeMenuEvents } from "./useNativeMenuEvents";
 
 let roots: Root[];
 const calls = { first: vi.fn(), second: vi.fn() };
+const openSession = vi.fn(async (_sessionId: string) => true);
 function Probe({ name }: { name: "first" | "second" }) {
-  const actions = { current: { onNew: calls[name] } as unknown as WorkspaceActions };
+  const actions = {
+    current: {
+      onNew: calls[name],
+      onOpenApprovalSession: openSession,
+    } as unknown as WorkspaceActions,
+  };
   useNativeMenuEvents({ actions, run: (_action, callback) => callback() });
   return null;
 }
@@ -55,6 +68,8 @@ function emit(name: string, target?: string, payload?: unknown) {
 beforeEach(() => {
   api.handlers = [];
   api.gate = null;
+  api.lead = false;
+  openSession.mockClear();
   api.saveAutosave.mockClear();
   calls.first.mockClear();
   calls.second.mockClear();
@@ -106,4 +121,39 @@ it("routes a targeted menu action to one window while retaining autosave broadca
   expect(
     api.handlers.filter((entry) => entry.name === "toggle_autosave").map((entry) => entry.target),
   ).toEqual(["first", "second"]);
+});
+
+async function mountClickWindow() {
+  api.label = "first";
+  const root = createRoot(document.createElement("div"));
+  roots.push(root);
+  await act(async () => root.render(createElement(Probe, { name: "first" })));
+}
+const flush = () => act(async () => void (await Promise.resolve()));
+
+it("opens a banner's session in the lead window even when no window holds it", async () => {
+  api.lead = true;
+  await mountClickWindow();
+  emit("bycoda:notification-click", "first", "closed-session");
+  await flush();
+  expect(openSession).toHaveBeenCalledWith("closed-session");
+});
+
+it("leaves a banner for an unheld session to the lead window", async () => {
+  await mountClickWindow();
+  emit("bycoda:notification-click", "first", "closed-session");
+  await flush();
+  expect(openSession).not.toHaveBeenCalled();
+});
+
+it("opens the assistant for a banner that carries no session", async () => {
+  api.lead = true;
+  await mountClickWindow();
+  const heard = vi.fn();
+  window.addEventListener("bycoda:open-assistant", heard);
+  emit("bycoda:notification-click", "first", "");
+  await flush();
+  window.removeEventListener("bycoda:open-assistant", heard);
+  expect(openSession).not.toHaveBeenCalled();
+  expect((heard.mock.calls[0]?.[0] as CustomEvent | undefined)?.detail).toEqual({ tab: "today" });
 });

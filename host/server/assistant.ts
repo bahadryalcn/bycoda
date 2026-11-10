@@ -15,7 +15,7 @@ import { HostAssistantManualSessions } from "../assistant/sessions/assistant-man
 import { assistantSessionRuntime } from "../assistant/sessions/assistant-session-runtime";
 import { HostDesktopHelper } from "../desktop-helper";
 import { HostDesktopControl } from "../desktop/desktop-control-host";
-import { readDesktopPresence } from "../desktop/desktop-presence";
+import { readDesktopPresenceWithVoice } from "../desktop/desktop-voice-activity";
 import { projectDisplayNames } from "../projects/project-display-names";
 import { readUsageLimits } from "../usage/limits-report";
 import type { ServerBindings } from "./bindings";
@@ -23,7 +23,14 @@ import { hostUsageLimitsDeps } from "./usage-limits-deps";
 export async function createAssistantRuntime(
   dependencies: Pick<
     ServerBindings,
-    "engine" | "goals" | "tasks" | "hostNotes" | "automations" | "desktop" | "models"
+    | "engine"
+    | "goals"
+    | "tasks"
+    | "hostNotes"
+    | "automations"
+    | "desktop"
+    | "models"
+    | "pushDevices"
   >,
   publish: (runtime: Awaited<ReturnType<typeof createAssistantRuntime>>) => void,
 ) {
@@ -98,7 +105,8 @@ export async function createAssistantRuntime(
     }));
   const assistantKeepAwake = new HostAssistantKeepAwake();
   assistantPorts.keepAwake = (enabled) => assistantKeepAwake.setEnabled(enabled);
-  assistantPorts.readPresence = readDesktopPresence;
+  assistantPorts.readPushPhones = () => dependencies.pushDevices.recipients();
+  assistantPorts.readPresence = readDesktopPresenceWithVoice;
   const assistant = new HostAssistant(dependencies.engine.store, assistantPorts);
   const roomAttestationSigner = new RoomAttestationSigner(
     roomAttestationKeyPath(dirname(dependencies.engine.store.attachmentDir)),
@@ -195,7 +203,7 @@ export async function createAssistantRuntime(
   assistantPorts.onJobResume = (id) => managedAssistantSessions.resumeJob(id);
   const desktopControl = new HostDesktopControl(dependencies.engine.store, {
     onOperation: (event) => assistant.recordDesktopOperation(event),
-    presence: readDesktopPresence,
+    presence: readDesktopPresenceWithVoice,
     // Headed actions on this route are explicitly requested by the device owner.
     // Agents use their separate captured principal and never inherit this grant.
     physicalGrant: async (principal) => principal.kind === "owner",

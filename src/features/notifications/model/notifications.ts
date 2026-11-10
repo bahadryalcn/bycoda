@@ -10,12 +10,14 @@ import {
   createNotificationBatcher,
   decideNotification,
   maskLockedNotification,
+  sessionsNeedingAttention,
   turnKey,
   turnOutcome,
   type AttentionKind,
   type NotificationPayload,
 } from "./attention";
 import { loadNotificationEvents } from "./notificationEvents";
+import { logNotification } from "./notificationLog";
 import { allowsProjectNotification, type NotificationSubject } from "./notificationPreferences";
 import { knownNotificationProject } from "./notificationProjects";
 import { reportAgentEvent } from "./serverRuntime";
@@ -176,13 +178,17 @@ type PendingInputNotification = {
   event: InputNotificationEvent;
 };
 
-/** Track each request, including a new request in an already-waiting session. */
+/**
+ * Track each request, including a new request in an already-waiting session.
+ * Which sessions wait is the shared attention definition, so the banners, the
+ * counters and the request center cannot disagree.
+ */
 export function pendingInputNotifications(
   sessions: Session[],
 ): Map<string, PendingInputNotification> {
   const pending = new Map<string, PendingInputNotification>();
-  for (const session of sessions) {
-    if (session.inboxAsk) continue;
+  const { input } = sessionsNeedingAttention(sessions, new Set(), { input: true, unseen: false });
+  for (const session of input) {
     for (const block of session.blocks) {
       if (block.approval && !block.approval.decided) {
         pending.set(JSON.stringify([session.id, "approval", block.approval.requestId]), {
@@ -298,15 +304,10 @@ export async function notifyAssistant(input: {
   projectPaths?: string[];
   occurredAt: number;
 }): Promise<boolean> {
-  if (
-    !shouldNotify({
-      enabled: loadNotificationsEnabled() && loadNotificationEvents()[input.kind],
-      permission,
-      windowFocused,
-      sessionVisible: false,
-    })
-  )
-    return false;
+  // The log follows the event setting alone; the banner also needs the master switch and an
+  // unfocused window.
+  if (!loadNotificationEvents()[input.kind]) return false;
+  let locked = false;
   for (const path of new Set([
     ...(input.projectPaths ?? []),
     ...(input.projectPath ? [input.projectPath] : []),
@@ -322,8 +323,27 @@ export async function notifyAssistant(input: {
     )
       return false;
     // A queued event cannot reveal a project that was locked after creation.
-    if (isProjectLocked(path)) return false;
+    if (isProjectLocked(path)) locked = true;
   }
+  logNotification({
+    kind: "assistant",
+    key: `assistant:${input.title}`,
+    title: input.title,
+    label: input.body,
+    target: BACKGROUND_NOTIFICATION_TARGETS.assistant,
+    occurredAt: input.occurredAt,
+    locked,
+  });
+  if (
+    locked ||
+    !shouldNotify({
+      enabled: loadNotificationsEnabled(),
+      permission,
+      windowFocused,
+      sessionVisible: false,
+    })
+  )
+    return false;
   return deliver({
     sessionId: BACKGROUND_NOTIFICATION_TARGETS.assistant,
     kind: input.kind,
@@ -341,6 +361,14 @@ export async function notifyAssistant(input: {
  * quiet hours were already applied by `planFeed`.
  */
 export async function notifyServerItem(item: { title: string; body: string }): Promise<boolean> {
+  logNotification({
+    kind: "account",
+    key: `account:${item.title}`,
+    title: item.title,
+    label: item.body,
+    target: BACKGROUND_NOTIFICATION_TARGETS.account,
+    occurredAt: Date.now(),
+  });
   if (
     !shouldNotify({
       enabled: loadNotificationsEnabled(),
@@ -364,6 +392,14 @@ export async function notifyServerItem(item: { title: string; body: string }): P
 /** The daily summary of background work. The global switch applies; it has no
  * event setting of its own beyond the summary's own toggle. */
 export async function notifyDailySummary(headline: string): Promise<boolean> {
+  logNotification({
+    kind: "background",
+    key: "background:summary",
+    title: t("Daily summary"),
+    label: headline,
+    target: BACKGROUND_NOTIFICATION_TARGETS.summary,
+    occurredAt: Date.now(),
+  });
   if (
     !shouldNotify({
       enabled: loadNotificationsEnabled(),
@@ -397,9 +433,19 @@ export async function notifyBackground(transition: {
   kind: AttentionKind;
   message: string;
 }): Promise<boolean> {
+  if (!loadNotificationEvents()[transition.kind]) return false;
+  const body = transition.target === "tasks" ? t("Background task") : t("Background automation");
+  logNotification({
+    kind: "background",
+    key: `background:${transition.target}:${transition.message}`,
+    title: transition.message,
+    label: body,
+    target: BACKGROUND_NOTIFICATION_TARGETS[transition.target],
+    occurredAt: Date.now(),
+  });
   if (
     !shouldNotify({
-      enabled: loadNotificationsEnabled() && loadNotificationEvents()[transition.kind],
+      enabled: loadNotificationsEnabled(),
       permission,
       windowFocused,
       sessionVisible: false,
@@ -411,7 +457,7 @@ export async function notifyBackground(transition: {
     kind: transition.kind,
     title: transition.message,
     subtitle: "",
-    body: transition.target === "tasks" ? "Background task" : "Background automation",
+    body,
     projectName: "",
     sessionTitle: "",
   });
@@ -498,6 +544,17 @@ async function notifyProjectSession(
       [session.id, turnKey(session), JSON.stringify(event)],
       subject.occurredAt,
     );
+  }
+  if (kind !== "input" && loadNotificationEvents()[kind] && allowsProjectNotification(subject)) {
+    logNotification({
+      kind,
+      key: `${session.id}:${kind}:${turnKey(session)}`,
+      title: session.title,
+      label: attentionText(session, kind, { projectName: notificationProjectName(session) }).body,
+      session,
+      occurredAt: subject.occurredAt ?? Date.now(),
+      locked: isProjectLocked(session.cwd),
+    });
   }
   const payload = decideNotification(
     session,

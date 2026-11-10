@@ -13,6 +13,7 @@ import {
   type ManagementAction,
   type ManagementReceipt,
 } from "../conversation/conversation-management-tools";
+import { gitPublishPreview, runGitPublish } from "../conversation/conversation-git-publish";
 import {
   projectManagementPath,
   runConversationGitAction,
@@ -94,6 +95,7 @@ export function createManagementRuntime(
     dependencies.automations,
     approveManagementOperation,
     modelPool,
+    (item) => dependencies.assistant.trackDirectWork(item),
   );
   const conversationThreadCrews = new ConversationThreadCrewTools(
     dependencies.crews,
@@ -114,6 +116,7 @@ export function createManagementRuntime(
       },
     },
     modelPool,
+    (item) => dependencies.assistant.trackDirectWork(item),
   );
   const conversationManagementRuntime = new ConversationManagementRuntime({
     subscribe: (listener) => dependencies.engine.store.subscribeChanges(listener),
@@ -341,6 +344,12 @@ export function createManagementRuntime(
           ...managementPage(status.files, args),
         };
       }
+      if (action === "git.pushPreview" || action === "git.mergePreview")
+        return gitPublishPreview(cwd, action, args);
+      if (action === "git.push" || action === "git.merge")
+        return dependencies.gitService.managedAction({ projectId, cwd }, context, (lockedCwd) =>
+          runGitPublish(lockedCwd, action, args.review as Record<string, unknown>),
+        );
       if (action === "git.stash" || action === "git.pull")
         return dependencies.gitService.managedAction(
           { projectId, cwd },

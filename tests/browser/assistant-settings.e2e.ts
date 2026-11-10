@@ -89,7 +89,7 @@ for (const theme of ["light", "dark"])
       await expect(tab("Work")).toHaveAttribute("aria-selected", "true");
       const worker = dialog.locator("[data-settings-page=work] fieldset").first();
       await expect(worker).toContainText("Fixture worker");
-      await worker.getByRole("button").first().click();
+      await worker.getByRole("button", { name: /Fixture worker/ }).click();
       // Reasoning is an inline radio row in the model panel's settings column.
       await page
         .getByRole("dialog", { name: tr("Model and settings"), exact: true })
@@ -219,7 +219,7 @@ for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
     test(`assistant model pool editor ${theme} ${width}`, async ({ page }) => {
       await mkdir(poolOutput, { recursive: true });
-      await page.setViewportSize({ width, height: 1100 });
+      await page.setViewportSize({ width, height: 1500 });
       await page.goto(
         `/tests/browser/assistant-room.html?real-controls&desktop&manual&theme=${theme}`,
       );
@@ -234,6 +234,11 @@ for (const theme of ["light", "dark"])
       await expect(models).toContainText("Limit unknown");
       await expect(models).toContainText("48% left");
       await expect(models).toContainText("12% left");
+      // Let the dialog grow so the whole group is captured, not only its scrolled part.
+      await dialog.evaluate((node) => {
+        node.style.blockSize = "1300px";
+        node.style.maxBlockSize = "none";
+      });
       await models.scrollIntoViewIfNeeded();
       await models.screenshot({
         path: join(poolOutput, `pool-${theme}-${width}.png`),

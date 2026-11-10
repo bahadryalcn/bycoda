@@ -13,6 +13,31 @@ export function voiceGlobalToolAllowed(family: string, action: string) {
     ["environment.describe", "environment.persistence.status", "sync.status"].includes(action)
   )
     return true;
+  if (
+    family === "conversation" &&
+    [
+      // Owner-chosen Assistant folders only: reads need no approval, writes and every
+      // command run keep their exact native approval (or the owner's explicit setting).
+      "files.roots",
+      "files.inspect",
+      "files.list",
+      "files.index",
+      "files.search",
+      "files.searchContent",
+      "files.read",
+      "files.create",
+      "files.write",
+      "files.rename",
+      "files.move",
+      "files.copy",
+      "files.delete",
+      "files.operation.status",
+      "commands.run",
+      "commands.run.status",
+      "commands.run.cancel",
+    ].includes(action)
+  )
+    return true;
   if (family === "social")
     return [
       "accounts.list",
@@ -51,6 +76,7 @@ export function voiceGlobalToolAllowed(family: string, action: string) {
       "tools.describe",
       "tools.status",
       "models.pool.list",
+      "devices.list",
       "preferences.read",
       "preferences.patch",
       "preferences.status",
@@ -91,11 +117,15 @@ export function voiceThreadToolAllowed(family: string, action: string) {
       "terminals.interrupt",
       "terminals.close",
       "terminals.operation.status",
+      "commands.run",
+      "commands.run.status",
+      "commands.run.cancel",
       "browser.status",
       "browser.claim",
       "browser.release",
       "browser.open",
       "browser.frame",
+      "browser.read",
       "browser.resize",
       "browser.preview",
       "browser.input",
@@ -170,9 +200,11 @@ export function voiceThreadToolAllowed(family: string, action: string) {
       "crews.agents.list",
       "crews.agent.get",
       "crews.runs.list",
+      "crews.active.list",
       "crews.save",
       "crews.agent.save",
       "crews.start",
+      "crews.member.ask",
       "crews.assign",
       "crews.request",
       "crews.resolve",
@@ -181,6 +213,20 @@ export function voiceThreadToolAllowed(family: string, action: string) {
       "crews.resume",
       "crews.accept",
       "crews.finish",
+      "crews.answer",
+    ].includes(action) ||
+    [
+      // Read-only project views; no approval needed.
+      "git.index",
+      "git.fileDiff",
+      "git.branches",
+      "git.worktrees",
+      "models.list",
+      "usage.sessions.read",
+      "skills.search",
+      "skills.read",
+      "devices.list",
+      "logs.monitors.list",
     ].includes(action) ||
     [
       "projects.browse",
@@ -188,6 +234,10 @@ export function voiceThreadToolAllowed(family: string, action: string) {
       "projects.open",
       "git.stash",
       "git.pull",
+      "git.pushPreview",
+      "git.push",
+      "git.mergePreview",
+      "git.merge",
     ].includes(action) ||
     [
       "environment.describe",
@@ -255,6 +305,11 @@ export function voiceThreadToolAllowed(family: string, action: string) {
       "tasks.stop",
       "tasks.retry",
       "tasks.update",
+      "tasks.delete",
+      "tasks.transfer",
+      "tasks.queue.pause",
+      "tasks.review.recheck",
+      "tasks.reorder",
       "goals.list",
       "goals.get",
       "goals.create",

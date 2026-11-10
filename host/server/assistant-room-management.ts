@@ -18,7 +18,14 @@ import { describeWorkspaceTransfer } from "../assistant/native/assistant-workspa
 import { isAssistantObservationAction } from "../assistant/observations/assistant-observation-tools";
 import { isRoomBrowserAction } from "../assistant/room/assistant-room-browser";
 import { isRoomDevServerAction } from "../assistant/room/assistant-room-dev-servers";
+import {
+  callRoomAppRead,
+  isRoomAppRead,
+  listHostDevices,
+} from "../assistant/room/assistant-room-app-reads";
 import { isRoomFileAction, isRoomFileWrite } from "../assistant/room/assistant-room-files";
+import { isRoomFolderAction } from "../assistant/folders/assistant-folder-schemas";
+import { isGlobalFolderFileWrite } from "../assistant/folders/assistant-folder-tools";
 import { isRoomInboxAction } from "../assistant/room/assistant-room-inbox";
 import { isRoomNotebookAction } from "../assistant/room/assistant-room-notebook";
 import { validateRoomOrganization } from "../assistant/room/assistant-room-organization";
@@ -90,6 +97,9 @@ export function registerRoomManagement(
     | "roomTerminals"
     | "roomFiles"
     | "roomDevServers"
+    | "conversationProject"
+    | "deviceHost"
+    | "logMonitors"
     | "roomSessions"
     | "assistantWorkspaceOwner"
     | "roomWorkspace"
@@ -250,6 +260,17 @@ export function registerRoomManagement(
             threadId: call.threadId,
             environmentId: dependencies.engine.store.environmentId,
           };
+          if (isRoomFileAction(call.action) || isRoomFolderAction(call.action))
+            return dependencies.roomFiles.folders.call(
+              call.action,
+              isGlobalFolderFileWrite(call.action)
+                ? { ...call.input, requestId: call.requestId }
+                : call.input,
+              principal,
+              authorized,
+            );
+          if (call.action === "devices.list")
+            return listHostDevices(dependencies.deviceHost, call.input, authorized);
           if (isGlobalRuntimeRead(call.action))
             return dependencies.conversationManagementRuntime.call(
               call.action as import("../conversation/conversation-management-runtime").RuntimeManagementAction,
@@ -368,6 +389,7 @@ export function registerRoomManagement(
           });
         if (
           isRoomFileAction(call.action) ||
+          isRoomFolderAction(call.action) ||
           isRoomDevServerAction(call.action) ||
           isRoomTerminalAction(call.action)
         ) {
@@ -390,6 +412,14 @@ export function registerRoomManagement(
                 effectValid = () => true;
               }
             });
+          if (isRoomFolderAction(call.action))
+            return dependencies.roomFiles.folders.call(
+              call.action,
+              input,
+              source,
+              effectAuthorized,
+              qualify,
+            );
           if (isRoomTerminalAction(call.action))
             return dependencies.roomTerminals.call(
               call.action,
@@ -412,6 +442,21 @@ export function registerRoomManagement(
                 qualify,
               );
         }
+        if (isRoomAppRead(call.action))
+          return dependencies.withRoomProjectScope(call, authorized, (valid, captured) =>
+            callRoomAppRead(
+              {
+                projects: dependencies.conversationProject,
+                devices: dependencies.deviceHost,
+                monitors: dependencies.logMonitors,
+              },
+              call.action,
+              call.input,
+              principal,
+              captured.projectCwd,
+              async () => valid() && (await authorized()) && valid(),
+            ),
+          );
         if (isRoomSessionAction(call.action)) {
           const input = validateRoomSessionAction(call.action, call.input, call.requestId);
           return dependencies.roomSessions.call(

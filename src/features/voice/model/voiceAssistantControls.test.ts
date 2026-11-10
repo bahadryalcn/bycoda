@@ -525,3 +525,111 @@ it("stops a bound session only when the owner names the work", async () => {
   for (const text of ["işi durdurma", "don't stop the work", "bunu durdurma", "don't stop it"])
     expect(voiceOwnerRequestedSessionStop(text), text).toBe(false);
 });
+it.each([
+  ["Set Recovery priority to high", "jobs.priority", "priority", { priority: "high" }],
+  [
+    "Recovery önceliğini yükselt, öncelik yüksek",
+    "jobs.priority",
+    "priority",
+    { priority: "high" },
+  ],
+  ["Replan Recovery with smaller steps", "jobs.replan", "replan", { feedback: "Smaller steps" }],
+  ["Recovery için yeniden planla", "jobs.replan", "replan", { feedback: "Smaller steps" }],
+] as const)(
+  "changes job priority or replans with its version, without a confirm card: %s",
+  async (text, op, action, extra) => {
+    const f = fixture();
+    f.request.mockImplementation(async (input: AssistantRequest): Promise<AssistantResponse> =>
+      input.op === "snapshot"
+        ? { snapshot: { jobs: f.jobs, notes: f.notes } as AssistantSnapshot }
+        : { job: { ...f.jobs[0], version: 2 } },
+    );
+    await f.call(
+      "assistant_job_control",
+      { id: "job-a", expectedVersion: 1, action, ...extra },
+      text,
+    );
+    expect(f.request).toHaveBeenLastCalledWith(
+      expect.objectContaining({ op, id: "job-a", expectedVersion: 1, ...extra }),
+    );
+    expect(f.confirm).not.toHaveBeenCalled();
+  },
+);
+it("refuses priority and replan without the owner's words, the job name or a stale version", async () => {
+  const f = fixture();
+  const priority = { id: "job-a", expectedVersion: 1, action: "priority", priority: "high" };
+  await expect(f.call("assistant_job_control", priority, "Do something else")).rejects.toThrow(
+    /explicitly/,
+  );
+  f.jobs.push({ ...f.jobs[0], id: "job-b", title: "Other" });
+  await expect(f.call("assistant_job_control", priority, "Change priority please")).rejects.toThrow(
+    /Name the job/,
+  );
+  await expect(
+    f.call("assistant_job_control", { ...priority, expectedVersion: 0 }, "Recovery priority"),
+  ).rejects.toThrow(/changed/);
+  expect(() =>
+    f.call("assistant_job_control", { ...priority, feedback: "x" }, "Recovery priority"),
+  ).toThrow();
+  expect(f.request).not.toHaveBeenCalledWith(expect.objectContaining({ op: "jobs.priority" }));
+});
+it("lists bounded activity and notifications only for visible project scope", async () => {
+  const f = fixture();
+  f.request.mockImplementation(async (input: AssistantRequest): Promise<AssistantResponse> =>
+    input.op === "snapshot"
+      ? {
+          snapshot: {
+            jobs: f.jobs,
+            notes: f.notes,
+            activity: [
+              {
+                id: "a1",
+                kind: "job.done",
+                summary: "x".repeat(500),
+                createdAt: 1,
+                jobId: "job-a",
+              },
+              { id: "a2", kind: "job.done", summary: "hidden", createdAt: 2, jobId: "job-hidden" },
+              {
+                id: "a3",
+                kind: "session",
+                summary: "unknown project",
+                createdAt: 3,
+                sessionId: "s",
+              },
+              { id: "a4", kind: "global", summary: "personal", createdAt: 4 },
+            ],
+            notifications: [
+              {
+                id: "n1",
+                kind: "task.done",
+                title: "Done",
+                body: "ok",
+                createdAt: 1,
+                projectId: "visible",
+              },
+              {
+                id: "n2",
+                kind: "task.done",
+                title: "Secret",
+                body: "no",
+                createdAt: 2,
+                projectId: "hidden",
+              },
+            ],
+          } as unknown as AssistantSnapshot,
+        }
+      : { ok: true },
+  );
+  const activity = (await f.call("assistant_activity", { list: "activity" })) as {
+    activity: { id: string; summary: string }[];
+  };
+  expect(activity.activity.map((item) => item.id)).toEqual(["a1", "a4"]);
+  expect(activity.activity[0].summary).toHaveLength(300);
+  const notices = (await f.call("assistant_activity", { list: "notifications", limit: 5 })) as {
+    notifications: { id: string }[];
+  };
+  expect(notices.notifications.map((item) => item.id)).toEqual(["n1"]);
+  expect(() => f.call("assistant_activity", { list: "activity", limit: 99 })).toThrow();
+  expect(f.confirm).not.toHaveBeenCalled();
+});

@@ -16,6 +16,7 @@ import {
 import { assistantTextLimits } from "./assistant-text-budget";
 import { createAssistantChiefContext } from "../chief/assistant-chief-context";
 import { sessionBudgetTokens } from "../../../src/features/usage/model/usageBudgets";
+import { describeVerification } from "../work/assistant-goal-verification";
 import { sessionNeedsInput } from "../../../src/features/sessions/model/session";
 import { assistantJobProjectIds } from "../../../src/shared/model/assistantProjects";
 import {
@@ -36,6 +37,7 @@ import { assistantWorkerModelSettings } from "../work/assistant-worker-settings"
 import { assistantCacheMeasurement } from "../work/assistant-cache-usage";
 import { AssistantGoalMissingError } from "../work/assistant-goal-recovery";
 import { repointUnstartedGoalTasks } from "../models/assistant-task-repoint";
+import { isoTimestamp } from "../../../src/shared/lib/time/timestamps";
 
 function assistantNoteDto(note: HostNote): AssistantNote {
   return {
@@ -531,7 +533,7 @@ export function assistantExecutionPorts(
             : {}),
         ...(limitWait
           ? {
-              summary: `Waiting for the ${limitWait.model} limit to reset${limitWait.resetsAt === undefined ? "" : ` at ${new Date(limitWait.resetsAt).toISOString()}`}.`,
+              summary: `Waiting for the ${limitWait.model} limit to reset${isoTimestamp(limitWait.resetsAt) === undefined ? "" : ` at ${isoTimestamp(limitWait.resetsAt)}`}.`,
             }
           : {}),
         taskIds: goal.taskIds,
@@ -553,6 +555,7 @@ export function assistantExecutionPorts(
           total: goal.taskIds.length,
         },
         ...(sessionQuestions.length ? { sessionQuestions } : {}),
+        ...(status === "done" ? { verification: describeVerification(goal, children) } : {}),
       };
     },
     controlGoal: async (id, action, job) => {

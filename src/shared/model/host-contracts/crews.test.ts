@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from "vitest";
+import type { z } from "zod";
 import { readFileSync } from "node:fs";
 import { declaredTypeKeys } from "../../../../scripts/checks/host-rpc-source-fixture.mjs";
 import { exportWireSchema } from "./manifest";
@@ -9,6 +10,13 @@ import { HostStore } from "../../../../host/store";
 import type { HostTasks } from "../../../../host/tasks/tasks";
 import type { HostEngine } from "../../../../host/engine";
 import type { HostTask } from "../../../features/tasks/model/hostTasks";
+import {
+  AVATAR_ACCESSORY,
+  AVATAR_FACE,
+  AVATAR_HEADWEAR,
+  AVATAR_OUTFIT,
+  AVATAR_PALETTE_COUNT,
+} from "../../../features/crews/model/memberAvatarTraits";
 import {
   CREW_CAPABILITIES,
   defaultCrewPolicy,
@@ -160,6 +168,15 @@ const question = {
 const approvalOccurrenceId = "7d5b2a52-3f0c-4a6e-9c1d-2b8e5f4a9c10";
 
 const params = {
+  "crews.active.list": { limit: 5 },
+  "crews.member.ask": {
+    projectId: "project",
+    requestId: "ask-1",
+    memberId: "profile",
+    prompt: "Look at the login flow",
+    parentSessionId: "parent",
+    files: ["src"],
+  },
   "crews.list": { projectId: "project" },
   "crews.schema": { projectId: "project" },
   "crews.inspect": {
@@ -277,11 +294,50 @@ it("inventories all declared Crew/candidate/policy/run and catalog/question fiel
     );
 });
 
+it("bounds the host-wide active member read", () => {
+  const { params, result } = dto.CREWS_RPC_SCHEMAS["crews.active.list"];
+  expect(params.safeParse({}).success).toBe(true);
+  expect(params.safeParse({ limit: 0 }).success).toBe(false);
+  expect(params.safeParse({ limit: 201 }).success).toBe(false);
+  expect(params.safeParse({ limit: 5, projectId: "p" }).success).toBe(false);
+  const item = {
+    runId: "r",
+    projectId: "p",
+    definitionId: "d",
+    definitionName: "D",
+    runStatus: "paused",
+    memberId: "m",
+    memberName: "M",
+    memberRole: "specialist",
+    kind: "worker",
+    attention: "blocked",
+  };
+  expect(result.parse({ items: [item], truncated: true })).toStrictEqual({
+    items: [item],
+    truncated: true,
+  });
+  expect(result.safeParse({ items: [{ ...item, prompt: "x" }] }).success).toBe(false);
+  expect(result.safeParse({ items: [{ ...item, runStatus: "finished" }] }).success).toBe(false);
+});
+
+it("bounds the member ask text and scope", () => {
+  const { params } = dto.CREWS_RPC_SCHEMAS["crews.member.ask"];
+  const base = { projectId: "p", requestId: "r", prompt: "hi", memberId: "m" };
+  expect(params.safeParse(base).success).toBe(true);
+  expect(params.safeParse({ ...base, memberId: undefined, handle: "dev" }).success).toBe(true);
+  expect(params.safeParse({ ...base, prompt: "" }).success).toBe(false);
+  expect(params.safeParse({ ...base, prompt: "x".repeat(20_001) }).success).toBe(false);
+  expect(params.safeParse({ ...base, requestId: "r".repeat(201) }).success).toBe(false);
+  expect(params.safeParse({ ...base, principal: "forged" }).success).toBe(false);
+});
+
 it("roundtrips all20 complete params without defaults, coercions or request-fingerprint normalization", () => {
   expect(Object.keys(dto.CREWS_RPC_SCHEMAS).sort()).toEqual(Object.keys(params).sort());
   for (const [method, schema] of Object.entries(dto.CREWS_RPC_SCHEMAS)) {
-    const value = params[method as keyof typeof params];
+    const value: Record<string, unknown> = params[method as keyof typeof params];
     expect(schema.params.parse(value)).toStrictEqual(value);
+    // Host-wide owner read: no project scope to strip.
+    if (method === "crews.active.list") continue;
     const { projectId: _scope, ...unscoped } = value;
     expect(schema.params.safeParse(unscoped).success).toBe(false);
     expect(schema.params.safeParse({ ...value, principal: { sessionId: "forged" } }).success).toBe(
@@ -486,7 +542,7 @@ it("exports all40 per-method schemas deterministically through the existing port
     for (const schema of [pair.params, pair.result]) {
       const exported = exportWireSchema(schema);
       expect(exported).toEqual(exportWireSchema(schema));
-      expect(exported.$schema).toBe("https://json-schema.org/draft/2020-12/schema");
+      expect(exported).toMatchObject({ $schema: "https://json-schema.org/draft/2020-12/schema" });
     }
 });
 
@@ -533,6 +589,8 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
   const tasks = {
     ready: Promise.resolve(),
     list: async () => rows,
+    taskIndex: async (ids?: readonly string[]) =>
+      new Map(rows.filter((row) => !ids || ids.includes(row.id)).map((row) => [row.id, row])),
     tick: vi.fn(),
     save: vi.fn(async (input) => {
       const row = {
@@ -568,20 +626,22 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
   );
   cleanups.push(() => owner.close());
   const covered = new Set<string>();
-  const call = async (
-    method: keyof typeof dto.CREWS_RPC_SCHEMAS,
+  const call = async <M extends keyof typeof dto.CREWS_RPC_SCHEMAS>(
+    method: M,
     args: Record<string, unknown> = {},
-  ) => {
+  ): Promise<z.output<(typeof dto.CREWS_RPC_SCHEMAS)[M]["result"]>> => {
     const input = { projectId: project.id, ...args };
     dto.CREWS_RPC_SCHEMAS[method].params.parse(input);
     const raw = await owner.call(method, args, project.id);
-    const json = JSON.parse(JSON.stringify(raw));
-    expect(dto.CREWS_RPC_SCHEMAS[method].result.parse(json), method).toStrictEqual(json);
+    const json: unknown = JSON.parse(JSON.stringify(raw));
+    const parsed = dto.CREWS_RPC_SCHEMAS[method].result.parse(json);
+    expect(parsed, method).toStrictEqual(json);
     covered.add(method);
-    return json;
+    // parse() on a generic method key widens to the union of every result; M pins it to one.
+    return parsed as z.output<(typeof dto.CREWS_RPC_SCHEMAS)[M]["result"]>;
   };
   const schema = await call("crews.schema");
-  expect(schema.definition.updatedAt).toBeUndefined();
+  expect(schema.definition).not.toHaveProperty("updatedAt");
   const saved = await call("crews.save", {
     definition: { ...definition, projectId: project.id },
   });
@@ -596,6 +656,23 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
     requestId: "run",
   });
   expect(started.launch?.prompt).toContain("Private launch work");
+  const asked = await call("crews.member.ask", {
+    requestId: "ask-1",
+    memberId: "profile",
+    prompt: "Look at the login flow",
+    parentSessionId: "coordinator",
+  });
+  expect(asked).toMatchObject({ memberId: "profile", reused: false });
+  expect(
+    (
+      await call("crews.member.ask", {
+        requestId: "ask-1",
+        memberId: "profile",
+        prompt: "Look at the login flow",
+        parentSessionId: "coordinator",
+      })
+    ).reused,
+  ).toBe(true);
   const assigned = await call("crews.assign", {
     runId: started.id,
     requestId: "assignment",
@@ -610,10 +687,20 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
   task.verification = {
     review: { verdict: "pass", note: "Reviewed", sessionId: "reviewer" },
   };
+  // The host-wide read takes no projectId, so it bypasses the project-scoped helper.
+  const activeParams = {};
+  dto.CREWS_RPC_SCHEMAS["crews.active.list"].params.parse(activeParams);
+  const activeJson: unknown = JSON.parse(
+    JSON.stringify(await owner.call("crews.active.list", activeParams, "")),
+  );
+  expect(dto.CREWS_RPC_SCHEMAS["crews.active.list"].result.parse(activeJson)).toStrictEqual(
+    activeJson,
+  );
+  covered.add("crews.active.list");
   const directory = await call("crews.list");
   const visible = directory.runs.find((run) => run.id === started.id);
-  expect(visible.launch).toBeUndefined();
-  expect(visible.definition.agents.every((member) => member.instructions === "")).toBe(true);
+  expect(visible).not.toHaveProperty("launch");
+  expect(visible!.definition.agents.every((member) => member.instructions === "")).toBe(true);
   const detail = await call("crews.get", { runId: started.id });
   expect(detail.pendingInputs).toHaveLength(2);
   const request = await call("crews.request", {
@@ -648,12 +735,39 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
   const finished = (await call("crews.list")).runs.find((run) => run.id === started.id);
   await call("crews.deleteRun", {
     runId: started.id,
-    expectedUpdatedAt: finished.updatedAt,
+    expectedUpdatedAt: finished!.updatedAt,
   });
   await call("crews.agent.delete", { agentId: savedAgent.id });
+  // The first list normalized the dangling member link, which moved the crew revision.
+  const current = (await call("crews.list")).definitions.find((d) => d.id === saved.id);
   await call("crews.delete", {
     definitionId: saved.id,
-    expectedUpdatedAt: saved.updatedAt,
+    expectedUpdatedAt: current!.updatedAt,
   });
   expect([...covered].sort()).toEqual(Object.keys(dto.CREWS_RPC_SCHEMAS).sort());
+});
+
+it("mirrors the member avatar parts and accepts identity fields on members and crews", () => {
+  const shape = dto.MemberAvatarChoiceSchema.shape;
+  expect(shape.headwear.unwrap().options).toEqual([...AVATAR_HEADWEAR]);
+  expect(shape.face.unwrap().options).toEqual([...AVATAR_FACE]);
+  expect(shape.outfit.unwrap().options).toEqual([...AVATAR_OUTFIT]);
+  expect(shape.accessory.unwrap().options).toEqual([...AVATAR_ACCESSORY]);
+  expect(shape.palette.unwrap().maxValue).toBe(AVATAR_PALETTE_COUNT - 1);
+  const identified = {
+    ...definition,
+    appearance: { icon: "fox", color: 2 },
+    agents: definition.agents.map((member) => ({
+      ...member,
+      handle: member.id,
+      avatar: { headwear: "beret" as const, palette: 2 },
+    })),
+  };
+  expect(dto.CrewDefinitionSchema.parse(identified)).toEqual(identified);
+  expect(
+    dto.CrewDefinitionSchema.safeParse({ ...identified, appearance: { color: 0 } }).success,
+  ).toBe(false);
+  expect(
+    dto.CrewAgentSchema.safeParse({ ...identified.agents[0], avatar: { mood: "x" } }).success,
+  ).toBe(false);
 });

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { inspectBrowserElement, type ElementInspection } from "./browser-annotation";
 import type { BrowserAnnotationCapture } from "../../src/shared/lib/browserAnnotation";
+import { BrowserRefs } from "./browser-read";
 import { browserShadowMasks, type BrowserDomNode } from "./browser-shadow-masks";
 import type {
   RuntimeLogSource,
@@ -175,6 +176,7 @@ export class SharedBrowser {
   };
   private lease?: { owner: string; id: string; expiresAt: number };
   private busy = false;
+  private readonly refs = new BrowserRefs();
   private readonly inputReceipts = new Map<
     string,
     { payload: string; result: ReturnType<SharedBrowser["status"]> }
@@ -246,12 +248,14 @@ export class SharedBrowser {
       this.logSource?.assistantThreadId === params.threadId;
     if (
       ["browser.frame", "browser.input", "browser.close", "browser.resize"].includes(method) ||
+      method === "browser.read" ||
       method.startsWith("browser.annotation.")
     ) {
       if (!matches) throw new Error("Open a browser for this session before using it.");
-      if (method !== "browser.frame" && (!this.lease || this.lease.expiresAt <= this.now()))
+      const observe = method === "browser.frame" || method === "browser.read";
+      if (!observe && (!this.lease || this.lease.expiresAt <= this.now()))
         throw new Error("Claim browser control before using it.");
-      if (method !== "browser.frame") this.requireLease(fingerprint(credential), params);
+      if (!observe) this.requireLease(fingerprint(credential), params);
     }
     const value = await this.dispatch(method, params, credential, options);
     if (method === "browser.status" || method === "browser.claim" || method === "browser.release") {
@@ -391,6 +395,10 @@ export class SharedBrowser {
           height: viewport.height,
         };
       }
+      if (method === "browser.read") {
+        const read = await this.refs.read(this.page, this.pageKey, params);
+        return { ...this.status(owner), ...read };
+      }
       if (method === "browser.resize") {
         this.requireLease(owner, params);
         if (!this.page) throw new Error("Open a shared browser first");
@@ -419,31 +427,12 @@ export class SharedBrowser {
           throw new Error("Browser document changed. Refresh before interacting.");
         if (params.navigationId !== undefined && params.navigationId !== this.navigationId)
           throw new Error("Browser view changed. Refresh before interacting.");
-        if (params.kind === "click") {
-          const x = Number(params.x),
-            y = Number(params.y);
-          if (
-            !Number.isFinite(x) ||
-            !Number.isFinite(y) ||
-            x < 0 ||
-            x >= this.viewport.width ||
-            y < 0 ||
-            y >= this.viewport.height
-          )
-            throw new Error("Invalid click position");
+        if (params.ref !== undefined) await this.refs.act(this.page, this.pageKey, params);
+        else if (params.kind === "click") {
+          const { x, y } = this.position(params, "Invalid click position");
           await this.page.mouse.click(x, y);
         } else if (params.kind === "pointer") {
-          const x = Number(params.x),
-            y = Number(params.y);
-          if (
-            !Number.isFinite(x) ||
-            !Number.isFinite(y) ||
-            x < 0 ||
-            y < 0 ||
-            x >= this.viewport.width ||
-            y >= this.viewport.height
-          )
-            throw new Error("Invalid pointer position");
+          const { x, y } = this.position(params, "Invalid pointer position");
           const button = params.button ?? "left";
           if (button !== "left" && button !== "middle" && button !== "right")
             throw new Error("Invalid pointer button");
@@ -529,6 +518,14 @@ export class SharedBrowser {
       this.busy = false;
     }
   }
+  private position(params: Record<string, unknown>, message: string) {
+    const x = Number(params.x),
+      y = Number(params.y);
+    if (!(x >= 0 && x < this.viewport.width && y >= 0 && y < this.viewport.height))
+      throw new Error(message);
+    return { x, y };
+  }
+  private pageKey = () => `${this.documentId}|${this.page?.url()}`;
   private status(owner: string) {
     return {
       open: !!this.page,

@@ -62,6 +62,7 @@ import {
   buildThreadStartParams,
   buildTurnStartParams,
   buildTurnSteerParams,
+  codexMode,
   codexSkillsFromList,
   codexSkillStatesFromList,
   mapApprovalRequest,
@@ -1093,8 +1094,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
           ...(threadConfig ? { config: threadConfig } : {}),
           ...buildThreadStartParams({
             cwd: input.cwd,
-            runtimeMode: input.runtimeMode,
-            controlsAgents: input.controlsAgents,
+            ...codexMode(input),
             model,
             serviceTier,
             additionalDirs: additionalDirsFor(input.sessionId),
@@ -1114,8 +1114,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
           ...(threadConfig ? { config: threadConfig } : {}),
           ...buildThreadStartParams({
             cwd: input.cwd,
-            runtimeMode: input.runtimeMode,
-            controlsAgents: input.controlsAgents,
+            ...codexMode(input),
             model,
             serviceTier,
             additionalDirs: additionalDirsFor(input.sessionId),
@@ -1327,8 +1326,7 @@ async function startParentTurn(
 
   const params = buildTurnStartParams({
     threadId: live.threadId,
-    runtimeMode: input.runtimeMode,
-    controlsAgents: input.controlsAgents,
+    ...codexMode(input),
     prompt:
       [input.runtimeInstructions, input.text].filter(Boolean).join("\n\n").trim() || undefined,
     attachments: input.attachments,

@@ -3,6 +3,10 @@ import { monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { voiceGlobalToolAllowed } from "../../src/shared/model/voiceToolScope";
 import { isAssistantObservationAction } from "../assistant/observations/assistant-observation-tools";
 import { isRoomNotebookAction } from "../assistant/room/assistant-room-notebook";
+import { isRoomFileAction } from "../assistant/room/assistant-room-files";
+import { listHostDevices } from "../assistant/room/assistant-room-app-reads";
+import { isRoomFolderAction } from "../assistant/folders/assistant-folder-schemas";
+import { isGlobalFolderFileWrite } from "../assistant/folders/assistant-folder-tools";
 import { isGlobalRuntimeRead } from "../conversation/conversation-management-runtime";
 import {
   assistantModelPoolSource,
@@ -31,6 +35,8 @@ export async function handleVoiceTools(
     | "assistantPorts"
     | "executeAccountSocial"
     | "roomNotebook"
+    | "roomFiles"
+    | "deviceHost"
     | "conversationManagementRuntime"
     | "conversationDesktop"
     | "globalServerManagement"
@@ -415,6 +421,21 @@ export async function handleVoiceTools(
         authorizeGlobal,
         call.requestId!,
       );
+    else if (isRoomFileAction(call.action) || isRoomFolderAction(call.action))
+      request.result = await dependencies.roomFiles.folders.call(
+        call.action,
+        isGlobalFolderFileWrite(call.action)
+          ? { ...call.input, requestId: call.requestId! }
+          : call.input,
+        {
+          kind: "assistant-thread",
+          threadId: call.threadId!,
+          environmentId: dependencies.engine.store.environmentId,
+        },
+        authorizeGlobal,
+      );
+    else if (call.action === "devices.list")
+      request.result = await listHostDevices(dependencies.deviceHost, call.input, authorizeGlobal);
     else if (isGlobalRuntimeRead(call.action))
       request.result = await dependencies.conversationManagementRuntime.call(
         call.action as import("../conversation/conversation-management-runtime").RuntimeManagementAction,

@@ -1414,10 +1414,12 @@ it("authenticates per provider and disables automatic provider responses/interru
   expect(sockets[1].sent()[0].session.audio.input).not.toHaveProperty("transcription");
   expect(realtimeSession("xai", "m", "en").tools.map((tool) => tool.name)).toEqual([
     "assistant_status",
+    "assistant_activity",
     "assistant_job_control",
     "assistant_note_delete",
     "assistant_stop_all",
     "assistant_presence",
+    "assistant_reminder",
     "give_jobs",
     "present_choices",
     "app_context",

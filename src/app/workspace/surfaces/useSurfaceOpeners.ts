@@ -1,6 +1,7 @@
 import { startTransition, useCallback, useEffect, type Dispatch, type SetStateAction } from "react";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import { OPEN_NOTE_LIBRARY_EVENT } from "../../../features/notes/noteNavigation";
+import { OPEN_CREWS_PAGE_EVENT, setCrewsPageOpen } from "../../../features/crews/model/crewsPage";
 import { OPEN_USAGE_GUIDE_EVENT } from "../../../features/onboarding/model/usageGuide";
 import { START_TOUR_EVENT } from "../../../features/onboarding/model/tourState";
 
@@ -43,6 +44,31 @@ export function useSurfaceOpeners({
       setServersViewOpen?.(true);
     });
   }, [setServersViewOpen]);
+  const onOpenCrews = useCallback(() => {
+    startTransition(() => {
+      setFilePickerOpen(false);
+      setSettingsOpen(false);
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      // Closing Servers also closes Crews, so it comes first.
+      setServersViewOpen?.(false);
+      setCrewsPageOpen(true);
+    });
+  }, [
+    setFilePickerOpen,
+    setSettingsOpen,
+    setSearchViewOpen,
+    setInboxViewOpen,
+    setNotesViewOpen,
+    setAutomationsViewOpen,
+    setServersViewOpen,
+  ]);
+  useEffect(() => {
+    window.addEventListener(OPEN_CREWS_PAGE_EVENT, onOpenCrews);
+    return () => window.removeEventListener(OPEN_CREWS_PAGE_EVENT, onOpenCrews);
+  }, [onOpenCrews]);
   const onLeaveServers = useCallback(() => setServersViewOpen?.(false), [setServersViewOpen]);
   const onOpenInbox = useCallback(async (_routed = false) => {
     setPullRequestsOnly(false);
@@ -139,6 +165,7 @@ export function useSurfaceOpeners({
 
   return {
     onOpenServers,
+    onOpenCrews,
     onLeaveServers,
     onOpenInbox,
     onLeaveInbox,

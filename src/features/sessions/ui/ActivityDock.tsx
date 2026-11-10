@@ -432,11 +432,17 @@ function DockAgentRow({
         <span className="activity-dock-agent-identity flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="line-clamp-2 block font-medium whitespace-pre-wrap text-(--ui-tone-neutral-fg) [overflow-wrap:anywhere]">
             {agent.name}
+            {agent.crewMember?.handle ? (
+              <span className="ml-1.5 font-normal text-(--ui-text-muted)">
+                @{agent.crewMember.handle}
+              </span>
+            ) : null}
           </span>
           {agent.kind === "agent" ? (
             <span className="flex min-w-0 items-center gap-1.5 text-ui-micro text-(--ui-text-muted)">
               <SubagentMarks
                 name={agent.name}
+                member={agent.crewMember}
                 harness={provider}
                 active={agent.status === "running"}
                 failed={agent.status === "failed"}

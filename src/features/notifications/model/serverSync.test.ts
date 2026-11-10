@@ -5,6 +5,7 @@ import {
 } from "@bycoda/account-contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { NotificationsServerPort } from "./serverPort";
+import { setHostPushEvents } from "../../../shared/lib/hostPushEvents";
 import { activateServerSync, reportAgentEvent } from "./serverRuntime";
 import { createServerSync } from "./serverSync";
 import type { ServerSyncDeps } from "./serverSyncSupport";
@@ -154,6 +155,22 @@ describe("reporting agent events", () => {
     expect(report?.event).toBe("approval.pending");
     expect(report?.dedupeKey).toMatch(/^[0-9a-f]{32}$/);
     expect(JSON.stringify(report)).not.toContain("session-secret-id");
+    activateServerSync(null);
+  });
+
+  it("leaves kinds the Host already pushes to the phone out of the account report", async () => {
+    const { sync, port } = setup();
+    await sync.syncSettings();
+    activateServerSync(sync);
+    setHostPushEvents(["finished"]);
+    const digest = vi.spyOn(crypto.subtle, "digest");
+    reportAgentEvent("finished", ["session", "turn"], NOW);
+    expect(digest).not.toHaveBeenCalled();
+    reportAgentEvent("input", ["session", "turn"], NOW);
+    await vi.waitFor(() => expect(port.reportEvent).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(port.reportEvent).mock.calls[0]?.[0].event).toBe("approval.pending");
+    digest.mockRestore();
+    setHostPushEvents(undefined);
     activateServerSync(null);
   });
 });

@@ -56,6 +56,11 @@
 
 - A crew is a team definition: a coordinator plus member agents with roles, models and
   file scopes. Users manage them in Settings > Crews.
+- One expert, one job: `crews.member.ask` (`handle` or `memberId`, `prompt`, `requestId`,
+  optional `files`) is the `@member` ask. It runs one library member in its own
+  conversation, with no coordinator or review, and reports back to this conversation.
+  Reuse the `requestId` only to retry the identical ask. Use a crew (below) when several
+  members must coordinate. `crews.active.list` reads this project's working members.
 - Flow:
   1. `crews.schema`, then `crews.inspect`, then `crews.save` (project scope).
   2. `crews.start` (`definitionId`, `prompt`, `requestId`).

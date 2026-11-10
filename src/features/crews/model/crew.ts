@@ -1,5 +1,8 @@
 import { isRemoteProvider, type RemoteProvider } from "../../connections/model/protocol";
 import type { RuntimeMode } from "../../sessions/model/session";
+import { parseAppearance, parseAvatar, parseHandle, type CrewAppearance } from "./crewIdentity";
+import { parseCrewTools, type CrewToolProfile } from "./crewTools";
+import type { MemberAvatarChoice } from "./memberAvatarTraits";
 
 export const HOST_CREWS = "crews.v1";
 export const HOST_CREW_TASKS = "crews.tasks.v1";
@@ -8,6 +11,14 @@ export const HOST_CREW_DELETE = "crews.delete.v1";
 /** Library members carry specialty groups and crews remember which profile a member came from. */
 export const HOST_CREW_AGENT_GROUPS = "crews.agent-groups.v1";
 export const HOST_CREW_ACCESS = "crews.access.v1";
+/** Members carry an avatar choice and handle; crews carry their appearance. */
+export const HOST_CREW_IDENTITY = "crews.identity.v1";
+/** Host-wide owner read of crew members currently working (`crews.active.list`). */
+export const HOST_CREW_ACTIVE = "crews.active.v1";
+/** Owner `@member` ask: one library member runs in its own conversation (`crews.member.ask`). */
+export const HOST_CREW_MEMBER_ASK = "crews.member.ask.v1";
+/** Members carry a tool profile the Host enforces on their Conversation Tool calls. */
+export const HOST_CREW_TOOLS = "crews.tools.v1";
 export const CREW_CAPABILITIES = [
   "code",
   "review",
@@ -45,8 +56,16 @@ export type CrewAgent = {
   candidates: CrewCandidate[];
   /** Specialty groups such as UI or Mobile; independent from the working role. */
   groups?: string[];
-  /** The library profile this member was copied from. Library edits never apply silently. */
+  /** The library profile this member follows until the crew customizes it. */
   source?: { id: string; updatedAt: number };
+  /** The crew edited this linked member, so library edits no longer apply to it. */
+  customized?: true;
+  /** Owner-picked look; parts left out come from the member's seed. */
+  avatar?: MemberAvatarChoice;
+  /** Lowercase `@handle`; unique among library members of one visibility. */
+  handle?: string;
+  /** Narrows the member's session tools; absent means unchanged. */
+  tools?: CrewToolProfile;
 };
 export type CrewPolicy = {
   preset: "economy" | "balanced" | "quality";
@@ -70,6 +89,7 @@ export type CrewDefinition = {
   projectId?: string;
   agents: CrewAgent[];
   policy: CrewPolicy;
+  appearance?: CrewAppearance;
   updatedAt: number;
 };
 /**
@@ -202,6 +222,9 @@ export function parseCrewAgent(value: unknown): CrewAgent {
     const s = record(a.source);
     source = { id: text(s.id), updatedAt: number(s.updatedAt, 0, Number.MAX_SAFE_INTEGER) };
   }
+  const avatar = a.avatar === undefined ? undefined : parseAvatar(a.avatar);
+  const handle = a.handle === undefined ? undefined : parseHandle(a.handle);
+  const tools = a.tools === undefined ? undefined : parseCrewTools(a.tools);
   return {
     id: text(a.id),
     name: text(a.name),
@@ -211,6 +234,10 @@ export function parseCrewAgent(value: unknown): CrewAgent {
     candidates,
     ...(groups?.length ? { groups } : {}),
     ...(source ? { source } : {}),
+    ...(a.customized === true ? { customized: true as const } : {}),
+    ...(avatar ? { avatar } : {}),
+    ...(handle ? { handle } : {}),
+    ...(tools ? { tools } : {}),
   };
 }
 
@@ -224,6 +251,8 @@ export function parseCrewDefinition(value: unknown): CrewDefinition {
   const agents = input.agents.map(parseCrewAgent);
   if (new Set(agents.map((a) => a.id)).size !== agents.length)
     throw new Error("Duplicate crew members");
+  const handles = agents.flatMap((a) => (a.handle ? [a.handle] : []));
+  if (new Set(handles).size !== handles.length) throw new Error("Duplicate member handles");
   if (
     agents.filter((a) => a.role === "coordinator").length !== 1 ||
     agents.filter((a) => a.role === "reviewer").length !== 1 ||
@@ -234,11 +263,13 @@ export function parseCrewDefinition(value: unknown): CrewDefinition {
   const maxAssignments = number(p.maxAssignments, 1, 20);
   if (!Number.isInteger(maxParallel) || !Number.isInteger(maxAssignments))
     throw new Error("Crew limits must be integers");
+  const appearance = input.appearance === undefined ? undefined : parseAppearance(input.appearance);
   return {
     id: text(input.id),
     name: text(input.name),
     ...(input.projectId === undefined ? {} : { projectId: text(input.projectId) }),
     agents,
+    ...(appearance ? { appearance } : {}),
     policy: {
       preset: p.preset as CrewPolicy["preset"],
       maxParallel,

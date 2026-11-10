@@ -23,3 +23,23 @@ this direction does not authorize a specific send, installation or publication.
 Same owner session, implementation authorization:
 
 > if there is a message, image, file and so on I have not sent in the chat, it should be able to see those too. Please start on these with subagents, 10 subagents (translated)
+
+2026-11-10, owner chat during the voice operator program (translated answers to explicit questions):
+
+> All of them except desktop input (from the phone)
+
+Approvals except physical desktop input and secret entry may also be answered from a paired phone, with the full operation summary shown.
+
+> if allowed, a permanent permission can reduce or increase this; like the full access, ask permission, auto settings, let it be configurable with those; I would like to leave it fully autonomous
+
+Computer use gets an owner-only permission mode (ask, auto, full access). Voice cannot change it. Stop computer use always works.
+
+> All of them open with approval (Git push/merge and direct social sending)
+
+Voice may request Git push and merge (never force push or history rewrite) and direct social sends, each through the existing native owner approval with the exact operation.
+
+2026-11-10, owner request for global Room file and shell reach (translated):
+
+> Owner-chosen folders: a Host setting "Assistant folders" ... Owner-only write path (Room/voice cannot change it). ... "Run commands without asking" (new owner-only setting next to the folders, default off).
+
+The global Room reads and changes files only inside owner-added folders (reads unapproved, writes with exact native approval). `commands.run` asks for exact native approval per run unless the owner enabled the default-off "Run commands without asking" setting, which applies to the global and project Room. Folders and the setting are owner-only; no tool writes them.

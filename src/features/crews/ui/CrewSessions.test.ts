@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { isConnectionFailure } from "../../connections/model/remoteFailure";
 import { reportRemoteConnection } from "../../connections/model/remoteHealth";
 import { CrewManagementDialog, CrewSessions } from "./CrewSessions";
+import { CrewWorkManager } from "./CrewWorkManager";
 
 const feedback = vi.hoisted(() => ({ coordinated: true }));
 vi.mock("../../connections/ui/RemoteConnectionFeedback", () => ({
@@ -211,4 +212,18 @@ it("names the machine and action of a failed crew action and clears it once the 
   expect(dialog.textContent).not.toContain("SSH tunnel");
   await renderDialog(Date.now() + 1000);
   expect(document.body.textContent).not.toContain("failed on This computer");
+});
+
+it("renders the work manager inline on the page layout without a modal", async () => {
+  await act(async () =>
+    root.render(
+      createElement(CrewWorkManager, {
+        layout: "page",
+        cwd,
+        state: { error: null, refetch: vi.fn() } as unknown as CrewState,
+      }),
+    ),
+  );
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.body.textContent).toContain("Loading crews…");
 });

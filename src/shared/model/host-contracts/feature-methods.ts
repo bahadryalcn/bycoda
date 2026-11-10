@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import { activityMethods } from "./activity";
+import { approvalsMethods } from "./approvals";
 import { decisionModelsMethods } from "./decision-models";
 import { diagnosticsLogsMethods } from "./diagnostics-logs";
 import type { HostRpcMethodDefinition } from "./methods";
@@ -18,6 +19,7 @@ export function featureMethods(
   return {
     ...decisionModelsMethods(workflow),
     ...activityMethods(workflow),
+    ...approvalsMethods(workflow),
     ...diagnosticsLogsMethods(workflow),
     ...secretsOwnerMethods(workflow),
     ...sessionLifecycleMethods(workflow),

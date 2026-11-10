@@ -1,8 +1,12 @@
 import { ownerDayBounds } from "../../src/shared/lib/time/ownerDay";
 import { randomUUID } from "node:crypto";
+import { QUICK_AUTOMATION_MAX_AHEAD_MS } from "../../src/shared/model/host-contracts/assistant-quick-automation";
 import { assertExpectedConfiguration } from "../configurationConflict";
 import { automationLimits } from "../../src/features/automations/model/automationLimits";
-import { nextAutomationRunAt } from "../../src/features/automations/model/automationSchedule";
+import {
+  nextAutomationRunAt,
+  type AutomationSchedule,
+} from "../../src/features/automations/model/automationSchedule";
 import {
   parseHostAutomation,
   type HostAutomation,
@@ -34,6 +38,11 @@ export interface AutomationWorkspaceServices {
 type ManagedAutomationRun = StoredAutomationRun & { workspaceId?: string; activityId?: string };
 const TICK_MS = 30000;
 const MAX_RUNS_PER_AUTOMATION = 100;
+const sameSchedule = (a: AutomationSchedule, b: AutomationSchedule) =>
+  a.scheduleKind === b.scheduleKind &&
+  a.time === b.time &&
+  a.minute === b.minute &&
+  a.dayOfWeek === b.dayOfWeek;
 // Legacy JSON readers used JavaScript truthiness, including strings such as "0".
 // Arguments are private SQL source identifiers and paths, never operation input.
 const truthyJson = (value: string, path: string) => {
@@ -81,6 +90,7 @@ export class HostAutomations {
       await store.db.scope(async () => {
         await store.db.exec(`
       CREATE TABLE IF NOT EXISTS automations (id TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS automation_once (id TEXT PRIMARY KEY REFERENCES automations(id) ON DELETE CASCADE, run_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS automation_runs (id TEXT PRIMARY KEY, automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE, created_at INTEGER NOT NULL, value TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS automation_runs_history_idx ON automation_runs (automation_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS automation_runs_status_idx ON automation_runs (automation_id, json_extract(value, '$.status'));
@@ -155,9 +165,13 @@ export class HostAutomations {
       if ((raw as { expectedAbsent?: unknown }).expectedAbsent === true && previous)
         throw new Error("Automation ID already exists. Choose a new ID.");
       assertExpectedConfiguration(raw, previous, parseHostAutomation);
+      // A one-time arming survives pause/resume edits that keep the schedule; any schedule change drops it.
+      const armed =
+        previous && sameSchedule(previous, input) ? await this.onceRunAt(input.id) : undefined;
+      if (!armed || armed <= now) await this.clearOnce(input.id);
       return await this.write({
         ...input,
-        nextRunAt: nextAutomationRunAt(input, now),
+        nextRunAt: armed && armed > now ? armed : nextAutomationRunAt(input, now),
         lastRunAt: previous?.lastRunAt,
         lastRunStatus: previous?.lastRunStatus,
         lastRunError: previous?.lastRunError,
@@ -167,6 +181,35 @@ export class HostAutomations {
         updatedAt: Math.max(now, (previous?.updatedAt ?? -1) + 1),
       });
     });
+  }
+  /** Arms a saved automation to run once at `runAt` (epoch ms, in the future, within a year), then turn itself off. */
+  async scheduleOnce(id: string, runAt: number): Promise<void> {
+    await this.ready;
+    if (
+      !Number.isSafeInteger(runAt) ||
+      runAt <= this.now() ||
+      runAt > this.now() + QUICK_AUTOMATION_MAX_AHEAD_MS
+    )
+      throw new Error("A one-time automation must run at a future time within one year.");
+    await this.store.db.scope(async () => {
+      const current = await this.find(id);
+      if (!current) throw new Error("Automation not found.");
+      await this.write({ ...current, nextRunAt: runAt });
+      await this.store.db
+        .prepare(
+          "INSERT INTO automation_once(id,run_at) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET run_at=excluded.run_at",
+        )
+        .run(id, runAt);
+    });
+  }
+  private async onceRunAt(id: string): Promise<number | undefined> {
+    const row = await this.store.db
+      .prepare("SELECT run_at FROM automation_once WHERE id=?")
+      .get(id);
+    return row ? Number(row.run_at) : undefined;
+  }
+  private async clearOnce(id: string): Promise<void> {
+    await this.store.db.prepare("DELETE FROM automation_once WHERE id=?").run(id);
   }
   /** Read-only preview evaluated by the same clock and scheduler as save. */
   preview(raw: unknown) {
@@ -290,10 +333,12 @@ export class HostAutomations {
       if (!automation.enabled || automation.nextRunAt > now) continue;
       try {
         const scheduledFor = automation.nextRunAt;
+        const once = (await this.onceRunAt(automation.id)) !== undefined;
         const due = await this.write({
           ...automation,
-          nextRunAt: nextAutomationRunAt(automation, now),
+          ...(once ? { enabled: false } : { nextRunAt: nextAutomationRunAt(automation, now) }),
         });
+        if (once) await this.clearOnce(automation.id);
         const run = await this.newRun(due, "scheduled", scheduledFor);
         if (now - scheduledFor > MISSED_RUN_GRACE_MS)
           await this.finish(run, "skipped", MISSED_RUN_SKIP, now);

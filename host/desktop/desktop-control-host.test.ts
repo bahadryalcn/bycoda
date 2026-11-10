@@ -10,6 +10,7 @@ import {
   type DesktopRunner,
   type DesktopControlPorts,
 } from "./desktop-control-host";
+import { isForbiddenDesktopShortcut } from "../../src/shared/model/host-contracts/desktop-control";
 import { readDesktopPresence, WINDOWS_DESKTOP_PRESENCE_SCRIPT } from "./desktop-presence";
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -543,7 +544,13 @@ async function setup(options: DesktopControlPorts = {}) {
         window: { id: "w-1" },
         snapshot_id: "s1",
         complete: true,
-        tree: { role: "window", children: [{ role: "button", name: "Save", ref_id: "@s1:e1" }] },
+        tree: {
+          role: "window",
+          children: [
+            { role: "button", name: "Save", ref_id: "@s1:e1" },
+            { role: "list", name: "Files", ref_id: "@s1:e2" },
+          ],
+        },
       });
     return envelope(command, {
       action: command,
@@ -653,11 +660,10 @@ it("binds exact qualified refs to the caller, app, process and configuration", a
     delivery: "delivered_unverified",
     retry: "unsafe",
   });
-  expect(f.calls.at(-1)).not.toContain("--no-trace");
-  expect(f.calls.at(-1)).not.toContain("--headed");
-  await expect(f.control.request({ ...input, requestId: "click-new" }, agent)).rejects.toThrow(
-    "stale",
-  );
+  // The last call is the read-only post-act refresh; the act precedes the app lookup before it.
+  expect(f.calls.at(-1)![2]).toBe("snapshot");
+  expect(f.calls.at(-3)).not.toContain("--no-trace");
+  expect(f.calls.at(-3)).not.toContain("--headed");
 });
 it("never repeats an uncertain mutation, including after a Host restart", async () => {
   let mutations = 0;
@@ -750,7 +756,7 @@ it("puts literal potentially flag-shaped text after the CLI option terminator", 
     },
     agent,
   );
-  expect(f.calls.at(-1)!.slice(-3)).toEqual(["--", "@s1:e1", "--headed $(secret)"]);
+  expect(f.calls.at(-3)!.slice(-3)).toEqual(["--", "@s1:e1", "--headed $(secret)"]);
 });
 it("aborts its own pending CLI on Stop and persists disabled state", async () => {
   let entered!: () => void;
@@ -832,6 +838,147 @@ it.each(["Alt+F4", " ALT + f4 ", "Win+L", "Windows+L", "Meta+L"])(
     expect(f.calls.some((args) => args.includes("press"))).toBe(false);
   },
 );
+it.each(["Ctrl+Win+Left", "Win+Shift+S", "Ctrl+S", "Alt+Tab", "Ctrl+F4", "Win+Left"])(
+  "does not treat %s as a dangerous shortcut",
+  (chord) => expect(isForbiddenDesktopShortcut(chord)).toBe(false),
+);
+it.each(["Alt+F4", " ALT + f4 ", "Win+L", "Windows+L", "Meta+L", "Ctrl+Super+L", "l+win", "win-l"])(
+  "forbids %s",
+  (chord) => expect(isForbiddenDesktopShortcut(chord)).toBe(true),
+);
+async function physicalSetup() {
+  const grants: string[] = [];
+  const f = await setup({
+    physicalGrant: async (_principal, op) => {
+      grants.push(op.action);
+      return true;
+    },
+  });
+  await f.configure();
+  await f.request({
+    op: "configure",
+    expectedVersion: 1,
+    configuration: {
+      enabled: true,
+      binaryPath: f.binary,
+      binarySha256: f.digest,
+      allowedApps: ["Notepad"],
+      allowPhysicalInput: true,
+    },
+  });
+  return { f, grants };
+}
+const act = (extra: Record<string, unknown>) => ({
+  op: "act",
+  requestId: `r-${JSON.stringify(extra)}`,
+  snapshotId: "s1",
+  ref: "@s1:e1",
+  ...extra,
+});
+it("scrolls headless by direction and amount without a physical grant", async () => {
+  const f = await setup();
+  await f.configure();
+  await f.snapshot();
+  const response = await f.control.request(
+    act({ action: "scroll", direction: "down", amount: 5 }),
+    agent,
+  );
+  expect(response.operation!.ok).toBe(true);
+  const call = f.calls.find((args) => args[2] === "scroll")!;
+  expect(call).not.toContain("--headed");
+  expect(call.slice(-6)).toEqual(["--direction", "down", "--amount", "5", "--", "@s1:e1"]);
+});
+it.each([
+  ["hover", {}],
+  ["drag", { toRef: "@s1:e2" }],
+  ["focus-window", {}],
+] as const)("%s needs the physical-input grant and never runs headless", async (action, extra) => {
+  const f = await setup();
+  await f.configure();
+  await f.snapshot();
+  await expect(f.control.request(act({ action, ...extra }), agent)).rejects.toThrow("physical");
+  await expect(f.control.request(act({ action, ...extra, headed: true }), agent)).rejects.toThrow(
+    "Physical input is not granted",
+  );
+  expect(f.calls.some((args) => args.includes(action))).toBe(false);
+});
+it("delivers hover, drag and focus-window headed through the same grant", async () => {
+  const { f, grants } = await physicalSetup();
+  await f.snapshot();
+  await f.control.request(act({ action: "hover", headed: true }), agent);
+  await f.snapshot();
+  await f.control.request(act({ action: "drag", toRef: "@s1:e2", headed: true }), agent);
+  await f.snapshot();
+  await f.control.request(act({ action: "focus-window", headed: true }), agent);
+  expect(grants).toEqual(["hover", "drag", "focus-window"]);
+  const find = (name: string) =>
+    f.calls.find((args) => args[2] === "--headed" && args[3] === name)!.slice(3);
+  expect(find("hover")).toEqual(["hover", "--timeout-ms", "5000", "--", "@s1:e1"]);
+  expect(find("drag")).toEqual([
+    "drag",
+    "--timeout-ms",
+    "5000",
+    "--from",
+    "@s1:e1",
+    "--to",
+    "@s1:e2",
+  ]);
+  expect(find("focus-window")).toEqual(["focus-window", "--app", "Notepad", "--window-id", "w-1"]);
+});
+it("rejects mismatched drag, scroll and destination parameters before any journal or command", async () => {
+  const { f } = await physicalSetup();
+  await f.snapshot();
+  const effects = () => f.calls.filter((args) => args[2] !== "list-apps").length;
+  const before = effects();
+  for (const bad of [
+    { action: "drag", headed: true },
+    { action: "drag", toRef: "@s1:e99", headed: true },
+    { action: "click", toRef: "@s1:e2" },
+    { action: "scroll" },
+    { action: "click", direction: "up" },
+    { action: "click", amount: 2 },
+  ])
+    await expect(f.control.request(act(bad), agent)).rejects.toThrow();
+  expect(effects()).toBe(before);
+});
+it("stores the owner-only permission mode, defaults old configs to ask and limits all-apps to full access", async () => {
+  const f = await setup();
+  expect((await f.configure()).configuration).toMatchObject({
+    permissionMode: "ask",
+    allowAllApps: false,
+  });
+  expect(await f.control.permission()).toEqual({ mode: "ask" });
+  const base = {
+    enabled: true,
+    binaryPath: f.binary,
+    binarySha256: f.digest,
+    allowedApps: ["Notepad"],
+    allowPhysicalInput: false,
+  };
+  const auto = await f.request({
+    op: "configure",
+    expectedVersion: 1,
+    configuration: { ...base, permissionMode: "auto", allowAllApps: true },
+  });
+  expect(auto.configuration).toMatchObject({ permissionMode: "auto", allowAllApps: false });
+  const full = await f.request({
+    op: "configure",
+    expectedVersion: 2,
+    configuration: { ...base, permissionMode: "full", allowAllApps: true },
+  });
+  expect(full.configuration).toMatchObject({ permissionMode: "full", allowAllApps: true });
+  expect(await f.control.permission()).toEqual({ mode: "full" });
+  await expect(
+    f.control.request(
+      {
+        op: "configure",
+        expectedVersion: 3,
+        configuration: { ...base, permissionMode: "full", allowAllApps: true },
+      },
+      agent,
+    ),
+  ).rejects.toThrow("owner");
+});
 it("keeps Host presence headless and treats unsupported, failed and malformed reads as unknown", async () => {
   let args: string[] = [];
   const read = await readDesktopPresence({
@@ -875,3 +1022,122 @@ it.runIf(process.platform === "win32")(
     expect(stdout.trim()).toBe("232");
   },
 );
+const bigTree = (id: string, count: number) => ({
+  role: "window",
+  ref_id: `@${id}:root`,
+  children: Array.from({ length: count }, (_, i) => ({
+    role: "button",
+    name: `Button ${i} ${"x".repeat(40)}`,
+    ref_id: `@${id}:e${i}`,
+  })),
+});
+function pagedRunner(options: { failRefresh?: boolean } = {}) {
+  let counter = 0;
+  const runner: DesktopRunner = async (_binary, args) => {
+    const command = args[2] === "--headed" ? args[3] : args[2];
+    if (command === "list-apps")
+      return envelope(command, { apps: [{ name: "Notepad", pid: 123 }] });
+    if (command === "snapshot") {
+      if (options.failRefresh && counter > 0) throw new Error("helper gone");
+      const id = `s${++counter}`;
+      return envelope(command, {
+        app: "Notepad",
+        window: { id: "w-1" },
+        snapshot_id: id,
+        complete: true,
+        tree: bigTree(id, 800),
+      });
+    }
+    return envelope(command, {
+      action: command,
+      disposition: { delivery: "delivered_unverified", retry: "unsafe" },
+    });
+  };
+  return runner;
+}
+it("pages large snapshots on node boundaries with continuous cursors", async () => {
+  const f = await setup({ run: pagedRunner() });
+  await f.configure();
+  const first = (await f.control.request({ op: "snapshot", app: "Notepad", maxChars: 5000 }, agent))
+    .snapshot!;
+  expect(first.nextCursor).toBeTruthy();
+  const pages = [first.treeJson];
+  let cursor = first.nextCursor;
+  while (cursor) {
+    const page = (
+      await f.control.request({ op: "snapshot", app: "Notepad", maxChars: 5000, cursor }, agent)
+    ).snapshot!;
+    expect(page.snapshotId).toBe(first.snapshotId);
+    expect(page.totalChars).toBe(first.totalChars);
+    pages.push(page.treeJson);
+    cursor = page.nextCursor;
+  }
+  expect(pages.length).toBeGreaterThan(3);
+  const joined = pages.join("\n");
+  expect(joined.length).toBe(first.totalChars);
+  for (const page of pages) {
+    expect(page.length).toBeLessThanOrEqual(5000);
+    for (const line of page.split("\n")) expect(line.trim()).toMatch(/^\{.*\}$/);
+  }
+  expect(new Set(joined.match(/@s1:e\d+/g)).size).toBe(800);
+  expect(f.calls).toHaveLength(0);
+});
+it("does not rerun the helper for cursor reads and binds them to the caller and app", async () => {
+  let snapshots = 0;
+  const inner = pagedRunner();
+  const f = await setup({
+    run: async (binary, args, options) => {
+      if (args[2] === "snapshot") snapshots++;
+      return inner(binary, args, options);
+    },
+  });
+  await f.configure();
+  const first = (await f.control.request({ op: "snapshot", app: "Notepad", maxChars: 5000 }, agent))
+    .snapshot!;
+  const cursor = first.nextCursor!;
+  await f.control.request({ op: "snapshot", app: "Notepad", cursor }, agent);
+  expect(snapshots).toBe(1);
+  await expect(
+    f.control.request({ op: "snapshot", app: "Notepad", cursor }, { ...agent, id: "other" }),
+  ).rejects.toThrow("cursor");
+  await expect(
+    f.control.request({ op: "snapshot", app: "Notepad", cursor: "5:missing" }, agent),
+  ).rejects.toThrow("cursor");
+  await expect(
+    f.control.request({ op: "snapshot", app: "Notepad", cursor: "nope" }, agent),
+  ).rejects.toThrow("cursor");
+});
+it("act returns a fresh snapshot and marks the consumed refs expired", async () => {
+  const f = await setup({ run: pagedRunner() });
+  await f.configure();
+  const old = (await f.control.request({ op: "snapshot", app: "Notepad" }, agent)).snapshot!;
+  const act = {
+    op: "act",
+    requestId: "a1",
+    snapshotId: old.snapshotId,
+    ref: `@${old.snapshotId}:e1`,
+    action: "click",
+  };
+  const result = await f.control.request(act, agent);
+  expect(result.refsExpired).toBe(true);
+  expect(result.next).toMatchObject({ snapshotId: "s2", app: "Notepad" });
+  await expect(f.control.request({ ...act, requestId: "a2" }, agent)).rejects.toThrow("stale");
+  const fresh = await f.control.request(
+    { ...act, requestId: "a3", snapshotId: "s2", ref: "@s2:e2" },
+    agent,
+  );
+  expect(fresh.operation?.ok).toBe(true);
+});
+it("a failed post-act refresh never fails the act", async () => {
+  const f = await setup({ run: pagedRunner({ failRefresh: true }) });
+  await f.configure();
+  const old = (await f.control.request({ op: "snapshot", app: "Notepad" }, agent)).snapshot!;
+  const result = await f.control.request(
+    { op: "act", requestId: "a1", snapshotId: "s1", ref: "@s1:e1", action: "click" },
+    agent,
+  );
+  expect(old.snapshotId).toBe("s1");
+  expect(result.operation).toMatchObject({ state: "settled", ok: true });
+  expect(result.refsExpired).toBe(true);
+  expect(result.next).toMatchObject({ error: expect.stringContaining("helper gone") });
+});

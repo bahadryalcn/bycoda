@@ -26,6 +26,7 @@ import { isAgentToolName, createPreviewFromTool, titleFromToolInput } from "../.
 import type { ReportedCommand } from "../../core/reportedCommands";
 import { streamTextDelta } from "../../core/streamText";
 import { claudeDisallowedTools } from "./claudeToolLimits";
+import type { ClaudeSpawnInput } from "./claudeSpawnInput";
 import type { ApprovalDecision, HarnessEvent } from "../../core/types";
 
 /** Claude Code versions that first ship Opus 5.5 / Opus 5 / Sonnet 5 / Fable 5 / Opus 4.8 / 4.7. */
@@ -238,25 +239,7 @@ function normalizeImageMime(mime: string): string {
   return mime;
 }
 
-export function buildClaudeSpawnArgs(input: {
-  model?: string;
-  advisor?: string;
-  subagentModel?: string;
-  subagentPolicy?: string;
-  effort?: string;
-  permissionMode?: ClaudePermissionMode;
-  resume?: string;
-  sessionId?: string;
-  settings?: ClaudeCliSettings;
-  includePartialMessages?: boolean;
-  maxTurns?: number;
-  isolated?: boolean;
-  /** Retain only the provider transcript while preserving isolated hooks/MCP policy. */
-  persistSession?: boolean;
-  /** Folders beyond the cwd the session may read and edit. */
-  additionalDirs?: readonly string[];
-  disabledSkills?: readonly string[];
-}): string[] {
+export function buildClaudeSpawnArgs(input: ClaudeSpawnInput): string[] {
   const args = ["--output-format", "stream-json", "--verbose", "--input-format", "stream-json"];
   const disallowed = claudeDisallowedTools(input);
   if (disallowed.length) args.push("--disallowedTools", ...disallowed);

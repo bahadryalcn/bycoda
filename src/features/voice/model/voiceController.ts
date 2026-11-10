@@ -1,3 +1,4 @@
+import { deliverToolImages } from "./voiceToolOutput";
 import type { Session } from "../../sessions/model/session";
 import { sameProjectPath } from "../../projects/model/recents";
 import { voiceContext } from "./voiceSession";
@@ -40,6 +41,16 @@ function text(value: unknown, name: string, optional = false): string | undefine
 }
 
 /** Tools are executed against captured identities, never a later selected tab. */
+/** File and run tools reach the owner's Assistant folders only with an explicit `root`;
+ * without one they stay on the captured project like before folders existed. */
+function projectRooted(args: Record<string, unknown>, action: string) {
+  if (args.family !== "conversation") return false;
+  if (action !== "commands.run" && (!action.startsWith("files.") || action === "files.roots"))
+    return false;
+  const input = args.input as Record<string, unknown> | undefined;
+  return input?.root === undefined;
+}
+
 export function createVoiceController(read: () => VoiceControllerPorts) {
   let bound:
     | {
@@ -336,7 +347,7 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
         args,
         !voiceThreadToolAllowed(args.family, action),
         args.family === "conversation" && voiceDesktopInputAction(action),
-        voiceGlobalToolAllowed(args.family, action),
+        voiceGlobalToolAllowed(args.family, action) && !projectRooted(args, action),
       );
       assertActive();
       const causalContext = selected.cwd.startsWith("remote://")
@@ -361,7 +372,7 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
         },
       );
       if (selected.cwd) project(selected.cwd);
-      return result;
+      return deliverToolImages(result, read().image);
     })();
     const request = { signature, result, settled: false };
     requests.set(requestId, request);

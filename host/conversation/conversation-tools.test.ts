@@ -339,6 +339,30 @@ describe("Conversation Tools boundary", () => {
     for (const extra of [{ projectId: "other" }, { runtimeMode: "auto" }, { approved: true }])
       expect(() => validateConversationTool("tasks.create", { ...input, ...extra })).toThrow();
   });
+  it("exposes crew member asks as writes with the owner contract and active lists as reads", () => {
+    const ask = { requestId: "r1", handle: "@dev", prompt: "Fix it", files: ["src/a.ts"] };
+    expect(() => validateConversationTool("crews.member.ask", ask)).not.toThrow();
+    expect(() =>
+      validateConversationTool("crews.member.ask", { ...ask, parentSessionId: "s" }),
+    ).not.toThrow();
+    for (const bad of [{ projectId: "other" }, { runtimeMode: "full-access" }, { prompt: "" }])
+      expect(() => validateConversationTool("crews.member.ask", { ...ask, ...bad })).toThrow();
+    expect(() => validateConversationTool("crews.member.ask", { prompt: "x" })).toThrow();
+    expect(() => validateConversationTool("crews.active.list", { limit: 5 })).not.toThrow();
+    expect(() => validateConversationTool("crews.active.list", { projectId: "p" })).toThrow();
+    expect(conversationAuthorizationScope("crews.member.ask")).toBe("write");
+    expect(conversationAuthorizationScope("crews.active.list")).toBe("read");
+    const tools = conversationToolCatalog();
+    expect(tools.find((tool) => tool.action === "crews.member.ask")?.annotations.readOnlyHint).toBe(
+      false,
+    );
+    expect(
+      tools.find((tool) => tool.action === "crews.active.list")?.annotations.readOnlyHint,
+    ).toBe(true);
+    expect(tools.find((tool) => tool.action === "crews.start")?.description).toContain(
+      "crews.member.ask for a single-expert job",
+    );
+  });
   it("accepts a bounded log stream generation so cursors can recover across host restarts", () => {
     expect(() =>
       validateConversationTool("logs.read", { after: 10, streamId: "previous-host" }),

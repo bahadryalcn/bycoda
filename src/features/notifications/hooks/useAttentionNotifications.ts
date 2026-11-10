@@ -10,20 +10,13 @@ import {
   taskbarAttention,
   type SessionPhase,
 } from "../model/attention";
-import { loadNotificationEvents, subscribeNotificationEvents } from "../model/notificationEvents";
-import {
-  allowsProjectNotificationIndicator,
-  subscribeNotificationPreferences,
-} from "../model/notificationPreferences";
-import { knownNotificationProject } from "../model/notificationProjects";
+import { attentionRulesFor, subscribeAttentionRules } from "../model/attentionRules";
 import {
   announceBackgroundFinish,
   announceSessionIssue,
   isWindowFocused,
-  loadNotificationsEnabled,
   replaceUnseenAttention,
   subscribeAttention,
-  subscribeNotificationsEnabled,
   unseenAttentionSessions,
 } from "../model/notifications";
 
@@ -66,27 +59,13 @@ export function useAttentionNotifications(
     replaceUnseenAttention(
       pruneUnseen(unseenAttentionSessions(), sessions, activeSessionId, focused),
     );
-    const events = loadNotificationEvents();
-    const next =
-      loadNotificationsEnabled() && events.taskbar
-        ? taskbarAttention(
-            sessions,
-            unseenAttentionSessions(),
-            activeSessionId,
-            focused,
-            (session) => {
-              const project = knownNotificationProject(session.cwd);
-              return (
-                !!project &&
-                events.input &&
-                allowsProjectNotificationIndicator({
-                  projectId: project.id,
-                  category: "agentInput",
-                })
-              );
-            },
-          )
-        : { count: 0, hasInput: false };
+    const next = taskbarAttention(
+      sessions,
+      unseenAttentionSessions(),
+      activeSessionId,
+      focused,
+      attentionRulesFor("taskbar"),
+    );
     const flash = flashFor(shownCount.current, next, focused);
     if (next.count === shownCount.current && flash === "none" && !nativeRetry.current) return;
     const previousCount = shownCount.current;
@@ -107,12 +86,7 @@ export function useAttentionNotifications(
     // Badge, event and project preferences (including mute expiry) change what
     // the taskbar may show without any session changing.
     const sync = () => syncAttention();
-    const unsubscribe = [
-      subscribeAttention(sync),
-      subscribeNotificationsEnabled(sync),
-      subscribeNotificationEvents(sync),
-      subscribeNotificationPreferences(sync),
-    ];
+    const unsubscribe = [subscribeAttention(sync), subscribeAttentionRules(sync)];
     return () => unsubscribe.forEach((off) => off());
   }, []);
 }

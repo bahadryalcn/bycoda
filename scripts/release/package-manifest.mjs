@@ -46,6 +46,24 @@ export function safeRelative(file) {
 const EMPTY_PAYLOAD_ROLES = new Set(["hostPayload", "appPayload"]);
 const minimumBytes = (role) => (EMPTY_PAYLOAD_ROLES.has(role) ? 0 : 1);
 
+const EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+/**
+ * Artifact uploads drop hidden files such as npm's empty `.npmrc`. A payload file the manifest
+ * binds to zero bytes and the empty digest has exactly one possible content, so recreate it;
+ * any other missing file still fails validation.
+ */
+export function restoreEmptyPayloadFiles(manifest, root) {
+  for (const file of manifest.files ?? []) {
+    if (file.bytes !== 0 || file.sha256 !== EMPTY_SHA256 || !EMPTY_PAYLOAD_ROLES.has(file.role))
+      continue;
+    const absolute = path.resolve(root, safeRelative(file.path));
+    if (existsSync(absolute)) continue;
+    mkdirSync(path.dirname(absolute), { recursive: true });
+    writeFileSync(absolute, "", { flag: "wx" });
+  }
+}
+
 export function packageFile(root, file, role = "payload") {
   safeRelative(file);
   const absolute = path.resolve(root, file);

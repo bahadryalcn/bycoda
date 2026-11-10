@@ -236,7 +236,6 @@ const goalOperation = (params: z.ZodType, result: z.ZodType): HostRpcMethodDefin
   cost: "read",
   requiredCapability: "transport.ws.goals.v2",
 });
-
 const devServerOperation = (
   params: z.ZodType,
   result: z.ZodType,
@@ -257,14 +256,13 @@ const workflowOperation = (
   cost: "read",
   requiredCapability,
 });
-
 /** A schema inventory, not an advertisement of routed or authorized capability. */
 const crewOperation = (method: keyof typeof CREWS_RPC_SCHEMAS): HostRpcMethodDefinition => ({
   ...workflowOperation(
     "transport.ws.crews.v2",
     CREWS_RPC_SCHEMAS[method].params,
     CREWS_RPC_SCHEMAS[method].result,
-    method === "crews.schema" || method === "crews.inspect" || method === "crews.get",
+    /^crews\.(schema|inspect|get|active\.list)$/.test(method),
   ),
   cost: method === "crews.stop" ? "control" : "read",
 });
@@ -564,6 +562,8 @@ export const HOST_RPC_METHODS = Object.freeze({
     ...read(NativeBufferRecoverySourceSchema, NativeBufferRecoveryStatusSchema),
     requiredCapability: "native.buffers.recovery.v1",
   },
+  "crews.active.list": crewOperation("crews.active.list"),
+  "crews.member.ask": crewOperation("crews.member.ask"),
   "crews.list": crewOperation("crews.list"),
   "crews.schema": crewOperation("crews.schema"),
   "crews.inspect": crewOperation("crews.inspect"),

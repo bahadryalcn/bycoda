@@ -1,9 +1,12 @@
 import { boundedSet, createStore } from "../../../shared/lib/store";
+import { isRemoteApproval } from "./ownerApprovalRemote";
 import { parseInboxApprovalDetails, type InboxApprovalDetails } from "./inboxApprovalDetails";
 
 export type OwnerApproval = {
   id: string;
   sessionId?: string;
+  /** Native action name; absent for approvals created outside the native relay. */
+  action?: string;
   title: string;
   message: string;
   confirmLabel: string;
@@ -11,7 +14,11 @@ export type OwnerApproval = {
   deadline: number;
   /** Structured preview of the same operation `message` states; absent for other approvals. */
   inbox?: InboxApprovalDetails;
+  /** A paired phone may also answer this approval; false for secrets and desktop input. */
+  remote: boolean;
 };
+
+export type OwnerApprovalOutcome = { id: string; answer?: boolean };
 const store = createStore();
 let requests: readonly OwnerApproval[] = [];
 const pending = new Map<
@@ -28,6 +35,12 @@ const pending = new Map<
 >();
 const settled = new Map<string, { signature: string; answer?: boolean }>();
 const surfaces = new Map<string, number>();
+const outcomes = new Set<(outcome: OwnerApprovalOutcome) => void>();
+/** Every pending approval ends once, answered (`answer` set) or not (timeout, revocation, closed window). */
+export function onOwnerApprovalOutcome(listener: (outcome: OwnerApprovalOutcome) => void) {
+  outcomes.add(listener);
+  return () => void outcomes.delete(listener);
+}
 export const subscribeOwnerApprovals = store.subscribe;
 export const ownerApprovalsSnapshot = () => requests;
 export const hasOwnerApprovalChat = (sessionId?: string) => !!sessionId && surfaces.has(sessionId);
@@ -70,12 +83,20 @@ function finishOwnerApproval(id: string, approved?: boolean): void {
   if (answer === undefined) entry.reject(new Error("Application approval expired or was revoked."));
   else entry.resolve(answer);
   store.notify();
+  for (const listener of outcomes) {
+    try {
+      listener({ id, answer });
+    } catch {
+      // A faulty observer never changes the owner decision.
+    }
+  }
 }
 
 export function requestOwnerApproval(
   payload: {
     id: string;
     sessionId?: unknown;
+    action?: unknown;
     input: Record<string, unknown>;
   },
   allowed: () => boolean = () => true,
@@ -111,15 +132,24 @@ export function requestOwnerApproval(
   ) {
     throw new Error("Invalid application approval.");
   }
+  const inbox = parseInboxApprovalDetails(input.details);
+  const action = typeof payload.action === "string" ? payload.action : undefined;
   const request: OwnerApproval = {
     id: payload.id,
     sessionId: payload.sessionId as string | undefined,
+    ...(action ? { action } : {}),
     title: input.title,
     message: input.message,
     confirmLabel: input.confirmLabel,
     cancelLabel: input.cancelLabel,
     deadline: input.deadline,
-    inbox: parseInboxApprovalDetails(input.details),
+    inbox,
+    remote: isRemoteApproval({
+      action,
+      title: input.title as string,
+      message: input.message as string,
+      details: inbox,
+    }),
   } as OwnerApproval;
   let resolve!: (answer: boolean) => void;
   let reject!: (error: Error) => void;

@@ -8,6 +8,7 @@ import {
   writeAttachmentChunk,
 } from "../attachments/attachments";
 import { measure } from "../diagnostics/perf-metrics";
+import { ownerVoiceActivity } from "../desktop/desktop-voice-activity";
 import { assertDomainAuthority } from "../domains/context";
 import { type SessionQueueAction } from "../domains/sessions/queue-service";
 import { fileRevertGeneration } from "../sessions/session-file-revert";
@@ -513,12 +514,12 @@ export async function handleSessionsRpc(
       break;
     case "sessions.desktopLive": {
       const beat = dependencies.desktop.live.beat(request.params);
+      ownerVoiceActivity.record(request.params.voiceActiveAgeMs);
       dependencies.pushNotifications.desktopPresence(
         String(request.params.clientId ?? "legacy"),
         request.params.userActive === true,
       );
-      // Sequential: an acknowledged command can change the turn that the run
-      // leases below read from the store.
+      // Sequential: an acknowledged command can change the turn the run leases read.
       const durableCommands = await measure("desktopLive.poll", () =>
         dependencies.withinBeat(
           () =>
@@ -528,9 +529,8 @@ export async function handleSessionsRpc(
           [],
         ),
       );
-      // Renew the reported epoch before queued busy bookkeeping can
-      // implicitly reacquire an expired lease with a new epoch.
-      // Otherwise this same heartbeat is falsely answered as lost.
+      // Renew the reported epoch before queued busy bookkeeping can implicitly
+      // reacquire an expired lease with a new epoch (a false "lost" answer).
       const renewedRunLeases = await measure("desktopLive.runLeases", () =>
         dependencies.renewRunLeases(request.params),
       );
@@ -591,6 +591,8 @@ export async function handleSessionsRpc(
         runLeases: renewedRunLeases,
         // Changes another device made that the desktop shows a notice for.
         activity: dependencies.remoteActivity.since(request.params.activitySeq),
+        // Kinds this Host pushes itself; the desktop skips reporting them to the account.
+        hostPush: await dependencies.pushNotifications.ownedEvents().catch(() => undefined),
       };
       break;
     }

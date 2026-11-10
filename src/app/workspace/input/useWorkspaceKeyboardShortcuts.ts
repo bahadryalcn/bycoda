@@ -11,6 +11,7 @@ import {
   zoomOutUiScale,
 } from "../../../features/settings/model/uiScale";
 import { resolveZoomKeybinding } from "../../../features/settings/model/zoomKeybinding";
+import { requestOpenCrewsPage } from "../../../features/crews/model/crewsPage";
 import { installUiScaleWheel } from "../../../features/settings/model/uiScaleWheel";
 import {
   LAYOUT_SHORTCUTS,
@@ -335,6 +336,7 @@ export function useWorkspaceKeyboardShortcuts({
         else if (shortcut === "App: Open Tasks") run("open_tasks", () => a.onOpenTasks());
         else if (shortcut === "App: Open Automations")
           run("open_automations", () => a.onOpenAutomations());
+        else if (shortcut === "App: Open Crews") run("open_crews", requestOpenCrewsPage);
         return;
       }
     };

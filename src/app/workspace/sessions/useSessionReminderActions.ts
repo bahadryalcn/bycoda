@@ -9,7 +9,8 @@ export interface SessionReminderActionsDeps {
   sessions: Session[];
   sessionsRef: { current: Session[] };
   ensureOpenSession: (sessionId: string) => Promise<Session | null>;
-  onSelectHistorySession: (sessionId: string) => Promise<unknown>;
+  /** The shared notification opener: resolves whether the conversation opened. */
+  openSession: (sessionId: string) => Promise<boolean>;
   setSearchViewOpen: Dispatch<SetStateAction<boolean>>;
   setInboxViewOpen: Dispatch<SetStateAction<boolean>>;
   setNotesViewOpen: Dispatch<SetStateAction<boolean>>;
@@ -27,7 +28,7 @@ export function useSessionReminderActions({
   sessions,
   sessionsRef,
   ensureOpenSession,
-  onSelectHistorySession,
+  openSession,
   setSearchViewOpen,
   setInboxViewOpen,
   setNotesViewOpen,
@@ -42,7 +43,8 @@ export function useSessionReminderActions({
   const openReminderSession = useCallback(
     async (sessionId: string) => {
       const session = await ensureOpenSession(sessionId);
-      if (!session) throw new Error("This conversation is no longer available.");
+      if (!session || !(await openSession(sessionId)))
+        throw new Error("This conversation is no longer available.");
       setSearchViewOpen(false);
       setInboxViewOpen(false);
       setNotesViewOpen(false);
@@ -53,9 +55,8 @@ export function useSessionReminderActions({
       setSidebarTab("sessions", session.cwd);
       setProjectCwd(session.cwd);
       setRecents(await rememberProject(session.cwd));
-      await onSelectHistorySession(sessionId);
     },
-    [ensureOpenSession, onSelectHistorySession],
+    [ensureOpenSession, openSession],
   );
 
   const ensureReminderSessionsSaved = useCallback(async (ids: readonly string[]) => {

@@ -415,6 +415,8 @@ Connect another computer using an SSH forward to the loopback port.`);
   const { HostRunWriters } = await import("./execution/run-writers");
   const runWriters = new HostRunWriters();
   const { McpHub } = await import("./mcp/hub/hub");
+  const { memberMcpHub } = await import("./mcp/hub/member-hub");
+  const { crewMcpServers } = await import("./crews/crew-native-tools");
   const mcpHub = new McpHub({
     dataDir: dirname(store.attachmentDir),
     projectCwd: async (id) => (await store.project(id).catch(() => undefined))?.cwd,
@@ -425,7 +427,14 @@ Connect another computer using an SSH forward to the loopback port.`);
     undefined,
     runWriters,
     undefined,
-    mcpHub,
+    memberMcpHub(mcpHub, async (sessionId) => {
+      // Only a session this Host does not know (desktop-owned) is unrestricted.
+      const found = await store.session(sessionId).catch((error: unknown) => {
+        if (error instanceof Error && /not found/i.test(error.message)) return undefined;
+        throw error;
+      });
+      return crewMcpServers(found?.session.modelSettings);
+    }),
   );
   let cleanup = async () => {
     rmSync(statePath, { force: true });

@@ -14,14 +14,11 @@ import {
 import { saveAutosave } from "../../../features/settings/model/settings";
 import { openFindInActiveEditor } from "../../../features/files/editor/editorFindBridge";
 import { openUsageGuide } from "../../../features/onboarding/model/usageGuide";
-import {
-  BACKGROUND_NOTIFICATION_TARGETS,
-  NOTIFICATION_CLICK_EVENT,
-} from "../../../features/notifications/model/notifications";
+import { NOTIFICATION_CLICK_EVENT } from "../../../features/notifications/model/notifications";
 import { isLeadWindow } from "../../../features/notifications/hooks/useBackgroundNotifications";
-import { requestSummaryPanel } from "../../../features/tasks/model/dailySummaryClient";
 import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
 import { restoreWindowFocus } from "../../model/windowFocus";
+import { backgroundTargetAction, OPEN_BACKGROUND_TARGET_EVENT } from "./backgroundTargets";
 import { runUpdateFlow } from "../../model/updater";
 import type { WorkspaceActions, WorkspaceRun } from "./useWorkspaceActions";
 
@@ -106,26 +103,10 @@ export function useNativeMenuEvents({ actions, run }: NativeMenuEventDeps): void
       listenWindow("open_model_picker", () => {
         window.dispatchEvent(new Event("open_model_picker"));
       }),
-      // Every window hears the click; only the one holding the session acts.
+      // Every window hears the click. The window holding the session acts; the
+      // lead window also acts so a session no window holds is still opened.
       listenWindow<string>(NOTIFICATION_CLICK_EVENT, ({ payload: sessionId }) => {
-        const background =
-          sessionId === BACKGROUND_NOTIFICATION_TARGETS.tasks
-            ? actions.current.onOpenTasks
-            : sessionId === BACKGROUND_NOTIFICATION_TARGETS.automations
-              ? actions.current.onOpenAutomations
-              : sessionId === BACKGROUND_NOTIFICATION_TARGETS.summary
-                ? () => {
-                    requestSummaryPanel();
-                    actions.current.onOpenTasks();
-                  }
-                : sessionId === BACKGROUND_NOTIFICATION_TARGETS.assistant
-                  ? () =>
-                      window.dispatchEvent(
-                        new CustomEvent("bycoda:open-assistant", { detail: { tab: "today" } }),
-                      )
-                  : sessionId === BACKGROUND_NOTIFICATION_TARGETS.account
-                    ? () => actions.current.openSettings("account")
-                    : null;
+        const background = backgroundTargetAction(sessionId, actions.current);
         if (background) {
           // Background work is not held by a window: the one that announced
           // it answers the click.
@@ -139,14 +120,29 @@ export function useNativeMenuEvents({ actions, run }: NativeMenuEventDeps): void
           });
           return;
         }
-        if (!sessionsRef.current.some((s) => s.id === sessionId)) return;
-        const win = getCurrentWindow();
-        // Windows leaves a minimized window minimized when it is only focused.
-        void restoreWindowFocus(win).catch((error) => {
-          console.warn("App operation failed", error);
-        });
-        actions.current.onOpenApprovalSession(sessionId);
+        const open = () => {
+          const win = getCurrentWindow();
+          // Windows leaves a minimized window minimized when it is only focused.
+          void restoreWindowFocus(win).catch((error) => {
+            console.warn("App operation failed", error);
+          });
+          void actions.current.onOpenApprovalSession(sessionId);
+        };
+        if (sessionsRef.current.some((s) => s.id === sessionId)) open();
+        else
+          void isLeadWindow().then((lead) => {
+            if (lead) open();
+          });
       }),
+      // The notification history opens a background target without a banner click.
+      (() => {
+        const open = (event: Event) => {
+          const target = (event as CustomEvent<string>).detail;
+          backgroundTargetAction(target, actions.current)?.();
+        };
+        window.addEventListener(OPEN_BACKGROUND_TARGET_EVENT, open);
+        return () => window.removeEventListener(OPEN_BACKGROUND_TARGET_EVENT, open);
+      })(),
       listenWindow("zoom_in", () => {
         const next = zoomInUiScale(loadUiScale());
         saveUiScale(next);

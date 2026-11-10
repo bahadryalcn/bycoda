@@ -1,4 +1,5 @@
 import { assistantJobProjectIds } from "../../../src/shared/model/assistantProjects";
+import { isoTimestamp } from "../../../src/shared/lib/time/timestamps";
 import { AssistantModelsHeldError } from "../models/assistant-model-execution";
 
 export type AssistantModelHold = { held: "limits" | "noRow"; nextResetAt?: number; at: number };
@@ -46,9 +47,9 @@ export function modelHoldNotification(
     title: job.title,
     body:
       hold.held === "limits"
-        ? hold.nextResetAt === undefined
+        ? isoTimestamp(hold.nextResetAt) === undefined
           ? "All models in the pool are at their limit."
-          : `All models in the pool are at their limit until ${new Date(hold.nextResetAt).toISOString()}.`
+          : `All models in the pool are at their limit until ${isoTimestamp(hold.nextResetAt)}.`
         : "No model in the pool can run this job.",
   };
 }

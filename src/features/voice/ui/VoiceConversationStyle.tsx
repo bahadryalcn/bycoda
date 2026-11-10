@@ -160,6 +160,35 @@ export function VoiceConversationStyle({
           onChange={(value) => change({ idleSleepMinutes: Number(value) })}
         />
       </Row>
+      <Row
+        id="voice-return-call"
+        label={t("Call me when I return")}
+        description={t(
+          "When you come back, the assistant speaks first and the microphone opens briefly. If you don't answer, it closes and you are notified.",
+        )}
+      >
+        <Toggle
+          label={t("Call me when I return")}
+          on={settings.returnCall === true}
+          onChange={(returnCall) => change({ returnCall })}
+        />
+      </Row>
+      {settings.returnCall === true && (
+        <Row id="voice-return-call-seconds" label={t("Listen for after calling")}>
+          <Select
+            hideLabel
+            label={t("Listen for after calling")}
+            value={String(settings.returnCallSeconds ?? 20)}
+            options={[...new Set([5, 10, 20, 30, 60, 120, settings.returnCallSeconds ?? 20])]
+              .sort((a, b) => a - b)
+              .map((seconds) => ({
+                value: String(seconds),
+                label: t("{p0} seconds", { p0: seconds }),
+              }))}
+            onChange={(value) => change({ returnCallSeconds: Number(value) })}
+          />
+        </Row>
+      )}
     </Group>
   );
 }

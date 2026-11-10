@@ -20,6 +20,7 @@ import {
   safeRelative,
   digest,
   packageFile,
+  restoreEmptyPayloadFiles,
 } from "./package-manifest.mjs";
 const sha = "a".repeat(40);
 function fixture(t, channel = "stable", { external = false, beforeCreate } = {}) {
@@ -318,4 +319,28 @@ test("runtime payload may hold empty files while named artifacts may not", (t) =
   assert.equal(packageFile(root, ".npmrc", "appPayload").bytes, 0);
   assert.throws(() => packageFile(root, ".npmrc", "installer"), /bounded regular file/);
   assert.throws(() => packageFile(root, ".npmrc"), /bounded regular file/);
+});
+
+test("only empty payload files dropped by the artifact upload are recreated", (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "bycoda-package-restore-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const empty = digest(Buffer.alloc(0));
+  restoreEmptyPayloadFiles(
+    {
+      files: [
+        { path: "host/npm/.npmrc", bytes: 0, sha256: empty, role: "hostPayload" },
+        { path: "launcher.exe", bytes: 0, sha256: empty, role: "launcher" },
+        {
+          path: "host/lost.js",
+          bytes: 4,
+          sha256: digest(Buffer.from("lost")),
+          role: "hostPayload",
+        },
+      ],
+    },
+    root,
+  );
+  assert.equal(packageFile(root, "host/npm/.npmrc", "hostPayload").bytes, 0);
+  assert.throws(() => packageFile(root, "launcher.exe", "launcher"));
+  assert.throws(() => packageFile(root, "host/lost.js", "hostPayload"));
 });

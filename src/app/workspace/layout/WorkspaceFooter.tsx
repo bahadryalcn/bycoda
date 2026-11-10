@@ -10,6 +10,7 @@ import { HiddenDictationIndicator } from "../../../features/voice/ui/HiddenDicta
 import { UsageFooter } from "../../shell/UsageFooter";
 import { WorkspaceControls } from "../../shell/WorkspaceControls";
 import { t } from "../../../shared/i18n";
+import { requestBackgroundTarget } from "../input/backgroundTargets";
 import type { WorkspaceNoticesProps } from "./WorkspaceNotices";
 
 type UsageFooterProps = ComponentProps<typeof UsageFooter>;
@@ -146,6 +147,7 @@ function WorkspaceFooterComponent({
           popupNotices={hiddenApprovalToasts}
           onFocusSession={onOpenApprovalSession}
           onOpenHistorySession={onOpenApprovalSession}
+          onOpenBackground={requestBackgroundTarget}
           onOpenSettings={() => openSettings("notifications", "notifications")}
           onApproval={onApproval}
         />

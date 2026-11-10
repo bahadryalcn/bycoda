@@ -28,6 +28,7 @@ mod desktop_control_page;
 mod desktop_control_window;
 mod desktop_inbox_review;
 mod desktop_shortcut;
+mod desktop_talk_shortcut;
 mod diagnostics;
 mod external_editor;
 mod file_access;
@@ -1139,6 +1140,7 @@ pub fn run() {
             menu::keybindings_set_overrides,
             native_language::native_language_set,
             desktop_shortcut::desktop_shortcut_configure,
+            desktop_talk_shortcut::desktop_talk_shortcut_configure,
             desktop_control_window::desktop_control_indicator_state,
             assistant_presence::assistant_presence_state,
             assistant_presence::assistant_presence_refresh,

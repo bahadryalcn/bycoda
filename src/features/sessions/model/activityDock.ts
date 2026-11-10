@@ -1,4 +1,5 @@
 import { t } from "../../../shared/i18n";
+import type { CrewMemberChild } from "../../../shared/model/host-contracts/delegation";
 import { hasPendingApproval, type Block, type HarnessId } from "./session";
 import { executionUserIndex } from "./executionTurn";
 import {
@@ -71,6 +72,8 @@ export type DockAgent = {
   /** The provider's id for the call, which is how a stop request finds it. */
   callId?: string;
   name: string;
+  /** The Crew member a delegated child runs; its portrait and @handle replace the generic marks. */
+  crewMember?: CrewMemberChild;
   /** Subagents open onto their own trail; commands only have a row. */
   kind: "agent" | "command";
   /** A delegated child session (cross-provider subagent); its own session id. */

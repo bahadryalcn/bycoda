@@ -5,7 +5,7 @@ Crews connect a coordinator conversation to independently addressable specialist
 ## Ready-made bycoda team
 
 The first owner-side Crew list on each host adds **bycoda Product Team** and
-17 reusable member profiles to **Settings > Agents > Crews**. They are ordinary host-wide
+17 reusable member profiles to the **Crews** page. They are ordinary host-wide
 records: edit their names, instructions, models, groups and working limits, copy
 them into project crews, or delete them. Initialization happens once, including
 on hosts that already contain custom crews. Existing records and run snapshots
@@ -155,13 +155,28 @@ guidance, adapted to this application's scheduler and owner-approval contracts:
 
 ## Find, edit and start a crew
 
-Open **Settings > Agents > Crews**. **Show crews** controls whether the crew
-section appears in the project rail. **Your crews** lists saved definitions with
-scope and member count; choose **Edit**, **Crew work**, or **New crew**. The rail
-also has **New crew**, a start action on each crew, and an options menu containing
-**Open coordinator** when one active run is available, **Crew work**, **Start
-work**, **Edit crew**, **Add members**, **Duplicate**, scope copying and, on a
-compatible host, **Delete crew**.
+Open **Crews** from the compact rail, the command palette (**Open Crews**) or
+Ctrl/Cmd+Shift+E. The page has **Teams**, **Members** and **Work** tabs and a
+**New crew** button.
+
+**Teams** lists saved crews as cards or rows (switch with **Cards** / **List**,
+filter by name). A card shows the crew seated around a table; the props on the
+table show whether the crew is idle, working, needs a decision or is blocked. A
+list row shows the members' faces overlapping, as the project rail does. Each crew
+has **New work**, **Edit** and an options menu containing **Open coordinator** when
+one active run is available, **Crew work**, **New work**, **Edit crew**, **Add
+members**, **Duplicate**, scope copying and, on a compatible host, **Delete crew**.
+
+**Members** is the member library. Each member shows the teams it is in. Use **Add
+to team** or **Remove from team** on a member, or select members and use **Add to
+team…** to add them all to one team. When a change would make a crew invalid, the
+option is disabled and shows the reason; in a bulk add, each skipped member is
+listed with its reason.
+
+**Work** shows the same work management as the **Crew work** dialog, inline on the
+page. The project rail lists the same crews with overlapping member faces and the
+same options menu. **Settings > Agents > Crews** keeps **Show crews** for the rail
+and an **Open Crews** button.
 
 The editor is one page. Give the crew a name, and choose **This project** or
 **All projects** when creating it; All projects means projects on the same host.
@@ -184,6 +199,18 @@ a starter team. Unfinished additions are kept when you go back and return, until
 you add them or choose **Discard draft**. A valid crew has one coordinator, one
 reviewer, at least one specialist and at most 20 members.
 
+Every member has a pixel avatar drawn from its library profile, so copies of the
+same profile look alike. Avatars follow the ambient scene theme: Classic draws the
+member as an uncle (amca) character, Star Wars as a protocol droid, Lord of the
+Rings as an Ent and Matrix as an agent. The saved look does not change; only its
+drawing does. On hosts that support crew identity, the expanded member
+also has a **Handle** field and an **Appearance** picker. The handle is optional
+and written as `@name`: lowercase letters, digits and hyphens, up to 24 characters,
+unique among library members you can see together and unique within the crew.
+**Appearance** sets headwear, face, glasses, outfit, colors and accessory, with a
+live preview; **Shuffle** picks a random complete look and **Reset** returns to the
+look drawn from the profile.
+
 Automatic selection uses a searchable allowed-model list with owner cost and
 quality ratings. Groups help find library members and require a host that
 supports member groups. Inspecting capabilities does not establish verified
@@ -193,8 +220,9 @@ runtime access.
 unrated cost), automatic ranking (**Economy**, **Balanced**, **Quality**),
 execution limits (**Members working at once** 1–4, **Assignments per work** 1–20,
 **Minutes per assignment** 1–240), appearance and copy/delete. Cost is a relative
-owner rating, not money. Appearance and rail visibility are device-local and
-saved on this device right away.
+owner rating, not money. On hosts that support crew identity, the crew's icon and
+color are saved with the crew and shown on every device; older hosts keep them on
+this device. **Show crews** for the rail is always a setting of this device.
 
 A saved crew saves itself shortly after each valid change; the footer shows
 **Saving…** or **All changes saved**, or the error with **Retry**. An invalid crew
@@ -218,13 +246,37 @@ another one.
 
 ## Member library and copies
 
-The Settings page's **Member library** offers **New member**, search, group
+The **Members** tab of the Crews page offers **New member**, search, group
 filtering and member editing. Search matches the name, responsibility, model
 summary, candidate models, groups and instructions. When picking members to add,
 the picked members stay listed above the results, including those the current
-search or group hides, with **Clear selection** and **Clear filters**. Save a crew member to the library or explicitly
-update its source profile. Crews hold independent copies: a library edit reaches
-a crew only through an explicit update there. Group rename/delete updates the
+search or group hides, with **Clear selection** and **Clear filters**. Save a crew
+member to the library to reuse it.
+
+A member added from the library stays linked to that profile and shows a
+**Library** badge. Editing the profile updates every crew that uses it, unless the
+member was customized in that crew. Changing a member inside a crew marks it
+**Customized** when the result differs from the profile, and a customized member
+then keeps its own copy. In the member's details, **Use library version** copies
+the profile back into the crew and **Edit library profile** opens the profile
+itself. When the profile has changed since the member was added, **Update from
+library** copies it into that crew. Deleting a library profile keeps the copies in crews, which are no
+longer linked. Work that is already running keeps its team snapshot. On hosts
+without linked members, crews hold independent copies and a library edit reaches a
+crew only through an explicit update there.
+
+A member can have **Tools**: Read-only, Code (the default), Design, Browser or Custom. A profile only
+narrows what that member's sessions can use; it never goes beyond the run's access mode or the
+owner approvals, and work already running keeps the profile it started with. The Host blocks Host
+tools outside the profile with a clear error. Read-only, Design and Browser also remove the
+provider's own file-edit and shell tools: Claude loses them and Codex runs in a read-only sandbox;
+any other provider refuses to start the member ("<provider> cannot run read-only members") instead
+of running it with write tools. Custom leaves provider tools as the run's access mode allows. On
+Custom, the MCP server list keeps only those servers for Claude, Codex and OpenCode (other providers
+refuse the member), and the skill list disables every other skill (Claude blocks them at launch;
+other providers are told not to use them). The control needs a host that supports tool profiles.
+
+Group rename/delete updates the
 profiles, not the members' existence; deleting a group keeps the members. These
 controls are hidden on hosts without group support. Select library profiles (or
 none, for all shown) and use the bulk bar to give them one model and its options;
@@ -279,8 +331,8 @@ work** follow below. While an action runs its name stays beside the controls
 
 **Advanced** groups model rules, execution limits, appearance and copy/delete.
 Opening it shows the model rules (cost, quality, unrated models, automatic
-ranking) beside the limits, with any blocked or narrowed warning above them. Settings belong to the crew and apply to work you start afterwards;
-appearance is saved on this device right away.
+ranking) beside the limits, with any blocked or narrowed warning above them. Settings belong to the crew and apply to work you start afterwards; appearance is
+saved the same way as in the editor.
 
 ## Model evidence, coordination and review
 

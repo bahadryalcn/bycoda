@@ -105,6 +105,7 @@ describe("resolveAppShortcut", () => {
     ["App: Open Notes", "l"],
     ["App: Open Tasks", "y"],
     ["App: Open Automations", "u"],
+    ["App: Open Crews", "e"],
   ])("opens %s and honours rebinding, disabling and IME", (command, letter) => {
     const chord = key({
       key: letter,

@@ -1,5 +1,20 @@
 import { nativeRun, type DesktopRunner } from "./desktop-control-runner";
 export type { DesktopRunner } from "./desktop-control-runner";
+import {
+  SNAPSHOT_PAGE_DEFAULT_CHARS,
+  pageSnapshotText,
+  parseSnapshotCursor,
+  renderSnapshotTree,
+  findResultSchema,
+  findFilterArgs,
+  parseScreenshotImage,
+  observedSnapshotSchema,
+} from "./desktop-snapshot-pages";
+import {
+  desktopActArgs,
+  isPhysicalOnlyDesktopAction,
+  validateDesktopAct,
+} from "./desktop-act-command";
 import { DesktopStatusChanges } from "./desktop-status-changes";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
@@ -8,12 +23,12 @@ import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { z } from "zod";
 import type { HostStore } from "../store";
 import { desktopOperationAuditId, type DesktopOperationAudit } from "./desktop-control-audit";
+import { isDesktopAppAllowed, normalizeDesktopConfiguration } from "./desktop-control-permission";
 import {
   AGENT_DESKTOP_PROTOCOL,
   AGENT_DESKTOP_UPSTREAM_REF,
   DesktopControlRequestValidationSchema,
   DesktopControlResponseSchema,
-  isForbiddenDesktopShortcut,
   type DesktopControlConfiguration,
   type DesktopControlOperation,
   type DesktopControlRequest,
@@ -57,6 +72,9 @@ type Snapshot = {
   owner: string;
   configurationVersion: number;
   createdAt: number;
+  complete?: boolean;
+  /** Rendered tree for paged reads; absent for find results. */
+  text?: string;
 };
 type Receipt = {
   fingerprint: string;
@@ -64,14 +82,6 @@ type Receipt = {
   audits?: { event: DesktopOperationAudit; delivered: boolean }[];
   auditPending?: boolean;
   auditAttempts?: number;
-};
-const empty: DesktopControlConfiguration = {
-  enabled: false,
-  binaryPath: "",
-  binarySha256: "",
-  allowedApps: [],
-  allowPhysicalInput: false,
-  version: 0,
 };
 
 /** Optional CLI adapter. The binary is never installed or downloaded here.
@@ -333,7 +343,13 @@ export class HostDesktopControl {
     const row = await this.store.db
       .prepare("SELECT value FROM desktop_control_configuration WHERE id=1")
       .get();
-    return row ? (JSON.parse(row.value) as DesktopControlConfiguration) : { ...empty };
+    return normalizeDesktopConfiguration(row ? JSON.parse(row.value) : {});
+  }
+  /** Owner-set permission mode for the conversation gate; never writable through this call. */
+  async permission() {
+    await this.ready;
+    const { permissionMode } = await this.configuration();
+    return { mode: permissionMode };
   }
   private async binary(configuration: DesktopControlConfiguration) {
     if (
@@ -487,7 +503,7 @@ export class HostDesktopControl {
     app: string,
     principal: DesktopControlPrincipal,
   ) {
-    if (!configuration.allowedApps.includes(app))
+    if (!isDesktopAppAllowed(configuration, app))
       throw new Error("The app is outside the owner's desktop allowlist.");
     const data = this.requireData(
       await this.invoke(configuration, ["list-apps", "--app", app], principal),
@@ -523,7 +539,7 @@ export class HostDesktopControl {
       if (
         input.app.startsWith("-") ||
         hasControlCharacters(input.app, false) ||
-        !configuration.allowedApps.includes(input.app)
+        !isDesktopAppAllowed(configuration, input.app)
       )
         throw new Error("The app is outside the owner's desktop allowlist.");
     } else {
@@ -552,6 +568,7 @@ export class HostDesktopControl {
       app,
       action,
       headed: false,
+      permissionMode: configuration.permissionMode,
       operation: {
         requestId: value.requestId,
         state: value.state,
@@ -652,6 +669,74 @@ export class HostDesktopControl {
       this.scheduleAuditDrain();
     }
   }
+  private liveSnapshot(
+    input: { snapshotId: string; ref: string },
+    configuration: DesktopControlConfiguration,
+    principal: DesktopControlPrincipal,
+    message: string,
+  ) {
+    const snapshot = this.snapshots.get(input.snapshotId);
+    if (
+      !snapshot ||
+      snapshot.owner !== principal.id ||
+      snapshot.configurationVersion !== configuration.version ||
+      this.now() - snapshot.createdAt > 5 * 60000 ||
+      !snapshot.refs.has(input.ref)
+    )
+      throw new Error(message);
+    return snapshot;
+  }
+  private snapshotPage(stored: Snapshot, offset: number, maxChars = SNAPSHOT_PAGE_DEFAULT_CHARS) {
+    const { page, ...paging } = pageSnapshotText(stored.text!, stored.id, offset, maxChars);
+    const { id: snapshotId, app, windowId } = stored;
+    return {
+      snapshotId,
+      app,
+      windowId,
+      complete: stored.complete ?? true,
+      treeJson: page,
+      ...paging,
+    };
+  }
+  private async observe(
+    configuration: DesktopControlConfiguration,
+    input: { app: string; windowId?: string; maxChars?: number },
+    principal: DesktopControlPrincipal,
+  ) {
+    const pid = await this.appProcess(configuration, input.app, principal);
+    const args = [
+      "snapshot",
+      "--app",
+      input.app,
+      "-i",
+      "--compact",
+      "--timeout-ms",
+      "10000",
+      ...(input.windowId ? [`--window-id=${input.windowId}`] : []),
+    ];
+    const data = this.requireData(await this.invoke(configuration, args, principal));
+    const observed = observedSnapshotSchema.parse(data);
+    if (observed.app !== input.app || (input.windowId && observed.window.id !== input.windowId))
+      throw new Error("Desktop observation resolved to a different app or window.");
+    if (JSON.stringify(observed.tree).length > 500000)
+      throw new Error("Desktop snapshot is too large; narrow the target window.");
+    const { text, refs } = renderSnapshotTree(observed.tree, observed.snapshot_id);
+    if (this.snapshots.size >= 100) this.snapshots.delete(this.snapshots.keys().next().value!);
+    const stored: Snapshot = {
+      id: observed.snapshot_id,
+      app: input.app,
+      pid,
+      windowId: observed.window.id,
+      refs,
+      owner: principal.id,
+      configurationVersion: configuration.version,
+      createdAt: this.now(),
+      complete: observed.complete,
+      text,
+    };
+    this.snapshots.set(stored.id, stored);
+    return this.snapshotPage(stored, 0, input.maxChars);
+  }
   private async dispatch(
     input: DesktopControlRequest,
     principal: DesktopControlPrincipal,
@@ -702,11 +787,11 @@ export class HostDesktopControl {
               !input.configuration.binaryPath.toLowerCase().endsWith(".exe")))
         )
           throw new Error("Choose an absolute native executable path.");
-        const next = {
+        const next = normalizeDesktopConfiguration({
           ...input.configuration,
           allowedApps: [...new Set(input.configuration.allowedApps)],
           version: configuration.version + 1,
-        };
+        });
         if (next.enabled) await this.binary(next);
         await this.store.transaction(async () => {
           const current = await this.configuration();
@@ -782,28 +867,7 @@ export class HostDesktopControl {
             principal,
           ),
         );
-        const image = z
-          .object({
-            data: z.string().max(6 * 1024 * 1024),
-            format: z.literal("png"),
-            width: z.number().int().positive().max(16384),
-            height: z.number().int().positive().max(16384),
-          })
-          .parse(data);
-        if (image.width * image.height > 64_000_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(image.data))
-          throw new Error("The desktop screenshot is invalid or oversized.");
-        const bytes = Buffer.from(image.data, "base64");
-        if (
-          bytes.length < 33 ||
-          bytes.length > 4 * 1024 * 1024 ||
-          !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
-          bytes.readUInt32BE(8) !== 13 ||
-          bytes.toString("ascii", 12, 16) !== "IHDR" ||
-          bytes.readUInt32BE(16) !== image.width ||
-          bytes.readUInt32BE(20) !== image.height ||
-          bytes.toString("base64") !== image.data
-        )
-          throw new Error("The desktop screenshot is not a bounded PNG.");
+        const image = parseScreenshotImage(data);
         await this.window(configuration, input.app, input.windowId, principal, pid);
         return {
           screenshot: {
@@ -819,15 +883,6 @@ export class HostDesktopControl {
       case "find": {
         const pid = await this.appProcess(configuration, input.app, principal);
         await this.window(configuration, input.app, input.windowId, principal, pid);
-        const filters = Object.entries(input.query).flatMap(([key, value]) =>
-          key === "exact"
-            ? value
-              ? ["--exact"]
-              : []
-            : typeof value === "string"
-              ? [`--${key}=${value}`]
-              : [],
-        );
         const data = this.requireData(
           await this.invoke(
             configuration,
@@ -839,29 +894,12 @@ export class HostDesktopControl {
               "50",
               "--timeout-ms",
               "5000",
-              ...filters,
+              ...findFilterArgs(input.query),
             ],
             principal,
           ),
         );
-        const found = z
-          .object({
-            snapshot_id: z.string().min(1).max(100).optional(),
-            matches: z
-              .array(
-                z.object({
-                  ref_id: z.string().max(200).nullable(),
-                  role: z.string().max(200),
-                  name: z.string().max(4000).optional(),
-                  value: z.string().max(16000).nullable(),
-                  states: z.array(z.string().max(200)).max(100),
-                  interactive: z.boolean(),
-                }),
-              )
-              .max(50),
-            truncated: z.boolean(),
-          })
-          .parse(data);
+        const found = findResultSchema.parse(data);
         await this.window(configuration, input.app, input.windowId, principal, pid);
         if (!found.snapshot_id) return { dataJson: JSON.stringify(found) };
         const refs = new Set(
@@ -896,15 +934,12 @@ export class HostDesktopControl {
         };
       }
       case "wait": {
-        const snapshot = this.snapshots.get(input.snapshotId);
-        if (
-          !snapshot ||
-          snapshot.owner !== principal.id ||
-          snapshot.configurationVersion !== configuration.version ||
-          this.now() - snapshot.createdAt > 5 * 60000 ||
-          !snapshot.refs.has(input.ref)
-        )
-          throw new Error("A current desktop ref from this caller is required for waiting.");
+        const snapshot = this.liveSnapshot(
+          input,
+          configuration,
+          principal,
+          "A current desktop ref from this caller is required for waiting.",
+        );
         await this.window(configuration, snapshot.app, snapshot.windowId, principal, snapshot.pid);
         const data = this.requireData(
           await this.invoke(
@@ -924,66 +959,20 @@ export class HostDesktopControl {
         return { dataJson: JSON.stringify(data) };
       }
       case "snapshot": {
-        const pid = await this.appProcess(configuration, input.app, principal);
-        const args = [
-          "snapshot",
-          "--app",
-          input.app,
-          "-i",
-          "--compact",
-          "--timeout-ms",
-          "10000",
-          ...(input.windowId ? [`--window-id=${input.windowId}`] : []),
-        ];
-        const data = this.requireData(await this.invoke(configuration, args, principal));
-        const observed = z
-          .object({
-            app: z.string(),
-            window: z.object({ id: z.string() }),
-            snapshot_id: z.string().max(100),
-            complete: z.boolean(),
-            tree: z.unknown(),
-          })
-          .parse(data);
-        if (observed.app !== input.app || (input.windowId && observed.window.id !== input.windowId))
-          throw new Error("Desktop observation resolved to a different app or window.");
-        const treeJson = JSON.stringify(observed.tree);
-        if (treeJson.length > 500000)
-          throw new Error("Desktop snapshot is too large; narrow the target window.");
-        const refs = new Set<string>();
-        const walk = (node: unknown, depth = 0) => {
-          if (depth > 100) throw new Error("Desktop tree exceeded its depth limit.");
-          if (!node || typeof node !== "object") return;
-          const value = node as { ref_id?: unknown; children?: unknown };
-          if (typeof value.ref_id === "string") {
-            if (!value.ref_id.startsWith(`@${observed.snapshot_id}:`))
-              throw new Error("Snapshot contained a foreign ref.");
-            refs.add(value.ref_id);
-          }
-          if (Array.isArray(value.children))
-            for (const child of value.children) walk(child, depth + 1);
-        };
-        walk(observed.tree);
-        if (this.snapshots.size >= 100) this.snapshots.delete(this.snapshots.keys().next().value!);
-        this.snapshots.set(observed.snapshot_id, {
-          id: observed.snapshot_id,
-          app: input.app,
-          pid,
-          windowId: observed.window.id,
-          refs,
-          owner: principal.id,
-          configurationVersion: configuration.version,
-          createdAt: this.now(),
-        });
-        return {
-          snapshot: {
-            snapshotId: observed.snapshot_id,
-            app: observed.app,
-            windowId: observed.window.id,
-            complete: observed.complete,
-            treeJson,
-          },
-        };
+        if (input.cursor) {
+          const { offset, snapshotId } = parseSnapshotCursor(input.cursor);
+          const stored = this.snapshots.get(snapshotId);
+          if (
+            !stored?.text ||
+            stored.owner !== principal.id ||
+            stored.app !== input.app ||
+            stored.configurationVersion !== configuration.version ||
+            this.now() - stored.createdAt > 5 * 60000
+          )
+            throw new Error("The desktop snapshot cursor is stale or outside this caller.");
+          return { snapshot: this.snapshotPage(stored, offset, input.maxChars) };
+        }
+        return { snapshot: await this.observe(configuration, input, principal) };
       }
       case "act": {
         const receiptId = `${principal.id}:${input.requestId}`;
@@ -998,20 +987,16 @@ export class HostDesktopControl {
           this.scheduleAuditDrain();
           return { operation: receipt.operation };
         }
-        const snapshot = this.snapshots.get(input.snapshotId);
-        if (
-          !snapshot ||
-          snapshot.owner !== principal.id ||
-          snapshot.configurationVersion !== configuration.version ||
-          this.now() - snapshot.createdAt > 5 * 60000 ||
-          !snapshot.refs.has(input.ref)
-        )
-          throw new Error("The desktop ref is stale or outside this caller's observed snapshot.");
+        const snapshot = this.liveSnapshot(
+          input,
+          configuration,
+          principal,
+          "The desktop ref is stale or outside this caller's observed snapshot.",
+        );
         if ((await this.appProcess(configuration, snapshot.app, principal)) !== snapshot.pid)
           throw new Error("The observed app process changed; take a fresh snapshot.");
-        if (input.action === "press" || input.action === "double-click")
-          if (!input.headed)
-            throw new Error("This action requires an explicit physical-input grant.");
+        if (isPhysicalOnlyDesktopAction(input.action) && !input.headed)
+          throw new Error("This action requires an explicit physical-input grant.");
         if (
           input.headed &&
           (!configuration.allowPhysicalInput ||
@@ -1027,20 +1012,7 @@ export class HostDesktopControl {
             ))
         )
           throw new Error("Physical input is not granted for this exact request.");
-        const requiresText = ["set-value", "type", "select", "press"].includes(input.action);
-        if (
-          (requiresText && input.text === undefined) ||
-          (!requiresText && input.text !== undefined)
-        )
-          throw new Error("Desktop action text did not match the selected command.");
-        if (
-          input.action === "press" &&
-          (!input.text ||
-            input.text.length > 100 ||
-            hasControlCharacters(input.text, false) ||
-            isForbiddenDesktopShortcut(input.text))
-        )
-          throw new Error("Invalid scoped keyboard shortcut.");
+        validateDesktopAct(input, snapshot.refs);
         await this.available(configuration, principal);
         let operation: DesktopControlOperation = {
           requestId: input.requestId,
@@ -1056,6 +1028,7 @@ export class HostDesktopControl {
           app: snapshot.app,
           action: input.action,
           headed: input.headed === true,
+          permissionMode: configuration.permissionMode,
           operation: {
             requestId: value.requestId,
             state: value.state,
@@ -1077,19 +1050,7 @@ export class HostDesktopControl {
               .run(receiptId, JSON.stringify(receipt)),
           "critical",
         );
-        const args = [
-          ...(input.headed ? ["--headed"] : []),
-          input.action,
-          "--timeout-ms",
-          "5000",
-          ...(input.action === "press"
-            ? ["--app", snapshot.app, "--window-id", snapshot.windowId]
-            : []),
-          "--",
-          ...(input.action === "press"
-            ? [input.text!]
-            : [input.ref, ...(requiresText ? [input.text!] : [])]),
-        ];
+        const args = desktopActArgs(input, snapshot);
         this.currentAction = { app: snapshot.app, action: input.action };
         this.statusChanged();
         try {
@@ -1126,13 +1087,26 @@ export class HostDesktopControl {
             }, "critical"),
           );
           this.snapshots.delete(input.snapshotId);
+          // Read-only refresh through the snapshot path; never fails the act.
+          const next = await this.observe(
+            configuration,
+            { app: snapshot.app, windowId: snapshot.windowId, maxChars: 20000 },
+            principal,
+          ).catch((error: unknown) => ({
+            error: (error instanceof Error ? error.message : "Desktop refresh failed.").slice(
+              0,
+              300,
+            ),
+          }));
           return {
             operation,
+            refsExpired: true,
+            next,
             dataJson: JSON.stringify(envelope.ok ? envelope.data : { code: envelope.error?.code }),
           };
         } catch {
           this.snapshots.delete(input.snapshotId);
-          return { operation };
+          return { operation, refsExpired: true };
         } finally {
           this.currentAction = undefined;
           this.statusChanged();

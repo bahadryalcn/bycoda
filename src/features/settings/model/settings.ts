@@ -27,7 +27,7 @@ import {
   shortcutTokens,
 } from "../../quick-composer/model/quickComposerShortcut";
 import { readFlag, writeFlag } from "./storageFlags";
-import { DESKTOP_STOP_COMMAND } from "./desktopStopKeybinding";
+import { DESKTOP_STOP_COMMAND, DESKTOP_TALK_ROW, requireGlobal } from "./desktopStopKeybinding";
 import { APPEARANCE_SETTINGS_INDEX } from "./appearanceSettingsIndex";
 import { PRIVACY_SETTINGS_INDEX } from "./privacySettingsIndex";
 import { GENERAL_SETTINGS_INDEX } from "./generalSettingsIndex";
@@ -2196,13 +2196,13 @@ export type KeybindingRow = {
 };
 
 /**
- * Mirrors the bindings we actually handle: the native menu accelerators in
- * `src-tauri/src/menu.rs`, `tabCommand`, the window key handler in App, and
- * focused surface handlers such as the draft composer workspace toggle.
+ * Mirrors the bindings we handle: native menu accelerators (`src-tauri/src/menu.rs`), `tabCommand`,
+ * the window key handler in App and focused surface handlers such as the draft composer toggle.
  */
 export const KEYBINDINGS: KeybindingRow[] = [
   { command: "Voice: Push to Talk", keys: "", when: "Voice connected and microphone paused" },
   { command: "Voice: Open Companion", keys: `${MOD}${SHIFT}K`, when: "Voice companion closed" },
+  DESKTOP_TALK_ROW,
   { command: DESKTOP_STOP_COMMAND, keys: `${CTRL}${IS_MAC ? "⌥" : "Alt+"}Esc`, when: "Anywhere" },
   { command: "App: Settings", keys: `${MOD},`, when: "Always" },
   { command: "App: Search", keys: `${MOD}K`, when: "Always" },
@@ -2215,6 +2215,7 @@ export const KEYBINDINGS: KeybindingRow[] = [
   { command: "App: Open Notes", keys: `${MOD}${SHIFT}L`, when: "Always" },
   { command: "App: Open Tasks", keys: `${MOD}${SHIFT}Y`, when: "Always" },
   { command: "App: Open Automations", keys: `${MOD}${SHIFT}U`, when: "Always" },
+  { command: "App: Open Crews", keys: `${MOD}${SHIFT}E`, when: "Always" },
   ...(IS_MAC
     ? [
         {
@@ -2440,8 +2441,7 @@ function shortcutOwners(): Map<string, string> {
 function validateShortcut(command: string, shortcut: string): string {
   const canonical = canonicalShortcut(shortcut);
   if (!canonical) throw new Error("That combination is not a valid shortcut");
-  if (command === DESKTOP_STOP_COMMAND && !isGlobalShortcut(canonical))
-    throw new Error("Emergency stop needs Command or Control as a global hotkey");
+  requireGlobal(command, isGlobalShortcut(canonical));
   if (command === ACTIVATE_RANGE_COMMAND && !/Digit[1-8]$/.test(canonical)) {
     throw new Error("Tab: Activate 1–8 needs a number key from 1 to 8");
   }

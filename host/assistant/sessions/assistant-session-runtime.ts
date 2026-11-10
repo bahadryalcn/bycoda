@@ -110,7 +110,7 @@ export function assistantSessionRuntime(
         "Assistant receipt metadata notification failed:",
         error instanceof Error ? error.message : String(error),
       ),
-    allowed: () => assistant.supervisionAllowed(),
+    allowed: () => assistant.supervisionAllowed(true),
     nudgeLimit: () => assistant.nudgeLimit(),
     questionsAllowed: () => assistant.routineQuestionsAllowed(),
     onAnswerSubmitted: (input) => assistant.recordSessionAnswer(input),

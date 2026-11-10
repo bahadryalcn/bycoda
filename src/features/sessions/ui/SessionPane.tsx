@@ -152,7 +152,6 @@ import {
 } from "../../projects/public/projectChatBackground";
 import { useProjectBackgroundEffect } from "../../projects/public/useProjectBackgroundEffect";
 import { GradientBlurBackground } from "../../settings/public/GradientBlurBackground";
-import { LiveBackgroundLayer } from "../../settings/public/LiveBackgroundCanvas";
 import {
   loadChatBackgroundPath,
   loadNewThreadBackgroundEffect,
@@ -168,8 +167,12 @@ import {
   sameOptionalSessionIgnoringStreamingText,
   selectSessionById,
   usePaneSession,
-  usePaneSessionBlocks,
 } from "../model/sessionsStore";
+import {
+  LiveSessionBackground,
+  LiveSessionBlocks,
+  streamingReplyLength,
+} from "./LiveSessionBlocks";
 import type { HostSession, RefreshAdoptedSession } from "../../connections";
 import { AdoptedSessionNotice } from "../../connections/public/AdoptedSessionNotice";
 import { remoteOrigin } from "./RemoteOriginMark";
@@ -1679,6 +1682,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 visible={visible}
                 enabled={!remote}
                 fallback={session.blocks}
+                delegatedCards
               >
                 {(liveBlocks) => (
                   <PooledTranscript
@@ -1890,78 +1894,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
     </>
   );
 });
-
-/**
- * The live blocks of a session, for the parts of a pane that follow streamed
- * text. The pane itself renders from a session that ignores that text, so only
- * this component re-renders on a frame. While `enabled` is off it renders
- * `fallback` and does not subscribe.
- */
-function LiveSessionBlocks({
-  sessionId,
-  visible,
-  enabled,
-  fallback,
-  children,
-}: {
-  sessionId: string;
-  visible: boolean;
-  enabled: boolean;
-  fallback: Block[];
-  children: (blocks: Block[]) => ReactNode;
-}) {
-  const live = usePaneSessionBlocks(sessionId, visible, enabled);
-  return <>{children(live ?? fallback)}</>;
-}
-
-/** The animated chat background, driven by the streamed text of the live session. */
-function LiveSessionBackground({
-  sessionId,
-  fallback,
-  follow,
-  active,
-  visible,
-}: {
-  sessionId: string;
-  fallback: Session;
-  /** False for a remote session, whose current state is `fallback`. */
-  follow: boolean;
-  active: boolean;
-  visible: boolean;
-}) {
-  const live = usePaneSession(sessionId, visible);
-  const session = follow ? (live ?? fallback) : fallback;
-  return (
-    <LiveBackgroundLayer
-      active={active}
-      visible={visible}
-      speech={streamingReplyLength(session)}
-      activity={liveTurnActivity(session)}
-    />
-  );
-}
-
-/** Length of the assistant reply currently streaming, or -1 when none is. */
-function streamingReplyLength(session: Session): number {
-  const last = session.blocks[session.blocks.length - 1];
-  return session.busy && last?.role === "assistant" && last.streaming ? last.text.length : -1;
-}
-
-/**
- * Everything the running turn has streamed since the latest user message:
- * reply, reasoning and tool progress. Each step also counts as a short burst,
- * so the live background reacts to tool calls that stream no text. -1 when idle.
- */
-function liveTurnActivity(session: Session): number {
-  if (!session.busy) return -1;
-  let length = 0;
-  for (let i = session.blocks.length - 1; i >= 0; i--) {
-    const block = session.blocks[i];
-    if (block.role === "user") break;
-    length += 12 + block.text.length + (block.tool?.detail?.length ?? 0);
-  }
-  return length;
-}
 
 const LatestTurnAccessory = memo(function LatestTurnAccessory({
   session,

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { t } from "../../../../../shared/i18n";
 import type { AssistantModelPoolRow } from "../../../../../shared/model/assistantModelPool";
 import { ASSISTANT_MODEL_POOL_ROLES } from "../../../../../shared/model/assistantModelPool";
+import { Badge } from "../../../../../shared/ui/Badge";
 import { Button } from "../../../../../shared/ui/Button";
 import { Checkbox } from "../../../../../shared/ui/Checkbox";
 import { InlineError } from "../../../../../shared/ui/InlineError";
@@ -52,6 +53,11 @@ function RowQuota({ row }: { row: AssistantModelPoolRow }) {
     );
   return (
     <p className={styles.quota}>
+      {tight.percent < (row.minRemainingPercent ?? 0) && (
+        <Badge size="xs" tone="warning">
+          {t("Skipped now")}
+        </Badge>
+      )}
       <strong>{t("{p0}% left", { p0: tight.percent })}</strong>
       {tight.resetsAt != null && (
         <Timestamp value={tight.resetsAt} prefix={t("Resets")} className={styles.reset} />

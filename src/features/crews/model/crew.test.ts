@@ -169,3 +169,72 @@ describe("crew access policy", () => {
     expect(() => parse("root")).toThrow("Invalid crew access");
   });
 });
+
+describe("crew identity", () => {
+  const member = (role: "coordinator" | "specialist" | "reviewer", extra = {}) => ({
+    id: role,
+    name: role,
+    role,
+    instructions: "",
+    selection: "fixed",
+    candidates: [
+      { id: "x", harness: "codex", model: "m", modelSettings: {}, capabilities: {}, cost: 1 },
+    ],
+    ...extra,
+  });
+  const parse = (extra: Record<string, unknown> = {}, agentExtra: Record<string, unknown> = {}) =>
+    parseCrewDefinition({
+      id: "c",
+      name: "C",
+      agents: [member("coordinator", agentExtra), member("specialist"), member("reviewer")],
+      policy: defaultCrewPolicy,
+      ...extra,
+    });
+  it("keeps older data without identity fields", () => {
+    const parsed = parse();
+    expect(parsed).not.toHaveProperty("appearance");
+    expect(parsed.agents[0]).not.toHaveProperty("avatar");
+    expect(parsed.agents[0]).not.toHaveProperty("handle");
+  });
+  it("keeps a valid avatar and omits an empty one", () => {
+    const avatar = { headwear: "beret", glasses: false, palette: 5, accessory: "pen" };
+    expect(parse({}, { avatar }).agents[0]!.avatar).toEqual(avatar);
+    expect(parse({}, { avatar: {} }).agents[0]).not.toHaveProperty("avatar");
+  });
+  it.each([
+    { headwear: "crown" },
+    { palette: 6 },
+    { palette: 1.5 },
+    { palette: -1 },
+    { glasses: "yes" },
+    { mood: "happy" },
+  ])("rejects avatar %j", (avatar) => {
+    expect(() => parse({}, { avatar })).toThrow("Invalid member avatar");
+  });
+  it("rejects a non-object avatar", () => {
+    expect(() => parse({}, { avatar: [] })).toThrow("Invalid crew object");
+  });
+  it("normalizes handles and rejects invalid ones", () => {
+    expect(parse({}, { handle: "  Pixel-Lead " }).agents[0]!.handle).toBe("pixel-lead");
+    for (const handle of ["", "-a", "a-", "a b", "@a", "x".repeat(25), 4])
+      expect(() => parse({}, { handle })).toThrow("Invalid member handle");
+  });
+  it("rejects a repeated handle inside one crew only", () => {
+    const agents = [
+      member("coordinator", { handle: "Same" }),
+      member("specialist", { handle: "same" }),
+      member("reviewer"),
+    ];
+    expect(() =>
+      parseCrewDefinition({ id: "c", name: "C", agents, policy: defaultCrewPolicy }),
+    ).toThrow("Duplicate member handles");
+  });
+  it("validates crew appearance and omits an empty one", () => {
+    expect(parse({ appearance: { icon: "no-such-mascot", color: 1 } }).appearance).toEqual({
+      color: 1,
+    });
+    expect(parse({ appearance: { color: 0 } })).not.toHaveProperty("appearance");
+    expect(parse({ appearance: {} })).not.toHaveProperty("appearance");
+    expect(() => parse({ appearance: [] })).toThrow();
+  });
+});

@@ -1225,6 +1225,36 @@ describe("runDesktopLiveTick", () => {
     ).rejects.toThrow();
     expect([...unacked]).toEqual(["x"]);
   });
+
+  it("sets the Host push kinds from a good beat and clears them on a failed or unanswered one", async () => {
+    const hostPush = vi.fn();
+    const deps = {
+      hostPush,
+      sessions: () => [],
+      handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
+      unacked: new Set<string>(),
+      handled: new Set<string>(),
+    };
+    await runDesktopLiveTick({
+      ...deps,
+      request: async () => ({ hostPush: ["task.done"] }),
+    });
+    expect(hostPush).toHaveBeenLastCalledWith(["task.done"]);
+    await expect(
+      runDesktopLiveTick({
+        ...deps,
+        request: async () => {
+          throw new Error("down");
+        },
+      }),
+    ).rejects.toThrow("down");
+    expect(hostPush).toHaveBeenLastCalledWith([]);
+    await runDesktopLiveTick({ ...deps, request: async () => ({ hostPush: ["task.done"] }) });
+    expect(hostPush).toHaveBeenLastCalledWith(["task.done"]);
+    await runDesktopLiveTick({ ...deps, request: async () => ({}) });
+    expect(hostPush).toHaveBeenLastCalledWith([]);
+    expect(hostPush).toHaveBeenCalledTimes(4);
+  });
 });
 
 describe("desktop deletion jobs", () => {

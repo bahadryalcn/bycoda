@@ -18,6 +18,7 @@ import {
   conversationListArguments,
   pageConversationListResult,
 } from "../conversation/conversation-list-page";
+import { crewToolGate } from "../crews/crew-tools";
 import { isManagementAction } from "../conversation/conversation-management-tools";
 import {
   type ConversationPreviewInput,
@@ -35,7 +36,6 @@ import {
   normalizeConversationTaskConfiguration,
 } from "../conversation/conversation-task-tools";
 import {
-  isRoomOnlyConversationAction,
   sessionConversationToolCatalog,
   validateSessionConversationTool,
 } from "../conversation/conversation-tools";
@@ -126,6 +126,7 @@ export async function dispatchConversationTools(
       const action = String(request.params.action ?? "");
       const originalArgs = request.params.input as Record<string, unknown>;
       validateSessionConversationTool(action, originalArgs);
+      const crewAllows = await crewToolGate(dependencies, boundPrincipal, action);
       const args = conversationListArguments(action, originalArgs);
       const scopedDeviceAuthorized = async () => {
         const current = await dependencies.conversationAccess.principalForToken(request.token);
@@ -330,15 +331,13 @@ export async function dispatchConversationTools(
         request.result = {
           environmentId: dependencies.engine.store.environmentId,
           projectId,
-          tools: sessionConversationToolCatalog(),
+          tools: sessionConversationToolCatalog().filter(crewAllows),
         };
       else if (["tools.search", "tools.describe", "tools.status"].includes(action))
         request.result = managedDiscoveryResult(
           action,
           args,
-          managedMcpCatalog().filter(
-            (tool) => tool.group !== "conversation" || !isRoomOnlyConversationAction(tool.action),
-          ),
+          managedMcpCatalog().filter(crewAllows),
         );
       else if (
         action.startsWith("ui.") ||

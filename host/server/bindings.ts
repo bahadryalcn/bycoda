@@ -90,6 +90,7 @@ import { ExternalTunnels } from "../tunnels/tunnels";
 import { VoiceCloudCredentials } from "../voice/voice-cloud-credentials";
 import { LocalVoiceService } from "../voice/voice-local";
 import { VoiceSetupService } from "../voice/voice-setup";
+import type { ApprovalRegistry } from "../approvals/approval-registry";
 import type { PushNotifications } from "../push/push-service";
 import type { PushDeviceStore } from "../push/push-store";
 import { AdoptedChanges } from "../workspaces/adoptedChanges";
@@ -338,6 +339,7 @@ export interface ServerBindings {
   voiceSetup: VoiceSetupService;
   pushDevices: PushDeviceStore;
   pushNotifications: PushNotifications;
+  approvals: ApprovalRegistry;
   decisionModels: DecisionModelsService;
   accountPlatform: AccountPlatformRuntime;
   catalogs: ModelCatalogCache;

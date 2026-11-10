@@ -1,16 +1,29 @@
 import type { HostSessionSummary } from "../../src/features/connections/model/protocol";
+import { ApprovalRegistry } from "../approvals/approval-registry";
+import { AssistantPushLedger } from "../push/push-assistant";
 import { PushNotifications } from "../push/push-service";
 import { PushDeviceStore } from "../push/push-store";
 import type { ServerBindings } from "./bindings";
 
 export function createPushRuntime(
-  dependencies: Pick<ServerBindings, "engine" | "projectSessionList">,
+  dependencies: Pick<ServerBindings, "assistant" | "engine" | "projectSessionList">,
 ) {
   const store = new PushDeviceStore(dependencies.engine.store.db);
   // Lazy DDL on the first push read would count as a data mutation in the middle of a read-only call.
   store.prepare().catch((error) => console.error("Push device table is unavailable:", error));
+  const assistantLedger = new AssistantPushLedger(dependencies.engine.store.db);
+  assistantLedger
+    .prepare()
+    .catch((error) => console.error("Assistant push ledger is unavailable:", error));
+  const approvals = new ApprovalRegistry();
   const pushNotifications = new PushNotifications({
     store,
+    assistantLedger,
+    approvals,
+    assistant: async () => {
+      const assistant = dependencies.assistant;
+      return assistant.notifications(await assistant.profile());
+    },
     environmentId: dependencies.engine.store.environmentId,
     sessions: async () => {
       const projects = await dependencies.engine.store.projects();
@@ -30,5 +43,5 @@ export function createPushRuntime(
     },
   });
   pushNotifications.start();
-  return { pushDevices: store, pushNotifications };
+  return { pushDevices: store, pushNotifications, approvals };
 }

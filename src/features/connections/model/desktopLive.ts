@@ -62,6 +62,8 @@ export type DesktopLivePayload = {
   runLeases?: { sessionId: string; epoch: number }[];
   /** Someone is using this window now; the Host holds phone pushes meanwhile. */
   userActive?: true;
+  /** Age of the owner's last accepted voice speech; the Host counts it as presence for 2 minutes. */
+  voiceActiveAgeMs?: number;
 };
 
 export type DesktopLiveResult = {
@@ -79,6 +81,8 @@ export type DesktopLiveResult = {
   adopted?: { seq: number; ids: string[]; reset?: boolean };
   /** What other devices did through the Host since `activitySeq`; untrusted. */
   activity?: DesktopActivityFeed;
+  /** Event kinds this Host pushes to phones itself; absent from older Hosts. */
+  hostPush?: string[];
   /** Per queue in `queueLeases`: the extended lease, or `null` when it was lost. */
   queueLeases?: Record<string, { holder: string; epoch: number; expiresAt: number } | null>;
   /** Per conversation in `runLeases`: the lease kept, or `null` when another side runs it now. */
@@ -359,6 +363,10 @@ export async function runDesktopLiveTick(deps: {
   now?: () => number;
   clientId?: string;
   userActive?: () => boolean;
+  /** Age of fresh accepted speech to report (throttled by the source), else undefined. */
+  voiceActiveAge?: () => number | undefined;
+  /** Receives the event kinds the Host pushes to phones itself; empty when none, unreachable or failed. */
+  hostPush?: (kinds: readonly string[]) => void;
   controlGuard?: {
     pageToken: () => Promise<string>;
     verify: (token: string) => Promise<void>;
@@ -449,7 +457,9 @@ export async function runDesktopLiveTick(deps: {
   const inboxReplies = [...(deps.inbox?.results.values() ?? [])].slice(0, 2);
   const heldLeases = deps.queueLeases?.held() ?? [];
   const heldRuns = deps.runLeases?.held() ?? [];
+  const voiceActiveAgeMs = deps.voiceActiveAge?.();
   const idle =
+    voiceActiveAgeMs === undefined &&
     live.length === 0 &&
     acked.length === 0 &&
     inboxReplies.length === 0 &&
@@ -483,6 +493,7 @@ export async function runDesktopLiveTick(deps: {
       : {}),
     ...(deps.clientId ? { clientId: deps.clientId } : {}),
     ...(deps.userActive?.() ? { userActive: true as const } : {}),
+    ...(voiceActiveAgeMs !== undefined ? { voiceActiveAgeMs } : {}),
     ...(pageToken ? { pageToken } : {}),
     sessions: live,
     ...(acked.length > 0 ? { acked } : {}),
@@ -504,7 +515,14 @@ export async function runDesktopLiveTick(deps: {
   // The legacy wire has no remote-view occurrence nonce: this closes the local
   // await/replacement race, not an ID-reuse ambiguity in an older remote view.
   const originalApprovals = captureDesktopApprovals(originalSessions, deps.handlers);
-  const result = await deps.request(payload);
+  let result: DesktopLiveResult | undefined;
+  try {
+    result = await deps.request(payload);
+  } catch (error) {
+    // The Host may no longer push these kinds: report them to the account again.
+    deps.hostPush?.([]);
+    throw error;
+  }
   if (deps.beat) {
     deps.beat.directoryFingerprint = directoryFingerprint;
     deps.beat.directoryAck =
@@ -516,6 +534,7 @@ export async function runDesktopLiveTick(deps: {
     deps.beat.directoryResend =
       !!projectDirectory && !payload.projectDirectory && !deps.beat.directoryAck;
   }
+  deps.hostPush?.(result?.hostPush ?? []);
   if (result?.queueLeases) deps.queueLeases?.answered(result.queueLeases);
   // A run lease the host took back: another computer runs this conversation now,
   // so this window stops its turn instead of writing next to it.

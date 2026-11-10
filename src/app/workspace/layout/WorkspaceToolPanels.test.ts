@@ -35,6 +35,7 @@ vi.mock("../surfaces/lazySurfaces", () => {
     SocialView: view,
     TasksView: view,
     ServersView: view,
+    CrewsView: view,
   };
 });
 

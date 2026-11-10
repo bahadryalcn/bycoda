@@ -15,13 +15,9 @@ import {
   type CrewRole,
 } from "../model/crew";
 import { useProjectCrews, type ProjectCrews } from "../model/crewClient";
-import {
-  loadCrewAppearances,
-  saveCrewAppearance,
-  useCrewAppearances,
-  type CrewAppearance,
-} from "../model/crewAppearance";
-import { adoptSaved, applyCandidate, commonCandidate } from "../model/crewBulk";
+import { applyCandidate, commonCandidate } from "../model/crewBulk";
+import { handleErrorsFromHost } from "../model/crewLink";
+import { teamTraits } from "../model/memberAvatars";
 import {
   blankMember,
   rememberCrewDraft,
@@ -50,6 +46,9 @@ import { CrewMemberTable, crewIssueSummary, crewSections } from "./CrewMemberTab
 import { CrewWorkingSettings } from "./CrewWorkingSettings";
 import { useCrewAdditions } from "./useCrewAdditions";
 import { useCrewAutosave } from "./useCrewAutosave";
+import { useCrewRebase } from "./useCrewRebase";
+import { usePageFocus } from "./usePageFocus";
+import { useCrewLook } from "./useCrewLook";
 
 export { emptyCrew };
 
@@ -120,12 +119,8 @@ function ConnectedCrewEditor({
   draftKey: string;
 } & EditorFocus) {
   useLocale();
-  const appearances = useCrewAppearances();
   const [draft, setDraft] = useState<CrewDefinition | null>(() =>
     initialCrewDraft(data, draftKey, { crewId, createScope, copyOf }),
-  );
-  const [draftLook, setDraftLook] = useState<CrewAppearance>(() =>
-    copyOf ? (loadCrewAppearances()[copyOf.crewId] ?? {}) : {},
   );
   const [page, setPage] = useState<Page>(
     initialPage === "add" ? { kind: "add" } : { kind: "team" },
@@ -150,33 +145,23 @@ function ConnectedCrewEditor({
     rememberCrewDraft(draftKey, draft, data.definitions, !!copyOf);
   }, [draftKey, draft, data.definitions, copyOf]);
 
-  // Page switches unmount the focused control: Add members focuses its heading and
-  // returning to the roster focuses the control that opened it.
-  const pageKind = page.kind;
-  const firstPage = useRef(true);
-  useEffect(() => {
-    if (firstPage.current) {
-      firstPage.current = false;
-      if (pageKind !== "add") return;
-    }
-    const root = body.current;
-    if (pageKind === "add")
-      root?.querySelector<HTMLElement>("[data-page-heading]")?.focus({ preventScroll: true });
-    else root?.querySelector<HTMLElement>("[data-crew-add]")?.focus();
-  }, [pageKind]);
+  usePageFocus(page.kind, body);
 
   const latest = data.definitions.find((d) => d.id === draft?.id);
+  useCrewRebase(draft, latest, setDraft);
   const missing = !!draft?.updatedAt && !latest;
   // Only a newer stored version is a conflict. Right after this editor saves, the listed
   // definition can still be the older copy until the crew list refetches.
   const conflict =
     !!draft?.updatedAt && (missing || (!!latest && latest.updatedAt > draft.updatedAt));
   const isNew = !!draft && !draft.updatedAt;
-  const look = draft && !isNew ? (appearances[draft.id] ?? {}) : draftLook;
-  const setLook = (patch: CrewAppearance) =>
-    draft && !isNew
-      ? saveCrewAppearance(draft.id, patch)
-      : setDraftLook((current) => ({ ...current, ...patch }));
+  const looks = useCrewLook({
+    draft,
+    setDraft,
+    isNew,
+    supported: data.identitySupported === true,
+    copyOfId: copyOf?.crewId,
+  });
 
   const issues = draft ? crewRosterIssues(draft) : undefined;
   const policy = policyErrors(draft?.policy ?? defaultCrewPolicy);
@@ -190,13 +175,14 @@ function ConnectedCrewEditor({
     enabled: !conflict && pendingAction !== "delete" && pendingAction !== "save",
     save: (definition) =>
       state.call<CrewDefinition>("crews.save", {
-        definition,
+        definition: looks.outgoing(definition),
         expectedUpdatedAt: definition.updatedAt || undefined,
       }),
     onSaved: (returned, sent) => {
       setDraft((current) =>
-        current?.id === returned.id ? adoptSaved(current, sent, returned) : current,
+        current?.id === returned.id ? looks.adopt(current, sent, returned) : current,
       );
+      looks.saved(sent, returned);
       forgetSentCrewDraft(draftKey, sent);
       setNotice("");
     },
@@ -249,9 +235,9 @@ function ConnectedCrewEditor({
     }
     void act("save", async () => {
       const definition = await state.call<CrewDefinition>("crews.save", {
-        definition: { ...draft, name: draft.name.trim() },
+        definition: looks.forCreate({ ...draft, name: draft.name.trim() }),
       });
-      saveCrewAppearance(definition.id, draftLook);
+      looks.afterCreate(definition);
       forgetCrewDraft(draftKey, draft.id);
       setDraft(definition);
       setShowIssues(false);
@@ -335,10 +321,14 @@ function ConnectedCrewEditor({
         memberScope === "project" ? data.project.id : undefined,
         agent,
       );
-      member(agent.id, { source: { id: saved.id, updatedAt: saved.updatedAt } });
+      member(agent.id, {
+        source: { id: saved.id, updatedAt: saved.updatedAt },
+        customized: undefined,
+      });
       setNotice(t("Saved to member library"));
     });
 
+  const handleErrors = handleErrorsFromHost(autosave.error, draft.agents);
   const sections = crewSections(draft.agents, issues);
   const issueSummary = valid ? "" : crewIssueSummary(sections, issues, policyValid);
   const footerIssue = issueSummary && (showIssues || draft.agents.length) ? issueSummary : "";
@@ -420,7 +410,10 @@ function ConnectedCrewEditor({
         renderDetail={(agent) => (
           <CrewMemberDetail
             cwd={cwd}
+            state={state}
             data={data}
+            traits={teamTraits(draft.agents).get(agent.id)}
+            handleError={handleErrors[agent.id]}
             crewSaved={!!draft.updatedAt}
             policy={draft.policy}
             agent={agent}
@@ -454,12 +447,13 @@ function ConnectedCrewEditor({
         appearance={
           <CrewAppearancePicker
             crewId={draft.id}
-            look={look}
-            onChange={setLook}
+            look={looks.look}
+            onChange={looks.setLook}
             disabled={pending}
           />
         }
-        appearanceSavedNow={!isNew}
+        appearanceSavedNow={!isNew && !data.identitySupported}
+        appearanceOnHost={!isNew && data.identitySupported === true}
         maintenance={
           latest ? (
             <CrewMaintenance
@@ -471,7 +465,7 @@ function ConnectedCrewEditor({
                 autosave
                   .flush()
                   .then(() => {
-                    setDraftLook(loadCrewAppearances()[draft.id] ?? {});
+                    looks.seedFrom(draft.id);
                     setDraft({
                       ...structuredClone(draft),
                       id: crypto.randomUUID(),
@@ -554,7 +548,7 @@ function ConnectedCrewEditor({
           conflict={conflict ? (missing ? "missing" : "changed") : undefined}
           onKeepAsNew={() => {
             forgetCrewDraft(draftKey, draft.id);
-            setDraftLook(loadCrewAppearances()[draft.id] ?? {});
+            looks.seedFrom(draft.id);
             setDraft({ ...draft, id: crypto.randomUUID(), updatedAt: 0 });
           }}
           onLoadLatest={
