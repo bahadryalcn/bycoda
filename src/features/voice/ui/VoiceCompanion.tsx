@@ -10,6 +10,7 @@ import { narrationWanted, retireNarrationOutput } from "../model/voiceNarrationL
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useRef,
   useState,
@@ -21,7 +22,7 @@ import { Button } from "../../../shared/ui/Button";
 import { useOverlay } from "../../../shared/ui/overlay";
 import { GripVertical } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
-import { errorText } from "../../../shared/lib/errors";
+import { voiceError } from "../model/voiceAssistantNotices";
 import { invalidateFeatureHosts } from "../../connections/model/hostFeatureClient";
 import { useVoiceSessionProgress } from "../model/voiceSessionProgress";
 import { VoiceToolActivity, type VoiceToolActivityEntry } from "../model/voiceToolActivity";
@@ -190,11 +191,6 @@ type SpeechTarget = {
 const speechTarget = Symbol("voiceSpeechTarget");
 type CapturedSpeechBinding = SpeechBinding & { [speechTarget]: SpeechTarget };
 
-/** Host RPC rejections arrive as strings; keep their reason instead of a generic fallback. */
-function voiceError(cause: unknown, fallback: string): string {
-  const message = cause == null ? "" : errorText(cause).trim();
-  return t(message && message !== "[object Object]" ? message : fallback);
-}
 export type VoiceCompanionProps = {
   activeId?: string;
   sessions: Session[];
@@ -828,6 +824,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     setDetachingState(value);
   }
   const canDetach = hasNativeWindows();
+  const closeFromEffect = useEffectEvent(close);
   const panel = useRef<HTMLElement>(null);
   const launcher = useRef<HTMLButtonElement>(null);
   const compactToggle = useRef<HTMLButtonElement>(null);
@@ -859,7 +856,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           settings.experimentalSemanticVad === true,
       });
       if (configured === false) {
-        close();
+        closeFromEffect();
         setError(t("Voice settings changed. Reconnect voice to apply."));
       }
     } else client.current?.configureConversation(options);
@@ -992,10 +989,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     threadId: string;
     environmentId: string;
   }>();
+  const managementIdle = status === "idle";
   useEffect(() => {
     let active = true;
     setManagementSource(undefined);
-    if (!managementBinding || managementBinding.remote || status === "idle") return;
+    if (!managementBinding || managementBinding.remote || managementIdle) return;
     void Promise.all([managementBinding.open(), managementBinding.environmentId?.()])
       .then(([history, environmentId]) => {
         if (active && environmentId && managementBinding.current?.() !== false)
@@ -1007,8 +1005,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     return () => {
       active = false;
     };
-  }, [managementBinding, status === "idle"]);
-  const managementCurrent = status !== "idle" && managementBinding?.current?.() !== false;
+  }, [managementBinding, managementIdle]);
+  const managementCurrent = !managementIdle && managementBinding?.current?.() !== false;
   useAssistantControlSource(
     managementCurrent ? managementSource?.threadId : undefined,
     managementCurrent ? managementSource?.environmentId : undefined,
@@ -1050,6 +1048,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     for (const turn of recentTurns.current) turn.text = turn.text.slice(-4000);
   }
   const realtime = settings.mode === "local" ? undefined : REALTIME[settings.mode];
+  const wanted = narrationWanted(assistantSnapshot?.profile);
   useEffect(() => {
     setNarrationGeneration(undefined);
     const runtime = client.current;
@@ -1069,7 +1068,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       () => source,
       async () => {
         if (client.current === runtime) {
-          close();
+          closeFromEffect();
           await narrationClosure.current;
         } else {
           runtime.close();
@@ -1105,7 +1104,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       narration.threadId !== source.threadId ||
       narration.environmentId !== source.environmentId ||
       status !== "live" ||
-      !narrationWanted(assistantSnapshot?.profile) ||
+      !wanted ||
       presence !== "active" ||
       muted ||
       speakerMuted ||
@@ -1198,7 +1197,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     managementSource,
     narrationGeneration,
     status,
-    narrationWanted(assistantSnapshot?.profile),
+    wanted,
     presence,
     muted,
     speakerMuted,
@@ -1515,7 +1514,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   useEffect(() => {
     if (connected.current === connection) return;
     connected.current = connection;
-    close();
+    closeFromEffect();
   }, [connection]);
   function dismiss() {
     close();
@@ -1537,7 +1536,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   }, [open]);
   useEffect(() => {
     // A reloaded page lost the session a floating window was mirroring.
-    if (canDetach) void closeVoiceOverlay().catch(() => undefined);
+    if (hasNativeWindows()) void closeVoiceOverlay().catch(() => undefined);
   }, []);
   useEffect(
     () => () => {
@@ -1548,7 +1547,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       transcriptStore.current?.finish();
       closeVoiceRuntime();
     },
-    [],
+    [reconnect],
   );
   /** `append` continues a streamed reply after the sentences already shown and queued. */
   function voiceDisclosureCurrent() {

@@ -13040,8 +13040,8 @@
   "Setup is finished and the assistant is enabled.": "A configuração foi concluída e o assistente está ativado.",
   "Jobs may start on their own": "As tarefas podem iniciar sozinhas",
   "Report only never starts jobs. Choose Run jobs or Supervise assigned jobs.": "Apenas relatar nunca inicia tarefas. Escolha Executar tarefas ou Supervisionar tarefas atribuídas.",
-  "A worker model is chosen": "Um modelo de trabalho está escolhido",
-  "Jobs run on the first worker model in the list.": "As tarefas são executadas com o primeiro modelo de trabalho da lista.",
+  "A worker model is chosen": "Um modelo dos agentes está escolhido",
+  "Jobs run on the first worker model in the list.": "As tarefas são executadas com o primeiro modelo dos agentes da lista.",
   "Daily token budget is set": "O orçamento diário de tokens está definido",
   "With no budget the assistant cannot run jobs.": "Sem orçamento, o assistente não pode executar tarefas.",
   "Keep this computer awake while working": "Manter este computador acordado durante o trabalho",
@@ -13093,5 +13093,15 @@
   "Listen for after calling": "Ouvir após a chamada",
   "{p0} seconds": "{p0} segundos",
   "Voice: Talk to assistant (global)": "Voz: falar com o assistente (global)",
-  "Anywhere, even when hidden": "Em qualquer lugar, mesmo oculto"
+  "Anywhere, even when hidden": "Em qualquer lugar, mesmo oculto",
+  "Listening for “{p0}” only": "Ouvindo apenas “{p0}”",
+  "Paused: too much background speech": "Pausado: muita fala em segundo plano",
+  "Wake phrase needs the local voice pack": "A frase de ativação precisa do pacote de voz local",
+  "Wake phrase stopped listening. Check the microphone.": "A frase de ativação parou de ouvir. Verifique o microfone.",
+  "Turn off": "Desativar",
+  "Use {p0} to {p1} characters.": "Use de {p0} a {p1} caracteres.",
+  "Wake and sleep phrases": "Frases de ativação e desativação",
+  "Listens on this computer only for your wake phrase, while no conversation is open, and starts Talk when you say it. Your sleep phrase ends the conversation. Audio never leaves this computer before the phrase is heard.": "Ouve sua frase de ativação apenas neste computador, quando nenhuma conversa está aberta, e inicia «Falar» quando você a diz. Sua frase de desativação encerra a conversa. O áudio não sai deste computador antes de a frase ser ouvida.",
+  "Wake phrase": "Frase de ativação",
+  "Sleep phrase": "Frase de desativação"
 }

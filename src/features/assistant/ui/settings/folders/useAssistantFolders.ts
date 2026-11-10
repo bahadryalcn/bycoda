@@ -33,30 +33,37 @@ export function useAssistantFolders(
   const generation = useRef(0);
   const dirty = saved !== null && JSON.stringify(draft) !== JSON.stringify(fromSaved(saved));
 
-  const load = useCallback(async () => {
+  const fetchLatest = useCallback(() => {
     const mine = ++generation.current;
+    return request({ op: "folders.get" })
+      .then((result) => {
+        if (mine !== generation.current) return;
+        if (!result.assistantFolders) throw new Error(t("The folder list could not be read."));
+        setSaved(result.assistantFolders);
+        setDraft(fromSaved(result.assistantFolders));
+        setConflict(false);
+        setError("");
+      })
+      .catch((cause) => {
+        if (mine === generation.current) setLoadError(message(cause));
+      })
+      .finally(() => {
+        if (mine === generation.current) setLoading(false);
+      });
+  }, [request]);
+  const load = useCallback(() => {
     setLoading(true);
     setLoadError("");
-    try {
-      const result = await request({ op: "folders.get" });
-      if (mine !== generation.current) return;
-      if (!result.assistantFolders) throw new Error(t("The folder list could not be read."));
-      setSaved(result.assistantFolders);
-      setDraft(fromSaved(result.assistantFolders));
-      setConflict(false);
-      setError("");
-    } catch (cause) {
-      if (mine === generation.current) setLoadError(message(cause));
-    } finally {
-      if (mine === generation.current) setLoading(false);
-    }
-  }, [request]);
+    return fetchLatest();
+  }, [fetchLatest]);
   useEffect(() => {
-    void load();
+    // The first fetch starts from the initial loading state, so it sets nothing synchronously.
+    void fetchLatest();
+    const owner = generation;
     return () => {
-      generation.current++;
+      owner.current++;
     };
-  }, [load]);
+  }, [fetchLatest]);
 
   const save = useCallback(async () => {
     if (!saved || pending) return;

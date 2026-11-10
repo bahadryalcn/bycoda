@@ -34,30 +34,37 @@ export function useModelPool(
   const generation = useRef(0);
   const dirty = pool !== null && !same(rows, pool.rows);
 
-  const load = useCallback(async () => {
+  const fetchLatest = useCallback(() => {
     const mine = ++generation.current;
+    return request({ op: "models.pool.get" })
+      .then((result) => {
+        if (mine !== generation.current) return;
+        if (!result.modelPool) throw new Error(t("The model list could not be read."));
+        setPool(result.modelPool);
+        setRows(result.modelPool.rows);
+        setConflict(false);
+        setError("");
+      })
+      .catch((cause) => {
+        if (mine === generation.current) setLoadError(message(cause));
+      })
+      .finally(() => {
+        if (mine === generation.current) setLoading(false);
+      });
+  }, [request]);
+  const load = useCallback(() => {
     setLoading(true);
     setLoadError("");
-    try {
-      const result = await request({ op: "models.pool.get" });
-      if (mine !== generation.current) return;
-      if (!result.modelPool) throw new Error(t("The model list could not be read."));
-      setPool(result.modelPool);
-      setRows(result.modelPool.rows);
-      setConflict(false);
-      setError("");
-    } catch (cause) {
-      if (mine === generation.current) setLoadError(message(cause));
-    } finally {
-      if (mine === generation.current) setLoading(false);
-    }
-  }, [request]);
+    return fetchLatest();
+  }, [fetchLatest]);
   useEffect(() => {
-    void load();
+    // The first fetch starts from the initial loading state, so it sets nothing synchronously.
+    void fetchLatest();
+    const owner = generation;
     return () => {
-      generation.current++;
+      owner.current++;
     };
-  }, [load]);
+  }, [fetchLatest]);
 
   const save = useCallback(async () => {
     if (!pool || pending) return;

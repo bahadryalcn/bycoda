@@ -29,6 +29,8 @@ type Input = {
   setPlayback: (active: boolean) => void;
 };
 
+const nowMs = () => Date.now();
+
 function waitFor(done: () => boolean, signal: AbortSignal, maxMs: number): Promise<void> {
   return new Promise((resolve) => {
     const started = Date.now();
@@ -46,7 +48,8 @@ export function useVoiceReturnCall(input: Input) {
   const latest = useRef(input);
   latest.current = input;
   const [notice, setNotice] = useState("");
-  const [pending, setPending] = useState(false);
+  const pending = useRef(false);
+  const [seenStatus, setSeenStatus] = useState(input.status);
   const previous = useRef(input.capturePresence);
   const ownOpen = useRef(false);
   const call = useRef<VoiceReturnCall | null>(null);
@@ -103,31 +106,33 @@ export function useVoiceReturnCall(input: Input) {
             title: latest.current.snapshot?.profile.name || t("Voice"),
             body: text,
             kind: "input",
-            occurredAt: Date.now(),
+            occurredAt: nowMs(),
           }).catch(() => undefined);
         },
       },
       () => voiceReturnCallWindowMs(latest.current.settings.returnCallSeconds),
     );
+  // Clear the missed-call notice when a conversation starts, during render rather than in an effect.
+  if (seenStatus !== input.status) {
+    setSeenStatus(input.status);
+    if (input.status === "connecting" || input.status === "live") setNotice("");
+  }
   useEffect(() => {
     const before = previous.current;
     previous.current = input.capturePresence;
     if ((before === "idle" || before === "away") && input.capturePresence === "active")
-      setPending(true);
-  }, [input.capturePresence]);
-  useEffect(() => {
-    if (!pending || input.status === "sleeping") return;
-    setPending(false);
+      pending.current = true;
+    if (!pending.current || input.status === "sleeping") return;
+    pending.current = false;
     if (input.status !== "ready") return;
     ownOpen.current = false;
     void call.current!.begin();
-  }, [pending, input.status]);
+  }, [input.capturePresence, input.status]);
   useEffect(() => {
     const busy = call.current!.busy;
     // Disconnect, or a manual Talk while the greeting plays, ends the call.
     if (busy && (input.status === "idle" || (input.status !== "ready" && !ownOpen.current)))
       call.current!.cancel();
-    if (input.status === "connecting" || input.status === "live") setNotice("");
   }, [input.status]);
   useEffect(() => {
     if (input.lastAdmittedSpeechAt !== null) call.current!.answered();

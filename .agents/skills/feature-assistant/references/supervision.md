@@ -14,9 +14,9 @@ contracts live in [Room, capture and delivery](room-and-delivery.md).
   provider, cwd, authority generation and original run across awaits. Model args
   cannot create authorship or management stamps.
 
-- Direct Room/voice goals, top-level tasks and crew runs are tracked read-only in 
-  `host/assistant/work/assistant-tracked-work.ts` for done/failed/waiting/stalled notices; 
-  tracking grants no write authority. Jobs autonomy may nudge its own stalled job worker once 
+- Direct Room/voice goals, top-level tasks and crew runs are tracked read-only in
+  `host/assistant/work/assistant-tracked-work.ts` for done/failed/waiting/stalled notices;
+  tracking grants no write authority. Jobs autonomy may nudge its own stalled job worker once
   per stall (the one-time restart gate is `supervisionAllowed(true)`); other supervision stays Chief-only.
 
 - Host PR watches (`host/assistant/work/assistant-pr-watch.ts`, Room tools `pullRequests.assistant*`) read

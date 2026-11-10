@@ -31,7 +31,7 @@ describe("offline model behavior standard", () => {
     }
     expect(
       buildCasePrompt(assistantRuleCases.find((item) => item.id === "assistant-long-pause")!),
-    ).toContain('"manualTurnEnd":true');
+    ).toContain('"manualTurnEnd":false'); // "don't interrupt" waits longer; it never switches to manual turns
     expect(
       buildCasePrompt(
         assistantRuleCases.find((item) => item.id === "assistant-worker-no-rule-promotion")!,

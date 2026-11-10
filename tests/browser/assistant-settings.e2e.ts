@@ -195,7 +195,7 @@ for (const theme of ["light", "dark"])
       // The footer Save also applies the model list draft, with its own version.
       const poolSave = (await requests(page)).find((r) => r.input.op === "models.pool.set");
       expect(poolSave?.input.expectedVersion).toBe(0);
-      expect((poolSave?.input.rows as any[])[0].modelSettings.reasoningEffort).toBe("high");
+      expect(((poolSave?.input.rows ?? []) as any[])[0].modelSettings.reasoningEffort).toBe("high");
       await tab("Personal").click();
       const unsavedAddress = dialog.getByRole("textbox", {
         name: tr("How should I address you?"),

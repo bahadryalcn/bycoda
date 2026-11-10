@@ -12973,7 +12973,7 @@
   "Not in {p0}": "{p0} には参加していません",
   "{p0} is the coordinator of {p1}; choose another coordinator first": "{p0} は {p1} のコーディネーターです。先に別のコーディネーターを選んでください",
   "{p0} is the reviewer of {p1}; choose another reviewer first": "{p0} は {p1} のレビュアーです。先に別のレビュアーを選んでください",
-  "{p0} is the last specialist of {p1}": "{p0} は {p1} 最後のスペシャリストです",
+  "{p0} is the last specialist of {p1}": "{p0} は {p1} の最後のスペシャリストです",
   "Not in a team": "どのチームにも属していません",
   "Teams of {p0}": "{p0} のチーム",
   "Add to team": "チームに追加",
@@ -13093,5 +13093,15 @@
   "Listen for after calling": "呼びかけた後に聞き取る",
   "{p0} seconds": "{p0} 秒",
   "Voice: Talk to assistant (global)": "音声: アシスタントと話す（グローバル）",
-  "Anywhere, even when hidden": "どこでも（非表示時も）"
+  "Anywhere, even when hidden": "どこでも（非表示時も）",
+  "Listening for “{p0}” only": "「{p0}」だけを待機中",
+  "Paused: too much background speech": "一時停止中: 背景の話し声が多すぎます",
+  "Wake phrase needs the local voice pack": "ウェイクフレーズにはローカル音声パックが必要です",
+  "Wake phrase stopped listening. Check the microphone.": "ウェイクフレーズの待機が停止しました。マイクを確認してください。",
+  "Turn off": "オフにする",
+  "Use {p0} to {p1} characters.": "{p0}〜{p1}文字で入力してください。",
+  "Wake and sleep phrases": "ウェイクフレーズとスリープフレーズ",
+  "Listens on this computer only for your wake phrase, while no conversation is open, and starts Talk when you say it. Your sleep phrase ends the conversation. Audio never leaves this computer before the phrase is heard.": "会話が開いていないときに限り、このコンピューター上だけでウェイクフレーズを待ち受け、聞こえたら「話す」を開始します。スリープフレーズで会話を終了します。フレーズが聞き取られるまで、音声がこのコンピューターの外に出ることはありません。",
+  "Wake phrase": "ウェイクフレーズ",
+  "Sleep phrase": "スリープフレーズ"
 }

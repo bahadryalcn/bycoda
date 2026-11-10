@@ -33,7 +33,7 @@ let inputs: { patch: Partial<Hook>; settings: Partial<VoiceSettings> } = {
   patch: {},
   settings: {},
 };
-function Fixture(_: { tick: number }) {
+function Fixture() {
   result = useVoiceReturnCall({
     settings: { returnCall: true, returnCallSeconds: 10, ...inputs.settings } as VoiceSettings,
     snapshot: { profile, presence: { state: "present" } } as never,
@@ -51,10 +51,9 @@ function Fixture(_: { tick: number }) {
   });
   return null;
 }
-let tick = 0;
 function mount(patch: Partial<Hook>, settings: Partial<VoiceSettings> = {}) {
   inputs = { patch, settings };
-  return act(async () => root.render(createElement(Fixture, { tick: ++tick })));
+  return act(async () => root.render(createElement(Fixture)));
 }
 const away = (extra: Partial<Hook> = {}, settings: Partial<VoiceSettings> = {}) =>
   mount({ capturePresence: "away", ...extra }, settings);

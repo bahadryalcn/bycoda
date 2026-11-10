@@ -1,3 +1,5 @@
+import { t } from "../../../shared/i18n";
+import { errorText } from "../../../shared/lib/errors";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 
 /** Interim speech delay: stay quiet for fast turns, reassure on slow multi-step ones. */
@@ -44,4 +46,10 @@ export function observedRequestIds(observations: readonly unknown[]) {
     if (typeof args?.requestId === "string" && args.requestId) ids.add(args.requestId);
   }
   return [...ids];
+}
+
+/** Host RPC rejections arrive as strings; keep their reason instead of a generic fallback. */
+export function voiceError(cause: unknown, fallback: string): string {
+  const message = cause == null ? "" : errorText(cause).trim();
+  return t(message && message !== "[object Object]" ? message : fallback);
 }

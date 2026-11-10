@@ -15,8 +15,8 @@ mod assistant_native_note_baseline;
 mod assistant_notification_owner;
 #[path = "assistant/assistant_observation_publisher.rs"]
 mod assistant_observation_publisher;
-mod owner_approval;
 mod management_actions;
+mod owner_approval;
 #[path = "privacy_account_capture.rs"]
 mod privacy_account_capture;
 #[path = "privacy_scope_capture.rs"]

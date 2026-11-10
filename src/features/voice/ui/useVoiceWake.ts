@@ -55,15 +55,16 @@ export function useVoiceWake({ settings, profile, manualPresence }: Input) {
     manualPresence !== "dnd";
   const armed = settings.wakeEnabled === true && present && !conversationActive && !handoff;
   const language = voiceLanguageCode(profile.language) ?? locale.split("-")[0];
-  const config = voiceRuntimeSettings({ ...settings, natural: false });
-  const configKey = JSON.stringify(config);
+  const configValue = voiceRuntimeSettings({ ...settings, natural: false });
+  const configKey = JSON.stringify(configValue);
   useEffect(() => {
     if (!handoff) return;
     const timer = setTimeout(() => setHandoff(false), HANDOFF_MS);
     return () => clearTimeout(timer);
   }, [handoff]);
   useEffect(() => {
-    if (!armed) return setIndicator(null);
+    if (!armed) return;
+    const config: typeof configValue = JSON.parse(configKey);
     let cancelled = false;
     let listener: WakeListener | undefined;
     const fail = () => !cancelled && setIndicator({ kind: "error" });
@@ -94,6 +95,7 @@ export function useVoiceWake({ settings, profile, manualPresence }: Input) {
     return () => {
       cancelled = true;
       listener?.stop();
+      setIndicator(null);
     };
   }, [armed, wake, language, configKey, settings.microphoneId]);
   return {

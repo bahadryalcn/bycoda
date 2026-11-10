@@ -92,13 +92,13 @@ export function ModelPoolRow({
     (supportsProviderAccounts(row.harness) ? defaultProviderAccountId(row.harness) : "");
   // The draft text keeps "" and partial typing; the row holds the parsed integer.
   const [threshold, setThreshold] = useState(String(row.minRemainingPercent ?? ""));
-  useEffect(() => {
-    setThreshold((current) =>
-      parseThreshold(current) === row.minRemainingPercent
-        ? current
-        : String(row.minRemainingPercent ?? ""),
-    );
-  }, [row.minRemainingPercent]);
+  const [seenPercent, setSeenPercent] = useState(row.minRemainingPercent);
+  if (seenPercent !== row.minRemainingPercent) {
+    // Derived during render: a changed row value replaces the draft text unless it already parses to it.
+    setSeenPercent(row.minRemainingPercent);
+    if (parseThreshold(threshold) !== row.minRemainingPercent)
+      setThreshold(String(row.minRemainingPercent ?? ""));
+  }
   const dragging = sortable.draggingId === row.id;
   return (
     <fieldset

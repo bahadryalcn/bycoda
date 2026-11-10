@@ -13093,5 +13093,15 @@
   "Listen for after calling": "Listen for after calling",
   "{p0} seconds": "{p0} seconds",
   "Voice: Talk to assistant (global)": "Voice: Talk to assistant (global)",
-  "Anywhere, even when hidden": "Anywhere, even when hidden"
+  "Anywhere, even when hidden": "Anywhere, even when hidden",
+  "Listening for “{p0}” only": "Listening for “{p0}” only",
+  "Paused: too much background speech": "Paused: too much background speech",
+  "Wake phrase needs the local voice pack": "Wake phrase needs the local voice pack",
+  "Wake phrase stopped listening. Check the microphone.": "Wake phrase stopped listening. Check the microphone.",
+  "Turn off": "Turn off",
+  "Use {p0} to {p1} characters.": "Use {p0} to {p1} characters.",
+  "Wake and sleep phrases": "Wake and sleep phrases",
+  "Listens on this computer only for your wake phrase, while no conversation is open, and starts Talk when you say it. Your sleep phrase ends the conversation. Audio never leaves this computer before the phrase is heard.": "Listens on this computer only for your wake phrase, while no conversation is open, and starts Talk when you say it. Your sleep phrase ends the conversation. Audio never leaves this computer before the phrase is heard.",
+  "Wake phrase": "Wake phrase",
+  "Sleep phrase": "Sleep phrase"
 }

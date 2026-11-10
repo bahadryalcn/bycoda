@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { SessionProviderSchema, SessionRuntimeModeSchema, ModelSettingsSchema } from "./session-commands";
+import {
+  SessionProviderSchema,
+  SessionRuntimeModeSchema,
+  ModelSettingsSchema,
+} from "./session-commands";
 
 const text = (max: number) => z.string().min(1).max(max);
 

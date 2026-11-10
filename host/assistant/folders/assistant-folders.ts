@@ -67,7 +67,7 @@ export function assertAssistantFolderAllowed(canonical: string, context = defaul
   const p = flavor(platform);
   if (!p.isAbsolute(canonical) || canonical.includes("\0"))
     throw new Error("Choose an absolute local folder.");
-  if (platform === "win32" && /^\\\\/.test(canonical) && !/^\\\\\?\\[a-z]:\\/i.test(canonical))
+  if (platform === "win32" && canonical.startsWith("\\\\") && !/^\\\\\?\\[a-z]:\\/i.test(canonical))
     throw new Error("Network and device paths cannot be Assistant folders.");
   const root = p.parse(canonical).root;
   if (root === canonical || root === `${canonical}${p.sep}`)

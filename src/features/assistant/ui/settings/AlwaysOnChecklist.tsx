@@ -46,9 +46,8 @@ export function AlwaysOnChecklist({
   const [alwaysOn, setAlwaysOn] = useState<AssistantAlwaysOn | null>(null);
   const [loading, setLoading] = useState(true);
   const generation = useRef(0);
-  const load = useCallback(async () => {
+  const fetchLatest = useCallback(async () => {
     const mine = ++generation.current;
-    setLoading(true);
     const [pool, facts] = await Promise.allSettled([
       request({ op: "models.pool.get" }),
       request({ op: "alwaysOn.get" }),
@@ -58,12 +57,18 @@ export function AlwaysOnChecklist({
     setAlwaysOn(facts.status === "fulfilled" ? (facts.value.alwaysOn ?? null) : null);
     setLoading(false);
   }, [request]);
+  const load = useCallback(() => {
+    setLoading(true);
+    return fetchLatest();
+  }, [fetchLatest]);
   useEffect(() => {
-    void load();
+    // The first fetch starts from the initial loading state, so it sets nothing synchronously.
+    void fetchLatest();
+    const owner = generation;
     return () => {
-      generation.current++;
+      owner.current++;
     };
-  }, [load]);
+  }, [fetchLatest]);
   const items = useMemo(
     () =>
       deriveAlwaysOnItems({
