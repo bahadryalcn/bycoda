@@ -431,10 +431,11 @@ mod windows {
         let reader = std::thread::spawn(move || {
             let mut line = String::new();
             BufReader::new(stdout).read_line(&mut line).unwrap();
-            send.send(line).unwrap();
+            let _ = send.send(line);
         });
         assert_eq!(
-            ready.recv_timeout(Duration::from_secs(5)).unwrap().trim(),
+            // Cold PowerShell startup competes with the parallel native suite on CI.
+            ready.recv_timeout(Duration::from_secs(30)).unwrap().trim(),
             "ready"
         );
         reader.join().unwrap();
