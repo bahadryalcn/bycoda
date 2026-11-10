@@ -102,6 +102,7 @@ import { ExplorerSyncStatus } from "./ExplorerSyncStatus";
 import { useRemoteFolderBrowser } from "./useRemoteFolderBrowser";
 import {
   isDirAt,
+  useTreeSelection,
   type Clip,
   type Creating,
   type MenuState,
@@ -292,10 +293,8 @@ function FileTreeInner({
     setSelectedPath(next);
     saveSelected(cwd, next);
   };
-  const [selectedPaths, setSelectedPaths] = useState(
-    () => new Set(selectedPath ? [selectedPath] : []),
-  );
-  const selectionAnchor = useRef(selectedPath);
+  const [selectedPaths, setSelectedPaths, selectionAnchor, setSelectionAnchor] =
+    useTreeSelection(selectedPath);
   const [children, setChildren] = useState<FsEntry[] | null>(() => peekDir(cwd));
   const [error, setError] = useState<string | null>(null);
   const [rootRefreshing, setRootRefreshing] = useState(false);
@@ -381,7 +380,7 @@ function FileTreeInner({
     setSelectedPaths((current) =>
       path === cwd ? new Set() : selectTreePaths(current, path, anchor, visible, modifiers),
     );
-    if (!modifiers.shiftKey) selectionAnchor.current = path;
+    if (!modifiers.shiftKey) setSelectionAnchor(path);
     commitSelectedPath(path);
   };
 

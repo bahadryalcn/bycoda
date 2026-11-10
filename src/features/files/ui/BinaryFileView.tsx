@@ -24,7 +24,7 @@ type Props = { path: string; cwd: string };
 
 type LoadState =
   | { status: "loading" }
-  | { status: "ready"; url: string; mime: string; size: number }
+  | { status: "ready"; path: string; url: string; mime: string; size: number }
   | { status: "unsupported"; size: number }
   | { status: "error"; message: string };
 
@@ -37,10 +37,26 @@ export function BinaryFileView({ path, cwd }: Props) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
 
+  const liveUrl = useRef<string | null>(null);
+  useEffect(
+    () => () => {
+      if (liveUrl.current) URL.revokeObjectURL(liveUrl.current);
+    },
+    [],
+  );
+
   useEffect(() => {
     let cancelled = false;
-    let created: string | null = null;
-    setState({ status: "loading" });
+    // A reload of the same path keeps the current view mounted (zoom and pan stay).
+    setState((current) =>
+      current.status === "ready" && current.path === path ? current : { status: "loading" },
+    );
+    const settle = (next: LoadState) => {
+      const previous = liveUrl.current;
+      liveUrl.current = next.status === "ready" ? next.url : null;
+      setState(next);
+      if (previous) URL.revokeObjectURL(previous);
+    };
 
     readBinaryFile(path).then(
       (bytes) => {
@@ -49,20 +65,20 @@ export function BinaryFileView({ path, cwd }: Props) {
         // named `.png` that holds markup can't become a same-origin document.
         const mime = sniffImageMime(bytes);
         if (!mime) {
-          setState({ status: "unsupported", size: bytes.byteLength });
+          settle({ status: "unsupported", size: bytes.byteLength });
           return;
         }
-        created = URL.createObjectURL(new Blob([bytes], { type: mime }));
-        setState({
+        settle({
           status: "ready",
-          url: created,
+          path,
+          url: URL.createObjectURL(new Blob([bytes], { type: mime })),
           mime,
           size: bytes.byteLength,
         });
       },
       (cause: unknown) => {
         if (cancelled) return;
-        setState({
+        settle({
           status: "error",
           message: cause instanceof Error ? cause.message : String(cause),
         });
@@ -71,7 +87,6 @@ export function BinaryFileView({ path, cwd }: Props) {
 
     return () => {
       cancelled = true;
-      if (created) URL.revokeObjectURL(created);
     };
   }, [path, reloadKey]);
 
@@ -154,7 +169,7 @@ function ImageView({
   const imageRef = useRef<HTMLImageElement>(null);
   const clickTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const imageZoom = useImageZoom(scrollRef, url);
+  const imageZoom = useImageZoom(scrollRef, path);
   const zoom = imageZoom.value.scale;
 
   useEffect(

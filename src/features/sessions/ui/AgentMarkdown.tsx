@@ -8,7 +8,6 @@ import { Alert } from "../../../shared/ui/Alert";
 import { useTransientFlag } from "../../../shared/hooks/useTransientFlag";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { useLocale, useT } from "../../../shared/i18n";
-import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { resolveNoteImagePath } from "../../notes/notes";
 import { openWorkspaceUrl } from "../../connections/public/workspaceUrls";
@@ -47,7 +46,8 @@ import {
 } from "streamdown";
 import type { Pluggable, PluggableList, Plugin } from "unified";
 import { useRenderTrace } from "./useRenderTrace";
-import { ExplorerMenu, type ExplorerMenuItem } from "../../files/public/ExplorerMenu";
+import { ExplorerMenu } from "../../files/public/ExplorerMenu";
+import { fileLinkMenuItems } from "./fileLinkMenuItems";
 import { FileActionError } from "../../files/public/FileActionError";
 import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { useCodeHighlightPlugin } from "../../files/public/useCodeHighlightPlugin";
@@ -76,7 +76,6 @@ import {
 } from "../../files/public/messagePathContext";
 import { INBOX_MEDIA_PREFIXES, isInboxMediaUrl } from "../../inbox/model/inboxMedia";
 import { isNoteImagePath } from "../../notes";
-import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { InboxMedia } from "../../inbox/ui/InboxMedia";
 import { isLocalMediaPath, LocalMedia } from "./LocalMedia";
 import { DocumentImage, ImageAltText } from "./DocumentImage";
@@ -95,6 +94,7 @@ import { loadStreamingTextMode, subscribeStreamingTextMode } from "../../setting
 import { usePresentationVisible } from "./presentationVisibility";
 import { usePrefersReducedMotion } from "../../settings/public/decorativeMotion";
 import { HighlightedCodeBlock } from "./HighlightedCodeBlock";
+import { codeSourceFingerprint } from "./stableCodeDisclosureIdentity";
 import { useParsedMarkdown } from "./useParsedMarkdown";
 import { parseLocalSessionLink } from "../model/localSessionReference";
 import { LocalSessionReferenceLink } from "./LocalSessionReferenceLink";
@@ -213,56 +213,6 @@ const BlockPluginContext = createContext<{
   /** Index of the last block of the text last handed to Streamdown. */
   lastBlock: number;
 } | null>(null);
-
-const REVEAL_LABEL = IS_MAC
-  ? "Reveal in Finder"
-  : IS_WIN
-    ? "Reveal in File Explorer"
-    : "Open Containing Folder";
-
-/** `t` from `useT()`, so the menu follows a language switch. */
-function fileLinkMenuItems(
-  t: (message: string, values?: Record<string, unknown>) => string,
-  canOpenInBycoda: boolean,
-  canCopyRelativePath: boolean,
-  remote = false,
-): ExplorerMenuItem[] {
-  return [
-    {
-      kind: "item",
-      id: "open-bycoda",
-      label: t("Open in {p0}", { p0: PRODUCT_IDENTITY.displayName }),
-      disabled: !canOpenInBycoda,
-    },
-    {
-      kind: "item",
-      id: "open-default",
-      label: t("Open in Default App"),
-      disabled: remote,
-    },
-    {
-      kind: "item",
-      id: "reveal",
-      label: remote ? `Open Containing Folder in ${PRODUCT_IDENTITY.displayName}` : REVEAL_LABEL,
-    },
-    ...(remote ? [{ kind: "item" as const, id: "reveal-local", label: REVEAL_LABEL }] : []),
-    { kind: "sep" },
-    {
-      kind: "item",
-      id: "copy-path",
-      label: t("Copy Path"),
-    },
-    ...(canCopyRelativePath
-      ? [
-          {
-            kind: "item" as const,
-            id: "copy-relative-path",
-            label: t("Copy Relative Path"),
-          },
-        ]
-      : []),
-  ];
-}
 
 type MarkdownLinkProps = Omit<ComponentProps<"a">, "onContextMenu"> & {
   node?: unknown;
@@ -571,23 +521,22 @@ function MarkdownCodeShell({
   const t = useT();
   const [collapsed, setCollapsed] = useState(false);
   const contentId = useId();
-  const label = collapsed ? "Expand code block" : "Collapse code block";
+  const label = collapsed ? t("Expand code block") : t("Collapse code block");
   // Only a collapsed block shows its summary; a streaming one would otherwise
   // split every line on every frame for nothing.
   const summary = useMemo(() => {
     if (!collapsed) return { preview: "", lineCount: 0 };
     const lines = code.replace(/\r?\n$/, "").split(/\r?\n/);
     return {
-      preview: (lines.find((line) => line.trim())?.trim() || "Code block").slice(0, 160),
+      preview: (lines.find((line) => line.trim())?.trim() || t("Code block")).slice(0, 160),
       lineCount: code ? lines.length : 0,
     };
-  }, [code, collapsed]);
-
+  }, [code, collapsed, t]);
   return (
     <div
       className="markdown-code-shell markdown-code-resizable"
       data-collapsed={collapsed}
-      data-code-identity={JSON.stringify([language, code])}
+      data-code-identity={codeSourceFingerprint(language, code)}
       dir="ltr"
       tabIndex={0}
       role="region"
@@ -986,10 +935,10 @@ export const AgentMarkdown = memo(function AgentMarkdown({
         if (await isLocalDirectory(resolved)) await openPathWithDefaultApp(resolved);
         else await revealPath(resolved);
       })().catch((error) =>
-        setFileActionError(`Could not open the containing folder: ${String(error)}`),
+        setFileActionError(t("Could not open the containing folder: {p0}", { p0: String(error) })),
       );
     },
-    [cwd, resolveInMessage],
+    [cwd, resolveInMessage, t],
   );
   const onFileContextMenu = useCallback(
     (event: ReactMouseEvent, path: string, navigation?: EditorNavigation) => {
@@ -1130,7 +1079,9 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     void action.catch((error) => {
       console.error(`Failed to run file-link action ${id}:`, error);
       setFileActionError(
-        `Could not ${id === "open-default" ? "open the file in its default app" : "complete the file action"}: ${String(error)}`,
+        id === "open-default"
+          ? t("Could not open the file in its default app: {p0}", { p0: String(error) })
+          : t("Could not complete the file action: {p0}", { p0: String(error) }),
       );
     });
   };
@@ -1178,7 +1129,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
                   !!cwd,
                   fileMenu.path.startsWith("remote://"),
                 )}
-                ariaLabel="File link actions"
+                ariaLabel={t("File link actions")}
                 onPick={onFileMenuPick}
                 onClose={() => setFileMenu(null)}
               />

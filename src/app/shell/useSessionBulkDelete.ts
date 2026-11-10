@@ -13,6 +13,7 @@ import {
   splitRunningSessions,
 } from "../../features/sessions/model/bulkSessionDelete";
 import { confirmSessionDelete } from "../../features/sessions/model/confirmSessionDelete";
+import { t } from "../../shared/i18n";
 
 export type SessionBulkDeleteOptions = {
   cwd: string;
@@ -68,7 +69,9 @@ export function useSessionBulkDelete({
     );
     const machine = remote.machine;
     if (remoteProject && (!machine || !hostProject)) {
-      window.alert("Connect this project's machine to delete its sessions.");
+      setDeleteNoticeCwd(cwd);
+      setDeleteNoticeError(true);
+      setBulkNotice(t("Connect this project's machine to delete its sessions."));
       return;
     }
     const deleteOne =
@@ -134,7 +137,9 @@ export function useSessionBulkDelete({
       setDeleteNoticeCwd(cwd);
       setDeleteNoticeError(true);
       setBulkNotice(
-        `Could not delete conversations: ${error instanceof Error ? error.message : String(error)}`,
+        t("Could not delete conversations: {p0}", {
+          p0: error instanceof Error ? error.message : String(error),
+        }),
       );
     } finally {
       bulkDeleteActive.current = false;

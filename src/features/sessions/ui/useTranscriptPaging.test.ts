@@ -17,13 +17,15 @@ function Harness({
   turns,
   load,
   more = false,
+  follow = true,
 }: {
   turns: Block[][];
   load?: () => Promise<number | void>;
   more?: boolean;
+  follow?: boolean;
 }) {
   const scroll = useRef<HTMLDivElement>(null);
-  const stick = useRef(true);
+  const stick = useRef(follow);
   const distance = useRef(0);
   const prepend = useRef<number | null>(null);
   api = useTranscriptPaging({
@@ -72,8 +74,13 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-function render(turns: Block[][], load?: () => Promise<number | void>, more = false) {
-  act(() => root.render(createElement(Harness, { turns, load, more })));
+function render(
+  turns: Block[][],
+  load?: () => Promise<number | void>,
+  more = false,
+  follow = true,
+) {
+  act(() => root.render(createElement(Harness, { turns, load, more, follow })));
   scroller = host.firstElementChild as HTMLDivElement;
 }
 
@@ -151,4 +158,11 @@ it("does not let a delayed remote earlier page replace a newer search window", a
   });
   expect(api.firstVisibleTurn).toBe(first);
   expect(scroller.querySelector('[data-transcript-turn="u-90"]')).not.toBeNull();
+});
+
+it("leaves the scroll position alone when a turn is appended while the reader is scrolled up", () => {
+  render(history(5), undefined, false, false);
+  scroller.scrollTop = 50;
+  render(history(6), undefined, false, false);
+  expect(scroller.scrollTop).toBe(50);
 });

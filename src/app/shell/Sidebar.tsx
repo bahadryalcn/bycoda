@@ -290,6 +290,8 @@ import { useCheckoutChangeStats } from "./useCheckoutChangeStats";
 import { changesTooltipDetails } from "./ChangesTabTooltip";
 import { useCompactRailDrawer } from "./useCompactRailDrawer";
 import { useSessionListMotion } from "./useSessionListMotion";
+import { useSingleFlight } from "./useSingleFlight";
+import { automationRetainedNotice } from "./automationRetainedNotice";
 import { useSessionSelection } from "./useSessionSelection";
 import { useAnimatedReorder } from "../../shared/hooks/useAnimatedReorder";
 import { normalizeHex } from "../../shared/lib/colorUtils";
@@ -952,6 +954,7 @@ function SidebarComponent({
   const [organizationNotice, setOrganizationNotice] = useState<string | null>(null);
   const [partialPinSagas, setPartialPinSagas] = useState<PinSaga[]>([]);
   const organizationBusy = useRef(false);
+  const runSagaAction = useSingleFlight((error) => setOrganizationNotice(String(error)));
   const organizationUnresolved = useRef(false);
   const organizationRefreshRequired = useRef(false);
   const organizationReady = useRef(!NATIVE_SESSION_ORGANIZATION_ACTIVE);
@@ -1395,10 +1398,12 @@ function SidebarComponent({
                 organizationReady.current = true;
                 if (pending.length)
                   setOrganizationNotice(
-                    `Folder change outcome is unknown: ${pending[0].operationId}`,
+                    t("Folder change outcome is unknown: {p0}", { p0: pending[0].operationId }),
                   );
                 else if (openSagas.length)
-                  setOrganizationNotice(`Pin change needs review: ${openSagas[0].id}`);
+                  setOrganizationNotice(
+                    t("Pin change needs review: {p0}", { p0: openSagas[0].id }),
+                  );
                 else
                   setOrganizationNotice((current) =>
                     current === t("Loading folders…") ? null : current,
@@ -1418,7 +1423,7 @@ function SidebarComponent({
       alive = false;
       unsubscribe();
     };
-  }, [cwd]);
+  }, [cwd, t]);
 
   useEffect(() => {
     if (!NATIVE_SESSION_ORGANIZATION_ACTIVE) return;
@@ -1435,20 +1440,14 @@ function SidebarComponent({
       if (!detail || !sameProjectPath(detail.cwd, cwd)) return;
       if (detail.result?.state === "unknown") organizationUnresolved.current = true;
       if (isProjectPasswordLocked(detail.cwd)) {
-        setOrganizationNotice("Folder placement needs review after unlocking the project.");
+        setOrganizationNotice(t("Folder placement needs review after unlocking the project."));
         return;
       }
-      setOrganizationNotice(
-        detail.result?.state === "unknown"
-          ? `Automation session ${detail.sessionId} retained; folder outcome is unknown: ${detail.result.operationId}`
-          : detail.result?.state === "applied-unavailable"
-            ? `Automation session ${detail.sessionId} retained; folder change was applied but refresh failed.`
-            : `Automation session ${detail.sessionId} retained; folder placement needs review${detail.error ? `: ${detail.error}` : "."}`,
-      );
+      setOrganizationNotice(automationRetainedNotice(detail));
     };
     window.addEventListener("bycoda:organization-operation-feedback", onFeedback);
     return () => window.removeEventListener("bycoda:organization-operation-feedback", onFeedback);
-  }, [cwd]);
+  }, [cwd, t]);
 
   useEffect(
     () =>
@@ -1582,13 +1581,11 @@ function SidebarComponent({
     onApplied?: (state: SessionOrganizationState, previous?: SessionOrganizationState) => void,
     quiet = false,
   ): Promise<boolean> => {
-    if (
-      !organizationReady.current ||
-      organizationBusy.current ||
-      organizationUnresolved.current ||
-      organizationRefreshRequired.current
-    )
+    const unavailable = organizationUnresolved.current || organizationRefreshRequired.current;
+    if (!organizationReady.current || organizationBusy.current || unavailable) {
+      if (!quiet && !unavailable) setOrganizationNotice(t("Still saving. Try again in a moment."));
       return false;
+    }
     organizationBusy.current = true;
     if (!quiet) setOrganizationNotice(t("Saving…"));
     const gestureId = crypto.randomUUID();
@@ -1605,7 +1602,9 @@ function SidebarComponent({
           onApplied?.(result.value, result.previous);
         } catch (error) {
           setOrganizationNotice(
-            `Change was applied, but the display could not be updated: ${String(error)}`,
+            t("Change was applied, but the display could not be updated: {p0}", {
+              p0: String(error),
+            }),
           );
         }
         return true;
@@ -1614,16 +1613,18 @@ function SidebarComponent({
       if (result.state === "applied-unavailable") organizationRefreshRequired.current = true;
       setOrganizationNotice(
         result.state === "unknown"
-          ? `Folder change outcome is unknown: ${result.operationId}`
+          ? t("Folder change outcome is unknown: {p0}", { p0: result.operationId })
           : result.state === "applied-unavailable"
-            ? `Folder change was applied, but refresh failed: ${result.operationId}`
-            : "Folder change conflicted; refresh before retrying.",
+            ? t("Folder change was applied, but refresh failed: {p0}", { p0: result.operationId })
+            : t("Folder change conflicted; refresh before retrying."),
       );
       return false;
     } catch (error) {
       if (admitted) organizationUnresolved.current = true;
       setOrganizationNotice(
-        admitted ? `Folder change outcome needs verification: ${gestureId}` : String(error),
+        admitted
+          ? t("Folder change outcome needs verification: {p0}", { p0: gestureId })
+          : String(error),
       );
       return false;
     } finally {
@@ -1940,7 +1941,7 @@ function SidebarComponent({
                     {
                       kind: "item" as const,
                       id: "archive",
-                      label: allMenuSessionsArchived ? "Unarchive" : "Archive",
+                      label: allMenuSessionsArchived ? t("Unarchive") : t("Archive"),
                     },
                   ]
                 : []),
@@ -2344,8 +2345,8 @@ function SidebarComponent({
           organizationUnresolved.current = prepared === "unknown";
           setOrganizationNotice(
             prepared === "unknown"
-              ? "Pin preparation outcome is unknown. Check again before another change."
-              : "Pin preparation conflicted; refresh before retrying.",
+              ? t("Pin preparation outcome is unknown. Check again before another change.")
+              : t("Pin preparation conflicted; refresh before retrying."),
           );
           return;
         }
@@ -2368,10 +2369,16 @@ function SidebarComponent({
           organizationUnresolved.current = result.state !== "conflict";
           setOrganizationNotice(
             result.state === "unknown"
-              ? `Pin change outcome is unknown: ${result.operationId ?? saga.id}`
+              ? t("Pin change outcome is unknown: {p0}", { p0: result.operationId ?? saga.id })
               : result.state === "applied-unavailable"
-                ? `${operation ? "Pin and folder changes were" : "Pin changes were"} applied, but final confirmation failed: ${result.operationId ?? saga.id}`
-                : "Pin change is partial. Review the confirmed state before continuing.",
+                ? operation
+                  ? t("Pin and folder changes were applied, but final confirmation failed: {p0}", {
+                      p0: result.operationId ?? saga.id,
+                    })
+                  : t("Pin changes were applied, but final confirmation failed: {p0}", {
+                      p0: result.operationId ?? saga.id,
+                    })
+                : t("Pin change is partial. Review the confirmed state before continuing."),
           );
           return;
         }
@@ -2381,7 +2388,7 @@ function SidebarComponent({
       if (sagaPrepared) organizationUnresolved.current = true;
       setOrganizationNotice(
         pinConfirmed
-          ? `A pin was applied; final confirmation failed: ${String(error)}`
+          ? t("A pin was applied; final confirmation failed: {p0}", { p0: String(error) })
           : String(error),
       );
     } finally {
@@ -2865,10 +2872,8 @@ function SidebarComponent({
               folderId: entry.folder.id,
               name,
             })
-              .then((applied) => {
-                if (applied) setRenamingFolderId(null);
-              })
-              .catch((error: unknown) => setOrganizationNotice(String(error)));
+              .catch((error: unknown) => setOrganizationNotice(String(error)))
+              .then(() => setRenamingFolderId(null));
             return;
           }
           commitSessionFolders(renameFolder(sessionFolders, entry.folder.id, name));
@@ -3899,7 +3904,7 @@ function SidebarComponent({
           x={folderMenu.x}
           y={folderMenu.y}
           items={folderMenuItems}
-          ariaLabel="Folder actions"
+          ariaLabel={t("Folder actions")}
           width={260}
           header={
             <FolderColorSwatches
@@ -3928,7 +3933,7 @@ function SidebarComponent({
               ? {
                   label: t("Check and continue"),
                   onClick: () => {
-                    void (async () => {
+                    runSagaAction(async () => {
                       const sagas = (await listPinSagas()).filter(
                         (saga) => saga.state !== "applied" && saga.state !== "accepted",
                       );
@@ -3956,20 +3961,24 @@ function SidebarComponent({
                       );
                       setPartialPinSagas(remaining.filter((saga) => saga.state === "partial"));
                       if (remaining.length) {
-                        setOrganizationNotice(`Pin change needs review: ${remaining[0].id}`);
+                        setOrganizationNotice(
+                          t("Pin change needs review: {p0}", { p0: remaining[0].id }),
+                        );
                         return;
                       }
                       const pending = await unresolvedSessionOrganizationGestures();
                       if (pending.length) {
                         setOrganizationNotice(
-                          `Folder change outcome is unknown: ${pending[0].operationId}`,
+                          t("Folder change outcome is unknown: {p0}", {
+                            p0: pending[0].operationId,
+                          }),
                         );
                         return;
                       }
                       await hydrateSessionOrganization();
                       organizationUnresolved.current = false;
-                      setOrganizationNotice("Folder state refreshed. Review your change.");
-                    })().catch((error: unknown) => setOrganizationNotice(String(error)));
+                      setOrganizationNotice(t("Folder state refreshed. Review your change."));
+                    });
                   },
                 }
               : roomPrivacyRetryAction(
@@ -3983,7 +3992,7 @@ function SidebarComponent({
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  void (async () => {
+                  runSagaAction(async () => {
                     for (const saga of partialPinSagas) {
                       const acknowledged = await withRoomPrivacyMutation(() => {
                         if (saga.steps.some((step) => isProjectPasswordLocked(step.viewCwd)))
@@ -4003,9 +4012,11 @@ function SidebarComponent({
                     ) {
                       await hydrateSessionOrganization();
                       organizationUnresolved.current = false;
-                      setOrganizationNotice("Confirmed pin changes kept. Review the folder state.");
+                      setOrganizationNotice(
+                        t("Confirmed pin changes kept. Review the folder state."),
+                      );
                     }
-                  })().catch((error: unknown) => setOrganizationNotice(String(error)));
+                  });
                 }}
               >
                 {t("Keep confirmed changes")}
@@ -5595,7 +5606,7 @@ const SessionCard = memo(function SessionCard({
       if (onPopOut && isPointerOutsideWindow(lastX, lastY, window.innerWidth, window.innerHeight)) {
         preview.move(point, {
           action: "window",
-          label: busy ? "Move after response finishes" : undefined,
+          label: busy ? t("Move after response finishes") : undefined,
         });
       } else if (lastList) {
         preview.move(point, { label: dropTargetLabel(lastList), bounds });
@@ -5606,7 +5617,7 @@ const SessionCard = memo(function SessionCard({
       } else {
         const over = paneDropFromPoint(lastX, lastY);
         if (!over || over.id === session.id) preview.move(point, { action: "blocked", bounds });
-        else preview.move(point, { label: `Place ${over.edge}` });
+        else preview.move(point, { label: t("Place {p0}", { p0: t(over.edge) }) });
       }
     };
 
@@ -5886,7 +5897,7 @@ const SessionCard = memo(function SessionCard({
   }, [hideDetail]);
   const detailVisible = detailOpen && !dragging && !pressing && !selectionMode && !orchestration;
 
-  const archiveLabel = session.archived ? "Unarchive" : "Archive";
+  const archiveLabel = session.archived ? t("Unarchive") : t("Archive");
   // Expanding an orchestration card must not move its existing header. Keep
   // the collapsed top inset and give only the new detail area extra room at
   // the bottom.
@@ -6376,6 +6387,8 @@ const SessionCard = memo(function SessionCard({
           maxHeight={320}
           role="tooltip"
           id={orchestrationTooltipId}
+          passive
+          restoreFocus={false}
           className="pointer-events-none overflow-y-auto p-2.5"
         >
           <div className="flex items-center justify-between gap-3">

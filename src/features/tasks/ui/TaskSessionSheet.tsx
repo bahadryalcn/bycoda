@@ -46,7 +46,11 @@ export function TaskSessionSheet({
         });
         if (!alive) return;
         if (next) known = next;
-        if (!known?.session) throw new Error(t("This session is no longer available."));
+        if (!known) {
+          setError(t("This session is no longer available."));
+          return;
+        }
+        if (!known.session) throw new Error(t("This session is no longer available."));
         if (next) setSessionState({ key: `${target.machineId}:${target.sessionId}`, value: next });
         setError("");
         if (known.status === "running") timer = setTimeout(load, 3000);

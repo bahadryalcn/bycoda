@@ -5,6 +5,7 @@ import { APPEARANCE_DEFAULTS } from "../../../model/appearancePreferences";
 import { Group, Row } from "../../settingsControls";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { FontPicker } from "./FontPicker";
+import { useNumberDraft } from "./useNumberDraft";
 
 export const SAMPLE_SIZE_MIN = 10;
 export const SAMPLE_SIZE_MAX = 20;
@@ -21,6 +22,7 @@ export function InterfaceFontGroup({
 }) {
   useLocale();
   const p = a.preferences;
+  const sample = useNumberDraft(sampleSize, onSampleSize);
   return (
     <Group
       id="interface-font"
@@ -54,11 +56,7 @@ export function InterfaceFontGroup({
           min={SAMPLE_SIZE_MIN}
           max={SAMPLE_SIZE_MAX}
           step={1}
-          value={sampleSize}
-          onChange={(event) => {
-            if (event.currentTarget.validity.valid && event.currentTarget.value !== "")
-              onSampleSize(event.currentTarget.valueAsNumber);
-          }}
+          {...sample}
         />
       </Row>
     </Group>

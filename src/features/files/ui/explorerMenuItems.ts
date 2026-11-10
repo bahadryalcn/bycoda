@@ -171,7 +171,7 @@ export function explorerItems(
           },
         ]
       : []),
-    { kind: "item", id: "reveal", label: REVEAL_LABEL },
+    { kind: "item", id: "reveal", label: t(REVEAL_LABEL) },
   ];
 }
 

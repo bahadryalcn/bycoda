@@ -1350,26 +1350,14 @@ export class WorkspaceCommands {
 
   private async gitCommitFiles(cwd: unknown, shaInput: unknown) {
     const sha = await this.gitCommitSha(cwd, shaInput);
-    const [names, stats] = await Promise.all([
-      this.gitCommand(cwd, [
-        "diff-tree",
-        "--root",
-        "--no-commit-id",
-        "--no-renames",
-        "--name-status",
-        "-r",
-        sha,
-      ]),
-      this.gitCommand(cwd, [
-        "diff-tree",
-        "--root",
-        "--no-commit-id",
-        "--no-renames",
-        "--numstat",
-        "-r",
-        sha,
-      ]),
-    ]);
+    const parent = await this.gitCommand(cwd, ["rev-parse", "--verify", `${sha}^1`]).then(
+      (out) => out.trim(),
+      () => "",
+    );
+    const range = parent ? [parent, sha] : ["--root", sha];
+    const diffTree = (mode: string) =>
+      this.gitCommand(cwd, ["diff-tree", "--no-commit-id", "--no-renames", mode, "-r", ...range]);
+    const [names, stats] = await Promise.all([diffTree("--name-status"), diffTree("--numstat")]);
     const counts = new Map(
       stats
         .split("\n")

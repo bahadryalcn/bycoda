@@ -551,9 +551,12 @@ function GroupDialog({
           />
         ) : (
           <p className="text-ui-body">
-            {t("{p0} members leave this group. The members themselves are kept.", {
-              p0: members.length,
-            })}
+            {t(
+              members.length === 1
+                ? "{p0} member leaves this group. The member itself is kept."
+                : "{p0} members leave this group. The members themselves are kept.",
+              { p0: members.length },
+            )}
           </p>
         )}
       </div>

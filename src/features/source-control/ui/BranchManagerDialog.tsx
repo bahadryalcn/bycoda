@@ -178,7 +178,11 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
     const reference = branchRef(branch);
     const isCurrent = !branch.remote && branch.name === current;
     if (editing?.kind === "rename" && !branch.remote && editing.from === branch.name) {
-      return <li key={reference}>{renderForm(`New name for ${branch.name}`, "Save")}</li>;
+      return (
+        <li key={reference}>
+          {renderForm(t("New name for {p0}", { p0: branch.name }), t("Save"))}
+        </li>
+      );
     }
     return (
       <li key={reference} className="flex h-8 items-center gap-1 px-1">
@@ -337,7 +341,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
             {t("New Branch…")}
           </Button>
         </div>
-        {editing?.kind === "create" ? renderForm("New branch name", "Create") : null}
+        {editing?.kind === "create" ? renderForm(t("New branch name"), t("Create")) : null}
         {error ? (
           <InlineError className="max-h-24 overflow-y-auto whitespace-pre-wrap">
             {error}

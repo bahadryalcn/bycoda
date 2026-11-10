@@ -61,7 +61,7 @@ export function useBrowserLiveFrames({
 
 /**
  * Renews the control lease shortly before it ends while the controlling panel is
- * visible. A hidden or closed panel stops renewing, so its control still expires.
+ * visible. A renewal that falls due while hidden runs when the panel is shown again.
  */
 export function useBrowserLeaseKeepAlive(
   enabled: boolean,
@@ -72,12 +72,23 @@ export function useBrowserLeaseKeepAlive(
   renewRef.current = renew;
   useEffect(() => {
     if (!enabled || expiresAt == null) return;
-    const timer = setTimeout(
-      () => {
-        if (!document.hidden) renewRef.current();
-      },
-      Math.max(1000, expiresAt - Date.now() - 10_000),
-    );
-    return () => clearTimeout(timer);
+    let due = false;
+    const fire = () => {
+      if (document.hidden) {
+        due = true;
+        return;
+      }
+      due = false;
+      renewRef.current();
+    };
+    const onVisible = () => {
+      if (due && !document.hidden) fire();
+    };
+    const timer = setTimeout(fire, Math.max(1000, expiresAt - Date.now() - 10_000));
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [enabled, expiresAt]);
 }

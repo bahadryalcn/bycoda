@@ -22,6 +22,7 @@ function deferred<T = void>() {
   });
   return { promise, resolve, reject };
 }
+type Deferred<T = void> = ReturnType<typeof deferred<T>>;
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -31,7 +32,7 @@ afterEach(async () => {
 async function fixture(options: { warm?: boolean; title?: boolean } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-engine-retirement-"));
   const store = new HostStore(join(directory, "host.db"));
-  const kills = new Map<ChildProcessHandle, ReturnType<typeof deferred>>();
+  const kills = new Map<ChildProcessHandle, Deferred>();
   const kill = vi.fn(
     (handle: ChildProcessHandle) => kills.get(handle)?.promise ?? Promise.resolve(),
   );
@@ -39,7 +40,7 @@ async function fixture(options: { warm?: boolean; title?: boolean } = {}) {
   const starts: Array<{
     input: SendTurnInput;
     handle: ChildProcessHandle;
-    finished: ReturnType<typeof deferred>;
+    finished: Deferred;
   }> = [];
   const releases: Array<ReturnType<typeof vi.fn<() => Promise<void>>>> = [];
   const releaseOnCleanup: Array<() => void> = [];

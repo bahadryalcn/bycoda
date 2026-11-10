@@ -71,10 +71,13 @@ export function DictationButton({
   if (!settings.dictationEnabled) return null;
 
   const toggle = () => {
-    if (state === "finishing") return;
     const current = dictation.current;
+    if (state === "finishing") {
+      current?.cancel();
+      return;
+    }
     if (current) {
-      void current.stop();
+      void current.stop().catch(() => {});
       return;
     }
     const next = new Dictation(
@@ -113,7 +116,7 @@ export function DictationButton({
     state === "starting"
       ? t("Preparing dictation…")
       : state === "finishing"
-        ? t("Transcribing…")
+        ? t("Cancel transcription")
         : listening
           ? t("Stop dictation")
           : t("Dictate");
@@ -127,7 +130,6 @@ export function DictationButton({
         tooltip={state === "idle" ? t("Dictate: speak and the text appears here") : label}
         data-dictation-state={state}
         aria-busy={state === "starting" || state === "finishing" || undefined}
-        aria-disabled={state === "finishing" || undefined}
         pressed={listening || state === "starting"}
         tone={listening ? "danger" : undefined}
         // Preparing can take a while; the button stays clickable so it can be cancelled.

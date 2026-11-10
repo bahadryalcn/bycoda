@@ -59,7 +59,7 @@ function eventLabel(event: NotificationEventKey): string {
   }
 }
 
-type ChangeHandler = (next: NotificationSettings) => void;
+type ChangeHandler = (change: (current: NotificationSettings) => NotificationSettings) => void;
 
 function QuietHoursControls({
   settings,
@@ -77,7 +77,7 @@ function QuietHoursControls({
         description={t("Hold non-urgent notifications during these hours.")}
         checked={quiet !== null}
         onCheckedChange={(on) =>
-          onChange(setQuietHours(settings, on ? defaultQuietHours(zone) : null))
+          onChange((s) => setQuietHours(s, on ? defaultQuietHours(zone) : null))
         }
       />
       {quiet ? (
@@ -88,7 +88,7 @@ function QuietHoursControls({
             value={quiet.start}
             onChange={(event) =>
               event.target.value &&
-              onChange(setQuietHours(settings, { ...quiet, start: event.target.value }))
+              onChange((s) => setQuietHours(s, { ...quiet, start: event.target.value }))
             }
           />
           <TextField
@@ -97,7 +97,7 @@ function QuietHoursControls({
             value={quiet.end}
             onChange={(event) =>
               event.target.value &&
-              onChange(setQuietHours(settings, { ...quiet, end: event.target.value }))
+              onChange((s) => setQuietHours(s, { ...quiet, end: event.target.value }))
             }
           />
         </>
@@ -119,14 +119,14 @@ function DailySummaryControls({
         label={t("E-mail me a daily summary")}
         description={t("One e-mail a day with your activity, sent at the time you choose.")}
         checked={settings.emailDigest}
-        onCheckedChange={(on) => onChange(setEmailDigest(settings, on))}
+        onCheckedChange={(on) => onChange((s) => setEmailDigest(s, on))}
       />
       {settings.emailDigest ? (
         <TextField
           label={t("Send at")}
           type="time"
           value={settings.dailySummaryTime ?? ""}
-          onChange={(event) => onChange(setDailySummaryTime(settings, event.target.value))}
+          onChange={(event) => onChange((s) => setDailySummaryTime(s, event.target.value))}
         />
       ) : null}
     </div>
@@ -153,7 +153,7 @@ function EventRow({
               aria-label={`${eventLabel(event)}: ${channelLabel(channel)}`}
               checked={isChannelOn(settings, event, channel)}
               disabled={locked}
-              onCheckedChange={(on) => onChange(setChannel(settings, event, channel, on))}
+              onCheckedChange={(on) => onChange((s) => setChannel(s, event, channel, on))}
             />
           </span>
         ) : (
@@ -169,7 +169,7 @@ export function AccountNotifications() {
   useLocale();
   const { query, save } = useNotificationSettings();
   const settings = query.data;
-  const update: ChangeHandler = (next) => save.mutate(next);
+  const update: ChangeHandler = (change) => save.mutate(change);
   return (
     <section className={styles.section} aria-labelledby="account-notifications">
       <SectionLabel labelId="account-notifications">{t("Notifications")}</SectionLabel>
@@ -207,7 +207,7 @@ export function AccountNotifications() {
               "Off by default: phone notifications then say only that something needs you, without project or session names.",
             )}
             checked={settings.pushShowDetails}
-            onCheckedChange={(on) => update(setPushDetails(settings, on))}
+            onCheckedChange={(on) => update((s) => setPushDetails(s, on))}
           />
           {save.isError ? (
             <InlineError>{t("Could not save. Your previous choice was kept.")}</InlineError>

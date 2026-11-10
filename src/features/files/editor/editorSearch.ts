@@ -476,7 +476,7 @@ class FindPanel implements Panel {
       return;
     }
     if (!this.query.valid) {
-      this.count.textContent = "Invalid regex";
+      this.count.textContent = t("Invalid regex");
       this.count.dataset.state = "invalid";
       this.dom.classList.add("is-invalid");
       this.dom.classList.remove("is-empty");
@@ -489,12 +489,15 @@ class FindPanel implements Panel {
     this.dom.classList.toggle("is-empty", total === 0);
     this.dom.classList.remove("is-invalid");
     if (total === 0) {
-      this.count.textContent = "No results";
+      this.count.textContent = t("No results");
       this.count.dataset.state = "empty";
       return;
     }
     const suffix = capped ? "+" : "";
-    this.count.textContent = current > 0 ? `${current} of ${total}${suffix}` : `${total}${suffix}`;
+    this.count.textContent =
+      current > 0
+        ? t("{p0} of {p1}{p2}", { p0: current, p1: total, p2: suffix })
+        : `${total}${suffix}`;
     this.count.dataset.state = "ok";
   }
 

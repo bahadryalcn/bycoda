@@ -12,6 +12,8 @@ export function useTodayData(period: TodayPeriod): {
   data: TodayData | null;
   pricing: UsagePricing | null;
   loading: boolean;
+  /** True while a read for the current period and refresh is still in flight. */
+  refreshing: boolean;
   failed: boolean;
   reload: () => void;
 } {
@@ -20,10 +22,12 @@ export function useTodayData(period: TodayPeriod): {
   const previousTurns = useRef<TodaySources["turns"] | undefined>(undefined);
   const [load, setLoad] = useState<{
     period: TodayPeriod;
+    version: number;
     value: TodaySources | null;
     failed: boolean;
   }>({
     period,
+    version: 0,
     value: null,
     failed: false,
   });
@@ -33,7 +37,7 @@ export function useTodayData(period: TodayPeriod): {
       .then(({ value, failed }) => {
         if (cancelled) return;
         previousTurns.current = value.turns;
-        setLoad({ period, failed, value });
+        setLoad({ period, version, failed, value });
       })
       .catch(() => undefined); // -- each source already degrades to an empty answer.
     return () => {
@@ -50,6 +54,7 @@ export function useTodayData(period: TodayPeriod): {
     data,
     pricing: value?.pricing ?? null,
     loading: !value,
+    refreshing: load.period !== period || load.version !== version,
     failed: load.period === period && load.failed,
     reload,
   };

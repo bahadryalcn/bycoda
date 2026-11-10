@@ -54,6 +54,7 @@ import { AgentTranscript } from "../../sessions/ui/AgentTranscript";
 import { SessionPane } from "../../sessions/ui/SessionPane";
 import { OrchestrationActions, OrchestrationWorkers } from "./OrchestrationActions";
 import { newSession } from "../../sessions/model/session";
+import { setComposerWorkMode } from "../../sessions/model/draftCache";
 import {
   orchestrator,
   type OrchestrationRun,
@@ -75,6 +76,8 @@ let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
+  // A rejected send keeps the picked mode for its session; start each test without one.
+  setComposerWorkMode("lead", undefined);
   vi.mocked(orchestrator.resumeBlocker).mockReturnValue(undefined);
   vi.mocked(orchestrator.resumeLeadBusy).mockReturnValue(false);
   setHarnessModels("codex", [

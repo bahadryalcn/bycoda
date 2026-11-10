@@ -234,10 +234,8 @@ import {
   hydrateSessionOrganization,
   NATIVE_SESSION_ORGANIZATION_ACTIVE,
   subscribeSessionOrganization,
-  unresolvedSessionOrganizationGestures,
 } from "../model/sessionOrganizationStore";
 import type { SessionOrganizationResult } from "../model/sessionOrganizationStore";
-import { listPinSagas } from "../model/sessionPinSaga";
 import { SessionFolderPicker } from "./SessionFolderPicker";
 import { MCP_COMMAND, isMcpCommand } from "../model/mcpCommand";
 import { mcpContextText, newMcpTag, taggedMcpServers, type McpTag } from "../model/mcpPicker";
@@ -271,6 +269,9 @@ import {
 } from "./composerExternalDraft";
 import { useComposerMcpCatalog } from "./useComposerMcpCatalog";
 import { useComposerMentionSources } from "./useComposerMentionSources";
+import { keepEqualToken } from "./keepEqualToken";
+import { recheckSessionFolderState } from "./recheckSessionFolderState";
+import { useComposerWorkMode } from "./useComposerWorkMode";
 import { useComposerSlashInventory } from "./useComposerSlashInventory";
 import { applyTextareaEdit, insertDictatedText } from "./composerTextareaEdit";
 import { installAttachmentSelectionPolicy } from "./attachmentSelectionPolicy";
@@ -760,9 +761,10 @@ export const Composer = memo(function Composer({
   );
   const [plusOpen, setPlusOpen] = useState(false);
   const [modeOpen, setModeOpen] = useState(false);
-  const [planSelected, setPlanSelected] = useState(false);
-  const [operatorSelected, setOperatorSelected] = useState(false);
-  const [orchestrationSelected, setOrchestrationSelected] = useState(false);
+  const workMode = useComposerWorkMode(sessionId);
+  const [planSelected, setPlanSelected] = workMode.plan;
+  const [operatorSelected, setOperatorSelected] = workMode.operator;
+  const [orchestrationSelected, setOrchestrationSelected] = workMode.orchestration;
   const [draftSelected, setDraftSelectedState] = useState(() =>
     sessionId ? getComposerDraftMode(sessionId) === "save" : false,
   );
@@ -994,7 +996,7 @@ export const Composer = memo(function Composer({
       window.removeEventListener("resize", onResize);
     };
   }, [reading]);
-  const { mentionIndex, rankedFiles } = useComposerMentionSources({
+  const { mentionIndex, rankedFiles, filesFailed, retryFiles } = useComposerMentionSources({
     executionCwd,
     remote,
     notesEnabled,
@@ -1405,9 +1407,11 @@ export const Composer = memo(function Composer({
     // `$name` opens only while some Codex skill matches, so `$HOME` stays text.
     const dollar = token ? null : dollarTokenAt(el.value, cursor);
     setSlash(
-      token ?? (dollar && rankSkills(dollarSkills, dollar.query, 1).length > 0 ? dollar : null),
+      keepEqualToken(
+        token ?? (dollar && rankSkills(dollarSkills, dollar.query, 1).length > 0 ? dollar : null),
+      ),
     );
-    setMention(token ? null : mentionTokenAt(el.value, cursor));
+    setMention(keepEqualToken(token ? null : mentionTokenAt(el.value, cursor)));
   };
 
   const openSessionFolderPicker = useCallback(() => {
@@ -1983,6 +1987,7 @@ export const Composer = memo(function Composer({
       pasteGenerationRef.current += 1;
       clearComposer();
       historyRef.current = null;
+      releaseAttachments(attachmentsRef.current, borrowedAttachmentIdsRef.current);
       borrowedAttachmentIdsRef.current.clear();
       attachmentsRef.current = [];
       setAttachments([]);
@@ -2012,8 +2017,11 @@ export const Composer = memo(function Composer({
       if (remote || !onResumeProviderSession || (harness !== "claude" && harness !== "codex")) {
         setPasteError(
           remote
-            ? `Importing terminal conversations from a remote machine is not available yet. Open ${PRODUCT_IDENTITY.displayName} on that machine to import them.`
-            : "Terminal conversation import is not available in this composer.",
+            ? t(
+                "Importing terminal conversations from a remote machine is not available yet. Open {p0} on that machine to import them.",
+                { p0: PRODUCT_IDENTITY.displayName },
+              )
+            : t("Terminal conversation import is not available in this composer."),
         );
         return;
       }
@@ -2039,7 +2047,9 @@ export const Composer = memo(function Composer({
       : { text: value, matched: false };
     if (draftSelected && (!canSaveDraft || !onSaveDraft)) {
       setPasteError(
-        "Saving drafts is unavailable here. Choose another mode explicitly to send this message.",
+        t(
+          "Saving drafts is unavailable here. Choose another mode explicitly to send this message.",
+        ),
       );
       return;
     }
@@ -2158,7 +2168,7 @@ export const Composer = memo(function Composer({
     // keep the draft instead of starting a turn the transport would refuse.
     const planBlocked = planUnavailableReason(harness);
     if ((planSelected || command.planning) && planBlocked) {
-      setPasteError(`Plan mode is unavailable: ${planBlocked}`);
+      setPasteError(t("Plan mode is unavailable: {p0}", { p0: planBlocked }));
       return;
     }
     const orchestratorCommand =
@@ -3076,18 +3086,20 @@ export const Composer = memo(function Composer({
                   if (result && result.state === "unknown") {
                     sessionFolderMutationBlocked.current = true;
                     setSessionFolderError(
-                      `Folder change outcome is unknown: ${result.operationId}`,
+                      t("Folder change outcome is unknown: {p0}", { p0: result.operationId }),
                     );
                     return;
                   }
                   if (result && result.state === "conflict") {
-                    setSessionFolderError("Folder change conflicted; refresh before retrying.");
+                    setSessionFolderError(t("Folder change conflicted; refresh before retrying."));
                     return;
                   }
                   if (result && result.state === "applied-unavailable") {
                     sessionFolderMutationBlocked.current = true;
                     setSessionFolderError(
-                      `Folder change was applied, but refresh failed: ${result.operationId}`,
+                      t("Folder change was applied, but refresh failed: {p0}", {
+                        p0: result.operationId,
+                      }),
                     );
                   }
                   setSessionFolderOpen(false);
@@ -3211,6 +3223,8 @@ export const Composer = memo(function Composer({
               query={mention?.query ?? ""}
               active={mentionActive}
               loading={looksLikeProject(executionCwd) && peekProjectFiles(executionCwd) == null}
+              failed={filesFailed}
+              onRetry={retryFiles}
               includeNotes={notesEnabled}
               onActive={setMentionActive}
               onPick={pickMention}
@@ -3273,26 +3287,10 @@ export const Composer = memo(function Composer({
                     variant="ghost"
                     size="sm"
                     onClick={() => {
-                      void unresolvedSessionOrganizationGestures()
-                        .then(async (pending) => {
-                          if (pending.length) {
-                            setSessionFolderError(
-                              `Folder change outcome is unknown: ${pending[0].operationId}`,
-                            );
-                            return;
-                          }
-                          const remaining = (await listPinSagas()).filter(
-                            (entry) => entry.state !== "applied" && entry.state !== "accepted",
-                          );
-                          if (remaining.length) {
-                            setSessionFolderError(
-                              `Pin change needs review in the sidebar: ${remaining[0].id}`,
-                            );
-                            return;
-                          }
-                          await hydrateSessionOrganization();
-                          sessionFolderMutationBlocked.current = false;
-                          setSessionFolderError("Folder state refreshed. Review your change.");
+                      void recheckSessionFolderState()
+                        .then((message) => {
+                          if (!message) sessionFolderMutationBlocked.current = false;
+                          setSessionFolderError(message);
                         })
                         .catch((error: unknown) => setSessionFolderError(String(error)));
                     }}

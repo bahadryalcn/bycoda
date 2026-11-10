@@ -93,6 +93,7 @@ export function useTranscriptPaging({
   const turnsRef = useRef(turns);
   const rangeRef = useRef({ first: firstVisibleTurn, last: lastVisibleTurn, count });
   const anchorRef = useRef<Anchor | null>(null);
+  const firstBlockRef = useRef<string | undefined | null>(null);
   const loadingRef = useRef(false);
   const navigationRef = useRef(0);
   const [pagingLoading, setPagingLoading] = useState(false);
@@ -135,6 +136,7 @@ export function useTranscriptPaging({
     const anchor = anchorRef.current;
     if (anchor) {
       anchorRef.current = null;
+      firstBlockRef.current = previous.current?.firstId;
       const node = [...el.querySelectorAll<HTMLElement>("[data-transcript-turn]")].find(
         (turn) => turn.dataset.transcriptTurn === anchor.id,
       );
@@ -145,24 +147,15 @@ export function useTranscriptPaging({
       distanceFromBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight;
       return;
     }
-    const previousHeight = prependHeight.current;
-    if (previousHeight != null) {
-      prependHeight.current = null;
-      el.scrollTop += el.scrollHeight - previousHeight;
-      distanceFromBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight;
-    } else if (stickToBottom.current) {
+    const firstBlockId = previous.current?.firstId;
+    const prepended = firstBlockRef.current !== firstBlockId;
+    firstBlockRef.current = firstBlockId;
+    if (stickToBottom.current) {
       syncTranscriptViewport(el);
       pinToBottom(el);
-    } else el.scrollTop = el.scrollHeight - el.clientHeight - distanceFromBottom.current;
-  }, [
-    firstVisibleTurn,
-    lastVisibleTurn,
-    blockCount,
-    scroller,
-    stickToBottom,
-    distanceFromBottom,
-    prependHeight,
-  ]);
+    } else if (prepended)
+      el.scrollTop = el.scrollHeight - el.clientHeight - distanceFromBottom.current;
+  }, [firstVisibleTurn, lastVisibleTurn, blockCount, scroller, stickToBottom, distanceFromBottom]);
 
   useLayoutEffect(() => {
     const el = scroller.current;

@@ -104,6 +104,9 @@ function PoolDialog({
         {attempted && issue === "models" ? (
           <Alert tone="danger">{t("Choose a model")}</Alert>
         ) : null}
+        {attempted && issue === "limit" ? (
+          <Alert tone="danger">{t("The model pool limit is reached. Delete a pool first.")}</Alert>
+        ) : null}
       </fieldset>
     </Modal>
   );

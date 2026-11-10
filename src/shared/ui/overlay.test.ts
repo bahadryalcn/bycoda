@@ -492,3 +492,19 @@ it("changes resize axis without retaining the previous dimension", async () => {
   await key(separator, "ArrowDown");
   expect(pane.style.height).toBe("300px");
 });
+
+it("leaves the toast region interactive while a modal is open", async () => {
+  const toasts = document.createElement("div");
+  toasts.dataset.toastRegion = "bottom-end";
+  const undo = document.createElement("button");
+  toasts.append(undo);
+  document.body.append(toasts);
+  await act(async () =>
+    root.render(createElement(Modal, { title: "Toast above", onClose: vi.fn(), children: "Body" })),
+  );
+  expect(toasts.inert).toBe(false);
+  undo.focus();
+  expect(document.activeElement).toBe(undo);
+  await act(async () => root.render(null));
+  toasts.remove();
+});

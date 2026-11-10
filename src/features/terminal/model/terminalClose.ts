@@ -24,8 +24,10 @@ async function runningTerminals(files: FilePaneTab[]): Promise<RunningTerminal[]
       const process = foreground?.trim();
       if (process) running.push({ file, process });
       else if (supported === false) running.push({ file, process: null });
-    } catch {
-      // A failed query cannot establish that killing the PTY is safe.
+    } catch (caught: unknown) {
+      // The native side drops a session when its shell exits, so this means idle.
+      if (/not running/i.test(caught instanceof Error ? caught.message : String(caught))) continue;
+      // Any other failure cannot establish that killing the PTY is safe.
       running.push({ file, process: null });
     }
   }

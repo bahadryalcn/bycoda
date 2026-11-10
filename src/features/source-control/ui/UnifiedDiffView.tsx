@@ -1361,7 +1361,7 @@ const DiffLineRow = memo(function DiffLineRow({
             className="absolute top-0.5 left-0.5 z-1"
           >
             <InlineAction
-              label={`Comment on line ${number ?? ""}`.trim()}
+              label={t("Comment on line {p0}", { p0: number ?? "" }).trim()}
               motion="none"
               type="button"
               onClick={(event) =>

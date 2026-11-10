@@ -253,13 +253,13 @@ export function TabList({
   );
 }
 
-export type TabProps = Omit<
+/** Icon-only tab (a provider rail): the glyph is the child and `label` is its accessible name. */
+type TabLabel = { iconOnly: true; label: string } | { iconOnly?: false; label?: string };
+
+type TabBase = Omit<
   ButtonProps,
   "value" | "variant" | "size" | "role" | "iconOnly" | "label" | "startIcon" | "selected"
 > & {
-  /** Icon-only tab (a provider rail): the glyph is the child and `label` is its accessible name. */
-  iconOnly?: boolean;
-  label?: string;
   value: string;
   /** Leading glyph from `icons.tsx`; Button sizes it from the shared icon scale. */
   icon?: ReactNode;
@@ -275,6 +275,8 @@ export type TabProps = Omit<
   /** Override `aria-controls` (otherwise derived from `<Tabs panels>`). */
   controls?: string;
 };
+
+export type TabProps = TabBase & TabLabel;
 
 /**
  * One tab: shared Button `tab` (or `item`) presentation with `role="tab"`, ids,

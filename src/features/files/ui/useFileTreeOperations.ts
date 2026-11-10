@@ -335,7 +335,7 @@ export function useFileTreeOperations({
   const transferPaths = async (paths: string[], destParent: string, copy: boolean) => {
     const targets = topLevelTreePaths(paths);
     if (transferVerdict(cwd, targets, destParent, copy) === "into-itself") {
-      throw new Error("Cannot move or copy a folder into itself.");
+      throw new Error(t("Cannot move or copy a folder into itself."));
     }
     const createdPaths: string[] = [];
     for (const from of targets) {
@@ -381,7 +381,7 @@ export function useFileTreeOperations({
           entry.isDir && (destParent === entry.path || destParent.startsWith(`${entry.path}/`)),
       )
     ) {
-      throw new Error("Cannot paste a folder into itself.");
+      throw new Error(t("Cannot paste a folder into itself."));
     }
     const createdPaths: string[] = [];
     for (const entry of clip.entries) {

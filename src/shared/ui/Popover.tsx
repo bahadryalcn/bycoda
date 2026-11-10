@@ -267,9 +267,9 @@ function NativePopover({
         return;
       onDismiss("outside");
     };
-    window.addEventListener("pointerdown", outside);
+    window.addEventListener("pointerdown", outside, true);
     return () => {
-      window.removeEventListener("pointerdown", outside);
+      window.removeEventListener("pointerdown", outside, true);
     };
   }, [onDismiss, dismissOnEscape, ignore, overlayId]);
   // These position the ordinary web popover; the OS positions this surface.
@@ -460,9 +460,9 @@ function WebPopover({
       if (ignore && el?.closest(ignore)) return;
       dismissRef.current?.("outside");
     };
-    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointerdown", onPointerDown, true);
     return () => {
-      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerdown", onPointerDown, true);
     };
   }, [onDismiss, dismissOnEscape, ignore, overlayId]);
 

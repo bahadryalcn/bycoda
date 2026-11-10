@@ -305,6 +305,27 @@ describe("fileTree cache", () => {
     expect(peekDir(root)).toEqual([entry("hello.ts")]);
   });
 
+  it("keeps the previous listing readable while a refresh is in flight and drops it on a hard failure", async () => {
+    listDir.mockResolvedValueOnce([entry("a.ts")]);
+    await listCachedDir(root);
+    let resolve!: (entries: FsEntry[]) => void;
+    listDir.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const pending = refreshDir(root);
+    expect(peekDir(root)).toEqual([entry("a.ts")]);
+    resolve([entry("b.ts")]);
+    await pending;
+    expect(peekDir(root)).toEqual([entry("b.ts")]);
+
+    listDir.mockRejectedValueOnce(new Error("ENOENT"));
+    await expect(refreshDir(root)).rejects.toThrow("ENOENT");
+    expect(peekDir(root)).toBeNull();
+  });
+
   it("refreshCachedDirs re-lists every cached folder", async () => {
     listDir.mockResolvedValueOnce([]);
     await listCachedDir(root);

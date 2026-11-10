@@ -123,4 +123,16 @@ describe("draftCache persistence hooks", () => {
     expect(takeComposerNotice("m1")).toBe("lost one");
     expect(takeComposerNotice("m1")).toBeUndefined();
   });
+
+  it("keeps the selected work mode across a remount until the draft is cleared", async () => {
+    const { getComposerWorkMode, setComposerWorkMode, clearComposerDraft } =
+      await import("./draftCache");
+    setComposerWorkMode("w1", "plan");
+    expect(getComposerWorkMode("w1")).toBe("plan");
+    setComposerWorkMode("w1", undefined);
+    expect(getComposerWorkMode("w1")).toBeUndefined();
+    setComposerWorkMode("w1", "orchestrator");
+    clearComposerDraft("w1");
+    expect(getComposerWorkMode("w1")).toBeUndefined();
+  });
 });

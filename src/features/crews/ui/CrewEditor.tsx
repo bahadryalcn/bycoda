@@ -211,16 +211,22 @@ function ConnectedCrewEditor({
     );
 
   const { livePicked, unfinished } = liveAdditions(data, additions);
-  const update = (patch: Partial<CrewDefinition>) => {
-    setDraft({ ...draft, ...patch });
+  const update = (
+    patch: Partial<CrewDefinition> | ((current: CrewDefinition) => Partial<CrewDefinition>),
+  ) => {
+    setDraft((current) =>
+      current ? { ...current, ...(typeof patch === "function" ? patch(current) : patch) } : current,
+    );
     setNotice("");
   };
   const updatePolicy = (patch: Partial<CrewPolicy>) =>
-    update({ policy: { ...draft.policy, ...patch } });
+    update((current) => ({ policy: { ...current.policy, ...patch } }));
   const member = (id: string, patch: Partial<CrewAgent>) =>
-    update({ agents: draft.agents.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
+    update((current) => ({
+      agents: current.agents.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+    }));
   const removeMember = (id: string) => {
-    update({ agents: draft.agents.filter((a) => a.id !== id) });
+    update((current) => ({ agents: current.agents.filter((a) => a.id !== id) }));
     setSelected((ids) => ids.filter((item) => item !== id));
     setExpandedId((open) => (open === id ? null : open));
   };
@@ -263,7 +269,7 @@ function ConnectedCrewEditor({
         const saved = data.agents.find((agent) => agent.id === id);
         return saved ? [memberFromLibrary(saved, additions.pickedFor)] : [];
       });
-      update({ agents: [...draft.agents, ...added] });
+      update((current) => ({ agents: [...current.agents, ...added] }));
       additions.setPicked([]);
       setPage({ kind: "team" });
       return;
@@ -287,7 +293,7 @@ function ConnectedCrewEditor({
           source: { id: saved.id, updatedAt: saved.updatedAt },
         };
       }
-      update({ agents: [...draft.agents, added] });
+      update((current) => ({ agents: [...current.agents, added] }));
       additions.setNewMember(blankMember(data));
       additions.setSaveToLibrary(false);
       additions.setIssues(false);

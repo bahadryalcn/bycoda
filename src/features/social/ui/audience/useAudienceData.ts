@@ -57,6 +57,7 @@ export function useAudienceData(
     const timer = window.setTimeout(
       () => {
         setLoading(true);
+        setLoadingMore(false);
         setError(undefined);
         Promise.all([client.lists.list(), client.snapshot()])
           .then(async ([listResult, snapshot]) => {

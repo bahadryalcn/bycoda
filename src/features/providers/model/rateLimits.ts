@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import { formatResetDuration } from "../../../shared/i18n/format";
 export { formatResetDuration } from "../../../shared/i18n/format";
 import { asRecord } from "../../../integrations/harness/providers/codex/codexProtocol";
@@ -166,7 +167,7 @@ export function formatWindowLabel(windowMinutes: number): string {
 
 export function formatResetCountdown(ms: number): string {
   const duration = formatResetDuration(ms);
-  return duration === "now" ? "Resets now" : `Resets in ${duration}`;
+  return duration === "now" ? t("Resets now") : t("Resets in {p0}", { p0: duration });
 }
 
 /**

@@ -37,7 +37,18 @@ function useAboveViewportCompensation(ref: { current: HTMLElement | null }, key:
           knownHeights.delete(knownHeights.keys().next().value!);
       }
       const scroller = element.closest<HTMLElement>(".agent-transcript");
-      if (delta !== 0 && scroller && oldBottom <= scroller.getBoundingClientRect().top)
+      // A turn wholly above the view is already compensated by useTurnScrollAnchor.
+      const turn = element.closest<HTMLElement>("[data-transcript-turn]");
+      const turnCompensated =
+        turn?.dataset.transcriptVirtualizedTurn !== "true" &&
+        turn != null &&
+        turn.getBoundingClientRect().bottom - delta <= (scroller?.getBoundingClientRect().top ?? 0);
+      if (
+        delta !== 0 &&
+        scroller &&
+        !turnCompensated &&
+        oldBottom <= scroller.getBoundingClientRect().top
+      )
         scroller.scrollTop += delta;
     });
     observer.observe(element);

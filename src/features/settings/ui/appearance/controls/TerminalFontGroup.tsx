@@ -5,6 +5,7 @@ import { APPEARANCE_DEFAULTS } from "../../../model/appearancePreferences";
 import { Group, Row, Segmented } from "../../settingsControls";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { FontPicker } from "./FontPicker";
+import { useNumberDraft } from "./useNumberDraft";
 
 const SAME_AS_CODE = "__same-as-code";
 /** The terminal-only list: "System" is the same-as-code choice, so it is not offered twice. */
@@ -22,6 +23,9 @@ export function TerminalFontGroup({ appearance: a }: { appearance: AppearanceSet
   useLocale();
   const p = a.preferences;
   const d = APPEARANCE_DEFAULTS;
+  const terminalSize = useNumberDraft(p.terminalSize, (size) =>
+    a.onPreferences({ ...p, terminalSize: size }),
+  );
   const same =
     p.terminalFontSource !== "custom" || !p.terminalFont.trim() || p.terminalFont === "System";
   const modified =
@@ -91,14 +95,7 @@ export function TerminalFontGroup({ appearance: a }: { appearance: AppearanceSet
           min={8}
           max={40}
           step={1}
-          value={p.terminalSize}
-          onChange={(event) => {
-            if (event.currentTarget.validity.valid && event.currentTarget.value !== "")
-              a.onPreferences({
-                ...p,
-                terminalSize: event.currentTarget.valueAsNumber,
-              });
-          }}
+          {...terminalSize}
         />
       </Row>
       <Row

@@ -24,6 +24,16 @@ import { LiveText } from "../../../shared/ui/LiveText";
 import { MicrophoneRecoveryAction } from "./MicrophoneRecoveryAction";
 import styles from "./VoiceSetupSteps.module.css";
 
+/** Audio inputs, or null when the browser cannot list them; the select then keeps its current options. */
+async function listMicrophones(): Promise<MediaDeviceInfo[] | null> {
+  try {
+    const all = await navigator.mediaDevices.enumerateDevices();
+    return all.filter((device) => device.kind === "audioinput");
+  } catch {
+    return null;
+  }
+}
+
 export function VoiceSetupSteps({
   step,
   onValidChange,
@@ -49,7 +59,7 @@ export function VoiceSetupSteps({
   const [advanced, setAdvanced] = useState(false);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const level = useRef(0);
-  const [volume, setVolume] = useState(0);
+  const meter = useRef<HTMLMeterElement | null>(null);
   const playback = useRef<AbortController | null>(null);
   const mic = useRef<RealtimeVoice | LocalVoice | null>(null);
   const epoch = useRef(0);
@@ -58,8 +68,24 @@ export function VoiceSetupSteps({
   const config = JSON.stringify({ step, settings, language });
   useEffect(() => {
     if (step !== "microphone") return;
-    const timer = setInterval(() => setVolume(level.current), 120);
+    const timer = setInterval(() => {
+      if (meter.current) meter.current.value = level.current;
+    }, 120);
     return () => clearInterval(timer);
+  }, [step]);
+  const refreshDevices = (stale: () => boolean) =>
+    listMicrophones().then((found) => {
+      if (found && !stale()) setDevices(found);
+    });
+  useEffect(() => {
+    if (step !== "microphone") return;
+    let stale = false;
+    void listMicrophones().then((found) => {
+      if (found && !stale) setDevices(found);
+    });
+    return () => {
+      stale = true;
+    };
   }, [step]);
   useEffect(() => {
     epoch.current++;
@@ -148,6 +174,7 @@ export function VoiceSetupSteps({
         setBusy(false);
         mic.current?.close();
         mic.current = null;
+        void refreshDevices(() => epoch.current !== attempt);
       }
     };
     try {
@@ -188,12 +215,7 @@ export function VoiceSetupSteps({
         if (epoch.current === attempt)
           await voice.connect(secret, [], { deviceId: settings.microphoneId });
       }
-      if (epoch.current === attempt && navigator.mediaDevices?.enumerateDevices)
-        setDevices(
-          (await navigator.mediaDevices.enumerateDevices()).filter(
-            (device) => device.kind === "audioinput",
-          ),
-        );
+      await refreshDevices(() => epoch.current !== attempt);
     } catch (cause) {
       failed(errorText(cause));
     }
@@ -305,7 +327,8 @@ export function VoiceSetupSteps({
               className={styles.level}
               min={0}
               max={1}
-              value={volume}
+              ref={meter}
+              defaultValue={0}
               aria-label={t("Microphone level")}
             />
           </div>
@@ -316,7 +339,7 @@ export function VoiceSetupSteps({
         </>
       ) : null}
       {error ? (
-        <InlineError action={<MicrophoneRecoveryAction message={error} />}>{error}</InlineError>
+        <InlineError action={<MicrophoneRecoveryAction message={error} />}>{t(error)}</InlineError>
       ) : null}
     </div>
   );

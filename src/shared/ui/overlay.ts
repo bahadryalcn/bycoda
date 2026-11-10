@@ -219,11 +219,14 @@ function modalRoots() {
     ? entries.filter((entry) => descendant(entry, modal.id)).map((entry) => entry.root)
     : [];
 }
+/** Toasts sit above dialogs, so their stack stays reachable while a modal is open. */
+const toastRegion = (node: Node) =>
+  node instanceof Element && node.closest("[data-toast-region]") !== null;
 function syncInert() {
   const roots = modalRoots();
   const next = new Set<HTMLElement>();
   const visit = (el: HTMLElement) => {
-    if (roots.some((root) => root === el)) return;
+    if (roots.some((root) => root === el) || toastRegion(el)) return;
     if (roots.some((root) => el.contains(root))) {
       for (const child of el.children) if (child instanceof HTMLElement) visit(child);
     } else {
@@ -287,7 +290,11 @@ function onKey(event: KeyboardEvent) {
 }
 function onFocus(event: FocusEvent) {
   const roots = modalRoots();
-  if (roots.length && !roots.some((root) => root.contains(event.target as Node))) {
+  if (
+    roots.length &&
+    !roots.some((root) => root.contains(event.target as Node)) &&
+    !toastRegion(event.target as Node)
+  ) {
     const entry = entries.find((entry) => entry.root === roots[0])!;
     initialFocus(entry).focus({ preventScroll: true });
   }
@@ -310,6 +317,10 @@ export function useOverlay(
   close.current = escape;
   const keep = useRef(keepEscape);
   keep.current = keepEscape;
+  const restore = useRef(restoreFocus);
+  const hasEscape = Boolean(escape);
+  const hasKeep = Boolean(keepEscape);
+  const registered = useRef<Entry | null>(null);
   useLayoutEffect(() => {
     if (!enabled || !root.current) return;
     const entry: Entry = {
@@ -317,17 +328,18 @@ export function useOverlay(
       parent,
       root: root.current,
       modal,
-      escape: escape ? () => close.current?.() : undefined,
+      escape: hasEscape ? () => close.current?.() : undefined,
       previous: captured.previous,
       fallbacks: captured.fallbacks,
       scope: captured.scope,
       initialFocusSelector,
       passive,
-      keepEscape: keepEscape ? (event) => keep.current?.(event) ?? false : undefined,
+      keepEscape: hasKeep ? (event) => keep.current?.(event) ?? false : undefined,
     };
     // Child layout effects run first: insert ancestors before their descendants.
     const child = entries.findIndex((item) => descendant(item, id));
     entries.splice(child < 0 ? entries.length : child, 0, entry);
+    registered.current = entry;
     if (entries.length === 1) {
       window.addEventListener("keydown", onKey, true);
       document.addEventListener("focusin", onFocus);
@@ -343,6 +355,7 @@ export function useOverlay(
     )
       initialFocus(entry).focus({ preventScroll: true });
     return () => {
+      registered.current = null;
       const wasTop = entries[entries.length - 1] === entry;
       entries.splice(entries.indexOf(entry), 1);
       syncInert();
@@ -351,20 +364,18 @@ export function useOverlay(
         document.removeEventListener("focusin", onFocus);
         observer?.disconnect();
       }
-      if (restoreFocus && (wasTop || entry.modal)) restoreFocusFor(entry);
+      if (restore.current && (wasTop || entry.modal)) restoreFocusFor(entry);
     };
-  }, [
-    id,
-    parent,
-    captured,
-    root,
-    modal,
-    Boolean(escape),
-    enabled,
-    initialFocusSelector,
-    restoreFocus,
-    passive,
-    Boolean(keepEscape),
-  ]);
+  }, [id, parent, captured, root, modal, enabled]);
+  // These only change what the entry reports; re-registering would restore focus to the opener.
+  useLayoutEffect(() => {
+    restore.current = restoreFocus;
+    const entry = registered.current;
+    if (!entry) return;
+    entry.escape = hasEscape ? () => close.current?.() : undefined;
+    entry.initialFocusSelector = initialFocusSelector;
+    entry.passive = passive;
+    entry.keepEscape = hasKeep ? (event) => keep.current?.(event) ?? false : undefined;
+  }, [hasEscape, initialFocusSelector, passive, hasKeep, restoreFocus]);
   return id;
 }

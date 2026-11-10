@@ -157,7 +157,7 @@ export function useConversationPanelMessages(
       });
       if (result.thread) setThreadId(result.thread.id);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(cause instanceof Error ? t(cause.message) : String(cause));
     } finally {
       setPending(false);
     }
@@ -196,7 +196,7 @@ export function useConversationPanelMessages(
           ? {
               ...current,
               loading: false,
-              error: cause instanceof Error ? cause.message : String(cause),
+              error: cause instanceof Error ? t(cause.message) : String(cause),
             }
           : current,
       );
@@ -212,7 +212,7 @@ export function useConversationPanelMessages(
       loading: true,
     });
     void loadDraftBackups(threadId, environmentId).catch((cause: unknown) =>
-      setError(cause instanceof Error ? cause.message : String(cause)),
+      setError(cause instanceof Error ? t(cause.message) : String(cause)),
     );
   }
   async function selectDraftBackup(hash: string) {
@@ -254,7 +254,7 @@ export function useConversationPanelMessages(
           ? {
               ...current,
               loading: false,
-              error: cause instanceof Error ? cause.message : String(cause),
+              error: cause instanceof Error ? t(cause.message) : String(cause),
             }
           : current,
       );
@@ -328,7 +328,7 @@ export function useConversationPanelMessages(
           ? {
               ...current,
               loading: false,
-              error: cause instanceof Error ? cause.message : String(cause),
+              error: cause instanceof Error ? t(cause.message) : String(cause),
             }
           : current,
       );

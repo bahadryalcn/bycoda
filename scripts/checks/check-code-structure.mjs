@@ -17,7 +17,13 @@ import { fileURLToPath } from "node:url";
 export const root = fileURLToPath(new URL("../../", import.meta.url));
 export const baselineFile = "scripts/checks/code-structure-baseline.json";
 
-/** Line ceilings per layer. A file at or above its ceiling is a finding (`file-lines`). */
+/**
+ * Line targets per layer. Above `limit` a file is only reported as an advisory
+ * (`file-lines-target`, never counted or gated): a prompt to look for a separable
+ * responsibility, not a reason to stop or to split mechanically. Above
+ * `limit * hardCeilingRatio` it is the gated `file-lines` finding.
+ */
+export const hardCeilingRatio = 2;
 export const lineBudgets = [
   {
     rule: "rust-test-file",
@@ -165,11 +171,21 @@ export function scanFile(file, text, publicEntries = new Set()) {
   const lines = text.split("\n").length;
   const budget = lineBudgets.find((candidate) => candidate.test(file));
   if (budget && lines > budget.limit) {
-    findings.push({
-      rule: "file-lines",
-      detail: `${lines} lines > ${budget.limit} (${budget.rule})`,
-      lines,
-    });
+    const ceiling = budget.limit * hardCeilingRatio;
+    findings.push(
+      lines > ceiling
+        ? {
+            rule: "file-lines",
+            detail: `${lines} lines > ${ceiling} (${budget.rule} hard ceiling)`,
+            lines,
+          }
+        : {
+            rule: "file-lines-target",
+            advisory: true,
+            detail: `${lines} lines > ${budget.limit} (${budget.rule} target)`,
+            lines,
+          },
+    );
   }
   if (!testFile.test(file)) {
     const dir = path.posix.dirname(file);
@@ -184,7 +200,10 @@ export function scanFile(file, text, publicEntries = new Set()) {
   return findings;
 }
 
-/** counts: { [file]: { [rule]: number } }; `file-lines` stores the line count, not 1. */
+/**
+ * counts: { [file]: { [rule]: number } }; `file-lines` stores the line count, not 1.
+ * Advisory findings (`file-lines-target`) are returned separately and never counted.
+ */
 export function countFindings(
   files,
   read = (file) => readFileSync(path.join(root, file), "utf8"),
@@ -192,26 +211,21 @@ export function countFindings(
 ) {
   const counts = {};
   const details = [];
+  const advisories = [];
   for (const file of files) {
     const findings = scanFile(file, read(file), publicEntries);
     for (const finding of findings) {
+      if (finding.advisory) {
+        advisories.push({ file, ...finding });
+        continue;
+      }
       counts[file] ??= {};
       counts[file][finding.rule] =
         finding.rule === "file-lines" ? finding.lines : (counts[file][finding.rule] ?? 0) + 1;
       details.push({ file, ...finding });
     }
   }
-  return { counts, details };
-}
-
-/** A baselined file at most this far over its limit may still grow by `growthTolerance` lines. */
-export const nearBudgetRatio = 1.25;
-export const growthTolerance = 10;
-
-/** Extra lines a baselined `file-lines` bucket may grow: only for files close to their budget. */
-export function lineGrowthAllowance(file, baselined) {
-  const budget = lineBudgets.find((candidate) => candidate.test(file));
-  return budget && baselined <= budget.limit * nearBudgetRatio ? growthTolerance : 0;
+  return { counts, details, advisories };
 }
 
 export function compare(counts, baseline, files) {
@@ -221,9 +235,7 @@ export function compare(counts, baseline, files) {
     if (scope && !scope.has(file)) continue;
     for (const [rule, count] of Object.entries(rules)) {
       const allowed = baseline[file]?.[rule] ?? 0;
-      const tolerance =
-        rule === "file-lines" && allowed > 0 ? lineGrowthAllowance(file, allowed) : 0;
-      if (count > allowed + tolerance) increases.push({ file, rule, count, allowed, tolerance });
+      if (count > allowed) increases.push({ file, rule, count, allowed });
     }
   }
   return increases;
@@ -255,7 +267,7 @@ export function main(argv = process.argv.slice(2)) {
         options.files.some((given) => given.endsWith(file) || file.endsWith(given)),
       )
     : all;
-  const { counts, details } = countFindings(files, undefined, publicEntries);
+  const { counts, details, advisories } = countFindings(files, undefined, publicEntries);
   const baselinePath = path.join(root, baselineFile);
   let previous = null;
   try {
@@ -282,8 +294,9 @@ export function main(argv = process.argv.slice(2)) {
       .filter((f) => f.rule === "file-lines")
       .sort((a, b) => b.lines - a.lines)
       .slice(0, 25);
-    console.log("\nLargest files over budget:");
+    console.log("\nLargest files over the hard ceiling:");
     for (const finding of largest) console.log(`${finding.lines}\t${finding.file}`);
+    console.log(`\n${advisories.length} files over their line target (advisory, not gated).`);
     return 0;
   }
 
@@ -306,7 +319,7 @@ export function main(argv = process.argv.slice(2)) {
         {
           schemaVersion: 1,
           purpose:
-            "Existing code-structure findings counted per file and rule by scripts/checks/check-code-structure.mjs. file-lines stores the current line count of an over-budget file. Counts may only fall; regenerate with --update-baseline after reducing them and review the diff.",
+            "Existing code-structure findings counted per file and rule by scripts/checks/check-code-structure.mjs. file-lines stores the current line count of a file over its hard ceiling. Counts may only fall; regenerate with --update-baseline after reducing them and review the diff.",
           counts: sortedCounts(next),
         },
         null,
@@ -327,20 +340,22 @@ export function main(argv = process.argv.slice(2)) {
   for (const increase of increases) {
     const detail =
       details.find((f) => f.file === increase.file && f.rule === increase.rule)?.detail ?? "";
-    const allowance = increase.tolerance
-      ? ` (baseline ${increase.allowed} + ${increase.tolerance} tolerated)`
-      : "";
     console.error(
-      `${increase.file}: ${increase.rule} ${increase.count} > ${increase.allowed + increase.tolerance}${allowance} ${detail}`,
+      `${increase.file}: ${increase.rule} ${increase.count} > ${increase.allowed} ${detail}`,
     );
   }
   if (increases.length) {
     console.error(
-      `\nA baselined over-budget file may not grow, except a file within ${nearBudgetRatio}x of its limit, which may grow by up to ${growthTolerance} lines over its baseline. Split the file into its owning feature/module folder or import through the layer's public entry (docs/reference/code-structure.md). Only an owner-approved exception may be accepted with --update-baseline.`,
+      `\nA file may not cross its hard ceiling (${hardCeilingRatio}x the line target), and a baselined file already over it may not grow. Move the responsibility you touch into its owning feature/module folder or import through the layer's public entry (docs/reference/code-structure.md). Only an owner-approved exception may be accepted with --update-baseline.`,
     );
   }
+  // Advisories never fail the check. Listed per file only in changed-file mode to keep full runs quiet.
+  if (options.files) {
+    for (const advisory of advisories)
+      console.log(`note: ${advisory.file}: ${advisory.detail}, advisory only`);
+  }
   console.log(
-    `Code structure: ${files.length} files scanned, ${details.length} baselined findings, ${increases.length} increases.`,
+    `Code structure: ${files.length} files scanned, ${details.length} baselined findings, ${increases.length} increases, ${advisories.length} over line target (advisory).`,
   );
   return increases.length ? 1 : 0;
 }

@@ -6,6 +6,7 @@ import {
 } from "../../features/connections/model/newLocalHostSession";
 import { t, useT } from "../../shared/i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useMenuError } from "./useMenuError";
 import {
   AppWindow,
   Archive,
@@ -431,9 +432,6 @@ export function useProjectMenu({
     | { kind: "set"; groupId: string; lockNow: boolean }
     | null
   >(null);
-  const [menuErrorState, setMenuErrorState] = useState<{ path?: string; message: string } | null>(
-    null,
-  );
   const [localHostCreating, setLocalHostCreating] = useState(false);
   const localHostCreationPending = useRef(false);
   const [externalEditors, setExternalEditors] = useState<ExternalEditor[] | null>(null);
@@ -455,12 +453,10 @@ export function useProjectMenu({
     ? notificationMuteStatus(notificationPreferences[readyNotificationProject.id])
     : null;
 
-  // An error belongs to the menu it was raised for. Cleared while rendering when
-  // the menu changes or closes, so it never carries over to another project.
-  if (menuErrorState && menuErrorState.path !== menuPath) setMenuErrorState(null);
-  const menuError = menuErrorState ? menuErrorState.message : null;
-  const setMenuError = (message: string | null) =>
-    setMenuErrorState(message === null ? null : { path: menuPath, message });
+  const { menuError, setMenuError, failMenuError, clearMenuError } = useMenuError(
+    menuPath,
+    projectMenu != null || groupMenu != null,
+  );
 
   useEffect(() => {
     let active = true;
@@ -509,6 +505,7 @@ export function useProjectMenu({
     setProjectMenu(null);
     setNotificationMenu(null);
     setFetchAll(null);
+    clearMenuError();
     setGroupMenu({ x, y, id, move });
   };
 
@@ -528,6 +525,7 @@ export function useProjectMenu({
   };
 
   const close = () => {
+    clearMenuError();
     setProjectMenu(null);
     setGroupMenu(null);
     setNotificationMenu(null);
@@ -647,15 +645,14 @@ export function useProjectMenu({
           setProjectMenu(null);
           restoreFocus();
         })
-        .catch((error: unknown) => {
-          setMenuError(error instanceof Error ? error.message : String(error));
-        });
+        .catch(failMenuError);
       return false;
     } else if (action === "notifications-settings") {
       onOpenNotificationSettings?.(path);
     } else if (action === "reconnect-machine") {
       const remote = remoteProjectFor(path);
-      if (remote) void reconnectRemoteMachine(remote.environmentId, { signIn: true });
+      if (remote)
+        void reconnectRemoteMachine(remote.environmentId, { signIn: true }).catch(failMenuError);
     } else if (action === "edit-machine") {
       const remote = remoteProjectFor(path);
       const machine = remote ? knownRemoteMachine(remote.environmentId) : undefined;
@@ -672,7 +669,7 @@ export function useProjectMenu({
         path,
         name: resolveTabGroupLabel(key, groupLabels, basename(path)),
       });
-    } else if (action === "reveal") void revealPath(path);
+    } else if (action === "reveal") void revealPath(path).catch(failMenuError);
     else if (action === "archive") {
       void Promise.resolve()
         .then(() => onRemoveProject?.(path, { purgeData: false }))
@@ -680,9 +677,7 @@ export function useProjectMenu({
           setProjectMenu(null);
           restoreFocus();
         })
-        .catch((error: unknown) =>
-          setMenuError(error instanceof Error ? error.message : String(error)),
-        );
+        .catch(failMenuError);
       return false;
     } else if (action === "delete") {
       setRemoving({
@@ -1056,7 +1051,7 @@ export function useProjectMenu({
           restoreFocus();
         }}
         showActions={false}
-        ariaLabel="Project group actions"
+        ariaLabel={t("Project group actions")}
         footer={menuError ? <Alert tone="danger">{menuError}</Alert> : undefined}
         compactAppearance
         extraItems={[
@@ -1432,7 +1427,7 @@ export function useProjectMenu({
         <PasswordPromptDialog
           title={t("Remove lock from {p0}", { p0: lockDialog.name })}
           description={t("The group stays; it just stops asking for the password.")}
-          submitLabel="Remove lock"
+          submitLabel={t("Remove lock")}
           danger
           verify={(password) => removeGroupLock(lockDialog.groupId, password)}
           onDone={() => {

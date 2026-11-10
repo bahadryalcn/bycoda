@@ -59,13 +59,21 @@ export function useGlobalRecentSessions(
     queueMicrotask(() => {
       if (!cancelled) setClock(Date.now());
     });
-    const timer = window.setInterval(() => {
+    const tickNow = () => {
       setClock(Date.now());
       refresh();
+    };
+    const timer = window.setInterval(() => {
+      if (!document.hidden) tickNow();
     }, 60_000);
+    const onVisible = () => {
+      if (!document.hidden) tickNow();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [enabled, refresh]);
   useEffect(() => {
@@ -140,11 +148,13 @@ export function useGlobalRecentSessions(
     () => buildGlobalRecentSessions(stored, history, sessions, allowedProjectKeys, clock),
     [stored, history, sessions, allowedProjectKeys, clock],
   );
-  return {
-    rows,
-    loading: enabled && loading,
-    error,
-    remoteHistoryLimited: [...allowedProjectKeys].some(isRemoteProjectPath),
-    refresh,
-  };
+  const remoteHistoryLimited = useMemo(
+    () => [...allowedProjectKeys].some(isRemoteProjectPath),
+    [allowedProjectKeys],
+  );
+  const visibleLoading = enabled && loading;
+  return useMemo(
+    () => ({ rows, loading: visibleLoading, error, remoteHistoryLimited, refresh }),
+    [rows, visibleLoading, error, remoteHistoryLimited, refresh],
+  );
 }

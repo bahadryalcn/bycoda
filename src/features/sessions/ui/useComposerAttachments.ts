@@ -265,7 +265,9 @@ export function useComposerAttachmentReads({
               }
               if (incoming.length === 0) {
                 setPasteError(
-                  "Nothing to attach from that drop — the file may have been moved, renamed, or deleted.",
+                  t(
+                    "Nothing to attach from that drop — the file may have been moved, renamed, or deleted.",
+                  ),
                 );
                 return;
               }

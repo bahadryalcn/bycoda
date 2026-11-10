@@ -109,7 +109,7 @@ it("only proposes finite personal notes, normalizes preview and retains the orig
   ).toBeUndefined();
 });
 it("creates no jobs until explicit start and verifies an uncertain result before retrying", async () => {
-  const accepted = { id: "job", ...drafts[0], status: "queued" } as AssistantJob;
+  const accepted = { ...drafts[0], id: "job", status: "queued" } as AssistantJob;
   let saved = false;
   const request = vi.fn(async (input: AssistantRequest): Promise<any> => {
     if (input.op === "snapshot") return { snapshot: { jobs: saved ? [accepted] : [] } };
@@ -200,7 +200,10 @@ it("hands a job to the project the same spoken turn just created and names what 
     { id: "locked", path: "/locked" },
   ];
   const visible = [{ path: "/a" }, { path: "/new" }, { path: "/locked" }];
-  const scope = (allowed: readonly string[], locked = (path: string) => path === "/locked") => ({
+  const scope = (
+    allowed: readonly string[],
+    locked: (path: string) => boolean = (path) => path === "/locked",
+  ) => ({
     allowed,
     visible,
     locked,

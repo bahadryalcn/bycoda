@@ -1155,7 +1155,7 @@ function ProjectBrowserPanel({
                     event.currentTarget.focus();
                     event.currentTarget.setPointerCapture?.(event.pointerId);
                     pressedPointer.current = { x, y, button };
-                    suppressClick.current = true;
+                    suppressClick.current = event.button === 0;
                     queueInput({ kind: "pointer", action: "down", x, y, button });
                   }}
                   onPointerMove={(event) => {
@@ -1204,7 +1204,7 @@ function ProjectBrowserPanel({
                   onPointerUp={(event) => {
                     const pressed = pressedPointer.current;
                     pressedPointer.current = undefined;
-                    if (pressed && canPageInput) {
+                    if (pressed) {
                       const box = event.currentTarget.getBoundingClientRect();
                       const x = box.width
                         ? Math.max(
@@ -1224,7 +1224,7 @@ function ProjectBrowserPanel({
                             ),
                           )
                         : pressed.y;
-                      queueInput({ kind: "pointer", action: "up", ...pressed, x, y });
+                      queueInput({ kind: "pointer", action: "up", ...pressed, x, y }, true);
                       if (event.currentTarget.hasPointerCapture?.(event.pointerId))
                         event.currentTarget.releasePointerCapture(event.pointerId);
                       inputReceiver.current?.focus();

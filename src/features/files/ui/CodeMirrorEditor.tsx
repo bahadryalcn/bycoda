@@ -1057,7 +1057,7 @@ function StandardCodeMirrorEditor({
     try {
       const next = nextConflictedFile(await gitConflicts(cwd), gitRelative);
       if (!next) {
-        setFileNote("No other conflicted files");
+        setFileNote(t("No other conflicted files"));
         return;
       }
       setFileNote(null);
@@ -1072,7 +1072,7 @@ function StandardCodeMirrorEditor({
     setMarking({ busy: true, error: null });
     try {
       const saved = (await saveNowRef.current?.()) ?? false;
-      if (!saved || dirtyRef.current) throw new Error("Couldn't save the file");
+      if (!saved || dirtyRef.current) throw new Error(t("Couldn't save the file"));
       await gitStageFile(cwd, gitRelative);
       notifyGitChanged(cwd, "index");
       setHadConflicts(false);

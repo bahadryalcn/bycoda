@@ -1172,11 +1172,11 @@ export function LinkedWorkItemPanel({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [visible]);
 
-  const kindLabel = target.kind === "pr" ? "Pull request" : "Issue";
+  const kindLabel = target.kind === "pr" ? t("pull request") : t("issue");
   return (
     <aside
       ref={resize.setPaneRef}
-      aria-label={t("Linked {p0} #{p1}", { p0: kindLabel.toLowerCase(), p1: target.number })}
+      aria-label={t("Linked {p0} #{p1}", { p0: kindLabel, p1: target.number })}
       aria-busy={loading}
       aria-hidden={!visible}
       inert={!visible || undefined}
@@ -1188,18 +1188,18 @@ export function LinkedWorkItemPanel({
       <Sash
         {...resize.sashProps}
         appearance="hidden"
-        label={t("Resize linked {p0} panel", { p0: kindLabel.toLowerCase() })}
+        label={t("Resize linked {p0} panel", { p0: kindLabel })}
         className="absolute inset-y-0 -left-px"
       />
       <header className="flex shrink-0 items-center gap-2 px-3 py-1">
         <span className="min-w-0 flex-1 truncate text-ui-caption font-medium text-(--ui-text-secondary)">
-          {t("Linked {p0} #{p1}", { p0: kindLabel.toLowerCase(), p1: target.number })}
+          {t("Linked {p0} #{p1}", { p0: kindLabel, p1: target.number })}
         </span>
         <Button
           variant="ghost"
           size="sm"
           iconOnly
-          label={t("Close {p0} panel", { p0: kindLabel.toLowerCase() })}
+          label={t("Close {p0} panel", { p0: kindLabel })}
           onClick={onClose}
           className="shrink-0"
         >

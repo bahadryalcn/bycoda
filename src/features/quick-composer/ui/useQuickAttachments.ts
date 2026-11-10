@@ -24,6 +24,7 @@ import {
   attachmentDropVerdict,
   type AttachmentDropBlock,
 } from "../../sessions/model/attachmentDrop";
+import { t } from "../../../shared/i18n";
 import { harnessSupportsAttachments, type Attachment } from "../../sessions/model/session";
 import {
   isFileReferenceText,
@@ -128,12 +129,14 @@ export function useQuickAttachments(
     (
       read: (accepted: QuickPreparation) => Promise<Attachment[]>,
       captureEarly = false,
+      /** Wait behind a pending read instead of dropping this one; for pastes that already hold their files. */
+      queued = false,
     ): Promise<void> => {
       const queue = queueRef.current;
       if (
         !isSupported() ||
         (owner && !owner.canMutate()) ||
-        (!captureEarly && queue.pending > 0) ||
+        (!captureEarly && !queued && queue.pending > 0) ||
         (captureEarly && queue.screenshot)
       )
         return Promise.resolve();
@@ -190,7 +193,7 @@ export function useQuickAttachments(
             before.length + picked.length >= MAX_ATTACHMENTS &&
             alive.current
           )
-            onError(`You can attach up to ${MAX_ATTACHMENTS} files.`);
+            onError(t("You can attach up to {p0} files.", { p0: MAX_ATTACHMENTS }));
           return picked;
         });
         const stored = await accepted.stage("stored", () =>
@@ -302,7 +305,8 @@ export function useQuickAttachments(
     ).then((results) => {
       const failed = results.find((result) => result.status === "rejected");
       if (failed?.status === "rejected") throw failed.reason;
-      if (overflow && alive.current) onError(`You can attach up to ${MAX_ATTACHMENTS} files.`);
+      if (overflow && alive.current)
+        onError(t("You can attach up to {p0} files.", { p0: MAX_ATTACHMENTS }));
       return results.flatMap((result) => (result as PromiseFulfilledResult<Attachment[]>).value);
     });
   };
@@ -322,13 +326,19 @@ export function useQuickAttachments(
       const files = await attachmentsFromPaths(chosen);
       if (!files.length)
         throw new Error(
-          "Nothing to attach from that path — the file may have been moved, renamed, or deleted.",
+          t(
+            "Nothing to attach from that path — the file may have been moved, renamed, or deleted.",
+          ),
         );
       return {
         files,
         ...(chosen.length < paths.length
           ? {
-              warning: `Attached ${files.length} of ${paths.length} copied files. A turn carries up to ${MAX_ATTACHMENTS}.`,
+              warning: t("Attached {p0} of {p1} copied files. A turn carries up to {p2}.", {
+                p0: files.length,
+                p1: paths.length,
+                p2: MAX_ATTACHMENTS,
+              }),
             }
           : {}),
       };
@@ -359,7 +369,7 @@ export function useQuickAttachments(
       event.preventDefault();
       const selected = pasted.slice(0, MAX_ATTACHMENTS);
       const overflow = selected.length < pasted.length;
-      void collect((accepted) => readFiles(selected, accepted, overflow));
+      void collect((accepted) => readFiles(selected, accepted, overflow), false, true);
       return;
     }
     if (!supported) return;

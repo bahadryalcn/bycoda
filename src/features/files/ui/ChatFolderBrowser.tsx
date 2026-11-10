@@ -20,7 +20,7 @@ import {
   localExplorerPath,
   saveExplorerMapping,
 } from "../../../shared/lib/remoteExplorerPaths";
-import { displayPath, isEqualOrInside } from "../../../shared/lib/paths";
+import { displayPath, isEqualOrInside, parentPath } from "../../../shared/lib/paths";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { ArrowUp, ExternalLink, FolderOpen } from "../../../shared/ui/icons";
 import { FileTypeIcon } from "./FileTypeIcon";
@@ -59,7 +59,8 @@ export function ChatFolderBrowser({
       ? "Reveal in File Explorer"
       : "Open in File Manager";
   const entries = listing?.entries;
-  const parent = listing?.parent;
+  const parentDir = parentPath(directory);
+  const parent = listing?.parent ?? (parentDir !== directory ? parentDir : undefined);
 
   function configureMapping() {
     const mapping = explorerMappingFor(directory);

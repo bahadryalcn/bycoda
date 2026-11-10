@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { gitCommitFileDiff, gitCommitFiles, type GitChangedFile } from "../../../platform/tauri/fs";
 import { forEachConcurrent } from "../../../shared/lib/concurrent";
-import { buildUnifiedFile, type UnifiedFileDiff } from "../model/unifiedDiff";
+import { runDiffWorker } from "../model/diffWorker";
+import { buildUnifiedFileAsync, type UnifiedFileDiff } from "../model/unifiedDiff";
 import { UnifiedDiffView, type UnifiedDiffFileModel } from "./UnifiedDiffView";
 
 type Props = {
@@ -58,7 +59,11 @@ export function CommitDiff({ cwd, sha }: Props) {
                 const diff = await gitCommitFileDiff(cwd, sha, file.relative);
                 const unified =
                   !diff.binary && !diff.tooLarge
-                    ? buildUnifiedFile(diff.original, diff.current)
+                    ? await runDiffWorker(
+                        (remote) => remote.build(diff.original, diff.current),
+                        () => buildUnifiedFileAsync(diff.original, diff.current),
+                        { size: diff.original.length + diff.current.length },
+                      )
                     : null;
                 loaded = {
                   binary: diff.binary,
@@ -109,9 +114,9 @@ export function CommitDiff({ cwd, sha }: Props) {
         tooLarge: loaded?.tooLarge,
         emptyMessage:
           loaded == null
-            ? "Loading…"
+            ? t("Loading…")
             : loaded.error
-              ? `Couldn’t load diff: ${loaded.error}`
+              ? t("Couldn’t load diff: {p0}", { p0: loaded.error })
               : unified != null &&
                   unified.additions === 0 &&
                   unified.deletions === 0 &&

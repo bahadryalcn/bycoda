@@ -896,7 +896,7 @@ function TitleBarComponent({
                 "window",
                 event,
                 tabs.find((tab) => tab.id === tabId)?.busyHarnesses.length
-                  ? "Move after response finishes"
+                  ? t("Move after response finishes")
                   : undefined,
               );
               setExternalPaneDrop(null);
@@ -908,7 +908,7 @@ function TitleBarComponent({
             setDropFeedback(
               overStrip ? "move" : "blocked",
               event,
-              overStrip ? "Release to reorder tabs" : undefined,
+              overStrip ? t("Release to reorder tabs") : undefined,
             );
             if (!onPlaceOnPane) {
               setExternalPaneDrop(null);
@@ -916,7 +916,7 @@ function TitleBarComponent({
             }
             if (!pulledBelowTabs(event)) {
               setExternalPaneDrop(null);
-              setDropFeedback("move", event, "Release to reorder tabs");
+              setDropFeedback("move", event, t("Release to reorder tabs"));
               return false;
             }
             const over = paneDropFromPoint(event.clientX, event.clientY);
@@ -942,10 +942,10 @@ function TitleBarComponent({
                 event,
                 tabId === activeId &&
                   tabs.find((tab) => tab.id === tabId)?.focusedPaneId === over.id
-                  ? `Split ${over.edge} with a new session`
+                  ? t("Split {p0} with a new session", { p0: t(over.edge) })
                   : over.edge === "center"
-                    ? "Add as pane tab"
-                    : `Place ${over.edge}`,
+                    ? t("Add as pane tab")
+                    : t("Place {p0}", { p0: t(over.edge) }),
               );
             return over != null || !overStrip;
           },
@@ -1057,11 +1057,9 @@ function TitleBarComponent({
 
   useEffect(() => {
     document.title = systemTitle;
-    try {
-      void getCurrentWindow().setTitle(systemTitle);
-    } catch (error) {
-      console.warn("Title bar operation failed", error);
-    }
+    void Promise.resolve()
+      .then(() => getCurrentWindow().setTitle(systemTitle))
+      .catch((error: unknown) => console.warn("Title bar operation failed", error));
   }, [systemTitle]);
 
   const contextTab = tabMenu ? tabs.find((tab) => tab.id === tabMenu.tabId) : undefined;
@@ -1395,7 +1393,7 @@ function TitleBarComponent({
           x={layoutMenu.x}
           y={layoutMenu.y}
           items={layoutMenuItems}
-          ariaLabel="Layout"
+          ariaLabel={t("Layout")}
           onPick={onPickLayoutMenu}
           onClose={() => setLayoutMenu(null)}
         />

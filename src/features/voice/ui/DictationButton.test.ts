@@ -114,7 +114,7 @@ it("cancels dictation when the composer becomes unavailable", async () => {
   expect(mock.cancel).toHaveBeenCalled();
 });
 
-it("keeps preparation cancellable and blocks duplicate stop while transcribing", async () => {
+it("keeps preparation cancellable and lets a click cancel a stuck transcription", async () => {
   saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true });
   const { button } = await render();
   await act(async () => button()!.click());
@@ -125,10 +125,12 @@ it("keeps preparation cancellable and blocks duplicate stop while transcribing",
   await act(async () => button()!.click());
   expect(mock.stop).toHaveBeenCalledOnce();
   await act(async () => mock.callbacks.state("finishing"));
-  expect(button()?.getAttribute("aria-label")).toBe("Transcribing…");
-  expect(button()?.getAttribute("aria-disabled")).toBe("true");
+  expect(button()?.getAttribute("aria-label")).toBe("Cancel transcription");
+  expect(button()?.getAttribute("aria-disabled")).not.toBe("true");
+  expect(mock.cancel).not.toHaveBeenCalled();
   await act(async () => button()!.click());
   expect(mock.stop).toHaveBeenCalledOnce();
+  expect(mock.cancel).toHaveBeenCalledOnce();
   await act(async () => mock.callbacks.state("idle"));
   expect(button()?.getAttribute("aria-label")).toBe("Dictate");
   expect(button()?.getAttribute("aria-busy")).toBeNull();

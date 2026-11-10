@@ -425,9 +425,10 @@ export function MessageQueue({
                 : route === "restart"
                   ? t("Steer restarts with this model")
                   : undefined;
+            const files = message.attachments.length;
             const label =
               message.text.trim() ||
-              `${message.attachments.length} attachment${message.attachments.length === 1 ? "" : "s"}`;
+              t(files === 1 ? "1 attachment" : "{p0} attachments", { p0: files });
             return (
               <div
                 key={message.id}

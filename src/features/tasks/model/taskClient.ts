@@ -31,6 +31,8 @@ import { HOST_CREW_TASKS } from "../../crews/model/crew";
 import { TASK_RUN_BUDGET_CAPABILITY, type TaskRunBudget } from "./taskBudget";
 import { TASK_PREFLIGHT_CAPABILITY, type TaskPreflightRequirement } from "./taskPreflight";
 import { projectKey } from "../../../shared/lib/paths";
+import { t } from "../../../shared/i18n";
+import { taskClientErrors } from "./taskClientErrors";
 import {
   HOST_TASKS,
   HOST_TASK_ACCOUNTS,
@@ -471,9 +473,7 @@ export async function listBoardTaskResults(
               evaluationSupported: capabilities.includes("tasks.evaluation"),
             }));
           }
-          throw new Error(
-            "The task board changed while loading. Refresh to load its latest state.",
-          );
+          throw new Error(taskClientErrors.boardChanged());
         } catch (error) {
           const currentWatch = watchedTasks.get(machine.id);
           if (currentWatch) currentWatch.dirty = true;
@@ -508,7 +508,7 @@ export async function saveTask(
   const machine = taskMachineFor(machines, draft.cwd, draft.machineId);
   await requireTaskAccount(machine, draft.providerAccountId);
   if (draft.crewDefinitionId && !(await machineCapabilities(machine)).includes(HOST_CREW_TASKS))
-    throw new Error("Update this project's host to run tasks with a crew.");
+    throw new Error(taskClientErrors.crewHost());
   await requireTaskContinuation(machine, !draft.crewDefinitionId && draft.continueUntilDone);
   await requireTaskHarnessCapabilities(machine, draft);
   await requireTaskWorkspaces(machine, !draft.crewDefinitionId && Boolean(draft.workspace));
@@ -532,9 +532,7 @@ export async function saveTask(
   if (creation) {
     const target = JSON.stringify([machine.id, machine.environmentId, project.id]);
     if (creation.target && creation.target !== target)
-      throw new Error(
-        "Resolve the previous task creation on its original machine before changing projects.",
-      );
+      throw new Error(taskClientErrors.resolvePrevious());
     if (creation.attempted) {
       // A failed reply is not evidence that the Host did not persist the task.
       // Failed reconciliation must not authorize another write.
@@ -542,7 +540,7 @@ export async function saveTask(
         projectId: project.id,
       });
       if (!Array.isArray(existing))
-        throw new Error("The previous task creation could not be checked.");
+        throw new Error(taskClientErrors.creationUnchecked());
       const recovered = existing.find(
         (task) => task.id === creation.id && task.projectId === project.id,
       );
@@ -585,7 +583,7 @@ export function taskMachineFor(
   const machine = machineId ? machines.find((entry) => entry.id === machineId) : inferred;
   if (!machine) throw new Error(TASK_MACHINE_ERROR);
   if (!inferred || inferred.id !== machine.id)
-    throw new Error("Choose a project on the selected machine.");
+    throw new Error(taskClientErrors.projectOnMachine());
   return machine;
 }
 
@@ -598,7 +596,7 @@ export async function requireTaskAccount(
     accountId !== "default" &&
     !(await machineCapabilities(machine)).includes(HOST_TASK_ACCOUNTS)
   )
-    throw new Error("Update the selected host to run tasks with the selected provider account.");
+    throw new Error(taskClientErrors.accountHost());
 }
 
 export async function requireTaskContinuation(
@@ -607,7 +605,9 @@ export async function requireTaskContinuation(
 ): Promise<void> {
   if (enabled && !(await machineCapabilities(machine)).includes(HOST_TASK_CONTINUATION))
     throw new Error(
-      `Update bycoda Host on ${isLocalSyncMachine(machine) ? "this computer" : machine.name} to continue tasks until complete.`,
+      taskClientErrors.continuationHost(
+        isLocalSyncMachine(machine) ? t("this computer") : machine.name,
+      ),
     );
 }
 
@@ -626,21 +626,21 @@ export async function requireTaskHarnessCapabilities(
   if (clearReviewer && !capabilities.includes(HOST_TASK_REVIEWER_PROFILE))
     throw new Error(TASK_MACHINE_ERROR);
   if (options.budget && !capabilities.includes(TASK_RUN_BUDGET_CAPABILITY))
-    throw new Error("Update the selected host to enforce the total run budget.");
+    throw new Error(taskClientErrors.budgetHost());
   if (options.preflightRequirements?.length && !capabilities.includes(TASK_PREFLIGHT_CAPABILITY))
-    throw new Error("Update the selected host to check preparation requirements.");
+    throw new Error(taskClientErrors.preflightHost());
 }
 
 export async function preflightTaskDraft(machines: readonly RemoteMachine[], draft: TaskDraft) {
   const machine = taskMachineFor(machines, draft.cwd, draft.machineId);
   const capabilities = await machineCapabilities(machine);
   if (!capabilities.includes(TASK_PREFLIGHT_CAPABILITY))
-    throw new Error("Update the selected host to check preparation requirements.");
+    throw new Error(taskClientErrors.preflightHost());
   const path = parseRemotePath(draft.cwd)?.hostPath ?? draft.cwd;
   const project = (await machineProjects(machine)).find(
     (entry) => projectKey(entry.cwd) === projectKey(path),
   );
-  if (!project) throw new Error("Choose a registered project before checking preparation.");
+  if (!project) throw new Error(taskClientErrors.registeredProject());
   return sendHostRequest<import("./taskPreflight").TaskPreflightReport>(
     machine.id,
     "tasks.preflight",
@@ -731,7 +731,7 @@ export async function retargetTask(
 export async function reorderTasks(tasks: readonly BoardTask[]): Promise<BoardTask[]> {
   if (!tasks.length) return [];
   if (tasks.some((task) => task.machineId !== tasks[0].machineId))
-    throw new Error("Reorder tasks on the same machine");
+    throw new Error(taskClientErrors.reorderSameMachine());
   const updated = await remoteRequest<HostTask[]>(
     tasks[0].machineId,
     "tasks.reorder",
@@ -754,9 +754,7 @@ export async function requireTaskWorkspaces(
   enabled: boolean,
 ): Promise<void> {
   if (enabled && !(await machineCapabilities(machine)).includes(HOST_TASK_WORKSPACES))
-    throw new Error(
-      "Update bycoda Host on the selected machine to choose task workspaces and start controls.",
-    );
+    throw new Error(taskClientErrors.workspaceHost());
 }
 
 export async function recheckTaskReview(task: BoardTask): Promise<BoardTask> {

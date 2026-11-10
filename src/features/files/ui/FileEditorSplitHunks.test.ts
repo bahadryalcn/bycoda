@@ -149,7 +149,7 @@ describe("hunk actions in the split editor layout", { timeout: 20_000 }, () => {
       [chunk]!.querySelector<HTMLElement>(`.cm-split-hunk-${action}`)!;
   async function click(button: HTMLElement) {
     await act(async () => {
-      button.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
   }
 

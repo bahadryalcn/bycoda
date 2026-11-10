@@ -3698,34 +3698,20 @@ fn git_commit_files_for(root: &Path, sha: &str) -> Result<Vec<GitChangedFile>, S
     let sha = git_peel_commit(root, sha)?;
     let mut files: HashMap<String, FileAcc> = HashMap::new();
     let mut statuses: HashMap<String, &'static str> = HashMap::new();
-    if let Some(text) = git_run(
-        root,
-        &[
-            "diff-tree",
-            "--no-commit-id",
-            "-r",
-            "--root",
-            "--no-renames",
-            "--numstat",
-            "-z",
-            &sha,
-        ],
-    ) {
+    let first_parent = git_stdout(root, &["rev-parse", "--verify", &format!("{sha}^1")]);
+    let range: Vec<&str> = match first_parent.as_deref() {
+        Some(parent) => vec![parent, sha.as_str()],
+        None => vec!["--root", sha.as_str()],
+    };
+    let diff = |mode: &str| {
+        let mut args = vec!["diff-tree", "--no-commit-id", "-r", "--no-renames", mode, "-z"];
+        args.extend(&range);
+        git_run(root, &args)
+    };
+    if let Some(text) = diff("--numstat") {
         add_numstat_map(&text, &mut files);
     }
-    if let Some(names) = git_run(
-        root,
-        &[
-            "diff-tree",
-            "--no-commit-id",
-            "-r",
-            "--root",
-            "--no-renames",
-            "--name-status",
-            "-z",
-            &sha,
-        ],
-    ) {
+    if let Some(names) = diff("--name-status") {
         add_name_status(&names, &mut statuses);
     }
     let mut out = Vec::with_capacity(files.len().max(statuses.len()));

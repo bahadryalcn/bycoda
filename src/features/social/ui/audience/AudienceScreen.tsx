@@ -44,6 +44,8 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
   const [activePersonId, setActivePersonId] = useState<string>();
   const [dialog, setDialog] = useState<Dialog>();
   const [notice, setNotice] = useState<string>();
+  const [noticeTone, setNoticeTone] = useState<"success" | "warning">("success");
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [aiBusy, setAiBusy] = useState(false);
   const [aiSteps, setAiSteps] = useState<number>();
@@ -99,19 +101,31 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
   }
 
   async function removeSelectedFromList() {
-    if (!activeList || activeList.kind !== "static") return;
+    if (!activeList || activeList.kind !== "static" || bulkBusy) return;
+    const ok = await confirm({
+      title: t("Remove from this list?"),
+      message: t("The selected people stay in your audience and in any other list."),
+      confirmLabel: t("Remove"),
+      danger: true,
+    });
+    if (!ok) return;
+    setBulkBusy(true);
     setError(undefined);
     try {
       const changed = await removeFromList(client, activeList.id, selectedIds);
+      setNoticeTone("success");
       setNotice(t("{p0} removed from {p1}", { p0: formatNumber(changed), p1: activeList.name }));
       setSelected(new Set());
       data.reload();
     } catch (err) {
       setError(errorMessage(err));
+    } finally {
+      setBulkBusy(false);
     }
   }
 
   async function optOutSelected() {
+    if (bulkBusy) return;
     const ok = await confirm({
       title: t("Stop contacting these people?"),
       message: t("They will not be sent any message on any channel. Nothing is deleted."),
@@ -119,9 +133,11 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
       danger: true,
     });
     if (!ok) return;
+    setBulkBusy(true);
     setError(undefined);
     try {
       const result = await suppressPeople(client, selectedIds);
+      setNoticeTone(result.failed.length ? "warning" : "success");
       setNotice(
         t("{p0} people opted out, {p1} could not be updated", {
           p0: formatNumber(result.done),
@@ -132,6 +148,8 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
       data.reload();
     } catch (err) {
       setError(errorMessage(err));
+    } finally {
+      setBulkBusy(false);
     }
   }
 
@@ -227,7 +245,7 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
           ) : null}
         </div>
 
-        {notice ? <InlineMessage tone="success">{notice}</InlineMessage> : null}
+        {notice ? <InlineMessage tone={noticeTone}>{notice}</InlineMessage> : null}
         {error ? <InlineError>{error}</InlineError> : null}
 
         <TabPanel value="people">
@@ -247,7 +265,10 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
                   aria-label={t("Search people")}
                   placeholder={t("Search by name")}
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                    setSelected(new Set());
+                  }}
                   clearable
                 />
               </div>
@@ -257,6 +278,7 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
                   items={bulkItems}
                   onClear={() => setSelected(new Set())}
                   onPick={pickBulk}
+                  disabled={bulkBusy}
                 />
               ) : null}
 
@@ -351,6 +373,7 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
           lists={data.lists}
           onClose={() => setDialog(undefined)}
           onCollected={(result) => {
+            setNoticeTone("success");
             setNotice(
               result.unsupported
                 ? undefined

@@ -5,7 +5,7 @@ import {
   handoffPhaseOf,
   subscribeHandoffPhase,
 } from "../../../integrations/harness/core/handoffPhase";
-import { useLocale, useT } from "../../../shared/i18n";
+import { t, useLocale, useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
   ChevronRight,
@@ -649,7 +649,7 @@ function ActivityInterjectionRow({ block }: { block: Block }) {
   );
   const meta = block.interjection;
   if (!meta) return null;
-  const chrome = interjectionChrome(meta);
+  const chrome = interjectionChrome(meta, t);
   const summary = proseSummary(block.text);
   const label = (
     <span className="min-w-0 flex-1 truncate font-sans text-ui-body">
@@ -900,7 +900,11 @@ function ActivityToolRow({
     <div className="flex min-w-0 flex-col">
       {hasResult ? (
         <ActionHost
-          aria-label={`${errorDetail ? "Failed tool call" : "Tool call"}: ${label}`}
+          aria-label={
+            errorDetail
+              ? t("Failed tool call: {p0}", { p0: label })
+              : t("Tool call: {p0}", { p0: label })
+          }
           className="-mx-1 min-h-7 min-w-0 gap-1.5 px-1 py-0.5"
         >
           {bare ? null : <ActivityToolIcon state={state} live={live} />}
@@ -986,7 +990,7 @@ function BycodaCallRow({
   const hasResult = !pendingApproval && hasToolInspection(block);
   const hasError = state === "rejected" && hasResult;
   const command = `${PRODUCT_IDENTITY.displayName} app ${call.action}`;
-  const verb = pendingApproval ? "Run" : state === "pending" ? "Running" : "Ran";
+  const verb = pendingApproval ? t("Run") : state === "pending" ? t("Running") : t("Ran");
   const summary = (
     <>
       <span
@@ -1093,12 +1097,17 @@ export function formatWorkingDuration(
 ): string {
   const who = modelName?.trim();
   const elapsed = formatElapsed(elapsedMs);
-  const verb = done ? (who ? "worked" : "Worked") : who ? "working" : "Working";
   if (elapsed == null) {
-    if (done) return who ? `${who} ${verb}` : verb;
-    return who ? `${who} ${verb}…` : `${verb}…`;
+    if (done) return who ? t("{p0} worked", { p0: who }) : t("Worked");
+    return who ? t("{p0} working…", { p0: who }) : t("Working…");
   }
-  return who ? `${who} ${verb} for ${elapsed}` : `${verb} for ${elapsed}`;
+  if (done)
+    return who
+      ? t("{p0} worked for {p1}", { p0: who, p1: elapsed })
+      : t("Worked for {p0}", { p0: elapsed });
+  return who
+    ? t("{p0} working for {p1}", { p0: who, p1: elapsed })
+    : t("Working for {p0}", { p0: elapsed });
 }
 
 export function ToolCall({
@@ -1124,7 +1133,7 @@ export function ToolCall({
   const expanded = detail && detail !== label ? detail : label;
   const state = toolCallState(block);
   const stateLabel =
-    state === "accepted" ? "Accepted" : state === "rejected" ? "Rejected" : "Pending";
+    state === "accepted" ? t("Accepted") : state === "rejected" ? t("Rejected") : t("Pending");
   const editTool = isEditTool(block.tool?.kind, block.text || block.tool?.title, preview);
   const compact =
     isReadTool(block.tool?.kind, label, preview) || isSearchTool(block.tool?.kind, label, preview);
@@ -1512,24 +1521,27 @@ export function HandoffDivider({ block }: { block: Block }) {
 }
 
 /** The label and severity chrome an interjection wears, wherever it sits. */
-function interjectionChrome(meta: InterjectionMeta): {
+function interjectionChrome(
+  meta: InterjectionMeta,
+  t: (message: string) => string,
+): {
   label: string;
   severityText?: string;
   severityClass: string;
 } {
   const label =
     meta.customType === "advisor"
-      ? "Advisor"
+      ? t("Advisor")
       : meta.customType === "custom"
-        ? "Notice"
+        ? t("Notice")
         : meta.customType;
   const severityText =
     meta.severity === "blocker"
-      ? "Blocker"
+      ? t("Blocker")
       : meta.severity === "concern"
-        ? "Concern"
+        ? t("Concern")
         : meta.severity === "nit"
-          ? "Nit"
+          ? t("Nit")
           : undefined;
   const severityClass =
     meta.severity === "blocker"
@@ -1554,7 +1566,7 @@ export function InterjectionDivider({ block }: { block: Block }) {
 
   const meta = block.interjection;
   if (!meta) return null;
-  const { label, severityText, severityClass } = interjectionChrome(meta);
+  const { label, severityText, severityClass } = interjectionChrome(meta, t);
   return (
     <div className="px-4 py-4">
       <div className="flex items-center gap-3">

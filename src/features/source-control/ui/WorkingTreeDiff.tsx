@@ -89,13 +89,13 @@ function buildModel(
     tooLarge: loaded?.tooLarge,
     emptyMessage:
       loaded == null
-        ? "Loading…"
+        ? t("Loading…")
         : loaded.error
-          ? `Couldn’t load diff: ${loaded.error}`
+          ? t("Couldn’t load diff: {p0}", { p0: loaded.error })
           : unchanged
             ? kind === "staged"
-              ? "No staged changes"
-              : "No unstaged changes"
+              ? t("No staged changes")
+              : t("No unstaged changes")
             : undefined,
     additions: unified?.additions ?? (canUseIndexCounts ? file.additions : 0),
     deletions: unified?.deletions ?? (canUseIndexCounts ? file.deletions : 0),

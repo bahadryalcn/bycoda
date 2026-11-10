@@ -6,6 +6,7 @@ import { RadioTiles } from "../../RadioTiles";
 import { Group, Row, Toggle } from "../../settingsControls";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { FontPicker } from "./FontPicker";
+import { useNumberDraft } from "./useNumberDraft";
 import "./TypographySamples.css";
 
 const CODE_THEMES = [
@@ -18,6 +19,7 @@ export function CodeFontGroup({ appearance: a }: { appearance: AppearanceSetting
   useLocale();
   const p = a.preferences;
   const d = APPEARANCE_DEFAULTS;
+  const codeSize = useNumberDraft(p.codeSize, (size) => a.onPreferences({ ...p, codeSize: size }));
   return (
     <Group
       id="monospace-font"
@@ -47,14 +49,7 @@ export function CodeFontGroup({ appearance: a }: { appearance: AppearanceSetting
           min={11}
           max={18}
           step={1}
-          value={p.codeSize}
-          onChange={(event) => {
-            if (event.currentTarget.validity.valid && event.currentTarget.value !== "")
-              a.onPreferences({
-                ...p,
-                codeSize: event.currentTarget.valueAsNumber,
-              });
-          }}
+          {...codeSize}
         />
       </Row>
       <Row

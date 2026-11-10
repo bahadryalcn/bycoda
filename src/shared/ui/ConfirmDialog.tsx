@@ -104,6 +104,8 @@ export type ConfirmRequest = {
 };
 
 type Live = {
+  /** Unique per request, so a request made while another settles never reuses its dialog state. */
+  id: number;
   request: ConfirmRequest;
   resolve: (value: ConfirmResult | null) => void;
 };
@@ -386,11 +388,12 @@ export function useConfirm(): {
 } {
   const [live, setLive] = useState<Live | null>(null);
   const ref = useRef<Live | null>(null);
+  const sequence = useRef(0);
   const confirmWith = useCallback(
     (request: ConfirmRequest) =>
       new Promise<ConfirmResult | null>((resolve) => {
         ref.current?.resolve(null);
-        const next = { request, resolve };
+        const next = { id: ++sequence.current, request, resolve };
         ref.current = next;
         setLive(next);
       }),
@@ -418,7 +421,7 @@ export function useConfirm(): {
   const renderDialog = (request: ConfirmRequest) =>
     live ? (
       <ConfirmDialog
-        key={live.request.title}
+        key={live.id}
         request={request}
         onSettle={settle}
         onResult={(value) => {

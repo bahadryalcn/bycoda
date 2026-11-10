@@ -710,7 +710,8 @@ function DevicePanelSurface({
     let current = true,
       renewing = false;
     const renew = () => {
-      if (document.hidden || renewing) return;
+      if (document.hidden) return void (timer = setTimeout(renew, 1000));
+      if (renewing) return;
       renewing = true;
       void api.renewControl!(lease.deviceId, lease.leaseId)
         .then(
@@ -734,10 +735,8 @@ function DevicePanelSurface({
         })
         .catch(() => {});
     };
-    const timer = setTimeout(
-      renew,
-      Math.max(100, Math.min(60000, (lease.expiresAt - Date.now()) / 2)),
-    );
+    const delay = Math.max(100, Math.min(60000, (lease.expiresAt - Date.now()) / 2));
+    let timer = setTimeout(renew, delay);
     return () => {
       current = false;
       clearTimeout(timer);
@@ -1036,7 +1035,7 @@ function DevicePanelSurface({
       connectionUnavailable ||
       liveFrameDelayed);
   useEffect(() => {
-    if (!visible || !frame) return;
+    if (!visible || !frame || streaming) return;
     setNow(Date.now());
     const timer = setInterval(
       () => {
@@ -1045,7 +1044,7 @@ function DevicePanelSurface({
       live ? 1000 : 5000,
     );
     return () => clearInterval(timer);
-  }, [!!frame, live, visible]);
+  }, [!!frame, live, visible, streaming]);
   const frameCaptured = shownFrame ? capturedLabel(shownFrame.capturedAt, now) : undefined;
   const ownershipLabel = control
     ? t("Device control claimed by this controller")

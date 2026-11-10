@@ -369,10 +369,10 @@ function PlanSurface({
     block.plan?.status === "built";
   const buildLabel =
     block.plan?.status === "building"
-      ? "Building…"
+      ? t("Building…")
       : block.plan?.status === "built"
-        ? "Built"
-        : "Build";
+        ? t("Built")
+        : t("Build");
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">

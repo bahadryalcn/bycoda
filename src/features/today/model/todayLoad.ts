@@ -51,7 +51,7 @@ export async function fetchTodaySources(
     fetchModelPrices().catch(() => null),
   ]);
   return {
-    failed: turns === null || (accounts.length > 0 && reports.every((report) => report.failed)),
+    failed: turns === null || (accounts.length > 0 && reports.some((report) => report.failed)),
     value: {
       usage: reports.map(({ account, rows }) => ({ account, rows })),
       turns: turns?.turns ?? previousTurns ?? [],

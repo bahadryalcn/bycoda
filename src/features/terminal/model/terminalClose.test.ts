@@ -27,6 +27,17 @@ describe("confirmCloseTerminal", () => {
     expect(confirmInApp).not.toHaveBeenCalled();
   });
 
+  it("treats an exited terminal as idle and an unknown failure as possibly running", async () => {
+    const file = newTerminalFile("/repo");
+    getPtyStatus.mockRejectedValueOnce("Terminal is not running");
+    await expect(confirmCloseTerminal(file)).resolves.toBe(true);
+    expect(confirmInApp).not.toHaveBeenCalled();
+    getPtyStatus.mockRejectedValueOnce(new Error("ipc failed"));
+    confirmInApp.mockResolvedValue(false);
+    await expect(confirmCloseTerminal(file)).resolves.toBe(false);
+    expect(confirmInApp).toHaveBeenCalledTimes(1);
+  });
+
   it("prompts when a process is running", async () => {
     const file = newTerminalFile("/repo", "agent-terminal");
     getPtyStatus.mockResolvedValue({ foreground: "npm" });

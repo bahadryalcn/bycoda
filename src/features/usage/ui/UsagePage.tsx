@@ -22,6 +22,7 @@ import {
 } from "../../providers/model/rateLimits";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { UsageOverview } from "./UsageOverview";
+import { usageLabel } from "./UsageVisualizations";
 import { UsageDisplaySettings } from "./UsageDisplaySettings";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { useShowRemainingUsage } from "../../settings/model/displayPrefs";
@@ -120,7 +121,8 @@ function AccountLimits({
   const locale = useLocale();
   const menuButton = useRef<HTMLButtonElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const { id: accountId, label } = account;
+  const { id: accountId } = account;
+  const label = usageLabel(account.label);
   const showRemaining = useShowRemainingUsage();
   const color = providerAccountColorValue(account);
   const limits = useCachedRateLimits(provider, accountId);

@@ -1,6 +1,6 @@
 # Code structure
 
-Where code goes, how big a file may be and which layer may import which. These rules
+Where code goes, when to split it and which layer may import which. These rules
 exist because an audit on 2026-11-05 found feature code scattered into flat 5,000 to
 14,000 line files (`host/server.ts`, `host/tasks/tasks.ts`, `src-tauri/src/fs.rs`,
 `src/app/shell/Sidebar.tsx`) that every unrelated fix had to touch. The rules apply to
@@ -44,25 +44,49 @@ and the file is `server.ts`, `engine.ts`, `App.tsx`, `Sidebar.tsx`, `settings.ts
 `*.rs` root module, the change belongs in the feature folder and the shared file gets a
 one-line registration at most.
 
-## File size budgets
+## When to split
 
-| File kind              | Ceiling     | Rule name in the check |
-| ---------------------- | ----------- | ---------------------- |
-| `.tsx` component file  | 600 lines   | `tsx-file`             |
-| `.ts`, `.mts`, `.mjs`  | 800 lines   | `ts-file`              |
-| TypeScript test file   | 1,500 lines | `ts-test-file`         |
-| Rust production module | 1,500 lines | `rust-file`            |
-| Rust `*_tests.rs`      | 3,000 lines | `rust-test-file`       |
+Split by design, not by line count. The questions, in order:
 
-Files already over budget are listed in the baseline with their current line count and
-may not grow. Touching one of them means either keeping its length flat or moving the
-part you touch into the owning feature folder. One exception keeps small fixes small: a
-baselined file whose recorded line count is at most 1.25 times its limit may exceed that
-count by up to 10 lines. The allowance is not renewed by `--ratchet`; files further over
-budget, and files not in the baseline, keep the hard limit. Other review triggers that are
-not gated:
-a component with more than fifteen `useState` calls, more than one exported component
-per `ui/` file, a `model/` file importing React, inline Rust test modules over 500 lines.
+1. **Does this part have its own responsibility?** Parsing, persistence, scheduling,
+   transport and rendering are separate modules. A toolbar, a list row, a dialog body
+   and an empty state are separate components.
+2. **Does it own its own state?** State lives in the smallest part that needs it.
+   Siblings never write each other's state; they communicate through props, callbacks
+   or a store. One component holding every `useState` of a screen lets any change
+   re-render and break unrelated parts, so move each group of state with the UI that
+   uses it into a child component or a hook.
+3. **Does a second place need it?** Then it is a reusable piece, not a copy: a
+   component or hook in the feature's `ui/` or `hooks/`, or in `src/shared/` once two
+   features use it. Design its props for the second caller, not only the first.
+
+A unit that answers "no" to all three stays whole, however long it is. Do not cut a
+cohesive unit into `Part1`/`Part2` files, and do not pass a dozen props and setters
+down just to move lines: that keeps the coupling and hides it.
+
+Review triggers that are not gated: a component with more than fifteen `useState`
+calls, more than one exported component per `ui/` file, a `model/` file importing
+React, inline Rust test modules over 500 lines.
+
+## File size
+
+Line counts are a hint to ask the questions above, not a rule to obey.
+
+| File kind              | Target (advisory) | Hard ceiling (gated) | Rule name in the check |
+| ---------------------- | ----------------- | -------------------- | ---------------------- |
+| `.tsx` component file  | 600 lines         | 1,200 lines          | `tsx-file`             |
+| `.ts`, `.mts`, `.mjs`  | 800 lines         | 1,600 lines          | `ts-file`              |
+| TypeScript test file   | 1,500 lines       | 3,000 lines          | `ts-test-file`         |
+| Rust production module | 1,500 lines       | 3,000 lines          | `rust-file`            |
+| Rust `*_tests.rs`      | 3,000 lines       | 6,000 lines          | `rust-test-file`       |
+
+- Over a target: the check prints a note for changed files and never fails. Split if a
+  separable responsibility exists; otherwise continue. A line count is never a reason
+  to refuse, shrink or delay requested work.
+- Over a hard ceiling (twice the target): gated. No file may cross it. Files already
+  over it are listed in the baseline with their line count and may not grow; touching
+  one means keeping its length flat or moving the part you touch into the owning
+  feature folder.
 
 ## Import boundaries
 
@@ -101,7 +125,7 @@ Cross-feature imports may use feature root paths or exact `public/<contract>.ts`
 | Command                                     | Effect                                                                                                                                                    |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm check:structure`                      | Gate against the baseline (part of `check:web` and CI)                                                                                                    |
-| `pnpm check:structure -- --report`          | Totals per rule and owner, the 25 largest over-budget files                                                                                               |
+| `pnpm check:structure -- --report`          | Totals per rule and owner, the 25 largest files over the hard ceiling, count of files over target                                                         |
 | `pnpm check:structure -- --files a.ts b.rs` | Only the given files (what `check-local` runs for changed files)                                                                                          |
 | `pnpm check:structure -- --ratchet`         | Lower baseline buckets after a cleanup; never raises                                                                                                      |
 | `pnpm check:structure -- --update-baseline` | Rewrite the baseline. Only for an owner-approved exception or a new rule; review the diff and record any rise in `scripts/checks/baseline-approvals.json` |

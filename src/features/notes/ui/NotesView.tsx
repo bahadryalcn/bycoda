@@ -124,6 +124,7 @@ import {
   type NoteCreateScope,
   type NoteMenuTarget,
 } from "../noteLibraryMenu";
+import { mergeSavedDrafts } from "./mergeSavedDrafts";
 import "./notes.css";
 import {
   drafts,
@@ -232,12 +233,7 @@ export function NotesView({
   useEffect(() => {
     const update = () => {
       updateDrafts((value) => value + 1);
-      setNotes((current) =>
-        current.map((note) => {
-          const saved = drafts.get(note.id)?.saved;
-          return saved && saved.updatedAt > note.updatedAt ? summarizeNote(saved) : note;
-        }),
-      );
+      setNotes(mergeSavedDrafts);
     };
     window.addEventListener(DRAFT_CHANGED_EVENT, update);
     return () => window.removeEventListener(DRAFT_CHANGED_EVENT, update);

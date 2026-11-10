@@ -343,14 +343,13 @@ export function stageChunkText(
 }
 
 export async function stageChunkAt(view: EditorView, pos: number): Promise<boolean> {
-  const original = view.state.field(originalField);
+  const original = view.state.field(originalField, false);
   const onStage = view.state.facet(gitStageFacet);
   if (!original || !onStage) return false;
   const contents = await stageChunkIn(view, original, pos, onStage, actionRange(view));
   if (contents == null) return false;
-  if (view.state.field(originalField)?.toString() !== contents) {
-    setGitOriginal(view, contents);
-  }
+  const current = view.state.field(originalField, false);
+  if (current && current.toString() !== contents) setGitOriginal(view, contents);
   return true;
 }
 
@@ -722,15 +721,13 @@ const gitHunkActions = ViewPlugin.fromClass(
       this.revertButton = hunkButton("Revert change", UNDO_SVG);
       this.stageButton = hunkButton("Stage change", PLUS_SVG);
       this.bar.append(this.commentButton, this.revertButton, this.stageButton);
-      this.commentButton.addEventListener("mousedown", (event) => {
-        this.onAction(event, "comment");
-      });
-      this.revertButton.addEventListener("mousedown", (event) => {
-        this.onAction(event, "revert");
-      });
-      this.stageButton.addEventListener("mousedown", (event) => {
-        this.onAction(event, "stage");
-      });
+      const bind = (button: HTMLButtonElement, action: "comment" | "revert" | "stage") => {
+        button.addEventListener("mousedown", (event) => event.preventDefault());
+        button.addEventListener("click", (event) => this.onAction(event, action));
+      };
+      bind(this.commentButton, "comment");
+      bind(this.revertButton, "revert");
+      bind(this.stageButton, "stage");
       this.stageButton.hidden = view.state.facet(gitStageFacet) == null;
       this.commentButton.hidden = view.state.facet(gitCommentFacet) == null;
       view.dom.appendChild(this.bar);
@@ -791,7 +788,7 @@ const gitHunkActions = ViewPlugin.fromClass(
       this.sync();
     };
 
-    onAction(event: MouseEvent, action: "comment" | "revert" | "stage") {
+    onAction(event: Event, action: "comment" | "revert" | "stage") {
       event.preventDefault();
       event.stopPropagation();
       const chunk = this.view.state.field(chunksField)[this.hover];
@@ -811,10 +808,12 @@ const gitHunkActions = ViewPlugin.fromClass(
         return;
       }
       this.busy = true;
-      void stageChunkAt(this.view, pos).finally(() => {
-        this.busy = false;
-        this.sync();
-      });
+      void stageChunkAt(this.view, pos)
+        .catch(() => {})
+        .finally(() => {
+          this.busy = false;
+          this.sync();
+        });
     }
 
     sync() {

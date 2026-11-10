@@ -5,9 +5,9 @@ import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/Dropdown
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { useOwnedTimeout } from "../../../shared/hooks/useOwnedTimeout";
 import { t, useLocale, useT } from "../../../shared/i18n/git";
+import { amendPushedCopy, discardSelectedCopy, discardUnstagedCopy } from "./gitConfirmCopy";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
-import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
   ArrowDown,
   ArrowUp,
@@ -850,8 +850,8 @@ function ChangedFiles({
       const branch = index.branch;
       return confirmNative(
         kind === "pr"
-          ? `Create a pull request from default branch "${branch}"?`
-          : `Push to default branch "${branch}"?`,
+          ? t('Create a pull request from default branch "{p0}"?', { p0: branch })
+          : t('Push to default branch "{p0}"?', { p0: branch }),
       );
     });
   };
@@ -917,10 +917,7 @@ function ChangedFiles({
       const queue = fileActions.current;
       if (gitPanelRuntime(cwd).state.busy && queue.size === 0) return;
       if (action === "discard") {
-        const ok = await confirmNative(
-          `Discard changes in ${selectedFiles.length} selected files? Untracked files will be deleted. This cannot be undone.`,
-          "Discard",
-        );
+        const ok = await confirmNative(...discardSelectedCopy(selectedFiles.length));
         if (!ok || (gitPanelRuntime(cwd).state.busy && queue.size === 0)) return;
       }
       if (queue.size === 0) setGitFeedback(cwd, null);
@@ -970,12 +967,7 @@ function ChangedFiles({
         const only = unstaged[0];
         const untrackedOnly = n === 1 && only?.status === "untracked";
         const ok = await confirmNative(
-          untrackedOnly
-            ? `Delete untracked file ${basename(only.relative)}?`
-            : n === 1 && only
-              ? `Discard changes in ${basename(only.relative)}? This cannot be undone.`
-              : `Discard all unstaged changes in ${n} files? This cannot be undone.`,
-          untrackedOnly ? "Delete" : "Discard",
+          ...discardUnstagedCopy(n, only && basename(only.relative), untrackedOnly),
         );
         if (!ok) return;
       }
@@ -1050,10 +1042,7 @@ function ChangedFiles({
   const confirmAmend = async (amending: boolean) => {
     return withGitPanelRuntime(cwd, async () => {
       if (!amending || !index?.headPushed) return true;
-      return confirmNative(
-        `Amend a commit that is already pushed? ${PRODUCT_IDENTITY.displayName} cannot push the result. You will need a force push from the terminal.`,
-        "Amend",
-      );
+      return confirmNative(...amendPushedCopy());
     });
   };
 
@@ -1114,8 +1103,8 @@ function ChangedFiles({
           setGitFeedback(cwd, {
             kind: "warning",
             title: pushed
-              ? "Commit pushed; pull request creation failed"
-              : "Commit created; push failed",
+              ? t("Commit pushed; pull request creation failed")
+              : t("Commit created; push failed"),
             detail: error instanceof Error ? error.message : String(error),
             retry: () =>
               retryPublication(!pushed && (push || createPr), createPr, index?.branch ?? null),
@@ -1220,7 +1209,7 @@ function ChangedFiles({
       } catch (error) {
         setGitFeedback(cwd, {
           kind: "warning",
-          title: remainingPush ? "Commit created; push failed" : "Publication incomplete",
+          title: remainingPush ? t("Commit created; push failed") : t("Publication incomplete"),
           detail: String(error),
           retry: () => retryPublication(remainingPush, createPr, branch),
         });
@@ -1253,8 +1242,8 @@ function ChangedFiles({
         setGitFeedback(cwd, {
           kind: pushed ? "warning" : "error",
           title: pushed
-            ? "Branch pushed; pull request creation failed"
-            : "Couldn’t create pull request",
+            ? t("Branch pushed; pull request creation failed")
+            : t("Couldn’t create pull request"),
           detail: String(error),
           retry: () =>
             retryPublication(!pushed && (index?.ahead ?? 0) > 0, true, index?.branch ?? null),

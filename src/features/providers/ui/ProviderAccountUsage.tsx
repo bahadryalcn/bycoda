@@ -148,7 +148,7 @@ export function UsageMeter({
     window.resetsAt == null
       ? formatWindowLabel(window.windowMinutes)
       : window.resetsAt <= now
-        ? "reset due"
+        ? t("reset due")
         : formatResetDuration(window.resetsAt - now);
   return (
     <div

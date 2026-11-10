@@ -1236,7 +1236,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       sendBlockedReason={sendBlockedReason}
       sendHeldReason={
         windowMovingSessionIds?.has(session.id)
-          ? "Opening new window… Your draft will move with the conversation."
+          ? t("Opening new window… Your draft will move with the conversation.")
           : undefined
       }
       remoteFeatures={stableRemoteFeatures}

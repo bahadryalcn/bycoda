@@ -230,10 +230,10 @@ export function FileEditor({
     setChromeError(null);
     try {
       if (pendingDiskRef.current) {
-        throw new Error("This file changed on disk. Reload or save it before opening Chrome.");
+        throw new Error(t("This file changed on disk. Reload or save it before opening Chrome."));
       }
       if (dirtyRef.current && !(await saveRequestRef.current?.())) {
-        throw new Error("Save the file successfully before opening Chrome.");
+        throw new Error(t("Save the file successfully before opening Chrome."));
       }
       await saveQueue.current;
       await openHtmlInChrome(path);
@@ -911,7 +911,7 @@ export function FileEditor({
         const operation = saveQueue.current.then(() => {
           if (pendingDiskRef.current && allowedOverwrite !== diskChangeVersion.current) {
             setDiskConflict(true);
-            throw new Error("The file changed on disk. Choose reload or overwrite before saving.");
+            throw new Error(t("The file changed on disk. Reload or overwrite before saving."));
           }
           return writeTextFile(path, serializedContent);
         });
@@ -1006,10 +1006,10 @@ export function FileEditor({
     async (contents: string) => {
       const relative = displayPath(path, cwd);
       if (!cwd || cwd === "~" || !relative || relative === path) {
-        throw new Error("Can't stage this file");
+        throw new Error(t("Can't stage this file"));
       }
       if (!gitDiff || gitDiff.kind !== "unstaged") {
-        throw new Error("Only unstaged changes can be staged");
+        throw new Error(t("Only unstaged changes can be staged"));
       }
       try {
         // Keep the index convention outside the selected text hunk.

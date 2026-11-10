@@ -368,13 +368,13 @@ export function FilePreviewSearch({
   };
 
   const count = result.invalid
-    ? "Invalid regex"
+    ? t("Invalid regex")
     : result.timedOut
-      ? "Regex search timed out"
+      ? t("Regex search timed out")
       : query && total === 0
-        ? "No results"
+        ? t("No results")
         : total > 0
-          ? `${current + 1} of ${total}${result.capped ? "+" : ""}`
+          ? t("{p0} of {p1}{p2}", { p0: current + 1, p1: total, p2: result.capped ? "+" : "" })
           : "";
 
   return (

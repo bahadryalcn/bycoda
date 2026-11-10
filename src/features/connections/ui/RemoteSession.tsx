@@ -292,12 +292,14 @@ function DurableRemoteSessionGate(props: Parameters<typeof ConnectedRemoteSessio
         if (active) setState({ ready: true, pending: result.command });
       })
       .catch((error: unknown) => {
-        if (active) setState({ ready: false, error: String(error) });
+        if (active) setState({ ready: false, error: String(error).replace(/^Error: /, "") });
       });
     return () => {
       active = false;
     };
   }, [project.key, machine.environmentId, shell.id, attempt]);
+  const retry = () => (setState({ ready: false }), setAttempt((value) => value + 1));
+  const review = t("Saved requests need review before continuing.");
   if (!state.ready)
     return (
       <div
@@ -310,10 +312,10 @@ function DurableRemoteSessionGate(props: Parameters<typeof ConnectedRemoteSessio
             {issues.length ? (
               <RemoteOutboxNotice project={project.key} environment={machine.environmentId} />
             ) : (
-              <Alert tone="warning">{t("Saved requests need review before continuing.")}</Alert>
+              <Alert tone="warning">{`${review} ${state.error}`}</Alert>
             )}
             <div>
-              <Button onClick={() => setAttempt((value) => value + 1)}>{t("Retry")}</Button>
+              <Button onClick={retry}>{t("Retry")}</Button>
             </div>
           </>
         ) : (
@@ -634,7 +636,7 @@ function ConnectedRemoteSession({
           if (active && version === generation) setPending(result.command);
         })
         .catch((reason: unknown) => {
-          if (active && version === generation) setError(String(reason));
+          if (active && version === generation) setError(String(reason).replace(/^Error: /, ""));
         });
     };
     const unsubscribe = subscribeOutbox(refresh);
@@ -816,193 +818,191 @@ function ConnectedRemoteSession({
           boundedSet(cachedDescriptors, machine.id, host);
           setDescriptor(host);
           described = true;
-          if (
-            visibleRef.current &&
-            !document.hidden &&
-            host.capabilities.includes("machine.changes") &&
-            sessionId &&
-            !unsubscribeChannel
-          ) {
-            const lastActiveAt = Date.now();
-            unsubscribeChannel = subscribeRemoteMachineChannel(
-              machine.id,
-              () => ({
-                active: { projectId: project.projectId, sessionId, lastActiveAt },
-                sessions: [
-                  {
-                    sessionId,
-                    revision: snapshotRef.current?.revision ?? 0,
-                    sourceEpoch: snapshotRef.current?.sourceEpoch,
-                  },
-                ],
-                inlineSync:
-                  visibleRef.current &&
-                  !document.hidden &&
-                  host.capabilities.includes("machine.changes.inlineSync") &&
-                  !!snapshotRef.current &&
-                  !snapshotRef.current.history &&
-                  !snapshotRef.current.historyLoading,
-              }),
-              async (changes, application) => {
-                if (stale() || application?.isCurrent() === false) return;
-                const recoveredControlChannel = controlChannelFailed;
-                if (controlChannelFailed) {
-                  controlChannelFailed = false;
-                }
-                const hint = changes.sessions.find((entry) => entry.sessionId === sessionId);
-                const sourceChanged =
-                  !!hint?.sourceEpoch &&
-                  !!snapshotRef.current &&
-                  hint.sourceEpoch !== snapshotRef.current.sourceEpoch;
-                if (hint?.deleted) {
-                  deletedOnHost = true;
-                  bindingGen.markDeleted(bindingKey);
-                  clearTimeout(timer);
-                  if (contentRetryTimer) clearTimeout(contentRetryTimer);
-                  unsubscribeChannel?.();
-                  unsubscribeChannel = undefined;
-                  historyPageRequest.current = null;
-                  setRemoteHistoryLoading(false);
-                  setRemoteDeleted(true);
-                  const currentData = remoteDataStateRef.current;
-                  publishRemoteDataState({
-                    phase: currentData.updatedAt ? "stale" : "error",
-                    updatedAt: currentData.updatedAt,
-                    error: t("This conversation was deleted on the host."),
-                  });
-                  setError(t("This conversation was deleted on the host."));
-                  return;
-                }
-                if (changes.reset || sourceChanged) {
-                  ownerResetGeneration++;
-                  forceTailRead.current = true;
-                  historyPageRequest.current = null;
-                  snapshotRef.current = undefined;
-                  cachedSessionSnapshots.delete(snapshotKey(machine.id, sessionId));
-                  await deleteRemotePageCache({ environmentId: machine.environmentId, sessionId });
-                  if (stale() || application?.isCurrent() === false) return;
-                  setRemoteHistoryLoading(false);
-                }
-                const current = snapshotRef.current;
-                if (
-                  !changes.reset &&
-                  !sourceChanged &&
-                  !recoveredControlChannel &&
-                  failed === 0 &&
-                  visibleRef.current &&
-                  !document.hidden &&
-                  hint?.sync?.kind === "delta" &&
-                  current &&
-                  !polling &&
-                  !forceTailRead.current
-                ) {
-                  if (
-                    hint.sync.value.revision <= current.revision &&
-                    current.session.id === sessionId &&
-                    verifiedProjects.has(current.projectId)
-                  )
-                    return { appliedRevision: current.revision };
-                  if (
-                    !current.history &&
-                    !current.historyLoading &&
-                    hint.sync.base === current.revision
-                  ) {
-                    try {
-                      const next = applySessionSync(current, hint.sync);
-                      if (
-                        !verifiedProjects.has(next.projectId) ||
-                        next.projectId !== current.projectId ||
-                        next.session.id !== sessionId
-                      )
-                        throw new Error("Inline sync does not match this host session");
-                      observeRemoteApprovalResolutions(shell.id, current, next);
-                      snapshotRef.current = next;
-                      setSnapshot(next);
-                      rememberSessionSnapshot(
-                        snapshotKey(machine.id, sessionId),
-                        next,
-                        machine.environmentId,
-                      );
-                      onSnapshot?.(shell.id, next);
-                      setOnline(true);
-                      reportRemoteMachineStatus(machine.id, true);
-                      publishRemoteDataState({
-                        phase: next.session.blocks.length ? "ready" : "empty",
-                        updatedAt: Date.now(),
-                      });
-                      return { appliedRevision: next.revision };
-                    } catch {
-                      /* A history/window mismatch uses the normal sync path. */
-                    }
-                  }
-                }
-                const ownerReadNeeded =
-                  recoveredControlChannel ||
-                  changes.reset ||
-                  sourceChanged ||
-                  // A content request can fail while the control lane stays
-                  // healthy. An unchanged host has no revision hint to wake us.
-                  failed > 0 ||
-                  (hint !== undefined && hint.revision !== snapshotRef.current?.revision);
-                if (ownerReadNeeded) {
-                  const currentData = remoteDataStateRef.current;
-                  if (failed === 0 && currentData.phase !== "refreshing")
-                    publishRemoteDataState({
-                      phase:
-                        snapshotRef.current || currentData.updatedAt ? "refreshing" : "loading",
-                      updatedAt: currentData.updatedAt,
-                    });
-                  if (failed === 0) {
-                    const hydration = poll(application);
-                    if (hint?.sync)
-                      return hydration.then(() => {
-                        const applied = snapshotRef.current;
-                        if (
-                          !stale() &&
-                          application?.isCurrent() !== false &&
-                          applied?.session.id === sessionId &&
-                          verifiedProjects.has(applied.projectId) &&
-                          applied.revision >= hint.revision
-                        )
-                          return { appliedRevision: applied.revision };
-                      });
-                  } else if (!contentRetryTimer)
-                    contentRetryTimer = setTimeout(
-                      () => {
-                        contentRetryTimer = undefined;
-                        void poll();
-                      },
-                      remoteSessionPollDelay(
-                        snapshotRef.current?.status === "running",
-                        visibleRef.current,
-                        document.hidden,
-                        failed,
-                      ),
-                    );
-                }
-                if (
-                  hint?.sync &&
-                  !stale() &&
-                  snapshotRef.current?.session.id === sessionId &&
-                  verifiedProjects.has(snapshotRef.current.projectId) &&
-                  snapshotRef.current.revision >= hint.revision
-                )
-                  return { appliedRevision: snapshotRef.current.revision };
-              },
-              (reason) => {
-                if (stale()) return;
-                controlChannelFailed = true;
-                setOnline(false);
-                reportRemoteMachineStatus(machine.id, false, reason);
+        }
+        const host = cachedDescriptors.get(machine.id);
+        if (
+          host?.capabilities.includes("machine.changes") &&
+          visibleRef.current &&
+          !document.hidden &&
+          sessionId &&
+          !unsubscribeChannel
+        ) {
+          const lastActiveAt = Date.now();
+          unsubscribeChannel = subscribeRemoteMachineChannel(
+            machine.id,
+            () => ({
+              active: { projectId: project.projectId, sessionId, lastActiveAt },
+              sessions: [
+                {
+                  sessionId,
+                  revision: snapshotRef.current?.revision ?? 0,
+                  sourceEpoch: snapshotRef.current?.sourceEpoch,
+                },
+              ],
+              inlineSync:
+                visibleRef.current &&
+                !document.hidden &&
+                host.capabilities.includes("machine.changes.inlineSync") &&
+                !!snapshotRef.current &&
+                !snapshotRef.current.history &&
+                !snapshotRef.current.historyLoading,
+            }),
+            async (changes, application) => {
+              if (stale() || application?.isCurrent() === false) return;
+              const recoveredControlChannel = controlChannelFailed;
+              controlChannelFailed = false;
+              const hint = changes.sessions.find((entry) => entry.sessionId === sessionId);
+              const sourceChanged =
+                !!hint?.sourceEpoch &&
+                !!snapshotRef.current &&
+                hint.sourceEpoch !== snapshotRef.current.sourceEpoch;
+              if (hint?.deleted) {
+                deletedOnHost = true;
+                bindingGen.markDeleted(bindingKey);
+                clearTimeout(timer);
+                if (contentRetryTimer) clearTimeout(contentRetryTimer);
+                unsubscribeChannel?.();
+                unsubscribeChannel = undefined;
+                historyPageRequest.current = null;
+                setRemoteHistoryLoading(false);
+                setRemoteDeleted(true);
                 const currentData = remoteDataStateRef.current;
                 publishRemoteDataState({
                   phase: currentData.updatedAt ? "stale" : "error",
-                  error: String(reason).replace(/^Error: /, ""),
                   updatedAt: currentData.updatedAt,
+                  error: t("This conversation was deleted on the host."),
                 });
-              },
-            );
-          }
+                setError(t("This conversation was deleted on the host."));
+                return;
+              }
+              if (changes.reset || sourceChanged) {
+                ownerResetGeneration++;
+                forceTailRead.current = true;
+                historyPageRequest.current = null;
+                snapshotRef.current = undefined;
+                cachedSessionSnapshots.delete(snapshotKey(machine.id, sessionId));
+                await deleteRemotePageCache({ environmentId: machine.environmentId, sessionId });
+                if (stale() || application?.isCurrent() === false) return;
+                setRemoteHistoryLoading(false);
+              }
+              const current = snapshotRef.current;
+              if (
+                !changes.reset &&
+                !sourceChanged &&
+                !recoveredControlChannel &&
+                failed === 0 &&
+                visibleRef.current &&
+                !document.hidden &&
+                hint?.sync?.kind === "delta" &&
+                current &&
+                !polling &&
+                !forceTailRead.current
+              ) {
+                if (
+                  hint.sync.value.revision <= current.revision &&
+                  current.session.id === sessionId &&
+                  verifiedProjects.has(current.projectId)
+                )
+                  return { appliedRevision: current.revision };
+                if (
+                  !current.history &&
+                  !current.historyLoading &&
+                  hint.sync.base === current.revision
+                ) {
+                  try {
+                    const next = applySessionSync(current, hint.sync);
+                    if (
+                      !verifiedProjects.has(next.projectId) ||
+                      next.projectId !== current.projectId ||
+                      next.session.id !== sessionId
+                    )
+                      throw new Error("Inline sync does not match this host session");
+                    observeRemoteApprovalResolutions(shell.id, current, next);
+                    snapshotRef.current = next;
+                    setSnapshot(next);
+                    rememberSessionSnapshot(
+                      snapshotKey(machine.id, sessionId),
+                      next,
+                      machine.environmentId,
+                    );
+                    onSnapshot?.(shell.id, next);
+                    setOnline(true);
+                    reportRemoteMachineStatus(machine.id, true);
+                    publishRemoteDataState({
+                      phase: next.session.blocks.length ? "ready" : "empty",
+                      updatedAt: Date.now(),
+                    });
+                    return { appliedRevision: next.revision };
+                  } catch {
+                    /* A history/window mismatch uses the normal sync path. */
+                  }
+                }
+              }
+              const ownerReadNeeded =
+                recoveredControlChannel ||
+                changes.reset ||
+                sourceChanged ||
+                // A content request can fail while the control lane stays
+                // healthy. An unchanged host has no revision hint to wake us.
+                failed > 0 ||
+                (hint !== undefined && hint.revision !== snapshotRef.current?.revision);
+              if (ownerReadNeeded) {
+                const currentData = remoteDataStateRef.current;
+                if (failed === 0 && currentData.phase !== "refreshing")
+                  publishRemoteDataState({
+                    phase: snapshotRef.current || currentData.updatedAt ? "refreshing" : "loading",
+                    updatedAt: currentData.updatedAt,
+                  });
+                if (failed === 0) {
+                  const hydration = poll(application);
+                  if (hint?.sync)
+                    return hydration.then(() => {
+                      const applied = snapshotRef.current;
+                      if (
+                        !stale() &&
+                        application?.isCurrent() !== false &&
+                        applied?.session.id === sessionId &&
+                        verifiedProjects.has(applied.projectId) &&
+                        applied.revision >= hint.revision
+                      )
+                        return { appliedRevision: applied.revision };
+                    });
+                } else if (!contentRetryTimer)
+                  contentRetryTimer = setTimeout(
+                    () => {
+                      contentRetryTimer = undefined;
+                      void poll();
+                    },
+                    remoteSessionPollDelay(
+                      snapshotRef.current?.status === "running",
+                      visibleRef.current,
+                      document.hidden,
+                      failed,
+                    ),
+                  );
+              }
+              if (
+                hint?.sync &&
+                !stale() &&
+                snapshotRef.current?.session.id === sessionId &&
+                verifiedProjects.has(snapshotRef.current.projectId) &&
+                snapshotRef.current.revision >= hint.revision
+              )
+                return { appliedRevision: snapshotRef.current.revision };
+            },
+            (reason) => {
+              if (stale()) return;
+              controlChannelFailed = true;
+              setOnline(false);
+              reportRemoteMachineStatus(machine.id, false, reason);
+              const currentData = remoteDataStateRef.current;
+              publishRemoteDataState({
+                phase: currentData.updatedAt ? "stale" : "error",
+                error: String(reason).replace(/^Error: /, ""),
+                updatedAt: currentData.updatedAt,
+              });
+            },
+          );
         }
         if (
           cachedDescriptors.get(machine.id)?.capabilities.includes("machine.changes") &&
@@ -1333,7 +1333,7 @@ function ConnectedRemoteSession({
         binding,
       );
     } catch (reason) {
-      setError(String(reason));
+      setError(String(reason).replace(/^Error: /, ""));
     }
   }, [
     shell.id,
@@ -1473,7 +1473,7 @@ function ConnectedRemoteSession({
           )
         ).command?.commandId === command.commandId;
     } catch (reason) {
-      setError(String(reason));
+      setError(String(reason).replace(/^Error: /, ""));
       return undefined;
     }
     if (!alive.current || version !== bindingGen.version || sendingRef.current) return undefined;
@@ -2218,7 +2218,7 @@ function ConnectedRemoteSession({
           version === bindingGen.version &&
           generation === submissionGeneration.current
         ) {
-          setError(String(reason));
+          setError(String(reason).replace(/^Error: /, ""));
           setStarting({ ...turn, failed: true });
         }
       })
@@ -2312,6 +2312,7 @@ function ConnectedRemoteSession({
     for (const [id, authority] of Array.from(shellFollowUps.current)) {
       const block = hostSession?.blocks.find((entry) => entry.id === id);
       if (!block?.shell || block.shell.running) continue;
+      shellFollowUps.current.delete(id);
       if (!remoteIntentAuthorityMatches(authority, snapshot)) {
         setError(
           t(
@@ -2320,7 +2321,6 @@ function ConnectedRemoteSession({
         );
         continue;
       }
-      shellFollowUps.current.delete(id);
       submit(SHELL_FOLLOW_UP_PROMPT);
     }
   }, [hostSession, snapshot?.authorityGeneration]);

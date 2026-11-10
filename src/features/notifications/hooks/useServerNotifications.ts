@@ -49,7 +49,10 @@ export function useServerNotifications(): void {
     });
     activateServerSync(sync);
     let cancelled = false;
+    let refreshing = false;
     const refresh = async () => {
+      if (refreshing) return;
+      refreshing = true;
       try {
         await sync.syncSettings();
         // One window announces; every window keeps its settings in step and can report events.
@@ -57,6 +60,8 @@ export function useServerNotifications(): void {
         if (!cancelled) await sync.flushRead();
       } catch {
         // Offline or signed out remotely: the next poll tries again.
+      } finally {
+        refreshing = false;
       }
     };
     const onFocus = () => refresh().catch(() => undefined);

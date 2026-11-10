@@ -53,6 +53,16 @@ type Params = {
  * the in-flight state and the last action error they own. `savingRef` guards
  * list/editor interaction while a save is in flight.
  */
+/** One full sentence per count, so each language keeps its own grammar. */
+export function unreachableNotice(names: string[]): string {
+  return t(
+    names.length === 1
+      ? "{p0} isn’t reachable right now, so its automations may be out of date."
+      : "{p0} aren’t reachable right now, so their automations may be out of date.",
+    { p0: names.join(", ") },
+  );
+}
+
 export function useAutomationActions({
   machines,
   confirmSaved,
@@ -92,7 +102,7 @@ export function useAutomationActions({
     setSaving(true);
     try {
       if (nextDraft.id && selected?.host && nextDraft.cwd !== selected.cwd) {
-        throw new Error("Create a new automation to use another project.");
+        throw new Error(t("Create a new automation to use another project."));
       }
       const saved = nextDraft.runInBackground
         ? await saveHostAutomation(machines, nextDraft)
@@ -129,6 +139,13 @@ export function useAutomationActions({
     }
   };
 
+  const confirmDiscard = () =>
+    confirm({
+      title: t("Discard changes"),
+      message: t("Discard your unsaved changes to this automation?"),
+      confirmLabel: t("Discard"),
+    });
+
   const onDelete = async (automation: Automation) => {
     if (deleting || saving) return;
     if (
@@ -153,7 +170,8 @@ export function useAutomationActions({
         await deleteHostAutomation(automation);
         confirmDeleted(automation);
       } else await deleteAutomation(automation.id);
-      setSelectedId(null);
+      setDraft((current) => (current?.id === automation.id ? null : current));
+      setSelectedId((current) => (current === automationKey(automation) ? null : current));
     } catch (reason: unknown) {
       failWith(reason);
     } finally {
@@ -196,5 +214,6 @@ export function useAutomationActions({
     onRun,
     onDelete,
     onToggle,
+    confirmDiscard,
   };
 }

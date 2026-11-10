@@ -18,7 +18,7 @@ export function useNearViewport<T extends Element>(margin = 400): [RefObject<T |
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) setNear(true);
       },
-      { rootMargin: `${margin}px` },
+      { root: ref.current.closest(".agent-transcript"), rootMargin: `${margin}px` },
     );
     observer.observe(ref.current);
     return () => observer.disconnect();

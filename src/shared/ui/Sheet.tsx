@@ -256,8 +256,8 @@ function NonModalSheet({
         return;
       close.current();
     };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
   }, [viewport, open, dismissOnOutside, ignore, overlayId]);
 
   // Focus moves into the sheet when it opens unless something inside already took it.

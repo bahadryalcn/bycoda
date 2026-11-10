@@ -488,6 +488,7 @@ function SearchableSelectMenu({
 
   const onSearchKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (isImeComposition(event.nativeEvent)) return;
+    if (event.key === "Tab") return void close(true);
     if ((event.key === "Home" || event.key === "End") && event.target instanceof HTMLInputElement)
       return;
     if (event.key === "ArrowDown") {
@@ -524,8 +525,7 @@ function SearchableSelectMenu({
   const framed = variant === "field" || variant === "transparent";
   const longMenu = searchable || options.length > 12;
   const showLoading = loading && !failed;
-  // A list with nothing to show says why: loading and failure have their own rows, an empty source and a filtered-out
-  // query keep different copy, and an unfinished or failed load is never presented as "no matches".
+  // An empty list says why: loading and failure have their own rows and are never "no matches".
   const noResults = !loading && !failed && filtered.length === 0;
   const resultsCopy =
     options.length === 0 && !normalizedQuery ? (noOptionsLabel ?? emptyLabel) : emptyLabel;

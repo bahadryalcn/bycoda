@@ -10,7 +10,8 @@ import {
 } from "../../sessions/public/checkpoint";
 
 import { forEachConcurrent } from "../../../shared/lib/concurrent";
-import { buildUnifiedFile, type UnifiedFileDiff } from "../model/unifiedDiff";
+import { runDiffWorker } from "../model/diffWorker";
+import { buildUnifiedFileAsync, type UnifiedFileDiff } from "../model/unifiedDiff";
 import { UnifiedDiffView, type UnifiedDiffFileModel } from "./UnifiedDiffView";
 
 type Props = {
@@ -27,6 +28,7 @@ type LoadedDiff = {
 };
 
 const DIFF_LOAD_CONCURRENCY = 4;
+const REFRESH_DEBOUNCE_MS = 500;
 
 /** Read-only review of the exact before/after snapshots owned by one session. */
 export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
@@ -48,16 +50,24 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
 
     let disposed = false;
     let generation = 0;
+    // A new session or target starts from the loading surface; a refresh keeps
+    // the previous diffs on screen until the new ones arrive.
+    setFiles(null);
+    setDiffs(new Map());
     const run = () => {
       const current = ++generation;
       setError(null);
-      setFiles(null);
-      setDiffs(new Map());
       void sessionCheckpointStatus(sessionId, cwd)
         .then(async (status) => {
           if (disposed || current !== generation) return;
           setFiles(status.files);
           setError(null);
+          const known = new Set(status.files.map((file) => file.relative));
+          setDiffs((existing) =>
+            [...existing.keys()].every((id) => known.has(id))
+              ? existing
+              : new Map([...existing].filter(([id]) => known.has(id))),
+          );
           const pendingFiles = [...status.files];
           await forEachConcurrent(
             status.files,
@@ -74,7 +84,11 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
                   tooLarge: diff.tooLarge,
                   unified:
                     !diff.binary && !diff.tooLarge
-                      ? buildUnifiedFile(diff.original, diff.current)
+                      ? await runDiffWorker(
+                          (remote) => remote.build(diff.original, diff.current),
+                          () => buildUnifiedFileAsync(diff.original, diff.current),
+                          { size: diff.original.length + diff.current.length },
+                        )
                       : null,
                 };
               } catch (caught: unknown) {
@@ -103,11 +117,18 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
     };
 
     run();
+    let refreshTimer = 0;
     const unsubscribe = subscribeReviewChanged((changedSessionId) => {
-      if (!changedSessionId || changedSessionId === sessionId) run();
+      if (changedSessionId && changedSessionId !== sessionId) return;
+      if (refreshTimer) return;
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = 0;
+        run();
+      }, REFRESH_DEBOUNCE_MS);
     });
     return () => {
       disposed = true;
+      window.clearTimeout(refreshTimer);
       unsubscribe();
     };
   }, [cwd, sessionId, retry]);
@@ -125,14 +146,14 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
         tooLarge: loaded?.tooLarge,
         emptyMessage:
           loaded == null
-            ? "Loading…"
+            ? t("Loading…")
             : loaded.error
               ? loaded.error
               : unified != null &&
                   unified.additions === 0 &&
                   unified.deletions === 0 &&
                   !loaded.binary
-                ? "No textual diff"
+                ? t("No textual diff")
                 : undefined,
         additions: unified?.additions ?? file.additions,
         deletions: unified?.deletions ?? file.deletions,

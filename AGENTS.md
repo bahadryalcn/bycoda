@@ -79,11 +79,23 @@ Take the first option that fully works:
 One feature, one folder per layer: `src/features/<feature>/` (`model/`, `ui/`, `hooks/`,
 `index.ts`), `host/<feature>/`, `src-tauri/src/<feature>/`. No loose files at `host/`
 root or a feature root; `server.ts`, `engine.ts`, `App.tsx`, `Sidebar.tsx` and the Rust
-root modules only compose and register. Ceilings: 600 lines for `.tsx`, 800 for `.ts`,
-1,500 for Rust; files already over budget may not grow, so move the part you touch into
-the owning folder (a file within 25% of its ceiling may grow by ten lines in total for
-small fixes). `src/shared|platform|integrations` never import `features` or `app`;
-`features` never import `app`; `host` never imports UI.
+root modules only compose and register. `src/shared|platform|integrations` never import
+`features` or `app`; `features` never import `app`; `host` never imports UI.
+
+Split by design, not by line count. Give a part its own component, hook or module when
+it has its own responsibility or owns its own state: siblings never change each other's
+state, they communicate through props, callbacks or a store, so one part's change cannot
+break another. Anything a second place needs becomes a reusable piece (shared in the
+feature, or `src/shared/` across features) instead of a copy. Do not put a whole screen
+and all its state in one component, and do not cut a cohesive unit into numbered parts
+to satisfy a number.
+
+Line targets are a hint, not a gate: 600 lines for `.tsx`, 800 for `.ts`, 1,500 for
+Rust. Past a target, look for a separable responsibility and split if there is one;
+otherwise keep going. Never refuse, shrink or delay requested work because of a line
+count, and do not count lines while writing. The only hard limit is twice the target
+(1,200 / 1,600 / 3,000): no file may cross it and a file already over it may not grow,
+so move the part you touch into the owning folder.
 
 # Code invariants
 

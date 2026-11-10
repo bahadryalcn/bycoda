@@ -386,7 +386,7 @@ export function GitGraphWorkspace({
       >
         <GitBranch className="icon-md shrink-0 text-(--ui-tone-accent-fg)" />
         <span className="max-w-44 truncate text-ui-caption font-medium">
-          {index.data?.branch ?? t("Detached HEAD")}
+          {index.data ? (index.data.branch ?? t("Detached HEAD")) : "…"}
         </span>
         <Tooltip
           label={
@@ -397,7 +397,7 @@ export function GitGraphWorkspace({
           }
         >
           <span className="text-ui-caption tabular-nums text-(--ui-text-secondary)">
-            ↑{index.data?.ahead ?? 0} ↓{index.data?.behind ?? 0}
+            {index.data ? `↑${index.data.ahead ?? 0} ↓${index.data.behind ?? 0}` : null}
           </span>
         </Tooltip>
       </PaneHeader>

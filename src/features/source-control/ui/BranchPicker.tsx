@@ -284,7 +284,7 @@ export function BranchPicker({
   // real branch all share the same icon + 12px line box.
   const awaitingBranch = inProject && !current && !branchesSettled;
   const missingGit = !current && !awaitingBranch;
-  const label = current ? (detached ? `detached ${current}` : current) : "No repo";
+  const label = current ? (detached ? t("detached {p0}", { p0: current }) : current) : t("No repo");
   const title = awaitingBranch
     ? t("Loading branch")
     : missingGit

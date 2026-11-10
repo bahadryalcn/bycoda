@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   loadProjectFiles,
   peekProjectFiles,
@@ -37,17 +37,22 @@ export function useComposerProjectFiles(input: {
   remote: boolean;
   /** An open mention menu refreshes a local index. */
   mentionOpen: boolean;
-}): ProjectFile[] {
+}): { files: ProjectFile[]; failed: boolean; retry: () => void } {
   const { cwd, remote, mentionOpen } = input;
   const [state, setState] = useState<ScopedProjectFiles>(() => ({
     cwd,
     files: peekProjectFiles(cwd) ?? NO_FILES,
   }));
+  const [failedCwd, setFailedCwd] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => setAttempt((count) => count + 1), []);
 
   useEffect(() => {
     let cancelled = false;
     const apply = (files: ProjectFile[]) => {
-      if (!cancelled) setState({ cwd, files });
+      if (cancelled) return;
+      setState({ cwd, files });
+      setFailedCwd(null);
     };
     apply(peekProjectFiles(cwd) ?? NO_FILES);
     if (!cwd) return;
@@ -55,6 +60,7 @@ export function useComposerProjectFiles(input: {
       .then(apply)
       .catch((error) => {
         console.warn("Composer operation failed", error);
+        if (!cancelled) setFailedCwd(cwd);
       });
     const unsubscribe = subscribeProjectFiles(() => {
       const next = peekProjectFiles(cwd);
@@ -64,9 +70,9 @@ export function useComposerProjectFiles(input: {
       cancelled = true;
       unsubscribe();
     };
-  }, [cwd, mentionOpen, remote]);
+  }, [attempt, cwd, mentionOpen, remote]);
 
-  return visibleProjectFiles(state, cwd);
+  return { files: visibleProjectFiles(state, cwd), failed: failedCwd === cwd, retry };
 }
 
 /**
@@ -101,7 +107,11 @@ export function useComposerMentionSources(input: {
   mentionQuery: string;
 }) {
   const { executionCwd, remote, notesEnabled, mentionOpen, mentionQuery } = input;
-  const files = useComposerProjectFiles({ cwd: executionCwd, remote, mentionOpen });
+  const {
+    files,
+    failed: filesFailed,
+    retry: retryFiles,
+  } = useComposerProjectFiles({ cwd: executionCwd, remote, mentionOpen });
   const notes = useComposerNotes(!remote && mentionOpen && notesEnabled);
   const crewHits = useComposerCrewMentions({
     cwd: executionCwd,
@@ -132,5 +142,5 @@ export function useComposerMentionSources(input: {
     notesEnabled,
     remote,
   ]);
-  return { mentionIndex, rankedFiles };
+  return { mentionIndex, rankedFiles, filesFailed, retryFiles };
 }

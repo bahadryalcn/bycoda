@@ -546,3 +546,20 @@ it("renders a large list and moves to the last choosable option", async () => {
   expect(elapsed).toBeLessThan(5000);
   console.info(`SearchableSelect 2000 options opened in ${Math.round(elapsed)}ms (happy-dom)`);
 });
+
+it("closes on Tab and returns focus to the trigger", async () => {
+  await act(async () =>
+    root.render(
+      createElement(SearchableSelect, {
+        label: "Region",
+        value: "",
+        options: [{ value: "a", label: "Alpha" }],
+        onChange: vi.fn(),
+      }),
+    ),
+  );
+  await openMenu();
+  const input = document.body.querySelector<HTMLInputElement>('[role="combobox"]')!;
+  await act(async () => dispatchKey(input, "Tab"));
+  expect(document.body.querySelector('[role="option"]')).toBeNull();
+});

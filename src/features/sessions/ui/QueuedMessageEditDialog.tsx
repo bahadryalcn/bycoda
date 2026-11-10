@@ -15,6 +15,7 @@ import {
 import { FilePlus } from "../../../shared/ui/icons";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { isImeComposition } from "../../../shared/lib/keyboard";
+import { captureDraft, dropPastedText, insertRestoredText } from "../../../shared/lib/draftRestore";
 import { droppedFileCount } from "../../../shared/lib/externalDrop";
 import { useExternalDropFeedback } from "../../../shared/hooks/useExternalDropFeedback";
 import { attachmentDropVerdict } from "../model/attachmentDrop";
@@ -288,14 +289,25 @@ function QueueEditContent({
     const text = data.getData("text/plain");
     if (!canAttach || (text && !isFileReferenceText(text))) return;
     event.preventDefault();
-    void collect(async () => {
-      const { files: pasted, warning } = await nativeClipboardAttachments(text);
-      if (alive.current && warning) setError(warning);
-      return pasted;
-    });
+    const captured = isFileReferenceText(text) ? captureDraft(event.currentTarget) : null;
+    void collect(
+      async () => {
+        const { files: pasted, warning } = await nativeClipboardAttachments(text);
+        if (alive.current && warning) setError(warning);
+        return pasted;
+      },
+      (pasted) => {
+        if (!captured) return;
+        if (pasted.length) dropPastedText(captured, text);
+        else insertRestoredText(captured, text);
+      },
+    );
   };
 
-  const collect = async (read: () => Promise<Attachment[]>) => {
+  const collect = async (
+    read: () => Promise<Attachment[]>,
+    restore?: (incoming: Attachment[]) => void,
+  ) => {
     const admitted = parentChanged.admit();
     if (!admitted) return;
     return admitted.run(async () => {
@@ -315,7 +327,10 @@ function QueueEditContent({
       setError(null);
       try {
         const incoming = await read();
-        admitted.apply(() => attach(incoming));
+        admitted.apply(() => {
+          restore?.(incoming);
+          attach(incoming);
+        });
       } catch (reason) {
         if (alive.current) setError(reason instanceof Error ? reason.message : String(reason));
       } finally {

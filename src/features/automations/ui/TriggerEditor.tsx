@@ -4,7 +4,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { CheckCircle, Clock, Inbox, X } from "../../../shared/ui/icons";
 import { InboxProviderMark } from "../../inbox/ui/InboxProviderMark";
-import { t, useLocale } from "../../../shared/i18n";
+import { formatDate, t, useLocale } from "../../../shared/i18n";
 import { gitBranches } from "../../../platform/tauri/fs";
 import { looksLikeProject } from "../../projects/model/recents";
 import {
@@ -202,7 +202,7 @@ export function TimeTriggerSentence<T extends AutomationSchedule>({
         {executionTimeZone === undefined
           ? nextRunPreview(nextAt)
           : executionTimeZone && nextAt
-            ? `${t("Next run")} ${new Date(nextAt).toLocaleString(undefined, { timeZone: executionTimeZone, timeZoneName: "short" })}`
+            ? `${t("Next run")} ${formatDate(nextAt, { timeZone: executionTimeZone, timeZoneName: "short" })}`
             : t("Host schedule preview unavailable")}
       </span>
     </>

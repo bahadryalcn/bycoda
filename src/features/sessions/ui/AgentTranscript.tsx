@@ -475,6 +475,7 @@ function AgentTranscriptComponent({
     lastVisibleTurn,
     visibleTurns,
     loadEarlier,
+    loadNewer,
     jumpLatest,
     revealBlock: pagingRevealBlock,
     findTurn,
@@ -786,7 +787,6 @@ function AgentTranscriptComponent({
                 live={live}
                 visible={visible}
                 isLastTurn={isLastTurn}
-                turnNumber={turnNumber}
                 turnHarness={turnHarnesses?.[turnIndex]}
                 clockStart={live ? turnClockStart(blocks, turnUserBlock(turn, managed)) : undefined}
                 currentModelName={live ? currentModelName : undefined}
@@ -839,7 +839,10 @@ function AgentTranscriptComponent({
           })}
         </div>
         {lastVisibleTurn < turns.length ? (
-          <div className="flex justify-center px-4 py-3">
+          <div className="flex justify-center gap-2 px-4 py-3">
+            <Button motion="none" variant="ghost" type="button" onClick={loadNewer}>
+              {t("Load newer messages")}
+            </Button>
             <Button motion="none" variant="ghost" type="button" onClick={jumpToLatest}>
               {t("Jump to latest")}
             </Button>
@@ -960,7 +963,6 @@ type TurnProps = {
   visible: boolean;
   isLastTurn: boolean;
   /** One-based position in the whole transcript, not in the visible window. */
-  turnNumber: number;
   /** The provider that produced the turn, resolved for the whole transcript. */
   turnHarness?: HarnessId;
   clockStart?: number;
@@ -1020,7 +1022,6 @@ const Turn = memo(function Turn({
   live,
   visible,
   isLastTurn,
-  turnNumber,
   turnHarness,
   clockStart,
   currentModelName,
@@ -1108,12 +1109,8 @@ const Turn = memo(function Turn({
       <LiveFoldTitle
         startedAt={clockStart}
         paused={waitingForApproval}
-        waitingLabel={
-          managed && waitingForApproval
-            ? "Waiting for orchestrator"
-            : pendingQuestion
-              ? "Waiting for answers"
-              : undefined
+        waitingFor={
+          managed && waitingForApproval ? "orchestrator" : pendingQuestion ? "answers" : undefined
         }
         background={backgroundTasks}
         backgroundAgents={backgroundAgents}
@@ -1176,7 +1173,6 @@ const Turn = memo(function Turn({
           revealOnMount={allowMountReveal && isLastTurn && !seenOutput.has(item.block.id)}
           layout={transcriptLayout}
           visible={item.block.role === "user" ? visible : undefined}
-          stickyIndex={turnNumber}
           // Prose reads the same wherever it lands: under the fold
           // line at the top of the turn, or under the work it follows.
           underLine={
@@ -1408,14 +1404,14 @@ function InitialThinking({ live, embedded = false }: { live: boolean; embedded?:
 function LiveFoldTitle({
   startedAt,
   paused,
-  waitingLabel,
+  waitingFor,
   background,
   backgroundAgents,
   modelName,
 }: {
   startedAt?: number;
   paused: boolean;
-  waitingLabel?: string;
+  waitingFor?: "orchestrator" | "answers";
   background?: string[];
   backgroundAgents?: number;
   modelName?: string;
@@ -1439,9 +1435,13 @@ function LiveFoldTitle({
   // Yielding with a command still going is not the end of the turn. The clock
   // keeps running and the line says what it is waiting on.
   const text = paused
-    ? (waitingLabel ?? "Waiting for approval")
+    ? waitingFor === "orchestrator"
+      ? t("Waiting for orchestrator")
+      : waitingFor === "answers"
+        ? t("Waiting for answers")
+        : t("Waiting for approval")
     : background?.length
-      ? `${formatWorkingDuration(elapsedMs, modelName)} · ${backgroundLabel(background)}`
+      ? `${formatWorkingDuration(elapsedMs, modelName)} · ${background.length === 1 ? t("running in background") : t("{p0} tasks running in background", { p0: background.length })}`
       : formatWorkingDuration(elapsedMs, modelName);
   const shimmer = (
     <Shimmer className="min-w-0 truncate font-sans text-ui-body" duration={1}>
@@ -1455,11 +1455,6 @@ function LiveFoldTitle({
   ) : (
     shimmer
   );
-}
-function backgroundLabel(tasks: string[]): string {
-  return tasks.length === 1
-    ? "running in background"
-    : `${tasks.length} tasks running in background`;
 }
 /**
  * What a finished turn leaves under the answer: what you can do with it, and
@@ -1518,17 +1513,11 @@ function RemoteBlockLoad({
         disabled={state === "pending"}
         onClick={() => void load()}
       >
-        {state === "pending" ? (
-          t("Loading full output…")
-        ) : state === "failed" ? (
-          t("Retry")
-        ) : (
-          <>
-            {t("Load full output (")}
-            {Math.max(1, Math.ceil(bytes / 1024))}
-            {t(" KB)")}
-          </>
-        )}
+        {state === "pending"
+          ? t("Loading full output…")
+          : state === "failed"
+            ? t("Retry")
+            : t("Load full output ({p0} KB)", { p0: Math.max(1, Math.ceil(bytes / 1024)) })}
       </Button>
       {state === "failed" ? (
         <InlineError>{t("Could not load the full output.")}</InlineError>
@@ -1685,15 +1674,23 @@ function TurnMetricsBadge({
       : undefined;
   const headline =
     [
-      metrics.cacheHitPercent != null ? `Cache hit ${Math.round(metrics.cacheHitPercent)}%` : null,
-      outputRate != null ? `Output ${formatMetricCount(outputRate)} tok/s` : null,
+      metrics.cacheHitPercent != null
+        ? t("Cache hit {p0}%", { p0: Math.round(metrics.cacheHitPercent) })
+        : null,
+      outputRate != null ? t("Output {p0} tok/s", { p0: formatMetricCount(outputRate) }) : null,
     ]
       .filter(Boolean)
-      .join(" · ") || "Turn tokens";
+      .join(" · ") || t("Turn tokens");
   const detail = [
-    metrics.inputTokens != null ? `${formatMetricCount(metrics.inputTokens)} input` : null,
-    metrics.outputTokens != null ? `${formatMetricCount(metrics.outputTokens)} output` : null,
-    metrics.cacheReadTokens != null ? `${formatMetricCount(metrics.cacheReadTokens)} cached` : null,
+    metrics.inputTokens != null
+      ? t("{p0} input", { p0: formatMetricCount(metrics.inputTokens) })
+      : null,
+    metrics.outputTokens != null
+      ? t("{p0} output", { p0: formatMetricCount(metrics.outputTokens) })
+      : null,
+    metrics.cacheReadTokens != null
+      ? t("{p0} cached", { p0: formatMetricCount(metrics.cacheReadTokens) })
+      : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -1967,7 +1964,6 @@ const TranscriptBlock = memo(function TranscriptBlock({
   revealOnMount,
   layout,
   visible,
-  stickyIndex,
   underLine = false,
   embedded = false,
   cwd,
@@ -1993,7 +1989,6 @@ const TranscriptBlock = memo(function TranscriptBlock({
   layout: TranscriptLayout;
   revealOnMount?: boolean;
   visible?: boolean;
-  stickyIndex: number;
   /** True when something already sits directly above this in the turn. */
   underLine?: boolean;
   /** True when the parent surface already provides the horizontal gutter. */
@@ -2048,7 +2043,6 @@ const TranscriptBlock = memo(function TranscriptBlock({
                   block={{ ...block, text: answers.join("\n"), questionAnswers: undefined }}
                   layout={layout}
                   visible={visible ?? true}
-                  stickyIndex={stickyIndex}
                   cwd={cwd}
                   onSaveNote={onSaveNote}
                   canRewind={canRewindMessage?.(block.id) ?? false}
@@ -2068,7 +2062,6 @@ const TranscriptBlock = memo(function TranscriptBlock({
         layout={layout}
         busy={planBusy}
         visible={visible ?? true}
-        stickyIndex={stickyIndex}
         cwd={cwd}
         onEdit={onEditLastTurn}
         canRewind={canRewindMessage?.(block.id) ?? false}
@@ -2197,15 +2190,15 @@ const TranscriptBlock = memo(function TranscriptBlock({
 
 /** A `!command` the user ran from the composer, and what it printed. */
 function ShellRunCard({ run, embedded }: { run: ShellRun; embedded?: boolean }) {
-  useLocale();
+  const t = useT();
   const status = run.running
     ? null
     : run.timedOut
-      ? "timed out"
+      ? t("timed out")
       : run.exitCode === null
-        ? "did not finish"
+        ? t("did not finish")
         : run.exitCode !== 0
-          ? `exit ${run.exitCode}`
+          ? t("exit {p0}", { p0: run.exitCode })
           : null;
   return (
     <div className={`${embedded ? "" : "px-4"} py-2`}>
@@ -2246,7 +2239,6 @@ function UserMessageBlock({
   block,
   layout,
   visible,
-  stickyIndex,
   onEdit,
   canRewind = false,
   onRewind,
@@ -2262,7 +2254,6 @@ function UserMessageBlock({
   block: Block;
   layout: TranscriptLayout;
   visible: boolean;
-  stickyIndex: number;
   onEdit?: () => void;
   canRewind?: boolean;
   onRewind?: (action: "edit" | "return") => void;
@@ -2417,7 +2408,6 @@ function UserMessageBlock({
               ? "border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
               : "bg-(--ui-workspace-reading)"
           } ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-xl`}
-          style={{ zIndex: stickyIndex }}
         >
           <ChatCitationList citations={citations} text={text} />
           {block.turnOutcome === "stopped" ? (

@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useHostAutomations } from "../hooks/useHostAutomations";
 import { useAutomationHistory } from "../hooks/useAutomationHistory";
-import { useAutomationActions } from "../hooks/useAutomationActions";
+import { unreachableNotice, useAutomationActions } from "../hooks/useAutomationActions";
 import { useAutomationDraftStart } from "../hooks/useAutomationDraftStart";
 import { useAutomationFolderOptions } from "../hooks/useAutomationFolderOptions";
 import { automationKey } from "../model/automationKey";
@@ -355,6 +355,7 @@ function AutomationsContent({
     onRun,
     onDelete,
     onToggle,
+    confirmDiscard,
   } = useAutomationActions({
     machines,
     confirmSaved: host.confirmSaved,
@@ -622,8 +623,7 @@ function AutomationsContent({
             </Button>
           }
         >
-          {unreachableNames.join(", ")} {unreachableNames.length === 1 ? t("isn’t") : t("aren’t")}
-          {t(" reachable right now, so its automations may be out of date.")}
+          {unreachableNotice(unreachableNames)}
         </Alert>
       ) : null}
       <div className="automation-body flex min-h-0 min-w-0 flex-1">
@@ -653,8 +653,8 @@ function AutomationsContent({
                         mascots={groupMascots}
                         colors={groupColors}
                         customColors={groupCustomColors}
-                        onSelect={() => {
-                          if (savingRef.current) return;
+                        onSelect={async () => {
+                          if (savingRef.current || (draft && !(await confirmDiscard()))) return;
                           setPickerOpen(false);
                           setDraft(null);
                           setSelectedId(automationKey(automation));
@@ -739,9 +739,7 @@ function AutomationsContent({
                     ? selected.host.machineId
                     : backgroundMachineFor(machines, editorDraft.cwd)?.id
                 }
-                onChange={(nextDraft) => {
-                  if (!savingRef.current) setDraft(nextDraft);
-                }}
+                onChange={(nextDraft) => void (!savingRef.current && setDraft(nextDraft))}
                 onClose={() => {
                   if (savingRef.current) return;
                   setDraft(null);
@@ -1375,7 +1373,7 @@ function AutomationEditor({
                     type="button"
                     onClick={onRun}
                     loading={running}
-                    disabled={saving}
+                    disabled={saving || dirty}
                     startIcon={<Play className="icon-sm" />}
                     variant="secondary"
                   >

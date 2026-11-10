@@ -93,22 +93,35 @@ export function useNotificationSettings() {
     enabled: userId !== null,
     queryFn: () => guarded(() => accountController().api().getNotificationSettings()),
   });
-  const save = useMutation({
-    mutationFn: (settings: NotificationSettings) =>
-      guarded(() => accountController().api().putNotificationSettings({ body: settings })),
-    // The switch moves at once; a failed save puts the saved value back.
-    onMutate: async (settings) => {
+  const mutationKey = ["account", userId, "notifications", "save"] as const;
+  // Saves run one after another; only the newest one may write its outcome to the cache.
+  const newerPending = () => queryClient.isMutating({ mutationKey }) > 1;
+  const mutation = useMutation({
+    mutationKey,
+    scope: { id: `account-notifications-${userId}` },
+    mutationFn: ({ next }: { next: NotificationSettings; previous?: NotificationSettings }) =>
+      guarded(() => accountController().api().putNotificationSettings({ body: next })),
+    onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient.getQueryData<NotificationSettings>(key);
-      queryClient.setQueryData(key, settings);
-      return { previous };
     },
-    onError: (_error, _settings, context) => {
-      if (context?.previous) queryClient.setQueryData(key, context.previous);
+    onError: (_error, { previous }) => {
+      if (newerPending()) return;
+      if (previous) queryClient.setQueryData(key, previous);
+      void queryClient.invalidateQueries({ queryKey: key });
     },
-    onSuccess: (saved) => queryClient.setQueryData(key, saved),
+    onSuccess: (saved) => {
+      if (!newerPending()) queryClient.setQueryData(key, saved);
+    },
   });
-  return { query, save };
+  // The switch moves at once from the latest cached value; a failed save puts the saved value back.
+  const mutate = (update: (current: NotificationSettings) => NotificationSettings) => {
+    const previous = queryClient.getQueryData<NotificationSettings>(key);
+    if (!previous) return;
+    const next = update(previous);
+    queryClient.setQueryData(key, next);
+    mutation.mutate({ next, previous });
+  };
+  return { query, save: { isError: mutation.isError, mutate } };
 }
 
 export function useProfileUpdate() {

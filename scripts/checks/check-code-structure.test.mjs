@@ -14,16 +14,34 @@ const rulesOf = (file, text) =>
     .map((finding) => finding.rule)
     .sort();
 
-test("file-lines flags a source file over its layer budget and records the line count", () => {
-  const tsx = "export const A = 1;\n".repeat(601);
-  const [finding] = scanFile("src/features/demo/ui/A.tsx", tsx);
+test("file-lines gates only the hard ceiling; the line target is an uncounted advisory", () => {
+  // tsx target 600, hard ceiling 1200.
+  const [advisory] = scanFile("src/features/demo/ui/A.tsx", "export const A = 1;\n".repeat(601));
+  assert.equal(advisory.rule, "file-lines-target");
+  assert.equal(advisory.advisory, true);
+  assert.equal(advisory.lines, 602);
+  const [finding] = scanFile("src/features/demo/ui/A.tsx", "export const A = 1;\n".repeat(1200));
   assert.equal(finding.rule, "file-lines");
-  assert.equal(finding.lines, 602);
+  assert.equal(finding.lines, 1201);
   assert.deepEqual(rulesOf("src/features/demo/ui/B.tsx", "export const B = 1;\n".repeat(599)), []);
-  assert.deepEqual(rulesOf("host/tasks/launch.ts", "x;\n".repeat(801)), ["file-lines"]);
+  assert.deepEqual(rulesOf("src/features/demo/ui/B.tsx", "export const B = 1;\n".repeat(1199)), [
+    "file-lines-target",
+  ]);
+  assert.deepEqual(rulesOf("host/tasks/launch.ts", "x;\n".repeat(801)), ["file-lines-target"]);
+  assert.deepEqual(rulesOf("host/tasks/launch.ts", "x;\n".repeat(1601)), ["file-lines"]);
   assert.deepEqual(rulesOf("host/tasks/launch.test.ts", "x;\n".repeat(801)), []);
-  assert.deepEqual(rulesOf("src-tauri/src/fs.rs", "fn a() {}\n".repeat(1501)), ["file-lines"]);
-  assert.deepEqual(rulesOf("src-tauri/src/fs/fs_tests.rs", "fn a() {}\n".repeat(1501)), []);
+  assert.deepEqual(rulesOf("src-tauri/src/fs.rs", "fn a() {}\n".repeat(3001)), ["file-lines"]);
+  assert.deepEqual(rulesOf("src-tauri/src/fs/fs_tests.rs", "fn a() {}\n".repeat(3001)), [
+    "file-lines-target",
+  ]);
+
+  const { counts, details, advisories } = countFindings(["host/tasks/launch.ts"], () =>
+    "x;\n".repeat(801),
+  );
+  assert.deepEqual(counts, {});
+  assert.deepEqual(details, []);
+  assert.equal(advisories.length, 1);
+  assert.deepEqual(compare(counts, {}, null), []);
 });
 
 test("loose files at host and feature roots are findings; entry files and folders are not", () => {
@@ -129,7 +147,6 @@ test("cross-feature imports require declared public entries and gate deep paths"
       rule: "cross-feature-deep-import",
       count: 1,
       allowed: 0,
-      tolerance: 0,
     },
   ]);
   const accepted = countFindings(
@@ -170,21 +187,14 @@ test("compare reports only counts above the baseline and honours the file scope"
   assert.deepEqual(compare(counts, baseline, ["src/shared/ui/X.tsx"]), []);
 });
 
-test("file-lines tolerates a small growth only for files within 1.25x of their limit", () => {
+test("a baselined file over the hard ceiling may shrink or stay flat but not grow", () => {
   const over = (file, count, allowed) =>
     compare({ [file]: { "file-lines": count } }, { [file]: { "file-lines": allowed } }, null);
-  // tsx limit 600: 750 is the near-budget edge.
-  assert.deepEqual(over("src/features/a/ui/A.tsx", 760, 750), []);
-  assert.equal(over("src/features/a/ui/A.tsx", 761, 750).length, 1);
-  assert.equal(over("src/features/a/ui/A.tsx", 761, 750)[0].tolerance, 10);
-  // 751 is beyond 1.25x: no growth allowed.
-  assert.equal(over("src/features/a/ui/A.tsx", 752, 751).length, 1);
-  assert.deepEqual(over("src/features/a/ui/A.tsx", 751, 751), []);
-  // Rust limit 1500.
-  assert.deepEqual(over("src-tauri/src/fs.rs", 1880, 1870), []);
-  assert.equal(over("src-tauri/src/fs.rs", 1881, 1870).length, 1);
-  // A file absent from the baseline that crosses its limit still fails.
-  assert.equal(over("src/features/a/ui/B.tsx", 601, 0).length, 1);
+  assert.deepEqual(over("src/features/a/ui/A.tsx", 1300, 1300), []);
+  assert.deepEqual(over("src/features/a/ui/A.tsx", 1250, 1300), []);
+  assert.equal(over("src/features/a/ui/A.tsx", 1301, 1300).length, 1);
+  // A file absent from the baseline that crosses its hard ceiling fails.
+  assert.equal(over("src/features/a/ui/B.tsx", 1201, 0).length, 1);
 });
 
 test("specifiers resolve through the @ alias and relative paths", () => {

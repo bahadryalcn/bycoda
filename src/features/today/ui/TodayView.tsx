@@ -51,7 +51,7 @@ export function TodayView() {
   const locale = useLocale();
   const titleId = useId();
   const [period, setPeriod] = useState<TodayPeriod>("today");
-  const { data, pricing, loading, failed, reload } = useTodayData(period);
+  const { data, pricing, loading, refreshing, failed, reload } = useTodayData(period);
   const overview = useActivityOverview();
   const { summary: activity, failed: activityFailed } = overview;
   const activeMinutes = activity ? (period === "today" ? activity.today : activity.week) : null;
@@ -87,7 +87,13 @@ export function TodayView() {
               { value: "week", label: t("This week") },
             ]}
           />
-          <Button variant="ghost" iconOnly label={t("Refresh")} loading={loading} onClick={reload}>
+          <Button
+            variant="ghost"
+            iconOnly
+            label={t("Refresh")}
+            loading={loading || refreshing}
+            onClick={reload}
+          >
             <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
           </Button>
         </div>
@@ -138,11 +144,18 @@ export function TodayView() {
   );
 }
 
+/** The aggregate emits "Unknown folder" as an English constant; real project names pass through. */
+const todayLabel = (label: string) => (label === "Unknown folder" ? t("Unknown folder") : label);
+
 /** Run time by project as a ring; run time by day (week) or active minutes of the last 7 days. */
 function TodayCharts({ data, activity }: { data: TodayData; activity: BarChartDatum[] | null }) {
   const projects = data.projects
     .filter((project) => project.runMs > 0)
-    .map((project) => ({ key: project.key, label: project.label, value: project.runMs }));
+    .map((project) => ({
+      key: project.key,
+      label: todayLabel(project.label),
+      value: project.runMs,
+    }));
   const days = useMemo(
     () =>
       data.days.map((day) => ({
@@ -210,7 +223,9 @@ function ProjectTable({ data }: { data: TodayData }) {
           key: "label",
           label: t("Project"),
           sortable: true,
-          render: (_, row) => <span title={row.path || row.label}>{row.label}</span>,
+          render: (_, row) => (
+            <span title={row.path || todayLabel(row.label)}>{todayLabel(row.label)}</span>
+          ),
         },
         {
           key: "sessions",

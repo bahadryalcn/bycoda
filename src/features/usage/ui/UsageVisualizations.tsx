@@ -29,6 +29,12 @@ import {
 } from "./UsageCharts";
 
 type Colors = ReadonlyMap<string, string>;
+const ENGLISH_USAGE_LABELS = ["Unknown folder", "Not in a group", "Other", "Default account"];
+/** Labels the usage model emits as English constants; real folder and account names pass through. */
+export function usageLabel(label: string): string {
+  return ENGLISH_USAGE_LABELS.includes(label) ? t(label) : label;
+}
+
 export function UsageTrend({
   buckets,
   series: allSeries,
@@ -113,7 +119,7 @@ export function UsageTrend({
             <p key={item.key}>
               <Checkbox
                 className="min-w-0 items-center"
-                label={item.label}
+                label={usageLabel(item.label)}
                 checked={singleSeries === null || singleSeries.has(item.key)}
                 onChange={(event) => {
                   const checked = event.currentTarget.checked;
@@ -139,7 +145,7 @@ export function UsageTrend({
           selectSeriesLabel={t("Choose a series to show")}
           series={series.map((s, index) => ({
             key: s.key,
-            label: s.label,
+            label: usageLabel(s.label),
             color: usageChartColor(colors, s.key),
             area: false,
             // Series differ by stroke pattern as well as colour (solid, dash, dot).
@@ -189,7 +195,7 @@ export function UsageShare({
           .filter((row) => row[metric] > 0)
           .map((row) => ({
             key: row.key,
-            label: row.label,
+            label: usageLabel(row.label),
             value: row[metric],
             color: usageChartColor(colors, row.key),
           }))}
@@ -231,7 +237,7 @@ export function Contribution({
         {rows.slice(0, 5).map((row) => (
           <div className="usage-contribution" key={row.key}>
             <Button variant="link" onClick={() => onSelect(row.key)}>
-              {row.label}
+              {usageLabel(row.label)}
             </Button>
             <span>
               {formatMetric(row[metric], metric)}{" "}

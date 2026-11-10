@@ -28,6 +28,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { prettyParent } from "../../../shared/lib/paths";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import { ChevronDown, Search, Plus, X, ImagePlus, Maximize2 } from "../../../shared/ui/icons";
 import { QuickProjectIcon, loadQuickProjectAppearance } from "./QuickProjectIcon";
 import {
@@ -361,9 +362,8 @@ export function QuickComposer({
     attachments.remove(id);
   };
 
-  const dismiss = () => {
-    void invoke("quick_composer_dismiss");
-  };
+  const dismiss = () =>
+    void invoke("quick_composer_dismiss").catch((reason) => setError(String(reason)));
 
   const submit = async (reveal: boolean) => {
     if (!owner.canMutate() || owner.pending) return;
@@ -477,7 +477,7 @@ export function QuickComposer({
   };
 
   const onPromptKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.nativeEvent.isComposing) return;
+    if (isImeComposition(event.nativeEvent)) return;
     if (event.key === "Escape") {
       event.preventDefault();
       if (picker) closePicker();
@@ -526,7 +526,7 @@ export function QuickComposer({
   };
 
   const onQueryKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (event.nativeEvent.isComposing) return;
+    if (isImeComposition(event.nativeEvent)) return;
     if (event.key === "Escape") {
       event.preventDefault();
       closePicker();

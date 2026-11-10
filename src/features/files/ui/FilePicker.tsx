@@ -413,13 +413,13 @@ function emptyLabel({
   paletteMode: boolean;
   actionCount: number;
 }): string | null {
-  if (paletteMode) return actionCount === 0 ? "No matching commands" : null;
+  if (paletteMode) return actionCount === 0 ? t("No matching commands") : null;
   if (error && fileCount === 0) return error;
-  if (!looksLikeProject(cwd)) return "Open a project to search files";
-  if (loading && fileCount === 0) return "Indexing files…";
-  if (fileCount === 0) return "No files found";
+  if (!looksLikeProject(cwd)) return t("Open a project to search files");
+  if (loading && fileCount === 0) return t("Indexing files…");
+  if (fileCount === 0) return t("No files found");
   if (matchCount === 0) {
-    return query.trim() ? "No matching files" : "Type a file name to search";
+    return query.trim() ? t("No matching files") : t("Type a file name to search");
   }
   return null;
 }

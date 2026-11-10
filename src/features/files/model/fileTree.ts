@@ -179,8 +179,8 @@ function readDir(path: string, previous?: FsEntry[]): Promise<FsEntry[]> {
         return cached;
       },
       (error: unknown) => {
-        if (dirEpochs.get(path) === epoch && previous && keepsLastListing(path, error)) {
-          dirs.set(path, previous);
+        if (dirEpochs.get(path) === epoch && previous && !keepsLastListing(path, error)) {
+          dirs.delete(path);
         }
         if (dirEpochs.get(path) === epoch) reportRemoteConnection(path, "files", error);
         throw error;
@@ -199,9 +199,7 @@ const keepsLastListing = (path: string, error: unknown) =>
 
 export function refreshDir(path: string): Promise<FsEntry[]> {
   pollBackoff.delete(path);
-  const previous = dirs.get(path);
-  dirs.delete(path);
-  return readDir(path, previous);
+  return readDir(path, dirs.get(path));
 }
 
 export function forgetDir(path: string) {

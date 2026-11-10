@@ -73,8 +73,11 @@ export function createServerSync(deps: ServerSyncDeps) {
     if (!deps.isFocused()) return;
     const ids = store.loadPendingRead();
     if (ids.length === 0) return;
-    await port.markRead(ids.slice(0, 100));
-    store.savePendingRead(ids.slice(100));
+    const sent = ids.slice(0, 100);
+    await port.markRead(sent);
+    // Ids appended while the request was in flight stay pending.
+    const done = new Set(sent);
+    store.savePendingRead(store.loadPendingRead().filter((id) => !done.has(id)));
   }
 
   /**

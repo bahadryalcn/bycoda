@@ -246,3 +246,16 @@ it("keeps a passive tooltip out of Escape handling", async () => {
   });
   expect(dismiss).not.toHaveBeenCalledWith("escape");
 });
+
+it("dismisses on an outside press even when its target stops pointerdown propagation", async () => {
+  const onDismiss = vi.fn();
+  const outside = document.createElement("div");
+  outside.addEventListener("pointerdown", (event) => event.stopPropagation());
+  document.body.append(outside);
+  await act(async () =>
+    root.render(createElement(Popover, { anchor, onDismiss, bare: true }, "Menu")),
+  );
+  outside.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+  expect(onDismiss).toHaveBeenCalledWith("outside");
+  outside.remove();
+});

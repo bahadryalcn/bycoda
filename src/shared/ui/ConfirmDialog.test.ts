@@ -171,3 +171,28 @@ it("calls onCancel synchronously on Cancel and Escape before settling", async ()
   await escape();
   expect(onCancel).toHaveBeenCalledTimes(2);
 });
+
+it("gives a second request with the same title a fresh dialog instance", async () => {
+  let open!: () => Promise<boolean>;
+  const request: ConfirmRequest = {
+    title: "Delete?",
+    message: "Gone.",
+    confirmLabel: "Delete",
+    acknowledge: { label: "Also remove", control: "switch" },
+  };
+  function Probe() {
+    const confirmation = useConfirm();
+    open = () => confirmation.confirm(request);
+    return confirmation.dialog;
+  }
+  await act(async () => root.render(createElement(Probe)));
+  await act(async () => {
+    void open();
+  });
+  await click(document.querySelector<HTMLButtonElement>('[role="switch"]')!);
+  expect(document.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("true");
+  await act(async () => {
+    void open();
+  });
+  expect(document.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
+});

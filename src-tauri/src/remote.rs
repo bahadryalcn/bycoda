@@ -2998,25 +2998,12 @@ pub async fn social_authority_connect(
     .await
 }
 
-fn social_peer_endpoint(value: &str) -> Result<String, String> {
-    let url = url::Url::parse(value).map_err(|_| "Use a stable HTTPS social authority endpoint")?;
-    if !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-        || !matches!(url.path(), "" | "/")
-        || !(url.scheme() == "https"
-            || (url.scheme() == "http"
-                && matches!(url.host_str(), Some("localhost" | "127.0.0.1"))))
-    {
-        return Err("Use a stable HTTPS social authority endpoint or loopback endpoint. An SSH tunnel address cannot be stored as peer authority.".into());
-    }
-    Ok(url.origin().ascii_serialization())
-}
-
 #[path = "remote/method_catalog.rs"]
 mod method_catalog;
 use method_catalog::supported_remote_method;
+#[path = "remote/social_endpoint.rs"]
+mod social_endpoint;
+use social_endpoint::social_peer_endpoint;
 
 /// A machine set up again: it keeps its id, so its projects and sessions stay
 /// linked. Added anew from another address (its Tailscale one, say), it keeps

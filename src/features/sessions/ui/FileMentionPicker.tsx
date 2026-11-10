@@ -15,6 +15,9 @@ type Props = {
   query: string;
   active: number;
   loading?: boolean;
+  /** The project file listing failed to load; shows a retry row instead of the loading text. */
+  failed?: boolean;
+  onRetry?: () => void;
   includeNotes?: boolean;
   onActive: (index: number) => void;
   onPick: (file: RankedFile) => void;
@@ -25,6 +28,8 @@ export function FileMentionPicker({
   query,
   active,
   loading,
+  failed,
+  onRetry,
   includeNotes = false,
   onActive,
   onPick,
@@ -66,7 +71,14 @@ export function FileMentionPicker({
       data-mention-picker
       className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-floating)"
     >
-      {files.length === 0 ? (
+      {files.length === 0 && failed && loading ? (
+        <div className="flex items-center justify-between gap-2 px-3 py-2">
+          <p className="text-ui-caption text-(--ui-text-secondary)">
+            {t("Could not index files.")}
+          </p>
+          <Button onClick={onRetry}>{t("Retry")}</Button>
+        </div>
+      ) : files.length === 0 ? (
         <p className="px-3 py-2.5 text-ui-caption text-(--ui-text-secondary)">
           {loading
             ? t("Indexing files…")

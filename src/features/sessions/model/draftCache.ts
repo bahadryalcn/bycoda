@@ -21,10 +21,14 @@ import { canRestoreOver } from "./draftPersistence";
 import type { Attachment } from "./session";
 import { rendererPersistenceDrain, type PersistenceWork } from "../data/persistenceDrain";
 
+/** The Plan / Operator / Orchestrator pick; kept so a remount cannot silently drop it. */
+export type ComposerWorkMode = "plan" | "operator" | "orchestrator";
+
 const drafts = new Map<string, string>();
 const mcpTags = new Map<string, McpTag[]>();
 const attachments = new Map<string, Attachment[]>();
 const modes = new Map<string, "save">();
+const workModes = new Map<string, ComposerWorkMode>();
 const sourceDraftIds = new Map<string, string>();
 const sourceDraftDigests = new Map<string, string>();
 const notices = new Map<string, string>();
@@ -71,6 +75,16 @@ export function getComposerDraft(sessionId: string): string | undefined {
 
 export function getComposerDraftMode(sessionId: string): "save" | undefined {
   return modes.get(sessionId);
+}
+
+export function getComposerWorkMode(sessionId: string): ComposerWorkMode | undefined {
+  return workModes.get(sessionId);
+}
+
+/** In-memory only: a remount restores it, an app restart starts from a normal turn. */
+export function setComposerWorkMode(sessionId: string, mode: ComposerWorkMode | undefined): void {
+  if (mode) workModes.set(sessionId, mode);
+  else workModes.delete(sessionId);
 }
 
 export function setComposerDraftMode(sessionId: string, mode: "save" | undefined): void {
@@ -244,6 +258,7 @@ export function clearComposerDraft(sessionId: string, work?: PersistenceWork): v
   mcpTags.delete(sessionId);
   attachments.delete(sessionId);
   modes.delete(sessionId);
+  workModes.delete(sessionId);
   sourceDraftIds.delete(sessionId);
   sourceDraftDigests.delete(sessionId);
   notices.delete(sessionId);

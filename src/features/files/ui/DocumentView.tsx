@@ -41,7 +41,7 @@ type Props = {
 
 type LoadState =
   | { status: "loading" }
-  | { status: "ready"; bytes: Uint8Array }
+  | { status: "ready"; path: string; bytes: Uint8Array }
   | { status: "error"; message: string };
 
 /**
@@ -81,7 +81,10 @@ export function DocumentView({
     if (!kind || kind === "doc") return;
     let cancelled = false;
     const controller = new AbortController();
-    setState({ status: "loading" });
+    // A reload of the same file keeps the viewer mounted (page and scroll stay).
+    setState((current) =>
+      current.status === "ready" && current.path === path ? current : { status: "loading" },
+    );
     (readBytes
       ? readBytes()
       : parseRemotePath(path)
@@ -96,7 +99,9 @@ export function DocumentView({
       (bytes) => {
         if (cancelled) return;
         const problem = documentSizeProblem(bytes.byteLength);
-        setState(problem ? { status: "error", message: problem } : { status: "ready", bytes });
+        setState(
+          problem ? { status: "error", message: problem } : { status: "ready", path, bytes },
+        );
       },
       (cause: unknown) => {
         if (!cancelled) {

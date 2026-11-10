@@ -614,7 +614,7 @@ export function ProjectRail({
     // Saving announces the change, which reloads `pinnedPaths`. Grouped projects are never pinned.
     const pinned = loadPinnedProjects();
     const next = pinned.filter(
-      (path) => allProjects.has(path) && !projectGroupIdForPath(path, projectGroupAssignments),
+      (p) => allProjects.has(pathKey(p)) && !projectGroupIdForPath(p, projectGroupAssignments),
     );
     if (next.length !== pinned.length) savePinnedProjects(next);
   }, [allProjects, projectGroupAssignments]);
@@ -1224,7 +1224,7 @@ export function ProjectRail({
                       icon={StickyNote}
                       onClick={onOpenNotes}
                       active={notesActive}
-                      ariaLabel="Notes"
+                      ariaLabel={t("Notes")}
                       guide="rail-notes"
                     />
                   ) : null}
@@ -1234,7 +1234,7 @@ export function ProjectRail({
                       icon={Zap}
                       onClick={onOpenAutomations}
                       active={automationsActive}
-                      ariaLabel="Automations"
+                      ariaLabel={t("Automations")}
                       guide="rail-automations"
                     />
                   </WorkspaceFeatureGate>
@@ -1257,7 +1257,7 @@ export function ProjectRail({
                       icon={DashboardSquare}
                       onClick={onOpenTasks}
                       active={tasksActive}
-                      ariaLabel="Tasks"
+                      ariaLabel={t("Tasks")}
                       guide="rail-tasks"
                     />
                   </WorkspaceFeatureGate>

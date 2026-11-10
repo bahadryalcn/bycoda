@@ -83,6 +83,16 @@ describe("server sync", () => {
     expect(port.markRead).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps ids queued while a read request is in flight", async () => {
+    const { sync, port, deps } = setup({ items: [announcement("d4")], focused: true });
+    await sync.poll();
+    vi.mocked(port.markRead).mockImplementationOnce(async () => {
+      deps.store.savePendingRead([...deps.store.loadPendingRead(), "late"]);
+    });
+    await sync.flushRead();
+    expect(deps.store.loadPendingRead()).toEqual(["late"]);
+  });
+
   it("retries an item the OS refused at the next poll", async () => {
     const { sync, deps } = setup({ items: [announcement("d3")] });
     vi.mocked(deps.announce).mockResolvedValueOnce(false);

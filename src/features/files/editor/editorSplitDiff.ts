@@ -1,6 +1,7 @@
 import { getChunks, MergeView } from "@codemirror/merge";
 import { EditorState, type Extension, type Text } from "@codemirror/state";
 import { EditorView, type ViewUpdate } from "@codemirror/view";
+import { t } from "../../../shared/i18n";
 import { editorDocChanges } from "./editorDoc";
 import { editorSurfaceActive } from "./editorSurfaceVisibility";
 import {
@@ -169,13 +170,16 @@ function hunkControl(
     button.addEventListener("mousedown", (event) => {
       event.preventDefault();
       event.stopPropagation();
+    });
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
       const index = Number(bar.dataset.chunk);
       if (Number.isInteger(index)) onAction(action, index);
     });
     bar.append(button);
   };
-  add("revert", "Revert change", UNDO_SVG);
-  add("stage", "Stage change", PLUS_SVG);
+  add("revert", t("Revert change"), UNDO_SVG);
+  add("stage", t("Stage change"), PLUS_SVG);
   return bar;
 }
 

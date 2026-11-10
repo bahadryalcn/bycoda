@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { classifyRemoteError } from "../model/remoteFailure";
 import {
   recordRemoteCapabilities,
@@ -14,6 +14,9 @@ export type MachineProbe = "connected" | "provider" | "update" | "offline";
 export function useMachineProbes(machines: RemoteMachine[], busy: boolean) {
   const [status, setStatus] = useState<Record<string, MachineProbe>>({});
   const [needsUpdate, setNeedsUpdate] = useState<Record<string, boolean>>({});
+  const machinesRef = useRef(machines);
+  machinesRef.current = machines;
+  const signature = machines.map((machine) => `${machine.id}:${machine.environmentId}`).join("|");
   useEffect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -24,7 +27,7 @@ export function useMachineProbes(machines: RemoteMachine[], busy: boolean) {
       // listener below re-checks as soon as it returns.
       if (!busy && !document.hidden)
         await Promise.all(
-          machines.map(async (machine) => {
+          machinesRef.current.map(async (machine) => {
             let label: MachineProbe = "connected";
             try {
               const host = await remoteRequest<HostDescriptor>(machine.id, "environment.describe", {
@@ -32,6 +35,7 @@ export function useMachineProbes(machines: RemoteMachine[], busy: boolean) {
               });
               if (host.environmentId !== machine.environmentId)
                 throw new Error("Host identity changed. Add this machine again before continuing.");
+              if (disposed) return;
               recordRemoteCapabilities(host.environmentId, host.capabilities);
               // The project rail shows the same machine; keep both in step.
               reportRemoteMachineStatus(machine.id, true);
@@ -48,7 +52,7 @@ export function useMachineProbes(machines: RemoteMachine[], busy: boolean) {
             } catch (reason) {
               // A busy or slow Host (for example while this computer builds) is not
               // offline: keep the last status and check again on the next round.
-              if (classifyRemoteError(reason).kind === "temporary") return;
+              if (disposed || classifyRemoteError(reason).kind === "temporary") return;
               label = "offline";
               reportRemoteMachineStatus(machine.id, false, reason);
             }
@@ -70,6 +74,6 @@ export function useMachineProbes(machines: RemoteMachine[], busy: boolean) {
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [machines, busy]);
+  }, [signature, busy]);
   return { status, setStatus, needsUpdate };
 }
