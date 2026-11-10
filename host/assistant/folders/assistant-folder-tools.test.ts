@@ -462,7 +462,7 @@ describe("Assistant folder tools", () => {
         "commands.run",
         {
           root: id(),
-          command: `"${process.execPath}" -e "process.stdout.write('line')"`,
+          command: "echo line",
           requestId: "shell-1",
         },
         global,

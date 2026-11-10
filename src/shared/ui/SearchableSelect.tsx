@@ -378,6 +378,7 @@ function SearchableSelectMenu({
   const trigger = useRef<HTMLButtonElement>(null);
   useImperativeHandle(triggerProps?.ref, () => trigger.current!, []);
   const search = useRef<HTMLInputElement>(null);
+  const retry = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const activeOption = useRef<HTMLButtonElement>(null);
   const listId = useId();
@@ -488,7 +489,13 @@ function SearchableSelectMenu({
 
   const onSearchKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (isImeComposition(event.nativeEvent)) return;
-    if (event.key === "Tab") return void close(true);
+    if (event.key === "Tab") {
+      if (!event.shiftKey && retry.current) {
+        event.preventDefault();
+        retry.current.focus({ preventScroll: true });
+      } else close(true);
+      return;
+    }
     if ((event.key === "Home" || event.key === "End") && event.target instanceof HTMLInputElement)
       return;
     if (event.key === "ArrowDown") {
@@ -735,6 +742,7 @@ function SearchableSelectMenu({
               action={
                 onRetry ? (
                   <Button
+                    ref={retry}
                     variant="ghost"
                     size="sm"
                     type="button"

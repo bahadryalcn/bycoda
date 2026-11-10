@@ -1364,7 +1364,7 @@ fn remove_with_sessions<G: std::ops::Deref<Target = rusqlite::Connection>>(
     }
     // Git has succeeded and the sessions are already durably detached. A
     // cleanup failure must not tell the UI to resume them in the deleted path.
-    if let Err(error) = db().and_then(|conn| finish_removal(&*conn, &tree.path, &[])) {
+    if let Err(error) = db().and_then(|conn| finish_removal(&conn, &tree.path, &[])) {
         log::warn!("Worktree removed; recovery journal cleanup will retry on restart: {error}");
     }
     Ok(WorktreeRemoval {

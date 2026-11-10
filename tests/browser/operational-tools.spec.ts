@@ -95,12 +95,16 @@ test("device help remains keyboard accessible and preserves input drafts", async
   await page.keyboard.press("Escape");
   await expect(page.getByLabel("App name or bundle ID", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Device options", exact: true }).click();
+  const setup = page.getByRole("button", { name: "Setup and access", exact: true });
+  await setup.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Setup and access", exact: true })).toBeVisible();
   const help = page.getByRole("button", { name: "Help", exact: true });
   await help.focus();
   await page.keyboard.press("Enter");
   await expect(help).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByText(/Android text input supports printable ASCII/)).toBeVisible();
-  // Escape closes one layer: the help first, then the options menu.
+  await expect(page.getByText(/Viewing never enables control/)).toBeVisible();
+  // Escape closes one layer: the help first, then the setup panel.
   await page.keyboard.press("Escape");
   await expect(help).toBeFocused();
   await page.keyboard.press("Escape");

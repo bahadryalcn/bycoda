@@ -401,7 +401,7 @@ for (const disk of ["missing", "changed"]) {
     expect((await snapshot(page)).writes).toHaveLength(0);
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.locator('[data-workspace="recovered"]')).toContainText(
-      "Choose reload or overwrite",
+      "The file changed on disk. Reload or overwrite before saving.",
     );
     expect((await snapshot(page)).writes).toHaveLength(0);
     await page.getByRole("button", { name: "Overwrite disk version", exact: true }).click();

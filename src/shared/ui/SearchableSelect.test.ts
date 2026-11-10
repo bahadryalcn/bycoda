@@ -433,11 +433,22 @@ it("announces a failed load, offers retry and keeps choosable stale options", as
   const retry = Array.from(alert.querySelectorAll("button")).find(
     (button) => button.textContent === "Retry",
   )!;
+  const input = document.body.querySelector<HTMLInputElement>('[role="combobox"]')!;
+  await act(async () => dispatchKey(input, "Tab"));
+  expect(document.activeElement).toBe(retry);
+  expect(document.body.querySelector('[role="listbox"]')).not.toBeNull();
   await act(async () => retry.click());
   expect(onRetry).toHaveBeenCalledTimes(1);
   // Recovery does not close the menu or change the committed value.
   expect(document.body.querySelector('[role="listbox"]')).not.toBeNull();
   expect(onChange).not.toHaveBeenCalled();
+  await act(async () =>
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true }),
+    ),
+  );
+  expect(document.body.querySelector('[role="listbox"]')).toBeNull();
+  expect(document.activeElement).toBe(container.querySelector("button"));
 });
 
 it("does not call a failed empty source a filtered-out search", async () => {

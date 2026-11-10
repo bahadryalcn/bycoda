@@ -48,15 +48,18 @@ for (const width of [390, 1000]) {
       await expect(strip.locator('[data-attachment-chip="image"]')).toHaveCount(7);
       const fileBox = await file.boundingBox();
       const imageBox = await image.boundingBox();
-      expect(fileBox!.width).toBeGreaterThan(imageBox!.width);
+      // File and image attachments share the compact tile dimensions.
+      expect(fileBox!.width).toBe(88);
+      expect(fileBox!.height).toBe(64);
+      expect(imageBox!.width).toBe(fileBox!.width);
+      expect(imageBox!.height).toBe(fileBox!.height);
       expect(
         await file
           .getByText("notes.txt", { exact: true })
           .evaluate((element) => element.scrollWidth <= element.clientWidth),
       ).toBe(true);
       expect(fileBox!.x + fileBox!.width).toBeLessThanOrEqual(imageBox!.x);
-      // Clicking the reference label opens the same viewer as the filename.
-      await file.getByText("file1", { exact: true }).click();
+      await file.getByText("notes.txt", { exact: true }).click();
       const dialog = page.getByRole("dialog");
       await expect(dialog.locator("pre")).toHaveText("Attachment file content");
       await page.keyboard.press("Escape");
@@ -64,6 +67,18 @@ for (const width of [390, 1000]) {
       await expect(file.getByRole("button")).toBeFocused();
       await page.keyboard.press("Enter");
       await expect(page.getByRole("dialog").locator("pre")).toHaveText("Attachment file content");
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      // The reference lives in the message and opens the same file viewer.
+      const reference = page.getByRole("button", {
+        name: "Open [file1] (notes.txt) full screen",
+        exact: true,
+      });
+      await reference.click();
+      await expect(dialog.locator("pre")).toHaveText("Attachment file content");
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      await expect(reference).toBeFocused();
     });
   }
 }

@@ -87,7 +87,7 @@ describe("startCommand", () => {
 
   it("runs a single command line through the platform shell when no args are given", async () => {
     const result = await startCommand({
-      command: `"${process.execPath}" -e "process.stdout.write('shell-ok')"`,
+      command: "echo shell-ok",
       cwd: tmpdir(),
       timeoutMs: 30_000,
     }).done;

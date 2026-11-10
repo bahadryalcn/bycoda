@@ -149,18 +149,15 @@ it("keeps the RPC allowlist aligned with the dispatch literals, including J2 tok
   // RPC registrations; they must not become metric labels by string matching.
   const methods = rpcDispatchLiterals(source).filter((name) => getHostRpcMethod(name));
   expect(methods.length).toBeGreaterThan(0);
-  for (const name of new Set([
+  const expected = new Set([
     ...methods,
     "mcp.tokens.create",
     "mcp.tokens.list",
     "mcp.tokens.revoke",
-  ])) {
-    recordDuration(name, 1);
-    expect(
-      perfMetrics.snapshot().metrics.some((entry) => entry.name === name),
-      name,
-    ).toBe(true);
-  }
+  ]);
+  for (const name of expected) recordDuration(name, 1);
+  const recorded = new Set(perfMetrics.snapshot().metrics.map((entry) => entry.name));
+  expect([...expected].filter((name) => !recorded.has(name))).toEqual([]);
   expect(measure("resources.read", () => 42)).toBe(42);
 });
 

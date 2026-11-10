@@ -2,7 +2,13 @@ import { CREWS_RPC_SCHEMAS } from "../../../src/shared/model/host-contracts/crew
 import { assertDomainAuthority, type HostDomainContext } from "../context";
 
 export type CrewRpcMethod = keyof typeof CREWS_RPC_SCHEMAS;
-const queries = new Set<CrewRpcMethod>(["crews.schema", "crews.inspect", "crews.get"]);
+const queries = new Set<CrewRpcMethod>([
+  "crews.schema",
+  "crews.inspect",
+  "crews.get",
+  "crews.active.list",
+  "crews.pools.list",
+]);
 
 export function createHostCrewsService(ports: {
   crews: {

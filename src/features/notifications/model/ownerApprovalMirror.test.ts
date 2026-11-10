@@ -90,17 +90,17 @@ describe("owner approval mirror", () => {
     const a = ask("a");
     const b = ask("b", "bycoda — Desktop action approval");
     const { calls } = start(() => []);
-    await flush();
-    const mirror = calls.find((call) => call.method === "approvals.mirror");
-    expect(
-      mirror?.params.upsert.map((entry: { id: string; remote: boolean }) => [
-        entry.id,
-        entry.remote,
+    await vi.waitFor(() =>
+      expect(
+        calls
+          .find((call) => call.method === "approvals.mirror")
+          ?.params.upsert.map((entry: { id: string; remote: boolean }) => [entry.id, entry.remote]),
+      ).toEqual([
+        [a.id, true],
+        [b.id, false],
       ]),
-    ).toEqual([
-      [a.id, true],
-      [b.id, false],
-    ]);
+    );
+    const mirror = calls.find((call) => call.method === "approvals.mirror");
     expect(mirror?.params.upsert[0].signature).toBe(
       await ownerApprovalSignature(ownerApprovalsSnapshot()[0]),
     );

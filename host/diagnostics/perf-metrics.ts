@@ -154,6 +154,10 @@ export function mcpMetricName(route: string): string | undefined {
 
 // RPC_METHOD_NAMES is a code-owned allowlist, never learned from requests.
 const RPC_METHOD_NAMES: readonly string[] = [
+  "approvals.decide",
+  "approvals.decisions",
+  "approvals.list",
+  "approvals.mirror",
   "appearance.themeSuggestions",
   "appearance.backgroundSuggestions",
   "appearance.backgroundImage",
@@ -306,6 +310,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "worktrees.removal.review",
   "worktrees.removal.status",
   "crews.accept",
+  "crews.active.list",
   "crews.agent.delete",
   "crews.agent.save",
   "crews.answer",
@@ -316,6 +321,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "crews.get",
   "crews.inspect",
   "crews.list",
+  "crews.member.ask",
   "crews.pause",
   "crews.pools.delete",
   "crews.pools.list",

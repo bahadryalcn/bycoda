@@ -27,6 +27,9 @@ async function fixture() {
   await run(base, "init", "--bare", "-b", "main", remote);
   await run(base, "init", "-b", "main", root);
   const git = (...args: string[]) => run(root, ...args);
+  await git("config", "user.name", "Fixture");
+  await git("config", "user.email", "fixture@example.invalid");
+  await git("config", "core.autocrlf", "false");
   const commit = async (file: string, body: string, message: string) => {
     await writeFile(join(root, file), body);
     await git("add", ".");

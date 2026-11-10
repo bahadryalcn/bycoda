@@ -97,8 +97,28 @@ it("keeps query cancellation and rejects cancellation before admission", async (
   expect(f.call).toHaveBeenCalledOnce();
 });
 
+it.each(["crews.active.list", "crews.pools.list"] as const)(
+  "retains caller cancellation for %s without exposing its completed result",
+  async (method) => {
+    const f = fixture();
+    f.call.mockImplementationOnce(async () => {
+      f.controller.abort();
+      await expect(f.guard()).rejects.toThrow("Request cancelled");
+      return { retained: true };
+    });
+    await expect(f.service.call(method, {}, f.context)).rejects.toThrow("Request cancelled");
+    expect(f.call).toHaveBeenCalledOnce();
+  },
+);
+
 it("accounts default-bootstrapping list as an effect and reserves control admission for Stop", () => {
-  const queries = new Set(["crews.schema", "crews.inspect", "crews.get"]);
+  const queries = new Set([
+    "crews.schema",
+    "crews.inspect",
+    "crews.get",
+    "crews.active.list",
+    "crews.pools.list",
+  ]);
   for (const method of Object.keys(CREWS_RPC_SCHEMAS)) {
     const policy = getHostRpcMethod(method)!;
     expect(policy.requiredCapability).toBe("transport.ws.crews.v2");
